@@ -1,0 +1,21 @@
+{
+  "name": "codotheca",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A library for the code you have written",
+  "license": "GPL-3.0-or-later",
+  "workspaces": ["app", "protocol"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "gen": "node protocol/generate.mjs",
+    "build:core": "cargo build --release --manifest-path core/Cargo.toml",
+    "build:app": "npm run build --workspace app",
+    "build": "npm run gen && npm run build:core && npm run build:app",
+    "dev": "npm run gen && npm run dev --workspace app",
+    "lint": "npm run lint --workspace app && cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings",
+    "typecheck": "npm run typecheck --workspace app",
+    "test": "cargo test --manifest-path core/Cargo.toml && npm run test --workspace app",
+    "fmt:check": "cargo fmt --manifest-path core/Cargo.toml -- --check && prettier --check \"app/**/*.{ts,tsx}\""
+  },
+  "devDependencies": { "prettier": "^3.3.0" }
+}

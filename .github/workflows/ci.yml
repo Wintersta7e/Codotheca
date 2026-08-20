@@ -1,0 +1,43 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions: { contents: read }
+
+jobs:
+  core:
+    name: core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: { os: [ubuntu-latest, windows-latest] }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: rustfmt, clippy }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: core }
+      - name: fmt
+        run: cargo fmt --manifest-path core/Cargo.toml -- --check
+      - name: clippy
+        run: cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
+      - name: test
+        run: cargo test --manifest-path core/Cargo.toml
+
+  app:
+    name: app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - name: generate protocol
+        run: npm run gen
+      - name: protocol is committed in sync
+        # The generator is the source of truth. If regenerating changes anything that is
+        # tracked, someone edited generated code by hand.
+        run: git status --porcelain -- app/src/generated core/src/protocol.rs | tee /dev/stderr | wc -l | grep -qx 0
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build:app

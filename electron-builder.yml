@@ -1,0 +1,37 @@
+appId: dev.codotheca.app
+productName: Codotheca
+copyright: Copyright © Codotheca contributors
+directories: { output: out, buildResources: build }
+
+files:
+  - app/dist/**
+  - app/static/**
+  - protocol/generated/**
+  - package.json
+extraResources:
+  # The Rust core ships alongside the shell and is spawned as a child process.
+  - from: core/target/release/
+    to: core
+    filter: ["codotheca-core", "codotheca-core.exe"]
+
+win:
+  target: [{ target: nsis, arch: [x64] }]
+  # A signed, stable install path also stops Defender rescanning on every launch.
+nsis:
+  oneClick: false
+  perMachine: false          # per-user: no UAC prompt, and the updater can replace files
+  allowToChangeInstallationDirectory: true
+
+linux:
+  category: Development
+  target:
+    - { target: AppImage, arch: [x64] }   # primary, and the ONLY self-updating artifact
+    - { target: deb, arch: [x64] }
+    - { target: rpm, arch: [x64] }
+
+# .deb/.rpm must never rewrite themselves — their updates belong to apt/dnf. The binary reads
+# this at runtime to decide whether the updater is available at all. Spec §14.
+extraMetadata:
+  updaterChannel: "${env.CODOTHECA_CHANNEL}"
+
+publish: [{ provider: github, releaseType: draft }]

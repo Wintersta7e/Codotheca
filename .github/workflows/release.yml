@@ -1,0 +1,30 @@
+name: Release
+on:
+  workflow_dispatch:
+  push: { tags: ['v*'] }
+permissions: { contents: write }
+
+jobs:
+  build:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: { os: [ubuntu-latest, windows-latest] }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run gen
+      - run: npm run build:core
+      - run: npm run build:app
+      # NOTE: Windows code signing needs a certificate and a hardware token or a cloud signer.
+      # That is procurement with weeks of lead time, not a build flag — see .dev/spec-phase1.md §14.
+      # Until it exists, Windows artifacts are unsigned and SmartScreen will warn.
+      - name: package
+        run: npx electron-builder --publish never
+        env: { CODOTHECA_CHANNEL: ${{ matrix.os == 'ubuntu-latest' && 'appimage' || 'nsis' }} }
+      - uses: actions/upload-artifact@v4
+        with: { name: codotheca-${{ matrix.os }}, path: out/*, retention-days: 14 }

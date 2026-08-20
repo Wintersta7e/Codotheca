@@ -1,0 +1,38 @@
+[package]
+name = "codotheca-core"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.80"
+license = "GPL-3.0-or-later"
+description = "Codotheca core: scanning, git, index and art rasterisation"
+
+[[bin]]
+name = "codotheca-core"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Denied deliberately: these are the ones that bite in a process that shells out to git
+# and writes to a database, and none of them should ever be silenced without a comment.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+indexing_slicing = "deny"
+# Allowed with reasons, not by taste:
+module_name_repetitions = "allow"   # core::scan::ScanError reads better than core::scan::Error
+missing_errors_doc = "allow"        # revisit once the public surface stabilises
+
+[profile.release]
+opt-level = 2
+lto = "thin"
+strip = true
