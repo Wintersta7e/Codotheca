@@ -2,31 +2,75 @@
   "version": 1,
   "$comment": "Single source of truth for the core<->shell contract. Both languages are GENERATED from this file; neither is written by hand. See .dev/spec-phase1.md §2.",
   "errors": [
-    "CORE_RESTARTED", "GIT_MISSING", "GIT_TOO_OLD", "REPO_UNREADABLE",
-    "PERMISSION_DENIED", "PATH_GONE", "STORE_OFFLINE", "BUDGET_EXCEEDED",
-    "UNTRUSTED_REPO", "PROJECT_MERGED", "PROTOCOL", "INTERNAL"
+    "CORE_RESTARTED",
+    "GIT_MISSING",
+    "GIT_TOO_OLD",
+    "REPO_UNREADABLE",
+    "PERMISSION_DENIED",
+    "PATH_GONE",
+    "STORE_OFFLINE",
+    "BUDGET_EXCEEDED",
+    "UNTRUSTED_REPO",
+    "PROJECT_MERGED",
+    "PROTOCOL",
+    "INTERNAL"
   ],
+  "types": {
+    "EffectsTier": { "kind": "enum", "variants": ["auto", "full", "reduced", "off"] }
+  },
   "commands": [
-    { "name": "app.hello_ack",   "args": { "protocolVersion": "u32" }, "returns": "Empty" },
-    { "name": "app.shutdown",    "args": {}, "returns": "Empty" },
-    { "name": "roots.suggest",   "args": {}, "returns": "RootSuggestions" },
-    { "name": "roots.add",       "args": { "path": "OsPath" }, "returns": "RootId", "privileged": true,
-      "$comment": "privileged: the path originates from a shell-owned native dialog, never from the renderer" },
-    { "name": "roots.setEnabled","args": { "id": "RootId", "enabled": "bool" }, "returns": "Empty" },
-    { "name": "scan.start",      "args": { "full": "bool" }, "returns": "ScanRunId" },
-    { "name": "scan.cancel",     "args": { "id": "ScanRunId" }, "returns": "Empty" },
-    { "name": "projects.list",   "args": { "query": "String", "sort": "Sort", "from": "u32", "to": "u32" }, "returns": "ProjectPage" },
-    { "name": "projects.get",    "args": { "id": "ProjectId" }, "returns": "ProjectDetail" },
-    { "name": "projects.peek",   "args": { "id": "ProjectId" }, "returns": "Peek" },
-    { "name": "projects.launch", "args": { "project": "ProjectId", "location": "LocationId", "target": "TargetId" }, "returns": "SessionId" },
-    { "name": "session.stop",    "args": { "id": "SessionId" }, "returns": "Empty" },
-    { "name": "art.url",         "args": { "ref": "AssetRef" }, "returns": "Url" },
-    { "name": "problems.list",   "args": { "run": "ScanRunId" }, "returns": "Problems" }
+    { "name": "app.hello_ack", "args": { "protocolVersion": "u32" }, "returns": "Empty" },
+    { "name": "app.shutdown", "args": {}, "returns": "Empty" },
+    { "name": "roots.suggest", "args": {}, "returns": "RootSuggestions" },
+    {
+      "name": "roots.add",
+      "args": { "path": "OsPath" },
+      "returns": "RootId",
+      "privileged": true,
+      "$comment": "privileged: the path originates from a shell-owned native dialog, never from the renderer"
+    },
+    {
+      "name": "roots.setEnabled",
+      "args": { "id": "RootId", "enabled": "bool" },
+      "returns": "Empty"
+    },
+    { "name": "scan.start", "args": { "full": "bool" }, "returns": "ScanRunId" },
+    { "name": "scan.cancel", "args": { "id": "ScanRunId" }, "returns": "Empty" },
+    {
+      "name": "projects.list",
+      "args": { "query": "String", "sort": "Sort", "from": "u32", "to": "u32" },
+      "returns": "ProjectPage"
+    },
+    { "name": "projects.get", "args": { "id": "ProjectId" }, "returns": "ProjectDetail" },
+    { "name": "projects.peek", "args": { "id": "ProjectId" }, "returns": "Peek" },
+    {
+      "name": "projects.launch",
+      "args": { "project": "ProjectId", "location": "LocationId", "target": "TargetId" },
+      "returns": "SessionId"
+    },
+    { "name": "session.stop", "args": { "id": "SessionId" }, "returns": "Empty" },
+    { "name": "art.url", "args": { "ref": "AssetRef" }, "returns": "Url" },
+    { "name": "problems.list", "args": { "run": "ScanRunId" }, "returns": "Problems" }
   ],
   "topics": {
-    "scan":     ["run_started", "repo_found", "job_done", "progress", "problem", "finished", "cancelled"],
-    "projects": ["upserted", "merged", "flags_changed", "condition_changed", "art_ready", "snapshot"],
-    "session":  ["started", "segment_closed", "ended"],
-    "core":     ["error", "degraded", "snapshot"]
+    "scan": [
+      "run_started",
+      "repo_found",
+      "job_done",
+      "progress",
+      "problem",
+      "finished",
+      "cancelled"
+    ],
+    "projects": [
+      "upserted",
+      "merged",
+      "flags_changed",
+      "condition_changed",
+      "art_ready",
+      "snapshot"
+    ],
+    "session": ["started", "segment_closed", "ended"],
+    "core": ["error", "degraded", "snapshot"]
   }
 }
