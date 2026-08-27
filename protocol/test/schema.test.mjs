@@ -94,3 +94,12 @@ test('ErrorCode may not be hand-declared; it is synthesised from errors', () => 
   s.types.ErrorCode = { kind: 'enum', variants: ['NOPE'] };
   assert.throws(() => validateSchema(s), /ErrorCode/);
 });
+
+// The two rules about ErrorCode pull in opposite directions and both are needed: it cannot be
+// declared, and ErrorFrame.code must still be able to name it. Rejecting the reference would
+// make the error frame — the one shape every failure crosses as — undeclarable.
+test('ErrorCode is referenceable even though it is undeclarable', () => {
+  const s = base();
+  s.types.ErrorFrame = { kind: 'struct', fields: { code: 'ErrorCode', message: 'String' } };
+  validateSchema(s);
+});

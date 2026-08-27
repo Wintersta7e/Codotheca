@@ -29,9 +29,16 @@ export function parseTypeExpr(expr) {
   return { base, array: open === '[', nullable: nullable === '?' };
 }
 
+/**
+ * Types that exist without being declared. `ErrorCode` is synthesised from `errors` and may not
+ * be hand-declared, but `ErrorFrame.code` still has to name it — so it must be referenceable
+ * while remaining undeclarable. Both halves of that are load-bearing.
+ */
+const SYNTHESISED = new Set(['ErrorCode']);
+
 function checkRef(schema, expr, where) {
   const { base } = parseTypeExpr(expr);
-  if (!SCALARS[base] && !schema.types[base]) {
+  if (!SCALARS[base] && !SYNTHESISED.has(base) && !schema.types[base]) {
     throw new Error(`${where}: ${base} is not a declared type or a scalar`);
   }
 }

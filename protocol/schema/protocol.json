@@ -27,11 +27,254 @@
       "kind": "struct",
       "fields": { "id": "LocationId", "pathDisplay": "String" }
     },
-    "EffectsTier": { "kind": "enum", "variants": ["auto", "full", "reduced", "off"] }
+
+    "Outcome": { "kind": "enum", "variants": ["unknown"] },
+    "Hello": {
+      "kind": "struct",
+      "fields": { "protocolVersion": "u32", "coreVersion": "String", "epoch": "u32" }
+    },
+    "ErrorFrame": {
+      "kind": "struct",
+      "fields": {
+        "code": "ErrorCode",
+        "message": "String",
+        "retryable": "bool",
+        "outcome": "Outcome?"
+      }
+    },
+
+    "LocationKind": { "kind": "enum", "variants": ["win", "linux", "wsl"] },
+
+    "RootProvenance": {
+      "kind": "enum",
+      "variants": [
+        "gitconfig",
+        "editor_recent",
+        "convention",
+        "cloud_synced",
+        "system_root",
+        "distro",
+        "dialog"
+      ]
+    },
+    "RootState": { "kind": "enum", "variants": ["watched", "ignored", "offline"] },
+    "RootRefusal": {
+      "kind": "enum",
+      "variants": [
+        "filesystem_root",
+        "home_without_narrowing",
+        "too_many_directories",
+        "already_a_root"
+      ]
+    },
+    "RootSuggestion": {
+      "kind": "struct",
+      "fields": {
+        "pathDisplay": "String",
+        "kind": "LocationKind",
+        "distro": "String",
+        "provenance": "RootProvenance",
+        "provenanceDetail": "String?",
+        "hits": "u32?",
+        "preTicked": "bool"
+      }
+    },
+    "Root": {
+      "kind": "struct",
+      "fields": {
+        "id": "RootId",
+        "pathDisplay": "String",
+        "kind": "LocationKind",
+        "distro": "String",
+        "enabled": "bool",
+        "descendIntoRepos": "bool",
+        "provenance": "RootProvenance",
+        "state": "RootState",
+        "addedAt": "Timestamp",
+        "projectCount": "u32?"
+      }
+    },
+    "RootAdd": {
+      "kind": "struct",
+      "fields": { "root": "Root?", "refusedBecause": "RootRefusal?", "estimatedDirs": "i64?" }
+    },
+
+    "ScanMode": { "kind": "enum", "variants": ["full", "incremental"] },
+    "ScanStatus": {
+      "kind": "struct",
+      "fields": {
+        "runId": "ScanRunId?",
+        "running": "bool",
+        "generation": "u32?",
+        "mode": "ScanMode?",
+        "startedAt": "Timestamp?",
+        "endedAt": "Timestamp?",
+        "cancelled": "bool",
+        "walkedDirs": "i64",
+        "foundRepos": "u32",
+        "indexedProjects": "u32",
+        "problemCount": "u32?",
+        "ambiguousLineageCount": "u32?"
+      }
+    },
+
+    "ProblemKind": {
+      "kind": "enum",
+      "variants": [
+        "permission_denied",
+        "untrusted_repo",
+        "unreadable_repo",
+        "deferred_slow",
+        "clock_skew",
+        "non_utf8_path",
+        "offline_store",
+        "ambiguous_lineage"
+      ]
+    },
+    "ProblemItem": {
+      "kind": "struct",
+      "fields": {
+        "pathDisplay": "String",
+        "detail": "String?",
+        "count": "u32",
+        "projectId": "ProjectId?",
+        "locationId": "LocationId?",
+        "lastSeenAt": "Timestamp?",
+        "candidateProjectIds": "[ProjectId]"
+      }
+    },
+    "ProblemGroup": {
+      "kind": "struct",
+      "fields": { "kind": "ProblemKind", "count": "u32", "items": "[ProblemItem]" }
+    },
+    "ProblemHeader": {
+      "kind": "struct",
+      "fields": {
+        "walkedDirs": "i64",
+        "repositories": "u32",
+        "problemCount": "u32?",
+        "ambiguousLineageCount": "u32?"
+      }
+    },
+    "Problems": {
+      "kind": "struct",
+      "fields": { "runId": "ScanRunId?", "header": "ProblemHeader", "groups": "[ProblemGroup]" }
+    },
+
+    "SortKey": { "kind": "enum", "variants": ["last_touched", "name", "size"] },
+    "ViewMode": { "kind": "enum", "variants": ["grid", "list"] },
+    "WindowGeometry": {
+      "kind": "struct",
+      "fields": {
+        "x": "i32",
+        "y": "i32",
+        "width": "u32",
+        "height": "u32",
+        "maximized": "bool",
+        "monitorId": "String?"
+      }
+    },
+    "ViewState": {
+      "kind": "struct",
+      "fields": {
+        "query": "String",
+        "sort": "SortKey",
+        "viewMode": "ViewMode",
+        "density": "u32",
+        "collapsedSections": "[String]",
+        "scrollOffset": "f64",
+        "selectedProjectId": "ProjectId?",
+        "dismissedNotices": "[String]",
+        "windowGeometry": "WindowGeometry?"
+      }
+    },
+    "ViewPatch": {
+      "kind": "struct",
+      "fields": {
+        "query": "String?",
+        "sort": "SortKey?",
+        "viewMode": "ViewMode?",
+        "density": "u32?",
+        "collapsedSections": "[String]?",
+        "scrollOffset": "f64?",
+        "selectedProjectId": "ProjectId?",
+        "dismissedNotices": "[String]?",
+        "windowGeometry": "WindowGeometry?"
+      }
+    },
+
+    "EffectsTier": { "kind": "enum", "variants": ["auto", "full", "reduced", "off"] },
+    "LogLevel": { "kind": "enum", "variants": ["error", "warn", "info", "debug", "trace"] },
+    "Settings": {
+      "kind": "struct",
+      "fields": {
+        "effectsTier": "EffectsTier",
+        "reducedMotionOverride": "bool",
+        "autostart": "bool",
+        "residentShortcut": "String?",
+        "roastEnabled": "bool",
+        "logLevel": "LogLevel"
+      }
+    },
+    "SettingsPatch": {
+      "kind": "struct",
+      "fields": {
+        "effectsTier": "EffectsTier?",
+        "reducedMotionOverride": "bool?",
+        "autostart": "bool?",
+        "residentShortcut": "String?",
+        "roastEnabled": "bool?",
+        "logLevel": "LogLevel?"
+      }
+    },
+
+    "DiagBundle": {
+      "kind": "struct",
+      "fields": {
+        "pathBytes": "Bytes",
+        "pathDisplay": "String",
+        "sizeBytes": "i64",
+        "anonymised": "bool"
+      }
+    }
   },
   "commands": [
     { "name": "app.hello_ack", "args": { "protocolVersion": "u32" }, "returns": "Empty" },
-    { "name": "app.shutdown", "args": {}, "returns": "Empty" }
+    { "name": "app.shutdown", "args": {}, "returns": "Empty" },
+    { "name": "roots.suggest", "args": {}, "returns": "[RootSuggestion]" },
+    {
+      "name": "roots.list",
+      "args": {},
+      "returns": "[Root]",
+      "$comment": "§11.3a draws a row per root and an `N OF M ACTIVE` caption; §2.4's table declared only the mutations, so nothing returned the set. Read-only and unprivileged: no path crosses in either direction, only RootId and path_display. Plan 16 implements the handler"
+    },
+    {
+      "name": "roots.add",
+      "args": { "pathBytes": "Bytes", "confirmLarge": "bool" },
+      "returns": "RootAdd",
+      "privileged": true,
+      "$comment": "privileged: the path originates from a shell-owned native dialog, never from the renderer. §10.1a's refuse-list answers with RootRefusal and an explanation, never a silent no"
+    },
+    { "name": "roots.remove", "args": { "id": "RootId" }, "returns": "Empty" },
+    {
+      "name": "roots.setEnabled",
+      "args": { "id": "RootId", "enabled": "bool" },
+      "returns": "Empty"
+    },
+    {
+      "name": "roots.setDescend",
+      "args": { "id": "RootId", "descendIntoRepos": "bool" },
+      "returns": "Empty"
+    },
+    { "name": "scan.start", "args": { "full": "bool" }, "returns": "ScanRunId" },
+    { "name": "scan.cancel", "args": { "id": "ScanRunId" }, "returns": "Empty" },
+    { "name": "scan.status", "args": {}, "returns": "ScanStatus" },
+    { "name": "problems.list", "args": { "run": "ScanRunId?" }, "returns": "Problems" },
+    { "name": "settings.get", "args": {}, "returns": "Settings" },
+    { "name": "settings.set", "args": { "patch": "SettingsPatch" }, "returns": "Settings" },
+    { "name": "view.get", "args": {}, "returns": "ViewState" },
+    { "name": "view.set", "args": { "patch": "ViewPatch" }, "returns": "Empty" },
+    { "name": "diag.bundle", "args": { "includeRealPaths": "bool" }, "returns": "DiagBundle" }
   ],
   "topics": {}
 }
