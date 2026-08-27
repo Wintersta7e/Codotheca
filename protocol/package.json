@@ -1,2 +1,9 @@
-{ "name": "@codotheca/protocol", "version": "0.0.0", "private": true, "type": "module",
-  "main": "generated/protocol.ts" }
+{
+  "name": "@codotheca/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
