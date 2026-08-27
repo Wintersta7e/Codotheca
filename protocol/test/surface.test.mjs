@@ -390,3 +390,31 @@ test('a condition change can carry the uncomputed state', () => {
 test('job_done names one of the eight jobs', () => {
   assert.deepEqual(schema.types.Job.variants, ['j0', 'j1', 'j1_5', 'j2', 'j3', 'j4', 'j5', 'j6']);
 });
+
+// §2.4: paths and executables enter only from a native file dialog owned by the shell, and each
+// such call is a privileged capability-issuance endpoint requiring explicit user confirmation.
+// Three commands qualify. Widening this set is a security decision, not a schema edit.
+test('exactly three commands are privileged', () => {
+  const priv = schema.commands
+    .filter((c) => c.privileged === true)
+    .map((c) => c.name)
+    .sort();
+  assert.deepEqual(priv, ['locations.relocate', 'roots.add', 'targets.upsert']);
+});
+
+// §2.2: non-idempotent operations are never auto-replayed — projects.launch, session mutations
+// and flag changes are surfaced to the user instead. Replaying a launch opens the editor twice.
+test('exactly three commands are non-idempotent', () => {
+  const ni = schema.commands
+    .filter((c) => c.idempotent === false)
+    .map((c) => c.name)
+    .sort();
+  assert.deepEqual(ni, ['projects.launch', 'projects.setFlags', 'session.stop']);
+});
+
+// §7.4: a retried, replayed or double-delivered art.rerender writes the same integer and lands
+// on the same card. It is idempotent by construction and must never join the set above.
+test('art.rerender is idempotent by construction', () => {
+  const c = schema.commands.find((x) => x.name === 'art.rerender');
+  assert.notEqual(c.idempotent, false);
+});

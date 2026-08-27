@@ -2,11 +2,11 @@
 //! renaming, byte tagging and command tagging are all serde attributes, and an attribute that is
 //! wrong compiles perfectly.
 
-// `expect_used` is denied crate-wide because a panic in the core kills the process the shell
-// supervises. That reasoning inverts in a test binary: a failed round-trip must abort the test
-// loudly, and the alternative — propagating Result out of every case — hides the assertion
-// behind error plumbing. This allow belongs at the top of every file in core/tests/.
-#![allow(clippy::expect_used)]
+// `expect_used` and `panic` are denied crate-wide because a panic in the core kills the process
+// the shell supervises. That reasoning inverts in a test binary: a failed round-trip must abort
+// the test loudly, and the alternative — propagating Result out of every case — hides the
+// assertion behind error plumbing. These allows belong at the top of every file in core/tests/.
+#![allow(clippy::expect_used, clippy::panic)]
 
 use codotheca_core::protocol::{AppHelloAckArgs, Bytes, Command, LocationId, LocationRef};
 
@@ -56,4 +56,35 @@ fn an_unknown_field_is_a_protocol_error_not_a_silent_drop() {
 #[test]
 fn the_protocol_version_is_the_schema_version() {
     assert_eq!(codotheca_core::protocol::PROTOCOL_VERSION, 2);
+}
+
+#[test]
+fn a_privileged_command_is_the_only_shape_carrying_bytes_inbound() {
+    // §2.4's trust rule as the core sees it: a bytes-bearing frame must name one of the three
+    // privileged commands. The generated Command enum is what makes that checkable at all.
+    let frame =
+        r#"{"command":"roots.add","args":{"pathBytes":{"b64":"L3RtcA=="},"confirmLarge":false}}"#;
+    let c: codotheca_core::protocol::Command = serde_json::from_str(frame).expect("deserialise");
+    match c {
+        codotheca_core::protocol::Command::RootsAdd(a) => {
+            assert_eq!(a.path_bytes.0, b"/tmp");
+            assert!(!a.confirm_large);
+        }
+        other => panic!("wrong variant: {other:?}"),
+    }
+}
+
+#[test]
+fn an_unknown_value_crosses_as_null_and_never_as_absence() {
+    // §1.10: never render unknown as zero. On the wire that means never omitting the key either —
+    // an absent key and a zero are equally unreadable as "not computed" at the receiver.
+    use codotheca_core::protocol::{ProjectConditionChanged, ProjectId};
+    let e = ProjectConditionChanged {
+        id: ProjectId(1),
+        condition_signal: None,
+    };
+    assert_eq!(
+        serde_json::to_string(&e).expect("serialise"),
+        r#"{"id":1,"conditionSignal":null}"#
+    );
 }

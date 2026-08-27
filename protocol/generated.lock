@@ -1,6 +1,6 @@
 {
   "protocolVersion": 2,
-  "schema": "sha256-2cb7a53f6780b6ba1f779269906b3946c0d3a44e0acd8fb56f8796ab3b964806",
+  "schema": "sha256-3b9ac9ef025a7b47c7429ca2cf51e280354fb915870e54c91f657b6c450a3076",
   "commands": 42,
   "topics": 4,
   "events": 19,
