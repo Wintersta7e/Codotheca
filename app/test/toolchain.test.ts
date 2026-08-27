@@ -55,4 +55,14 @@ describe('the app TypeScript projects', () => {
     expect(Array.isArray(types)).toBe(true);
     expect(types).not.toContain('node');
   });
+
+  it('leaves shared tests to the node project, which is the only one that can type them', () => {
+    // src/shared is imported by both sides, so both projects include it — but a shared *test*
+    // runs under Node and may name a Node API: gitFloor.test.ts reads the Rust source it
+    // mirrors. Type-checking those here fails on `node:fs` purely because this project
+    // withholds @types/node, which is the guarantee above. tsconfig.node.json still covers them,
+    // so nothing goes unchecked.
+    expect(readTsconfig('tsconfig.web.json')['exclude']).toContain('src/shared/**/*.test.ts');
+    expect(readTsconfig('tsconfig.node.json')['include']).toContain('src/shared/**/*.ts');
+  });
 });

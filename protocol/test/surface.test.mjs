@@ -418,3 +418,45 @@ test('art.rerender is idempotent by construction', () => {
   const c = schema.commands.find((x) => x.name === 'art.rerender');
   assert.notEqual(c.idempotent, false);
 });
+
+// §11.2a: the corrupt-index window draws three blocks and §1.12 gives them figures. v2.2 shipped
+// the boolean and no numbers, so the window named what a gap contains and printed nothing.
+test('the corrupt-index ledger carries a figure set for each of its three blocks', () => {
+  const f = schema.types.CorruptIndexLedger.fields;
+  assert.equal(f.quarantinedAt, 'Timestamp');
+  assert.equal(f.gapStartedAt, 'Timestamp?');
+  assert.equal(f.reDerivable, 'LedgerCounts');
+  assert.equal(f.restorable, 'LedgerCounts');
+  assert.equal(f.deferred, 'LedgerCounts');
+});
+
+// The boolean stays, and stays load-bearing: false means the gap block says so in words and
+// prints no figure at all. §1.10 on the screen where an invented zero costs the most.
+test('whether the gap could be counted is carried apart from the counts', () => {
+  assert.equal(schema.types.CorruptIndexLedger.fields.gapCountsRecoverable, 'bool');
+});
+
+// §1.10 one level down: a block sourced from a struct with no column for a row kind must say
+// nothing about that kind. Nullable is the only encoding left — convention 1 of this plan.
+test('every ledger count is nullable, and the set is the one plan 04 computes', () => {
+  const fields = schema.types.LedgerCounts.fields;
+  for (const [name, expr] of Object.entries(fields)) {
+    assert.equal(expr, 'i64?', `LedgerCounts.${name} must be nullable`);
+  }
+  assert.deepEqual(Object.keys(fields).sort(), [
+    'aliases',
+    'collectionMembers',
+    'collections',
+    'identities',
+    'launchTargets',
+    'merges',
+    'notes',
+    'projects',
+    'roots',
+    'sessionSegments',
+    'sessions',
+    'settings',
+    'viewState',
+    'xpEvents',
+  ]);
+});

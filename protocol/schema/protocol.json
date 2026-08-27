@@ -782,6 +782,37 @@
         "schemaVersion": "u32",
         "scan": "ScanStatus"
       }
+    },
+
+    "LedgerCounts": {
+      "kind": "struct",
+      "fields": {
+        "projects": "i64?",
+        "notes": "i64?",
+        "sessions": "i64?",
+        "sessionSegments": "i64?",
+        "collections": "i64?",
+        "collectionMembers": "i64?",
+        "roots": "i64?",
+        "identities": "i64?",
+        "aliases": "i64?",
+        "merges": "i64?",
+        "settings": "i64?",
+        "viewState": "i64?",
+        "xpEvents": "i64?",
+        "launchTargets": "i64?"
+      }
+    },
+    "CorruptIndexLedger": {
+      "kind": "struct",
+      "fields": {
+        "quarantinedAt": "Timestamp",
+        "gapStartedAt": "Timestamp?",
+        "gapCountsRecoverable": "bool",
+        "reDerivable": "LedgerCounts",
+        "restorable": "LedgerCounts",
+        "deferred": "LedgerCounts"
+      }
     }
   },
   "commands": [
