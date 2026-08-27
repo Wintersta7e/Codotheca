@@ -638,6 +638,148 @@
     "CollectionUpsert": {
       "kind": "struct",
       "fields": { "collection": "Collection?", "refusedBecause": "CollectionRefusal?" }
+    },
+
+    "Job": { "kind": "enum", "variants": ["j0", "j1", "j1_5", "j2", "j3", "j4", "j5", "j6"] },
+    "DegradedReason": {
+      "kind": "enum",
+      "variants": [
+        "git_missing",
+        "git_too_old",
+        "store_offline",
+        "budget_exceeded",
+        "index_read_only"
+      ]
+    },
+
+    "ScanRunStarted": {
+      "kind": "struct",
+      "fields": {
+        "runId": "ScanRunId",
+        "generation": "u32",
+        "mode": "ScanMode",
+        "roots": "[RootId]",
+        "startedAt": "Timestamp"
+      }
+    },
+    "RepoFound": {
+      "kind": "struct",
+      "fields": {
+        "runId": "ScanRunId",
+        "projectId": "ProjectId",
+        "location": "LocationRef",
+        "isNew": "bool"
+      }
+    },
+    "JobDone": {
+      "kind": "struct",
+      "fields": {
+        "runId": "ScanRunId",
+        "projectId": "ProjectId",
+        "job": "Job",
+        "ok": "bool",
+        "elapsedMs": "u32",
+        "deferred": "bool"
+      }
+    },
+    "ScanProgress": {
+      "kind": "struct",
+      "fields": {
+        "runId": "ScanRunId",
+        "walkedDirs": "i64",
+        "foundRepos": "u32",
+        "indexedProjects": "u32"
+      }
+    },
+    "ProblemFound": {
+      "kind": "struct",
+      "fields": {
+        "runId": "ScanRunId",
+        "kind": "ProblemKind",
+        "pathDisplay": "String",
+        "detail": "String?"
+      }
+    },
+    "ScanFinished": {
+      "kind": "struct",
+      "fields": {
+        "runId": "ScanRunId",
+        "endedAt": "Timestamp",
+        "walkedDirs": "i64",
+        "foundRepos": "u32",
+        "problemCount": "u32",
+        "ambiguousLineageCount": "u32"
+      }
+    },
+    "ScanCancelled": {
+      "kind": "struct",
+      "fields": { "runId": "ScanRunId", "endedAt": "Timestamp", "indexedProjects": "u32" }
+    },
+
+    "ProjectUpserted": { "kind": "struct", "fields": { "row": "ProjectRow" } },
+    "ProjectMerged": { "kind": "struct", "fields": { "from": "ProjectId", "into": "ProjectId" } },
+    "ProjectFlagsChanged": {
+      "kind": "struct",
+      "fields": {
+        "id": "ProjectId",
+        "isPinned": "bool",
+        "isArchived": "bool",
+        "isHidden": "bool"
+      }
+    },
+    "ProjectConditionChanged": {
+      "kind": "struct",
+      "fields": { "id": "ProjectId", "conditionSignal": "ConditionSignal?" }
+    },
+    "ArtReady": {
+      "kind": "struct",
+      "fields": {
+        "projectId": "ProjectId",
+        "sceneHash": "SceneHash",
+        "rendition": "Rendition",
+        "artState": "ArtState"
+      }
+    },
+    "ProjectsSnapshot": {
+      "kind": "struct",
+      "fields": {
+        "epoch": "u32",
+        "throughSeq": "i64",
+        "generation": "u32",
+        "rows": "[ProjectRow]"
+      }
+    },
+
+    "SessionStarted": { "kind": "struct", "fields": { "session": "SessionRef" } },
+    "SegmentClosed": {
+      "kind": "struct",
+      "fields": {
+        "sessionId": "SessionId",
+        "startedAt": "Timestamp",
+        "endedAt": "Timestamp",
+        "creditedSeconds": "i64",
+        "closedBy": "CloseReason"
+      }
+    },
+    "SessionEnded": { "kind": "struct", "fields": { "session": "SessionRef" } },
+
+    "CoreError": {
+      "kind": "struct",
+      "fields": { "code": "ErrorCode", "message": "String", "projectId": "ProjectId?" }
+    },
+    "CoreDegraded": {
+      "kind": "struct",
+      "fields": { "reason": "DegradedReason", "detail": "String?" }
+    },
+    "CoreSnapshot": {
+      "kind": "struct",
+      "fields": {
+        "epoch": "u32",
+        "throughSeq": "i64",
+        "gitVersion": "String?",
+        "schemaVersion": "u32",
+        "scan": "ScanStatus"
+      }
     }
   },
   "commands": [
@@ -828,5 +970,33 @@
       "$comment": "§9: app focus extends a segment only while the focused view is that project, so the renderer must report which project's view holds focus; null means none. §2.4's table omits it. Not privileged — it originates no path and no executable"
     }
   ],
-  "topics": {}
+  "topics": {
+    "scan": {
+      "run_started": "ScanRunStarted",
+      "repo_found": "RepoFound",
+      "job_done": "JobDone",
+      "progress": "ScanProgress",
+      "problem": "ProblemFound",
+      "finished": "ScanFinished",
+      "cancelled": "ScanCancelled"
+    },
+    "projects": {
+      "upserted": "ProjectUpserted",
+      "merged": "ProjectMerged",
+      "flags_changed": "ProjectFlagsChanged",
+      "condition_changed": "ProjectConditionChanged",
+      "art_ready": "ArtReady",
+      "snapshot": "ProjectsSnapshot"
+    },
+    "session": {
+      "started": "SessionStarted",
+      "segment_closed": "SegmentClosed",
+      "ended": "SessionEnded"
+    },
+    "core": {
+      "error": "CoreError",
+      "degraded": "CoreDegraded",
+      "snapshot": "CoreSnapshot"
+    }
+  }
 }

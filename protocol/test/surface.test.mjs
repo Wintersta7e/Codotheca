@@ -349,3 +349,44 @@ test('collections.upsert reports which refusal fired', () => {
   ]);
   assert.equal(schema.types.CollectionUpsert.fields.refusedBecause, 'CollectionRefusal?');
 });
+
+// §2.4's topic table, transcribed.
+const TOPICS = {
+  scan: ['run_started', 'repo_found', 'job_done', 'progress', 'problem', 'finished', 'cancelled'],
+  projects: ['upserted', 'merged', 'flags_changed', 'condition_changed', 'art_ready', 'snapshot'],
+  session: ['started', 'segment_closed', 'ended'],
+  core: ['error', 'degraded', 'snapshot'],
+};
+
+test('every topic and event of §2.4 is declared, with a payload type', () => {
+  assert.deepEqual(Object.keys(schema.topics).sort(), Object.keys(TOPICS).sort());
+  for (const [t, events] of Object.entries(TOPICS)) {
+    assert.deepEqual(Object.keys(schema.topics[t]).sort(), [...events].sort(), t);
+    for (const e of events) assert.equal(typeof schema.topics[t][e], 'string', `${t}/${e}`);
+  }
+});
+
+// §2.4: projects.merged did not exist in v1, so the renderer had no way to collapse two visible
+// tiles into one — which happens live during the first scan.
+test('projects/merged names both sides', () => {
+  assert.deepEqual(schema.types.ProjectMerged.fields, { from: 'ProjectId', into: 'ProjectId' });
+});
+
+// §2.3: on overflow the queue is atomically replaced by one snapshot {epoch, throughSeq, data};
+// only deltas with seq > throughSeq may follow it.
+test('both snapshot events carry epoch and throughSeq', () => {
+  for (const t of ['ProjectsSnapshot', 'CoreSnapshot']) {
+    assert.equal(schema.types[t].fields.epoch, 'u32', t);
+    assert.equal(schema.types[t].fields.throughSeq, 'i64', t);
+  }
+});
+
+// §1.2: condition_signal is NULL until a scan job has produced one.
+test('a condition change can carry the uncomputed state', () => {
+  assert.equal(schema.types.ProjectConditionChanged.fields.conditionSignal, 'ConditionSignal?');
+});
+
+// §4.1: the job vocabulary, including J1.5, which §4.1a schedules before J2 and J3.
+test('job_done names one of the eight jobs', () => {
+  assert.deepEqual(schema.types.Job.variants, ['j0', 'j1', 'j1_5', 'j2', 'j3', 'j4', 'j5', 'j6']);
+});
