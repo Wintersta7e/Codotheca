@@ -236,7 +236,298 @@
         "sizeBytes": "i64",
         "anonymised": "bool"
       }
-    }
+    },
+
+    "CollectionId": { "kind": "id", "repr": "i64" },
+    "SceneHash": { "kind": "id", "repr": "String" },
+
+    "Presence": { "kind": "enum", "variants": ["present", "offline", "missing", "unscanned"] },
+    "ConditionSignal": {
+      "kind": "enum",
+      "variants": ["live", "idle", "dormant", "neglected", "abandoned", "offline", "empty"]
+    },
+    "ArtState": { "kind": "enum", "variants": ["pending", "ready", "failed", "stale"] },
+    "DescriptionSource": {
+      "kind": "enum",
+      "variants": ["manifest", "readme", "note", "detected"]
+    },
+    "InterruptedOp": {
+      "kind": "enum",
+      "variants": ["merge", "rebase", "cherry_pick", "revert", "bisect", "am"]
+    },
+    "HeadComparison": {
+      "kind": "enum",
+      "variants": ["same_commit", "different_commit", "not_compared"]
+    },
+    "AssociationKind": {
+      "kind": "enum",
+      "variants": ["definitive", "strong", "inferred", "manual"]
+    },
+    "Flag": { "kind": "enum", "variants": ["pinned", "archived", "hidden"] },
+    "ReadmeStateKind": { "kind": "enum", "variants": ["not_indexed", "absent", "present"] },
+    "ReadmeState": {
+      "kind": "struct",
+      "fields": { "state": "ReadmeStateKind", "text": "String?", "readAt": "Timestamp?" }
+    },
+    "LaneState": {
+      "kind": "enum",
+      "variants": ["measured", "not_computed", "shallow_excluded"]
+    },
+
+    "TargetKind": { "kind": "enum", "variants": ["editor", "terminal", "file_manager"] },
+    "VerifyState": { "kind": "enum", "variants": ["unverified", "ok", "missing"] },
+    "TargetTier": {
+      "kind": "enum",
+      "variants": ["project", "location", "language", "global"]
+    },
+    "TargetRow": {
+      "kind": "struct",
+      "fields": {
+        "id": "TargetId",
+        "kind": "TargetKind",
+        "name": "String",
+        "projectId": "ProjectId?",
+        "locationId": "LocationId?",
+        "language": "String?",
+        "sortIndex": "u32",
+        "detected": "bool",
+        "verifyState": "VerifyState",
+        "verifiedAt": "Timestamp?",
+        "execDisplay": "String"
+      }
+    },
+    "ResolvedTarget": {
+      "kind": "struct",
+      "fields": { "target": "TargetRow", "tier": "TargetTier" }
+    },
+
+    "CloseReason": {
+      "kind": "enum",
+      "variants": ["stop", "idle", "process_exit", "app_exit", "crash", "orphaned"]
+    },
+    "SessionRef": {
+      "kind": "struct",
+      "fields": {
+        "id": "SessionId",
+        "projectId": "ProjectId",
+        "locationId": "LocationId",
+        "targetId": "TargetId",
+        "startedAt": "Timestamp",
+        "endedAt": "Timestamp?",
+        "creditedSeconds": "i64",
+        "closeReason": "CloseReason?"
+      }
+    },
+
+    "CommitRef": {
+      "kind": "struct",
+      "fields": {
+        "sha": "String",
+        "subject": "String",
+        "at": "Timestamp",
+        "tzOffsetMin": "i32"
+      }
+    },
+    "WorktreeObservation": {
+      "kind": "struct",
+      "fields": { "observedAt": "Timestamp?", "isDirty": "bool?", "untrackedCount": "u32?" }
+    },
+
+    "ProjectRow": {
+      "kind": "struct",
+      "fields": {
+        "id": "ProjectId",
+        "name": "String",
+        "owner": "String?",
+        "description": "String?",
+        "descriptionSource": "DescriptionSource?",
+        "birthYear": "u32?",
+        "primaryLanguage": "String?",
+        "archetype": "String?",
+        "artSceneHash": "SceneHash?",
+        "artState": "ArtState",
+        "conditionSignal": "ConditionSignal?",
+        "completionLit": "u32?",
+        "completionApplicable": "u32?",
+        "isPinned": "bool",
+        "isArchived": "bool",
+        "isHidden": "bool",
+        "isReference": "bool",
+        "isFork": "bool",
+        "isBare": "bool",
+        "isShallow": "bool",
+        "isSubmodule": "bool",
+        "ambiguousLineage": "bool",
+        "lastTouchedAt": "Timestamp",
+        "lastInteractionAt": "Timestamp?",
+        "lastCommitAt": "Timestamp?",
+        "lastCommitSubject": "String?",
+        "firstCommitAt": "Timestamp?",
+        "createdAt": "Timestamp",
+        "acknowledgedAt": "Timestamp?",
+        "sizeTrackedBytes": "i64?",
+        "trackedFiles": "i64?",
+        "collectionIds": "[CollectionId]",
+        "primaryLocation": "LocationRef?",
+        "presence": "Presence",
+        "branch": "String?",
+        "isDirty": "bool?",
+        "untrackedCount": "u32?",
+        "ahead": "u32?",
+        "behind": "u32?",
+        "stashCount": "u32?",
+        "interruptedOp": "InterruptedOp?",
+        "fetchHeadAt": "Timestamp?",
+        "refstateObservedAt": "Timestamp?",
+        "worktreeObservedAt": "Timestamp?",
+        "errorKind": "ErrorCode?",
+        "errorAt": "Timestamp?",
+        "eraSectionId": "String"
+      }
+    },
+
+    "EraAggregate": {
+      "kind": "struct",
+      "fields": {
+        "trackedBytes": "i64",
+        "indexedCount": "u32",
+        "unpushed": "u32",
+        "uncommitted": "u32",
+        "interrupted": "u32",
+        "unchecked": "u32"
+      }
+    },
+    "EraSection": {
+      "kind": "struct",
+      "fields": {
+        "id": "String",
+        "order": "u32",
+        "year": "u32?",
+        "cutAgainstYear": "u32",
+        "count": "u32",
+        "agg": "EraAggregate"
+      }
+    },
+    "Window": { "kind": "struct", "fields": { "from": "u32", "to": "u32" } },
+    "ProjectPage": {
+      "kind": "struct",
+      "fields": {
+        "sections": "[EraSection]",
+        "rows": "[ProjectRow]",
+        "window": "Window",
+        "orderKey": "String",
+        "generation": "u32"
+      }
+    },
+
+    "LocationDetail": {
+      "kind": "struct",
+      "fields": {
+        "location": "LocationRef",
+        "kind": "LocationKind",
+        "distro": "String",
+        "presence": "Presence",
+        "isPrimary": "bool",
+        "branch": "String?",
+        "headOid": "String?",
+        "headComparison": "HeadComparison",
+        "ahead": "u32?",
+        "behind": "u32?",
+        "isDirty": "bool?",
+        "untrackedCount": "u32?",
+        "stashCount": "u32?",
+        "interruptedOp": "InterruptedOp?",
+        "lastSeenAt": "Timestamp?",
+        "refstateObservedAt": "Timestamp?",
+        "worktreeObservedAt": "Timestamp?",
+        "fetchHeadAt": "Timestamp?",
+        "trustedAt": "Timestamp?",
+        "coveringRootId": "RootId?"
+      }
+    },
+
+    "ActivityWeek": {
+      "kind": "struct",
+      "fields": {
+        "weekStart": "Timestamp",
+        "commitDays": "u32?",
+        "sessionCount": "u32?",
+        "sessionSeconds": "i64?"
+      }
+    },
+    "Activity": {
+      "kind": "struct",
+      "fields": { "weeks": "[ActivityWeek]", "commitDays": "LaneState", "sessions": "LaneState" }
+    },
+
+    "ProjectDetail": {
+      "kind": "struct",
+      "fields": {
+        "row": "ProjectRow",
+        "locations": "[LocationDetail]",
+        "resolvedTarget": "ResolvedTarget?",
+        "targets": "[TargetRow]",
+        "readme": "ReadmeState",
+        "notes": "String?",
+        "remoteKey": "String?",
+        "lineageKey": "String?",
+        "associationKind": "AssociationKind?",
+        "seedBasename": "String",
+        "rerollOffset": "u32",
+        "playtimeSeconds": "i64",
+        "liveSession": "SessionRef?",
+        "activity": "Activity",
+        "recentCommits": "[CommitRef]",
+        "firstCommitSha": "String?",
+        "firstCommitTzOffsetMin": "i32?",
+        "sizeWorktreeBytes": "i64?"
+      }
+    },
+
+    "Peek": {
+      "kind": "struct",
+      "fields": {
+        "id": "ProjectId",
+        "readme": "ReadmeState",
+        "commits": "[CommitRef]",
+        "location": "LocationRef?",
+        "worktree": "WorktreeObservation",
+        "birthYear": "u32?",
+        "primaryLanguage": "String?",
+        "sizeTrackedBytes": "i64?",
+        "lastCommitAt": "Timestamp?",
+        "playtimeSeconds": "i64",
+        "interruptedOp": "InterruptedOp?"
+      }
+    },
+
+    "MergeResult": {
+      "kind": "struct",
+      "fields": {
+        "survivor": "ProjectId",
+        "absorbed": "ProjectId",
+        "locationsReparented": "u32",
+        "sessionsReparented": "u32",
+        "collectionMembersMerged": "u32",
+        "xpEventsRecomputed": "u32"
+      }
+    },
+    "UnmergeHint": {
+      "kind": "struct",
+      "fields": {
+        "absorbedProjectId": "ProjectId",
+        "associationKind": "AssociationKind",
+        "mergedAt": "Timestamp",
+        "locations": "u32",
+        "sessions": "u32",
+        "collectionMemberships": "u32",
+        "xpEvents": "u32",
+        "notesConcatenated": "bool",
+        "flagsOrred": "[Flag]",
+        "flagsAnded": "[Flag]"
+      }
+    },
+    "RequeueResult": { "kind": "struct", "fields": { "jobsRequeued": "u32" } }
   },
   "commands": [
     { "name": "app.hello_ack", "args": { "protocolVersion": "u32" }, "returns": "Empty" },
@@ -274,7 +565,68 @@
     { "name": "settings.set", "args": { "patch": "SettingsPatch" }, "returns": "Settings" },
     { "name": "view.get", "args": {}, "returns": "ViewState" },
     { "name": "view.set", "args": { "patch": "ViewPatch" }, "returns": "Empty" },
-    { "name": "diag.bundle", "args": { "includeRealPaths": "bool" }, "returns": "DiagBundle" }
+    { "name": "diag.bundle", "args": { "includeRealPaths": "bool" }, "returns": "DiagBundle" },
+    {
+      "name": "projects.list",
+      "args": { "query": "String", "sort": "SortKey", "from": "u32", "to": "u32" },
+      "returns": "ProjectPage"
+    },
+    { "name": "projects.get", "args": { "id": "ProjectId" }, "returns": "ProjectDetail" },
+    { "name": "projects.peek", "args": { "id": "ProjectId" }, "returns": "Peek" },
+    {
+      "name": "projects.setFlags",
+      "args": {
+        "id": "ProjectId",
+        "isPinned": "bool?",
+        "isArchived": "bool?",
+        "isHidden": "bool?"
+      },
+      "returns": "Empty",
+      "idempotent": false,
+      "$comment": "§2.2: a flag change is non-idempotent and is never auto-replayed. null leaves a flag unchanged"
+    },
+    {
+      "name": "projects.setNote",
+      "args": { "id": "ProjectId", "note": "String?" },
+      "returns": "Empty"
+    },
+    {
+      "name": "projects.merge",
+      "args": { "from": "ProjectId", "into": "ProjectId" },
+      "returns": "MergeResult",
+      "$comment": "§11.1: ships with no phase-1 caller and zero call sites outside the test suite"
+    },
+    {
+      "name": "projects.unmergeHint",
+      "args": { "id": "ProjectId" },
+      "returns": "[UnmergeHint]",
+      "$comment": "§1.5: a read-only advisory. It reports what a split would have to decide and decides nothing"
+    },
+    {
+      "name": "projects.requeue",
+      "args": { "id": "ProjectId" },
+      "returns": "RequeueResult",
+      "$comment": "§11.1: re-queues exactly one project's failed and deferred project_job_state rows. TRY AGAIN on one tile means one repository, so this is not scan.start"
+    },
+    {
+      "name": "projects.launch",
+      "args": { "projectId": "ProjectId", "locationId": "LocationId", "targetId": "TargetId" },
+      "returns": "SessionId",
+      "idempotent": false
+    },
+    {
+      "name": "locations.setTrusted",
+      "args": { "locationId": "LocationId" },
+      "returns": "Empty",
+      "$comment": "§1.3/§3.2: writes location.trusted_at in Codotheca's own database, never the user's git config. The -c safe.directory argument is assembled core-side, so no path crosses the wire in either direction"
+    },
+    {
+      "name": "locations.relocate",
+      "args": { "locationId": "LocationId", "pathBytes": "Bytes" },
+      "returns": "LocationDetail",
+      "privileged": true,
+      "$comment": "§17: rewrites path_bytes in place and keeps scan_generation. It is the only phase-1 write to a location's path"
+    }
   ],
   "topics": {}
 }
