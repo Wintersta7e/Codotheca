@@ -23,6 +23,12 @@ function tsRef(expr) {
   return nullable ? `${body} | null` : body;
 }
 
+/** An interface with the given member lines, or the `Record<string, never>` form when empty. */
+function mapOrEmpty(name, lines) {
+  if (lines.length === 0) return `export type ${name} = Record<string, never>;\n`;
+  return `export interface ${name} {\n${lines.join('\n')}\n}\n`;
+}
+
 function declare(name, fields) {
   const entries = Object.entries(fields);
   if (entries.length === 0) return `export type ${name} = Record<string, never>;`;
@@ -71,25 +77,33 @@ export function emitTypeScript(schema) {
   for (const c of schema.commands) L.push(`  '${c.name}': ${tsRef(c.returns)};`);
   L.push('}\n');
 
+  // An empty topic set is a real state — the schema carries no topic until they are declared —
+  // and both degenerate forms are compile errors rather than cosmetic: `type Topic = ;` does not
+  // parse, and a bare `interface X {}` accepts 0 and "" for the same reason `Empty` is not one.
   const topics = Object.keys(schema.topics);
-  L.push(`export type Topic = ${topics.map((t) => `'${t}'`).join(' | ')};\n`);
-  L.push('export interface TopicEvents {');
-  for (const t of topics) {
-    L.push(
-      `  '${t}': ${Object.keys(schema.topics[t])
-        .map((e) => `'${e}'`)
-        .join(' | ')};`,
-    );
-  }
-  L.push('}\n');
+  L.push(
+    `export type Topic = ${topics.length === 0 ? 'never' : topics.map((t) => `'${t}'`).join(' | ')};\n`,
+  );
+  L.push(
+    mapOrEmpty(
+      'TopicEvents',
+      topics.map(
+        (t) =>
+          `  '${t}': ${Object.keys(schema.topics[t])
+            .map((e) => `'${e}'`)
+            .join(' | ')};`,
+      ),
+    ),
+  );
   L.push('/** Keyed `topic/event`, so a handler narrows on one string. */');
-  L.push('export interface EventPayloads {');
-  for (const t of topics) {
-    for (const [e, expr] of Object.entries(schema.topics[t])) {
-      L.push(`  '${t}/${e}': ${tsRef(expr)};`);
-    }
-  }
-  L.push('}\n');
+  L.push(
+    mapOrEmpty(
+      'EventPayloads',
+      topics.flatMap((t) =>
+        Object.entries(schema.topics[t]).map(([e, expr]) => `  '${t}/${e}': ${tsRef(expr)};`),
+      ),
+    ),
+  );
 
   const priv = schema.commands.filter((c) => c.privileged === true).map((c) => `'${c.name}'`);
   L.push('/** §2.4: these carry a value issued by a shell-owned native dialog. The renderer may');

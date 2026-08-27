@@ -6,11 +6,16 @@ rust-version = "1.80"
 license = "GPL-3.0-or-later"
 description = "Codotheca core: scanning, git, index and art rasterisation"
 
+[lib]
+name = "codotheca_core"
+path = "src/lib.rs"
+
 [[bin]]
 name = "codotheca-core"
 path = "src/main.rs"
 
 [dependencies]
+base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

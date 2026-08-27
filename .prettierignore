@@ -1,5 +1,6 @@
 app/out/
 app/src/generated/
+core/src/protocol.rs
 core/target/
 out/
 node_modules/

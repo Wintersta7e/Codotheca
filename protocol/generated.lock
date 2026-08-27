@@ -1,0 +1,12 @@
+{
+  "protocolVersion": 2,
+  "schema": "sha256-9a8cb2d85d8bd7914194168d4bcced8510e873d62bd099e87baf4ea2cb1f8552",
+  "commands": 2,
+  "topics": 0,
+  "events": 0,
+  "types": 9,
+  "files": {
+    "app/src/generated/protocol.ts": "sha256-48780c680b75218a97c363c06ae88f5e67670d367d849aa4cd8e4d9695bda526",
+    "core/src/protocol.rs": "sha256-adeb04f61dfb3d49e24f3ea100fc4770bd99c1c6e15257e43025d1cfc5047138"
+  }
+}

@@ -82,3 +82,15 @@ test('the privileged and non-idempotent sets are exported as const tuples', () =
 test('emission is deterministic', () => {
   assert.equal(emitTypeScript(schema), out);
 });
+
+// The schema carries no topic until they are declared, so zero topics is a state the product
+// reaches. Every other test here uses a fixture with one topic, which cannot see this: the
+// degenerate forms are `export type Topic = ;`, which does not parse, and two empty interfaces.
+test('a schema with no topics still emits parseable TypeScript', () => {
+  const empty = emitTypeScript({ ...schema, topics: {} });
+  assert.match(empty, /export type Topic = never;/);
+  assert.match(empty, /export type TopicEvents = Record<string, never>;/);
+  assert.match(empty, /export type EventPayloads = Record<string, never>;/);
+  assert.doesNotMatch(empty, /interface \w+ \{\s*\}/);
+  assert.doesNotMatch(empty, /=\s*;/);
+});

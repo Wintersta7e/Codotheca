@@ -76,3 +76,12 @@ test('Bytes carries the b64 codec, not a raw Vec on the wire', () => {
   assert.match(out, /pub struct Bytes\(pub Vec<u8>\);/);
   assert.match(out, /"b64"/);
 });
+
+// Zero topics is a state the schema reaches. rustfmt rejects an enum whose braces enclose only
+// a blank line, so `cargo fmt --check` fails on emitted text — a gate failing on generated
+// output nobody hand-writes.
+test('an empty enum is emitted in the form rustfmt accepts', () => {
+  const empty = emitRust({ ...schema, topics: {} });
+  assert.match(empty, /pub enum Topic \{\}/);
+  assert.doesNotMatch(empty, /pub enum \w+ \{\n\s*\n\}/);
+});

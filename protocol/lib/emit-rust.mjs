@@ -76,6 +76,15 @@ function rsRef(expr) {
   return nullable ? `Option<${body}>` : body;
 }
 
+/**
+ * `pub enum Name { … }`, collapsed to `{}` when there are no variants. rustfmt rejects a brace
+ * pair with a blank line between, and an empty topic or command set is a real schema state.
+ */
+function enumOf(derive, name, variantLines, attrs = '') {
+  const head = `${derive}\n${attrs}pub enum ${name}`;
+  return variantLines.length === 0 ? `${head} {}\n` : `${head} {\n${variantLines.join('\n')}\n}\n`;
+}
+
 function structOf(name, fields) {
   const body = Object.entries(fields)
     .map(([f, e]) => `    pub ${snake(f)}: ${rsRef(e)},`)
@@ -91,10 +100,17 @@ export function emitRust(schema) {
   L.push('// Bindings precede their consumers: a command is added to the schema before the core');
   L.push('// implements it, so unused variants are expected and are not a defect. The allows are');
   L.push('// shape complaints about generated data types, not about the code that uses them.');
-  L.push(
-    '#![allow(dead_code, clippy::large_enum_variant, clippy::struct_excessive_bools,\n' +
-      '         clippy::struct_field_names, clippy::doc_markdown, clippy::module_name_repetitions)]\n',
-  );
+  // Laid out the way rustfmt lays it out: this file is checked by `cargo fmt --check` like any
+  // other, so the emitter has to produce canonical text rather than merely valid text.
+  L.push(`#![allow(
+    dead_code,
+    clippy::large_enum_variant,
+    clippy::struct_excessive_bools,
+    clippy::struct_field_names,
+    clippy::doc_markdown,
+    clippy::module_name_repetitions
+)]
+`);
   L.push(`pub const PROTOCOL_VERSION: u32 = ${schema.version};\n`);
 
   // §2.5: bytes cross tagged. A Vec<u8> would round-trip as a JSON array, which is not the form
@@ -113,7 +129,10 @@ struct BytesWire {
 impl serde::Serialize for Bytes {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use base64::Engine as _;
-        BytesWire { b64: base64::engine::general_purpose::STANDARD.encode(&self.0) }.serialize(s)
+        BytesWire {
+            b64: base64::engine::general_purpose::STANDARD.encode(&self.0),
+        }
+        .serialize(s)
     }
 }
 
@@ -156,16 +175,23 @@ impl<'de> serde::Deserialize<'de> for Bytes {
 
   for (const c of schema.commands) L.push(structOf(`${pascal(c.name)}Args`, c.args));
 
-  const cmdVariants = schema.commands
-    .map((c) => `    #[serde(rename = "${c.name}")]\n    ${pascal(c.name)},`)
-    .join('\n');
-  L.push(`${DERIVE_UNIT}\npub enum CommandName {\n${cmdVariants}\n}\n`);
-
-  const cmdArms = schema.commands
-    .map((c) => `    #[serde(rename = "${c.name}")]\n    ${pascal(c.name)}(${pascal(c.name)}Args),`)
-    .join('\n');
   L.push(
-    `${DERIVE_DATA}\n#[serde(tag = "command", content = "args")]\npub enum Command {\n${cmdArms}\n}\n`,
+    enumOf(
+      DERIVE_UNIT,
+      'CommandName',
+      schema.commands.map((c) => `    #[serde(rename = "${c.name}")]\n    ${pascal(c.name)},`),
+    ),
+  );
+
+  L.push(
+    enumOf(
+      DERIVE_DATA,
+      'Command',
+      schema.commands.map(
+        (c) => `    #[serde(rename = "${c.name}")]\n    ${pascal(c.name)}(${pascal(c.name)}Args),`,
+      ),
+      '#[serde(tag = "command", content = "args")]\n',
+    ),
   );
 
   // Untagged and serialize-only: the response frame carries the request id, so repeating the
@@ -194,10 +220,13 @@ ${resName}
 `);
 
   const topics = Object.keys(schema.topics);
-  const topicVariants = topics
-    .map((t) => `    #[serde(rename = "${t}")]\n    ${pascal(t)},`)
-    .join('\n');
-  L.push(`${DERIVE_UNIT}\npub enum Topic {\n${topicVariants}\n}\n`);
+  L.push(
+    enumOf(
+      DERIVE_UNIT,
+      'Topic',
+      topics.map((t) => `    #[serde(rename = "${t}")]\n    ${pascal(t)},`),
+    ),
+  );
 
   for (const t of topics) {
     const evs = Object.entries(schema.topics[t]);
