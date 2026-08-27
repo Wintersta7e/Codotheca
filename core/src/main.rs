@@ -1,7 +1,7 @@
 //! Codotheca core.
 //!
 //! Runs as a child process of the shell, speaking length-prefixed JSON on stdin/stdout.
-//! See `.dev/spec-phase1.md` §2 for the protocol and §4 for the scanner.
+//! See the protocol specification §2 for the framing and §4 for the scanner.
 //!
 //! Two invariants that are easy to violate and expensive to fix:
 //!   * **stdout carries protocol frames and nothing else.** No `println!`, no dependency
@@ -11,7 +11,7 @@
 
 #![forbid(unsafe_code)]
 
-mod protocol;
+use codotheca_core::protocol;
 
 use std::io::Write as _;
 
