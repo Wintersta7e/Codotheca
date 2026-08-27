@@ -21,7 +21,7 @@ jobs:
       - run: npm run build:core
       - run: npm run build:app
       # NOTE: Windows code signing needs a certificate and a hardware token or a cloud signer.
-      # That is procurement with weeks of lead time, not a build flag — see .dev/spec-phase1.md §14.
+      # That is procurement with weeks of lead time, not a build flag. See the packaging spec §14.
       # Until it exists, Windows artifacts are unsigned and SmartScreen will warn.
       - name: package
         run: npx electron-builder --publish never

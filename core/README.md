@@ -7,4 +7,4 @@ over stdin/stdout.
 It is deliberately the only writer to the database, and the only component that ever sees a
 filesystem path — the renderer receives opaque references.
 
-Specification: `.dev/spec-phase1.md`.
+Specification: the phase-1 protocol and data-model sections.
