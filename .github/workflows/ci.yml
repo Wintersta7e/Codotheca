@@ -30,7 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        # Electron 44 requires >= 22.12.0 and Vite 7 requires ^20.19 || >= 22.12.
+        with: { node-version: 22, cache: npm }
       - run: npm ci
       - name: generate protocol
         run: npm run gen
@@ -41,3 +42,13 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build:app
+      - name: bundle guard
+        # The bundle exists where packaging expects it, names no remote origin in its HTML or
+        # CSS, ships the policy, and carries the self-hosted faces.
+        run: npm run check:bundle
+      - run: npm run test --workspace app
+      - name: formatting
+        # The TypeScript half of fmt:check only. `cargo fmt --check` already runs in the core
+        # job on both runners; installing a Rust toolchain here to repeat it would be a
+        # second copy of a gate that is already green.
+        run: npx prettier --check "app/**/*.{ts,tsx}" "scripts/**/*.mjs"

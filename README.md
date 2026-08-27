@@ -25,10 +25,11 @@ has not started. Windows and Linux; macOS is deferred until it can be tested on 
 Requires Rust (stable), Node LTS, and `git` 2.22 or newer on `PATH`.
 
 ```sh
-npm install           # app dependencies
+npm install           # workspace dependencies
 npm run gen           # generate protocol bindings for both languages
-npm run build         # core (release) + app
-npm run dev           # run against the development build
+npm run build         # core (release) + app bundles
+npm run check:bundle  # guard the bundle after a build
+npm run dev           # run the shell against the dev server
 ```
 
 ## Licence

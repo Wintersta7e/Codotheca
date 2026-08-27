@@ -21,3 +21,8 @@ core/src/protocol.rs
 # local
 .env
 *.log
+
+# editor and tool state
+.serena/
+.vscode/
+.idea/

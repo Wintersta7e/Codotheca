@@ -6,7 +6,14 @@
  */
 import { contextBridge } from 'electron';
 import { PROTOCOL_VERSION } from '../generated/protocol';
+import { CODOTHECA_BRIDGE_KEY, type CodothecaBridge } from '../shared/bridge';
+import { effectsTierFromArgv } from '../shared/effectsTier';
 
-contextBridge.exposeInMainWorld('codotheca', {
+// process.argv is available synchronously in a sandboxed preload, so the tier reaches the
+// document with no round trip — which is the whole point of §11.2a.
+const bridge: CodothecaBridge = {
   protocolVersion: PROTOCOL_VERSION,
-});
+  effectsTier: effectsTierFromArgv(process.argv) ?? 'auto',
+};
+
+contextBridge.exposeInMainWorld(CODOTHECA_BRIDGE_KEY, bridge);

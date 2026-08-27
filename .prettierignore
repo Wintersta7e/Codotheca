@@ -1,0 +1,5 @@
+app/out/
+app/src/generated/
+core/target/
+out/
+node_modules/

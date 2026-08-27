@@ -1,12 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "node",
-    "lib": ["ES2022", "DOM"],
-    "outDir": "dist",
-    "rootDir": "src",
-
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -15,14 +11,15 @@
     "noFallthroughCasesInSwitch": true,
     "noPropertyAccessFromIndexSignature": true,
     "useUnknownInCatchVariables": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "isolatedModules": true,
     "verbatimModuleSyntax": false,
-
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "sourceMap": true,
-    "declaration": false,
-
-  },
-  "include": ["src/**/*.ts"]
+    "noEmit": true
+  }
 }
