@@ -17,6 +17,13 @@ jobs:
         with: { components: rustfmt, clippy }
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: core }
+      # core/src/protocol.rs is generated and gitignored, so a runner that never touches Node
+      # would compile against whatever the last commit happened to leave — or nothing at all.
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: generate protocol
+        run: npm run gen
       - name: fmt
         run: cargo fmt --manifest-path core/Cargo.toml -- --check
       - name: clippy
@@ -35,10 +42,14 @@ jobs:
       - run: npm ci
       - name: generate protocol
         run: npm run gen
-      - name: protocol is committed in sync
-        # The generator is the source of truth. If regenerating changes anything that is
-        # tracked, someone edited generated code by hand.
-        run: git status --porcelain -- app/src/generated core/src/protocol.rs | tee /dev/stderr | wc -l | grep -qx 0
+      - name: protocol lock is up to date
+        # app/src/generated and core/src/protocol.rs are gitignored, so the `git status` check
+        # this replaced returned zero lines whatever the tree held, and passed unconditionally.
+        # generated.lock is tracked, so regenerating it here fails when the schema moved without
+        # `npm run gen`, and when the generator's output changed without review.
+        run: git diff --exit-code -- protocol/generated.lock
+      - name: protocol tests
+        run: npm run test --workspace protocol
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build:app

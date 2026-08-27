@@ -15,6 +15,7 @@
   },
   "scripts": {
     "gen": "node protocol/generate.mjs",
+    "gen:check": "node protocol/generate.mjs --check",
     "build:core": "cargo build --release --manifest-path core/Cargo.toml",
     "build:app": "npm run build --workspace app",
     "build": "npm run gen && npm run build:core && npm run build:app",
@@ -23,7 +24,7 @@
     "typecheck": "npm run typecheck --workspace app",
     "check:bundle": "node scripts/check-bundle.mjs",
     "prepare:win": "node scripts/win-prepare.mjs",
-    "test": "cargo test --manifest-path core/Cargo.toml && npm run test --workspace protocol && npm run test --workspace app",
+    "test": "npm run gen && npm run test --workspace protocol && cargo test --manifest-path core/Cargo.toml && npm run test --workspace app",
     "fmt:check": "cargo fmt --manifest-path core/Cargo.toml -- --check && prettier --check \"app/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"protocol/**/*.mjs\""
   },
   "devDependencies": {
