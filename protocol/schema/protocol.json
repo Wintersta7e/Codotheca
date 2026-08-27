@@ -527,7 +527,118 @@
         "flagsAnded": "[Flag]"
       }
     },
-    "RequeueResult": { "kind": "struct", "fields": { "jobsRequeued": "u32" } }
+    "RequeueResult": { "kind": "struct", "fields": { "jobsRequeued": "u32" } },
+
+    "IdentityId": { "kind": "id", "repr": "i64" },
+
+    "TargetList": {
+      "kind": "struct",
+      "fields": { "resolved": "ResolvedTarget?", "rows": "[TargetRow]" }
+    },
+    "TargetVerification": {
+      "kind": "struct",
+      "fields": {
+        "targetId": "TargetId",
+        "verifyState": "VerifyState",
+        "verifiedAt": "Timestamp",
+        "execDisplay": "String"
+      }
+    },
+
+    "Rendition": { "kind": "enum", "variants": ["card", "hero"] },
+    "ArtRerender": {
+      "kind": "struct",
+      "fields": {
+        "projectId": "ProjectId",
+        "offset": "u32",
+        "rejected": "bool",
+        "sceneHash": "SceneHash?",
+        "artState": "ArtState"
+      }
+    },
+
+    "IdentitySource": {
+      "kind": "enum",
+      "variants": ["gitconfig", "noreply", "inferred", "manual"]
+    },
+    "AliasReason": { "kind": "enum", "variants": ["local_part", "coauthor", "manual"] },
+    "IdentityRow": {
+      "kind": "struct",
+      "fields": {
+        "id": "IdentityId",
+        "email": "String",
+        "name": "String?",
+        "isUser": "bool",
+        "source": "IdentitySource",
+        "aliasReason": "AliasReason?",
+        "primaryEmail": "String?",
+        "repositories": "u32?",
+        "commits": "i64",
+        "projects": "u32",
+        "confirmedAt": "Timestamp?"
+      }
+    },
+    "IdentityConfirm": {
+      "kind": "struct",
+      "fields": { "movedToReference": "u32", "commitDaysRemoved": "i64", "applied": "bool" }
+    },
+
+    "RevealBasis": {
+      "kind": "struct",
+      "fields": {
+        "projectsCovered": "u32",
+        "projectsTotal": "u32",
+        "historyComplete": "bool"
+      }
+    },
+    "RevealFigure": { "kind": "struct", "fields": { "value": "f64?", "basis": "RevealBasis" } },
+    "RevealOldest": {
+      "kind": "struct",
+      "fields": {
+        "projectId": "ProjectId?",
+        "firstCommitAt": "Timestamp?",
+        "basis": "RevealBasis"
+      }
+    },
+    "Reveal": {
+      "kind": "struct",
+      "fields": {
+        "spanDays": "RevealFigure",
+        "projectCount": "RevealFigure",
+        "languageCount": "RevealFigure",
+        "bestYear": "RevealFigure",
+        "playtimeSeconds": "RevealFigure",
+        "oldestStillAlive": "RevealOldest"
+      }
+    },
+
+    "CollectionKind": { "kind": "enum", "variants": ["manual", "query"] },
+    "CollectionRefusal": {
+      "kind": "enum",
+      "variants": [
+        "empty_name",
+        "name_taken",
+        "too_long",
+        "contains_collection_term",
+        "limit_reached"
+      ]
+    },
+    "Collection": {
+      "kind": "struct",
+      "fields": {
+        "id": "CollectionId",
+        "name": "String",
+        "kind": "CollectionKind",
+        "queryText": "String?",
+        "queryGrammarVersion": "u32",
+        "sortIndex": "u32",
+        "memberCount": "u32?"
+      }
+    },
+    "CollectionUpsert": {
+      "kind": "struct",
+      "fields": { "collection": "Collection?", "refusedBecause": "CollectionRefusal?" }
+    }
   },
   "commands": [
     { "name": "app.hello_ack", "args": { "protocolVersion": "u32" }, "returns": "Empty" },
@@ -626,6 +737,95 @@
       "returns": "LocationDetail",
       "privileged": true,
       "$comment": "§17: rewrites path_bytes in place and keeps scan_generation. It is the only phase-1 write to a location's path"
+    },
+    {
+      "name": "targets.list",
+      "args": { "projectId": "ProjectId?", "locationId": "LocationId?" },
+      "returns": "TargetList"
+    },
+    {
+      "name": "targets.setDefault",
+      "args": {
+        "targetId": "TargetId",
+        "projectId": "ProjectId?",
+        "locationId": "LocationId?",
+        "language": "String?"
+      },
+      "returns": "Empty",
+      "$comment": "§4bis.2a: all three NULL is the global default, the drawer's ANY row. A scope's default is its lowest sort_index; there is no is_default column"
+    },
+    {
+      "name": "targets.upsert",
+      "args": {
+        "targetId": "TargetId?",
+        "kind": "TargetKind",
+        "name": "String",
+        "execBytes": "Bytes",
+        "argv": "[String]",
+        "projectId": "ProjectId?",
+        "locationId": "LocationId?",
+        "language": "String?"
+      },
+      "returns": "TargetRow",
+      "privileged": true,
+      "$comment": "privileged: the executable originates from a shell-owned native dialog. argv is stored and spawned core-side, never through a shell"
+    },
+    {
+      "name": "targets.verify",
+      "args": { "targetId": "TargetId?" },
+      "returns": "[TargetVerification]",
+      "$comment": "§4bis.2a: per row and language-blind. Resolution never consults verify_state"
+    },
+    {
+      "name": "art.url",
+      "args": { "hash": "SceneHash", "rendition": "Rendition" },
+      "returns": "String"
+    },
+    {
+      "name": "art.rerender",
+      "args": { "projectId": "ProjectId", "offset": "u32" },
+      "returns": "ArtRerender",
+      "$comment": "§7.4: the absolute target reroll_offset, never an increment, never more than 1 from the stored value, one project per call"
+    },
+    { "name": "identity.list", "args": {}, "returns": "[IdentityRow]" },
+    {
+      "name": "identity.confirm",
+      "args": { "emails": "[String]", "apply": "bool" },
+      "returns": "IdentityConfirm",
+      "$comment": "§1.4: apply:false runs the join, returns the delta and writes nothing"
+    },
+    { "name": "stats.reveal", "args": {}, "returns": "Reveal" },
+    { "name": "collections.list", "args": {}, "returns": "[Collection]" },
+    {
+      "name": "collections.upsert",
+      "args": {
+        "id": "CollectionId?",
+        "name": "String",
+        "kind": "CollectionKind",
+        "queryText": "String?",
+        "queryGrammarVersion": "u32",
+        "sortIndex": "u32"
+      },
+      "returns": "CollectionUpsert"
+    },
+    {
+      "name": "collections.remove",
+      "args": { "id": "CollectionId" },
+      "returns": "Empty",
+      "$comment": "§8.8: deletes the collection and collection_member rows and touches nothing else"
+    },
+    {
+      "name": "session.stop",
+      "args": { "id": "SessionId" },
+      "returns": "Empty",
+      "idempotent": false
+    },
+    {
+      "name": "session.focus",
+      "args": { "projectId": "ProjectId?" },
+      "returns": "Empty",
+      "idempotent": true,
+      "$comment": "§9: app focus extends a segment only while the focused view is that project, so the renderer must report which project's view holds focus; null means none. §2.4's table omits it. Not privileged — it originates no path and no executable"
     }
   ],
   "topics": {}

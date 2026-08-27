@@ -239,3 +239,113 @@ test('two copies are compared by identity, never by direction', () => {
   ]);
   assert.ok(!('divergedBy' in schema.types.LocationDetail.fields));
 });
+
+const REST = [
+  'targets.list',
+  'targets.setDefault',
+  'targets.upsert',
+  'targets.verify',
+  'art.url',
+  'art.rerender',
+  'identity.list',
+  'identity.confirm',
+  'stats.reveal',
+  'collections.list',
+  'collections.upsert',
+  'collections.remove',
+  'session.stop',
+  'session.focus',
+];
+
+test('every remaining command of §2.4, and §9 focus, is declared', () => {
+  for (const n of REST) assert.ok(names.includes(n), `${n} is missing`);
+});
+
+// §2.4's table is 40 commands; §9's session.focus and §11.3a's roots.list are the 41st and 42nd
+// and the only two beyond it. The literal and the transcribed lists above move together — a count
+// that disagrees with them moves the failure rather than fixing it.
+test('the whole §2.4 table is present, plus §9 focus and roots.list, and nothing extra is', () => {
+  assert.equal(names.length, 42, `expected 42 commands, found ${names.length}`);
+  assert.equal(new Set(names).size, names.length);
+});
+
+// §2.4 [v2.2] + criterion 7: setDefault carries the targetId it re-heads plus all three of
+// §4bis.2a's scope triple. v2.2 enumerated two and made tier 1 unwritable.
+test('targets.setDefault carries the full scope triple', () => {
+  const c = schema.commands.find((x) => x.name === 'targets.setDefault');
+  assert.deepEqual(c.args, {
+    targetId: 'TargetId',
+    projectId: 'ProjectId?',
+    locationId: 'LocationId?',
+    language: 'String?',
+  });
+});
+
+// §4bis.2a: list returns the resolved row WITH the tier that resolved it — the menu labels one
+// row DEFAULT and another SET, and the renderer cannot derive that distinction. Tier 5, `ask`,
+// is the null resolution and is not an enum member.
+test('a resolved target carries its tier, and the ask tier is a null resolution', () => {
+  assert.equal(schema.types.ResolvedTarget.fields.tier, 'TargetTier');
+  assert.equal(schema.types.TargetList.fields.resolved, 'ResolvedTarget?');
+  assert.deepEqual(schema.types.TargetTier.variants, ['project', 'location', 'language', 'global']);
+});
+
+// §2.4: upsert takes a shell-dialog executable. §4bis.5: arguments come from the stored row as an
+// argv array, never through a shell — so no executable travels back out to the renderer.
+test('targets.upsert is privileged and carries exec bytes; TargetRow returns no executable', () => {
+  const c = schema.commands.find((x) => x.name === 'targets.upsert');
+  assert.equal(c.privileged, true);
+  assert.equal(c.args.execBytes, 'Bytes');
+  assert.ok(!('execBytes' in schema.types.TargetRow.fields));
+  assert.equal(schema.types.TargetRow.fields.execDisplay, 'String');
+});
+
+// §7.4 + criterion 56: the absolute target offset, never an increment, one project per call.
+test('art.rerender is an absolute offset for one project', () => {
+  const c = schema.commands.find((x) => x.name === 'art.rerender');
+  assert.deepEqual(c.args, { projectId: 'ProjectId', offset: 'u32' });
+  assert.equal(schema.types.ArtRerender.fields.offset, 'u32');
+  assert.equal(schema.types.ArtRerender.fields.rejected, 'bool');
+});
+
+// §7.6: a two-segment address, so a fetch of codotheca://art/<hash> fails.
+test('art.url names both the hash and the rendition', () => {
+  const c = schema.commands.find((x) => x.name === 'art.url');
+  assert.deepEqual(c.args, { hash: 'SceneHash', rendition: 'Rendition' });
+  assert.deepEqual(schema.types.Rendition.variants, ['card', 'hero']);
+});
+
+// §1.4: apply:false returns the delta and writes nothing — the effect is stated before the write.
+test('identity.confirm can preview without writing', () => {
+  const c = schema.commands.find((x) => x.name === 'identity.confirm');
+  assert.deepEqual(c.args, { emails: '[String]', apply: 'bool' });
+  assert.equal(schema.types.IdentityConfirm.fields.movedToReference, 'u32');
+  assert.equal(schema.types.IdentityConfirm.fields.commitDaysRemoved, 'i64');
+  assert.equal(schema.types.IdentityConfirm.fields.applied, 'bool');
+});
+
+// §10.4: every reveal figure carries its coverage, and says so when incomplete.
+test('every reveal figure carries a basis and a nullable value', () => {
+  assert.equal(schema.types.RevealFigure.fields.value, 'f64?');
+  assert.equal(schema.types.RevealFigure.fields.basis, 'RevealBasis');
+  assert.deepEqual(Object.keys(schema.types.RevealBasis.fields).sort(), [
+    'historyComplete',
+    'projectsCovered',
+    'projectsTotal',
+  ]);
+  for (const f of ['spanDays', 'projectCount', 'languageCount', 'bestYear', 'playtimeSeconds']) {
+    assert.equal(schema.types.Reveal.fields[f], 'RevealFigure', f);
+  }
+});
+
+// §8.8: five named refusals, each with its own control text. A bare error would lose which.
+test('collections.upsert reports which refusal fired', () => {
+  assert.deepEqual(schema.types.CollectionRefusal.variants, [
+    'empty_name',
+    'name_taken',
+    'too_long',
+    'contains_collection_term',
+    'limit_reached',
+  ]);
+  assert.equal(schema.types.CollectionUpsert.fields.refusedBecause, 'CollectionRefusal?');
+});
