@@ -113,18 +113,50 @@ fn a_second_write_for_the_same_job_replaces_the_row() {
     assert_eq!(back[0].at, 2);
 }
 
-/// A row written by a newer build — `j5` is a real schema job this scheduler does not queue —
-/// is skipped, not guessed at.
+/// A row written by a newer build is skipped, not guessed at.
+///
+/// **This test's example changed when plan 10 added `J5Art`.** It used `j5` as "a real schema
+/// job this scheduler does not queue"; `j5` is now queued, so that premise is gone and every
+/// slug the column's CHECK permits maps to a `JobKind`. The guarantee itself still matters —
+/// it protects this build against a row a *later* migration's vocabulary wrote — so the row is
+/// now inserted with check constraints suspended, which is exactly the state a newer build
+/// that widened the CHECK would leave behind.
 #[test]
 fn an_unknown_job_slug_is_skipped_rather_than_guessed() {
     let (_dir, conn) = fresh();
     let project = insert_project(&conn, "p");
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
     conn.execute(
-        "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, 'j5', 'queued', 0)",
+        "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, 'j7', 'queued', 0)",
         [project.0],
     )
     .unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
+    assert_eq!(JobKind::from_slug("j7"), None);
     assert!(load(&conn, project).unwrap().is_empty());
+}
+
+/// The other half, and the one plan 10 makes newly true: every slug the column permits is a
+/// slug this build can name. R34's mirror, read from the column side.
+#[test]
+fn every_slug_the_column_permits_is_a_job_kind_this_build_knows() {
+    let (_dir, conn) = fresh();
+    let project = insert_project(&conn, "p");
+    for slug in ["j1", "j1_5", "j2", "j3", "j4", "j5", "j6"] {
+        conn.execute(
+            "INSERT INTO project_job_state (project_id, job, state, at)
+             VALUES (?1, ?2, 'queued', 0)",
+            rusqlite::params![project.0, slug],
+        )
+        .unwrap();
+        assert!(
+            JobKind::from_slug(slug).is_some(),
+            "{slug} is stored by the column and named by no JobKind"
+        );
+    }
+    assert_eq!(load(&conn, project).unwrap().len(), 7);
 }
 
 /// `reset_for` is plan 08 Task 17's dependency: a merge and its requeue must commit together,

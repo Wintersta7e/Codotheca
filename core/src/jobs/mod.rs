@@ -35,6 +35,8 @@ pub enum JobKind {
     J3Inventory,
     /// Chunked history and commit-days.
     J4History,
+    /// Card art: one scene, one raster, one file. A CPU job off the git path (§4.1).
+    J5Art,
     /// Manifest and README content.
     J6Content,
 }
@@ -50,12 +52,13 @@ pub enum JobScope {
 
 impl JobKind {
     /// Every kind, so a test can walk the vocabulary without restating it.
-    pub const ALL: [JobKind; 6] = [
+    pub const ALL: [JobKind; 7] = [
         JobKind::J1Refstate,
         JobKind::J15Authorship,
         JobKind::J2Status,
         JobKind::J3Inventory,
         JobKind::J4History,
+        JobKind::J5Art,
         JobKind::J6Content,
     ];
 
@@ -70,6 +73,7 @@ impl JobKind {
             JobKind::J2Status => "j2",
             JobKind::J3Inventory => "j3",
             JobKind::J4History => "j4",
+            JobKind::J5Art => "j5",
             JobKind::J6Content => "j6",
         }
     }
@@ -90,7 +94,11 @@ impl JobKind {
             JobKind::J2Status => Some(Duration::from_millis(500)),
             JobKind::J3Inventory => Some(Duration::from_millis(300)),
             // J1.5 is the gate everything waits on and J6 is byte-capped, not time-capped.
-            JobKind::J15Authorship | JobKind::J4History | JobKind::J6Content => None,
+            // §4.1: a CPU job with no deadline table entry. It yields no slices: one scene,
+            // one raster, one file.
+            JobKind::J15Authorship | JobKind::J4History | JobKind::J5Art | JobKind::J6Content => {
+                None
+            }
         }
     }
 
@@ -108,6 +116,7 @@ impl JobKind {
             JobKind::J15Authorship
             | JobKind::J3Inventory
             | JobKind::J4History
+            | JobKind::J5Art
             | JobKind::J6Content => JobScope::PrimaryOnly,
         }
     }
@@ -431,6 +440,22 @@ pub fn run_one(
     let now = deps.clock.now_unix();
 
     match job.kind {
+        // §4.1: J5 spawns no git process, so it takes no git slot and reads no repository —
+        // its inputs are columns J3 already wrote.
+        //
+        // **R39**: `run_one` holds `&Mutex<Index>`, so the plan's literal
+        // `run_j5(index, ...)` does not typecheck — `run_j5` takes the `&Index` the plan
+        // declares, and the lock is taken here. It is held across the raster, which is roughly
+        // 100 ms of CPU for one card; plan 21 owns assembly and is where a narrower split
+        // belongs if that ever proves to matter.
+        JobKind::J5Art => {
+            let guard = index
+                .lock()
+                .map_err(|_| JobError::Io("index lock is poisoned".to_owned()))?;
+            let outcome = crate::art::job::run_j5(&guard, job.project_id.0, now);
+            drop(guard);
+            outcome
+        }
         JobKind::J1Refstate => {
             let state = j1_refstate::observe(git, &repo, &ctx)?;
             write(index, |tx| {

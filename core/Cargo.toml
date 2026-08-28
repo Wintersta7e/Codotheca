@@ -42,6 +42,9 @@ fs4 = "1.1"
 # The parallel directory walk (J0). Standard filters off: this is a filesystem census, not a
 # git operation, so nothing may be hidden by a `.gitignore`.
 ignore = "0.4"
+# §7.2's lossless WebP encoder. Pure Rust, so there is no C dependency to build for two
+# targets and no `unsafe` to justify against this crate's own `forbid`.
+image-webp = "0.2"
 # §6's bounded worktree watch set. Change notification only — path names, never file contents.
 # Default features off: the macOS FSEvents backend is the only optional one this needs and the
 # targets are Windows and Linux, which use ReadDirectoryChangesW and inotify unconditionally.
@@ -54,6 +57,8 @@ sha2 = "0.10"
 # Only under `testkit`; see the feature's comment.
 tempfile = { version = "3", optional = true }
 thiserror = "1"
+# §7's rasterizer. CPU-only 2D, no GPU context and no system library.
+tiny-skia = "0.12"
 
 # §4.3's cycle and duplicate detection needs a directory's stable file identity. On Windows that
 # is `(volume serial, file index)` from an open handle; `std::os::windows::fs::MetadataExt`

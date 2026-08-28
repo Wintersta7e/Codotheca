@@ -48,8 +48,11 @@ pub fn next_jobs_after(done: JobKind, is_reference: Option<bool>) -> Vec<(JobKin
             (JobKind::J3Inventory, band),
             (JobKind::J4History, Priority::Deferred),
         ],
-        JobKind::J3Inventory => vec![(JobKind::J6Content, Priority::Deferred)],
-        JobKind::J2Status | JobKind::J4History | JobKind::J6Content => Vec::new(),
+        JobKind::J3Inventory => vec![
+            (JobKind::J6Content, Priority::Deferred),
+            (JobKind::J5Art, Priority::Deferred),
+        ],
+        JobKind::J2Status | JobKind::J4History | JobKind::J5Art | JobKind::J6Content => Vec::new(),
     }
 }
 
@@ -265,13 +268,35 @@ impl JobRunner {
         if row.state != JobState::Done {
             return;
         }
+        // Ruling 12: the art event is emitted after the commit, never inside it — `put_scene`
+        // has already returned by the time `settle` runs.
+        if job.kind == JobKind::J5Art {
+            let payload = {
+                let Ok(guard) = self.index.lock() else { return };
+                crate::art::job::art_ready_payload(
+                    &guard,
+                    job.project_id.0,
+                    crate::protocol::Rendition::Card,
+                )
+            };
+            if let Some(data) = payload {
+                self.events.emit("projects", "art_ready", data);
+            }
+        }
         let is_reference = self.read_is_reference(job.project_id);
         for (kind, priority) in next_jobs_after(job.kind, is_reference) {
+            // Ruling 6: art takes a slot keyed apart from the repository's own, so a card does
+            // not spend a git slot on a store it never touches.
+            let store_key = if kind == JobKind::J5Art {
+                crate::art::art_store_key(&job.store_key)
+            } else {
+                job.store_key.clone()
+            };
             self.enqueue(Job {
                 kind,
                 project_id: job.project_id,
                 location_id: job.location_id,
-                store_key: job.store_key.clone(),
+                store_key,
                 store_kind: job.store_kind,
                 priority,
                 not_before: 0,
@@ -383,6 +408,26 @@ impl JobSink for JobRunner {
             priority: Priority::Interactive,
             not_before: 0,
         });
+
+        // §7.5: a stale, failed, missing or absent card is redrawn when its tile comes into
+        // view, at the priority of the thing the user is looking at. This is what makes a
+        // schema bump repaint shelf-visible first rather than four hundred cards at once on
+        // the launch after an update.
+        let needs = self.index.lock().is_ok_and(|guard| {
+            let data_dir = guard.data_dir().to_path_buf();
+            crate::art::job::needs_art_at(guard.conn(), &data_dir, project.0).unwrap_or(true)
+        });
+        if needs {
+            self.enqueue(Job {
+                kind: JobKind::J5Art,
+                project_id: project,
+                location_id: location,
+                store_key: crate::art::art_store_key(store_key),
+                store_kind,
+                priority: Priority::Interactive,
+                not_before: 0,
+            });
+        }
     }
 }
 
@@ -438,10 +483,28 @@ mod tests {
     #[test]
     fn content_waits_for_the_inventory_that_names_its_language() {
         // J6's synthesised description reads primary_language and archetype, which J3 writes.
-        assert_eq!(
-            next_jobs_after(JobKind::J3Inventory, Some(false)),
-            vec![(JobKind::J6Content, Priority::Deferred)]
-        );
+        let next = next_jobs_after(JobKind::J3Inventory, Some(false));
+        assert!(next.contains(&(JobKind::J6Content, Priority::Deferred)));
+    }
+
+    #[test]
+    fn art_is_queued_after_the_inventory_that_gives_it_its_size_bucket() {
+        // §7.6: the card rendition is rendered "during the scan, at J3", and §7.2's seed inputs
+        // are exactly what J3 writes.
+        let next = next_jobs_after(JobKind::J3Inventory, Some(false));
+        assert!(next.contains(&(JobKind::J5Art, Priority::Deferred)));
+        // Art chains from nothing else, and chains nothing further.
+        assert!(next_jobs_after(JobKind::J5Art, Some(false)).is_empty());
+        assert!(!next_jobs_after(JobKind::J1Refstate, None)
+            .iter()
+            .any(|(k, _)| *k == JobKind::J5Art));
+    }
+
+    #[test]
+    fn an_art_job_does_not_spend_the_repositorys_own_slot() {
+        // Ruling 6 / §4.1: J5 is a CPU job off the git path.
+        assert_eq!(crate::art::art_store_key("vol-a"), "art:vol-a");
+        assert_ne!(crate::art::art_store_key("vol-a"), "vol-a");
     }
 
     #[test]
