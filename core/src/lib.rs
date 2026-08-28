@@ -20,6 +20,9 @@ pub mod mount;
 pub mod proto;
 pub mod protocol;
 
+#[cfg(feature = "testkit")]
+pub mod testing;
+
 /// A trivially true constant that exists so an integration test can prove the library target
 /// links before any real surface exists to call.
 pub const PROTOCOL_VERSION_MAJOR_IS_POSITIVE: bool = protocol::PROTOCOL_VERSION > 0;
