@@ -81,6 +81,7 @@ impl ThreadScanLauncher {
             clock: self.clock.as_ref(),
             skip: self.skip.as_ref(),
             cancel,
+            jobs: Arc::new(crate::jobs::NullJobSink),
         }
     }
 

@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use sha2::{Digest as _, Sha256};
+use sha2::Digest as _;
 
 use crate::cancel::CancelToken;
 use crate::clock::Clock;
@@ -18,11 +18,6 @@ use super::repo::RepoHandle;
 // `u128`. `location.refstate_basis` is a `TEXT` column, and `serde_json` cannot carry a `u128`
 // outside `u64` range without `arbitrary_precision` — so the digest is SHA-256 and the value is
 // its lowercase hex. Plan 09's `BasisInputs` feeds the same computation.
-
-/// Feed one labelled `u128` — an mtime in nanoseconds, or a length — into the digest.
-fn write_u128(h: &mut Sha256, v: u128) {
-    h.update(v.to_le_bytes());
-}
 
 /// §6's ref-state basis, stored as `location.refstate_basis`.
 ///
@@ -45,6 +40,16 @@ impl RefFingerprint {
             && s.bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
         ok.then(|| Self(s.to_owned()))
+    }
+
+    /// The digest producer's constructor, for `core::freshness::compute_basis` and nothing else.
+    ///
+    /// Deliberately not public. `from_hex` stays the only door for a value that arrives from the
+    /// database or the wire, which is where the validation is load-bearing; a freshly finalised
+    /// SHA-256 formatted with `{:x}` cannot fail it, and routing it through an `Option` would
+    /// force a fallback branch that can never be taken.
+    pub(crate) fn from_digest(digest: impl std::fmt::LowerHex) -> Self {
+        Self(format!("{digest:x}"))
     }
 
     /// The 64-character lowercase hex form written to the database.
@@ -273,98 +278,42 @@ fn interrupted(git_dir: &Path) -> Option<InterruptedOp> {
     None
 }
 
-/// The §6 tuple, fed into a SHA-256 that the caller finishes (**R5**).
-fn base_digest(repo: &RepoHandle) -> Sha256 {
-    let mut h = Sha256::new();
-    h.update(b"head:");
-    h.update(
-        read_trimmed(&repo.git_dir.join("HEAD"))
-            .unwrap_or_default()
-            .as_bytes(),
-    );
-    h.update(b"packed:");
-    write_u128(
-        &mut h,
-        mtime_nanos(&repo.common_dir.join("packed-refs")).unwrap_or(0),
-    );
-    h.update(b"refs:");
-    for (name, (nanos, len)) in loose_refs(&repo.common_dir) {
-        h.update(name.as_bytes());
-        write_u128(&mut h, nanos);
-        write_u128(&mut h, u128::from(len));
-    }
-    h.update(b"fetchhead:");
-    write_u128(
-        &mut h,
-        mtime_nanos(&repo.common_dir.join("FETCH_HEAD")).unwrap_or(0),
-    );
-    h.update(b"config:");
-    write_u128(
-        &mut h,
-        mtime_nanos(&repo.common_dir.join("config")).unwrap_or(0),
-    );
-    h.update(b"shallow:");
-    h.update(if repo.common_dir.join("shallow").exists() {
-        b"1"
-    } else {
-        b"0"
-    });
-    h.update(b"markers:");
-    for marker in [
-        "MERGE_HEAD",
-        "REBASE_HEAD",
-        "CHERRY_PICK_HEAD",
-        "REVERT_HEAD",
-        "BISECT_LOG",
-    ] {
-        h.update(if repo.git_dir.join(marker).exists() {
-            b"1"
-        } else {
-            b"0"
-        });
-    }
-    for dir in ["rebase-merge", "rebase-apply"] {
-        h.update(if repo.git_dir.join(dir).is_dir() {
-            b"1"
-        } else {
-            b"0"
-        });
-    }
-    h.update(b"stash:");
-    write_u128(
-        &mut h,
-        mtime_nanos(&repo.common_dir.join("logs").join("refs").join("stash")).unwrap_or(0),
-    );
-    h
+/// §6's basis. Cheap: stats, not reads, for everything but `HEAD`.
+///
+/// The digest itself lives in [`crate::freshness`], which is the only place it is computed.
+/// This function's job is to know that a linked worktree keeps `HEAD` and its operation markers
+/// in `git_dir` while refs, config and the stash reflog live in `common_dir` — a fact the pure
+/// digest has no business carrying.
+pub fn ref_fingerprint(repo: &RepoHandle) -> GitResult<RefFingerprint> {
+    Ok(crate::freshness::compute_basis(&basis_inputs(repo)?))
 }
 
-/// §6's basis. Cheap: stats, not reads, for everything but `HEAD`.
-pub fn ref_fingerprint(repo: &RepoHandle) -> GitResult<RefFingerprint> {
+fn basis_inputs(repo: &RepoHandle) -> GitResult<crate::freshness::BasisInputs> {
     if !repo.git_dir.exists() {
         return Err(GitError::PathGone {
             detail: "git dir is not there".to_owned(),
         });
     }
-    Ok(RefFingerprint(format!(
-        "{:x}",
-        base_digest(repo).finalize()
-    )))
+    crate::freshness::collect_basis_inputs_split(&repo.git_dir, &repo.common_dir).map_err(|e| {
+        GitError::Unreadable {
+            detail: e.to_string(),
+        }
+    })
 }
 
 /// The basis plus the index, for §3.5's before/after comparison only.
+///
+/// Never stored, so its exact bytes do not matter — only that it moves whenever the basis or the
+/// index does. It extends the one basis digest instead of restating its inputs.
 pub fn observation_fingerprint(repo: &RepoHandle) -> GitResult<ObservationFingerprint> {
-    if !repo.git_dir.exists() {
-        return Err(GitError::PathGone {
-            detail: "git dir is not there".to_owned(),
-        });
-    }
-    let mut h = base_digest(repo);
+    let mut h = crate::freshness::basis_hasher(&basis_inputs(repo)?);
     let index = repo.git_dir.join("index");
     h.update(b"index:");
-    write_u128(&mut h, mtime_nanos(&index).unwrap_or(0));
-    write_u128(
-        &mut h,
-        u128::from(std::fs::metadata(&index).map_or(0, |m| m.len())),
+    h.update(mtime_nanos(&index).unwrap_or(0).to_le_bytes());
+    h.update(
+        std::fs::metadata(&index)
+            .map_or(0, |m| m.len())
+            .to_le_bytes(),
     );
     Ok(ObservationFingerprint(format!("{:x}", h.finalize())))
 }

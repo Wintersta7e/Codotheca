@@ -36,6 +36,12 @@ pub struct CommitterTally {
     pub commits: u32,
     /// Distinct local days this committer committed on — J4's actual output.
     pub days: BTreeSet<i64>,
+    /// The newest commit this address made, epoch seconds.
+    ///
+    /// §5.1's `last_user_commit_at` is "the last commit by a *user identity*", which is not
+    /// `last_commit_at` and cannot be recovered from `days`: a day number is a day, and the
+    /// column is a second. The walk already parses the timestamp, so carrying it costs nothing.
+    pub last_commit_at: i64,
 }
 
 /// The full-history committer walk.
@@ -179,7 +185,7 @@ pub fn authorship(
         cancel,
         |_stdin| Ok(()),
         |stdout: &mut dyn BufRead| {
-            let mut acc: BTreeMap<String, (u32, BTreeSet<i64>)> = BTreeMap::new();
+            let mut acc: BTreeMap<String, (u32, BTreeSet<i64>, i64)> = BTreeMap::new();
             let mut line = String::new();
             loop {
                 line.clear();
@@ -197,9 +203,12 @@ pub fn authorship(
                 else {
                     continue;
                 };
-                let entry = acc.entry(email.to_owned()).or_insert((0, BTreeSet::new()));
+                let entry = acc
+                    .entry(email.to_owned())
+                    .or_insert((0, BTreeSet::new(), i64::MIN));
                 entry.0 = entry.0.saturating_add(1);
                 entry.1.insert(local_day(at, tz));
+                entry.2 = entry.2.max(at);
             }
             Ok(acc)
         },
@@ -213,10 +222,11 @@ pub fn authorship(
     Ok(Authorship {
         committers: tallies
             .into_iter()
-            .map(|(email, (commits, days))| CommitterTally {
+            .map(|(email, (commits, days, last_commit_at))| CommitterTally {
                 email,
                 commits,
                 days,
+                last_commit_at,
             })
             .collect(),
     })

@@ -111,6 +111,7 @@ fn runner(r: &Rig, mounts: Arc<FakeMountResolver>) -> ScanRunner<'_> {
         clock: &r.clock,
         skip: &r.skip,
         cancel: &r.cancel,
+        jobs: Arc::new(codotheca_core::jobs::NullJobSink),
     }
 }
 

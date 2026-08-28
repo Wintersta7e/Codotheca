@@ -42,6 +42,13 @@ pub struct TrackedInventory {
     /// Bytes per lowercase file extension; `""` collects everything without a usable one.
     /// Mapping extensions to languages belongs to the caller, not here.
     pub extension_bytes: BTreeMap<String, u64>,
+    /// The tracked path set, raw bytes, one entry per path.
+    ///
+    /// A size census does not need paths, but §1.2's **archetype** does, and it is decided by
+    /// basenames — `Dockerfile`, `index.html`, `Cargo.toml` — that no extension histogram can
+    /// express. Carried here so J3 folds one enumeration instead of spawning `ls-files` twice
+    /// over the same index.
+    pub paths: Vec<Vec<u8>>,
     /// When this was observed.
     pub observed_at: i64,
 }
@@ -144,6 +151,7 @@ pub fn tracked_inventory(
             tracked_files: 0,
             size_tracked_bytes: 0,
             extension_bytes: BTreeMap::new(),
+            paths: Vec::new(),
             observed_at: clock.now_unix(),
         });
     }
@@ -206,6 +214,7 @@ pub fn tracked_inventory(
         })?,
         size_tracked_bytes: total,
         extension_bytes,
+        paths: entries.iter().map(|e| e.path.clone()).collect(),
         observed_at: clock.now_unix(),
     })
 }

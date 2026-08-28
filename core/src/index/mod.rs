@@ -47,6 +47,37 @@ impl Index {
         &mut self.conn
     }
 
+    /// Borrow the connection for one read.
+    ///
+    /// A read opens no transaction, so it needs no `TxGuard`: the interlock exists to stop a
+    /// pipe write while a *write* lock is held (§2.2), and a bare `SELECT` holds none.
+    pub fn read<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<T, IndexError>,
+    ) -> Result<T, IndexError> {
+        f(&self.conn)
+    }
+
+    /// Run `f` inside one transaction, committing on success and rolling back on error.
+    ///
+    /// **Every rusqlite transaction in the core opens through `TxGuard`** (plan 03 Task 4). If
+    /// one does not, `FrameSink::send`'s check is always false and the whole pipe-write
+    /// interlock is decorative.
+    ///
+    /// Takes `&mut self` because `rusqlite::Connection::transaction` does. Callers holding the
+    /// index behind a `Mutex` lock it mutably for the write and release it immediately — see
+    /// `core::jobs::run_one`, which never holds the lock across a git invocation.
+    pub fn with_tx<T>(
+        &mut self,
+        f: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, IndexError>,
+    ) -> Result<T, IndexError> {
+        let _tx_guard = crate::proto::txguard::TxGuard::enter();
+        let tx = self.conn.transaction()?;
+        let out = f(&tx)?;
+        tx.commit()?;
+        Ok(out)
+    }
+
     /// §11.2 step 2 and §1.12, in one door. Uses the wall clock for backup names and the
     /// restore time; `open_at` is the same path with the clock supplied.
     pub fn open(data_dir: &Path) -> Result<Self, IndexError> {

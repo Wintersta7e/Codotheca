@@ -3,10 +3,12 @@
 
 mod clock;
 mod git;
+mod index;
 mod mount;
 mod scan;
 
 pub use clock::FakeClock;
 pub use git::{FakeGitBackend, GitReply, RecordedGitCall, RecordingGitBackend};
+pub use index::TempIndex;
 pub use mount::FakeMountResolver;
 pub use scan::{MemScanStore, ScanEventFake, ScanLauncherFake};

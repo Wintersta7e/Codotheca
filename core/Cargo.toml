@@ -26,7 +26,10 @@ required-features = ["testkit"]
 default = []
 # Test doubles and the corpus generator. Off by default so the shipped binary contains no
 # fake clock, no fake mount table and no fixture builder.
-testkit = []
+#
+# `TempIndex` puts a migrated database in a temporary directory, so the seam needs `tempfile` as
+# a real dependency rather than a dev one — `core::testing` is a library module, not a test.
+testkit = ["dep:tempfile"]
 
 [dependencies]
 base64 = "0.22"
@@ -39,11 +42,17 @@ fs4 = "1.1"
 # The parallel directory walk (J0). Standard filters off: this is a filesystem census, not a
 # git operation, so nothing may be hidden by a `.gitignore`.
 ignore = "0.4"
+# §6's bounded worktree watch set. Change notification only — path names, never file contents.
+# Default features off: the macOS FSEvents backend is the only optional one this needs and the
+# targets are Windows and Linux, which use ReadDirectoryChangesW and inotify unconditionally.
+notify = { version = "6", default-features = false, features = ["macos_fsevent"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # R5: the ref-state basis is a lowercase-hex SHA-256, because `location.refstate_basis` is TEXT.
 sha2 = "0.10"
+# Only under `testkit`; see the feature's comment.
+tempfile = { version = "3", optional = true }
 thiserror = "1"
 
 # §4.3's cycle and duplicate detection needs a directory's stable file identity. On Windows that

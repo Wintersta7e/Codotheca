@@ -96,6 +96,29 @@ pub struct ScanRunner<'a> {
     pub clock: &'a dyn Clock,
     pub skip: &'a SkipList,
     pub cancel: &'a CancelToken,
+    /// Where a newly indexed location's jobs are queued (§4.1a).
+    ///
+    /// **Typed and installed here, and called from nowhere yet — deliberately, and this is the
+    /// gap rather than an oversight.** The hand-off belongs at the point where a repository's
+    /// `project` and `location` rows have both been written, which is
+    /// `identity::resolve_identity` followed by `identity::store::upsert_location`. Nothing
+    /// calls either: the walk stops at `WalkEvent::Discovered` (R1), and `SqliteScanStore::
+    /// upsert_location` refuses by design, naming plan 08 as the owner. Whoever closes that —
+    /// the core's assembly module under R35(a) — calls
+    /// `self.jobs.on_location_indexed(project_id, location_id, &facts.store_key, facts.class)`
+    /// with the `MountFacts` `enrich` already resolved. **R4**: both values come out of that one
+    /// `MountFacts`; there is no second resolver call and the queue never touches the filesystem.
+    pub jobs: Arc<dyn crate::jobs::JobSink>,
+}
+
+impl ScanRunner<'_> {
+    /// Install the sink that queues jobs for a newly indexed location.
+    ///
+    /// A runner built without one queues nothing, which is what keeps plan 07's own tests
+    /// standing: `NullJobSink` is the absence of a scheduler, not a fake of one.
+    pub fn set_job_sink(&mut self, sink: Arc<dyn crate::jobs::JobSink>) {
+        self.jobs = sink;
+    }
 }
 
 impl std::fmt::Debug for ScanRunner<'_> {

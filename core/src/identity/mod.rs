@@ -20,6 +20,7 @@ pub mod store;
 pub mod submodule;
 #[cfg(test)]
 pub mod testutil;
+pub mod user;
 
 use crate::protocol::ErrorCode;
 
