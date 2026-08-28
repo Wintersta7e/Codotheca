@@ -1,0 +1,29 @@
+{
+  "$comment": "Golden envelopes. Both languages parse this file in their own test suite, so a field rename fails a test instead of a demo. Not generated; edit by hand alongside core/src/proto/wire.rs and app/src/main/core/wire.ts.",
+  "outbound": [
+    { "t": "hello", "protocol_version": 1, "core_version": "0.0.0", "epoch": 1, "pid": 4242 },
+    { "t": "response", "epoch": 1, "id": 7, "ok": { "count": 3 } },
+    {
+      "t": "error",
+      "epoch": 1,
+      "id": 8,
+      "code": "CORE_RESTARTED",
+      "message": "diagnostic only",
+      "outcome": "unknown"
+    },
+    { "t": "event", "epoch": 1, "topic": "scan", "event": "repo_found", "seq": 12, "data": {} },
+    {
+      "t": "snapshot",
+      "epoch": 1,
+      "topic": "projects",
+      "through_seq": 12,
+      "data": { "projects": [] }
+    }
+  ],
+  "inbound": [
+    { "t": "request", "id": 0, "command": "app.hello_ack", "args": { "protocolVersion": 1 } },
+    { "t": "subscribe", "topic": "scan" },
+    { "t": "unsubscribe", "topic": "scan" },
+    { "t": "resync", "topic": "projects" }
+  ]
+}
