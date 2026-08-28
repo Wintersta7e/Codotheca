@@ -1,32 +1,68 @@
-//! Codotheca core.
+//! Codotheca core, the binary.
 //!
-//! Runs as a child process of the shell, speaking length-prefixed JSON on stdin/stdout.
-//! See the protocol specification §2 for the framing and §4 for the scanner.
-//!
-//! Two invariants that are easy to violate and expensive to fix:
-//!   * **stdout carries protocol frames and nothing else.** No `println!`, no dependency
-//!     writing to stdout, no panic text. Diagnostics go to stderr, which the shell drains.
-//!   * **Never write a zero where the value is unknown.** Absent and empty are different
-//!     states throughout the data model.
+//! stdout carries protocol frames and nothing else. Every diagnostic goes to stderr, which
+//! the shell drains into its rolling log.
 
 #![forbid(unsafe_code)]
 
-use codotheca_core::protocol;
-
+use codotheca_core::lifecycle::{
+    parse_args, CoreLock, LockError, OsParentProbe, EXIT_BAD_ARGS, EXIT_LOCK_HELD,
+};
+use codotheca_core::proto::dispatch::{run_loop, send_hello, RefusingHandler};
+use codotheca_core::proto::pubsub::{Publisher, TOPIC_HIGH_WATER};
+use codotheca_core::proto::transport::{claim_stdout, Transport, WRITER_CAPACITY};
+use codotheca_core::proto::wire::Epoch;
 use std::io::Write as _;
+use std::process::ExitCode;
 
-fn main() -> std::process::ExitCode {
-    // stderr is the only channel for diagnostics; the shell merges it into the rolling log.
-    let mut err = std::io::stderr();
-    let _ = writeln!(
-        err,
-        "codotheca-core {} protocol v{} starting",
-        env!("CARGO_PKG_VERSION"),
-        protocol::PROTOCOL_VERSION
-    );
+fn note(line: &str) {
+    let _ = writeln!(std::io::stderr(), "{line}");
+}
 
-    // TODO(phase-1): handshake, then the command loop. Nothing is implemented yet;
-    // this binary exists so the workspace, lints, CI and packaging are real from commit one.
-    let _ = writeln!(err, "not implemented");
-    std::process::ExitCode::SUCCESS
+fn main() -> ExitCode {
+    let args = match parse_args(std::env::args().skip(1)) {
+        Ok(a) => a,
+        Err(e) => {
+            note(&format!("codotheca-core: {e}"));
+            return ExitCode::from(EXIT_BAD_ARGS);
+        }
+    };
+
+    let _lock = match CoreLock::acquire(&args.data_dir) {
+        Ok(l) => l,
+        Err(LockError::Held) => {
+            note("codotheca-core: another core holds the advisory lock for this data directory");
+            return ExitCode::from(EXIT_LOCK_HELD);
+        }
+        Err(e) => {
+            note(&format!("codotheca-core: {e}"));
+            return ExitCode::from(EXIT_BAD_ARGS);
+        }
+    };
+
+    let Some(stdout) = claim_stdout() else {
+        note("codotheca-core: stdout was already claimed");
+        return ExitCode::FAILURE;
+    };
+
+    let transport = match Transport::start(std::io::stdin(), stdout, WRITER_CAPACITY) {
+        Ok(t) => t,
+        Err(e) => {
+            note(&format!("codotheca-core: transport: {e}"));
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let epoch = Epoch(args.epoch);
+    if let Err(e) = send_hello(&transport.sink, epoch) {
+        note(&format!("codotheca-core: hello: {e}"));
+        return ExitCode::FAILURE;
+    }
+
+    let publisher = Publisher::new(transport.sink.clone(), epoch, TOPIC_HIGH_WATER);
+    let mut handler = RefusingHandler;
+    let parent = OsParentProbe::new(args.parent_pid);
+    let exit = run_loop(transport, publisher, &mut handler, epoch, &parent);
+    note(&format!("codotheca-core: exiting ({exit:?})"));
+    ExitCode::SUCCESS
 }

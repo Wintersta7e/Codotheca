@@ -7,3 +7,4 @@ pub mod txguard;
 pub mod wire;
 
 pub use pubsub::{EventSink, PublisherSink};
+pub mod dispatch;
