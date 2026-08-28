@@ -106,3 +106,15 @@ fn mount_facts_round_trip_under_serde_with_the_column_names_intact() {
         serde_json::from_str(&serde_json::to_string(&anonymous).unwrap()).unwrap();
     assert_eq!(back.volume_key, None);
 }
+
+#[test]
+fn the_system_resolver_answers_for_the_current_directory() {
+    use codotheca_core::mount::SystemMountResolver;
+    let r = SystemMountResolver::new();
+    let cwd = std::env::current_dir().unwrap();
+    let facts = r.resolve(&cwd).unwrap();
+    assert!(
+        !facts.store_key.is_empty(),
+        "a resolved store must always carry a key"
+    );
+}
