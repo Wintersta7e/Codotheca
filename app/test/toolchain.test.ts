@@ -56,6 +56,14 @@ describe('the app TypeScript projects', () => {
     expect(types).not.toContain('node');
   });
 
+  it('leaves DOM tests to the web project, which is the only one that carries the DOM lib', () => {
+    // The mirror of the rule below. test/dom/** mounts into a document, and the node project
+    // deliberately has no DOM lib — that absence is what stops a main- or preload-side test
+    // passing against a global the sandboxed shell has never had.
+    expect(readTsconfig('tsconfig.node.json')['exclude']).toContain('test/dom/**/*.ts');
+    expect(readTsconfig('tsconfig.web.json')['include']).toContain('test/dom/**/*.ts');
+  });
+
   it('leaves shared tests to the node project, which is the only one that can type them', () => {
     // src/shared is imported by both sides, so both projects include it — but a shared *test*
     // runs under Node and may name a Node API: gitFloor.test.ts reads the Rust source it

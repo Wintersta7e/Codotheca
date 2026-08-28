@@ -1,15 +1,24 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "vite/client"
+    ],
     "jsx": "react-jsx"
   },
   "include": [
     "src/renderer/**/*.ts",
     "src/renderer/**/*.tsx",
     "src/shared/**/*.ts",
-    "src/generated/**/*.ts"
+    "src/generated/**/*.ts",
+    "test/dom/**/*.ts"
   ],
-  "exclude": ["src/shared/**/*.test.ts"]
+  "exclude": [
+    "src/shared/**/*.test.ts"
+  ]
 }
