@@ -70,3 +70,25 @@ impl MountResolver for FakeMountResolver {
             .map_or(true, |set| !set.contains(volume_key))
     }
 }
+
+use crate::corpus::CorpusManifest;
+
+impl FakeMountResolver {
+    /// A mount table matching the corpus's simulated volumes. Every fixture path resolves to
+    /// the volume it was written on, and `unmount` then makes exactly those paths disappear.
+    #[must_use]
+    pub fn from_manifest(manifest: &CorpusManifest) -> Self {
+        let resolver = Self::new();
+        for volume in &manifest.volumes {
+            resolver.map(
+                volume.path.clone(),
+                MountFacts {
+                    store_key: volume.store_key.clone(),
+                    volume_key: Some(volume.volume_key.clone()),
+                    class: volume.class,
+                },
+            );
+        }
+        resolver
+    }
+}

@@ -123,3 +123,36 @@ fn the_system_resolver_answers_for_the_current_directory() {
         "a resolved store must always carry a key"
     );
 }
+
+#[test]
+fn unplugging_a_corpus_volume_hides_its_repositories_and_deletes_nothing() {
+    use codotheca_core::corpus::fixtures as ids;
+    use codotheca_core::corpus::{generate, CorpusOptions};
+
+    let dir = std::env::temp_dir().join("codotheca-corpus-test-unplug");
+    let mut options = CorpusOptions::new(dir);
+    options.only = Some(vec![ids::COPY_ONE.to_owned(), ids::COPY_TWO.to_owned()]);
+    let manifest = generate(&options).unwrap();
+
+    let resolver = FakeMountResolver::from_manifest(&manifest);
+    let one = manifest.require(ids::COPY_ONE).unwrap();
+    let two = manifest.require(ids::COPY_TWO).unwrap();
+    let removable = manifest.volume("vol-b").unwrap().volume_key.clone();
+
+    assert!(resolver.resolve(&one.path).is_ok());
+    assert!(resolver.resolve(&two.path).is_ok());
+
+    resolver.unmount(&removable);
+    assert_eq!(resolver.resolve(&two.path), Err(MountError::NotMounted));
+    assert!(
+        resolver.resolve(&one.path).is_ok(),
+        "the other volume is unaffected"
+    );
+    assert!(
+        two.path.join(".git").is_dir(),
+        "an offline location is frozen, never deleted"
+    );
+
+    resolver.mount(&removable);
+    assert!(resolver.resolve(&two.path).is_ok());
+}
