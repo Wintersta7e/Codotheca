@@ -12,6 +12,7 @@
 //! wrapper. What plans 07 and 09 still need from this file is the other half — an injectable
 //! git that is slow, that fails, and that answers differently on two successive calls.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -100,6 +101,7 @@ pub struct FakeGitBackend {
     divergence: Op<Option<Divergence>>,
     worktree_status: Op<WorktreeStatus>,
     tracked_inventory: Op<TrackedInventory>,
+    submodule_gitlinks: Op<BTreeMap<Vec<u8>, String>>,
     root_commits: Op<Vec<RootCommit>>,
     authorship: Op<Authorship>,
     commit_subjects: Op<Vec<CommitSubject>>,
@@ -200,6 +202,7 @@ setters! {
     divergence: Option<Divergence>, on_divergence, always_divergence;
     worktree_status: WorktreeStatus, on_worktree_status, always_worktree_status;
     tracked_inventory: TrackedInventory, on_tracked_inventory, always_tracked_inventory;
+    submodule_gitlinks: BTreeMap<Vec<u8>, String>, on_submodule_gitlinks, always_submodule_gitlinks;
     root_commits: Vec<RootCommit>, on_root_commits, always_root_commits;
     authorship: Authorship, on_authorship, always_authorship;
     commit_subjects: Vec<CommitSubject>, on_commit_subjects, always_commit_subjects;
@@ -266,6 +269,20 @@ impl GitBackend for FakeGitBackend {
             &self.tracked_inventory,
             Some(&repo.work_dir),
             || unconfigured("tracked_inventory"),
+        )
+    }
+
+    fn submodule_gitlinks(
+        &self,
+        repo: &RepoHandle,
+        _paths: &[Vec<u8>],
+        _ctx: &JobContext<'_>,
+    ) -> GitResult<BTreeMap<Vec<u8>, String>> {
+        self.answer(
+            "submodule_gitlinks",
+            &self.submodule_gitlinks,
+            Some(&repo.work_dir),
+            || unconfigured("submodule_gitlinks"),
         )
     }
 
@@ -376,6 +393,16 @@ impl<B: GitBackend> GitBackend for RecordingGitBackend<B> {
     ) -> GitResult<TrackedInventory> {
         self.record("tracked_inventory", Some(&repo.work_dir));
         self.inner.tracked_inventory(repo, ctx)
+    }
+
+    fn submodule_gitlinks(
+        &self,
+        repo: &RepoHandle,
+        paths: &[Vec<u8>],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<BTreeMap<Vec<u8>, String>> {
+        self.record("submodule_gitlinks", Some(&repo.work_dir));
+        self.inner.submodule_gitlinks(repo, paths, ctx)
     }
 
     fn root_commits(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>> {

@@ -4,7 +4,9 @@
 mod clock;
 mod git;
 mod mount;
+mod scan;
 
 pub use clock::FakeClock;
 pub use git::{FakeGitBackend, GitReply, RecordedGitCall, RecordingGitBackend};
 pub use mount::FakeMountResolver;
+pub use scan::{MemScanStore, ScanEventFake, ScanLauncherFake};

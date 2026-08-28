@@ -20,6 +20,10 @@ use super::repo::RepoHandle;
 /// One row of `git ls-files -s`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexEntry {
+    /// The six-digit octal mode, as git printed it. Kept as text rather than parsed: the only
+    /// question asked of it is whether it is `160000`, a gitlink (§4.4), and an octal parse
+    /// would turn one comparison into two conversions that can disagree.
+    pub mode: String,
     /// The blob's object id.
     pub oid: String,
     /// Merge stage: `0` ordinarily, `1`/`2`/`3` while conflicted.
@@ -54,14 +58,15 @@ pub fn parse_ls_files_z(bytes: &[u8]) -> Vec<IndexEntry> {
         let path = rest.get(1..).unwrap_or_default().to_vec();
         let meta = String::from_utf8_lossy(meta);
         let mut parts = meta.split_whitespace();
-        let (_mode, oid, stage) = (parts.next(), parts.next(), parts.next());
-        let (Some(oid), Some(stage)) = (oid, stage) else {
+        let (mode, oid, stage) = (parts.next(), parts.next(), parts.next());
+        let (Some(mode), Some(oid), Some(stage)) = (mode, oid, stage) else {
             continue;
         };
         let Ok(stage) = stage.parse::<u8>() else {
             continue;
         };
         out.push(IndexEntry {
+            mode: mode.to_owned(),
             oid: oid.to_owned(),
             stage,
             path,
@@ -203,4 +208,44 @@ pub fn tracked_inventory(
         extension_bytes,
         observed_at: clock.now_unix(),
     })
+}
+
+/// The gitlink mode. A `160000` index entry records a *commit* id at a path, which is what makes
+/// it a submodule and not a blob.
+const GITLINK_MODE: &str = "160000";
+
+/// §4.4 — the gitlink OIDs `submodule_edge.gitlink_oid` (§1.9) records, read from the parent's
+/// index.
+///
+/// `-z` switches off git's path quoting, which is what keeps a non-UTF-8 submodule path readable;
+/// the paths are passed after `--` so a submodule named like an option cannot become one. An
+/// empty `paths` asks git nothing rather than listing the whole index.
+pub fn submodule_gitlinks(
+    exec: &GitExec,
+    repo: &RepoHandle,
+    paths: &[Vec<u8>],
+    limits: RunLimits,
+    cancel: &CancelToken,
+) -> GitResult<BTreeMap<Vec<u8>, String>> {
+    if paths.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let owned: Vec<std::ffi::OsString> = paths
+        .iter()
+        .map(|raw| crate::paths::path_from_bytes(raw).into_os_string())
+        .collect();
+    let mut args: Vec<&OsStr> = vec![
+        OsStr::new("ls-files"),
+        OsStr::new("-z"),
+        OsStr::new("-s"),
+        OsStr::new("--"),
+    ];
+    args.extend(owned.iter().map(std::ffi::OsString::as_os_str));
+
+    let out = exec.run(repo, &args, limits, cancel)?;
+    Ok(parse_ls_files_z(&out.stdout)
+        .into_iter()
+        .filter(|entry| entry.mode == GITLINK_MODE)
+        .map(|entry| (entry.path, entry.oid))
+        .collect())
 }

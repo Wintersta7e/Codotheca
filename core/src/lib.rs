@@ -16,12 +16,16 @@ pub mod cancel;
 pub mod clock;
 #[cfg(feature = "testkit")]
 pub mod corpus;
+pub mod derive;
 pub mod git;
+pub mod identity;
 pub mod index;
 pub mod lifecycle;
 pub mod mount;
+pub mod paths;
 pub mod proto;
 pub mod protocol;
+pub mod scan;
 
 #[cfg(feature = "testkit")]
 pub mod testing;

@@ -36,12 +36,21 @@ command-group = "5"
 # Cross-platform advisory file locks with no libc and no unsafe in our tree. std's own
 # File::try_lock is stable only from 1.89 and the workspace MSRV is 1.80.
 fs4 = "1.1"
+# The parallel directory walk (J0). Standard filters off: this is a filesystem census, not a
+# git operation, so nothing may be hidden by a `.gitignore`.
+ignore = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # R5: the ref-state basis is a lowercase-hex SHA-256, because `location.refstate_basis` is TEXT.
 sha2 = "0.10"
 thiserror = "1"
+
+# §4.3's cycle and duplicate detection needs a directory's stable file identity. On Windows that
+# is `(volume serial, file index)` from an open handle; `std::os::windows::fs::MetadataExt`
+# exposes both but only on nightly, behind `windows_by_handle`, and this crate forbids `unsafe`.
+[target.'cfg(windows)'.dependencies]
+winapi-util = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

@@ -13,7 +13,7 @@ use super::facts::{repo_facts, RepoFacts};
 use super::history::{
     authorship, commit_subjects, root_commits, Authorship, CommitSubject, RootCommit,
 };
-use super::inventory::{tracked_inventory, TrackedInventory};
+use super::inventory::{submodule_gitlinks, tracked_inventory, TrackedInventory};
 use super::refstate::{divergence, read_ref_state, Divergence, RefState};
 use super::repo::{RepoHandle, StoreKey};
 use super::slots::{GitSlots, JobClass};
@@ -83,6 +83,18 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
         repo: &RepoHandle,
         ctx: &JobContext<'_>,
     ) -> GitResult<TrackedInventory>;
+    /// §4.4: the gitlink OID this repository's index records at each of `paths`, keyed by path.
+    ///
+    /// The scanner's, not a job's. `submodule_edge.gitlink_oid` (§1.9) has no other source —
+    /// `ls-files -s` is the only read that reports a mode, and `TrackedInventory` discards it —
+    /// and the scanner may not spawn git outside this seam (§15.2). A path with no gitlink is
+    /// simply absent from the map; there is no placeholder OID.
+    fn submodule_gitlinks(
+        &self,
+        repo: &RepoHandle,
+        paths: &[Vec<u8>],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<std::collections::BTreeMap<Vec<u8>, String>>;
     /// J4: the root set, with dates.
     fn root_commits(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>>;
     /// J1.5: the full committer walk.
@@ -203,6 +215,17 @@ impl GitBackend for SystemGit {
                     self.clock.as_ref(),
                 )
             })
+        })
+    }
+
+    fn submodule_gitlinks(
+        &self,
+        repo: &RepoHandle,
+        paths: &[Vec<u8>],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<std::collections::BTreeMap<Vec<u8>, String>> {
+        self.with_slot(repo, ctx, || {
+            submodule_gitlinks(&self.exec, repo, paths, ctx.limits(), ctx.cancel)
         })
     }
 

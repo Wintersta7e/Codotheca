@@ -13,7 +13,9 @@ use std::time::Duration;
 
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::SystemClock;
-use codotheca_core::git::{parse_ls_files_z, path_extension, tracked_inventory, RunLimits};
+use codotheca_core::git::{
+    parse_ls_files_z, path_extension, submodule_gitlinks, tracked_inventory, RunLimits,
+};
 use support::TestRepo;
 
 #[test]
@@ -179,4 +181,62 @@ fn a_conflicted_file_is_measured_from_ours_not_from_the_merge_base() {
         inv.size_tracked_bytes, 4,
         "ours is 4 bytes; the merge base is 13 and theirs is 9"
     );
+}
+
+// ---- §4.4's gitlink OIDs -------------------------------------------------------------------
+
+/// `submodule_edge.gitlink_oid` (§1.9) has no source anywhere else in the plan set: `ls-files -s`
+/// is the only read that reports one, and `TrackedInventory` discards the mode. The parser has
+/// always parsed the mode and thrown it away.
+#[test]
+fn ls_files_entries_carry_their_mode() {
+    let line = b"160000 4444444444444444444444444444444444444444 0\tvendor/lib\x00100644 1111111111111111111111111111111111111111 0\ta.txt\0";
+    let entries = parse_ls_files_z(line);
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].mode, "160000", "a gitlink");
+    assert_eq!(entries[1].mode, "100644", "an ordinary blob");
+}
+
+#[test]
+fn gitlinks_come_back_keyed_by_path_and_ordinary_blobs_do_not() {
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"hello");
+    repo.git(&["add", "a.txt"]);
+    // A gitlink without cloning anything: the index records a commit id at a path.
+    let oid = "4".repeat(40);
+    repo.git(&[
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        &format!("160000,{oid},vendor/lib"),
+    ]);
+
+    let found = submodule_gitlinks(
+        &repo.exec(),
+        &repo.handle(),
+        &[b"vendor/lib".to_vec(), b"a.txt".to_vec()],
+        RunLimits::none(),
+        &CancelToken::new(),
+    )
+    .unwrap();
+
+    assert_eq!(found.len(), 1, "an ordinary blob is not a gitlink");
+    assert_eq!(found.get(b"vendor/lib".as_slice()), Some(&oid));
+}
+
+/// Asking about no paths asks git nothing, rather than listing the whole index.
+#[test]
+fn an_empty_path_list_yields_an_empty_map() {
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"hello");
+    repo.git(&["add", "a.txt"]);
+    let found = submodule_gitlinks(
+        &repo.exec(),
+        &repo.handle(),
+        &[],
+        RunLimits::none(),
+        &CancelToken::new(),
+    )
+    .unwrap();
+    assert!(found.is_empty());
 }

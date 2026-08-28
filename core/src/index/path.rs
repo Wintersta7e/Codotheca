@@ -64,14 +64,18 @@ impl StoredPath {
 
 // R2a: the *folding* is decided by the `PathPlatform` argument, but obtaining the bytes stays
 // host-scoped. On a Windows host an OsStr is UTF-16, so there is no byte view to borrow.
+//
+// `crate::paths` re-exposes this as a free function rather than declaring its own: two byte
+// encodings for one `location.path_bytes` column is the "one value stated twice" defect with a
+// BLOB behind it, and a path written by the scanner must equal the same path written by plan 08.
 #[cfg(unix)]
-fn os_bytes(s: &std::ffi::OsStr) -> Vec<u8> {
+pub(crate) fn os_bytes(s: &std::ffi::OsStr) -> Vec<u8> {
     use std::os::unix::ffi::OsStrExt as _;
     s.as_bytes().to_vec()
 }
 
 #[cfg(not(unix))]
-fn os_bytes(s: &std::ffi::OsStr) -> Vec<u8> {
+pub(crate) fn os_bytes(s: &std::ffi::OsStr) -> Vec<u8> {
     s.to_string_lossy().into_owned().into_bytes()
 }
 

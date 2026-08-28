@@ -30,7 +30,8 @@ pub use history::{
     CommitSubject, CommitterTally, RootCommit,
 };
 pub use inventory::{
-    parse_ls_files_z, path_extension, tracked_inventory, IndexEntry, TrackedInventory,
+    parse_ls_files_z, path_extension, submodule_gitlinks, tracked_inventory, IndexEntry,
+    TrackedInventory,
 };
 pub use invocation::{base_args, ensure_empty_hooks_dir, neutralise_env};
 pub use observe::{busy_marker, defer_while_locked, observe_stable, Backoff, Observation};
