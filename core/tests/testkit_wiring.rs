@@ -1,3 +1,8 @@
+//! Compiled only under `testkit`: these link `codotheca_core::testing`, which the feature
+//! gates. Without the gate a bare `cargo test` fails to compile rather than skipping, and the
+//! real gate — `npm test`, and CI — passes `--features testkit`. `app/test/toolchain.test.ts`
+//! asserts that flag is still there, so it cannot be dropped silently.
+#![cfg(feature = "testkit")]
 // The linkage assertion below is deliberately on a constant: its whole purpose is to prove the
 // library target links from an integration test, before any real surface exists to call.
 #![allow(

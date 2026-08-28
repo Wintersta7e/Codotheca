@@ -66,3 +66,36 @@ describe('the app TypeScript projects', () => {
     expect(readTsconfig('tsconfig.node.json')['include']).toContain('src/shared/**/*.ts');
   });
 });
+
+describe('the testkit feature reaches the commands that matter', () => {
+  // core::testing and core::corpus are gated on a default-off `testkit` feature, and the
+  // integration tests that link them are gated to match. A bare `cargo test` therefore runs
+  // 126 of 142 tests and still reports success. These assertions are what stops the flag from
+  // being dropped from the two commands that are supposed to run everything.
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+
+  function repoFile(rel: string): string {
+    return readFileSync(join(repoRoot, '..', rel), 'utf8');
+  }
+
+  it('keeps --features testkit on the root test script', () => {
+    const pkg: unknown = JSON.parse(repoFile('package.json'));
+    const scripts = (pkg as { scripts?: Record<string, string> }).scripts ?? {};
+    expect(scripts['test']).toContain('cargo test');
+    expect(scripts['test'], 'a bare cargo test skips every seam test').toContain(
+      '--features testkit',
+    );
+  });
+
+  it('keeps --all-features on the lint script, or the gated code is never linted', () => {
+    const pkg: unknown = JSON.parse(repoFile('package.json'));
+    const scripts = (pkg as { scripts?: Record<string, string> }).scripts ?? {};
+    expect(scripts['lint']).toContain('--all-features');
+  });
+
+  it("keeps both flags in CI's core job", () => {
+    const ci = repoFile('.github/workflows/ci.yml');
+    expect(ci).toContain('cargo test --manifest-path core/Cargo.toml --features testkit');
+    expect(ci).toContain('--all-targets --all-features -- -D warnings');
+  });
+});
