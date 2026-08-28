@@ -29,3 +29,6 @@ core/src/protocol.rs
 
 # The corpus the CI step and a local `codotheca-corpus --out corpus-check` materialise.
 corpus-check/
+
+# Playwright's per-run artefacts.
+test-results/
