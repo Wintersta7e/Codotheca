@@ -10,8 +10,10 @@
 //!     throughout the data model.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod git;
+pub mod index;
 pub mod lifecycle;
 pub mod proto;
 pub mod protocol;
