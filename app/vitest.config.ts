@@ -21,6 +21,8 @@ export default defineConfig({
           exclude: ['test/dom/**'],
           environment: 'node',
           restoreMocks: true,
+          // The corpus test's beforeAll compiles and runs the Rust generator on a cold cache.
+          testTimeout: 300_000,
         },
       },
       {
