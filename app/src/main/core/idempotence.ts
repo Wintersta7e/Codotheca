@@ -1,0 +1,69 @@
+/**
+ * Which commands may be replayed after the core dies, and which may not.
+ */
+import type { CommandName } from '../../generated/protocol';
+
+export type CommandEffect = 'read' | 'write';
+
+/**
+ * `read` iff the command performs no write of any kind and spawns no process. Everything else
+ * is `write` and is never auto-replayed: replaying a launch opens the editor twice.
+ *
+ * This is deliberately wider than the schema's `idempotent` flag, which asks whether re-running
+ * yields the same result. Erring toward `write` costs a user-visible refusal; erring toward
+ * `read` acts twice. `client.test.ts` asserts every command the schema calls non-idempotent is
+ * `write` here, so the two can only diverge in the safe direction.
+ *
+ * `Record<CommandName, …>` makes an unclassified command a type error, so a command added to
+ * the schema cannot reach the wire without this decision being made. If tsc reports a missing
+ * or excess key, the schema is the authority — add or delete the row and classify it by the
+ * rule above.
+ */
+export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
+  'app.hello_ack': 'read',
+  'app.shutdown': 'write',
+  'roots.suggest': 'read',
+  'roots.list': 'read',
+  'roots.add': 'write',
+  'roots.remove': 'write',
+  'roots.setEnabled': 'write',
+  'roots.setDescend': 'write',
+  'scan.start': 'write',
+  'scan.cancel': 'write',
+  'scan.status': 'read',
+  'problems.list': 'read',
+  'settings.get': 'read',
+  'settings.set': 'write',
+  'view.get': 'read',
+  'view.set': 'write',
+  'diag.bundle': 'write',
+  'projects.list': 'read',
+  'projects.get': 'read',
+  'projects.peek': 'read',
+  'projects.setFlags': 'write',
+  'projects.setNote': 'write',
+  'projects.merge': 'write',
+  'projects.unmergeHint': 'read',
+  'projects.requeue': 'write',
+  'projects.launch': 'write',
+  'locations.setTrusted': 'write',
+  'locations.relocate': 'write',
+  'targets.list': 'read',
+  'targets.setDefault': 'write',
+  'targets.upsert': 'write',
+  'targets.verify': 'write',
+  'art.url': 'read',
+  'art.rerender': 'write',
+  'identity.list': 'read',
+  'identity.confirm': 'write',
+  'stats.reveal': 'read',
+  'collections.list': 'read',
+  'collections.upsert': 'write',
+  'collections.remove': 'write',
+  'session.stop': 'write',
+  'session.focus': 'write',
+};
+
+export function isNonIdempotent(name: CommandName): boolean {
+  return COMMAND_EFFECT[name] === 'write';
+}
