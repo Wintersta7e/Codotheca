@@ -110,6 +110,53 @@ impl Drop for CoreLock {
     }
 }
 
+/// How often the watchdog re-checks. The pipe EOF is the fast path; this is the backstop.
+pub const PARENT_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The second way the core learns the shell is gone.
+#[derive(Debug)]
+pub struct OsParentProbe {
+    pid: u32,
+    token: Option<String>,
+}
+
+impl OsParentProbe {
+    #[must_use]
+    pub fn new(pid: u32) -> Self {
+        Self {
+            pid,
+            token: Self::identity(pid),
+        }
+    }
+
+    /// Field 22 of `/proc/<pid>/stat` is the process start time. Reading it after the
+    /// executable name — which may itself contain spaces and parentheses — means splitting
+    /// at the last `)`, not at the first.
+    #[cfg(target_os = "linux")]
+    fn identity(pid: u32) -> Option<String> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let tail = stat.rsplit_once(')')?.1;
+        tail.split_whitespace()
+            .nth(19)
+            .map(std::borrow::ToOwned::to_owned)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn identity(_pid: u32) -> Option<String> {
+        None
+    }
+
+    /// True only when the parent is provably gone, or has been replaced by a new process
+    /// reusing its pid. Unknown is never reported as gone.
+    #[must_use]
+    pub fn parent_gone(&self) -> bool {
+        match &self.token {
+            None => false,
+            Some(known) => Self::identity(self.pid).as_ref() != Some(known),
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -164,5 +211,35 @@ mod tests {
         );
         drop(held);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn our_own_process_is_never_reported_gone() {
+        let probe = super::OsParentProbe::new(std::process::id());
+        assert!(!probe.parent_gone());
+    }
+
+    #[test]
+    fn an_unresolvable_parent_is_unknown_not_gone() {
+        // pid 0 is not a pollable process on either target.
+        let probe = super::OsParentProbe::new(0);
+        assert!(
+            !probe.parent_gone(),
+            "unknown must never be reported as gone"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_parent_that_exits_is_reported_gone() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn a stand-in parent");
+        let probe = super::OsParentProbe::new(child.id());
+        assert!(!probe.parent_gone());
+        child.kill().expect("kill");
+        child.wait().expect("reap");
+        assert!(probe.parent_gone());
     }
 }
