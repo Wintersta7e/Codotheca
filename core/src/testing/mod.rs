@@ -2,7 +2,9 @@
 //! `testkit` feature, so none of it can reach a shipped binary.
 
 mod clock;
+mod git;
 mod mount;
 
 pub use clock::FakeClock;
+pub use git::{FakeGitBackend, GitReply, RecordedGitCall, RecordingGitBackend};
 pub use mount::FakeMountResolver;
