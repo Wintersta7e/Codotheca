@@ -51,6 +51,8 @@ jobs:
       - name: protocol tests
         run: npm run test --workspace protocol
       - run: npm run typecheck
+      - name: stdout discipline
+        run: npm run lint:stdout
       - run: npm run lint
       - run: npm run build:app
       - name: bundle guard
