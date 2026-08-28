@@ -9,7 +9,16 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+/**
+ * The file the core holds locked. It is deliberately empty and must never be read: Windows'
+ * `LockFileEx` is mandatory where Unix `flock` is advisory, so a read of it while the core is
+ * alive throws `EBUSY` and this probe would report that nothing holds the directory — the
+ * inverse of the truth, and on the platform that ships first.
+ */
 export const CORE_LOCK_FILE = 'core.lock';
+
+/** The unlocked sibling carrying `{pid, started_at}`. Readable while the core is alive. */
+export const CORE_OWNER_FILE = 'core.owner.json';
 export const LOCK_WAIT_POLL_MS = 250;
 /** §11.2a: `FORCE` appears only after ten seconds of actual waiting. */
 export const FORCE_OFFERED_AFTER_MS = 10_000;
@@ -22,7 +31,7 @@ export interface CoreLockProbe {
 function readLockPid(dataDir: string): number | null {
   let raw: string;
   try {
-    raw = fs.readFileSync(path.join(dataDir, CORE_LOCK_FILE), 'utf8');
+    raw = fs.readFileSync(path.join(dataDir, CORE_OWNER_FILE), 'utf8');
   } catch {
     return null;
   }

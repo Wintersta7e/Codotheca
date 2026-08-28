@@ -7,9 +7,18 @@ pub const EXIT_BAD_ARGS: u8 = 2;
 /// Another core holds the advisory lock.
 pub const EXIT_LOCK_HELD: u8 = 3;
 
-/// The lock file lives beside the database and is never the database. The shell probes this
-/// file; only the core ever opens the database itself.
+/// The lock file lives beside the database and is never the database. Only the core ever opens
+/// the database itself.
+///
+/// **Held locked, and deliberately empty.** Windows' `LockFileEx` is *mandatory* where Unix
+/// `flock` is advisory, so while the core holds this lock no other process can read it — a
+/// shell reading it gets `EBUSY` and would conclude no core is running, which is the inverse of
+/// the truth. The identifying body therefore lives in [`CORE_OWNER_FILE`].
 pub const CORE_LOCK_FILE: &str = "core.lock";
+
+/// `{"pid":…,"started_at":…}`, beside the lock and never locked, so the shell can read it while
+/// the core is alive. This is the file `probeCoreLock` reads.
+pub const CORE_OWNER_FILE: &str = "core.owner.json";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreArgs {
@@ -77,6 +86,7 @@ impl std::error::Error for LockError {}
 #[derive(Debug)]
 pub struct CoreLock {
     file: std::fs::File,
+    owner: PathBuf,
 }
 
 impl CoreLock {
@@ -98,14 +108,17 @@ impl CoreLock {
             "{{\"pid\":{},\"started_at\":{started_at}}}\n",
             std::process::id()
         );
-        file.set_len(0).map_err(LockError::Io)?;
-        std::io::Write::write_all(&mut (&file), body.as_bytes()).map_err(LockError::Io)?;
-        Ok(Self { file })
+        let owner = data_dir.join(CORE_OWNER_FILE);
+        std::fs::write(&owner, body).map_err(LockError::Io)?;
+        Ok(Self { file, owner })
     }
 }
 
 impl Drop for CoreLock {
     fn drop(&mut self) {
+        // The owner file goes first: anything that sees it must be able to trust that the lock
+        // behind it is still held.
+        let _ = std::fs::remove_file(&self.owner);
         let _ = <std::fs::File as fs4::FileExt>::unlock(&self.file);
     }
 }
@@ -199,17 +212,24 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The shell reads this while the core is alive. Reading the *locked* file instead fails on
+    /// Windows with OS error 33, and the probe would then report that no core is running — the
+    /// inverse of the truth. This test is what keeps the body out of the locked file.
     #[test]
-    fn the_lock_file_names_the_process_that_holds_it() {
+    fn the_owner_file_names_the_process_and_is_readable_while_the_lock_is_held() {
         let dir = std::env::temp_dir().join(format!("codotheca-lockpid-{}", std::process::id()));
         let held = CoreLock::acquire(&dir).expect("lock");
-        let body = std::fs::read_to_string(dir.join(super::CORE_LOCK_FILE)).expect("read");
+        let body = std::fs::read_to_string(dir.join(super::CORE_OWNER_FILE)).expect("read");
         let v: serde_json::Value = serde_json::from_str(&body).expect("json");
         assert_eq!(
             v.get("pid").and_then(serde_json::Value::as_u64),
             Some(u64::from(std::process::id()))
         );
         drop(held);
+        assert!(
+            !dir.join(super::CORE_OWNER_FILE).exists(),
+            "a released lock must not leave an owner file naming a dead process"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

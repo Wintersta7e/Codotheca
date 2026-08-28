@@ -3,13 +3,13 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CORE_LOCK_FILE, probeCoreLock, waitForCoreLock } from './instanceLock';
+import { CORE_OWNER_FILE, probeCoreLock, waitForCoreLock } from './instanceLock';
 
 function tmp(tag: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), `codotheca-${tag}-`));
 }
 function writeLock(dir: string, pid: number): void {
-  fs.writeFileSync(path.join(dir, CORE_LOCK_FILE), JSON.stringify({ pid, started_at: 1 }));
+  fs.writeFileSync(path.join(dir, CORE_OWNER_FILE), JSON.stringify({ pid, started_at: 1 }));
 }
 
 describe('core lock probe', () => {
@@ -40,7 +40,7 @@ describe('core lock probe', () => {
 
   it('reads an unparseable lock file as not held, never an error window', () => {
     const dir = tmp('garbage');
-    fs.writeFileSync(path.join(dir, CORE_LOCK_FILE), 'not json at all');
+    fs.writeFileSync(path.join(dir, CORE_OWNER_FILE), 'not json at all');
     expect(probeCoreLock(dir)).toEqual({ held: false, pid: null });
     fs.rmSync(dir, { recursive: true, force: true });
   });
