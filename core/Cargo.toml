@@ -33,6 +33,10 @@ expect_used = "deny"
 panic = "deny"
 todo = "deny"
 indexing_slicing = "deny"
+# stdout carries protocol frames and nothing else. `print_stderr` is deliberately NOT denied:
+# stderr is the diagnostics channel the shell drains.
+print_stdout = "deny"
+dbg_macro = "deny"
 # Allowed with reasons, not by taste:
 module_name_repetitions = "allow"   # core::scan::ScanError reads better than core::scan::Error
 missing_errors_doc = "allow"        # revisit once the public surface stabilises
