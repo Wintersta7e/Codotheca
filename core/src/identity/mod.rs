@@ -11,6 +11,7 @@
 //! caller owns the transaction and the clock, which is what lets §1.5 be one transaction and
 //! keeps the `Clock` seam out of this module.
 
+pub mod commands;
 pub mod decide;
 pub mod lineage;
 pub mod merge;
