@@ -1,6 +1,7 @@
 //! The core's single SQLite connection and its storage invariants.
 
 pub mod error;
+pub mod migrate;
 
 use std::path::{Path, PathBuf};
 
