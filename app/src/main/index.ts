@@ -5,25 +5,41 @@
  * It does NOT open the database: the core is the only reader and writer, and every renderer
  * read crosses the protocol (§1.10, §2.4).
  */
-import { app, BrowserWindow, protocol, session } from 'electron';
+import { BrowserWindow, app, ipcMain, protocol, session } from 'electron';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { PROTOCOL_VERSION } from '../generated/protocol';
+import { type CommandName, PROTOCOL_VERSION, type Topic } from '../generated/protocol';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
 import { EFFECTS_TIER_FLAG } from '../shared/effectsTier';
 import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
+import { type BridgeRequest, registerBridge } from './core/bridge';
+import { CoreClient } from './core/client';
+import { FORCE_OFFERED_AFTER_MS, LOCK_WAIT_POLL_MS, waitForCoreLock } from './core/instanceLock';
+import { openRollingLog } from './core/log';
+import { spawnCoreChild } from './core/spawn';
+import { CoreSupervisor } from './core/supervisor';
+import { resolveCoreBinary, resolveDataDir } from './paths';
 import {
   contentSecurityPolicyListener,
   denyPermissionRequest,
   isNavigationAllowed,
 } from './security';
+import { runStartup } from './startup';
+
+const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core'];
+
+/**
+ * Deliberately empty: no command has a handler yet, so nothing is callable from the renderer
+ * and the bridge refuses every name. A list naming commands with no handler behind them is the
+ * dead-control defect §11 exists to correct.
+ */
+const KNOWN_COMMANDS: readonly CommandName[] = [];
 
 // A second instance must focus the first, never start a second core — two cores would be two
-// writers against one database. Spec §2.1.
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-}
+// writers against one database. Asked here rather than inside the startup sequence because
+// Electron wants it before the app does any real work. Spec §2.1.
+const hasInstanceLock = app.requestSingleInstanceLock();
 
 // electron-vite sets this while `electron-vite dev` is running, and never in a packaged app.
 const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
@@ -89,29 +105,129 @@ function createWindow(): BrowserWindow {
   return w;
 }
 
-app.whenReady().then(
-  () => {
-    const policy =
-      rendererUrl === undefined
-        ? CONTENT_SECURITY_POLICY
-        : developmentContentSecurityPolicy(new URL(rendererUrl).origin);
-    session.defaultSession.webRequest.onHeadersReceived(contentSecurityPolicyListener(policy));
-    session.defaultSession.setPermissionRequestHandler(denyPermissionRequest);
+async function main(): Promise<void> {
+  await app.whenReady();
 
-    process.stderr.write(`codotheca shell, protocol v${String(PROTOCOL_VERSION)}\n`);
-    win = createWindow();
-    app.on('second-instance', () => {
-      if (win) {
-        if (win.isMinimized()) win.restore();
-        win.focus();
-      }
-    });
-  },
-  (e: unknown) => {
-    process.stderr.write(`failed to start: ${String(e)}\n`);
-    app.quit();
-  },
-);
+  const policy =
+    rendererUrl === undefined
+      ? CONTENT_SECURITY_POLICY
+      : developmentContentSecurityPolicy(new URL(rendererUrl).origin);
+  session.defaultSession.webRequest.onHeadersReceived(contentSecurityPolicyListener(policy));
+  session.defaultSession.setPermissionRequestHandler(denyPermissionRequest);
+
+  process.stderr.write(`codotheca shell, protocol v${String(PROTOCOL_VERSION)}\n`);
+
+  const dataDir = resolveDataDir({ userDataPath: app.getPath('userData'), env: process.env });
+  const log = openRollingLog({
+    dir: path.join(dataDir, 'logs'),
+    maxBytes: 4 * 1024 * 1024,
+    keep: 3,
+    level: 'info',
+  });
+
+  const supervisor = new CoreSupervisor({
+    binaryPath: resolveCoreBinary({
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appRoot: path.join(app.getAppPath(), '..'),
+      platform: process.platform,
+    }),
+    dataDir,
+    log,
+    spawn: spawnCoreChild,
+    now: () => Date.now(),
+    schedule: (fn, ms) => {
+      setTimeout(fn, ms).unref();
+    },
+  });
+
+  const client = new CoreClient(supervisor);
+  const request = client.request.bind(client) as unknown as BridgeRequest;
+
+  registerBridge({
+    request,
+    subscribe: (topic, onEvent) =>
+      client.subscribe(topic, { onEvent, onSnapshot: () => undefined }),
+    topics: TOPICS,
+    schedule: (fn, ms) => {
+      const t = setTimeout(fn, ms);
+      return (): void => {
+        clearTimeout(t);
+      };
+    },
+    onStatus: (fn) => {
+      supervisor.onStatus(fn);
+    },
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
+    },
+    sendToRenderer: (channel, payload) => {
+      win?.webContents.send(channel, payload);
+    },
+    knownCommands: KNOWN_COMMANDS,
+  });
+
+  const lockWait = new AbortController();
+  const outcome = await runStartup({
+    acquireInstanceLock: () => hasInstanceLock,
+    focusExistingWindow: () => {
+      app.quit();
+    },
+    dataDir,
+    supervisor,
+    log,
+    now: () => Date.now(),
+    paintUiLane: async () => {
+      const w = createWindow();
+      win = w;
+      await new Promise<void>((resolve) => {
+        w.once('ready-to-show', () => {
+          resolve();
+        });
+      });
+    },
+    awaitFreeLock: () =>
+      waitForCoreLock(dataDir, {
+        pollMs: LOCK_WAIT_POLL_MS,
+        onWait: (elapsed) => {
+          if (elapsed >= FORCE_OFFERED_AFTER_MS) {
+            log.write(
+              'warn',
+              'shell',
+              `another core is still shutting down · ${String(elapsed)}ms`,
+            );
+          }
+        },
+        signal: lockWait.signal,
+        now: () => Date.now(),
+        sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
+      }),
+    joinSteps: [],
+  });
+
+  log.write('info', 'shell', `startup: ${outcome.kind}`);
+  if (outcome.kind === 'running') {
+    log.write('info', 'shell', `interactive after ${String(outcome.interactiveAfterMs)} ms`);
+    const joined = await outcome.joined;
+    log.write('info', 'shell', `core lane: ${joined.kind}`);
+  }
+
+  app.on('second-instance', () => {
+    if (win === null) return;
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  });
+  app.on('before-quit', () => {
+    supervisor.stop();
+  });
+}
 
 // Resident by design once the tray lands (spec §0); for now, quit with the last window.
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => {
+  app.quit();
+});
+
+void main().catch((e: unknown) => {
+  process.stderr.write(`failed to start: ${String(e)}\n`);
+  app.quit();
+});
