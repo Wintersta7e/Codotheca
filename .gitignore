@@ -26,3 +26,6 @@ core/src/protocol.rs
 .serena/
 .vscode/
 .idea/
+
+# The corpus the CI step and a local `codotheca-corpus --out corpus-check` materialise.
+corpus-check/

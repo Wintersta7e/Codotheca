@@ -30,6 +30,10 @@ jobs:
         run: cargo clippy --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings
       - name: test
         run: cargo test --manifest-path core/Cargo.toml --features testkit
+      - name: corpus generates on this platform
+        # The fixtures whose builders differ by platform: a bare clone, a linked worktree, a
+        # recursive submodule, a path git can only hold in the tree, and one over MAX_PATH.
+        run: cargo run --manifest-path core/Cargo.toml --features testkit --bin codotheca-corpus -- --out corpus-check --only bare,linked-worktree,submodule-parent,non-utf8-path,long-path --force
 
   app:
     name: app

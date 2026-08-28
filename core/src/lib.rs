@@ -13,6 +13,8 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod clock;
+#[cfg(feature = "testkit")]
+pub mod corpus;
 pub mod git;
 pub mod index;
 pub mod lifecycle;
