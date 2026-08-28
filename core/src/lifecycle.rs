@@ -1,0 +1,168 @@
+//! argv, the advisory lock, and the two ways the core learns the shell is gone.
+
+use std::path::{Path, PathBuf};
+
+/// Bad or missing argv. There is no window and no pipe peer yet, so this is an exit code.
+pub const EXIT_BAD_ARGS: u8 = 2;
+/// Another core holds the advisory lock.
+pub const EXIT_LOCK_HELD: u8 = 3;
+
+/// The lock file lives beside the database and is never the database. The shell probes this
+/// file; only the core ever opens the database itself.
+pub const CORE_LOCK_FILE: &str = "core.lock";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreArgs {
+    pub data_dir: PathBuf,
+    pub epoch: u64,
+    pub parent_pid: u32,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ArgError {
+    Missing(&'static str),
+    Bad(&'static str),
+}
+
+impl std::fmt::Display for ArgError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing(k) => write!(f, "missing required argument {k}"),
+            Self::Bad(k) => write!(f, "malformed argument {k}"),
+        }
+    }
+}
+
+impl std::error::Error for ArgError {}
+
+/// `--data-dir=<path> --epoch=<u64> --parent-pid=<u32>`, all three required.
+pub fn parse_args<I: IntoIterator<Item = String>>(argv: I) -> Result<CoreArgs, ArgError> {
+    let mut data_dir: Option<PathBuf> = None;
+    let mut epoch: Option<u64> = None;
+    let mut parent_pid: Option<u32> = None;
+    for arg in argv {
+        if let Some(v) = arg.strip_prefix("--data-dir=") {
+            data_dir = Some(PathBuf::from(v));
+        } else if let Some(v) = arg.strip_prefix("--epoch=") {
+            epoch = Some(v.parse().map_err(|_| ArgError::Bad("--epoch"))?);
+        } else if let Some(v) = arg.strip_prefix("--parent-pid=") {
+            parent_pid = Some(v.parse().map_err(|_| ArgError::Bad("--parent-pid"))?);
+        }
+    }
+    Ok(CoreArgs {
+        data_dir: data_dir.ok_or(ArgError::Missing("--data-dir"))?,
+        epoch: epoch.ok_or(ArgError::Missing("--epoch"))?,
+        parent_pid: parent_pid.ok_or(ArgError::Missing("--parent-pid"))?,
+    })
+}
+
+#[derive(Debug)]
+pub enum LockError {
+    Held,
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for LockError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Held => write!(f, "another core holds the advisory lock"),
+            Self::Io(e) => write!(f, "lock io: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for LockError {}
+
+/// Held for the whole life of the process. The OS releases it when the process dies.
+#[derive(Debug)]
+pub struct CoreLock {
+    file: std::fs::File,
+}
+
+impl CoreLock {
+    pub fn acquire(data_dir: &Path) -> Result<Self, LockError> {
+        std::fs::create_dir_all(data_dir).map_err(LockError::Io)?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(data_dir.join(CORE_LOCK_FILE))
+            .map_err(LockError::Io)?;
+        <std::fs::File as fs4::FileExt>::try_lock(&file).map_err(|_| LockError::Held)?;
+        let started_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default();
+        let body = format!(
+            "{{\"pid\":{},\"started_at\":{started_at}}}\n",
+            std::process::id()
+        );
+        file.set_len(0).map_err(LockError::Io)?;
+        std::io::Write::write_all(&mut (&file), body.as_bytes()).map_err(LockError::Io)?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for CoreLock {
+    fn drop(&mut self) {
+        let _ = <std::fs::File as fs4::FileExt>::unlock(&self.file);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::{parse_args, ArgError, CoreLock, LockError};
+
+    fn argv(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn argv_requires_the_data_dir_the_shell_decided() {
+        let e = parse_args(argv(&["--epoch=1", "--parent-pid=9"])).expect_err("must refuse");
+        assert_eq!(e, ArgError::Missing("--data-dir"));
+    }
+
+    #[test]
+    fn argv_parses_all_three() {
+        let a =
+            parse_args(argv(&["--data-dir=/x/y", "--epoch=4", "--parent-pid=99"])).expect("parse");
+        assert_eq!(a.data_dir, std::path::PathBuf::from("/x/y"));
+        assert_eq!(a.epoch, 4);
+        assert_eq!(a.parent_pid, 99);
+    }
+
+    #[test]
+    fn a_non_numeric_epoch_is_refused_rather_than_defaulted() {
+        let e = parse_args(argv(&["--data-dir=/x", "--epoch=soon", "--parent-pid=1"]))
+            .expect_err("must refuse");
+        assert_eq!(e, ArgError::Bad("--epoch"));
+    }
+
+    #[test]
+    fn a_second_core_cannot_take_the_lock_and_a_released_one_can() {
+        let dir = std::env::temp_dir().join(format!("codotheca-lock-{}", std::process::id()));
+        let first = CoreLock::acquire(&dir).expect("first");
+        assert!(matches!(CoreLock::acquire(&dir), Err(LockError::Held)));
+        drop(first);
+        let third = CoreLock::acquire(&dir).expect("after release");
+        drop(third);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_lock_file_names_the_process_that_holds_it() {
+        let dir = std::env::temp_dir().join(format!("codotheca-lockpid-{}", std::process::id()));
+        let held = CoreLock::acquire(&dir).expect("lock");
+        let body = std::fs::read_to_string(dir.join(super::CORE_LOCK_FILE)).expect("read");
+        let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+        assert_eq!(
+            v.get("pid").and_then(serde_json::Value::as_u64),
+            Some(u64::from(std::process::id()))
+        );
+        drop(held);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

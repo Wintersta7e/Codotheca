@@ -12,5 +12,6 @@
 #![forbid(unsafe_code)]
 
 pub mod git;
+pub mod lifecycle;
 pub mod proto;
 pub mod protocol;
