@@ -71,6 +71,77 @@ fn as_params_yields_the_three_columns_in_ddl_order() {
     assert_eq!(display, r"C:\P\Thing");
 }
 
+/// Every string literal in a Rust source file, plain and raw, with comments skipped.
+///
+/// A literal is consumed whole, so a `//` inside one — a URL — is never mistaken for a comment.
+/// Char literals are ignored rather than parsed: none in `core/src` contains a quote, and
+/// treating `'a'` as a string opener is what would desynchronise this.
+fn string_literals(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '/' && chars.get(i + 1) == Some(&'/') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            i = (i + 2).min(chars.len());
+            continue;
+        }
+        if chars[i] == 'r' {
+            let mut hashes = 0;
+            let mut j = i + 1;
+            while chars.get(j) == Some(&'#') {
+                hashes += 1;
+                j += 1;
+            }
+            if chars.get(j) == Some(&'"') {
+                let mut lit = String::new();
+                let mut k = j + 1;
+                while k < chars.len() {
+                    if chars[k] == '"' && (1..=hashes).all(|h| chars.get(k + h) == Some(&'#')) {
+                        k += hashes + 1;
+                        break;
+                    }
+                    lit.push(chars[k]);
+                    k += 1;
+                }
+                out.push(lit);
+                i = k;
+                continue;
+            }
+        }
+        if chars[i] == '"' {
+            let mut lit = String::new();
+            let mut k = i + 1;
+            while k < chars.len() {
+                if chars[k] == '\\' {
+                    k += 2;
+                    continue;
+                }
+                if chars[k] == '"' {
+                    k += 1;
+                    break;
+                }
+                lit.push(chars[k]);
+                k += 1;
+            }
+            out.push(lit);
+            i = k;
+            continue;
+        }
+        i += 1;
+    }
+    out
+}
+
 /// §1.10: `path_display` is write-once and never read by the core. An `INSERT` naming the
 /// column is expected; a `SELECT` reading it back is the round-trip the invariant forbids.
 #[test]
@@ -84,9 +155,14 @@ fn no_sql_outside_path_rs_selects_a_path_display() {
         let Ok(text) = std::fs::read_to_string(file) else {
             return;
         };
-        let lowered = text.to_ascii_lowercase();
-        for statement in lowered.split(';') {
-            if statement.contains("select") && statement.contains("path_display") {
+        // SQL lives in a string literal, so only string literals are scanned. Splitting the
+        // whole file on `;` matched two things that are not reads of the column: a doc comment
+        // naming it, and a struct field named after it, each landing in the same chunk as an
+        // unrelated `SELECT` items away. That is prose and identifiers matching as the
+        // declaration — the error this project has already recorded twice.
+        for literal in string_literals(&text) {
+            let lowered = literal.to_ascii_lowercase();
+            if lowered.contains("select") && lowered.contains("path_display") {
                 offenders.push(file.display().to_string());
                 break;
             }

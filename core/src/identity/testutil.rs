@@ -1,0 +1,169 @@
+//! `#[cfg(test)]` fixtures for the identity module.
+//!
+//! Every helper here is a **fixture**, never a production writer. The distinction matters most
+//! for [`insert_location`], whose production counterpart is `super::store::upsert_location`:
+//! the two differ only by module, so read the path before reaching for either.
+#![allow(
+    // Fixtures, reachable only from `cfg(test)`; nothing outside a test binary can call them,
+    // so the documented-public-API lints are noise here.
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate
+)]
+
+use rusqlite::{params, Connection};
+
+use crate::index::migrate::{apply_all, MIGRATIONS};
+
+/// An in-memory index with **the migrations the shipped build applies**, in order.
+///
+/// It goes through `index::migrate::MIGRATIONS` rather than reading `core/migrations/` off
+/// disk. A directory walk would apply a `.sql` file that nothing has registered in that slice —
+/// so a column this module needs could be present in every identity test and absent from every
+/// real database, and the whole suite would agree with a schema the product does not have.
+pub fn open_test_index() -> Connection {
+    let mut conn = Connection::open_in_memory().expect("in-memory sqlite");
+    // `foreign_keys` is a no-op inside a transaction, so it is set before the migrations run.
+    conn.execute_batch(
+        "PRAGMA journal_mode=MEMORY; PRAGMA foreign_keys=ON; PRAGMA synchronous=OFF;",
+    )
+    .expect("pragmas");
+    apply_all(&mut conn, MIGRATIONS).expect("migrations apply");
+    conn
+}
+
+/// The fields an identity test ever varies. Everything else takes the DDL's default.
+#[derive(Debug, Clone, Copy)]
+pub struct NewProject {
+    pub name: &'static str,
+    pub lineage_key: Option<&'static str>,
+    pub remote_key: Option<&'static str>,
+    pub created_at: i64,
+}
+
+/// A `project` row with the identity columns set and nothing claimed that has not been observed.
+///
+/// **`last_touched_at` is deliberately not written.** §5.1 owns it and `0001` says NULL until a
+/// scan job produces one; stamping `created_at` there would make every test here agree that a
+/// never-scanned project has a touch time, which is the "unknown rendered as a value" defect.
+pub fn insert_project(conn: &Connection, p: NewProject) -> i64 {
+    conn.execute(
+        "INSERT INTO project (lineage_key, remote_key, name, seed_basename, created_at,
+                              updated_at)
+         VALUES (?1, ?2, ?3, ?3, ?4, ?4)",
+        params![p.lineage_key, p.remote_key, p.name, p.created_at],
+    )
+    .expect("insert project");
+    conn.last_insert_rowid()
+}
+
+/// A fixed-shape `location` row, for a test that needs one to exist.
+///
+/// **This is a fixture and never the production writer.** Every `location` row the app writes
+/// goes through [`super::store::upsert_location`], which takes a `LocationInput`, is idempotent
+/// on `(kind, distro, path_key)`, and derives `common_dir_key` from raw bytes. This builder
+/// hard-codes a Linux location on a present store because no test here varies those;
+/// hard-coding them in *production* is the defect R1 exists to remove, so do not reach for this
+/// outside `#[cfg(test)]`.
+pub fn insert_location(
+    conn: &Connection,
+    project_id: i64,
+    path: &str,
+    common_dir_key: Option<&[u8]>,
+) -> i64 {
+    conn.execute(
+        "INSERT INTO location
+            (project_id, kind, distro, path_bytes, path_key, path_display, volume_key, store_key,
+             presence, scan_generation, common_dir_key, repo_kind)
+         VALUES (?1, 'linux', '', ?2, ?2, ?3, 'vol', 'store', 'present', 1, ?4, 'worktree')",
+        params![project_id, path.as_bytes(), path, common_dir_key],
+    )
+    .expect("insert location");
+    conn.last_insert_rowid()
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    fn table_sql(conn: &rusqlite::Connection, table: &str) -> String {
+        conn.query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?1",
+            rusqlite::params![table],
+            |r| r.get::<_, String>(0),
+        )
+        .unwrap()
+    }
+
+    fn has_column(conn: &rusqlite::Connection, table: &str, column: &str) -> bool {
+        let mut st = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        let mut rows = st.query([]).unwrap();
+        while let Some(r) = rows.next().unwrap() {
+            if r.get::<_, String>(1).unwrap() == column {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn the_identity_columns_are_all_present_on_a_migrated_index() {
+        let conn = super::open_test_index();
+        assert!(has_column(&conn, "project", "association_kind"));
+        assert!(has_column(&conn, "project", "merged_into"));
+        assert!(has_column(&conn, "location", "common_dir_key"));
+        assert!(has_column(&conn, "launch_target", "disabled"));
+    }
+
+    #[test]
+    fn project_ids_are_autoincrement_so_a_tombstoned_id_can_never_be_reused() {
+        // §1.5 requires `id INTEGER PRIMARY KEY AUTOINCREMENT`, so a rowid can never be reused
+        // and alias a future project.
+        let conn = super::open_test_index();
+        assert!(table_sql(&conn, "project")
+            .to_uppercase()
+            .contains("AUTOINCREMENT"));
+    }
+
+    #[test]
+    fn the_fixture_builders_produce_rows_that_satisfy_every_not_null_column() {
+        let conn = super::open_test_index();
+        let p = super::insert_project(
+            &conn,
+            super::NewProject {
+                name: "alpha",
+                lineage_key: Some("aa"),
+                remote_key: None,
+                created_at: 100,
+            },
+        );
+        let l = super::insert_location(&conn, p, "/w/alpha", Some(b"/w/alpha/.git"));
+        assert!(p > 0 && l > 0);
+    }
+
+    /// A project nothing has scanned has no `last_touched_at`. §5.1 owns the column and
+    /// `0001`'s own comment says NULL until a scan job produces one; a fixture that stamped
+    /// `created_at` there would teach every later test that the value is always present.
+    #[test]
+    fn a_fixture_project_has_no_last_touched_at() {
+        let conn = super::open_test_index();
+        let p = super::insert_project(
+            &conn,
+            super::NewProject {
+                name: "alpha",
+                lineage_key: None,
+                remote_key: None,
+                created_at: 100,
+            },
+        );
+        let touched: Option<i64> = conn
+            .query_row(
+                "SELECT last_touched_at FROM project WHERE id=?1",
+                rusqlite::params![p],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(touched, None);
+    }
+}
