@@ -2,5 +2,7 @@
 //! `testkit` feature, so none of it can reach a shipped binary.
 
 mod clock;
+mod mount;
 
 pub use clock::FakeClock;
+pub use mount::FakeMountResolver;
