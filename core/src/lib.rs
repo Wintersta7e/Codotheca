@@ -12,8 +12,23 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod clock;
 pub mod git;
 pub mod index;
 pub mod lifecycle;
+pub mod mount;
 pub mod proto;
 pub mod protocol;
+
+/// A trivially true constant that exists so an integration test can prove the library target
+/// links before any real surface exists to call.
+pub const PROTOCOL_VERSION_MAJOR_IS_POSITIVE: bool = protocol::PROTOCOL_VERSION > 0;
+
+/// True when the crate was compiled with the `testkit` feature.
+///
+/// Production code may ask exactly this one question about the seams: a release build asserts
+/// it is false, which is how a test double can never reach a user.
+#[must_use]
+pub const fn testkit_enabled() -> bool {
+    cfg!(feature = "testkit")
+}

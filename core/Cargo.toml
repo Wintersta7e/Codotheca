@@ -14,6 +14,20 @@ path = "src/lib.rs"
 name = "codotheca-core"
 path = "src/main.rs"
 
+# The corpus generator. `required-features` keeps it out of a default release build; the file
+# is a placeholder until plan 06 Task 12 fills it, because `--all-features` clippy builds every
+# declared target and a missing path is a hard error.
+[[bin]]
+name = "codotheca-corpus"
+path = "src/bin/corpus.rs"
+required-features = ["testkit"]
+
+[features]
+default = []
+# Test doubles and the corpus generator. Off by default so the shipped binary contains no
+# fake clock, no fake mount table and no fixture builder.
+testkit = []
+
 [dependencies]
 base64 = "0.22"
 # Cross-platform advisory file locks with no libc and no unsafe in our tree. std's own
