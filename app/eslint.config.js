@@ -7,7 +7,7 @@ module.exports = [
     ignores: ["out/**", "src/generated/**"],
   },
   {
-    files: ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "*.config.ts"],
+    files: ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "e2e/**/*.ts", "*.config.ts"],
     languageOptions: {
       parser: tsParser,
       parserOptions: {

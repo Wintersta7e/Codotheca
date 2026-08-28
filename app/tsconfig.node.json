@@ -15,7 +15,9 @@
     "src/generated/**/*.ts",
     "test/**/*.ts",
     "electron.vite.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "e2e/**/*.ts",
+    "playwright.config.ts"
   ],
   "exclude": [
     "test/dom/**/*.ts"

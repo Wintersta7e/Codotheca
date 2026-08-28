@@ -69,3 +69,20 @@ jobs:
         # job on both runners; installing a Rust toolchain here to repeat it would be a
         # second copy of a gate that is already green.
         run: npx prettier --check "app/**/*.{ts,tsx}" "scripts/**/*.mjs"
+
+  e2e:
+    name: e2e (electron)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run gen
+      - run: npm run build:app
+      # Electron ships its own Chromium; only the shared libraries are missing on a runner.
+      - run: npx playwright install-deps chromium
+      - name: end to end
+        # The app has never been launched by CI. One smoke test proves the driver, the build
+        # output path and the display before plan 20 wires 67 criteria into this directory.
+        run: xvfb-run --auto-servernum npm run test:e2e --workspace app
