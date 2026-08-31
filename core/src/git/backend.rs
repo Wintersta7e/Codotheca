@@ -48,6 +48,7 @@ impl<'a> JobContext<'a> {
     fn limits(&self) -> RunLimits {
         RunLimits {
             deadline: self.deadline,
+            tolerated_exit: None,
         }
     }
 }

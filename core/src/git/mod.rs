@@ -12,6 +12,7 @@ mod error;
 mod exec;
 mod facts;
 mod history;
+mod ignore;
 mod inventory;
 mod invocation;
 mod observe;
@@ -29,6 +30,7 @@ pub use history::{
     authorship, commit_subjects, local_day, parse_tz_offset_min, root_commits, Authorship,
     CommitSubject, CommitterTally, RootCommit,
 };
+pub use ignore::{check_ignore, CHECK_IGNORE_BATCH};
 pub use inventory::{
     parse_ls_files_z, path_extension, submodule_gitlinks, tracked_inventory, IndexEntry,
     TrackedInventory,
