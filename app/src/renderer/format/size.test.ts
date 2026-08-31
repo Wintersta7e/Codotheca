@@ -3,7 +3,10 @@ import { BYTES_PER_GB, BYTES_PER_MB, GB_FLOOR_BYTES, formatTrackedBytes } from '
 
 describe('§8.1: one decimal of GB at or above 0.1 GB, whole MB below', () => {
   it('formats the four figures the shelf and the project page both print', () => {
-    expect(formatTrackedBytes(41 * BYTES_PER_GB)).toBe('41.0 GB');
+    // `41 GB`, not `41.0 GB`. "One decimal of GB" is precision, and the prototype
+    // (`Codotheca v7 Shelf.dc.html:2683`) rounds to one place and concatenates, which drops a
+    // trailing zero. §8.1's own era-header examples print `41 GB tracked`.
+    expect(formatTrackedBytes(41 * BYTES_PER_GB)).toBe('41 GB');
     expect(formatTrackedBytes(Math.round(0.15 * BYTES_PER_GB))).toBe('0.2 GB');
     expect(formatTrackedBytes(100 * BYTES_PER_MB)).toBe('100 MB');
     expect(formatTrackedBytes(0)).toBe('0 MB');
@@ -37,10 +40,12 @@ describe('the rungs the spec does not carry are not invented', () => {
   });
 
   // The deleted implementation printed `8.0 MB` where §8.1 prints `8 MB`, because it carried a
-  // decimal at every rung. The MB branch has no decimal at all and the GB branch always has one.
-  it('carries a decimal at GB and never at MB, which is where the two disagreed', () => {
+  // decimal at every rung. Neither branch forces one: a whole figure prints whole on both sides,
+  // and the decimal appears only when the value has one.
+  it('never forces a decimal place on a whole figure, at either rung', () => {
     expect(formatTrackedBytes(8 * BYTES_PER_MB)).toBe('8 MB');
-    expect(formatTrackedBytes(2 * BYTES_PER_GB)).toBe('2.0 GB');
+    expect(formatTrackedBytes(2 * BYTES_PER_GB)).toBe('2 GB');
+    expect(formatTrackedBytes(Math.round(2.5 * BYTES_PER_GB))).toBe('2.5 GB');
   });
 });
 

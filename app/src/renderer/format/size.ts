@@ -17,7 +17,14 @@ export const BYTES_PER_GB = 1024 ** 3;
 export const GB_FLOOR_BYTES = 0.1 * BYTES_PER_GB;
 
 export function formatTrackedBytes(bytes: number): string {
-  if (bytes >= GB_FLOOR_BYTES) return `${(bytes / BYTES_PER_GB).toFixed(1)} GB`;
+  // One decimal of *precision*, not a forced decimal place: `41 GB`, `1.2 GB`, `0.2 GB`.
+  // The prototype computes `Math.round(total / 1024 * 10) / 10` and concatenates it
+  // (`Codotheca v7 Shelf.dc.html:2683`, `:2696`), and it outranks its prose files. That is the
+  // only reading under which §8.1's "one decimal of GB" and its own era-header examples —
+  // `41 GB tracked` at `08-shelf-query.md:31`, `:93` and `03-git.md:66` — agree.
+  if (bytes >= GB_FLOOR_BYTES) {
+    return `${String(Math.round((bytes / BYTES_PER_GB) * 10) / 10)} GB`;
+  }
   // A measured zero is not an unknown: `0 MB` is a fact, and §7.8a draws the same distinction
   // for `is_pinned = 0`. A caller with no measurement passes nothing and renders no figure.
   return `${String(Math.round(bytes / BYTES_PER_MB))} MB`;
