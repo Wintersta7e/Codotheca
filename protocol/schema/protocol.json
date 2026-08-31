@@ -346,6 +346,8 @@
         "birthYear": "u32?",
         "primaryLanguage": "String?",
         "archetype": "String?",
+        "seedBasename": "String",
+        "rerollOffset": "u32",
         "artSceneHash": "SceneHash?",
         "artState": "ArtState",
         "conditionSignal": "ConditionSignal?",
