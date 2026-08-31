@@ -41,15 +41,19 @@ test('projects.launch names the copy as well as the project and the target', () 
 
 test('the launch value types exist and are shaped as the shell reads them', () => {
   assert.deepEqual(schema.types.TargetKind.variants, [
-    'editor', 'terminal', 'file_manager', 'git_client',
+    'editor',
+    'terminal',
+    'file_manager',
+    'git_client',
   ]);
   assert.deepEqual(schema.types.VerifyState.variants, [
-    'unverified', 'ok', 'missing', 'not_executable',
+    'unverified',
+    'ok',
+    'missing',
+    'not_executable',
   ]);
   assert.deepEqual(schema.types.CwdMode.variants, ['location', 'none']);
-  assert.deepEqual(schema.types.TargetTier.variants, [
-    'project', 'location', 'language', 'global',
-  ]);
+  assert.deepEqual(schema.types.TargetTier.variants, ['project', 'location', 'language', 'global']);
   assert.equal(schema.types.TargetList.fields.rows, '[TargetRow]');
   assert.equal(schema.types.TargetList.fields.resolved, 'ResolvedTarget?');
   assert.equal(schema.types.TargetVerification.fields.verifyState, 'VerifyState');
@@ -58,19 +62,24 @@ test('the launch value types exist and are shaped as the shell reads them', () =
 test('no launch type leaks an executable or an argv to the renderer', () => {
   for (const name of ['TargetRow', 'TargetList', 'TargetVerification', 'ResolvedTarget']) {
     for (const field of Object.keys(schema.types[name].fields)) {
-      assert.ok(!/^(exec|execBytes|exec_bytes|argv|args|env)$/.test(field),
-        `${name}.${field} would put an executable or argv on the wire`);
+      assert.ok(
+        !/^(exec|execBytes|exec_bytes|argv|args|env)$/.test(field),
+        `${name}.${field} would put an executable or argv on the wire`,
+      );
     }
   }
 });
 
 test('the three session events are shaped, and closure reasons are the enum §1.6 states', () => {
   assert.deepEqual(schema.types.CloseReason.variants, [
-    'stop', 'idle', 'process_exit', 'app_exit', 'crash', 'orphaned',
+    'stop',
+    'idle',
+    'process_exit',
+    'app_exit',
+    'crash',
+    'orphaned',
   ]);
-  assert.deepEqual(schema.types.ClosedBy.variants, [
-    'idle', 'session_end', 'app_exit', 'crash',
-  ]);
+  assert.deepEqual(schema.types.ClosedBy.variants, ['idle', 'session_end', 'app_exit', 'crash']);
   assert.equal(schema.topics.session.started, 'SessionStarted');
   assert.equal(schema.types.SessionStarted.fields.session, 'SessionRef');
   assert.equal(schema.types.SessionEnded.fields.session, 'SessionRef');
