@@ -450,6 +450,17 @@ fn a_launch_writes_only_the_two_session_tables_and_the_row_it_verified() {
     handle_launch(&mut h.ctx(), args).unwrap();
     let after = h.row_counts();
 
+    // A pass that compared zero tables would prove nothing. Name the two that must grow and
+    // one that must not, and require them to be in the set actually walked.
+    for required in [
+        "session",
+        "session_segment",
+        "project",
+        "location",
+        "launch_target",
+    ] {
+        assert!(after.contains_key(required), "{required} was not compared");
+    }
     for (table, count) in &after {
         let was = before[table];
         if table == "session" || table == "session_segment" {
