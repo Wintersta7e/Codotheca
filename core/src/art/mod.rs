@@ -70,6 +70,10 @@ impl std::fmt::Debug for ArtCtx<'_> {
 #[derive(Debug)]
 pub enum ArtError {
     Index(IndexError),
+    /// A stale or tombstoned project id (§1.6). Kept as its own variant so
+    /// `ErrorCode::ProjectMerged` reaches the wire: collapsing it into `Internal` would
+    /// tell a rail holding a pre-merge id to retry rather than to refresh.
+    Identity(crate::identity::IdentityError),
     Sqlite(rusqlite::Error),
     Io(String),
     Encode(String),
@@ -83,6 +87,7 @@ impl std::fmt::Display for ArtError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Index(e) => write!(f, "index: {e:?}"),
+            Self::Identity(e) => write!(f, "identity: {e:?}"),
             Self::Sqlite(e) => write!(f, "sqlite: {e}"),
             Self::Io(d) => write!(f, "io: {d}"),
             Self::Encode(d) => write!(f, "encode: {d}"),
@@ -106,6 +111,12 @@ impl From<IndexError> for ArtError {
     }
 }
 
+impl From<crate::identity::IdentityError> for ArtError {
+    fn from(e: crate::identity::IdentityError) -> Self {
+        Self::Identity(e)
+    }
+}
+
 impl ArtError {
     /// The core's `message` is diagnostic and never shown raw; this is the closed code the
     /// shell narrows on.
@@ -113,6 +124,7 @@ impl ArtError {
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::BadHash(_) | Self::NoScene(_) => ErrorCode::Protocol,
+            Self::Identity(e) => e.code(),
             _ => ErrorCode::Internal,
         }
     }
@@ -209,7 +221,7 @@ pub fn dispatch_art_command(
 )]
 mod tests {
     use super::*;
-    use crate::protocol::Rendition;
+    use crate::protocol::{ErrorCode, Rendition};
     use std::path::Path;
 
     const H: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -277,6 +289,16 @@ mod tests {
             .iter()
             .all(|n| n.starts_with("art.")));
         assert_eq!(dispatch_art_command_names(), ["art.url", "art.rerender"]);
+    }
+
+    #[test]
+    fn a_stale_project_id_keeps_its_own_wire_code_instead_of_becoming_internal() {
+        // §1.6: a rail holding a pre-merge id must be told to refresh, not to retry.
+        let err = ArtError::Identity(crate::identity::IdentityError::ProjectMerged {
+            requested: 3,
+            into: 4,
+        });
+        assert_eq!(err.code(), ErrorCode::ProjectMerged);
     }
 }
 

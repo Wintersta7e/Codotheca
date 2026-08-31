@@ -6,21 +6,27 @@
 
 use serde_json::Value;
 
-use crate::art::job::art_ready_payload;
+use crate::art::job::{art_ready_payload, render_card};
 use crate::art::scene::Scene;
 use crate::art::store::{
     find_project_by_hash, load_row, rendition_exists, set_state, touch_hero, write_rendition,
 };
 use crate::art::{art_url, is_scene_hash, ArtCtx, ArtError};
+use crate::identity::redirect::resolve_project_id;
 use crate::proto::dispatch::{parse_args, CommandFailure};
-use crate::protocol::{ArtState, ArtUrlArgs, ErrorCode, Rendition};
+use crate::proto::txguard::TxGuard;
+use crate::protocol::{
+    ArtRerender, ArtRerenderArgs, ArtState, ArtUrlArgs, CoreError, ErrorCode, ProjectId, Rendition,
+    SceneHash,
+};
 
 /// `ArtError` already carries the closed code; this is the only place it becomes a wire failure.
 /// The core's `message` is diagnostic and is never shown raw (§2.4).
 fn failure(err: &ArtError) -> CommandFailure {
-    match err.code() {
-        ErrorCode::Protocol => CommandFailure::protocol(err.to_string()),
-        _ => CommandFailure::internal(err.to_string()),
+    CommandFailure {
+        code: err.code(),
+        message: err.to_string(),
+        outcome: None,
     }
 }
 
@@ -84,11 +90,86 @@ pub fn hero_address(ctx: &ArtCtx<'_>, hash: &str) -> Result<String, ArtError> {
     Ok(art_url(hash, Rendition::Hero).unwrap_or_default())
 }
 
-pub fn handle_rerender(
-    _ctx: &ArtCtx<'_>,
-    _args: serde_json::Value,
-) -> Result<serde_json::Value, CommandFailure> {
-    Err(CommandFailure::internal("art.rerender not yet implemented"))
+/// §7.4: "±1 per press. Never a random draw, never a wrap, floored at 0 and unbounded above."
+/// The floor is the `u32` on the wire and the column's `CHECK`; this is the step.
+pub const MAX_OFFSET_STEP: u32 = 1;
+
+/// §7.4's stepper. The renderer sends the **absolute** target offset it computed, so a retried,
+/// replayed or double-delivered message writes the same integer and lands on the same card.
+pub fn handle_rerender(ctx: &ArtCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
+    let args: ArtRerenderArgs = parse_args(args)?;
+    let reply = rerender(ctx, args.project_id.0, args.offset).map_err(|e| failure(&e))?;
+
+    if reply.rejected {
+        // Plan 02: the reply carries the stored value so a stale rail resyncs, and the rejection
+        // itself is announced separately — one reply cannot be both a value and a failure.
+        let payload = serde_json::to_value(&CoreError {
+            code: ErrorCode::Protocol,
+            message: "art.rerender: offset is more than one step from the stored value".to_owned(),
+            project_id: Some(reply.project_id),
+        })
+        .map_err(|e| CommandFailure::internal(e.to_string()))?;
+        ctx.events.emit("core", "error", payload);
+    }
+    serde_json::to_value(&reply).map_err(|e| CommandFailure::internal(e.to_string()))
+}
+
+/// One project, never a batch (§7.4). Ruling 2: the superseded renditions are left for §7.5's
+/// sweep — two deleters for one file is how a cache grows a dangling journal entry.
+pub fn rerender(ctx: &ArtCtx<'_>, requested: i64, offset: u32) -> Result<ArtRerender, ArtError> {
+    let conn = ctx.index.conn();
+
+    let guard = TxGuard::enter();
+    let tx = conn.unchecked_transaction()?;
+    // §1.6: one hop. A rail holding a pre-merge id rerolls the survivor, not nothing.
+    let project_id = resolve_project_id(&tx, requested)?;
+    let stored: i64 = tx.query_row(
+        "SELECT reroll_offset FROM project WHERE id = ?1",
+        [project_id],
+        |r| r.get(0),
+    )?;
+    let stored = u32::try_from(stored).unwrap_or(0);
+
+    let rejected = offset.abs_diff(stored) > MAX_OFFSET_STEP;
+    if !rejected {
+        tx.execute(
+            "UPDATE project SET reroll_offset = ?2, updated_at = ?3 WHERE id = ?1",
+            rusqlite::params![project_id, i64::from(offset), ctx.now],
+        )?;
+    }
+    tx.commit()?;
+    drop(guard);
+
+    if rejected {
+        return current(ctx, project_id, stored, true);
+    }
+
+    // §7.4 "Priority": a user is waiting on this one render, so it happens on the command's own
+    // thread rather than joining the background queue behind J5's other work.
+    render_card(ctx.index, project_id, ctx.now)?;
+
+    if let Some(payload) = art_ready_payload(ctx.index, project_id, Rendition::Card) {
+        ctx.events.emit("projects", "art_ready", payload);
+    }
+    current(ctx, project_id, offset, false)
+}
+
+/// The project's art state as it now stands, which is what both the accepted and the rejected
+/// reply carry.
+fn current(
+    ctx: &ArtCtx<'_>,
+    project_id: i64,
+    offset: u32,
+    rejected: bool,
+) -> Result<ArtRerender, ArtError> {
+    let row = load_row(ctx.index.conn(), project_id)?;
+    Ok(ArtRerender {
+        project_id: ProjectId(project_id),
+        offset,
+        rejected,
+        scene_hash: row.as_ref().map(|r| SceneHash(r.scene_hash.clone())),
+        art_state: row.as_ref().map_or(ArtState::Pending, |r| r.state),
+    })
 }
 
 #[cfg(all(test, feature = "testkit"))]
@@ -105,7 +186,7 @@ mod tests {
     use crate::art::store::{put_scene, rendition_exists, write_rendition};
     use crate::art::testsupport::CollectingSink;
     use crate::index::Index;
-    use crate::protocol::{ArtState, Rendition};
+    use crate::protocol::{ArtState, Rendition, SceneHash};
     use serde_json::json;
 
     /// A project with a persisted scene and a card on disk, exactly as J5 would leave it.
@@ -244,5 +325,163 @@ mod tests {
             .expect("ok");
             assert_eq!(out, json!(""));
         }
+    }
+
+    fn offset_of(index: &Index, project_id: i64) -> i64 {
+        index
+            .conn()
+            .query_row(
+                "SELECT reroll_offset FROM project WHERE id = ?1",
+                [project_id],
+                |r| r.get(0),
+            )
+            .expect("offset")
+    }
+
+    fn insert_survivor(index: &Index) -> i64 {
+        const SURVIVOR_ID: i64 = 8;
+        index
+            .conn()
+            .execute(
+                "INSERT INTO project (id, name, seed_basename, created_at, updated_at)
+                 VALUES (?1, 'beta tool', 'beta-tool', 0, 0)",
+                [SURVIVOR_ID],
+            )
+            .expect("insert survivor");
+        SURVIVOR_ID
+    }
+
+    #[test]
+    fn a_pre_merge_id_rerolls_the_survivor_and_leaves_the_tombstone_unchanged() {
+        let (_d, index, sink, _h) = seeded();
+        let survivor_id = insert_survivor(&index);
+        index
+            .conn()
+            .execute(
+                "UPDATE project SET merged_into = ?2 WHERE id = ?1",
+                rusqlite::params![7, survivor_id],
+            )
+            .expect("tombstone");
+        index
+            .conn()
+            .execute(
+                "INSERT INTO project_redirect (old_project_id, new_project_id, merged_at)
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params![7, survivor_id, 1_700_000_000_i64],
+            )
+            .expect("redirect");
+
+        let reply = rerender(&ctx(&index, &sink), 7, 1).expect("rerender survivor");
+
+        assert_eq!(reply.project_id.0, survivor_id);
+        assert_eq!(offset_of(&index, survivor_id), 1);
+        let tombstone: (i64, i64) = index
+            .conn()
+            .query_row(
+                "SELECT reroll_offset, updated_at FROM project WHERE id = 7",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("tombstone state");
+        assert_eq!(tombstone, (0, 0), "the pre-merge row was not written");
+    }
+
+    #[test]
+    fn a_tombstoned_id_without_a_redirect_surfaces_project_merged_at_the_wire_edge() {
+        let (_d, index, sink, _h) = seeded();
+        let survivor_id = insert_survivor(&index);
+        index
+            .conn()
+            .execute(
+                "UPDATE project SET merged_into = ?2 WHERE id = ?1",
+                rusqlite::params![7, survivor_id],
+            )
+            .expect("tombstone");
+
+        let failure = handle_rerender(&ctx(&index, &sink), json!({ "projectId": 7, "offset": 1 }))
+            .expect_err("a tombstone without its redirect is stale");
+
+        assert_eq!(failure.code, ErrorCode::ProjectMerged);
+    }
+
+    #[test]
+    fn a_replayed_message_writes_the_same_integer_and_lands_on_the_same_card() {
+        let (_d, index, sink, _h) = seeded();
+        let first = rerender(&ctx(&index, &sink), 7, 1).expect("first");
+        let replay = rerender(&ctx(&index, &sink), 7, 1).expect("replay");
+        assert!(!first.rejected);
+        assert!(!replay.rejected);
+        assert_eq!(first.offset, 1);
+        assert_eq!(first.scene_hash, replay.scene_hash);
+        assert_eq!(offset_of(&index, 7), 1);
+    }
+
+    #[test]
+    fn offset_n_minus_one_re_derives_byte_identically() {
+        // §7.4's walk back: the derivation is pure, so offset 0 is the original card and not a
+        // reconstruction of it.
+        let (_d, index, sink, original) = seeded();
+        rerender(&ctx(&index, &sink), 7, 1).expect("forward");
+        let back = rerender(&ctx(&index, &sink), 7, 0).expect("back");
+        assert_eq!(back.scene_hash, Some(SceneHash(original)));
+        assert_eq!(offset_of(&index, 7), 0);
+    }
+
+    #[test]
+    fn an_offset_more_than_one_step_away_is_rejected_and_the_stored_value_comes_back() {
+        let (_d, index, sink, _h) = seeded();
+        let reply = rerender(&ctx(&index, &sink), 7, 2).expect("reply, not an error");
+        assert!(reply.rejected);
+        assert_eq!(reply.offset, 0, "the stored value, so a stale rail resyncs");
+        assert_eq!(offset_of(&index, 7), 0, "and nothing was written");
+    }
+
+    #[test]
+    fn a_rejection_is_announced_as_protocol_on_the_core_topic() {
+        let (_d, index, sink, _h) = seeded();
+        let out = handle_rerender(&ctx(&index, &sink), json!({ "projectId": 7, "offset": 5 }))
+            .expect("a reply, not a failure");
+        assert_eq!(out["rejected"], json!(true));
+        let errors = sink.named("core", "error");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0]["code"], json!("PROTOCOL"));
+        assert_eq!(errors[0]["projectId"], json!(7));
+    }
+
+    #[test]
+    fn a_reroll_moves_no_identity_field_and_writes_no_ledger_row() {
+        let (_d, index, sink, _h) = seeded();
+        let before: (String, String) = index
+            .conn()
+            .query_row(
+                "SELECT name, seed_basename FROM project WHERE id = 7",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("before");
+        rerender(&ctx(&index, &sink), 7, 1).expect("reroll");
+        let after: (String, String) = index
+            .conn()
+            .query_row(
+                "SELECT name, seed_basename FROM project WHERE id = 7",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("after");
+        assert_eq!(before, after);
+        let xp: i64 = index
+            .conn()
+            .query_row("SELECT count(*) FROM xp_events", [], |r| r.get(0))
+            .expect("xp");
+        assert_eq!(xp, 0, "§7.4: a reroll writes no xp_events row");
+    }
+
+    #[test]
+    fn a_reroll_announces_the_card_once_and_only_after_the_write() {
+        let (_d, index, sink, _h) = seeded();
+        rerender(&ctx(&index, &sink), 7, 1).expect("reroll");
+        let ready = sink.named("projects", "art_ready");
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0]["rendition"], json!("card"));
     }
 }
