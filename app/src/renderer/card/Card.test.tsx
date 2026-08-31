@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { appearanceFor } from '../art/appearance';
+import { LADDER_RUNGS } from '../theme/tokens';
 import { Card, type CardProps } from './Card';
 import { uncomputedRank } from './completion';
 import { HAZARD_TAPE_HEIGHT_PX, bandsFor } from './geometry';
@@ -39,6 +40,12 @@ const draw = (over: Partial<CardProps> = {}): HTMLElement =>
   render(<Card {...props(over)} />).container;
 const px = (v: string): number => Number.parseFloat(v);
 const tight = (v: string): string => v.replace(/\s+/g, '');
+
+/** `#333c45` → `rgb(51, 60, 69)`, which is the only form an inline colour reaches the DOM in. */
+const asRgb = (hex: string): string => {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgb(${String((n >> 16) & 255)}, ${String((n >> 8) & 255)}, ${String(n & 255)})`;
+};
 
 describe('clip-path deletes what sits outside it, so three things are unclipped siblings', () => {
   it('puts the halo, the bloom and the frame gap outside the clipped card', () => {
@@ -198,7 +205,12 @@ describe('§7.7a and §11.7: the absence is stated, and it is stated to the tree
     expect(container.querySelector('.cdt-rank-glyph')?.textContent).toBe('—');
     expect(container.querySelector('.cdt-rank-label')?.textContent).toBe('NOT COMPUTED');
     expect(screen.getByText('Completion not computed')).toBeTruthy();
-    expect(container.innerHTML).not.toContain('#333c45');
+    // Both spellings: an inline `#333c45` reaches the DOM as `rgb(51, 60, 69)` and a hex-only
+    // guard passes against a card that really is painting a rung.
+    for (const rung of LADDER_RUNGS) {
+      expect(container.innerHTML, rung).not.toContain(rung);
+      expect(container.innerHTML, `${rung} as rgb()`).not.toContain(asRgb(rung));
+    }
     expect(container.innerHTML).not.toContain('0/10');
   });
 
