@@ -259,6 +259,10 @@ describe('shelf.css', () => {
       'cdt-reference-summary',
       'cdt-attention-row',
       'cdt-attention-chip',
+      // The 56th name. AttentionRow applied it before shelf.css declared it, so the broken
+      // state selected nothing — the contract list is what makes that a failure and not a
+      // silent one.
+      'cdt-attention-chip--broken',
       'cdt-attention-count',
       'cdt-attention-label',
       'cdt-attention-sub',
