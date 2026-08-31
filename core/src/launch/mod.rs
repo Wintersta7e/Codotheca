@@ -12,6 +12,7 @@ pub mod probe_windows;
 pub mod rank;
 pub mod recents;
 pub mod resolve;
+pub mod verify;
 pub mod wslpath;
 
 pub use catalogue::{CwdMode, TargetKind};

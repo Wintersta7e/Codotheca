@@ -109,6 +109,34 @@ pub fn load_target(
     })
 }
 
+/// Every row id, disabled ones included: §4bis.2a's verification is per row and unfiltered,
+/// where resolution is filtered. A disabled row still has an executable that can go missing.
+pub fn all_target_ids(conn: &rusqlite::Connection) -> Result<Vec<i64>, LaunchError> {
+    let mut stmt = conn.prepare("SELECT id FROM launch_target ORDER BY id")?;
+    let mapped = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+    let mut out = Vec::new();
+    for id in mapped {
+        out.push(id?);
+    }
+    Ok(out)
+}
+
+/// [`load_target`] without its `disabled = 0` clause.
+pub fn load_any_target(
+    conn: &rusqlite::Connection,
+    target_id: i64,
+) -> Result<StoredTarget, LaunchError> {
+    conn.query_row(
+        &format!("SELECT {COLUMNS} FROM launch_target WHERE id = ?1"),
+        [target_id],
+        row_to_target,
+    )
+    .map_err(|err| match err {
+        rusqlite::Error::QueryReturnedNoRows => LaunchError::NoSuchTarget(target_id),
+        other => LaunchError::Sqlite(other),
+    })
+}
+
 fn head_of(
     conn: &rusqlite::Connection,
     predicate: &str,
