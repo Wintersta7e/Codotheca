@@ -22,7 +22,6 @@ use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::protocol::{
     Activity, ActivityWeek, AssociationKind, HeadComparison, LaneState, LocationDetail, LocationId,
     LocationRef, ProjectDetail, ProjectId, ProjectsGetArgs, ResolvedTarget, SessionRef, TargetRow,
-    VerifyState,
 };
 
 /// §8.5.5's chart: 26 weekly slots, the axis running `26 WEEKS AGO` → `THIS WEEK`.
@@ -203,30 +202,6 @@ pub(crate) fn location_detail(
         .ok_or_else(|| CommandFailure::protocol(format!("no location {}", location.0)))
 }
 
-/// A stored target on the wire.
-///
-/// **This is a stand-in for plan 11c's `to_target_row`, which is the declared owner and does not
-/// exist in this tree.** It drops `exec_bytes`, `args_json`, `cwd_mode` and `env_json` — the
-/// wire carries `execDisplay` and nothing a renderer could launch from. When 11c lands, delete
-/// this and import that one: two mappings from `StoredTarget` to `TargetRow` is R12's defect,
-/// and returning an empty `targets` list instead would have been a lie the renderer cannot see.
-fn target_row(target: &crate::launch::resolve::StoredTarget) -> TargetRow {
-    TargetRow {
-        id: crate::protocol::TargetId(target.id),
-        kind: target.kind,
-        name: target.name.clone(),
-        project_id: target.project_id.map(ProjectId),
-        location_id: target.location_id.map(LocationId),
-        language: target.language.clone(),
-        sort_index: u32::try_from(target.sort_index).unwrap_or(0),
-        detected: target.detected,
-        // A stored word this build does not know is `unverified`, not a guess at what it meant.
-        verify_state: enum_from_column(&target.verify_state).unwrap_or(VerifyState::Unverified),
-        verified_at: target.verified_at,
-        exec_display: crate::launch::resolve::exec_display(target),
-    }
-}
-
 fn target_rows(
     conn: &rusqlite::Connection,
     id: i64,
@@ -234,7 +209,10 @@ fn target_rows(
 ) -> Result<Vec<TargetRow>, CommandFailure> {
     let stored =
         crate::launch::resolve::menu_rows(conn, Some(id), primary_location).map_err(internal)?;
-    Ok(stored.iter().map(target_row).collect())
+    stored
+        .iter()
+        .map(|t| crate::commands::targets::to_target_row(t).map_err(internal))
+        .collect()
 }
 
 /// §4bis.2a's tiers, resolved through plan 11's `resolve` rather than re-ranked here.
@@ -252,10 +230,14 @@ fn resolved_target(
         crate::protocol::TargetKind::Editor,
     )
     .map_err(internal)?;
-    Ok(found.map(|r| ResolvedTarget {
-        target: target_row(&r.target),
-        tier: r.tier,
-    }))
+    found
+        .map(|r| {
+            Ok(ResolvedTarget {
+                target: crate::commands::targets::to_target_row(&r.target).map_err(internal)?,
+                tier: r.tier,
+            })
+        })
+        .transpose()
 }
 
 /// §9: the one open session on this project, if this install has one running.
