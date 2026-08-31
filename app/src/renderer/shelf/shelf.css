@@ -471,12 +471,18 @@
   padding: 10px 22px 52px;
 }
 
+/* Section 8.0b states `flex-wrap:wrap`. Section 8.8's saved chips are appended to this same row
+ * and the row grows: a cap that refuses visibly is honest, a row that silently stops showing
+ * chips is not. Without the wrap the sixteenth saved chip is simply off the edge. */
 .cdt-attention-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 20px 22px 0;
 }
 
+/* `--cdt-chip-accent` is set inline per chip from the accent its section states. Until this
+ * rule existed the property was written by the component and read by nothing. */
 .cdt-attention-chip {
   display: flex;
   flex-direction: column;
@@ -485,6 +491,7 @@
   cursor: pointer;
   background: var(--surface-2);
   border: 1px solid var(--line-2);
+  box-shadow: inset 3px 0 0 0 var(--cdt-chip-accent);
   transition: border-color 0.16s cubic-bezier(0.2, 0.85, 0.2, 1);
 }
 

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import { effectiveQueryText } from '../../shared/query/format.js';
 import { parseQuery } from '../../shared/query/parse.js';
+import { AttentionChip } from './AttentionChip.js';
 import { ATTENTION_CHIPS, attentionCounts, headlineText } from './counts.js';
 import type { ShelfCounts } from './counts.js';
 import type { QueryContext } from './evaluate.js';
@@ -17,6 +18,12 @@ export interface AttentionRowProps {
   readonly sortLabel: string;
   readonly query: string;
   readonly onQuery: (query: string) => void;
+  /**
+   * §8.8's saved chips, appended after the four built-ins inside this same wrapping row. The row
+   * owns the geometry; what goes in the tail is the collections module's, and this component
+   * never counts one — a count here would be a second predicate beside §8.3a's one function.
+   */
+  readonly savedChips?: ReactElement | null;
 }
 
 export function AttentionRow(props: AttentionRowProps): ReactElement {
@@ -26,27 +33,20 @@ export function AttentionRow(props: AttentionRowProps): ReactElement {
 
   return (
     <div className="cdt-attention-row">
-      {ATTENTION_CHIPS.map((chip) => {
-        const pressed = running === effectiveQueryText(parseQuery(chip.query));
-        return (
-          <button
-            type="button"
-            className="cdt-attention-chip"
-            key={chip.id}
-            aria-pressed={pressed}
-            style={{ '--cdt-chip-accent': chip.accent } as CSSProperties}
-            onClick={() => {
-              onQuery(chip.query);
-            }}
-          >
-            <span className="cdt-attention-count">{chipCounts[chip.id]}</span>
-            <span>
-              <span className="cdt-attention-label">{chip.label}</span>
-              <span className="cdt-attention-sub">{chip.sub}</span>
-            </span>
-          </button>
-        );
-      })}
+      {ATTENTION_CHIPS.map((chip) => (
+        <AttentionChip
+          key={chip.id}
+          count={chipCounts[chip.id] ?? null}
+          label={chip.label}
+          subLine={chip.sub}
+          accent={chip.accent}
+          active={running === effectiveQueryText(parseQuery(chip.query))}
+          onActivate={() => {
+            onQuery(chip.query);
+          }}
+        />
+      ))}
+      {props.savedChips}
       <div className="cdt-attention-tail">
         <span className="cdt-attention-headline">{headlineText(counts, sortLabel)}</span>
         <span className="cdt-attention-hint">{SPACE_PEEK_HINT}</span>

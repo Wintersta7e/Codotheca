@@ -4,11 +4,13 @@
  * every other module takes a `QueryEngine`, a `CoreRpc` or a component as a parameter.
  * R13: the AST type itself is plan 13's, so nothing below casts through `never`.
  *
- * **Two re-exports this file is supposed to carry are absent, and are not written here.**
- * `AttentionChip` / `AttentionChipProps` (`app/src/renderer/shelf/AttentionChip.tsx`, plan 13c)
- * and `jewelFor` (`app/src/renderer/derive/jewel.ts`, plan 12) do not exist in the tree yet.
- * A local substitute would be the second copy this file exists to prevent, so they are named as
- * a gap instead: when 13c and 12 land them, they are re-exported from here and from nowhere else.
+ * `AttentionChip` / `AttentionChipProps` are re-exported below: §8.0b's box now exists as a
+ * component and the collection chip composes it through this file and no other.
+ *
+ * **One re-export this file is supposed to carry is still absent, and is not written here.**
+ * `jewelFor` (`app/src/renderer/derive/jewel.ts`, plan 12) does not exist in the tree yet. A
+ * local substitute would be the second copy this file exists to prevent, so it is named as a
+ * gap instead: when plan 12 lands it, it is re-exported from here and from nowhere else.
  */
 // R43: plan 13's own names, at plan 13's own paths. There is no `./query/index.js`, and nothing
 // below is aliased back to the name this plan first guessed at — an alias is a second name for
@@ -22,6 +24,10 @@ import type { CoreRpc, QueryEngine } from './collections/engine.js';
 import type { QueryContext } from './shelf/evaluate.js';
 import { evaluateQuery } from './shelf/evaluate.js';
 import { toShelfRow } from './shelf/row.js';
+
+// §8.0b's chip box, plan 13c's component. The collection chip names it here and nowhere else.
+export { AttentionChip, DEFAULT_CHIP_ACCENT } from './shelf/AttentionChip.js';
+export type { AttentionChipProps } from './shelf/AttentionChip.js';
 
 /**
  * R43: an engine per `QueryContext`, not a module constant. `evaluateQuery` is three-valued and
