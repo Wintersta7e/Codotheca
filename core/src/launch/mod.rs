@@ -8,6 +8,7 @@ pub mod probe_linux;
 // so they compile and are tested everywhere while only the registry walk is `#[cfg(windows)]`.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub mod probe_windows;
+pub mod rank;
 pub mod recents;
 pub mod wslpath;
 
