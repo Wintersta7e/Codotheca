@@ -8,6 +8,7 @@
 // Vendored @fontsource faces are third-party CSS in the built bundle and are not this
 // stylesheet; plan 20 owns the built-bundle form with that carve-out named.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readScannedFile } from './lib/read-scanned.mjs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -86,19 +87,13 @@ const sharedKeyframes = new Set(vocabulary.sharedKeyframes);
 const baseFile = join(rendererDir, 'styles/base.css');
 const keyframeSites = new Map(); // name -> [file, …]
 
-// Files actually read, not files the walk saw. A sibling gate's self-test plants a probe in
-// this tree and removes it while vitest runs the suites in parallel, so a path can vanish
-// between the walk and the read. A file that no longer exists cannot violate anything — but it
-// must not be counted either, or the summary overstates what this run checked.
+const walked = cssFiles(rendererDir);
 const scanned = [];
-for (const file of cssFiles(rendererDir)) {
-  let text;
-  try {
-    text = readFileSync(file, 'utf8');
-  } catch (error) {
-    if (error && error.code === 'ENOENT') continue;
-    throw error;
-  }
+
+for (const file of walked) {
+  const text = readScannedFile(file);
+  // Not counted when it has vanished, so the empty-scan guard below still means what it says.
+  if (text === null) continue;
   scanned.push(file);
   const isTokenFile = file === tokensFile;
 

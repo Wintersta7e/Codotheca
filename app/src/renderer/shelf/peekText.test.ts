@@ -132,8 +132,11 @@ describe('peekFacts', () => {
       expect(valueOf(base, key)).toBe(UNCOMPUTED_FACT);
     }
   });
-  it('renders PLAYTIME 0 as a true zero — that ledger starts at install', () => {
+  it('renders PLAYTIME 0 as 0h — a measured zero, that ledger starts at install', () => {
+    // §8.4.1's one carve-out from "never render unknown as zero": every other fact here is `—`
+    // until its job has run, and this one is `0h` and true from install.
     expect(valueOf(base, 'PLAYTIME')).not.toBe(UNCOMPUTED_FACT);
+    expect(valueOf(base, 'PLAYTIME')).toBe('0h');
   });
   it('labels the byte figure as tracked by using the one formatter', () => {
     const peek = { ...base, sizeTrackedBytes: 41 * 1024 ** 3 } as Peek;
@@ -145,6 +148,6 @@ describe('peekFacts', () => {
   it('prints playtime through the one playtime grammar, at every magnitude', () => {
     const peek = { ...base, playtimeSeconds: 2 * 3600 + 7 * 60 } as Peek;
     expect(valueOf(peek, 'PLAYTIME')).toBe(formatPlaytime(2 * 3600 + 7 * 60));
-    expect(valueOf(peek, 'PLAYTIME')).toBe('2h 07m');
+    expect(valueOf(peek, 'PLAYTIME')).toBe('2.1h');
   });
 });

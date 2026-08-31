@@ -1,26 +1,32 @@
 /**
- * §1.10's playtime ledger, formatted once for the whole renderer.
+ * §1.10's playtime ledger, formatted once for the whole renderer (**R20**).
  *
- * It sits here rather than inside the project page because Peek prints the same figure: two
- * implementations would print different durations for one project on Peek and on its own page.
+ * It sits here rather than in the project page's own rail strings because §8.4.1's Peek prints
+ * the same figure and the shelf is built first: two implementations would print different
+ * durations for one project on Peek and on its own page — R12's failure, one ledger over.
  *
- * **An empty ledger reads `0h`, not `0m`.** §8.1 states the rule and its reason: a fact whose job
- * has not run renders an em dash and never a zero, and `PLAYTIME 0h` is *the one exception,
- * because that ledger starts at install*. §10's reveal calls the same figure "complete by
- * construction, and the only figure on the screen that is". So this zero is a measured fact, and
- * the hour unit is what says so: `0m` reads as a rounding of something, where `0h` reads as a
- * ledger that has recorded nothing yet.
+ * **The unit is the hour, and `0h` is a measured fact.** §8.4.1 states it outright: *"A fact whose
+ * job has not run renders `—`, never `0`. `PLAYTIME 0h` is the one exception and is true: that
+ * ledger starts at install."* This is the single place in the product where a rendered zero is a
+ * measurement rather than an unknown, and it is deliberately carved out of *never render unknown
+ * as zero*. Every other spec site renders hours too — `10-first-run.md:266` prints
+ * `Playtime 0h — starts now`, `08-palette-tokens.md:471` prints `6h tracked, 9 commit-days`.
  *
- * This is the *playtime* ledger and only that. §7.8's bench figure shares the grammar **above
- * zero** and is deliberately not shared code: it is elapsed wall time on a live session, never
- * summed into playtime, and one function across both ledgers is how they get summed by accident.
- * At zero they diverge, because only this one has a ledger to declare complete.
+ * **Sub-hour values carry one decimal of *precision*, not a forced decimal place** — `0h`, `0.2h`,
+ * `2.1h`, `6h`, `40h`. The spec fixes only `0h` and `6h` and says nothing about what sits between
+ * them; this is the one rule under which both render verbatim while a real 45-minute session stays
+ * visible. Flooring to whole hours would print `0h` for it, collapsing *installed and never
+ * played* together with *played most of an hour* into one string — and `0h`'s whole point is that
+ * it is a fact. The rounding is the one already settled for `formatTrackedBytes`' gigabytes, so
+ * the product has one rounding grammar rather than two.
+ *
+ * **This is the *playtime* ledger and only that.** §7.8's bench scrim renders a live session as
+ * `AT THE BENCH · 2h 07m` (`07-art-composition.md:274`) and is 12c's `useBenchElapsed`: elapsed
+ * wall time on an open session, never summed into playtime (§1.10 keeps the two ledgers apart).
+ * Two formatters is correct here, and the different grammar is what keeps them visibly distinct —
+ * folding them together would be R12 inverted.
  */
 export function formatPlaytime(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds / 60));
-  if (total === 0) return '0h';
-  const hours = Math.floor(total / 60);
-  const minutes = total % 60;
-  if (hours === 0) return `${String(minutes)}m`;
-  return `${String(hours)}h ${String(minutes).padStart(2, '0')}m`;
+  const hours = Math.max(0, seconds) / 3600;
+  return `${String(Math.round(hours * 10) / 10)}h`;
 }

@@ -216,6 +216,14 @@ describe('GridSection', () => {
     });
     expect(screen.getAllByTestId('card')).toHaveLength(6);
   });
+  it('sets the density on the namespaced property the stylesheet may legally read', () => {
+    // `check-style-tokens.mjs:118-122` rejects a `var(--x)` that is neither in `tokens.css` nor
+    // prefixed `cdt-`, so `--tile` is a property the grid could set and no rule could ever read.
+    const { container } = draw({ density: 232 });
+    const grid = container.querySelector('.cdt-shelf-grid') as HTMLElement;
+    expect(grid.style.getPropertyValue('--cdt-tile')).toBe('232px');
+    expect(grid.style.getPropertyValue('--tile')).toBe('');
+  });
   it('reports the Peek slot’s measured height, so the canvas can grow by it', () => {
     const onPeekHeight = vi.fn();
     draw({ selectedId: 2 as unknown as ProjectId, peek: <p>peek</p>, onPeekHeight });

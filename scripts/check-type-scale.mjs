@@ -4,13 +4,14 @@
 //
 // It scans renderer CSS *and* the inline `style={{…}}` objects in renderer `.tsx`, since the card
 // sets per-project geometry inline and a 6.5px there is just as unreadable.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readScannedFile } from './lib/read-scanned.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const rendererDir = join(root, 'app/src/renderer');
-const typeSource = readFileSync(join(rendererDir, 'theme/type.ts'), 'utf8');
+const typeSource = readScannedFile(join(rendererDir, 'theme/type.ts')) ?? '';
 
 const scaleFrom = (name) => {
   const block = new RegExp(`${name}: readonly number\\[\\] = \\[([^\\]]*)\\]`).exec(typeSource);
@@ -48,17 +49,9 @@ for (const file of files(rendererDir, ['.css', '.tsx', '.ts'])) {
   if (file.endsWith('theme/type.ts') || file.endsWith('.test.ts') || file.endsWith('.test.tsx')) {
     continue;
   }
-  // A file can vanish between the walk and the read: the sibling gates' self-tests plant a
-  // probe in this same tree and remove it, and vitest runs those suites in parallel with this
-  // one. A file that no longer exists cannot be violating anything, so skip it — and skip it
-  // *before* counting it, so the printed scan count stays a true count of files actually read.
-  let text;
-  try {
-    text = readFileSync(file, 'utf8');
-  } catch (error) {
-    if (error && error.code === 'ENOENT') continue;
-    throw error;
-  }
+  const text = readScannedFile(file);
+  // Not counted when it has vanished, so the empty-scan guard below still means what it says.
+  if (text === null) continue;
   scanned.push(file);
   const seen = [];
   for (const [, px] of text.matchAll(CSS_SIZE)) seen.push(Number(px));

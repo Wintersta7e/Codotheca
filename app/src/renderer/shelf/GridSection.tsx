@@ -193,7 +193,11 @@ export function GridSection(props: GridSectionProps): ReactElement {
       role={GRID_ROLE}
       aria-rowcount={totalRows}
       aria-colcount={metrics.columns}
-      style={{ '--tile': `${String(density)}px` } as CSSProperties}
+      // `--cdt-tile`, not `--tile`. `scripts/check-style-tokens.mjs:118-122` rejects any
+      // `var(--x)` a stylesheet reads that is neither declared in `tokens.css` nor namespaced
+      // `cdt-`, so the unprefixed spelling — which is the one plan 13's prose uses — is a
+      // property the grid would set and the stylesheet could never legally read.
+      style={{ '--cdt-tile': `${String(density)}px` } as CSSProperties}
     >
       {nodes}
     </div>
