@@ -7,6 +7,20 @@ import css from './card.css?raw';
 import motionCss from './motion.css?raw';
 
 /**
+ * Both `?raw` imports, asserted non-empty before anything reads them. Vitest stubs CSS to an
+ * empty module unless the file is processed, and that stubbing catches `?raw` too — an empty
+ * read makes every `toContain` in this file vacuous and turns the cascade block below into
+ * three confusing failures that name the cascade rather than the missing text. Observed once
+ * in this repo, on a run that was green immediately before and after.
+ */
+describe('the stylesheets under test actually arrived', () => {
+  it('reads real text for both, because every assertion here is vacuous against ""', () => {
+    expect(css.length).toBeGreaterThan(1000);
+    expect(motionCss.length).toBeGreaterThan(500);
+  });
+});
+
+/**
  * Comments are stripped before any structural match. A rule's own explanation legitimately names
  * the selectors and declarations it is about, and a matcher that reads them finds a "rule" that
  * is prose — the same mistake as grepping for a declaration and hitting a plan's gap list.
