@@ -189,6 +189,19 @@ describe('the shed order', () => {
     }
   });
 
+  it('carries the shed class its level names, and none at rest', () => {
+    // `cdt-topbar--shed-0` is a class no stylesheet declares, so an unshed bar carries none.
+    const unshed = render(<TopBar {...props({ barWidth: 1400 })} />);
+    expect(unshed.container.querySelector('.cdt-shelf-bar')?.className).toBe('cdt-shelf-bar');
+    for (const [index, width] of SHED_WIDTHS.entries()) {
+      cleanup();
+      const { container } = render(<TopBar {...props({ barWidth: width })} />);
+      expect(container.querySelector('.cdt-shelf-bar')?.className).toBe(
+        `cdt-shelf-bar cdt-topbar--shed-${String(index + 1)}`,
+      );
+    }
+  });
+
   it('sheds no control that has no other way in', () => {
     // Only the SWITCH chip goes, and Alt+Space still reaches the palette. Every other slot is
     // present at the floor: shedding a control with no keyboard route would strand it.

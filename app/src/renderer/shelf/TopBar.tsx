@@ -7,7 +7,7 @@ import { QueryFieldView } from './QueryField.js';
 // R19: `ShedLevel`, `SHED_ORDER`, `SHED_WIDTHS` and `shedLevelFor` are declared in
 // `useShedLevel.ts` and imported here, never re-exported from this file. This component imports
 // that module, so exporting its table back out of the component is a cycle around a constant.
-import { shedLevelFor } from './useShedLevel.js';
+import { shedClassName, shedLevelFor } from './useShedLevel.js';
 import type { ShelfView } from './viewState.js';
 import { SORT_LABELS, nextSort } from './viewState.js';
 
@@ -61,7 +61,7 @@ export function TopBar(props: TopBarProps): ReactElement {
   const sortLabel = SORT_LABELS[view.sort];
 
   return (
-    <div className={`cdt-shelf-bar cdt-topbar--shed-${String(shed)}`}>
+    <div className={['cdt-shelf-bar', shedClassName(shed)].filter(Boolean).join(' ')}>
       <div className="cdt-shelf-wordmark">
         <span className="cdt-shelf-mark" aria-hidden="true">
           <i className="cdt-shelf-mark-bar" />
