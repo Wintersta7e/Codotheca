@@ -116,6 +116,9 @@ describe('createDefaultDeps', () => {
       relocate: () => Promise.resolve({ kind: 'cancelled' }),
       onCoreStatus: () => undefined,
       onCoreEvents: () => undefined,
+      // Plan 15 added this to the bridge on another branch. The fake must carry the whole
+      // interface or it stops being evidence about the shape the product actually has.
+      onOpenPalette: () => undefined,
     };
     const bridge: CodothecaBridge = { ...base, ...over };
     Object.defineProperty(window, 'codotheca', { value: bridge, configurable: true });
