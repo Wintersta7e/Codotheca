@@ -24,9 +24,10 @@
     "lint:style": "node scripts/check-style-tokens.mjs",
     "lint:type": "node scripts/check-type-scale.mjs",
     "lint:focus": "node scripts/check-focus-ring.mjs",
+    "lint:accelerators": "node scripts/check-shell-accelerators.mjs",
     "lint": "npm run lint:stdout && npm run lint:style && npm run lint:type && npm run lint:focus && npm run lint --workspace app && cargo clippy --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings",
     "typecheck": "npm run typecheck --workspace app",
-    "check:bundle": "node scripts/check-bundle.mjs",
+    "check:bundle": "node scripts/check-bundle.mjs && npm run lint:accelerators",
     "prepare:win": "node scripts/win-prepare.mjs",
     "test": "npm run gen && npm run test --workspace protocol && cargo test --manifest-path core/Cargo.toml --features testkit && npm run test --workspace app",
     "fmt:check": "cargo fmt --manifest-path core/Cargo.toml -- --check && prettier --check \"app/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"protocol/**/*.mjs\""

@@ -15,6 +15,16 @@ export const IPC_EVENTS = 'codotheca:events';
  */
 export const IPC_OPEN_PALETTE = 'codotheca:open-palette';
 
+// R32: the channel and the frame live beside the class that publishes them. Plans 17 and 17b
+// import both and declare neither; `src/shared` because the renderer cannot import `src/main`.
+export const IPC_SHORTCUT_STATE = 'codotheca:shortcut-state';
+
+/** §8.6: a chord that failed to register reads back with the chord and `registered: false`. */
+export interface ShortcutState {
+  readonly chord: string | null;
+  readonly registered: boolean;
+}
+
 export interface RendererEvent {
   topic: Topic;
   event: string;
