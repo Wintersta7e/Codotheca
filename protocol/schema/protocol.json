@@ -187,8 +187,10 @@
         "scrollOffset": "f64",
         "selectedProjectId": "ProjectId?",
         "dismissedNotices": "[String]",
-        "windowGeometry": "WindowGeometry?"
-      }
+        "windowGeometry": "WindowGeometry?",
+        "savedAt": "Timestamp?"
+      },
+      "$comment": "§8: `savedAt` is null on a fresh install and non-null on a restored view, which is the only thing separating the two — every other field reads identically when a client deliberately saves an empty shelf, so without it a first run and a cleared shelf are indistinguishable on the wire. It is deliberately NOT on ViewPatch: the core stamps it inside view.set, so a client cannot forge a provenance it does not have"
     },
     "ViewPatch": {
       "kind": "struct",
