@@ -1,0 +1,53 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--app-bg);
+  color: var(--text-1);
+  font-family: var(--font-body);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* An accessible name with no pixels. §11.7 needs several. */
+.cdt-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * R35(b) — the three shared entry keyframes, declared once, here.
+ *
+ * They belong to the design system rather than to any screen because §11.6's tier clamp lives in
+ * `motion.css` and can only reduce or disable an animation it can see. A screen that declares its
+ * own copy is invisible to that clamp, and a duplicate `@keyframes` of the same name SILENTLY
+ * OVERRIDES rather than erroring — which is why `check-style-tokens.mjs` fails the build on a
+ * second declaration. Every consumer imports the name and declares nothing:
+ *
+ *   viewIn  — §8.6 quick switch, §10.1b, §10.3a, §11.2a failure windows, §11.3a
+ *   panelIn — §10.1b's consent panels, §10.4a's reveal and turn controls
+ *   turnIn  — §10.4a's turn line (plan 16c's only declared dependency here)
+ *
+ * The three carry no duration and no curve: the consumer states both at its own `animation`
+ * shorthand, from §11.6's tables.
+ */
+@keyframes viewIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes panelIn { 0% { opacity: 0; transform: translateY(16px) scale(.985) } 100% { opacity: 1; transform: none } }
+@keyframes turnIn { 0% { opacity: 0; letter-spacing: .4em } 100% { opacity: 1; letter-spacing: .02em } }
