@@ -436,3 +436,458 @@
     animation: none;
   }
 }
+
+/* --- the left rail (§8.5.1) ------------------------------------------------------------ */
+
+.cp-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cp-cta {
+  height: 38px;
+  border: 1px solid transparent;
+  background: var(--sig);
+  color: var(--sig-ink);
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  cursor: pointer;
+}
+.cp-cta-reopen {
+  background: transparent;
+  border-color: var(--edge-strong);
+  color: var(--text-1);
+}
+.cp-cta-statement {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  border: 1px solid var(--line-2);
+  color: var(--text-3);
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.cp-terminal {
+  height: 30px;
+  background: transparent;
+  border: 1px solid var(--line-5);
+  color: var(--text-1);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background-color 140ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+.cp-terminal:hover,
+.cp-terminal:focus-visible {
+  background: var(--surface-5);
+}
+
+.cp-stats {
+  display: flex;
+  gap: 12px;
+}
+.cp-stat {
+  flex: 1 1 0;
+  padding: 9px 11px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
+.cp-stat-label {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+}
+.cp-stat-value {
+  margin-top: 3px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+/* --- §8.5.2 Locations ------------------------------------------------------------------ */
+
+.cp-loc {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.cp-loc-header {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+.cp-loc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cp-loc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 13px;
+  background: var(--surface-2);
+  box-shadow:
+    inset 0 0 0 1px var(--line-2),
+    inset 3px 0 0 0 var(--line-5);
+  transition:
+    box-shadow 160ms,
+    background 160ms;
+}
+.cp-loc-row:hover {
+  background: var(--surface-sel-hover);
+}
+/* The jewel arrives as --cdt-jewel, set inline from §7.3a's derivation: the primary row is this
+ * project's colour here exactly as it is on its tile, from one appearance function. */
+.cp-loc-row-primary {
+  background: var(--surface-sel);
+  box-shadow:
+    inset 0 0 0 1px var(--cdt-jewel-55),
+    inset 3px 0 0 0 var(--cdt-jewel);
+}
+.cp-loc-row-warn {
+  box-shadow:
+    inset 0 0 0 1px var(--warn),
+    inset 3px 0 0 0 var(--warn);
+}
+.cp-loc-adopt {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.cp-loc-chip {
+  flex: none;
+  padding: 2px 6px;
+  background: var(--surface-3);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--text-2);
+}
+.cp-loc-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-loc-facts {
+  display: flex;
+  flex: none;
+  gap: 14px;
+}
+.cp-loc-fact-key {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+}
+.cp-loc-fact-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+.cp-loc-state {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+.cp-loc-tag {
+  flex: none;
+  padding: 2px 6px;
+  background: var(--line-4);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+}
+.cp-loc-tag-primary {
+  background: var(--cdt-jewel);
+  color: var(--sig-ink);
+}
+.cp-loc-action {
+  flex: none;
+  height: 23px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--line-5);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+.cp-loc-action:hover,
+.cp-loc-action:focus-visible {
+  background: var(--sig);
+  color: var(--sig-ink);
+}
+.cp-loc-note {
+  padding: 2px 0 2px 9px;
+  border-left: 2px solid var(--line-5);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.cp-loc-note-warn {
+  border-left-color: var(--warn);
+}
+.cp-loc-footer {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+}
+
+/* --- §8.5.3 README --------------------------------------------------------------------- */
+
+.cp-readme {
+  border: 1px solid var(--line-2);
+}
+.cp-readme-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 13px;
+  background: var(--surface-3);
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  color: var(--text-3);
+}
+/* §8.7 snaps §8.5.3's age-slot grey to --text-3 under the floor clause, and criterion 47 puts it
+ * there anyway: an observation age is the only rendering of its fact. */
+.cp-readme-age {
+  flex: none;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+.cp-readme-body {
+  padding: 15px 16px 17px;
+}
+.cp-readme-name {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-1);
+}
+.cp-readme-stripe {
+  width: 2px;
+  height: 44px;
+  margin-top: 8px;
+  background: var(--cdt-jewel);
+}
+.cp-readme-text {
+  margin: 12px 0 0;
+  max-width: 600px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --- §8.5.4 the note ------------------------------------------------------------------- */
+
+.cp-note {
+  padding: 12px 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
+.cp-note-label {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: var(--text-3);
+}
+/* The invitation is the only thing on the surface saying the surface is writable, so it sits at
+ * the decision floor and not below it (§8.7's second consequence). */
+.cp-note-empty {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font-size: 12.5px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--text-3);
+  cursor: text;
+}
+.cp-note-text {
+  margin-top: 7px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  cursor: text;
+}
+.cp-note-field {
+  width: 100%;
+  margin-top: 7px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  resize: vertical;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  caret-color: var(--sig);
+}
+.cp-note-feeds {
+  margin-top: 9px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+
+/* --- §8.5.5 Activity ------------------------------------------------------------------- */
+
+.cp-act-title,
+.cp-act-commits-label {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--text-1);
+}
+.cp-act-note {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+/*
+ * A slot is a flex ROW of two sub-columns, each ending on the slot's own floor. Nothing wraps one
+ * lane over the other and no height accumulates between them, so the built DOM cannot be measured
+ * as a total — §8.5.5's "never summed" is geometric here, not only arithmetic.
+ */
+.cp-act-chart {
+  display: flex;
+  gap: 2px;
+  height: 84px;
+  margin-top: 12px;
+}
+.cp-act-slot {
+  display: flex;
+  flex: 1 1 0;
+  align-items: flex-end;
+  gap: 1px;
+}
+.cp-act-lane {
+  flex: 1 1 0;
+  align-self: flex-end;
+}
+.cp-act-lane-hairline {
+  height: 1px;
+  background: var(--baseline-hairline);
+}
+.cp-act-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+.cp-act-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 11px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+.cp-act-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cp-act-swatch {
+  width: 9px;
+  height: 3px;
+}
+.cp-act-commits {
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cp-act-commit {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+}
+.cp-act-commit-sha {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--sig);
+}
+.cp-act-commit-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-act-commit-date {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+
+/* --- the tab body: §8.5.1's Overview column, one panel per beat ------------------------- */
+
+.cp-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}

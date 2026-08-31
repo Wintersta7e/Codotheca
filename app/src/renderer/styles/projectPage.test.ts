@@ -144,4 +144,30 @@ describe('what the page may not paint', () => {
       expect(block, `${rule} has no colour`).toContain('var(--text-3)');
     }
   });
+
+  /**
+   * Criterion 40's other half. `ActivityTab.test.tsx` proves the two lanes are the slot's own
+   * children; this proves the slot lays them out side by side against its own floor, which lives
+   * in the stylesheet and cannot be seen from the DOM shape.
+   */
+  it('lays the two activity lanes across the slot, each on the slot’s own floor', () => {
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.append(style);
+    document.body.innerHTML = `
+      <div class="cp-act-chart">
+        <div class="cp-act-slot">
+          <div class="cp-act-lane" data-lane="commitDays"></div>
+          <div class="cp-act-lane" data-lane="sessions"></div>
+        </div>
+      </div>`;
+    const slot = document.querySelector('.cp-act-slot');
+    const lane = document.querySelector('[data-lane="sessions"]');
+    if (slot === null || lane === null) throw new Error('fixture has no activity slot');
+    const slotStyle = getComputedStyle(slot);
+    // A row, not a column: a column is a stack, and a stack reads as a total.
+    expect(slotStyle.flexDirection).not.toBe('column');
+    expect(slotStyle.alignItems).toBe('flex-end');
+    expect(getComputedStyle(lane).alignSelf).toBe('flex-end');
+  });
 });
