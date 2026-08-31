@@ -36,6 +36,11 @@ export default defineConfig({
           ],
           environment: 'jsdom',
           restoreMocks: true,
+          // Vitest stubs CSS to an empty module unless it is processed, and that stubbing
+          // catches `?raw` too — so a mirror test comparing theme/tokens.ts against
+          // styles/tokens.css silently reads an empty string and passes on nothing. These are
+          // the renderer's own stylesheets and the tests that assert on them are source gates.
+          css: { include: [/src\/renderer\/styles\/.*\.css(\?raw)?$/] },
         },
       },
     ],

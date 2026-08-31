@@ -1,0 +1,91 @@
+/*
+ * §8.7's token block. This file is the single source of truth for colour, type family and
+ * geometry in the renderer; `theme/tokens.ts` is a mirror checked against it, and
+ * `scripts/check-style-tokens.mjs` fails the build on any colour literal outside it.
+ *
+ * Do not re-derive the contrast floors by eye — two review rounds corrected them.
+ */
+:root {
+  /* ground */
+  --app-bg: #07090b;
+  --surface-0: #0a0d10;
+  --surface-1: #0d1013;
+  --surface-2: #101418;
+  --surface-3: #12161a;
+  --surface-4: #171d23;
+  --surface-5: #1c2228;
+  --surface-sel: #131820;
+  --surface-sel-hover: #141a20;
+  --pill-bg: #1c2a3d;
+
+  /* lines */
+  --line-1: #171b20;
+  --line-2: #1f242a;
+  --line-3: #252b32;
+  --line-4: #2c3540;
+  --line-5: #3c454e;
+  --sig-edge: #3a4a5e;
+  --edge-strong: #7f9aa0;
+
+  /* type — decision-carrying text is --text-3 or lighter; 4 and 5 are ornament */
+  --text-0: #f2f5f7;
+  --text-1: #dde3e8;
+  --text-2: #b6c1cb;
+  --text-3: #8b97a3;
+  --text-4: #6c7885;
+  --text-5: #4a5560;
+
+  /* signal — system, alive. Never a project's colour. */
+  --sig: #4a9dff;
+  --sig-ink: #08131f;
+  --sig-hover: #8ec2ff;
+
+  /* state */
+  --pass: #56704e;
+  --pass-ink: #8fa87c;
+  --fail: #8c4a3c;
+  --fail-hot: #e0533d;
+  --warn: #c48a4a;
+  --absent: #2c3540;
+  --unknown: #1e262e;
+  --unknown-ink: #bacede;
+  --interrupt: #c8563c;
+  --silver: #b9c4cc;
+  --rust: #96522a;
+  --growth: #54703e;
+
+  /* tier frames — machined edges against black */
+  --tier-gold: #e8c268;
+  --tier-brass: #a8763f;
+  --tier-steel: #5c7c85;
+  --tier-plain: #333c45;
+  --tier-blue: #2f4a5c;
+  --tier-ref: #232a31;
+
+  /* tier ink — used whenever a tier is named in type, never the frame colour */
+  --tier-gold-ink: #f0d493;
+  --tier-brass-ink: #dca972;
+  --tier-steel-ink: #a3c4cd;
+  --tier-plain-ink: #95a3ae;
+  --tier-silver-ink: #cfd8de;
+
+  /* rank — low rank reads low through chroma and label, never luminance */
+  --rank-s: oklch(0.86 0.13 88);
+  --rank-a: oklch(0.74 0.15 300);
+  --rank-b: oklch(0.76 0.13 232);
+  --rank-c: oklch(0.82 0.02 240);
+  --rank-d: oklch(0.78 0.018 240);
+  --rank-e: oklch(0.74 0.016 240);
+
+  /* type families — self-hosted, registered by renderer/fonts.ts */
+  --font-display: 'Rajdhani', system-ui, sans-serif;
+  --font-body: 'Barlow', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* geometry — radius elsewhere is 0–3px only; this is an instrument panel */
+  --chamfer-card: 12px;
+  --chamfer-hero: 16px;
+  --tile-min: 186px;
+  --grid-col-gap: 16px;
+  --grid-row-gap: 24px;
+}
