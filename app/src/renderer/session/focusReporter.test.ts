@@ -1,14 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { FOCUS_HEARTBEAT_MS } from '../../shared/sessionFocus';
-import { createFocusReporter } from './focusReporter';
+import { createFocusReporter, type FocusReporter } from './focusReporter';
 
-function harness() {
+interface Harness {
+  reporter: FocusReporter;
+  sent: Array<number | null>;
+  fire: () => void;
+  pending: () => { fn: () => void; ms: number } | null;
+}
+
+function harness(): Harness {
   const sent: Array<number | null> = [];
   let pending: { fn: () => void; ms: number } | null = null;
   let next = 1;
   const reporter = createFocusReporter({
-    report: async (args) => {
+    report: (args) => {
       sent.push(args.projectId);
+      return Promise.resolve();
     },
     setTimer: (fn, ms) => {
       pending = { fn, ms };
@@ -102,9 +110,9 @@ describe('the focus reporter', () => {
     let pending: (() => void) | null = null;
     let calls = 0;
     const reporter = createFocusReporter({
-      report: async () => {
+      report: () => {
         calls += 1;
-        throw new Error('core restarting');
+        return Promise.reject(new Error('core restarting'));
       },
       setTimer: (fn) => {
         pending = fn;
