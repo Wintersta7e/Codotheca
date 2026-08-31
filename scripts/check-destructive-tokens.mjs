@@ -113,6 +113,34 @@ export function collectFiles(roots, repoRoot) {
   return files.sort();
 }
 
+/**
+ * The read half, separated from the walk so the gap between them is testable.
+ *
+ * A file can vanish in that gap: `app/test/styleGates.test.ts` plants and removes a probe
+ * stylesheet inside one of these roots to prove its own gate can fail, and vitest runs it in
+ * parallel with this gate's suite. Reading the walk's list unguarded crashed this gate with an
+ * ENOENT stack and failed the whole app suite — a gate that throws is a gate that reports
+ * nothing. A file that is no longer there carries no rendered string, so it is skipped and
+ * deliberately not counted, which keeps the "scanned nothing" guard meaning what it says. Any
+ * other read error is a real problem and is raised.
+ */
+export function scanFiles(files, repoRoot) {
+  const violations = [];
+  let scanned = 0;
+  for (const file of files) {
+    let source;
+    try {
+      source = readFileSync(file, 'utf8');
+    } catch (error) {
+      if (error && error.code === 'ENOENT') continue;
+      throw error;
+    }
+    scanned += 1;
+    violations.push(...scanSource(source, relative(repoRoot, file).split(sep).join('/')));
+  }
+  return { scanned, violations };
+}
+
 function assertRootIsReadable(root) {
   const absolute = join(REPO_ROOT, root);
   if (!existsSync(absolute)) {
@@ -201,22 +229,17 @@ function main(argv) {
     return 1;
   }
 
-  const files = collectFiles(roots, REPO_ROOT);
-  if (files.length === 0) {
+  const { scanned, violations } = scanFiles(collectFiles(roots, REPO_ROOT), REPO_ROOT);
+
+  if (scanned === 0) {
     process.stderr.write(
       'destructive-token gate: 0 files scanned — the gate refuses to pass on a scan it did not run\n',
     );
     return 1;
   }
 
-  const violations = files.flatMap((file) =>
-    scanSource(readFileSync(file, 'utf8'), relative(REPO_ROOT, file).split(sep).join('/')),
-  );
-
   if (json) {
-    process.stdout.write(
-      `${JSON.stringify({ filesScanned: files.length, violations }, null, 2)}\n`,
-    );
+    process.stdout.write(`${JSON.stringify({ filesScanned: scanned, violations }, null, 2)}\n`);
     return violations.length === 0 ? 0 : 1;
   }
 
@@ -226,7 +249,7 @@ function main(argv) {
     );
   }
   if (violations.length > 0) return 1;
-  process.stdout.write(`destructive-token gate: ${files.length} files, 0 violations\n`);
+  process.stdout.write(`destructive-token gate: ${String(scanned)} files, 0 violations\n`);
   return 0;
 }
 

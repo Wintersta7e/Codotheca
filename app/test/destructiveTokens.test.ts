@@ -43,16 +43,35 @@ function parseReport(out: string): { filesScanned: number; violations: unknown[]
   return { filesScanned: parsed.filesScanned, violations: parsed.violations };
 }
 
-async function readScanRoots(): Promise<readonly string[]> {
+interface Gate {
+  readonly SCAN_ROOTS: readonly string[];
+  readonly collectFiles: (roots: readonly string[], repoRoot: string) => readonly string[];
+  readonly scanFiles: (
+    files: readonly string[],
+    repoRoot: string,
+  ) => { scanned: number; violations: readonly unknown[] };
+}
+
+async function importGate(): Promise<Gate> {
   const gate: unknown = await import(/* @vite-ignore */ pathToFileURL(SCRIPT).href);
-  if (typeof gate !== 'object' || gate === null || !('SCAN_ROOTS' in gate)) {
-    throw new Error('destructive-token gate does not export SCAN_ROOTS');
+  if (
+    typeof gate !== 'object' ||
+    gate === null ||
+    !('SCAN_ROOTS' in gate) ||
+    !Array.isArray(gate.SCAN_ROOTS) ||
+    !gate.SCAN_ROOTS.every((root: unknown) => typeof root === 'string') ||
+    !('collectFiles' in gate) ||
+    typeof gate.collectFiles !== 'function' ||
+    !('scanFiles' in gate) ||
+    typeof gate.scanFiles !== 'function'
+  ) {
+    throw new Error('destructive-token gate does not export the shape this test drives');
   }
-  const roots = gate.SCAN_ROOTS;
-  if (!Array.isArray(roots) || !roots.every((root: unknown) => typeof root === 'string')) {
-    throw new Error('destructive-token gate exports an invalid SCAN_ROOTS');
-  }
-  return roots;
+  return gate as unknown as Gate;
+}
+
+async function readScanRoots(): Promise<readonly string[]> {
+  return (await importGate()).SCAN_ROOTS;
 }
 
 describe('the destructive-token gate', () => {
@@ -115,5 +134,31 @@ describe('the destructive-token gate', () => {
       });
       expect(tracked.trim(), `${root} must hold a tracked file`).not.toBe('');
     }
+  });
+
+  it('survives a file that vanishes between the walk and the read', async () => {
+    // Measured, not hypothetical. `app/test/styleGates.test.ts:39` plants and removes
+    // `app/src/renderer/styles/__probe.css` inside a scan root to prove its own gate can fail,
+    // and vitest runs the node project's files in parallel — so this gate walked that path and
+    // read it after it was gone, crashed with an ENOENT stack, and failed the whole app suite.
+    // A gate that throws is a gate that reports nothing.
+    //
+    // The window is far too narrow to reproduce by racing two suites, so the walk and the read
+    // are separate exports and the gap between them is opened here on purpose.
+    const gate = await importGate();
+    const vanishing = join(REPO, 'app/src/renderer/styles/__vanishing_probe__.css');
+    writeFileSync(vanishing, '.x { color: #ffffff; }\n', 'utf8');
+
+    let walked: readonly string[];
+    try {
+      walked = gate.collectFiles(['app/src/renderer/styles'], REPO);
+    } finally {
+      rmSync(vanishing, { force: true });
+    }
+    expect(walked.some((file) => file.endsWith('__vanishing_probe__.css'))).toBe(true);
+
+    const result = gate.scanFiles(walked, REPO);
+    expect(result.scanned).toBe(walked.length - 1);
+    expect(result.violations).toHaveLength(0);
   });
 });
