@@ -30,6 +30,7 @@ pub mod paths;
 pub mod proto;
 pub mod protocol;
 pub mod scan;
+pub mod session;
 
 #[cfg(feature = "testkit")]
 pub mod testing;
