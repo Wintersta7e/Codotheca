@@ -1,5 +1,6 @@
 //! Launch targets: discovery, ranking, resolution, verification and the spawn.
 
+pub mod argv;
 pub mod catalogue;
 pub mod detect;
 pub mod probe;
