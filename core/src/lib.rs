@@ -26,6 +26,7 @@ pub mod jobs;
 pub mod lifecycle;
 pub mod mount;
 pub mod paths;
+pub mod projects;
 pub mod proto;
 pub mod protocol;
 pub mod query;
