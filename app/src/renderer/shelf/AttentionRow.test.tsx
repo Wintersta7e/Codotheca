@@ -1,12 +1,10 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ATTENTION_CHIPS, attentionCounts } from './counts.js';
-import {
-  AttentionChip,
-  AttentionRow,
-  SPACE_PEEK_HINT,
-  type AttentionRowProps,
-} from './AttentionRow.js';
+// `AttentionChip` moved out of `AttentionRow` when the collections lane made the two rows share
+// one box. The row still owns `SPACE_PEEK_HINT` and its own props.
+import { AttentionChip } from './AttentionChip.js';
+import { AttentionRow, SPACE_PEEK_HINT, type AttentionRowProps } from './AttentionRow.js';
 import type { QueryContext } from './evaluate.js';
 import type { ShelfRow } from './row.js';
 
@@ -144,7 +142,7 @@ describe('AttentionChip', () => {
         label="UNKNOWN"
         count={null}
         subLine="NOT COUNTED"
-        pressed={false}
+        active={false}
         onActivate={vi.fn()}
       />,
     );
@@ -156,7 +154,7 @@ describe('AttentionChip', () => {
         label="ZERO"
         count={0}
         subLine="COUNTED"
-        pressed={false}
+        active={false}
         onActivate={vi.fn()}
       />,
     );
@@ -173,7 +171,7 @@ describe('AttentionChip', () => {
             <s>is:broken</s> dropped
           </>
         }
-        pressed={false}
+        active={false}
         onActivate={vi.fn()}
       />,
     );
@@ -186,7 +184,7 @@ describe('AttentionChip', () => {
         label="DEFAULT"
         count={1}
         subLine="ACCENT"
-        pressed={false}
+        active={false}
         onActivate={vi.fn()}
       />,
     );
@@ -200,7 +198,7 @@ describe('AttentionChip', () => {
         count={1}
         subLine="ACCENT"
         accent="var(--warn)"
-        pressed={false}
+        active={false}
         onActivate={vi.fn()}
       />,
     );
@@ -216,7 +214,7 @@ describe('AttentionChip', () => {
         count={1}
         subLine="STATE"
         broken
-        pressed={false}
+        active={false}
         onActivate={vi.fn()}
       />,
     );
@@ -230,7 +228,7 @@ describe('AttentionChip', () => {
         label="PLAIN"
         count={1}
         subLine="STATE"
-        pressed={false}
+        active={false}
         onActivate={vi.fn()}
       />,
     );
@@ -243,7 +241,7 @@ describe('AttentionChip', () => {
   it('activates on click and reflects the pressed state', () => {
     const onActivate = vi.fn();
     const view = render(
-      <AttentionChip label="ACTIVE" count={1} subLine="STATE" pressed onActivate={onActivate} />,
+      <AttentionChip label="ACTIVE" count={1} subLine="STATE" active onActivate={onActivate} />,
     );
     const button = screen.getByRole('button', { name: /ACTIVE/ });
     expect(button.getAttribute('aria-pressed')).toBe('true');
@@ -255,7 +253,7 @@ describe('AttentionChip', () => {
         label="ACTIVE"
         count={1}
         subLine="STATE"
-        pressed={false}
+        active={false}
         onActivate={onActivate}
       />,
     );
