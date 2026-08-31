@@ -2,4 +2,5 @@
 //! `dispatch_*_command` that returns `None` for a command it does not own, so the assembling
 //! `CommandHandler` can try them in turn.
 
+pub mod launch;
 pub mod targets;
