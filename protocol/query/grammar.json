@@ -1,0 +1,30 @@
+{
+  "queryGrammarVersion": 1,
+  "fields": ["lang", "owner", "in", "is", "has", "touched", "size", "completion", "collection"],
+  "is": [
+    "dirty",
+    "unpushed",
+    "behind",
+    "interrupted",
+    "archived",
+    "pinned",
+    "hidden",
+    "reference",
+    "bare",
+    "fork",
+    "empty",
+    "shallow",
+    "local",
+    "wsl",
+    "new"
+  ],
+  "has": ["readme", "license", "tests", "ci", "remote", "stash", "submodules"],
+  "sizeUnitBytes": { "kb": 1024, "mb": 1048576, "gb": 1073741824 },
+  "touchedUnitDays": { "d": 1, "w": 7, "mo": 30, "y": 365 },
+  "comparisons": {
+    "size": [">", "<"],
+    "touched": [">", "<"],
+    "completion": [">=", "<=", "=", ">", "<"]
+  },
+  "neverEvaluated": ["completion"]
+}
