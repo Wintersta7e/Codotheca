@@ -1,1 +1,95 @@
-/* §11.6's `reduced` and `off` tier gates. Empty for now, so the import in main.tsx resolves. */
+/*
+ * §11.6's tiers, as CSS. `data-effects-tier` is set on the document element by
+ * renderer/effectsTier.ts with the RESOLVED tier — `auto` never reaches this file.
+ *
+ * `reduced` keeps an effect by clamping it, not by keeping its duration: §7.8 says reduced
+ * keeps frame, bloom and the data strip, and §11.6 clamps every surviving transition to
+ * 160 ms and drops every transform. Both hold at once.
+ */
+
+/* Travelling highlights are absent below `full`: LED run, specular sweep, brackets, scan line. */
+[data-effects-tier='reduced'] .cdt-card,
+[data-effects-tier='off'] .cdt-card {
+  background-image: none;
+}
+
+[data-effects-tier='reduced'] .cdt-plate,
+[data-effects-tier='off'] .cdt-plate {
+  background-image: var(--cdt-plate);
+}
+
+[data-effects-tier='reduced'] .cdt-bracket,
+[data-effects-tier='off'] .cdt-bracket,
+[data-effects-tier='reduced'] .cdt-scanline,
+[data-effects-tier='off'] .cdt-scanline {
+  display: none;
+}
+
+/* No transform below `full`: no lift, no press, no dot scale, no strip travel. */
+[data-effects-tier='reduced'] .cdt-card,
+[data-effects-tier='off'] .cdt-card,
+[data-effects-tier='reduced'] .cdt-card:active,
+[data-effects-tier='off'] .cdt-card:active,
+[data-effects-tier='reduced'] .cdt-dot,
+[data-effects-tier='off'] .cdt-dot,
+[data-effects-tier='reduced'] .cdt-strip,
+[data-effects-tier='off'] .cdt-strip {
+  transform: none;
+}
+
+/* `reduced`: opacity and colour transitions only, clamped. */
+[data-effects-tier='reduced'] .cdt-card {
+  transition: background-color 160ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+[data-effects-tier='reduced'] .cdt-bloom {
+  transition: box-shadow 160ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+[data-effects-tier='reduced'] .cdt-strip,
+[data-effects-tier='reduced'] .cdt-pin-silhouette {
+  transition: opacity 160ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+[data-effects-tier='reduced'] .cdt-dot,
+[data-effects-tier='reduced'] .cdt-plate {
+  transition: none;
+}
+
+/* `off`: no transition and no animation of any property. The states themselves remain. */
+[data-effects-tier='off'] .cdt-card,
+[data-effects-tier='off'] .cdt-card *,
+[data-effects-tier='off'] .cdt-card-halo,
+[data-effects-tier='off'] .cdt-bloom {
+  transition: none;
+  animation: none;
+}
+
+/* The scheduled flicker rides the tier and gets no switch of its own (§11.3a). */
+[data-effects-tier='reduced'] .cdt-card-halo,
+[data-effects-tier='off'] .cdt-card-halo {
+  opacity: 1;
+}
+
+/*
+ * R35(b) — the three shared entry keyframes, and why they had to be declared in `base.css`.
+ *
+ * `viewIn`, `panelIn` and `turnIn` are the entry animations every full-screen flow uses (§8.6,
+ * §10.1b, §10.3a, §10.4a, §11.2a, §11.3a). CSS cannot select on `animation-name`, so the clamp is
+ * expressed twice and BOTH halves need the single declaration to exist in the design system:
+ *
+ *   `off`     — nothing animates at all. The blanket rule below is the whole of it.
+ *   `reduced` — the three are opacity-and-tracking only, so they survive, clamped: the consuming
+ *               surface reads REDUCED_CLAMP_MS from `motion/tier.ts` and states that duration on
+ *               its own `animation` shorthand.
+ *
+ * A screen that declares its own copy of any of the three sits outside both halves — the clamp
+ * has no way to see it, and a duplicate `@keyframes` silently overrides rather than erroring. No
+ * screen may; `check-style-tokens.mjs` fails the build on a second declaration.
+ */
+[data-effects-tier='off'],
+[data-effects-tier='off'] *,
+[data-effects-tier='off'] *::before,
+[data-effects-tier='off'] *::after {
+  animation: none;
+}

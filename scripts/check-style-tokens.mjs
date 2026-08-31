@@ -60,9 +60,14 @@ const TIMING =
   /cubic-bezier\([^)]*\)|\b(?:ease-in-out|ease-in|ease-out|ease|linear|steps\([^)]*\))\b/g;
 const KEYFRAMES = /@keyframes\s+([A-Za-z_][\w-]*)/g;
 
+// A curve is a set of four numbers, not a spelling. The spec writes `cubic-bezier(.2,.85,.2,1)`
+// and a CSS formatter writes `cubic-bezier(0.2, 0.85, 0.2, 1)`; comparing the raw strings makes
+// the gate fail on whitespace and a leading zero, which says nothing about §11.6.
+const curveKey = (v) => v.replace(/\s+/g, '').replace(/\b0\.(\d)/g, '.$1');
+
 const exemptColours = new Set(vocabulary.exemptColourLiterals.map((v) => v.replace(/\s+/g, ' ')));
 const permittedDurations = new Set(vocabulary.durationsMs);
-const permittedTimings = new Set(vocabulary.timingFunctions.map((v) => v.replace(/\s+/g, '')));
+const permittedTimings = new Set(vocabulary.timingFunctions.map(curveKey));
 
 // R35(b). A duplicate @keyframes of the same name silently overrides rather than erroring, and a
 // keyframe declared inside a screen's stylesheet is invisible to motion.css's tier clamp.
@@ -90,7 +95,7 @@ for (const file of scanned) {
       if (!permittedDurations.has(ms)) fail(file, `duration ${amount}${unit} is not in §11.6`);
     }
     for (const [timing] of text.matchAll(TIMING)) {
-      if (!permittedTimings.has(timing.replace(/\s+/g, ''))) {
+      if (!permittedTimings.has(curveKey(timing))) {
         fail(file, `timing function not in §11.6: ${timing}`);
       }
     }

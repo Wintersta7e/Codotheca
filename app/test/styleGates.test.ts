@@ -75,6 +75,26 @@ describe('the stylesheet gate', () => {
     expect(result.code).toBe(0);
   });
 
+  it('reads a curve as four numbers, not as a spelling', () => {
+    // The spec writes `cubic-bezier(.2,.85,.2,1)`; a CSS formatter writes
+    // `cubic-bezier(0.2, 0.85, 0.2, 1)`. Both are §11.6's standard enter curve. Comparing raw
+    // strings fails on a leading zero, which says nothing about the motion contract.
+    const listed = gateOver(
+      'scripts/check-style-tokens.mjs',
+      '.cdt-probe { transition: opacity 160ms cubic-bezier(0.2, 0.85, 0.2, 1); }\n',
+    );
+    expect(listed.out).toContain('check-style-tokens: ok');
+    expect(listed.code).toBe(0);
+
+    // …and the normalisation must not have made it permissive.
+    const unlisted = gateOver(
+      'scripts/check-style-tokens.mjs',
+      '.cdt-probe { transition: opacity 160ms cubic-bezier(0.2, 1.5, 0.4, 1); }\n',
+    );
+    expect(unlisted.code).toBe(1);
+    expect(unlisted.out).toContain('timing function not in §11.6');
+  });
+
   it('rejects a var() that names no token', () => {
     const result = gateOver(
       'scripts/check-style-tokens.mjs',

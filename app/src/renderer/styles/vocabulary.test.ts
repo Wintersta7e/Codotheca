@@ -52,8 +52,11 @@ describe('R35(b): the shared entry keyframes are declared once, here', () => {
   });
 
   it('carries turnIn, which no plan declared before this ruling', () => {
+    // The tracking values are the assertion; their spelling is not. A CSS formatter writes the
+    // leading zero back in, so matching `.4em` literally would fail on a reformat and say
+    // nothing about §10.4a's turn line.
     expect(base).toContain('@keyframes turnIn');
-    expect(base).toContain('letter-spacing: .4em');
-    expect(base).toContain('letter-spacing: .02em');
+    expect(base).toMatch(/letter-spacing:\s*0?\.4em/);
+    expect(base).toMatch(/letter-spacing:\s*0?\.02em/);
   });
 });
