@@ -2,6 +2,8 @@
 
 pub mod catalogue;
 pub mod probe;
+#[cfg(not(windows))]
+pub mod probe_linux;
 pub mod wslpath;
 
 pub use catalogue::{CwdMode, TargetKind};
