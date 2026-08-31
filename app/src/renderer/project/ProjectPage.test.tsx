@@ -216,6 +216,59 @@ describe('pinning from the hero', () => {
   });
 });
 
+describe('the mounted body', () => {
+  it('draws the rail beside the hero and the Overview panels beside them', async () => {
+    mount(detailFixture());
+    await screen.findByTestId('cp-rail');
+    expect(screen.getByTestId('cp-loc-header')).toBeTruthy();
+    expect(screen.getByTestId('cp-readme-header')).toBeTruthy();
+    expect(screen.getByTestId('cp-note-label')).toBeTruthy();
+  });
+
+  it('mounts one tab at a time — the ACTIVITY chart does not exist while OVERVIEW is shown', async () => {
+    mount(detailFixture());
+    await screen.findByTestId('cp-loc-header');
+    expect(screen.queryByTestId('cp-act-note')).toBeNull();
+    press(await screen.findByTestId('cp-page'), 'ArrowRight');
+    await waitFor(() => {
+      expect(screen.getByTestId('cp-act-note')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('cp-loc-header')).toBeNull();
+    expect(screen.queryByTestId('cp-note-label')).toBeNull();
+  });
+
+  it('adopts a copy from the Locations panel, and the page follows that one', async () => {
+    const detail = detailFixture({
+      locations: [locationFixture({ isPrimary: true }), locationFixture({ isPrimary: false })],
+    });
+    mount(detail);
+    const adopts = await screen.findAllByTestId('cp-loc-adopt');
+    expect(adopts).toHaveLength(2);
+    fireEvent.click(adopts[1] as HTMLElement);
+    const second = String(detail.locations[1]?.location.id);
+    await waitFor(() => {
+      expect(screen.getByTestId('cp-tabpanel').dataset['shownLocation']).toBe(second);
+    });
+    expect(screen.getAllByTestId('cp-loc-adopt')[1]?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  /**
+   * R45's text-entry guard lives in the key table and this is the surface that proves it: `Esc`
+   * typed into the note reverts the edit and stays in the field rather than leaving the page.
+   */
+  it('leaves Escape to the note field rather than backing out of the page', async () => {
+    const { onBack } = mount(detailFixture());
+    fireEvent.click(await screen.findByTestId('cp-note-empty'));
+    const field = screen.getByTestId('cp-note-field');
+    fireEvent.change(field, { target: { value: 'discarded' } });
+    // `fireEvent`, not the raw dispatch `press` uses: the assertion is about what React does
+    // with the event, so it has to go through React's own delegation and be act-wrapped.
+    fireEvent.keyDown(field, { key: 'Escape', code: 'Escape' });
+    expect(onBack).not.toHaveBeenCalled();
+    expect(screen.getByTestId('cp-note-empty')).toBeTruthy();
+  });
+});
+
 describe('the shown location', () => {
   it('defaults to the primary', () => {
     const detail = detailFixture();

@@ -22,10 +22,15 @@ import type {
   ProjectId,
 } from '../../generated/protocol';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
+import { ActivityTab } from './activity/ActivityTab';
 import { useProjectPageDeps } from './deps';
 import { HeroTile } from './hero/HeroTile';
 import { Identity } from './Identity';
+import { LocationsPanel } from './locations/LocationsPanel';
 import { cascadeDelay } from './motion';
+import { NotePanel } from './note/NotePanel';
+import { Rail } from './rail/Rail';
+import { ReadmePanel } from './readme/ReadmePanel';
 import { RoastNote } from './RoastNote';
 import { nextTab, PROJECT_TABS, type ProjectTab } from './tabs';
 import { useProjectDetail } from './useProjectDetail';
@@ -245,6 +250,7 @@ export function ProjectPageView({
               isPinned={pinnedOverride ?? detail.row.isPinned}
               onTogglePin={onTogglePin}
             />
+            <Rail detail={detail} shown={shown} onChanged={reload} />
           </div>
           <div className="cp-col-right">
             <div className="cp-rise" style={{ animationDelay: cascadeDelay(0) }}>
@@ -257,9 +263,13 @@ export function ProjectPageView({
                 roastsEnabled={roastsEnabled}
               />
             </div>
+            {/*
+             * §8.5.1 unmounts what is not on screen, and the same reasoning applies inside the
+             * page: only the mounted tab's subtree exists. The cascade delay moved onto the
+             * panels themselves, each of which carries §8.5.1's own beat.
+             */}
             <div
-              className="cp-rise"
-              style={{ animationDelay: cascadeDelay(1) }}
+              className="cp-tabpanel"
               id="cp-tabpanel"
               role="tabpanel"
               aria-labelledby={`cp-tab-${tab}`}
@@ -267,7 +277,27 @@ export function ProjectPageView({
               data-tab={tab}
               data-shown-location={String(shown?.location.id ?? '')}
               data-primary-location={String(primary?.location.id ?? '')}
-            />
+            >
+              {tab === 'overview' ? (
+                <>
+                  <LocationsPanel
+                    detail={detail}
+                    shownId={shownId}
+                    onShow={setShownId}
+                    onChanged={reload}
+                  />
+                  <ReadmePanel readme={detail.readme} row={detail.row} now={deps.now()} />
+                  <NotePanel
+                    projectId={detail.row.id}
+                    row={detail.row}
+                    note={detail.notes}
+                    onChanged={reload}
+                  />
+                </>
+              ) : (
+                <ActivityTab detail={detail} />
+              )}
+            </div>
           </div>
         </div>
       ) : null}

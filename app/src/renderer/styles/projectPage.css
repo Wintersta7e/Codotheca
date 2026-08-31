@@ -883,3 +883,11 @@
   letter-spacing: 0.02em;
   color: var(--text-3);
 }
+
+/* --- the tab body: §8.5.1's Overview column, one panel per beat ------------------------- */
+
+.cp-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
