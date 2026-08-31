@@ -8,6 +8,13 @@ export const IPC_REQUEST = 'codotheca:request';
 export const IPC_CORE_STATUS = 'codotheca:core-status';
 export const IPC_EVENTS = 'codotheca:events';
 
+/**
+ * The shell tells the renderer to open quick switch. §8.6: pressing the resident show shortcut
+ * shows the window and opens the palette; tray-icon activation shows the window and opens
+ * nothing, so the tray path never sends on this channel.
+ */
+export const IPC_OPEN_PALETTE = 'codotheca:open-palette';
+
 export interface RendererEvent {
   topic: Topic;
   event: string;

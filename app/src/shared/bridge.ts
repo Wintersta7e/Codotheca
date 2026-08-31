@@ -23,4 +23,9 @@ export interface CodothecaBridge {
   onCoreStatus(cb: (status: unknown) => void): void;
   /** One batch per frame, never one message per event. */
   onCoreEvents(cb: (batch: unknown) => void): void;
+  /**
+   * §8.6: the resident show shortcut shows the window and opens the palette. The renderer is
+   * told to open it; it never learns the chord, and no path here carries one.
+   */
+  onOpenPalette(cb: () => void): void;
 }
