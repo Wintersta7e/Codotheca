@@ -34,6 +34,7 @@ pub mod protocol;
 pub mod query;
 pub mod scan;
 pub mod session;
+pub mod view;
 
 #[cfg(feature = "testkit")]
 pub mod testing;
