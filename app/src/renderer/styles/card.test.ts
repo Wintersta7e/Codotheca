@@ -261,6 +261,51 @@ describe('the motion tier clamp resolves against these class names', () => {
   });
 });
 
+/**
+ * §11.6's dip is a custom property and never an inline `opacity`, and this is the gate for it.
+ *
+ * The two routes are indistinguishable at `full` and differ at exactly the two tiers that forbid
+ * the dip: an inline style outranks every selector, so a driver writing `style.opacity` keeps
+ * dipping under `[data-effects-tier='reduced'] .cdt-card-halo { opacity: 1 }` with nothing on
+ * screen or in any other test to say so. The second case below is that driver, and it fails.
+ */
+function haloOpacityAt(tier: 'full' | 'reduced' | 'off', markup: string): string {
+  const style = document.createElement('style');
+  style.textContent = `${css}\n${motionCss}`;
+  document.head.append(style);
+  document.documentElement.setAttribute('data-effects-tier', tier);
+  document.body.innerHTML = markup;
+  const halo = document.querySelector('.cdt-card-halo');
+  if (halo === null) throw new Error('fixture has no .cdt-card-halo');
+  return getComputedStyle(halo).opacity;
+}
+
+const VIA_PROPERTY =
+  '<div class="cdt-card-frame" style="--cdt-halo-opacity: 0.8">' +
+  '<span class="cdt-card-halo"></span></div>';
+const VIA_INLINE =
+  '<div class="cdt-card-frame"><span class="cdt-card-halo" style="opacity: 0.8"></span></div>';
+
+describe('the flicker dip rides the tier because it is a value, not an inline opacity', () => {
+  it('declares the halo opacity as a custom property with a steady fallback', () => {
+    expect(rule('.cdt-card-halo')).toContain('opacity: var(--cdt-halo-opacity, 1)');
+  });
+
+  it('is clamped to steady at reduced and at off while the property is set', () => {
+    for (const tier of ['reduced', 'off'] as const) {
+      expect(haloOpacityAt(tier, VIA_PROPERTY)).toBe('1');
+    }
+  });
+
+  it('would NOT be clamped had the driver written an inline opacity instead', () => {
+    // jsdom substitutes no `var()`, so `full` cannot be read here — but the tiers that matter
+    // are the two that clamp, and this is the whole difference between the two routes.
+    for (const tier of ['reduced', 'off'] as const) {
+      expect(haloOpacityAt(tier, VIA_INLINE)).toBe('0.8');
+    }
+  });
+});
+
 describe('the card carries no hex and no roast', () => {
   it('declares every colour through a token or a card-local property', () => {
     expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
