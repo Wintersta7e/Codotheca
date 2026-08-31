@@ -13,6 +13,7 @@ pub mod probe_windows;
 pub mod rank;
 pub mod recents;
 pub mod resolve;
+pub mod spawn;
 pub mod verify;
 pub mod wslpath;
 
