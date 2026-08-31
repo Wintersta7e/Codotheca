@@ -7,6 +7,12 @@
  * at ≥ 0.1 GB, whole MB below*, on the design's own scale rule, which divides MB by 1024. There
  * is no rung below MB.
  *
+ * *One decimal of GB* is a statement about **precision, not about padding**: the figure is
+ * rounded to a tenth and printed as a plain number, so a whole one prints `41 GB` and a
+ * fractional one `1.2 GB`. That is what reconciles §8.1's sentence with the era-header examples
+ * printed beside it, which read `41 GB tracked`; forcing a trailing `.0` is the one reading under
+ * which the two contradict each other.
+ *
  * The figure is returned alone. §8.1's era header appends `tracked` (§5.3's mandatory word),
  * §8.4.1's Peek fact labels it `TRACKED`, and §7.8's hover strip labels it not at all.
  */
@@ -17,11 +23,6 @@ export const BYTES_PER_GB = 1024 ** 3;
 export const GB_FLOOR_BYTES = 0.1 * BYTES_PER_GB;
 
 export function formatTrackedBytes(bytes: number): string {
-  // One decimal of *precision*, not a forced decimal place: `41 GB`, `1.2 GB`, `0.2 GB`.
-  // The prototype computes `Math.round(total / 1024 * 10) / 10` and concatenates it
-  // (`Codotheca v7 Shelf.dc.html:2683`, `:2696`), and it outranks its prose files. That is the
-  // only reading under which §8.1's "one decimal of GB" and its own era-header examples —
-  // `41 GB tracked` at `08-shelf-query.md:31`, `:93` and `03-git.md:66` — agree.
   if (bytes >= GB_FLOOR_BYTES) {
     return `${String(Math.round((bytes / BYTES_PER_GB) * 10) / 10)} GB`;
   }
