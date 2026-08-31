@@ -11,6 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { type CommandName, PROTOCOL_VERSION, type Topic } from '../generated/protocol';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
 import { EFFECTS_TIER_FLAG } from '../shared/effectsTier';
+import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
 import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
@@ -124,6 +125,10 @@ async function main(): Promise<void> {
     keep: 3,
     level: 'info',
   });
+
+  // After `app.ready`, before the window: the renderer cannot load `file:`, so a card that
+  // paints before this is bound would 404 and fall back to the nameplate for its first frame.
+  registerArtProtocol(protocol, { dataDir, readRendition: readRenditionFromDisk, log });
 
   const supervisor = new CoreSupervisor({
     binaryPath: resolveCoreBinary({
