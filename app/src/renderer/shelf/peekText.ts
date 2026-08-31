@@ -36,13 +36,20 @@ export interface PeekFact {
 }
 
 /**
+ * The fact: J6 has run and found nothing. §8.5.3's panel renders the same sentence, so it is a
+ * constant rather than three literals — §8.1 states it and Peek is its first renderer, so this
+ * is where it lives and the project page imports it (R12).
+ */
+export const README_ABSENT = 'No README in this repository.';
+
+/**
  * Two fallbacks, because they are two different states (§8.4.1). One string for both renders
  * unknown as zero: the first is a promise, the second is a fact.
  */
 export function readmeFallback(readme: ReadmeState): string | null {
   if (readme.state === 'not_indexed') return 'No README indexed yet.';
-  if (readme.state === 'absent') return 'No README in this repository.';
-  return readme.text === null || readme.text.trim() === '' ? 'No README in this repository.' : null;
+  if (readme.state === 'absent') return README_ABSENT;
+  return readme.text === null || readme.text.trim() === '' ? README_ABSENT : null;
 }
 
 /**

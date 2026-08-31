@@ -669,3 +669,55 @@
   letter-spacing: 0.16em;
   color: var(--text-3);
 }
+
+/* --- §8.5.3 README --------------------------------------------------------------------- */
+
+.cp-readme {
+  border: 1px solid var(--line-2);
+}
+.cp-readme-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 13px;
+  background: var(--surface-3);
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  color: var(--text-3);
+}
+/* §8.7 snaps §8.5.3's age-slot grey to --text-3 under the floor clause, and criterion 47 puts it
+ * there anyway: an observation age is the only rendering of its fact. */
+.cp-readme-age {
+  flex: none;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+.cp-readme-body {
+  padding: 15px 16px 17px;
+}
+.cp-readme-name {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-1);
+}
+.cp-readme-stripe {
+  width: 2px;
+  height: 44px;
+  margin-top: 8px;
+  background: var(--cdt-jewel);
+}
+.cp-readme-text {
+  margin: 12px 0 0;
+  max-width: 600px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
