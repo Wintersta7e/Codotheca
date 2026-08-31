@@ -22,8 +22,10 @@ import type {
   ProjectId,
 } from '../../generated/protocol';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
+import { useProjectPageDeps } from './deps';
 import { Identity } from './Identity';
 import { cascadeDelay } from './motion';
+import { RoastNote } from './RoastNote';
 import { nextTab, PROJECT_TABS, type ProjectTab } from './tabs';
 import { useProjectDetail } from './useProjectDetail';
 
@@ -81,7 +83,9 @@ export function ProjectPageView({
   const { state, heroHash, redirectedTo, reload } = useProjectDetail(projectId);
   const [tab, setTab] = useState<ProjectTab>('overview');
   const [shownId, setShownId] = useState<LocationId | null>(null);
+  const [roastsEnabled, setRoastsEnabled] = useState(true);
   const rootRef = useRef<HTMLDivElement>(null);
+  const deps = useProjectPageDeps();
 
   useEffect(() => {
     if (redirectedTo !== null) onOpenProject(redirectedTo);
@@ -96,6 +100,21 @@ export function ProjectPageView({
   useEffect(() => {
     setShownId(null);
   }, [projectId]);
+
+  // §11.3a's switch defaults **on**, so a settings read that has not landed yet must not silence
+  // a note that would render, and a read that fails leaves the documented default in place.
+  useEffect(() => {
+    let live = true;
+    deps
+      .request('settings.get', {})
+      .then((settings) => {
+        if (live) setRoastsEnabled(settings.roastEnabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [deps]);
 
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -181,6 +200,13 @@ export function ProjectPageView({
           <div className="cp-col-right">
             <div className="cp-rise" style={{ animationDelay: cascadeDelay(0) }}>
               <Identity row={detail.row} />
+              {/* §8.5.1 sits the note under the description, inside the identity block. */}
+              <RoastNote
+                detail={detail}
+                shown={shown}
+                primary={primary}
+                roastsEnabled={roastsEnabled}
+              />
             </div>
             <div
               className="cp-rise"
