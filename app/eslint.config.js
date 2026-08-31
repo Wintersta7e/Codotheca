@@ -11,7 +11,7 @@ module.exports = [
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.web.json"],
+        project: ["./tsconfig.node.json", "./tsconfig.web.json", "./tsconfig.e2e.json"],
         tsconfigRootDir: __dirname,
       },
     },

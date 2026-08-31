@@ -15,11 +15,12 @@ export const SHED_ORDER = ['switch', 'keys', 'wordmarkLettering'] as const;
 /**
  * The bar width at or below which each step engages, in `SHED_ORDER`'s order.
  *
- * **Provisional.** §8.0a's clause is that the floor is *measured, not asserted*, and
- * `app/e2e/topbar-floor.spec.ts` is what measures it — these three are replaced by that run's
- * output, not adjusted by hand.
+ * **Measured**, not chosen: §8.0a's clause is that these are measured rather than asserted, and
+ * `app/e2e/topbar-floor.spec.ts` is what produces them — it renders this bar in a real layout
+ * engine with the real faces and fails when a value here is wrong in either direction. Do not
+ * adjust one by hand; re-run the measurement.
  */
-export const SHED_WIDTHS = [1024, 976, 948] as const;
+export const SHED_WIDTHS = [860, 714, 627] as const;
 
 export type ShedLevel = 0 | 1 | 2 | 3;
 

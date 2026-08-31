@@ -7,7 +7,7 @@ import type { TopBarProps } from './TopBar.js';
 import { TOP_BAR_FLOOR_PX, TOP_BAR_HEIGHT_PX, TopBar, WORDMARK } from './TopBar.js';
 // R19: the four shed names are 13c's, in the hook's own module. Importing them from `TopBar.js`
 // would re-export the hook's table through the component that imports the hook.
-import { SHED_ORDER, shedLevelFor } from './useShedLevel.js';
+import { SHED_ORDER, SHED_WIDTHS, shedLevelFor } from './useShedLevel.js';
 import { DEFAULT_SHELF_VIEW } from './viewState.js';
 
 afterEach(cleanup);
@@ -32,8 +32,12 @@ describe('geometry', () => {
   it("is 40px, the prototype's value, not the prose's 42", () => {
     expect(TOP_BAR_HEIGHT_PX).toBe(40);
   });
-  it('has a floor above the width both shelf captures fail at', () => {
-    expect(TOP_BAR_FLOOR_PX).toBeGreaterThan(924);
+  it('has a floor that is a fully shed width, and the number is the measurement’s to own', () => {
+    // The value itself belongs to `app/e2e/topbar-floor.spec.ts`, which renders this bar in a
+    // real layout engine and fails when the constant is wrong in either direction. What holds
+    // here is the relationship: the floor is where the last shed step has already engaged.
+    expect(shedLevelFor(TOP_BAR_FLOOR_PX)).toBe(3);
+    expect(TOP_BAR_FLOOR_PX).toBeLessThanOrEqual(SHED_WIDTHS[2]);
   });
 });
 
@@ -136,7 +140,7 @@ describe('the shed order', () => {
   it('engages step by step as the bar narrows, and never un-sheds', () => {
     expect(shedLevelFor(1400)).toBe(0);
     expect(shedLevelFor(TOP_BAR_FLOOR_PX)).toBe(3);
-    const levels = [1400, 1100, 1000, TOP_BAR_FLOOR_PX].map(shedLevelFor);
+    const levels = [1400, ...SHED_WIDTHS, TOP_BAR_FLOOR_PX].map(shedLevelFor);
     expect(levels).toEqual([...levels].sort((a, b) => a - b));
   });
 
@@ -149,8 +153,8 @@ describe('the shed order', () => {
     // The bar's own `textContent` runs every label together — `CODOTHECASORTLAST TOUCHED` — so
     // `/\bSORT\b/` over it can never match and asserting on it either way proves nothing. Each
     // step is read off the slot it belongs to, and states what still stands as well as what went.
-    const { container } = render(<TopBar {...props({ barWidth: 1000 })} />);
-    expect(shedLevelFor(1000)).toBe(1);
+    const { container } = render(<TopBar {...props({ barWidth: SHED_WIDTHS[0] })} />);
+    expect(shedLevelFor(SHED_WIDTHS[0])).toBe(1);
     expect(container.querySelector('[data-slot="switch"]')).toBeNull();
     expect(container.textContent).not.toContain('ALT+SPACE');
     expect(container.querySelector('.cdt-shelf-wordmark-text')?.textContent).toBe(WORDMARK);
@@ -159,8 +163,8 @@ describe('the shed order', () => {
   });
 
   it('then drops the SORT and DENSITY keys, leaving their values and the wordmark', () => {
-    const { container } = render(<TopBar {...props({ barWidth: 960 })} />);
-    expect(shedLevelFor(960)).toBe(2);
+    const { container } = render(<TopBar {...props({ barWidth: SHED_WIDTHS[1] })} />);
+    expect(shedLevelFor(SHED_WIDTHS[1])).toBe(2);
     expect(keyOf(container, 'sort')).toBeNull();
     expect(keyOf(container, 'density')).toBeNull();
     expect(container.querySelector('.cdt-shelf-wordmark-text')?.textContent).toBe(WORDMARK);
@@ -178,7 +182,7 @@ describe('the shed order', () => {
   });
 
   it('keeps the mark at every level, so the bar is never headless', () => {
-    for (const width of [1400, 1000, 960, TOP_BAR_FLOOR_PX]) {
+    for (const width of [1400, ...SHED_WIDTHS, TOP_BAR_FLOOR_PX]) {
       cleanup();
       const { container } = render(<TopBar {...props({ barWidth: width })} />);
       expect(container.querySelector('.cdt-shelf-mark')).toBeTruthy();

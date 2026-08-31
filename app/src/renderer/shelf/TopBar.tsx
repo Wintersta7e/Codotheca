@@ -15,10 +15,10 @@ import { SORT_LABELS, nextSort } from './viewState.js';
  *  own Fidelity clause makes the prototype authoritative where the two differ. */
 export const TOP_BAR_HEIGHT_PX = 40 as const;
 
-/** Measured by `app/e2e/topbar-floor.spec.ts`, not asserted here: the width at which the last
- *  shed step still fits at the widest sort label. 924px is known to be below it — both shelf
- *  captures show the query pill painting over the input text and over the sort value there. */
-export const TOP_BAR_FLOOR_PX = 940;
+/** Measured by `app/e2e/topbar-floor.spec.ts`, not asserted here: the narrowest width at which
+ *  the fully shed bar still fits at the widest sort label, with the query field at its own 80px
+ *  floor. One pixel below it the row runs past the bar and the right-hand control is clipped. */
+export const TOP_BAR_FLOOR_PX = 508;
 
 export const WORDMARK = 'CODOTHECA' as const;
 
