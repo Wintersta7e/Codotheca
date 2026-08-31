@@ -3,6 +3,7 @@ import './styles/tokens.css';
 import './styles/base.css';
 // Between base and motion, so §11.6's tier clamps still win on order as well as specificity.
 import './styles/card.css';
+import './styles/projectPage.css';
 import './styles/motion.css';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
