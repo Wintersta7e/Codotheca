@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 const ALLOWED: &[&str] = &[
     "--version",
     "cat-file",
+    "check-ignore",
     "log",
     "ls-files",
     "rev-list",

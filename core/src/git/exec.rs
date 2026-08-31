@@ -30,19 +30,42 @@ use super::repo::RepoHandle;
 pub struct RunLimits {
     /// Wall-clock ceiling before the process tree is killed.
     pub deadline: Option<Duration>,
+    /// The one non-zero exit code that is an *answer* rather than a failure, if any.
+    ///
+    /// Every subcommand the core runs succeeds with `0` except `check-ignore`, which exits `1`
+    /// to mean "none of these paths is ignored" — the usual answer in a repository with no
+    /// ignore rules at all. Raising that as an error would force the caller to guess, and both
+    /// guesses are wrong: treating it as "all ignored" credits nothing in such a repository, and
+    /// treating it as "none ignored" credits the dev-server writes §9 exists to exclude.
+    pub tolerated_exit: Option<i32>,
 }
 
 impl RunLimits {
     /// No deadline.
     #[must_use]
     pub fn none() -> Self {
-        Self { deadline: None }
+        Self {
+            deadline: None,
+            tolerated_exit: None,
+        }
     }
 
     /// Kill the tree after `d`.
     #[must_use]
     pub fn after(d: Duration) -> Self {
-        Self { deadline: Some(d) }
+        Self {
+            deadline: Some(d),
+            tolerated_exit: None,
+        }
+    }
+
+    /// Accept `code` as an answer, keeping the stdout that came with it.
+    #[must_use]
+    pub fn tolerating(self, code: i32) -> Self {
+        Self {
+            tolerated_exit: Some(code),
+            ..self
+        }
     }
 }
 
@@ -204,7 +227,10 @@ impl GitExec {
             Stop::Deadline(ms) => return Err(GitError::Budget { after_ms: ms }),
             Stop::Exited(status) => {
                 if !status.success() {
-                    return Err(classify(status.code().unwrap_or(-1), &stderr_bytes));
+                    let code = status.code().unwrap_or(-1);
+                    if limits.tolerated_exit != Some(code) {
+                        return Err(classify(code, &stderr_bytes));
+                    }
                 }
             }
         }

@@ -23,6 +23,7 @@ pub mod git;
 pub mod identity;
 pub mod index;
 pub mod jobs;
+pub mod launch;
 pub mod lifecycle;
 pub mod mount;
 pub mod paths;
@@ -31,6 +32,7 @@ pub mod proto;
 pub mod protocol;
 pub mod query;
 pub mod scan;
+pub mod session;
 
 #[cfg(feature = "testkit")]
 pub mod testing;

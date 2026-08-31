@@ -276,8 +276,9 @@
       "variants": ["measured", "not_computed", "shallow_excluded"]
     },
 
-    "TargetKind": { "kind": "enum", "variants": ["editor", "terminal", "file_manager"] },
-    "VerifyState": { "kind": "enum", "variants": ["unverified", "ok", "missing"] },
+    "TargetKind": { "kind": "enum", "variants": ["editor", "terminal", "file_manager", "git_client"] },
+    "VerifyState": { "kind": "enum", "variants": ["unverified", "ok", "missing", "not_executable"] },
+    "CwdMode": { "kind": "enum", "variants": ["location", "none"] },
     "TargetTier": {
       "kind": "enum",
       "variants": ["project", "location", "language", "global"]
@@ -306,6 +307,11 @@
     "CloseReason": {
       "kind": "enum",
       "variants": ["stop", "idle", "process_exit", "app_exit", "crash", "orphaned"]
+    },
+    "ClosedBy": {
+      "kind": "enum",
+      "variants": ["idle", "session_end", "app_exit", "crash"],
+      "$comment": "§9: a segment closes for a narrower set of reasons than a session does. 'stop', 'process_exit' and 'orphaned' end a session; the segment open at that moment closes as 'session_end'. Not a duplicate of CloseReason — do not collapse them"
     },
     "SessionRef": {
       "kind": "struct",
@@ -757,10 +763,12 @@
       "kind": "struct",
       "fields": {
         "sessionId": "SessionId",
+        "projectId": "ProjectId",
         "startedAt": "Timestamp",
         "endedAt": "Timestamp",
         "creditedSeconds": "i64",
-        "closedBy": "CloseReason"
+        "closedBy": "ClosedBy",
+        "sessionCreditedSeconds": "i64"
       }
     },
     "SessionEnded": { "kind": "struct", "fields": { "session": "SessionRef" } },

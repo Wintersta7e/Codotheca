@@ -65,6 +65,10 @@ tiny-skia = "0.12"
 # exposes both but only on nightly, behind `windows_by_handle`, and this crate forbids `unsafe`.
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1"
+# §4bis.1's registry sources: the App Paths keys under both hives, and the default shell verb for
+# a folder. Read-only, and behind `#[cfg(windows)]` at every call site — the two Shell Link
+# parsers beside them are platform-free and are tested on Linux too.
+winreg = "0.56"
 
 [dev-dependencies]
 tempfile = "3"
