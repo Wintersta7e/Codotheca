@@ -17,6 +17,8 @@ impl ProjectRow {
         Self {
             id: ProjectId(id),
             name: format!("p{id}"),
+            seed_basename: format!("p{id}"),
+            reroll_offset: 0,
             owner: None,
             description: None,
             description_source: None,

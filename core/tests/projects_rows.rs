@@ -349,3 +349,31 @@ fn the_stored_slugs_and_the_generated_renames_are_the_same_words() {
     // A word this build does not know is not guessed at.
     assert_eq!(enum_from_column::<Presence>("teleported"), None);
 }
+
+/// §7.3a derives the jewel from `seedBasename` and `rerollOffset`, so both must cross as
+/// stored. Plan 12b added them to the wire on one branch while this loader was written on
+/// another; a merge that compiles is not a merge that carries the values.
+#[test]
+fn the_two_fields_the_jewel_is_derived_from_cross_as_stored_and_not_as_defaults() {
+    let (_dir, index) = opened();
+    project(index.conn(), 1, "p", NOW);
+    // A basename that differs from the name, and an offset that is not the column default,
+    // so neither can pass by accident.
+    index
+        .conn()
+        .execute(
+            "UPDATE project SET seed_basename = 'other-basename', reroll_offset = 3 WHERE id = 1",
+            [],
+        )
+        .expect("set seed and offset");
+    location(index.conn(), 1, &Loc::new(10, "/a"));
+    let sink = CollectingSink::default();
+    let rows = load_project_rows(&ctx(&index, &sink)).expect("load");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].row.seed_basename, "other-basename");
+    assert_eq!(rows[0].row.reroll_offset, 3);
+    let wire = serde_json::to_value(&rows[0].row).expect("serialise");
+    assert_eq!(wire["seedBasename"], "other-basename");
+    assert_eq!(wire["rerollOffset"], 3);
+}

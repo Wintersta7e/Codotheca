@@ -279,7 +279,8 @@ const PROJECT_COLUMNS: &str =
             p.size_tracked_bytes, p.tracked_files, p.error_kind, p.error_at,
             p.authored_by_user, p.remote_key,
             EXISTS(SELECT 1 FROM submodule_edge se WHERE se.parent_project_id = p.id),
-            pc.computed_at, pc.readme_excerpt
+            pc.computed_at, pc.readme_excerpt,
+            p.seed_basename, p.reroll_offset
        FROM project p
        LEFT JOIN peek_cache pc ON pc.project_id = p.id
       WHERE p.merged_into IS NULL
@@ -363,6 +364,11 @@ fn map_loaded_row(
         worktree_observed_at: max_present(locations, |l| l.worktree_observed_at),
         error_kind: optional_column::<ErrorCode>(r.get(31)?, "project.error_kind")?,
         error_at: r.get(32)?,
+        // §7.3a derives the jewel from these two, so they cross as stored and are never
+        // defaulted here: a basename the renderer did not seed from produces a different
+        // colour than the art the core rasterized.
+        seed_basename: r.get(38)?,
+        reroll_offset: u32::try_from(r.get::<_, i64>(39)?).unwrap_or(0),
         // Stamped by `projects::list`, which owns the band rules. Empty here so a caller
         // that forgets to section cannot pass an id off as one this loader computed.
         era_section_id: String::new(),
