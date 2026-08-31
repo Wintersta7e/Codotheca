@@ -779,3 +779,107 @@
   letter-spacing: 0.14em;
   color: var(--text-3);
 }
+
+/* --- §8.5.5 Activity ------------------------------------------------------------------- */
+
+.cp-act-title,
+.cp-act-commits-label {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--text-1);
+}
+.cp-act-note {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+/*
+ * A slot is a flex ROW of two sub-columns, each ending on the slot's own floor. Nothing wraps one
+ * lane over the other and no height accumulates between them, so the built DOM cannot be measured
+ * as a total — §8.5.5's "never summed" is geometric here, not only arithmetic.
+ */
+.cp-act-chart {
+  display: flex;
+  gap: 2px;
+  height: 84px;
+  margin-top: 12px;
+}
+.cp-act-slot {
+  display: flex;
+  flex: 1 1 0;
+  align-items: flex-end;
+  gap: 1px;
+}
+.cp-act-lane {
+  flex: 1 1 0;
+  align-self: flex-end;
+}
+.cp-act-lane-hairline {
+  height: 1px;
+  background: var(--baseline-hairline);
+}
+.cp-act-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+.cp-act-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 11px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+.cp-act-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cp-act-swatch {
+  width: 9px;
+  height: 3px;
+}
+.cp-act-commits {
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cp-act-commit {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+}
+.cp-act-commit-sha {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--sig);
+}
+.cp-act-commit-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-act-commit-date {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}

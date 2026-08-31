@@ -66,6 +66,12 @@ describe('the two lanes are normalised apart', () => {
     expect(commitAlpha(7)).toBeCloseTo(0.95);
     expect(commitAlpha(9)).toBeCloseTo(0.95);
   });
+
+  it('stays a CSS alpha rather than a float — no value carries more than two decimals', () => {
+    for (let days = 0; days <= 9; days++) {
+      expect(String(commitAlpha(days))).toMatch(/^\d(\.\d{1,2})?$/);
+    }
+  });
 });
 
 describe('the three states, separated by the baseline', () => {

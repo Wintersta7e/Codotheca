@@ -54,6 +54,10 @@
   --rust: #96522a;
   --growth: #54703e;
 
+  /* §8.5.5's lane baseline: an achromatic alpha, not a colour choice, so it is named once here
+     rather than written into every lane that draws a measured zero */
+  --baseline-hairline: rgb(255 255 255 / 0.05);
+
   /* tier frames — machined edges against black */
   --tier-gold: #e8c268;
   --tier-brass: #a8763f;

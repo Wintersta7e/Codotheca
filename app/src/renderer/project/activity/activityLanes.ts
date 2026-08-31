@@ -40,9 +40,14 @@ export function sessionCell(week: ActivityWeek, state: LaneState): LaneCell {
   return cell(week.sessionCount, state, SESSIONS_FULL);
 }
 
-/** §8.5.5: the project jewel at `0.4 + min(1, days / 7) * 0.55`. */
+/**
+ * §8.5.5: the project jewel at `0.4 + min(1, days / 7) * 0.55`, rounded to two decimals because
+ * this is a CSS alpha and seventeen digits of it is noise rather than precision. The two points
+ * the formula turns on — `0.4` at nothing and `0.95` at a full week — are exact either way.
+ */
 export function commitAlpha(days: number): number {
-  return 0.4 + Math.min(1, Math.max(0, days) / COMMIT_DAYS_FULL) * 0.55;
+  const raw = 0.4 + Math.min(1, Math.max(0, days) / COMMIT_DAYS_FULL) * 0.55;
+  return Math.round(raw * 100) / 100;
 }
 
 function commitHalf(state: LaneState): string {
