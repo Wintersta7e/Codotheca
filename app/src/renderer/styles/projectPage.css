@@ -721,3 +721,61 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* --- §8.5.4 the note ------------------------------------------------------------------- */
+
+.cp-note {
+  padding: 12px 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
+.cp-note-label {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: var(--text-3);
+}
+/* The invitation is the only thing on the surface saying the surface is writable, so it sits at
+ * the decision floor and not below it (§8.7's second consequence). */
+.cp-note-empty {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font-size: 12.5px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--text-3);
+  cursor: text;
+}
+.cp-note-text {
+  margin-top: 7px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  cursor: text;
+}
+.cp-note-field {
+  width: 100%;
+  margin-top: 7px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  resize: vertical;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  caret-color: var(--sig);
+}
+.cp-note-feeds {
+  margin-top: 9px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
