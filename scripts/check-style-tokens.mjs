@@ -86,10 +86,20 @@ const sharedKeyframes = new Set(vocabulary.sharedKeyframes);
 const baseFile = join(rendererDir, 'styles/base.css');
 const keyframeSites = new Map(); // name -> [file, …]
 
-const scanned = cssFiles(rendererDir);
-
-for (const file of scanned) {
-  const text = readFileSync(file, 'utf8');
+// Files actually read, not files the walk saw. A sibling gate's self-test plants a probe in
+// this tree and removes it while vitest runs the suites in parallel, so a path can vanish
+// between the walk and the read. A file that no longer exists cannot violate anything — but it
+// must not be counted either, or the summary overstates what this run checked.
+const scanned = [];
+for (const file of cssFiles(rendererDir)) {
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') continue;
+    throw error;
+  }
+  scanned.push(file);
   const isTokenFile = file === tokensFile;
 
   for (const [literal] of text.matchAll(COLOUR)) {

@@ -23,9 +23,19 @@ function files(dir) {
 
 const hasInsetRing = (block) => /box-?[sS]hadow[^;]*inset[^;]*/.test(block);
 
-const scanned = files(rendererDir);
-for (const file of scanned) {
-  const text = readFileSync(file, 'utf8');
+// Files actually read, not files the walk saw — a sibling gate's self-test plants a probe in
+// this tree and removes it while vitest runs the suites in parallel. A vanished file cannot
+// violate anything, and counting it would overstate what this run checked.
+const scanned = [];
+for (const file of files(rendererDir)) {
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') continue;
+    throw error;
+  }
+  scanned.push(file);
   for (const block of text.split(/\}/)) {
     if (!/outline\s*:\s*(none|0)\b/.test(block) && !/outline\s*:\s*['"]?none/.test(block)) continue;
     if (!hasInsetRing(block)) {

@@ -48,8 +48,18 @@ for (const file of files(rendererDir, ['.css', '.tsx', '.ts'])) {
   if (file.endsWith('theme/type.ts') || file.endsWith('.test.ts') || file.endsWith('.test.tsx')) {
     continue;
   }
+  // A file can vanish between the walk and the read: the sibling gates' self-tests plant a
+  // probe in this same tree and remove it, and vitest runs those suites in parallel with this
+  // one. A file that no longer exists cannot be violating anything, so skip it — and skip it
+  // *before* counting it, so the printed scan count stays a true count of files actually read.
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') continue;
+    throw error;
+  }
   scanned.push(file);
-  const text = readFileSync(file, 'utf8');
   const seen = [];
   for (const [, px] of text.matchAll(CSS_SIZE)) seen.push(Number(px));
   for (const [, px] of text.matchAll(TSX_SIZE)) seen.push(Number(px));
