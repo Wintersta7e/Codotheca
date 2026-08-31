@@ -16,8 +16,10 @@ export function NoticeSlot(props: NoticeSlotProps): ReactElement | null {
   const notice = selectNotice(props.candidates, props.dismissed);
   if (notice === null) return null;
 
-  // §8.0: only the left border varies between priority 1 and everything else.
-  const style = { '--notice-accent': `var(--${noticeAccent(notice.kind)})` } as CSSProperties;
+  // §8.0: only the left border varies between priority 1 and everything else. The property is
+  // `--cdt-` namespaced because `check-style-tokens.mjs` rejects any `var(--x)` a stylesheet
+  // reads that is not declared in the token sheet, and this one is set per instance.
+  const style = { '--cdt-notice-accent': `var(--${noticeAccent(notice.kind)})` } as CSSProperties;
 
   return (
     <div className="cdt-shelf-notice-slot">

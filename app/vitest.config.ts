@@ -40,7 +40,10 @@ export default defineConfig({
           // catches `?raw` too — so a mirror test comparing theme/tokens.ts against
           // styles/tokens.css silently reads an empty string and passes on nothing. These are
           // the renderer's own stylesheets and the tests that assert on them are source gates.
-          css: { include: [/src\/renderer\/styles\/.*\.css(\?raw)?$/] },
+          // Every renderer stylesheet, not only `styles/`: a screen's own sheet is asserted on
+          // the same way, and scoping this to one directory left those tests reading an empty
+          // string rather than failing to resolve.
+          css: { include: [/src\/renderer\/.*\.css(\?raw)?$/] },
         },
       },
     ],

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseQuery } from '../../shared/query/parse.js';
 import { statesAColour } from '../a11y/names.js';
 import { fieldModel } from './QueryField.js';
+import type { TopBarProps } from './TopBar.js';
 import { TOP_BAR_FLOOR_PX, TOP_BAR_HEIGHT_PX, TopBar, WORDMARK } from './TopBar.js';
 // R19: the four shed names are 13c's, in the hook's own module. Importing them from `TopBar.js`
 // would re-export the hook's table through the component that imports the hook.
@@ -11,7 +12,7 @@ import { DEFAULT_SHELF_VIEW } from './viewState.js';
 
 afterEach(cleanup);
 
-const props = (over: Record<string, unknown> = {}) => ({
+const props = (over: Partial<TopBarProps> = {}): TopBarProps => ({
   view: DEFAULT_SHELF_VIEW,
   field: fieldModel('', parseQuery(''), []),
   scan: { running: false, foundRepos: 0 },
@@ -139,9 +140,9 @@ describe('the shed order', () => {
     expect(levels).toEqual([...levels].sort((a, b) => a - b));
   });
 
-  const keyOf = (root: HTMLElement, slot: string) =>
+  const keyOf = (root: HTMLElement, slot: string): string | null =>
     root.querySelector(`[data-slot="${slot}"] .cdt-shelf-control-key`)?.textContent ?? null;
-  const valueOf = (root: HTMLElement, slot: string) =>
+  const valueOf = (root: HTMLElement, slot: string): string | null =>
     root.querySelector(`[data-slot="${slot}"] .cdt-shelf-control-value`)?.textContent ?? null;
 
   it('drops SWITCH first, and only SWITCH, and Alt+Space still opens it', () => {

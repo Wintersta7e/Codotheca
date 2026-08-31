@@ -1,14 +1,16 @@
+import type { RenderResult } from '@testing-library/react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { pillsOf } from '../../shared/query/format.js';
 import { parseQuery } from '../../shared/query/parse.js';
 import source from './QueryField.tsx?raw';
+import type { QueryFieldModel } from './QueryField.js';
 import { QUERY_PLACEHOLDER, QueryFieldView, dropPill, fieldModel } from './QueryField.js';
 
 afterEach(cleanup);
 
-const model = (text: string) => fieldModel(text, parseQuery(text), []);
-const labels = (text: string) => model(text).pills.map((pill) => pill.label);
+const model = (text: string): QueryFieldModel => fieldModel(text, parseQuery(text), []);
+const labels = (text: string): string[] => model(text).pills.map((pill) => pill.label);
 
 describe('the tokenizer that must not ship', () => {
   it('reads its own source, so the three assertions below are not vacuous', () => {
@@ -106,7 +108,7 @@ describe('dropPill', () => {
 });
 
 describe('QueryFieldView', () => {
-  const view = (text: string, onQueryChange = vi.fn()) =>
+  const view = (text: string, onQueryChange = vi.fn()): RenderResult =>
     render(
       <QueryFieldView
         text={text}
@@ -157,7 +159,7 @@ describe('QueryFieldView', () => {
 
   it('shows the draft, never the pilled text, in the input', () => {
     view('lang:rust Codo');
-    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('Codo');
+    expect(screen.getByRole<HTMLInputElement>('searchbox').value).toBe('Codo');
   });
 
   it('declares no colour of its own and names no destructive operation', () => {

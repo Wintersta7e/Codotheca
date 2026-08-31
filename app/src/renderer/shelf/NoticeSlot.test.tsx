@@ -49,13 +49,13 @@ describe('NoticeSlot', () => {
       <NoticeSlot candidates={[notice('coreFailure')]} dismissed={[]} onDismiss={vi.fn()} />,
     );
     const hotBox = hot.container.querySelector('.cdt-shelf-notice') as HTMLElement;
-    expect(hotBox.style.getPropertyValue('--notice-accent')).toBe('var(--fail-hot)');
+    expect(hotBox.style.getPropertyValue('--cdt-notice-accent')).toBe('var(--fail-hot)');
 
     const warm = render(
       <NoticeSlot candidates={[notice('problems', 'r')]} dismissed={[]} onDismiss={vi.fn()} />,
     );
     const warmBox = warm.container.querySelector('.cdt-shelf-notice') as HTMLElement;
-    expect(warmBox.style.getPropertyValue('--notice-accent')).toBe('var(--sig)');
+    expect(warmBox.style.getPropertyValue('--cdt-notice-accent')).toBe('var(--sig)');
 
     // Everything else about the two boxes is the same rule.
     expect(hotBox.className).toBe(warmBox.className);
