@@ -15,6 +15,7 @@
 pub mod art;
 pub mod cancel;
 pub mod clock;
+pub mod commands;
 #[cfg(feature = "testkit")]
 pub mod corpus;
 pub mod derive;

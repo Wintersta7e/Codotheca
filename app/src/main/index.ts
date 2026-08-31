@@ -21,6 +21,8 @@ import { openRollingLog } from './core/log';
 import { spawnCoreChild } from './core/spawn';
 import { CoreSupervisor } from './core/supervisor';
 import { resolveCoreBinary, resolveDataDir } from './paths';
+import { registerFocusRelease } from './session/focus';
+import { launchJoinSteps } from './startup/launchSteps';
 import {
   contentSecurityPolicyListener,
   denyPermissionRequest,
@@ -185,6 +187,18 @@ async function main(): Promise<void> {
     paintUiLane: async () => {
       const w = createWindow();
       win = w;
+      // §9: the shell releases a focus claim and never makes one. Destroy matters most — the
+      // renderer's heartbeat dies with the window, so without it the core would believe the
+      // last claim for a further FOCUS_STALE_SECS.
+      registerFocusRelease({
+        release: (args) => client.request('session.focus', args as never),
+        onBlur: (cb) => w.on('blur', cb),
+        onHide: (cb) => w.on('hide', cb),
+        onDestroyed: (cb) => w.once('closed', cb),
+        onError: (detail) => {
+          log.write('warn', 'shell', `focus release failed: ${detail}`);
+        },
+      });
       await new Promise<void>((resolve) => {
         w.once('ready-to-show', () => {
           resolve();
@@ -207,7 +221,20 @@ async function main(): Promise<void> {
         now: () => Date.now(),
         sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
       }),
-    joinSteps: [],
+    // §11.2's launch lane. `verifyTargetsStep` is plan 17's and is not written yet, so the
+    // lane is one step short rather than carrying a second declaration of it.
+    joinSteps: [
+      ...launchJoinSteps({
+        request: (name, args) => client.request(name as never, args as never),
+        subscribe: (topic, handler) => client.subscribe(topic, handler),
+        onRecovered: (sessions) => {
+          if (sessions.length > 0) {
+            log.write('info', 'shell', `recovered ${String(sessions.length)} orphaned session(s)`);
+          }
+        },
+        onVerified: () => undefined,
+      }),
+    ],
   });
 
   log.write('info', 'shell', `startup: ${outcome.kind}`);
