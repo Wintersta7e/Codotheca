@@ -3,9 +3,10 @@
 // outline without drawing a replacement in the same rule leaves a keyboard user with nothing.
 // The replacement is an inset ring in the element's own box-shadow — never an overlay layer,
 // one of which silently failed to mount in design review.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readScannedFile } from './lib/read-scanned.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const rendererDir = join(root, 'app/src/renderer');
@@ -23,9 +24,13 @@ function files(dir) {
 
 const hasInsetRing = (block) => /box-?[sS]hadow[^;]*inset[^;]*/.test(block);
 
-const scanned = files(rendererDir);
-for (const file of scanned) {
-  const text = readFileSync(file, 'utf8');
+const walked = files(rendererDir);
+const scanned = [];
+for (const file of walked) {
+  const text = readScannedFile(file);
+  // Not counted when it has vanished, so the empty-scan guard below still means what it says.
+  if (text === null) continue;
+  scanned.push(file);
   for (const block of text.split(/\}/)) {
     if (!/outline\s*:\s*(none|0)\b/.test(block) && !/outline\s*:\s*['"]?none/.test(block)) continue;
     if (!hasInsetRing(block)) {

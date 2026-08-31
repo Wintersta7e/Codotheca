@@ -4,13 +4,14 @@
 //
 // It scans renderer CSS *and* the inline `style={{…}}` objects in renderer `.tsx`, since the card
 // sets per-project geometry inline and a 6.5px there is just as unreadable.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readScannedFile } from './lib/read-scanned.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const rendererDir = join(root, 'app/src/renderer');
-const typeSource = readFileSync(join(rendererDir, 'theme/type.ts'), 'utf8');
+const typeSource = readScannedFile(join(rendererDir, 'theme/type.ts')) ?? '';
 
 const scaleFrom = (name) => {
   const block = new RegExp(`${name}: readonly number\\[\\] = \\[([^\\]]*)\\]`).exec(typeSource);
@@ -48,8 +49,10 @@ for (const file of files(rendererDir, ['.css', '.tsx', '.ts'])) {
   if (file.endsWith('theme/type.ts') || file.endsWith('.test.ts') || file.endsWith('.test.tsx')) {
     continue;
   }
+  const text = readScannedFile(file);
+  // Not counted when it has vanished, so the empty-scan guard below still means what it says.
+  if (text === null) continue;
   scanned.push(file);
-  const text = readFileSync(file, 'utf8');
   const seen = [];
   for (const [, px] of text.matchAll(CSS_SIZE)) seen.push(Number(px));
   for (const [, px] of text.matchAll(TSX_SIZE)) seen.push(Number(px));

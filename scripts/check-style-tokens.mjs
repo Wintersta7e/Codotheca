@@ -8,6 +8,7 @@
 // Vendored @fontsource faces are third-party CSS in the built bundle and are not this
 // stylesheet; plan 20 owns the built-bundle form with that carve-out named.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readScannedFile } from './lib/read-scanned.mjs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -86,10 +87,14 @@ const sharedKeyframes = new Set(vocabulary.sharedKeyframes);
 const baseFile = join(rendererDir, 'styles/base.css');
 const keyframeSites = new Map(); // name -> [file, …]
 
-const scanned = cssFiles(rendererDir);
+const walked = cssFiles(rendererDir);
+const scanned = [];
 
-for (const file of scanned) {
-  const text = readFileSync(file, 'utf8');
+for (const file of walked) {
+  const text = readScannedFile(file);
+  // Not counted when it has vanished, so the empty-scan guard below still means what it says.
+  if (text === null) continue;
+  scanned.push(file);
   const isTokenFile = file === tokensFile;
 
   for (const [literal] of text.matchAll(COLOUR)) {
