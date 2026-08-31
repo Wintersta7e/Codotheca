@@ -6,7 +6,9 @@
 )]
 //! Criterion 7's command half: the five tiers as `targets.list` returns them.
 
-use codotheca_core::commands::targets::{dispatch_targets_command, handle_list, TargetsCtx};
+use codotheca_core::commands::targets::{
+    dispatch_targets_command, handle_list, handle_verify, TargetsCtx,
+};
 use codotheca_core::index::Index;
 use codotheca_core::protocol::{ErrorCode, ProjectId, TargetTier, VerifyState};
 use serde_json::{json, Value};
@@ -59,7 +61,7 @@ impl codotheca_core::proto::EventSink for RecordingSink {
 }
 
 struct Fixture {
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
     index: Index,
     events: RecordingSink,
     project: i64,
@@ -73,7 +75,7 @@ fn fixture() -> Fixture {
     let index = Index::open(dir.path()).expect("open");
     index.conn().execute_batch(SEED).expect("seed");
     Fixture {
-        _dir: dir,
+        dir,
         index,
         events: RecordingSink,
         project: 1,
@@ -502,4 +504,165 @@ fn an_adopted_row_heads_its_new_scope_and_the_indices_stay_representable() {
         adopted.sort_index,
         sitting_row.sort_index
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Task 4: `targets.verify` — per row, language-blind.
+// ---------------------------------------------------------------------------------------------
+
+impl Fixture {
+    /// A `launch_target` row whose executable is `exec`.
+    fn target_at(&mut self, scope: &Scope, exec: &str) -> i64 {
+        let id = self.target(scope, exec);
+        self.index
+            .conn()
+            .execute(
+                "UPDATE launch_target SET exec_bytes = ?2 WHERE id = ?1",
+                rusqlite::params![id, exec.as_bytes()],
+            )
+            .expect("set exec");
+        id
+    }
+
+    /// An executable file inside the fixture's tempdir.
+    fn executable(&self, name: &str) -> String {
+        let path = self.dir.path().join(name);
+        std::fs::write(&path, b"#!/bin/sh\n").expect("write");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        }
+        path.display().to_string()
+    }
+
+    /// A path nothing has ever created.
+    fn missing_path(&self) -> String {
+        self.dir.path().join("never-existed").display().to_string()
+    }
+
+    /// A file that exists and cannot be executed. Unix only: there is no execute bit to clear
+    /// on the other target.
+    #[cfg(unix)]
+    fn non_executable_file(&self, name: &str) -> String {
+        let path = self.dir.path().join(name);
+        std::fs::write(&path, b"x").expect("write"); // fs::write leaves mode 0644
+        path.display().to_string()
+    }
+
+    fn verified_at(&self, target: i64) -> Option<i64> {
+        self.index
+            .conn()
+            .query_row(
+                "SELECT verified_at FROM launch_target WHERE id = ?1",
+                rusqlite::params![target],
+                |r| r.get(0),
+            )
+            .expect("verified_at")
+    }
+
+    fn advance(&mut self, seconds: i64) {
+        self.now += seconds;
+    }
+}
+
+#[test]
+fn verify_walks_every_scope_and_stamps_each_row_separately() {
+    // §4bis.2a: "a language row is not covered by having verified the global row it was
+    // copied from."
+    let mut h = fixture();
+    let project = h.project;
+    let editor = h.executable("editor");
+    let gone = h.missing_path();
+    let global = h.target_at(&Scope::global(), &editor);
+    let lang = h.target_at(&Scope::language("Rust"), &gone);
+    let proj = h.target_at(&Scope::project(project), &editor);
+
+    let rows = handle_verify(&mut h.ctx(), json!({ "targetId": null })).unwrap();
+    assert_eq!(rows.len(), 3);
+    let by_id = |id: i64| {
+        rows.iter()
+            .find(|r| r.target_id.0 == id)
+            .unwrap_or_else(|| panic!("no verification for {id}"))
+    };
+    assert_eq!(by_id(global).verify_state, VerifyState::Ok);
+    assert_eq!(by_id(lang).verify_state, VerifyState::Missing);
+    assert_eq!(by_id(proj).verify_state, VerifyState::Ok);
+    for row in &rows {
+        assert_eq!(
+            row.verified_at, h.now,
+            "each row carries its own verified_at"
+        );
+    }
+}
+
+#[test]
+fn verifying_one_row_leaves_the_others_stamps_alone() {
+    let mut h = fixture();
+    let editor = h.executable("editor");
+    let a = h.target_at(&Scope::global(), &editor);
+    let b = h.target_at(&Scope::language("Rust"), &editor);
+    handle_verify(&mut h.ctx(), json!({ "targetId": null })).unwrap();
+    let before = h.verified_at(b);
+
+    h.advance(600);
+    let rows = handle_verify(&mut h.ctx(), json!({ "targetId": a })).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(h.verified_at(b), before, "an untouched row keeps its stamp");
+    assert!(h.verified_at(a) > before);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_that_exists_but_is_not_executable_is_its_own_state() {
+    // §4bis.5's four states, not three: `missing` and `not_executable` are different repairs.
+    // Unix only — the other target has no execute bit to leave clear.
+    let mut h = fixture();
+    let blunt = h.non_executable_file("not-runnable");
+    let id = h.target_at(&Scope::global(), &blunt);
+    let rows = handle_verify(&mut h.ctx(), json!({ "targetId": id })).unwrap();
+    assert_eq!(rows[0].verify_state, VerifyState::NotExecutable);
+}
+
+#[test]
+fn verify_never_changes_which_row_resolves() {
+    // §4bis.2a: "Resolution never consults verify_state."
+    let mut h = fixture();
+    let gone = h.missing_path();
+    let global = h.target_at(&Scope::global(), &gone);
+    handle_verify(&mut h.ctx(), json!({ "targetId": null })).unwrap();
+
+    let project = h.project;
+    let resolved = handle_list(&mut h.ctx(), json_args(project, None))
+        .unwrap()
+        .resolved
+        .unwrap();
+    assert_eq!(resolved.target.id.0, global);
+    assert_eq!(resolved.target.verify_state, VerifyState::Missing);
+}
+
+#[test]
+fn verify_covers_a_disabled_row_too() {
+    // §4bis.2a: verification is unfiltered where resolution is filtered. A disabled row still
+    // has an executable that can go missing.
+    let mut h = fixture();
+    let editor = h.executable("editor");
+    let id = h.target_at(&Scope::global(), &editor);
+    h.index
+        .conn()
+        .execute(
+            "UPDATE launch_target SET disabled = 1 WHERE id = ?1",
+            rusqlite::params![id],
+        )
+        .expect("disable");
+    let rows = handle_verify(&mut h.ctx(), json!({ "targetId": null })).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].target_id.0, id);
+}
+
+#[test]
+fn verify_on_an_unknown_target_reports_it_rather_than_returning_an_empty_list() {
+    let mut h = fixture();
+    let err = handle_verify(&mut h.ctx(), json!({ "targetId": 9_999 })).unwrap_err();
+    assert_eq!(err.code, ErrorCode::Protocol);
 }

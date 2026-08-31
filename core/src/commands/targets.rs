@@ -15,7 +15,9 @@ use crate::launch::verify::VerifyState;
 use crate::launch::LaunchError;
 use crate::proto::dispatch::{parse_args, CommandFailure}; // R15: one helper, plan 03's
 use crate::proto::EventSink; // R16: the trait, not plan 07's WalkSink
-use crate::protocol::{LocationId, ProjectId, ResolvedTarget, TargetId, TargetList, TargetRow};
+use crate::protocol::{
+    LocationId, ProjectId, ResolvedTarget, TargetId, TargetList, TargetRow, TargetVerification,
+};
 
 /// Everything §2.4's `targets.*` commands need.
 ///
@@ -135,6 +137,7 @@ pub fn dispatch_targets_command(
         "targets.list" => Some(handle_list(ctx, args).and_then(|list| to_value(&list))),
         "targets.setDefault" => Some(handle_set_default(ctx, args)),
         "targets.upsert" => Some(handle_upsert(ctx, args).and_then(|row| to_value(&row))),
+        "targets.verify" => Some(handle_verify(ctx, args).and_then(|rows| to_value(&rows))),
         _ => None,
     }
 }
@@ -427,6 +430,45 @@ pub fn handle_upsert(ctx: &mut TargetsCtx<'_>, args: Value) -> Result<TargetRow,
 
     let stored = resolve::load_target(ctx.index.conn(), id).map_err(|e| failure(&e))?;
     to_target_row(&stored).map_err(|e| failure(&e))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VerifyArgs {
+    #[serde(default)]
+    target_id: Option<TargetId>,
+}
+
+/// `TargetVerification.verifiedAt` is a non-optional `Timestamp`: a verification is produced
+/// only by a check that just ran, so the stamp always exists. `TargetRow.verifiedAt` stays
+/// optional, which is correct for a row that has never been verified.
+#[must_use]
+pub fn to_verification(v: &crate::launch::verify::Verification) -> TargetVerification {
+    TargetVerification {
+        target_id: TargetId(v.target_id),
+        verify_state: v.verify_state,
+        verified_at: v.verified_at,
+        exec_display: v.exec_display.clone(),
+    }
+}
+
+/// §4bis.2a: *"`targets.verify` is per row and language-blind."* No argument verifies every
+/// stored row — override, language and global alike, disabled ones included — which is the
+/// startup sweep; an argument verifies one, which is `projects.launch`'s before-spawn check.
+pub fn handle_verify(
+    ctx: &mut TargetsCtx<'_>,
+    args: Value,
+) -> Result<Vec<TargetVerification>, CommandFailure> {
+    let args: VerifyArgs = parse_args(args)?;
+    let now = ctx.now;
+    let conn = ctx.index.conn_mut();
+    let verified = match args.target_id {
+        None => crate::launch::verify::verify_all(conn, now).map_err(|e| failure(&e))?,
+        Some(id) => {
+            vec![crate::launch::verify::verify_one(conn, id.0, now).map_err(|e| failure(&e))?]
+        }
+    };
+    Ok(verified.iter().map(to_verification).collect())
 }
 
 fn identity_failure(err: &crate::identity::IdentityError) -> CommandFailure {
