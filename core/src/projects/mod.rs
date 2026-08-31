@@ -11,6 +11,8 @@ pub mod flags;
 pub mod list;
 pub mod peek;
 pub mod rows;
+#[cfg(feature = "testkit")]
+pub mod testrow;
 
 use crate::index::{Index, IndexError};
 use crate::proto::dispatch::CommandFailure;

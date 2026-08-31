@@ -2,6 +2,7 @@
 //! what keeps this parser and `app/src/shared/query/parse.ts` from diverging.
 
 pub mod ast;
+pub mod execute;
 pub mod parse;
 
 pub use ast::{
