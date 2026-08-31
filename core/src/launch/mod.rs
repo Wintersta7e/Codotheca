@@ -1,6 +1,7 @@
 //! Launch targets: discovery, ranking, resolution, verification and the spawn.
 
 pub mod catalogue;
+pub mod probe;
 pub mod wslpath;
 
 pub use catalogue::{CwdMode, TargetKind};
