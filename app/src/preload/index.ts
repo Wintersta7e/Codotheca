@@ -7,7 +7,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { PROTOCOL_VERSION } from '../generated/protocol';
 import { CODOTHECA_BRIDGE_KEY, type CodothecaBridge } from '../shared/bridge';
-import { IPC_CORE_STATUS, IPC_EVENTS, IPC_OPEN_PALETTE, IPC_REQUEST } from '../shared/channels';
+import {
+  IPC_CORE_STATUS,
+  IPC_EVENTS,
+  IPC_OPEN_PALETTE,
+  IPC_RELOCATE,
+  IPC_REQUEST,
+  type RelocateReply,
+} from '../shared/channels';
 import { effectsTierFromArgv } from '../shared/effectsTier';
 
 // process.argv is available synchronously in a sandboxed preload, so the tier reaches the
@@ -17,6 +24,9 @@ const bridge: CodothecaBridge = {
   effectsTier: effectsTierFromArgv(process.argv) ?? 'auto',
   request: (name: string, args: unknown): Promise<unknown> =>
     ipcRenderer.invoke(IPC_REQUEST, { name, args }),
+  // An id and nothing else. The folder is chosen in the main process, where the dialog lives.
+  relocate: (locationId: number): Promise<RelocateReply> =>
+    ipcRenderer.invoke(IPC_RELOCATE, { locationId }) as Promise<RelocateReply>,
   onCoreStatus: (cb: (status: unknown) => void): void => {
     ipcRenderer.on(IPC_CORE_STATUS, (_event, status: unknown) => {
       cb(status);

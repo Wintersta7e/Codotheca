@@ -20,6 +20,12 @@ export interface PinControlProps {
   readonly surface: CardSurface;
   /** Hover (§7.8's `hov`) or focus (§11.7's focused project id). Never CSS `:hover`. */
   readonly visible: boolean;
+  /**
+   * `-1` on the grid, where §11.7 keeps one roving tabindex per grid and the pin is reached by
+   * `P` while the cell holds focus. The project page has no grid and binds no `P`, so its hero
+   * pin takes a real tab stop or it is a control nobody can reach.
+   */
+  readonly tabIndex?: 0 | -1;
   readonly onToggle: () => void;
 }
 
@@ -38,9 +44,7 @@ export function PinControl(props: PinControlProps): ReactElement {
     <button
       type="button"
       className="cdt-pin"
-      // Reached by `P` while the card holds focus, never by Tab: §11.7 keeps one roving
-      // tabindex per grid and it belongs to the cell.
-      tabIndex={-1}
+      tabIndex={props.tabIndex ?? -1}
       aria-pressed={props.isPinned}
       aria-label={pinControlName(props.projectName, props.isPinned)}
       data-pinned={props.isPinned ? 'true' : 'false'}

@@ -1,3 +1,4 @@
+import type { RelocateReply } from './channels';
 import type { EffectsTier } from './effectsTier';
 
 /** The single `contextBridge` key. Nothing else is exposed on `window`. */
@@ -20,6 +21,12 @@ export interface CodothecaBridge {
    * none of them.
    */
   request(name: string, args: unknown): Promise<unknown>;
+  /**
+   * The one privileged operation the renderer may ask for. It sends an opaque LocationId and
+   * nothing else; the path comes from a native dialog the shell owns, because §2.4 forbids the
+   * renderer from originating one.
+   */
+  relocate(locationId: number): Promise<RelocateReply>;
   onCoreStatus(cb: (status: unknown) => void): void;
   /** One batch per frame, never one message per event. */
   onCoreEvents(cb: (batch: unknown) => void): void;

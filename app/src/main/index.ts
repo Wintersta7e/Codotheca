@@ -5,7 +5,7 @@
  * It does NOT open the database: the core is the only reader and writer, and every renderer
  * read crosses the protocol (§1.10, §2.4).
  */
-import { BrowserWindow, app, ipcMain, protocol, session } from 'electron';
+import { BrowserWindow, app, dialog, ipcMain, protocol, session } from 'electron';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { type CommandName, PROTOCOL_VERSION, type Topic } from '../generated/protocol';
@@ -15,6 +15,7 @@ import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
 import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
+import { registerRelocateDialog } from './dialogs/relocate';
 import { CoreClient } from './core/client';
 import { FORCE_OFFERED_AFTER_MS, LOCK_WAIT_POLL_MS, waitForCoreLock } from './core/instanceLock';
 import { openRollingLog } from './core/log';
@@ -172,6 +173,24 @@ async function main(): Promise<void> {
       win?.webContents.send(channel, payload);
     },
     knownCommands: KNOWN_COMMANDS,
+  });
+
+  // §2.4: `locations.relocate` is privileged, so the bridge above refuses it by design. It
+  // travels its own channel, where the path is whatever this process's dialog returns and never
+  // anything the renderer typed.
+  registerRelocateDialog({
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
+    },
+    showFolderDialog: async () => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        title: 'Where is this copy now?',
+        buttonLabel: 'Relocate',
+      });
+      return result.canceled || result.filePaths[0] === undefined ? null : result.filePaths[0];
+    },
+    request,
   });
 
   const lockWait = new AbortController();
