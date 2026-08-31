@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { ARCHIVED_GLASS } from '../card/completion';
 import { GRID_TILE_BANDS, HERO_BANDS } from '../card/geometry';
 // `?raw` rather than node:fs: the renderer project carries no Node types by design, and under
 // jsdom `import.meta.url` is not a file URL. The dom project processes these stylesheets so the
@@ -285,6 +286,23 @@ const VIA_PROPERTY =
   '<span class="cdt-card-halo"></span></div>';
 const VIA_INLINE =
   '<div class="cdt-card-frame"><span class="cdt-card-halo" style="opacity: 0.8"></span></div>';
+
+describe('the values this stylesheet states twice with a module', () => {
+  // `.cdt-glass` is declared here and mounted by the plate from `ARCHIVED_GLASS`. The inline
+  // value wins, so the rule below is a fallback nothing exercises — and an unexercised second
+  // statement of one value is exactly how the two drift. A gradient is its numbers: a CSS
+  // formatter rewrites `/ .16` as `/ 0.16` and matching the spelling would fail on a correct
+  // value.
+  it('declares the archived glass overlay with the numbers completion.ts states', () => {
+    const numbers = (text: string): number[] =>
+      [...text.matchAll(/-?\d*\.?\d+/g)].map((m) => Number(m[0]));
+    // Only this declaration: `rule()` gathers every block the selector appears in, and the
+    // grouped spanning-layer block contributes an `inset: 0` that is not part of the gradient.
+    const declared = /background-image:\s*(linear-gradient\([\s\S]*?\));/.exec(rule('.cdt-glass'));
+    expect(declared).not.toBeNull();
+    expect(numbers(declared?.[1] ?? '')).toEqual(numbers(ARCHIVED_GLASS));
+  });
+});
 
 describe('the flicker dip rides the tier because it is a value, not an inline opacity', () => {
   it('declares the halo opacity as a custom property with a steady fallback', () => {
