@@ -1,0 +1,248 @@
+/* §8.6's geometry, verbatim, over §8.7's tokens. Every ground resolves to a token, with two of
+   the four grounds §8.7's snap table already snapped: the row divider is --line-1 and the
+   footer is --surface-0. No hex may appear even in a comment — check-style-tokens.mjs reads the
+   file as text. The backdrop scrim is §8.6's own stated value and is named in
+   styles/css-vocabulary.json rather than invented here.
+
+   The backdrop uses `viewIn`, which R35(b) puts in styles/base.css and forbids a screen from
+   re-declaring: a local copy is invisible to motion.css's tier clamp. `palIn` and `rowSlide` are
+   the palette's own and are declared here, under §8.6's own names. */
+
+.qs-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 88px;
+  background: rgb(6 9 11 / 0.68);
+  animation: viewIn 160ms both;
+}
+
+.qs-panel {
+  width: 580px;
+  max-width: calc(100% - 40px);
+  max-height: calc(100% - 140px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  box-shadow:
+    inset 0 0 0 1px var(--line-4),
+    0 30px 70px -22px rgb(0 0 0 / 0.85);
+  animation: palIn 240ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+
+.qs-bar {
+  flex: none;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 14px;
+  background: var(--surface-3);
+  border-bottom: 1px solid var(--line-2);
+}
+
+/* The bar's own indicator, on §8.3a's precedent for the shelf query field. It is in addition to
+   the input's inset ring, not instead of it: criterion 53 is satisfied inside the element whose
+   outline was removed. */
+.qs-bar:focus-within {
+  border-bottom-color: var(--sig);
+}
+
+.qs-caret {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--sig);
+}
+
+/* Criterion 53: the outline goes and an inset ring replaces it in the same rule. §8.6 states no
+   tracking for the field; mono ships with its tracking, and a field being typed into takes the
+   smallest that satisfies that rather than a label's 0.1em. */
+.qs-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 0;
+  outline: none;
+  box-shadow: inset 0 0 0 1px transparent;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--text-0);
+  caret-color: var(--sig);
+}
+
+.qs-input:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--sig);
+}
+
+.qs-input::placeholder {
+  color: var(--text-3);
+}
+
+/* §8.6 [v2.2]: the count is a figure and §8.7 bars --text-5 from every figure. */
+.qs-count {
+  flex: none;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+
+.qs-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.qs-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line-1);
+  animation: rowSlide 200ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
+  /* No fallback value: the row always sets this property inline, and a zero-millisecond
+     literal here is a duration §11.6 does not carry. */
+  animation-delay: var(--cdt-qs-row-delay);
+}
+
+.qs-row[aria-selected='true'] {
+  background: var(--surface-4);
+  box-shadow: inset 3px 0 0 0 var(--cdt-qs-jewel, transparent);
+}
+
+.qs-dot-slot {
+  flex: none;
+  width: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qs-dot {
+  border-radius: 50%;
+}
+
+.qs-body {
+  flex: 1;
+  min-width: 0;
+  display: block;
+}
+
+.qs-name {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qs-sub {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* §8.7 clause 1: the selected row's ground is --surface-4, where --text-3 is 5.70:1 and this
+   line is what separates two similarly named projects. §8.0b applies the same correction. */
+.qs-row[aria-selected='true'] .qs-sub {
+  color: var(--text-2);
+}
+
+.qs-act {
+  flex: none;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  color: var(--sig);
+}
+
+.qs-act--unavailable {
+  color: var(--text-3);
+}
+
+.qs-empty {
+  padding: 26px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+
+.qs-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 9px 14px;
+  background: var(--surface-0);
+  border-top: 1px solid var(--line-2);
+}
+
+/* §8.7 admits --text-5 here and nowhere else on this surface: hint text at >=8px, letterspaced. */
+.qs-hint {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-5);
+}
+
+.qs-spacer {
+  flex: 1;
+  min-width: 6px;
+}
+
+@keyframes palIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.97);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rowSlide {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* §11.6 `reduced`: opacity and colour only, no transform, clamped to REDUCED_CLAMP_MS. Both
+   entries carry a transform, so both fall back to the shared opacity-only keyframe. The row
+   stagger is already flat here — `paletteRowDelayMs` returns 0 below `full`, and a ladder of
+   forty delays is a travelling highlight made of time.
+
+   `off` needs nothing: motion.css stops every animation under [data-effects-tier='off']. */
+[data-effects-tier='reduced'] .qs-panel,
+[data-effects-tier='reduced'] .qs-row {
+  animation: viewIn 160ms both;
+}
