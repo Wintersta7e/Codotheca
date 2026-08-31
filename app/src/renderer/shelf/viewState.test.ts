@@ -105,13 +105,13 @@ describe('viewFromState', () => {
         viewMode: 'list',
         scrollOffset: 940,
         selectedProjectId: 12 as ProjectId,
-        dismissedNotices: ['notice.dismissed.identityAsk'],
+        dismissedNotices: ['notice.dismissed.identity'],
       }),
     );
     expect(view.viewMode).toBe('list');
     expect(view.scrollOffset).toBe(940);
     expect(view.selectedProjectId).toBe(12);
-    expect(view.dismissedNotices).toEqual(['notice.dismissed.identityAsk']);
+    expect(view.dismissedNotices).toEqual(['notice.dismissed.identity']);
   });
 });
 
