@@ -854,8 +854,9 @@
     { "name": "diag.bundle", "args": { "includeRealPaths": "bool" }, "returns": "DiagBundle" },
     {
       "name": "projects.list",
-      "args": { "query": "String", "sort": "SortKey", "from": "u32", "to": "u32" },
-      "returns": "ProjectPage"
+      "args": { "query": "String?", "sort": "SortKey?", "window": "Window?" },
+      "returns": "ProjectPage",
+      "$comment": "§8.2: every field is optional with a stated default, because the projects topic's snapshot calls this with {}. `window` is the same shape the response carries, so a caller pages by echoing back the window it was given rather than by rebuilding from/to"
     },
     { "name": "projects.get", "args": { "id": "ProjectId" }, "returns": "ProjectDetail" },
     { "name": "projects.peek", "args": { "id": "ProjectId" }, "returns": "Peek" },
