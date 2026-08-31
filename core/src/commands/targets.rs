@@ -134,6 +134,7 @@ pub fn dispatch_targets_command(
     match command {
         "targets.list" => Some(handle_list(ctx, args).and_then(|list| to_value(&list))),
         "targets.setDefault" => Some(handle_set_default(ctx, args)),
+        "targets.upsert" => Some(handle_upsert(ctx, args).and_then(|row| to_value(&row))),
         _ => None,
     }
 }
@@ -285,6 +286,147 @@ pub fn handle_set_default(ctx: &mut TargetsCtx<'_>, args: Value) -> Result<Value
     tx.commit()
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
     Ok(serde_json::json!({}))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UpsertArgs {
+    #[serde(default)]
+    target_id: Option<TargetId>,
+    kind: TargetKind,
+    name: String,
+    exec_bytes: crate::protocol::Bytes,
+    #[serde(default)]
+    argv: Vec<String>,
+    #[serde(default)]
+    project_id: Option<ProjectId>,
+    #[serde(default)]
+    location_id: Option<LocationId>,
+    #[serde(default)]
+    language: Option<String>,
+}
+
+/// §2.4's trust rule, core-side, and the third of its three guards — the schema marks the
+/// command `privileged`, the bridge refuses a privileged command from the renderer, and this
+/// refuses an `execBytes` a native dialog could not have produced.
+///
+/// The rule is one sentence: **the executable must be an absolute path.** A dialog returns
+/// nothing else. A relative program would be resolved by the OS through `PATH` or the working
+/// directory at spawn time, and this process controls neither. `is_absolute` is host-correct on
+/// both targets: a WSL target's program is `wsl.exe`, a Windows path, because §4bis.4 launches
+/// into a distro through it rather than executing a Linux binary directly.
+pub fn check_dialog_origin(exec: &std::path::Path) -> Result<(), CommandFailure> {
+    if exec.is_absolute() {
+        return Ok(());
+    }
+    Err(CommandFailure::protocol(
+        "targets.upsert requires an absolute executable from a native dialog",
+    ))
+}
+
+/// The one command in phase 1 whose argument *is* an executable.
+///
+/// Everything besides `execBytes` is a renderer-supplied string stored **verbatim, never
+/// interpreted**: `name` is a label, and `argv` is arguments to the program named by
+/// `execBytes` and can never itself be a program. There is no shell anywhere on the path from
+/// this row to `std::process::Command`.
+pub fn handle_upsert(ctx: &mut TargetsCtx<'_>, args: Value) -> Result<TargetRow, CommandFailure> {
+    let args: UpsertArgs = parse_args(args)?;
+    let exec = crate::paths::path_from_bytes(&args.exec_bytes.0);
+    check_dialog_origin(&exec)?;
+    if args.name.trim().is_empty() {
+        return Err(CommandFailure::protocol(
+            "targets.upsert requires a non-empty name",
+        ));
+    }
+    let argv_json =
+        serde_json::to_string(&args.argv).map_err(|e| CommandFailure::internal(e.to_string()))?;
+
+    let id = {
+        let _guard = crate::proto::txguard::TxGuard::enter();
+        let tx = ctx
+            .index
+            .conn_mut()
+            .transaction()
+            .map_err(|e| CommandFailure::internal(e.to_string()))?;
+
+        let project_id = match args.project_id {
+            None => None,
+            Some(requested) => Some(
+                crate::identity::redirect::resolve_project_id(&tx, requested.0)
+                    .map_err(|e| identity_failure(&e))?,
+            ),
+        };
+        let scope = TargetScope {
+            project_id: project_id.map(ProjectId),
+            location_id: args.location_id,
+            language: args.language,
+        };
+
+        // Rewriting the row's executable invalidates the verification that described the old
+        // one: keeping `ok` would claim a currency the row no longer has (§6).
+        let id = if let Some(existing) = args.target_id {
+            {
+                let changed = tx
+                    .prepare_cached(
+                        "UPDATE launch_target
+                            SET kind = ?2, name = ?3, exec_bytes = ?4, args_json = ?5,
+                                project_id = ?6, location_id = ?7, language = ?8,
+                                verify_state = 'unverified', verified_at = NULL
+                          WHERE id = ?1",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.execute(rusqlite::params![
+                            existing.0,
+                            args.kind.as_str(),
+                            args.name,
+                            args.exec_bytes.0,
+                            argv_json,
+                            scope.project_id.map(|p| p.0),
+                            scope.location_id.map(|l| l.0),
+                            scope.language.as_deref(),
+                        ])
+                    })
+                    .map_err(|e| failure(&LaunchError::Sqlite(e)))?;
+                if changed == 0 {
+                    return Err(failure(&LaunchError::NoSuchTarget(existing.0)));
+                }
+                existing.0
+            }
+        } else {
+            {
+                tx.prepare_cached(
+                    "INSERT INTO launch_target
+                       (kind, name, exec_bytes, args_json, cwd_mode, env_json,
+                        project_id, location_id, language, sort_index, detected, verify_state)
+                     VALUES (?1, ?2, ?3, ?4, 'location', '{}', ?5, ?6, ?7, 0, 0, 'unverified')",
+                )
+                .and_then(|mut stmt| {
+                    stmt.execute(rusqlite::params![
+                        args.kind.as_str(),
+                        args.name,
+                        args.exec_bytes.0,
+                        argv_json,
+                        scope.project_id.map(|p| p.0),
+                        scope.location_id.map(|l| l.0),
+                        scope.language.as_deref(),
+                    ])
+                })
+                .map_err(|e| failure(&LaunchError::Sqlite(e)))?;
+                let inserted = tx.last_insert_rowid();
+                // A target the user just chose in a dialog is the one they meant to use.
+                renumber_head(&tx, args.kind, &scope, inserted).map_err(|e| failure(&e))?;
+                inserted
+            }
+        };
+
+        tx.commit()
+            .map_err(|e| CommandFailure::internal(e.to_string()))?;
+        id
+    };
+
+    let stored = resolve::load_target(ctx.index.conn(), id).map_err(|e| failure(&e))?;
+    to_target_row(&stored).map_err(|e| failure(&e))
 }
 
 fn identity_failure(err: &crate::identity::IdentityError) -> CommandFailure {
