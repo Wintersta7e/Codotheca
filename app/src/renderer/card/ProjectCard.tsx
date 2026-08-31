@@ -1,0 +1,182 @@
+import { type ReactElement, useState } from 'react';
+import type { ProjectRow, SessionRef } from '../../generated/protocol';
+import { CARD_ROLE } from '../a11y/names';
+import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
+import { useCardBitmap } from '../art/useCardBitmap';
+import { glowShadow, glowStrength } from '../derive/condition';
+import { formatTrackedBytes } from '../format/size';
+import { Card } from './Card';
+import { statusChips } from './chips';
+import { frameToken, uncomputedRank } from './completion';
+import { densityStep } from './geometry';
+import { BENCH_LABEL, useBenchElapsed } from './useBenchElapsed';
+
+/**
+ * The grid tile the shelf mounts, and the composition every value in the card modules was
+ * derived for. It computes nothing of its own: appearance, chips, rank, glow, geometry and names
+ * all arrive already decided, and this component chooses only which of them are on screen at
+ * this density.
+ *
+ * Hover is held here, not on the shelf. §7.8's `hov = <projectId>` is one value seen from the
+ * other end; a shelf-level id re-renders 140 mounted cards on every pointer move, and the
+ * measured frame budget is 4.2 ms.
+ *
+ * Five props exceed the eight-field contract the shelf plan quotes, each forced by a spec
+ * sentence: the first-run boundary `NEW` needs, the open session §7.8's live tile needs, the pin
+ * and stop callbacks §7.8a and §7.8 need — the card may not call the protocol — and the flicker
+ * dip, which is chosen above the card because "at most one card in the viewport" is a
+ * shelf-level fact.
+ */
+export interface ProjectCardProps {
+  readonly row: ProjectRow;
+  /** The `--tile` value in px, §8.0a's three steps. */
+  readonly density: number;
+  readonly rendition: 'card';
+  readonly selected: boolean;
+  readonly focused: boolean;
+  /**
+   * Unix **seconds** (R3), and the shelf's shared instant for this paint. §11.7's as-of clauses
+   * and §7.8's bench figure both re-derive from it, so a shelf that never advances it freezes
+   * both. The card's own timer repaints at the minute boundary; it cannot invent a later second.
+   */
+  readonly now: number;
+  readonly firstRunCompletedAt: number | null;
+  readonly session: SessionRef | null;
+  readonly haloOpacity: number;
+  readonly onActivate: () => void;
+  readonly onOpen: () => void;
+  readonly onTogglePin: () => void;
+  readonly onStopSession: () => void;
+}
+
+export function ProjectCard(props: ProjectCardProps): ReactElement {
+  const { row } = props;
+  const [hovered, setHovered] = useState(false);
+  const step = densityStep(props.density);
+  const appearance = appearanceFor(seedOf(row), fadeFor(row), row.primaryLanguage);
+  const bitmap = useCardBitmap({
+    sceneHash: row.artSceneHash,
+    rendition: props.rendition,
+    artState: row.artState,
+  });
+  const bench = useBenchElapsed(
+    props.session === null || props.session.endedAt !== null ? null : props.session.startedAt,
+    () => props.now,
+  );
+
+  const glow = glowShadow(
+    glowStrength({
+      signal: row.conditionSignal,
+      isReference: row.isReference,
+      isArchived: row.isArchived,
+      hasOpenSession: bench !== null,
+    }),
+  );
+
+  // §7.7's identity line: `<first-commit year> · <primary language>`, `owner` prefixed only when
+  // it is not the user — which the projection expresses by leaving `owner` NULL when it is.
+  // Whichever half is NULL is omitted; both NULL renders nothing at all.
+  const identity = [
+    row.owner,
+    row.birthYear === null ? null : String(row.birthYear),
+    row.primaryLanguage,
+  ]
+    .filter((part): part is string => part !== null && part !== '')
+    .join(' · ');
+
+  return (
+    <Card
+      surface="card"
+      appearance={appearance}
+      frameToken={frameToken(row)}
+      density={props.density}
+      isArchived={row.isArchived}
+      isReference={row.isReference}
+      halo={{ shadow: glow, opacity: props.haloOpacity }}
+      hovered={hovered}
+      focused={props.focused}
+      selected={props.selected}
+      role={CARD_ROLE}
+      tabIndex={props.focused ? 0 : -1}
+      onMouseEnter={() => {
+        setHovered(true);
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+      }}
+      onClick={(shiftKey) => {
+        if (shiftKey) props.onOpen();
+        else props.onActivate();
+      }}
+      art={
+        bitmap.src === null ? null : (
+          <img
+            className="cdt-art"
+            alt=""
+            src={bitmap.src}
+            decoding="async"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              display: 'block',
+            }}
+          />
+        )
+      }
+      bands={{
+        languageCode: row.primaryLanguage === null ? null : languageCode(row.primaryLanguage),
+        designation: appearance.designation,
+        hazard: row.conditionSignal === 'abandoned' && !row.isReference,
+        conditionSignal: row.conditionSignal,
+        rank: uncomputedRank('gridCard', {
+          completionLit: row.completionLit,
+          isReference: row.isReference,
+          density: props.density,
+        }),
+        chips: statusChips(row, props.now, props.firstRunCompletedAt),
+        pin: {
+          projectName: row.name,
+          isPinned: row.isPinned,
+          surface: 'card',
+          visible: row.isPinned || hovered || props.focused,
+          onToggle: props.onTogglePin,
+        },
+      }}
+    >
+      <h3 className="cdt-name">{row.name}</h3>
+      {step.showDescription && row.description !== null ? (
+        <p className="cdt-desc">{row.description}</p>
+      ) : null}
+      {step.showIdentity && identity !== '' ? <p className="cdt-identity">{identity}</p> : null}
+      {step.showStrip ? (
+        <div className="cdt-strip" aria-hidden="true">
+          {row.branch === null ? null : <span className="cdt-strip-branch">{row.branch}</span>}
+          <span className="cdt-strip-rule" />
+          {/* A NULL inventory is unmeasured, and an unmeasured size renders no figure — never a
+              zero, which would read as an empty repository. */}
+          {row.sizeTrackedBytes === null ? null : (
+            <span>{formatTrackedBytes(row.sizeTrackedBytes)}</span>
+          )}
+        </div>
+      ) : null}
+      {bench === null ? null : (
+        <div className="cdt-bench">
+          <span>{`${BENCH_LABEL} · ${bench}`}</span>
+          {/* Stops propagation for the same reason the pin does: the card body is Play. Stopping
+              a session writes no working tree and is not a §17 destructive operation. */}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onStopSession();
+            }}
+          >
+            STOP
+          </button>
+        </div>
+      )}
+    </Card>
+  );
+}

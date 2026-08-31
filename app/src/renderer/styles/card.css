@@ -26,14 +26,17 @@
   border-radius: 2px;
 }
 
-/* §5.4a's steady glow. Its strength comes from plan 09; the flicker owns this element too.
-   §11.6 gives the glow element its own opacity transition — the flicker dip is opacity on this
-   element and nothing else, and routing it through the card's box-shadow curve is exactly what
-   the spec replaced. It is declared here rather than by whoever drives the dip, because
-   motion.css already clamps this element's opacity at reduced and off as though the declaration
-   existed. Plan 12c adds the matching `opacity: var(--cdt-halo-opacity, 1)` with the driver. */
+/* §5.4a's steady glow and §11.6's scheduled dip, which own the same element. §11.6 gives it its
+   own opacity transition — the dip is opacity on this element and nothing else, and routing it
+   through the card's box-shadow curve is exactly what the spec replaced.
+
+   The dip arrives as a VALUE, never as an inline `opacity`. An inline style outranks every
+   selector, so a driver writing `style.opacity` would keep dipping under
+   `[data-effects-tier='reduced'] .cdt-card-halo { opacity: 1 }` — at the two tiers that forbid
+   it. Reading the custom property here is what leaves the clamp in charge. */
 .cdt-card-halo {
   box-shadow: var(--cdt-halo, none);
+  opacity: var(--cdt-halo-opacity, 1);
   transition: opacity 90ms linear;
 }
 

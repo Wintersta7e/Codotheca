@@ -1,4 +1,5 @@
 import type { CustomScheme } from 'electron';
+import { ART_SCHEME } from '../shared/artAddress';
 
 /**
  * `codotheca://art/<hash>/<rendition>` (§7.2, §7.6).
@@ -7,11 +8,12 @@ import type { CustomScheme } from 'electron';
  * the only route by which card art reaches the screen. The privileges must be declared
  * before `app.ready` — Electron throws otherwise, and the throw would happen on a user's
  * machine.
+ *
+ * The two segments are `shared/artAddress.ts`'s, which is also where the renderer composes
+ * addresses from them. The renderer cannot import this file — `tsconfig.web.json` excludes
+ * `src/main/**` — so a copy here would be the scheme spelled twice for the two ends of one URL.
  */
-export const ART_SCHEME = 'codotheca';
-
-/** The single host segment. §7.6's address is two-segment: a fetch of `//art/<hash>` fails. */
-export const ART_SCHEME_HOST = 'art';
+export { ART_SCHEME, ART_SCHEME_HOST } from '../shared/artAddress';
 
 export const ART_SCHEME_PRIVILEGES: CustomScheme = {
   scheme: ART_SCHEME,
