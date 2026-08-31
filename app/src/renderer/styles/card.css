@@ -1,0 +1,546 @@
+/*
+ * The card's structural rules (§7.7, §7.7a, §7.8, §7.8a).
+ *
+ * Every declaration a motion tier has to override lives here and reads a `--cdt-*` value that
+ * the component sets inline. An inline `background-image` would outrank
+ * `[data-effects-tier='off']` on the card — inline style beats any selector — and the LED run
+ * would keep travelling at tier `off`.
+ *
+ * Per-surface geometry and the per-surface strings §7.7's two band tables hold are applied
+ * inline from `card/geometry.ts`. The two tables are never merged here either.
+ */
+
+/* The unclipped positioning context. It exists so the two outer shadows have somewhere to live:
+   `clip-path` deletes an outer `box-shadow` exactly as it deletes an `outline`. */
+.cdt-card-frame {
+  position: relative;
+  isolation: isolate;
+}
+
+.cdt-card-halo,
+.cdt-bloom {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+/* §5.4a's steady glow. Its strength comes from plan 09; the flicker owns this element too.
+   §11.6 gives the glow element its own opacity transition — the flicker dip is opacity on this
+   element and nothing else, and routing it through the card's box-shadow curve is exactly what
+   the spec replaced. It is declared here rather than by whoever drives the dip, because
+   motion.css already clamps this element's opacity at reduced and off as though the declaration
+   existed. Plan 12c adds the matching `opacity: var(--cdt-halo-opacity, 1)` with the driver. */
+.cdt-card-halo {
+  box-shadow: var(--cdt-halo, none);
+  transition: opacity 90ms linear;
+}
+
+/* §7.8's hover bloom. Outer, and therefore never on the clipped element. */
+.cdt-bloom {
+  box-shadow: none;
+  transition: box-shadow 220ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+.cdt-card-frame[data-hovered='true'] .cdt-bloom {
+  box-shadow: var(--cdt-bloom, none);
+}
+
+/* The 1px tier frame. Its colour is the frame token at rest and the jewel under the pointer. */
+.cdt-card {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  padding: 1px;
+  aspect-ratio: 2 / 3;
+  background-color: var(--cdt-frame);
+  background-image: var(--cdt-led);
+  background-size: 250% 100%;
+  background-position: -85% 0;
+  background-repeat: no-repeat;
+  border: 0;
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--chamfer-card)) 0,
+    100% var(--chamfer-card),
+    100% 100%,
+    var(--chamfer-card) 100%,
+    0 calc(100% - var(--chamfer-card))
+  );
+  transition:
+    background-color 200ms cubic-bezier(0.2, 0.85, 0.2, 1),
+    background-position 620ms cubic-bezier(0.3, 0.7, 0.2, 1),
+    transform 260ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.cdt-card[data-surface='hero'] {
+  aspect-ratio: auto;
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--chamfer-hero)) 0,
+    100% var(--chamfer-hero),
+    100% 100%,
+    var(--chamfer-hero) 100%,
+    0 calc(100% - var(--chamfer-hero))
+  );
+}
+
+.cdt-card[data-hovered='true'] {
+  background-color: var(--cdt-jewel);
+  background-position: 115% 0;
+  transform: translateY(-7px) scale(1.025);
+}
+
+.cdt-card[data-hovered='true']:active {
+  transform: translateY(-3px) scale(0.986);
+}
+
+/*
+ * The one focus indicator, and the selection indicator, which are the same thing. `clip-path`
+ * clips an `outline` away entirely, so a focus ring drawn that way does not exist on this shape;
+ * composing it into the element's own shadow is what makes it impossible for keyboard navigation
+ * to render nothing. It never animates, so no motion tier removes it.
+ */
+.cdt-card:focus-visible,
+.cdt-card[data-focused='true'],
+.cdt-card[data-selected='true'] {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 2px var(--cdt-jewel-ink),
+    inset 0 0 22px -6px var(--cdt-jewel-55);
+}
+
+/* §7.7a: a hole in the frame's top edge, filled with the surface behind the frame. It carries
+   the state without colour, so it survives a monochrome display and every colour blindness.
+
+   It is a child of the unclipped frame, never of the clipped element. `uncomputedRank(…).gap.top`
+   is `-1px` and the clip polygon starts at `0 0`, so a gap mounted inside is deleted by the clip
+   exactly as an `outline` is. `z-index: 3` clears the card's `z-index: 1` inside the frame's
+   `isolation: isolate` context. Same rule, same reason, third element: halo, bloom, gap. */
+.cdt-frame-gap {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* The plate: everything inside the 1px frame, clipped to the same shape. */
+.cdt-plate {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--surface-1);
+  background-image: var(--cdt-greebling), var(--cdt-plate);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.13),
+    inset 0 -22px 30px -22px rgb(0 0 0 / 0.85);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--chamfer-card)) 0,
+    100% var(--chamfer-card),
+    100% 100%,
+    var(--chamfer-card) 100%,
+    0 calc(100% - var(--chamfer-card))
+  );
+}
+
+.cdt-card[data-surface='hero'] .cdt-plate {
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.13),
+    inset 0 -30px 40px -30px rgb(0 0 0 / 0.9);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--chamfer-hero)) 0,
+    100% var(--chamfer-hero),
+    100% 100%,
+    var(--chamfer-hero) 100%,
+    0 calc(100% - var(--chamfer-hero))
+  );
+}
+
+/* Layers that legitimately span the plate, because they carry no content. */
+.cdt-sheen,
+.cdt-specular,
+.cdt-scanline,
+.cdt-glass {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cdt-specular {
+  background-image: linear-gradient(
+    101deg,
+    transparent 30%,
+    rgb(255 255 255 / 0.16) 50%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  background-position: 155% 0;
+  transition: background-position 700ms cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+
+.cdt-card[data-hovered='true'] .cdt-specular {
+  background-position: -60% 0;
+}
+
+.cdt-scanline {
+  inset: 0 0 auto 0;
+  height: 16%;
+  background-image: var(--cdt-scan);
+  opacity: 0;
+  transform: translateY(-110%);
+  transition:
+    transform 720ms cubic-bezier(0.34, 0.6, 0.24, 1),
+    opacity 180ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+.cdt-card[data-hovered='true'] .cdt-scanline {
+  opacity: 1;
+  transform: translateY(560%);
+}
+
+/* §7.7a: `is_archived` keeps only its sealed markers, which are independent of completion. */
+.cdt-glass {
+  background-image: linear-gradient(
+    122deg,
+    rgb(255 255 255 / 0.16) 0%,
+    transparent 26%,
+    transparent 64%,
+    rgb(255 255 255 / 0.07) 100%
+  );
+}
+
+.cdt-bracket {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--cdt-jewel);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    inset 300ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    opacity 200ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+.cdt-card[data-hovered='true'] .cdt-bracket {
+  opacity: 1;
+}
+
+/* §7.8's sigil layer has no producer in phase 1; the rule is built and nothing mounts a node. */
+.cdt-sigil {
+  position: absolute;
+  color: rgb(255 255 255 / 0.16);
+  transform: scale(1);
+  transition:
+    transform 260ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    color 260ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+.cdt-card[data-hovered='true'] .cdt-sigil {
+  color: rgb(255 255 255 / 0.42);
+  transform: scale(1.14);
+}
+
+/* Band 1 — furniture only, and the one element that spans the plate inside it. */
+.cdt-hazard {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 5px;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgb(214 178 104 / 0.6) 0 4px,
+    rgb(16 13 10 / 0.82) 4px 8px
+  );
+}
+
+.cdt-langplate {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  background-color: rgb(8 12 15 / 0.58);
+  border-left: 2px solid var(--cdt-jewel);
+  color: var(--cdt-jewel-ink);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.cdt-card[data-surface='hero'] .cdt-langplate {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+}
+
+.cdt-dot {
+  position: absolute;
+  border-radius: 50%;
+  transform: scale(1);
+  transition: transform 260ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.cdt-card[data-hovered='true'] .cdt-dot {
+  transform: scale(1.5);
+}
+
+/* §7.8a — a shape, not a colour, and a real button. */
+.cdt-pin {
+  position: absolute;
+  display: block;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.cdt-pin[data-visible='false'] {
+  pointer-events: none;
+}
+
+.cdt-pin:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--cdt-jewel-ink);
+}
+
+.cdt-pin-ground {
+  position: absolute;
+  background-color: rgb(8 12 15 / 0.58);
+  border-radius: 0;
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.14),
+    inset 0 -1px 0 0 rgb(0 0 0 / 0.45);
+}
+
+.cdt-pin-silhouette {
+  position: absolute;
+  opacity: 1;
+  transition: opacity 140ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+.cdt-pin[data-pinned='false'] .cdt-pin-silhouette {
+  opacity: 0;
+}
+
+.cdt-pin[data-pinned='false'][data-visible='true'] .cdt-pin-silhouette {
+  opacity: 1;
+}
+
+.cdt-pin-bar,
+.cdt-pin-shaft {
+  position: absolute;
+  background-color: var(--text-2);
+}
+
+.cdt-pin[data-pinned='false'] .cdt-pin-bar,
+.cdt-pin[data-pinned='false'] .cdt-pin-shaft {
+  background-color: var(--text-3);
+}
+
+/* Band 2 — the hairline, whose gradient stops differ per surface and arrive inline. */
+.cdt-hairline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.05);
+}
+
+/* Band 3 — the rank, which in phase 1 is always the uncomputed treatment. */
+.cdt-rank {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.cdt-rank-glyph {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 0.8;
+  letter-spacing: -0.02em;
+  color: var(--unknown-ink);
+  text-shadow: none;
+}
+
+.cdt-card[data-density='compact'] .cdt-rank-glyph {
+  font-family: var(--font-display);
+  font-size: 30px;
+  letter-spacing: -0.02em;
+}
+
+.cdt-card[data-density='roomy'] .cdt-rank-glyph {
+  font-family: var(--font-display);
+  font-size: 38px;
+  letter-spacing: -0.02em;
+}
+
+.cdt-card[data-surface='hero'] .cdt-rank-glyph {
+  font-family: var(--font-display);
+  font-size: 64px;
+  letter-spacing: -0.02em;
+}
+
+/* The label names an absence, not a rank, so it is --text-3 and never the rank ink. */
+.cdt-rank-label {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: var(--text-3);
+}
+
+.cdt-card[data-surface='hero'] .cdt-rank-label {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.24em;
+}
+
+/* Band 4 — chips, vent bank, jewel stripe, designation. */
+.cdt-chips {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.cdt-chip {
+  display: inline-block;
+  padding: 2px 5px;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.cdt-vent {
+  position: absolute;
+  opacity: 0.6;
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgb(0 0 0 / 0.3) 0 3px,
+    rgb(255 255 255 / 0.07) 3px 4px,
+    transparent 4px 9px
+  );
+}
+
+.cdt-stripe {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background-image: linear-gradient(90deg, var(--cdt-jewel) 0 46%, rgb(0 0 0 / 0.4) 46% 100%);
+}
+
+.cdt-designation {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: rgb(255 255 255 / 0.64);
+}
+
+/* Band 5 — the scrim, whose gradient and padding arrive inline from the band table. */
+.cdt-scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.cdt-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cdt-card[data-density='compact'] .cdt-name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 0.03em;
+}
+
+.cdt-card[data-density='roomy'] .cdt-name {
+  font-family: var(--font-display);
+  font-size: 19px;
+  letter-spacing: 0.03em;
+}
+
+.cdt-desc {
+  margin-top: 2px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  line-height: 1.3;
+  max-height: 26px;
+  overflow: hidden;
+  text-wrap: pretty;
+  color: var(--text-3);
+}
+
+/* The identity line is what separates two projects sharing a basename, which is a decision, so
+   it is --text-3 and not the --text-4 the prototype used. */
+.cdt-identity {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cdt-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(6px);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  transition:
+    height 280ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    opacity 200ms cubic-bezier(0.2, 0.85, 0.2, 1),
+    transform 280ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.cdt-card[data-hovered='true'] .cdt-strip {
+  height: 13px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cdt-strip-branch {
+  color: var(--cdt-jewel-80);
+}
+
+.cdt-strip-rule {
+  width: 1px;
+  align-self: stretch;
+  background-color: var(--cdt-jewel-12);
+}
+
+/* The live tile's permanent row. It was never animation, so no tier touches it. */
+.cdt-bench {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--sig);
+}

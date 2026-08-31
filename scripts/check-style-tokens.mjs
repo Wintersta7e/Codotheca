@@ -65,7 +65,18 @@ const KEYFRAMES = /@keyframes\s+([A-Za-z_][\w-]*)/g;
 // the gate fail on whitespace and a leading zero, which says nothing about §11.6.
 const curveKey = (v) => v.replace(/\s+/g, '').replace(/\b0\.(\d)/g, '.$1');
 
-const exemptColours = new Set(vocabulary.exemptColourLiterals.map((v) => v.replace(/\s+/g, ' ')));
+// And a colour is its channels and its alpha, not its spelling — the same argument as `curveKey`
+// one line up, which was applied to curves and not to colours only because no stylesheet carried
+// an `rgb()` literal until the card did. A CSS formatter writes `rgb(255 255 255 / 0.13)` where
+// §7.7's band table writes `/ .13`; rejecting that fails 20 exempt colours over a leading zero
+// and says nothing about criterion 46. A different alpha still fails, which is the point.
+const colourKey = (v) =>
+  v
+    .replace(/\s+/g, ' ')
+    .replace(/\b0\.(\d)/g, '.$1')
+    .toLowerCase();
+
+const exemptColours = new Set(vocabulary.exemptColourLiterals.map(colourKey));
 const permittedDurations = new Set(vocabulary.durationsMs);
 const permittedTimings = new Set(vocabulary.timingFunctions.map(curveKey));
 
@@ -82,10 +93,10 @@ for (const file of scanned) {
   const isTokenFile = file === tokensFile;
 
   for (const [literal] of text.matchAll(COLOUR)) {
-    const normalised = literal.replace(/\s+/g, ' ');
+    const normalised = colourKey(literal);
     if (isTokenFile) continue;
     if (exemptColours.has(normalised)) continue;
-    if (CONDITION_DOT_FILLS.has(normalised.toLowerCase())) continue;
+    if (CONDITION_DOT_FILLS.has(normalised)) continue;
     fail(file, `colour literal outside the token block: ${literal}`);
   }
 

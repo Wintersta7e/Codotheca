@@ -95,6 +95,28 @@ describe('the stylesheet gate', () => {
     expect(unlisted.out).toContain('timing function not in §11.6');
   });
 
+  it('reads a colour as its channels and its alpha, not as a spelling', () => {
+    // §7.7's band tables spell an alpha `/ .13`; a CSS formatter writes `/ 0.13`. Comparing raw
+    // strings rejected 20 exempt colours in one stylesheet over a leading zero — the same defect
+    // the curve normalisation above exists for, left in place for colours only because no
+    // stylesheet carried an `rgb()` literal until the card did.
+    const formatted = gateOver(
+      'scripts/check-style-tokens.mjs',
+      '.cdt-probe { color: rgb(255 255 255 / 0.13); }\n',
+    );
+    expect(formatted.out).toContain('check-style-tokens: ok');
+    expect(formatted.code).toBe(0);
+
+    // …and the normalisation must not have made it permissive. A different alpha is a different
+    // colour and is still outside the vocabulary.
+    const unlisted = gateOver(
+      'scripts/check-style-tokens.mjs',
+      '.cdt-probe { color: rgb(255 255 255 / 0.11); }\n',
+    );
+    expect(unlisted.code).toBe(1);
+    expect(unlisted.out).toContain('colour literal outside the token block');
+  });
+
   it('rejects a var() that names no token', () => {
     const result = gateOver(
       'scripts/check-style-tokens.mjs',
