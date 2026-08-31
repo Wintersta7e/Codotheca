@@ -23,6 +23,7 @@ pub mod git;
 pub mod identity;
 pub mod index;
 pub mod jobs;
+pub mod launch;
 pub mod lifecycle;
 pub mod mount;
 pub mod paths;
