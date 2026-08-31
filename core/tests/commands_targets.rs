@@ -290,3 +290,216 @@ fn primary_language_reads_null_as_absent_rather_than_empty() {
         Some("Rust")
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Task 2: `targets.setDefault` — re-heading a scope, and adopting a row into one.
+// ---------------------------------------------------------------------------------------------
+
+impl Fixture {
+    fn set_default(&mut self, target: i64, scope: &Scope) {
+        let project = self.project;
+        self.set_default_for(target, project, scope);
+    }
+
+    fn set_default_for(&mut self, target: i64, project: i64, scope: &Scope) {
+        let args = json!({
+            "targetId": target,
+            "projectId": scope.project.map(|_| project),
+            "locationId": scope.location,
+            "language": scope.language,
+        });
+        dispatch_targets_command(&mut self.ctx(), "targets.setDefault", args)
+            .expect("targets.setDefault is owned here")
+            .expect("set default");
+    }
+
+    fn new_project(&self) -> i64 {
+        self.index
+            .conn()
+            .execute(
+                "INSERT INTO project (name, seed_basename, created_at, updated_at)
+                 VALUES ('q', 'q', 0, 0)",
+                [],
+            )
+            .expect("insert project");
+        self.index.conn().last_insert_rowid()
+    }
+
+    /// A tombstoned project that redirects to `survivor` — §1.5's merge, seeded directly.
+    fn merge_project_into(&self, survivor: i64) -> i64 {
+        let conn = self.index.conn();
+        conn.execute(
+            "INSERT INTO project (name, seed_basename, created_at, updated_at, merged_into)
+             VALUES ('gone', 'gone', 0, 0, ?1)",
+            rusqlite::params![survivor],
+        )
+        .expect("insert tombstone");
+        let gone = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO project_redirect (old_project_id, new_project_id, merged_at)
+             VALUES (?1, ?2, 0)",
+            rusqlite::params![gone, survivor],
+        )
+        .expect("insert redirect");
+        gone
+    }
+
+    fn row_count(&self) -> i64 {
+        self.index
+            .conn()
+            .query_row("SELECT COUNT(*) FROM launch_target", [], |r| r.get(0))
+            .expect("count")
+    }
+}
+
+#[test]
+fn the_tier_one_write_is_target_id_plus_project_id_and_the_other_two_null() {
+    // Criterion 7 [v2.2]: "the bar drives that exact shape."
+    let mut h = fixture();
+    let global = h.target(&Scope::global(), "any-editor");
+    let project = h.project;
+
+    dispatch_targets_command(
+        &mut h.ctx(),
+        "targets.setDefault",
+        json!({ "targetId": global, "projectId": project, "locationId": null, "language": null }),
+    )
+    .unwrap()
+    .unwrap();
+
+    let resolved = handle_list(&mut h.ctx(), json_args(project, None))
+        .unwrap()
+        .resolved
+        .unwrap();
+    assert_eq!(resolved.tier, TargetTier::Project);
+    assert_eq!(resolved.target.name, "any-editor");
+}
+
+#[test]
+fn adopting_a_global_row_into_a_project_leaves_the_global_scope_intact() {
+    // L2: a row has one scope. Moving it would break every other project's default.
+    let mut h = fixture();
+    let global = h.target(&Scope::global(), "any-editor");
+    let project = h.project;
+    h.set_default(global, &Scope::project(project));
+
+    let other = h.new_project();
+    let still = handle_list(&mut h.ctx(), json_args(other, None))
+        .unwrap()
+        .resolved
+        .unwrap();
+    assert_eq!(still.tier, TargetTier::Global);
+    assert_eq!(
+        still.target.id.0, global,
+        "the global row itself, not a copy"
+    );
+}
+
+#[test]
+fn an_adopted_row_is_not_marked_detected() {
+    // L2: an override is a statement, not a detection.
+    let mut h = fixture();
+    let global = h.target(&Scope::global(), "any-editor");
+    let project = h.project;
+    h.set_default(global, &Scope::project(project));
+
+    let row = handle_list(&mut h.ctx(), json_args(project, None))
+        .unwrap()
+        .resolved
+        .unwrap();
+    assert!(!row.target.detected);
+    assert_ne!(row.target.id.0, global);
+}
+
+#[test]
+fn re_heading_a_scope_the_row_is_already_in_reuses_the_row() {
+    let mut h = fixture();
+    let project = h.project;
+    let first = h.target(&Scope::project(project), "first");
+    let second = h.target(&Scope::project(project), "second");
+    h.set_default(second, &Scope::project(project));
+
+    let rows = handle_list(&mut h.ctx(), json_args(project, None)).unwrap();
+    assert_eq!(rows.rows.len(), 2, "no copy was made");
+    assert_eq!(rows.resolved.unwrap().target.id.0, second);
+    assert!(rows.rows.iter().any(|r| r.id.0 == first));
+}
+
+#[test]
+fn the_language_scope_is_written_with_the_canonical_string_not_the_drawer_tag() {
+    // §4bis.2a: "`RS` is a display label and nothing stores it."
+    let mut h = fixture();
+    let global = h.target(&Scope::global(), "any-editor");
+    let project = h.project;
+    dispatch_targets_command(
+        &mut h.ctx(),
+        "targets.setDefault",
+        json!({ "targetId": global, "projectId": null, "locationId": null, "language": "Rust" }),
+    )
+    .unwrap()
+    .unwrap();
+    h.set_primary_language(project, "Rust");
+
+    let resolved = handle_list(&mut h.ctx(), json_args(project, None))
+        .unwrap()
+        .resolved
+        .unwrap();
+    assert_eq!(resolved.tier, TargetTier::Language);
+    assert_eq!(resolved.target.language.as_deref(), Some("Rust"));
+}
+
+#[test]
+fn set_default_follows_a_merge_redirect() {
+    let mut h = fixture();
+    let global = h.target(&Scope::global(), "any-editor");
+    let project = h.project;
+    let gone = h.merge_project_into(project); // `gone` now redirects to `project`
+
+    h.set_default_for(global, gone, &Scope::project(gone));
+    let resolved = handle_list(&mut h.ctx(), json_args(project, None))
+        .unwrap()
+        .resolved
+        .unwrap();
+    assert_eq!(resolved.tier, TargetTier::Project);
+    assert_eq!(
+        resolved.target.project_id.map(|p| p.0),
+        Some(project),
+        "the survivor's id was written, not the stale one"
+    );
+}
+
+#[test]
+fn set_default_on_an_unknown_target_reports_it() {
+    let mut h = fixture();
+    let err = dispatch_targets_command(
+        &mut h.ctx(),
+        "targets.setDefault",
+        json!({ "targetId": 9_999, "projectId": null, "locationId": null, "language": null }),
+    )
+    .unwrap()
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::Protocol);
+}
+
+#[test]
+fn an_adopted_row_heads_its_new_scope_and_the_indices_stay_representable() {
+    // The scope is renumbered densely from 0 rather than driven negative: `TargetRow` carries
+    // `sortIndex: u32`, so a negative column value could not reach the wire intact.
+    let mut h = fixture();
+    let project = h.project;
+    let sitting = h.target(&Scope::project(project), "already-here");
+    let global = h.target(&Scope::global(), "adopted");
+    h.set_default(global, &Scope::project(project));
+
+    let list = handle_list(&mut h.ctx(), json_args(project, None)).unwrap();
+    let adopted = list.resolved.unwrap().target;
+    assert_eq!(adopted.name, "adopted");
+    assert_eq!(h.row_count(), 3, "one copy, and only one");
+    let sitting_row = list.rows.iter().find(|r| r.id.0 == sitting).unwrap();
+    assert!(
+        adopted.sort_index < sitting_row.sort_index,
+        "the adopted row heads the scope: {} then {}",
+        adopted.sort_index,
+        sitting_row.sort_index
+    );
+}

@@ -133,7 +133,166 @@ pub fn dispatch_targets_command(
 ) -> Option<Result<Value, CommandFailure>> {
     match command {
         "targets.list" => Some(handle_list(ctx, args).and_then(|list| to_value(&list))),
+        "targets.setDefault" => Some(handle_set_default(ctx, args)),
         _ => None,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SetDefaultArgs {
+    target_id: TargetId,
+    #[serde(default)]
+    project_id: Option<ProjectId>,
+    #[serde(default)]
+    location_id: Option<LocationId>,
+    #[serde(default)]
+    language: Option<String>,
+}
+
+/// §4bis.2a's scope triple. A row has exactly one, and `targets.setDefault` names one.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TargetScope {
+    pub project_id: Option<ProjectId>,
+    pub location_id: Option<LocationId>,
+    pub language: Option<String>,
+}
+
+#[must_use]
+pub fn scope_of(target: &StoredTarget) -> TargetScope {
+    TargetScope {
+        project_id: target.project_id.map(ProjectId),
+        location_id: target.location_id.map(LocationId),
+        language: target.language.clone(),
+    }
+}
+
+/// Renumber one scope's rows of one kind densely from 0, with `head` first.
+///
+/// The obvious scheme is `MIN(sort_index) - 1`, which drives the column negative. `TargetRow`
+/// carries `sortIndex: u32`, so two negative rows both reach the wire as 0 and the wire stops
+/// agreeing with the column it is projected from. Renumbering keeps the column non-negative,
+/// and the group renumbered is exactly the one `resolve` orders over: a scope triple and one
+/// kind (`ORDER BY sort_index, id` inside `WHERE kind = ?`).
+///
+/// `IS` rather than `=` so NULL matches NULL — that comparison *is* the scope-triple predicate.
+fn renumber_head(
+    tx: &rusqlite::Transaction<'_>,
+    kind: TargetKind,
+    scope: &TargetScope,
+    head: i64,
+) -> Result<(), LaunchError> {
+    let mut stmt = tx.prepare_cached(
+        "SELECT id FROM launch_target
+          WHERE kind = ?1 AND project_id IS ?2 AND location_id IS ?3 AND language IS ?4
+          ORDER BY sort_index, id",
+    )?;
+    let ids = stmt.query_map(
+        rusqlite::params![
+            kind.as_str(),
+            scope.project_id.map(|p| p.0),
+            scope.location_id.map(|l| l.0),
+            scope.language.as_deref(),
+        ],
+        |row| row.get::<_, i64>(0),
+    )?;
+    let mut ordered = vec![head];
+    for id in ids {
+        let id = id?;
+        if id != head {
+            ordered.push(id);
+        }
+    }
+    let mut write = tx.prepare_cached("UPDATE launch_target SET sort_index = ?2 WHERE id = ?1")?;
+    for (index, id) in ordered.iter().enumerate() {
+        write.execute(rusqlite::params![
+            id,
+            i64::try_from(index).unwrap_or(i64::MAX)
+        ])?;
+    }
+    Ok(())
+}
+
+/// L2. Returns the id of the row that now heads `scope`: the same row when it was already in
+/// the scope, a fresh copy when it was not.
+///
+/// Re-heading in place would either move the global default out of the global scope, breaking
+/// every other project, or leave tier 1 unwritable — which is the defect criterion 7 was
+/// amended to close. §4bis.2a: "Within a scope the default is the row with the lowest
+/// `sort_index`... No `is_default` column exists and none is added."
+pub fn rehead_scope(
+    tx: &rusqlite::Transaction<'_>,
+    target_id: i64,
+    scope: &TargetScope,
+    now: i64,
+) -> Result<i64, LaunchError> {
+    let target = resolve::load_target(tx, target_id)?;
+
+    if scope_of(&target) == *scope {
+        renumber_head(tx, target.kind, scope, target_id)?;
+        return Ok(target_id);
+    }
+
+    // A statement, not a detection: `detected = 0`. Re-detection's `rewrite_exec_for` still
+    // repairs this row's `exec_bytes`, because it matches on (kind, name) and not on `detected`.
+    tx.prepare_cached(
+        "INSERT INTO launch_target
+           (kind, name, exec_bytes, args_json, cwd_mode, env_json,
+            project_id, location_id, language, sort_index, detected,
+            verify_state, verified_at, disabled)
+         SELECT kind, name, exec_bytes, args_json, cwd_mode, env_json,
+                ?2, ?3, ?4, 0, 0, verify_state, ?5, 0
+           FROM launch_target WHERE id = ?1",
+    )?
+    .execute(rusqlite::params![
+        target_id,
+        scope.project_id.map(|p| p.0),
+        scope.location_id.map(|l| l.0),
+        scope.language.as_deref(),
+        now,
+    ])?;
+    let copied = tx.last_insert_rowid();
+    renumber_head(tx, target.kind, scope, copied)?;
+    Ok(copied)
+}
+
+/// §4bis.2a's tier-1 write: `{targetId, projectId}` with the other two null.
+pub fn handle_set_default(ctx: &mut TargetsCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
+    let args: SetDefaultArgs = parse_args(args)?;
+    let now = ctx.now;
+    let _guard = crate::proto::txguard::TxGuard::enter();
+    let tx = ctx
+        .index
+        .conn_mut()
+        .transaction()
+        .map_err(|e| CommandFailure::internal(e.to_string()))?;
+
+    // A project can be merged between the menu painting and the choice (§1.5).
+    let project_id = match args.project_id {
+        None => None,
+        Some(requested) => Some(ProjectId(
+            crate::identity::redirect::resolve_project_id(&tx, requested.0)
+                .map_err(|e| identity_failure(&e))?,
+        )),
+    };
+
+    let scope = TargetScope {
+        project_id,
+        location_id: args.location_id,
+        language: args.language,
+    };
+    rehead_scope(&tx, args.target_id.0, &scope, now).map_err(|e| failure(&e))?;
+    tx.commit()
+        .map_err(|e| CommandFailure::internal(e.to_string()))?;
+    Ok(serde_json::json!({}))
+}
+
+fn identity_failure(err: &crate::identity::IdentityError) -> CommandFailure {
+    CommandFailure {
+        code: err.code(),
+        message: format!("{err:?}"),
+        // [R31] `Outcome` has only `unknown`; None = definitely did not take effect.
+        outcome: None,
     }
 }
 
