@@ -22,6 +22,7 @@ import type {
   ProjectId,
 } from '../../generated/protocol';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
+import { Identity } from './Identity';
 import { cascadeDelay } from './motion';
 import { nextTab, PROJECT_TABS, type ProjectTab } from './tabs';
 import { useProjectDetail } from './useProjectDetail';
@@ -178,6 +179,9 @@ export function ProjectPageView({
             <div data-testid="cp-hero-slot" data-hero-hash={heroHash ?? ''} />
           </div>
           <div className="cp-col-right">
+            <div className="cp-rise" style={{ animationDelay: cascadeDelay(0) }}>
+              <Identity row={detail.row} />
+            </div>
             <div
               className="cp-rise"
               style={{ animationDelay: cascadeDelay(1) }}
