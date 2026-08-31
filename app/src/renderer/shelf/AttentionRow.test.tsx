@@ -224,13 +224,7 @@ describe('AttentionChip', () => {
     expect(brokenButton?.className).toBe('cdt-attention-chip cdt-attention-chip--broken');
 
     const plainView = render(
-      <AttentionChip
-        label="PLAIN"
-        count={1}
-        subLine="STATE"
-        active={false}
-        onActivate={vi.fn()}
-      />,
+      <AttentionChip label="PLAIN" count={1} subLine="STATE" active={false} onActivate={vi.fn()} />,
     );
     const plainButton = plainView.container.querySelector('button');
     expect(plainButton?.classList.contains('cdt-attention-chip')).toBe(true);
