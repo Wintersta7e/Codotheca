@@ -42,10 +42,36 @@ describe('the app TypeScript projects', () => {
     }
   });
 
-  it('has both real projects inherit that base', () => {
-    for (const name of ['tsconfig.node.json', 'tsconfig.web.json']) {
+  it('has every project inherit that base', () => {
+    for (const name of ['tsconfig.node.json', 'tsconfig.web.json', 'tsconfig.e2e.json']) {
       expect(readTsconfig(name)['extends']).toBe('./tsconfig.base.json');
     }
+  });
+
+  it('gives the e2e specs their own project, and typechecks it', () => {
+    // A Playwright spec is neither of the other two: it runs under Node *and* it drives a
+    // browser, and one that measures a real component's layout imports the renderer's TSX.
+    // Under the node project that is `--jsx is not set` plus a missing DOM lib; under the web
+    // project it is a missing @types/node. Leaving it in the node project would mean either
+    // weakening the guarantee below for main and preload code, or not checking the spec at all.
+    const options = compilerOptions('tsconfig.e2e.json');
+    expect(options['jsx']).toBe('react-jsx');
+    expect(options['types']).toContain('node');
+    expect(options['lib']).toContain('DOM');
+    expect(readTsconfig('tsconfig.e2e.json')['include']).toContain('e2e/**/*.ts');
+    // And the node project must not still carry them, or the stricter project checks the same
+    // file and fails on exactly what the new one exists to allow.
+    expect(readTsconfig('tsconfig.node.json')['include']).not.toContain('e2e/**/*.ts');
+
+    const pkg: unknown = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'));
+    const scripts = (pkg as { scripts?: Record<string, string> }).scripts ?? {};
+    expect(scripts['typecheck'], 'a project no script names is a project nothing checks').toContain(
+      'tsconfig.e2e.json',
+    );
+  });
+
+  it('keeps the DOM lib out of the node project, which is what makes the split bite', () => {
+    expect(compilerOptions('tsconfig.node.json')['lib']).not.toContain('DOM');
   });
 
   it('keeps Node types out of the renderer project', () => {

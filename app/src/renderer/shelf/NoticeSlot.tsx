@@ -1,0 +1,55 @@
+import type { CSSProperties, ReactElement } from 'react';
+import type { Notice } from './notice.js';
+import { noticeAccent, noticeDismissKey, noticeIsDismissible, selectNotice } from './notice.js';
+
+export const NOTICE_DISMISS_LABEL = 'DISMISS' as const;
+
+export interface NoticeSlotProps {
+  readonly candidates: readonly Notice[];
+  readonly dismissed: readonly string[];
+  readonly onDismiss: (key: string) => void;
+}
+
+/** Block 2. Returns `null` — not an empty wrapper — when nothing qualifies: the wrapper's
+ *  `padding:18px 22px 4px` would otherwise contribute 22px of dead band above block 3. */
+export function NoticeSlot(props: NoticeSlotProps): ReactElement | null {
+  const notice = selectNotice(props.candidates, props.dismissed);
+  if (notice === null) return null;
+
+  // §8.0: only the left border varies between priority 1 and everything else. The property is
+  // `--cdt-` namespaced because `check-style-tokens.mjs` rejects any `var(--x)` a stylesheet
+  // reads that is not declared in the token sheet, and this one is set per instance.
+  const style = { '--cdt-notice-accent': `var(--${noticeAccent(notice.kind)})` } as CSSProperties;
+
+  return (
+    <div className="cdt-shelf-notice-slot">
+      <div className="cdt-shelf-notice" style={style} role="region" aria-label={notice.title}>
+        <p className="cdt-shelf-notice-title">{notice.title}</p>
+        <p className="cdt-shelf-notice-body">{notice.body}</p>
+        <div className="cdt-shelf-notice-actions">
+          {notice.actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              className={`cdt-shelf-notice-${action.kind}`}
+              onClick={action.run}
+            >
+              {action.label}
+            </button>
+          ))}
+          {noticeIsDismissible(notice.kind) ? (
+            <button
+              type="button"
+              className="cdt-shelf-notice-secondary"
+              onClick={() => {
+                props.onDismiss(noticeDismissKey(notice.kind, notice.scope));
+              }}
+            >
+              {NOTICE_DISMISS_LABEL}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -42,9 +42,12 @@ export default defineConfig({
           // the renderer's own stylesheets and the tests that assert on them are source gates.
           //
           // Widened from `styles/` to the whole renderer tree: a screen's own stylesheet
-          // (`palette/quickSwitch.css`, and 15b's `collections/collections.css`) is a source
-          // gate for the same reason, and `check-style-tokens.mjs` already scans the tree
-          // rather than one directory.
+          // (`palette/quickSwitch.css`, `shelf/shelf.css`, and 15b's
+          // `collections/collections.css`) is a source gate for the same reason, and
+          // `check-style-tokens.mjs` already scans the tree rather than one directory.
+          // Scoped to one directory, those tests read the **empty string** and their whole
+          // block passes vacuously rather than failing to resolve. Two lanes hit that
+          // independently.
           css: { include: [/src\/renderer\/.*\.css(\?raw)?$/] },
         },
       },
