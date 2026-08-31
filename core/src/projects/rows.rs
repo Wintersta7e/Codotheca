@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 
 use crate::art::compose::local_year;
+use crate::index::path::{display_paths_for_ui, DisplayPathTable};
 use crate::projects::{ProjectsCtx, ProjectsError};
 use crate::protocol::{
     ArtState, CollectionId, ConditionSignal, ErrorCode, InterruptedOp, LocationId, LocationKind,
@@ -149,8 +150,9 @@ pub fn scan_generation(conn: &rusqlite::Connection) -> Result<i64, ProjectsError
     )?)
 }
 
-const LOCATION_COLUMNS: &str =
-    "SELECT id, project_id, kind, distro, path_display, presence, branch,
+/// §1.10: `path_display` is **not** here. It is write-once and the one function permitted to
+/// read it back is `index::path::display_paths_for_ui`; `fill_display_paths` below calls it.
+const LOCATION_COLUMNS: &str = "SELECT id, project_id, kind, distro, presence, branch,
                 is_dirty, untracked_count, ahead, behind, stash_count, interrupted_op,
                 fetch_head_at, refstate_observed_at, worktree_observed_at, worktree_newest_mtime,
                 last_seen_at
@@ -158,27 +160,50 @@ const LOCATION_COLUMNS: &str =
 
 fn map_location(r: &rusqlite::Row<'_>) -> Result<LocationFacts, ProjectsError> {
     let kind_raw: String = r.get(2)?;
-    let presence_raw: String = r.get(5)?;
+    let presence_raw: String = r.get(4)?;
     Ok(LocationFacts {
         id: LocationId(r.get(0)?),
         project_id: ProjectId(r.get(1)?),
         kind: column(&kind_raw, "location.kind")?,
         distro: r.get(3)?,
-        path_display: r.get(4)?,
+        // Filled by `fill_display_paths`, which is the only route §1.10 allows.
+        path_display: String::new(),
         presence: column(&presence_raw, "location.presence")?,
-        branch: r.get(6)?,
-        is_dirty: r.get::<_, Option<i64>>(7)?.map(|v| v != 0),
-        untracked_count: r.get(8)?,
-        ahead: r.get(9)?,
-        behind: r.get(10)?,
-        stash_count: r.get(11)?,
-        interrupted_op: optional_column(r.get(12)?, "location.interrupted_op")?,
-        fetch_head_at: r.get(13)?,
-        refstate_observed_at: r.get(14)?,
-        worktree_observed_at: r.get(15)?,
-        worktree_newest_mtime: r.get(16)?,
-        last_seen_at: r.get(17)?,
+        branch: r.get(5)?,
+        is_dirty: r.get::<_, Option<i64>>(6)?.map(|v| v != 0),
+        untracked_count: r.get(7)?,
+        ahead: r.get(8)?,
+        behind: r.get(9)?,
+        stash_count: r.get(10)?,
+        interrupted_op: optional_column(r.get(11)?, "location.interrupted_op")?,
+        fetch_head_at: r.get(12)?,
+        refstate_observed_at: r.get(13)?,
+        worktree_observed_at: r.get(14)?,
+        worktree_newest_mtime: r.get(15)?,
+        last_seen_at: r.get(16)?,
     })
+}
+
+/// §1.10's one permitted reader, called once for the whole set rather than per row.
+///
+/// The column is write-once and `core/tests/index_paths.rs` scans the source to keep every
+/// other statement off it — anything that opens, launches or compares a path takes
+/// `path_bytes`, and a `LocationRef` is the only shape a path leaves the core in (§2.5).
+fn fill_display_paths(
+    conn: &rusqlite::Connection,
+    locations: &mut [LocationFacts],
+) -> Result<(), ProjectsError> {
+    let ids: Vec<i64> = locations.iter().map(|l| l.id.0).collect();
+    let displays: BTreeMap<i64, String> =
+        display_paths_for_ui(conn, DisplayPathTable::Location, &ids)?
+            .into_iter()
+            .collect();
+    for loc in locations.iter_mut() {
+        if let Some(text) = displays.get(&loc.id.0) {
+            loc.path_display.clone_from(text);
+        }
+    }
+    Ok(())
 }
 
 /// Every copy of one project, in the same mapping `load_project_rows` uses for all of them.
@@ -187,12 +212,15 @@ pub fn locations_of(
     conn: &rusqlite::Connection,
     project: ProjectId,
 ) -> Result<Vec<LocationFacts>, ProjectsError> {
-    let mut stmt = conn.prepare(&format!("{LOCATION_COLUMNS} WHERE project_id = ?1"))?;
     let mut out = Vec::new();
-    let mut rows = stmt.query(rusqlite::params![project.0])?;
-    while let Some(r) = rows.next()? {
-        out.push(map_location(r)?);
+    {
+        let mut stmt = conn.prepare(&format!("{LOCATION_COLUMNS} WHERE project_id = ?1"))?;
+        let mut rows = stmt.query(rusqlite::params![project.0])?;
+        while let Some(r) = rows.next()? {
+            out.push(map_location(r)?);
+        }
     }
+    fill_display_paths(conn, &mut out)?;
     Ok(out)
 }
 
@@ -204,11 +232,18 @@ fn count_u32(value: Option<i64>) -> Option<u32> {
 fn locations_by_project(
     conn: &rusqlite::Connection,
 ) -> Result<BTreeMap<i64, Vec<LocationFacts>>, ProjectsError> {
+    let mut all: Vec<LocationFacts> = Vec::new();
+    {
+        let mut stmt = conn.prepare(LOCATION_COLUMNS)?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            all.push(map_location(r)?);
+        }
+    }
+    fill_display_paths(conn, &mut all)?;
+
     let mut by_project: BTreeMap<i64, Vec<LocationFacts>> = BTreeMap::new();
-    let mut stmt = conn.prepare(LOCATION_COLUMNS)?;
-    let mut rows = stmt.query([])?;
-    while let Some(r) = rows.next()? {
-        let facts = map_location(r)?;
+    for facts in all {
         by_project
             .entry(facts.project_id.0)
             .or_default()
