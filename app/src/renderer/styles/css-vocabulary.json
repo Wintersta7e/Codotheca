@@ -1,0 +1,42 @@
+{
+  "$comment": "The only literals the renderer stylesheet may carry beyond tokens.css. Colour entries are the achromatic layers §7.7's two band tables state verbatim; each names its owning row. Durations and timing functions are §11.6's two tables plus the single-effect values stated at the surface that owns them. sharedKeyframes is R35(b)'s list: each is declared in styles/base.css and in no other stylesheet, because a duplicate @keyframes silently overrides and is invisible to the tier clamp in motion.css.",
+  "exemptColourLiterals": [
+    "rgb(255 255 255 / .13)",
+    "rgb(0 0 0 / .85)",
+    "rgb(0 0 0 / .9)",
+    "rgb(255 255 255 / .09)",
+    "rgb(255 255 255 / .1)",
+    "rgb(0 0 0 / .4)",
+    "rgb(255 255 255 / .05)",
+    "rgb(7 9 11 / .93)",
+    "rgb(8 12 15 / .58)",
+    "rgb(255 255 255 / .14)",
+    "rgb(0 0 0 / .45)",
+    "rgb(255 255 255 / .64)",
+    "rgb(0 0 0 / .3)",
+    "rgb(255 255 255 / .07)",
+    "rgb(214 178 104 / .6)",
+    "rgb(16 13 10 / .82)",
+    "rgb(255 255 255 / .16)",
+    "rgb(255 255 255 / .18)",
+    "rgb(255 255 255 / .42)",
+    "rgb(0 0 0 / .8)",
+    "rgb(255 255 255 / .08)",
+    "transparent",
+    "currentColor"
+  ],
+  "durationsMs": [
+    90, 140, 160, 180, 200, 220, 260, 280, 300, 420, 560, 620, 700, 720, 1150, 30, 60
+  ],
+  "timingFunctions": [
+    "cubic-bezier(.2,.85,.2,1)",
+    "cubic-bezier(.2,.9,.2,1)",
+    "cubic-bezier(.2,1.4,.4,1)",
+    "cubic-bezier(.4,.1,.6,1)",
+    "cubic-bezier(.5,.05,.7,1)",
+    "cubic-bezier(.3,.7,.2,1)",
+    "cubic-bezier(.34,.6,.24,1)",
+    "linear"
+  ],
+  "sharedKeyframes": ["viewIn", "panelIn", "turnIn"]
+}
