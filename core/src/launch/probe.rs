@@ -57,6 +57,19 @@ pub trait TargetProbe: Send + Sync + std::fmt::Debug {
     fn probe(&self) -> ProbeFacts;
 }
 
+/// The probe for the platform this build runs on.
+#[must_use]
+pub fn system_probe() -> Box<dyn TargetProbe> {
+    #[cfg(windows)]
+    {
+        Box::new(crate::launch::probe_windows::WindowsProbe::new())
+    }
+    #[cfg(not(windows))]
+    {
+        Box::new(crate::launch::probe_linux::LinuxProbe::new())
+    }
+}
+
 #[must_use]
 pub fn dedupe(apps: Vec<ProbedApp>) -> Vec<ProbedApp> {
     let mut best: BTreeMap<(Option<String>, Vec<u8>), ProbedApp> = BTreeMap::new();
