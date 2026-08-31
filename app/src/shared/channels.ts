@@ -28,3 +28,20 @@ export interface BridgeCall {
   name: string;
   args: unknown;
 }
+
+/**
+ * §2.4: `locations.relocate` is privileged, so `isRendererCallable` refuses it on IPC_REQUEST.
+ * It travels this channel instead, where the shell owns the native folder dialog and the
+ * renderer supplies nothing but an opaque LocationId. A renderer-supplied string and a dialog
+ * result are different trust categories, and only one of them may become a path.
+ */
+export const IPC_RELOCATE = 'codotheca:relocate';
+
+export interface RelocateCall {
+  locationId: number;
+}
+
+export type RelocateReply =
+  | { kind: 'relocated'; location: unknown }
+  | { kind: 'cancelled' }
+  | { kind: 'failed'; error: BridgeError };
