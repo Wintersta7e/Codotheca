@@ -7,7 +7,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { PROTOCOL_VERSION } from '../generated/protocol';
 import { CODOTHECA_BRIDGE_KEY, type CodothecaBridge } from '../shared/bridge';
-import { IPC_CORE_STATUS, IPC_EVENTS, IPC_REQUEST } from '../shared/channels';
+import { IPC_CORE_STATUS, IPC_EVENTS, IPC_OPEN_PALETTE, IPC_REQUEST } from '../shared/channels';
 import { effectsTierFromArgv } from '../shared/effectsTier';
 
 // process.argv is available synchronously in a sandboxed preload, so the tier reaches the
@@ -25,6 +25,11 @@ const bridge: CodothecaBridge = {
   onCoreEvents: (cb: (batch: unknown) => void): void => {
     ipcRenderer.on(IPC_EVENTS, (_event, batch: unknown) => {
       cb(batch);
+    });
+  },
+  onOpenPalette: (cb: () => void): void => {
+    ipcRenderer.on(IPC_OPEN_PALETTE, () => {
+      cb();
     });
   },
 };

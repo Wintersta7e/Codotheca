@@ -40,7 +40,12 @@ export default defineConfig({
           // catches `?raw` too — so a mirror test comparing theme/tokens.ts against
           // styles/tokens.css silently reads an empty string and passes on nothing. These are
           // the renderer's own stylesheets and the tests that assert on them are source gates.
-          css: { include: [/src\/renderer\/styles\/.*\.css(\?raw)?$/] },
+          //
+          // Widened from `styles/` to the whole renderer tree: a screen's own stylesheet
+          // (`palette/quickSwitch.css`, and 15b's `collections/collections.css`) is a source
+          // gate for the same reason, and `check-style-tokens.mjs` already scans the tree
+          // rather than one directory.
+          css: { include: [/src\/renderer\/.*\.css(\?raw)?$/] },
         },
       },
     ],
