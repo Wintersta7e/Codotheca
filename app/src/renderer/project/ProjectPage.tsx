@@ -92,6 +92,7 @@ export function ProjectPageView({
   const [tab, setTab] = useState<ProjectTab>('overview');
   const [shownId, setShownId] = useState<LocationId | null>(null);
   const [roastsEnabled, setRoastsEnabled] = useState(true);
+  const [pinnedOverride, setPinnedOverride] = useState<boolean | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const deps = useProjectPageDeps();
 
@@ -107,6 +108,7 @@ export function ProjectPageView({
   // project from the palette, would otherwise carry a stranger's id into the fallback.
   useEffect(() => {
     setShownId(null);
+    setPinnedOverride(null);
   }, [projectId]);
 
   // §11.3a's switch defaults **on**, so a settings read that has not landed yet must not silence
@@ -123,6 +125,39 @@ export function ProjectPageView({
       live = false;
     };
   }, [deps]);
+
+  const detailPinned = state.kind === 'ready' ? state.detail.row.isPinned : null;
+
+  /**
+   * The optimistic bit stands until the core's own answer agrees with it. Clearing it on any
+   * arriving detail would let a reload already in flight when the press happened flip the mark
+   * back; clearing it only on agreement means the mark moves once, in the direction the user
+   * asked for. A refused write clears it below, so it cannot outlive the round trip.
+   */
+  useEffect(() => {
+    if (pinnedOverride !== null && detailPinned === pinnedOverride) setPinnedOverride(null);
+  }, [detailPinned, pinnedOverride]);
+
+  const onTogglePin = useCallback(() => {
+    if (detailPinned === null) return;
+    const next = !(pinnedOverride ?? detailPinned);
+    // §8.3 filters `is:pinned` client-side, so the projection flips first and
+    // `projects/flags_changed` reconciles; a pin that waits for the round trip leaves the query
+    // and the mark disagreeing.
+    setPinnedOverride(next);
+    deps
+      .request('projects.setFlags', {
+        id: projectId,
+        isPinned: next,
+        isArchived: null,
+        isHidden: null,
+      })
+      .catch(() => {
+        // The write did not land, or may not have: either way the core's last answer is the only
+        // thing this page knows, so it goes back to drawing that.
+        setPinnedOverride(null);
+      });
+  }, [deps, detailPinned, pinnedOverride, projectId]);
 
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -207,6 +242,8 @@ export function ProjectPageView({
               row={detail.row}
               heroHash={heroHash}
               firstRunCompletedAt={firstRunCompletedAt}
+              isPinned={pinnedOverride ?? detail.row.isPinned}
+              onTogglePin={onTogglePin}
             />
           </div>
           <div className="cp-col-right">

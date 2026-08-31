@@ -1,9 +1,9 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail, ProjectId } from '../../generated/protocol';
 import { ProjectPageDepsContext, type ProjectPageDeps } from './deps';
 import { primaryLocation, ProjectPageView, shownLocation } from './ProjectPage';
-import { detailFixture, locationFixture, NOW } from './testFixtures';
+import { detailFixture, locationFixture, NOW, rowFixture } from './testFixtures';
 
 afterEach(cleanup);
 
@@ -132,6 +132,87 @@ describe('the shell', () => {
     );
     expect(await screen.findByRole('button', { name: 'TRY AGAIN' })).toBeTruthy();
     expect(screen.queryByTestId('cp-tabpanel')).toBeNull();
+  });
+});
+
+/**
+ * §8.3 filters `is:pinned` client-side, so the renderer flips the bit in its own projection the
+ * moment the control is pressed and `projects/flags_changed` reconciles. A pin that waited for the
+ * round trip would leave the query and the mark disagreeing about the same project.
+ */
+describe('pinning from the hero', () => {
+  function mountWith(request: ReturnType<typeof vi.fn>): void {
+    const deps: ProjectPageDeps = {
+      request: request as unknown as ProjectPageDeps['request'],
+      relocate: () => Promise.resolve({ kind: 'cancelled' }),
+      subscribe: () => () => undefined,
+      now: () => NOW,
+    };
+    render(
+      <ProjectPageDepsContext.Provider value={deps}>
+        <ProjectPageView
+          projectId={7 as unknown as ProjectId}
+          onBack={vi.fn()}
+          onOpenProject={vi.fn()}
+        />
+      </ProjectPageDepsContext.Provider>,
+    );
+  }
+
+  const answering = (
+    detail: ProjectDetail,
+    setFlags: () => Promise<unknown>,
+  ): ReturnType<typeof vi.fn> =>
+    vi.fn((name: string) => {
+      if (name === 'projects.get') return Promise.resolve(detail);
+      if (name === 'projects.setFlags') return setFlags();
+      if (name === 'art.url') return Promise.resolve('codotheca://art/aa/hero');
+      return Promise.resolve({});
+    });
+
+  it('flips the mark without waiting for the answer', async () => {
+    const detail = detailFixture({ row: rowFixture({ isPinned: false }) });
+    // A command that never resolves: whatever the mark does next, it did not wait for this.
+    const request = answering(detail, () => new Promise<never>(() => undefined));
+    mountWith(request);
+    fireEvent.click(await screen.findByRole('button', { name: 'Pin aurora' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Unpin aurora' })).toBeTruthy();
+    });
+  });
+
+  it('touches only the pinned flag — archived and hidden are other controls', async () => {
+    const detail = detailFixture({ row: rowFixture({ isPinned: false }) });
+    const request = answering(detail, () => Promise.resolve({}));
+    mountWith(request);
+    fireEvent.click(await screen.findByRole('button', { name: 'Pin aurora' }));
+    await waitFor(() => {
+      expect(request.mock.calls.some((c) => c[0] === 'projects.setFlags')).toBe(true);
+    });
+    const call = request.mock.calls.find((c) => c[0] === 'projects.setFlags');
+    expect(call?.[1]).toEqual({ id: 7, isPinned: true, isArchived: null, isHidden: null });
+  });
+
+  it('goes back to the core’s answer when the write is refused', async () => {
+    const detail = detailFixture({ row: rowFixture({ isPinned: false }) });
+    const request = answering(detail, () => Promise.reject(new Error('refused')));
+    mountWith(request);
+    fireEvent.click(await screen.findByRole('button', { name: 'Pin aurora' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Pin aurora' })).toBeTruthy();
+    });
+  });
+
+  it('unpins a pinned project rather than pinning it again', async () => {
+    const detail = detailFixture({ row: rowFixture({ isPinned: true }) });
+    const request = answering(detail, () => Promise.resolve({}));
+    mountWith(request);
+    fireEvent.click(await screen.findByRole('button', { name: 'Unpin aurora' }));
+    await waitFor(() => {
+      expect(request.mock.calls.some((c) => c[0] === 'projects.setFlags')).toBe(true);
+    });
+    const call = request.mock.calls.find((c) => c[0] === 'projects.setFlags');
+    expect(call?.[1]).toEqual({ id: 7, isPinned: false, isArchived: null, isHidden: null });
   });
 });
 

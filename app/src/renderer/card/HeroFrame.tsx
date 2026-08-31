@@ -5,6 +5,7 @@ import { useCardBitmap } from '../art/useCardBitmap';
 import { Card, type CardHalo } from './Card';
 import type { StatusChip } from './chips';
 import { frameToken, uncomputedRank } from './completion';
+import type { PinControlProps } from './PinControl';
 
 /**
  * §7.7's **second** band table, mounted. The hero is not the tile at hero scale: building that
@@ -13,8 +14,10 @@ import { frameToken, uncomputedRank } from './completion';
  *
  * Band 5 is `children`. §8.5 owns its content, and the project page is the only caller.
  *
- * No pin: §7.8a's own closing sentence rules the project page out, and the hero lives there. The
- * geometry exists in the table because §7.8a states it; the affordance is not mounted.
+ * **Band 1 owns the pin, on both tile and hero.** §7.8a gives the hero its own box, ground, glyph,
+ * rotation, ink and hit-target size, every one of them different from the tile's, and none of that
+ * would be specified for a mark that never renders. Its closing sentence rules out a **second
+ * copy** — a pin in the page's chrome on top of this one — not this one.
  *
  * The address arrives from the caller because `art.url {rendition:'hero'}` *is* the demand that
  * renders it — the core cannot observe an open page — and `''` means keep the plate.
@@ -43,6 +46,8 @@ export interface HeroFrameProps {
    * fact no single project's payload carries.
    */
   readonly chips: readonly StatusChip[];
+  /** §7.8a's band-1 mark, at the hero's own values. `null` draws none. */
+  readonly pin: PinControlProps | null;
   readonly children: ReactNode;
 }
 
@@ -104,7 +109,7 @@ export function HeroFrame(props: HeroFrameProps): ReactElement {
         }),
         // §7.7 gives the hero column a geometry and §8.5 owns what goes in it.
         chips: props.chips,
-        pin: null,
+        pin: props.pin,
       }}
     >
       {props.children}

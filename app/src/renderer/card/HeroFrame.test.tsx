@@ -24,7 +24,33 @@ const row = (over: Partial<HeroRow> = {}): HeroRow => ({
 
 const draw = (over: Partial<HeroRow> = {}, heroSrc = ''): HTMLElement =>
   render(
-    <HeroFrame row={row(over)} heroSrc={heroSrc} halo={{ shadow: null, opacity: 1 }} chips={[]}>
+    <HeroFrame
+      row={row(over)}
+      heroSrc={heroSrc}
+      halo={{ shadow: null, opacity: 1 }}
+      chips={[]}
+      pin={null}
+    >
+      <span data-testid="band5" />
+    </HeroFrame>,
+  ).container;
+
+const drawWithPin = (): HTMLElement =>
+  render(
+    <HeroFrame
+      row={row()}
+      heroSrc=""
+      halo={{ shadow: null, opacity: 1 }}
+      chips={[]}
+      pin={{
+        projectName: 'atlas',
+        isPinned: true,
+        surface: 'hero',
+        visible: true,
+        tabIndex: 0,
+        onToggle: vi.fn(),
+      }}
+    >
       <span data-testid="band5" />
     </HeroFrame>,
   ).container;
@@ -66,10 +92,20 @@ describe('the hero is not the tile at hero scale', () => {
   });
 });
 
-describe('§7.8a: nothing else in phase 1 carries a second copy of the pin', () => {
-  it('mounts no pin control on the hero, though the geometry for one exists', () => {
-    expect(draw().querySelector('.cdt-pin')).toBeNull();
+describe('§7.8a: band 1 owns the pin, on both tile and hero', () => {
+  it('draws the mark the caller hands it, at the hero row of the table', () => {
+    // §7.8a gives the hero its own box, ground, glyph, rotation, ink and hit-target size, every
+    // one different from the tile's. Its closing sentence rules out a *second copy* — a pin in
+    // the page's chrome on top of this one — not this one.
+    const button = drawWithPin().querySelector<HTMLElement>('.cdt-pin');
+    expect(button).not.toBeNull();
+    expect(button?.style.width).toBe(`${String(bandsFor('hero').pin.hit)}px`);
     expect(bandsFor('hero').pin.box).toBe(14);
+    expect(bandsFor('hero').pin.hit).not.toBe(bandsFor('card').pin.hit);
+  });
+
+  it('mounts none when the caller supplies none, rather than inventing one', () => {
+    expect(draw().querySelector('.cdt-pin')).toBeNull();
   });
 });
 

@@ -36,6 +36,14 @@ export interface HeroTileProps {
    * a guess.
    */
   firstRunCompletedAt: number | null;
+  /**
+   * The pinned bit **as the page is drawing it**, which is not always `row.isPinned`: the
+   * renderer flips it in its own projection the moment the control is pressed, because the shelf
+   * filters `is:pinned` client-side and a mark that waits for a round trip leaves the query
+   * disagreeing with the mark in the meantime.
+   */
+  isPinned: boolean;
+  onTogglePin: () => void;
 }
 
 /**
@@ -52,7 +60,13 @@ export function heroIdentityLine(row: ProjectRow): string | null {
   return parts.length === 0 ? null : parts.join(' · ');
 }
 
-export function HeroTile({ row, heroHash, firstRunCompletedAt }: HeroTileProps): ReactElement {
+export function HeroTile({
+  row,
+  heroHash,
+  firstRunCompletedAt,
+  isPinned,
+  onTogglePin,
+}: HeroTileProps): ReactElement {
   const deps = useProjectPageDeps();
   const heroSrc = useHeroArt(heroHash, row.artState);
   const identity = heroIdentityLine(row);
@@ -74,6 +88,20 @@ export function HeroTile({ row, heroHash, firstRunCompletedAt }: HeroTileProps):
       heroSrc={heroSrc}
       halo={{ shadow: glow, opacity: 1 }}
       chips={statusChips(row, deps.now(), firstRunCompletedAt)}
+      pin={{
+        projectName: row.name,
+        isPinned,
+        surface: 'hero',
+        // The grid reveals the empty mark on hover or focus because it draws 180 of them. This
+        // surface draws one, and nothing here hovers: §7.8's hover choreography is a grid effect
+        // and §8.5.1 holds this page to zero animation frames once its entry has played. A mark
+        // that only appeared on a hover the page does not track would be unreachable.
+        visible: true,
+        // No grid here to hold a roving tabindex, and this page binds no `P`, so a real tab stop
+        // is the only way the control can be reached without a pointer.
+        tabIndex: 0,
+        onToggle: onTogglePin,
+      }}
     >
       {identity === null ? null : (
         <div className="cp-hero-identity" data-testid="cp-hero-identity">

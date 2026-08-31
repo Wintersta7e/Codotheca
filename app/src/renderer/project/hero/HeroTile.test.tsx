@@ -1,7 +1,9 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectRow, SceneHash } from '../../../generated/protocol';
 import { statusChips } from '../../card/chips';
+import { bandsFor } from '../../card/geometry';
+import { PIN_ROTATION } from '../../card/PinControl';
 import { LADDER_RUNGS } from '../../theme/tokens';
 import { ProjectPageDepsContext, type ProjectPageDeps } from '../deps';
 import { NOW, rowFixture } from '../testFixtures';
@@ -17,10 +19,21 @@ const deps: ProjectPageDeps = {
   now: () => NOW,
 };
 
-function draw(row: ProjectRow = rowFixture(), firstRunCompletedAt: number | null = null): void {
+function draw(
+  row: ProjectRow = rowFixture(),
+  firstRunCompletedAt: number | null = null,
+  onTogglePin: () => void = vi.fn(),
+  isPinned = row.isPinned,
+): void {
   render(
     <ProjectPageDepsContext.Provider value={deps}>
-      <HeroTile row={row} heroHash={'aa' as SceneHash} firstRunCompletedAt={firstRunCompletedAt} />
+      <HeroTile
+        row={row}
+        heroHash={'aa' as SceneHash}
+        firstRunCompletedAt={firstRunCompletedAt}
+        isPinned={isPinned}
+        onTogglePin={onTogglePin}
+      />
     </ProjectPageDepsContext.Provider>,
   );
 }
@@ -113,6 +126,80 @@ describe('band 4', () => {
   });
 });
 
+describe('the pin', () => {
+  it('takes the hero row of §7.8a, never the tile’s', () => {
+    draw(rowFixture({ isPinned: true }));
+    const hero = bandsFor('hero').pin;
+    const button = screen.getByRole('button', { name: /pin/i });
+    expect(button.style.width).toBe(`${String(hero.hit)}px`);
+    expect(button.style.right).toBe(`${String(hero.hitRight)}px`);
+    expect(button.style.top).toBe(`${String(hero.hitTop)}px`);
+    // The two surfaces differ, which is the whole reason there are two tables.
+    expect(hero.hit).not.toBe(bandsFor('card').pin.hit);
+
+    const silhouette = screen.getByTestId('cdt-pin-silhouette');
+    expect(silhouette.style.width).toBe(`${String(hero.box)}px`);
+    expect(silhouette.style.transform).toBe(PIN_ROTATION);
+    expect(screen.getByTestId('cdt-pin-bar').style.width).toBe(`${String(hero.barW)}px`);
+    expect(screen.getByTestId('cdt-pin-shaft').style.height).toBe(`${String(hero.shaftH)}px`);
+  });
+
+  it('carries the state by presence of the ground, not by hue, and by aria-pressed', () => {
+    draw(rowFixture({ isPinned: true }));
+    expect(screen.getByTestId('cdt-pin-ground')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /pin/i }).getAttribute('aria-pressed')).toBe('true');
+    cleanup();
+    draw(rowFixture({ isPinned: false }));
+    expect(screen.queryByTestId('cdt-pin-ground')).toBeNull();
+    expect(screen.getByRole('button', { name: /pin/i }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('is reachable without a pointer: this page has no grid and binds no P', () => {
+    draw(rowFixture({ isPinned: false }));
+    const button = screen.getByRole('button', { name: /pin/i });
+    expect(button.tabIndex).toBe(0);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('asks the page to toggle, and stops the press reaching the card body', () => {
+    const onTogglePin = vi.fn();
+    const onCardClick = vi.fn();
+    render(
+      <ProjectPageDepsContext.Provider value={deps}>
+        <div onClick={onCardClick}>
+          <HeroTile
+            row={rowFixture({ isPinned: false })}
+            heroHash={'aa' as SceneHash}
+            firstRunCompletedAt={null}
+            isPinned={false}
+            onTogglePin={onTogglePin}
+          />
+        </div>
+      </ProjectPageDepsContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /pin/i }));
+    expect(onTogglePin).toHaveBeenCalledTimes(1);
+    // The card body is Play; pinning must launch nothing.
+    expect(onCardClick).not.toHaveBeenCalled();
+  });
+
+  it('draws the bit the page is holding, which is not always the row’s', () => {
+    // The page flips its own projection on press; the row still carries the core's last answer.
+    draw(rowFixture({ isPinned: false }), null, vi.fn(), true);
+    expect(screen.getByRole('button', { name: /pin/i }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('cdt-pin-ground')).toBeTruthy();
+  });
+
+  it('names the action, never the colour or the shape', () => {
+    draw(rowFixture({ isPinned: false }));
+    expect(screen.getByRole('button', { name: 'Pin aurora' })).toBeTruthy();
+    cleanup();
+    draw(rowFixture({ isPinned: true }));
+    expect(screen.getByRole('button', { name: 'Unpin aurora' })).toBeTruthy();
+  });
+});
+
 describe('band 5', () => {
   it('reads first-commit year and language, owner-prefixed only when there is one', () => {
     expect(heroIdentityLine(rowFixture())).toBe('2019 · RUST');
@@ -144,9 +231,14 @@ describe('what the hero does not do', () => {
     }
   });
 
-  it('offers no pin control: the page carries no second copy of that toggle', () => {
+  it('carries the pin once, in band 1, and nowhere else on the page', () => {
+    // §7.8a rules out a *second copy* — a pin in the page's chrome on top of this one. The mark
+    // has hero values of its own in the same table, so band 1 owns it here as on the tile.
     draw(rowFixture({ isPinned: true }));
-    expect(screen.queryByRole('button', { name: /pin/i })).toBeNull();
+    expect(screen.getAllByRole('button', { name: /pin/i })).toHaveLength(1);
+    const mark = document.querySelector('.cdt-pin');
+    if (mark === null) throw new Error('the hero mounted no pin');
+    expect(mark.closest('.cdt-plate')).not.toBeNull();
   });
 
   it('asks for the hero rendition, never the card one', () => {
@@ -155,7 +247,13 @@ describe('what the hero does not do', () => {
       <ProjectPageDepsContext.Provider
         value={{ ...deps, request: request as unknown as ProjectPageDeps['request'] }}
       >
-        <HeroTile row={rowFixture()} heroHash={'aa' as SceneHash} firstRunCompletedAt={null} />
+        <HeroTile
+          row={rowFixture()}
+          heroHash={'aa' as SceneHash}
+          firstRunCompletedAt={null}
+          isPinned={false}
+          onTogglePin={vi.fn()}
+        />
       </ProjectPageDepsContext.Provider>,
     );
     expect(request).toHaveBeenCalledWith('art.url', { hash: 'aa', rendition: 'hero' });
