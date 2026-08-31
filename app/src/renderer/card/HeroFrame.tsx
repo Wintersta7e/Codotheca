@@ -1,0 +1,106 @@
+import type { ReactElement, ReactNode } from 'react';
+import type { ProjectRow } from '../../generated/protocol';
+import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
+import { useCardBitmap } from '../art/useCardBitmap';
+import { Card, type CardHalo } from './Card';
+import { frameToken, uncomputedRank } from './completion';
+
+/**
+ * §7.7's **second** band table, mounted. The hero is not the tile at hero scale: building that
+ * sentence literally moves the jewel stripe out of the band it closes, so this component passes
+ * `surface="hero"` and reads nothing from the tile's table.
+ *
+ * Band 5 is `children`. §8.5 owns its content, and the project page is the only caller.
+ *
+ * No pin: §7.8a's own closing sentence rules the project page out, and the hero lives there. The
+ * geometry exists in the table because §7.8a states it; the affordance is not mounted.
+ *
+ * The address arrives from the caller because `art.url {rendition:'hero'}` *is* the demand that
+ * renders it — the core cannot observe an open page — and `''` means keep the plate.
+ */
+export type HeroRow = Pick<
+  ProjectRow,
+  | 'seedBasename'
+  | 'rerollOffset'
+  | 'primaryLanguage'
+  | 'isReference'
+  | 'isArchived'
+  | 'conditionSignal'
+  | 'completionLit'
+  | 'artSceneHash'
+  | 'artState'
+>;
+
+export interface HeroFrameProps {
+  readonly row: HeroRow;
+  /** The `art.url` answer. `''` is "no address": §7.5's nameplate stands. */
+  readonly heroSrc: string;
+  readonly halo: CardHalo;
+  readonly children: ReactNode;
+}
+
+/**
+ * The hero is one size and §7.7's second table gives it fixed figures; `densityStep` is read
+ * only for the tile's three name and glyph sizes, which `card.css` overrides for
+ * `[data-surface='hero']` anyway.
+ */
+const HERO_DENSITY = 186;
+
+export function HeroFrame(props: HeroFrameProps): ReactElement {
+  const { row } = props;
+  const appearance = appearanceFor(seedOf(row), fadeFor(row), row.primaryLanguage);
+  const bitmap = useCardBitmap({
+    sceneHash: row.artSceneHash,
+    rendition: 'hero',
+    artState: row.artState,
+    src: props.heroSrc,
+  });
+
+  return (
+    <Card
+      surface="hero"
+      appearance={appearance}
+      frameToken={frameToken(row)}
+      density={HERO_DENSITY}
+      isArchived={row.isArchived}
+      isReference={row.isReference}
+      halo={props.halo}
+      hovered={false}
+      focused={false}
+      selected={false}
+      art={
+        bitmap.src === null ? null : (
+          <img
+            className="cdt-art"
+            alt=""
+            src={bitmap.src}
+            decoding="async"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              display: 'block',
+            }}
+          />
+        )
+      }
+      bands={{
+        languageCode: row.primaryLanguage === null ? null : languageCode(row.primaryLanguage),
+        designation: appearance.designation,
+        hazard: row.conditionSignal === 'abandoned' && !row.isReference,
+        conditionSignal: row.conditionSignal,
+        rank: uncomputedRank('hero', {
+          completionLit: row.completionLit,
+          isReference: row.isReference,
+          density: HERO_DENSITY,
+        }),
+        // §7.7 gives the hero column a geometry and §8.5 owns what goes in it.
+        chips: [],
+        pin: null,
+      }}
+    >
+      {props.children}
+    </Card>
+  );
+}
