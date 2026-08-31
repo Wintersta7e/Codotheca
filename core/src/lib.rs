@@ -28,6 +28,7 @@ pub mod mount;
 pub mod paths;
 pub mod proto;
 pub mod protocol;
+pub mod query;
 pub mod scan;
 
 #[cfg(feature = "testkit")]
