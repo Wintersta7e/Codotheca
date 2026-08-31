@@ -18,6 +18,7 @@ pub mod clock;
 #[cfg(feature = "testkit")]
 pub mod corpus;
 pub mod derive;
+pub mod detail;
 pub mod freshness;
 pub mod git;
 pub mod identity;

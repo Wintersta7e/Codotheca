@@ -54,7 +54,10 @@ fn project_facts(
 /// `absent` is a fact — J6 looked and found none. `peek_cache.computed_at` is what tells them
 /// apart, and `read_at` carries it so the shell can draw the age slot or draw none at all. One
 /// merged string here would render unknown as zero on the surface built to triage.
-fn readme_and_commits(
+/// `pub(crate)` because §8.5.3's README panel reads the same two states from the same column —
+/// one rule, two surfaces. A second copy in `crate::detail` is R12's defect with an invariant
+/// behind it rather than a formatter.
+pub(crate) fn readme_and_commits(
     conn: &rusqlite::Connection,
     project: ProjectId,
 ) -> Result<(ReadmeState, Vec<CommitRef>), ProjectsError> {

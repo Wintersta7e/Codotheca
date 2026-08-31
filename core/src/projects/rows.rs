@@ -64,6 +64,11 @@ pub struct LocationFacts {
     pub behind: Option<i64>,
     pub stash_count: Option<i64>,
     pub interrupted_op: Option<InterruptedOp>,
+    /// §8.5.2's per-copy HEAD. The shelf row does not draw it; `LocationDetail` does, and one
+    /// location mapping serving both is the point of this struct.
+    pub head_oid: Option<String>,
+    /// §11.1's TRUST THIS REPOSITORY, scoped to the exact path `safe.directory` takes.
+    pub trusted_at: Option<i64>,
     pub fetch_head_at: Option<i64>,
     pub refstate_observed_at: Option<i64>,
     pub worktree_observed_at: Option<i64>,
@@ -152,10 +157,12 @@ pub fn scan_generation(conn: &rusqlite::Connection) -> Result<i64, ProjectsError
 
 /// §1.10: `path_display` is **not** here. It is write-once and the one function permitted to
 /// read it back is `index::path::display_paths_for_ui`; `fill_display_paths` below calls it.
+/// `volume_key` and `store_key` are deliberately absent: a column that is never selected cannot
+/// leak into a payload, and §11.1's offline row must name no drive (criterion 63).
 const LOCATION_COLUMNS: &str = "SELECT id, project_id, kind, distro, presence, branch,
                 is_dirty, untracked_count, ahead, behind, stash_count, interrupted_op,
                 fetch_head_at, refstate_observed_at, worktree_observed_at, worktree_newest_mtime,
-                last_seen_at
+                last_seen_at, head_oid, trusted_at
            FROM location";
 
 fn map_location(r: &rusqlite::Row<'_>) -> Result<LocationFacts, ProjectsError> {
@@ -181,6 +188,8 @@ fn map_location(r: &rusqlite::Row<'_>) -> Result<LocationFacts, ProjectsError> {
         worktree_observed_at: r.get(14)?,
         worktree_newest_mtime: r.get(15)?,
         last_seen_at: r.get(16)?,
+        head_oid: r.get(17)?,
+        trusted_at: r.get(18)?,
     })
 }
 
@@ -282,8 +291,10 @@ const PROJECT_COLUMNS: &str =
             pc.computed_at, pc.readme_excerpt,
             p.seed_basename, p.reroll_offset
        FROM project p
-       LEFT JOIN peek_cache pc ON pc.project_id = p.id
-      WHERE p.merged_into IS NULL
+       LEFT JOIN peek_cache pc ON pc.project_id = p.id";
+
+/// The shelf's fixed shape, which `idx_project_shelf_order` exists for.
+const PROJECT_SHELF_FILTER: &str = " WHERE p.merged_into IS NULL
       ORDER BY p.last_touched_at DESC, p.id ASC";
 
 /// One `project` row plus its already-loaded copies and collections, folded into the wire row.
@@ -392,7 +403,7 @@ pub fn load_project_rows(ctx: &ProjectsCtx<'_>) -> Result<Vec<LoadedRow>, Projec
     let mut by_project = locations_by_project(conn)?;
     let mut collections = collections_by_project(conn)?;
 
-    let mut stmt = conn.prepare(PROJECT_COLUMNS)?;
+    let mut stmt = conn.prepare(&format!("{PROJECT_COLUMNS}{PROJECT_SHELF_FILTER}"))?;
     let mut out: Vec<LoadedRow> = Vec::new();
     let mut rows = stmt.query([])?;
     while let Some(r) = rows.next()? {
@@ -402,4 +413,39 @@ pub fn load_project_rows(ctx: &ProjectsCtx<'_>) -> Result<Vec<LoadedRow>, Projec
         out.push(map_loaded_row(r, &locations, collection_ids)?);
     }
     Ok(out)
+}
+
+/// One project through the **same** projection the shelf uses.
+///
+/// The opened page and the tile must not be able to disagree about one repository, which is
+/// R12's rule applied to a row rather than a formatter: `projects.get` builds its hero from this
+/// and never from a second `SELECT`. `merged_into` is not filtered here because the caller has
+/// already followed §1.6's redirect and holds the survivor's id.
+///
+/// # Errors
+/// `UnknownProject` when the id names no row; `Sqlite` for anything the index refuses.
+pub fn load_project_row(
+    conn: &rusqlite::Connection,
+    project: ProjectId,
+) -> Result<LoadedRow, ProjectsError> {
+    let mut locations = locations_of(conn, project)?;
+    locations.sort_by_key(|l| l.id.0);
+
+    let mut collection_ids: Vec<CollectionId> = Vec::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT collection_id FROM collection_member WHERE project_id = ?1 ORDER BY 1",
+        )?;
+        let mut rows = stmt.query(rusqlite::params![project.0])?;
+        while let Some(r) = rows.next()? {
+            collection_ids.push(CollectionId(r.get(0)?));
+        }
+    }
+
+    let mut stmt = conn.prepare(&format!("{PROJECT_COLUMNS} WHERE p.id = ?1"))?;
+    let mut rows = stmt.query(rusqlite::params![project.0])?;
+    let Some(r) = rows.next()? else {
+        return Err(ProjectsError::UnknownProject(project.0));
+    };
+    map_loaded_row(r, &locations, collection_ids)
 }
