@@ -3,6 +3,7 @@ import type { ProjectRow } from '../../generated/protocol';
 import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
 import { useCardBitmap } from '../art/useCardBitmap';
 import { Card, type CardHalo } from './Card';
+import type { StatusChip } from './chips';
 import { frameToken, uncomputedRank } from './completion';
 
 /**
@@ -36,6 +37,12 @@ export interface HeroFrameProps {
   /** The `art.url` answer. `''` is "no address": §7.5's nameplate stands. */
   readonly heroSrc: string;
   readonly halo: CardHalo;
+  /**
+   * §7.7's band 4 is one table for both surfaces — "status chips only" — so this is the strip
+   * `statusChips` produces, handed in by the caller because the `NEW` boundary is a library-wide
+   * fact no single project's payload carries.
+   */
+  readonly chips: readonly StatusChip[];
   readonly children: ReactNode;
 }
 
@@ -96,7 +103,7 @@ export function HeroFrame(props: HeroFrameProps): ReactElement {
           density: HERO_DENSITY,
         }),
         // §7.7 gives the hero column a geometry and §8.5 owns what goes in it.
-        chips: [],
+        chips: props.chips,
         pin: null,
       }}
     >

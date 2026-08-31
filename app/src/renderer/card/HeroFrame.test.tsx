@@ -24,7 +24,7 @@ const row = (over: Partial<HeroRow> = {}): HeroRow => ({
 
 const draw = (over: Partial<HeroRow> = {}, heroSrc = ''): HTMLElement =>
   render(
-    <HeroFrame row={row(over)} heroSrc={heroSrc} halo={{ shadow: null, opacity: 1 }}>
+    <HeroFrame row={row(over)} heroSrc={heroSrc} halo={{ shadow: null, opacity: 1 }} chips={[]}>
       <span data-testid="band5" />
     </HeroFrame>,
   ).container;

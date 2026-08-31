@@ -23,6 +23,7 @@ import type {
 } from '../../generated/protocol';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
 import { useProjectPageDeps } from './deps';
+import { HeroTile } from './hero/HeroTile';
 import { Identity } from './Identity';
 import { cascadeDelay } from './motion';
 import { RoastNote } from './RoastNote';
@@ -35,6 +36,12 @@ export interface ProjectPageProps {
   projectId: ProjectId;
   onBack: () => void;
   onOpenProject: (id: ProjectId) => void;
+  /**
+   * §10.5a's boundary, which is a library-wide fact and not part of one project's payload, so it
+   * arrives from whoever mounts the page. Absent means first run has not finished, under which
+   * §10.5a says nothing is new — so the hero draws no `NEW` rather than guessing one.
+   */
+  firstRunCompletedAt?: number | null;
 }
 
 export function primaryLocation(detail: ProjectDetail): LocationDetail | null {
@@ -79,6 +86,7 @@ export function ProjectPageView({
   projectId,
   onBack,
   onOpenProject,
+  firstRunCompletedAt = null,
 }: ProjectPageProps): ReactElement {
   const { state, heroHash, redirectedTo, reload } = useProjectDetail(projectId);
   const [tab, setTab] = useState<ProjectTab>('overview');
@@ -195,7 +203,11 @@ export function ProjectPageView({
       {detail !== null ? (
         <div className="cp-body">
           <div className="cp-col-left">
-            <div data-testid="cp-hero-slot" data-hero-hash={heroHash ?? ''} />
+            <HeroTile
+              row={detail.row}
+              heroHash={heroHash}
+              firstRunCompletedAt={firstRunCompletedAt}
+            />
           </div>
           <div className="cp-col-right">
             <div className="cp-rise" style={{ animationDelay: cascadeDelay(0) }}>
