@@ -23,9 +23,22 @@ function files(dir) {
 
 const hasInsetRing = (block) => /box-?[sS]hadow[^;]*inset[^;]*/.test(block);
 
-const scanned = files(rendererDir);
-for (const file of scanned) {
-  const text = readFileSync(file, 'utf8');
+// Walked, then read. A file can vanish in the gap: `app/test/styleGates.test.ts` plants and
+// removes a probe inside this root to prove its own gate can fail, and vitest runs the node
+// project's files in parallel. Reading unguarded throws an ENOENT stack, and a gate that throws
+// is a gate that reports nothing. A vanished file is skipped and deliberately **not** counted,
+// so the "scanned nothing" guard below keeps meaning what it says. Any other error is raised.
+const walked = files(rendererDir);
+const scanned = [];
+for (const file of walked) {
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') continue;
+    throw error;
+  }
+  scanned.push(file);
   for (const block of text.split(/\}/)) {
     if (!/outline\s*:\s*(none|0)\b/.test(block) && !/outline\s*:\s*['"]?none/.test(block)) continue;
     if (!hasInsetRing(block)) {

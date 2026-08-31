@@ -48,8 +48,20 @@ for (const file of files(rendererDir, ['.css', '.tsx', '.ts'])) {
   if (file.endsWith('theme/type.ts') || file.endsWith('.test.ts') || file.endsWith('.test.tsx')) {
     continue;
   }
+  // A file can vanish between the walk and the read: `app/test/styleGates.test.ts` plants and
+  // removes a probe inside this root to prove its own gate can fail, and vitest runs the node
+  // project's files in parallel. Reading unguarded crashed this gate with an ENOENT stack, and
+  // a gate that throws is a gate that reports nothing. A file that is no longer there carries
+  // no font-size, so it is skipped and deliberately **not** counted, which keeps the "scanned
+  // nothing" guard meaning what it says. Any other read error is real and is raised.
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') continue;
+    throw error;
+  }
   scanned.push(file);
-  const text = readFileSync(file, 'utf8');
   const seen = [];
   for (const [, px] of text.matchAll(CSS_SIZE)) seen.push(Number(px));
   for (const [, px] of text.matchAll(TSX_SIZE)) seen.push(Number(px));

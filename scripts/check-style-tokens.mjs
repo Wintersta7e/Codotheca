@@ -86,10 +86,24 @@ const sharedKeyframes = new Set(vocabulary.sharedKeyframes);
 const baseFile = join(rendererDir, 'styles/base.css');
 const keyframeSites = new Map(); // name -> [file, …]
 
-const scanned = cssFiles(rendererDir);
+// Walked, then read. A file can vanish in the gap: `app/test/styleGates.test.ts` plants and
+// removes a probe stylesheet inside this root to prove its own gate can fail, and vitest runs
+// the node project's files in parallel. Reading unguarded throws an ENOENT stack, and a gate
+// that throws is a gate that reports nothing. A vanished file is skipped and deliberately **not**
+// counted, so the "scanned nothing" guard below keeps meaning what it says. Any other read error
+// is real and is raised.
+const walked = cssFiles(rendererDir);
+const scanned = [];
 
-for (const file of scanned) {
-  const text = readFileSync(file, 'utf8');
+for (const file of walked) {
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') continue;
+    throw error;
+  }
+  scanned.push(file);
   const isTokenFile = file === tokensFile;
 
   for (const [literal] of text.matchAll(COLOUR)) {
