@@ -294,6 +294,90 @@ pub fn publish_condition_changes(ctx: &mut LaunchCtx<'_>) {
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StopArgs {
+    id: SessionId,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FocusArgs {
+    #[serde(default)]
+    project_id: Option<ProjectId>,
+}
+
+/// §7.8's STOP: close the ledger. It writes nothing to disk and kills nothing (§17).
+///
+/// **L3: stopping an already-closed session succeeds.** A user pressing STOP twice, or
+/// pressing it on a tile whose wait-mode process exited a moment earlier, has asked for a
+/// state that already holds, and closing a closed ledger is not a second close. An id naming
+/// **no row at all** is a renderer bug rather than a race, so only that reports one — which is
+/// why the row is looked up rather than inferred from `SessionManager::stop`, whose own
+/// contract is to succeed for any session it is not holding.
+pub fn handle_stop(ctx: &mut LaunchCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
+    let args: StopArgs = parse_args(args)?;
+    crate::session::store::session_ref(ctx.index.conn(), args.id)
+        .map_err(|e| session_failure(&e))?;
+    ctx.sessions
+        .stop(ctx.index, args.id)
+        .map_err(|e| session_failure(&e))?;
+    publish_condition_changes(ctx);
+    Ok(serde_json::json!({}))
+}
+
+/// L4: the only command in §2.4's table that opens no transaction and issues no statement.
+///
+/// It arrives on every project-page entry and exit, and once per heartbeat while a page is
+/// held. A handler that opened a write transaction would put `TxGuard` contention on a timer,
+/// on the one command whose whole purpose is to be cheap enough to repeat.
+pub fn handle_focus(ctx: &mut LaunchCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
+    let args: FocusArgs = parse_args(args)?;
+    ctx.sessions.set_focus(args.project_id);
+    Ok(serde_json::json!({}))
+}
+
+/// L1: called from the core's assembly **before `run_loop`**, so every open row it finds is by
+/// definition from a previous process. §11.2's core lane and plan 11b Task 7's safety argument
+/// both depend on that ordering, and a `JoinStep` could not provide it — by the time a step
+/// runs, the loop is already accepting commands.
+///
+/// `close_orphans` returns counts and not ids, so the ids are read first. That ordering is the
+/// only way to publish recovery without changing plan 11b's signature.
+pub fn startup(
+    ctx: &mut LaunchCtx<'_>,
+) -> Result<crate::session::orphan::OrphanReport, CommandFailure> {
+    let open: Vec<SessionId> = crate::session::store::open_sessions(ctx.index.conn())
+        .map_err(|e| session_failure(&e))?
+        .into_iter()
+        .map(|row| row.session_id)
+        .collect();
+
+    let report = crate::session::orphan::close_orphans(ctx.index, ctx.now)
+        .map_err(|e| session_failure(&e))?;
+
+    for id in open {
+        let session = crate::session::store::session_ref(ctx.index.conn(), id)
+            .map_err(|e| session_failure(&e))?;
+        ctx.events.emit(
+            "session",
+            "ended",
+            serde_json::json!({ "session": session }),
+        );
+    }
+    Ok(report)
+}
+
+/// Scheduled by the core's assembly every `DEFAULT_TICK_SECS`. Never awaited — a driver that
+/// slept on the clock would spin under a fake one.
+pub fn tick(ctx: &mut LaunchCtx<'_>) -> Result<(), CommandFailure> {
+    ctx.sessions
+        .tick(ctx.index)
+        .map_err(|e| session_failure(&e))?;
+    publish_condition_changes(ctx);
+    Ok(())
+}
+
 /// `None` means "not mine". The assembling router chains the next dispatcher on it.
 pub fn dispatch_launch_command(
     ctx: &mut LaunchCtx<'_>,
@@ -302,6 +386,8 @@ pub fn dispatch_launch_command(
 ) -> Option<Result<Value, CommandFailure>> {
     match command {
         "projects.launch" => Some(handle_launch(ctx, args).and_then(|id| to_value(&id))),
+        "session.stop" => Some(handle_stop(ctx, args)),
+        "session.focus" => Some(handle_focus(ctx, args)),
         _ => None,
     }
 }

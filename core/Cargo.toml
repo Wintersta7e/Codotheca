@@ -29,7 +29,10 @@ default = []
 #
 # `TempIndex` puts a migrated database in a temporary directory, so the seam needs `tempfile` as
 # a real dependency rather than a dev one — `core::testing` is a library module, not a test.
-testkit = ["dep:tempfile"]
+# `rusqlite/trace` is testkit-only: it installs a per-connection statement callback, which is
+# how `commands_session.rs` proves `session.focus` issues no statement at all. A release build
+# has neither the hook nor the callback.
+testkit = ["dep:tempfile", "rusqlite/trace"]
 
 [dependencies]
 base64 = "0.22"
