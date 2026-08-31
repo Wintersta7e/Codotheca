@@ -9,6 +9,10 @@ idea*.txt
 
 # build output
 target/
+# The Windows-native build needs its own directory: WSL and Windows cargo both default to
+# target/debug and each invalidates the other's artifacts, which surfaces as a rustc crash
+# rather than a rebuild. Set CARGO_TARGET_DIR to this when building through interop.
+target-win/
 dist/
 out/
 node_modules/
