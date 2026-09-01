@@ -47,7 +47,8 @@ pub fn handle_set(
             ));
         }
     }
-    write(ctx.index.conn(), &args.patch).map_err(|e| CommandFailure::internal(e.to_string()))
+    write(ctx.index.conn(), &args.patch, ctx.now)
+        .map_err(|e| CommandFailure::internal(e.to_string()))
 }
 
 fn get(conn: &rusqlite::Connection, key: &str) -> Result<Option<String>, IndexError> {
@@ -91,9 +92,26 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings, IndexError> {
 
 /// Applies the fields the patch names and leaves the rest alone.
 ///
+/// **A patch carrying `autostart` also ends first run** (§11.3a). That is the residency answer's
+/// event, not the turn's button: stamping at the turn would begin the second-launch path with
+/// the question still unasked, and the row could never reappear. Answering *no* ends it just the
+/// same — the ask was answered, which is the event, not the value chosen.
+///
+/// It happens inside this transaction because "autostart was set" and "the ask was answered"
+/// are one fact. Without it `first_run_completed_at` stays `NULL`, `CoreSnapshot.firstRunCompletedAt`
+/// stays `null`, and `isNewArrival` is `false` for every project forever — the `NEW` chip and the
+/// arrivals row never appear at all. It does not fail; it just never shows.
+///
+/// `now` is therefore required rather than optional: a caller cannot apply this patch without
+/// deciding what time the stamp would carry.
+///
 /// # Errors
 /// Fails when the index cannot be written.
-pub fn write(conn: &rusqlite::Connection, patch: &SettingsPatch) -> Result<Settings, IndexError> {
+pub fn write(
+    conn: &rusqlite::Connection,
+    patch: &SettingsPatch,
+    now: i64,
+) -> Result<Settings, IndexError> {
     {
         let _guard = TxGuard::enter();
         let tx = conn.unchecked_transaction()?;
@@ -105,6 +123,9 @@ pub fn write(conn: &rusqlite::Connection, patch: &SettingsPatch) -> Result<Setti
         }
         if let Some(v) = patch.autostart {
             put(&tx, KEY_AUTOSTART, bit(v))?;
+            // Idempotent by construction: it returns false and writes nothing once stamped, so
+            // a later change to autostart cannot move the time first run ended.
+            crate::firstrun::stamp_first_run_completed(&tx, now)?;
         }
         if let Some(v) = patch.resident_shortcut.as_deref() {
             put(&tx, KEY_RESIDENT_SHORTCUT, v)?;

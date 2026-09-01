@@ -114,6 +114,7 @@ describe('createDefaultDeps', () => {
       effectsTier: 'auto',
       request: () => Promise.resolve({ ok: true, value: {} }),
       relocate: () => Promise.resolve({ kind: 'cancelled' }),
+      pickRoot: () => Promise.resolve({ kind: 'cancelled' }),
       onCoreStatus: () => undefined,
       onCoreEvents: () => undefined,
       // Plan 15 added this to the bridge on another branch. The fake must carry the whole

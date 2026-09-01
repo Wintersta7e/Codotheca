@@ -14,10 +14,12 @@ import {
   IPC_INDEX_LOCATION,
   IPC_OPEN_PALETTE,
   IPC_PICK_EXECUTABLE,
+  IPC_PICK_ROOT,
   IPC_RELOCATE,
   IPC_REQUEST,
   IPC_REVEAL,
   IPC_SHORTCUT_STATE,
+  type PickRootReply,
   type RelocateReply,
   type RevealTarget,
   type ShortcutState,
@@ -40,6 +42,10 @@ const bridge: CodothecaBridge = {
   // An id and nothing else. The folder is chosen in the main process, where the dialog lives.
   relocate: (locationId: number): Promise<RelocateReply> =>
     ipcRenderer.invoke(IPC_RELOCATE, { locationId }) as Promise<RelocateReply>,
+  // A flag and nothing else. The folder is chosen in the main process, where the dialog lives,
+  // and its path never enters the sandbox — §2.4.
+  pickRoot: (confirmLarge: boolean): Promise<PickRootReply> =>
+    ipcRenderer.invoke(IPC_PICK_ROOT, { confirmLarge }) as Promise<PickRootReply>,
   onCoreStatus: (cb: (status: unknown) => void): void => {
     ipcRenderer.on(IPC_CORE_STATUS, (_event, status: unknown) => {
       cb(status);
