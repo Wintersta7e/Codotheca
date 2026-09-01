@@ -417,6 +417,36 @@ mod corehandler {
         assert_eq!(snap["gitVersion"], "git version 2.43.0");
     }
 
+    /// The last hop of §10.5a's `NEW` chip. Three plans meet here: the residency card sends a
+    /// patch carrying `autostart`, `settings.set` stamps `first_run_completed_at` on it, and
+    /// this snapshot hands the stamp back as `firstRunCompletedAt`. Break any one and the
+    /// renderer's `isNewArrival` is false for every project forever — the chip and the arrivals
+    /// row never appear. It does not fail; it never shows. Driven through the real dispatcher,
+    /// because that is the path the renderer actually takes.
+    #[test]
+    fn declining_autostart_reaches_the_snapshot_the_new_chip_reads() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        assert_eq!(
+            h.snapshot(Topic::Core)["firstRunCompletedAt"],
+            serde_json::Value::Null,
+            "the residency ask has not been answered yet"
+        );
+
+        // `LEAVE IT OFF` — the answer that changes nothing observable, and still ends first run.
+        h.handle(
+            "settings.set",
+            serde_json::json!({"patch": {"autostart": false}}),
+        )
+        .expect("settings.set is answerable");
+
+        let stamped = h.snapshot(Topic::Core)["firstRunCompletedAt"].clone();
+        assert!(
+            stamped.is_i64(),
+            "declining is an answer, and the answer is what arms the NEW chip: {stamped}"
+        );
+    }
+
     /// The three non-fatal steps run and none of them can stop the core.
     ///
     /// The fakes make git fail (there is no real binary behind `FakeGitBackend`), which is
