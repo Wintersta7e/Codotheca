@@ -12,9 +12,11 @@
 //! keeps the `Clock` seam out of this module.
 
 pub mod commands;
+pub mod confirm;
 pub mod decide;
 pub mod lineage;
 pub mod merge;
+pub mod people;
 pub mod redirect;
 pub mod remote;
 pub mod store;

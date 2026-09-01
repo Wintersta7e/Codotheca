@@ -21,6 +21,7 @@ pub mod commands;
 pub mod corpus;
 pub mod derive;
 pub mod detail;
+pub mod firstrun;
 pub mod freshness;
 pub mod git;
 pub mod identity;
@@ -36,7 +37,9 @@ pub mod protocol;
 pub mod query;
 pub mod scan;
 pub mod session;
+pub mod stats;
 pub mod view;
+pub mod wsl;
 
 #[cfg(feature = "testkit")]
 pub mod testing;
