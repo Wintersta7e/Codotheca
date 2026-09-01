@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactElement } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import type { Notice } from './notice.js';
 import { noticeAccent, noticeDismissKey, noticeIsDismissible, selectNotice } from './notice.js';
 
@@ -8,6 +8,17 @@ export interface NoticeSlotProps {
   readonly candidates: readonly Notice[];
   readonly dismissed: readonly string[];
   readonly onDismiss: (key: string) => void;
+  /**
+   * The inside of the box, where the owning section has more than a `body` string to say.
+   *
+   * §8.0 owns the box, the priority and the dismissal key, and says geometry lives here and
+   * only here; the sections it lists own what the box contains. Two of them cannot fit a
+   * string: §1.4's identity card is a list of tickable rows with a statement of effect, and
+   * §11.3a's residency ask has two answers whose dismissal must write a setting rather than a
+   * `view_state` key. Returning non-null takes the body, the actions **and** the generic
+   * `DISMISS` — the section is then responsible for every way out of its own row.
+   */
+  readonly renderContent?: (notice: Notice) => ReactNode;
 }
 
 /** Block 2. Returns `null` — not an empty wrapper — when nothing qualifies: the wrapper's
@@ -20,6 +31,17 @@ export function NoticeSlot(props: NoticeSlotProps): ReactElement | null {
   // `--cdt-` namespaced because `check-style-tokens.mjs` rejects any `var(--x)` a stylesheet
   // reads that is not declared in the token sheet, and this one is set per instance.
   const style = { '--cdt-notice-accent': `var(--${noticeAccent(notice.kind)})` } as CSSProperties;
+
+  const supplied = props.renderContent?.(notice) ?? null;
+  if (supplied !== null) {
+    return (
+      <div className="cdt-shelf-notice-slot">
+        <div className="cdt-shelf-notice" style={style} role="region" aria-label={notice.title}>
+          {supplied}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="cdt-shelf-notice-slot">

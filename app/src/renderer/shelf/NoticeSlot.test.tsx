@@ -108,6 +108,42 @@ describe('NoticeSlot', () => {
     expect(container.innerHTML).not.toMatch(/rgba?\(/);
   });
 
+  // §1.4's identity card is a list of tickable rows and §11.3a's residency ask is two answers
+  // with no dismissal of their own. Neither fits a `body` string, and §8.0 gives one box — so
+  // the owning section supplies the inside and the slot keeps the box. Without this the two
+  // cards compile, pass their own tests, and can be rendered nowhere.
+  it('lets the owning section supply the inside of the box', () => {
+    render(
+      <NoticeSlot
+        candidates={[notice('identity')]}
+        dismissed={[]}
+        onDismiss={vi.fn()}
+        renderContent={(n) => <p data-testid="card">{`inside ${n.kind}`}</p>}
+      />,
+    );
+    expect(screen.getByTestId('card').textContent).toBe('inside identity');
+    // The box is still §8.0's, and it is still a labelled region.
+    expect(screen.getByRole('region', { name: 'IDENTITY' })).toBeTruthy();
+    // The slot's own body and its generic DISMISS stand down: §1.4 labels its secondary
+    // `LEAVE IT AS IT IS`, and a bare `notice.dismissed.residency` would suppress §11.3a's row
+    // without stamping `first_run_completed_at` — the NEW chip would then never appear again.
+    expect(screen.queryByText('body text')).toBeNull();
+    expect(screen.queryByRole('button', { name: NOTICE_DISMISS_LABEL })).toBeNull();
+  });
+
+  it('keeps its own inside for every notice the section does not claim', () => {
+    render(
+      <NoticeSlot
+        candidates={[notice('problems', 'r')]}
+        dismissed={[]}
+        onDismiss={vi.fn()}
+        renderContent={(n) => (n.kind === 'identity' ? <p>never</p> : null)}
+      />,
+    );
+    expect(screen.getByText('body text')).toBeTruthy();
+    expect(screen.getByRole('button', { name: NOTICE_DISMISS_LABEL })).toBeTruthy();
+  });
+
   it('names no destructive operation', () => {
     const { container } = render(
       <NoticeSlot candidates={[notice('problems', 'r')]} dismissed={[]} onDismiss={vi.fn()} />,
