@@ -3,43 +3,16 @@
 // not open. The core leaves one small JSON file beside it and exits; this reads it.
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+// The shape moved to `src/shared` so the renderer's failure windows can name it: this file
+// opens with `node:fs`, and `tsconfig.web.json` carries no Node types, so importing the types
+// from here fails the renderer's typecheck with `Cannot find module 'node:fs'`. Re-exported so
+// every existing caller of this module is unchanged.
+import type { StartupFailure } from '../shared/startupFailure';
+
+export type { LedgerCounts, StartupFailure } from '../shared/startupFailure';
 
 export const STARTUP_FAILURE_FILE = 'startup-failure.json';
 export const EXIT_INDEX_FATAL = 4;
-
-/** One block of §11.2a's ledger. */
-export interface LedgerCounts {
-  readonly projects: number;
-  readonly notes: number;
-  readonly sessions: number;
-  readonly collections: number;
-  readonly roots: number;
-  readonly xpEvents: number;
-  readonly launchTargets: number;
-}
-
-export type StartupFailure =
-  | { readonly kind: 'schema_from_future'; readonly onDisk: number; readonly supported: number }
-  | {
-      readonly kind: 'migration_failed';
-      readonly version: number;
-      readonly name: string;
-      readonly restoredTo: number;
-      readonly restoredAt: number;
-    }
-  | {
-      readonly kind: 'corrupt_index';
-      readonly quarantinedAt: number;
-      readonly gapStartedAt: number | null;
-      readonly gapCountsRecoverable: boolean;
-      /**
-       * `null` until a rebuild has run. The window draws no figure at all for a null block —
-       * `0 projects restorable` would be a claim about what was lost, on the one screen where
-       * unknown-as-zero does the most damage.
-       */
-      readonly reDerivable: LedgerCounts | null;
-      readonly restorable: LedgerCounts | null;
-    };
 
 const KINDS = ['schema_from_future', 'migration_failed', 'corrupt_index'] as const;
 
