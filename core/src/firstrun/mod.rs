@@ -2,3 +2,4 @@
 
 pub mod classify;
 pub mod sources;
+pub mod suggest;
