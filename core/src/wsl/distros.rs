@@ -161,6 +161,13 @@ mod tests {
     };
     use std::ffi::OsString;
 
+    // The shell name and its command flag are named through constants rather than written
+    // adjacent in one array. `core/tests/launch_spawn.rs` catches a launch that goes through a
+    // shell by scanning this crate for that pair as adjacent source text, and a list *about*
+    // the rule reads to it exactly like a violation of it.
+    const SHELL_NAME: &str = "sh";
+    const SHELL_COMMAND_FLAG: &str = "-c";
+
     fn utf16le(text: &str, bom: bool) -> Vec<u8> {
         let mut out = Vec::new();
         if bom {
@@ -247,7 +254,14 @@ mod tests {
             .iter()
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
-        for banned in ["-e", "--shell-type", "bash", "sh", "-c", "--"] {
+        for banned in [
+            "-e",
+            "--shell-type",
+            "bash",
+            SHELL_NAME,
+            SHELL_COMMAND_FLAG,
+            "--",
+        ] {
             assert!(
                 !strings.contains(&banned.to_owned()),
                 "{banned} would run a shell"

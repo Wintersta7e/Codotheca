@@ -158,31 +158,35 @@ fn already_a_root(
 
 /// One `scan_root` row as the wire sees it.
 ///
+/// §1.10 gives `path_display` exactly one read door, so it is fetched through
+/// `index::path::display_paths_for_ui` rather than selected here; `core/tests/index_paths.rs`
+/// scans the source to keep that true. Everything else comes from the row.
+///
 /// # Errors
 /// Returns [`IndexError`] when the read fails.
 pub fn root_row(conn: &rusqlite::Connection, id: i64) -> Result<Option<Root>, IndexError> {
     let mut stmt = conn.prepare(
-        "SELECT id, path_display, kind, distro, enabled, descend_into_repos, added_by, added_at
+        "SELECT id, kind, distro, enabled, descend_into_repos, added_by, added_at
            FROM scan_root WHERE id = ?1",
     )?;
     let mut rows = stmt.query(rusqlite::params![id])?;
     let Some(row) = rows.next()? else {
         return Ok(None);
     };
-    let kind: String = row.get(2)?;
-    let added_by: String = row.get(6)?;
-    let enabled: i64 = row.get(4)?;
-    Ok(Some(Root {
+    let kind: String = row.get(1)?;
+    let added_by: String = row.get(5)?;
+    let enabled: i64 = row.get(3)?;
+    let root = Root {
         id: crate::protocol::RootId(row.get(0)?),
-        path_display: row.get(1)?,
+        path_display: String::new(),
         kind: match kind.as_str() {
             "win" => LocationKind::Win,
             "wsl" => LocationKind::Wsl,
             _ => LocationKind::Linux,
         },
-        distro: row.get(3)?,
+        distro: row.get(2)?,
         enabled: enabled != 0,
-        descend_into_repos: row.get::<_, i64>(5)? != 0,
+        descend_into_repos: row.get::<_, i64>(4)? != 0,
         provenance: if added_by == "user" {
             RootProvenance::Dialog
         } else {
@@ -193,10 +197,27 @@ pub fn root_row(conn: &rusqlite::Connection, id: i64) -> Result<Option<Root>, In
         } else {
             RootState::Ignored
         },
-        added_at: row.get(7)?,
+        added_at: row.get(6)?,
         // §10.1b: `?` where a count exists but is not computed. Never `0`, and never a
         // fabricated number before a walk has run.
         project_count: None,
+    };
+    drop(rows);
+    drop(stmt);
+
+    let displays = crate::index::path::display_paths_for_ui(
+        conn,
+        crate::index::path::DisplayPathTable::ScanRoot,
+        &[id],
+    )?;
+    // The row went away between the two reads. A `Root` with no display string is not a row
+    // any surface can draw, so it is reported absent rather than blank.
+    let Some((_, path_display)) = displays.into_iter().next() else {
+        return Ok(None);
+    };
+    Ok(Some(Root {
+        path_display,
+        ..root
     }))
 }
 
