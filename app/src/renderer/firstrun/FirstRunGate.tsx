@@ -19,6 +19,7 @@ import type { RevealDeps, RevealPanel } from './revealModel';
 import type { ScanFeedEvent } from './scanFeed';
 import type { RootRow } from './rootRows';
 import type { Reveal, RootAdd, RootSuggestion, ScanStatus } from '../../generated/protocol';
+import type { PickRootReply } from '../../shared/channels';
 import type { ResolvedTier } from '../motion/tier';
 
 export interface TurnHandlers {
@@ -36,8 +37,13 @@ export interface FirstRunGateDeps {
    * renderer built.
    */
   readonly commitSuggestion: (pathDisplay: string) => Promise<RootAdd>;
-  /** The native dialog behind `IPC_PICK_ROOT`. `null` is a cancellation. */
-  readonly pickRoot: (confirmLarge: boolean) => Promise<RootAdd | null>;
+  /**
+   * The native dialog behind `IPC_PICK_ROOT`, exactly as `CodothecaBridge.pickRoot` answers it.
+   * The three variants are kept apart rather than collapsed to `RootAdd | null`: a dialog the
+   * user cancelled and a dialog that failed are different events, and an adapter that erased the
+   * difference would let a `failed` reply be drawn as a folder the user picked.
+   */
+  readonly pickRoot: (confirmLarge: boolean) => Promise<PickRootReply>;
   readonly startScan: () => Promise<void>;
   readonly loadReveal: () => Promise<Reveal>;
   readonly revealDeps: RevealDeps;
@@ -193,17 +199,20 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
       onConsent: (granted: boolean) => {
         dispatch({ kind: 'consent', granted });
       },
-      // §2.4: a folder can only reach the core through a dialog the shell owns.
+      // §2.4: a folder can only reach the core through a dialog the shell owns. `cancelled` adds
+      // nothing by design. GAP-16b-5: `failed` carries a `BridgeError` this screen has nowhere to
+      // draw — §10.1b specifies no failure state for the dialog, and 17c's error surfaces explain
+      // a *project's* error kind, not a shell call. The reply is left whole at this call site
+      // rather than erased in an adapter, so the surface can be wired in one place later.
       onAddFolder: () => {
-        void pickRoot(false).then((add) => {
-          if (add === null) return;
-          absorb(add, add.root?.pathDisplay ?? '');
+        void pickRoot(false).then((reply) => {
+          if (reply.kind === 'added') absorb(reply.add, reply.add.root?.pathDisplay ?? '');
         });
       },
       onConfirmLarge: (pathDisplay: string) => {
         setPendingConfirm(null);
-        void pickRoot(true).then((add) => {
-          if (add !== null) absorb(add, pathDisplay);
+        void pickRoot(true).then((reply) => {
+          if (reply.kind === 'added') absorb(reply.add, pathDisplay);
         });
       },
       onDig: () => {
