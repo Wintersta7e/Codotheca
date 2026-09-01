@@ -122,7 +122,7 @@ struct TopicState {
 /// Owns one outbound queue per subscribed topic and the only `FrameSink` events travel on.
 #[derive(Debug)]
 pub struct Publisher {
-    sink: FrameSink,
+    sink: Option<FrameSink>,
     epoch: Epoch,
     high_water: usize,
     topics: Vec<TopicState>,
@@ -132,7 +132,7 @@ impl Publisher {
     #[must_use]
     pub fn new(sink: FrameSink, epoch: Epoch, high_water: usize) -> Self {
         Self {
-            sink,
+            sink: Some(sink),
             epoch,
             high_water,
             topics: Vec::new(),
@@ -163,7 +163,9 @@ impl Publisher {
         };
         let seq = state.queue.push(event, data);
         let over = state.queue.over_high_water();
-        Self::flush_one(&self.sink, epoch, topic, &mut self.topics);
+        if let Some(sink) = self.sink.as_ref() {
+            Self::flush_one(sink, epoch, topic, &mut self.topics);
+        }
         if over {
             Published::NeedsSnapshot { through_seq: seq }
         } else {
@@ -177,7 +179,9 @@ impl Publisher {
         if let Some(state) = self.state(topic) {
             state.queue.replace_with_snapshot(data);
         }
-        Self::flush_one(&self.sink, epoch, topic, &mut self.topics);
+        if let Some(sink) = self.sink.as_ref() {
+            Self::flush_one(sink, epoch, topic, &mut self.topics);
+        }
     }
 
     /// The consumer detected a gap and asked for a fresh snapshot. Returns the sequence the
@@ -190,11 +194,19 @@ impl Publisher {
 
     /// Drains whatever the writer queue will now accept, for every topic.
     pub fn flush(&mut self) {
+        let Some(sink) = self.sink.as_ref() else {
+            return;
+        };
         let epoch = self.epoch;
         let topics: Vec<Topic> = self.topics.iter().map(|t| t.topic).collect();
         for topic in topics {
-            Self::flush_one(&self.sink, epoch, topic, &mut self.topics);
+            Self::flush_one(sink, epoch, topic, &mut self.topics);
         }
+    }
+
+    /// Releases the transport sender once all producers have shut down.
+    pub(crate) fn close(&mut self) {
+        self.sink = None;
     }
 
     fn flush_one(sink: &FrameSink, epoch: Epoch, topic: Topic, topics: &mut [TopicState]) {

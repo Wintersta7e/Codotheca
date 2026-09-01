@@ -1,7 +1,7 @@
 //! The handshake and the command loop.
 
 use crate::lifecycle::{OsParentProbe, PARENT_POLL};
-use crate::proto::pubsub::Publisher;
+use crate::proto::pubsub::{Publisher, PublisherSink};
 use crate::proto::transport::{FrameSink, SendError, Transport};
 use crate::proto::wire::{Epoch, Inbound, Outbound, Outcome, RequestId};
 use crate::protocol::{ErrorCode, Topic, PROTOCOL_VERSION};
@@ -47,20 +47,28 @@ pub fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, Comm
     serde_json::from_value(args).map_err(|e| CommandFailure::protocol(e.to_string()))
 }
 
-/// Everything the loop delegates. Plan 04 implements this over the index.
+/// Everything the loop delegates.
+///
+/// **The handler publishes through the `Arc<dyn EventSink>` it holds, never through a borrowed
+/// `Publisher`.** There is one `Publisher` in the process and `PublisherSink` owns it; handing a
+/// second reference to it here would either duplicate the per-topic sequence counters or
+/// deadlock the loop against a handler that emits while it runs.
 pub trait CommandHandler {
-    /// Executes one command. `publisher` is available so a command that changes state can
-    /// publish the resulting events before it returns.
-    fn handle(
-        &mut self,
-        command: &str,
-        args: Value,
-        publisher: &mut Publisher,
-    ) -> Result<Value, CommandFailure>;
+    /// Executes one command.
+    fn handle(&mut self, command: &str, args: Value) -> Result<Value, CommandFailure>;
 
     /// The current state of one topic, for a snapshot. Must not be called with a transaction
     /// open — the pipe write that follows would be refused.
     fn snapshot(&mut self, topic: Topic) -> Value;
+
+    /// Called once per loop iteration, request or timeout. Periodic work goes here; the loop
+    /// wakes at least every `PARENT_POLL`, so a job on a longer period keeps its own deadline.
+    fn pump(&mut self) {}
+
+    /// Called after the loop breaks and before the transport is joined. Every `FrameSink` clone
+    /// the handler holds — directly or through an `Arc<PublisherSink>` it handed to a worker —
+    /// must be dropped here, or `Transport::join` never returns.
+    fn shutdown(&mut self) {}
 }
 
 /// The handler this plan ships. Every command is a protocol error until plan 04 lands.
@@ -68,12 +76,7 @@ pub trait CommandHandler {
 pub struct RefusingHandler;
 
 impl CommandHandler for RefusingHandler {
-    fn handle(
-        &mut self,
-        command: &str,
-        _args: Value,
-        _publisher: &mut Publisher,
-    ) -> Result<Value, CommandFailure> {
+    fn handle(&mut self, command: &str, _args: Value) -> Result<Value, CommandFailure> {
         Err(CommandFailure::protocol(format!(
             "no handler for {command}"
         )))
@@ -126,11 +129,11 @@ fn respond(sink: &FrameSink, epoch: Epoch, id: RequestId, result: Result<Value, 
 
 /// Runs until stdin closes, `app.shutdown` arrives, or the parent goes away.
 ///
-/// Takes the `Publisher` **by value**: it holds a `FrameSink` clone, and `Transport::join`
-/// cannot finish until every clone is dropped. Borrowing it here hangs the process on exit.
+/// Takes the sink **by reference**: the caller keeps an `Arc` so the handler and its workers can
+/// share the one publisher that owns the per-topic sequence counters.
 pub fn run_loop(
     transport: Transport,
-    mut publisher: Publisher,
+    events: &std::sync::Arc<PublisherSink>,
     handler: &mut dyn CommandHandler,
     epoch: Epoch,
     parent: &OsParentProbe,
@@ -142,38 +145,63 @@ pub fn run_loop(
                 if parent.parent_gone() {
                     break LoopExit::ParentGone;
                 }
-                publisher.flush();
+                handler.pump();
+                events.with(Publisher::flush);
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break LoopExit::StdinEof,
             Ok(Inbound::Subscribe { topic }) => {
-                publisher.subscribe(topic);
+                events.with(|publisher| publisher.subscribe(topic));
                 let data = handler.snapshot(topic);
-                publisher.supply_snapshot(topic, data);
+                events.with(|publisher| publisher.supply_snapshot(topic, data));
+                handler.pump();
             }
-            Ok(Inbound::Unsubscribe { topic }) => publisher.unsubscribe(topic),
+            Ok(Inbound::Unsubscribe { topic }) => {
+                events.with(|publisher| publisher.unsubscribe(topic));
+                handler.pump();
+            }
             Ok(Inbound::Resync { topic }) => {
-                if publisher.resync(topic).is_some() {
+                if events.with(|publisher| publisher.resync(topic)).is_some() {
                     let data = handler.snapshot(topic);
-                    publisher.supply_snapshot(topic, data);
+                    events.with(|publisher| publisher.supply_snapshot(topic, data));
+                }
+                handler.pump();
+            }
+            Ok(Inbound::Request { id, command, args }) => {
+                let exit = match command.as_str() {
+                    "app.hello_ack" => {
+                        respond(&sink, epoch, id, Ok(serde_json::json!({})));
+                        None
+                    }
+                    "app.shutdown" => {
+                        respond(&sink, epoch, id, Ok(serde_json::json!({})));
+                        Some(LoopExit::Shutdown)
+                    }
+                    other => {
+                        let result = handler.handle(other, args);
+                        respond(&sink, epoch, id, result);
+                        None
+                    }
+                };
+
+                // A topic that overflowed while the command ran wants a fresh snapshot, and
+                // only the handler can compute one. The lock is released around that call.
+                for topic in events.take_snapshot_requests() {
+                    let data = handler.snapshot(topic);
+                    events.with(|publisher| publisher.supply_snapshot(topic, data));
+                }
+                handler.pump();
+                // Anything the command queued goes out here, where no transaction is open.
+                events.with(Publisher::flush);
+
+                if let Some(exit) = exit {
+                    break exit;
                 }
             }
-            Ok(Inbound::Request { id, command, args }) => match command.as_str() {
-                "app.hello_ack" => respond(&sink, epoch, id, Ok(serde_json::json!({}))),
-                "app.shutdown" => {
-                    respond(&sink, epoch, id, Ok(serde_json::json!({})));
-                    break LoopExit::Shutdown;
-                }
-                other => {
-                    let result = handler.handle(other, args, &mut publisher);
-                    respond(&sink, epoch, id, result);
-                    // Anything the command queued goes out here, where no transaction is open.
-                    publisher.flush();
-                }
-            },
         }
     };
+    handler.shutdown();
+    events.with(Publisher::close);
     drop(sink);
-    drop(publisher);
     transport.join();
     exit
 }

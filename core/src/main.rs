@@ -9,7 +9,7 @@ use codotheca_core::lifecycle::{
     parse_args, CoreLock, LockError, OsParentProbe, EXIT_BAD_ARGS, EXIT_LOCK_HELD,
 };
 use codotheca_core::proto::dispatch::{run_loop, send_hello, RefusingHandler};
-use codotheca_core::proto::pubsub::{Publisher, TOPIC_HIGH_WATER};
+use codotheca_core::proto::pubsub::{Publisher, PublisherSink, TOPIC_HIGH_WATER};
 use codotheca_core::proto::transport::{claim_stdout, Transport, WRITER_CAPACITY};
 use codotheca_core::proto::wire::Epoch;
 use std::io::Write as _;
@@ -59,10 +59,14 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let publisher = Publisher::new(transport.sink.clone(), epoch, TOPIC_HIGH_WATER);
+    let events = std::sync::Arc::new(PublisherSink::new(Publisher::new(
+        transport.sink.clone(),
+        epoch,
+        TOPIC_HIGH_WATER,
+    )));
     let mut handler = RefusingHandler;
     let parent = OsParentProbe::new(args.parent_pid);
-    let exit = run_loop(transport, publisher, &mut handler, epoch, &parent);
+    let exit = run_loop(transport, &events, &mut handler, epoch, &parent);
     note(&format!("codotheca-core: exiting ({exit:?})"));
     ExitCode::SUCCESS
 }
