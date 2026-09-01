@@ -246,6 +246,18 @@
   color: var(--text-3);
 }
 
+/* §10.1b: the one refusal that is a question rather than a verdict. */
+.cdt-fr-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--sig-edge);
+}
+
 .cdt-fr-panels-two {
   display: flex;
   flex-wrap: wrap;

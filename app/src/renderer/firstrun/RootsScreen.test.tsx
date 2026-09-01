@@ -1,10 +1,10 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { RootsScreen, moreChipLabel, visibleExclusions } from './RootsScreen';
-import { toRow } from './rootRows';
+import { refusedRow, toRow } from './rootRows';
 import * as copy from './copy';
 import { EXCLUSION_CAPTION, EXCLUSION_LIST } from '../../shared/skipList';
-import type { RootSuggestion } from '../../generated/protocol';
+import type { RootAdd, RootSuggestion } from '../../generated/protocol';
 
 afterEach(cleanup);
 
@@ -23,12 +23,14 @@ function draw(over: Partial<Parameters<typeof RootsScreen>[0]> = {}): {
   onToggleRoot: ReturnType<typeof vi.fn>;
   onConsent: ReturnType<typeof vi.fn>;
   onAddFolder: ReturnType<typeof vi.fn>;
+  onConfirmLarge: ReturnType<typeof vi.fn>;
   onDig: ReturnType<typeof vi.fn>;
 } {
   const deps = {
     onToggleRoot: vi.fn(),
     onConsent: vi.fn(),
     onAddFolder: vi.fn(),
+    onConfirmLarge: vi.fn(),
     onDig: vi.fn(),
   };
   const rows = [
@@ -49,6 +51,7 @@ function draw(over: Partial<Parameters<typeof RootsScreen>[0]> = {}): {
       rows={rows}
       ticked={new Set(['/somewhere/dev'])}
       consented
+      pendingConfirm={null}
       tier="full"
       busy={false}
       {...over}
@@ -163,4 +166,66 @@ test('DIG is inert while a commit is in flight, so one press cannot start two sc
 test('no rendered string on this screen carries a destructive verb', () => {
   draw();
   expect(document.body.textContent).not.toMatch(/\bFORGET\b|\bdelete\b|\buninstall\b/i);
+});
+
+const refusal = (because: RootAdd['refusedBecause'], dirs: number | null): RootAdd => ({
+  root: null,
+  refusedBecause: because,
+  estimatedDirs: dirs,
+});
+
+// §10.1b: three are absolute and are listed with no tick slot at all, path at the ornament grey,
+// reason in the provenance slot.
+test('an absolute refusal is a row with no control on it', () => {
+  draw({
+    rows: [refusedRow(refusal('home_without_narrowing', null), '/somewhere')],
+    ticked: new Set<string>(),
+  });
+  const row = screen.getByTestId('fr-root-row');
+  expect(row.tagName).not.toBe('BUTTON');
+  expect(within(row).queryByRole('checkbox')).toBeNull();
+  expect(within(row).getByText('PICK A FOLDER INSIDE YOUR HOME, NOT ALL OF IT')).toBeTruthy();
+  expect(row.getAttribute('data-tickable')).toBe('false');
+});
+
+test('a drive root is refused with its own reason and never a silent no', () => {
+  draw({ rows: [refusedRow(refusal('filesystem_root', null), '/')], ticked: new Set<string>() });
+  expect(screen.getByText('A DRIVE ROOT IS NOT A PROJECT FOLDER')).toBeTruthy();
+});
+
+// §10.1b: the fourth is confirmable — over 500k estimated directories keeps its tick and opens
+// a confirmation.
+test('the confirmable refusal keeps its tick and asks', () => {
+  const deps = draw({
+    rows: [refusedRow(refusal('too_many_directories', 512_000), '/somewhere/big')],
+    ticked: new Set(['/somewhere/big']),
+    pendingConfirm: { pathDisplay: '/somewhere/big', estimatedDirs: 512_000 },
+  });
+  // The row *is* the control — `within` searches descendants, so the tick has to be read off
+  // the row itself or the assertion passes on a row that has no control at all.
+  const row = screen.getByTestId('fr-root-row');
+  expect(row.tagName).toBe('BUTTON');
+  expect(row.getAttribute('role')).toBe('checkbox');
+  expect(row.getAttribute('aria-checked')).toBe('true');
+  // The reason is a mis-pick, never slowness: 101k dirs/s makes 500,000 directories five seconds.
+  expect(screen.getByText(/almost always a mis-pick/i)).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/\bslow\b|\btoo long\b/i);
+  fireEvent.click(screen.getByRole('button', { name: copy.CONFIRM_LARGE_LABEL }));
+  expect(deps.onConfirmLarge).toHaveBeenCalledWith('/somewhere/big');
+});
+
+test('no confirmation is drawn when none is pending', () => {
+  draw();
+  expect(screen.queryByRole('button', { name: copy.CONFIRM_LARGE_LABEL })).toBeNull();
+});
+
+// §2.4: paths enter only from a native dialog owned by the shell. The screen asks for one; it
+// never types one.
+test('ADD A FOLDER asks the shell and sends no path', () => {
+  const deps = draw();
+  fireEvent.click(screen.getByRole('button', { name: copy.ADD_A_FOLDER_LABEL }));
+  expect(deps.onAddFolder).toHaveBeenCalledTimes(1);
+  // The handler is passed straight to onClick, so the only argument it can ever see is the
+  // event — never a path this screen assembled.
+  expect(deps.onAddFolder.mock.calls[0]?.filter((a) => typeof a === 'string')).toEqual([]);
 });
