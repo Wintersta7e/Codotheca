@@ -10,7 +10,11 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { type CommandName, PROTOCOL_VERSION, type Topic } from '../generated/protocol';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
-import { EFFECTS_TIER_FLAG } from '../shared/effectsTier';
+import {
+  EFFECTS_TIER_FLAG,
+  EFFECTS_TIER_SOURCE_FLAG,
+  PAINT_FAIL_FORCED_AT_FLAG,
+} from '../shared/effectsTier';
 import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
 import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
@@ -79,7 +83,15 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       nodeIntegration: false,
       webviewTag: false,
-      additionalArguments: [`${EFFECTS_TIER_FLAG}${boot.tier}`],
+      // §11.2a: the tier and the account of where it came from both reach the document with
+      // no round trip, because the core joins after first paint.
+      additionalArguments: [
+        `${EFFECTS_TIER_FLAG}${boot.tier}`,
+        `${EFFECTS_TIER_SOURCE_FLAG}${boot.source}`,
+        ...(boot.stored.paintFailForcedAt === null
+          ? []
+          : [`${PAINT_FAIL_FORCED_AT_FLAG}${String(boot.stored.paintFailForcedAt)}`]),
+      ],
     },
   });
 

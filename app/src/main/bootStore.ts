@@ -10,11 +10,15 @@ import {
 import {
   EFFECTS_TIER_ENV_VAR,
   type EffectsTier,
+  type EffectsTierSource,
   effectsTierFromArgv,
   parseEffectsTier,
 } from '../shared/effectsTier';
 
-export type EffectsTierSource = 'argv' | 'environment' | 'paint-failure' | 'boot-file';
+// Declared in `src/shared` because `CodothecaBridge` carries it to the renderer, and
+// `tsconfig.web.json` excludes `src/main` — the renderer structurally cannot import from here.
+// Re-exported so this module's existing callers do not change.
+export type { EffectsTierSource } from '../shared/effectsTier';
 
 /** §11.2a: "At 2 it forces `off`." */
 export const PAINT_FAIL_FORCE_OFF_AT = 2;

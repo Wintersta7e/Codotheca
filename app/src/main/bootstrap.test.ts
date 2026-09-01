@@ -7,6 +7,7 @@ function stored(overrides: Partial<BootFile> = {}): BootFile {
     generation: BOOT_FILE_GENERATION,
     effectsTier: 'full',
     paintFailCount: 0,
+    paintFailForcedAt: null,
     shelfProjection: null,
     ...overrides,
   };
@@ -91,13 +92,16 @@ describe('clearPaintFailure', () => {
     const writeBoot = vi.fn();
     clearPaintFailure({
       userDataDir: '/data',
-      readBoot: () => stored({ paintFailCount: 3, effectsTier: 'reduced' }),
+      readBoot: () => stored({ paintFailCount: 3, effectsTier: 'reduced', paintFailForcedAt: 555 }),
       writeBoot,
     });
     expect(writeBoot).toHaveBeenCalledWith('/data', {
       generation: BOOT_FILE_GENERATION,
       effectsTier: 'reduced',
       paintFailCount: 0,
+      // A successful paint clears the counter, not the record of which launch forced the tier
+      // off — §11.3's control is what clears that, and it is the only thing that does.
+      paintFailForcedAt: 555,
       shelfProjection: null,
     });
   });

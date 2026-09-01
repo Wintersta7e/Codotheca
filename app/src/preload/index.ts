@@ -8,20 +8,33 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { PROTOCOL_VERSION } from '../generated/protocol';
 import { CODOTHECA_BRIDGE_KEY, type CodothecaBridge } from '../shared/bridge';
 import {
+  IPC_CLEAR_PAINT_FAILURE,
   IPC_CORE_STATUS,
   IPC_EVENTS,
+  IPC_INDEX_LOCATION,
   IPC_OPEN_PALETTE,
+  IPC_PICK_EXECUTABLE,
   IPC_RELOCATE,
   IPC_REQUEST,
+  IPC_REVEAL,
+  IPC_SHORTCUT_STATE,
   type RelocateReply,
+  type RevealTarget,
+  type ShortcutState,
 } from '../shared/channels';
-import { effectsTierFromArgv } from '../shared/effectsTier';
+import {
+  effectsTierFromArgv,
+  effectsTierSourceFromArgv,
+  paintFailForcedAtFromArgv,
+} from '../shared/effectsTier';
 
 // process.argv is available synchronously in a sandboxed preload, so the tier reaches the
 // document with no round trip — which is the whole point of §11.2a.
 const bridge: CodothecaBridge = {
   protocolVersion: PROTOCOL_VERSION,
   effectsTier: effectsTierFromArgv(process.argv) ?? 'auto',
+  effectsTierSource: effectsTierSourceFromArgv(process.argv) ?? 'boot-file',
+  paintFailForcedAt: paintFailForcedAtFromArgv(process.argv),
   request: (name: string, args: unknown): Promise<unknown> =>
     ipcRenderer.invoke(IPC_REQUEST, { name, args }),
   // An id and nothing else. The folder is chosen in the main process, where the dialog lives.
@@ -40,6 +53,18 @@ const bridge: CodothecaBridge = {
   onOpenPalette: (cb: () => void): void => {
     ipcRenderer.on(IPC_OPEN_PALETTE, () => {
       cb();
+    });
+  },
+  // R11: `pickRoot` is plan 16's — it declares `IPC_PICK_ROOT` and owns the only handler for
+  // it, so its renderer wrapper belongs beside the constant rather than here.
+  pickExecutable: (scope: unknown): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_PICK_EXECUTABLE, scope),
+  reveal: (target: RevealTarget): Promise<unknown> => ipcRenderer.invoke(IPC_REVEAL, { target }),
+  indexLocation: (): Promise<unknown> => ipcRenderer.invoke(IPC_INDEX_LOCATION, null),
+  clearPaintFailure: (): Promise<unknown> => ipcRenderer.invoke(IPC_CLEAR_PAINT_FAILURE, null),
+  onShortcutState: (cb: (state: ShortcutState) => void): void => {
+    ipcRenderer.on(IPC_SHORTCUT_STATE, (_event, state: ShortcutState) => {
+      cb(state);
     });
   },
 };

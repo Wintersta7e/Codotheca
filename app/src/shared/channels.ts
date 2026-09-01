@@ -58,6 +58,25 @@ export interface RelocateCall {
   locationId: number;
 }
 
+// R11: `IPC_PICK_ROOT` and `PickRootReply` are declared in this file by plan 16, whose
+// first-run flow picks the first root (§10.1b) and owns the only `ipcMain.handle` for that
+// channel. §11's settings drawer calls through it and declares neither.
+export const IPC_PICK_EXECUTABLE = 'codotheca:pick-executable';
+export const IPC_REVEAL = 'codotheca:reveal';
+export const IPC_INDEX_LOCATION = 'codotheca:index-location';
+export const IPC_CLEAR_PAINT_FAILURE = 'codotheca:clear-paint-failure';
+
+/** The only two things the shell will reveal. A renderer-supplied path is refused. */
+export type RevealTarget = 'index' | 'bundle';
+
+export interface IndexLocation {
+  readonly pathDisplay: string;
+  readonly sizeBytes: number;
+}
+
+/** Must equal `Index::db_path`'s file name; `app/test/shellServices.test.ts` reads it there. */
+export const INDEX_DB_FILE = 'index.db';
+
 export type RelocateReply =
   | { kind: 'relocated'; location: unknown }
   | { kind: 'cancelled' }

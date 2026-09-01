@@ -20,6 +20,7 @@ describe('the boot file on disk', () => {
       generation: BOOT_FILE_GENERATION,
       effectsTier: 'off',
       paintFailCount: 2,
+      paintFailForcedAt: 1_700_000_000_000,
       shelfProjection: null,
     } as const;
     writeBootFile(dir, file);
@@ -49,6 +50,7 @@ describe('resolveBootEffectsTier', () => {
     generation: BOOT_FILE_GENERATION,
     effectsTier: 'full',
     paintFailCount: 0,
+    paintFailForcedAt: null,
     shelfProjection: null,
   } as const;
 

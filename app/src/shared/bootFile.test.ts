@@ -12,12 +12,24 @@ describe('parseBootFile', () => {
       generation: BOOT_FILE_GENERATION,
       effectsTier: 'reduced',
       paintFailCount: 1,
+      paintFailForcedAt: 1_700_000_000_000,
       shelfProjection: { tiles: [] },
     } as const;
     const text = serializeBootFile(file);
     expect(text).toContain('"effects_tier"');
     expect(text).toContain('"paint_fail_count"');
+    expect(text).toContain('"paint_fail_forced_at"');
     expect(parseBootFile(text)).toEqual(file);
+  });
+
+  it('reads no forcing launch rather than a forcing at time zero', () => {
+    // §11.3 names the launch that forced the tier off; `0` would name the epoch.
+    const at = (json: string): number | null => parseBootFile(json).paintFailForcedAt;
+    const g = String(BOOT_FILE_GENERATION);
+    expect(at(`{"generation":${g}}`)).toBeNull();
+    expect(at(`{"generation":${g},"paint_fail_forced_at":0}`)).toBeNull();
+    expect(at(`{"generation":${g},"paint_fail_forced_at":"yesterday"}`)).toBeNull();
+    expect(at(`{"generation":${g},"paint_fail_forced_at":5}`)).toBe(5);
   });
 
   it('falls back to auto and an empty shelf, never to an error', () => {
