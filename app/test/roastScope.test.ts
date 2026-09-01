@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -16,18 +16,50 @@ const srcDir = join(appDir, 'src');
 function sources(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry);
-    if (statSync(path).isDirectory()) sources(path, out);
+    let dirent;
+    try {
+      dirent = statSync(path);
+    } catch (error) {
+      // A probe another gate planted can vanish between the walk and the stat.
+      if (isMissing(error)) continue;
+      throw error;
+    }
+    if (dirent.isDirectory()) sources(path, out);
     else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) out.push(path);
   }
   return out;
 }
 
-const files = sources(srcDir);
+function isMissing(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+}
+
+/**
+ * Every file this gate walked, read **once**, with the vanished ones dropped before they are
+ * counted — the contract `scripts/lib/read-scanned.mjs` states for the four `scripts/` gates.
+ *
+ * `app/test/styleGates.test.ts` and `app/test/destructiveTokens.test.ts` plant probe files inside
+ * `app/src/renderer/` to prove their own gates can fail, and vitest runs the node project in
+ * parallel, so a walked path can be gone by the time it is read. An unguarded `readFileSync`
+ * throws a raw ENOENT that takes the **whole suite** red rather than failing this one assertion.
+ *
+ * Skipping *before* counting is the load-bearing half: the `files.length` guard below exists to
+ * prove this gate scanned a real tree, and counting a file that was never read would make that
+ * guard stop meaning what it says.
+ */
+const files: readonly (readonly [string, string])[] = sources(srcDir).flatMap((path) => {
+  try {
+    return [[path, readFileSync(path, 'utf8')] as const];
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw error;
+  }
+});
 
 function importersOf(pattern: RegExp): string[] {
   return files
-    .filter((path) => pattern.test(readFileSync(path, 'utf8')))
-    .map((path) => relative(appDir, path).replace(/\\/g, '/'))
+    .filter(([, text]) => pattern.test(text))
+    .map(([path]) => relative(appDir, path).replace(/\\/g, '/'))
     .sort();
 }
 
