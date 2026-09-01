@@ -15,7 +15,11 @@ import {
   type Topic,
 } from '../generated/protocol';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
-import { EFFECTS_TIER_FLAG } from '../shared/effectsTier';
+import {
+  EFFECTS_TIER_FLAG,
+  EFFECTS_TIER_SOURCE_FLAG,
+  PAINT_FAIL_FORCED_AT_FLAG,
+} from '../shared/effectsTier';
 import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
 import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
@@ -29,6 +33,7 @@ import { spawnCoreChild } from './core/spawn';
 import { CoreSupervisor } from './core/supervisor';
 import { resolveCoreBinary, resolveDataDir } from './paths';
 import { registerFocusRelease } from './session/focus';
+import { logLevelStep, staleTargets, verifyTargetsStep } from './joinSteps';
 import { launchJoinSteps } from './startup/launchSteps';
 import {
   contentSecurityPolicyListener,
@@ -138,7 +143,15 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       nodeIntegration: false,
       webviewTag: false,
-      additionalArguments: [`${EFFECTS_TIER_FLAG}${boot.tier}`],
+      // §11.2a: the tier and the account of where it came from both reach the document with
+      // no round trip, because the core joins after first paint.
+      additionalArguments: [
+        `${EFFECTS_TIER_FLAG}${boot.tier}`,
+        `${EFFECTS_TIER_SOURCE_FLAG}${boot.source}`,
+        ...(boot.stored.paintFailForcedAt === null
+          ? []
+          : [`${PAINT_FAIL_FORCED_AT_FLAG}${String(boot.stored.paintFailForcedAt)}`]),
+      ],
     },
   });
 
@@ -315,18 +328,38 @@ async function main(): Promise<void> {
         now: () => Date.now(),
         sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
       }),
-    // §11.2's launch lane. `verifyTargetsStep` is plan 17's and is not written yet, so the
-    // lane is one step short rather than carrying a second declaration of it.
+    // §11.2's launch lane: recovery first, because a session orphaned by a crash must be
+    // closed before anything reads playtime, then the target sweep, which blocks nothing.
     joinSteps: [
-      ...launchJoinSteps({
-        request: (name, args) => client.request(name as never, args as never),
-        subscribe: (topic, handler) => client.subscribe(topic, handler),
-        onRecovered: (sessions) => {
-          if (sessions.length > 0) {
-            log.write('info', 'shell', `recovered ${String(sessions.length)} orphaned session(s)`);
-          }
+      ...launchJoinSteps(
+        {
+          request: (name, args) => client.request(name as never, args as never),
+          subscribe: (topic, handler) => client.subscribe(topic, handler),
+          onRecovered: (sessions) => {
+            if (sessions.length > 0) {
+              log.write(
+                'info',
+                'shell',
+                `recovered ${String(sessions.length)} orphaned session(s)`,
+              );
+            }
+          },
+          onVerified: () => undefined,
         },
-        onVerified: () => undefined,
+        verifyTargetsStep(
+          (name, args) => client.request(name as never, args as never),
+          (rows) => {
+            const stale = staleTargets(rows);
+            if (stale.length > 0) {
+              log.write('warn', 'shell', `${String(stale.length)} launch target(s) missing`);
+            }
+          },
+        ),
+      ),
+      logLevelStep((name, args) => client.request(name as never, args as never), {
+        setLevel: (level) => {
+          log.setLevel(level);
+        },
       }),
     ],
   });

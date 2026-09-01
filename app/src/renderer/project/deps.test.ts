@@ -119,6 +119,14 @@ describe('createDefaultDeps', () => {
       // Plan 15 added this to the bridge on another branch. The fake must carry the whole
       // interface or it stops being evidence about the shape the product actually has.
       onOpenPalette: () => undefined,
+      // §11's shell services, added for the same reason.
+      effectsTierSource: 'boot-file',
+      paintFailForcedAt: null,
+      pickExecutable: () => Promise.resolve({ ok: true, value: null }),
+      reveal: () => Promise.resolve({ ok: true, value: null }),
+      indexLocation: () => Promise.resolve({ ok: true, value: null }),
+      clearPaintFailure: () => Promise.resolve({ ok: true, value: null }),
+      onShortcutState: () => undefined,
     };
     const bridge: CodothecaBridge = { ...base, ...over };
     Object.defineProperty(window, 'codotheca', { value: bridge, configurable: true });

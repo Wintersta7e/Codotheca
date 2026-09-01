@@ -1,5 +1,5 @@
-import type { RelocateReply } from './channels';
-import type { EffectsTier } from './effectsTier';
+import type { RelocateReply, RevealTarget, ShortcutState } from './channels';
+import type { EffectsTier, EffectsTierSource } from './effectsTier';
 
 /** The single `contextBridge` key. Nothing else is exposed on `window`. */
 export const CODOTHECA_BRIDGE_KEY = 'codotheca';
@@ -15,6 +15,16 @@ export interface CodothecaBridge {
    * resolves that in the renderer, where the media query and the compositor live.
    */
   readonly effectsTier: EffectsTier;
+  /**
+   * Which link in §11.2a's override chain decided that tier. §11.3's drawer states it, because
+   * a tier the user did not choose and cannot account for reads as a broken control.
+   */
+  readonly effectsTierSource: EffectsTierSource;
+  /**
+   * When a launch forced the tier `off`. `null` is "no launch forced it" — never a forcing at
+   * the epoch.
+   */
+  readonly paintFailForcedAt: number | null;
   /**
    * One command. Resolves to a `BridgeReply`, never rejects: the renderer needs `code`,
    * `outcome` and `retryable` to decide whether a retry is safe, and a thrown string carries
@@ -35,4 +45,16 @@ export interface CodothecaBridge {
    * told to open it; it never learns the chord, and no path here carries one.
    */
   onOpenPalette(cb: () => void): void;
+  /**
+   * The native executable dialog (§2.4). The renderer names a scope; the bytes never leave
+   * the shell except as a `targets.upsert` it did not compose.
+   */
+  pickExecutable(scope: unknown): Promise<unknown>;
+  /** Two named targets, never a path. */
+  reveal(target: RevealTarget): Promise<unknown>;
+  indexLocation(): Promise<unknown>;
+  /** §11.3: reachable from settings, because a user who cannot see the window is stuck. */
+  clearPaintFailure(): Promise<unknown>;
+  /** [R32] Plan 15 owns the binding and is the only thing that publishes its state. */
+  onShortcutState(cb: (state: ShortcutState) => void): void;
 }

@@ -7,10 +7,19 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+// R31/R12: `LogLevel` is declared in `protocol/schema/protocol.json` and generated, and
+// §11.3's setting stores it there, so the generated type is the only one. The hand-written
+// copy here was one variant short of the schema's: `trace` was missing from ORDER, and the
+// filter below compares `ORDER[lvl] > ORDER[level]`, so an absent entry made the comparison
+// `undefined > n` — false — and the filter FAILED OPEN. Every trace line was written at every
+// level, including the default, which is a log that grows without bound and buries the panic
+// it exists to preserve.
+import type { LogLevel } from '../../generated/protocol';
+
+export type { LogLevel };
 export type LogSource = 'shell' | 'core';
 
-const ORDER: Record<LogLevel, number> = { error: 0, warn: 1, info: 2, debug: 3 };
+const ORDER: Record<LogLevel, number> = { error: 0, warn: 1, info: 2, debug: 3, trace: 4 };
 
 export interface RollingLog {
   /** The path the failure surfaces show the user. */
