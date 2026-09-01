@@ -197,7 +197,7 @@ export function DataGroups(props: DataGroupsProps): ReactElement {
         <SettingsGroup id="identity" title="IDENTITY" caption={identityCaption(props.identities)}>
           {identityCard()}
           {addIdentityAddress !== undefined && (
-            <div style={SD.row}>
+            <div style={SD.row} data-row="identity-add">
               <button type="button" style={SD.buttonDashed} onClick={addIdentityAddress}>
                 + ADD AN ADDRESS
               </button>

@@ -177,15 +177,21 @@ export function ScanGroups(props: ScanGroupsProps): ReactElement {
             />
           </div>
         ))}
+        {/* Each action carries its own `data-row`, or the registry names a row the audit
+            cannot find and a control could be added without anything checking it. */}
         <div style={SD.row}>
           <div style={SD.rowActions}>
             {/* §2.4: the path originates in a shell-owned native dialog. No field accepts one. */}
-            <button type="button" style={SD.buttonFilled} onClick={props.onAddFolder}>
-              ADD A FOLDER
-            </button>
-            <button type="button" style={SD.buttonOutline} onClick={props.onRescan}>
-              RESCAN NOW
-            </button>
+            <span data-row="roots-add">
+              <button type="button" style={SD.buttonFilled} onClick={props.onAddFolder}>
+                ADD A FOLDER
+              </button>
+            </span>
+            <span data-row="roots-rescan">
+              <button type="button" style={SD.buttonOutline} onClick={props.onRescan}>
+                RESCAN NOW
+              </button>
+            </span>
           </div>
         </div>
       </SettingsGroup>
