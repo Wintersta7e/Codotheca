@@ -278,8 +278,14 @@
       "variants": ["measured", "not_computed", "shallow_excluded"]
     },
 
-    "TargetKind": { "kind": "enum", "variants": ["editor", "terminal", "file_manager", "git_client"] },
-    "VerifyState": { "kind": "enum", "variants": ["unverified", "ok", "missing", "not_executable"] },
+    "TargetKind": {
+      "kind": "enum",
+      "variants": ["editor", "terminal", "file_manager", "git_client"]
+    },
+    "VerifyState": {
+      "kind": "enum",
+      "variants": ["unverified", "ok", "missing", "not_executable"]
+    },
     "CwdMode": { "kind": "enum", "variants": ["location", "none"] },
     "TargetTier": {
       "kind": "enum",
@@ -792,7 +798,8 @@
         "throughSeq": "i64",
         "gitVersion": "String?",
         "schemaVersion": "u32",
-        "scan": "ScanStatus"
+        "scan": "ScanStatus",
+        "firstRunCompletedAt": "Timestamp?"
       }
     },
 

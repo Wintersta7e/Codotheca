@@ -460,3 +460,9 @@ test('every ledger count is nullable, and the set is the one plan 04 computes', 
     'xpEvents',
   ]);
 });
+
+// §10.5a: the NEW predicate lives once, in `isNewArrival`. ProjectRow carries its per-project
+// inputs; without this field the run-wide one is missing and the chip cannot ship.
+test('the core snapshot names when first run ended', () => {
+  assert.equal(schema.types.CoreSnapshot.fields.firstRunCompletedAt, 'Timestamp?');
+});
