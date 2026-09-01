@@ -432,23 +432,45 @@ mod tests {
         );
     }
 
+    /// An absolute home for the target being tested.
+    ///
+    /// `/home/u` is **not absolute on Windows** — it has no drive — and the parsers drop a
+    /// non-absolute candidate, which is correct behaviour. A Unix-only literal here therefore
+    /// makes the whole test vacuous on the target this ships to first.
+    fn test_home() -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(r"C:\home\u")
+        } else {
+            PathBuf::from("/home/u")
+        }
+    }
+
+    /// An absolute path that is not under the home, for the same reason.
+    fn other_absolute() -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(r"C:\srv\beta")
+        } else {
+            PathBuf::from("/srv/beta")
+        }
+    }
+
     #[test]
     fn recent_projects_xml_yields_project_directories_with_the_home_macro_expanded() {
-        let xml = concat!(
-            "<application><component name=\"RecentProjectsManager\">",
-            "<option name=\"additionalInfo\"><map>",
-            "<entry key=\"$USER_HOME$/dev/alpha\"><value/></entry>",
-            "<entry key=\"/srv/beta\"><value/></entry>",
-            "</map></option>",
-            "<option name=\"lastProjectLocation\" value=\"$USER_HOME$/dev\" />",
-            "</component></application>",
+        let home = test_home();
+        let other = other_absolute();
+        let xml = format!(
+            "<application><component name=\"RecentProjectsManager\">\
+             <option name=\"additionalInfo\"><map>\
+             <entry key=\"$USER_HOME$/dev/alpha\"><value/></entry>\
+             <entry key=\"{}\"><value/></entry>\
+             </map></option>\
+             <option name=\"lastProjectLocation\" value=\"$USER_HOME$/dev\" />\
+             </component></application>",
+            other.display()
         );
         assert_eq!(
-            parse_recent_projects_xml(xml, Path::new("/home/u")),
-            vec![
-                PathBuf::from("/home/u/dev/alpha"),
-                PathBuf::from("/srv/beta")
-            ]
+            parse_recent_projects_xml(&xml, &home),
+            vec![home.join("dev").join("alpha"), other]
         );
     }
 
@@ -461,10 +483,11 @@ mod tests {
 
     #[test]
     fn the_candidate_list_is_short_and_is_the_whole_read_surface() {
+        let home = test_home();
         let env = SourceEnv {
-            home: PathBuf::from("/home/u"),
-            app_data: Some(PathBuf::from("/home/u/AppData/Roaming")),
-            xdg_config: Some(PathBuf::from("/home/u/.config")),
+            home: home.clone(),
+            app_data: Some(home.join("AppData").join("Roaming")),
+            xdg_config: Some(home.join(".config")),
         };
         let files = candidate_files(&env);
         let names: Vec<String> = files
@@ -472,8 +495,12 @@ mod tests {
             .map(|(_, p)| p.to_string_lossy().replace('\\', "/"))
             .collect();
 
-        assert!(names.contains(&"/home/u/.gitconfig".to_owned()));
-        assert!(names.contains(&"/home/u/.config/git/config".to_owned()));
+        let home_s = home.to_string_lossy().replace('\\', "/");
+        assert!(names.contains(&format!("{home_s}/.gitconfig")), "{names:?}");
+        assert!(
+            names.contains(&format!("{home_s}/.config/git/config")),
+            "{names:?}"
+        );
         assert!(names
             .iter()
             .any(|n| n.ends_with("/User/globalStorage/storage.json")));

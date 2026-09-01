@@ -5,6 +5,24 @@
 //! stops compiling — `error[E0004]: non-exhaustive patterns`. That is deliberate: an
 //! unhandled command must fail the build, not fall through to a `PROTOCOL` refusal a user
 //! discovers at runtime.
+//!
+//! # The ledger, as it stands
+//!
+//! **All 42 schema commands reach a module; `UNOWNED_COMMANDS` is empty.** It stays empty rather
+//! than being deleted: it is what *names* the next command that arrives without a handler, and a
+//! bare `PROTOCOL` refusal reads to the shell as "no such command" — which is how nineteen
+//! commands stayed invisible for the length of this project. This file's tests pin the constant
+//! against `protocol.json` and against `route`'s own arms, so the two cannot be edited apart.
+//!
+//! Two things the dispatcher still cannot do, recorded so they are not rediscovered:
+//!
+//! - **No job runner is constructed, so no job is scheduled.** `rusqlite::Connection` is `Send`
+//!   but not `Sync`; the index is shared as `Arc<Mutex<Index>>` and the tick runs on the loop
+//!   thread. `scan.start` reaches a handler and enqueues nothing across a thread either — the
+//!   `ScanLauncher` seam is `Send + Sync` precisely so no connection crosses it.
+//! - **No production `DistroProbe`.** `SystemWslCli` exists and nothing implements the trait over
+//!   it; the composition root passes `NoDistros`, which reports *no distros found* rather than
+//!   guessing. Wiring it is the WSL worker's.
 
 use crate::proto::dispatch::CommandFailure;
 use crate::protocol::CommandName;
