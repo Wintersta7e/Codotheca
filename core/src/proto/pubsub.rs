@@ -139,6 +139,22 @@ impl Publisher {
         }
     }
 
+    /// A publisher with no transport behind it, for composing a handler in a test.
+    ///
+    /// **Gated behind `testkit` on purpose.** Every publish through it is queued and then
+    /// dropped, which is exactly the silent-loss failure the core must never have in
+    /// production; a test that only wants a `CoreHandler` should not have to stand up a pipe.
+    #[cfg(feature = "testkit")]
+    #[must_use]
+    pub fn detached() -> Self {
+        Self {
+            sink: None,
+            epoch: Epoch(0),
+            high_water: TOPIC_HIGH_WATER,
+            topics: Vec::new(),
+        }
+    }
+
     pub fn subscribe(&mut self, topic: Topic) {
         if !self.topics.iter().any(|t| t.topic == topic) {
             self.topics.push(TopicState {

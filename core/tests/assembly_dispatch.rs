@@ -189,3 +189,152 @@ mod wire {
         OsParentProbe::new(std::process::id())
     }
 }
+
+// ---------------------------------------------------------------------------
+// Task 3: the real handler. Every assertion below is that a command *reached*
+// its module, never what that module does with it — those are the modules' own
+// suites. The point is the seam: `route` and the ten sub-dispatchers agreeing.
+// ---------------------------------------------------------------------------
+
+mod corehandler {
+    use super::*;
+    use codotheca_core::assembly::{CoreDeps, CoreHandler};
+    use codotheca_core::protocol::ErrorCode;
+
+    const NOW: i64 = 1_750_000_000;
+
+    /// A `CoreHandler` over the fakes plan 06 ships. Nothing here touches the real filesystem,
+    /// a real git binary, or a real process.
+    fn handler(dir: &std::path::Path) -> CoreHandler {
+        let index = codotheca_core::index::Index::open_at(dir, NOW).expect("index opens");
+        let index = Arc::new(std::sync::Mutex::new(index));
+        let events = Arc::new(PublisherSink::new(Publisher::detached()));
+        let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
+
+        CoreHandler::new(CoreDeps {
+            index: Arc::clone(&index),
+            clock: clock.clone(),
+            git: Arc::new(codotheca_core::testing::FakeGitBackend::new()),
+            mount: Arc::new(codotheca_core::testing::FakeMountResolver::default()),
+            spawner: Box::new(codotheca_core::launch::spawn::RecordingSpawner::new()),
+            sessions: codotheca_core::session::manager::SessionManager::new(
+                clock,
+                Arc::clone(&events) as Arc<dyn EventSink>,
+                Box::new(codotheca_core::session::watch::FakeActivitySource::new()),
+                Arc::new(codotheca_core::session::activity::FakeIgnoreCheck::new(&[])),
+            ),
+            scans: codotheca_core::scan::ScanSupervisor::new(Arc::new(
+                codotheca_core::testing::ScanLauncherFake::new(),
+            )),
+            scan_store: Arc::new(codotheca_core::testing::MemScanStore::new()),
+            firstrun: firstrun_env(dir),
+            events,
+            tz_offset_min: 0,
+        })
+    }
+
+    fn firstrun_env(home: &std::path::Path) -> codotheca_core::firstrun::FirstRunEnv {
+        codotheca_core::firstrun::FirstRunEnv {
+            sources: codotheca_core::firstrun::sources::SourceEnv {
+                home: home.to_path_buf(),
+                app_data: None,
+                xdg_config: None,
+            },
+            classifier: Arc::new(codotheca_core::firstrun::classify::FixedClassifier::new(
+                vec![],
+            )),
+            distros: Arc::new(codotheca_core::firstrun::classify::NoDistros),
+            platform: codotheca_core::index::path::PathPlatform::Unix,
+            skip: codotheca_core::scan::skiplist::SkipList::default(),
+            cache: codotheca_core::firstrun::roots::SuggestionCache::new(),
+        }
+    }
+
+    /// The whole point of the plan: **every** schema command the router claims is answerable
+    /// reaches a module. Against `RefusingHandler` every one of these was a PROTOCOL refusal.
+    #[test]
+    fn every_routed_command_reaches_its_module() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../protocol/schema/protocol.json"),
+        )
+        .expect("schema readable");
+        let doc: serde_json::Value = serde_json::from_str(&text).expect("schema parses");
+        let names: Vec<String> = doc["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .map(|c| c["name"].as_str().expect("name").to_owned())
+            .collect();
+
+        let loop_only = ["app.hello_ack", "app.shutdown"];
+        let mut checked = 0_u32;
+        for name in &names {
+            if loop_only.contains(&name.as_str()) {
+                continue;
+            }
+            checked += 1;
+            // Bad arguments are fine and expected — they prove the module parsed them. What must
+            // never come back is the router's own "no handler" or a module declining its route.
+            if let Err(e) = h.handle(name, serde_json::json!({})) {
+                assert!(
+                    !e.message.contains("no handler in the core"),
+                    "{name} reached no module: {}",
+                    e.message
+                );
+                assert!(
+                    !e.message.contains("disagree about ownership"),
+                    "{name} was routed to a module that declined it: {}",
+                    e.message
+                );
+            }
+        }
+        assert_eq!(
+            checked, 40,
+            "the schema's answerable set, minus the loop's pair"
+        );
+    }
+
+    /// A gate whose passing run scans zero files is a failing gate; the same is true of a loop.
+    #[test]
+    fn the_handshake_pair_never_reaches_the_handler() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        for name in ["app.hello_ack", "app.shutdown"] {
+            let e = h
+                .handle(name, serde_json::json!({}))
+                .expect_err("must refuse");
+            assert_eq!(e.code, ErrorCode::Protocol);
+            assert!(e.message.contains("command loop"), "{}", e.message);
+        }
+    }
+
+    #[test]
+    fn an_unknown_command_is_a_protocol_error_and_took_no_effect() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        let e = h
+            .handle("nope.notacommand", serde_json::json!({}))
+            .expect_err("must refuse");
+        assert_eq!(e.code, ErrorCode::Protocol);
+        assert_eq!(
+            e.outcome, None,
+            "a name that never dispatched took no effect"
+        );
+    }
+
+    /// `scan.status` is answered without the index lock. If it were taken, this deadlocks:
+    /// `SqliteScanStore` locks the same mutex and `std::sync::Mutex` is not reentrant.
+    #[test]
+    fn a_scan_command_is_answered_without_holding_the_index_lock() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        let answer = h.handle("scan.status", serde_json::json!({}));
+        assert!(answer.is_ok(), "scan.status: {answer:?}");
+        // And the lock really is free afterwards, from this thread.
+        assert!(h.index().try_lock().is_ok(), "the index lock was left held");
+    }
+}
