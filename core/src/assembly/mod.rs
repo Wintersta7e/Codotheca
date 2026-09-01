@@ -1,6 +1,7 @@
 //! The composition root: the real `CommandHandler`, the startup sequence and the tick pump.
 
 pub mod route;
+pub mod startup;
 
 use crate::art::ArtCtx;
 use crate::commands::launch as launch_cmd;

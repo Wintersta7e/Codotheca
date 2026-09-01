@@ -403,6 +403,32 @@ mod corehandler {
         assert_eq!(snap["gitVersion"], "git version 2.43.0");
     }
 
+    /// The three non-fatal steps run and none of them can stop the core.
+    ///
+    /// The fakes make git fail (there is no real binary behind `FakeGitBackend`), which is
+    /// exactly the case that must **not** be fatal: a missing git is a drawn window, never a
+    /// refusal to start. So `git` is `None` here and startup still returns.
+    #[test]
+    fn every_startup_step_after_the_index_is_non_fatal() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        let summary = codotheca_core::assembly::startup::run_startup(&mut h);
+
+        assert!(
+            summary.orphans.is_some(),
+            "orphan closure runs against a real index and must succeed: {summary:?}"
+        );
+        // The core is still usable afterwards — the point of every step being non-fatal.
+        assert!(
+            h.handle("scan.status", serde_json::json!({})).is_ok(),
+            "startup left the core unable to answer"
+        );
+        assert!(
+            h.index().try_lock().is_ok(),
+            "startup left the index lock held"
+        );
+    }
+
     /// `scan.status` is answered without the index lock. If it were taken, this deadlocks:
     /// `SqliteScanStore` locks the same mutex and `std::sync::Mutex` is not reentrant.
     #[test]
