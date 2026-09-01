@@ -44,13 +44,20 @@ export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = [
 ];
 
 /**
- * A control the drawer draws only when the mounting surface supplies the thing behind it. The
- * drawer holds no project picker, no executable picker and no §1.4 identity card, and phase 1
- * ships none of the three from here — so each row is drawn with its slot or not at all, which
- * is §11.3a's second limb.
+ * What the mounting surface supplies, and what the drawer therefore draws. The drawer holds no
+ * project picker, no executable picker and no §1.4 identity card, and phase 1 ships none of the
+ * three from here — so each row is drawn with its slot or not at all, which is §11.3a's second
+ * limb. Typed rather than `unknown`, so a missing slot is a compile error at the mount point
+ * rather than a cast at the call site.
  */
-export type SettingsSlotName =
-  'chooseProjectToHide' | 'chooseLaunchTarget' | 'identityCard' | 'addIdentityAddress';
+export interface SettingsSlots {
+  readonly chooseProjectToHide?: () => void;
+  readonly chooseLaunchTarget?: (language: string) => void;
+  readonly identityCard?: () => ReactElement | null;
+  readonly addIdentityAddress?: () => void;
+}
+
+export type SettingsSlotName = keyof SettingsSlots;
 
 export type RowBacking =
   | { readonly kind: 'command'; readonly command: CommandName }
@@ -74,8 +81,6 @@ export interface SettingsGroupProps {
   readonly id: SettingsGroupId;
   readonly title: string;
   readonly caption?: string;
-  /** §4.3's caption is the consent boundary, so it is raised a rung off the caption grey. */
-  readonly captionIsPrivacyBoundary?: boolean;
   readonly children: ReactNode;
 }
 
@@ -88,13 +93,7 @@ export function SettingsGroup(props: SettingsGroupProps): ReactElement {
           {props.title}
         </h2>
         <span style={SD.groupRule} aria-hidden="true" />
-        {props.caption !== undefined && (
-          <span
-            style={props.captionIsPrivacyBoundary === true ? SD.privacyCaption : SD.groupCaption}
-          >
-            {props.caption}
-          </span>
-        )}
+        {props.caption !== undefined && <span style={SD.groupCaption}>{props.caption}</span>}
       </div>
       <div style={SD.rows}>{props.children}</div>
     </section>

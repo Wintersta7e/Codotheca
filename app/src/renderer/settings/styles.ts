@@ -158,12 +158,17 @@ export const SD: Readonly<Record<SettingsStyleKey, CSSProperties>> = {
     color: text3,
     whiteSpace: 'nowrap',
   },
+  // §8.7 gives the privacy caption its own row — 11.5px at `--text-2` — because it is the
+  // consent boundary and is read to decide. It is a sentence under the chips, not a nowrap
+  // qualifier in the group header, so it is not the caption slot's style.
   privacyCaption: {
     fontFamily: mono,
-    fontSize: '8px',
-    letterSpacing: '.12em',
+    fontSize: '11.5px',
+    letterSpacing: '.1em',
+    lineHeight: 1.6,
     color: text2,
     textWrap: 'pretty',
+    paddingTop: '9px',
   },
 
   rows: { display: 'flex', flexDirection: 'column' },

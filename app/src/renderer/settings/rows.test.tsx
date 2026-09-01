@@ -84,12 +84,7 @@ describe('the two row variants, and no third', () => {
 describe('a settings group', () => {
   it('titles itself, qualifies itself once, and names nothing else', () => {
     render(
-      <SettingsGroup
-        id="excluded"
-        title="EXCLUDED FROM EVERY SCAN"
-        caption="A CAPTION"
-        captionIsPrivacyBoundary
-      >
+      <SettingsGroup id="excluded" title="EXCLUDED FROM EVERY SCAN" caption="A CAPTION">
         <SettingsRow spec={statementSpec} />
       </SettingsGroup>,
     );
