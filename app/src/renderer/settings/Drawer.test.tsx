@@ -1,15 +1,26 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommandName, Settings } from '../../generated/protocol.js';
+import type { CodothecaBridge } from '../../shared/bridge.js';
 import {
   SETTINGS_ROWS,
   SettingsDrawer,
   toSettingsPatch,
   type SettingsDrawerDeps,
+  type SettingsShell,
 } from './Drawer.js';
 import { SETTINGS_GROUP_ORDER } from './rows.js';
 
 afterEach(cleanup);
+
+/** `true` only when the two types are each assignable to the other, in both directions. */
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+/** The four members of the real bridge the drawer's `SettingsShell` must match exactly. */
+type SettingsShellShape = Pick<
+  CodothecaBridge,
+  'pickRoot' | 'reveal' | 'indexLocation' | 'onShortcutState'
+>;
 
 const settings: Settings = {
   effectsTier: 'auto',
@@ -153,6 +164,26 @@ describe('the settings drawer', () => {
     const dialog = await screen.findByRole('dialog', { name: 'SETTINGS' });
     expect(dialog.style.animation).toBe('none');
     expect(screen.getByTestId('sd-backdrop').style.animation).toBe('none');
+  });
+
+  it('takes the bridge the shell already exposes, with nothing wrapped around it', () => {
+    // The whole of `ADD A FOLDER`'s renderer path. `SettingsShell` had no `pickRoot` to agree
+    // with until the shell grew one, and the row could not have worked at any mount point.
+    //
+    // Mutual `extends`, not assignment: an assignment passes on a drifted parameter type
+    // through variance, which was measured — the first version of this test stayed green after
+    // `pickRoot` was changed back to taking an object. This form cannot.
+    const identical: Exact<SettingsShellShape, SettingsShell> = true;
+    expect(identical).toBe(true);
+  });
+
+  it('asks the shell for a folder with a flag, never a path', async () => {
+    const d = deps();
+    render(<SettingsDrawer open onClose={vi.fn()} deps={d} slots={{}} />);
+    await screen.findByRole('dialog', { name: 'SETTINGS' });
+    fireEvent.click(screen.getByRole('button', { name: 'ADD A FOLDER' }));
+    // §2.4: the renderer may never originate a filesystem path. It sends one boolean.
+    expect(d.shell.pickRoot).toHaveBeenCalledWith(false);
   });
 
   it('registers every group exactly once, in §11.3a order', () => {
