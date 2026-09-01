@@ -24,8 +24,12 @@ const STATED_VERBATIM = new Set<string>([BACKDROP_SCRIM, PANEL_SHADOW]);
 const allValues = (): string[] =>
   Object.values(SD).flatMap((style) => Object.values(style).map((v) => String(v)));
 
+/** CSS property values are strings and numbers; anything else is not a value to read. */
+const textOf = (value: unknown): string =>
+  typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+
 const familyOf = (style: Record<string, unknown>): TypeFamily | null => {
-  const family = String(style['fontFamily'] ?? '');
+  const family = textOf(style['fontFamily']);
   if (family.includes('--font-display')) return 'display';
   if (family.includes('--font-mono')) return 'mono';
   if (family.includes('--font-body')) return 'body';
@@ -81,10 +85,10 @@ describe('the drawer stylesheet', () => {
       const size = record['fontSize'];
       if (size === undefined) continue;
       sized += 1;
-      const px = Number(String(size).replace('px', ''));
+      const px = Number(textOf(size).replace('px', ''));
       const family = familyOf(record);
       expect(family, `${key} sets a font size and no family`).not.toBeNull();
-      expect(isOnScale(family as TypeFamily, px), `${key}: ${String(size)}`).toBe(true);
+      expect(isOnScale(family as TypeFamily, px), `${key}: ${textOf(size)}`).toBe(true);
       // §8.7: mono is always tracked, and so is display at 14px and below — the tracking is
       // what buys the size. `check-type-scale.mjs` enforces the same rule over the file.
       if (family === 'mono' || (family === 'display' && px <= 14)) {
