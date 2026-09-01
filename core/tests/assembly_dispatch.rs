@@ -206,19 +206,32 @@ mod corehandler {
     /// A `CoreHandler` over the fakes plan 06 ships. Nothing here touches the real filesystem,
     /// a real git binary, or a real process.
     fn handler(dir: &std::path::Path) -> CoreHandler {
+        handler_parts(dir).0
+    }
+
+    /// The handler plus the two things a test needs to observe it: the sink whose `Arc` count
+    /// proves `shutdown` released the session manager's clone, and the clock the pump's period
+    /// is measured against.
+    fn handler_parts(
+        dir: &std::path::Path,
+    ) -> (
+        CoreHandler,
+        Arc<PublisherSink>,
+        Arc<codotheca_core::testing::FakeClock>,
+    ) {
         let index = codotheca_core::index::Index::open_at(dir, NOW).expect("index opens");
         let index = Arc::new(std::sync::Mutex::new(index));
         let events = Arc::new(PublisherSink::new(Publisher::detached()));
         let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
 
-        CoreHandler::new(CoreDeps {
+        let handler = CoreHandler::new(CoreDeps {
             index: Arc::clone(&index),
             clock: clock.clone(),
             git: Arc::new(codotheca_core::testing::FakeGitBackend::new()),
             mount: Arc::new(codotheca_core::testing::FakeMountResolver::default()),
             spawner: Box::new(codotheca_core::launch::spawn::RecordingSpawner::new()),
             sessions: codotheca_core::session::manager::SessionManager::new(
-                clock,
+                Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
                 Arc::clone(&events) as Arc<dyn EventSink>,
                 Box::new(codotheca_core::session::watch::FakeActivitySource::new()),
                 Arc::new(codotheca_core::session::activity::FakeIgnoreCheck::new(&[])),
@@ -228,9 +241,10 @@ mod corehandler {
             )),
             scan_store: Arc::new(codotheca_core::testing::MemScanStore::new()),
             firstrun: firstrun_env(dir),
-            events,
+            events: Arc::clone(&events),
             tz_offset_min: 0,
-        })
+        });
+        (handler, events, clock)
     }
 
     fn firstrun_env(home: &std::path::Path) -> codotheca_core::firstrun::FirstRunEnv {
@@ -427,6 +441,88 @@ mod corehandler {
             h.index().try_lock().is_ok(),
             "startup left the index lock held"
         );
+    }
+
+    #[test]
+    fn the_pump_ticks_on_its_own_period_not_on_every_iteration() {
+        use codotheca_core::session::DEFAULT_TICK_SECS;
+
+        let dir = tempfile::tempdir().expect("tmp");
+        let (mut h, _events, clock) = handler_parts(dir.path());
+
+        for _ in 0..20 {
+            h.pump();
+        }
+        assert_eq!(
+            h.ticks(),
+            1,
+            "the first pump ticks; the next nineteen are inside the period"
+        );
+
+        clock.advance_ms(DEFAULT_TICK_SECS * 1_000);
+        h.pump();
+        assert_eq!(h.ticks(), 2, "and one lands once the period has elapsed");
+    }
+
+    /// The period is measured against `monotonic_ms`, which never decreases, and never against
+    /// `now_unix`, which a user or NTP can move. A wall-clock step must not fire a burst.
+    #[test]
+    fn a_wall_clock_step_does_not_fire_a_burst_of_ticks() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let (mut h, _events, clock) = handler_parts(dir.path());
+
+        h.pump();
+        assert_eq!(h.ticks(), 1);
+
+        // A year forward and then back again, with the monotonic clock untouched.
+        clock.set_unix(NOW + 60 * 60 * 24 * 365);
+        for _ in 0..10 {
+            h.pump();
+        }
+        clock.set_unix(NOW - 60 * 60 * 24 * 365);
+        for _ in 0..10 {
+            h.pump();
+        }
+        assert_eq!(h.ticks(), 1, "wall time moved; the tick period did not");
+    }
+
+    /// `shutdown`'s load-bearing half is the **drop**: the session manager holds an
+    /// `Arc<PublisherSink>` clone, and `Transport::join` waits until every `FrameSink` clone is
+    /// gone. Without it the process hangs on exit with its window already closed.
+    #[test]
+    fn shutdown_releases_the_session_managers_sink_clone() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let (mut h, events, _clock) = handler_parts(dir.path());
+
+        let before = Arc::strong_count(&events);
+        assert!(
+            before >= 3,
+            "the test, the handler and the session manager each hold one: {before}"
+        );
+
+        h.shutdown();
+
+        assert_eq!(
+            Arc::strong_count(&events),
+            before - 1,
+            "the session manager's clone must be gone, or Transport::join never returns"
+        );
+        // And the core says so rather than pretending: a launch after shutdown is refused.
+        let e = h
+            .handle("projects.launch", serde_json::json!({}))
+            .expect_err("no session manager");
+        assert!(e.message.contains("shut down"), "{}", e.message);
+    }
+
+    /// Shutting down twice must not panic or double-release.
+    #[test]
+    fn shutdown_is_idempotent() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let (mut h, events, _clock) = handler_parts(dir.path());
+        h.shutdown();
+        let after_first = Arc::strong_count(&events);
+        h.shutdown();
+        assert_eq!(Arc::strong_count(&events), after_first);
     }
 
     /// `scan.status` is answered without the index lock. If it were taken, this deadlocks:

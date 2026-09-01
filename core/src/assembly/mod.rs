@@ -8,11 +8,13 @@ use crate::commands::launch as launch_cmd;
 use crate::commands::targets as targets_cmd;
 use crate::index::Index;
 use crate::proto::dispatch::{CommandFailure, CommandHandler};
+use crate::proto::pubsub::EventSink;
 use crate::proto::pubsub::PublisherSink;
 use crate::protocol::Topic;
 use crate::scan::presence::ScanStore;
 use crate::scan::{ScanCtx, ScanSupervisor};
 use crate::session::manager::SessionManager;
+use crate::session::DEFAULT_TICK_SECS;
 use route::{command_name, route, Route};
 use serde_json::Value;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -69,8 +71,10 @@ pub struct CoreHandler {
     firstrun: crate::firstrun::FirstRunEnv,
     events: Arc<PublisherSink>,
     tz_offset_min: i32,
-    #[allow(dead_code)]
+    /// Measured against `Clock::monotonic_ms`, never wall time: a clock step backwards must not
+    /// fire a burst of ticks, and `now_unix` is something a user or NTP can move.
     last_tick_ms: u64,
+    ticks: u64,
 }
 
 impl std::fmt::Debug for CoreHandler {
@@ -99,7 +103,14 @@ impl CoreHandler {
             events: deps.events,
             tz_offset_min: deps.tz_offset_min,
             last_tick_ms,
+            ticks: 0,
         }
+    }
+
+    /// How many ticks have run. The pump's period is otherwise unobservable from outside.
+    #[must_use]
+    pub fn ticks(&self) -> u64 {
+        self.ticks
     }
 
     /// The one connection, shared rather than owned. Every caller takes the lock for the length
@@ -162,6 +173,19 @@ impl CoreHandler {
                 }))
             }
         }
+    }
+
+    /// A tick step that failed is a `core/error` event, never a panic and never a silent skip.
+    /// The message is diagnostic (§2.4) and is not rendered.
+    fn emit_tick_error(&self, step: &str, message: &str) {
+        self.events.emit(
+            "core",
+            "error",
+            serde_json::json!({
+                "code": "INTERNAL",
+                "message": format!("tick: {step}: {message}"),
+            }),
+        );
     }
 
     fn declined(command: &str, dest: Route) -> CommandFailure {
@@ -294,12 +318,80 @@ impl CommandHandler for CoreHandler {
         self.snapshot_of(topic).unwrap_or(Value::Null)
     }
 
+    /// Called once per loop iteration. The tick runs **on the loop thread**, not a timer thread:
+    /// it needs `&mut Index`, and the one `rusqlite::Connection` is `Send` but not `Sync`, so a
+    /// timer thread would need a second connection and there is exactly one (§1.10).
+    ///
+    /// `run_loop` wakes at least every `PARENT_POLL` (2 s), so a 15 s period lands within 2 s of
+    /// its deadline — finer than a segment boundary needs.
     fn pump(&mut self) {
-        // Task 6.
+        let mono = self.clock.monotonic_ms();
+        let due = self.ticks == 0
+            || mono.saturating_sub(self.last_tick_ms) >= DEFAULT_TICK_SECS.saturating_mul(1_000);
+        if !due {
+            return;
+        }
+        self.last_tick_ms = mono;
+        self.ticks += 1;
+        let now = self.clock.now_unix();
+
+        // 1. Plan 11c's pump: drain the activity watcher, advance every live segment, close what
+        //    has gone idle. It publishes condition changes itself, so the shelf learns about a
+        //    closed segment here rather than at the next request.
+        if let Some(sessions) = self.sessions.as_mut() {
+            let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut ctx = launch_cmd::LaunchCtx {
+                index: &mut guard,
+                sessions,
+                spawner: self.spawner.as_ref(),
+                events: self.events.as_ref(),
+                mounts: self.mount.as_ref(),
+                now,
+            };
+            if let Err(e) = launch_cmd::tick(&mut ctx) {
+                drop(guard);
+                self.emit_tick_error("session tick", &e.message);
+            }
+        }
+
+        // 2. §1's hourly sidecar export. It rides this tick because it is the only other
+        //    periodic work the core has, and a second scheduler would want a second connection.
+        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        match guard.sidecar_due(now) {
+            Ok(true) => {
+                if let Err(e) = guard.export_sidecar(now) {
+                    let message = e.to_string();
+                    drop(guard);
+                    self.emit_tick_error("sidecar export", &message);
+                }
+            }
+            Ok(false) => {}
+            Err(e) => {
+                let message = e.to_string();
+                drop(guard);
+                self.emit_tick_error("sidecar due", &message);
+            }
+        }
     }
 
+    /// Ends every live session with `app_exit`, then **drops the session manager**.
+    ///
+    /// The drop is the load-bearing half: the manager holds an `Arc<PublisherSink>` clone, and
+    /// `Transport::join` waits until every `FrameSink` clone is gone. Without it the process
+    /// hangs on exit with its window already closed.
     fn shutdown(&mut self) {
-        // Task 6.
+        let Some(mut sessions) = self.sessions.take() else {
+            return;
+        };
+        {
+            let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Err(e) = sessions.shutdown(&mut guard) {
+                let message = e.to_string();
+                drop(guard);
+                self.emit_tick_error("session shutdown", &message);
+            }
+        }
+        drop(sessions);
     }
 }
 
