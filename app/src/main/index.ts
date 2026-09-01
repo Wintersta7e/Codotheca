@@ -27,6 +27,7 @@ import { spawnCoreChild } from './core/spawn';
 import { CoreSupervisor } from './core/supervisor';
 import { resolveCoreBinary, resolveDataDir } from './paths';
 import { registerFocusRelease } from './session/focus';
+import { logLevelStep, staleTargets, verifyTargetsStep } from './joinSteps';
 import { launchJoinSteps } from './startup/launchSteps';
 import {
   contentSecurityPolicyListener,
@@ -252,18 +253,38 @@ async function main(): Promise<void> {
         now: () => Date.now(),
         sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
       }),
-    // §11.2's launch lane. `verifyTargetsStep` is plan 17's and is not written yet, so the
-    // lane is one step short rather than carrying a second declaration of it.
+    // §11.2's launch lane: recovery first, because a session orphaned by a crash must be
+    // closed before anything reads playtime, then the target sweep, which blocks nothing.
     joinSteps: [
-      ...launchJoinSteps({
-        request: (name, args) => client.request(name as never, args as never),
-        subscribe: (topic, handler) => client.subscribe(topic, handler),
-        onRecovered: (sessions) => {
-          if (sessions.length > 0) {
-            log.write('info', 'shell', `recovered ${String(sessions.length)} orphaned session(s)`);
-          }
+      ...launchJoinSteps(
+        {
+          request: (name, args) => client.request(name as never, args as never),
+          subscribe: (topic, handler) => client.subscribe(topic, handler),
+          onRecovered: (sessions) => {
+            if (sessions.length > 0) {
+              log.write(
+                'info',
+                'shell',
+                `recovered ${String(sessions.length)} orphaned session(s)`,
+              );
+            }
+          },
+          onVerified: () => undefined,
         },
-        onVerified: () => undefined,
+        verifyTargetsStep(
+          (name, args) => client.request(name as never, args as never),
+          (rows) => {
+            const stale = staleTargets(rows);
+            if (stale.length > 0) {
+              log.write('warn', 'shell', `${String(stale.length)} launch target(s) missing`);
+            }
+          },
+        ),
+      ),
+      logLevelStep((name, args) => client.request(name as never, args as never), {
+        setLevel: (level) => {
+          log.setLevel(level);
+        },
       }),
     ],
   });
