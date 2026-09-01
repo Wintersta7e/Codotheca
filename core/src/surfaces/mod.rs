@@ -54,6 +54,20 @@ pub const SURFACE_COMMANDS: [&str; 6] = [
 // R15: `parse_args` is plan 03's, in `crate::proto::dispatch`. This module does not
 // re-export it — each surface module imports it from there directly.
 
+/// §1.10: `path_display` is write-once and the core never reads it back, except through the
+/// one function permitted to — `index::path::display_paths_for_ui`, which
+/// `core/tests/index_paths.rs` enforces by scanning the source. Every §11 surface that shows a
+/// path resolves its ids here rather than joining the column into its own query.
+fn display_map(
+    conn: &rusqlite::Connection,
+    table: crate::index::path::DisplayPathTable,
+    ids: &[i64],
+) -> Result<std::collections::BTreeMap<i64, String>, crate::index::IndexError> {
+    Ok(crate::index::path::display_paths_for_ui(conn, table, ids)?
+        .into_iter()
+        .collect())
+}
+
 /// Serialises a command's return value. Every arm of the dispatcher that answers a typed
 /// value goes through this one function.
 fn encode<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, CommandFailure> {

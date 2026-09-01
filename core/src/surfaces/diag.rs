@@ -5,11 +5,12 @@
 //! field by field, and a half-scrubbed log is worse than an absent one. The bundle names the
 //! file so the user attaches it deliberately — the same consent shape as `SHOW REAL PATHS`.
 
+use crate::index::path::DisplayPathTable;
 use crate::index::{Index, IndexError};
 use crate::proto::dispatch::{parse_args, CommandFailure}; // R15: one helper, plan 03's
 use crate::protocol::{Bytes, DiagBundle, DiagBundleArgs};
 use crate::surfaces::anonymise::{anonymise_path, VolumeShapes};
-use crate::surfaces::{settings, SurfaceCtx};
+use crate::surfaces::{display_map, settings, SurfaceCtx};
 
 pub const BUNDLE_FILE_PREFIX: &str = "codotheca-diagnostics-";
 
@@ -104,56 +105,77 @@ fn locations(
     conn: &rusqlite::Connection,
     paths: &mut Paths,
 ) -> Result<Vec<serde_json::Value>, IndexError> {
-    rows(
+    // §1.10: `path_display` never joins another query, so the row is read first and the
+    // display strings are resolved for its ids afterwards.
+    let mut plain = rows(
         conn,
-        "SELECT id, project_id, kind, presence, path_display, volume_key,
+        "SELECT id, project_id, kind, presence, volume_key,
                 branch, is_dirty, untracked_count, ahead, behind,
                 worktree_observed_at, refstate_observed_at, trusted_at, last_seen_at
          FROM location ORDER BY id",
         |r| {
-            let display: String = r.get(4)?;
-            let volume: Option<String> = r.get(5)?;
             Ok(serde_json::json!({
                 "id": r.get::<_, i64>(0)?,
                 "projectId": r.get::<_, i64>(1)?,
                 "kind": r.get::<_, String>(2)?,
                 "presence": r.get::<_, String>(3)?,
-                "path": paths.show(&display, volume.as_deref()),
-                "branch": r.get::<_, Option<String>>(6)?,
-                "isDirty": r.get::<_, Option<bool>>(7)?,
-                "untrackedCount": r.get::<_, Option<i64>>(8)?,
-                "ahead": r.get::<_, Option<i64>>(9)?,
-                "behind": r.get::<_, Option<i64>>(10)?,
-                "worktreeObservedAt": r.get::<_, Option<i64>>(11)?,
-                "refstateObservedAt": r.get::<_, Option<i64>>(12)?,
-                "trustedAt": r.get::<_, Option<i64>>(13)?,
-                "lastSeenAt": r.get::<_, Option<i64>>(14)?,
+                "volumeKey": r.get::<_, Option<String>>(4)?,
+                "branch": r.get::<_, Option<String>>(5)?,
+                "isDirty": r.get::<_, Option<bool>>(6)?,
+                "untrackedCount": r.get::<_, Option<i64>>(7)?,
+                "ahead": r.get::<_, Option<i64>>(8)?,
+                "behind": r.get::<_, Option<i64>>(9)?,
+                "worktreeObservedAt": r.get::<_, Option<i64>>(10)?,
+                "refstateObservedAt": r.get::<_, Option<i64>>(11)?,
+                "trustedAt": r.get::<_, Option<i64>>(12)?,
+                "lastSeenAt": r.get::<_, Option<i64>>(13)?,
             }))
         },
-    )
+    )?;
+
+    let ids: Vec<i64> = plain.iter().filter_map(|v| v["id"].as_i64()).collect();
+    let displays = display_map(conn, DisplayPathTable::Location, &ids)?;
+    for row in &mut plain {
+        let id = row["id"].as_i64().unwrap_or_default();
+        let display = displays.get(&id).cloned().unwrap_or_default();
+        // The real volume key is what gives one mount a stable pseudonym. It is read here and
+        // dropped: the bundle carries the shape, never the identifier it was derived from.
+        let volume = row["volumeKey"].as_str().map(str::to_owned);
+        row["path"] = serde_json::Value::String(paths.show(&display, volume.as_deref()));
+        if let Some(object) = row.as_object_mut() {
+            object.remove("volumeKey");
+        }
+    }
+    Ok(plain)
 }
 
 fn roots(
     conn: &rusqlite::Connection,
     paths: &mut Paths,
 ) -> Result<Vec<serde_json::Value>, IndexError> {
-    rows(
+    let mut plain = rows(
         conn,
-        "SELECT id, kind, path_display, enabled, added_by, descend_into_repos
-         FROM scan_root ORDER BY id",
+        "SELECT id, kind, enabled, added_by, descend_into_repos FROM scan_root ORDER BY id",
         |r| {
-            let display: String = r.get(2)?;
             Ok(serde_json::json!({
                 "id": r.get::<_, i64>(0)?,
                 "kind": r.get::<_, String>(1)?,
-                // A root is not on a location's volume, so it gets its own shape namespace.
-                "path": paths.show(&display, Some("root")),
-                "enabled": r.get::<_, bool>(3)?,
-                "addedBy": r.get::<_, String>(4)?,
-                "descendIntoRepos": r.get::<_, bool>(5)?,
+                "enabled": r.get::<_, bool>(2)?,
+                "addedBy": r.get::<_, String>(3)?,
+                "descendIntoRepos": r.get::<_, bool>(4)?,
             }))
         },
-    )
+    )?;
+
+    let ids: Vec<i64> = plain.iter().filter_map(|v| v["id"].as_i64()).collect();
+    let displays = display_map(conn, DisplayPathTable::ScanRoot, &ids)?;
+    for row in &mut plain {
+        let id = row["id"].as_i64().unwrap_or_default();
+        let display = displays.get(&id).cloned().unwrap_or_default();
+        // A root is not on a location's volume, so it gets its own shape namespace.
+        row["path"] = serde_json::Value::String(paths.show(&display, Some("root")));
+    }
+    Ok(plain)
 }
 
 fn projects(conn: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, IndexError> {
@@ -223,20 +245,28 @@ fn scan_problems(
     conn: &rusqlite::Connection,
     paths: &mut Paths,
 ) -> Result<Vec<serde_json::Value>, IndexError> {
-    rows(
+    let mut plain = rows(
         conn,
-        "SELECT scan_run_id, kind, path_display, detail, count FROM scan_problem ORDER BY id",
+        "SELECT id, scan_run_id, kind, detail, count FROM scan_problem ORDER BY id",
         |r| {
-            let display: Option<String> = r.get(2)?;
             Ok(serde_json::json!({
-                "scanRunId": r.get::<_, i64>(0)?,
-                "kind": r.get::<_, String>(1)?,
-                "path": paths.show(&display.unwrap_or_default(), Some("problem")),
+                "id": r.get::<_, i64>(0)?,
+                "scanRunId": r.get::<_, i64>(1)?,
+                "kind": r.get::<_, String>(2)?,
                 "detail": r.get::<_, Option<String>>(3)?,
                 "count": r.get::<_, i64>(4)?,
             }))
         },
-    )
+    )?;
+
+    let ids: Vec<i64> = plain.iter().filter_map(|v| v["id"].as_i64()).collect();
+    let displays = display_map(conn, DisplayPathTable::ScanProblem, &ids)?;
+    for row in &mut plain {
+        let id = row["id"].as_i64().unwrap_or_default();
+        let display = displays.get(&id).cloned().unwrap_or_default();
+        row["path"] = serde_json::Value::String(paths.show(&display, Some("problem")));
+    }
+    Ok(plain)
 }
 
 fn job_states(conn: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, IndexError> {

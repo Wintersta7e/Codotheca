@@ -1,13 +1,14 @@
 //! §11.1's scan summary. Six groups read `scan_problem`, one reads
 //! `project_job_state`, and the eighth is a live query over `project`.
 
+use crate::index::path::DisplayPathTable;
 use crate::index::IndexError;
 use crate::proto::dispatch::{parse_args, CommandFailure}; // R15: one helper, plan 03's
 use crate::protocol::{
     LocationId, ProblemGroup, ProblemHeader, ProblemItem, ProblemKind, Problems, ProblemsListArgs,
     ProjectId, ScanRunId,
 };
-use crate::surfaces::SurfaceCtx;
+use crate::surfaces::{display_map, SurfaceCtx};
 
 /// §11.1: *did not index* first, *indexed with a qualification* last.
 pub const GROUP_ORDER: [ProblemKind; 8] = [
@@ -139,9 +140,10 @@ fn latest_run(
     }))
 }
 
-/// One `scan_problem` row, before its stored kind has been recognised.
+/// One `scan_problem` row, before its stored kind has been recognised. It carries the row id
+/// rather than the display string: §1.10 keeps `path_display` out of every other query.
 struct StoredProblem {
-    path_display: Option<String>,
+    id: i64,
     detail: Option<String>,
     count: u32,
     kind: String,
@@ -153,44 +155,48 @@ fn scan_problems(
     kind: ProblemKind,
 ) -> Result<Vec<ProblemItem>, IndexError> {
     let mut stmt = conn.prepare(
-        "SELECT path_display, detail, count, kind FROM scan_problem
-         WHERE scan_run_id = ?1 ORDER BY id",
+        "SELECT id, detail, count, kind FROM scan_problem WHERE scan_run_id = ?1 ORDER BY id",
     )?;
-    let rows = stmt.query_map([run.0], |r| {
-        Ok(StoredProblem {
-            path_display: r.get(0)?,
-            detail: r.get(1)?,
-            count: r.get(2)?,
-            kind: r.get(3)?,
-        })
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let row = row?;
-        if problem_kind_from_storage(&row.kind) != Some(kind) {
-            continue;
-        }
-        out.push(ProblemItem {
-            path_display: row.path_display.unwrap_or_default(),
+    let rows = stmt
+        .query_map([run.0], |r| {
+            Ok(StoredProblem {
+                id: r.get(0)?,
+                detail: r.get(1)?,
+                count: r.get(2)?,
+                kind: r.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mine: Vec<StoredProblem> = rows
+        .into_iter()
+        .filter(|r| problem_kind_from_storage(&r.kind) == Some(kind))
+        .collect();
+
+    let ids: Vec<i64> = mine.iter().map(|r| r.id).collect();
+    let displays = display_map(conn, DisplayPathTable::ScanProblem, &ids)?;
+
+    Ok(mine
+        .into_iter()
+        .map(|row| ProblemItem {
+            path_display: displays.get(&row.id).cloned().unwrap_or_default(),
             detail: row.detail,
             count: row.count,
             project_id: None,
             location_id: None,
-            // `scan_problem` carries no location_id and a path_display is lossy, so there is
-            // no non-lossy way to reach an observation clock. Absent, never 0.
+            // `scan_problem` carries no location_id, so there is no observation clock to
+            // reach. Absent, never 0.
             last_seen_at: None,
             candidate_project_ids: Vec::new(),
             candidate_names: Vec::new(),
-        });
-    }
-    Ok(out)
+        })
+        .collect())
 }
 
-/// One deferred job, with whichever location the project happens to own.
+/// One deferred job, with whichever location the project happens to own. The location's
+/// display string is resolved separately (§1.10), so only its id appears here.
 struct DeferredRow {
     project_id: i64,
     location_id: Option<i64>,
-    path_display: Option<String>,
     last_seen_at: Option<i64>,
     job: String,
     reason: Option<String>,
@@ -199,28 +205,32 @@ struct DeferredRow {
 /// §4.1 put deferred-slow in `project_job_state`, so this group reads it there.
 fn deferred_slow(conn: &rusqlite::Connection) -> Result<Vec<ProblemItem>, IndexError> {
     let mut stmt = conn.prepare(
-        "SELECT s.project_id, l.id, l.path_display, l.last_seen_at, s.job, s.reason
+        "SELECT s.project_id, l.id, l.last_seen_at, s.job, s.reason
          FROM project_job_state s
          LEFT JOIN location l ON l.project_id = s.project_id
          WHERE s.state = 'deferred_slow'
          GROUP BY s.project_id, s.job
          ORDER BY s.project_id, s.job",
     )?;
-    let rows = stmt.query_map([], |r| {
-        Ok(DeferredRow {
-            project_id: r.get(0)?,
-            location_id: r.get(1)?,
-            path_display: r.get(2)?,
-            last_seen_at: r.get(3)?,
-            job: r.get(4)?,
-            reason: r.get(5)?,
-        })
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let row = row?;
-        out.push(ProblemItem {
-            path_display: row.path_display.unwrap_or_default(),
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(DeferredRow {
+                project_id: r.get(0)?,
+                location_id: r.get(1)?,
+                last_seen_at: r.get(2)?,
+                job: r.get(3)?,
+                reason: r.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let ids: Vec<i64> = rows.iter().filter_map(|r| r.location_id).collect();
+    let displays = display_map(conn, DisplayPathTable::Location, &ids)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| ProblemItem {
+            path_display: location_display(&displays, row.location_id),
             detail: Some(match row.reason {
                 Some(reason) => format!("{} · {reason}", row.job),
                 None => row.job,
@@ -231,9 +241,18 @@ fn deferred_slow(conn: &rusqlite::Connection) -> Result<Vec<ProblemItem>, IndexE
             last_seen_at: row.last_seen_at,
             candidate_project_ids: Vec::new(),
             candidate_names: Vec::new(),
-        });
-    }
-    Ok(out)
+        })
+        .collect())
+}
+
+/// A project with no location has no path to show — an empty string, not a fabricated one.
+fn location_display(
+    displays: &std::collections::BTreeMap<i64, String>,
+    location_id: Option<i64>,
+) -> String {
+    location_id
+        .and_then(|id| displays.get(&id).cloned())
+        .unwrap_or_default()
 }
 
 /// One project flagged ambiguous, before its candidates are counted.
@@ -241,7 +260,6 @@ struct AmbiguousSubject {
     project_id: i64,
     lineage_key: Option<String>,
     location_id: Option<i64>,
-    path_display: Option<String>,
     last_seen_at: Option<i64>,
 }
 
@@ -249,7 +267,7 @@ struct AmbiguousSubject {
 /// have fallen back to one stops appearing, with no repair pass.
 fn ambiguous(conn: &rusqlite::Connection) -> Result<Vec<ProblemItem>, IndexError> {
     let mut flagged = conn.prepare(
-        "SELECT p.id, p.lineage_key, l.id, l.path_display, l.last_seen_at
+        "SELECT p.id, p.lineage_key, l.id, l.last_seen_at
          FROM project p LEFT JOIN location l ON l.project_id = p.id
          WHERE p.ambiguous_lineage = 1 AND p.merged_into IS NULL
          GROUP BY p.id ORDER BY p.id",
@@ -260,11 +278,13 @@ fn ambiguous(conn: &rusqlite::Connection) -> Result<Vec<ProblemItem>, IndexError
                 project_id: r.get(0)?,
                 lineage_key: r.get(1)?,
                 location_id: r.get(2)?,
-                path_display: r.get(3)?,
-                last_seen_at: r.get(4)?,
+                last_seen_at: r.get(3)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+
+    let ids: Vec<i64> = subjects.iter().filter_map(|s| s.location_id).collect();
+    let displays = display_map(conn, DisplayPathTable::Location, &ids)?;
 
     let mut out = Vec::new();
     for subject in subjects {
@@ -286,7 +306,7 @@ fn ambiguous(conn: &rusqlite::Connection) -> Result<Vec<ProblemItem>, IndexError
             continue;
         }
         out.push(ProblemItem {
-            path_display: subject.path_display.unwrap_or_default(),
+            path_display: location_display(&displays, subject.location_id),
             detail: None, // the sentence is shell prose, composed from the names below
             count: 1,
             project_id: Some(ProjectId(subject.project_id)),
