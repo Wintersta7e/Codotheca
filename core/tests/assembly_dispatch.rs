@@ -326,6 +326,83 @@ mod corehandler {
         );
     }
 
+    #[test]
+    fn scan_and_session_have_no_snapshot_event_and_answer_null() {
+        // Plan 02's `topics` block declares a `snapshot` event for `projects` and `core` only,
+        // so there is no frame to build for these two. `scan.status` existing does not change
+        // it — a command's result is not a topic's snapshot type.
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        assert_eq!(h.snapshot(Topic::Scan), serde_json::Value::Null);
+        assert_eq!(h.snapshot(Topic::Session), serde_json::Value::Null);
+    }
+
+    /// The invariant that cuts both ways. An empty library is *measured, none* and must be
+    /// `rows: []` — answering `Null` here would tell the shell it had never been looked at.
+    #[test]
+    fn an_empty_library_snapshots_as_measured_none_not_as_uncomputed() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        let snap = h.snapshot(Topic::Projects);
+        assert!(
+            snap.is_object(),
+            "an answerable topic must not be Null: {snap}"
+        );
+        assert_eq!(
+            snap["rows"],
+            serde_json::json!([]),
+            "no projects is an empty row set, never null"
+        );
+        assert!(
+            snap.get("generation").is_some(),
+            "generation is part of the payload"
+        );
+        assert!(
+            snap.get("epoch").is_none() && snap.get("throughSeq").is_none(),
+            "epoch and throughSeq are the publisher's and are stamped by supply_snapshot"
+        );
+    }
+
+    /// Every `?` field is read, never synthesised. An unset `git_version` is a real null.
+    #[test]
+    fn the_core_snapshot_reads_its_optional_fields_and_never_invents_them() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        let snap = h.snapshot(Topic::Core);
+        assert!(snap.is_object(), "core is answerable: {snap}");
+        assert_eq!(
+            snap["gitVersion"],
+            serde_json::Value::Null,
+            "never written yet"
+        );
+        assert_eq!(
+            snap["firstRunCompletedAt"],
+            serde_json::Value::Null,
+            "first run has not finished in a fresh index"
+        );
+        assert!(
+            snap["schemaVersion"].is_u64(),
+            "schema version is read from the database"
+        );
+        assert!(snap["scan"].is_object(), "scan delegates to scan.status");
+        // `runId` null is "no scan has ever run" — distinct from a run that found nothing.
+        assert_eq!(snap["scan"]["runId"], serde_json::Value::Null);
+    }
+
+    /// Once written, the value is passed through rather than recomputed.
+    #[test]
+    fn a_recorded_git_version_reaches_the_core_snapshot() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        h.index()
+            .lock()
+            .expect("index lock")
+            .set_app_meta("git_version", "git version 2.43.0")
+            .expect("write");
+        let snap = h.snapshot(Topic::Core);
+        assert_eq!(snap["gitVersion"], "git version 2.43.0");
+    }
+
     /// `scan.status` is answered without the index lock. If it were taken, this deadlocks:
     /// `SqliteScanStore` locks the same mutex and `std::sync::Mutex` is not reentrant.
     #[test]

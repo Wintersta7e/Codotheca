@@ -95,6 +95,32 @@ impl Index {
         migrate::schema_version(&self.conn)
     }
 
+    /// One `app_meta` value as text, or `None` when the key is unset.
+    ///
+    /// `optional()` rather than `.ok()`: rusqlite reports "no row" as an error, and swallowing
+    /// every error would read a locked or corrupt database as "the key was never written".
+    pub fn app_meta(&self, key: &str) -> Result<Option<String>, IndexError> {
+        use rusqlite::OptionalExtension as _;
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT v FROM app_meta WHERE k = ?1",
+                rusqlite::params![key],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Writes one `app_meta` value, replacing any previous one.
+    pub fn set_app_meta(&self, key: &str, value: &str) -> Result<(), IndexError> {
+        self.conn.execute(
+            "INSERT INTO app_meta (k, v) VALUES (?1, ?2)
+             ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+            rusqlite::params![key, value],
+        )?;
+        Ok(())
+    }
+
     /// The one place an `Index` is constructed from an already-open connection.
     fn from_parts(conn: Connection, data_dir: PathBuf) -> Self {
         Self { conn, data_dir }

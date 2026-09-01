@@ -116,6 +116,53 @@ impl CoreHandler {
         ))
     }
 
+    /// One topic's snapshot payload, or `None` when it could not be computed.
+    ///
+    /// **`None` is not "empty".** Every step is a `?`, so a delegated command that *fails* makes
+    /// the whole snapshot `Null` — §7.7a's invariant at the protocol layer. An empty `rows: []`
+    /// says *there are no projects*; `null` says *not computed*, and a snapshot whose producing
+    /// command could not answer is the second. The distinction cuts both ways: a **successful**
+    /// `projects.list` over an empty library returns `rows: []`, and answering `Null` there would
+    /// tell the shell the library had never been looked at.
+    ///
+    /// Delegation goes through `handle`, never into the modules directly, so a subscriber's
+    /// snapshot is byte-for-byte what the same command would have returned.
+    ///
+    /// `epoch` and `throughSeq` are the publisher's and are stamped by `supply_snapshot`, so
+    /// they are deliberately absent here.
+    fn snapshot_of(&mut self, topic: Topic) -> Option<Value> {
+        match topic {
+            // Plan 02's `topics` block declares a `snapshot` event for `projects` and `core`
+            // only. There is no frame to build for these two, so `Null` is the whole answer —
+            // a command's result is not a topic's snapshot type.
+            Topic::Scan | Topic::Session => None,
+            Topic::Projects => {
+                let page = self.handle("projects.list", serde_json::json!({})).ok()?;
+                Some(serde_json::json!({
+                    "generation": page.get("generation")?,
+                    "rows": page.get("rows")?,
+                }))
+            }
+            Topic::Core => {
+                let scan = self.handle("scan.status", serde_json::json!({})).ok()?;
+                let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+                let schema_version = guard.schema_version().ok()?;
+                // Both are `?` on the wire and both are read, never synthesised: `gitVersion` is
+                // whatever the startup floor check recorded, and `firstRunCompletedAt` is
+                // first run's own stamp. An unset key is a real `null`, not a zero.
+                let git_version = guard.app_meta("git_version").ok()?;
+                let first_run_completed_at =
+                    crate::firstrun::first_run_completed_at(guard.conn()).ok()?;
+                Some(serde_json::json!({
+                    "gitVersion": git_version,
+                    "schemaVersion": schema_version,
+                    "scan": scan,
+                    "firstRunCompletedAt": first_run_completed_at,
+                }))
+            }
+        }
+    }
+
     fn declined(command: &str, dest: Route) -> CommandFailure {
         CommandFailure::internal(format!(
             "{command}: routed to {dest:?}, which declined it — the router and the module \
@@ -243,9 +290,7 @@ impl CommandHandler for CoreHandler {
     }
 
     fn snapshot(&mut self, topic: Topic) -> Value {
-        // Task 4.
-        let _ = topic;
-        Value::Null
+        self.snapshot_of(topic).unwrap_or(Value::Null)
     }
 
     fn pump(&mut self) {
