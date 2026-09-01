@@ -2,5 +2,6 @@
 
 pub mod classify;
 pub mod refuse;
+pub mod roots;
 pub mod sources;
 pub mod suggest;
