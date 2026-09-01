@@ -15,6 +15,7 @@ pub mod commands;
 pub mod decide;
 pub mod lineage;
 pub mod merge;
+pub mod people;
 pub mod redirect;
 pub mod remote;
 pub mod store;
