@@ -34,11 +34,64 @@ import { runStartup } from './startup';
 const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core'];
 
 /**
- * Deliberately empty: no command has a handler yet, so nothing is callable from the renderer
- * and the bridge refuses every name. A list naming commands with no handler behind them is the
- * dead-control defect §11 exists to correct.
+ * The commands the core answers, and therefore the only names the bridge will accept.
+ *
+ * A name belongs here exactly when the core assembly route maps it to a handler. The two
+ * supervisor-channel commands are deliberately absent: the shell sends those itself, and the
+ * renderer never names either one.
  */
-const KNOWN_COMMANDS: readonly CommandName[] = [];
+export const KNOWN_COMMANDS: readonly CommandName[] = [
+  // firstrun::dispatch
+  'roots.suggest',
+  'roots.list',
+  'roots.add',
+  'roots.remove',
+  'roots.setEnabled',
+  'roots.setDescend',
+  'stats.reveal',
+  'identity.list',
+  'identity.confirm',
+  // art::dispatch_art_command
+  'art.url',
+  'art.rerender',
+  // commands::launch::dispatch_launch_command
+  'projects.launch',
+  'session.stop',
+  'session.focus',
+  // commands::targets::dispatch_targets_command
+  'targets.list',
+  'targets.setDefault',
+  'targets.upsert',
+  'targets.verify',
+  // surfaces::dispatch_surface_command
+  'problems.list',
+  'settings.get',
+  'settings.set',
+  'locations.setTrusted',
+  'projects.requeue',
+  'diag.bundle',
+  // scan::dispatch_scan_command
+  'scan.start',
+  'scan.cancel',
+  'scan.status',
+  // identity::commands::dispatch_identity_command
+  'projects.merge',
+  'projects.unmergeHint',
+  // projects::dispatch_projects_command
+  'projects.list',
+  'projects.peek',
+  'projects.setFlags',
+  // detail::dispatch_detail_command
+  'projects.get',
+  'projects.setNote',
+  'locations.relocate',
+  // view::dispatch_view_command
+  'view.get',
+  'view.set',
+  'collections.list',
+  'collections.upsert',
+  'collections.remove',
+];
 
 // A second instance must focus the first, never start a second core — two cores would be two
 // writers against one database. Asked here rather than inside the startup sequence because
