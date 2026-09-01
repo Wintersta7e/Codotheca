@@ -76,6 +76,17 @@
   padding: 44px 30px 40px;
 }
 
+/* §11.7: the reading the scan count is announced through. It sits in the ground block because
+   the beat's own sections are drawn, and this one never is. */
+.cdt-fr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .cdt-fr-eyebrow {
   font-family: var(--font-mono);
   font-size: 8.5px;
