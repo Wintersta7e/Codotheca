@@ -1,0 +1,664 @@
+/*
+ * The three full-screen beats of §10. §11.2a: every full-screen flow unmounts the shelf, so
+ * these rules never coexist with the grid and share nothing with it.
+ *
+ * Every colour is a bare token. §8.7 ends with "the stylesheet's remaining literals are zero",
+ * `scripts/check-style-tokens.mjs` enforces exactly that, and `tokens.css` is imported first in
+ * `renderer/main.tsx` before anything mounts — so a hex fallback inside `var()` would be a
+ * literal bought against a case that cannot arise.
+ *
+ * R35(b): `viewIn` and `panelIn` are declared once, in `renderer/styles/base.css` (alongside
+ * `turnIn`), and are used freely below. They are NOT declared here: a keyframe inside a screen's
+ * own stylesheet is invisible to §11.6's tier clamp in `motion.css`, and a duplicate
+ * `@keyframes` of the same name silently overrides rather than erroring. The two below are
+ * §10.3a's outright and are used by nothing else.
+ */
+
+/* §10.3a. Decorative: the period is fixed and unrelated to the walk. Tying it to progress
+   reinstates the bar §10.2 forbids. */
+@keyframes frBeam {
+  0% {
+    transform: translateY(-8%);
+  }
+  100% {
+    transform: translateY(1900%);
+  }
+}
+
+/* §10.3a's per-tile arrival. Not the settle — there is exactly one settle, at walk completion. */
+@keyframes materialise {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.02);
+    filter: brightness(3.4);
+  }
+  30% {
+    opacity: 1;
+    transform: scaleY(0.5);
+    filter: brightness(2.2);
+  }
+  62% {
+    transform: scaleY(1.05);
+    filter: brightness(1.3);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: brightness(1);
+  }
+}
+
+/* ── the ground every beat sits on ───────────────────────────────────────────────────────── */
+
+.cdt-fr-view {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: var(--surface-0);
+  animation: viewIn 0.3s both;
+}
+.cdt-fr-view--scan {
+  animation: viewIn 0.26s both;
+  display: flex;
+  flex-direction: column;
+}
+.cdt-fr-view--roots,
+.cdt-fr-view--reveal {
+  overflow-y: auto;
+}
+.cdt-fr-column {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 52px 30px 40px;
+}
+.cdt-fr-column--reveal {
+  max-width: 920px;
+  padding: 44px 30px 40px;
+}
+
+.cdt-fr-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.32em;
+  color: var(--sig);
+}
+.cdt-fr-headline {
+  font-family: var(--font-display);
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: 0.01em;
+  margin-top: 12px;
+  color: var(--text-0);
+}
+.cdt-fr-standfirst {
+  font-size: 13.5px;
+  line-height: 1.6;
+  max-width: 560px;
+  margin-top: 12px;
+  /* §10's standfirst grey has no token; --text-2 is its role, and a standfirst is
+     decision-carrying prose. */
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+/* ── beat 1: consent and roots (§10.1b) ─────────────────────────────────────────────────── */
+
+.cdt-fr-roots {
+  margin-top: 26px;
+  border: 1px solid var(--line-2);
+}
+.cdt-fr-root-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line-1);
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  transition: background 0.14s;
+}
+.cdt-fr-root-row[data-tickable='true'] {
+  cursor: pointer;
+}
+.cdt-fr-root-row[data-tickable='true']:hover {
+  background: var(--surface-2);
+}
+.cdt-fr-tick {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  box-shadow: inset 0 0 0 1px var(--line-5);
+}
+.cdt-fr-tick[data-on='true'] {
+  background: var(--sig);
+}
+.cdt-fr-row-body {
+  flex: 1;
+  min-width: 0;
+}
+.cdt-fr-path {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  /* §10.1b states no tracking for the path; the mono register's floor keeps an ellipsised
+     path legible at 11.5px without spacing a filename out into a label. */
+  letter-spacing: 0.02em;
+  /* §10's path ink has no token; --text-1's stated use is body and control labels. */
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* §10.1b: an unticked path drops to the ornament grey — it names a row nothing will read. */
+.cdt-fr-path[data-on='false'] {
+  color: var(--text-4);
+}
+/* §10.1b: the provenance label is the trust argument, so it decides a tick and takes the 5.9:1
+   floor. The prototype's grey here measures 3.57:1 on --surface-0. */
+.cdt-fr-provenance {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  margin-top: 4px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cdt-fr-count {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: right;
+  flex: none;
+  color: var(--text-3);
+}
+.cdt-fr-count-unit {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
+  color: var(--text-4);
+}
+
+.cdt-fr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+.cdt-fr-chip {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  /* §10.1b states no tracking for the chip; .06em is the mono register's lightest, and an
+     exclusion entry is a path fragment read literally rather than a label. */
+  letter-spacing: 0.06em;
+  padding: 3px 6px;
+  background: var(--surface-3);
+  border: 1px solid var(--line-2);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.cdt-fr-chip--more {
+  border: 1px dashed var(--line-5);
+  color: var(--sig);
+  padding: 3px 7px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.cdt-fr-consent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  transition: border-color 0.14s;
+  width: 100%;
+  text-align: left;
+}
+.cdt-fr-consent-row[data-kind='control'] {
+  cursor: pointer;
+}
+.cdt-fr-consent-row[data-on='true'] {
+  border-color: var(--sig-edge);
+}
+/* §10.1b: a statement row trades the tick for a dot and takes no hover and no pointer. */
+.cdt-fr-consent-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  margin-top: 5px;
+  background: var(--line-5);
+}
+.cdt-fr-consent-body {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-1);
+}
+.cdt-fr-consent-note {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  margin-top: 4px;
+  color: var(--text-3);
+}
+
+.cdt-fr-panels-two {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  margin-top: 22px;
+}
+.cdt-fr-panels-two > section {
+  flex: 1 1 260px;
+  min-width: 240px;
+}
+
+.cdt-fr-commit {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 26px;
+}
+.cdt-fr-primary {
+  display: flex;
+  align-items: center;
+  height: 42px;
+  padding: 0 30px;
+  flex: none;
+  background: var(--sig);
+  color: var(--sig-ink);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    filter 0.14s,
+    transform 0.16s;
+}
+.cdt-fr-primary:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+.cdt-fr-primary[aria-disabled='true'] {
+  cursor: default;
+  filter: none;
+  transform: none;
+}
+.cdt-fr-note {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* ── beat 2: the scan (§10.3a) ──────────────────────────────────────────────────────────── */
+
+.cdt-fr-beam-well {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.cdt-fr-beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 80px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--sig) 30%, transparent) 62%,
+    var(--sig) 94%,
+    transparent
+  );
+  animation: frBeam 2.6s linear infinite;
+}
+.cdt-fr-scan-head {
+  flex: none;
+  padding: 30px 30px 16px;
+}
+.cdt-fr-rootline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cdt-fr-rootline-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  background: var(--sig);
+  box-shadow: 0 0 10px 0 var(--sig);
+}
+.cdt-fr-rootline-text {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.3em;
+  color: var(--sig);
+  white-space: nowrap;
+}
+.cdt-fr-found-line {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-top: 10px;
+}
+.cdt-fr-count-big {
+  font-family: var(--font-display);
+  font-size: 64px;
+  font-weight: 700;
+  line-height: 0.9;
+  color: var(--text-0);
+}
+.cdt-fr-found {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.cdt-fr-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.cdt-fr-tally-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 19px;
+  padding: 0 7px;
+  background: var(--surface-3);
+  border: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  /* §10.3a states no tracking for the chip; .1em matches the row's own mono register. */
+  letter-spacing: 0.1em;
+}
+.cdt-fr-tally-sigil {
+  color: var(--text-3);
+}
+.cdt-fr-tally-count {
+  color: var(--text-1);
+}
+
+/* §10.3a: mandatory at every coverage, never suppressed — a qualifier that changes what a
+   number means is decision-relevant and takes the 5.9:1 floor. */
+.cdt-fr-milestone {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
+}
+.cdt-fr-milestone-value {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-0);
+}
+.cdt-fr-milestone-key,
+.cdt-fr-milestone-sofar {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.2em;
+  color: var(--text-3);
+}
+
+.cdt-fr-grid-well {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 30px 24px;
+}
+.cdt-fr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  column-gap: 9px;
+  row-gap: 11px;
+}
+.cdt-fr-tile {
+  position: relative;
+  aspect-ratio: 2/3;
+  transform-origin: center;
+  background: var(--line-4);
+  animation: materialise 0.42s cubic-bezier(0.25, 0.85, 0.25, 1) both;
+}
+.cdt-fr-tile[data-merged='true'] {
+  opacity: 0;
+  transition: opacity 200ms;
+}
+.cdt-fr-tile-plate {
+  position: absolute;
+  inset: 1px;
+  overflow: hidden;
+  background: var(--surface-1);
+}
+/* §10.3a: unlit is absent-grey, never missing. An absent stripe reads *language not yet known*;
+   no stripe reads *no language*. The tick-row invariant, applied to a stripe. */
+.cdt-fr-tile-stripe {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 30%;
+  height: 4px;
+  background: var(--absent);
+}
+.cdt-fr-tile-scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px 5px 5px;
+  background: linear-gradient(transparent, color-mix(in srgb, var(--app-bg) 94%, transparent) 50%);
+}
+.cdt-fr-tile-name {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  /* §10.3a's tile column states no tracking; .03em is the name treatment in the same table row. */
+  letter-spacing: 0.03em;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cdt-fr-skip {
+  position: absolute;
+  right: 30px;
+  top: 32px;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 13px;
+  background: transparent;
+  border: 1px solid var(--line-5);
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.16s;
+}
+.cdt-fr-skip:hover {
+  border-color: var(--sig);
+}
+
+/* §10.3a: the counts on this line never appear in the 64px headline, which stays the project
+   count. Directories walked is a progress number for a denominator that does not exist. */
+.cdt-fr-scanline {
+  flex: none;
+  padding: 0 30px 10px;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.2em;
+  color: var(--text-3);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* ── beat 3: the reveal (§10.4a) ────────────────────────────────────────────────────────── */
+
+.cdt-fr-reveal-headline {
+  font-family: var(--font-display);
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: 0.01em;
+  margin-top: 11px;
+  color: var(--text-0);
+}
+.cdt-fr-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 11px;
+  margin-top: 26px;
+}
+.cdt-fr-panel {
+  padding: 15px 16px 16px;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-top: 2px solid var(--line-4);
+  animation: panelIn 0.5s cubic-bezier(0.2, 0.85, 0.2, 1) both;
+  transition:
+    background 0.16s,
+    border-color 0.16s;
+}
+.cdt-fr-panel:hover {
+  background: var(--surface-4);
+}
+.cdt-fr-panel--sig {
+  border-top-color: var(--sig);
+}
+.cdt-fr-panel[aria-expanded='true'] {
+  border-color: var(--sig-edge);
+}
+.cdt-fr-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+/* §10.4a: the key is the only thing naming the figure beneath it, and §8.7 bars --text-4 from
+   the sole rendering of a fact. */
+.cdt-fr-panel-key {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.2em;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+/* §10.4a: raised from the design's 7px ornament grey — it is the affordance criterion 23
+   rests on, so it takes the 5.9:1 decision floor. */
+.cdt-fr-panel-working {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.cdt-fr-panel[aria-expanded='true'] .cdt-fr-panel-working {
+  color: var(--sig);
+}
+.cdt-fr-panel-value {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  margin-top: 7px;
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cdt-fr-panel-value--name {
+  font-size: 22px;
+}
+.cdt-fr-panel-value--uncomputed {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+/* §10.4a: --sig, because coverage is the system speaking about its own number. */
+.cdt-fr-panel-coverage {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  margin-top: 6px;
+  color: var(--sig);
+}
+.cdt-fr-panel-caption {
+  font-size: 11.5px;
+  line-height: 1.45;
+  margin-top: 7px;
+  color: var(--text-3);
+  text-wrap: pretty;
+}
+.cdt-fr-evidence {
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
+  animation: panelIn 0.28s cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+.cdt-fr-evidence-label {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  letter-spacing: 0.2em;
+  color: var(--text-3);
+}
+.cdt-fr-evidence-body {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.7;
+  /* §10.4a states no tracking for the evidence body; it is running mono prose, so it takes the
+     register's floor rather than a label's spacing. */
+  letter-spacing: 0.02em;
+  margin-top: 6px;
+  color: var(--text-2);
+  text-wrap: pretty;
+  white-space: pre-line;
+}
+/* §10.4a: ornament — it repeats what the raised SHOW WORKING label now says on all six panels,
+   which is the one place this grey snaps *down*. */
+.cdt-fr-footer {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-4);
+  white-space: nowrap;
+}
+
+/* ── motion tiers (§11.6): a static equivalent at every tier ────────────────────────────── */
+
+.cdt-fr-view[data-effects-tier='reduced'] .cdt-fr-beam,
+.cdt-fr-view[data-effects-tier='off'] .cdt-fr-beam {
+  animation: none;
+  opacity: 0.55;
+}
+.cdt-fr-view[data-effects-tier='reduced'] .cdt-fr-tile,
+.cdt-fr-view[data-effects-tier='off'] .cdt-fr-tile {
+  animation: none;
+}
+.cdt-fr-view[data-effects-tier='reduced'] .cdt-fr-panel,
+.cdt-fr-view[data-effects-tier='off'] .cdt-fr-panel {
+  animation: none;
+}
+.cdt-fr-view[data-effects-tier='off'] {
+  animation: none;
+}
