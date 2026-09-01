@@ -3,6 +3,8 @@
 //! dispatcher below is a seam, not an owner — it answers `None` for anything it
 //! does not implement so a later plan can chain its own beside it.
 
+pub mod problems;
+
 use crate::index::Index;
 use crate::proto::dispatch::CommandFailure;
 use crate::protocol::ErrorCode;
@@ -33,6 +35,12 @@ pub fn is_project_error_kind(code: ErrorCode) -> bool {
 // R15: `parse_args` is plan 03's, in `crate::proto::dispatch`. This module does not
 // re-export it — each surface module imports it from there directly.
 
+/// Serialises a command's return value. Every arm of the dispatcher that answers a typed
+/// value goes through this one function.
+fn encode<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, CommandFailure> {
+    serde_json::to_value(value).map_err(|e| CommandFailure::internal(e.to_string()))
+}
+
 /// `None` means "not mine". A later plan chains its own dispatcher after this one.
 ///
 /// The arms are added by the task that writes each command's module, so this file
@@ -43,9 +51,10 @@ pub fn dispatch_surface_command(
     command: &str,
     args: serde_json::Value,
 ) -> Option<Result<serde_json::Value, CommandFailure>> {
-    // Later tasks add one arm each, beside this one.
-    let _ = (ctx, command, args);
-    None
+    match command {
+        "problems.list" => Some(problems::handle(ctx, args).and_then(|v| encode(&v))),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

@@ -142,7 +142,8 @@
         "projectId": "ProjectId?",
         "locationId": "LocationId?",
         "lastSeenAt": "Timestamp?",
-        "candidateProjectIds": "[ProjectId]"
+        "candidateProjectIds": "[ProjectId]",
+        "candidateNames": "[String]"
       }
     },
     "ProblemGroup": {

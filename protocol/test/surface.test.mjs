@@ -74,6 +74,16 @@ test('a problem item carries when its location was last observed', () => {
   assert.equal(schema.types.ProblemItem.fields.lastSeenAt, 'Timestamp?');
 });
 
+// §11.1's ambiguous row reads `Same history as <name> and <name>.` The wire carried ids and no
+// names, and no command maps an id to a name, so the sentence was unrenderable. The core holds
+// both and returns the first two names in the same order as the ids; the id array's length is
+// what the `and <n> more` tail counts, which is why both fields are needed and neither is a
+// substitute for the other.
+test('an ambiguous row carries the names it needs to render its sentence', () => {
+  assert.equal(schema.types.ProblemItem.fields.candidateNames, '[String]');
+  assert.equal(schema.types.ProblemItem.fields.candidateProjectIds, '[ProjectId]');
+});
+
 // §11.1: while a scan is in flight the problem clause is omitted, never zeroed — a scan that has
 // not finished has not yet found no problems.
 test('scan and problem counts are nullable so an unfinished run cannot report zero problems', () => {
