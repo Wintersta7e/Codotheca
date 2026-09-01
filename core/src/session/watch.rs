@@ -37,6 +37,31 @@ pub trait ActivitySource: Send + std::fmt::Debug {
     fn drain(&mut self) -> Vec<ActivityBatch>;
 }
 
+/// The watcher that is not there.
+///
+/// §9's activity watch is a nicety, not a requirement: without it a segment closes on its idle
+/// deadline instead of on the last edit. `NotifyActivitySource::new` can fail for ordinary
+/// environmental reasons — an exhausted inotify budget is the common one on Linux — and that
+/// must not stop the core from starting, so the composition root falls back to this and emits
+/// `core/degraded`.
+///
+/// **Not `#[cfg(test)]`**: the production binary is its only caller.
+#[derive(Debug, Default)]
+pub struct NullActivitySource;
+
+impl ActivitySource for NullActivitySource {
+    fn watch(&mut self, _session: SessionId, _root: &Path) -> Result<(), SessionError> {
+        Ok(())
+    }
+
+    fn unwatch(&mut self, _session: SessionId) {}
+
+    /// Always empty — never a fabricated edit. A segment closes on its idle deadline instead.
+    fn drain(&mut self) -> Vec<ActivityBatch> {
+        Vec::new()
+    }
+}
+
 /// Coalescing buffer shared by both implementations, so the cap and the grouping are written
 /// once and the fake cannot drift from the real watcher.
 ///

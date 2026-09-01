@@ -98,3 +98,114 @@ fn a_clean_open_with_no_stale_report_is_untroubled_by_its_absence() {
     let _index = open_index(dir.path(), NOW).expect("opens");
     assert!(!dir.path().join(STARTUP_FAILURE_FILE).exists());
 }
+
+// ---------------------------------------------------------------------------
+// Task 7: the composition, end to end. This is the whole point of the plan —
+// the real binary answering a real command over the real transport.
+// ---------------------------------------------------------------------------
+
+mod binary {
+    use codotheca_core::proto::frame::{read_frame, write_frame};
+    use std::io::Write as _;
+
+    fn spawn(dir: &std::path::Path) -> std::process::Child {
+        std::process::Command::new(env!("CARGO_BIN_EXE_codotheca-core"))
+            .arg(format!("--data-dir={}", dir.display()))
+            .arg("--epoch=7")
+            .arg(format!("--parent-pid={}", std::process::id()))
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("core spawns")
+    }
+
+    fn send(child: &mut std::process::Child, frame: &serde_json::Value) {
+        let body = serde_json::to_vec(frame).expect("frame");
+        let stdin = child.stdin.as_mut().expect("stdin");
+        write_frame(stdin, &body).expect("write");
+        stdin.flush().expect("flush");
+    }
+
+    fn recv(child: &mut std::process::Child) -> serde_json::Value {
+        let stdout = child.stdout.as_mut().expect("stdout");
+        let mut buf = Vec::new();
+        read_frame(stdout, &mut buf).expect("read");
+        serde_json::from_slice(&buf).expect("json")
+    }
+
+    /// Against `RefusingHandler` — what shipped before this plan — `targets.list` came back as an
+    /// error frame. A `response` here is the assembly working end to end.
+    #[test]
+    fn the_binary_answers_a_command_after_the_handshake() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut child = spawn(dir.path());
+
+        let hello = recv(&mut child);
+        assert_eq!(hello["t"], "hello", "{hello}");
+
+        send(
+            &mut child,
+            &serde_json::json!({"t": "request", "id": 1, "command": "app.hello_ack", "args": {}}),
+        );
+        let ack = recv(&mut child);
+        assert_eq!(ack["t"], "response", "{ack}");
+
+        send(
+            &mut child,
+            &serde_json::json!({"t": "request", "id": 2, "command": "targets.list", "args": {}}),
+        );
+        let reply = recv(&mut child);
+        assert_eq!(
+            reply["t"], "response",
+            "against RefusingHandler this is an error frame: {reply}"
+        );
+
+        send(
+            &mut child,
+            &serde_json::json!({"t": "request", "id": 3, "command": "app.shutdown", "args": {}}),
+        );
+        let status = child.wait().expect("exits");
+        assert!(
+            status.success(),
+            "and it exits rather than hanging on the transport join: {status:?}"
+        );
+    }
+
+    /// stdout carries protocol frames and nothing else. The startup sequence and the tick now sit
+    /// behind the loop, and every one of their diagnostics must still go to stderr.
+    #[test]
+    fn nothing_but_frames_reaches_stdout() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut child = spawn(dir.path());
+
+        // Written without reading, so every byte the core produces is still in the pipe for the
+        // scan below. Reading first would consume the frames this test exists to count.
+        send(
+            &mut child,
+            &serde_json::json!({"t": "request", "id": 1, "command": "app.hello_ack", "args": {}}),
+        );
+        send(
+            &mut child,
+            &serde_json::json!({"t": "request", "id": 2, "command": "app.shutdown", "args": {}}),
+        );
+
+        let out = child.wait_with_output().expect("exits");
+        assert!(out.status.success());
+
+        // Every byte of stdout parses as a length-prefixed frame carrying JSON. A stray
+        // `println!` anywhere in startup would desynchronise this immediately.
+        let mut cursor = std::io::Cursor::new(out.stdout);
+        let mut frames = 0_u32;
+        let mut buf = Vec::new();
+        while read_frame(&mut cursor, &mut buf).is_ok() {
+            serde_json::from_slice::<serde_json::Value>(&buf).expect("every frame is JSON");
+            frames += 1;
+            buf.clear();
+        }
+        assert!(
+            frames >= 3,
+            "hello, ack and the shutdown response: {frames}"
+        );
+    }
+}
