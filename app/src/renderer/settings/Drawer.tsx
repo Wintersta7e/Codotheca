@@ -30,7 +30,6 @@ import type {
   BridgeReply,
   IndexLocation,
   PickRootReply,
-  PickRootRequest,
   RevealTarget,
   ShortcutState,
 } from '../../shared/channels.js';
@@ -69,8 +68,16 @@ export function toSettingsPatch(patch: Partial<Settings>): SettingsPatch {
   };
 }
 
+/**
+ * The four shell capabilities the drawer needs, in the shapes `CodothecaBridge` already has —
+ * so the mount point passes `window.codotheca` and wraps nothing. `Drawer.test.tsx` assigns a
+ * bridge to this type, which is what stops the two drifting apart.
+ *
+ * `pickRoot` carries a flag, never a path: the renderer asks, the shell opens the dialog, and
+ * the chosen folder never round-trips through the sandbox (§2.4).
+ */
 export interface SettingsShell {
-  readonly pickRoot: (request: PickRootRequest) => Promise<PickRootReply>;
+  readonly pickRoot: (confirmLarge: boolean) => Promise<PickRootReply>;
   readonly reveal: (target: RevealTarget) => Promise<unknown>;
   readonly indexLocation: () => Promise<unknown>;
   readonly onShortcutState: (cb: (state: ShortcutState) => void) => void;
@@ -192,7 +199,8 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null 
               call('roots.setDescend', { id, descendIntoRepos }).then(readRoots, () => undefined);
             }}
             onAddFolder={() => {
-              shell.pickRoot({ confirmLarge: false }).then(
+              // `false`: nothing here has shown the user a large-directory estimate to accept.
+              shell.pickRoot(false).then(
                 (reply) => {
                   if (reply.kind === 'added') readRoots();
                 },
