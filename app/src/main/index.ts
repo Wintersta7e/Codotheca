@@ -8,7 +8,12 @@
 import { BrowserWindow, app, dialog, ipcMain, protocol, session } from 'electron';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { type CommandName, PROTOCOL_VERSION, type Topic } from '../generated/protocol';
+import {
+  type CommandName,
+  PROTOCOL_VERSION,
+  type RootAdd,
+  type Topic,
+} from '../generated/protocol';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
 import { EFFECTS_TIER_FLAG } from '../shared/effectsTier';
 import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
@@ -16,6 +21,7 @@ import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
 import { registerRelocateDialog } from './dialogs/relocate';
+import { registerRootPicker } from './rootPicker';
 import { CoreClient } from './core/client';
 import { FORCE_OFFERED_AFTER_MS, LOCK_WAIT_POLL_MS, waitForCoreLock } from './core/instanceLock';
 import { openRollingLog } from './core/log';
@@ -191,6 +197,22 @@ async function main(): Promise<void> {
       return result.canceled || result.filePaths[0] === undefined ? null : result.filePaths[0];
     },
     request,
+  });
+
+  // §2.4 again, for the other privileged path: `roots.add` carries `pathBytes`, so the folder
+  // comes from this process's dialog and never from the renderer. R11 makes this the only
+  // registration on the channel.
+  registerRootPicker({
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
+    },
+    showOpenDialog: () =>
+      dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        title: 'Choose a folder to look in',
+        buttonLabel: 'Look here',
+      }),
+    addRoot: (args) => request('roots.add', args) as Promise<RootAdd>,
   });
 
   const lockWait = new AbortController();

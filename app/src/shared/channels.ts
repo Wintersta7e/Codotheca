@@ -2,7 +2,7 @@
  * The IPC surface between the shell and the renderer. Imported by both ends, so a channel
  * name cannot drift between them.
  */
-import type { ErrorCode, Outcome, Topic } from '../generated/protocol';
+import type { ErrorCode, Outcome, RootAdd, Topic } from '../generated/protocol';
 
 export const IPC_REQUEST = 'codotheca:request';
 export const IPC_CORE_STATUS = 'codotheca:core-status';
@@ -62,3 +62,23 @@ export type RelocateReply =
   | { kind: 'relocated'; location: unknown }
   | { kind: 'cancelled' }
   | { kind: 'failed'; error: BridgeError };
+
+/**
+ * The native folder dialog. §2.4: the renderer may never originate a filesystem path, and
+ * `roots.add` is privileged, so a folder can only reach the core through a dialog the shell
+ * owns. This is that dialog.
+ *
+ * R11: declared here once, and `registerRootPicker` is the sole `ipcMain.handle` on it —
+ * Electron throws at a second registration, so a duplicate is a startup crash. Every other
+ * surface that needs a folder imports this constant and invokes the channel.
+ */
+export const IPC_PICK_ROOT = 'codotheca:pick-root';
+
+export interface PickRootRequest {
+  readonly confirmLarge: boolean;
+}
+
+export type PickRootReply =
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'added'; readonly add: RootAdd }
+  | { readonly kind: 'failed'; readonly error: BridgeError };
