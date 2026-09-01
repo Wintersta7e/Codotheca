@@ -58,12 +58,14 @@ test('no duration and no curve outside the stated set', () => {
   }
 });
 
-// §11.6: no animation declares `infinite`, except the first-run scan beam, which is bounded by
-// the scan it reports.
-test('the scan beam is the only infinite animation', () => {
-  const infinite = [...CSS.matchAll(/animation:[^;]*infinite/g)].map((m) => m[0]);
-  expect(infinite).toHaveLength(1);
-  expect(infinite[0]).toContain('frBeam');
+// §11.6: no animation declares `infinite` except the two that report work in progress and stop
+// when it stops — §10.3a's scan beam and §10.5a's rescan line. Both loop because the work is
+// indeterminate (a generation walk has no denominator until it ends), and both are bounded by
+// the pass they report: the beam by the screen it lives on, the line by `RescanLine` returning
+// null the moment the walk ends, which is what keeps idle at zero scheduled frames.
+test('only the two work-in-progress indicators loop', () => {
+  const infinite = [...CSS.matchAll(/animation:\s*([\w-]+)[^;]*infinite/g)].map((m) => m[1]);
+  expect([...infinite].sort()).toEqual(['frBeam', 'rescanTravel']);
 });
 
 // R35(b): viewIn, panelIn and turnIn belong to plan 12's styles/base.css. A copy here would
@@ -72,7 +74,9 @@ test('the scan beam is the only infinite animation', () => {
 // declarations moved.
 test('the shared entry keyframes are used here and declared elsewhere', () => {
   const declared = [...CSS.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]).sort();
-  expect(declared).toEqual(['frBeam', 'materialise']);
+  // `rescanTravel` is §10.5a's and is used by nothing else, so it stays local like the other
+  // two. It is not in `sharedKeyframes` and must never be added there.
+  expect(declared).toEqual(['frBeam', 'materialise', 'rescanTravel']);
   expect(CSS).toContain('animation: viewIn');
   expect(CSS).toContain('animation: panelIn');
 });
@@ -83,12 +87,14 @@ test('the beam takes no pointer events', () => {
   expect(CSS).toMatch(/\.cdt-fr-beam\b[^}]*pointer-events:\s*none/s);
 });
 
-// §8.7: --text-4 and --text-5 are ornament only. §10 assigns --text-4 exactly three slots — an
-// unticked root's path (§10.1b), the HITS/PROJECTS unit beneath the count (§10.1b) and the
-// reveal footer (§10.4a), which is the one place a grey snaps *down* because the raised
-// SHOW WORKING label now says the same thing on all six panels. --text-5 gets none.
+// §8.7: --text-4 and --text-5 are ornament only. §10 and §1.4 assign --text-4 exactly four
+// slots — an unticked root's path (§10.1b), the HITS/PROJECTS unit beneath the count (§10.1b),
+// the reveal footer (§10.4a), which is the one place a grey snaps *down* because the raised
+// SHOW WORKING label now says the same thing on all six panels, and an unticked identity
+// address (§1.4 states `#6c7885 off` verbatim, the same argument as the unticked root path:
+// the row names something nothing will count). --text-5 gets none.
 test('the two ornament greys appear only where §10 assigns them', () => {
-  const ORNAMENT_SLOTS = /cdt-fr-path|cdt-fr-count-unit|cdt-fr-footer/;
+  const ORNAMENT_SLOTS = /cdt-fr-path|cdt-fr-count-unit|cdt-fr-footer|cdt-fr-identity-email/;
   let seen = 0;
   for (const [, selector] of CSS.matchAll(/([^}@/]*)\{[^}]*--text-4[^}]*\}/g)) {
     seen += 1;

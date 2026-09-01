@@ -667,6 +667,234 @@
   white-space: nowrap;
 }
 
+/* ── beat 4: the turn (§10.4a) ──────────────────────────────────────────────────────────── */
+
+/* One line, one button, one way out. The 26px rhythm is between those three blocks, which is
+   why the qualifier sits inside the lede rather than beside it. */
+.cdt-fr-view--turn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  padding: 40px;
+  animation: viewIn 0.34s both;
+}
+.cdt-fr-turn-lede {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 620px;
+}
+/* `turnIn` carries the tracking itself, .4em → .02em, so this rule states none: a static value
+   here would fight the keyframe's final one. */
+.cdt-fr-turn-line {
+  font-family: var(--font-display);
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-0);
+  text-align: center;
+  text-wrap: pretty;
+  animation: turnIn 0.7s cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+/* §10.4a: the same 620px measure as the line, because it qualifies that line and nothing else.
+   --text-3 and not an ornament grey — it is the honesty clause on the most prominent
+   unverifiable claim in the product, so it decides whether the line above it is believed. */
+.cdt-fr-turn-qualifier {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  text-align: center;
+  animation: panelIn 0.5s 0.35s cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+.cdt-fr-turn-show-me {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 34px;
+  border: 0;
+  background: var(--sig);
+  color: var(--sig-ink);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+  cursor: pointer;
+  animation: panelIn 0.5s 0.5s cubic-bezier(0.2, 0.85, 0.2, 1) both;
+  transition:
+    filter 0.14s,
+    transform 0.16s;
+}
+.cdt-fr-turn-show-me:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+/* §10.4a raises this from the prototype's ornament grey for the same reason as SHOW WORKING:
+   it is one of exactly two controls on the screen. */
+.cdt-fr-turn-not-now {
+  border: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+  cursor: pointer;
+  animation: panelIn 0.5s 0.7s both;
+  transition: color 0.14s;
+}
+.cdt-fr-turn-not-now:hover {
+  color: var(--text-2);
+}
+
+/* ── §10.5a: the rescan line ────────────────────────────────────────────────────────────── */
+
+/* At `reduced` and `off` this rule is the whole line: a static 2px --sig. The tier is decided
+   in `RescanLine.tsx`, because this element is full-bleed under the top bar and has no
+   `.cdt-fr-view` ancestor that a tier selector here could reach it through. */
+.cdt-fr-rescan-line {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 2px;
+  padding: 0;
+  border: 0;
+  background: var(--sig);
+  cursor: pointer;
+}
+/* A 2px painted line with a 16px hit target; the paint does not grow. */
+.cdt-fr-rescan-line::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  left: 0;
+  top: -7px;
+  bottom: -7px;
+}
+/* §10.5a: the section strip-light geometry with its easing removed — a one-shot curve reads as
+   a stutter when looped. Indeterminate, because a generation walk has no denominator until it
+   ends and a bar that retreats poisons every figure beside it. */
+.cdt-fr-rescan-line--travelling {
+  background-color: var(--line-2);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0 8%,
+    var(--sig) 26%,
+    #ffffff 44%,
+    var(--sig) 62%,
+    transparent 92%
+  );
+  background-repeat: no-repeat;
+  background-size: 190% 100%;
+  animation: rescanTravel 1.15s linear infinite;
+}
+@keyframes rescanTravel {
+  from {
+    background-position: -60% 0;
+  }
+  to {
+    background-position: 160% 0;
+  }
+}
+
+/* ── §1.4: the identity card, inside §8.0's box ─────────────────────────────────────────── */
+
+.cdt-fr-identity-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 11px;
+  padding: 0;
+  list-style: none;
+}
+.cdt-fr-identity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
+.cdt-fr-identity-row[data-on='true'] {
+  border-color: var(--sig-edge);
+}
+.cdt-fr-identity-tick {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-5);
+}
+.cdt-fr-identity-tick:checked {
+  background: var(--sig);
+  box-shadow: inset 0 0 0 1px var(--sig);
+}
+.cdt-fr-identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+/* §10.1b's path treatment: an address is a machine string, and a wrapped one reads as two
+   addresses. §1.4's ink has no token; --text-1's stated use is body and control labels. The
+   tracking is the mono register's floor, as on the root row's path at the same size. */
+.cdt-fr-identity-email {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* An unticked address drops to the ornament grey — it names a row nothing will count. */
+.cdt-fr-identity-email[data-on='false'] {
+  color: var(--text-4);
+}
+/* §1.4 raises this from the prototype's grey for the reason §10.1b raised the root row's
+   provenance slot, and it is the identical correction: it decides a tick. */
+.cdt-fr-identity-source {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+/* §1.4: the slot §10.4a gave coverage, for the same reason — the system speaking about its own
+   numbers, not a caption about a project. */
+.cdt-fr-identity-effect {
+  margin-top: 9px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  line-height: 1.5;
+  color: var(--sig);
+}
+.cdt-fr-identity-footnote {
+  margin-top: 9px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+
+/* ── §11.3a: the residency ask ──────────────────────────────────────────────────────────── */
+
+/* Measured, not estimated. The figures are the whole argument for the answer, so they take the
+   decision floor rather than an ornament grey. */
+.cdt-fr-residency-figures {
+  margin-top: 9px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
 /* ── motion tiers (§11.6): a static equivalent at every tier ────────────────────────────── */
 
 .cdt-fr-view[data-effects-tier='reduced'] .cdt-fr-beam,
@@ -683,5 +911,20 @@
   animation: none;
 }
 .cdt-fr-view[data-effects-tier='off'] {
+  animation: none;
+}
+/* §10.4a's three entry animations. The line's `turnIn` also carries the tracking, so a clamped
+   turn needs its final letter-spacing stated or the line ships at the keyframe's 0% .4em. */
+.cdt-fr-view--turn[data-effects-tier='reduced'] .cdt-fr-turn-line,
+.cdt-fr-view--turn[data-effects-tier='off'] .cdt-fr-turn-line {
+  animation: none;
+  letter-spacing: 0.02em;
+}
+.cdt-fr-view--turn[data-effects-tier='reduced'] .cdt-fr-turn-qualifier,
+.cdt-fr-view--turn[data-effects-tier='off'] .cdt-fr-turn-qualifier,
+.cdt-fr-view--turn[data-effects-tier='reduced'] .cdt-fr-turn-show-me,
+.cdt-fr-view--turn[data-effects-tier='off'] .cdt-fr-turn-show-me,
+.cdt-fr-view--turn[data-effects-tier='reduced'] .cdt-fr-turn-not-now,
+.cdt-fr-view--turn[data-effects-tier='off'] .cdt-fr-turn-not-now {
   animation: none;
 }

@@ -1,5 +1,8 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
+// `?raw` rather than node:fs: the renderer project carries no Node types, and under jsdom
+// `import.meta.url` is not a file URL.
+import CSS from './firstRun.css?raw';
 import {
   RESCAN_ARM_AFTER_MS,
   RESCAN_LINE_LABEL,
@@ -94,4 +97,63 @@ test('the line states no percentage and reports no progress', () => {
 test('the travel duration is the looped one, not the one-shot strip-light', () => {
   expect(RESCAN_TRAVEL_MS).toBe(1150);
   expect(RESCAN_ARM_AFTER_MS).toBe(400);
+});
+
+// §10.5a fixes the loop at 1.15s linear and the travel from -60% to 160%. A stylesheet is the
+// one place those numbers drift silently, because no type checker reads it — and the constant
+// above and the keyframe below are the same value stated twice, so one test reads both.
+//
+// Nothing here compares a CSS literal as a string beyond these positions: the Write hook
+// reformats `.css` on write and `fmt:check` does not cover it, so durations are compared as
+// milliseconds rather than as `1.15s`.
+test('the stylesheet carries the travel geometry §10.5a fixes', () => {
+  // A gate that passes over an empty read is a failing gate that looks green.
+  expect(CSS.length).toBeGreaterThan(2_000);
+
+  const travel = /animation:\s*rescanTravel\s+([\d.]+)(m?s)\s+linear\s+infinite/.exec(CSS);
+  expect(travel).not.toBeNull();
+  const ms = Number(travel?.[1]) * (travel?.[2] === 's' ? 1000 : 1);
+  expect(ms).toBe(RESCAN_TRAVEL_MS);
+
+  expect(CSS).toContain('background-position: -60% 0');
+  expect(CSS).toContain('background-position: 160% 0');
+  expect(CSS).toContain('background-size: 190% 100%');
+});
+
+// §11.6: a static equivalent at every tier. The turn's line animates its own tracking, so a
+// clamped turn that only dropped the animation would ship at the keyframe's 0% — .4em, which
+// is unreadable at 38px. Resolved on a real element, never matched as stylesheet text.
+test('a clamped turn keeps the tracking its keyframe would have left it', () => {
+  expect(CSS.length).toBeGreaterThan(2_000);
+  const style = document.createElement('style');
+  style.textContent = CSS;
+  document.head.append(style);
+
+  const view = document.createElement('div');
+  view.className = 'cdt-fr-view cdt-fr-view--turn';
+  const line = document.createElement('p');
+  line.className = 'cdt-fr-turn-line';
+  view.append(line);
+  document.body.append(view);
+
+  // The `full` control first, so the two clamped assertions cannot pass over a sheet jsdom
+  // never applied.
+  view.setAttribute('data-effects-tier', 'full');
+  expect(getComputedStyle(line).animation).toContain('turnIn');
+
+  // Resolved in px, because jsdom turns `.02em` at 38px into `0.76px`. The keyframe's own 0%
+  // is `.4em` — 15.2px — so a clamp that dropped the animation without restating the tracking
+  // would land twenty times wide, and comparing the declaration as text would not notice.
+  const size = Number.parseFloat(getComputedStyle(line).fontSize);
+  expect(size).toBe(38);
+  for (const tier of ['reduced', 'off']) {
+    view.setAttribute('data-effects-tier', tier);
+    expect(getComputedStyle(line).animation).not.toContain('turnIn');
+    const tracking = Number.parseFloat(getComputedStyle(line).letterSpacing);
+    expect(tracking).toBeCloseTo(0.02 * size, 5);
+    expect(tracking).not.toBeCloseTo(0.4 * size, 5);
+  }
+
+  style.remove();
+  view.remove();
 });

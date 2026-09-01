@@ -1,5 +1,5 @@
 {
-  "$comment": "The only literals the renderer stylesheet may carry beyond tokens.css. Colour entries are the achromatic layers §7.7's two band tables state verbatim; each names its owning row. Durations and timing functions are §11.6's two tables plus the single-effect values stated at the surface that owns them. sharedKeyframes is R35(b)'s list: each is declared in styles/base.css and in no other stylesheet, because a duplicate @keyframes silently overrides and is invisible to the tier clamp in motion.css.",
+  "$comment": "The only literals the renderer stylesheet may carry beyond tokens.css. Colour entries are the achromatic layers §7.7's two band tables state verbatim, each naming its owning row, plus #ffffff — the centre stop of §10.5a's rescan band, which is stated as pure white there and is the band's brightest point rather than any surface's ink. Durations and timing functions are §11.6's two tables plus the single-effect values stated at the surface that owns them. sharedKeyframes is R35(b)'s list: each is declared in styles/base.css and in no other stylesheet, because a duplicate @keyframes silently overrides and is invisible to the tier clamp in motion.css.",
   "exemptColourLiterals": [
     "rgb(255 255 255 / .13)",
     "rgb(0 0 0 / .85)",
@@ -24,11 +24,12 @@
     "rgb(255 255 255 / .08)",
     "rgb(6 9 11 / .68)",
     "transparent",
-    "currentColor"
+    "currentColor",
+    "#ffffff"
   ],
   "durationsMs": [
-    90, 140, 160, 180, 200, 220, 240, 260, 280, 300, 400, 420, 500, 560, 620, 700, 720, 1150, 2600,
-    30, 60
+    90, 140, 160, 180, 200, 220, 240, 260, 280, 300, 340, 350, 400, 420, 500, 560, 620, 700, 720,
+    1150, 2600, 30, 60
   ],
   "timingFunctions": [
     "cubic-bezier(.25,.8,.3,1)",
