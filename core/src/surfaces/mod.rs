@@ -4,6 +4,7 @@
 //! does not implement so a later plan can chain its own beside it.
 
 pub mod problems;
+pub mod settings;
 
 use crate::index::Index;
 use crate::proto::dispatch::CommandFailure;
@@ -53,6 +54,8 @@ pub fn dispatch_surface_command(
 ) -> Option<Result<serde_json::Value, CommandFailure>> {
     match command {
         "problems.list" => Some(problems::handle(ctx, args).and_then(|v| encode(&v))),
+        "settings.get" => Some(settings::handle_get(ctx).and_then(|v| encode(&v))),
+        "settings.set" => Some(settings::handle_set(ctx, args).and_then(|v| encode(&v))),
         _ => None,
     }
 }
