@@ -1,4 +1,5 @@
 import type { ProjectId } from '../../generated/protocol.js';
+import { isNewArrival } from '../firstrun/newArrivals.js';
 import type { IgnoredTerm, QueryAst, QueryTerm } from '../../shared/query/ast.js';
 import { renderTerm } from '../../shared/query/format.js';
 import type { ProjectionCapabilities, ShelfRow } from './row.js';
@@ -117,8 +118,11 @@ export function termTruth(row: ShelfRow, term: QueryTerm, ctx: QueryContext): Tr
         case 'wsl':
           return row.locationKind === null ? null : row.locationKind === 'wsl';
         case 'new': {
+          // R18: one predicate. Returning `null` rather than `false` for an unstamped install
+          // is this engine's own distinction — §8.3 drops a term it cannot answer instead of
+          // rendering an empty grid — but what *counts* as new is not restated here.
           if (ctx.firstRunCompletedAt === null) return null;
-          return row.acknowledgedAt === null && row.createdAt > ctx.firstRunCompletedAt;
+          return isNewArrival(row, ctx.firstRunCompletedAt);
         }
       }
     case 'has':

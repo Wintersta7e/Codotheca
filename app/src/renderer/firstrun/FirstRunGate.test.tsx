@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { FirstRunGate, gateDecision } from './FirstRunGate';
+import { TurnScreen } from './TurnScreen';
 import type { FirstRunGateDeps } from './FirstRunGate';
 import { SETTLE_HOLD_MS } from './phase';
 import { SKIP_AHEAD_LABEL } from '../a11y/names';
@@ -22,6 +23,8 @@ import type {
  * bodies these deps actually have — which would have been "fixed" by dropping the assertions.
  */
 interface Harness {
+  /** Every query `SHOW ME` handed up, in order. Empty until the turn's button is pressed. */
+  readonly shownQueries: string[];
   readonly deps: FirstRunGateDeps & {
     readonly suggestRoots: Mock<() => Promise<readonly RootSuggestion[]>>;
     readonly commitSuggestion: Mock<(pathDisplay: string) => Promise<RootAdd>>;
@@ -78,6 +81,7 @@ const noRefusal = { root: null, refusedBecause: null, estimatedDirs: null };
 
 function harness(over: Partial<Parameters<typeof FirstRunGate>[0]> = {}): Harness {
   let emit: (event: ScanFeedEvent) => void = () => undefined;
+  const shownQueries: string[] = [];
   const released = vi.fn();
   const deps = {
     nowMs: () => Date.now(),
@@ -101,16 +105,21 @@ function harness(over: Partial<Parameters<typeof FirstRunGate>[0]> = {}): Harnes
       emit = cb;
       return released;
     },
-    // Plan 16c owns TurnScreen; the gate takes the beat rather than duplicating it.
+    // GAP-16b-4, closed: the gate takes the beat and plan 16c's `TurnScreen` is what fills it.
+    // The seam is exercised against the production component rather than a stand-in, so a
+    // handler shape that only a fake satisfies cannot pass here. The query is closed over at
+    // this call site because the gate has nowhere to put it — the shelf is what consumes it.
     renderTurn: (h: { onShowMe: () => void; onNotNow: () => void }) => (
-      <div data-testid="turn">
-        <button type="button" onClick={h.onShowMe}>
-          {copy.SHOW_ME_LABEL}
-        </button>
-        <button type="button" onClick={h.onNotNow}>
-          {copy.NOT_NOW_LABEL}
-        </button>
-      </div>
+      <TurnScreen
+        counts={{ unpushed: 4, dirty: 0, interrupted: 0, total: 212 }}
+        worktreeObservedAt={null}
+        tier="full"
+        onShowMe={(query) => {
+          shownQueries.push(query);
+          h.onShowMe();
+        }}
+        onNotNow={h.onNotNow}
+      />
     ),
     rootLine: `/somewhere/dev · 1 ${copy.ROOTS_SUFFIX}`,
   };
@@ -120,6 +129,7 @@ function harness(over: Partial<Parameters<typeof FirstRunGate>[0]> = {}): Harnes
     </FirstRunGate>,
   );
   return {
+    shownQueries,
     deps,
     emit: (e: ScanFeedEvent) => {
       act(() => {
@@ -283,7 +293,7 @@ test('an empty library skips the reveal and the turn entirely', async () => {
     expect(screen.getByTestId('shelf')).toBeTruthy();
   });
   expect(screen.queryByText(copy.EVIDENCE_FOOTER)).toBeNull();
-  expect(screen.queryByTestId('turn')).toBeNull();
+  expect(screen.queryByRole('button', { name: copy.SHOW_ME_LABEL })).toBeNull();
 });
 
 // §10.3a: a milestone renders one reveal figure computed at that instant, from the same call as
@@ -359,11 +369,35 @@ test('AC-12 first run asks nothing, shows no percentage, and states its coverage
   fireEvent.click(screen.getByRole('button', { name: SKIP_AHEAD_LABEL }));
   await screen.findByText(copy.EVIDENCE_FOOTER);
   sweep();
-
-  expect(seen).toHaveLength(3);
-  for (const text of seen) expect(text).not.toMatch(/%/);
-  // Five of six figures over a partial index, each saying so.
+  // Five of six figures over a partial index, each saying so. Read before the reveal is left.
   expect(screen.getAllByTestId('fr-panel-coverage')).toHaveLength(5);
+
+  // The fourth beat. Report 16b left the sweep at three because the turn was 16c's and the
+  // stand-in carried no copy; it carries the production screen now, so the criterion is
+  // checked over the whole flow rather than over the three quarters of it that were drawn.
+  fireEvent.click(screen.getByRole('button', { name: copy.GO_ON_LABEL }));
+  await screen.findByRole('button', { name: copy.SHOW_ME_LABEL });
+  sweep();
+  // §10.4a: exactly two controls on the turn, and the identity and residency questions are
+  // both on the shelf behind it — a third here would silently undo §1.4 and §11.3a.
+  expect(screen.getAllByRole('button')).toHaveLength(2);
+
+  expect(seen).toHaveLength(4);
+  for (const text of seen) expect(text).not.toMatch(/%/);
+});
+
+// The turn's `SHOW ME` lands the shelf on the rung its own line was drawn from; the gate has
+// nowhere to put a query, so the wiring site is what carries it and this pins that it does.
+test('the query the turn computed reaches the host, and NOT NOW carries none', async () => {
+  const { shownQueries } = harness();
+  await screen.findByText(copy.ROOTS_HEADLINE);
+  dig();
+  fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
+  fireEvent.click(await screen.findByRole('button', { name: copy.GO_ON_LABEL }));
+  expect(shownQueries).toEqual([]);
+  fireEvent.click(await screen.findByRole('button', { name: copy.SHOW_ME_LABEL }));
+  expect(shownQueries).toEqual(['is:unpushed']);
+  expect(screen.getByTestId('shelf')).toBeTruthy();
 });
 
 // Criterion 23, reveal half: every reveal figure carries its coverage; shallow repositories are
