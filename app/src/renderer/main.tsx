@@ -5,6 +5,9 @@ import './styles/base.css';
 import './styles/card.css';
 import './styles/projectPage.css';
 import './shelf/shelf.css';
+// §11.2a: a first-run beat unmounts the shelf, so these rules never coexist with the grid — but
+// the sheet is loaded with the rest, because only `main.tsx` mounts CSS in this renderer.
+import './firstrun/firstRun.css';
 // motion.css stays last: it clamps by effects tier and has to win over every sheet above it.
 import './styles/motion.css';
 import { createRoot } from 'react-dom/client';
