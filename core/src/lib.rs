@@ -20,6 +20,7 @@ pub mod commands;
 pub mod corpus;
 pub mod derive;
 pub mod detail;
+pub mod firstrun;
 pub mod freshness;
 pub mod git;
 pub mod identity;
