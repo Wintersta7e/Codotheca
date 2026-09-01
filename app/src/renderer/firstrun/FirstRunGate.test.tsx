@@ -7,6 +7,7 @@ import { SETTLE_HOLD_MS } from './phase';
 import { SKIP_AHEAD_LABEL } from '../a11y/names';
 import * as copy from './copy';
 import type { Mock } from 'vitest';
+import type { PickRootReply } from '../../shared/channels';
 import type { ScanFeedEvent } from './scanFeed';
 import type {
   ProjectId,
@@ -28,7 +29,7 @@ interface Harness {
   readonly deps: FirstRunGateDeps & {
     readonly suggestRoots: Mock<() => Promise<readonly RootSuggestion[]>>;
     readonly commitSuggestion: Mock<(pathDisplay: string) => Promise<RootAdd>>;
-    readonly pickRoot: Mock<(confirmLarge: boolean) => Promise<RootAdd | null>>;
+    readonly pickRoot: Mock<(confirmLarge: boolean) => Promise<PickRootReply>>;
     readonly startScan: Mock<() => Promise<void>>;
     readonly loadReveal: Mock<() => Promise<Reveal>>;
   };
@@ -87,7 +88,7 @@ function harness(over: Partial<Parameters<typeof FirstRunGate>[0]> = {}): Harnes
     nowMs: () => Date.now(),
     suggestRoots: vi.fn(() => Promise.resolve([suggestion])),
     commitSuggestion: vi.fn(() => Promise.resolve(noRefusal)),
-    pickRoot: vi.fn(() => Promise.resolve(null)),
+    pickRoot: vi.fn((): Promise<PickRootReply> => Promise.resolve({ kind: 'cancelled' })),
     startScan: vi.fn(() => Promise.resolve(undefined)),
     loadReveal: vi.fn(() => Promise.resolve(reveal)),
     revealDeps: {
@@ -223,6 +224,47 @@ test('withholding consent commits nothing and starts nothing', async () => {
   expect(deps.commitSuggestion).not.toHaveBeenCalled();
   expect(deps.startScan).not.toHaveBeenCalled();
   expect(screen.getByText(copy.DIG_INERT_NOTE)).toBeTruthy();
+});
+
+// §2.4 and §10.1b: the dialog is the only way a folder reaches the core, and its three replies
+// are three different events. A `failed` reply drawn as a row would put a folder on the list the
+// user never picked and the core never accepted — which is what collapsing the reply down to
+// `RootAdd | null` would have allowed.
+test('only an accepted pick becomes a row; cancelling and failing draw nothing', async () => {
+  const { deps } = harness();
+  await screen.findByText(copy.ROOTS_HEADLINE);
+  const rowCount = (): number => screen.getAllByTestId('fr-root-row').length;
+  expect(rowCount()).toBe(1);
+
+  fireEvent.click(screen.getByRole('button', { name: copy.ADD_A_FOLDER_LABEL }));
+  await waitFor(() => {
+    expect(deps.pickRoot).toHaveBeenCalledWith(false);
+  });
+  expect(rowCount()).toBe(1);
+
+  deps.pickRoot.mockResolvedValue({
+    kind: 'failed',
+    // R31: the code is the schema's, not one invented here. `outcome: null` is "definitely did
+    // not take effect", which is what a dialog that never opened is.
+    error: { code: 'PERMISSION_DENIED', message: 'dialog failed', outcome: null, retryable: true },
+  });
+  fireEvent.click(screen.getByRole('button', { name: copy.ADD_A_FOLDER_LABEL }));
+  await waitFor(() => {
+    expect(deps.pickRoot).toHaveBeenCalledTimes(2);
+  });
+  expect(rowCount()).toBe(1);
+  // The message never reaches the DOM raw — `CoreCallError`'s rule, applied to a shell reply.
+  expect(document.body.textContent).not.toContain('dialog failed');
+
+  deps.pickRoot.mockResolvedValue({
+    kind: 'added',
+    add: { root: null, refusedBecause: 'filesystem_root', estimatedDirs: null },
+  });
+  fireEvent.click(screen.getByRole('button', { name: copy.ADD_A_FOLDER_LABEL }));
+  await waitFor(() => {
+    expect(rowCount()).toBe(2);
+  });
+  expect(screen.getByText('A DRIVE ROOT IS NOT A PROJECT FOLDER')).toBeTruthy();
 });
 
 // §10.3: batches on a fixed ~600 ms cadence, never one per discovery.
