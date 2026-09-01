@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectRow } from '../../generated/protocol.js';
 import type { QueryTerm } from '../../shared/query/ast.js';
 import { parseQuery } from '../../shared/query/parse.js';
+import { isNewArrival } from '../firstrun/newArrivals.js';
 import type { ShelfRow } from './row.js';
 import { toShelfRow } from './row.js';
 import type { QueryContext } from './evaluate.js';
@@ -119,6 +120,21 @@ describe('termTruth is three-valued', () => {
     expect(
       termTruth(base(2, { createdAt: NOW - 2 * DAY, acknowledgedAt: NOW }), only('is:new'), ctx),
     ).toBe(false);
+  });
+  // R18 named two copies of the NEW predicate; this file carried a third. The flag now routes
+  // through `isNewArrival`, so the chip on a card, the count in the arrivals row and the query
+  // result cannot disagree about what "new" means — this reads the other side to prove it.
+  it('answers is:new from the one predicate, not a second reading of the two columns', () => {
+    const stamp = ctx.firstRunCompletedAt ?? 0;
+    const rows = [
+      base(1, { createdAt: NOW - 2 * DAY }),
+      base(2, { createdAt: NOW - 2 * DAY, acknowledgedAt: NOW }),
+      base(3, { createdAt: stamp }),
+      base(4, { createdAt: stamp - 1 }),
+    ];
+    for (const row of rows) {
+      expect(termTruth(row, only('is:new'), ctx)).toBe(isNewArrival(row, stamp));
+    }
   });
   it('matches a bare word against name, owner, description, path and the last subject', () => {
     const row = base(1, { name: 'Codo', primaryLocation: { id: 3, pathDisplay: '/w/codo' } });
