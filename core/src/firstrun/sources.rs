@@ -206,6 +206,153 @@ fn attribute<'a>(attrs: &'a str, name: &str) -> Option<&'a str> {
     tail.get(..end)
 }
 
+/// Where the three files live on this machine. Injected rather than read, so a test never
+/// touches a real home directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceEnv {
+    pub home: PathBuf,
+    /// Windows roaming application data, when this is Windows.
+    pub app_data: Option<PathBuf>,
+    /// `XDG_CONFIG_HOME`, or `~/.config` where that is unset.
+    pub xdg_config: Option<PathBuf>,
+}
+
+/// Editor product directories under application data or `~/.config`. Names only — the whole
+/// point of §10.1a is that this list is short enough to print.
+const WORKSPACE_STORE_DIRS: [&str; 3] = ["Code", "Code - Insiders", "VSCodium"];
+
+/// The recent-projects XML lives under a per-product, per-version directory. Only one level of
+/// enumeration is performed and only under this parent.
+const PROJECT_STORE_PARENT: &str = "JetBrains";
+
+/// Every fixed file or bounded file pattern this subsystem may open, in a fixed order. Nothing
+/// outside this list is read.
+#[must_use]
+pub fn candidate_files(env: &SourceEnv) -> Vec<(SourceKind, PathBuf)> {
+    let mut out = Vec::new();
+    out.push((SourceKind::GitConfig, env.home.join(".gitconfig")));
+    if let Some(config) = &env.xdg_config {
+        out.push((SourceKind::GitConfig, config.join("git").join("config")));
+    }
+
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(app_data) = &env.app_data {
+        roots.push(app_data.clone());
+    }
+    if let Some(config) = &env.xdg_config {
+        roots.push(config.clone());
+    }
+
+    for root in &roots {
+        for product in WORKSPACE_STORE_DIRS {
+            let base = root.join(product).join("User").join("globalStorage");
+            out.push((SourceKind::VsCode, base.join("storage.json")));
+            out.push((SourceKind::VsCode, base.join("state.vscdb")));
+        }
+        out.push((
+            SourceKind::JetBrains,
+            root.join(PROJECT_STORE_PARENT)
+                .join("*")
+                .join("options")
+                .join("recentProjects.xml"),
+        ));
+    }
+    out
+}
+
+/// The recent-workspace list out of the editor's key-value store. Opened **read-only**; a store
+/// the editor is holding is skipped rather than waited on.
+#[must_use]
+pub fn read_workspace_store_db(db: &std::path::Path) -> Vec<PathBuf> {
+    let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI;
+    let Ok(conn) = rusqlite::Connection::open_with_flags(db, flags) else {
+        return Vec::new();
+    };
+    let row: Result<String, _> = conn.query_row(
+        "SELECT value FROM ItemTable WHERE key = 'history.recentlyOpenedPathsList'",
+        [],
+        |r| r.get(0),
+    );
+    let Ok(json) = row else { return Vec::new() };
+    parse_recent_workspaces_json(json.as_bytes())
+}
+
+/// Every path the three files name, in source order.
+#[must_use]
+pub fn collect_hits(env: &SourceEnv) -> Vec<SourceHit> {
+    let mut out: Vec<SourceHit> = Vec::new();
+    for (kind, path) in candidate_files(env) {
+        match kind {
+            SourceKind::GitConfig => {
+                let Ok(text) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                for pattern in parse_gitconfig_gitdirs(&text) {
+                    if let Some(dir) = expand_gitdir_pattern(&pattern, &env.home) {
+                        out.push(SourceHit {
+                            kind,
+                            path: dir,
+                            is_container: true,
+                        });
+                    }
+                }
+            }
+            SourceKind::VsCode => {
+                let found = if path.extension().is_some_and(|e| e == "vscdb") {
+                    read_workspace_store_db(&path)
+                } else {
+                    std::fs::read(&path)
+                        .map(|b| parse_recent_workspaces_json(&b))
+                        .unwrap_or_default()
+                };
+                for project in found {
+                    out.push(SourceHit {
+                        kind,
+                        path: project,
+                        is_container: false,
+                    });
+                }
+            }
+            SourceKind::JetBrains => {
+                for xml in recent_project_files(&path) {
+                    let Ok(text) = std::fs::read_to_string(&xml) else {
+                        continue;
+                    };
+                    for project in parse_recent_projects_xml(&text, &env.home) {
+                        out.push(SourceHit {
+                            kind,
+                            path: project,
+                            is_container: false,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Resolve the one wildcard level in a recent-project file pattern. Nothing recurses.
+fn recent_project_files(pattern: &std::path::Path) -> Vec<PathBuf> {
+    let Some(parent) = pattern
+        .parent()
+        .and_then(std::path::Path::parent)
+        .and_then(std::path::Path::parent)
+    else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return Vec::new();
+    };
+    let mut out: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.path().join("options").join("recentProjects.xml"))
+        .filter(|p| p.is_file())
+        .collect();
+    out.sort();
+    out
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -310,5 +457,70 @@ mod tests {
         assert!(parse_recent_workspaces_json(b"not json").is_empty());
         assert!(parse_recent_projects_xml("<unclosed", Path::new("/home/u")).is_empty());
         assert!(parse_gitconfig_gitdirs("").is_empty());
+    }
+
+    #[test]
+    fn the_candidate_list_is_short_and_is_the_whole_read_surface() {
+        let env = SourceEnv {
+            home: PathBuf::from("/home/u"),
+            app_data: Some(PathBuf::from("/home/u/AppData/Roaming")),
+            xdg_config: Some(PathBuf::from("/home/u/.config")),
+        };
+        let files = candidate_files(&env);
+        let names: Vec<String> = files
+            .iter()
+            .map(|(_, p)| p.to_string_lossy().replace('\\', "/"))
+            .collect();
+
+        assert!(names.contains(&"/home/u/.gitconfig".to_owned()));
+        assert!(names.contains(&"/home/u/.config/git/config".to_owned()));
+        assert!(names
+            .iter()
+            .any(|n| n.ends_with("/User/globalStorage/storage.json")));
+        assert!(names
+            .iter()
+            .any(|n| n.ends_with("/User/globalStorage/state.vscdb")));
+        assert!(names
+            .iter()
+            .any(|n| n.ends_with("/options/recentProjects.xml")));
+
+        // The claim on the screen is that a *named set* is read. A directory walk here would
+        // make that claim false, so the list is finite and short.
+        assert!(files.len() <= 24, "candidate list grew to {}", files.len());
+        for (_, path) in &files {
+            assert!(path.is_absolute(), "{path:?} is not absolute");
+        }
+    }
+
+    #[test]
+    fn a_missing_home_yields_a_list_and_never_a_panic() {
+        let env = SourceEnv {
+            home: PathBuf::from("/nonexistent"),
+            app_data: None,
+            xdg_config: None,
+        };
+        assert!(!candidate_files(&env).is_empty());
+        assert!(collect_hits(&env).is_empty());
+    }
+
+    #[test]
+    fn a_gitdir_hit_is_a_container_and_an_editor_hit_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        std::fs::write(
+            home.join(".gitconfig"),
+            "[includeIf \"gitdir:~/work/\"]\n\tpath = w\n",
+        )
+        .unwrap();
+        let env = SourceEnv {
+            home: home.to_path_buf(),
+            app_data: None,
+            xdg_config: None,
+        };
+        let hits = collect_hits(&env);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].kind, SourceKind::GitConfig);
+        assert!(hits[0].is_container);
+        assert_eq!(hits[0].path, home.join("work"));
     }
 }
