@@ -4,6 +4,7 @@
 //! does not implement so a later plan can chain its own beside it.
 
 pub mod problems;
+pub mod repair;
 pub mod settings;
 
 use crate::index::Index;
@@ -56,6 +57,8 @@ pub fn dispatch_surface_command(
         "problems.list" => Some(problems::handle(ctx, args).and_then(|v| encode(&v))),
         "settings.get" => Some(settings::handle_get(ctx).and_then(|v| encode(&v))),
         "settings.set" => Some(settings::handle_set(ctx, args).and_then(|v| encode(&v))),
+        "locations.setTrusted" => Some(repair::handle_set_trusted(ctx, args)),
+        "projects.requeue" => Some(repair::handle_requeue(ctx, args).and_then(|v| encode(&v))),
         _ => None,
     }
 }
