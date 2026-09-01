@@ -3,6 +3,8 @@
 //! dispatcher below is a seam, not an owner — it answers `None` for anything it
 //! does not implement so a later plan can chain its own beside it.
 
+pub mod anonymise;
+pub mod diag;
 pub mod problems;
 pub mod repair;
 pub mod settings;
@@ -34,6 +36,20 @@ pub fn is_project_error_kind(code: ErrorCode) -> bool {
     PROJECT_ERROR_KINDS.contains(&code)
 }
 
+/// Every command this module owns, for the router that chains dispatchers.
+///
+/// A name enters this list in the same change that gives it an arm below, and the test at the
+/// bottom of this file fails if the two disagree — a router built against a list the
+/// dispatcher does not answer would refuse a command that is implemented.
+pub const SURFACE_COMMANDS: [&str; 6] = [
+    "problems.list",
+    "settings.get",
+    "settings.set",
+    "locations.setTrusted",
+    "projects.requeue",
+    "diag.bundle",
+];
+
 // R15: `parse_args` is plan 03's, in `crate::proto::dispatch`. This module does not
 // re-export it — each surface module imports it from there directly.
 
@@ -59,6 +75,7 @@ pub fn dispatch_surface_command(
         "settings.set" => Some(settings::handle_set(ctx, args).and_then(|v| encode(&v))),
         "locations.setTrusted" => Some(repair::handle_set_trusted(ctx, args)),
         "projects.requeue" => Some(repair::handle_requeue(ctx, args).and_then(|v| encode(&v))),
+        "diag.bundle" => Some(diag::handle(ctx, args).and_then(|v| encode(&v))),
         _ => None,
     }
 }
@@ -98,6 +115,29 @@ mod tests {
         assert!(!is_project_error_kind(ErrorCode::Protocol));
         assert!(!is_project_error_kind(ErrorCode::Internal));
         assert!(!is_project_error_kind(ErrorCode::ProjectMerged));
+    }
+
+    #[test]
+    fn every_command_the_router_is_given_is_a_command_the_dispatcher_answers() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let index = Index::open(dir.path()).expect("open");
+        let ctx = SurfaceCtx {
+            index: &index,
+            now: 1_700_000_000,
+        };
+        for command in SURFACE_COMMANDS {
+            let args = match command {
+                "settings.set" => serde_json::json!({ "patch": {} }),
+                "locations.setTrusted" => serde_json::json!({ "locationId": 1 }),
+                "projects.requeue" => serde_json::json!({ "id": 1 }),
+                "diag.bundle" => serde_json::json!({ "includeRealPaths": false }),
+                _ => serde_json::json!({}),
+            };
+            assert!(
+                dispatch_surface_command(&ctx, command, args).is_some(),
+                "{command} is in SURFACE_COMMANDS and must not fall through to None"
+            );
+        }
     }
 
     #[test]
