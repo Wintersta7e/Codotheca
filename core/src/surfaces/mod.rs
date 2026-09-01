@@ -8,6 +8,7 @@ pub mod diag;
 pub mod problems;
 pub mod repair;
 pub mod settings;
+pub mod startup_failure;
 
 use crate::index::Index;
 use crate::proto::dispatch::CommandFailure;
