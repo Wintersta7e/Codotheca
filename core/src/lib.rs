@@ -36,6 +36,7 @@ pub mod query;
 pub mod scan;
 pub mod session;
 pub mod view;
+pub mod wsl;
 
 #[cfg(feature = "testkit")]
 pub mod testing;
