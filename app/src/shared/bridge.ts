@@ -1,4 +1,4 @@
-import type { RelocateReply, RevealTarget, ShortcutState } from './channels';
+import type { PickRootReply, RelocateReply, RevealTarget, ShortcutState } from './channels';
 import type { EffectsTier, EffectsTierSource } from './effectsTier';
 
 /** The single `contextBridge` key. Nothing else is exposed on `window`. */
@@ -37,6 +37,17 @@ export interface CodothecaBridge {
    * renderer from originating one.
    */
   relocate(locationId: number): Promise<RelocateReply>;
+  /**
+   * The native folder dialog, and the only path by which a folder reaches `roots.add`.
+   *
+   * It carries **no path in either direction on the way in**: the renderer asks, the shell opens
+   * the dialog, and the chosen folder never round-trips through the sandbox. §2.4 forbids the
+   * renderer from originating a filesystem path, and `roots.add` is privileged, so this is the
+   * whole of first run's and the drawer's `ADD A FOLDER`.
+   *
+   * `confirmLarge` is the caller having already accepted a large-directory estimate.
+   */
+  pickRoot(confirmLarge: boolean): Promise<PickRootReply>;
   onCoreStatus(cb: (status: unknown) => void): void;
   /** One batch per frame, never one message per event. */
   onCoreEvents(cb: (batch: unknown) => void): void;
