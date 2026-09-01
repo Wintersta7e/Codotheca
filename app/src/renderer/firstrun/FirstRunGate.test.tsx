@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { FirstRunGate, gateDecision } from './FirstRunGate';
 import type { FirstRunGateDeps } from './FirstRunGate';
@@ -323,4 +323,80 @@ test('the subscription is released when the gate stops needing it', async () => 
   expect(released).not.toHaveBeenCalled();
   unmount();
   expect(released).toHaveBeenCalled();
+});
+
+// Criterion 12: first run asks zero configuration questions, shows no percentage, and states
+// its coverage on any figure computed over a partial index.
+test('AC-12 first run asks nothing, shows no percentage, and states its coverage', async () => {
+  const partial = { projectsCovered: 212, projectsTotal: 400, historyComplete: false };
+  const { deps } = harness();
+  deps.loadReveal.mockResolvedValue({
+    spanDays: { value: 4_400, basis: partial },
+    projectCount: { value: 212, basis: partial },
+    languageCount: { value: 9, basis: partial },
+    bestYear: { value: 2021, basis: partial },
+    playtimeSeconds: {
+      value: 0,
+      basis: { ...partial, projectsTotal: 212, historyComplete: true },
+    },
+    oldestStillAlive: { projectId: 1 as ProjectId, firstCommitAt: 1, basis: partial },
+  });
+
+  await screen.findByText(copy.ROOTS_HEADLINE);
+  const seen: string[] = [];
+  const sweep = (): void => {
+    seen.push(document.body.textContent ?? '');
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  };
+
+  sweep();
+  dig();
+  await screen.findByRole('button', { name: SKIP_AHEAD_LABEL });
+  sweep();
+  fireEvent.click(screen.getByRole('button', { name: SKIP_AHEAD_LABEL }));
+  await screen.findByText(copy.EVIDENCE_FOOTER);
+  sweep();
+
+  expect(seen).toHaveLength(3);
+  for (const text of seen) expect(text).not.toMatch(/%/);
+  // Five of six figures over a partial index, each saying so.
+  expect(screen.getAllByTestId('fr-panel-coverage')).toHaveLength(5);
+});
+
+// Criterion 23, reveal half: every reveal figure carries its coverage; shallow repositories are
+// excluded from history statistics and counted in the coverage line.
+test('AC-23 no figure over a partial index is presented bare', async () => {
+  const partial = { projectsCovered: 212, projectsTotal: 400, historyComplete: false };
+  const { deps } = harness();
+  deps.loadReveal.mockResolvedValue({
+    spanDays: { value: 4_400, basis: partial },
+    projectCount: { value: 212, basis: partial },
+    languageCount: { value: 9, basis: partial },
+    bestYear: { value: 2021, basis: partial },
+    playtimeSeconds: {
+      value: 0,
+      basis: { ...partial, projectsTotal: 212, historyComplete: true },
+    },
+    oldestStillAlive: { projectId: 1 as ProjectId, firstCommitAt: 1, basis: partial },
+  });
+  await screen.findByText(copy.ROOTS_HEADLINE);
+  dig();
+  fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
+  await screen.findByText(copy.EVIDENCE_FOOTER);
+
+  const panels = screen.getAllByTestId('fr-panel');
+  expect(panels).toHaveLength(6);
+  for (const panel of panels) {
+    const label = within(panel).getByTestId('fr-panel-value').textContent ?? '';
+    const coverage = within(panel).queryByTestId('fr-panel-coverage');
+    // PLAYTIME is the only figure complete by construction.
+    if (panel.textContent?.includes('PLAYTIME') === true) expect(coverage).toBeNull();
+    else expect(coverage, label).not.toBeNull();
+  }
+  // The two history strings are distinguishable: one promises growth, one admits movement.
+  expect(screen.getByText(new RegExp(copy.COVERAGE_HISTORY_GROWS))).toBeTruthy();
+  expect(screen.getAllByText(new RegExp(copy.COVERAGE_HISTORY_MOVES))).toHaveLength(2);
 });
