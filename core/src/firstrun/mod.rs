@@ -16,10 +16,16 @@ use crate::index::IndexError;
 use crate::proto::dispatch::{parse_args, CommandFailure}; // R15: one helper, plan 03's
 use crate::scan::skiplist::SkipList;
 
-/// The five commands of §10 this module answers.
-pub const FIRST_RUN_COMMANDS: [&str; 5] = [
+/// The five commands of §10, plus §11.3a's four root-row commands (**R37**, **R33 gap 1**).
+///
+/// All nine go through the one dispatcher below; §11.3a's rows do not open a second one.
+pub const FIRST_RUN_COMMANDS: [&str; 9] = [
     "roots.suggest",
+    "roots.list",
     "roots.add",
+    "roots.remove",
+    "roots.setEnabled",
+    "roots.setDescend",
     "stats.reveal",
     "identity.list",
     "identity.confirm",
@@ -49,7 +55,11 @@ pub fn dispatch(
 ) -> Option<Result<Value, CommandFailure>> {
     match command {
         "roots.suggest" => Some(handle_suggest(env)),
+        "roots.list" => Some(handle_list(conn)),
         "roots.add" => Some(handle_add(conn, env, args, now)),
+        "roots.remove" => Some(handle_remove(conn, args)),
+        "roots.setEnabled" => Some(handle_set_enabled(conn, args)),
+        "roots.setDescend" => Some(handle_set_descend(conn, args)),
         "stats.reveal" => Some(handle_reveal(conn, now)),
         "identity.list" => Some(handle_identity_list(conn)),
         "identity.confirm" => Some(handle_identity_confirm(conn, args, now)),
@@ -80,6 +90,64 @@ fn handle_suggest(env: &FirstRunEnv) -> Result<Value, CommandFailure> {
     );
     let wire: Vec<_> = rows.into_iter().map(|s| s.row).collect();
     encode(&wire)
+}
+
+/// The wire's `Empty`. These three mutations have nothing to report but success.
+fn empty() -> Value {
+    serde_json::json!({})
+}
+
+fn handle_list(conn: &mut rusqlite::Connection) -> Result<Value, CommandFailure> {
+    let rows = roots::list_roots(conn).map_err(|e| internal(&e))?;
+    encode(&rows)
+}
+
+/// §2.4: a `RootId` the renderer received from `roots.list` or `roots.add`. Never a path — the
+/// renderer cannot originate one, which is the whole reason the native dialog exists.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RootIdArgs {
+    id: crate::protocol::RootId,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetEnabledArgs {
+    id: crate::protocol::RootId,
+    enabled: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetDescendArgs {
+    id: crate::protocol::RootId,
+    descend_into_repos: bool,
+}
+
+fn handle_remove(conn: &mut rusqlite::Connection, args: &Value) -> Result<Value, CommandFailure> {
+    let parsed: RootIdArgs = parse_args(args.clone())?;
+    // The boolean is dropped deliberately: an id that is already gone is the state the caller
+    // asked for, and §2.2 must be able to replay this.
+    roots::remove_root(conn, parsed.id.0).map_err(|e| internal(&e))?;
+    Ok(empty())
+}
+
+fn handle_set_enabled(
+    conn: &mut rusqlite::Connection,
+    args: &Value,
+) -> Result<Value, CommandFailure> {
+    let parsed: SetEnabledArgs = parse_args(args.clone())?;
+    roots::set_enabled(conn, parsed.id.0, parsed.enabled).map_err(|e| internal(&e))?;
+    Ok(empty())
+}
+
+fn handle_set_descend(
+    conn: &mut rusqlite::Connection,
+    args: &Value,
+) -> Result<Value, CommandFailure> {
+    let parsed: SetDescendArgs = parse_args(args.clone())?;
+    roots::set_descend(conn, parsed.id.0, parsed.descend_into_repos).map_err(|e| internal(&e))?;
+    Ok(empty())
 }
 
 #[derive(serde::Deserialize)]
@@ -326,5 +394,48 @@ mod tests {
         assert_eq!(first_run_completed_at(index.conn()).unwrap(), Some(NOW));
         assert!(!stamp_first_run_completed(index.conn(), NOW + 500).unwrap());
         assert_eq!(first_run_completed_at(index.conn()).unwrap(), Some(NOW));
+    }
+    // R37: the four commands §11.3a draws its per-root rows from, on the one dispatcher this
+    // module has. `None` is still "not mine" for everything else — the router chains on it.
+    #[test]
+    fn the_four_root_row_commands_are_answered_by_the_same_dispatcher() {
+        let home = tempfile::tempdir().unwrap();
+        let (_dir, mut index) = open();
+        let e = env(home.path());
+
+        let listed = dispatch(index.conn_mut(), &e, "roots.list", &json!({}), NOW)
+            .unwrap()
+            .unwrap();
+        assert_eq!(listed.as_array().map(Vec::len), Some(0));
+
+        // A RootId that is not a root is idempotently accepted, never a panic (§2.2).
+        for (command, args) in [
+            ("roots.remove", json!({"id": 4_242})),
+            ("roots.setEnabled", json!({"id": 4_242, "enabled": false})),
+            (
+                "roots.setDescend",
+                json!({"id": 4_242, "descendIntoRepos": true}),
+            ),
+        ] {
+            let out = dispatch(index.conn_mut(), &e, command, &args, NOW)
+                .unwrap_or_else(|| panic!("{command} was declined"))
+                .unwrap_or_else(|f| panic!("{command} failed: {}", f.message));
+            assert_eq!(out, json!({}), "{command} answers Empty");
+        }
+
+        // §2.4: the renderer never originates a path, so a path where a RootId belongs is a
+        // protocol failure and not a second way in.
+        let bad = dispatch(
+            index.conn_mut(),
+            &e,
+            "roots.remove",
+            &json!({"id": "/home/u"}),
+            NOW,
+        )
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(bad.code, crate::protocol::ErrorCode::Protocol);
+
+        assert!(dispatch(index.conn_mut(), &e, "roots.rename", &json!({}), NOW).is_none());
     }
 }

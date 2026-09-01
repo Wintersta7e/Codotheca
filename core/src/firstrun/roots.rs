@@ -200,6 +200,86 @@ pub fn root_row(conn: &rusqlite::Connection, id: i64) -> Result<Option<Root>, In
     }))
 }
 
+/// Every scan root, oldest first — §11.3a's rows, and the caption's `M`.
+///
+/// **R33 gap 1**: §2.4's table declared only the four mutations, so nothing returned the set the
+/// surface enumerates. Read-only, and no path crosses in either direction: a `Root` carries
+/// `path_display` and a `RootId`, never bytes (§1.3, §2.4).
+///
+/// `root_row` stays the single place a `scan_root` row becomes a `Root`, so the two cannot drift
+/// — including its refusal to invent `project_count`, which is `None` until a walk has run.
+///
+/// # Errors
+/// Returns [`IndexError`] when the read fails.
+pub fn list_roots(conn: &rusqlite::Connection) -> Result<Vec<Root>, IndexError> {
+    let mut stmt = conn.prepare("SELECT id FROM scan_root ORDER BY added_at, id")?;
+    let ids = stmt
+        .query_map([], |r| r.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(root) = root_row(conn, id)? {
+            out.push(root);
+        }
+    }
+    Ok(out)
+}
+
+/// Stop walking there. **Not a destructive operation, and it must not become one.**
+///
+/// §17: phase 1 has none. This deletes one `scan_root` row — no `project`, no `location`,
+/// nothing on disk. Projects already found stay found; a location no longer under an enabled
+/// root becomes `unscanned` through the presence pass (§4.6), never a deleted row.
+///
+/// Returns false when the id was already gone, which is not an error: §2.2 lets an
+/// unacknowledged request be replayed, and a second removal changes nothing.
+///
+/// # Errors
+/// Returns [`IndexError`] when the write fails.
+pub fn remove_root(conn: &rusqlite::Connection, id: i64) -> Result<bool, IndexError> {
+    Ok(conn.execute("DELETE FROM scan_root WHERE id = ?1", rusqlite::params![id])? > 0)
+}
+
+/// §4.6's "disable a root", and §11.3a's checkbox — the reversible control that exists so
+/// `roots.remove` never has to be drawn.
+///
+/// The flag is all this writes. §4.6's *"disabling a root marks its locations `unscanned`"* is
+/// computed by the presence pass; its immediate form, `scan::presence::mark_root_unscanned`,
+/// needs a `ScanStore`, and **R40** records that no production implementation of that trait
+/// exists yet. Re-deriving §4.6's rule in SQL here would be one value in two places.
+///
+/// # Errors
+/// Returns [`IndexError`] when the write fails.
+pub fn set_enabled(
+    conn: &rusqlite::Connection,
+    id: i64,
+    enabled: bool,
+) -> Result<bool, IndexError> {
+    let changed = conn.execute(
+        "UPDATE scan_root SET enabled = ?2 WHERE id = ?1",
+        rusqlite::params![id, i64::from(enabled)],
+    )?;
+    Ok(changed > 0)
+}
+
+/// §4.2's `descend_into_repos`: the walk stops at a repository root unless this is set. Nested
+/// submodules are enumerated from `.gitmodules` either way, so this changes coverage, not
+/// correctness.
+///
+/// # Errors
+/// Returns [`IndexError`] when the write fails.
+pub fn set_descend(
+    conn: &rusqlite::Connection,
+    id: i64,
+    descend_into_repos: bool,
+) -> Result<bool, IndexError> {
+    let changed = conn.execute(
+        "UPDATE scan_root SET descend_into_repos = ?2 WHERE id = ?1",
+        rusqlite::params![id, i64::from(descend_into_repos)],
+    )?;
+    Ok(changed > 0)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -239,6 +319,32 @@ mod tests {
             now: 1_700_000_000,
             ceiling_for_tests: crate::firstrun::refuse::DIRECTORY_CEILING,
         }
+    }
+
+    /// A project and a location beneath the root, so the removal test can prove that found
+    /// work survives. A **fixture**, not a production writer: the production writer of a
+    /// `location` is `identity::store::upsert_location` (R1, R27).
+    fn seed_found_project(conn: &rusqlite::Connection, path: &str) {
+        conn.execute(
+            "INSERT INTO project (name, seed_basename, created_at, updated_at)
+             VALUES ('p', 'p', 1, 1)",
+            [],
+        )
+        .unwrap();
+        let project = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO location
+               (project_id, kind, distro, path_bytes, path_key, path_display, store_key,
+                presence, repo_kind)
+             VALUES (?1, 'linux', '', ?2, ?3, ?4, 's', 'present', 'worktree')",
+            rusqlite::params![
+                project,
+                path.as_bytes(),
+                crate::paths::path_key(Path::new(path), PathPlatform::Unix),
+                path,
+            ],
+        )
+        .unwrap();
     }
 
     #[test]
@@ -345,5 +451,107 @@ mod tests {
         confirmed.ceiling_for_tests = 3;
         let out = add_root(conn, &confirmed).unwrap();
         assert!(out.root.is_some(), "confirmation writes the root");
+    }
+    #[test]
+    fn the_set_is_listed_in_the_order_it_was_added_and_no_count_is_invented() {
+        let (_dir, index) = open();
+        let conn = index.conn();
+        let skip = SkipList::default();
+        let cache = SuggestionCache::new();
+        assert!(
+            list_roots(conn).unwrap().is_empty(),
+            "an empty set is empty, not an error"
+        );
+
+        add_root(conn, &params("/home/u/dev", false, &skip, &cache)).unwrap();
+        add_root(conn, &params("/home/u/work", false, &skip, &cache)).unwrap();
+        let rows = list_roots(conn).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].path_display, "/home/u/dev");
+        assert_eq!(rows[1].path_display, "/home/u/work");
+        // §10.1b / §11.3a: uncomputed, never zero.
+        assert!(rows.iter().all(|r| r.project_count.is_none()));
+    }
+
+    // §17: phase 1 has no destructive operation. Removing a root removes a scan_root row and
+    // nothing else — the projects and locations already found are untouched.
+    #[test]
+    fn removing_a_root_removes_the_root_row_and_deletes_nothing_else() {
+        let (_dir, index) = open();
+        let conn = index.conn();
+        let skip = SkipList::default();
+        let cache = SuggestionCache::new();
+        let id = add_root(conn, &params("/home/u/dev", false, &skip, &cache))
+            .unwrap()
+            .root
+            .expect("a root")
+            .id
+            .0;
+        seed_found_project(conn, "/home/u/dev/p");
+
+        assert!(remove_root(conn, id).unwrap());
+        assert!(list_roots(conn).unwrap().is_empty());
+        // The project and its location survive: they were found, and finding is not undone.
+        let projects: i64 = conn
+            .query_row("SELECT COUNT(*) FROM project", [], |r| r.get(0))
+            .unwrap();
+        let locations: i64 = conn
+            .query_row("SELECT COUNT(*) FROM location", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            (projects, locations),
+            (1, 1),
+            "removing a root deletes no found work"
+        );
+
+        // §2.2: replaying an unacknowledged request must not fail the second time.
+        assert!(!remove_root(conn, id).unwrap());
+    }
+
+    // §4.6: the reversible control, which is why §11.3a draws this and never roots.remove.
+    #[test]
+    fn disabling_a_root_keeps_the_row_and_flips_only_the_flag() {
+        let (_dir, index) = open();
+        let conn = index.conn();
+        let skip = SkipList::default();
+        let cache = SuggestionCache::new();
+        let id = add_root(conn, &params("/home/u/dev", false, &skip, &cache))
+            .unwrap()
+            .root
+            .expect("a root")
+            .id
+            .0;
+
+        assert!(set_enabled(conn, id, false).unwrap());
+        let row = root_row(conn, id).unwrap().expect("still there");
+        assert!(!row.enabled);
+        assert_eq!(row.state, crate::protocol::RootState::Ignored);
+        assert!(!row.descend_into_repos, "the other toggle did not move");
+
+        assert!(set_enabled(conn, id, true).unwrap());
+        assert!(root_row(conn, id).unwrap().expect("still there").enabled);
+        // An id that is not a root writes nothing and is not an error.
+        assert!(!set_enabled(conn, id + 999, false).unwrap());
+    }
+
+    // §4.2: stop at a repository root unless descend_into_repos is set.
+    #[test]
+    fn the_descend_toggle_is_independent_of_the_enabled_one() {
+        let (_dir, index) = open();
+        let conn = index.conn();
+        let skip = SkipList::default();
+        let cache = SuggestionCache::new();
+        let id = add_root(conn, &params("/home/u/dev", false, &skip, &cache))
+            .unwrap()
+            .root
+            .expect("a root")
+            .id
+            .0;
+
+        assert!(set_descend(conn, id, true).unwrap());
+        let row = root_row(conn, id).unwrap().expect("still there");
+        assert!(row.descend_into_repos);
+        assert!(row.enabled, "the other toggle did not move");
+        assert!(!set_descend(conn, id + 999, true).unwrap());
     }
 }
