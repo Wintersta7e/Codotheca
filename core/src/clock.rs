@@ -59,3 +59,54 @@ impl Clock for SystemClock {
         std::thread::sleep(dur);
     }
 }
+
+/// The machine's local offset from UTC, in minutes east of Greenwich.
+///
+/// Not a `Clock` method: the trait is time a test injects, and this is a property of the machine
+/// the composition root reads **once** and passes down as data — `ProjectsCtx.tz_offset_min`.
+/// Every consumer takes it as an argument, so nothing below the root reads a zone.
+///
+/// §8.1's era bands cut on the **local calendar year**, which makes this a correctness input
+/// rather than a display detail: an offset that is wrong by a few hours moves a project into the
+/// neighbouring era near New Year, and does it silently.
+#[must_use]
+pub fn local_utc_offset_min() -> i32 {
+    // `local_minus_utc` is seconds east of UTC. Every real zone is a whole number of minutes,
+    // so the division is exact for every value this can return.
+    chrono::Local::now().offset().local_minus_utc() / 60
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_offset_is_local_wall_clock_minus_utc() {
+        // Derived from the difference between the two wall clocks rather than from
+        // `local_minus_utc`, so this does not restate the implementation back to itself.
+        let local = chrono::Local::now().naive_local();
+        let utc = chrono::Utc::now().naive_utc();
+        let observed = (local - utc).num_minutes();
+        let reported = i64::from(local_utc_offset_min());
+        assert!(
+            (observed - reported).abs() <= 1,
+            "reported {reported} min, but the two wall clocks differ by {observed} min"
+        );
+    }
+
+    #[test]
+    fn the_offset_is_one_a_real_zone_could_have() {
+        // UTC-12 (Baker Island) to UTC+14 (Line Islands) bound every zone in use.
+        let offset = local_utc_offset_min();
+        assert!(
+            (-720..=840).contains(&offset),
+            "{offset} min is outside every real UTC offset"
+        );
+    }
+}

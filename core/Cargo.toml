@@ -36,6 +36,16 @@ testkit = ["dep:tempfile", "rusqlite/trace"]
 
 [dependencies]
 base64 = "0.22"
+# The machine's local UTC offset, and nothing else. §8.1's era bands cut on the local calendar
+# year, so the offset is a correctness input: a wrong one mis-sorts the shelf silently instead
+# of failing. std has no timezone support, and the platform calls that do (`localtime_r`,
+# `GetTimeZoneInformation`) need `unsafe`, which this crate forbids. `time`'s local-offset read
+# is documented-unsound in a multithreaded process and returns `None` there, which this is.
+# Default features off: only the `clock` feature is used, never chrono's formatting or serde.
+# Three crates compile per target — chrono + num-traits + iana-time-zone on Linux, and
+# chrono + num-traits + windows-link on Windows. The wasm-bindgen and futures entries this
+# adds to Cargo.lock are wasm32-only and are never built for either target.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # Spawns every git child into a Linux process group or a Windows Job Object, so a kill takes
 # the whole tree. A plain kill left eight live git processes holding file locks (§3.4).
 command-group = "5"
