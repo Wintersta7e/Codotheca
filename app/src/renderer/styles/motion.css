@@ -93,3 +93,22 @@
 [data-effects-tier='off'] *::after {
   animation: none;
 }
+
+/*
+ * §11.3a's settings panel enters on the rail. It is not one of the three shared entries — only
+ * this surface animates it — so it is declared here rather than in `base.css`, beside the clamp
+ * that has to be able to stop it. `reduced` drops every transform, so the panel falls back to
+ * the shared `viewIn`, which `settings/styles.ts` states with REDUCED_CLAMP_MS on its own
+ * `animation` shorthand, exactly as the three shared entries are clamped.
+ */
+@keyframes sd-slide-rail {
+  0% {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
