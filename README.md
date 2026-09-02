@@ -32,6 +32,9 @@ npm run check:bundle  # guard the bundle after a build
 npm run dev           # run the shell against the dev server
 ```
 
+Windows builds carry a Linux worker for repositories that live inside WSL; see
+[docs/wsl-worker.md](docs/wsl-worker.md).
+
 ## Licence
 
 GPL-3.0-or-later. See `LICENSE`.
