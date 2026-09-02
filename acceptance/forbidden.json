@@ -1,0 +1,268 @@
+{
+  "version": 1,
+  "targets": {
+    "renderer": {
+      "dirs": [
+        "app/out/renderer"
+      ],
+      "ext": [
+        ".js",
+        ".css",
+        ".html"
+      ],
+      "why": "run `npm run build:app` first"
+    },
+    "shell": {
+      "dirs": [
+        "app/out/main",
+        "app/out/preload"
+      ],
+      "ext": [
+        ".js"
+      ],
+      "why": "run `npm run build:app` first"
+    },
+    "stylesheet": {
+      "dirs": [
+        "app/out/renderer"
+      ],
+      "ext": [
+        ".css"
+      ],
+      "why": "run `npm run build:app` first"
+    },
+    "schema": {
+      "files": [
+        "protocol/schema/protocol.json"
+      ],
+      "why": "the protocol schema is committed"
+    },
+    "core": {
+      "dirs": [
+        "core/src",
+        "core/migrations"
+      ],
+      "ext": [
+        ".rs",
+        ".sql"
+      ],
+      "why": "the core sources are committed; comments and inline #[cfg(test)] modules are out of scope, because a comment naming a banned string and a test asserting the ban must not trip the rule they document",
+      "skipTests": true,
+      "stripComments": true
+    },
+    "app-src": {
+      "dirs": [
+        "app/src"
+      ],
+      "ext": [
+        ".ts",
+        ".tsx",
+        ".css"
+      ],
+      "exclude": [
+        "src/generated"
+      ],
+      "why": "the renderer and shell sources are committed; comments and *.test.* files are out of scope for the same reason",
+      "skipTests": true,
+      "stripComments": true
+    }
+  },
+  "rules": [
+    {
+      "id": "c44-forget-token",
+      "kind": "regex",
+      "spec": "§16.44, §17",
+      "why": "Phase 1 has no destructive operation at all. The token FORGET appears in no rendered string, no accessible name and no command name; a build that ships it has shipped the control. The source-side complement is scripts/check-destructive-tokens.mjs, which cannot reach the built bundle because it refuses a gitignored scan root by design.",
+      "targets": [
+        "renderer",
+        "shell",
+        "schema"
+      ],
+      "patterns": [
+        "\\bFORGET\\b"
+      ],
+      "flags": "u",
+      "exempt": []
+    },
+    {
+      "id": "c33-keycap-glyphs",
+      "kind": "literal",
+      "spec": "§16.33, §11.7",
+      "why": "Quick switch's footer prints the two keycap glyphs the target keyboards actually carry. The Option and Space glyphs are not among them, and a keycap a keyboard does not print is an instruction the user cannot follow.",
+      "targets": [
+        "renderer"
+      ],
+      "patterns": [
+        "⌥",
+        "␣"
+      ],
+      "exempt": []
+    },
+    {
+      "id": "c38-superseded-footer",
+      "kind": "literal",
+      "spec": "§16.38, §8.5.2",
+      "why": "The superseded Locations footer asserts the inference §1.1 forbids: a fork and its upstream share a root commit by definition, so a shared root commit cannot say one project rather than n.",
+      "targets": [
+        "renderer"
+      ],
+      "patterns": [
+        "SAME ROOT COMMIT",
+        "ONE PROJECT · NOT"
+      ],
+      "exempt": []
+    },
+    {
+      "id": "c39-directional-claims",
+      "kind": "literal",
+      "spec": "§16.39, §1.3, §8.5.2",
+      "why": "Phase 1 compares copies by identity, never by direction. A directional claim needs a merge-base across two object stores, which needs a fetch, which §17 forbids — so the product may not render one.",
+      "targets": [
+        "renderer"
+      ],
+      "patterns": [
+        "DIVERGED",
+        "BEHIND PRIMARY",
+        "commits the primary does not"
+      ],
+      "exempt": []
+    },
+    {
+      "id": "c40-commit-counts",
+      "kind": "regex",
+      "spec": "§16.40, §8.5.5",
+      "why": "Never reward volume. J4 produces commit-days; nothing in the schema stores a count, and the superseded legend naming commits by the user is the string that would make one worth acquiring.",
+      "targets": [
+        "renderer",
+        "schema",
+        "core",
+        "app-src"
+      ],
+      "patterns": [
+        "COMMITS BY YOU",
+        "\\bcommit_count\\b",
+        "\\bcommitCount\\b",
+        "\\bcommitsCount\\b"
+      ],
+      "flags": "u",
+      "exempt": []
+    },
+    {
+      "id": "c53-first-run-escape",
+      "kind": "literal",
+      "spec": "§16.53, §11.7",
+      "why": "The first-run escape control is short, in the first rendered frame and reachable by Tab. The superseded sentence is longer than the control it labels and was replaced for that reason.",
+      "targets": [
+        "renderer"
+      ],
+      "patterns": [
+        "show me what you",
+        "Enough — show me"
+      ],
+      "exempt": []
+    },
+    {
+      "id": "c54-superseded-roast",
+      "kind": "literal",
+      "spec": "§16.54, §5.6",
+      "why": "Nothing renders when no roast clause matches — silence, not a reassurance. The superseded strings either fill that silence or carry an age §5.6's clause table no longer produces.",
+      "targets": [
+        "renderer"
+      ],
+      "patterns": [
+        "Nothing outstanding.",
+        "when it was last looked at"
+      ],
+      "exempt": []
+    },
+    {
+      "id": "c58-design-band-names",
+      "kind": "regex",
+      "spec": "§16.58, §5.4a",
+      "why": "The design's band vocabulary is forbidden in every machine-readable surface: a CSS class, a query field, a protocol message, a log line or an accessible name. The two enum words that look like band names are NOT banned — §11.7 requires them verbatim in an accessible name, so a grep for those would fail a correct build.",
+      "targets": [
+        "renderer",
+        "schema",
+        "core"
+      ],
+      "patterns": [
+        "\\bwarm\\b",
+        "\\bcooling\\b",
+        "\\bblueprint\\b"
+      ],
+      "flags": "iu",
+      "exempt": []
+    },
+    {
+      "id": "c64-watch-set-copy",
+      "kind": "literal",
+      "spec": "§16.64, §6",
+      "why": "The bounded worktree watch set does watch inside a repository — it invalidates the worktree observation time. The sentence claiming otherwise is false against §6 and would be a currency claim the product cannot make.",
+      "targets": [
+        "renderer"
+      ],
+      "patterns": [
+        "Nothing is watched inside a repository"
+      ],
+      "exempt": []
+    },
+    {
+      "id": "c67-canvas-and-webgl",
+      "kind": "regex",
+      "spec": "§16.67, §7.1a",
+      "why": "Probe C moved the canvas layer, the texture atlas and layer swim to phase 3, and criterion 22 dropped its GPU clause on that basis. Nothing asserted DOM-only rendering, which is how a negative rule comes back by accident.",
+      "targets": [
+        "renderer"
+      ],
+      "patterns": [
+        "WebGL2?RenderingContext",
+        "getContext\\(\\s*[\"'`]webgl",
+        "createElement\\(\\s*[\"'`]canvas[\"'`]",
+        "jsxs?\\(\\s*[\"'`]canvas[\"'`]",
+        "<canvas[\\s>]"
+      ],
+      "flags": "iu",
+      "exempt": []
+    },
+    {
+      "id": "c46-colour-literals",
+      "kind": "delegate",
+      "spec": "§16.46, §8.7",
+      "why": "Plan 12 owns the token vocabulary and the stylesheet gate; the ladder is closed there, with §7.3a's language palette and everything the rasterizer computes exempt by name. A second implementation here would drift from the vocabulary file it reads.",
+      "owner": "12",
+      "script": "scripts/check-style-tokens.mjs"
+    },
+    {
+      "id": "c46-motion-values",
+      "kind": "delegate",
+      "spec": "§16.46, §11.6",
+      "why": "The motion half is the same grep over the same built stylesheet against §11.6's two tables plus the named single-effect values, and plan 12's script already carries both allowlists. A beat is a band, so the allowlist is data the owning script holds, not a pattern this file can restate.",
+      "owner": "12",
+      "script": "scripts/check-style-tokens.mjs"
+    },
+    {
+      "id": "c53-outline-replacement",
+      "kind": "delegate",
+      "spec": "§16.53, §11.7",
+      "why": "An inset box-shadow ring is the only focus indicator that survives clip-path clipping every outline away, so a rule removing the outline without a replacement in the same rule kills the keyboard silently. Plan 12 owns the CSS-rule parser this needs.",
+      "owner": "12",
+      "script": "scripts/check-focus-ring.mjs"
+    },
+    {
+      "id": "c60-sub-floor-size",
+      "kind": "delegate",
+      "spec": "§16.60, §8.7",
+      "why": "The retired half-pixel size is one member of the scale-membership check plan 12 already runs over every computed font-size, and the floor is only meaningful alongside the scale and its tracking.",
+      "owner": "12",
+      "script": "scripts/check-type-scale.mjs"
+    },
+    {
+      "id": "c61-global-shortcut",
+      "kind": "delegate",
+      "spec": "§16.61, §8.6",
+      "why": "The default palette chord is the Windows system window menu accelerator, which is why plan 15 gates it over the built shell bundle. One chord, one grep, one owner.",
+      "owner": "15",
+      "script": "scripts/check-shell-accelerators.mjs"
+    }
+  ]
+}

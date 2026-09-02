@@ -1,0 +1,2131 @@
+{
+  "version": 1,
+  "criteria": [
+    {
+      "id": "1",
+      "title": "Every repository under the enabled roots appears exactly once",
+      "group": "functional",
+      "spec": "§16.1",
+      "checks": [
+        {
+          "id": "AC-1-discovery",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "07",
+          "test": "acceptance_discovery::ac_1_every_repository_appears_once",
+          "assert": "Over the whole corpus each fixture yields exactly one project row; linked worktrees resolve to their parent; bare repositories are detected."
+        },
+        {
+          "id": "AC-1-submodules",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_discovery::ac_1_submodules_are_their_own_projects",
+          "assert": "submodule-child and submodule-nested are projects of their own with a submodule_edge row to the parent."
+        },
+        {
+          "id": "AC-1-bare",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_discovery::ac_1_a_bare_repository_reports_as_bare",
+          "assert": "A bare fixture reports as bare at the project level.",
+          "reason": "project.is_bare is computed and never written: the column exists NOT NULL DEFAULT 0, two derivations produce the value, and create() hard-codes 0. Bareness is a property of a location and the column is on project, so whoever takes it must first rule on what a project with one bare and one non-bare copy reports."
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "title": "Copies collapse, forks stay apart, ambiguous lineage is flagged",
+      "group": "functional",
+      "spec": "§16.2",
+      "checks": [
+        {
+          "id": "AC-2-collapse",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_2_two_copies_collapse_to_one_project",
+          "assert": "copy-one and copy-two on two volumes become one project with two locations."
+        },
+        {
+          "id": "AC-2-fork",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_2_fork_and_upstream_stay_two_projects",
+          "assert": "fork and upstream remain two projects sharing a lineage_key with different remote_keys."
+        },
+        {
+          "id": "AC-2-ambiguous",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_2_remoteless_two_candidates_is_flagged",
+          "assert": "ambiguous-lineage becomes its own project with ambiguous_lineage set, and problems.list names both candidate lineages."
+        },
+        {
+          "id": "AC-2-merge-has-no-caller",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:projects-merge",
+          "assert": "Amendment 2: projects.merge has zero call sites outside the test suite; a control wired to it is the §17 breach §11.1 forbids by name."
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "title": "A merge is transactional and loses no work",
+      "group": "functional",
+      "spec": "§16.3",
+      "checks": [
+        {
+          "id": "AC-3-transactional",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_3_merge_is_transactional",
+          "assert": "Amendment 3: git-derived rows are deleted and recomputed for the survivor, session-derived rows are reparented, a redirect is written, level_floor cannot fall, and projects.merged is emitted."
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "title": "Unplugging a volume freezes and deletes nothing; re-plugging restores",
+      "group": "functional",
+      "spec": "§16.4",
+      "checks": [
+        {
+          "id": "AC-4-offline",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "07",
+          "test": "acceptance_presence::ac_4_unplug_freezes_and_deletes_nothing",
+          "assert": "FakeMountResolver::unmount over vol-b moves those locations to offline, freezes condition, and every project, location, session and xp_events row is byte-identical before and after."
+        },
+        {
+          "id": "AC-4-replug",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "07",
+          "test": "acceptance_presence::ac_4_replug_restores_present",
+          "assert": "mount() plus a rescan returns the same location rows to present."
+        }
+      ]
+    },
+    {
+      "id": "5",
+      "title": "Hostile repositories index without crashing and contribute no wrong date",
+      "group": "functional",
+      "spec": "§16.5",
+      "checks": [
+        {
+          "id": "AC-5-index",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_5_hostile_fixtures_index_without_crashing",
+          "assert": "zero-commit, shallow, non-utf8-path, long-path, dubious-ownership and index-lock-held all reach a terminal job state with no panic."
+        },
+        {
+          "id": "AC-5-dates",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_5_future_dated_contributes_no_wrong_date",
+          "assert": "future-dated raises clock_skew and contributes to no era boundary, no reveal figure and no commit-day."
+        }
+      ]
+    },
+    {
+      "id": "6",
+      "title": "Editing a tracked file and re-observing flips is:dirty to true",
+      "group": "functional",
+      "spec": "§16.6",
+      "checks": [
+        {
+          "id": "AC-6-reobserve",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_6_edit_then_reobserve_is_dirty",
+          "assert": "The v1 regression: a plain fs::write to a tracked file, with no git command in between, must flip is_dirty on the next J2. Prove it by re-introducing an index-mtime cache and watching this test fail."
+        },
+        {
+          "id": "AC-6-query",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-6 is:dirty matches the edited project",
+          "assert": "The shelf query is:dirty selects that project after the re-observation."
+        }
+      ]
+    },
+    {
+      "id": "7",
+      "title": "Play, the dropdown, the overrides and the five resolution tiers",
+      "group": "functional",
+      "spec": "§16.7",
+      "checks": [
+        {
+          "id": "AC-7-tiers",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11c",
+          "test": "acceptance_targets::ac_7_resolution_walks_five_tiers",
+          "assert": "Amendment 7: project override, location override, language default, global default, ask — first hit wins, a tier with no row is skipped, primary_language NULL resolves at global, targets.list returns the tier that resolved, resolution never consults verify_state."
+        },
+        {
+          "id": "AC-7-detection",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11",
+          "test": "acceptance_targets::ac_7_redetection_rewrites_every_matching_row",
+          "assert": "Re-detection rewrites exec_bytes for every row matching the re-detected (kind, name), language rows included; a fresh install ships no built-in language-to-editor table."
+        },
+        {
+          "id": "AC-7-stale",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "11c",
+          "test": "AC-7 a stale target path is detected before spawn",
+          "assert": "targets.verify marks a removed executable missing and Play refuses before spawning."
+        }
+      ]
+    },
+    {
+      "id": "8",
+      "title": "A WSL-resident repository launches with translated paths",
+      "group": "functional",
+      "spec": "§16.8",
+      "checks": [
+        {
+          "id": "AC-8-translate",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "18",
+          "test": "acceptance_wsl::ac_8_path_translation_round_trips",
+          "assert": "Windows-to-distro and distro-to-Windows translation round-trips for drive-mounted, VHD-resident and UNC paths."
+        },
+        {
+          "id": "AC-8-live",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "WSL-LAUNCH",
+          "reason": "No CI runner provides a WSL distro: nested virtualisation is not available on hosted Windows runners, so the in-distro worker cannot be started. Run on Reference A before a release. The bridge has never been crossed on a real machine here either — the dispatcher is asserted over a loopback worker only.",
+          "assert": "A repository inside a distro launches its target and runs git inside the distro."
+        }
+      ]
+    },
+    {
+      "id": "9",
+      "title": "The query grammar, its soft errors and saved queries",
+      "group": "functional",
+      "spec": "§16.9",
+      "checks": [
+        {
+          "id": "AC-9-grammar",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-9 the grammar parses every documented field, negation and comparison",
+          "assert": "The query conformance corpus runs in both the renderer and the core and produces identical ASTs."
+        },
+        {
+          "id": "AC-9-soft-error",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-9 an unknown field soft-errors without discarding the query",
+          "assert": "The unknown term is dropped, named in the ignored clause, and the surviving terms still run."
+        },
+        {
+          "id": "AC-9-saved",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15b",
+          "test": "AC-9 a saved query survives a restart",
+          "assert": "A saved collection re-lights after a relaunch by AST comparison against the restored query."
+        }
+      ]
+    },
+    {
+      "id": "10",
+      "title": "Peek is plain text; view state restores exactly",
+      "group": "functional",
+      "spec": "§16.10",
+      "checks": [
+        {
+          "id": "AC-10-peek",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-10 Space peeks inline as plain text",
+          "assert": "Peek renders the README as literal text — no markup, no fetch, no navigation."
+        },
+        {
+          "id": "AC-10-view-state",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "13b",
+          "test": "AC-10 view state restores exactly across a relaunch",
+          "assert": "Amendment 10: query, sort, view mode (grid|list), density, collapsed sections, scroll offset, selection, dismissed notices and window geometry all restore.",
+          "reason": "No geometry restore exists: viewState always writes null for the window rectangle and nothing in the shell reads it. Whoever lands the restore must clamp to the measured top-bar floor in the same change, or a window narrowed once stays broken."
+        }
+      ]
+    },
+    {
+      "id": "11",
+      "title": "Sessions: wait mode, idle segmentation, isolation, orphan recovery",
+      "group": "functional",
+      "spec": "§16.11",
+      "checks": [
+        {
+          "id": "AC-11-wait-mode",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11b",
+          "test": "acceptance_sessions::ac_11_wait_mode_ends_on_process_exit",
+          "assert": "A wait-mode target closes its session with close_reason process_exit."
+        },
+        {
+          "id": "AC-11-idle",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11b",
+          "test": "acceptance_sessions::ac_11_idle_credits_at_most_twenty_minutes",
+          "assert": "With FakeClock, a tree that never changed credits at most 20 minutes to a segment."
+        },
+        {
+          "id": "AC-11-isolation",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11b",
+          "test": "acceptance_sessions::ac_11_browsing_does_not_extend_another_segment",
+          "assert": "Shelf interaction does not extend an open segment belonging to a different project."
+        },
+        {
+          "id": "AC-11-orphan",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11b",
+          "test": "acceptance_sessions::ac_11_orphaned_session_closed_at_startup",
+          "assert": "A session with no ended_at from a previous process closes with close_reason orphaned."
+        }
+      ]
+    },
+    {
+      "id": "12",
+      "title": "First run asks nothing, shows no percentage, states its coverage",
+      "group": "functional",
+      "spec": "§16.12",
+      "checks": [
+        {
+          "id": "AC-12-no-questions",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-12 first run asks nothing, shows no percentage, and states its coverage",
+          "assert": "The first-run flow presents no configuration input and no percentage anywhere, and the word setup appears in no rendered string. Asserted over the mounted gate in jsdom, which has no layout engine — the same clause against a real frame is AC-12-paints."
+        },
+        {
+          "id": "AC-12-paints",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "22",
+          "test": "AC-12 the first-run screen paints and the word setup is absent from it",
+          "assert": "The same clause against a composited frame rather than a jsdom tree.",
+          "reason": "The e2e that renders the first-run screen skips itself when core/target/release/codotheca-core is absent — honestly, rather than passing over a blank window — so on any machine or CI job that has not built a release core the check does not run at all. Making it automated would mark a criterion covered by a test that silently declines to execute."
+        },
+        {
+          "id": "AC-12-coverage",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "16b",
+          "test": "AC-12 every figure over a partial index states its coverage",
+          "assert": "Every reveal figure carries its RevealBasis coverage line, with shallow repositories excluded from the maths and counted in the coverage line."
+        },
+        {
+          "id": "AC-12-refusal-explained",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "16b",
+          "test": "AC-12 a refused suggestion says why rather than nothing",
+          "assert": "§10.1a requires an explanation and never a silent no.",
+          "reason": "The shell distinguishes an unknown suggestion from an ambiguous one and the renderer collapses both to no root added: the commit path returns a root-add reply and the refusal type has no variant for it. What a user sees today is a scan that found nothing under a root nobody added. Closing it is a schema change plus 16b's surface."
+        }
+      ]
+    },
+    {
+      "id": "13",
+      "title": "Two launches: the second focuses the first and starts no second core",
+      "group": "functional",
+      "spec": "§16.13",
+      "checks": [
+        {
+          "id": "AC-13-no-second-core",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "03",
+          "test": "AC-13 a second launch opens no window and starts no core",
+          "assert": "With one instance running, a second process exits without opening a window and without taking the core lock.",
+          "reason": "Plan 20's File Structure names app/e2e/acceptance_single_instance.spec.ts and no task in plan 20 or 20b creates it; the single-instance lock itself is the shell plan's code. Registering it automated against a spec nobody wrote would be a criterion marked covered by a test that does not exist."
+        },
+        {
+          "id": "AC-13-focus",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "SECOND-LAUNCH-FOCUS",
+          "reason": "Focus transfer to an existing window is not observable under xvfb: there is no window manager, so focus semantics on a headless runner are unrepresentative of either target.",
+          "assert": "The second launch raises and focuses the first window."
+        }
+      ]
+    },
+    {
+      "id": "14",
+      "title": "A future schema refuses to open; a corrupt database quarantines and rebuilds",
+      "group": "functional",
+      "spec": "§16.14",
+      "checks": [
+        {
+          "id": "AC-14-future-schema",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_recovery::ac_14_schema_from_the_future_refuses_to_open",
+          "assert": "A PRAGMA user_version above SUPPORTED_SCHEMA_VERSION yields SchemaFromFuture carrying both numbers, and the file is left untouched."
+        },
+        {
+          "id": "AC-14-quarantine",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_recovery::ac_14_corrupt_database_quarantines_and_rebuilds",
+          "assert": "A corrupt file is quarantined with its wal and shm, rebuild returns a RebuildReport, and the report names exactly what was not derivable."
+        },
+        {
+          "id": "AC-14-message",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17c",
+          "test": "AC-14 the failure window states the schema number and the restore time",
+          "assert": "Criterion 57's failed-migration window renders the restored schema number and the restore time."
+        }
+      ]
+    },
+    {
+      "id": "15",
+      "title": "Cold launch to first painted tiles",
+      "group": "performance",
+      "spec": "§16.15",
+      "checks": [
+        {
+          "id": "AC-15-cold",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "13c",
+          "test": "perf::launch_to_first_tile",
+          "assert": "p50 under 800 ms and p95 under 1.5 s on A; p95 under 2.5 s on B. Chromium bootstrap dominates and v1's 300 ms was not achievable.",
+          "reason": "The terminal event now exists and has been observed: an end-to-end spec launches the real app and asserts a real pixel against a blank frame of the same window. Nothing times it. No harness records the pair below, no run has produced a p50 or a p95, and the spec that proves the paint skips itself when core/target/release/codotheca-core is absent. What is true today is that the app paints; what this budget claims is unmeasured.",
+          "measurement": {
+            "kind": "latency",
+            "from": "main process start",
+            "to": "first tile pixel composited",
+            "thermal": "cold",
+            "machines": ["A", "B"],
+            "state": "warm database, cold page cache"
+          },
+          "budget": [
+            {
+              "metric": "p50",
+              "op": "<",
+              "value": 800,
+              "unit": "ms",
+              "machine": "A"
+            },
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 1500,
+              "unit": "ms",
+              "machine": "A"
+            },
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 2500,
+              "unit": "ms",
+              "machine": "B"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "16",
+      "title": "Resident hotkey to window visible",
+      "group": "performance",
+      "spec": "§16.16",
+      "checks": [
+        {
+          "id": "AC-16-warm",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "17",
+          "test": "perf::hotkey_to_composited_frame_warm",
+          "assert": "Window alive: p95 under 30 ms. Measured 9 ms p50 / 12.6 ms p95. Amendment 16: the harness binds a chord first, because the resident shortcut ships unbound.",
+          "measurement": {
+            "kind": "latency",
+            "from": "shell global-shortcut callback entry",
+            "to": "a composited frame of the window",
+            "thermal": "warm",
+            "machines": ["A"],
+            "state": "window alive, chord bound by the harness"
+          },
+          "budget": [
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 30,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-16-cold",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "17",
+          "test": "perf::hotkey_to_composited_frame_cold",
+          "assert": "Window destroyed: p95 under 250 ms. Measured 134 ms p50 / 150 ms p95.",
+          "measurement": {
+            "kind": "latency",
+            "from": "shell global-shortcut callback entry",
+            "to": "a composited frame of the recreated window",
+            "thermal": "cold",
+            "machines": ["A"],
+            "state": "window destroyed under the 30-minute hybrid"
+          },
+          "budget": [
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 250,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "17",
+      "title": "Keystroke to refiltered grid at 1,000 projects",
+      "group": "performance",
+      "spec": "§16.17",
+      "checks": [
+        {
+          "id": "AC-17-refilter",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "13c",
+          "test": "perf::keystroke_to_presented_grid",
+          "assert": "p95 under 16 ms over a named query corpus, measured through to presentation. p99 was dropped in v2.1 because no harness can produce it honestly.",
+          "measurement": {
+            "kind": "latency",
+            "from": "renderer keydown",
+            "to": "the refiltered grid presented",
+            "thermal": "warm",
+            "machines": ["A"],
+            "state": "1,000 projects, client-side projection"
+          },
+          "budget": [
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 16,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "18",
+      "title": "Cache-validation pass over 1,000 repositories",
+      "group": "performance",
+      "spec": "§16.18",
+      "checks": [
+        {
+          "id": "AC-18-validate",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "09",
+          "test": "perf::cache_validation_pass",
+          "assert": "Under 5 s with every fingerprint unchanged and no J2 re-run. This is what v1's full T2 refresh under 5 s actually described.",
+          "measurement": {
+            "kind": "duration",
+            "from": "the scan.start response",
+            "to": "the scan/finished event",
+            "thermal": "warm",
+            "machines": ["A"],
+            "state": "1,000 repositories, all fingerprints unchanged, no J2 re-run"
+          },
+          "budget": [
+            {
+              "metric": "max",
+              "op": "<",
+              "value": 5000,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "19",
+      "title": "Forced J2 and J3 refresh over 1,000 repositories",
+      "group": "performance",
+      "spec": "§16.19",
+      "checks": [
+        {
+          "id": "AC-19-refresh",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "09",
+          "test": "perf::forced_j2_j3_refresh",
+          "assert": "75 to 120 s, reported with the Reference split, since deprioritising Reference repositories removes about 61% of the work from the critical path. Measured 584 ms per repository excluding the worst outlier.",
+          "measurement": {
+            "kind": "duration",
+            "from": "the scan.start response",
+            "to": "the scan/finished event",
+            "thermal": "warm",
+            "machines": ["A"],
+            "state": "1,000 repositories on local SSD, freshness reset, fully backgrounded"
+          },
+          "budget": [
+            {
+              "metric": "max",
+              "op": "<",
+              "value": 120000,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-19-interactive",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "13c",
+          "test": "perf::ui_interactive_during_refresh",
+          "assert": "The UI never blocks during the refresh: frame pacing during the run holds criterion 30's rate.",
+          "measurement": {
+            "kind": "rate",
+            "run": "wheel-driven scrolling through the shelf for at least 450 frames while the forced refresh runs",
+            "thermal": "warm",
+            "machines": ["A"]
+          },
+          "budget": [
+            {
+              "metric": "missedFraction",
+              "op": "<=",
+              "value": 0.01,
+              "unit": "fraction",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "20",
+      "title": "First full J4 history index over 1,000 repositories",
+      "group": "performance",
+      "spec": "§16.20",
+      "checks": [
+        {
+          "id": "AC-20-resumable",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_20_j4_resumes_from_its_cursor",
+          "assert": "J4 stopped mid-run resumes from project_job_state.cursor and produces the same commit-day set as an uninterrupted run.",
+          "reason": "§4.1's chunking is unreachable today and accepted for phase 1: the git backend exposes atomic calls with no yield point, so there is nowhere to write a cursor. The contract is built — a partial outcome, its application and the cursor column all exist — so closing it is additive. Overturn on measurement, not taste."
+        },
+        {
+          "id": "AC-20-coverage",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-20 the coverage indicator is visible while J4 is incomplete",
+          "assert": "A week outside J4's coverage is not computed, and the panel carries its coverage line."
+        },
+        {
+          "id": "AC-20-duration",
+          "status": "unmeasurable",
+          "runner": "none",
+          "reason": "The criterion states no deadline — 'minutes, resumable, with a visible coverage indicator. No deadline.' There is nothing to gate on, and a ceiling invented here would gate on a number the spec deliberately declined to state.",
+          "assert": "No duration budget exists for the first full J4 pass."
+        },
+        {
+          "id": "AC-20-large-history",
+          "status": "unmeasurable",
+          "runner": "none",
+          "reason": "The corpus tops out at the deep-history fixture, which reached 2,585 commits. About 30 ms fixed plus 0.02 ms per commit implies roughly 2 s at 100k commits and 20 s at 1M, but that is an extrapolation from a fit, not a measurement, and the harness records extrapolations as extrapolations.",
+          "assert": "The 100k and 1M commit cases are extrapolated and are never reported as measured."
+        }
+      ]
+    },
+    {
+      "id": "21",
+      "title": "Idle on Reference A",
+      "group": "performance",
+      "spec": "§16.21",
+      "checks": [
+        {
+          "id": "AC-21-frames",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "12c",
+          "test": "perf::idle_scheduled_frames",
+          "assert": "Amendment 21: zero scheduled frames while unfocused or hidden, and at most one flicker element while focused, sampled over at least 60 s in the defined idle state.",
+          "measurement": {
+            "kind": "rate",
+            "run": "at least 60 s with the shelf visible and focused, no project page open, no session open, no job running, and no pointer or keyboard input for at least 5 s",
+            "thermal": "warm",
+            "machines": ["A"]
+          },
+          "budget": [
+            {
+              "metric": "max",
+              "op": "<=",
+              "value": 1,
+              "unit": "flicker elements",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-21-flicker",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-21 the scheduled flicker obeys its eligibility and its parameters",
+          "assert": "At most one card in the viewport — mounted is not enough; 1 to 2 sub-dips of 15 to 25% of steady glow, each 80 to 140 ms, a deterministic Poisson process at about 9 s mean seeded per session, suspended while unfocused and resuming with no backlog. Eligibility is condition_signal in {neglected, abandoned}, location present, is_reference = 0. The design's 50% depth, fixed 130 ms hold and fixed 9,000 ms period are cut and must not be asserted."
+        },
+        {
+          "id": "AC-21-cpu",
+          "status": "unmeasurable",
+          "runner": "none",
+          "reason": "Amendment 21 marks the CPU figure provisional: the 0.014 to 0.017% in the probe results was taken before any scheduled frame existed, so it describes a different build. It is re-measured before the public beta rather than gated on now.",
+          "assert": "No idle CPU or GPU budget is gated in phase 1."
+        },
+        {
+          "id": "AC-21-audio",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "IDLE-AUDIO",
+          "reason": "Asserting the app is absent from the OS audio mixer requires an OS audio mixer; no hosted CI runner exposes one, and a stubbed audio device would assert the stub.",
+          "assert": "The app does not appear in the OS audio mixer while idle."
+        }
+      ]
+    },
+    {
+      "id": "22",
+      "title": "Storage against the 1,000-project fixture",
+      "group": "performance",
+      "spec": "§16.22",
+      "checks": [
+        {
+          "id": "AC-22-database",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_storage::ac_22_database_and_wal_under_100mb",
+          "assert": "Main database plus WAL under 100 MB against the fixture of 1,000 projects, 200,000 commit subjects and 100,000 events.",
+          "reason": "The file exists and holds the art half only. The other half was deliberately not stubbed, because a stub reports passed for a budget nothing measured, and the 1,000-project fixture belongs to the jobs plan and to no other. The file is shared; the owner is per-function.",
+          "measurement": {
+            "kind": "size",
+            "thermal": "n/a",
+            "machines": ["A"],
+            "state": "1,000 projects, 200,000 commit subjects, 100,000 events"
+          },
+          "budget": [
+            {
+              "metric": "bytes",
+              "op": "<",
+              "value": 104857600,
+              "unit": "bytes",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-22-art-cache",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_storage::ac_22_art_cache_under_50mb",
+          "assert": "Art cache under 50 MB against the re-derived total, with the card rendition asserted at 600x900 and the hero cache bounded, least-recently-opened evicted first. The GPU texture clause is phase 3 and is not tested. The 1,000-project total is projected from the worst of a 24-scene sample rather than rasterized in full, which the test states; the eviction order is observed over more opens than the cap.",
+          "measurement": {
+            "kind": "size",
+            "thermal": "n/a",
+            "machines": ["A"],
+            "state": "the worst of a 24-scene sample projected to 1,000 projects, with more hero opens than the cap"
+          },
+          "budget": [
+            {
+              "metric": "bytes",
+              "op": "<",
+              "value": 52428800,
+              "unit": "bytes",
+              "machine": "A"
+            },
+            {
+              "metric": "files",
+              "op": "<=",
+              "value": 200,
+              "unit": "hero files",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "23",
+      "title": "No value is presented as current without its observation time",
+      "group": "honesty",
+      "spec": "§16.23",
+      "checks": [
+        {
+          "id": "AC-23-audit",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-23 auditObservationTimes finds a fact rendered without its observation time",
+          "assert": "The audit primitives themselves: a fact node without its observation-time attribute is a violation, a coverage figure without its coverage attribute is a violation, and the word clean in a worktree readout is a violation.",
+          "reason": "The DOM convention the audit would read does not exist. No data-observed-at and no data-coverage attribute appears anywhere in the renderer today; the observation clause is composed in a formatter and rendered as text. An audit written against that convention now would select nothing on every possible tree and report clean — which is the same shape as the dead in-sync CI step. The convention has to land with the shelf first. The one clause that is gated today is the vocabulary: the destructive-token gate already fails the build on the word clean in a rendered string."
+        },
+        {
+          "id": "AC-23-shelf",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-23 the shelf renders no current value without its observation time",
+          "assert": "The audit run over the rendered shelf at every card state returns no violations; absence of dirty reads 'no changes as of T', never 'clean'."
+        },
+        {
+          "id": "AC-23-reveal",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-23 no figure over a partial index is presented bare",
+          "assert": "Every reveal figure renders with its basis rather than bare — the projects it was computed over and whether history is complete."
+        },
+        {
+          "id": "AC-23-shallow",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_23_shallow_excluded_and_counted",
+          "assert": "The shallow fixture is excluded from history statistics and counted in the coverage line; its Activity lanes report shallow_excluded rather than measured."
+        }
+      ]
+    },
+    {
+      "id": "24",
+      "title": "Killing the core loses no committed data and replays nothing non-idempotent",
+      "group": "honesty",
+      "spec": "§16.24",
+      "checks": [
+        {
+          "id": "AC-24-restarted",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-24 every pending request is rejected with CORE_RESTARTED",
+          "assert": "When the child dies, every in-flight request rejects with a CoreRequestError carrying code CORE_RESTARTED; a non-idempotent one carries outcome unknown and is not retryable, a read carries no outcome and is."
+        },
+        {
+          "id": "AC-24-no-replay",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-24 nothing non-idempotent is replayed across an epoch",
+          "assert": "No non-idempotent command is re-sent after a restart; the resubscribe rides the new epoch and a frame carrying the dead one is dropped."
+        },
+        {
+          "id": "AC-24-shutdown",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "CoreSupervisor.stopAndWait resolves once the core has actually exited",
+          "assert": "The orderly half only: quitting waits for the core to exit rather than assuming it did, and kills it when the deadline passes. This is not the kill-mid-scan clause — a clean stop is the case where nothing was interrupted."
+        },
+        {
+          "id": "AC-24-durable",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "07",
+          "test": "acceptance_scan::ac_24_kill_mid_scan_loses_no_committed_data",
+          "assert": "Killing the core during a scan over huge-untracked leaves every committed row intact and the scan_run row resumable."
+        },
+        {
+          "id": "AC-24-resume",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "07",
+          "test": "acceptance_scan::ac_24_scan_resumes_on_restart",
+          "assert": "A restart resumes the interrupted scan from its generation rather than starting a new full walk."
+        }
+      ]
+    },
+    {
+      "id": "25",
+      "title": "Every promised problem is reachable; every never-indexed repository carries an explained error",
+      "group": "honesty",
+      "spec": "§16.25",
+      "checks": [
+        {
+          "id": "AC-25-kinds",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-problem-kinds:reachable",
+          "assert": "Every problem kind the protocol declares is representable in the store and appears in the scan summary's group list; a kind that the protocol can emit and the schema cannot store is a defect, not an omission."
+        },
+        {
+          "id": "AC-25-summary",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17c",
+          "test": "AC-25 every counted problem is reachable in the scan summary",
+          "assert": "Each group in problems.list renders with a count and a way to reach its rows."
+        },
+        {
+          "id": "AC-25-explained",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_25_never_indexed_carries_an_explained_error",
+          "assert": "A repository that has never successfully indexed carries error_kind, error_detail and error_at, and its condition_signal stays NULL rather than being invented."
+        },
+        {
+          "id": "AC-25-problem-location",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "04",
+          "test": "acceptance_jobs::ac_25_a_problem_row_names_the_location_it_came_from",
+          "assert": "A problem row names which copy raised it.",
+          "reason": "scan_problem has no location_id column. A project with two copies on two volumes can raise a problem on one of them and the row cannot say which, so the reachable-rows half of the criterion resolves to the project and not to the thing the user has to go and look at. The scan now writes problem rows, which makes the omission live rather than theoretical. Closing it is the schema plan's column plus the surfaces plan's rendering."
+        }
+      ]
+    },
+    {
+      "id": "26",
+      "title": "Signed per-user NSIS with a working updater round trip",
+      "group": "distribution",
+      "spec": "§16.26",
+      "checks": [
+        {
+          "id": "AC-26-roundtrip",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "19",
+          "test": "AC-26 the updater round trip completes against a local feed",
+          "assert": "A per-user NSIS install updates from a locally served feed, including an update staged while the core is running, which completes the shutdown first.",
+          "reason": "Phase 1 ships no update channel. There is no auto-updater, no update server and no feed: distribution is a release page downloaded by hand. electron-updater is not a dependency and a gate asserts its absence, so the round trip has nothing to round-trip against. This is neither covered nor failing — the criterion's subject does not exist in this phase, and the check is here so that adding an updater later cannot arrive without it."
+        },
+        {
+          "id": "AC-26-signature",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "RELEASE-SIGNING",
+          "reason": "The code-signing certificate is a hardware-token procurement and none has been obtained: phase 1 ships unsigned and the packager reports that posture rather than hiding it. The private key could not exist in CI even once it does, so no automated job can produce or verify a genuinely signed artifact.",
+          "assert": "The shipped installer and its update artifacts carry a valid signature."
+        }
+      ]
+    },
+    {
+      "id": "27",
+      "title": "AppImage self-updates; deb and rpm install with the updater disabled",
+      "group": "distribution",
+      "spec": "§16.27",
+      "checks": [
+        {
+          "id": "AC-27-appimage",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "19",
+          "test": "AC-27 the AppImage self-updates from a local feed",
+          "assert": "Run with --appimage-extract-and-run on a Linux runner, the AppImage completes an update round trip.",
+          "reason": "Phase 1 ships no update channel, so the AppImage self-update has nothing to update from. The AppImage target itself is built and packed."
+        },
+        {
+          "id": "AC-27-packages",
+          "status": "deferred",
+          "runner": "script",
+          "owner": "19",
+          "test": "check-packages:updater-disabled",
+          "assert": "The built .deb and .rpm carry the build-time artifact flag that disables the updater, and installing them on a runner leaves no updater timer.",
+          "reason": "There is no updater to disable and therefore no flag to carry. What ships instead is the stronger statement, gated today by scripts/check-no-updater.mjs in the bundle guard: the updater package is absent from the dependency tree and from the built shell entirely. That gate emits no joinable result row, so the criterion cannot claim it until either it does or this check is rewritten against what actually exists."
+        }
+      ]
+    },
+    {
+      "id": "28",
+      "title": "diag.bundle exports the stated fields, anonymised by default",
+      "group": "distribution",
+      "spec": "§16.28",
+      "checks": [
+        {
+          "id": "AC-28-fields",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "17",
+          "test": "acceptance_diag::ac_28_bundle_exports_the_stated_fields",
+          "assert": "diag.bundle returns exactly the stated fields and no path, no remote URL and no email survives anonymisation by default."
+        }
+      ]
+    },
+    {
+      "id": "29",
+      "title": "Real Linux GPU rendering across the driver and compositor matrix",
+      "group": "external",
+      "spec": "§16.29",
+      "checks": [
+        {
+          "id": "AC-29-linux-gpu",
+          "status": "external",
+          "runner": "none",
+          "reason": "Neither the maintainer nor CI can exercise it: development is on Windows with WSL, WSLg is unrepresentative, and CI runners are headless. Criteria 15 and 21 are measured on A and on WSLg only; the Linux figures come from external users during the public beta. This is a known, accepted gap and it is the reason phase 1 ships publicly as a beta.",
+          "assert": "Not verified here. The harness reports it as external and refuses any other status."
+        }
+      ]
+    },
+    {
+      "id": "30",
+      "title": "Scroll frame pacing",
+      "group": "performance",
+      "spec": "§16.30",
+      "checks": [
+        {
+          "id": "AC-30-pacing",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "13c",
+          "test": "perf::scroll_frame_pacing",
+          "assert": "At most 1% of frames miss a display refresh over a run of at least 450 frames, at whatever interval the display actually reports. This criterion carries a run definition and no event pair, because it gates a rate. Measured DOM-only on A: 0 of 450 missed.",
+          "measurement": {
+            "kind": "rate",
+            "run": "1,000 logical cards with 140 mounted, virtualized, driven by injected wheel events through the real compositor path and never by assigning scrollTop, over at least 450 frames, with the window alive, the shelf already painted and the virtualizer settled",
+            "thermal": "warm",
+            "machines": ["A"]
+          },
+          "budget": [
+            {
+              "metric": "missedFraction",
+              "op": "<=",
+              "value": 0.01,
+              "unit": "fraction",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "31",
+      "title": "Palette painted with its first page of rows",
+      "group": "performance",
+      "spec": "§16.31",
+      "checks": [
+        {
+          "id": "AC-31-warm",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "15",
+          "test": "perf::palette_warm",
+          "assert": "In-app palette chord with the window alive: p95 under 50 ms. A budget, not a measurement, and it must be measured before the bar is claimed.",
+          "measurement": {
+            "kind": "latency",
+            "from": "renderer keydown",
+            "to": "the palette painted with its first page of rows and the field focused",
+            "thermal": "warm",
+            "machines": ["A"],
+            "state": "window alive"
+          },
+          "budget": [
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 50,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-31-cold",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "15",
+          "test": "perf::palette_cold",
+          "assert": "The resident show shortcut with the window destroyed: p95 under 300 ms, against a chord the harness binds. This is the same press criterion 16 measures; 16's terminal event precedes 31's inside it.",
+          "measurement": {
+            "kind": "latency",
+            "from": "shell global-shortcut callback entry",
+            "to": "the palette painted with its first page of rows and the field focused",
+            "thermal": "cold",
+            "machines": ["A"],
+            "state": "window destroyed, chord bound by the harness"
+          },
+          "budget": [
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 300,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "32",
+      "title": "The palette hotkey wins over the query field",
+      "group": "surfaces",
+      "spec": "§16.32",
+      "checks": [
+        {
+          "id": "AC-32-preventdefault",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15",
+          "test": "AC-32 the hotkey opens the palette and never reaches the query field",
+          "assert": "A press anywhere in the app, including while the query field holds focus, opens the palette, calls preventDefault, and the keystroke never reaches the field. A press while another application has focus is criterion 61's, not this one's."
+        }
+      ]
+    },
+    {
+      "id": "33",
+      "title": "Quick switch keys, order, empty state and footer",
+      "group": "surfaces",
+      "spec": "§16.33",
+      "checks": [
+        {
+          "id": "AC-33-keys",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15",
+          "test": "AC-33 arrows move, Enter launches, Shift+Enter opens the page, Esc restores focus",
+          "assert": "Order is most-recently-touched first; no match renders 'No project matches that.'; Esc returns focus to whatever held it."
+        },
+        {
+          "id": "AC-33-glyphs",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c33-keycap-glyphs",
+          "assert": "The glyphs for Option and Space appear nowhere in the built renderer; the two glyphs the target keyboards do print are permitted only on quick switch's footer and its selected row."
+        }
+      ]
+    },
+    {
+      "id": "34",
+      "title": "The page plays once and stays put",
+      "group": "surfaces",
+      "spec": "§16.34",
+      "checks": [
+        {
+          "id": "AC-34-once",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-34 one animationstart per named animation per open",
+          "assert": "Opening the page fires each named animation exactly once, even when a transient state clears and re-renders."
+        }
+      ]
+    },
+    {
+      "id": "35",
+      "title": "The page unmounts the shelf and stops the session tick",
+      "group": "surfaces",
+      "spec": "§16.35",
+      "checks": [
+        {
+          "id": "AC-35-unmount",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-35 zero shelf cards mounted and the 4-second tick stopped",
+          "assert": "With the page mounted the shelf has no mounted cards and the 4-second session tick is not scheduled."
+        }
+      ]
+    },
+    {
+      "id": "36",
+      "title": "Esc on the page restores the shelf exactly",
+      "group": "surfaces",
+      "spec": "§16.36",
+      "checks": [
+        {
+          "id": "AC-36-return",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-36 Esc repaints the shelf with the originating section expanded and the tile in view",
+          "assert": "The originating section is expanded, the originating tile is selected and scrolled into view."
+        }
+      ]
+    },
+    {
+      "id": "37",
+      "title": "The tab strip is OVERVIEW and ACTIVITY and nothing else",
+      "group": "surfaces",
+      "spec": "§16.37",
+      "checks": [
+        {
+          "id": "AC-37-tabs",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-37 the tab strip has exactly two tabs and no path reaches a third",
+          "assert": "The rendered tab strip has exactly two tabs, and no key, route or state path mounts a Health or Remote panel."
+        }
+      ]
+    },
+    {
+      "id": "38",
+      "title": "The Locations footer, its association wording and its row states",
+      "group": "surfaces",
+      "spec": "§16.38",
+      "checks": [
+        {
+          "id": "AC-38-footer",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-38 the footer matches the association kind and exactly one row is PRIMARY",
+          "assert": "One location renders no footer; two or more render the wording for the association's association_kind, with exactly one row plated PRIMARY and every other tagged COPY."
+        },
+        {
+          "id": "AC-38-states",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-38 a row's state word comes from the whole table, not the present row of it",
+          "assert": "A present row reads SAME COMMIT, DIFFERENT COMMIT or NOT COMPARED; offline, missing and unscanned rows read OFFLINE, MISSING and NOT SCANNED. No row carries a CURRENT marker."
+        },
+        {
+          "id": "AC-38-superseded",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c38-superseded-footer",
+          "assert": "The superseded root-commit footer, quoted byte-for-byte with its ellipsis, appears nowhere in the built renderer — it asserts the inference a shared root commit cannot support."
+        }
+      ]
+    },
+    {
+      "id": "39",
+      "title": "A copy on a different commit, and the directional claims that are forbidden",
+      "group": "surfaces",
+      "spec": "§16.39",
+      "checks": [
+        {
+          "id": "AC-39-note",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-39 a differing head carries the note and a NULL head reads NOT COMPARED",
+          "assert": "A copy whose stored head_oid differs from the primary's carries the verbatim note on the warn edge; either head NULL reads NOT COMPARED and carries no note; an offline location offers RELOCATE and nothing else with its verbatim sentence."
+        },
+        {
+          "id": "AC-39-no-direction",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c39-directional-claims",
+          "assert": "Phase 1 compares copies by identity, never by direction: the diverged wording, the behind-primary wording and the sentence about commits the primary does not have appear in no rendered string."
+        }
+      ]
+    },
+    {
+      "id": "40",
+      "title": "Activity draws two lanes and never a count",
+      "group": "surfaces",
+      "spec": "§16.40",
+      "checks": [
+        {
+          "id": "AC-40-lanes",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-40 the two lanes share a slot, each with its own baseline and normalisation",
+          "assert": "Adjacent sub-columns, never stacked and never summed; a fixture with commit-days and no sessions renders an empty session lane, not one merged bar."
+        },
+        {
+          "id": "AC-40-legend",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c40-commit-counts",
+          "assert": "The superseded legend naming commits by the user appears nowhere; nothing in the schema stores a commit count and never-reward-volume forbids acquiring one."
+        }
+      ]
+    },
+    {
+      "id": "41",
+      "title": "A week outside J4's coverage is not computed",
+      "group": "surfaces",
+      "spec": "§16.41",
+      "checks": [
+        {
+          "id": "AC-41-uncovered",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-41 an uncovered week renders as not computed, never as a zero-height bar",
+          "assert": "A week outside coverage renders the not-computed treatment and the panel carries its coverage line."
+        }
+      ]
+    },
+    {
+      "id": "42",
+      "title": "A README renders as literal text on both surfaces",
+      "group": "surfaces",
+      "spec": "§16.42",
+      "checks": [
+        {
+          "id": "AC-42-peek",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-42 markup in a README renders as literal text in Peek",
+          "assert": "Script tags, image tags and link syntax render as text — no markup, no fetch, no navigation."
+        },
+        {
+          "id": "AC-42-page",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-42 markup in a README renders as literal text on the project page",
+          "assert": "Amendment 10 extends the plain-text rule from Peek to the project page's README panel."
+        }
+      ]
+    },
+    {
+      "id": "43",
+      "title": "The scratchpad persists, is project-scoped and reconciles on merge",
+      "group": "surfaces",
+      "spec": "§16.43",
+      "checks": [
+        {
+          "id": "AC-43-note",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-43 the scratchpad persists, scopes and reconciles",
+          "assert": "It survives a relaunch, is scoped to the project, reconciles on merge by the note rule, and reads its verbatim empty state when unset."
+        }
+      ]
+    },
+    {
+      "id": "44",
+      "title": "Nothing on the page mutates disk",
+      "group": "surfaces",
+      "spec": "§16.44",
+      "checks": [
+        {
+          "id": "AC-44-no-destruction",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-44 no surface offers a destructive control and RELOCATE rewrites one row",
+          "assert": "No Remove, no clean, no push, no checkout on any surface; RELOCATE rewrites the location row's path only, verified by hashing the location's tree before and after; setTrusted and requeue are read-only with respect to the filesystem and git config."
+        },
+        {
+          "id": "AC-44-token",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c44-forget-token",
+          "assert": "The forget token appears in no rendered string, no accessible name and no command name anywhere in the built bundle or in the protocol schema."
+        },
+        {
+          "id": "AC-44-readonly-argv",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "git_readonly::no_source_file_names_a_destructive_subcommand",
+          "assert": "Every argv literal the git module can emit is on a read-only allow list and none is on the destructive deny list, audited over the module's own source with its own scanned-nothing guard. It reads core/src/git only and one literal form, which is why the static call-site rule covers argv assembled elsewhere in the core."
+        },
+        {
+          "id": "AC-44-no-destructive-git",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:no-destructive-git",
+          "assert": "No destructive git subcommand appears as an argv literal anywhere in the core — push, clean, checkout, reset, fetch, pull, gc, prune and restore, fetch included because a directional claim would need one."
+        }
+      ]
+    },
+    {
+      "id": "45a",
+      "title": "The grid card and the hero state the absence",
+      "group": "surfaces",
+      "spec": "§16.45a",
+      "checks": [
+        {
+          "id": "AC-45a-uncomputed",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-45a the uncomputed band draws its frame, gap, glyph and label",
+          "assert": "Frame in the unknown token with the top-edge gap at the stated geometry, an em-dash rank glyph in the unknown ink, and the label in text-3. Never a ladder colour, never a lit tick row, never a zero over ten."
+        }
+      ]
+    },
+    {
+      "id": "45b",
+      "title": "Every other completion readout renders no element at all",
+      "group": "surfaces",
+      "spec": "§16.45b",
+      "checks": [
+        {
+          "id": "AC-45b-empty",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-45b the rank and score columns, the palette slot, the hero band and Peek contain no node",
+          "assert": "Assert the emptiness of the node, not the absence of a digit — a dash placed there passes a digits-only check."
+        }
+      ]
+    },
+    {
+      "id": "45c",
+      "title": "The layout survives the emptiness",
+      "group": "surfaces",
+      "spec": "§16.45c",
+      "checks": [
+        {
+          "id": "AC-45c-layout",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-45c the empty list columns keep their widths and the header labels only the middle four",
+          "assert": "Columns 2 and 7 still occupy their stated widths with the rows aligned; the header labels columns 3 to 6 only; column 6's em dash is a different value and stays."
+        }
+      ]
+    },
+    {
+      "id": "46",
+      "title": "Every colour and every motion value resolves to a declared one",
+      "group": "surfaces",
+      "spec": "§16.46",
+      "checks": [
+        {
+          "id": "AC-46-colour",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c46-colour-literals",
+          "assert": "The built stylesheet contains none of the four snapped grounds, none of the additional off-token ground, none of the off-token greys other than the condition-dot fills, and not the dropped blue. The language palette and everything the rasterizer computes are exempt by name and never reach a stylesheet."
+        },
+        {
+          "id": "AC-46-motion",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c46-motion-values",
+          "assert": "The built stylesheet declares no duration literal and no timing function that the motion tables or a named single-effect row does not carry."
+        }
+      ]
+    },
+    {
+      "id": "47",
+      "title": "Decision text clears the floor against its own ancestor",
+      "group": "surfaces",
+      "spec": "§16.47",
+      "checks": [
+        {
+          "id": "AC-47-contrast",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12",
+          "test": "AC-47 every decision string clears 5.9:1 against its nearest painted ancestor",
+          "assert": "The number, not a token's ratio. A row that can be hovered onto the hover fill is the fixture, because text-3 is legal on four grounds and not on that one."
+        },
+        {
+          "id": "AC-47-ornament",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12",
+          "test": "AC-47 no element that is the only rendering of a fact resolves to text-4 or text-5",
+          "assert": "A rule, not a list of ten elements; text-5 appears only on keyboard hints at 8px or larger with at least .12em tracking."
+        }
+      ]
+    },
+    {
+      "id": "48a",
+      "title": "The grid tile's reserved bands",
+      "group": "surfaces",
+      "spec": "§16.48a",
+      "checks": [
+        {
+          "id": "AC-48a-bands",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-48a no element on the grid tile occupies two bands",
+          "assert": "The tile's own band table, read alone: furniture, hairline, rank band, chip and vent and jewel band, then the scrim and the name. Four separate overlap bugs came from ignoring these."
+        }
+      ]
+    },
+    {
+      "id": "48b",
+      "title": "The hero's reserved bands",
+      "group": "surfaces",
+      "spec": "§16.48b",
+      "checks": [
+        {
+          "id": "AC-48b-bands",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-48b the hero uses its own band table, not the tile's",
+          "assert": "The hero is not the tile at hero scale: applying the tile's allocation moves the jewel stripe out of the band it closes. The first-run scan tile is outside both tables."
+        }
+      ]
+    },
+    {
+      "id": "49",
+      "title": "Chamfer geometry and the one permitted circle",
+      "group": "surfaces",
+      "spec": "§16.49",
+      "checks": [
+        {
+          "id": "AC-49-chamfer",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-49 the chamfer is cut by clip-path and radius elsewhere is 0 to 3px",
+          "assert": "The card and hero chamfer tokens, cut over a 1px tier-filled parent with the art inset by 1px; the condition dot's full circle is the one exception."
+        }
+      ]
+    },
+    {
+      "id": "50",
+      "title": "Effects tier off",
+      "group": "surfaces",
+      "spec": "§16.50",
+      "checks": [
+        {
+          "id": "AC-50-zero-animation",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12",
+          "test": "AC-50 tier off runs zero animations and schedules zero frames",
+          "assert": "At reduced and off the scheduled flicker is absent — steady glow, no dip. Hazard tape renders identically and the pin mark is a static silhouette no tier deletes. Verified by resolving a style on a real element under each tier, never by matching the stylesheet's text: the clamp selects nine class names exactly and a tenth name makes it select nothing."
+        },
+        {
+          "id": "AC-50-readability",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "EFFECTS-OFF-READABILITY",
+          "reason": "The criterion is marked half in the spec: whether condition, tier, rank and safety remain readable from static form alone is a human reading, and absence of a condition dot is a correct static reading rather than a failure.",
+          "assert": "Condition, tier, rank and safety are readable at tier off."
+        }
+      ]
+    },
+    {
+      "id": "51",
+      "title": "Copy voice",
+      "group": "surfaces",
+      "spec": "§16.51",
+      "checks": [
+        {
+          "id": "AC-51-voice",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "COPY-VOICE",
+          "reason": "The spec marks this criterion as not automatable: no second-person accusation, no editorialised figure and nothing that congratulates volume are judgements about prose, and a machine reading them would be asserting a keyword list rather than the rule.",
+          "assert": "Every user-visible string passes the copy-voice ruling; roast copy is gated by criterion 54 instead."
+        }
+      ]
+    },
+    {
+      "id": "52",
+      "title": "Saved collections, their degraded states and their removal",
+      "group": "surfaces",
+      "spec": "§16.52",
+      "checks": [
+        {
+          "id": "AC-52-save",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15b",
+          "test": "AC-52 a saved collection re-lights by AST comparison and adds no view_state key",
+          "assert": "It appears as a chip after the four built-ins and adds no key to view_state."
+        },
+        {
+          "id": "AC-52-degraded",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15b",
+          "test": "AC-52 a stored query whose grammar moved on renders degraded or broken",
+          "assert": "Surviving terms run with dropped terms struck and the count attributed to what ran, or no number at all and not activatable — never an empty grid and never a zero."
+        },
+        {
+          "id": "AC-52-remove",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "15",
+          "test": "acceptance_collections::ac_52_remove_deletes_only_collection_rows",
+          "assert": "collections.remove deletes the collection and collection_member rows only, verified by hashing project, location, session and xp_events before and after."
+        }
+      ]
+    },
+    {
+      "id": "53",
+      "title": "Keyboard, focus and accessibility",
+      "group": "subsystems",
+      "spec": "§16.53",
+      "checks": [
+        {
+          "id": "AC-53-grid-keys",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-53 arrows move by the measured column count and carry a desired column",
+          "assert": "Each context's handler runs only in its context; left and right clamp at row ends without wrapping; collapsed sections are out of the sequence. Verified against a real event target: a keyboard table asserted against a null target would have shipped a dead palette."
+        },
+        {
+          "id": "AC-53-focus-identity",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-53 focus is held as a project id and a focused card stays mounted",
+          "assert": "Focus survives an insert mid-scan, and the virtualizer may not evict a focused card, or the browser drops focus to the body and the keyboard dies silently."
+        },
+        {
+          "id": "AC-53-outline",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c53-outline-replacement",
+          "assert": "No rule in the built stylesheet removes the outline without a box-shadow replacement in the same rule — the only indicator that survives clip-path clipping every outline away."
+        },
+        {
+          "id": "AC-53-escape-copy",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c53-first-run-escape",
+          "assert": "The superseded first-run escape sentence appears nowhere in the built renderer."
+        },
+        {
+          "id": "AC-53-names",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-53 every control is a real button or tabindex participant with a name that states no colour",
+          "assert": "The scan count line is role=status, replaced only at the stated milestones and at completion; the first-run escape control is in the first rendered frame and reachable by Tab. A repository-badge name is not tested because that indicator never mounts."
+        }
+      ]
+    },
+    {
+      "id": "54",
+      "title": "The roast producer",
+      "group": "subsystems",
+      "spec": "§16.54",
+      "checks": [
+        {
+          "id": "AC-54-selection",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-54 first match wins over the five clauses and silence when none matches",
+          "assert": "At most one line, describing the shown location and never the aggregate; nothing when the switch is off, the project is Reference or archived, the shown location is not present, or the project never succeeded. Clause 2 is the only clause carrying a time and is not produced at all past 24 h."
+        },
+        {
+          "id": "AC-54-scope",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-54 a DOM audit finds zero roast blocks outside an opened project card",
+          "assert": "The grid, Peek, the list, quick switch, the scan summary and every notification contain no roast block. This is the half that makes the feature admissible."
+        },
+        {
+          "id": "AC-54-superseded",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c54-superseded-roast",
+          "assert": "The superseded roast strings appear nowhere in the built renderer."
+        }
+      ]
+    },
+    {
+      "id": "55",
+      "title": "The pin",
+      "group": "subsystems",
+      "spec": "§16.55",
+      "checks": [
+        {
+          "id": "AC-55-control",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-55 P toggles the pin, is inert in the query field, and the control is a button with aria-pressed",
+          "assert": "Exposed on an unpinned card whenever the card is focused, so the binding is discoverable without a pointer; the hit target is the one stated for that surface, abutting the condition dot without overlapping it and staying inside band 1."
+        },
+        {
+          "id": "AC-55-static",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-55 the pin mark renders identically at full, reduced and off",
+          "assert": "It is geometry, not motion. The hero carries its own pin row in the surface table; the ban on a second copy is on the page chrome, not on the one in the hero's band 1."
+        },
+        {
+          "id": "AC-55-no-consequence",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-55 pinning changes no section, order, aggregate, collapse state or chip",
+          "assert": "The pinned query matching it is the entire phase-1 consequence."
+        }
+      ]
+    },
+    {
+      "id": "56",
+      "title": "The art reroll",
+      "group": "subsystems",
+      "spec": "§16.56",
+      "checks": [
+        {
+          "id": "AC-56-absolute",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_56_reroll_offset_is_absolute",
+          "assert": "An absolute target offset, never an increment: a replayed message writes the same integer; an offset more than 1 from the stored value is rejected PROTOCOL with the stored value returned; plus or minus one per press, floored at zero, never a wrap; offset n-1 re-derives byte-identically."
+        },
+        {
+          "id": "AC-56-effects-swap",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "art AC-56 reroll holds the old bitmap until the new hash has decoded and swaps with no transition",
+          "assert": "One projectId per call; the old bitmap is held until the new hash has decoded and the swap carries no transition."
+        },
+        {
+          "id": "AC-56-effects-shell",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17",
+          "test": "AC-56 a reroll writes no xp_events row and fires no notification",
+          "assert": "A reroll leaves the identity fields and the name unchanged, writes no xp_events row and raises no notification.",
+          "reason": "Split out of a single check that mixed runners. The notification clause has no shell module to assert against until the tray and the notice surfaces land, and the xp_events clause is a cargo assertion — registering all three together would have reported the criterion covered while a third of it was not."
+        },
+        {
+          "id": "AC-56-stepper",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "10b",
+          "test": "AC-56 the back step and the readout are absent at offset zero",
+          "assert": "At offset zero the reroll control renders no back step and no readout — there is nothing to go back to and no number to state."
+        }
+      ]
+    },
+    {
+      "id": "57",
+      "title": "Startup, boot.json and the three failure windows",
+      "group": "subsystems",
+      "spec": "§16.57",
+      "checks": [
+        {
+          "id": "AC-57-boot-file",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-57 boot.json falls back to auto and an empty shelf, never to an error window",
+          "assert": "A missing, unparseable or wrong-generation file resolves to auto; the shell never opens the database."
+        },
+        {
+          "id": "AC-57-precedence",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-57 the effects-tier flag beats the environment variable beats boot.json",
+          "assert": "Neither override is written back to the file."
+        },
+        {
+          "id": "AC-57-paint-fail",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-57 a second paint failure forces off on the next launch without reading the database",
+          "assert": "A user who cannot see the window cannot change a setting inside it, so the forcing decision is taken from the file alone."
+        },
+        {
+          "id": "AC-57-windows",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17c",
+          "test": "AC-57 the three failure windows render as specified",
+          "assert": "A failed migration names the schema number it was restored to and the restore time; the shutting-down window counts real elapsed seconds and offers the force control only after 10 s of actual waiting and only as the outline button; core spawn failure renders in the notice slot at priority 1 with no dismissal, over a stored shelf where every tile keeps its stored observation time and Play is disabled with its reason on it.",
+          "reason": "The spawn-failure notice is shaped and reaches nothing: the failure facts are assignable to the renderer's notice type and no channel carries them across, and nothing stats the core binary for the mode the copy needs. The window cannot be asserted before it is delivered."
+        }
+      ]
+    },
+    {
+      "id": "58",
+      "title": "The condition dot",
+      "group": "subsystems",
+      "spec": "§16.58",
+      "checks": [
+        {
+          "id": "AC-58-surfaces",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-58 the dot renders on all five surfaces from one table and emits no value outside it",
+          "assert": "A NULL condition_signal draws no dot at all on every surface; the not-indexed badge carries the state. Contrast is asserted per row, with the offline disc explicitly exempt. The project page's identity line draws exactly one dot and the page's hero draws band 1's, which is a different surface."
+        },
+        {
+          "id": "AC-58-edges",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_derive::ac_58_condition_day_edges",
+          "assert": "The mapping's day edges are exactly the stated ones and the design's colder boundary, the one edge this document does not carry, appears in none of them."
+        },
+        {
+          "id": "AC-58-vocabulary",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c58-design-band-names",
+          "assert": "The three design band names appear in no CSS class, query field, protocol message, log line or accessible name. The two enum words that look like band names are required verbatim and are not banned."
+        }
+      ]
+    },
+    {
+      "id": "59",
+      "title": "Hazard tape",
+      "group": "subsystems",
+      "spec": "§16.59",
+      "checks": [
+        {
+          "id": "AC-59-scope",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-59 the tape renders if and only if abandoned and not Reference",
+          "assert": "A neglected project carries none: the wrong reading tapes a large fraction of a real library, and a badge means something only while badges are rare."
+        },
+        {
+          "id": "AC-59-tiers",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-59 the tape renders identically at full, reduced and off",
+          "assert": "No settings switch removes it; a layer that draws the same at every tier is composition, not motion."
+        }
+      ]
+    },
+    {
+      "id": "60",
+      "title": "The type floor and the scale",
+      "group": "subsystems",
+      "spec": "§16.60",
+      "checks": [
+        {
+          "id": "AC-60-floor",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-60 no rendered string measures below 7px and every size ships with its tracking",
+          "assert": "Name the two sites that ship on every card: the tile's rank-band label and the hero's. Every computed font-size is a member of the completed scale."
+        },
+        {
+          "id": "AC-60-half-pixel",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c60-sub-floor-size",
+          "assert": "The retired half-pixel size appears nowhere in the built stylesheet."
+        }
+      ]
+    },
+    {
+      "id": "61",
+      "title": "The binding model",
+      "group": "subsystems",
+      "spec": "§16.61",
+      "checks": [
+        {
+          "id": "AC-61-never-registered",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c61-global-shortcut",
+          "assert": "The default palette chord is never passed to globalShortcut.register, statically checkable over the shell bundle; on a default install the shell registers no accelerator at all."
+        },
+        {
+          "id": "AC-61-runtime",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "15",
+          "test": "AC-61 a default install holds no accelerator and a bound chord opens window and palette once",
+          "assert": "With the resident shortcut bound, one press produces both a composited window frame and a painted palette; tray-icon activation produces the window and no palette; bound to the default chord specifically, only the global path runs and the palette opens exactly once."
+        },
+        {
+          "id": "AC-61-refused",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17b",
+          "test": "AC-61 a refused registration reads back as held by another application",
+          "assert": "A failed registration is never silent and never renders as bound."
+        }
+      ]
+    },
+    {
+      "id": "62",
+      "title": "fade, the art address and the two caches",
+      "group": "subsystems",
+      "spec": "§16.62",
+      "checks": [
+        {
+          "id": "AC-62-fade",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_62_fade_is_reference_or_archived_only",
+          "assert": "fade takes exactly one of two values regardless of last_commit_at, and no other value appears in phase 1."
+        },
+        {
+          "id": "AC-62-clock",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_62_scene_hash_is_not_a_function_of_wall_clock",
+          "assert": "With the clock advanced by any amount, or over fixtures whose last_commit_at spans years, the scene hash for an otherwise unchanged project is byte-identical and no re-render is enqueued."
+        },
+        {
+          "id": "AC-62-address",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "art AC-62 the art scheme takes two segments and the card rendition is the stated size",
+          "assert": "A fetch of the hash alone fails and the card rendition is the stated size."
+        },
+        {
+          "id": "AC-62-art-state",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "10b",
+          "test": "acceptance_art::ac_62_art_state_tracks_the_card_rendition_only",
+          "assert": "art_state and fail_count track the card rendition only, so a project whose page has never been opened is ready rather than pending or failed.",
+          "reason": "Split out of the address check, which is a renderer assertion and cannot observe a database column. The two clauses were registered as one and only the renderer half exists."
+        },
+        {
+          "id": "AC-62-not-tested",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_62_seed_inputs_are_basename_and_offset",
+          "assert": "The first-commit sha is not an art-seed input and its empty-repository case is not tested; a first commit on a previously-empty repository changes era detail only. Decay rendering is not in phase 1 and is not tested."
+        }
+      ]
+    },
+    {
+      "id": "63",
+      "title": "Existence: a surface may render only what is stored or commandable",
+      "group": "subsystems",
+      "spec": "§16.63",
+      "checks": [
+        {
+          "id": "AC-63-behind-chip",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-63 a NULL fetch head omits the behind chip entirely",
+          "assert": "No zero, no age computed from the refstate observation time, no age recovered from the basis; a fixture with ahead above zero and no fetch head renders no chip and no number."
+        },
+        {
+          "id": "AC-63-trust",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_63_set_trusted_writes_only_our_database",
+          "assert": "The user's global and repository git config are byte-identical before and after, and every subsequent invocation for that location carries the exact-path safe-directory argument."
+        },
+        {
+          "id": "AC-63-trust-static",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:no-git-config-write",
+          "assert": "No git invocation in the core carries a config-writing flag as an argv literal — the greppable complement to the byte-identical-config assertion."
+        },
+        {
+          "id": "AC-63-requeue",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_63_requeue_touches_one_project",
+          "assert": "It re-queues exactly one project's job rows and leaves every other project's untouched."
+        },
+        {
+          "id": "AC-63-try-again",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:try-again-not-scan",
+          "assert": "The renderer file carrying the per-project retry control does not also name the library-wide rescan command: one tile means one repository, and stretching the rescan over that control would re-queue everything from a button that promises not to."
+        },
+        {
+          "id": "AC-63-slow-repo",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:slow-repo",
+          "assert": "The slow-repo column has zero writers outside the test suite, asserted in the same form as the zero-call-sites check on the merge command."
+        },
+        {
+          "id": "AC-63-no-volume-name",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-63 an offline location row renders no drive or volume name",
+          "assert": "Its facts are exactly the last-seen age and the branch as last observed."
+        }
+      ]
+    },
+    {
+      "id": "64",
+      "title": "Era sections, header aggregates and the watch set",
+      "group": "subsystems",
+      "spec": "§16.64",
+      "checks": [
+        {
+          "id": "AC-64-sections",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "13",
+          "test": "acceptance_shelf::ac_64_era_section_ids_and_orders",
+          "assert": "The section id table and nothing else, with the tail carrying no year, the not-cloned section never emitted in phase 1, and Reference rendering in its own chrome below the grid rather than as an era section."
+        },
+        {
+          "id": "AC-64-aggregates",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-64 the header renders the indexed and unchecked counts, including all-zero with unchecked above zero",
+          "assert": "The flag line still renders in that case, because an absent flag line may only ever mean observed and nothing to report. The label is absent from the response; order, year and the calendar year grouped against are present."
+        },
+        {
+          "id": "AC-64-watch-set",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_64_watch_set_invalidates_and_never_scans",
+          "assert": "The bounded worktree watch set invalidates the worktree observation time and never starts a scan or discovers a repository."
+        },
+        {
+          "id": "AC-64-copy",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c64-watch-set-copy",
+          "assert": "The sentence claiming nothing is watched inside a repository is false and appears nowhere."
+        }
+      ]
+    },
+    {
+      "id": "65",
+      "title": "The notice slot, the chips and the completion term",
+      "group": "subsystems",
+      "spec": "§16.65",
+      "checks": [
+        {
+          "id": "AC-65-slot",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-65 every notice renders in one slot at its priority, at most one at a time",
+          "assert": "Only the left border varies; no section draws a second surface with geometry of its own; when nothing qualifies the wrapper is not rendered at all rather than rendered at zero height."
+        },
+        {
+          "id": "AC-65-chips",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-65 chip chrome is asserted once against its owning section for all six chips",
+          "assert": "The stated padding, gap, ground and inset shadows, with the hover and active rule that the sub-line takes text-2 on the hover fill.",
+          "reason": "The attention chip as built diverges from its owning section in seven values — padding, two gaps, border versus inset, three type sizes and a missing row border. Only the two declarations another section depends on were reconciled; the rest is untouched and unowned, so this check would fail today against the section it cites rather than against the component."
+        },
+        {
+          "id": "AC-65-completion-term",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-65 a completion comparison parses, soft-errors and does not filter the shelf to zero",
+          "assert": "It renders its pill in the soft-error state with the stated reason, is dropped from the effective query and named in the ignored clause. Assert explicitly that NULL is never compared as zero."
+        },
+        {
+          "id": "AC-65-identity-notice",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "16c",
+          "test": "AC-65 the identity notice's plural line uses the previewed delta",
+          "assert": "The literal example number is not tested."
+        }
+      ]
+    },
+    {
+      "id": "66",
+      "title": "The top bar and density",
+      "group": "subsystems",
+      "spec": "§16.66",
+      "checks": [
+        {
+          "id": "AC-66-density",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 density cycles exactly three steps and each moves the column count by one",
+          "assert": "Each step carries its stated card composition; the chosen step persists and survives a restart; in list view the control is not rendered at all."
+        },
+        {
+          "id": "AC-66-hash-stable",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 the scene hash is byte-identical across every density press",
+          "assert": "Density is a render parameter, never a seed input, and the 2x track clears the largest step."
+        },
+        {
+          "id": "AC-66-sort",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 sort cycles exactly three keys with completion absent",
+          "assert": "Nothing computes completion, so it is not offered."
+        },
+        {
+          "id": "AC-66-shed",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 at the minimum window width nothing overlaps and the bar sheds in the stated order",
+          "assert": "The floor itself is measured, not asserted; every label a user must read to work a control sits at text-3 or lighter. The written 924px minimum is superseded by measurement: the unshed bar fits from 861px and the fully shed one from the measured floor."
+        }
+      ]
+    },
+    {
+      "id": "67",
+      "title": "DOM composition and the mid-scan flip",
+      "group": "subsystems",
+      "spec": "§16.67",
+      "checks": [
+        {
+          "id": "AC-67-no-canvas",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c67-canvas-and-webgl",
+          "assert": "The built renderer creates no WebGL context and no canvas element — statically checkable over the renderer bundle. Nothing asserted this before, which is how a negative rule comes back by accident."
+        },
+        {
+          "id": "AC-67-plate-roles",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-67 the CSS plate has two roles and no third",
+          "assert": "The state every card is born in, and the fallback where the art failed or the file is gone — never drawn over a decoded bitmap."
+        },
+        {
+          "id": "AC-67-flip",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-67 during a live scan a mounted card changes appearance exactly once per scene hash",
+          "assert": "The plate is held until the bitmap for that exact hash exists and has decoded, then swapped with no transition, no cross-fade, no re-layout, no intermediate plate flash, at identical geometry."
+        }
+      ]
+    }
+  ]
+}

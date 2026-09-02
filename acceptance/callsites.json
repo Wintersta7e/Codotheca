@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "projects-merge",
+      "spec": "§16.2 amendment, §11.1",
+      "why": "projects.merge ships, has no phase-1 caller and is exercised by tests only: criterion 3 drives it directly against the command surface. Its inverse, the split, is deferred to phase 4, so a control wired to it is an irreversible join with no undo — the §17 breach §11.1 forbids by name.",
+      "roots": ["app/src", "core/src"],
+      "ext": [".ts", ".tsx", ".rs"],
+      "patterns": ["projects\\.merge", "\\bmerge_projects\\b"],
+      "allow": [
+        "app/src/generated/",
+        "core/src/protocol.rs",
+        "core/src/identity/merge.rs",
+        "core/src/identity/commands.rs",
+        "app/src/main/index.ts",
+        "app/src/main/core/idempotence.ts"
+      ],
+      "allowLines": [],
+      "allowWhy": "The implementation and its dispatch arm are where the command has to be named. The shell's two entries are tables — the command allowlist the transport enforces and the write/read effect table — and a table is not a caller; the control this rule exists to catch would live in the renderer, which is scanned whole."
+    },
+    {
+      "id": "slow-repo",
+      "spec": "§16.63, §11.1",
+      "why": "project.slow_repo is an operator opt-out distinct from deferred_slow, and no phase-1 surface writes it. v2.2 asked for a command to set it and drew no control to call one; the column stands and a later reader must not wire one on the strength of that paragraph.",
+      "roots": ["app/src", "core/src"],
+      "ext": [".ts", ".tsx", ".rs"],
+      "patterns": [
+        "UPDATE\\s+project\\b[^\\n]*slow_repo",
+        "slow_repo\\s*=",
+        "\\bslowRepo\\b\\s*[:=]"
+      ],
+      "allow": ["app/src/generated/", "core/src/protocol.rs"],
+      "allowLines": []
+    },
+    {
+      "id": "try-again-not-scan",
+      "mode": "co-occurrence",
+      "spec": "§16.63, §2.4",
+      "why": "TRY AGAIN on one tile means one repository. scan.start re-queues the library, and stretching it over the per-project control would rescan everything from a button that promises not to.",
+      "roots": ["app/src/renderer"],
+      "ext": [".ts", ".tsx"],
+      "patterns": ["TRY AGAIN", "scan.start"],
+      "allow": []
+    },
+    {
+      "id": "no-git-config-write",
+      "spec": "§16.63, §3.2, §17",
+      "why": "Trust is stored in Codotheca's own database and passed per invocation as -c safe.directory=<exact-path>. Writing the user's git config is a write, and §17 permits none; this is the static complement to the byte-identical-config assertion. It reaches argv built outside core/src/git, which the read-only argv audit cannot see because it reads one directory and one literal form.",
+      "roots": ["core/src"],
+      "ext": [".rs"],
+      "patterns": ["\"--global\"", "\"--system\"", "\"--replace-all\"", "\"--unset\"", "\"--add\""],
+      "allow": ["core/src/corpus/", "core/src/testing/", "core/src/protocol.rs"],
+      "allowLines": [],
+      "allowWhy": "The corpus generator and the seam fakes build fixture repositories and are gated behind the testkit feature; constructing a repository is their whole job and is not a product git invocation."
+    },
+    {
+      "id": "no-destructive-git",
+      "spec": "§16.44, §17",
+      "why": "Every git invocation in phase 1 is read-only and argv-only. These subcommands as quoted argv literals are the whole destructive surface, fetch included: a directional claim needs a merge-base across two object stores, which needs a fetch, which §17 forbids. Quoted rather than bare words on purpose — fetch_head_at and reset_at are legitimate column names and a bare-word pattern would fail every correct build.",
+      "roots": ["core/src"],
+      "ext": [".rs"],
+      "patterns": [
+        "\"push\"",
+        "\"clean\"",
+        "\"checkout\"",
+        "\"reset\"",
+        "\"fetch\"",
+        "\"pull\"",
+        "\"gc\"",
+        "\"prune\"",
+        "\"restore\""
+      ],
+      "allow": ["core/src/corpus/", "core/src/testing/", "core/src/git/", "core/src/protocol.rs"],
+      "allowLines": [],
+      "allowWhy": "core/src/git is excluded because core/tests/git_readonly.rs already audits it properly — an allow list plus a deny list over its argv literals, with its own scanned-nothing guard — and a second, weaker grep over the same directory would be the copy that drifts. This rule covers what that audit cannot reach: argv assembled elsewhere in the core. The corpus generator and the seam fakes build fixture repositories behind the testkit feature."
+    }
+  ]
+}

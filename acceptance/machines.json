@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "spec": "§15.3",
+  "identification": {
+    "env": "CODOTHECA_REFERENCE_MACHINE",
+    "accepts": ["A", "B"],
+    "mustMatch": ["platform", "cores", "memoryGb"],
+    "memoryToleranceGb": 2,
+    "why": "A claim is not enough and a fingerprint is not enough. The variable states the intent; the fingerprint refuses the claim when the hardware contradicts it. Neither present means no machine, which means the run skips."
+  },
+  "machines": [
+    {
+      "id": "A",
+      "role": "Reference A",
+      "profile": {
+        "form": "desktop",
+        "cores": 8,
+        "memoryGb": 32,
+        "storage": "nvme",
+        "gpu": "discrete",
+        "platform": "win32"
+      },
+      "display": {
+        "refreshHz": 238,
+        "frameBudgetMs": 4.2,
+        "why": "Criterion 30 gates a missed-frame fraction at whatever interval the display reports. The same millisecond figure is a different claim on a different panel: 4.2 ms is the whole budget here and a quarter of it at 60 Hz."
+      },
+      "measured": {
+        "electronResidentMb": {
+          "windowAliveNoTextures": 307,
+          "windowAliveFullShelf": 522,
+          "windowDestroyed": 232,
+          "why": "The consent copy said about 30 MB. The floor with a live window and zero textures is 307 MB; the string had to change.",
+          "staleBecause": "Measured on Electron 33 with WebGL textures simulating the shelf. The product ships Electron 44 and phase 1 renders DOM only, so these are estimates until re-probed. They are recorded rather than removed because the argument they settled — that the consent copy was false by an order of magnitude — does not depend on the exact figure."
+        },
+        "hotkeyToVisibleMs": {
+          "windowAliveNoTextures": { "p50": 8.1, "p95": 9.2 },
+          "windowAliveFullShelf": { "p50": 9.3, "p95": 12.6 },
+          "windowDestroyed": { "p50": 134, "p95": 150 },
+          "why": "Residency is a 30-minute hybrid: 9 ms when a press matters, 232 MB when it does not.",
+          "staleBecause": "Same probe, same Electron 33 build."
+        },
+        "scrollFramePacing": {
+          "mode": "pure DOM, no WebGL",
+          "logicalCards": 1000,
+          "mountedCards": 140,
+          "p50Ms": 4.2,
+          "p95Ms": 4.3,
+          "missedFrames": 0,
+          "totalFrames": 450,
+          "driver": "injected wheel events through the real compositor path, never by assigning scrollTop",
+          "why": "This measurement is why phase 1 ships DOM only — no canvas, no WebGL, no texture atlas."
+        }
+      }
+    },
+    {
+      "id": "B",
+      "role": "Reference B",
+      "profile": {
+        "form": "laptop",
+        "cores": 4,
+        "memoryGb": 16,
+        "storage": "sata-ssd",
+        "gpu": "integrated",
+        "platform": "linux"
+      },
+      "display": null,
+      "measured": null,
+      "measuredReason": "Nothing has been run on Reference B. Its budgets are budgets. A figure printed for B that came from an A run would be the same error as reporting an extrapolation as a measurement, and B is also where criterion 29's untestable Linux GPU behaviour lives."
+    }
+  ]
+}

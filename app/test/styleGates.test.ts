@@ -212,11 +212,38 @@ describe('the focus-ring gate', () => {
 });
 
 describe('the three gates are wired into npm run lint', () => {
+  /**
+   * Follow `npm run <name>` through the script table rather than matching one script's text.
+   * `lint` composes `lint:shell`, which is what CI's shell job runs — the job installs no Rust
+   * toolchain and the old single script ended in `cargo clippy` — so a substring check on
+   * `lint` alone would fail a correct split, and a substring check on `lint:shell` alone would
+   * pass a `lint` that had stopped calling it.
+   */
+  function reachableFrom(scripts: Record<string, string>, name: string): string {
+    const seen = new Set<string>();
+    let text = '';
+    const walk = (script: string): void => {
+      if (seen.has(script)) return;
+      seen.add(script);
+      const body = scripts[script] ?? '';
+      text += ` ${body}`;
+      for (const m of body.matchAll(/npm run ([\w:-]+)/gu)) walk(m[1] ?? '');
+    };
+    walk(name);
+    return text;
+  }
+
   it('names all of them, or a green lint proves nothing about the stylesheet', () => {
     const pkg: unknown = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'));
     const scripts = (pkg as { scripts?: Record<string, string> }).scripts ?? {};
-    expect(scripts['lint']).toContain('lint:style');
-    expect(scripts['lint']).toContain('lint:type');
-    expect(scripts['lint']).toContain('lint:focus');
+    const reachable = reachableFrom(scripts, 'lint');
+    expect(reachable).toContain('lint:style');
+    expect(reachable).toContain('lint:type');
+    expect(reachable).toContain('lint:focus');
+    // And the shell-only entry point CI uses reaches them too, or CI's lint job proves nothing.
+    const shell = reachableFrom(scripts, 'lint:shell');
+    expect(shell).toContain('check-style-tokens.mjs');
+    expect(shell).toContain('check-type-scale.mjs');
+    expect(shell).toContain('check-focus-ring.mjs');
   });
 });
