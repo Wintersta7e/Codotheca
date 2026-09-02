@@ -356,6 +356,7 @@ async function main(): Promise<void> {
       shell.showItemInFolder(target);
     },
     dataDir,
+    logPath: log.path,
     statSync: (target) => statSync(target),
     request: (name, args) => request(name as CommandName, args),
     readBoot: readBootFile,

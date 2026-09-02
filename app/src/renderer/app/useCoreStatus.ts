@@ -29,6 +29,11 @@ export interface CoreStatusState {
    * which would file every project as an arrival.
    */
   readonly firstRunCompletedAt: number | null;
+  /**
+   * §11.1's `THIS GIT IS TOO OLD` prints the version it found. `null` is *not read yet*, which
+   * that copy states in words rather than printing a version it does not have.
+   */
+  readonly gitVersion: string | null;
 }
 
 const STARTING: CoreStatus = { kind: 'starting' };
@@ -37,6 +42,7 @@ export function useCoreStatus(deps: AppDeps): CoreStatusState {
   const [lane, setLane] = useState<CoreStatus>(STARTING);
   const [degraded, setDegraded] = useState<DegradedReason | null>(null);
   const [firstRunCompletedAt, setFirstRunCompletedAt] = useState<number | null>(null);
+  const [gitVersion, setGitVersion] = useState<string | null>(null);
 
   const { onCoreStatus, subscribe, logPath } = deps;
 
@@ -49,6 +55,7 @@ export function useCoreStatus(deps: AppDeps): CoreStatusState {
         const data = (event.data ?? {}) as {
           reason?: unknown;
           firstRunCompletedAt?: unknown;
+          gitVersion?: unknown;
         };
         if (event.event === 'degraded') {
           setDegraded((data.reason ?? null) as DegradedReason | null);
@@ -57,6 +64,7 @@ export function useCoreStatus(deps: AppDeps): CoreStatusState {
         if (event.event === 'snapshot') {
           const at = data.firstRunCompletedAt;
           setFirstRunCompletedAt(typeof at === 'number' ? at : null);
+          setGitVersion(typeof data.gitVersion === 'string' ? data.gitVersion : null);
         }
       }),
     [subscribe],
@@ -69,7 +77,8 @@ export function useCoreStatus(deps: AppDeps): CoreStatusState {
       logPath,
       degraded,
       firstRunCompletedAt,
+      gitVersion,
     }),
-    [lane, logPath, degraded, firstRunCompletedAt],
+    [lane, logPath, degraded, firstRunCompletedAt, gitVersion],
   );
 }

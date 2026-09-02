@@ -43,6 +43,7 @@ function register(over: Partial<Parameters<typeof registerShellServices>[0]> = {
     openExecutable: () => Promise.resolve(null),
     revealItem,
     dataDir: '/data',
+    logPath: '/data/logs/codotheca.log',
     statSync: () => ({ size: 1 }),
     request,
     readBoot: () => boot(),
@@ -80,9 +81,17 @@ describe('the shell services', () => {
     await handlers.get(IPC_REVEAL)?.(null, { target: '/etc/shadow' });
     await handlers.get(IPC_REVEAL)?.(null, { target: '../../secrets' });
     await handlers.get(IPC_REVEAL)?.(null, null);
-    // §2.4: the renderer names one of two targets. Anything else is not a path it may hand us.
+    // §2.4: the renderer names one of three targets. Anything else is not a path it may hand us.
     expect(revealItem).toHaveBeenCalledTimes(1);
     expect(revealItem).toHaveBeenCalledWith(join('/data', INDEX_DB_FILE));
+  });
+
+  // §11.1's degraded notice and §11.2a's failure windows both offer OPEN THE LOG, and the log
+  // is in neither the index nor the bundle. It is a named target, still never a path.
+  it('reveals the rolling log by name', async () => {
+    const { handlers, revealItem } = register();
+    await handlers.get(IPC_REVEAL)?.(null, { target: 'log' });
+    expect(revealItem).toHaveBeenCalledWith('/data/logs/codotheca.log');
   });
 
   it('a cancelled executable dialog issues no privileged command', async () => {
