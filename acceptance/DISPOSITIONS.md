@@ -6,7 +6,7 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 1 | 38 |
+| automated | 1 | 39 |
 | deferred | 61 | 121 |
 | manual | 5 | 6 |
 | unmeasurable | 2 | 3 |
@@ -57,7 +57,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | 41 | deferred | A week outside J4's coverage is not computed | `AC-41-uncovered` deferred, plan 14b — `AC-41 an uncovered week renders as not computed, never as a zero-height bar` |
 | 42 | deferred | A README renders as literal text on both surfaces | `AC-42-peek` deferred, plan 13c — `AC-42 markup in a README renders as literal text in Peek`<br>`AC-42-page` deferred, plan 14b — `AC-42 markup in a README renders as literal text on the project page` |
 | 43 | deferred | The scratchpad persists, is project-scoped and reconciles on merge | `AC-43-note` deferred, plan 14b — `AC-43 the scratchpad persists, scopes and reconciles` |
-| 44 | deferred | Nothing on the page mutates disk | `AC-44-no-destruction` deferred, plan 14b — `AC-44 no surface offers a destructive control and RELOCATE rewrites one row`<br>`AC-44-token` automated, runs now — `check-forbidden:c44-forget-token`<br>`AC-44-no-destructive-git` automated, runs now — `check-call-sites:no-destructive-git` |
+| 44 | deferred | Nothing on the page mutates disk | `AC-44-no-destruction` deferred, plan 14b — `AC-44 no surface offers a destructive control and RELOCATE rewrites one row`<br>`AC-44-token` automated, runs now — `check-forbidden:c44-forget-token`<br>`AC-44-readonly-argv` automated, runs now — `git_readonly::no_source_file_names_a_destructive_subcommand`<br>`AC-44-no-destructive-git` automated, runs now — `check-call-sites:no-destructive-git` |
 | 45a | deferred | The grid card and the hero state the absence | `AC-45a-uncomputed` deferred, plan 12b — `AC-45a the uncomputed band draws its frame, gap, glyph and label` |
 | 45b | deferred | Every other completion readout renders no element at all | `AC-45b-empty` deferred, plan 13c — `AC-45b the rank and score columns, the palette slot, the hero band and Peek contain no node` |
 | 45c | deferred | The layout survives the emptiness | `AC-45c-layout` deferred, plan 13c — `AC-45c the empty list columns keep their widths and the header labels only the middle four` |

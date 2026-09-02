@@ -1346,6 +1346,13 @@
           "assert": "The forget token appears in no rendered string, no accessible name and no command name anywhere in the built bundle or in the protocol schema."
         },
         {
+          "id": "AC-44-readonly-argv",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "git_readonly::no_source_file_names_a_destructive_subcommand",
+          "assert": "Every argv literal the git module can emit is on a read-only allow list and none is on the destructive deny list, audited over the module's own source with its own scanned-nothing guard. It reads core/src/git only and one literal form, which is why the static call-site rule covers argv assembled elsewhere in the core."
+        },
+        {
           "id": "AC-44-no-destructive-git",
           "status": "automated",
           "runner": "script",

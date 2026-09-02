@@ -111,7 +111,7 @@ export function validateForbidden(rules, registry) {
   return problems;
 }
 
-const TEST_FILE = /\.test\.[cm]?[jt]sx?$/u;
+export const TEST_FILE = /\.test\.[cm]?[jt]sx?$/u;
 
 /**
  * Blank a comment's characters while keeping every newline, so a reported line number is still
@@ -120,7 +120,7 @@ const TEST_FILE = /\.test\.[cm]?[jt]sx?$/u;
  * trip the rule it documents. This is the same carve-out `check-destructive-tokens.mjs` makes,
  * including its crude `[^:]` guard so `https://` in a string literal is not read as a comment.
  */
-function stripComments(text, ext) {
+export function stripComments(text, ext) {
   const blank = (m) => m.replace(/[^\r\n]/gu, ' ');
   if (ext === '.sql') return text.replace(/--[^\r\n]*/gu, blank);
   if (ext === '.css') return text.replace(/\/\*[\s\S]*?\*\//gu, blank);
@@ -136,11 +136,21 @@ function stripComments(text, ext) {
  * because a rule that silently stopped scanning at the first test module would under-scan every
  * file that has code after one.
  */
-function stripRustTestModules(text) {
+export function stripRustTestModules(text) {
   let out = text;
+  let from = 0;
   for (;;) {
-    const at = out.indexOf('#[cfg(test)]');
-    if (at === -1) return out;
+    // Not the literal `#[cfg(test)]`: this codebase writes
+    // `#[cfg(all(test, feature = "testkit"))]`, and matching only the short form blanked
+    // nothing in the files that matter. `\btest\b` does not match `testkit`, and `not(` is
+    // skipped because `#[cfg(not(test))]` guards production code, not a test.
+    const found = /#\[cfg\([^\]]*\btest\b[^\]]*\)\]/u.exec(out.slice(from));
+    if (found === null) return out;
+    const at = from + found.index;
+    if (found[0].includes('not(')) {
+      from = at + found[0].length;
+      continue;
+    }
     const open = out.indexOf('{', at);
     if (open === -1) return `${out.slice(0, at)}${' '.repeat(out.length - at)}`;
     let depth = 0;
