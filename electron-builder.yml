@@ -2,7 +2,11 @@ appId: dev.codotheca.app
 productName: Codotheca
 copyright: Copyright © Codotheca contributors
 asar: true
-directories: { output: out, buildResources: build }
+directories: { output: dist, buildResources: build }
+
+# Asserts the core binary was staged for THIS target and restores its execute bit. An
+# extraResources filter that matches nothing ships nothing, without a word.
+afterPack: build/afterPack.cjs
 
 files:
   # electron-vite writes the three bundles here. The renderer's assets — including the
@@ -11,6 +15,7 @@ files:
   # OFL-1.1 texts for the three embedded families.
   - licenses/**
   - package.json
+
 extraResources:
   # The Rust core ships alongside the shell and is spawned as a child process.
   - from: core/target/release/
@@ -18,18 +23,46 @@ extraResources:
     filter: ['codotheca-core', 'codotheca-core.exe']
 
 win:
-  target: [{ target: nsis, arch: [x64] }]
-  # A signed, stable install path also stops Defender rescanning on every launch.
+  target:
+    - { target: nsis, arch: [x64] }
+    - { target: portable, arch: [x64] }
+  # There is no certificate. The hook refuses to pretend the artifact is signed, and signs only
+  # when one is explicitly configured.
+  sign: build/sign.cjs
+  # §13: the WSL worker is a Linux ELF that ships inside the WINDOWS installer, versioned with
+  # the app, one per supported architecture. Staged by scripts/stage-worker.mjs, which validates
+  # the header. The core entry is repeated here because a platform-level extraResources array
+  # replaces the top-level one rather than extending it — omitting it ships a Windows installer
+  # with no core.
+  extraResources:
+    - from: core/target/release/
+      to: core
+      filter: ['codotheca-core.exe']
+    - from: build/worker/linux-x64/
+      to: worker/linux-x64
+      filter: ['codotheca-worker']
+    - from: build/worker/linux-arm64/
+      to: worker/linux-arm64
+      filter: ['codotheca-worker']
+
 nsis:
   oneClick: false
-  perMachine: false # per-user: no UAC prompt, and the updater can replace files
+  perMachine: false # per-user: no UAC prompt and no elevation
   allowToChangeInstallationDirectory: true
+  # §17 permits no destructive operation. The index, the notes and the session ledger are the
+  # only content no rescan can re-derive; an uninstall does not take them.
+  deleteAppDataOnUninstall: false
 
 linux:
   category: Development
+  synopsis: A library for the code you have written
+  maintainer: Codotheca contributors <codotheca@invalid>
   target:
-    - { target: AppImage, arch: [x64] } # primary, and the ONLY self-updating artifact
+    - { target: AppImage, arch: [x64] }
     - { target: deb, arch: [x64] }
     - { target: rpm, arch: [x64] }
 
-publish: [{ provider: github, releaseType: draft }]
+# There is no release feed and no update server, so nothing is published from a build and no
+# artifact carries update metadata. An installed system package never rewrites itself, and here
+# neither does anything else.
+publish: null
