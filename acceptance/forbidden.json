@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "targets": {
+    "renderer": {
+      "dirs": ["app/out/renderer"],
+      "ext": [".js", ".css", ".html"],
+      "why": "run `npm run build:app` first"
+    },
+    "shell": {
+      "dirs": ["app/out/main", "app/out/preload"],
+      "ext": [".js"],
+      "why": "run `npm run build:app` first"
+    },
+    "stylesheet": {
+      "dirs": ["app/out/renderer"],
+      "ext": [".css"],
+      "why": "run `npm run build:app` first"
+    },
+    "schema": {
+      "files": ["protocol/schema/protocol.json"],
+      "why": "the protocol schema is committed"
+    },
+    "core": {
+      "dirs": ["core/src", "core/migrations"],
+      "ext": [".rs", ".sql"],
+      "why": "the core sources are committed"
+    },
+    "app-src": {
+      "dirs": ["app/src"],
+      "ext": [".ts", ".tsx", ".css"],
+      "exclude": ["src/generated"],
+      "why": "the renderer and shell sources are committed"
+    }
+  },
+  "rules": [
+    {
+      "id": "c44-forget-token",
+      "kind": "regex",
+      "spec": "§16.44, §17",
+      "why": "Phase 1 has no destructive operation at all. The token FORGET appears in no rendered string, no accessible name and no command name; a build that ships it has shipped the control. The source-side complement is scripts/check-destructive-tokens.mjs, which cannot reach the built bundle because it refuses a gitignored scan root by design.",
+      "targets": ["renderer", "shell", "schema"],
+      "patterns": ["\\bFORGET\\b"],
+      "flags": "u",
+      "exempt": []
+    }
+  ]
+}
