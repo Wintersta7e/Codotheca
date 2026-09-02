@@ -9,6 +9,8 @@
  * reason, as `StartupFailure` and `EffectsTierSource`.
  */
 
+import type { StartupFailure } from './startupFailure';
+
 export type CoreFailureReason = 'spawn' | 'protocol_version' | 'crash_loop';
 
 /**
@@ -19,7 +21,21 @@ export type CoreStatus =
   | { kind: 'starting' }
   | { kind: 'ready'; epoch: number; coreVersion: string; protocolVersion: number; pid: number }
   | { kind: 'restarting'; epoch: number; delayMs: number }
-  | { kind: 'failed'; reason: CoreFailureReason; detail: string; logPath: string };
+  | {
+      kind: 'failed';
+      reason: CoreFailureReason;
+      detail: string;
+      logPath: string;
+      /**
+       * §11.2a's report, re-read at the moment the lane is declared failed.
+       *
+       * Optional because the supervisor does not read the filesystem: the shell attaches it on
+       * the way to the renderer. It cannot ride on the window's argv instead — the core writes
+       * the file *after* the window is created, so a value read at window creation is `null`
+       * for the first occurrence of a fault and stale after a repair, in both directions.
+       */
+      startupFailure?: StartupFailure | null;
+    };
 
 const KINDS = ['starting', 'ready', 'restarting', 'failed'] as const;
 

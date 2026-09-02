@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { logLevelStep, staleTargets, verifyTargetsStep } from '../src/main/joinSteps';
+import {
+  logLevelStep,
+  residentShortcutStep,
+  staleTargets,
+  verifyTargetsStep,
+} from '../src/main/joinSteps';
 import type { TargetId, TargetVerification } from '../src/generated/protocol';
 
 // `TargetId` is a branded number in the generated types, so a literal needs the cast; the
@@ -59,6 +64,42 @@ describe('the join steps', () => {
     await step.run();
     expect(request).toHaveBeenCalledWith('settings.get', {});
     expect(setLevel).toHaveBeenCalledWith('debug');
+  });
+
+  // §8.6: the chord is stored in settings and registered by the shell. Without this step a
+  // stored chord is never bound after a restart, and the drawer's row says NOT SET about it.
+  it('applies the stored resident shortcut at join', async () => {
+    const apply = vi.fn();
+    const request = vi.fn(() =>
+      Promise.resolve({
+        effectsTier: 'auto',
+        reducedMotionOverride: false,
+        autostart: false,
+        residentShortcut: 'Control+Shift+K',
+        roastEnabled: true,
+        logLevel: 'info',
+      }),
+    );
+    const step = residentShortcutStep(request, apply);
+    expect(step.name).toBe('shortcut.bind');
+    await step.run();
+    expect(apply).toHaveBeenCalledWith('Control+Shift+K');
+  });
+
+  it('applies a null chord rather than skipping, so an unbound setting really unbinds', async () => {
+    const apply = vi.fn();
+    const request = vi.fn(() =>
+      Promise.resolve({
+        effectsTier: 'auto',
+        reducedMotionOverride: false,
+        autostart: false,
+        residentShortcut: null,
+        roastEnabled: true,
+        logLevel: 'info',
+      }),
+    );
+    await residentShortcutStep(request, apply).run();
+    expect(apply).toHaveBeenCalledWith(null);
   });
 
   it('a failing step rejects rather than swallowing, so runStartup reports step_failed', async () => {

@@ -32,6 +32,24 @@ export function staleTargets(rows: readonly TargetVerification[]): readonly Targ
   return rows.filter((r) => r.verifyState === 'missing');
 }
 
+/**
+ * §8.6's chord is stored in `settings` and registered by this process, so something has to read
+ * the one and apply it to the other. Without this a stored chord silently does nothing after a
+ * restart, and the drawer's row would say `NOT SET` about a setting that is plainly set.
+ */
+export function residentShortcutStep(
+  request: Request,
+  apply: (chord: string | null) => unknown,
+): JoinStep {
+  return {
+    name: 'shortcut.bind',
+    run: async () => {
+      const settings = (await request('settings.get', {})) as Settings;
+      apply(settings.residentShortcut);
+    },
+  };
+}
+
 export function logLevelStep(
   request: Request,
   log: { setLevel(level: Settings['logLevel']): void },

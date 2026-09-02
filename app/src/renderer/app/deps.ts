@@ -76,6 +76,8 @@ export interface AppDeps extends ProjectPageDeps {
   readonly effectsTier: EffectsTier;
   readonly effectsTierSource: EffectsTierSource;
   readonly paintFailForcedAt: number | null;
+  /** §11.2a names the log on every failure window. Display only; empty means none was passed. */
+  readonly logPath: string;
 }
 
 export const AppDepsContext = createContext<AppDeps | null>(null);
@@ -121,5 +123,6 @@ export function createDefaultAppDeps(): AppDeps {
     effectsTier: bridge.effectsTier,
     effectsTierSource: bridge.effectsTierSource,
     paintFailForcedAt: bridge.paintFailForcedAt,
+    logPath: bridge.logPath,
   };
 }

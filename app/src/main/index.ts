@@ -5,7 +5,17 @@
  * It does NOT open the database: the core is the only reader and writer, and every renderer
  * read crosses the protocol (§1.10, §2.4).
  */
-import { BrowserWindow, app, dialog, ipcMain, protocol, session } from 'electron';
+import {
+  BrowserWindow,
+  app,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  protocol,
+  session,
+  shell,
+} from 'electron';
+import { statSync } from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -20,6 +30,10 @@ import {
   EFFECTS_TIER_SOURCE_FLAG,
   PAINT_FAIL_FORCED_AT_FLAG,
 } from '../shared/effectsTier';
+import { logPathArgument } from '../shared/windowArgs';
+import { startShortcutService, withShortcutRebind } from './paletteShortcut';
+import { registerShellServices } from './shellServices';
+import { readStartupFailure } from './startupFailure';
 import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
 import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
@@ -33,7 +47,7 @@ import { spawnCoreChild } from './core/spawn';
 import { CoreSupervisor } from './core/supervisor';
 import { resolveCoreBinary, resolveDataDir } from './paths';
 import { registerFocusRelease } from './session/focus';
-import { logLevelStep, staleTargets, verifyTargetsStep } from './joinSteps';
+import { logLevelStep, residentShortcutStep, staleTargets, verifyTargetsStep } from './joinSteps';
 import { launchJoinSteps } from './startup/launchSteps';
 import {
   contentSecurityPolicyListener,
@@ -123,6 +137,9 @@ const boot = bootstrap({
 });
 
 let win: BrowserWindow | null = null;
+// Set before the window is created, in `main`. The renderer needs it on its first frame —
+// §11.2a's failure windows name the log — and a round trip is exactly what §11.2 forbids there.
+let logPath = '';
 
 function entryUrl(): string {
   // pathToFileURL, not string concatenation: on Windows a drive-letter path concatenated
@@ -151,6 +168,7 @@ function createWindow(): BrowserWindow {
         ...(boot.stored.paintFailForcedAt === null
           ? []
           : [`${PAINT_FAIL_FORCED_AT_FLAG}${String(boot.stored.paintFailForcedAt)}`]),
+        logPathArgument(logPath),
       ],
     },
   });
@@ -200,6 +218,7 @@ async function main(): Promise<void> {
     keep: 3,
     level: 'info',
   });
+  logPath = log.path;
 
   // After `app.ready`, before the window: the renderer cannot load `file:`, so a card that
   // paints before this is bound would 404 and fall back to the nameplate for its first frame.
@@ -222,7 +241,32 @@ async function main(): Promise<void> {
   });
 
   const client = new CoreClient(supervisor);
-  const request = client.request.bind(client) as unknown as BridgeRequest;
+  const coreRequest = client.request.bind(client) as unknown as BridgeRequest;
+
+  // §8.6 and R32. The window does not exist yet — the UI lane paints below — so every send goes
+  // through `win?`, and the binding republishes its state on each transition after that.
+  const shortcut = startShortcutService({
+    host: {
+      register: (chord, cb) => globalShortcut.register(chord, cb),
+      unregister: (chord) => {
+        globalShortcut.unregister(chord);
+      },
+      isRegistered: (chord) => globalShortcut.isRegistered(chord),
+    },
+    showWindow: () => {
+      if (win === null) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    },
+    send: (channel, payload) => {
+      win?.webContents.send(channel, payload);
+    },
+  });
+
+  // The drawer rebinds by writing `settings.set`, which otherwise reaches the core and nothing
+  // else — the chord would be stored and never registered.
+  const request = withShortcutRebind(coreRequest, shortcut.apply);
 
   registerBridge({
     request,
@@ -235,8 +279,17 @@ async function main(): Promise<void> {
         clearTimeout(t);
       };
     },
+    // §11.2a's report is re-read here rather than carried on the window's argv: the core writes
+    // it *after* the window exists, so an argv copy is null the first time a fault happens and
+    // stale after a repair. The moment the lane is declared failed is when it is true.
     onStatus: (fn) => {
-      supervisor.onStatus(fn);
+      supervisor.onStatus((status) => {
+        fn(
+          status.kind === 'failed'
+            ? { ...status, startupFailure: readStartupFailure(dataDir) }
+            : status,
+        );
+      });
     },
     handle: (channel, fn) => {
       ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
@@ -279,6 +332,34 @@ async function main(): Promise<void> {
         buttonLabel: 'Look here',
       }),
     addRoot: (args) => request('roots.add', args) as Promise<RootAdd>,
+  });
+
+  // §11.3 and §11.5: reveal, the index location, the paint-failure reset and the executable
+  // dialog. The module landed with plan 17 and was called from nowhere, so every one of those
+  // drawer rows invoked a channel with no handler — a dead switch that also rejects.
+  registerShellServices({
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, (_event, payload: unknown) => fn(null, payload));
+    },
+    // §2.4: the bytes the core stores are the *path* to the executable, chosen in a dialog this
+    // process owns. `exec_bytes` is the column; nothing reads the file.
+    openExecutable: async () => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        title: 'Choose an application',
+        buttonLabel: 'Use this',
+      });
+      const chosen = result.canceled ? undefined : result.filePaths[0];
+      return chosen === undefined ? null : Buffer.from(chosen);
+    },
+    revealItem: (target) => {
+      shell.showItemInFolder(target);
+    },
+    dataDir,
+    statSync: (target) => statSync(target),
+    request: (name, args) => request(name as CommandName, args),
+    readBoot: readBootFile,
+    writeBoot: writeBootFile,
   });
 
   const lockWait = new AbortController();
@@ -361,6 +442,10 @@ async function main(): Promise<void> {
           log.setLevel(level);
         },
       }),
+      residentShortcutStep(
+        (name, args) => client.request(name as never, args as never),
+        shortcut.apply,
+      ),
     ],
   });
 
@@ -377,6 +462,7 @@ async function main(): Promise<void> {
     win.focus();
   });
   app.on('before-quit', () => {
+    shortcut.dispose();
     supervisor.stop();
   });
 }

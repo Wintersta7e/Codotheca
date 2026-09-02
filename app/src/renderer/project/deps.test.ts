@@ -112,6 +112,7 @@ describe('createDefaultDeps', () => {
     const base: CodothecaBridge = {
       protocolVersion: 2,
       effectsTier: 'auto',
+      logPath: '/tmp/codotheca/logs/codotheca.log',
       request: () => Promise.resolve({ ok: true, value: {} }),
       relocate: () => Promise.resolve({ kind: 'cancelled' }),
       pickRoot: () => Promise.resolve({ kind: 'cancelled' }),

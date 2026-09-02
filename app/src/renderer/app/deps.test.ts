@@ -20,6 +20,7 @@ function stubBridge(): StubBridge {
     effectsTier: 'full',
     effectsTierSource: 'boot-file',
     paintFailForcedAt: null,
+    logPath: '/tmp/codotheca/logs/codotheca.log',
     request: () => Promise.resolve({ ok: true, value: null }),
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
     pickRoot: () => Promise.resolve({ kind: 'cancelled' }),

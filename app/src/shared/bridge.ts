@@ -26,6 +26,16 @@ export interface CodothecaBridge {
    */
   readonly paintFailForcedAt: number | null;
   /**
+   * The rolling log's path, for §11.2a's failure windows to name.
+   *
+   * §2.4 is not bent by carrying it: this is a *display* string on a screen that exists because
+   * something failed, never a path the renderer originates or acts on — the renderer cannot
+   * open it, and the two things the shell will reveal are named targets, not paths.
+   *
+   * The empty string is "the shell passed none", which draws no note at all.
+   */
+  readonly logPath: string;
+  /**
    * One command. Resolves to a `BridgeReply`, never rejects: the renderer needs `code`,
    * `outcome` and `retryable` to decide whether a retry is safe, and a thrown string carries
    * none of them.

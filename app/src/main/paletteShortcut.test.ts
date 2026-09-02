@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ShortcutState } from '../shared/channels.js';
-import { activateFromTray, installResidentShortcut, shortcutStateOf } from './paletteShortcut.js';
+import { IPC_OPEN_PALETTE, IPC_SHORTCUT_STATE, type ShortcutState } from '../shared/channels.js';
+import {
+  activateFromTray,
+  installResidentShortcut,
+  shortcutStateOf,
+  startShortcutService,
+  withShortcutRebind,
+} from './paletteShortcut.js';
 import type { ShortcutHost } from './shortcut.js';
 
 function host(accept = true): ShortcutHost & { fire: () => void } {
@@ -133,6 +139,90 @@ describe('shortcutStateOf', () => {
       chord: 'Alt+F12',
       registered: false,
     });
+  });
+});
+
+// R32 closed at the composition, not at the class. The publisher existed and was called from
+// nowhere, so the drawer's chord row read `NOT SET` whatever the real binding was.
+describe('startShortcutService', () => {
+  it('sends the binding state on the shortcut channel before the drawer could ask', () => {
+    const sent: { channel: string; payload: unknown }[] = [];
+    const service = startShortcutService({
+      host: host(),
+      showWindow: vi.fn(),
+      send: (channel, payload) => sent.push({ channel, payload }),
+    });
+    service.apply('Control+Shift+K');
+
+    const states = sent
+      .filter((message) => message.channel === IPC_SHORTCUT_STATE)
+      .map((message) => message.payload as ShortcutState);
+    expect(states.at(-1)).toEqual({ chord: 'Control+Shift+K', registered: true });
+    // The real binding, not `null`: an unbound frame here is indistinguishable from silence.
+    expect(states.at(-1)?.chord).not.toBeNull();
+  });
+
+  it('sends the failed registration rather than sending nothing', () => {
+    const sent: { channel: string; payload: unknown }[] = [];
+    const service = startShortcutService({
+      host: host(false),
+      showWindow: vi.fn(),
+      send: (channel, payload) => sent.push({ channel, payload }),
+    });
+    service.apply('Control+Shift+K');
+    expect(
+      sent.filter((message) => message.channel === IPC_SHORTCUT_STATE).at(-1)?.payload,
+    ).toEqual({ chord: 'Control+Shift+K', registered: false });
+  });
+
+  it('opens the palette on the palette channel, and shows the window first', () => {
+    const sent: string[] = [];
+    const order: string[] = [];
+    const h = host();
+    const service = startShortcutService({
+      host: h,
+      showWindow: () => order.push('show'),
+      send: (channel) => {
+        sent.push(channel);
+        if (channel === IPC_OPEN_PALETTE) order.push('palette');
+      },
+    });
+    service.apply('Control+Shift+K');
+    h.fire();
+    expect(order).toEqual(['show', 'palette']);
+    expect(sent).toContain(IPC_OPEN_PALETTE);
+  });
+});
+
+describe('withShortcutRebind', () => {
+  it('re-applies the chord the drawer just wrote, so the row is not a dead switch', async () => {
+    const applied: (string | null)[] = [];
+    const request = withShortcutRebind(
+      (name) =>
+        Promise.resolve(
+          name === 'settings.set' ? { residentShortcut: 'Alt+F12' } : { residentShortcut: null },
+        ),
+      (chord) => {
+        applied.push(chord);
+        return { kind: 'bound' as const, chord: chord ?? '' };
+      },
+    );
+
+    await request('settings.set', { patch: {} });
+    expect(applied).toEqual(['Alt+F12']);
+  });
+
+  it('leaves every other command untouched', async () => {
+    const applied: (string | null)[] = [];
+    const request = withShortcutRebind(
+      () => Promise.resolve({ residentShortcut: 'Alt+F12' }),
+      (chord) => {
+        applied.push(chord);
+        return { kind: 'unbound' as const };
+      },
+    );
+    await request('settings.get', {});
+    expect(applied).toEqual([]);
   });
 });
 
