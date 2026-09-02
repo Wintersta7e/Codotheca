@@ -28,6 +28,13 @@ core/src/protocol.rs
 .env
 *.log
 
+# Acceptance run output — the disposition table is committed and diff-gated, the results are not.
+# Nothing under acceptance/ that a gate reads may be added here: a check over a gitignored path
+# is the never-fails-by-construction defect this directory exists to end.
+acceptance/report.md
+acceptance/report.json
+acceptance/results/
+
 # editor and tool state
 .serena/
 .vscode/
