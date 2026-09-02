@@ -58,10 +58,14 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
     now: () => nowSeconds,
     nowMs: () => nowSeconds * 1000,
     pickRoot: () => Promise.resolve({ kind: 'cancelled' }),
-    pickExecutable: () => Promise.resolve(null),
-    reveal: () => Promise.resolve(null),
-    indexLocation: () => Promise.resolve(null),
-    clearPaintFailure: () => Promise.resolve(null),
+    // The shell's own channels answer a `BridgeReply` envelope, not a bare value — the same
+    // shape `registerShellServices` returns. A fake answering `null` would let a caller that
+    // forgot to unwrap pass here and throw in the product.
+    pickExecutable: () => Promise.resolve({ ok: true, value: null }),
+    reveal: () => Promise.resolve({ ok: true, value: null }),
+    indexLocation: () =>
+      Promise.resolve({ ok: true, value: { pathDisplay: '<index>', sizeBytes: 0 } }),
+    clearPaintFailure: () => Promise.resolve({ ok: true, value: null }),
     onCoreStatus: createValueFanout<CoreStatus>((cb) => {
       pushStatus = cb;
     }),
