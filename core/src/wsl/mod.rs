@@ -9,3 +9,4 @@
 pub mod distros;
 pub mod mounts;
 pub mod path;
+pub mod proto;
