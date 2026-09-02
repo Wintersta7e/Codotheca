@@ -22,6 +22,12 @@ name = "codotheca-corpus"
 path = "src/bin/corpus.rs"
 required-features = ["testkit"]
 
+# §13: the WSL worker. One per supported architecture, built alongside the Windows core and
+# shipped inside the Windows installer (plan 19 stages it).
+[[bin]]
+name = "codotheca-worker"
+path = "src/bin/worker.rs"
+
 [features]
 default = []
 # Test doubles and the corpus generator. Off by default so the shipped binary contains no
