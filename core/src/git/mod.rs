@@ -35,7 +35,7 @@ pub use inventory::{
     parse_ls_files_z, path_extension, submodule_gitlinks, tracked_inventory, IndexEntry,
     TrackedInventory,
 };
-pub use invocation::{base_args, ensure_empty_hooks_dir, neutralise_env};
+pub use invocation::{base_args, ensure_empty_hooks_dir, neutralise_env, EMPTY_HOOKS_DIR_NAME};
 pub use observe::{busy_marker, defer_while_locked, observe_stable, Backoff, Observation};
 pub use refstate::{
     divergence, observation_fingerprint, read_ref_state, ref_fingerprint, Divergence,

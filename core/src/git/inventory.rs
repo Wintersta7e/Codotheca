@@ -33,7 +33,7 @@ pub struct IndexEntry {
 }
 
 /// What J3 produces.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrackedInventory {
     /// `project.tracked_files`.
     pub tracked_files: u32,

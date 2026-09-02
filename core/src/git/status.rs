@@ -65,7 +65,7 @@ pub struct StatusCounts {
 }
 
 /// One observation of the working tree.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorktreeStatus {
     /// `location.is_dirty`: any tracked modification.
     pub is_dirty: bool,

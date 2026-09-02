@@ -30,6 +30,20 @@ jobs:
         run: cargo clippy --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings
       - name: test
         run: cargo test --manifest-path core/Cargo.toml --features testkit
+      # §13's second binary. It only ever runs on Linux, but it must not rot between releases,
+      # and the Windows packaging job cannot stage what was never built. Both architectures are
+      # built: WSL2 runs on arm64 Windows too, and a target nobody compiles is one that breaks
+      # silently on exactly the machines that cannot diagnose it.
+      - name: build the WSL worker
+        if: runner.os == 'Linux'
+        run: |
+          cargo build --manifest-path core/Cargo.toml --bin codotheca-worker
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+            cargo build --manifest-path core/Cargo.toml --bin codotheca-worker \
+              --target aarch64-unknown-linux-gnu
       - name: corpus generates on this platform
         # The fixtures whose builders differ by platform: a bare clone, a linked worktree, a
         # recursive submodule, a path git can only hold in the tree, and one over MAX_PATH.

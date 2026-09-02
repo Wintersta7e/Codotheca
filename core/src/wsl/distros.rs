@@ -136,6 +136,41 @@ impl WslCli for SystemWslCli {
     }
 }
 
+/// The production `DistroProbe` (R9, R46). §13 forbids starting a stopped distro, so this only
+/// ever reads the two quiet listings — neither of which names a distro, and so neither of which
+/// can start one.
+///
+/// It is declared here, beside the CLI it drives, and in the same change as the trait's first
+/// real use: a trait that gets its fake and never its production implementation has cost this
+/// project four rulings, and this seam was the fifth until now.
+///
+/// On a machine with no `wsl.exe` the spawn fails and the answer is an empty list — which is
+/// the truth ("no distros found"), not a stand-in for it. No `#[cfg]`: the behaviour is then
+/// testable on either host, and the two listings are the whole cost.
+#[derive(Debug, Clone)]
+pub struct SystemDistroProbe {
+    cli: std::sync::Arc<dyn WslCli>,
+}
+
+impl SystemDistroProbe {
+    #[must_use]
+    pub fn new(cli: std::sync::Arc<dyn WslCli>) -> SystemDistroProbe {
+        SystemDistroProbe { cli }
+    }
+
+    /// The probe the shipped binary uses.
+    #[must_use]
+    pub fn system() -> SystemDistroProbe {
+        SystemDistroProbe::new(std::sync::Arc::new(SystemWslCli::new()))
+    }
+}
+
+impl crate::firstrun::classify::DistroProbe for SystemDistroProbe {
+    fn distros(&self) -> Vec<DistroInfo> {
+        installed_distros(self.cli.as_ref()).unwrap_or_default()
+    }
+}
+
 /// Every installed distro with its state, read without starting any of them.
 pub fn installed_distros(cli: &dyn WslCli) -> std::io::Result<Vec<DistroInfo>> {
     let all = list_argv(false);
@@ -267,6 +302,121 @@ mod tests {
                 "{banned} would run a shell"
             );
         }
+    }
+
+    /// Records what was asked and answers with canned UTF-16LE, so the *production* probe is
+    /// what runs — not a second implementation written to satisfy the test.
+    #[derive(Debug, Default)]
+    struct RecordingCli {
+        asked: std::sync::Mutex<Vec<Vec<String>>>,
+        replies: std::sync::Mutex<Vec<Vec<u8>>>,
+    }
+
+    impl RecordingCli {
+        fn with(replies: Vec<Vec<u8>>) -> RecordingCli {
+            RecordingCli {
+                asked: std::sync::Mutex::new(Vec::new()),
+                replies: std::sync::Mutex::new(replies),
+            }
+        }
+
+        fn asked(&self) -> Vec<Vec<String>> {
+            self.asked.lock().map(|a| a.clone()).unwrap_or_default()
+        }
+    }
+
+    impl super::WslCli for RecordingCli {
+        fn output(&self, args: &[&std::ffi::OsStr]) -> std::io::Result<std::process::Output> {
+            if let Ok(mut asked) = self.asked.lock() {
+                asked.push(
+                    args.iter()
+                        .map(|a| a.to_string_lossy().into_owned())
+                        .collect(),
+                );
+            }
+            let stdout = self
+                .replies
+                .lock()
+                .map(|mut r| {
+                    if r.is_empty() {
+                        Vec::new()
+                    } else {
+                        r.remove(0)
+                    }
+                })
+                .unwrap_or_default();
+            Ok(std::process::Output {
+                status: std::process::Command::new(if cfg!(windows) { "cmd" } else { "true" })
+                    .args(if cfg!(windows) {
+                        vec!["/c", "exit 0"]
+                    } else {
+                        vec![]
+                    })
+                    .status()?,
+                stdout,
+                stderr: Vec::new(),
+            })
+        }
+
+        fn spawn_piped(&self, _args: &[&std::ffi::OsStr]) -> std::io::Result<std::process::Child> {
+            Err(std::io::Error::other("not used by the probe"))
+        }
+    }
+
+    #[test]
+    fn the_production_probe_reads_both_listings_and_starts_nothing() {
+        use crate::firstrun::classify::DistroProbe;
+
+        let cli = std::sync::Arc::new(RecordingCli::with(vec![
+            utf16le("alpha\r\nbeta\r\n", true),
+            utf16le("beta\r\n", true),
+        ]));
+        let probe = super::SystemDistroProbe::new(cli.clone());
+        assert_eq!(
+            probe.distros(),
+            vec![
+                DistroInfo {
+                    name: "alpha".to_owned(),
+                    state: DistroState::Stopped
+                },
+                DistroInfo {
+                    name: "beta".to_owned(),
+                    state: DistroState::Running
+                },
+            ]
+        );
+        assert_eq!(
+            cli.asked(),
+            vec![
+                vec!["--list".to_owned(), "--quiet".to_owned()],
+                vec![
+                    "--list".to_owned(),
+                    "--running".to_owned(),
+                    "--quiet".to_owned()
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn a_machine_without_wsl_reports_no_distros_rather_than_failing() {
+        use crate::firstrun::classify::DistroProbe;
+
+        #[derive(Debug)]
+        struct NoWslExe;
+        impl super::WslCli for NoWslExe {
+            fn output(&self, _args: &[&std::ffi::OsStr]) -> std::io::Result<std::process::Output> {
+                Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+            }
+            fn spawn_piped(
+                &self,
+                _args: &[&std::ffi::OsStr],
+            ) -> std::io::Result<std::process::Child> {
+                Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+            }
+        }
+        let probe = super::SystemDistroProbe::new(std::sync::Arc::new(NoWslExe));
+        assert!(probe.distros().is_empty());
     }
 
     #[test]
