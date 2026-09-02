@@ -32,6 +32,7 @@ import { openRollingLog } from './core/log';
 import { spawnCoreChild } from './core/spawn';
 import { CoreSupervisor } from './core/supervisor';
 import { resolveCoreBinary, resolveDataDir } from './paths';
+import { installQuitGate } from './quitGate';
 import { registerFocusRelease } from './session/focus';
 import { logLevelStep, staleTargets, verifyTargetsStep } from './joinSteps';
 import { launchJoinSteps } from './startup/launchSteps';
@@ -376,8 +377,13 @@ async function main(): Promise<void> {
     if (win.isMinimized()) win.restore();
     win.focus();
   });
-  app.on('before-quit', () => {
-    supervisor.stop();
+  // The core must be fully gone, not merely told to go: its orderly-close path writes the
+  // session's close reason, and a kill mid-write loses it. `stop()` starts a shutdown;
+  // `stopAndWait()` completes one.
+  installQuitGate({
+    app,
+    steps: [{ name: 'core-shutdown', run: () => supervisor.stopAndWait() }],
+    log,
   });
 }
 
