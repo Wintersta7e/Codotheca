@@ -10,15 +10,14 @@
 //! "a seam every plan writes through, with only a test implementation behind it", after R1 and
 //! R35(a). Plan 07 declares the trait, so plan 07 owns the real one.
 //!
-//! The one method that is still a refusal is `upsert_location`, and that is R1: the `location`
-//! row must be written in the transaction `resolve_identity` decided the project in, which is
-//! plan 08's. The refusal is asserted below so the seam cannot be mistaken for a working one.
+//! **R35(a) closed the one hole this file used to pin.** `upsert_location` was a refusal on the
+//! trait, naming plan 08 as the owner of the `location` writer; the method is gone from the
+//! trait entirely, and `assembly::handoff` calls plan 08's writer inside the transaction
+//! `resolve_identity` holds. `core/tests/handoff_identity.rs` asserts that writer's idempotence
+//! against the real database.
 
-use codotheca_core::derive::LocationKind;
-use codotheca_core::identity::store::LocationInput;
 use codotheca_core::index::path::{PathPlatform, StoredPath};
 use codotheca_core::index::Index;
-use codotheca_core::scan::discover::RepoKind;
 use codotheca_core::scan::presence::{
     apply_presence, Presence, PresenceContext, ScanRunFinish, ScanRunStart, ScanStore,
 };
@@ -257,38 +256,4 @@ fn a_presence_sweep_over_the_real_index_deletes_nothing() {
     let by_id: Vec<_> = rows.iter().map(|r| (r.location_id, r.presence)).collect();
     assert!(by_id.contains(&(a, Presence::Missing)));
     assert!(by_id.contains(&(b, Presence::Offline)));
-}
-
-/// R1: the `location` row is plan 08's to write, in the transaction `resolve_identity` holds.
-/// The seam refuses rather than writing a second `INSERT INTO location` under a second owner —
-/// and it says whose it is, so the next reader is not left guessing.
-#[test]
-fn upsert_location_refuses_and_names_the_plan_that_owns_the_writer() {
-    let h = harness();
-    let input = LocationInput {
-        kind: LocationKind::Linux,
-        distro: None,
-        path: StoredPath::from_bytes(b"/r/a".to_vec(), PathPlatform::Unix),
-        store_key: "s1".to_owned(),
-        volume_key: None,
-        presence: Presence::Present,
-        repo_kind: RepoKind::WorkTree,
-        common_dir_bytes: None,
-        generation: 1,
-        last_seen_at: None,
-    };
-    let err = h.store.upsert_location(1, &input).unwrap_err();
-    assert!(
-        err.message.contains("plan 08"),
-        "the refusal must name its owner, got: {}",
-        err.message
-    );
-    let count: i64 = h
-        .index
-        .lock()
-        .unwrap()
-        .conn()
-        .query_row("SELECT COUNT(*) FROM location", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(count, 0, "a refusal writes nothing");
 }

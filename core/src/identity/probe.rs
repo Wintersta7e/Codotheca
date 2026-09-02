@@ -32,9 +32,13 @@ pub fn probe_identity(
     let roots = git.root_commits(repo, ctx)?;
     let remote_urls = git.remote_urls(repo, ctx)?;
     Ok(IdentityProbe {
-        // Keyed with the same canonicaliser `location.path_key` uses (§1.3), so
-        // `worktree_owner`'s lookup compares like with like.
-        common_dir_key: Some(path_key(&facts.common_dir, platform)),
+        // **The handle's common dir, not `facts.common_dir`.** They name one directory, and
+        // `location.common_dir_bytes` stores the handle's — so keying git's spelling instead
+        // would make the key stored beside the row and the key identity was decided on two
+        // spellings of one value, which is this project's dominant defect. Keyed with the
+        // canonicaliser `location.path_key` uses (§1.3), so `worktree_owner`'s lookup compares
+        // like with like.
+        common_dir_key: Some(path_key(&repo.common_dir, platform)),
         is_shallow: facts.is_shallow,
         root_oids: roots.into_iter().map(|r| r.oid).collect(),
         remote_urls,

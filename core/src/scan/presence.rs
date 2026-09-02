@@ -198,9 +198,14 @@ pub struct ScanRunRow {
 
 /// The scanner's whole view of the database, and its **only** one.
 ///
-/// **Nothing here deletes.** R1 added `upsert_location`, a writer, and that property is
-/// unchanged: there is still no method on this trait that removes a row, and §17 is what says
-/// there must not be one.
+/// **Nothing here deletes**, and §17 is what says there must not be one.
+///
+/// **R35(a), second option: there is no `upsert_location` here either.** R1 put a delegating
+/// method on this trait; the delegation is not expressible, because the `location` row must be
+/// written inside the transaction `resolve_identity` decided the project in, and a trait method
+/// taking a `&Transaction` leaks the identity module's transaction into the scanner's seam.
+/// The writer is `identity::store::upsert_location`, reached through
+/// `assembly::handoff::hand_off_discovered`.
 ///
 /// `Send + Sync` because the run executes on a worker thread while the protocol loop answers
 /// `scan.status` — `rusqlite::Connection` is `Send` but not `Sync` (R39), so the production
@@ -237,19 +242,6 @@ pub trait ScanStore: Send + Sync {
     /// Projects whose lineage could not be decided (§1.1). A live query over `project`, not a
     /// `scan_problem` kind — §11.1's eighth group reads the column, not this table.
     fn ambiguous_lineage_count(&self) -> Result<u64, ScanStoreError>;
-    /// **R1: the only production writer of a `location` row, seen from the scanner's side.**
-    ///
-    /// The real implementation **delegates** to plan 08's
-    /// `core::identity::store::upsert_location(tx, project_id, loc, now)` inside the same
-    /// transaction that `resolve_identity` just decided the project in. That is the point of
-    /// routing it through this trait rather than calling plan 08 directly: the scanner keeps
-    /// **one** seam onto the database, and the `location` row is never written by two owners.
-    /// Idempotent on `(kind, distro, path_key)`; returns the `location_id`.
-    fn upsert_location(
-        &self,
-        project_id: i64,
-        loc: &crate::identity::store::LocationInput,
-    ) -> Result<i64, ScanStoreError>;
 }
 
 /// Run §4.6 over every location. Called **only after a run completes** — a cancelled run did not
