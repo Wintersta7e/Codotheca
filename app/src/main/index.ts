@@ -6,6 +6,7 @@
  * read crosses the protocol (§1.10, §2.4).
  */
 import { BrowserWindow, app, dialog, ipcMain, protocol, session } from 'electron';
+import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -33,6 +34,7 @@ import { spawnCoreChild } from './core/spawn';
 import { CoreSupervisor } from './core/supervisor';
 import { resolveCoreBinary, resolveDataDir } from './paths';
 import { installQuitGate } from './quitGate';
+import { formatArtifactStamp, readArtifactStamp } from './update/artifact';
 import { registerFocusRelease } from './session/focus';
 import { logLevelStep, staleTargets, verifyTargetsStep } from './joinSteps';
 import { launchJoinSteps } from './startup/launchSteps';
@@ -201,6 +203,22 @@ async function main(): Promise<void> {
     keep: 3,
     level: 'info',
   });
+
+  // §11.4: a diagnostics bundle has to name the build it came from, and neither half of that
+  // name is a compile-time constant — the version is written into the packaged manifest after
+  // the bundler has run, and which of the five artifacts is executing is only observable at
+  // run time. It goes to the rolling log, which is what the bundle collects.
+  log.write(
+    'info',
+    'shell',
+    `artifact: ${formatArtifactStamp(
+      readArtifactStamp({
+        appPath: app.getAppPath(),
+        readTextFile: (p) => readFileSync(p, 'utf8'),
+        artifact: { isPackaged: app.isPackaged, platform: process.platform, env: process.env },
+      }),
+    )}`,
+  );
 
   // After `app.ready`, before the window: the renderer cannot load `file:`, so a card that
   // paints before this is bound would 404 and fall back to the nameplate for its first frame.

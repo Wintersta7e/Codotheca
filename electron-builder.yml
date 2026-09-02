@@ -32,9 +32,4 @@ linux:
     - { target: deb, arch: [x64] }
     - { target: rpm, arch: [x64] }
 
-# .deb/.rpm must never rewrite themselves — their updates belong to apt/dnf. The binary reads
-# this at runtime to decide whether the updater is available at all. Spec §14.
-extraMetadata:
-  updaterChannel: '${env.CODOTHECA_CHANNEL}'
-
 publish: [{ provider: github, releaseType: draft }]
