@@ -1,7 +1,7 @@
 //! §4bis.4 — path translation, in both directions.
 //!
 //! Two independent pairs live here. Bridge form (`\\wsl.localhost\<distro>\…`) is a *display and
-//! launch* form only: §4.5 forbids scanning or running git through it. DrvFS form (`/mnt/c/…`)
+//! launch* form only: §4.5 forbids scanning or running git through it. `DrvFS` form (`/mnt/c/…`)
 //! is a Windows volume surfaced inside the distro, and which mount point carries it is a fact
 //! read from the mount table, never a name matched with a pattern.
 
@@ -64,7 +64,7 @@ pub struct DrvfsMount {
     pub windows_root: String,
 }
 
-/// The Windows root a mount source names, when it names one. The mount source for a DrvFS mount
+/// The Windows root a mount source names, when it names one. The mount source for a `DrvFS` mount
 /// is the drive it exposes; for anything else it is a device node, a filesystem name, or a
 /// placeholder, and this returns `None` rather than guessing.
 #[must_use]
@@ -90,7 +90,7 @@ fn relative_under(path: &str, base: &str) -> Option<String> {
     Some(rest.strip_prefix('/')?.to_owned())
 }
 
-/// The Windows path a DrvFS path denotes, or `None` when the path is not under that mount.
+/// The Windows path a `DrvFS` path denotes, or `None` when the path is not under that mount.
 #[must_use]
 pub fn drvfs_to_windows(linux_path: &str, mount: &DrvfsMount) -> Option<String> {
     let rel = relative_under(linux_path, &mount.mount_point)?;
@@ -102,7 +102,7 @@ pub fn drvfs_to_windows(linux_path: &str, mount: &DrvfsMount) -> Option<String> 
     }
 }
 
-/// The DrvFS path a Windows path denotes, or `None` when the path is not on that volume.
+/// The `DrvFS` path a Windows path denotes, or `None` when the path is not on that volume.
 /// Windows paths compare case-insensitively; the produced Linux path does not.
 #[must_use]
 pub fn windows_to_drvfs(windows_path: &str, mount: &DrvfsMount) -> Option<String> {
