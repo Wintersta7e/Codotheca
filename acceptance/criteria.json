@@ -1,0 +1,414 @@
+{
+  "version": 1,
+  "criteria": [
+    {
+      "id": "1",
+      "title": "Every repository under the enabled roots appears exactly once",
+      "group": "functional",
+      "spec": "§16.1",
+      "checks": [
+        {
+          "id": "AC-1-discovery",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "07",
+          "test": "acceptance_discovery::ac_1_every_repository_appears_once",
+          "assert": "Over the whole corpus each fixture yields exactly one project row; linked worktrees resolve to their parent; bare repositories are detected."
+        },
+        {
+          "id": "AC-1-submodules",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_discovery::ac_1_submodules_are_their_own_projects",
+          "assert": "submodule-child and submodule-nested are projects of their own with a submodule_edge row to the parent."
+        },
+        {
+          "id": "AC-1-bare",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_discovery::ac_1_a_bare_repository_reports_as_bare",
+          "assert": "A bare fixture reports as bare at the project level.",
+          "reason": "project.is_bare is computed and never written: the column exists NOT NULL DEFAULT 0, two derivations produce the value, and create() hard-codes 0. Bareness is a property of a location and the column is on project, so whoever takes it must first rule on what a project with one bare and one non-bare copy reports."
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "title": "Copies collapse, forks stay apart, ambiguous lineage is flagged",
+      "group": "functional",
+      "spec": "§16.2",
+      "checks": [
+        {
+          "id": "AC-2-collapse",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_2_two_copies_collapse_to_one_project",
+          "assert": "copy-one and copy-two on two volumes become one project with two locations."
+        },
+        {
+          "id": "AC-2-fork",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_2_fork_and_upstream_stay_two_projects",
+          "assert": "fork and upstream remain two projects sharing a lineage_key with different remote_keys."
+        },
+        {
+          "id": "AC-2-ambiguous",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_2_remoteless_two_candidates_is_flagged",
+          "assert": "ambiguous-lineage becomes its own project with ambiguous_lineage set, and problems.list names both candidate lineages."
+        },
+        {
+          "id": "AC-2-merge-has-no-caller",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:projects-merge",
+          "assert": "Amendment 2: projects.merge has zero call sites outside the test suite; a control wired to it is the §17 breach §11.1 forbids by name."
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "title": "A merge is transactional and loses no work",
+      "group": "functional",
+      "spec": "§16.3",
+      "checks": [
+        {
+          "id": "AC-3-transactional",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_3_merge_is_transactional",
+          "assert": "Amendment 3: git-derived rows are deleted and recomputed for the survivor, session-derived rows are reparented, a redirect is written, level_floor cannot fall, and projects.merged is emitted."
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "title": "Unplugging a volume freezes and deletes nothing; re-plugging restores",
+      "group": "functional",
+      "spec": "§16.4",
+      "checks": [
+        {
+          "id": "AC-4-offline",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "07",
+          "test": "acceptance_presence::ac_4_unplug_freezes_and_deletes_nothing",
+          "assert": "FakeMountResolver::unmount over vol-b moves those locations to offline, freezes condition, and every project, location, session and xp_events row is byte-identical before and after."
+        },
+        {
+          "id": "AC-4-replug",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "07",
+          "test": "acceptance_presence::ac_4_replug_restores_present",
+          "assert": "mount() plus a rescan returns the same location rows to present."
+        }
+      ]
+    },
+    {
+      "id": "5",
+      "title": "Hostile repositories index without crashing and contribute no wrong date",
+      "group": "functional",
+      "spec": "§16.5",
+      "checks": [
+        {
+          "id": "AC-5-index",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_5_hostile_fixtures_index_without_crashing",
+          "assert": "zero-commit, shallow, non-utf8-path, long-path, dubious-ownership and index-lock-held all reach a terminal job state with no panic."
+        },
+        {
+          "id": "AC-5-dates",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_5_future_dated_contributes_no_wrong_date",
+          "assert": "future-dated raises clock_skew and contributes to no era boundary, no reveal figure and no commit-day."
+        }
+      ]
+    },
+    {
+      "id": "6",
+      "title": "Editing a tracked file and re-observing flips is:dirty to true",
+      "group": "functional",
+      "spec": "§16.6",
+      "checks": [
+        {
+          "id": "AC-6-reobserve",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_6_edit_then_reobserve_is_dirty",
+          "assert": "The v1 regression: a plain fs::write to a tracked file, with no git command in between, must flip is_dirty on the next J2. Prove it by re-introducing an index-mtime cache and watching this test fail."
+        },
+        {
+          "id": "AC-6-query",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-6 is:dirty matches the edited project",
+          "assert": "The shelf query is:dirty selects that project after the re-observation."
+        }
+      ]
+    },
+    {
+      "id": "7",
+      "title": "Play, the dropdown, the overrides and the five resolution tiers",
+      "group": "functional",
+      "spec": "§16.7",
+      "checks": [
+        {
+          "id": "AC-7-tiers",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11c",
+          "test": "acceptance_targets::ac_7_resolution_walks_five_tiers",
+          "assert": "Amendment 7: project override, location override, language default, global default, ask — first hit wins, a tier with no row is skipped, primary_language NULL resolves at global, targets.list returns the tier that resolved, resolution never consults verify_state."
+        },
+        {
+          "id": "AC-7-detection",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11",
+          "test": "acceptance_targets::ac_7_redetection_rewrites_every_matching_row",
+          "assert": "Re-detection rewrites exec_bytes for every row matching the re-detected (kind, name), language rows included; a fresh install ships no built-in language-to-editor table."
+        },
+        {
+          "id": "AC-7-stale",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "11c",
+          "test": "AC-7 a stale target path is detected before spawn",
+          "assert": "targets.verify marks a removed executable missing and Play refuses before spawning."
+        }
+      ]
+    },
+    {
+      "id": "8",
+      "title": "A WSL-resident repository launches with translated paths",
+      "group": "functional",
+      "spec": "§16.8",
+      "checks": [
+        {
+          "id": "AC-8-translate",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "18",
+          "test": "acceptance_wsl::ac_8_path_translation_round_trips",
+          "assert": "Windows-to-distro and distro-to-Windows translation round-trips for drive-mounted, VHD-resident and UNC paths."
+        },
+        {
+          "id": "AC-8-live",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "WSL-LAUNCH",
+          "reason": "No CI runner provides a WSL distro: nested virtualisation is not available on hosted Windows runners, so the in-distro worker cannot be started. Run on Reference A before a release. The bridge has never been crossed on a real machine here either — the dispatcher is asserted over a loopback worker only.",
+          "assert": "A repository inside a distro launches its target and runs git inside the distro."
+        }
+      ]
+    },
+    {
+      "id": "9",
+      "title": "The query grammar, its soft errors and saved queries",
+      "group": "functional",
+      "spec": "§16.9",
+      "checks": [
+        {
+          "id": "AC-9-grammar",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-9 the grammar parses every documented field, negation and comparison",
+          "assert": "The query conformance corpus runs in both the renderer and the core and produces identical ASTs."
+        },
+        {
+          "id": "AC-9-soft-error",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-9 an unknown field soft-errors without discarding the query",
+          "assert": "The unknown term is dropped, named in the ignored clause, and the surviving terms still run."
+        },
+        {
+          "id": "AC-9-saved",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15b",
+          "test": "AC-9 a saved query survives a restart",
+          "assert": "A saved collection re-lights after a relaunch by AST comparison against the restored query."
+        }
+      ]
+    },
+    {
+      "id": "10",
+      "title": "Peek is plain text; view state restores exactly",
+      "group": "functional",
+      "spec": "§16.10",
+      "checks": [
+        {
+          "id": "AC-10-peek",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-10 Space peeks inline as plain text",
+          "assert": "Peek renders the README as literal text — no markup, no fetch, no navigation."
+        },
+        {
+          "id": "AC-10-view-state",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "13b",
+          "test": "AC-10 view state restores exactly across a relaunch",
+          "assert": "Amendment 10: query, sort, view mode (grid|list), density, collapsed sections, scroll offset, selection, dismissed notices and window geometry all restore.",
+          "reason": "No geometry restore exists: viewState always writes null for the window rectangle and nothing in the shell reads it. Whoever lands the restore must clamp to the measured top-bar floor in the same change, or a window narrowed once stays broken."
+        }
+      ]
+    },
+    {
+      "id": "11",
+      "title": "Sessions: wait mode, idle segmentation, isolation, orphan recovery",
+      "group": "functional",
+      "spec": "§16.11",
+      "checks": [
+        {
+          "id": "AC-11-wait-mode",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11b",
+          "test": "acceptance_sessions::ac_11_wait_mode_ends_on_process_exit",
+          "assert": "A wait-mode target closes its session with close_reason process_exit."
+        },
+        {
+          "id": "AC-11-idle",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11b",
+          "test": "acceptance_sessions::ac_11_idle_credits_at_most_twenty_minutes",
+          "assert": "With FakeClock, a tree that never changed credits at most 20 minutes to a segment."
+        },
+        {
+          "id": "AC-11-isolation",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11b",
+          "test": "acceptance_sessions::ac_11_browsing_does_not_extend_another_segment",
+          "assert": "Shelf interaction does not extend an open segment belonging to a different project."
+        },
+        {
+          "id": "AC-11-orphan",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "11b",
+          "test": "acceptance_sessions::ac_11_orphaned_session_closed_at_startup",
+          "assert": "A session with no ended_at from a previous process closes with close_reason orphaned."
+        }
+      ]
+    },
+    {
+      "id": "12",
+      "title": "First run asks nothing, shows no percentage, states its coverage",
+      "group": "functional",
+      "spec": "§16.12",
+      "checks": [
+        {
+          "id": "AC-12-no-questions",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-12 first run asks nothing, shows no percentage, and states its coverage",
+          "assert": "The first-run flow presents no configuration input and no percentage anywhere, and the word setup appears in no rendered string. Asserted over the mounted gate in jsdom, which has no layout engine — the same clause against a real frame is AC-12-paints."
+        },
+        {
+          "id": "AC-12-paints",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "22",
+          "test": "AC-12 the first-run screen paints and the word setup is absent from it",
+          "assert": "The same clause against a composited frame rather than a jsdom tree.",
+          "reason": "The e2e that renders the first-run screen skips itself when core/target/release/codotheca-core is absent — honestly, rather than passing over a blank window — so on any machine or CI job that has not built a release core the check does not run at all. Making it automated would mark a criterion covered by a test that silently declines to execute."
+        },
+        {
+          "id": "AC-12-coverage",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "16b",
+          "test": "AC-12 every figure over a partial index states its coverage",
+          "assert": "Every reveal figure carries its RevealBasis coverage line, with shallow repositories excluded from the maths and counted in the coverage line."
+        },
+        {
+          "id": "AC-12-refusal-explained",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "16b",
+          "test": "AC-12 a refused suggestion says why rather than nothing",
+          "assert": "§10.1a requires an explanation and never a silent no.",
+          "reason": "The shell distinguishes an unknown suggestion from an ambiguous one and the renderer collapses both to no root added: the commit path returns a root-add reply and the refusal type has no variant for it. What a user sees today is a scan that found nothing under a root nobody added. Closing it is a schema change plus 16b's surface."
+        }
+      ]
+    },
+    {
+      "id": "13",
+      "title": "Two launches: the second focuses the first and starts no second core",
+      "group": "functional",
+      "spec": "§16.13",
+      "checks": [
+        {
+          "id": "AC-13-no-second-core",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "03",
+          "test": "AC-13 a second launch opens no window and starts no core",
+          "assert": "With one instance running, a second process exits without opening a window and without taking the core lock.",
+          "reason": "Plan 20's File Structure names app/e2e/acceptance_single_instance.spec.ts and no task in plan 20 or 20b creates it; the single-instance lock itself is the shell plan's code. Registering it automated against a spec nobody wrote would be a criterion marked covered by a test that does not exist."
+        },
+        {
+          "id": "AC-13-focus",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "SECOND-LAUNCH-FOCUS",
+          "reason": "Focus transfer to an existing window is not observable under xvfb: there is no window manager, so focus semantics on a headless runner are unrepresentative of either target.",
+          "assert": "The second launch raises and focuses the first window."
+        }
+      ]
+    },
+    {
+      "id": "14",
+      "title": "A future schema refuses to open; a corrupt database quarantines and rebuilds",
+      "group": "functional",
+      "spec": "§16.14",
+      "checks": [
+        {
+          "id": "AC-14-future-schema",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_recovery::ac_14_schema_from_the_future_refuses_to_open",
+          "assert": "A PRAGMA user_version above SUPPORTED_SCHEMA_VERSION yields SchemaFromFuture carrying both numbers, and the file is left untouched."
+        },
+        {
+          "id": "AC-14-quarantine",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_recovery::ac_14_corrupt_database_quarantines_and_rebuilds",
+          "assert": "A corrupt file is quarantined with its wal and shm, rebuild returns a RebuildReport, and the report names exactly what was not derivable."
+        },
+        {
+          "id": "AC-14-message",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17c",
+          "test": "AC-14 the failure window states the schema number and the restore time",
+          "assert": "Criterion 57's failed-migration window renders the restored schema number and the restore time."
+        }
+      ]
+    }
+  ]
+}
