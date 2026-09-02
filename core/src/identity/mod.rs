@@ -4,8 +4,9 @@
 //! [`decide`] maps that evidence plus the projects already indexed onto one of six decisions with
 //! no I/O at all; [`store`], [`merge`], [`redirect`] and [`submodule`] apply a decision through a
 //! borrowed `rusqlite::Transaction`. **Git is never spawned from here**: this module exports the
-//! argv vectors and the parsers for their output, and the job layer runs them through
-//! `GitBackend` so a test can inject slow, failing and torn-read git (§15.2).
+//! argv vectors and the parsers for their output, and they are run through `GitBackend` so a
+//! test can inject slow, failing and torn-read git (§15.2). [`probe`] composes the three reads
+//! §1.1 needs into one `IdentityProbe` — through the seam, holding no lock and no connection.
 //!
 //! Every function that writes takes `&rusqlite::Transaction<'_>` and an explicit `now: i64`. The
 //! caller owns the transaction and the clock, which is what lets §1.5 be one transaction and
@@ -17,6 +18,7 @@ pub mod decide;
 pub mod lineage;
 pub mod merge;
 pub mod people;
+pub mod probe;
 pub mod redirect;
 pub mod remote;
 pub mod store;
