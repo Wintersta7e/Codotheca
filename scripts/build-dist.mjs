@@ -118,7 +118,10 @@ async function step(name, command, args, env = {}) {
       stdio: ['ignore', fd, fd],
       // Its own group, so the whole tree can be reaped rather than just the parent.
       detached: process.platform !== 'win32',
-      shell: false,
+      // Node refuses to spawn a `.cmd` without a shell, and reports it as `spawn EINVAL` —
+      // which names neither the file nor the reason. Every command here is a literal in this
+      // file, so nothing a shell could reinterpret reaches it.
+      shell: /\.(?:cmd|bat)$/iu.test(command),
     });
     child.on('error', reject);
     child.on('close', resolve);
