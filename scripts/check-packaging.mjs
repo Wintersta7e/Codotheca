@@ -231,6 +231,17 @@ for (const pack of packs) {
     }
   }
 
+  // "Staged for THIS target" is two assertions, not one. A platform's extraResources
+  // concatenates with the top-level list rather than replacing it, and a single entry naming
+  // both core file names put the other platform's core in the pack — a binary the installing
+  // machine cannot run, shipped in silence.
+  const foreign = join(resources, 'core', pack.windows ? 'codotheca-core' : 'codotheca-core.exe');
+  if (existsSync(foreign)) {
+    fail(`${pack.dir} carries the other platform's core: ${foreign}`);
+  } else {
+    packedFilesChecked += 1;
+  }
+
   if (pack.windows) {
     for (const arch of ['x64', 'arm64']) {
       const worker = join(resources, 'worker', `linux-${arch}`, 'codotheca-worker');

@@ -20,11 +20,11 @@ files:
   - licenses/**
   - package.json
 
-extraResources:
-  # The Rust core ships alongside the shell and is spawned as a child process.
-  - from: core/target/release/
-    to: core
-    filter: ['codotheca-core', 'codotheca-core.exe']
+# The core is staged per platform and NOT at the top level. A platform's `extraResources`
+# concatenates with the top-level list rather than replacing it, so one top-level entry naming
+# both core file names put the Linux core inside the Windows installer — measured, 6.5 MB of a
+# binary that machine cannot run. With no top-level list there is nothing to concatenate, and
+# each pack carries exactly the core built for it.
 
 win:
   target:
@@ -36,11 +36,11 @@ win:
   # names only `configuration.win` and no key.
   signtoolOptions:
     sign: build/sign.cjs
+  # The Rust core ships alongside the shell and is spawned as a child process.
+  #
   # §13: the WSL worker is a Linux ELF that ships inside the WINDOWS installer, versioned with
   # the app, one per supported architecture. Staged by scripts/stage-worker.mjs, which validates
-  # the header. The core entry is repeated here because a platform-level extraResources array
-  # replaces the top-level one rather than extending it — omitting it ships a Windows installer
-  # with no core.
+  # the header and derives the architecture from it.
   extraResources:
     - from: core/target/release/
       to: core
@@ -61,6 +61,12 @@ nsis:
   deleteAppDataOnUninstall: false
 
 linux:
+  # No worker here: it is carried by the Windows installer, because that is the side that has
+  # to reach into the subsystem. A Linux install already runs on the kernel it indexes.
+  extraResources:
+    - from: core/target/release/
+      to: core
+      filter: ['codotheca-core']
   category: Development
   synopsis: A library for the code you have written
   maintainer: Codotheca contributors <codotheca@invalid>
