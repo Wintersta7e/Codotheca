@@ -50,6 +50,8 @@ pub struct ThreadScanLauncher {
     mounts: Arc<dyn MountResolver>,
     clock: Arc<dyn Clock>,
     skip: Arc<SkipList>,
+    /// §13's dispatcher, or `None` on a host with no WSL and in a build that staged no worker.
+    wsl: Option<Arc<crate::wsl::dispatch::WslDispatcher>>,
     /// §4.1a's queue. **Not `NullJobSink`**: that is the absence of a scheduler, not a fake of
     /// one, and installing it here is what left every discovered repository uncomputed.
     jobs: Arc<dyn JobSink>,
@@ -73,6 +75,8 @@ pub struct ScanLauncherDeps {
     pub mounts: Arc<dyn MountResolver>,
     pub clock: Arc<dyn Clock>,
     pub skip: Arc<SkipList>,
+    /// §13's dispatcher. `None` on a host with no WSL, or in a build that staged no worker.
+    pub wsl: Option<Arc<crate::wsl::dispatch::WslDispatcher>>,
     pub jobs: Arc<dyn JobSink>,
     pub events: Arc<dyn EventSink>,
 }
@@ -93,6 +97,7 @@ impl ThreadScanLauncher {
             mounts: deps.mounts,
             clock: deps.clock,
             skip: deps.skip,
+            wsl: deps.wsl,
             jobs: deps.jobs,
             events: deps.events,
         }
@@ -107,6 +112,7 @@ impl ThreadScanLauncher {
             skip: self.skip.as_ref(),
             cancel,
             index: self.index.as_ref(),
+            wsl: self.wsl.as_deref(),
             jobs: Arc::clone(&self.jobs),
         }
     }

@@ -147,6 +147,7 @@ fn rig(root: &Path) -> Rig {
             mounts: Arc::new(mounts),
             clock: Arc::new(FakeClock::new(NOW)),
             skip: Arc::new(SkipList::default()),
+            wsl: None,
             jobs: Arc::clone(&jobs) as Arc<_>,
             events: Arc::clone(&events) as Arc<_>,
         },

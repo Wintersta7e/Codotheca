@@ -170,7 +170,16 @@ fn indexable(r: &Rig, common_dir: &Path) {
 }
 
 fn runner(r: &Rig, mounts: Arc<FakeMountResolver>) -> ScanRunner<'_> {
+    runner_with_wsl(r, mounts, None)
+}
+
+fn runner_with_wsl<'a>(
+    r: &'a Rig,
+    mounts: Arc<FakeMountResolver>,
+    wsl: Option<&'a codotheca_core::wsl::dispatch::WslDispatcher>,
+) -> ScanRunner<'a> {
     ScanRunner {
+        wsl,
         store: &r.store,
         git: &r.git,
         mounts,
@@ -706,4 +715,146 @@ fn a_repository_the_handoff_cannot_read_is_reported_and_queues_nothing() {
             .contains(&ScanProblemKind::UnreadableRepo),
         "the run must say which repository it could not index"
     );
+}
+
+// ---------------------------------------------------------------------------
+// §13: the walk registers the bridge and the dispatcher crosses it. Nothing
+// called `WslDispatcher` at all, so a repository inside a distro was never indexed.
+// ---------------------------------------------------------------------------
+
+mod bridge {
+    use super::{indexable, rig, runner_with_wsl, Rig};
+    use codotheca_core::scan::{ScanProblemKind, WalkEvent, WalkOptions};
+    use codotheca_core::testing::wsl::LoopbackLauncher;
+    use codotheca_core::testing::{FakeGitBackend, FakeMountResolver};
+    use codotheca_core::wsl::conn::WslWorkerPool;
+    use codotheca_core::wsl::dispatch::WslDispatcher;
+    use codotheca_core::wsl::distros::{DistroInfo, DistroState};
+    use codotheca_core::wsl::mounts::MountTable;
+    use codotheca_core::wsl::proto::WorkerGit;
+    use codotheca_core::wsl::serve::WorkerContext;
+    use std::collections::BTreeSet;
+    use std::sync::{Arc, Mutex};
+
+    const MOUNTINFO: &str = "28 1 8:32 / / rw - ext4 /dev/sdc rw\n";
+
+    fn installed() -> Vec<DistroInfo> {
+        vec![DistroInfo {
+            name: "distro-a".to_owned(),
+            state: DistroState::Stopped,
+        }]
+    }
+
+    fn dispatcher(consented: bool) -> (Arc<LoopbackLauncher>, WslDispatcher) {
+        let launcher = Arc::new(LoopbackLauncher::new(|distro: &str| WorkerContext {
+            distro: distro.to_owned(),
+            git: Box::new(FakeGitBackend::new()),
+            mounts: MountTable::from_mountinfo(MOUNTINFO),
+            presence: WorkerGit::Present {
+                version: "2.43.0".to_owned(),
+            },
+        }));
+        let consent: BTreeSet<String> = if consented {
+            ["distro-a".to_owned()].into_iter().collect()
+        } else {
+            BTreeSet::new()
+        };
+        let dispatcher = WslDispatcher::new(
+            Arc::new(WslWorkerPool::new(Arc::clone(&launcher) as Arc<_>)),
+            installed(),
+            consent,
+        );
+        (launcher, dispatcher)
+    }
+
+    fn cross(r: &Rig, wsl: &WslDispatcher, path_display: &str) -> Vec<ScanProblemKind> {
+        let mounts = Arc::new(FakeMountResolver::new());
+        let runner = runner_with_wsl(r, mounts, Some(wsl));
+        let problems = Mutex::new(Vec::new());
+        runner.cross_the_bridge(
+            "distro-a",
+            path_display,
+            1,
+            &WalkOptions::default(),
+            1,
+            7,
+            &|event| {
+                if let WalkEvent::Problem(p) = event {
+                    problems.lock().expect("lock").push(p.kind);
+                }
+            },
+        );
+        problems.into_inner().expect("lock")
+    }
+
+    /// §13: a distro the user has not opted into is **not scanned and is not an error**. The
+    /// difference between "not opted in" and "the scan failed" has to survive to the surface,
+    /// and the row the dispatcher writes is what carries it.
+    #[test]
+    fn without_consent_no_distro_is_started() {
+        let r = rig();
+        let (launcher, wsl) = dispatcher(false);
+        let problems = cross(&r, &wsl, r"\\wsl$\distro-a\home\u\code");
+
+        assert!(
+            launcher.launched().is_empty(),
+            "a stopped distro must never be started without consent"
+        );
+        assert!(
+            r.jobs.indexed().is_empty(),
+            "and nothing inside it was indexed"
+        );
+        assert_eq!(
+            problems,
+            vec![ScanProblemKind::OfflineStore],
+            "the surface has to be able to say which distro is waiting on the user"
+        );
+    }
+
+    /// With consent the bridge is crossed and whatever the distro reports is indexed by exactly
+    /// the same path a native discovery takes.
+    #[test]
+    fn with_consent_the_bridge_is_crossed() {
+        let r = rig();
+        indexable(&r, std::path::Path::new("/home/u/code/.git"));
+        let (launcher, wsl) = dispatcher(true);
+        let problems = cross(&r, &wsl, r"\\wsl$\distro-a\home\u\code");
+
+        assert_eq!(
+            launcher.launched(),
+            vec!["distro-a".to_owned()],
+            "consent is what lets a stopped distro be started, and only that"
+        );
+        assert!(
+            !problems.contains(&ScanProblemKind::OfflineStore),
+            "a consented distro is not offline: {problems:?}"
+        );
+    }
+
+    /// A build with no worker records the bridge rather than ignoring it: silence would report a
+    /// distro's repositories as absent when nobody looked.
+    #[test]
+    fn a_build_with_no_dispatcher_says_so_rather_than_passing_over_it() {
+        let r = rig();
+        let mounts = Arc::new(FakeMountResolver::new());
+        let runner = runner_with_wsl(&r, mounts, None);
+        let problems = Mutex::new(Vec::new());
+        runner.cross_the_bridge(
+            "distro-a",
+            r"\\wsl$\distro-a\home\u\code",
+            1,
+            &WalkOptions::default(),
+            1,
+            7,
+            &|event| {
+                if let WalkEvent::Problem(p) = event {
+                    problems.lock().expect("lock").push(p.kind);
+                }
+            },
+        );
+        assert_eq!(
+            problems.into_inner().expect("lock"),
+            vec![ScanProblemKind::OfflineStore]
+        );
+    }
 }

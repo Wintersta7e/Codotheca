@@ -65,6 +65,7 @@ function harness(): Harness {
   const state = { clock: 0 };
   const sup = new CoreSupervisor({
     binaryPath: '/nowhere/codotheca-core',
+    workerPath: null,
     dataDir: dir,
     log,
     spawn: () => {

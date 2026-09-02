@@ -62,6 +62,46 @@ fn first_run_env(data_dir: &Path) -> codotheca_core::firstrun::FirstRunEnv {
     }
 }
 
+/// §13's dispatcher, or `None`.
+///
+/// Three things have to be true at once: the shell handed this build a worker path, that file
+/// reads, and the host lists at least one distro. Any of them missing means there is nothing to
+/// dispatch to — and the caller says so rather than installing a stand-in that reports every
+/// distro as empty.
+///
+/// The consent set is read here, once, from `app_meta` (plan 18's deviation: `settings` is not a
+/// table). A malformed value consents to nothing, which is "ask again" and never "start it".
+fn build_wsl_dispatcher(
+    worker: Option<&Path>,
+    index: &Arc<Mutex<codotheca_core::index::Index>>,
+) -> Option<Arc<codotheca_core::wsl::dispatch::WslDispatcher>> {
+    let bytes = std::fs::read(worker?)
+        .map_err(|e| note(&format!("codotheca-core: wsl worker unreadable: {e}")))
+        .ok()?;
+    let cli: Arc<dyn codotheca_core::wsl::distros::WslCli> =
+        Arc::new(codotheca_core::wsl::distros::SystemWslCli::new());
+    let installed = codotheca_core::wsl::distros::installed_distros(cli.as_ref()).ok()?;
+    if installed.is_empty() {
+        return None;
+    }
+    let consented = {
+        let guard = index.lock().ok()?;
+        let set = codotheca_core::wsl::dispatch::read_consented(guard.conn());
+        drop(guard);
+        set
+    };
+    let launcher = Arc::new(codotheca_core::wsl::conn::WslExeLauncher::new(
+        cli,
+        Arc::new(bytes),
+        None,
+    ));
+    Some(Arc::new(codotheca_core::wsl::dispatch::WslDispatcher::new(
+        Arc::new(codotheca_core::wsl::conn::WslWorkerPool::new(launcher)),
+        installed,
+        consented,
+    )))
+}
+
 #[allow(clippy::too_many_lines)]
 fn main() -> ExitCode {
     let args = match parse_args(std::env::args().skip(1)) {
@@ -152,6 +192,15 @@ fn main() -> ExitCode {
             }
         };
 
+    // §13's dispatcher, built only when this build has a worker to run and the host has
+    // distros to run it in. **No null stand-in**: on Linux there is no bridge to cross, and on
+    // Windows an absent worker is a fact the scan reports rather than a silence it passes off
+    // as an empty distro.
+    let wsl = build_wsl_dispatcher(args.worker.as_deref(), &index);
+    if args.worker.is_some() && wsl.is_none() {
+        note("codotheca-core: no WSL worker; distros will not be scanned");
+    }
+
     // §4.1a's pump. Started here because the shelf is uncomputed until it runs: the walk writes
     // rows and nothing derives a fact about them without J1-J6. `CoreHandler` owns it and stops
     // it in `shutdown`, before the publisher closes.
@@ -194,6 +243,7 @@ fn main() -> ExitCode {
                     mounts: Arc::clone(&mount),
                     clock: Arc::clone(&clock),
                     skip: Arc::new(codotheca_core::scan::skiplist::SkipList::default()),
+                    wsl,
                     // The real queue. `NullJobSink` is the absence of a scheduler, not a fake of
                     // one, and installing it here is what left every discovery uncomputed.
                     jobs: jobs.sink(),

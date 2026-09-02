@@ -106,6 +106,13 @@ pub struct ScanRunner<'a> {
     /// cannot carry one (R35a). Both are the same mutex over the same connection — never a
     /// second one.
     pub index: &'a Mutex<Index>,
+    /// §13's dispatcher, or `None` on a host with no WSL.
+    ///
+    /// `None` is not a null object: on Linux there is no bridge to cross and no
+    /// `WalkEvent::WslBridge` is ever emitted, so an absent dispatcher is never reached. On
+    /// Windows an absent one means the build staged no worker, and the walk says so rather than
+    /// reporting an empty distro.
+    pub wsl: Option<&'a crate::wsl::dispatch::WslDispatcher>,
     /// Where a newly indexed location's jobs are queued (§4.1a).
     ///
     /// Called from [`ScanRunner::index_one`], with the store key and class from the **one**
@@ -399,6 +406,21 @@ impl ScanRunner<'_> {
                     });
                 }
                 WalkEvent::Problem(problem) => self.report(scan_run_id, problem, sink),
+                // §4.5: the walk registers the bridge and refuses to traverse it; §13 crosses it
+                // over the protocol instead. Everything the distro reports comes back through
+                // this same sink, so an in-distro repository is indexed by the arm above.
+                WalkEvent::WslBridge {
+                    distro,
+                    path_display,
+                } => self.cross_the_bridge(
+                    &distro,
+                    &path_display,
+                    entry.root.root_id,
+                    &opts,
+                    scan_run_id,
+                    generation,
+                    sink,
+                ),
                 other => sink(other),
             });
 
@@ -413,6 +435,98 @@ impl ScanRunner<'_> {
             links_refused,
             cancelled,
         )
+    }
+
+    /// §13: hand one bridge path to the in-distro worker.
+    ///
+    /// **A distro with no consent is not scanned and is not an error.** The dispatcher answers
+    /// `Unreachable { NeedsConsent }` and emits its own problem row saying which distro is
+    /// waiting on the user — the difference between *the user has not opted in* and *the scan
+    /// failed* has to survive to the surface, and it is that row that carries it.
+    ///
+    /// A build with no dispatcher records the bridge instead of ignoring it. Silence here would
+    /// report a distro's repositories as absent rather than unscanned.
+    /// Public so a host with **no** bridge to walk can still drive this arm. `\\wsl$\` paths
+    /// exist only on Windows, so a Linux test can never reach it through `walk_root` — and an
+    /// arm no test can reach is how the whole in-distro subsystem stayed unwired.
+    #[allow(clippy::too_many_arguments)]
+    pub fn cross_the_bridge(
+        &self,
+        distro: &str,
+        path_display: &str,
+        root_id: i64,
+        opts: &WalkOptions,
+        scan_run_id: i64,
+        generation: i64,
+        sink: &WalkSink<'_>,
+    ) {
+        let Some(wsl) = self.wsl else {
+            self.report(
+                scan_run_id,
+                ScanProblem {
+                    kind: ScanProblemKind::OfflineStore,
+                    path_display: path_display.to_owned(),
+                    detail: format!(
+                        "{distro}: this build has no in-distro worker, so the bridge was not                          crossed"
+                    ),
+                },
+                sink,
+            );
+            return;
+        };
+        // The bridge path carries the Linux path the distro knows this directory by. Parsing it
+        // here rather than re-deriving one keeps `wsl::path` the single owner of that mapping.
+        let Some(parsed) = crate::wsl::path::parse_bridge_path(path_display) else {
+            self.report(
+                scan_run_id,
+                ScanProblem {
+                    kind: ScanProblemKind::UnreadableRepo,
+                    path_display: path_display.to_owned(),
+                    detail: format!("{distro}: not a bridge path this build understands"),
+                },
+                sink,
+            );
+            return;
+        };
+        let generation_for_walk = generation;
+        let outcome = wsl.scan(
+            &crate::scan::wsl::WslBridgeRef {
+                distro: distro.to_owned(),
+            },
+            &parsed.linux_path,
+            root_id,
+            opts,
+            &|event| match event {
+                WalkEvent::Repo(_) | WalkEvent::WslBridge { .. } => {}
+                WalkEvent::Discovered(discovered) => {
+                    // The distro's own store class: `store_key` came back from the worker's
+                    // mount table, and nothing on this host can resolve a path inside a distro.
+                    self.index_one(
+                        &discovered,
+                        crate::mount::StoreClass::Unknown,
+                        generation_for_walk,
+                        scan_run_id,
+                        sink,
+                    );
+                    sink(WalkEvent::Discovered(discovered));
+                }
+                WalkEvent::Problem(problem) => self.report(scan_run_id, problem, sink),
+                other => sink(other),
+            },
+        );
+        if let Some(kind) = crate::wsl::dispatch::error_kind_for(&outcome) {
+            // §11.5 for a distro that has no git of its own. Its repositories were found; they
+            // just cannot be read, and that is a different sentence from "not found".
+            self.report(
+                scan_run_id,
+                ScanProblem {
+                    kind: ScanProblemKind::UnreadableRepo,
+                    path_display: path_display.to_owned(),
+                    detail: format!("{distro}: {kind}"),
+                },
+                sink,
+            );
+        }
     }
 
     /// §4.1a: the row, then the queue.

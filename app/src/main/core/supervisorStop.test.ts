@@ -17,6 +17,7 @@ function stubbornRig(): StubbornRig {
   const timers: (() => void)[] = [];
   const sup = new CoreSupervisor({
     binaryPath: '/test-data/core',
+    workerPath: null,
     dataDir: '/test-data',
     log: {
       path: '/test-data/core.log',
