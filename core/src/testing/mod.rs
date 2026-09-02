@@ -6,6 +6,7 @@ mod git;
 mod index;
 mod mount;
 mod scan;
+pub mod wsl;
 
 pub use clock::FakeClock;
 pub use git::{FakeGitBackend, GitReply, RecordedGitCall, RecordingGitBackend};

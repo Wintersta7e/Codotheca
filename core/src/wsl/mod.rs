@@ -6,6 +6,7 @@
 //! virtual machine — and because spawning `wsl.exe` per repository, or per git command, costs
 //! more than the work.
 
+pub mod conn;
 pub mod deploy;
 pub mod distros;
 pub mod mounts;
