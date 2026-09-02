@@ -13,7 +13,7 @@
 //! reassigned on every restart, the whole table is needed at once to decide what to walk, and
 //! §13 says the class comes from the type alone.
 
-use crate::mount::{MountFacts, StoreClass};
+use crate::mount::{MountError, MountFacts, MountResolver, StoreClass};
 use crate::scan::wsl::is_drvfs_fstype;
 use crate::wsl::path::{parse_drvfs_source, DrvfsMount};
 
@@ -239,6 +239,35 @@ pub fn class_for_fstype(fstype: &str) -> StoreClass {
     }
 }
 
+/// §4.7's seam, answered from inside the distro. The Windows implementation cannot answer for a
+/// distro at all: it sees one 9p share where the distro sees a VHD, several Windows drives and
+/// whatever else was mounted.
+#[derive(Debug)]
+pub struct DistroMountResolver {
+    distro: String,
+    table: MountTable,
+}
+
+impl DistroMountResolver {
+    #[must_use]
+    pub fn new(distro: String, table: MountTable) -> DistroMountResolver {
+        DistroMountResolver { distro, table }
+    }
+}
+
+impl MountResolver for DistroMountResolver {
+    fn resolve(&self, path: &std::path::Path) -> Result<MountFacts, MountError> {
+        Ok(self.table.facts_for(&self.distro, &path.to_string_lossy()))
+    }
+
+    fn is_volume_mounted(&self, volume_key: &str) -> bool {
+        self.table
+            .entries()
+            .iter()
+            .any(|e| volume_key_for(&self.distro, e).as_deref() == Some(volume_key))
+    }
+}
+
 #[must_use]
 pub fn class_slug(class: StoreClass) -> &'static str {
     match class {
@@ -415,6 +444,20 @@ mod tests {
         assert_eq!(f.class, StoreClass::Unknown);
         assert_eq!(f.store_key, "wsl:alpha:?");
         assert_eq!(f.volume_key, None);
+    }
+
+    #[test]
+    fn the_resolver_answers_from_the_table_and_reports_what_is_mounted() {
+        use crate::mount::MountResolver;
+        use std::path::Path;
+
+        let resolver = super::DistroMountResolver::new("alpha".to_owned(), table());
+        let facts = resolver
+            .resolve(Path::new("/home/me/widget"))
+            .expect("resolves");
+        assert_eq!(facts.store_key, "wsl:alpha:/");
+        assert!(resolver.is_volume_mounted("wsl-distro:alpha:/"));
+        assert!(!resolver.is_volume_mounted("wsl-distro:beta:/"));
     }
 
     #[test]

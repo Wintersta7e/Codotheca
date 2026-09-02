@@ -9,13 +9,26 @@ use crate::cancel::CancelToken;
 use crate::git::{
     GitBackend, GitResult, JobClass, JobContext, RepoHandle, StatusOptions, StoreKey,
 };
+use crate::index::path::PathPlatform;
+use crate::mount::MountResolver;
+use crate::paths::path_key;
 use crate::proto::frame::{read_frame, FrameError};
-use crate::wsl::mounts::{class_slug, MountTable};
+use crate::proto::wire::RequestId;
+use crate::scan::discover::{ProbeCtx, RepoCandidate};
+use crate::scan::links::LinkPolicy;
+use crate::scan::skiplist::SkipList;
+use crate::scan::walk::{walk_root, WalkCtx};
+use crate::scan::{WalkEvent, WalkOptions};
+use crate::wsl::mounts::{class_slug, DistroMountResolver, MountTable, MountVerdict};
 use crate::wsl::proto::{
-    fault_of, gitlinks_to_wire, write_worker_frame, WireMountFacts, WorkerCall, WorkerFault,
-    WorkerGit, WorkerGitOp, WorkerOutbound, WorkerRepo, WorkerRequest, WORKER_PROTOCOL_VERSION,
+    fault_of, gitlinks_to_wire, write_worker_frame, WalkRequest, WalkSummary, WireMountFacts,
+    WorkerCall, WorkerEvent, WorkerFault, WorkerGit, WorkerGitOp, WorkerOutbound, WorkerRepo,
+    WorkerRepoFound, WorkerRequest, WORKER_PROTOCOL_VERSION,
 };
+use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 pub const WORKER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -135,6 +148,143 @@ fn run_git(
     }
 }
 
+#[must_use]
+pub fn repo_found_of(ctx: &WorkerContext, candidate: &RepoCandidate) -> WorkerRepoFound {
+    let work_dir = candidate.path.to_string_lossy().into_owned();
+    let facts = ctx.mounts.facts_for(&ctx.distro, &work_dir);
+    WorkerRepoFound {
+        work_dir,
+        git_dir: candidate.git_dir.to_string_lossy().into_owned(),
+        common_dir: candidate.common_dir.to_string_lossy().into_owned(),
+        kind: candidate.kind.as_str().to_owned(),
+        store_key: facts.store_key,
+        volume_key: facts.volume_key,
+        store_class: class_slug(facts.class).to_owned(),
+    }
+}
+
+/// Runs plan 07's walk inside the distro and streams what it finds.
+///
+/// The one behaviour that is not plan 07's: a root standing on a Windows-backed filesystem is
+/// refused by **type** (§4.5) and named, because those bytes belong to the native walk.
+pub fn walk(
+    ctx: &WorkerContext,
+    request: &WalkRequest,
+    id: RequestId,
+    emit: &mut Emit<'_>,
+) -> std::io::Result<WalkSummary> {
+    if let MountVerdict::SkipWindowsBacked {
+        mount_point,
+        fstype,
+    } = ctx.mounts.verdict_for(&request.root)
+    {
+        emit(&WorkerOutbound::Event {
+            id,
+            event: WorkerEvent::SkippedMount {
+                mount_point,
+                fstype,
+            },
+        })?;
+        return Ok(WalkSummary {
+            walked_dirs: 0,
+            found_repos: 0,
+            cancelled: false,
+        });
+    }
+
+    let opts = WalkOptions {
+        // One thread. The distro's cost is the git work, not the walk — which measured at 101k
+        // dirs/s — and every event has to pass through one frame writer anyway.
+        threads: 1,
+        follow_links: request.follow_links,
+        descend_into_repos: request.descend_into_repos,
+        bare_candidates: request.bare_candidates,
+    };
+    let skip = SkipList::with_user_entries(&request.skip_extra);
+    let cancel = CancelToken::new();
+    let root = PathBuf::from(&request.root);
+    let root_facts = ctx.mounts.facts_for(&ctx.distro, &request.root);
+    // The resolver gets the *live* table. An empty one would answer `wsl:<distro>:?` for every
+    // target, which never equals the root's store, and the link policy would then refuse every
+    // link inside the distro while reporting that it had judged them.
+    let resolver: Arc<dyn MountResolver> = Arc::new(DistroMountResolver::new(
+        ctx.distro.clone(),
+        ctx.mounts.clone(),
+    ));
+    let mut root_stores = BTreeSet::new();
+    root_stores.insert(root_facts.store_key.clone());
+    let links = Arc::new(LinkPolicy::new(
+        request.follow_links,
+        // R2: `path_key` takes the platform explicitly. Inside a distro the answer is always
+        // `Unix` — two names differing only in case are two directories, whatever the host is.
+        vec![path_key(&root, PathPlatform::Unix)],
+        root_stores,
+        resolver,
+    ));
+    let probe = ProbeCtx::new(
+        ctx.git.as_ref(),
+        StoreKey::new(root_facts.store_key),
+        root_facts.class,
+        &cancel,
+    );
+    let walk_ctx = WalkCtx {
+        opts: &opts,
+        skip: &skip,
+        probe: &probe,
+        links,
+    };
+
+    // `WalkSink` is `Fn` and `Send + Sync`, so the frame writer needs a lock and the counter
+    // needs an atomic. A write that fails is counted rather than swallowed: the summary would
+    // otherwise report repositories the core never received.
+    let out = std::sync::Mutex::new(emit);
+    let failed = AtomicU64::new(0);
+    let sink = |event: WalkEvent| {
+        let framed = match event {
+            WalkEvent::Repo(candidate) => Some(WorkerEvent::Repo(repo_found_of(ctx, &candidate))),
+            WalkEvent::Problem(problem) => Some(WorkerEvent::Problem {
+                kind: problem.kind.as_str().to_owned(),
+                path_display: problem.path_display,
+                detail: problem.detail,
+            }),
+            WalkEvent::Progress {
+                walked_dirs,
+                found_repos,
+            } => Some(WorkerEvent::Progress {
+                walked_dirs,
+                found_repos,
+            }),
+            // The distro never registers a bridge inside itself, and the core owns identity,
+            // submodule edges and the raw directory counter: those events end here.
+            WalkEvent::WslBridge { .. }
+            | WalkEvent::Discovered(_)
+            | WalkEvent::SubmoduleEdge(_)
+            | WalkEvent::Walked { .. } => None,
+        };
+        let Some(event) = framed else { return };
+        let Ok(mut guard) = out.lock() else {
+            failed.fetch_add(1, Ordering::Relaxed);
+            return;
+        };
+        let write: &mut Emit<'_> = &mut *guard;
+        if write(&WorkerOutbound::Event { id, event }).is_err() {
+            failed.fetch_add(1, Ordering::Relaxed);
+        }
+    };
+
+    let stats = walk_root(&root, &walk_ctx, &sink);
+    if failed.load(Ordering::Relaxed) > 0 {
+        return Err(std::io::Error::other(
+            "the frame stream closed while the walk was reporting",
+        ));
+    }
+    Ok(WalkSummary {
+        walked_dirs: stats.walked_dirs,
+        found_repos: stats.repos_found,
+        cancelled: stats.cancelled,
+    })
+}
+
 /// Answers one call. `Ok(false)` means the loop should stop.
 pub fn handle(
     ctx: &WorkerContext,
@@ -155,9 +305,14 @@ pub fn handle(
                 detail: e.to_string(),
             })
         }
-        WorkerRequest::Walk(_) => Err(WorkerFault::Internal {
-            detail: "walk is not implemented yet".to_owned(),
-        }),
+        WorkerRequest::Walk(request) => match walk(ctx, request, id, emit) {
+            Ok(summary) => serde_json::to_value(summary).map_err(|e| WorkerFault::Internal {
+                detail: e.to_string(),
+            }),
+            Err(err) => Err(WorkerFault::Internal {
+                detail: err.to_string(),
+            }),
+        },
         WorkerRequest::Git {
             repo,
             op,
@@ -377,6 +532,118 @@ mod tests {
             }
         ));
         assert!(matches!(&frames[2], WorkerOutbound::Reply { .. }));
+    }
+
+    #[test]
+    fn the_walk_finds_a_repository_and_reports_its_store() {
+        use crate::wsl::proto::{WalkRequest, WorkerEvent};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = dir.path().join("p");
+        std::fs::create_dir_all(repo.join(".git")).expect("mkdir");
+        let root = repo
+            .parent()
+            .expect("has a parent")
+            .to_string_lossy()
+            .into_owned();
+
+        let ctx = context(WorkerGit::Present {
+            version: "2.43.0".to_owned(),
+        });
+        let frames = drive(
+            &ctx,
+            &[WorkerCall {
+                id: RequestId(5),
+                request: WorkerRequest::Walk(WalkRequest {
+                    root,
+                    follow_links: false,
+                    descend_into_repos: false,
+                    bare_candidates: false,
+                    skip_extra: Vec::new(),
+                }),
+            }],
+        );
+
+        let found: Vec<_> = frames
+            .iter()
+            .filter_map(|f| match f {
+                WorkerOutbound::Event {
+                    event: WorkerEvent::Repo(r),
+                    ..
+                } => Some(r),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            found.len(),
+            1,
+            "expected exactly one repository, got {frames:?}"
+        );
+        assert!(found[0].work_dir.ends_with('p'));
+        assert_eq!(found[0].store_key, "wsl:alpha:/");
+        assert_eq!(found[0].kind, "worktree");
+
+        match frames.last().expect("has a last frame") {
+            WorkerOutbound::Reply { id, ok } => {
+                assert_eq!(id.0, 5);
+                assert_eq!(ok["found_repos"], 1);
+                assert_eq!(ok["cancelled"], false);
+            }
+            other => panic!("last frame was {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_windows_backed_mount_is_named_and_not_walked() {
+        use crate::wsl::proto::{WalkRequest, WorkerEvent};
+
+        // A 9p mount at an arbitrary point: §4.5 forbids deciding this by the name `/mnt/c`.
+        let ctx = WorkerContext {
+            distro: "alpha".to_owned(),
+            git: Box::new(FakeGitBackend::new()),
+            mounts: MountTable::from_mountinfo(
+                "28 1 8:32 / / rw - ext4 /dev/sdc rw\n64 28 0:64 / /opt/win rw - 9p C:\\134 rw\n",
+            ),
+            presence: WorkerGit::Present {
+                version: "2.43.0".to_owned(),
+            },
+        };
+        let frames = drive(
+            &ctx,
+            &[WorkerCall {
+                id: RequestId(6),
+                request: WorkerRequest::Walk(WalkRequest {
+                    root: "/opt/win".to_owned(),
+                    follow_links: false,
+                    descend_into_repos: false,
+                    bare_candidates: false,
+                    skip_extra: Vec::new(),
+                }),
+            }],
+        );
+
+        let skipped: Vec<_> = frames
+            .iter()
+            .filter_map(|f| match f {
+                WorkerOutbound::Event {
+                    event:
+                        WorkerEvent::SkippedMount {
+                            mount_point,
+                            fstype,
+                        },
+                    ..
+                } => Some((mount_point.clone(), fstype.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(skipped, vec![("/opt/win".to_owned(), "9p".to_owned())]);
+        assert!(!frames.iter().any(|f| matches!(
+            f,
+            WorkerOutbound::Event {
+                event: WorkerEvent::Repo(_),
+                ..
+            }
+        )));
     }
 
     #[test]
