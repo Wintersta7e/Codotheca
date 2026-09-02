@@ -23,7 +23,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const publisher = process.env.CODOTHECA_PUBLISHER_NAME ?? '';
 const args = [
   ...process.argv.slice(2),
-  ...(publisher === '' ? [] : [`--config.win.publisherName=${publisher}`]),
+  // Under `signtoolOptions` from electron-builder 26 onward; at the top of `win` it is a
+  // schema error whose message names only `configuration.win` and no key.
+  ...(publisher === '' ? [] : [`--config.win.signtoolOptions.publisherName=${publisher}`]),
 ];
 
 const builderDir = join(root, 'node_modules', 'electron-builder');

@@ -2,7 +2,11 @@ appId: dev.codotheca.app
 productName: Codotheca
 copyright: Copyright © Codotheca contributors
 asar: true
-directories: { output: dist, buildResources: build }
+# `app: .` is load-bearing. A directory named `app` holding a package.json is taken as the
+# application root unless this says otherwise, and then every glob below resolves inside it —
+# `app/out/**` becomes `app/app/out/**`, matches nothing, and the pack completes with an asar
+# that has no entry point. The root manifest is the one that carries `main`.
+directories: { app: ., output: dist, buildResources: build }
 
 # Asserts the core binary was staged for THIS target and restores its execute bit. An
 # extraResources filter that matches nothing ships nothing, without a word.
@@ -27,8 +31,11 @@ win:
     - { target: nsis, arch: [x64] }
     - { target: portable, arch: [x64] }
   # There is no certificate. The hook refuses to pretend the artifact is signed, and signs only
-  # when one is explicitly configured.
-  sign: build/sign.cjs
+  # when one is explicitly configured. `sign` and `publisherName` live under `signtoolOptions`
+  # from electron-builder 26 onward; at the top of `win:` they are a schema error whose message
+  # names only `configuration.win` and no key.
+  signtoolOptions:
+    sign: build/sign.cjs
   # §13: the WSL worker is a Linux ELF that ships inside the WINDOWS installer, versioned with
   # the app, one per supported architecture. Staged by scripts/stage-worker.mjs, which validates
   # the header. The core entry is repeated here because a platform-level extraResources array

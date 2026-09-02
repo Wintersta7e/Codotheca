@@ -90,9 +90,12 @@ assertFalse(
 );
 
 const win = readBlock(configText, 'win', 'win');
+// `sign` moved under `signtoolOptions` in electron-builder 26. Reading the nested block keeps
+// the assertion pointed at the key the packager actually reads.
+const signtool = readBlock(win, 'signtoolOptions', 'win.signtoolOptions');
 for (const [label, source, key] of [
   ['afterPack', configText, 'afterPack'],
-  ['win.sign', win, 'sign'],
+  ['win.signtoolOptions.sign', signtool, 'sign'],
 ]) {
   configAssertions += 1;
   const hook = readScalar(source, key, label);
