@@ -76,7 +76,7 @@ function mount(
     <FirstRunHost
       deps={fake.deps}
       rows={rows}
-      queryContext={context(rows)}
+      firstRunCompletedAt={null}
       status={over.status === undefined ? neverScanned : over.status}
       hasStoredShelf={over.hasStoredShelf ?? false}
       tier="off"
@@ -257,7 +257,7 @@ describe('FirstRunHost', () => {
       <FirstRunHost
         deps={fake.deps}
         rows={[]}
-        queryContext={context([])}
+        firstRunCompletedAt={null}
         status={neverScanned}
         hasStoredShelf={false}
         tier="off"

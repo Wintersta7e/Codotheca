@@ -112,6 +112,11 @@ export function useVirtualizer(input: VirtualizerInput): VirtualizerState {
       );
     };
     measure();
+    // jsdom has no ResizeObserver, and neither does an older shell. Without the guard a caller
+    // under test throws on mount, which reads as a broken shelf rather than as a missing browser
+    // API — the same guard `Shelf` and `useShedLevel` already carry. Found by the first thing
+    // that ever mounted this hook.
+    if (typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => {

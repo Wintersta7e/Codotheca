@@ -23,13 +23,13 @@ import type { Notice } from '../shelf/notice.js';
 import { buildShelfPage } from '../shelf/page.js';
 import { PeekPanel } from '../shelf/Peek.js';
 import { ReferenceTail } from '../shelf/ReferenceTail.js';
-import { projectionCapabilities, type ShelfRow } from '../shelf/row.js';
+import type { ShelfRow } from '../shelf/row.js';
 import { Shelf } from '../shelf/Shelf.js';
 import { useVirtualizer } from '../shelf/useVirtualizer.js';
 import { SORT_LABELS, type ShelfView } from '../shelf/viewState.js';
 import type { AppDeps } from './deps.js';
+import { buildQueryContext } from './queryContext.js';
 
-const EMPTY_COLLECTION_IDS: ReadonlyMap<string, number> = new Map();
 const UNKNOWN_SCAN: Pick<ScanStatus, 'running' | 'foundRepos' | 'problemCount'> = {
   running: false,
   foundRepos: 0,
@@ -129,17 +129,9 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
     };
   }, [readNow]);
 
-  const capabilities = useMemo(() => projectionCapabilities(rows), [rows]);
   const queryContext = useMemo<QueryContext>(
-    () => ({
-      now,
-      firstRunCompletedAt,
-      collectionIdsByName: EMPTY_COLLECTION_IDS,
-      pathsAreCaseSensitive: false,
-      capabilities,
-      commitSubjectHits: null,
-    }),
-    [capabilities, firstRunCompletedAt, now],
+    () => buildQueryContext({ rows, now, firstRunCompletedAt }),
+    [rows, now, firstRunCompletedAt],
   );
   const page = useMemo(
     () =>

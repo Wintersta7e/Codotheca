@@ -5,7 +5,7 @@
  * over the shelf and the project page alike. `route.ts` decides what is behind them; this
  * decides only what is on top.
  */
-import { useMemo, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ReactElement } from 'react';
 
 import type { LocationId, Problems, ProjectId, ProjectRow } from '../../generated/protocol.js';
 import type { FailureFact } from '../failure/copy.js';
@@ -33,6 +33,12 @@ export interface SurfaceHostProps {
   readonly liveSessionProjectIds: ReadonlySet<ProjectId>;
   readonly onOpenProject: (id: ProjectId) => void;
   readonly onLaunch: (projectId: ProjectId, locationId: LocationId) => void;
+  /**
+   * §8.0a's `SWITCH` control opens the palette too, and it is above this host rather than in it.
+   * A counter rather than a boolean: two presses in a row are two openings, and a flag that was
+   * already true would make the second one silent.
+   */
+  readonly openPaletteNonce?: number;
 }
 
 export function SurfaceHost(props: SurfaceHostProps): ReactElement {
@@ -46,6 +52,21 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
    * which §11.3a forbids by name — so the absent ones stay absent and the drawer draws no row.
    */
   const slots = useMemo<SettingsSlots>(() => ({}), []);
+
+  // One registration on the shell channel, and the same callback reused for the top bar's own
+  // control — a second subscription would be a second palette listening to half the openings.
+  const openPalette = useRef<(() => void) | null>(null);
+  const subscribeShellOpen = useCallback(
+    (cb: () => void) => {
+      openPalette.current = cb;
+      return deps.onOpenPalette(cb);
+    },
+    [deps],
+  );
+  const nonce = props.openPaletteNonce ?? 0;
+  useEffect(() => {
+    if (nonce > 0) openPalette.current?.();
+  }, [nonce]);
 
   return (
     <>
@@ -111,7 +132,7 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
         now={deps.now}
         onLaunch={props.onLaunch}
         onOpenPage={props.onOpenProject}
-        subscribeShellOpen={deps.onOpenPalette}
+        subscribeShellOpen={subscribeShellOpen}
         ambientContext="shelf"
       />
     </>

@@ -34,12 +34,12 @@ import { attentionCounts } from '../shelf/counts.js';
 import type { QueryContext } from '../shelf/evaluate.js';
 import type { ShelfRow } from '../shelf/row.js';
 import type { AppDeps } from './deps.js';
+import { buildQueryContext } from './queryContext.js';
 
 export interface FirstRunHostProps {
   readonly deps: AppDeps;
   readonly rows: readonly ShelfRow[];
-  /** The same context the shelf evaluates against, so the turn's rungs cannot disagree with it. */
-  readonly queryContext: QueryContext;
+  readonly firstRunCompletedAt: number | null;
   readonly status: ScanStatus | null;
   readonly hasStoredShelf: boolean;
   readonly tier: ResolvedTier;
@@ -154,8 +154,13 @@ export function newestWorktreeObservation(rows: readonly ShelfRow[]): number | n
 }
 
 export function FirstRunHost(props: FirstRunHostProps): ReactElement {
-  const { deps, rows, queryContext, tier, onOpenScanSummary, onShowMe } = props;
+  const { deps, rows, tier, onOpenScanSummary, onShowMe } = props;
   const { request, subscribe, pickRoot, nowMs, now } = deps;
+  // The same builder the shelf uses, so the turn's rungs cannot disagree with the grid's chips.
+  const queryContext = useMemo(
+    () => buildQueryContext({ rows, now: now(), firstRunCompletedAt: props.firstRunCompletedAt }),
+    [rows, now, props.firstRunCompletedAt],
+  );
   const [roots, setRoots] = useState<readonly Root[]>([]);
 
   useEffect(() => {
