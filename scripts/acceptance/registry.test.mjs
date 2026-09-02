@@ -135,6 +135,33 @@ test('nothing on the perf runner is automated, and an automated perf check measu
   }
 });
 
+test('criterion 29 is external, alone, and carries its reason', () => {
+  const registry = loadRegistry(registryPath);
+  const external = registry.criteria.filter((c) => c.checks.some((k) => k.status === 'external'));
+  assert.deepEqual(
+    external.map((c) => c.id),
+    ['29'],
+  );
+  const entry = external[0];
+  assert.equal(rollUp(entry), 'external');
+  for (const check of entry.checks) {
+    assert.match(check.reason, /beta/iu);
+    assert.equal(check.runner, 'none');
+  }
+});
+
+test('the honesty criteria each carry at least one automated check today', () => {
+  const registry = loadRegistry(registryPath);
+  for (const id of ['23', '24', '25']) {
+    const entry = registry.criteria.find((c) => c.id === id);
+    assert.ok(entry, `criterion ${id} is missing`);
+    assert.ok(
+      entry.checks.some((k) => k.status === 'automated'),
+      `criterion ${id} has nothing running today`,
+    );
+  }
+});
+
 test('a budget anywhere in the registry names the measurement it is a budget for', () => {
   const registry = loadRegistry(registryPath);
   for (const entry of registry.criteria) {

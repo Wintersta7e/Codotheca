@@ -793,6 +793,213 @@
       ]
     },
     {
+      "id": "23",
+      "title": "No value is presented as current without its observation time",
+      "group": "honesty",
+      "spec": "§16.23",
+      "checks": [
+        {
+          "id": "AC-23-audit",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-23 auditObservationTimes finds a fact rendered without its observation time",
+          "assert": "The audit primitives themselves: a fact node without its observation-time attribute is a violation, a coverage figure without its coverage attribute is a violation, and the word clean in a worktree readout is a violation.",
+          "reason": "The DOM convention the audit would read does not exist. No data-observed-at and no data-coverage attribute appears anywhere in the renderer today; the observation clause is composed in a formatter and rendered as text. An audit written against that convention now would select nothing on every possible tree and report clean — which is the same shape as the dead in-sync CI step. The convention has to land with the shelf first. The one clause that is gated today is the vocabulary: the destructive-token gate already fails the build on the word clean in a rendered string."
+        },
+        {
+          "id": "AC-23-shelf",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-23 the shelf renders no current value without its observation time",
+          "assert": "The audit run over the rendered shelf at every card state returns no violations; absence of dirty reads 'no changes as of T', never 'clean'."
+        },
+        {
+          "id": "AC-23-reveal",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-23 no figure over a partial index is presented bare",
+          "assert": "Every reveal figure renders with its basis rather than bare — the projects it was computed over and whether history is complete."
+        },
+        {
+          "id": "AC-23-shallow",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_23_shallow_excluded_and_counted",
+          "assert": "The shallow fixture is excluded from history statistics and counted in the coverage line; its Activity lanes report shallow_excluded rather than measured."
+        }
+      ]
+    },
+    {
+      "id": "24",
+      "title": "Killing the core loses no committed data and replays nothing non-idempotent",
+      "group": "honesty",
+      "spec": "§16.24",
+      "checks": [
+        {
+          "id": "AC-24-restarted",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-24 every pending request is rejected with CORE_RESTARTED",
+          "assert": "When the child dies, every in-flight request rejects with a CoreRequestError carrying code CORE_RESTARTED; a non-idempotent one carries outcome unknown and is not retryable, a read carries no outcome and is."
+        },
+        {
+          "id": "AC-24-no-replay",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-24 nothing non-idempotent is replayed across an epoch",
+          "assert": "No non-idempotent command is re-sent after a restart; the resubscribe rides the new epoch and a frame carrying the dead one is dropped."
+        },
+        {
+          "id": "AC-24-shutdown",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "CoreSupervisor.stopAndWait resolves once the core has actually exited",
+          "assert": "The orderly half only: quitting waits for the core to exit rather than assuming it did, and kills it when the deadline passes. This is not the kill-mid-scan clause — a clean stop is the case where nothing was interrupted."
+        },
+        {
+          "id": "AC-24-durable",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "07",
+          "test": "acceptance_scan::ac_24_kill_mid_scan_loses_no_committed_data",
+          "assert": "Killing the core during a scan over huge-untracked leaves every committed row intact and the scan_run row resumable."
+        },
+        {
+          "id": "AC-24-resume",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "07",
+          "test": "acceptance_scan::ac_24_scan_resumes_on_restart",
+          "assert": "A restart resumes the interrupted scan from its generation rather than starting a new full walk."
+        }
+      ]
+    },
+    {
+      "id": "25",
+      "title": "Every promised problem is reachable; every never-indexed repository carries an explained error",
+      "group": "honesty",
+      "spec": "§16.25",
+      "checks": [
+        {
+          "id": "AC-25-kinds",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-problem-kinds:reachable",
+          "assert": "Every problem kind the protocol declares is representable in the store and appears in the scan summary's group list; a kind that the protocol can emit and the schema cannot store is a defect, not an omission."
+        },
+        {
+          "id": "AC-25-summary",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17c",
+          "test": "AC-25 every counted problem is reachable in the scan summary",
+          "assert": "Each group in problems.list renders with a count and a way to reach its rows."
+        },
+        {
+          "id": "AC-25-explained",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_25_never_indexed_carries_an_explained_error",
+          "assert": "A repository that has never successfully indexed carries error_kind, error_detail and error_at, and its condition_signal stays NULL rather than being invented."
+        },
+        {
+          "id": "AC-25-problem-location",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "04",
+          "test": "acceptance_jobs::ac_25_a_problem_row_names_the_location_it_came_from",
+          "assert": "A problem row names which copy raised it.",
+          "reason": "scan_problem has no location_id column. A project with two copies on two volumes can raise a problem on one of them and the row cannot say which, so the reachable-rows half of the criterion resolves to the project and not to the thing the user has to go and look at. The scan now writes problem rows, which makes the omission live rather than theoretical. Closing it is the schema plan's column plus the surfaces plan's rendering."
+        }
+      ]
+    },
+    {
+      "id": "26",
+      "title": "Signed per-user NSIS with a working updater round trip",
+      "group": "distribution",
+      "spec": "§16.26",
+      "checks": [
+        {
+          "id": "AC-26-roundtrip",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "19",
+          "test": "AC-26 the updater round trip completes against a local feed",
+          "assert": "A per-user NSIS install updates from a locally served feed, including an update staged while the core is running, which completes the shutdown first.",
+          "reason": "Phase 1 ships no update channel. There is no auto-updater, no update server and no feed: distribution is a release page downloaded by hand. electron-updater is not a dependency and a gate asserts its absence, so the round trip has nothing to round-trip against. This is neither covered nor failing — the criterion's subject does not exist in this phase, and the check is here so that adding an updater later cannot arrive without it."
+        },
+        {
+          "id": "AC-26-signature",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "RELEASE-SIGNING",
+          "reason": "The code-signing certificate is a hardware-token procurement and none has been obtained: phase 1 ships unsigned and the packager reports that posture rather than hiding it. The private key could not exist in CI even once it does, so no automated job can produce or verify a genuinely signed artifact.",
+          "assert": "The shipped installer and its update artifacts carry a valid signature."
+        }
+      ]
+    },
+    {
+      "id": "27",
+      "title": "AppImage self-updates; deb and rpm install with the updater disabled",
+      "group": "distribution",
+      "spec": "§16.27",
+      "checks": [
+        {
+          "id": "AC-27-appimage",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "19",
+          "test": "AC-27 the AppImage self-updates from a local feed",
+          "assert": "Run with --appimage-extract-and-run on a Linux runner, the AppImage completes an update round trip.",
+          "reason": "Phase 1 ships no update channel, so the AppImage self-update has nothing to update from. The AppImage target itself is built and packed."
+        },
+        {
+          "id": "AC-27-packages",
+          "status": "deferred",
+          "runner": "script",
+          "owner": "19",
+          "test": "check-packages:updater-disabled",
+          "assert": "The built .deb and .rpm carry the build-time artifact flag that disables the updater, and installing them on a runner leaves no updater timer.",
+          "reason": "There is no updater to disable and therefore no flag to carry. What ships instead is the stronger statement, gated today by scripts/check-no-updater.mjs in the bundle guard: the updater package is absent from the dependency tree and from the built shell entirely. That gate emits no joinable result row, so the criterion cannot claim it until either it does or this check is rewritten against what actually exists."
+        }
+      ]
+    },
+    {
+      "id": "28",
+      "title": "diag.bundle exports the stated fields, anonymised by default",
+      "group": "distribution",
+      "spec": "§16.28",
+      "checks": [
+        {
+          "id": "AC-28-fields",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "17",
+          "test": "acceptance_diag::ac_28_bundle_exports_the_stated_fields",
+          "assert": "diag.bundle returns exactly the stated fields and no path, no remote URL and no email survives anonymisation by default."
+        }
+      ]
+    },
+    {
+      "id": "29",
+      "title": "Real Linux GPU rendering across the driver and compositor matrix",
+      "group": "external",
+      "spec": "§16.29",
+      "checks": [
+        {
+          "id": "AC-29-linux-gpu",
+          "status": "external",
+          "runner": "none",
+          "reason": "Neither the maintainer nor CI can exercise it: development is on Windows with WSL, WSLg is unrepresentative, and CI runners are headless. Criteria 15 and 21 are measured on A and on WSLg only; the Linux figures come from external users during the public beta. This is a known, accepted gap and it is the reason phase 1 ships publicly as a beta.",
+          "assert": "Not verified here. The harness reports it as external and refuses any other status."
+        }
+      ]
+    },
+    {
       "id": "30",
       "title": "Scroll frame pacing",
       "group": "performance",
