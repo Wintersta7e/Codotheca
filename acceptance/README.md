@@ -36,6 +36,14 @@ There is no name table, on purpose: a table mapping criterion to test name is a 
 the truth and rots on the first rename. A rename makes the gate report the check as **not run**,
 which is the intended behaviour.
 
+## Dispositions today
+
+Most criteria carry a mixture, and the honest statement is the generated one rather than a
+sentence written here that can drift from it: run `npm run acceptance -- --report` for the
+current roll-up, and read `DISPOSITIONS.md` for the committed one. `DISPOSITIONS.md` is a pure
+function of `criteria.json` and is diff-gated, so editing the registry without regenerating it
+fails the build.
+
 `baseline.json` holds failing tests that are **known** red. It compares by identity, never by
 count: a failure that is not listed fails the build, a listed test that now passes fails the
 build as a stale entry, and a listed test that did not run at all fails the build as rot.

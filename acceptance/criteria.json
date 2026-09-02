@@ -1567,6 +1567,558 @@
           "assert": "collections.remove deletes the collection and collection_member rows only, verified by hashing project, location, session and xp_events before and after."
         }
       ]
+    },
+    {
+      "id": "53",
+      "title": "Keyboard, focus and accessibility",
+      "group": "subsystems",
+      "spec": "§16.53",
+      "checks": [
+        {
+          "id": "AC-53-grid-keys",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-53 arrows move by the measured column count and carry a desired column",
+          "assert": "Each context's handler runs only in its context; left and right clamp at row ends without wrapping; collapsed sections are out of the sequence. Verified against a real event target: a keyboard table asserted against a null target would have shipped a dead palette."
+        },
+        {
+          "id": "AC-53-focus-identity",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-53 focus is held as a project id and a focused card stays mounted",
+          "assert": "Focus survives an insert mid-scan, and the virtualizer may not evict a focused card, or the browser drops focus to the body and the keyboard dies silently."
+        },
+        {
+          "id": "AC-53-outline",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c53-outline-replacement",
+          "assert": "No rule in the built stylesheet removes the outline without a box-shadow replacement in the same rule — the only indicator that survives clip-path clipping every outline away."
+        },
+        {
+          "id": "AC-53-escape-copy",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c53-first-run-escape",
+          "assert": "The superseded first-run escape sentence appears nowhere in the built renderer."
+        },
+        {
+          "id": "AC-53-names",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-53 every control is a real button or tabindex participant with a name that states no colour",
+          "assert": "The scan count line is role=status, replaced only at the stated milestones and at completion; the first-run escape control is in the first rendered frame and reachable by Tab. A repository-badge name is not tested because that indicator never mounts."
+        }
+      ]
+    },
+    {
+      "id": "54",
+      "title": "The roast producer",
+      "group": "subsystems",
+      "spec": "§16.54",
+      "checks": [
+        {
+          "id": "AC-54-selection",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-54 first match wins over the five clauses and silence when none matches",
+          "assert": "At most one line, describing the shown location and never the aggregate; nothing when the switch is off, the project is Reference or archived, the shown location is not present, or the project never succeeded. Clause 2 is the only clause carrying a time and is not produced at all past 24 h."
+        },
+        {
+          "id": "AC-54-scope",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-54 a DOM audit finds zero roast blocks outside an opened project card",
+          "assert": "The grid, Peek, the list, quick switch, the scan summary and every notification contain no roast block. This is the half that makes the feature admissible."
+        },
+        {
+          "id": "AC-54-superseded",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c54-superseded-roast",
+          "assert": "The superseded roast strings appear nowhere in the built renderer."
+        }
+      ]
+    },
+    {
+      "id": "55",
+      "title": "The pin",
+      "group": "subsystems",
+      "spec": "§16.55",
+      "checks": [
+        {
+          "id": "AC-55-control",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-55 P toggles the pin, is inert in the query field, and the control is a button with aria-pressed",
+          "assert": "Exposed on an unpinned card whenever the card is focused, so the binding is discoverable without a pointer; the hit target is the one stated for that surface, abutting the condition dot without overlapping it and staying inside band 1."
+        },
+        {
+          "id": "AC-55-static",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-55 the pin mark renders identically at full, reduced and off",
+          "assert": "It is geometry, not motion. The hero carries its own pin row in the surface table; the ban on a second copy is on the page chrome, not on the one in the hero's band 1."
+        },
+        {
+          "id": "AC-55-no-consequence",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-55 pinning changes no section, order, aggregate, collapse state or chip",
+          "assert": "The pinned query matching it is the entire phase-1 consequence."
+        }
+      ]
+    },
+    {
+      "id": "56",
+      "title": "The art reroll",
+      "group": "subsystems",
+      "spec": "§16.56",
+      "checks": [
+        {
+          "id": "AC-56-absolute",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_56_reroll_offset_is_absolute",
+          "assert": "An absolute target offset, never an increment: a replayed message writes the same integer; an offset more than 1 from the stored value is rejected PROTOCOL with the stored value returned; plus or minus one per press, floored at zero, never a wrap; offset n-1 re-derives byte-identically."
+        },
+        {
+          "id": "AC-56-effects-swap",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "art AC-56 reroll holds the old bitmap until the new hash has decoded and swaps with no transition",
+          "assert": "One projectId per call; the old bitmap is held until the new hash has decoded and the swap carries no transition."
+        },
+        {
+          "id": "AC-56-effects-shell",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17",
+          "test": "AC-56 a reroll writes no xp_events row and fires no notification",
+          "assert": "A reroll leaves the identity fields and the name unchanged, writes no xp_events row and raises no notification.",
+          "reason": "Split out of a single check that mixed runners. The notification clause has no shell module to assert against until the tray and the notice surfaces land, and the xp_events clause is a cargo assertion — registering all three together would have reported the criterion covered while a third of it was not."
+        },
+        {
+          "id": "AC-56-stepper",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "10b",
+          "test": "AC-56 the back step and the readout are absent at offset zero",
+          "assert": "At offset zero the reroll control renders no back step and no readout — there is nothing to go back to and no number to state."
+        }
+      ]
+    },
+    {
+      "id": "57",
+      "title": "Startup, boot.json and the three failure windows",
+      "group": "subsystems",
+      "spec": "§16.57",
+      "checks": [
+        {
+          "id": "AC-57-boot-file",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-57 boot.json falls back to auto and an empty shelf, never to an error window",
+          "assert": "A missing, unparseable or wrong-generation file resolves to auto; the shell never opens the database."
+        },
+        {
+          "id": "AC-57-precedence",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-57 the effects-tier flag beats the environment variable beats boot.json",
+          "assert": "Neither override is written back to the file."
+        },
+        {
+          "id": "AC-57-paint-fail",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-57 a second paint failure forces off on the next launch without reading the database",
+          "assert": "A user who cannot see the window cannot change a setting inside it, so the forcing decision is taken from the file alone."
+        },
+        {
+          "id": "AC-57-windows",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17c",
+          "test": "AC-57 the three failure windows render as specified",
+          "assert": "A failed migration names the schema number it was restored to and the restore time; the shutting-down window counts real elapsed seconds and offers the force control only after 10 s of actual waiting and only as the outline button; core spawn failure renders in the notice slot at priority 1 with no dismissal, over a stored shelf where every tile keeps its stored observation time and Play is disabled with its reason on it.",
+          "reason": "The spawn-failure notice is shaped and reaches nothing: the failure facts are assignable to the renderer's notice type and no channel carries them across, and nothing stats the core binary for the mode the copy needs. The window cannot be asserted before it is delivered."
+        }
+      ]
+    },
+    {
+      "id": "58",
+      "title": "The condition dot",
+      "group": "subsystems",
+      "spec": "§16.58",
+      "checks": [
+        {
+          "id": "AC-58-surfaces",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-58 the dot renders on all five surfaces from one table and emits no value outside it",
+          "assert": "A NULL condition_signal draws no dot at all on every surface; the not-indexed badge carries the state. Contrast is asserted per row, with the offline disc explicitly exempt. The project page's identity line draws exactly one dot and the page's hero draws band 1's, which is a different surface."
+        },
+        {
+          "id": "AC-58-edges",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_derive::ac_58_condition_day_edges",
+          "assert": "The mapping's day edges are exactly the stated ones and the design's colder boundary, the one edge this document does not carry, appears in none of them."
+        },
+        {
+          "id": "AC-58-vocabulary",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c58-design-band-names",
+          "assert": "The three design band names appear in no CSS class, query field, protocol message, log line or accessible name. The two enum words that look like band names are required verbatim and are not banned."
+        }
+      ]
+    },
+    {
+      "id": "59",
+      "title": "Hazard tape",
+      "group": "subsystems",
+      "spec": "§16.59",
+      "checks": [
+        {
+          "id": "AC-59-scope",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-59 the tape renders if and only if abandoned and not Reference",
+          "assert": "A neglected project carries none: the wrong reading tapes a large fraction of a real library, and a badge means something only while badges are rare."
+        },
+        {
+          "id": "AC-59-tiers",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-59 the tape renders identically at full, reduced and off",
+          "assert": "No settings switch removes it; a layer that draws the same at every tier is composition, not motion."
+        }
+      ]
+    },
+    {
+      "id": "60",
+      "title": "The type floor and the scale",
+      "group": "subsystems",
+      "spec": "§16.60",
+      "checks": [
+        {
+          "id": "AC-60-floor",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-60 no rendered string measures below 7px and every size ships with its tracking",
+          "assert": "Name the two sites that ship on every card: the tile's rank-band label and the hero's. Every computed font-size is a member of the completed scale."
+        },
+        {
+          "id": "AC-60-half-pixel",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c60-sub-floor-size",
+          "assert": "The retired half-pixel size appears nowhere in the built stylesheet."
+        }
+      ]
+    },
+    {
+      "id": "61",
+      "title": "The binding model",
+      "group": "subsystems",
+      "spec": "§16.61",
+      "checks": [
+        {
+          "id": "AC-61-never-registered",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c61-global-shortcut",
+          "assert": "The default palette chord is never passed to globalShortcut.register, statically checkable over the shell bundle; on a default install the shell registers no accelerator at all."
+        },
+        {
+          "id": "AC-61-runtime",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "15",
+          "test": "AC-61 a default install holds no accelerator and a bound chord opens window and palette once",
+          "assert": "With the resident shortcut bound, one press produces both a composited window frame and a painted palette; tray-icon activation produces the window and no palette; bound to the default chord specifically, only the global path runs and the palette opens exactly once."
+        },
+        {
+          "id": "AC-61-refused",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17b",
+          "test": "AC-61 a refused registration reads back as held by another application",
+          "assert": "A failed registration is never silent and never renders as bound."
+        }
+      ]
+    },
+    {
+      "id": "62",
+      "title": "fade, the art address and the two caches",
+      "group": "subsystems",
+      "spec": "§16.62",
+      "checks": [
+        {
+          "id": "AC-62-fade",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_62_fade_is_reference_or_archived_only",
+          "assert": "fade takes exactly one of two values regardless of last_commit_at, and no other value appears in phase 1."
+        },
+        {
+          "id": "AC-62-clock",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_62_scene_hash_is_not_a_function_of_wall_clock",
+          "assert": "With the clock advanced by any amount, or over fixtures whose last_commit_at spans years, the scene hash for an otherwise unchanged project is byte-identical and no re-render is enqueued."
+        },
+        {
+          "id": "AC-62-address",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "art AC-62 the art scheme takes two segments and the card rendition is the stated size",
+          "assert": "A fetch of the hash alone fails and the card rendition is the stated size."
+        },
+        {
+          "id": "AC-62-art-state",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "10b",
+          "test": "acceptance_art::ac_62_art_state_tracks_the_card_rendition_only",
+          "assert": "art_state and fail_count track the card rendition only, so a project whose page has never been opened is ready rather than pending or failed.",
+          "reason": "Split out of the address check, which is a renderer assertion and cannot observe a database column. The two clauses were registered as one and only the renderer half exists."
+        },
+        {
+          "id": "AC-62-not-tested",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_62_seed_inputs_are_basename_and_offset",
+          "assert": "The first-commit sha is not an art-seed input and its empty-repository case is not tested; a first commit on a previously-empty repository changes era detail only. Decay rendering is not in phase 1 and is not tested."
+        }
+      ]
+    },
+    {
+      "id": "63",
+      "title": "Existence: a surface may render only what is stored or commandable",
+      "group": "subsystems",
+      "spec": "§16.63",
+      "checks": [
+        {
+          "id": "AC-63-behind-chip",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-63 a NULL fetch head omits the behind chip entirely",
+          "assert": "No zero, no age computed from the refstate observation time, no age recovered from the basis; a fixture with ahead above zero and no fetch head renders no chip and no number."
+        },
+        {
+          "id": "AC-63-trust",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_63_set_trusted_writes_only_our_database",
+          "assert": "The user's global and repository git config are byte-identical before and after, and every subsequent invocation for that location carries the exact-path safe-directory argument."
+        },
+        {
+          "id": "AC-63-trust-static",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:no-git-config-write",
+          "assert": "No git invocation in the core carries a config-writing flag as an argv literal — the greppable complement to the byte-identical-config assertion."
+        },
+        {
+          "id": "AC-63-requeue",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_63_requeue_touches_one_project",
+          "assert": "It re-queues exactly one project's job rows and leaves every other project's untouched."
+        },
+        {
+          "id": "AC-63-try-again",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:try-again-not-scan",
+          "assert": "The renderer file carrying the per-project retry control does not also name the library-wide rescan command: one tile means one repository, and stretching the rescan over that control would re-queue everything from a button that promises not to."
+        },
+        {
+          "id": "AC-63-slow-repo",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:slow-repo",
+          "assert": "The slow-repo column has zero writers outside the test suite, asserted in the same form as the zero-call-sites check on the merge command."
+        },
+        {
+          "id": "AC-63-no-volume-name",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-63 an offline location row renders no drive or volume name",
+          "assert": "Its facts are exactly the last-seen age and the branch as last observed."
+        }
+      ]
+    },
+    {
+      "id": "64",
+      "title": "Era sections, header aggregates and the watch set",
+      "group": "subsystems",
+      "spec": "§16.64",
+      "checks": [
+        {
+          "id": "AC-64-sections",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "13",
+          "test": "acceptance_shelf::ac_64_era_section_ids_and_orders",
+          "assert": "The section id table and nothing else, with the tail carrying no year, the not-cloned section never emitted in phase 1, and Reference rendering in its own chrome below the grid rather than as an era section."
+        },
+        {
+          "id": "AC-64-aggregates",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-64 the header renders the indexed and unchecked counts, including all-zero with unchecked above zero",
+          "assert": "The flag line still renders in that case, because an absent flag line may only ever mean observed and nothing to report. The label is absent from the response; order, year and the calendar year grouped against are present."
+        },
+        {
+          "id": "AC-64-watch-set",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_64_watch_set_invalidates_and_never_scans",
+          "assert": "The bounded worktree watch set invalidates the worktree observation time and never starts a scan or discovers a repository."
+        },
+        {
+          "id": "AC-64-copy",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c64-watch-set-copy",
+          "assert": "The sentence claiming nothing is watched inside a repository is false and appears nowhere."
+        }
+      ]
+    },
+    {
+      "id": "65",
+      "title": "The notice slot, the chips and the completion term",
+      "group": "subsystems",
+      "spec": "§16.65",
+      "checks": [
+        {
+          "id": "AC-65-slot",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-65 every notice renders in one slot at its priority, at most one at a time",
+          "assert": "Only the left border varies; no section draws a second surface with geometry of its own; when nothing qualifies the wrapper is not rendered at all rather than rendered at zero height."
+        },
+        {
+          "id": "AC-65-chips",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-65 chip chrome is asserted once against its owning section for all six chips",
+          "assert": "The stated padding, gap, ground and inset shadows, with the hover and active rule that the sub-line takes text-2 on the hover fill.",
+          "reason": "The attention chip as built diverges from its owning section in seven values — padding, two gaps, border versus inset, three type sizes and a missing row border. Only the two declarations another section depends on were reconciled; the rest is untouched and unowned, so this check would fail today against the section it cites rather than against the component."
+        },
+        {
+          "id": "AC-65-completion-term",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-65 a completion comparison parses, soft-errors and does not filter the shelf to zero",
+          "assert": "It renders its pill in the soft-error state with the stated reason, is dropped from the effective query and named in the ignored clause. Assert explicitly that NULL is never compared as zero."
+        },
+        {
+          "id": "AC-65-identity-notice",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "16c",
+          "test": "AC-65 the identity notice's plural line uses the previewed delta",
+          "assert": "The literal example number is not tested."
+        }
+      ]
+    },
+    {
+      "id": "66",
+      "title": "The top bar and density",
+      "group": "subsystems",
+      "spec": "§16.66",
+      "checks": [
+        {
+          "id": "AC-66-density",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 density cycles exactly three steps and each moves the column count by one",
+          "assert": "Each step carries its stated card composition; the chosen step persists and survives a restart; in list view the control is not rendered at all."
+        },
+        {
+          "id": "AC-66-hash-stable",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 the scene hash is byte-identical across every density press",
+          "assert": "Density is a render parameter, never a seed input, and the 2x track clears the largest step."
+        },
+        {
+          "id": "AC-66-sort",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 sort cycles exactly three keys with completion absent",
+          "assert": "Nothing computes completion, so it is not offered."
+        },
+        {
+          "id": "AC-66-shed",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 at the minimum window width nothing overlaps and the bar sheds in the stated order",
+          "assert": "The floor itself is measured, not asserted; every label a user must read to work a control sits at text-3 or lighter. The written 924px minimum is superseded by measurement: the unshed bar fits from 861px and the fully shed one from the measured floor."
+        }
+      ]
+    },
+    {
+      "id": "67",
+      "title": "DOM composition and the mid-scan flip",
+      "group": "subsystems",
+      "spec": "§16.67",
+      "checks": [
+        {
+          "id": "AC-67-no-canvas",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c67-canvas-and-webgl",
+          "assert": "The built renderer creates no WebGL context and no canvas element — statically checkable over the renderer bundle. Nothing asserted this before, which is how a negative rule comes back by accident."
+        },
+        {
+          "id": "AC-67-plate-roles",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-67 the CSS plate has two roles and no third",
+          "assert": "The state every card is born in, and the fallback where the art failed or the file is gone — never drawn over a decoded bitmap."
+        },
+        {
+          "id": "AC-67-flip",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-67 during a live scan a mounted card changes appearance exactly once per scene hash",
+          "assert": "The plate is held until the bitmap for that exact hash exists and has decoded, then swapped with no transition, no cross-fade, no re-layout, no intermediate plate flash, at identical geometry."
+        }
+      ]
     }
   ]
 }

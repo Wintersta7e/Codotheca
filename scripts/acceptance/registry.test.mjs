@@ -180,6 +180,75 @@ test('the greppable halves are automated static gates', () => {
   }
 });
 
+test('every check id is unique across the whole registry', () => {
+  const registry = loadRegistry(registryPath);
+  const ids = registry.criteria.flatMap((c) => c.checks.map((k) => k.id));
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test('every deferred check names a plan that exists in the plan set', () => {
+  const registry = loadRegistry(registryPath);
+  // The plan set is a literal, not a directory listing: the plans live under a gitignored
+  // directory, so a test that read them would scan nothing on a fresh clone and pass on nothing.
+  // R44: the second halves own the surfaces most of these criteria test, so they are plans too.
+  const plans = new Set([
+    '01',
+    '02',
+    '03',
+    '04',
+    '05',
+    '06',
+    '07',
+    '08',
+    '09',
+    '10',
+    '10b',
+    '11',
+    '11b',
+    '11c',
+    '12',
+    '12b',
+    '12c',
+    '13',
+    '13b',
+    '13c',
+    '14',
+    '14b',
+    '15',
+    '15b',
+    '16',
+    '16b',
+    '16c',
+    '17',
+    '17b',
+    '17c',
+    '18',
+    '19',
+    '20',
+    '20b',
+    '21',
+    '22',
+    '23',
+    '24',
+  ]);
+  for (const entry of registry.criteria) {
+    for (const check of entry.checks) {
+      if (check.status !== 'deferred') continue;
+      assert.ok(plans.has(check.owner), `${check.id} names plan ${String(check.owner)}`);
+    }
+  }
+});
+
+test('a check that carries a reason has one worth reading', () => {
+  const registry = loadRegistry(registryPath);
+  for (const entry of registry.criteria) {
+    for (const check of entry.checks) {
+      if (check.reason === undefined) continue;
+      assert.ok(check.reason.length >= 20, `${check.id}'s reason says nothing`);
+    }
+  }
+});
+
 test('a budget anywhere in the registry names the measurement it is a budget for', () => {
   const registry = loadRegistry(registryPath);
   for (const entry of registry.criteria) {
