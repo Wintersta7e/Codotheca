@@ -51,12 +51,11 @@ fn first_run_env(data_dir: &Path) -> codotheca_core::firstrun::FirstRunEnv {
                 SystemMountResolver::new(),
             )),
         ),
-        // **No production `DistroProbe` exists in any plan.** `SystemWslCli` is in
-        // `core/src/wsl/distros.rs` and nothing implements the trait over it; that wiring is
-        // plan 18's. `NoDistros` is the honest stand-in, not a stub: it reports *no distros
-        // found*, which is correct on a machine without WSL and merely un-classified on one
-        // with it. Recorded as a gap rather than duplicated here.
-        distros: Arc::new(codotheca_core::firstrun::classify::NoDistros),
+        // §13's probe, reading the two quiet `wsl.exe` listings. Neither listing names a distro,
+        // so neither can start one — starting a stopped distro stays an explicit, consented act.
+        // A machine with no `wsl.exe` answers with an empty list, which is what the `NoDistros`
+        // stand-in used to say and is now said by the code that would actually find them.
+        distros: Arc::new(codotheca_core::wsl::distros::SystemDistroProbe::system()),
         platform: codotheca_core::index::path::native_platform(),
         skip: codotheca_core::scan::skiplist::SkipList::default(),
         cache: codotheca_core::firstrun::roots::SuggestionCache::new(),

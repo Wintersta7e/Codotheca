@@ -20,9 +20,10 @@
 //!   but not `Sync`; the index is shared as `Arc<Mutex<Index>>` and the tick runs on the loop
 //!   thread. `scan.start` reaches a handler and enqueues nothing across a thread either — the
 //!   `ScanLauncher` seam is `Send + Sync` precisely so no connection crosses it.
-//! - **No production `DistroProbe`.** `SystemWslCli` exists and nothing implements the trait over
-//!   it; the composition root passes `NoDistros`, which reports *no distros found* rather than
-//!   guessing. Wiring it is the WSL worker's.
+//! - **The production `DistroProbe` is now wired.** `wsl::distros::SystemDistroProbe` implements
+//!   it over `SystemWslCli` and the composition root passes that. It reads the two quiet
+//!   `wsl.exe` listings — neither of which names a distro, so neither can start one — and
+//!   answers with an empty list where there is no `wsl.exe`.
 
 use crate::proto::dispatch::CommandFailure;
 use crate::protocol::CommandName;
