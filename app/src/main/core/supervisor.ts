@@ -5,6 +5,7 @@
  * reports the log path, which is what the failure surface shows.
  */
 import { PROTOCOL_VERSION } from '../../generated/protocol';
+import type { CoreFailureReason, CoreStatus } from '../../shared/coreStatus';
 import { FrameDecoder, encodeFrame } from './frame';
 import { type RollingLog, drainStderr } from './log';
 import type { CoreChild, SpawnCore } from './spawn';
@@ -15,13 +16,10 @@ export const CRASH_LOOP_WINDOW_MS = 60_000;
 /** Reserved for the shell's own `app.hello_ack`; client-issued ids start at 1. */
 export const HELLO_REQUEST_ID = 0;
 
-export type CoreFailureReason = 'spawn' | 'protocol_version' | 'crash_loop';
-
-export type CoreStatus =
-  | { kind: 'starting' }
-  | { kind: 'ready'; epoch: number; coreVersion: string; protocolVersion: number; pid: number }
-  | { kind: 'restarting'; epoch: number; delayMs: number }
-  | { kind: 'failed'; reason: CoreFailureReason; detail: string; logPath: string };
+// The shape moved to `src/shared` so the renderer can name what arrives on `IPC_CORE_STATUS`:
+// this file opens with the shell's own modules, which `tsconfig.web.json` cannot see.
+// Re-exported so every existing caller of this module is unchanged.
+export type { CoreFailureReason, CoreStatus } from '../../shared/coreStatus';
 
 export interface SupervisorDeps {
   binaryPath: string;

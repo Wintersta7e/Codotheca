@@ -29,6 +29,7 @@ import {
   effectsTierSourceFromArgv,
   paintFailForcedAtFromArgv,
 } from '../shared/effectsTier';
+import { logPathFromArgv } from '../shared/windowArgs';
 
 // process.argv is available synchronously in a sandboxed preload, so the tier reaches the
 // document with no round trip — which is the whole point of §11.2a.
@@ -37,6 +38,7 @@ const bridge: CodothecaBridge = {
   effectsTier: effectsTierFromArgv(process.argv) ?? 'auto',
   effectsTierSource: effectsTierSourceFromArgv(process.argv) ?? 'boot-file',
   paintFailForcedAt: paintFailForcedAtFromArgv(process.argv),
+  logPath: logPathFromArgv(process.argv),
   request: (name: string, args: unknown): Promise<unknown> =>
     ipcRenderer.invoke(IPC_REQUEST, { name, args }),
   // An id and nothing else. The folder is chosen in the main process, where the dialog lives.

@@ -24,6 +24,8 @@ export interface ShellServiceDeps {
   openExecutable(): Promise<Buffer | null>;
   revealItem(path: string): void;
   dataDir: string;
+  /** The rolling log's own path. §11.1's `OPEN THE LOG` names a target, never a path. */
+  logPath: string;
   statSync(path: string): { size: number };
   request(name: string, args: unknown): Promise<unknown>;
   readBoot(dataDir: string): BootFile;
@@ -69,6 +71,7 @@ export function registerShellServices(deps: ShellServiceDeps): void {
     const target = (args as { target?: unknown } | null)?.target as RevealTarget | undefined;
     if (target === 'index') deps.revealItem(join(deps.dataDir, INDEX_DB_FILE));
     else if (target === 'bundle') deps.revealItem(deps.dataDir);
+    else if (target === 'log') deps.revealItem(deps.logPath);
     return { ok: true, value: null };
   });
 

@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactElement, ReactNode } from 'react';
+import type { CSSProperties, ReactElement, ReactNode, RefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { ScanStatus } from '../../generated/protocol.js';
 import { parseQuery } from '../../shared/query/parse.js';
@@ -42,6 +42,12 @@ export interface ShelfProps {
   readonly onScan: () => void;
   readonly onOpenScanSummary: () => void;
   readonly onAddScanRoot: () => void;
+  /**
+   * §8.0's one scroll container, handed back so blocks 3 and 4 can virtualize against it. They
+   * are `children` and cannot reach it otherwise, and a second scroller for the grid would make
+   * the era headers scroll independently of the rows they head.
+   */
+  readonly scrollRef?: RefObject<HTMLDivElement>;
   readonly children: ReactNode;
 }
 
@@ -167,7 +173,7 @@ export function Shelf(props: ShelfProps): ReactElement {
         onOpenPalette={props.onOpenPalette}
         onOpenSettings={props.onOpenSettings}
       />
-      <div className={SHELF_SCROLL_CLASS} style={scrollStyle}>
+      <div className={SHELF_SCROLL_CLASS} style={scrollStyle} ref={props.scrollRef}>
         <NoticeSlot
           candidates={props.notices}
           dismissed={view.dismissedNotices}

@@ -1,4 +1,5 @@
-import type { ShortcutState } from '../shared/channels.js';
+import type { Settings } from '../generated/protocol.js';
+import { IPC_OPEN_PALETTE, IPC_SHORTCUT_STATE, type ShortcutState } from '../shared/channels.js';
 import { ResidentShortcut, residentShortcutStatusText } from './shortcut.js';
 import type { BindOutcome, ShortcutHost } from './shortcut.js';
 
@@ -59,6 +60,54 @@ export function installResidentShortcut(deps: ResidentShortcutDeps): ResidentSho
       shortcut.dispose();
       publish(shortcut.outcome);
     },
+  };
+}
+
+export interface ShortcutServiceDeps {
+  readonly host: ShortcutHost;
+  /** Show and focus the window, creating it if the 30-minute hybrid destroyed it. */
+  readonly showWindow: () => void;
+  readonly send: (channel: string, payload: unknown) => void;
+}
+
+/**
+ * R32's other half: the binding wired to the two channels that carry it.
+ *
+ * `installResidentShortcut` published every transition from the first commit and was called
+ * from nowhere, so §11.3a's chord row read `NOT SET` whatever the real binding was — a control
+ * that looks broken rather than one that is missing. This is the call site.
+ */
+export function startShortcutService(deps: ShortcutServiceDeps): ResidentShortcutHandle {
+  return installResidentShortcut({
+    host: deps.host,
+    showWindow: deps.showWindow,
+    openPalette: () => {
+      deps.send(IPC_OPEN_PALETTE, null);
+    },
+    publishShortcutState: (state) => {
+      deps.send(IPC_SHORTCUT_STATE, state);
+    },
+  });
+}
+
+/**
+ * The rebind path. The drawer changes the chord by writing `settings.set`, which travels the
+ * command channel and never touches this process's binding — so without this the new chord is
+ * stored, never registered, and the row goes on describing the old one.
+ *
+ * `settings.set` returns the whole `Settings`, so the value applied is the value that was
+ * stored rather than the patch the renderer hoped for.
+ */
+export function withShortcutRebind<N extends string, A, R>(
+  request: (name: N, args: A) => Promise<R>,
+  apply: (chord: string | null) => BindOutcome,
+): (name: N, args: A) => Promise<R> {
+  return async (name, args) => {
+    const value = await request(name, args);
+    if ((name as string) === 'settings.set') {
+      apply((value as Settings | null)?.residentShortcut ?? null);
+    }
+    return value;
   };
 }
 

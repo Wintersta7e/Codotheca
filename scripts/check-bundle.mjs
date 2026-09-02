@@ -64,6 +64,44 @@ for (const clause of ["default-src 'none'", "font-src 'self'"]) {
   }
 }
 
+/**
+ * 3a. The screens are actually in the bundle.
+ *
+ * Every screen in this product was built, tested in jsdom, and mounted by nothing for two
+ * sessions — and the bundler dutifully tree-shook all of it out, which nothing noticed because
+ * the suite was green and the build succeeded. This is the check that would have said so.
+ *
+ * Matched as `function <Name>(`, which is what this build emits: it does not mangle names. If
+ * minification is ever turned on this gate goes red rather than quietly passing, and whoever
+ * turns it on owns changing the detector.
+ */
+export const MOUNTED_MODULES = [
+  'FirstRunGate',
+  'TurnScreen',
+  'Shelf',
+  'GridSection',
+  'SettingsDrawer',
+  'ScanSummary',
+  'FailureWindow',
+  'QuickSwitch',
+  'ProjectPageView',
+];
+
+const scripts = files.filter((f) => extname(f) === '.js');
+const bundleText = scripts.map((f) => readFileSync(f, 'utf8')).join('\n');
+// A gate whose passing run scans zero files is a failing gate.
+if (scripts.length === 0) {
+  fail('no renderer script was emitted, so the mounted-module check scanned nothing');
+} else {
+  const missing = MOUNTED_MODULES.filter((name) => !bundleText.includes(`function ${name}(`));
+  if (missing.length > 0) {
+    fail(
+      `${String(missing.length)} of ${String(MOUNTED_MODULES.length)} screens are absent from ` +
+        `the bundle (tree-shaken because nothing mounts them): ${missing.join(', ')}`,
+    );
+  }
+}
+
 // 4. The three families were emitted as local assets.
 const woff2 = files.filter((f) => extname(f) === '.woff2');
 for (const family of ['rajdhani', 'barlow', 'jetbrains-mono']) {
@@ -105,5 +143,6 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.error(
-  `check-bundle: ok (${String(files.length)} renderer files, ${String(woff2.length)} woff2)`,
+  `check-bundle: ok (${String(files.length)} renderer files, ${String(woff2.length)} woff2, ` +
+    `${String(MOUNTED_MODULES.length)} screens present in ${String(scripts.length)} script(s))`,
 );

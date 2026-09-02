@@ -66,8 +66,14 @@ export const IPC_REVEAL = 'codotheca:reveal';
 export const IPC_INDEX_LOCATION = 'codotheca:index-location';
 export const IPC_CLEAR_PAINT_FAILURE = 'codotheca:clear-paint-failure';
 
-/** The only two things the shell will reveal. A renderer-supplied path is refused. */
-export type RevealTarget = 'index' | 'bundle';
+/**
+ * The only three things the shell will reveal. A renderer-supplied path is refused (§2.4): the
+ * renderer names a target, never a location.
+ *
+ * `log` is named because §11.1's degraded notice and §11.2a's failure windows both offer
+ * `OPEN THE LOG`, and the rolling log is not inside the index or the bundle.
+ */
+export type RevealTarget = 'index' | 'bundle' | 'log';
 
 export interface IndexLocation {
   readonly pathDisplay: string;
