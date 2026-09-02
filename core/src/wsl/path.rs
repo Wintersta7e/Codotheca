@@ -150,16 +150,16 @@ mod tests {
     #[test]
     fn both_bridge_prefixes_parse_and_the_distro_keeps_its_case() {
         assert_eq!(
-            parse_bridge_path(r"\\wsl$\Ubuntu\home\u\p"),
+            parse_bridge_path(r"\\wsl$\alpha\home\u\p"),
             Some(BridgePath {
-                distro: "Ubuntu".to_owned(),
+                distro: "alpha".to_owned(),
                 linux_path: "/home/u/p".to_owned()
             })
         );
         assert_eq!(
-            parse_bridge_path(r"\\WSL.LOCALHOST\Debian\srv"),
+            parse_bridge_path(r"\\WSL.LOCALHOST\beta\srv"),
             Some(BridgePath {
-                distro: "Debian".to_owned(),
+                distro: "beta".to_owned(),
                 linux_path: "/srv".to_owned()
             })
         );
@@ -168,9 +168,9 @@ mod tests {
     #[test]
     fn the_distro_root_is_the_linux_root() {
         assert_eq!(
-            parse_bridge_path(r"\\wsl.localhost\Alpine"),
+            parse_bridge_path(r"\\wsl.localhost\gamma"),
             Some(BridgePath {
-                distro: "Alpine".to_owned(),
+                distro: "gamma".to_owned(),
                 linux_path: "/".to_owned()
             })
         );
@@ -186,10 +186,10 @@ mod tests {
 
     #[test]
     fn the_bridge_form_round_trips() {
-        let raw = r"\\wsl.localhost\Ubuntu\home\u\p";
+        let raw = r"\\wsl.localhost\alpha\home\u\p";
         let parsed = parse_bridge_path(raw).expect("parses");
         assert_eq!(bridge_path(&parsed.distro, &parsed.linux_path), raw);
-        assert_eq!(bridge_path("Ubuntu", "/"), r"\\wsl.localhost\Ubuntu");
+        assert_eq!(bridge_path("alpha", "/"), r"\\wsl.localhost\alpha");
     }
 
     #[test]
