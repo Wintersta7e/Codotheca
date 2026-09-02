@@ -16,7 +16,7 @@ use super::exec::{GitExec, RunLimits};
 use super::repo::RepoHandle;
 
 /// A root commit and the local day it happened on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RootCommit {
     /// Its object id.
     pub oid: String,
@@ -28,7 +28,7 @@ pub struct RootCommit {
 }
 
 /// One committer's contribution to a repository.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CommitterTally {
     /// The committer email as git recorded it.
     pub email: String,
@@ -45,14 +45,14 @@ pub struct CommitterTally {
 }
 
 /// The full-history committer walk.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Authorship {
     /// One entry per committer email, ordered by email.
     pub committers: Vec<CommitterTally>,
 }
 
 /// One commit's subject line.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CommitSubject {
     /// Its object id.
     pub oid: String,

@@ -65,13 +65,33 @@ impl RefFingerprint {
     }
 }
 
+// §13: the basis crosses the wire out of the distro. Both impls are hand-written because the
+// wire form must be the bare hex string `refstate_basis TEXT` holds and not a wrapper object,
+// and because a value that is not a digest has to be refused *on the way in* — a derived
+// `Deserialize` would build one and let it reach the column, and the freshness comparison this
+// type exists to drive would then quietly never match. `from_hex` is the one validator.
+impl serde::Serialize for RefFingerprint {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RefFingerprint {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = <String as serde::Deserialize>::deserialize(deserializer)?;
+        RefFingerprint::from_hex(&raw)
+            .ok_or_else(|| serde::de::Error::custom("not a hexadecimal fingerprint"))
+    }
+}
+
 /// The ref basis plus the index, used only by §3.5's torn-read guard. Never stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObservationFingerprint(String);
 
 /// An operation git left half-finished. §3.3 reads only `MERGE_HEAD` and `REBASE_HEAD`, so
 /// phase 1 stores only these two (§5.6).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum InterruptedOp {
     /// A merge is open.
     Merge,
@@ -91,7 +111,7 @@ impl InterruptedOp {
 }
 
 /// The branch's configured upstream and where it currently points.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct UpstreamRef {
     /// `branch.<name>.remote`.
     pub remote: String,
@@ -102,7 +122,7 @@ pub struct UpstreamRef {
 }
 
 /// Everything J1 produces from file reads.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RefState {
     /// `location.head_oid`. `None` on a bare or unborn HEAD — not computed, never a zero oid.
     pub head_oid: Option<String>,
@@ -387,7 +407,7 @@ pub fn read_ref_state(repo: &RepoHandle, clock: &dyn Clock) -> GitResult<RefStat
 }
 
 /// `location.ahead` / `location.behind`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Divergence {
     /// Commits on the branch that the upstream does not have.
     pub ahead: u32,

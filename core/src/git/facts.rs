@@ -10,7 +10,7 @@ use super::exec::{GitExec, RunLimits};
 use super::repo::RepoHandle;
 
 /// What git says about a repository's shape.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RepoFacts {
     /// `project.is_bare`.
     pub is_bare: bool,

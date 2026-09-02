@@ -13,7 +13,7 @@
 pub const GIT_FLOOR: (u32, u32) = (2, 22);
 
 /// A parsed `git --version`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GitVersion {
     /// Major component.
     pub major: u32,
