@@ -142,6 +142,7 @@ fn run_git(
             git.submodule_gitlinks(&handle, paths, &jc)
                 .map(|m| gitlinks_to_wire(&m)),
         ),
+        WorkerGitOp::RemoteUrls => encode(git.remote_urls(&handle, &jc)),
         WorkerGitOp::RootCommits => encode(git.root_commits(&handle, &jc)),
         WorkerGitOp::Authorship => encode(git.authorship(&handle, &jc)),
         WorkerGitOp::CommitSubjects { limit } => encode(git.commit_subjects(&handle, *limit, &jc)),

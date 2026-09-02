@@ -185,6 +185,14 @@ impl GitBackend for WslGitBackend {
         Ok(gitlinks_from_wire(pairs))
     }
 
+    fn remote_urls(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<(String, String)>> {
+        self.op(repo, WorkerGitOp::RemoteUrls, ctx)
+    }
+
     fn root_commits(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>> {
         self.op(repo, WorkerGitOp::RootCommits, ctx)
     }

@@ -137,3 +137,42 @@ fn the_forbidden_token_appears_nowhere_in_the_module() {
         );
     }
 }
+
+/// The one argv the git seam runs that is **built outside** `core/src/git/`.
+///
+/// `identity::remote::remote_urls_argv` holds the tokens, so the literal scan above cannot see
+/// them — and until this plan nothing ran it, so §17's audit had never had to. Asserting the
+/// value it returns is the same guarantee reached the other way round.
+#[test]
+fn the_remote_url_argv_is_a_read() {
+    let argv = codotheca_core::identity::remote::remote_urls_argv();
+    assert_eq!(
+        argv.first().copied(),
+        Some("config"),
+        "the subcommand moved: {argv:?}"
+    );
+    for token in &argv {
+        assert!(
+            !FORBIDDEN.contains(token),
+            "the remote read names the destructive subcommand `{token}`"
+        );
+    }
+    // `git config` writes when it is given a value or a mutating flag. Neither is here, and the
+    // token count is what makes that mechanical: `--get-regexp <pattern>` plus `--null` is four,
+    // and a fifth token would be the value to store.
+    for writing in [
+        "--add",
+        "--edit",
+        "--remove-section",
+        "--rename-section",
+        "--replace-all",
+        "--unset",
+        "--unset-all",
+    ] {
+        assert!(
+            !argv.contains(&writing),
+            "the remote read carries the mutating flag `{writing}`"
+        );
+    }
+    assert_eq!(argv.len(), 4, "an extra token would be a value: {argv:?}");
+}

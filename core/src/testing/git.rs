@@ -102,6 +102,7 @@ pub struct FakeGitBackend {
     worktree_status: Op<WorktreeStatus>,
     tracked_inventory: Op<TrackedInventory>,
     submodule_gitlinks: Op<BTreeMap<Vec<u8>, String>>,
+    remote_urls: Op<Vec<(String, String)>>,
     root_commits: Op<Vec<RootCommit>>,
     authorship: Op<Authorship>,
     commit_subjects: Op<Vec<CommitSubject>>,
@@ -203,6 +204,7 @@ setters! {
     worktree_status: WorktreeStatus, on_worktree_status, always_worktree_status;
     tracked_inventory: TrackedInventory, on_tracked_inventory, always_tracked_inventory;
     submodule_gitlinks: BTreeMap<Vec<u8>, String>, on_submodule_gitlinks, always_submodule_gitlinks;
+    remote_urls: Vec<(String, String)>, on_remote_urls, always_remote_urls;
     root_commits: Vec<RootCommit>, on_root_commits, always_root_commits;
     authorship: Authorship, on_authorship, always_authorship;
     commit_subjects: Vec<CommitSubject>, on_commit_subjects, always_commit_subjects;
@@ -283,6 +285,19 @@ impl GitBackend for FakeGitBackend {
             &self.submodule_gitlinks,
             Some(&repo.work_dir),
             || unconfigured("submodule_gitlinks"),
+        )
+    }
+
+    fn remote_urls(
+        &self,
+        repo: &RepoHandle,
+        _ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<(String, String)>> {
+        self.answer(
+            "remote_urls",
+            &self.remote_urls,
+            Some(&repo.work_dir),
+            || unconfigured("remote_urls"),
         )
     }
 
@@ -403,6 +418,15 @@ impl<B: GitBackend> GitBackend for RecordingGitBackend<B> {
     ) -> GitResult<BTreeMap<Vec<u8>, String>> {
         self.record("submodule_gitlinks", Some(&repo.work_dir));
         self.inner.submodule_gitlinks(repo, paths, ctx)
+    }
+
+    fn remote_urls(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<(String, String)>> {
+        self.record("remote_urls", Some(&repo.work_dir));
+        self.inner.remote_urls(repo, ctx)
     }
 
     fn root_commits(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>> {
