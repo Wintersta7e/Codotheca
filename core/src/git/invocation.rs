@@ -67,10 +67,16 @@ pub fn neutralise_env(cmd: &mut Command) {
     }
 }
 
+/// The leaf name of the empty hooks directory. Exported because §13's worker cleanup has to
+/// remove the very directory this creates, and `rmdir` refuses one that still holds anything —
+/// spelling the name a second time over there would make that cleanup fail for every stale
+/// build, silently and forever.
+pub const EMPTY_HOOKS_DIR_NAME: &str = "git-hooks-empty";
+
 /// Create the empty directory `core.hooksPath` points at, under the app data directory the
 /// shell passed in argv (§2.1).
 pub fn ensure_empty_hooks_dir(app_data_dir: &Path) -> std::io::Result<PathBuf> {
-    let dir = app_data_dir.join("git-hooks-empty");
+    let dir = app_data_dir.join(EMPTY_HOOKS_DIR_NAME);
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }

@@ -7,8 +7,8 @@
 use crate::proto::frame::{read_frame, FrameError};
 use crate::proto::wire::RequestId;
 use crate::wsl::deploy::{
-    chmod_argv, cleanup_argvs, deploy_paths, home_argv, list_root_argv, mkdir_argv, plan_deploy,
-    worker_fingerprint, write_argv, WORKER_FILE_NAME,
+    chmod_argv, cleanup_argvs, deploy_paths, home_argv, list_root_argv, mkdir_argv, parse_size,
+    plan_deploy, size_argv, worker_fingerprint, write_argv,
 };
 use crate::wsl::distros::{launch_argv, WslCli};
 use crate::wsl::proto::{
@@ -370,15 +370,42 @@ impl WslExeLauncher {
             stop_child(&mut child);
             return Err(deploy_error(distro, "deployment command had no stdin"));
         };
+        // `tee` copies its stdin straight back to stdout. Writing the whole binary while
+        // nothing drains that pipe fills it: `tee` blocks on the write, stops reading stdin,
+        // and both sides wait forever. Measured — deploying a 2.5 MB worker hung indefinitely
+        // until the two output pipes were drained on their own threads.
+        let mut stdout = child.stdout.take();
+        let mut stderr = child.stderr.take();
+        let out_drain = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(pipe) = stdout.as_mut() {
+                let _ = std::io::Read::read_to_end(pipe, &mut buf);
+            }
+            buf
+        });
+        let err_drain = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(pipe) = stderr.as_mut() {
+                let _ = std::io::Read::read_to_end(pipe, &mut buf);
+            }
+            buf
+        });
+
         let write_result = sink.write_all(input).and_then(|()| sink.flush());
+        // Closing stdin is what tells the child the stream ended.
         drop(sink);
         if let Err(err) = write_result {
             stop_child(&mut child);
             return Err(deploy_error(distro, err.to_string()));
         }
-        let output = child
-            .wait_with_output()
+        let status = child
+            .wait()
             .map_err(|err| deploy_error(distro, err.to_string()))?;
+        let output = Output {
+            status,
+            stdout: out_drain.join().unwrap_or_default(),
+            stderr: err_drain.join().unwrap_or_default(),
+        };
         checked_deploy_output(distro, argv, output)
     }
 
@@ -398,16 +425,18 @@ impl WslExeLauncher {
             Ok(output) => sibling_names(&output),
             Err(_) => Vec::new(),
         };
-        // Presence is the *executable*, not its directory. An install interrupted between the
-        // `mkdir` and the copy leaves the versioned directory behind with nothing in it, and
-        // taking that as "deployed" would launch a path that does not exist — once, silently,
-        // and for as long as that build is current.
-        let exe_present = match self.run_output(distro, &list_root_argv(&paths.version_dir)) {
-            Ok(output) => sibling_names(&output)
-                .iter()
-                .any(|name| name == WORKER_FILE_NAME),
-            Err(_) => false,
-        };
+        // Presence is the *whole executable*, not its directory and not merely a file at that
+        // path. An install interrupted between the `mkdir` and the copy leaves an empty
+        // directory; one interrupted during the copy leaves a short file. Either read as
+        // "deployed" launches something that cannot run, and the symptom — a pipe that closes
+        // with no frame — names nothing. The directory is content-addressed, so a copy of the
+        // right length at that path is the right build.
+        let want = u64::try_from(self.worker_bytes.len()).unwrap_or(u64::MAX);
+        let exe_present = self
+            .run_output(distro, &size_argv(&paths.exe))
+            .ok()
+            .and_then(|output| parse_size(&output))
+            == Some(want);
         let plan = plan_deploy(&paths, exe_present, &siblings);
         if plan.install {
             self.run_output(distro, &mkdir_argv(&paths.version_dir))?;
@@ -416,8 +445,11 @@ impl WslExeLauncher {
                 &write_argv(&paths.exe),
                 self.worker_bytes.as_slice(),
             )?;
-            self.run_output(distro, &chmod_argv(&paths.exe))?;
         }
+        // Always, not only after a copy: a deploy killed between the copy and the mode change
+        // leaves a complete file the size check accepts and `--exec` still refuses. One extra
+        // call per worker start, against the cost of starting a virtual machine.
+        self.run_output(distro, &chmod_argv(&paths.exe))?;
         for stale_dir in &plan.stale_dirs {
             for argv in cleanup_argvs(stale_dir) {
                 // Refusing to remove a non-empty stale directory is the intended safety bound.

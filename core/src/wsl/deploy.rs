@@ -12,6 +12,12 @@
 pub const WORKER_FILE_NAME: &str = "codotheca-worker";
 pub const DEPLOY_ROOT_RELATIVE: &str = ".cache/codotheca/worker";
 
+/// The worker creates its empty hooks directory beside itself, and the cleanup below has to
+/// name the same one. The name has a single owner in `core::git::invocation`; restating it here
+/// is how the version-change cleanup would quietly stop working, because `rmdir` refuses a
+/// directory that still holds a subdirectory nobody removed.
+pub use crate::git::EMPTY_HOOKS_DIR_NAME;
+
 const FNV_OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
 const FNV_PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
 
@@ -53,7 +59,7 @@ pub fn deploy_paths(home: &str, fingerprint: &str) -> Option<DeployPaths> {
     let version_dir = format!("{root}/{fingerprint}");
     Some(DeployPaths {
         exe: format!("{version_dir}/{WORKER_FILE_NAME}"),
-        hooks_dir: format!("{version_dir}/hooks"),
+        hooks_dir: format!("{version_dir}/{EMPTY_HOOKS_DIR_NAME}"),
         version_dir,
         root,
     })
@@ -111,6 +117,30 @@ pub fn list_root_argv(root: &str) -> Vec<String> {
     vec!["ls".to_owned(), "-1".to_owned(), root.to_owned()]
 }
 
+/// The deployed file's size in bytes. `wc -c` is in both coreutils and busybox and needs no
+/// shell redirect, unlike `stat -c` whose format flag differs between them.
+///
+/// This exists because *existence is not completeness*. A copy interrupted part-way leaves a
+/// short file at the right path, and treating that as "this build is deployed" launches a
+/// truncated binary — measured: a killed deploy left 409600 of 2551120 bytes behind, and the
+/// next launch skipped the install and got an immediately-closed pipe with nothing to explain
+/// it.
+#[must_use]
+pub fn size_argv(path: &str) -> Vec<String> {
+    vec!["wc".to_owned(), "-c".to_owned(), path.to_owned()]
+}
+
+/// The byte count `wc -c` reported, or `None` when it reported anything else — a missing file
+/// makes it fail, and a failure must never read as a size.
+#[must_use]
+pub fn parse_size(output: &[u8]) -> Option<u64> {
+    String::from_utf8_lossy(output)
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
+}
+
 /// Resolving `$HOME` without a shell: `getent passwd` is not needed because the launch already
 /// fixes the user, and `printenv` reports that user's environment.
 #[must_use]
@@ -129,7 +159,10 @@ pub fn cleanup_argvs(version_dir: &str) -> Vec<Vec<String>> {
             "-f".to_owned(),
             format!("{version_dir}/{WORKER_FILE_NAME}"),
         ],
-        vec!["rmdir".to_owned(), format!("{version_dir}/hooks")],
+        vec![
+            "rmdir".to_owned(),
+            format!("{version_dir}/{EMPTY_HOOKS_DIR_NAME}"),
+        ],
         vec!["rmdir".to_owned(), version_dir.to_owned()],
     ]
 }
@@ -256,7 +289,10 @@ mod tests {
                 ],
                 vec![
                     "rmdir".to_owned(),
-                    "/home/me/.cache/codotheca/worker/abc/hooks".to_owned()
+                    format!(
+                        "/home/me/.cache/codotheca/worker/abc/{}",
+                        super::EMPTY_HOOKS_DIR_NAME
+                    )
                 ],
                 vec![
                     "rmdir".to_owned(),
@@ -275,17 +311,46 @@ mod tests {
     }
 
     #[test]
+    fn a_short_file_does_not_read_as_a_deployed_one() {
+        use super::{parse_size, size_argv};
+        assert_eq!(
+            size_argv("/d/w"),
+            vec!["wc".to_owned(), "-c".to_owned(), "/d/w".to_owned()]
+        );
+        // `wc -c` prints "<bytes> <path>".
+        assert_eq!(parse_size(b"2551120 /d/w\n"), Some(2_551_120));
+        assert_eq!(parse_size(b"  0 /d/w\n"), Some(0));
+        // A missing file makes `wc` fail; its message must never read as a size.
+        assert_eq!(parse_size(b"wc: /d/w: No such file or directory\n"), None);
+        assert_eq!(parse_size(b""), None);
+    }
+
+    #[test]
     fn the_install_argvs_run_no_shell() {
         for argv in [
             super::mkdir_argv("/d"),
             super::write_argv("/d/w"),
             super::chmod_argv("/d/w"),
             super::list_root_argv("/d"),
+            super::size_argv("/d/w"),
             super::home_argv(),
         ] {
-            for banned in ["sh", "bash", "-c", "eval"] {
-                assert!(!argv.iter().any(|a| a == banned), "{banned} in {argv:?}");
+            // "Runs no shell" means the program is not a shell and nothing hands one a command
+            // string. It does not mean the token `-c` never appears: `wc -c` is a byte count,
+            // and banning the bare flag would forbid a correct argv while still allowing
+            // `bash --login`. So the test states the two things that are actually forbidden.
+            let program = argv.first().map(String::as_str).unwrap_or_default();
+            for shell in ["sh", "bash", "dash", "zsh", "busybox", "env"] {
+                assert_ne!(program, shell, "{program} is a shell, in {argv:?}");
             }
+            for pair in argv.windows(2) {
+                let named_shell = ["sh", "bash", "dash", "zsh"].contains(&pair[0].as_str());
+                assert!(
+                    !(named_shell && pair[1] == "-c"),
+                    "a shell command string in {argv:?}"
+                );
+            }
+            assert!(!argv.iter().any(|a| a == "eval"), "eval in {argv:?}");
         }
         assert_eq!(
             super::write_argv("/d/w"),
