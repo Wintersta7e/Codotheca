@@ -99,7 +99,7 @@ test(
     const writes = [...NON_IDEMPOTENT_COMMANDS];
     const inFlight = [...writes, ...reads].map((name) => ({
       name,
-      settled: settle(send(client, name as CommandName)),
+      settled: settle(send(client, name)),
     }));
     expect(inFlight.length).toBeGreaterThan(1);
 

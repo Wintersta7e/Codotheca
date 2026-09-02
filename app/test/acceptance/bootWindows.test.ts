@@ -94,13 +94,13 @@ test('AC-57 the effects-tier flag beats the environment variable beats boot.json
 
   const fromEnv = deps({
     readBoot: vi.fn(() => stored),
-    env: { CODOTHECA_EFFECTS_TIER: 'full' } as NodeJS.ProcessEnv,
+    env: { CODOTHECA_EFFECTS_TIER: 'full' },
   });
   expect(bootstrap(fromEnv.base)).toMatchObject({ tier: 'full', source: 'environment' });
 
   const fromArgv = deps({
     readBoot: vi.fn(() => stored),
-    env: { CODOTHECA_EFFECTS_TIER: 'full' } as NodeJS.ProcessEnv,
+    env: { CODOTHECA_EFFECTS_TIER: 'full' },
     argv: ['--effects-tier=off'],
   });
   expect(bootstrap(fromArgv.base)).toMatchObject({ tier: 'off', source: 'argv' });
