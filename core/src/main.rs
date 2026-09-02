@@ -187,12 +187,18 @@ fn main() -> ExitCode {
         // `rusqlite::Connection` crosses it, which is what keeps the one-writer rule intact.
         scans: ScanSupervisor::new(Arc::new(
             codotheca_core::scan::launcher::ThreadScanLauncher::new(
-                Arc::clone(&scan_store),
-                Arc::clone(&git),
-                Arc::clone(&mount),
-                Arc::clone(&clock),
-                Arc::new(codotheca_core::scan::skiplist::SkipList::default()),
-                Arc::clone(&events) as Arc<dyn EventSink>,
+                codotheca_core::scan::launcher::ScanLauncherDeps {
+                    store: Arc::clone(&scan_store),
+                    index: Arc::clone(&index),
+                    git: Arc::clone(&git),
+                    mounts: Arc::clone(&mount),
+                    clock: Arc::clone(&clock),
+                    skip: Arc::new(codotheca_core::scan::skiplist::SkipList::default()),
+                    // The real queue. `NullJobSink` is the absence of a scheduler, not a fake of
+                    // one, and installing it here is what left every discovery uncomputed.
+                    jobs: jobs.sink(),
+                    events: Arc::clone(&events) as Arc<dyn EventSink>,
+                },
             ),
         )),
         scan_store: Arc::clone(&scan_store),

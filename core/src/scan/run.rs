@@ -12,14 +12,16 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::assembly::handoff::{hand_off_discovered, HandoffCtx, HandoffError};
 use crate::cancel::CancelToken;
 use crate::clock::Clock;
-use crate::git::{GitBackend, StoreKey};
+use crate::git::{GitBackend, GitError, StoreKey};
 use crate::index::path::PathPlatform;
-use crate::mount::{MountFacts, MountResolver};
+use crate::index::Index;
+use crate::mount::{MountFacts, MountResolver, StoreClass};
 use crate::paths::{path_bytes, path_display, path_from_bytes, path_key};
 use crate::scan::discover::{ProbeCtx, RepoCandidate};
 use crate::scan::links::LinkPolicy;
@@ -96,18 +98,19 @@ pub struct ScanRunner<'a> {
     pub clock: &'a dyn Clock,
     pub skip: &'a SkipList,
     pub cancel: &'a CancelToken,
+    /// The one `rusqlite::Connection`, shared rather than owned (R39).
+    ///
+    /// The runner reaches the database two ways on purpose. `store` is plan 07's seam and owns
+    /// the run's own rows; this is what `assembly::handoff` needs, because the `location` row
+    /// must be written inside the transaction that decided its project and a trait method
+    /// cannot carry one (R35a). Both are the same mutex over the same connection — never a
+    /// second one.
+    pub index: &'a Mutex<Index>,
     /// Where a newly indexed location's jobs are queued (§4.1a).
     ///
-    /// **Typed and installed here, and called from nowhere yet — deliberately, and this is the
-    /// gap rather than an oversight.** The hand-off belongs at the point where a repository's
-    /// `project` and `location` rows have both been written, which is
-    /// `identity::resolve_identity` followed by `identity::store::upsert_location`. Nothing
-    /// calls either: the walk stops at `WalkEvent::Discovered` (R1), and `SqliteScanStore::
-    /// upsert_location` refuses by design, naming plan 08 as the owner. Whoever closes that —
-    /// the core's assembly module under R35(a) — calls
-    /// `self.jobs.on_location_indexed(project_id, location_id, &facts.store_key, facts.class)`
-    /// with the `MountFacts` `enrich` already resolved. **R4**: both values come out of that one
-    /// `MountFacts`; there is no second resolver call and the queue never touches the filesystem.
+    /// Called from [`ScanRunner::index_one`], with the store key and class from the **one**
+    /// `MountFacts` `enrich` resolved: **R4** — there is no second resolver call and the queue
+    /// never touches the filesystem.
     pub jobs: Arc<dyn crate::jobs::JobSink>,
 }
 
@@ -207,7 +210,7 @@ impl ScanRunner<'_> {
 
         let survey = self.survey_roots(&roots, scan_run_id, sink);
         let (walked_dirs, found_this_run, links_refused, cancelled) =
-            self.walk_all(&survey, resumed_from, scan_run_id, sink);
+            self.walk_all(&survey, resumed_from, scan_run_id, generation, sink);
 
         let found_repos = found_this_run.max(resumed_from);
 
@@ -314,6 +317,7 @@ impl ScanRunner<'_> {
         survey: &Survey<'_>,
         resumed_from: u64,
         scan_run_id: i64,
+        generation: i64,
         sink: &WalkSink<'_>,
     ) -> (u64, u64, u64, bool) {
         let link_roots: Vec<Vec<u8>> = survey
@@ -375,6 +379,13 @@ impl ScanRunner<'_> {
                         );
                     }
                     let seen = found_this_run.fetch_add(1, Ordering::Relaxed) + 1;
+                    self.index_one(
+                        &discovered,
+                        entry.facts.class,
+                        generation,
+                        scan_run_id,
+                        sink,
+                    );
                     sink(WalkEvent::Discovered(Box::new(discovered)));
                     sink(WalkEvent::Progress {
                         walked_dirs: 0,
@@ -402,6 +413,56 @@ impl ScanRunner<'_> {
             links_refused,
             cancelled,
         )
+    }
+
+    /// §4.1a: the row, then the queue.
+    ///
+    /// This is the step the module's own doc comment used to describe as the gap. Every git read
+    /// inside `hand_off_discovered` happens with the index lock free (**R39**), which is what
+    /// lets this run from the walk's worker threads at all.
+    ///
+    /// A repository that could not be indexed becomes a `scan_problem`, never a silent skip: a
+    /// scan that quietly drops what it could not read claims a completeness the walk did not
+    /// have. A **cancelled** run is the one exception — it reports nothing, because a token that
+    /// fired once would otherwise write one row per remaining repository, none of which is a
+    /// problem with the repository.
+    fn index_one(
+        &self,
+        discovered: &Discovered,
+        store_class: StoreClass,
+        generation: i64,
+        scan_run_id: i64,
+        sink: &WalkSink<'_>,
+    ) {
+        let ctx = HandoffCtx {
+            git: self.git,
+            cancel: self.cancel,
+            store_class,
+            generation,
+            now: self.clock.now_unix(),
+        };
+        match hand_off_discovered(self.index, &ctx, discovered) {
+            Ok(indexed) => self.jobs.on_location_indexed(
+                indexed.project,
+                indexed.location,
+                &discovered.store_key,
+                store_class,
+            ),
+            Err(err) => {
+                if self.cancel.is_cancelled() {
+                    return;
+                }
+                self.report(
+                    scan_run_id,
+                    ScanProblem {
+                        kind: problem_kind_for(&err),
+                        path_display: discovered.path_display.clone(),
+                        detail: format!("could not be indexed: {err}"),
+                    },
+                    sink,
+                );
+            }
+        }
     }
 
     /// Every problem reaches `scan_problem` as well as the subscriber — §11.1's summary reads the
@@ -458,6 +519,20 @@ pub fn platform_of(kind: &str) -> PathPlatform {
         PathPlatform::Windows
     } else {
         PathPlatform::Unix
+    }
+}
+
+/// §11.1's group for a repository the hand-off could not index.
+///
+/// The three that have their own group keep it: an untrusted repository is fixed by trusting it
+/// and a permission error by changing a mode, and filing either under *unreadable* would offer
+/// the user no action. Everything else is `unreadable_repo`.
+fn problem_kind_for(err: &HandoffError) -> ScanProblemKind {
+    match err {
+        HandoffError::Git(GitError::Untrusted { .. }) => ScanProblemKind::UntrustedRepo,
+        HandoffError::Git(GitError::PermissionDenied { .. }) => ScanProblemKind::PermissionDenied,
+        HandoffError::Git(GitError::StoreOffline { .. }) => ScanProblemKind::OfflineStore,
+        _ => ScanProblemKind::UnreadableRepo,
     }
 }
 

@@ -19,8 +19,10 @@
 
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::git::RepoFacts;
+use codotheca_core::index::Index;
 use codotheca_core::mount::{MountFacts, StoreClass};
 use codotheca_core::paths::{path_bytes, path_key};
+use codotheca_core::protocol::{LocationId, ProjectId};
 use codotheca_core::scan::discover::RepoKind;
 use codotheca_core::scan::presence::{LocationPresenceRow, Presence, PresenceSummary, ScanRootRow};
 use codotheca_core::scan::run::{platform_of, ScanMode, ScanRunner};
@@ -85,22 +87,86 @@ fn mounts_at(base: &Path, store: &str, volume: Option<&str>) -> Arc<FakeMountRes
     Arc::new(m)
 }
 
+/// Every `on_location_indexed` the run made, in order.
+///
+/// `NullJobSink` would let a run that queued nothing pass every assertion below, which is the
+/// state the product was actually in.
+#[derive(Debug, Default)]
+struct RecordingJobs {
+    indexed: Mutex<Vec<(i64, i64, String, StoreClass)>>,
+    visible: Mutex<Vec<i64>>,
+}
+
+impl codotheca_core::jobs::JobSink for RecordingJobs {
+    fn on_location_indexed(
+        &self,
+        project: ProjectId,
+        location: LocationId,
+        store_key: &str,
+        store_kind: StoreClass,
+    ) {
+        self.indexed.lock().unwrap().push((
+            project.0,
+            location.0,
+            store_key.to_owned(),
+            store_kind,
+        ));
+    }
+
+    fn on_visible(&self, project: ProjectId, _: LocationId, _: &str, _: StoreClass) {
+        self.visible.lock().unwrap().push(project.0);
+    }
+}
+
+impl RecordingJobs {
+    fn indexed(&self) -> Vec<(i64, i64, String, StoreClass)> {
+        self.indexed.lock().unwrap().clone()
+    }
+}
+
 struct Rig {
+    _dir: tempfile::TempDir,
     store: MemScanStore,
+    /// The hand-off's connection. `MemScanStore` is the walk's own seam and holds no database;
+    /// the `location` row goes through the identity writer, which needs a real transaction.
+    index: Arc<Mutex<Index>>,
     git: FakeGitBackend,
     clock: FakeClock,
     skip: SkipList,
     cancel: CancelToken,
+    jobs: Arc<RecordingJobs>,
 }
 
 fn rig() -> Rig {
+    let dir = tempfile::tempdir().unwrap();
+    let index = Index::open_at(dir.path(), NOW).unwrap();
     Rig {
+        _dir: dir,
         store: MemScanStore::new(),
+        index: Arc::new(Mutex::new(index)),
         git: FakeGitBackend::new(),
         clock: FakeClock::new(NOW),
         skip: SkipList::default(),
         cancel: CancelToken::new(),
+        jobs: Arc::new(RecordingJobs::default()),
     }
+}
+
+/// Answers the three reads `probe_identity` makes, so the hand-off gets as far as a row.
+///
+/// One fallback, so every repository in the fixture reports the **same** common dir. That is
+/// §1.1's definitive evidence, so a fixture with two of them is two locations under one project
+/// — which is a real shape and the one this fake can express. Whether two *unrelated*
+/// repositories become two projects is the corpus's question, not this fake's.
+fn indexable(r: &Rig, common_dir: &Path) {
+    r.git.always_repo_facts(GitReply::Ok(RepoFacts {
+        is_bare: false,
+        is_shallow: false,
+        git_dir: common_dir.to_path_buf(),
+        common_dir: common_dir.to_path_buf(),
+    }));
+    r.git.always_root_commits(GitReply::Ok(Vec::new()));
+    r.git.always_remote_urls(GitReply::Ok(Vec::new()));
 }
 
 fn runner(r: &Rig, mounts: Arc<FakeMountResolver>) -> ScanRunner<'_> {
@@ -111,7 +177,8 @@ fn runner(r: &Rig, mounts: Arc<FakeMountResolver>) -> ScanRunner<'_> {
         clock: &r.clock,
         skip: &r.skip,
         cancel: &r.cancel,
-        jobs: Arc::new(codotheca_core::jobs::NullJobSink),
+        index: r.index.as_ref(),
+        jobs: Arc::clone(&r.jobs) as Arc<dyn codotheca_core::jobs::JobSink>,
     }
 }
 
@@ -261,6 +328,8 @@ fn a_repository_at_a_non_utf8_path_indexes_and_says_its_displayed_path_is_lossy(
     std::fs::create_dir_all(odd.join(".git")).unwrap();
 
     let r = rig();
+    // Indexable, so the only problem this run can produce is the one it is about.
+    indexable(&r, &odd.join(".git"));
     r.store.push_root(root_row(1, base.path(), true));
     let runner = runner(&r, mounts_at(base.path(), "store-a", Some("vol-a")));
 
@@ -444,11 +513,8 @@ fn every_shape_appears_exactly_once_with_the_kind_that_identifies_it() {
     let (work, sub, wt, archive) = build_shelf(base.path());
 
     let r = Rig {
-        store: MemScanStore::new(),
         git: shelf_git(&work),
-        clock: FakeClock::new(NOW),
-        skip: SkipList::default(),
-        cancel: CancelToken::new(),
+        ..rig()
     };
     r.store.push_root(root_row(1, base.path(), true));
     let runner = runner(&r, mounts_at(base.path(), "store-a", Some("vol-a")));
@@ -505,11 +571,8 @@ fn nothing_in_the_scanner_can_remove_a_row() {
     let (work, _, _, _) = build_shelf(base.path());
 
     let r = Rig {
-        store: MemScanStore::new(),
         git: shelf_git(&work),
-        clock: FakeClock::new(NOW),
-        skip: SkipList::default(),
-        cancel: CancelToken::new(),
+        ..rig()
     };
     r.store.push_root(root_row(1, base.path(), true));
     for id in 1..=4 {
@@ -533,4 +596,114 @@ fn nothing_in_the_scanner_can_remove_a_row() {
     for id in 1..=4 {
         assert_eq!(r.store.presence_of(id), Some(Presence::Offline));
     }
+}
+
+// ---------------------------------------------------------------------------
+// §4.1a: the walk hands each indexed location to the scheduler. Before this the
+// production launcher installed `NullJobSink`, so the answer was always none.
+// ---------------------------------------------------------------------------
+
+/// One `on_location_indexed` per discovered repository, carrying the store key and class from
+/// the **one** `MountFacts` `enrich` resolved (**R4** — no second resolver call, and the queue
+/// never touches the filesystem).
+#[test]
+fn every_indexed_location_is_handed_to_the_scheduler_once() {
+    let base = tempfile::tempdir().unwrap();
+    let a = repo_at(base.path(), "a");
+    repo_at(base.path(), "b");
+    let r = rig();
+    indexable(&r, &a.join(".git"));
+    r.store.push_root(root_row(1, base.path(), true));
+    let runner = runner(&r, mounts_at(base.path(), "store-a", Some("vol-a")));
+
+    let outcome = runner.run(ScanMode::Full, &|_| {}).unwrap();
+    assert_eq!(outcome.found_repos, 2);
+
+    let handed = r.jobs.indexed();
+    assert_eq!(handed.len(), 2, "one hand-off per repository: {handed:?}");
+    for (project, location, store_key, class) in &handed {
+        assert!(*project > 0 && *location > 0);
+        assert_eq!(store_key, "store-a");
+        assert_eq!(*class, StoreClass::Local);
+    }
+
+    // Two distinct locations: a hand-off reporting the same id twice would queue one
+    // repository's jobs against another's path. They share a project because the fake gives
+    // both the same common dir, which is §1.1's definitive evidence — see `indexable`.
+    let mut locations: Vec<i64> = handed.iter().map(|h| h.1).collect();
+    locations.sort_unstable();
+    locations.dedup();
+    assert_eq!(locations.len(), 2);
+}
+
+/// A second scan of an unchanged tree re-identifies rather than duplicating: the same
+/// `(project, location)` pair comes back, so nothing new is queued against a new row.
+#[test]
+fn a_second_scan_of_an_unchanged_tree_hands_off_the_same_rows() {
+    let base = tempfile::tempdir().unwrap();
+    let a = repo_at(base.path(), "a");
+    let r = rig();
+    indexable(&r, &a.join(".git"));
+    r.store.push_root(root_row(1, base.path(), true));
+
+    runner(&r, mounts_at(base.path(), "store-a", Some("vol-a")))
+        .run(ScanMode::Full, &|_| {})
+        .unwrap();
+    runner(&r, mounts_at(base.path(), "store-a", Some("vol-a")))
+        .run(ScanMode::Full, &|_| {})
+        .unwrap();
+
+    let handed = r.jobs.indexed();
+    assert_eq!(handed.len(), 2, "one per scan");
+    assert_eq!(
+        (handed[0].0, handed[0].1),
+        (handed[1].0, handed[1].1),
+        "a rescan must re-identify, not create a second project and a second row"
+    );
+
+    let guard = r.index.lock().unwrap();
+    let projects: i64 = guard
+        .conn()
+        .query_row("SELECT COUNT(*) FROM project", [], |row| row.get(0))
+        .unwrap();
+    let locations: i64 = guard
+        .conn()
+        .query_row("SELECT COUNT(*) FROM location", [], |row| row.get(0))
+        .unwrap();
+    drop(guard);
+    assert_eq!((projects, locations), (1, 1));
+}
+
+/// A repository the hand-off cannot read becomes a `scan_problem`, never a silent skip: a scan
+/// that quietly drops what it could not identify claims a completeness the walk did not have.
+#[test]
+fn a_repository_the_handoff_cannot_read_is_reported_and_queues_nothing() {
+    let base = tempfile::tempdir().unwrap();
+    repo_at(base.path(), "a");
+    // The fake answers no `repo_facts`, which is what an unreadable git dir looks like here.
+    let r = rig();
+    r.store.push_root(root_row(1, base.path(), true));
+    let runner = runner(&r, mounts_at(base.path(), "store-a", Some("vol-a")));
+
+    let problems = Mutex::new(Vec::new());
+    let outcome = runner
+        .run(ScanMode::Full, &|event| {
+            if let WalkEvent::Problem(p) = event {
+                problems.lock().unwrap().push(p.kind);
+            }
+        })
+        .unwrap();
+
+    assert_eq!(outcome.found_repos, 1, "the walk still found it");
+    assert!(
+        r.jobs.indexed().is_empty(),
+        "nothing to compute without a row"
+    );
+    assert!(
+        problems
+            .lock()
+            .unwrap()
+            .contains(&ScanProblemKind::UnreadableRepo),
+        "the run must say which repository it could not index"
+    );
 }
