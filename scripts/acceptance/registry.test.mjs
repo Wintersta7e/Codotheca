@@ -86,3 +86,61 @@ test('the shipped registry validates and covers 1..67', () => {
   for (let n = 1; n <= 67; n += 1) assert.ok(integers.has(n), `criterion ${String(n)} is missing`);
   assert.equal(integers.size, 67);
 });
+
+test('every performance check states an event pair or is unmeasurable', () => {
+  const registry = loadRegistry(registryPath);
+  const perf = registry.criteria.filter((c) => c.group === 'performance');
+  assert.deepEqual(
+    perf.map((c) => c.id).sort(),
+    ['15', '16', '17', '18', '19', '20', '21', '22', '30', '31'].sort(),
+  );
+  for (const entry of perf) {
+    for (const check of entry.checks) {
+      if (check.status === 'unmeasurable') {
+        assert.ok(check.reason.length >= 20, `${check.id} needs a reason`);
+        assert.equal(check.budget, undefined, `${check.id} may not carry a budget`);
+        continue;
+      }
+      // A check that states no number needs no event pair: requiring one would be met by
+      // inventing one, which is the failure the rule exists to prevent.
+      if (check.runner !== 'perf' && (check.budget ?? []).length === 0) {
+        assert.equal(check.measurement, undefined, `${check.id} states no number and no pair`);
+        continue;
+      }
+      const m = check.measurement;
+      assert.ok(m, `${check.id} has no measurement`);
+      if (m.kind === 'rate') assert.ok(m.run.length > 0, `${check.id} needs a run definition`);
+      else if (m.kind !== 'size') {
+        assert.ok(m.from.length > 0, `${check.id} needs a from-event`);
+        assert.ok(m.to.length > 0, `${check.id} needs a to-event`);
+      }
+    }
+  }
+});
+
+test('nothing on the perf runner is automated, and an automated perf check measures a size', () => {
+  const registry = loadRegistry(registryPath);
+  for (const entry of registry.criteria.filter((c) => c.group === 'performance')) {
+    for (const check of entry.checks) {
+      if (check.runner === 'perf') {
+        assert.notEqual(check.status, 'automated', check.id);
+        continue;
+      }
+      if (check.status !== 'automated') continue;
+      // A latency, duration or rate is meaningless without the machine that produced it, and CI
+      // is neither reference machine. A size is not: bytes on disk do not vary with the CPU.
+      assert.equal(check.runner, 'cargo', `${check.id} runs somewhere a size can be measured`);
+      assert.equal(check.measurement.kind, 'size', `${check.id} measures a size, not a time`);
+    }
+  }
+});
+
+test('a budget anywhere in the registry names the measurement it is a budget for', () => {
+  const registry = loadRegistry(registryPath);
+  for (const entry of registry.criteria) {
+    for (const check of entry.checks) {
+      if ((check.budget ?? []).length === 0) continue;
+      assert.ok(check.measurement, `${check.id} carries a budget and no measurement`);
+    }
+  }
+});

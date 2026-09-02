@@ -409,6 +409,477 @@
           "assert": "Criterion 57's failed-migration window renders the restored schema number and the restore time."
         }
       ]
+    },
+    {
+      "id": "15",
+      "title": "Cold launch to first painted tiles",
+      "group": "performance",
+      "spec": "§16.15",
+      "checks": [
+        {
+          "id": "AC-15-cold",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "13c",
+          "test": "perf::launch_to_first_tile",
+          "assert": "p50 under 800 ms and p95 under 1.5 s on A; p95 under 2.5 s on B. Chromium bootstrap dominates and v1's 300 ms was not achievable.",
+          "reason": "The terminal event now exists and has been observed: an end-to-end spec launches the real app and asserts a real pixel against a blank frame of the same window. Nothing times it. No harness records the pair below, no run has produced a p50 or a p95, and the spec that proves the paint skips itself when core/target/release/codotheca-core is absent. What is true today is that the app paints; what this budget claims is unmeasured.",
+          "measurement": {
+            "kind": "latency",
+            "from": "main process start",
+            "to": "first tile pixel composited",
+            "thermal": "cold",
+            "machines": ["A", "B"],
+            "state": "warm database, cold page cache"
+          },
+          "budget": [
+            {
+              "metric": "p50",
+              "op": "<",
+              "value": 800,
+              "unit": "ms",
+              "machine": "A"
+            },
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 1500,
+              "unit": "ms",
+              "machine": "A"
+            },
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 2500,
+              "unit": "ms",
+              "machine": "B"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "16",
+      "title": "Resident hotkey to window visible",
+      "group": "performance",
+      "spec": "§16.16",
+      "checks": [
+        {
+          "id": "AC-16-warm",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "17",
+          "test": "perf::hotkey_to_composited_frame_warm",
+          "assert": "Window alive: p95 under 30 ms. Measured 9 ms p50 / 12.6 ms p95. Amendment 16: the harness binds a chord first, because the resident shortcut ships unbound.",
+          "measurement": {
+            "kind": "latency",
+            "from": "shell global-shortcut callback entry",
+            "to": "a composited frame of the window",
+            "thermal": "warm",
+            "machines": ["A"],
+            "state": "window alive, chord bound by the harness"
+          },
+          "budget": [
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 30,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-16-cold",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "17",
+          "test": "perf::hotkey_to_composited_frame_cold",
+          "assert": "Window destroyed: p95 under 250 ms. Measured 134 ms p50 / 150 ms p95.",
+          "measurement": {
+            "kind": "latency",
+            "from": "shell global-shortcut callback entry",
+            "to": "a composited frame of the recreated window",
+            "thermal": "cold",
+            "machines": ["A"],
+            "state": "window destroyed under the 30-minute hybrid"
+          },
+          "budget": [
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 250,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "17",
+      "title": "Keystroke to refiltered grid at 1,000 projects",
+      "group": "performance",
+      "spec": "§16.17",
+      "checks": [
+        {
+          "id": "AC-17-refilter",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "13c",
+          "test": "perf::keystroke_to_presented_grid",
+          "assert": "p95 under 16 ms over a named query corpus, measured through to presentation. p99 was dropped in v2.1 because no harness can produce it honestly.",
+          "measurement": {
+            "kind": "latency",
+            "from": "renderer keydown",
+            "to": "the refiltered grid presented",
+            "thermal": "warm",
+            "machines": ["A"],
+            "state": "1,000 projects, client-side projection"
+          },
+          "budget": [
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 16,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "18",
+      "title": "Cache-validation pass over 1,000 repositories",
+      "group": "performance",
+      "spec": "§16.18",
+      "checks": [
+        {
+          "id": "AC-18-validate",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "09",
+          "test": "perf::cache_validation_pass",
+          "assert": "Under 5 s with every fingerprint unchanged and no J2 re-run. This is what v1's full T2 refresh under 5 s actually described.",
+          "measurement": {
+            "kind": "duration",
+            "from": "the scan.start response",
+            "to": "the scan/finished event",
+            "thermal": "warm",
+            "machines": ["A"],
+            "state": "1,000 repositories, all fingerprints unchanged, no J2 re-run"
+          },
+          "budget": [
+            {
+              "metric": "max",
+              "op": "<",
+              "value": 5000,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "19",
+      "title": "Forced J2 and J3 refresh over 1,000 repositories",
+      "group": "performance",
+      "spec": "§16.19",
+      "checks": [
+        {
+          "id": "AC-19-refresh",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "09",
+          "test": "perf::forced_j2_j3_refresh",
+          "assert": "75 to 120 s, reported with the Reference split, since deprioritising Reference repositories removes about 61% of the work from the critical path. Measured 584 ms per repository excluding the worst outlier.",
+          "measurement": {
+            "kind": "duration",
+            "from": "the scan.start response",
+            "to": "the scan/finished event",
+            "thermal": "warm",
+            "machines": ["A"],
+            "state": "1,000 repositories on local SSD, freshness reset, fully backgrounded"
+          },
+          "budget": [
+            {
+              "metric": "max",
+              "op": "<",
+              "value": 120000,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-19-interactive",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "13c",
+          "test": "perf::ui_interactive_during_refresh",
+          "assert": "The UI never blocks during the refresh: frame pacing during the run holds criterion 30's rate.",
+          "measurement": {
+            "kind": "rate",
+            "run": "wheel-driven scrolling through the shelf for at least 450 frames while the forced refresh runs",
+            "thermal": "warm",
+            "machines": ["A"]
+          },
+          "budget": [
+            {
+              "metric": "missedFraction",
+              "op": "<=",
+              "value": 0.01,
+              "unit": "fraction",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "20",
+      "title": "First full J4 history index over 1,000 repositories",
+      "group": "performance",
+      "spec": "§16.20",
+      "checks": [
+        {
+          "id": "AC-20-resumable",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_20_j4_resumes_from_its_cursor",
+          "assert": "J4 stopped mid-run resumes from project_job_state.cursor and produces the same commit-day set as an uninterrupted run.",
+          "reason": "§4.1's chunking is unreachable today and accepted for phase 1: the git backend exposes atomic calls with no yield point, so there is nowhere to write a cursor. The contract is built — a partial outcome, its application and the cursor column all exist — so closing it is additive. Overturn on measurement, not taste."
+        },
+        {
+          "id": "AC-20-coverage",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-20 the coverage indicator is visible while J4 is incomplete",
+          "assert": "A week outside J4's coverage is not computed, and the panel carries its coverage line."
+        },
+        {
+          "id": "AC-20-duration",
+          "status": "unmeasurable",
+          "runner": "none",
+          "reason": "The criterion states no deadline — 'minutes, resumable, with a visible coverage indicator. No deadline.' There is nothing to gate on, and a ceiling invented here would gate on a number the spec deliberately declined to state.",
+          "assert": "No duration budget exists for the first full J4 pass."
+        },
+        {
+          "id": "AC-20-large-history",
+          "status": "unmeasurable",
+          "runner": "none",
+          "reason": "The corpus tops out at the deep-history fixture, which reached 2,585 commits. About 30 ms fixed plus 0.02 ms per commit implies roughly 2 s at 100k commits and 20 s at 1M, but that is an extrapolation from a fit, not a measurement, and the harness records extrapolations as extrapolations.",
+          "assert": "The 100k and 1M commit cases are extrapolated and are never reported as measured."
+        }
+      ]
+    },
+    {
+      "id": "21",
+      "title": "Idle on Reference A",
+      "group": "performance",
+      "spec": "§16.21",
+      "checks": [
+        {
+          "id": "AC-21-frames",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "12c",
+          "test": "perf::idle_scheduled_frames",
+          "assert": "Amendment 21: zero scheduled frames while unfocused or hidden, and at most one flicker element while focused, sampled over at least 60 s in the defined idle state.",
+          "measurement": {
+            "kind": "rate",
+            "run": "at least 60 s with the shelf visible and focused, no project page open, no session open, no job running, and no pointer or keyboard input for at least 5 s",
+            "thermal": "warm",
+            "machines": ["A"]
+          },
+          "budget": [
+            {
+              "metric": "max",
+              "op": "<=",
+              "value": 1,
+              "unit": "flicker elements",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-21-flicker",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-21 the scheduled flicker obeys its eligibility and its parameters",
+          "assert": "At most one card in the viewport — mounted is not enough; 1 to 2 sub-dips of 15 to 25% of steady glow, each 80 to 140 ms, a deterministic Poisson process at about 9 s mean seeded per session, suspended while unfocused and resuming with no backlog. Eligibility is condition_signal in {neglected, abandoned}, location present, is_reference = 0. The design's 50% depth, fixed 130 ms hold and fixed 9,000 ms period are cut and must not be asserted."
+        },
+        {
+          "id": "AC-21-cpu",
+          "status": "unmeasurable",
+          "runner": "none",
+          "reason": "Amendment 21 marks the CPU figure provisional: the 0.014 to 0.017% in the probe results was taken before any scheduled frame existed, so it describes a different build. It is re-measured before the public beta rather than gated on now.",
+          "assert": "No idle CPU or GPU budget is gated in phase 1."
+        },
+        {
+          "id": "AC-21-audio",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "IDLE-AUDIO",
+          "reason": "Asserting the app is absent from the OS audio mixer requires an OS audio mixer; no hosted CI runner exposes one, and a stubbed audio device would assert the stub.",
+          "assert": "The app does not appear in the OS audio mixer while idle."
+        }
+      ]
+    },
+    {
+      "id": "22",
+      "title": "Storage against the 1,000-project fixture",
+      "group": "performance",
+      "spec": "§16.22",
+      "checks": [
+        {
+          "id": "AC-22-database",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_storage::ac_22_database_and_wal_under_100mb",
+          "assert": "Main database plus WAL under 100 MB against the fixture of 1,000 projects, 200,000 commit subjects and 100,000 events.",
+          "reason": "The file exists and holds the art half only. The other half was deliberately not stubbed, because a stub reports passed for a budget nothing measured, and the 1,000-project fixture belongs to the jobs plan and to no other. The file is shared; the owner is per-function.",
+          "measurement": {
+            "kind": "size",
+            "thermal": "n/a",
+            "machines": ["A"],
+            "state": "1,000 projects, 200,000 commit subjects, 100,000 events"
+          },
+          "budget": [
+            {
+              "metric": "bytes",
+              "op": "<",
+              "value": 104857600,
+              "unit": "bytes",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-22-art-cache",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_storage::ac_22_art_cache_under_50mb",
+          "assert": "Art cache under 50 MB against the re-derived total, with the card rendition asserted at 600x900 and the hero cache bounded, least-recently-opened evicted first. The GPU texture clause is phase 3 and is not tested. The 1,000-project total is projected from the worst of a 24-scene sample rather than rasterized in full, which the test states; the eviction order is observed over more opens than the cap.",
+          "measurement": {
+            "kind": "size",
+            "thermal": "n/a",
+            "machines": ["A"],
+            "state": "the worst of a 24-scene sample projected to 1,000 projects, with more hero opens than the cap"
+          },
+          "budget": [
+            {
+              "metric": "bytes",
+              "op": "<",
+              "value": 52428800,
+              "unit": "bytes",
+              "machine": "A"
+            },
+            {
+              "metric": "files",
+              "op": "<=",
+              "value": 200,
+              "unit": "hero files",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "30",
+      "title": "Scroll frame pacing",
+      "group": "performance",
+      "spec": "§16.30",
+      "checks": [
+        {
+          "id": "AC-30-pacing",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "13c",
+          "test": "perf::scroll_frame_pacing",
+          "assert": "At most 1% of frames miss a display refresh over a run of at least 450 frames, at whatever interval the display actually reports. This criterion carries a run definition and no event pair, because it gates a rate. Measured DOM-only on A: 0 of 450 missed.",
+          "measurement": {
+            "kind": "rate",
+            "run": "1,000 logical cards with 140 mounted, virtualized, driven by injected wheel events through the real compositor path and never by assigning scrollTop, over at least 450 frames, with the window alive, the shelf already painted and the virtualizer settled",
+            "thermal": "warm",
+            "machines": ["A"]
+          },
+          "budget": [
+            {
+              "metric": "missedFraction",
+              "op": "<=",
+              "value": 0.01,
+              "unit": "fraction",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "31",
+      "title": "Palette painted with its first page of rows",
+      "group": "performance",
+      "spec": "§16.31",
+      "checks": [
+        {
+          "id": "AC-31-warm",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "15",
+          "test": "perf::palette_warm",
+          "assert": "In-app palette chord with the window alive: p95 under 50 ms. A budget, not a measurement, and it must be measured before the bar is claimed.",
+          "measurement": {
+            "kind": "latency",
+            "from": "renderer keydown",
+            "to": "the palette painted with its first page of rows and the field focused",
+            "thermal": "warm",
+            "machines": ["A"],
+            "state": "window alive"
+          },
+          "budget": [
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 50,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-31-cold",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "15",
+          "test": "perf::palette_cold",
+          "assert": "The resident show shortcut with the window destroyed: p95 under 300 ms, against a chord the harness binds. This is the same press criterion 16 measures; 16's terminal event precedes 31's inside it.",
+          "measurement": {
+            "kind": "latency",
+            "from": "shell global-shortcut callback entry",
+            "to": "the palette painted with its first page of rows and the field focused",
+            "thermal": "cold",
+            "machines": ["A"],
+            "state": "window destroyed, chord bound by the harness"
+          },
+          "budget": [
+            {
+              "metric": "p95",
+              "op": "<",
+              "value": 300,
+              "unit": "ms",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

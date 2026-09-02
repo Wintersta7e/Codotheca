@@ -104,9 +104,21 @@ function checkProblems(entry, check, seenCheckIds, problems) {
   }
 }
 
+/**
+ * The measurement rule binds a check that states a **number** — one on the `perf` runner, or any
+ * check carrying a budget. A performance criterion also has clauses that assert behaviour and no
+ * figure (J4 resumes from its cursor; the flicker obeys its eligibility), and requiring an event
+ * pair from those would be satisfied by inventing one, which is the failure this rule exists to
+ * prevent rather than a use of it.
+ */
+function statesANumber(check) {
+  return check.runner === 'perf' || (check.budget ?? []).length > 0;
+}
+
 function performanceProblems(entry, check, problems) {
   const where = `${entry.id}/${String(check.id)}`;
   if (check.status === 'unmeasurable') return;
+  if (!statesANumber(check)) return;
   const m = check.measurement;
   if (m === undefined || m === null) {
     problems.push(`${where}: a performance check states a measurement or is marked unmeasurable`);
@@ -181,7 +193,9 @@ export function validateRegistry(registry) {
     }
     for (const check of entry.checks ?? []) {
       checkProblems(entry, check, seenCheckIds, problems);
-      if (entry.group === 'performance') performanceProblems(entry, check, problems);
+      if (entry.group === 'performance' || (check.budget ?? []).length > 0) {
+        performanceProblems(entry, check, problems);
+      }
     }
     if (id === '29' && (entry.checks ?? []).some((c) => c.status !== 'external')) {
       problems.push('29: every check on criterion 29 is external — it is not verified here');
