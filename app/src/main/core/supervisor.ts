@@ -13,6 +13,20 @@ import { type Inbound, type Outbound, parseOutbound } from './wire';
 
 export const RESTART_BACKOFF_MS = 2_000;
 export const CRASH_LOOP_WINDOW_MS = 60_000;
+/**
+ * How long an orderly shutdown may take before the core is killed. It is a bound, not a drain:
+ * the core cancels in-flight work and checkpoints rather than waiting for it, and a killed core
+ * loses no ledger because orphan recovery credits completed segments on the next launch. Waiting
+ * for in-flight git would mean tens of seconds — one repository in the measurement corpus spent
+ * 25.6 s inside a single `git status`.
+ */
+export const CORE_STOP_DEADLINE_MS = 8_000;
+
+/** Enough to carry a loader error and a short backtrace; not enough to be a second log. */
+export const STDERR_TAIL_LINES = 12;
+
+export type CoreStopResult = 'exited' | 'timed-out' | 'not-running';
+
 /** Reserved for the shell's own `app.hello_ack`; client-issued ids start at 1. */
 export const HELLO_REQUEST_ID = 0;
 
@@ -37,6 +51,8 @@ export class CoreSupervisor {
   private lastCrashAt: number | null = null;
   private state: CoreStatus = { kind: 'starting' };
   private stopping = false;
+  private readonly stderrLines: string[] = [];
+  private pendingStop: ((result: CoreStopResult) => void) | null = null;
   private readonly statusListeners: ((s: CoreStatus) => void)[] = [];
   private readonly frameListeners: ((f: Outbound) => void)[] = [];
   private readonly epochEndListeners: ((epoch: number) => void)[] = [];
@@ -82,7 +98,11 @@ export class CoreSupervisor {
       return;
     }
     this.child = child;
-    drainStderr(child.stderr, this.deps.log);
+    this.stderrLines.length = 0;
+    drainStderr(child.stderr, this.deps.log, (line) => {
+      this.stderrLines.push(line);
+      if (this.stderrLines.length > STDERR_TAIL_LINES) this.stderrLines.shift();
+    });
 
     const decoder = new FrameDecoder();
     child.stdout.on('data', (chunk: Buffer) => {
@@ -125,6 +145,46 @@ export class CoreSupervisor {
     this.child?.stdin.end();
   }
 
+  /** The last few stderr lines from the current or most recent core, oldest first. */
+  stderrTail(): string {
+    return this.stderrLines.join('\n');
+  }
+
+  /**
+   * §2.2 clause 3: the core exits on stdin EOF. `stop()` starts that shutdown; this one
+   * completes it, because the core's orderly-close path writes the session's close reason and a
+   * kill mid-write loses it. Resolves `'exited'` on an orderly exit, `'timed-out'` after killing
+   * a core that would not go, and `'not-running'` when there is none.
+   */
+  stopAndWait(deadlineMs: number = CORE_STOP_DEADLINE_MS): Promise<CoreStopResult> {
+    this.stopping = true;
+    const child = this.child;
+    if (child === null) return Promise.resolve('not-running');
+    return new Promise<CoreStopResult>((resolve) => {
+      let settled = false;
+      const settle = (result: CoreStopResult): void => {
+        if (settled) return;
+        settled = true;
+        this.pendingStop = null;
+        resolve(result);
+      };
+      this.pendingStop = () => {
+        settle('exited');
+      };
+      this.deps.schedule(() => {
+        if (settled) return;
+        this.deps.log.write(
+          'warn',
+          'shell',
+          `core did not exit within ${String(deadlineMs)} ms; killing it`,
+        );
+        child.kill();
+        settle('timed-out');
+      }, deadlineMs);
+      this.stop();
+    });
+  }
+
   private dispatch(frame: Outbound): void {
     if (frame.t === 'hello') {
       if (frame.protocol_version !== PROTOCOL_VERSION) {
@@ -160,6 +220,9 @@ export class CoreSupervisor {
   private onDeath(code: number | null, signal: NodeJS.Signals | null): void {
     const dead = this.epoch;
     this.child = null;
+    const pending = this.pendingStop;
+    this.pendingStop = null;
+    pending?.('exited');
     for (const fn of this.epochEndListeners) fn(dead);
     if (this.stopping || this.state.kind === 'failed') return;
     this.deps.log.write(
@@ -181,8 +244,10 @@ export class CoreSupervisor {
   }
 
   private fail(reason: CoreFailureReason, detail: string): void {
-    this.deps.log.write('error', 'shell', `core failed (${reason}): ${detail}`);
-    this.setStatus({ kind: 'failed', reason, detail, logPath: this.deps.log.path });
+    const tail = this.stderrTail();
+    const full = tail.length > 0 ? `${detail}\n${tail}` : detail;
+    this.deps.log.write('error', 'shell', `core failed (${reason}): ${full}`);
+    this.setStatus({ kind: 'failed', reason, detail: full, logPath: this.deps.log.path });
   }
 
   private setStatus(next: CoreStatus): void {

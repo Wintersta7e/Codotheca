@@ -79,17 +79,28 @@ export function openRollingLog(opts: RollingLogOptions): RollingLog {
  * however many chunks the pipe felt like, so a partial line is carried to the next chunk
  * rather than logged as two.
  */
-export function drainStderr(stream: NodeJS.ReadableStream, log: RollingLog): void {
+export function drainStderr(
+  stream: NodeJS.ReadableStream,
+  log: RollingLog,
+  onLine?: (line: string) => void,
+): void {
   let carry = '';
   stream.setEncoding('utf8');
   stream.on('data', (chunk: string | Buffer) => {
     carry += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
     const lines = carry.split('\n');
     carry = lines.pop() ?? '';
-    for (const line of lines) if (line.length > 0) log.write('info', 'core', line);
+    for (const line of lines) {
+      if (line.length === 0) continue;
+      log.write('info', 'core', line);
+      onLine?.(line);
+    }
   });
   stream.on('end', () => {
-    if (carry.length > 0) log.write('info', 'core', carry);
+    if (carry.length > 0) {
+      log.write('info', 'core', carry);
+      onLine?.(carry);
+    }
     carry = '';
   });
 }

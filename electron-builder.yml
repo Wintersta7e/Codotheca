@@ -2,7 +2,15 @@ appId: dev.codotheca.app
 productName: Codotheca
 copyright: Copyright © Codotheca contributors
 asar: true
-directories: { output: out, buildResources: build }
+# `app: .` is load-bearing. A directory named `app` holding a package.json is taken as the
+# application root unless this says otherwise, and then every glob below resolves inside it —
+# `app/out/**` becomes `app/app/out/**`, matches nothing, and the pack completes with an asar
+# that has no entry point. The root manifest is the one that carries `main`.
+directories: { app: ., output: dist, buildResources: build }
+
+# Asserts the core binary was staged for THIS target and restores its execute bit. An
+# extraResources filter that matches nothing ships nothing, without a word.
+afterPack: build/afterPack.cjs
 
 files:
   # electron-vite writes the three bundles here. The renderer's assets — including the
@@ -11,30 +19,63 @@ files:
   # OFL-1.1 texts for the three embedded families.
   - licenses/**
   - package.json
-extraResources:
-  # The Rust core ships alongside the shell and is spawned as a child process.
-  - from: core/target/release/
-    to: core
-    filter: ['codotheca-core', 'codotheca-core.exe']
+
+# The core is staged per platform and NOT at the top level. A platform's `extraResources`
+# concatenates with the top-level list rather than replacing it, so one top-level entry naming
+# both core file names put the Linux core inside the Windows installer — measured, 6.5 MB of a
+# binary that machine cannot run. With no top-level list there is nothing to concatenate, and
+# each pack carries exactly the core built for it.
 
 win:
-  target: [{ target: nsis, arch: [x64] }]
-  # A signed, stable install path also stops Defender rescanning on every launch.
+  target:
+    - { target: nsis, arch: [x64] }
+    - { target: portable, arch: [x64] }
+  # There is no certificate. The hook refuses to pretend the artifact is signed, and signs only
+  # when one is explicitly configured. `sign` and `publisherName` live under `signtoolOptions`
+  # from electron-builder 26 onward; at the top of `win:` they are a schema error whose message
+  # names only `configuration.win` and no key.
+  signtoolOptions:
+    sign: build/sign.cjs
+  # The Rust core ships alongside the shell and is spawned as a child process.
+  #
+  # §13: the WSL worker is a Linux ELF that ships inside the WINDOWS installer, versioned with
+  # the app, one per supported architecture. Staged by scripts/stage-worker.mjs, which validates
+  # the header and derives the architecture from it.
+  extraResources:
+    - from: core/target/release/
+      to: core
+      filter: ['codotheca-core.exe']
+    - from: build/worker/linux-x64/
+      to: worker/linux-x64
+      filter: ['codotheca-worker']
+    - from: build/worker/linux-arm64/
+      to: worker/linux-arm64
+      filter: ['codotheca-worker']
+
 nsis:
   oneClick: false
-  perMachine: false # per-user: no UAC prompt, and the updater can replace files
+  perMachine: false # per-user: no UAC prompt and no elevation
   allowToChangeInstallationDirectory: true
+  # §17 permits no destructive operation. The index, the notes and the session ledger are the
+  # only content no rescan can re-derive; an uninstall does not take them.
+  deleteAppDataOnUninstall: false
 
 linux:
+  # No worker here: it is carried by the Windows installer, because that is the side that has
+  # to reach into the subsystem. A Linux install already runs on the kernel it indexes.
+  extraResources:
+    - from: core/target/release/
+      to: core
+      filter: ['codotheca-core']
   category: Development
+  synopsis: A library for the code you have written
+  maintainer: Codotheca contributors <codotheca@invalid>
   target:
-    - { target: AppImage, arch: [x64] } # primary, and the ONLY self-updating artifact
+    - { target: AppImage, arch: [x64] }
     - { target: deb, arch: [x64] }
     - { target: rpm, arch: [x64] }
 
-# .deb/.rpm must never rewrite themselves — their updates belong to apt/dnf. The binary reads
-# this at runtime to decide whether the updater is available at all. Spec §14.
-extraMetadata:
-  updaterChannel: '${env.CODOTHECA_CHANNEL}'
-
-publish: [{ provider: github, releaseType: draft }]
+# There is no release feed and no update server, so nothing is published from a build and no
+# artifact carries update metadata. An installed system package never rewrites itself, and here
+# neither does anything else.
+publish: null

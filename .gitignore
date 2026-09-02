@@ -8,6 +8,8 @@ CLAUDE.md
 idea*.txt
 
 # build output
+# The two .cjs hooks in build/ are committed; a staged binary never is.
+build/worker/
 target/
 # The Windows-native build needs its own directory: WSL and Windows cargo both default to
 # target/debug and each invalidates the other's artifacts, which surfaces as a rustc crash

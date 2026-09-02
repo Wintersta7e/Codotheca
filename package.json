@@ -5,6 +5,7 @@
   "author": "Codotheca contributors",
   "private": true,
   "description": "A library for the code you have written",
+  "homepage": "https://codotheca.invalid",
   "license": "GPL-3.0-or-later",
   "workspaces": [
     "app",
@@ -28,7 +29,13 @@
     "lint:accelerators": "node scripts/check-shell-accelerators.mjs",
     "lint": "npm run lint:destructive && npm run lint:stdout && npm run lint:style && npm run lint:type && npm run lint:focus && npm run lint --workspace app && cargo clippy --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings",
     "typecheck": "npm run typecheck --workspace app",
-    "check:bundle": "node scripts/check-bundle.mjs && npm run lint:accelerators",
+    "check:bundle": "node scripts/check-bundle.mjs && npm run lint:accelerators && npm run lint:updater",
+    "lint:updater": "node scripts/check-no-updater.mjs",
+    "package:dir": "node scripts/package.mjs --dir",
+    "package:win": "node scripts/package.mjs --win",
+    "package:linux": "node scripts/package.mjs --linux",
+    "check:packaging": "node scripts/check-packaging.mjs",
+    "dist": "node scripts/build-dist.mjs",
     "prepare:win": "node scripts/win-prepare.mjs",
     "test": "npm run gen && npm run test --workspace protocol && cargo test --manifest-path core/Cargo.toml --features testkit && npm run test --workspace app",
     "fmt:check": "cargo fmt --manifest-path core/Cargo.toml -- --check && prettier --check \"app/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"protocol/**/*.mjs\""

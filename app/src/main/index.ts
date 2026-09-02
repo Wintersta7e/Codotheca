@@ -15,7 +15,7 @@ import {
   session,
   shell,
 } from 'electron';
-import { statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -46,6 +46,8 @@ import { openRollingLog } from './core/log';
 import { spawnCoreChild } from './core/spawn';
 import { CoreSupervisor } from './core/supervisor';
 import { resolveCoreBinary, resolveDataDir } from './paths';
+import { installQuitGate } from './quitGate';
+import { formatArtifactStamp, readArtifactStamp } from './update/artifact';
 import { registerFocusRelease } from './session/focus';
 import { logLevelStep, residentShortcutStep, staleTargets, verifyTargetsStep } from './joinSteps';
 import { launchJoinSteps } from './startup/launchSteps';
@@ -219,6 +221,22 @@ async function main(): Promise<void> {
     level: 'info',
   });
   logPath = log.path;
+
+  // §11.4: a diagnostics bundle has to name the build it came from, and neither half of that
+  // name is a compile-time constant — the version is written into the packaged manifest after
+  // the bundler has run, and which of the five artifacts is executing is only observable at
+  // run time. It goes to the rolling log, which is what the bundle collects.
+  log.write(
+    'info',
+    'shell',
+    `artifact: ${formatArtifactStamp(
+      readArtifactStamp({
+        appPath: app.getAppPath(),
+        readTextFile: (p) => readFileSync(p, 'utf8'),
+        artifact: { isPackaged: app.isPackaged, platform: process.platform, env: process.env },
+      }),
+    )}`,
+  );
 
   // After `app.ready`, before the window: the renderer cannot load `file:`, so a card that
   // paints before this is bound would 404 and fall back to the nameplate for its first frame.
@@ -462,9 +480,26 @@ async function main(): Promise<void> {
     if (win.isMinimized()) win.restore();
     win.focus();
   });
-  app.on('before-quit', () => {
-    shortcut.dispose();
-    supervisor.stop();
+  // The core must be fully gone, not merely told to go: its orderly-close path writes the
+  // session's close reason, and a kill mid-write loses it. `stop()` starts a shutdown;
+  // `stopAndWait()` completes one.
+  //
+  // The chord is released first and unconditionally. It is a process-wide OS binding, it costs
+  // nothing to drop, and a core shutdown that stalls must not leave it held — a stale global
+  // accelerator outlives the window it was meant to raise.
+  installQuitGate({
+    app,
+    steps: [
+      {
+        name: 'shortcut-release',
+        run: () => {
+          shortcut.dispose();
+          return Promise.resolve('released');
+        },
+      },
+      { name: 'core-shutdown', run: () => supervisor.stopAndWait() },
+    ],
+    log,
   });
 }
 
