@@ -59,7 +59,7 @@ export function resolveTargets(root, targets, name) {
         'a gate that scans nothing cannot fail and is not a gate',
     );
   }
-  return kept;
+  return kept.map((path) => ({ path, spec }));
 }
 
 export function loadForbidden(path) {
@@ -111,17 +111,71 @@ export function validateForbidden(rules, registry) {
   return problems;
 }
 
+const TEST_FILE = /\.test\.[cm]?[jt]sx?$/u;
+
+/**
+ * Blank a comment's characters while keeping every newline, so a reported line number is still
+ * the file's. The ban is on what a user reads: a comment naming the banned string — and every
+ * one of these rules has a doc comment somewhere explaining why the string is banned — must not
+ * trip the rule it documents. This is the same carve-out `check-destructive-tokens.mjs` makes,
+ * including its crude `[^:]` guard so `https://` in a string literal is not read as a comment.
+ */
+function stripComments(text, ext) {
+  const blank = (m) => m.replace(/[^\r\n]/gu, ' ');
+  if (ext === '.sql') return text.replace(/--[^\r\n]*/gu, blank);
+  if (ext === '.css') return text.replace(/\/\*[\s\S]*?\*\//gu, blank);
+  return text
+    .replace(/\/\*[\s\S]*?\*\//gu, blank)
+    .replace(/(^|[^:])\/\/[^\r\n]*/gu, (m, lead) => lead + ' '.repeat(m.length - lead.length));
+}
+
+/**
+ * Blank a Rust `#[cfg(test)]` module. A test that asserts a banned string must be able to name
+ * it — the same reason `.test.ts` files are skipped — and in this codebase the core's tests are
+ * inline rather than in their own file. Brace-counted rather than "to the end of the file",
+ * because a rule that silently stopped scanning at the first test module would under-scan every
+ * file that has code after one.
+ */
+function stripRustTestModules(text) {
+  let out = text;
+  for (;;) {
+    const at = out.indexOf('#[cfg(test)]');
+    if (at === -1) return out;
+    const open = out.indexOf('{', at);
+    if (open === -1) return `${out.slice(0, at)}${' '.repeat(out.length - at)}`;
+    let depth = 0;
+    let end = out.length;
+    for (let i = open; i < out.length; i += 1) {
+      if (out[i] === '{') depth += 1;
+      else if (out[i] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = i + 1;
+          break;
+        }
+      }
+    }
+    const blanked = out.slice(at, end).replace(/[^\r\n]/gu, ' ');
+    out = out.slice(0, at) + blanked + out.slice(end);
+  }
+}
+
 /**
  * Read the walked files, skipping one that vanished between the walk and the read **before**
  * counting it — the convention every gate under `scripts/` follows, so the printed count stays a
  * true count of files actually examined.
  */
-function readAll(root, files) {
+function readAll(root, walked) {
   const read = [];
-  for (const file of files) {
-    const text = readScannedFile(file);
-    if (text === null) continue;
-    read.push({ path: posix(relative(root, file)), text });
+  for (const { path, spec } of walked) {
+    const ext = extname(path);
+    if (spec.skipTests === true && TEST_FILE.test(path)) continue;
+    const raw = readScannedFile(path);
+    if (raw === null) continue;
+    let text = raw;
+    if (spec.stripComments === true) text = stripComments(text, ext);
+    if (spec.skipTests === true && ext === '.rs') text = stripRustTestModules(text);
+    read.push({ path: posix(relative(root, path)), text });
   }
   return read;
 }
