@@ -9,6 +9,7 @@
 pub mod backend;
 pub mod conn;
 pub mod deploy;
+pub mod dispatch;
 pub mod distros;
 pub mod mounts;
 pub mod path;
