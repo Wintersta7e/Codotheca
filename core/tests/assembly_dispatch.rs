@@ -241,6 +241,14 @@ mod corehandler {
             )),
             scan_store: Arc::new(codotheca_core::testing::MemScanStore::new()),
             firstrun: firstrun_env(dir),
+            // A real pump over the fake git: `shutdown` stops it, and a handler built with one
+            // that never started would not exercise that.
+            jobs: codotheca_core::assembly::jobs::JobPump::start(
+                Arc::clone(&index),
+                Arc::new(codotheca_core::testing::FakeGitBackend::new()),
+                Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+                Arc::clone(&events) as Arc<dyn EventSink>,
+            ),
             events: Arc::clone(&events),
             tz_offset_min: 0,
         });

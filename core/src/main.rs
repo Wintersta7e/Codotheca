@@ -152,6 +152,16 @@ fn main() -> ExitCode {
             }
         };
 
+    // §4.1a's pump. Started here because the shelf is uncomputed until it runs: the walk writes
+    // rows and nothing derives a fact about them without J1-J6. `CoreHandler` owns it and stops
+    // it in `shutdown`, before the publisher closes.
+    let jobs = codotheca_core::assembly::jobs::JobPump::start(
+        Arc::clone(&index),
+        Arc::clone(&git),
+        Arc::clone(&clock),
+        Arc::clone(&events) as Arc<dyn EventSink>,
+    );
+
     // The same `Arc<Mutex<Index>>` reached a different way, never a second connection. The
     // launcher and the scan context share this one store.
     let scan_store: Arc<dyn codotheca_core::scan::presence::ScanStore> = Arc::new(
@@ -187,6 +197,7 @@ fn main() -> ExitCode {
         )),
         scan_store: Arc::clone(&scan_store),
         firstrun: first_run_env(&args.data_dir),
+        jobs: jobs.clone(),
         events: Arc::clone(&events),
         // §8.1's era bands cut on the local calendar year, so this is a correctness input.
         tz_offset_min: local_utc_offset_min(),
