@@ -85,10 +85,29 @@ fn location(conn: &rusqlite::Connection, project_id: i64, loc: &Loc) {
     .expect("insert location");
 }
 
-fn ctx<'a>(index: &'a Index, sink: &'a CollectingSink) -> ProjectsCtx<'a> {
+/// §6's two collaborators, which the projection itself never uses: `load_project_rows` is the
+/// shelf's read and the shelf does **not** ask for freshness — a thousand rows would queue a
+/// thousand status jobs on every keystroke.
+struct Deps {
+    jobs: codotheca_core::jobs::NullJobSink,
+    mounts: codotheca_core::testing::FakeMountResolver,
+}
+
+impl Deps {
+    fn new() -> Deps {
+        Deps {
+            jobs: codotheca_core::jobs::NullJobSink,
+            mounts: codotheca_core::testing::FakeMountResolver::new(),
+        }
+    }
+}
+
+fn ctx<'a>(index: &'a Index, sink: &'a CollectingSink, deps: &'a Deps) -> ProjectsCtx<'a> {
     ProjectsCtx {
         index,
         events: sink,
+        jobs: &deps.jobs,
+        mounts: &deps.mounts,
         now: NOW,
         tz_offset_min: 0,
     }
@@ -106,7 +125,7 @@ fn a_never_observed_worktree_stays_null_on_the_wire_and_never_false() {
     project(index.conn(), 1, "p", NOW);
     location(index.conn(), 1, &Loc::new(10, "/a"));
     let sink = CollectingSink::default();
-    let rows = load_project_rows(&ctx(&index, &sink)).expect("load");
+    let rows = load_project_rows(&ctx(&index, &sink, &Deps::new())).expect("load");
 
     assert_eq!(rows.len(), 1);
     // §6: absence of dirty means "no changes as of T", never "clean".
@@ -158,7 +177,7 @@ fn dirty_is_the_or_across_present_locations_and_null_only_when_none_was_observed
         },
     );
     let sink = CollectingSink::default();
-    let rows = load_project_rows(&ctx(&index, &sink)).expect("load");
+    let rows = load_project_rows(&ctx(&index, &sink, &Deps::new())).expect("load");
     // §5.1: any present location dirty means the project is dirty.
     assert_eq!(rows[0].row.is_dirty, Some(true));
 
@@ -175,7 +194,7 @@ fn dirty_is_the_or_across_present_locations_and_null_only_when_none_was_observed
         },
     );
     location(index2.conn(), 1, &Loc::new(11, "/b"));
-    let rows2 = load_project_rows(&ctx(&index2, &sink)).expect("load");
+    let rows2 = load_project_rows(&ctx(&index2, &sink, &Deps::new())).expect("load");
     assert_eq!(rows2[0].row.is_dirty, Some(false));
 }
 
@@ -207,7 +226,7 @@ fn branch_and_ahead_come_from_the_primary_location_not_from_the_or() {
         },
     );
     let sink = CollectingSink::default();
-    let rows = load_project_rows(&ctx(&index, &sink)).expect("load");
+    let rows = load_project_rows(&ctx(&index, &sink, &Deps::new())).expect("load");
     assert_eq!(rows[0].row.branch.as_deref(), Some("main"));
     assert_eq!(rows[0].row.ahead, Some(2));
     assert_eq!(
@@ -237,7 +256,7 @@ fn an_all_offline_project_still_names_a_copy_and_reports_offline() {
         },
     );
     let sink = CollectingSink::default();
-    let rows = load_project_rows(&ctx(&index, &sink)).expect("load");
+    let rows = load_project_rows(&ctx(&index, &sink, &Deps::new())).expect("load");
     assert_eq!(rows[0].row.presence, Presence::Offline);
     assert!(rows[0].row.primary_location.is_some());
 }
@@ -252,7 +271,7 @@ fn a_merged_project_is_never_listed() {
         .execute("UPDATE project SET merged_into = 1 WHERE id = 2", [])
         .expect("merge");
     let sink = CollectingSink::default();
-    let rows = load_project_rows(&ctx(&index, &sink)).expect("load");
+    let rows = load_project_rows(&ctx(&index, &sink, &Deps::new())).expect("load");
     assert_eq!(
         rows.iter().map(|r| r.row.id.0).collect::<Vec<_>>(),
         vec![1_i64]
@@ -368,7 +387,7 @@ fn the_two_fields_the_jewel_is_derived_from_cross_as_stored_and_not_as_defaults(
         .expect("set seed and offset");
     location(index.conn(), 1, &Loc::new(10, "/a"));
     let sink = CollectingSink::default();
-    let rows = load_project_rows(&ctx(&index, &sink)).expect("load");
+    let rows = load_project_rows(&ctx(&index, &sink, &Deps::new())).expect("load");
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].row.seed_basename, "other-basename");

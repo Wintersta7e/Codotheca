@@ -385,6 +385,19 @@ pub fn handle_project_get(
         .find(|l| l.is_primary)
         .map(|l| l.location.id.0);
 
+    // §6: an opened page asks for a current worktree reading for the copy it is showing. What
+    // this command returns is still the **stored** reading with its own `as_of` — the job
+    // updates it and publishes a change. Absence of dirty stays "no changes as of T".
+    if let Some(location) = primary_location {
+        crate::jobs::visible::notify_visible(
+            conn,
+            ctx.mount,
+            ctx.jobs,
+            ProjectId(id),
+            crate::protocol::LocationId(location),
+        );
+    }
+
     Ok(ProjectDetail {
         resolved_target: resolved_target(
             conn,

@@ -299,6 +299,8 @@ impl CommandHandler for CoreHandler {
                 let ctx = crate::projects::ProjectsCtx {
                     index: &guard,
                     events: self.events.as_ref(),
+                    jobs: self.jobs.sink_ref(),
+                    mounts: self.mount.as_ref(),
                     now,
                     tz_offset_min: self.tz_offset_min,
                 };
@@ -310,6 +312,7 @@ impl CommandHandler for CoreHandler {
                     git: self.git.as_ref(),
                     mount: self.mount.as_ref(),
                     events: self.events.as_ref(),
+                    jobs: self.jobs.sink_ref(),
                     now,
                 };
                 crate::detail::dispatch_detail_command(&ctx, command, args)

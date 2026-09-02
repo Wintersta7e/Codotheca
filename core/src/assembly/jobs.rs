@@ -91,6 +91,12 @@ impl JobPump {
         Arc::clone(&self.runner) as Arc<dyn JobSink>
     }
 
+    /// The same seam borrowed rather than cloned, for a command context that lives one call.
+    #[must_use]
+    pub fn sink_ref(&self) -> &dyn JobSink {
+        self.runner.as_ref()
+    }
+
     /// Stop every worker and wait for it.
     ///
     /// Idempotent, and it must be: it runs from `CoreHandler::shutdown`, which the loop calls
