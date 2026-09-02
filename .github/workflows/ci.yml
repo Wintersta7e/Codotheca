@@ -71,7 +71,12 @@ jobs:
       - run: npm run typecheck
       - name: stdout discipline
         run: npm run lint:stdout
-      - run: npm run lint
+      # `npm run lint` ends in `cargo clippy` and this runner installs no Rust toolchain, so the
+      # step would have failed on CI's first ever run for a reason that has nothing to do with
+      # the shell. The core job already runs clippy with both flags on both platforms; this job
+      # runs the shell half only rather than installing a second toolchain to repeat it.
+      - name: shell lint
+        run: npm run lint:shell
       - run: npm run build:app
       - name: bundle guard
         # The bundle exists where packaging expects it, names no remote origin in its HTML or
@@ -100,3 +105,45 @@ jobs:
         # The app has never been launched by CI. One smoke test proves the driver, the build
         # output path and the display before plan 20 wires 67 criteria into this directory.
         run: xvfb-run --auto-servernum npm run test:e2e --workspace app
+
+  acceptance:
+    name: acceptance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: core }
+      - run: npm ci
+      - run: npm run gen
+      - run: npm run build:app
+      # The static gates and the suites write here; the gate reads the directory. It must exist
+      # before the first writer or every gate reports its result into nothing.
+      - name: results directory
+        run: mkdir -p acceptance/results
+      - name: harness unit tests
+        run: npm run test:harness
+      - name: the committed disposition table is in sync
+        run: npm run acceptance -- --dispositions && git diff --exit-code -- acceptance/DISPOSITIONS.md
+      - name: static gates
+        run: npm run check:forbidden && npm run check:callsites && npm run check:problems
+      - name: core suite
+        # `pipefail` is not the default for a `run:` block, and without it `tee` returns zero for
+        # a red suite: this repository has already shipped one gate that could not fail.
+        run: |
+          set -o pipefail
+          cargo test --manifest-path core/Cargo.toml --features testkit -- --nocapture \
+            | tee acceptance/results/cargo.txt
+      - name: app suite
+        run: npm run test --workspace app -- --reporter=json --outputFile=../acceptance/results/vitest.json
+      - name: gate
+        # Always, so a red suite still produces the report that names *which* checks failed.
+        # Deliberately no performance measurement: a hosted runner is neither reference machine
+        # and a budget checked on unknown hardware is a number nobody can act on.
+        if: always()
+        run: npm run acceptance
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: acceptance-report, path: acceptance/report.md }
