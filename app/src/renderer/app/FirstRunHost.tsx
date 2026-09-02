@@ -155,7 +155,7 @@ export function newestWorktreeObservation(rows: readonly ShelfRow[]): number | n
 
 export function FirstRunHost(props: FirstRunHostProps): ReactElement {
   const { deps, rows, tier, onOpenScanSummary, onShowMe } = props;
-  const { request, subscribe, pickRoot, nowMs, now } = deps;
+  const { request, subscribe, pickRoot, commitSuggestion, nowMs, now } = deps;
   // The same builder the shelf uses, so the turn's rungs cannot disagree with the grid's chips.
   const queryContext = useMemo(
     () => buildQueryContext({ rows, now: now(), firstRunCompletedAt: props.firstRunCompletedAt }),
@@ -218,19 +218,22 @@ export function FirstRunHost(props: FirstRunHostProps): ReactElement {
       nowMs,
       suggestRoots: (): Promise<readonly RootSuggestion[]> => request('roots.suggest', {}),
       /**
-       * GAP-16b-1, still open and **not filled here**. `roots.add` is privileged and takes
-       * `pathBytes`; §1.3 bars `RootSuggestion` from carrying bytes and §2.4 bars the renderer
-       * from originating a path, so committing a ticked suggestion needs a shell channel that
-       * resolves the display string against the core's own list — plan 16's `SuggestionCache`,
-       * which does not exist. Owner: plan 16 plus `protocol/schema/protocol.json`.
+       * GAP-16b-1, closed. `roots.add` is privileged and takes `pathBytes`; `RootSuggestion`
+       * carries none and §2.4 bars the renderer from originating a path, so the shell resolves
+       * the display string against what `roots.suggest` returned and adds the folder the core
+       * itself proposed.
        *
-       * It **resolves** rather than rejects on purpose: the gate awaits this inside `onDig`, so
-       * a rejection would leave `DIG IN` spinning for the rest of the session. A resolved
-       * `RootAdd` with no root added lets the beat advance and the scan report what it found,
-       * which is nothing under a root nobody added — visible, rather than a hung button.
+       * It still **resolves** rather than rejects: the gate awaits this inside `onDig`, so a
+       * rejection would leave `DIG IN` spinning for the rest of the session. A refusal — a
+       * string naming no suggestion, or two — comes back as no root added, which the scan then
+       * reports as nothing found under a root nobody added. Visible, rather than a hung button.
        */
-      commitSuggestion: (): Promise<RootAdd> =>
-        Promise.resolve({ root: null, refusedBecause: null, estimatedDirs: null }),
+      commitSuggestion: async (pathDisplay: string): Promise<RootAdd> => {
+        const reply = await commitSuggestion(pathDisplay);
+        return reply.kind === 'added'
+          ? reply.add
+          : { root: null, refusedBecause: null, estimatedDirs: null };
+      },
       pickRoot,
       startScan: async (): Promise<void> => {
         await request('scan.start', { full: true });
@@ -254,7 +257,17 @@ export function FirstRunHost(props: FirstRunHostProps): ReactElement {
       renderTurn,
       rootLine: rootLineOf(roots),
     }),
-    [nowMs, request, pickRoot, revealDeps, onOpenScanSummary, subscribe, renderTurn, roots],
+    [
+      nowMs,
+      request,
+      pickRoot,
+      commitSuggestion,
+      revealDeps,
+      onOpenScanSummary,
+      subscribe,
+      renderTurn,
+      roots,
+    ],
   );
 
   return (

@@ -19,6 +19,8 @@ import {
   IPC_REQUEST,
   IPC_REVEAL,
   IPC_SHORTCUT_STATE,
+  type CommitSuggestionReply,
+  IPC_COMMIT_SUGGESTION,
   type PickRootReply,
   type RelocateReply,
   type RevealTarget,
@@ -48,6 +50,10 @@ const bridge: CodothecaBridge = {
   // and its path never enters the sandbox — §2.4.
   pickRoot: (confirmLarge: boolean): Promise<PickRootReply> =>
     ipcRenderer.invoke(IPC_PICK_ROOT, { confirmLarge }) as Promise<PickRootReply>,
+  // A display string and nothing else. The shell resolves it against what `roots.suggest`
+  // returned and adds the folder the core itself proposed — the renderer never holds a path.
+  commitSuggestion: (pathDisplay: string): Promise<CommitSuggestionReply> =>
+    ipcRenderer.invoke(IPC_COMMIT_SUGGESTION, { pathDisplay }) as Promise<CommitSuggestionReply>,
   onCoreStatus: (cb: (status: unknown) => void): void => {
     ipcRenderer.on(IPC_CORE_STATUS, (_event, status: unknown) => {
       cb(status);

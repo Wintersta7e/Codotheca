@@ -58,6 +58,7 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
     now: () => nowSeconds,
     nowMs: () => nowSeconds * 1000,
     pickRoot: () => Promise.resolve({ kind: 'cancelled' }),
+    commitSuggestion: () => Promise.resolve({ kind: 'unknown' as const }),
     // The shell's own channels answer a `BridgeReply` envelope, not a bare value — the same
     // shape `registerShellServices` returns. A fake answering `null` would let a caller that
     // forgot to unwrap pass here and throw in the product.

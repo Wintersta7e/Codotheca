@@ -1,4 +1,10 @@
-import type { PickRootReply, RelocateReply, RevealTarget, ShortcutState } from './channels';
+import type {
+  CommitSuggestionReply,
+  PickRootReply,
+  RelocateReply,
+  RevealTarget,
+  ShortcutState,
+} from './channels';
 import type { EffectsTier, EffectsTierSource } from './effectsTier';
 
 /** The single `contextBridge` key. Nothing else is exposed on `window`. */
@@ -58,6 +64,14 @@ export interface CodothecaBridge {
    * `confirmLarge` is the caller having already accepted a large-directory estimate.
    */
   pickRoot(confirmLarge: boolean): Promise<PickRootReply>;
+  /**
+   * Commit a **suggested** root — GAP-16b-1.
+   *
+   * The renderer holds only the display string `roots.suggest` returned; the shell resolves it
+   * against that same list and calls `roots.add` with the path the core produced. A string that
+   * names no suggestion, or two, is refused rather than guessed.
+   */
+  commitSuggestion(pathDisplay: string): Promise<CommitSuggestionReply>;
   onCoreStatus(cb: (status: unknown) => void): void;
   /** One batch per frame, never one message per event. */
   onCoreEvents(cb: (batch: unknown) => void): void;

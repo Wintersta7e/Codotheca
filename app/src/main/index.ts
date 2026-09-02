@@ -22,6 +22,7 @@ import {
   type CommandName,
   PROTOCOL_VERSION,
   type RootAdd,
+  type RootSuggestion,
   type Topic,
 } from '../generated/protocol';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
@@ -39,7 +40,7 @@ import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
 import { registerRelocateDialog } from './dialogs/relocate';
-import { registerRootPicker } from './rootPicker';
+import { registerRootPicker, registerSuggestionCommit, SuggestionCache } from './rootPicker';
 import { CoreClient } from './core/client';
 import { FORCE_OFFERED_AFTER_MS, LOCK_WAIT_POLL_MS, waitForCoreLock } from './core/instanceLock';
 import { openRollingLog } from './core/log';
@@ -378,6 +379,17 @@ async function main(): Promise<void> {
         buttonLabel: 'Look here',
       }),
     addRoot: (args) => request('roots.add', args) as Promise<RootAdd>,
+  });
+
+  // GAP-16b-1: the other half of §10.1b. Ticking only *suggested* roots and pressing `DIG IN`
+  // used to add nothing at all, because the display string had nowhere to resolve against.
+  registerSuggestionCommit({
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
+    },
+    suggestRoots: () => request('roots.suggest', {}) as Promise<RootSuggestion[]>,
+    addRoot: (args) => request('roots.add', args) as Promise<RootAdd>,
+    cache: new SuggestionCache(),
   });
 
   // §11.3 and §11.5: reveal, the index location, the paint-failure reset and the executable

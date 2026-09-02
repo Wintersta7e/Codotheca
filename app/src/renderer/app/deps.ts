@@ -11,7 +11,12 @@
  */
 import { createContext, useContext } from 'react';
 
-import type { PickRootReply, RevealTarget, ShortcutState } from '../../shared/channels';
+import type {
+  CommitSuggestionReply,
+  PickRootReply,
+  RevealTarget,
+  ShortcutState,
+} from '../../shared/channels';
 import type { CoreStatus } from '../../shared/coreStatus';
 import type { EffectsTier, EffectsTierSource } from '../../shared/effectsTier';
 import { call } from '../core/call';
@@ -65,6 +70,8 @@ export interface AppDeps extends ProjectPageDeps {
   readonly nowMs: () => number;
   /** §2.4: the shell owns the folder dialog. A flag goes out; no path comes back in. */
   readonly pickRoot: (confirmLarge: boolean) => Promise<PickRootReply>;
+  /** GAP-16b-1: commit a *suggested* root, which carries a display string and never a path. */
+  readonly commitSuggestion: (pathDisplay: string) => Promise<CommitSuggestionReply>;
   readonly pickExecutable: (scope: unknown) => Promise<unknown>;
   /** Two named targets, never a path. */
   readonly reveal: (target: RevealTarget) => Promise<unknown>;
@@ -105,6 +112,7 @@ export function createDefaultAppDeps(): AppDeps {
     now: () => Math.floor(nowMs() / 1000),
     nowMs,
     pickRoot: (confirmLarge) => bridge.pickRoot(confirmLarge),
+    commitSuggestion: (pathDisplay) => bridge.commitSuggestion(pathDisplay),
     pickExecutable: (scope) => bridge.pickExecutable(scope),
     reveal: (target) => bridge.reveal(target),
     indexLocation: () => bridge.indexLocation(),
