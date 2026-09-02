@@ -518,7 +518,12 @@ mod tests {
             } => {
                 assert_eq!(repos, 1);
                 assert!(git_missing);
+                // See `wsl::serve`'s walk test: the table maps Linux paths, so on a Windows
+                // host the temporary root resolves to the honest `wsl:up:?` and the store key
+                // can only be asserted where the root is a path the table can cover.
+                #[cfg(unix)]
                 assert!(store_keys.contains("wsl:up:/"));
+                assert_eq!(store_keys.len(), 1, "one root, one store");
             }
             ref other @ DistroOutcome::Unreachable { .. } => panic!("outcome was {other:?}"),
         }

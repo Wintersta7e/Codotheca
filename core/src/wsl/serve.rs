@@ -580,8 +580,13 @@ mod tests {
             "expected exactly one repository, got {frames:?}"
         );
         assert!(found[0].work_dir.ends_with('p'));
-        assert_eq!(found[0].store_key, "wsl:alpha:/");
         assert_eq!(found[0].kind, "worktree");
+        // The mount table maps *Linux* paths, because the worker only ever runs inside a distro.
+        // On a Windows host the temporary root is `C:\…`, which no distro mount covers, so the
+        // key is honestly `wsl:alpha:?` — the "not determined" answer, not a wrong one. The
+        // resolved key can only be asserted where the root is a path the table can cover.
+        #[cfg(unix)]
+        assert_eq!(found[0].store_key, "wsl:alpha:/");
 
         match frames.last().expect("has a last frame") {
             WorkerOutbound::Reply { id, ok } => {
