@@ -1087,6 +1087,486 @@
           ]
         }
       ]
+    },
+    {
+      "id": "32",
+      "title": "The palette hotkey wins over the query field",
+      "group": "surfaces",
+      "spec": "§16.32",
+      "checks": [
+        {
+          "id": "AC-32-preventdefault",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15",
+          "test": "AC-32 the hotkey opens the palette and never reaches the query field",
+          "assert": "A press anywhere in the app, including while the query field holds focus, opens the palette, calls preventDefault, and the keystroke never reaches the field. A press while another application has focus is criterion 61's, not this one's."
+        }
+      ]
+    },
+    {
+      "id": "33",
+      "title": "Quick switch keys, order, empty state and footer",
+      "group": "surfaces",
+      "spec": "§16.33",
+      "checks": [
+        {
+          "id": "AC-33-keys",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15",
+          "test": "AC-33 arrows move, Enter launches, Shift+Enter opens the page, Esc restores focus",
+          "assert": "Order is most-recently-touched first; no match renders 'No project matches that.'; Esc returns focus to whatever held it."
+        },
+        {
+          "id": "AC-33-glyphs",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c33-keycap-glyphs",
+          "assert": "The glyphs for Option and Space appear nowhere in the built renderer; the two glyphs the target keyboards do print are permitted only on quick switch's footer and its selected row."
+        }
+      ]
+    },
+    {
+      "id": "34",
+      "title": "The page plays once and stays put",
+      "group": "surfaces",
+      "spec": "§16.34",
+      "checks": [
+        {
+          "id": "AC-34-once",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-34 one animationstart per named animation per open",
+          "assert": "Opening the page fires each named animation exactly once, even when a transient state clears and re-renders."
+        }
+      ]
+    },
+    {
+      "id": "35",
+      "title": "The page unmounts the shelf and stops the session tick",
+      "group": "surfaces",
+      "spec": "§16.35",
+      "checks": [
+        {
+          "id": "AC-35-unmount",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-35 zero shelf cards mounted and the 4-second tick stopped",
+          "assert": "With the page mounted the shelf has no mounted cards and the 4-second session tick is not scheduled."
+        }
+      ]
+    },
+    {
+      "id": "36",
+      "title": "Esc on the page restores the shelf exactly",
+      "group": "surfaces",
+      "spec": "§16.36",
+      "checks": [
+        {
+          "id": "AC-36-return",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-36 Esc repaints the shelf with the originating section expanded and the tile in view",
+          "assert": "The originating section is expanded, the originating tile is selected and scrolled into view."
+        }
+      ]
+    },
+    {
+      "id": "37",
+      "title": "The tab strip is OVERVIEW and ACTIVITY and nothing else",
+      "group": "surfaces",
+      "spec": "§16.37",
+      "checks": [
+        {
+          "id": "AC-37-tabs",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-37 the tab strip has exactly two tabs and no path reaches a third",
+          "assert": "The rendered tab strip has exactly two tabs, and no key, route or state path mounts a Health or Remote panel."
+        }
+      ]
+    },
+    {
+      "id": "38",
+      "title": "The Locations footer, its association wording and its row states",
+      "group": "surfaces",
+      "spec": "§16.38",
+      "checks": [
+        {
+          "id": "AC-38-footer",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-38 the footer matches the association kind and exactly one row is PRIMARY",
+          "assert": "One location renders no footer; two or more render the wording for the association's association_kind, with exactly one row plated PRIMARY and every other tagged COPY."
+        },
+        {
+          "id": "AC-38-states",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-38 a row's state word comes from the whole table, not the present row of it",
+          "assert": "A present row reads SAME COMMIT, DIFFERENT COMMIT or NOT COMPARED; offline, missing and unscanned rows read OFFLINE, MISSING and NOT SCANNED. No row carries a CURRENT marker."
+        },
+        {
+          "id": "AC-38-superseded",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c38-superseded-footer",
+          "assert": "The superseded root-commit footer, quoted byte-for-byte with its ellipsis, appears nowhere in the built renderer — it asserts the inference a shared root commit cannot support."
+        }
+      ]
+    },
+    {
+      "id": "39",
+      "title": "A copy on a different commit, and the directional claims that are forbidden",
+      "group": "surfaces",
+      "spec": "§16.39",
+      "checks": [
+        {
+          "id": "AC-39-note",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-39 a differing head carries the note and a NULL head reads NOT COMPARED",
+          "assert": "A copy whose stored head_oid differs from the primary's carries the verbatim note on the warn edge; either head NULL reads NOT COMPARED and carries no note; an offline location offers RELOCATE and nothing else with its verbatim sentence."
+        },
+        {
+          "id": "AC-39-no-direction",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c39-directional-claims",
+          "assert": "Phase 1 compares copies by identity, never by direction: the diverged wording, the behind-primary wording and the sentence about commits the primary does not have appear in no rendered string."
+        }
+      ]
+    },
+    {
+      "id": "40",
+      "title": "Activity draws two lanes and never a count",
+      "group": "surfaces",
+      "spec": "§16.40",
+      "checks": [
+        {
+          "id": "AC-40-lanes",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-40 the two lanes share a slot, each with its own baseline and normalisation",
+          "assert": "Adjacent sub-columns, never stacked and never summed; a fixture with commit-days and no sessions renders an empty session lane, not one merged bar."
+        },
+        {
+          "id": "AC-40-legend",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c40-commit-counts",
+          "assert": "The superseded legend naming commits by the user appears nowhere; nothing in the schema stores a commit count and never-reward-volume forbids acquiring one."
+        }
+      ]
+    },
+    {
+      "id": "41",
+      "title": "A week outside J4's coverage is not computed",
+      "group": "surfaces",
+      "spec": "§16.41",
+      "checks": [
+        {
+          "id": "AC-41-uncovered",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-41 an uncovered week renders as not computed, never as a zero-height bar",
+          "assert": "A week outside coverage renders the not-computed treatment and the panel carries its coverage line."
+        }
+      ]
+    },
+    {
+      "id": "42",
+      "title": "A README renders as literal text on both surfaces",
+      "group": "surfaces",
+      "spec": "§16.42",
+      "checks": [
+        {
+          "id": "AC-42-peek",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-42 markup in a README renders as literal text in Peek",
+          "assert": "Script tags, image tags and link syntax render as text — no markup, no fetch, no navigation."
+        },
+        {
+          "id": "AC-42-page",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-42 markup in a README renders as literal text on the project page",
+          "assert": "Amendment 10 extends the plain-text rule from Peek to the project page's README panel."
+        }
+      ]
+    },
+    {
+      "id": "43",
+      "title": "The scratchpad persists, is project-scoped and reconciles on merge",
+      "group": "surfaces",
+      "spec": "§16.43",
+      "checks": [
+        {
+          "id": "AC-43-note",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-43 the scratchpad persists, scopes and reconciles",
+          "assert": "It survives a relaunch, is scoped to the project, reconciles on merge by the note rule, and reads its verbatim empty state when unset."
+        }
+      ]
+    },
+    {
+      "id": "44",
+      "title": "Nothing on the page mutates disk",
+      "group": "surfaces",
+      "spec": "§16.44",
+      "checks": [
+        {
+          "id": "AC-44-no-destruction",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-44 no surface offers a destructive control and RELOCATE rewrites one row",
+          "assert": "No Remove, no clean, no push, no checkout on any surface; RELOCATE rewrites the location row's path only, verified by hashing the location's tree before and after; setTrusted and requeue are read-only with respect to the filesystem and git config."
+        },
+        {
+          "id": "AC-44-token",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c44-forget-token",
+          "assert": "The forget token appears in no rendered string, no accessible name and no command name anywhere in the built bundle or in the protocol schema."
+        },
+        {
+          "id": "AC-44-no-destructive-git",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:no-destructive-git",
+          "assert": "No destructive git subcommand appears as an argv literal anywhere in the core — push, clean, checkout, reset, fetch, pull, gc, prune and restore, fetch included because a directional claim would need one."
+        }
+      ]
+    },
+    {
+      "id": "45a",
+      "title": "The grid card and the hero state the absence",
+      "group": "surfaces",
+      "spec": "§16.45a",
+      "checks": [
+        {
+          "id": "AC-45a-uncomputed",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-45a the uncomputed band draws its frame, gap, glyph and label",
+          "assert": "Frame in the unknown token with the top-edge gap at the stated geometry, an em-dash rank glyph in the unknown ink, and the label in text-3. Never a ladder colour, never a lit tick row, never a zero over ten."
+        }
+      ]
+    },
+    {
+      "id": "45b",
+      "title": "Every other completion readout renders no element at all",
+      "group": "surfaces",
+      "spec": "§16.45b",
+      "checks": [
+        {
+          "id": "AC-45b-empty",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-45b the rank and score columns, the palette slot, the hero band and Peek contain no node",
+          "assert": "Assert the emptiness of the node, not the absence of a digit — a dash placed there passes a digits-only check."
+        }
+      ]
+    },
+    {
+      "id": "45c",
+      "title": "The layout survives the emptiness",
+      "group": "surfaces",
+      "spec": "§16.45c",
+      "checks": [
+        {
+          "id": "AC-45c-layout",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-45c the empty list columns keep their widths and the header labels only the middle four",
+          "assert": "Columns 2 and 7 still occupy their stated widths with the rows aligned; the header labels columns 3 to 6 only; column 6's em dash is a different value and stays."
+        }
+      ]
+    },
+    {
+      "id": "46",
+      "title": "Every colour and every motion value resolves to a declared one",
+      "group": "surfaces",
+      "spec": "§16.46",
+      "checks": [
+        {
+          "id": "AC-46-colour",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c46-colour-literals",
+          "assert": "The built stylesheet contains none of the four snapped grounds, none of the additional off-token ground, none of the off-token greys other than the condition-dot fills, and not the dropped blue. The language palette and everything the rasterizer computes are exempt by name and never reach a stylesheet."
+        },
+        {
+          "id": "AC-46-motion",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c46-motion-values",
+          "assert": "The built stylesheet declares no duration literal and no timing function that the motion tables or a named single-effect row does not carry."
+        }
+      ]
+    },
+    {
+      "id": "47",
+      "title": "Decision text clears the floor against its own ancestor",
+      "group": "surfaces",
+      "spec": "§16.47",
+      "checks": [
+        {
+          "id": "AC-47-contrast",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12",
+          "test": "AC-47 every decision string clears 5.9:1 against its nearest painted ancestor",
+          "assert": "The number, not a token's ratio. A row that can be hovered onto the hover fill is the fixture, because text-3 is legal on four grounds and not on that one."
+        },
+        {
+          "id": "AC-47-ornament",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12",
+          "test": "AC-47 no element that is the only rendering of a fact resolves to text-4 or text-5",
+          "assert": "A rule, not a list of ten elements; text-5 appears only on keyboard hints at 8px or larger with at least .12em tracking."
+        }
+      ]
+    },
+    {
+      "id": "48a",
+      "title": "The grid tile's reserved bands",
+      "group": "surfaces",
+      "spec": "§16.48a",
+      "checks": [
+        {
+          "id": "AC-48a-bands",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-48a no element on the grid tile occupies two bands",
+          "assert": "The tile's own band table, read alone: furniture, hairline, rank band, chip and vent and jewel band, then the scrim and the name. Four separate overlap bugs came from ignoring these."
+        }
+      ]
+    },
+    {
+      "id": "48b",
+      "title": "The hero's reserved bands",
+      "group": "surfaces",
+      "spec": "§16.48b",
+      "checks": [
+        {
+          "id": "AC-48b-bands",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-48b the hero uses its own band table, not the tile's",
+          "assert": "The hero is not the tile at hero scale: applying the tile's allocation moves the jewel stripe out of the band it closes. The first-run scan tile is outside both tables."
+        }
+      ]
+    },
+    {
+      "id": "49",
+      "title": "Chamfer geometry and the one permitted circle",
+      "group": "surfaces",
+      "spec": "§16.49",
+      "checks": [
+        {
+          "id": "AC-49-chamfer",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-49 the chamfer is cut by clip-path and radius elsewhere is 0 to 3px",
+          "assert": "The card and hero chamfer tokens, cut over a 1px tier-filled parent with the art inset by 1px; the condition dot's full circle is the one exception."
+        }
+      ]
+    },
+    {
+      "id": "50",
+      "title": "Effects tier off",
+      "group": "surfaces",
+      "spec": "§16.50",
+      "checks": [
+        {
+          "id": "AC-50-zero-animation",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12",
+          "test": "AC-50 tier off runs zero animations and schedules zero frames",
+          "assert": "At reduced and off the scheduled flicker is absent — steady glow, no dip. Hazard tape renders identically and the pin mark is a static silhouette no tier deletes. Verified by resolving a style on a real element under each tier, never by matching the stylesheet's text: the clamp selects nine class names exactly and a tenth name makes it select nothing."
+        },
+        {
+          "id": "AC-50-readability",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "EFFECTS-OFF-READABILITY",
+          "reason": "The criterion is marked half in the spec: whether condition, tier, rank and safety remain readable from static form alone is a human reading, and absence of a condition dot is a correct static reading rather than a failure.",
+          "assert": "Condition, tier, rank and safety are readable at tier off."
+        }
+      ]
+    },
+    {
+      "id": "51",
+      "title": "Copy voice",
+      "group": "surfaces",
+      "spec": "§16.51",
+      "checks": [
+        {
+          "id": "AC-51-voice",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "COPY-VOICE",
+          "reason": "The spec marks this criterion as not automatable: no second-person accusation, no editorialised figure and nothing that congratulates volume are judgements about prose, and a machine reading them would be asserting a keyword list rather than the rule.",
+          "assert": "Every user-visible string passes the copy-voice ruling; roast copy is gated by criterion 54 instead."
+        }
+      ]
+    },
+    {
+      "id": "52",
+      "title": "Saved collections, their degraded states and their removal",
+      "group": "surfaces",
+      "spec": "§16.52",
+      "checks": [
+        {
+          "id": "AC-52-save",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15b",
+          "test": "AC-52 a saved collection re-lights by AST comparison and adds no view_state key",
+          "assert": "It appears as a chip after the four built-ins and adds no key to view_state."
+        },
+        {
+          "id": "AC-52-degraded",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15b",
+          "test": "AC-52 a stored query whose grammar moved on renders degraded or broken",
+          "assert": "Surviving terms run with dropped terms struck and the count attributed to what ran, or no number at all and not activatable — never an empty grid and never a zero."
+        },
+        {
+          "id": "AC-52-remove",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "15",
+          "test": "acceptance_collections::ac_52_remove_deletes_only_collection_rows",
+          "assert": "collections.remove deletes the collection and collection_member rows only, verified by hashing project, location, session and xp_events before and after."
+        }
+      ]
     }
   ]
 }

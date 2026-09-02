@@ -162,6 +162,24 @@ test('the honesty criteria each carry at least one automated check today', () =>
   }
 });
 
+test('45 and 48 exist only in lettered form and 46 does not', () => {
+  const registry = loadRegistry(registryPath);
+  const ids = new Set(registry.criteria.map((c) => c.id));
+  for (const id of ['45a', '45b', '45c', '48a', '48b']) assert.ok(ids.has(id), `${id} is missing`);
+  for (const id of ['45', '48', '46a', '46b']) assert.ok(!ids.has(id), `${id} must not exist`);
+});
+
+test('the greppable halves are automated static gates', () => {
+  const registry = loadRegistry(registryPath);
+  for (const id of ['38', '39', '40', '44', '46']) {
+    const entry = registry.criteria.find((c) => c.id === id);
+    assert.ok(
+      entry.checks.some((k) => k.status === 'automated' && k.runner === 'script'),
+      `criterion ${id} has no static gate`,
+    );
+  }
+});
+
 test('a budget anywhere in the registry names the measurement it is a budget for', () => {
   const registry = loadRegistry(registryPath);
   for (const entry of registry.criteria) {
