@@ -318,3 +318,27 @@ fn the_page_runs_no_git_at_all() {
         rig.git.calls()
     );
 }
+
+/// §6: an opened page asks for a current worktree reading for the copy it is showing, and asks
+/// **once**.
+///
+/// `on_visible` had no caller anywhere in the product, which is what made "no changes as of T"
+/// a stale answer rather than a current one.
+#[test]
+fn opening_a_page_asks_for_one_fresh_reading_of_the_copy_it_shows() {
+    let rig = rig_with_nothing_computed();
+    rig.location(1, 1, "/srv/work/thing", "present", Some("main"), None, None);
+
+    let detail = handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("get");
+    assert_eq!(
+        rig.jobs.visible.lock().expect("lock").clone(),
+        vec![(1, 1)],
+        "the page asks for the primary copy, once"
+    );
+
+    // The answer is the stored reading, not a claim about now: this project has had no job run
+    // against it, so its worktree is *not observed* and must say so rather than reading clean.
+    let v = serde_json::to_value(&detail).expect("encode");
+    assert_eq!(v["row"]["isDirty"], json!(null));
+    assert_eq!(v["row"]["worktreeObservedAt"], json!(null));
+}

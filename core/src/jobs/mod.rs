@@ -10,6 +10,7 @@ pub mod j6_content;
 pub mod queue;
 pub mod scheduler;
 pub mod state;
+pub mod visible;
 
 use std::time::Duration;
 

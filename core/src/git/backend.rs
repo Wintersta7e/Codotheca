@@ -96,6 +96,16 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
         paths: &[Vec<u8>],
         ctx: &JobContext<'_>,
     ) -> GitResult<std::collections::BTreeMap<Vec<u8>, String>>;
+    /// §1.1's remote evidence: `(remote name, raw url)` for every configured remote.
+    ///
+    /// The scanner's, like `submodule_gitlinks`: `IdentityProbe` needs it and the scanner may not
+    /// spawn git outside this seam (§15.2). An empty list is the answer *this repository has no
+    /// remote* — §1.1's weak row keys on a NULL `remote_key` — and never a failure.
+    fn remote_urls(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<(String, String)>>;
     /// J4: the root set, with dates.
     fn root_commits(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>>;
     /// J1.5: the full committer walk.
@@ -227,6 +237,28 @@ impl GitBackend for SystemGit {
     ) -> GitResult<std::collections::BTreeMap<Vec<u8>, String>> {
         self.with_slot(repo, ctx, || {
             submodule_gitlinks(&self.exec, repo, paths, ctx.limits(), ctx.cancel)
+        })
+    }
+
+    /// The argv and the parser are `identity::remote`'s and are **not** re-spelled here. §3.2's
+    /// neutralising options and criterion 63's `-c safe.directory=<exact-path>` are asserted
+    /// against that builder, and a second argv would escape the assertion.
+    fn remote_urls(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<(String, String)>> {
+        self.with_slot(repo, ctx, || {
+            let tokens = crate::identity::remote::remote_urls_argv();
+            let argv: Vec<&std::ffi::OsStr> =
+                tokens.iter().map(|t| std::ffi::OsStr::new(*t)).collect();
+            // `--get-regexp` exits **1 with empty output** when the pattern matches nothing.
+            // That is "no remotes", not a failure: classifying it as one would make every
+            // local-only repository unidentifiable.
+            let out = self
+                .exec
+                .run(repo, &argv, ctx.limits().tolerating(1), ctx.cancel)?;
+            Ok(crate::identity::remote::parse_remote_urls(&out.stdout))
         })
     }
 

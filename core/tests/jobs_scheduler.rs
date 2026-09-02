@@ -280,3 +280,90 @@ fn a_missing_repository_fails_rather_than_looping() {
     rig.runner.join();
     assert!(settled, "a missing repository never settled");
 }
+
+// ---------------------------------------------------------------------------
+// The pump the composition root builds. Before it existed, `JobRunner::new` was
+// called from this file and nowhere else, so J1–J6 never ran in the product.
+// ---------------------------------------------------------------------------
+
+/// The scanner's hand-off, driven through the pump the composition root actually builds — not
+/// through a runner a test assembled. `on_location_indexed` is the seam a walk reaches; a pump
+/// that queued nothing from it would leave the shelf uncomputed and every test here still green.
+#[test]
+fn the_pump_the_composition_root_builds_drains_a_handed_off_location() {
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"one\n");
+    repo.git(&["add", "a.txt"]);
+    repo.commit("first");
+
+    let dir = tempfile::tempdir().unwrap();
+    let index = Arc::new(Mutex::new(Index::open_at(dir.path(), 0).unwrap()));
+    let (project, location) = {
+        let guard = index.lock().unwrap();
+        let conn = guard.conn();
+        conn.execute(
+            "INSERT INTO project (name, seed_basename, created_at, updated_at)
+             VALUES ('p', 'p', 0, 0)",
+            [],
+        )
+        .unwrap();
+        let project = ProjectId(conn.last_insert_rowid());
+        let path = repo.path().to_string_lossy().into_owned();
+        conn.execute(
+            "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                   store_key, presence, repo_kind)
+             VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree')",
+            rusqlite::params![project.0, path.as_bytes(), path],
+        )
+        .unwrap();
+        (project, LocationId(conn.last_insert_rowid()))
+    };
+
+    let events = Arc::new(RecordingSink::default());
+    let pump = codotheca_core::assembly::jobs::JobPump::start(
+        Arc::clone(&index),
+        Arc::new(SystemGit::new(
+            Arc::new(repo.exec()),
+            Arc::new(GitSlots::new(4)),
+            Arc::new(SystemClock::new()),
+        )),
+        Arc::new(SystemClock::new()),
+        Arc::clone(&events) as Arc<dyn EventSink>,
+    );
+
+    pump.sink()
+        .on_location_indexed(project, location, "store", StoreClass::Local);
+
+    let observed = wait_for(Duration::from_secs(30), || {
+        let guard = index.lock().unwrap();
+        let branch: Option<String> = guard
+            .conn()
+            .query_row(
+                "SELECT branch FROM location WHERE id = ?1",
+                [location.0],
+                |r| r.get(0),
+            )
+            .unwrap();
+        drop(guard);
+        branch.is_some()
+    });
+
+    // The failure this is most likely to ship is a hang, not a wrong value: a pool nobody stops
+    // leaves workers writing to SQLite while the process is already exiting.
+    let stopping = Instant::now();
+    pump.stop();
+    let stopped = stopping.elapsed();
+    // Idempotent: `CoreHandler::shutdown` may be reached more than once and a second join must
+    // not panic on handles already taken.
+    pump.stop();
+
+    assert!(observed, "the pump never ran J1 for a handed-off location");
+    assert!(
+        stopped < Duration::from_secs(30),
+        "stop() did not return: {stopped:?}"
+    );
+    assert!(
+        !events.seen().is_empty(),
+        "a drained job publishes `scan/job_done`; silence would leave the shelf stale"
+    );
+}

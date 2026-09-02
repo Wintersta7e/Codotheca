@@ -174,3 +174,65 @@ fn an_untrusted_repository_becomes_readable_once_the_handle_is_trusted() {
         .unwrap();
     assert!(!st.is_dirty);
 }
+
+/// §1.1's fourth identity fact, which the seam could not read at all until now: the argv builder
+/// and the parser both existed and no method ran them, so `IdentityProbe` could not be assembled
+/// through `GitBackend`.
+///
+/// The three properties asserted are the three that would each fail silently: a repository with
+/// no remotes is an **answer**, not an error (`git config --get-regexp` exits 1 with empty
+/// output and every local-only repository would otherwise be unidentifiable); every remote is
+/// returned, not just `origin`, because §1.1's fork rule compares owners across remotes; and a
+/// URL containing a newline survives, which is the whole reason the argv asks for `--null`.
+#[test]
+fn the_seam_reads_every_remote_url_and_no_remotes_is_an_answer() {
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"one\n");
+    repo.commit("first");
+    let git = backend(&repo);
+    let cancel = CancelToken::new();
+
+    assert_eq!(
+        git.remote_urls(&repo.handle(), &ctx(&cancel, JobClass::Background))
+            .unwrap(),
+        Vec::new(),
+        "a repository with no remote must answer with an empty list, never an error"
+    );
+
+    repo.git(&["remote", "add", "origin", "https://example.invalid/one.git"]);
+    repo.git(&[
+        "remote",
+        "add",
+        "upstream",
+        "ssh://git@example.invalid/two.git",
+    ]);
+    // Not reachable through `git remote add`, and exactly what `--null` exists for: a value
+    // holding the record separator a line-based parse would split on.
+    repo.git(&[
+        "config",
+        "remote.odd.url",
+        "https://example.invalid/a\nb.git",
+    ]);
+
+    let mut found = git
+        .remote_urls(&repo.handle(), &ctx(&cancel, JobClass::Background))
+        .unwrap();
+    found.sort();
+    assert_eq!(
+        found,
+        vec![
+            (
+                "odd".to_owned(),
+                "https://example.invalid/a\nb.git".to_owned()
+            ),
+            (
+                "origin".to_owned(),
+                "https://example.invalid/one.git".to_owned()
+            ),
+            (
+                "upstream".to_owned(),
+                "ssh://git@example.invalid/two.git".to_owned()
+            ),
+        ]
+    );
+}

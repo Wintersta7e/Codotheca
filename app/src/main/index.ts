@@ -15,13 +15,14 @@ import {
   session,
   shell,
 } from 'electron';
-import { readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   type CommandName,
   PROTOCOL_VERSION,
   type RootAdd,
+  type RootSuggestion,
   type Topic,
 } from '../generated/protocol';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
@@ -39,13 +40,13 @@ import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
 import { registerRelocateDialog } from './dialogs/relocate';
-import { registerRootPicker } from './rootPicker';
+import { registerRootPicker, registerSuggestionCommit, SuggestionCache } from './rootPicker';
 import { CoreClient } from './core/client';
 import { FORCE_OFFERED_AFTER_MS, LOCK_WAIT_POLL_MS, waitForCoreLock } from './core/instanceLock';
 import { openRollingLog } from './core/log';
 import { spawnCoreChild } from './core/spawn';
 import { CoreSupervisor } from './core/supervisor';
-import { resolveCoreBinary, resolveDataDir } from './paths';
+import { resolveCoreBinary, resolveDataDir, resolveWorkerBinary, WORKER_ARCHES } from './paths';
 import { installQuitGate } from './quitGate';
 import { formatArtifactStamp, readArtifactStamp } from './update/artifact';
 import { registerFocusRelease } from './session/focus';
@@ -201,6 +202,30 @@ function createWindow(): BrowserWindow {
   return w;
 }
 
+/**
+ * §13's worker on this machine, or `null`.
+ *
+ * Windows only: `\\wsl$\` paths exist nowhere else, so a Linux build has no bridge to cross
+ * and passing a path would only invite the core to read a file it will never use. The arch is
+ * this process's, because the worker runs inside a distro on this same machine.
+ */
+function stagedWorkerPath(): string | null {
+  if (process.platform !== 'win32') {
+    return null;
+  }
+  const arch = WORKER_ARCHES.find((candidate) => candidate === process.arch);
+  if (arch === undefined) {
+    return null;
+  }
+  const staged = resolveWorkerBinary({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appRoot: path.join(app.getAppPath(), '..'),
+    arch,
+  });
+  return existsSync(staged) ? staged : null;
+}
+
 async function main(): Promise<void> {
   await app.whenReady();
 
@@ -249,6 +274,10 @@ async function main(): Promise<void> {
       appRoot: path.join(app.getAppPath(), '..'),
       platform: process.platform,
     }),
+    // §13. Only Windows has a bridge to cross, and only a build that staged the ELF has
+    // anything to run inside a distro. Absent is passed as absent rather than as a path that
+    // does not resolve, so the core reports "no worker" instead of an unreadable file.
+    workerPath: stagedWorkerPath(),
     dataDir,
     log,
     spawn: spawnCoreChild,
@@ -350,6 +379,17 @@ async function main(): Promise<void> {
         buttonLabel: 'Look here',
       }),
     addRoot: (args) => request('roots.add', args) as Promise<RootAdd>,
+  });
+
+  // GAP-16b-1: the other half of §10.1b. Ticking only *suggested* roots and pressing `DIG IN`
+  // used to add nothing at all, because the display string had nowhere to resolve against.
+  registerSuggestionCommit({
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
+    },
+    suggestRoots: () => request('roots.suggest', {}) as Promise<RootSuggestion[]>,
+    addRoot: (args) => request('roots.add', args) as Promise<RootAdd>,
+    cache: new SuggestionCache(),
   });
 
   // §11.3 and §11.5: reveal, the index location, the paint-failure reset and the executable

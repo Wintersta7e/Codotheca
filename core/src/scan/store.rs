@@ -20,7 +20,6 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
-use crate::identity::store::LocationInput;
 use crate::index::Index;
 use crate::scan::presence::{
     LocationPresenceRow, Presence, ScanRootRow, ScanRunFinish, ScanRunRow, ScanRunStart, ScanStore,
@@ -268,24 +267,5 @@ impl ScanStore for SqliteScanStore {
             )?;
             Ok(u64::try_from(n).unwrap_or(0))
         })
-    }
-
-    /// **R1: this refuses, and that is the ruling rather than an omission.**
-    ///
-    /// The `location` row *is* the project↔path association `resolve_identity` has just decided,
-    /// so it has to be written in that same transaction — which is
-    /// `core::identity::store::upsert_location(tx, project_id, loc, now)`, plan 08's. Writing a
-    /// second `INSERT INTO location` here would put one row under two owners, which is the defect
-    /// R1 exists to close rather than the one it found. The refusal names its owner so this
-    /// cannot be mistaken for a working seam, and a test pins the message.
-    fn upsert_location(
-        &self,
-        _project_id: i64,
-        _loc: &LocationInput,
-    ) -> Result<i64, ScanStoreError> {
-        Err(ScanStoreError::new(
-            "location writes belong to plan 08's identity::store::upsert_location, inside the \
-             transaction resolve_identity holds (R1); this seam delegates and does not write",
-        ))
     }
 }

@@ -37,6 +37,8 @@ export type { CoreFailureReason, CoreStatus } from '../../shared/coreStatus';
 
 export interface SupervisorDeps {
   binaryPath: string;
+  /** §13's in-distro worker, or `null` where this build has none. */
+  workerPath: string | null;
   dataDir: string;
   log: RollingLog;
   spawn: SpawnCore;
@@ -89,6 +91,7 @@ export class CoreSupervisor {
     try {
       child = this.deps.spawn({
         binaryPath: this.deps.binaryPath,
+        workerPath: this.deps.workerPath,
         dataDir: this.deps.dataDir,
         epoch: this.epoch,
         parentPid: process.pid,

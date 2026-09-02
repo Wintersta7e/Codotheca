@@ -136,3 +136,41 @@ fn the_recorder_reports_what_it_forwarded() {
     assert_eq!(git.calls().len(), 1);
     assert_eq!(git.calls()[0].op, "version");
 }
+
+/// The fake half of the new seam method, in the same change as the trait and `SystemGit`'s
+/// implementation. The rule exists because four rulings — R1, R35a, R40, R46 — each came from a
+/// trait that got its fake and never its real impl, and each of those compiled.
+#[test]
+fn the_fake_returns_the_remotes_it_was_seeded_with_and_refuses_when_it_was_not() {
+    let git = FakeGitBackend::new();
+    let cancel = CancelToken::new();
+    let ctx = JobContext::new(JobClass::Interactive, &cancel, None);
+
+    assert!(
+        matches!(
+            git.remote_urls(&handle("/c/thing"), &ctx),
+            Err(GitError::Unreadable { .. })
+        ),
+        "an unseeded fake must not answer `no remotes`: that is a real §1.1 fact, not a default"
+    );
+
+    let seeded = vec![(
+        "origin".to_owned(),
+        "https://example.invalid/one.git".to_owned(),
+    )];
+    git.on_remote_urls(Some("thing"), GitReply::Ok(seeded.clone()));
+    assert_eq!(git.remote_urls(&handle("/c/thing"), &ctx).unwrap(), seeded);
+}
+
+/// The recorder passes the new method through rather than swallowing it, so a test that counts
+/// git calls still counts this one.
+#[test]
+fn the_recorder_reports_a_remote_read() {
+    let inner = FakeGitBackend::new();
+    inner.always_remote_urls(GitReply::Ok(Vec::new()));
+    let recorder = RecordingGitBackend::new(inner);
+    let cancel = CancelToken::new();
+    let ctx = JobContext::new(JobClass::Interactive, &cancel, None);
+    assert!(recorder.remote_urls(&handle("/c/thing"), &ctx).is_ok());
+    assert!(recorder.calls().iter().any(|c| c.op == "remote_urls"));
+}

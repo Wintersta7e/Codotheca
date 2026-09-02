@@ -10,11 +10,8 @@
 //! §4.6 — presence, and the generation rule v1 omitted. Without it nothing ever left `present`,
 //! `last_seen_at` was written and never read, and acceptance criterion 4 could not pass.
 
-use codotheca_core::derive::LocationKind;
-use codotheca_core::identity::store::LocationInput;
-use codotheca_core::index::path::{PathPlatform, StoredPath};
+use codotheca_core::index::path::PathPlatform;
 use codotheca_core::paths::{path_bytes, path_key};
-use codotheca_core::scan::discover::RepoKind;
 use codotheca_core::scan::presence::{
     apply_presence, classify_presence, mark_root_unscanned, project_presence, LocationPresenceRow,
     Presence, PresenceContext, PresenceSummary, ScanRootRow, ScanStore,
@@ -55,22 +52,6 @@ fn stores(names: &[&str]) -> BTreeSet<String> {
     names.iter().map(|s| (*s).to_owned()).collect()
 }
 
-/// R1: plan 08's type, consumed. Nothing in this plan defines a second one.
-fn location_input(path: &str, generation: i64) -> LocationInput {
-    LocationInput {
-        kind: LocationKind::Linux,
-        distro: None,
-        path: StoredPath::from_bytes(path.as_bytes().to_vec(), PathPlatform::Unix),
-        store_key: "s1".to_owned(),
-        volume_key: None,
-        presence: Presence::Present,
-        repo_kind: RepoKind::WorkTree,
-        common_dir_bytes: None,
-        generation,
-        last_seen_at: None,
-    }
-}
-
 #[test]
 fn presence_round_trips_through_the_text_the_column_stores() {
     for presence in [
@@ -87,28 +68,6 @@ fn presence_round_trips_through_the_text_the_column_stores() {
         );
     }
     assert_eq!(Presence::parse("gone"), None);
-}
-
-#[test]
-fn upsert_location_is_idempotent_and_adds_no_way_to_remove_a_row() {
-    // R1 is the ruling that gives the scanner a `location` writer at all. The property that has
-    // to hold is that scanning the same repository twice writes **one** row, keyed on
-    // `(kind, distro, path_key)`; and that adding a writer added no remover.
-    let store = MemScanStore::new();
-    let first = store
-        .upsert_location(1, &location_input("/r/a", 7))
-        .unwrap();
-    let again = store
-        .upsert_location(1, &location_input("/r/a", 8))
-        .unwrap();
-    assert_eq!(first, again, "one (kind, distro, path_key) is one row");
-    assert_eq!(store.location_count(), 1);
-
-    let other = store
-        .upsert_location(2, &location_input("/r/b", 8))
-        .unwrap();
-    assert_ne!(other, first);
-    assert_eq!(store.location_count(), 2);
 }
 
 #[test]

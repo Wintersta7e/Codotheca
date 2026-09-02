@@ -24,6 +24,7 @@ function stubBridge(): StubBridge {
     request: () => Promise.resolve({ ok: true, value: null }),
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
     pickRoot: () => Promise.resolve({ kind: 'cancelled' }),
+    commitSuggestion: () => Promise.resolve({ kind: 'unknown' as const }),
     onCoreStatus: () => undefined,
     onCoreEvents: (cb) => {
       registrations.push(cb);

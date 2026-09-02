@@ -38,9 +38,13 @@ fn call(
     cmd: &str,
     args: serde_json::Value,
 ) -> serde_json::Value {
+    let jobs = codotheca_core::jobs::NullJobSink;
+    let mounts = codotheca_core::testing::FakeMountResolver::default();
     let ctx = ProjectsCtx {
         index,
         events: sink,
+        jobs: &jobs,
+        mounts: &mounts,
         now: NOW,
         tz_offset_min: 0,
     };
@@ -235,9 +239,13 @@ fn pinning_changes_no_sort_order() {
 fn an_unknown_project_is_refused_rather_than_silently_creating_one() {
     let (_dir, index) = seeded();
     let sink = CollectingSink::default();
+    let jobs = codotheca_core::jobs::NullJobSink;
+    let mounts = codotheca_core::testing::FakeMountResolver::default();
     let ctx = ProjectsCtx {
         index: &index,
         events: &sink,
+        jobs: &jobs,
+        mounts: &mounts,
         now: NOW,
         tz_offset_min: 0,
     };
@@ -272,9 +280,13 @@ fn a_merged_away_project_is_not_reachable_through_either_command() {
         .conn()
         .execute("UPDATE project SET merged_into = 2 WHERE id = 1", [])
         .expect("merge");
+    let jobs = codotheca_core::jobs::NullJobSink;
+    let mounts = codotheca_core::testing::FakeMountResolver::default();
     let ctx = ProjectsCtx {
         index: &index,
         events: &sink,
+        jobs: &jobs,
+        mounts: &mounts,
         now: NOW,
         tz_offset_min: 0,
     };
@@ -288,4 +300,98 @@ fn a_merged_away_project_is_not_reachable_through_either_command() {
             "{command}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// §6: a Peek asks for a current worktree reading. `on_visible` had no caller,
+// which is what made "no changes as of T" a stale answer rather than a current one.
+// ---------------------------------------------------------------------------
+
+/// Every §6 request the command made.
+#[derive(Debug, Default)]
+struct RecordingJobs {
+    visible: std::sync::Mutex<Vec<(i64, i64)>>,
+}
+
+impl codotheca_core::jobs::JobSink for RecordingJobs {
+    fn on_location_indexed(
+        &self,
+        _: codotheca_core::protocol::ProjectId,
+        _: codotheca_core::protocol::LocationId,
+        _: &str,
+        _: codotheca_core::mount::StoreClass,
+    ) {
+    }
+
+    fn on_visible(
+        &self,
+        project: codotheca_core::protocol::ProjectId,
+        location: codotheca_core::protocol::LocationId,
+        _: &str,
+        _: codotheca_core::mount::StoreClass,
+    ) {
+        self.visible
+            .lock()
+            .expect("lock")
+            .push((project.0, location.0));
+    }
+}
+
+/// One project with one copy, whose worktree was observed a long time ago.
+fn seeded_with_a_location() -> (tempfile::TempDir, Index) {
+    let (dir, index) = seeded();
+    index
+        .conn()
+        .execute(
+            "INSERT INTO location
+               (id, project_id, kind, path_bytes, path_key, path_display, store_key,
+                presence, repo_kind, is_dirty, worktree_observed_at)
+             VALUES (1, 1, 'linux', ?1, ?1, '/home/u/a', 'store-a', 'present', 'worktree', 0, ?2)",
+            rusqlite::params![b"/home/u/a".to_vec(), NOW - 86_400],
+        )
+        .expect("seed location");
+    (dir, index)
+}
+
+#[test]
+fn a_peek_asks_for_one_fresh_reading_and_a_list_asks_for_none() {
+    let (_dir, index) = seeded_with_a_location();
+    let sink = CollectingSink::default();
+    let jobs = RecordingJobs::default();
+    let mounts = codotheca_core::testing::FakeMountResolver::new();
+    let ctx = ProjectsCtx {
+        index: &index,
+        events: &sink,
+        jobs: &jobs,
+        mounts: &mounts,
+        now: NOW,
+        tz_offset_min: 0,
+    };
+
+    let peek = dispatch_projects_command(&ctx, "projects.peek", serde_json::json!({ "id": 1 }))
+        .expect("owned")
+        .expect("ok");
+    assert_eq!(
+        jobs.visible.lock().expect("lock").clone(),
+        vec![(1, 1)],
+        "§6: an opened Peek asks for a current reading for the copy it is showing"
+    );
+
+    // …and the answer is still the **stored** one, with its own `as_of`. Claiming the time of
+    // the call would turn a day-old reading into a fresh one on the wire.
+    assert_eq!(
+        peek["worktree"]["observedAt"],
+        serde_json::json!(NOW - 86_400)
+    );
+    assert_eq!(peek["worktree"]["isDirty"], serde_json::json!(false));
+
+    dispatch_projects_command(&ctx, "projects.list", serde_json::json!({}))
+        .expect("owned")
+        .expect("ok");
+    assert_eq!(
+        jobs.visible.lock().expect("lock").len(),
+        1,
+        "§8: a shelf of a thousand rows must not queue a thousand status jobs, and the \
+         virtualizer means `in the page` is not `on screen`"
+    );
 }

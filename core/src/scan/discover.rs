@@ -25,7 +25,7 @@ use crate::scan::{ScanProblem, ScanProblemKind, WalkEvent, WalkOptions, WalkSink
 /// A `.git` file is a one-line pointer. Anything larger is not one.
 const DOT_GIT_FILE_CAP: u64 = 4 * 1024;
 /// This probe is a handful of file reads behind a process spawn; it is not a job budget (§4.1).
-const GIT_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+pub const GIT_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// **R7: serde and an inverse are both required, not conveniences.** `location.repo_kind` is a
 /// TEXT column, so every value `as_str` writes has to be readable back; and plan 18's in-distro

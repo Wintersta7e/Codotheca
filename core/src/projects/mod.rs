@@ -30,6 +30,13 @@ use crate::protocol::ErrorCode;
 pub struct ProjectsCtx<'a> {
     pub index: &'a Index,
     pub events: &'a dyn EventSink,
+    /// §6's freshness request. `projects.peek` asks for a current worktree reading; nothing
+    /// else in this module does, because a shelf of a thousand rows would queue a thousand
+    /// status jobs on every keystroke.
+    pub jobs: &'a dyn crate::jobs::JobSink,
+    /// The store class the queued job is scheduled against. Not a column (R27): it is a
+    /// property of the mount right now.
+    pub mounts: &'a dyn crate::mount::MountResolver,
     pub now: i64,
     pub tz_offset_min: i32,
 }
@@ -140,9 +147,13 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let index = Index::open(dir.path()).expect("open");
         let events = CollectingSink::default();
+        let jobs = crate::jobs::NullJobSink;
+        let mounts = crate::testing::FakeMountResolver::default();
         let ctx = ProjectsCtx {
             index: &index,
             events: &events,
+            jobs: &jobs,
+            mounts: &mounts,
             now: 1_700_000_000,
             tz_offset_min: 0,
         };

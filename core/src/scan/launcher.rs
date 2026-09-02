@@ -7,20 +7,24 @@
 //! **Three `WalkEvent`s are deliberately not published**, because their payloads need values only
 //! later plans produce, and inventing them would put a claim on the wire the app cannot support:
 //!
-//! * `Discovered` → `repo_found` needs `projectId` and a `LocationRef`. Identity resolution is
-//!   plan 08's, and a fabricated project id names a project that does not exist.
+//! * `Discovered` → `repo_found` needs `projectId` and a `LocationRef`. The ids now exist —
+//!   `ScanRunner` writes the rows before it emits the event — but building the payload here
+//!   would put the hand-off's result on the wire from a second place; `scan/job_done` already
+//!   says a location was indexed.
 //! * `SubmoduleEdge` → no schema event carries one; plan 08 writes the edge.
 //! * `WslBridge` → §13's dispatch is plan 18's, and no `scan` event describes a refused bridge.
 //!
 //! `run_started` is **not** published here either: only `scan.start` knows whether it started a
 //! run or coalesced onto a live one, and one run started is one event.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::cancel::CancelToken;
 use crate::clock::Clock;
 use crate::git::GitBackend;
+use crate::index::Index;
+use crate::jobs::JobSink;
 use crate::mount::MountResolver;
 use crate::proto::EventSink;
 use crate::protocol::{
@@ -35,15 +39,22 @@ use crate::scan::{LaunchedScan, ScanLauncher, ScanProblem, ScanProgressCell, Wal
 /// Runs one scan on a worker thread and publishes it onto the `scan` topic.
 ///
 /// Every collaborator is an `Arc` rather than a borrow because the walk outlives the `launch`
-/// call that started it. `ScanStore` is the only database handle — `rusqlite::Connection` is
-/// `Send` but not `Sync` (R39), and the production store owns it behind a mutex.
+/// call that started it. `rusqlite::Connection` is `Send` but not `Sync` (R39), so the index
+/// crosses to the walk thread behind a mutex — the same one `store` holds, never a second
+/// connection.
 #[derive(Clone)]
 pub struct ThreadScanLauncher {
     store: Arc<dyn ScanStore>,
+    index: Arc<Mutex<Index>>,
     git: Arc<dyn GitBackend>,
     mounts: Arc<dyn MountResolver>,
     clock: Arc<dyn Clock>,
     skip: Arc<SkipList>,
+    /// §13's dispatcher, or `None` on a host with no WSL and in a build that staged no worker.
+    wsl: Option<Arc<crate::wsl::dispatch::WslDispatcher>>,
+    /// §4.1a's queue. **Not `NullJobSink`**: that is the absence of a scheduler, not a fake of
+    /// one, and installing it here is what left every discovered repository uncomputed.
+    jobs: Arc<dyn JobSink>,
     events: Arc<dyn EventSink>,
 }
 
@@ -53,23 +64,42 @@ impl std::fmt::Debug for ThreadScanLauncher {
     }
 }
 
+/// What one launcher is built from.
+///
+/// A struct rather than eight positional arguments: two of them are `Arc<dyn …>` over traits
+/// with no relation to each other, and a swapped pair would compile.
+pub struct ScanLauncherDeps {
+    pub store: Arc<dyn ScanStore>,
+    pub index: Arc<Mutex<Index>>,
+    pub git: Arc<dyn GitBackend>,
+    pub mounts: Arc<dyn MountResolver>,
+    pub clock: Arc<dyn Clock>,
+    pub skip: Arc<SkipList>,
+    /// §13's dispatcher. `None` on a host with no WSL, or in a build that staged no worker.
+    pub wsl: Option<Arc<crate::wsl::dispatch::WslDispatcher>>,
+    pub jobs: Arc<dyn JobSink>,
+    pub events: Arc<dyn EventSink>,
+}
+
+impl std::fmt::Debug for ScanLauncherDeps {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScanLauncherDeps").finish_non_exhaustive()
+    }
+}
+
 impl ThreadScanLauncher {
     #[must_use]
-    pub fn new(
-        store: Arc<dyn ScanStore>,
-        git: Arc<dyn GitBackend>,
-        mounts: Arc<dyn MountResolver>,
-        clock: Arc<dyn Clock>,
-        skip: Arc<SkipList>,
-        events: Arc<dyn EventSink>,
-    ) -> Self {
+    pub fn new(deps: ScanLauncherDeps) -> Self {
         Self {
-            store,
-            git,
-            mounts,
-            clock,
-            skip,
-            events,
+            store: deps.store,
+            index: deps.index,
+            git: deps.git,
+            mounts: deps.mounts,
+            clock: deps.clock,
+            skip: deps.skip,
+            wsl: deps.wsl,
+            jobs: deps.jobs,
+            events: deps.events,
         }
     }
 
@@ -81,7 +111,9 @@ impl ThreadScanLauncher {
             clock: self.clock.as_ref(),
             skip: self.skip.as_ref(),
             cancel,
-            jobs: Arc::new(crate::jobs::NullJobSink),
+            index: self.index.as_ref(),
+            wsl: self.wsl.as_deref(),
+            jobs: Arc::clone(&self.jobs),
         }
     }
 

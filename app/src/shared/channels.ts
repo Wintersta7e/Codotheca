@@ -103,6 +103,31 @@ export interface PickRootRequest {
   readonly confirmLarge: boolean;
 }
 
+/**
+ * Committing a **suggested** root — GAP-16b-1.
+ *
+ * §2.4 bars the renderer from originating a filesystem path and `RootSuggestion` carries no
+ * bytes, so the renderer holds only a display string. The shell resolves that string against
+ * what `roots.suggest` returned and calls `roots.add` with the path the core itself produced;
+ * a string that names no suggestion is **refused**, never guessed.
+ */
+export const IPC_COMMIT_SUGGESTION = 'codotheca:commit-suggestion';
+
+export interface CommitSuggestionRequest {
+  readonly pathDisplay: string;
+}
+
+/**
+ * `unknown` and `ambiguous` are refusals, not failures: nothing went wrong, and nothing was
+ * added. Two suggestions can render one string, and adding the wrong folder is worse than
+ * adding none.
+ */
+export type CommitSuggestionReply =
+  | { readonly kind: 'added'; readonly add: RootAdd }
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'ambiguous' }
+  | { readonly kind: 'failed'; readonly error: BridgeError };
+
 export type PickRootReply =
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'added'; readonly add: RootAdd }

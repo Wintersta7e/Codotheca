@@ -10,8 +10,6 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::cancel::CancelToken;
-use crate::derive::LocationKind;
-use crate::identity::store::LocationInput;
 use crate::protocol::{RootId, ScanMode, ScanRunId};
 use crate::scan::presence::{
     LocationPresenceRow, Presence, ScanRootRow, ScanRunFinish, ScanRunRow, ScanRunStart, ScanStore,
@@ -32,10 +30,6 @@ struct MemInner {
     generation: i64,
     roots: Vec<ScanRootRow>,
     locations: BTreeMap<i64, LocationPresenceRow>,
-    /// R1: `(kind, distro, path_key) -> location_id`, the uniqueness `upsert_location` is
-    /// idempotent on. `push_location` does not populate it — it fabricates rows directly for the
-    /// presence tests and never goes through the writer.
-    location_identity: Vec<(LocationKind, Option<String>, Vec<u8>, i64)>,
     indexed_projects: u64,
     runs: Vec<(ScanRunStart, Option<ScanRunFinish>)>,
     problems: Vec<(i64, ScanProblem)>,
@@ -204,52 +198,6 @@ impl ScanStore for MemScanStore {
     /// uses the real store.
     fn ambiguous_lineage_count(&self) -> Result<u64, ScanStoreError> {
         Ok(0)
-    }
-
-    /// R1. Idempotent on `(kind, distro, path_key)`, exactly as plan 08's real writer must be: a
-    /// second scan of the same repository updates the row it already has rather than adding
-    /// another. A fake that appended would let a duplicate-location bug pass every test here.
-    fn upsert_location(&self, project_id: i64, loc: &LocationInput) -> Result<i64, ScanStoreError> {
-        let mut inner = self.inner.lock().map_err(|_| Self::err())?;
-        // A linear scan, not a map: `LocationKind` derives `PartialEq` and neither `Ord` nor
-        // `Hash`, and R21 makes it plan 09's to change. A fake holding a shelf's worth of rows
-        // does not need the index, and inventing derives on another plan's type would.
-        let existing = inner
-            .location_identity
-            .iter()
-            .find(|(kind, distro, key, _)| {
-                *kind == loc.kind && distro == &loc.distro && key.as_slice() == loc.path.key()
-            });
-        if let Some((_, _, _, id)) = existing {
-            let id = *id;
-            if let Some(row) = inner.locations.get_mut(&id) {
-                row.project_id = project_id;
-                row.scan_generation = loc.generation;
-                row.presence = Presence::Present;
-            }
-            return Ok(id);
-        }
-        let location_id = i64::try_from(inner.locations.len() + 1).map_err(|_| Self::err())?;
-        inner.locations.insert(
-            location_id,
-            LocationPresenceRow {
-                location_id,
-                project_id,
-                path_bytes: loc.path.bytes().to_vec(),
-                path_key: loc.path.key().to_vec(),
-                store_key: loc.store_key.clone(),
-                scan_generation: loc.generation,
-                presence: loc.presence,
-            },
-        );
-        inner.location_identity.push((
-            loc.kind,
-            loc.distro.clone(),
-            loc.path.key().to_vec(),
-            location_id,
-        ));
-        inner.indexed_projects = u64::try_from(inner.locations.len()).unwrap_or(u64::MAX);
-        Ok(location_id)
     }
 }
 

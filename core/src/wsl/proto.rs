@@ -81,6 +81,9 @@ pub enum WorkerGitOp {
     SubmoduleGitlinks {
         paths: Vec<Vec<u8>>,
     },
+    /// §1.1's remote evidence. A unit variant: the argv is the core's own builder, run inside
+    /// the distro by the worker's `SystemGit`.
+    RemoteUrls,
     RootCommits,
     Authorship,
     CommitSubjects {

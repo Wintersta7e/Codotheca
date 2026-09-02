@@ -29,6 +29,8 @@ pub struct DetailCtx<'a> {
     pub git: &'a dyn GitBackend,
     pub mount: &'a dyn MountResolver,
     pub events: &'a dyn EventSink,
+    /// §6: an opened page asks for a current worktree reading for the copy it is showing.
+    pub jobs: &'a dyn crate::jobs::JobSink,
     pub now: i64,
 }
 

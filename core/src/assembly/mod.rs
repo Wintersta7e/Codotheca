@@ -1,5 +1,7 @@
 //! The composition root: the real `CommandHandler`, the startup sequence and the tick pump.
 
+pub mod handoff;
+pub mod jobs;
 pub mod route;
 pub mod startup;
 
@@ -40,6 +42,11 @@ pub struct CoreDeps {
     /// connection reached a different way — never a second one.
     pub scan_store: Arc<dyn ScanStore>,
     pub firstrun: crate::firstrun::FirstRunEnv,
+    /// The job pump (§4.1a). Held here so `shutdown` can stop it **before** the publisher
+    /// closes and before the process exits: a worker mid-write to SQLite when `main` returns is
+    /// a torn observation, and a worker inside a twenty-second history read is a git process
+    /// tree outliving the app.
+    pub jobs: jobs::JobPump,
     pub events: Arc<PublisherSink>,
     /// `ProjectsCtx`'s (plan 13). §8.1's era bands cut on the local calendar year and nothing
     /// under `crate::projects` reads a clock or a zone, so the offset arrives with the deps.
@@ -69,6 +76,7 @@ pub struct CoreHandler {
     scans: ScanSupervisor,
     scan_store: Arc<dyn ScanStore>,
     firstrun: crate::firstrun::FirstRunEnv,
+    jobs: jobs::JobPump,
     events: Arc<PublisherSink>,
     tz_offset_min: i32,
     /// Measured against `Clock::monotonic_ms`, never wall time: a clock step backwards must not
@@ -100,6 +108,7 @@ impl CoreHandler {
             scans: deps.scans,
             scan_store: deps.scan_store,
             firstrun: deps.firstrun,
+            jobs: deps.jobs,
             events: deps.events,
             tz_offset_min: deps.tz_offset_min,
             last_tick_ms,
@@ -290,6 +299,8 @@ impl CommandHandler for CoreHandler {
                 let ctx = crate::projects::ProjectsCtx {
                     index: &guard,
                     events: self.events.as_ref(),
+                    jobs: self.jobs.sink_ref(),
+                    mounts: self.mount.as_ref(),
                     now,
                     tz_offset_min: self.tz_offset_min,
                 };
@@ -301,6 +312,7 @@ impl CommandHandler for CoreHandler {
                     git: self.git.as_ref(),
                     mount: self.mount.as_ref(),
                     events: self.events.as_ref(),
+                    jobs: self.jobs.sink_ref(),
                     now,
                 };
                 crate::detail::dispatch_detail_command(&ctx, command, args)
@@ -374,12 +386,20 @@ impl CommandHandler for CoreHandler {
         }
     }
 
-    /// Ends every live session with `app_exit`, then **drops the session manager**.
+    /// Stops the job pump, ends every live session with `app_exit`, then **drops the session
+    /// manager**.
     ///
-    /// The drop is the load-bearing half: the manager holds an `Arc<PublisherSink>` clone, and
-    /// `Transport::join` waits until every `FrameSink` clone is gone. Without it the process
-    /// hangs on exit with its window already closed.
+    /// The pump goes first, and without the index lock held: its workers need that lock to
+    /// settle whatever they are running, and a worker still writing when `main` returns is a
+    /// torn observation stored as a finished one. It goes here rather than after the loop
+    /// because this runs before `Publisher::close()`, so a job's last `job_done` still reaches
+    /// the shell.
+    ///
+    /// The session drop is the other load-bearing half: the manager holds an
+    /// `Arc<PublisherSink>` clone, and `Transport::join` waits until every `FrameSink` clone is
+    /// gone.
     fn shutdown(&mut self) {
+        self.jobs.stop();
         let Some(mut sessions) = self.sessions.take() else {
             return;
         };

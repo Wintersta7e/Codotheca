@@ -25,6 +25,14 @@ pub struct CoreArgs {
     pub data_dir: PathBuf,
     pub epoch: u64,
     pub parent_pid: u32,
+    /// §13's in-distro worker, on disk, or `None` where this build has none.
+    ///
+    /// **Optional, and the two absences are different.** A Linux host has no WSL and never
+    /// wants one; a Windows build whose installer staged no worker cannot scan a distro and
+    /// must say so rather than pretending the distro was empty. Passed rather than derived
+    /// because the shell already computes it (`resolveWorkerBinary`), and a second convention
+    /// in Rust is one value spelled twice.
+    pub worker: Option<PathBuf>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -49,6 +57,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(argv: I) -> Result<CoreArgs, A
     let mut data_dir: Option<PathBuf> = None;
     let mut epoch: Option<u64> = None;
     let mut parent_pid: Option<u32> = None;
+    let mut worker: Option<PathBuf> = None;
     for arg in argv {
         if let Some(v) = arg.strip_prefix("--data-dir=") {
             data_dir = Some(PathBuf::from(v));
@@ -56,12 +65,20 @@ pub fn parse_args<I: IntoIterator<Item = String>>(argv: I) -> Result<CoreArgs, A
             epoch = Some(v.parse().map_err(|_| ArgError::Bad("--epoch"))?);
         } else if let Some(v) = arg.strip_prefix("--parent-pid=") {
             parent_pid = Some(v.parse().map_err(|_| ArgError::Bad("--parent-pid"))?);
+        } else if let Some(v) = arg.strip_prefix("--worker=") {
+            // An empty value is malformed rather than absent: the shell omits the flag when it
+            // has no worker, so an empty one means it thought it had a path and did not.
+            if v.is_empty() {
+                return Err(ArgError::Bad("--worker"));
+            }
+            worker = Some(PathBuf::from(v));
         }
     }
     Ok(CoreArgs {
         data_dir: data_dir.ok_or(ArgError::Missing("--data-dir"))?,
         epoch: epoch.ok_or(ArgError::Missing("--epoch"))?,
         parent_pid: parent_pid.ok_or(ArgError::Missing("--parent-pid"))?,
+        worker,
     })
 }
 
@@ -174,6 +191,7 @@ impl OsParentProbe {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::{parse_args, ArgError, CoreLock, LockError};
+    use std::path::PathBuf;
 
     fn argv(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| (*s).to_owned()).collect()
@@ -192,6 +210,38 @@ mod tests {
         assert_eq!(a.data_dir, std::path::PathBuf::from("/x/y"));
         assert_eq!(a.epoch, 4);
         assert_eq!(a.parent_pid, 99);
+    }
+
+    /// §13: `--worker` is optional, and the two absences are different.
+    ///
+    /// Omitted means this build has no in-distro worker and never wanted one. Empty means the
+    /// shell thought it had a path and did not — scanning no distro on that would be the silent
+    /// failure the flag exists to prevent.
+    #[test]
+    fn the_worker_path_is_optional_and_an_empty_one_is_malformed() {
+        let none = parse_args(argv(&["--data-dir=/x", "--epoch=1", "--parent-pid=2"])).expect("ok");
+        assert_eq!(none.worker, None);
+
+        let given = parse_args(argv(&[
+            "--data-dir=/x",
+            "--epoch=1",
+            "--parent-pid=2",
+            "--worker=/opt/app/worker/linux-x64/codotheca-worker",
+        ]))
+        .expect("ok");
+        assert_eq!(
+            given.worker,
+            Some(PathBuf::from("/opt/app/worker/linux-x64/codotheca-worker"))
+        );
+
+        let empty = parse_args(argv(&[
+            "--data-dir=/x",
+            "--epoch=1",
+            "--parent-pid=2",
+            "--worker=",
+        ]))
+        .expect_err("must refuse");
+        assert_eq!(empty, ArgError::Bad("--worker"));
     }
 
     #[test]

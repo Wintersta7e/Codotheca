@@ -11,12 +11,49 @@ use codotheca_core::testing::{FakeGitBackend, FakeMountResolver};
 
 pub const NOW: i64 = 1_781_179_200;
 
+/// Every §6 freshness request the page made, so "asks once" is a count and not a hope.
+#[derive(Debug, Default)]
+pub struct RecordingJobs {
+    pub indexed: std::sync::Mutex<Vec<(i64, i64)>>,
+    pub visible: std::sync::Mutex<Vec<(i64, i64)>>,
+}
+
+impl codotheca_core::jobs::JobSink for RecordingJobs {
+    fn on_location_indexed(
+        &self,
+        project: codotheca_core::protocol::ProjectId,
+        location: codotheca_core::protocol::LocationId,
+        _store_key: &str,
+        _store_kind: StoreClass,
+    ) {
+        self.indexed
+            .lock()
+            .expect("lock")
+            .push((project.0, location.0));
+    }
+
+    fn on_visible(
+        &self,
+        project: codotheca_core::protocol::ProjectId,
+        location: codotheca_core::protocol::LocationId,
+        _store_key: &str,
+        _store_kind: StoreClass,
+    ) {
+        self.visible
+            .lock()
+            .expect("lock")
+            .push((project.0, location.0));
+    }
+}
+
 pub struct Rig {
     pub dir: tempfile::TempDir,
     pub index: Index,
     pub git: FakeGitBackend,
     pub mount: FakeMountResolver,
     pub sink: CollectingSink,
+    /// §6: `projects.get` asks for a current worktree reading for the copy it shows.
+    pub jobs: RecordingJobs,
 }
 
 impl Rig {
@@ -29,6 +66,7 @@ impl Rig {
             git: FakeGitBackend::new(),
             mount: FakeMountResolver::new(),
             sink: CollectingSink::default(),
+            jobs: RecordingJobs::default(),
         }
     }
 
@@ -38,6 +76,7 @@ impl Rig {
             git: &self.git,
             mount: &self.mount,
             events: &self.sink,
+            jobs: &self.jobs,
             now: NOW,
         }
     }

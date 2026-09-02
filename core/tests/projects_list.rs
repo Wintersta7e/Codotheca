@@ -101,9 +101,15 @@ fn seeded() -> (tempfile::TempDir, Index) {
 }
 
 fn list(index: &Index, sink: &CollectingSink, args: serde_json::Value) -> serde_json::Value {
+    // §6: the shelf does not ask for freshness, so a null sink here is not a stand-in — it is
+    // the assertion that `projects.list` queues nothing, made structurally.
+    let jobs = codotheca_core::jobs::NullJobSink;
+    let mounts = codotheca_core::testing::FakeMountResolver::new();
     let ctx = ProjectsCtx {
         index,
         events: sink,
+        jobs: &jobs,
+        mounts: &mounts,
         now: NOW,
         tz_offset_min: 0,
     };

@@ -13,17 +13,21 @@
 //! plan 21's Task 7 uncompletable. This runs a real walk over a real temp tree, through the real
 //! `SqliteScanStore`, and asserts what reaches the `scan` topic.
 
+use codotheca_core::git::RepoFacts;
 use codotheca_core::index::Index;
 use codotheca_core::mount::{MountFacts, StoreClass};
 use codotheca_core::paths::path_key;
 use codotheca_core::protocol::ScanMode;
+use codotheca_core::protocol::{LocationId, ProjectId};
 use codotheca_core::scan::launcher::ThreadScanLauncher;
 use codotheca_core::scan::presence::ScanStore;
 use codotheca_core::scan::run::platform_of;
 use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::store::SqliteScanStore;
 use codotheca_core::scan::ScanSupervisor;
-use codotheca_core::testing::{FakeClock, FakeGitBackend, FakeMountResolver, ScanEventFake};
+use codotheca_core::testing::{
+    FakeClock, FakeGitBackend, FakeMountResolver, GitReply, ScanEventFake,
+};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -75,10 +79,33 @@ fn await_idle(scans: &ScanSupervisor) {
     panic!("the scan worker never cleared the supervisor's slot");
 }
 
+/// Counts the hand-offs the production launcher makes. `NullJobSink` used to be wired in here,
+/// and it is why a scan produced a library nothing ever computed a fact about.
+#[derive(Debug, Default)]
+struct RecordingJobs {
+    indexed: Mutex<Vec<(i64, i64)>>,
+}
+
+impl codotheca_core::jobs::JobSink for RecordingJobs {
+    fn on_location_indexed(
+        &self,
+        project: ProjectId,
+        location: LocationId,
+        _store_key: &str,
+        _store_kind: StoreClass,
+    ) {
+        self.indexed.lock().unwrap().push((project.0, location.0));
+    }
+
+    fn on_visible(&self, _: ProjectId, _: LocationId, _: &str, _: StoreClass) {}
+}
+
 struct Rig {
     _dir: tempfile::TempDir,
+    index: Arc<Mutex<Index>>,
     store: Arc<SqliteScanStore>,
     events: Arc<ScanEventFake>,
+    jobs: Arc<RecordingJobs>,
     scans: Arc<ScanSupervisor>,
 }
 
@@ -87,7 +114,8 @@ fn rig(root: &Path) -> Rig {
     let index = Arc::new(Mutex::new(Index::open(dir.path()).unwrap()));
     seed_root(&index, root);
 
-    let store = Arc::new(SqliteScanStore::new(index));
+    let index_for_rig = Arc::clone(&index);
+    let store = Arc::new(SqliteScanStore::new(Arc::clone(&index)));
     let events = Arc::new(ScanEventFake::default());
     let mounts = FakeMountResolver::new();
     mounts.map(
@@ -98,18 +126,38 @@ fn rig(root: &Path) -> Rig {
             class: StoreClass::Local,
         },
     );
+    // The fixtures are bare `.git` directories, so the hand-off's probe answers from the fake.
+    // One common dir for all of them: two locations under one project is a real shape, and the
+    // question this file asks is what reaches the `scan` topic, not how identity decides.
+    let git = FakeGitBackend::new();
+    git.always_repo_facts(GitReply::Ok(RepoFacts {
+        is_bare: false,
+        is_shallow: false,
+        git_dir: root.join(".git"),
+        common_dir: root.join(".git"),
+    }));
+    git.always_root_commits(GitReply::Ok(Vec::new()));
+    git.always_remote_urls(GitReply::Ok(Vec::new()));
+    let jobs = Arc::new(RecordingJobs::default());
     let launcher = Arc::new(ThreadScanLauncher::new(
-        Arc::clone(&store) as Arc<_>,
-        Arc::new(FakeGitBackend::new()),
-        Arc::new(mounts),
-        Arc::new(FakeClock::new(NOW)),
-        Arc::new(SkipList::default()),
-        Arc::clone(&events) as Arc<_>,
+        codotheca_core::scan::launcher::ScanLauncherDeps {
+            store: Arc::clone(&store) as Arc<_>,
+            index: Arc::clone(&index),
+            git: Arc::new(git),
+            mounts: Arc::new(mounts),
+            clock: Arc::new(FakeClock::new(NOW)),
+            skip: Arc::new(SkipList::default()),
+            wsl: None,
+            jobs: Arc::clone(&jobs) as Arc<_>,
+            events: Arc::clone(&events) as Arc<_>,
+        },
     ));
     Rig {
         _dir: dir,
+        index: index_for_rig,
         store,
         events,
+        jobs,
         scans: Arc::new(ScanSupervisor::new(launcher as Arc<_>)),
     }
 }
@@ -237,4 +285,33 @@ fn an_unreadable_root_reaches_scan_problem_and_the_topic() {
         r.events.named("scan", "repo_found").is_empty(),
         "repo_found needs a projectId, and identity resolution is plan 08's"
     );
+}
+
+/// The production launcher installs the real queue, not `NullJobSink`.
+///
+/// That substitution is the whole reason a scan produced a library nothing computed a fact
+/// about, and it would pass every other assertion in this file.
+#[test]
+fn the_production_launcher_hands_every_indexed_location_to_the_scheduler() {
+    let tree = tempfile::tempdir().unwrap();
+    repo_at(tree.path(), "a");
+    repo_at(tree.path(), "b");
+    let r = rig(tree.path());
+
+    r.scans.start(ScanMode::Full, NOW).unwrap();
+    await_idle(&r.scans);
+
+    let handed = r.jobs.indexed.lock().unwrap().clone();
+    assert_eq!(
+        handed.len(),
+        2,
+        "one per repository the walk found: {handed:?}"
+    );
+    let guard = r.index.lock().unwrap();
+    let locations: i64 = guard
+        .conn()
+        .query_row("SELECT COUNT(*) FROM location", [], |row| row.get(0))
+        .unwrap();
+    drop(guard);
+    assert_eq!(locations, 2, "and each one is a row, not just an event");
 }
