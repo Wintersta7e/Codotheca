@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 import { loadSchema, parseTypeExpr } from '../lib/schema.mjs';
 
-const schema = loadSchema(new URL('../schema/protocol.json', import.meta.url).pathname);
+// `fileURLToPath`, never `.pathname`: a file URL's pathname keeps a leading slash, and on
+// Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
+const schema = loadSchema(fileURLToPath(new URL('../schema/protocol.json', import.meta.url)));
 const command = (name) => schema.commands.find((c) => c.name === name);
 
 test('session.focus exists, is unprivileged and returns Empty', () => {

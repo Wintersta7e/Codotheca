@@ -1,17 +1,20 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { joinResults } from './join.mjs';
 import { loadRegistry } from './registry.mjs';
 import { countByStatus, renderDispositions, renderRunReport } from './report.mjs';
 
-const registryPath = new URL('../../acceptance/criteria.json', import.meta.url).pathname;
+// `fileURLToPath`, never `.pathname`: a file URL's pathname keeps a leading slash, and on
+// Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
+const registryPath = fileURLToPath(new URL('../../acceptance/criteria.json', import.meta.url));
 
 test('the committed disposition table matches the registry', () => {
   const registry = loadRegistry(registryPath);
   const onDisk = readFileSync(
-    new URL('../../acceptance/DISPOSITIONS.md', import.meta.url).pathname,
+    fileURLToPath(new URL('../../acceptance/DISPOSITIONS.md', import.meta.url)),
     'utf8',
   );
   assert.equal(renderDispositions(registry), onDisk);

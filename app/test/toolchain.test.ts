@@ -127,9 +127,20 @@ describe('the testkit feature reaches the commands that matter', () => {
     expect(scripts['lint']).toContain('--all-features');
   });
 
-  it("keeps both flags in CI's core job", () => {
+  it('keeps the flag on every cargo test CI runs', () => {
     const ci = repoFile('.github/workflows/ci.yml');
-    expect(ci).toContain('cargo test --manifest-path core/Cargo.toml --features testkit');
+    // Per invocation, not as one fixed string. The whole-command form broke the moment `--locked`
+    // was inserted between `cargo test` and `--features testkit`, reporting the loss of a flag
+    // that had not moved — and it saw only the one job whose spelling it happened to carry.
+    const invocations = ci
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => !line.startsWith('#') && line.includes('cargo test'));
+    expect(invocations.length, 'CI runs no cargo test at all').toBeGreaterThan(0);
+    for (const line of invocations) {
+      expect(line, 'a bare cargo test skips every seam test').toContain('--features testkit');
+      expect(line).toContain('--manifest-path core/Cargo.toml');
+    }
     expect(ci).toContain('--all-targets --all-features -- -D warnings');
   });
 });

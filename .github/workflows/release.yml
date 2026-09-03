@@ -18,10 +18,10 @@ jobs:
       fail-fast: false
       matrix: { os: [ubuntu-latest, windows-latest] }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         # `package.json` declares engines.node ">=22.12.0". Pinning 20 here made the release
         # build the one place in the project running below its own floor.
         with: { node-version: 22, cache: npm }
@@ -49,7 +49,7 @@ jobs:
           echo "packaged artifacts: $count"
           test "$count" -gt 0 || { echo 'no artifact was produced'; ls -la dist || true; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: 'codotheca-${{ matrix.os }}'
           path: dist/*

@@ -187,6 +187,13 @@ fn a_wait_mode_target_ends_the_session_on_process_exit() {
     // Criterion 11, clause 1.
     let mut h = harness();
     let child = std::thread::spawn(|| Some(0));
+    // The manager detects exit through `JoinHandle::is_finished`, so the thread must actually
+    // have run before any tick can observe it. The loop below advances a fake clock and blocks
+    // on nothing, so on a two-core runner it can finish all forty iterations before this thread
+    // is ever scheduled — which failed on CI while passing on every developer machine.
+    while !child.is_finished() {
+        std::thread::yield_now();
+    }
     let s = h.launch(h.alpha, h.loc, Some(child));
     for _ in 0..40 {
         h.clock.advance(TICK);

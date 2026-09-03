@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { criterionOf, loadRegistry, rollUp, validateRegistry } from './registry.mjs';
 
-const registryPath = new URL('../../acceptance/criteria.json', import.meta.url).pathname;
+// `fileURLToPath`, never `.pathname`: a file URL's pathname keeps a leading slash, and on
+// Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
+const registryPath = fileURLToPath(new URL('../../acceptance/criteria.json', import.meta.url));
 
 const entry = (over = {}) => ({
   id: '1',

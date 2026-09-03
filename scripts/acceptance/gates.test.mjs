@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { stripComments, stripRustTestModules, validateForbidden } from '../check-forbidden.mjs';
 import { validateCallSites } from '../check-call-sites.mjs';
@@ -14,7 +15,11 @@ import {
   summarize,
 } from './perf.mjs';
 
-const machines = loadMachines(new URL('../../acceptance/machines.json', import.meta.url).pathname);
+// `fileURLToPath`, never `.pathname`: a file URL's pathname keeps a leading slash, and on
+// Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
+const machines = loadMachines(
+  fileURLToPath(new URL('../../acceptance/machines.json', import.meta.url)),
+);
 const factsA = { platform: 'win32', cores: 8, memoryGb: 32 };
 
 test('an unclaimed machine resolves to null with a reason, never to a default', () => {

@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { persist-credentials: false }
       - name: actionlint
         uses: docker://rhysd/actionlint:1.7.7
@@ -35,15 +35,15 @@ jobs:
       fail-fast: false
       matrix: { os: [ubuntu-latest, windows-latest] }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { persist-credentials: false }
       - uses: dtolnay/rust-toolchain@stable
-        with: { components: rustfmt, clippy }
+        with: { components: "rustfmt, clippy" }
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: core }
       # core/src/protocol.rs is generated and gitignored, so a runner that never touches Node
       # would compile against whatever the last commit happened to leave — or nothing at all.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - name: generate protocol
@@ -85,9 +85,9 @@ jobs:
       # half is full of path handling, and a jsdom suite passing on Linux says nothing about it.
       matrix: { os: [ubuntu-latest, windows-latest] }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { persist-credentials: false }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         # Electron 44 requires >= 22.12.0 and Vite 7 requires ^20.19 || >= 22.12.
         with: { node-version: 22, cache: npm }
       - run: npm ci
@@ -128,12 +128,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { persist-credentials: false }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: core }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run gen
@@ -167,9 +167,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { persist-credentials: false }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -202,6 +202,6 @@ jobs:
         # and a budget checked on unknown hardware is a number nobody can act on.
         if: always()
         run: npm run acceptance
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with: { name: acceptance-report, path: acceptance/report.md }
