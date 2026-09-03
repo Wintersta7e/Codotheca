@@ -66,7 +66,7 @@ fn source_files() -> Vec<(String, String)> {
     out
 }
 
-/// Collect every `OsStr::new("…")` literal in the module: an argv element can enter no other way.
+/// Collect every literal `OsStr::new("…")` argument; computed arguments are audited separately.
 fn os_str_literals(source: &str) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     let mut rest = source;
@@ -80,6 +80,102 @@ fn os_str_literals(source: &str) -> BTreeSet<String> {
         }
     }
     found
+}
+
+#[derive(Debug)]
+struct NonLiteralOsStrAllowance {
+    file: &'static str,
+    call: &'static str,
+    reason: &'static str,
+}
+
+const NON_LITERAL_OS_STR_ALLOWLIST: &[NonLiteralOsStrAllowance] = &[
+    NonLiteralOsStrAllowance {
+        file: "refstate.rs",
+        call: "OsStr::new(&range)",
+        reason: "the value is an upstream-versus-HEAD revision range built from resolved OIDs",
+    },
+    NonLiteralOsStrAllowance {
+        file: "history.rs",
+        call: "OsStr::new(o.as_str())",
+        reason: "each value is a commit OID already selected by the bounded root-history read",
+    },
+    NonLiteralOsStrAllowance {
+        file: "history.rs",
+        call: "OsStr::new(&count)",
+        reason: "the value is the computed -n limit flag, not a git subcommand",
+    },
+    NonLiteralOsStrAllowance {
+        file: "status.rs",
+        call: "OsStr::new(untracked)",
+        reason: "the closed status-mode enum produces one of two read-only untracked-file flags",
+    },
+];
+
+/// Collect `OsStr::new(...)` calls whose argument is not exactly one string literal.
+fn non_literal_os_str_calls(source: &str) -> Vec<String> {
+    const START: &str = "OsStr::new(";
+
+    let mut calls = Vec::new();
+    let mut cursor = 0;
+    while let Some(relative_start) = source[cursor..].find(START) {
+        let call_start = cursor + relative_start;
+        let argument_start = call_start + START.len();
+        let mut depth = 1_u32;
+        let mut in_string = false;
+        let mut escaped = false;
+        let mut call_end = None;
+
+        for (relative, ch) in source[argument_start..].char_indices() {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_string = false;
+                }
+                continue;
+            }
+            match ch {
+                '"' => in_string = true,
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        call_end = Some(argument_start + relative);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let Some(call_end) = call_end else {
+            break;
+        };
+        let argument = source[argument_start..call_end].trim();
+        if !(argument.starts_with('"') && argument.ends_with('"')) {
+            calls.push(source[call_start..=call_end].to_owned());
+        }
+        cursor = call_end + 1;
+    }
+    calls
+}
+
+fn rejected_non_literal_os_str_calls(file: &str, source: &str) -> Vec<String> {
+    non_literal_os_str_calls(source)
+        .into_iter()
+        .filter(|call| {
+            !NON_LITERAL_OS_STR_ALLOWLIST.iter().any(|allowed| {
+                assert!(
+                    !allowed.reason.trim().is_empty(),
+                    "{file}: empty allowlist reason"
+                );
+                allowed.file == file && allowed.call == call
+            })
+        })
+        .collect()
 }
 
 #[test]
@@ -110,6 +206,44 @@ fn every_subcommand_literal_is_on_the_read_only_allow_list() {
             );
         }
     }
+}
+
+#[test]
+fn every_non_literal_os_str_call_is_explicitly_justified() {
+    let files = source_files();
+    let mut scanned = 0;
+    let mut rejected = Vec::new();
+    for (name, source) in &files {
+        scanned += non_literal_os_str_calls(source).len();
+        rejected.extend(
+            rejected_non_literal_os_str_calls(name, source)
+                .into_iter()
+                .map(|call| format!("{name}: {call}")),
+        );
+    }
+    eprintln!(
+        "git read-only dynamic argv audit scanned {} files and {scanned} non-literal calls",
+        files.len()
+    );
+    assert!(
+        !files.is_empty(),
+        "the dynamic argv audit scanned zero source files"
+    );
+    assert!(
+        rejected.is_empty(),
+        "non-literal OsStr::new arguments require an exact justified allowlist entry:\n{}",
+        rejected.join("\n")
+    );
+}
+
+#[test]
+fn a_non_literal_os_str_fixture_is_rejected() {
+    let source = r#"let sub = "push"; OsStr::new(sub)"#;
+    assert_eq!(
+        rejected_non_literal_os_str_calls("fixture.rs", source),
+        ["OsStr::new(sub)"],
+        "a computed argv element must not pass the git read-only audit"
+    );
 }
 
 // The audit has to see something. A run that scanned no literals would pass both assertions

@@ -125,6 +125,20 @@ describe('QuickSwitchHost', () => {
     expect(document.querySelector('.qs-panel')).toBeNull();
   });
 
+  it('Enter opens the page when the selected row has no local copy', () => {
+    const unavailable = makeProjectRow({
+      id: 3 as ProjectId,
+      name: 'Remote only',
+      primaryLocation: null,
+    });
+    const { props } = host({ rows: [unavailable] });
+    altSpace();
+    fireEvent.keyDown(screen.getByRole('combobox'), { code: 'Enter' });
+    expect(props.onOpenPage).toHaveBeenCalledWith(3 as ProjectId);
+    expect(props.onLaunch).not.toHaveBeenCalled();
+    expect(document.querySelector('.qs-panel')).toBeNull();
+  });
+
   it('Esc closes and restores focus to whatever held it', () => {
     host();
     const field = document.createElement('input');

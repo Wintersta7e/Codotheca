@@ -250,8 +250,10 @@ impl GitBackend for SystemGit {
     ) -> GitResult<Vec<(String, String)>> {
         self.with_slot(repo, ctx, || {
             let tokens = crate::identity::remote::remote_urls_argv();
-            let argv: Vec<&std::ffi::OsStr> =
-                tokens.iter().map(|t| std::ffi::OsStr::new(*t)).collect();
+            let argv: Vec<&std::ffi::OsStr> = tokens
+                .iter()
+                .map(|token| <str as AsRef<std::ffi::OsStr>>::as_ref(*token))
+                .collect();
             // `--get-regexp` exits **1 with empty output** when the pattern matches nothing.
             // That is "no remotes", not a failure: classifying it as one would make every
             // local-only repository unidentifiable.

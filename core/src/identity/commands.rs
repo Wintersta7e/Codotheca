@@ -38,8 +38,8 @@ impl std::fmt::Debug for IdentityCtx<'_> {
 #[serde(rename_all = "camelCase")]
 struct MergeArgs {
     /// Neither argument picks the survivor — §1.5's rule does (`choose_survivor`).
-    from: ProjectId,
-    into: ProjectId,
+    a: ProjectId,
+    b: ProjectId,
 }
 
 #[derive(serde::Deserialize)]
@@ -99,8 +99,8 @@ fn handle_merge(ctx: &IdentityCtx<'_>, args: Value) -> Result<Value, CommandFail
             .map_err(|e| CommandFailure::internal(e.to_string()))?;
         let outcome = merge_projects(
             &tx,
-            args.from.0,
-            args.into.0,
+            args.a.0,
+            args.b.0,
             AssociationKind::Manual,
             &evidence,
             ctx.now,
@@ -270,13 +270,13 @@ mod tests {
             events: &sink,
             now: NOW,
         };
-        let failure = dispatch_identity_command(&ctx, "projects.merge", json!({"from": 1}))
+        let failure = dispatch_identity_command(&ctx, "projects.merge", json!({"a": 1}))
             .unwrap()
             .unwrap_err();
         assert_eq!(failure.code, crate::protocol::ErrorCode::Protocol);
     }
 
-    // §1.5: one transaction, and the survivor is the core's choice — not the `into` argument.
+    // §1.5: one transaction, and the survivor is the core's choice — not argument `b`.
     #[test]
     fn merging_commits_once_reports_the_chosen_survivor_and_announces_it() {
         let (_dir, index) = open();
@@ -290,18 +290,18 @@ mod tests {
             now: NOW,
         };
 
-        // Argument order deliberately puts the younger project in `into`.
+        // Argument order deliberately puts the younger project in `b`.
         let out = dispatch_identity_command(
             &ctx,
             "projects.merge",
-            json!({"from": survivor, "into": absorbed}),
+            json!({"a": survivor, "b": absorbed}),
         )
         .unwrap()
         .unwrap();
         assert_eq!(
             out["survivor"],
             json!(survivor),
-            "earliest created_at wins, not `into`"
+            "earliest created_at wins, not argument `b`"
         );
         assert_eq!(out["absorbed"], json!(absorbed));
         assert_eq!(out["locationsReparented"], json!(1));
@@ -342,11 +342,11 @@ mod tests {
             now: NOW,
         };
 
-        dispatch_identity_command(&ctx, "projects.merge", json!({"from": a, "into": b}))
+        dispatch_identity_command(&ctx, "projects.merge", json!({"a": a, "b": b}))
             .unwrap()
             .unwrap();
         // `b` is now stale. Merging it again must land on its survivor, not error.
-        let out = dispatch_identity_command(&ctx, "projects.merge", json!({"from": b, "into": c}))
+        let out = dispatch_identity_command(&ctx, "projects.merge", json!({"a": b, "b": c}))
             .unwrap()
             .unwrap();
         assert_eq!(out["survivor"], json!(a));
@@ -369,7 +369,7 @@ mod tests {
         dispatch_identity_command(
             &ctx,
             "projects.merge",
-            json!({"from": survivor, "into": absorbed}),
+            json!({"a": survivor, "b": absorbed}),
         )
         .unwrap()
         .unwrap();

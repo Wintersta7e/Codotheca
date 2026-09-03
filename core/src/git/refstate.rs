@@ -298,6 +298,22 @@ fn interrupted(git_dir: &Path) -> Option<InterruptedOp> {
     None
 }
 
+fn read_stash_count(common_dir: &Path) -> GitResult<usize> {
+    let path = common_dir.join("logs").join("refs").join("stash");
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(text.lines().filter(|line| !line.trim().is_empty()).count()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            Err(GitError::PermissionDenied {
+                detail: format!("stash reflog: {error}"),
+            })
+        }
+        Err(error) => Err(GitError::Unreadable {
+            detail: format!("stash reflog: {error}"),
+        }),
+    }
+}
+
 /// §6's basis. Cheap: stats, not reads, for everything but `HEAD`.
 ///
 /// The digest itself lives in [`crate::freshness`], which is the only place it is computed.
@@ -382,9 +398,7 @@ pub fn read_ref_state(repo: &RepoHandle, clock: &dyn Clock) -> GitResult<RefStat
     tag_names.sort_unstable();
     tag_names.dedup();
 
-    let stash_count =
-        std::fs::read_to_string(repo.common_dir.join("logs").join("refs").join("stash"))
-            .map_or(0, |t| t.lines().filter(|l| !l.trim().is_empty()).count());
+    let stash_count = read_stash_count(&repo.common_dir)?;
 
     Ok(RefState {
         head_oid,

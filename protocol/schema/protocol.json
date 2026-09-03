@@ -899,7 +899,7 @@
     },
     {
       "name": "projects.merge",
-      "args": { "from": "ProjectId", "into": "ProjectId" },
+      "args": { "a": "ProjectId", "b": "ProjectId" },
       "returns": "MergeResult",
       "$comment": "§11.1: ships with no phase-1 caller and zero call sites outside the test suite"
     },

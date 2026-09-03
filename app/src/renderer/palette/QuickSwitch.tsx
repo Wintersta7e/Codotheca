@@ -123,8 +123,11 @@ export function QuickSwitch(props: QuickSwitchProps): ReactElement {
 
   const commitLaunch = (row: ProjectRow): void => {
     const action = paletteRowAction(row);
-    if (action.kind !== 'launch') return;
-    props.onLaunch(row.id, action.locationId);
+    if (action.kind === 'launch') {
+      props.onLaunch(row.id, action.locationId);
+    } else {
+      props.onOpenPage(row.id);
+    }
     props.onClose();
   };
 

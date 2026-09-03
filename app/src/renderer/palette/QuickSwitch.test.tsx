@@ -110,11 +110,12 @@ describe('QuickSwitch', () => {
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('does not launch a row with no location, and does not close either', () => {
+  it('opens the page instead of leaving a dead row when there is no local copy', () => {
     const { props } = view({ cursor: 1 });
     fireEvent.click(screen.getAllByRole('option')[1] as HTMLElement);
     expect(props.onLaunch).not.toHaveBeenCalled();
-    expect(props.onClose).not.toHaveBeenCalled();
+    expect(props.onOpenPage).toHaveBeenCalledWith(2 as ProjectId);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
   it('closes on a backdrop click and not on a click inside the panel', () => {

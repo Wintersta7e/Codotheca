@@ -10,7 +10,8 @@ mod support;
 
 use codotheca_core::clock::SystemClock;
 use codotheca_core::git::{
-    observation_fingerprint, read_ref_state, ref_fingerprint, InterruptedOp, RefFingerprint,
+    observation_fingerprint, read_ref_state, ref_fingerprint, GitError, InterruptedOp,
+    RefFingerprint,
 };
 use support::TestRepo;
 
@@ -99,6 +100,24 @@ fn stashes_are_counted_from_the_stash_reflog() {
 
     let st = read_ref_state(&repo.handle(), &clock()).unwrap();
     assert_eq!(st.stash_count, 2);
+}
+
+#[test]
+fn an_unreadable_stash_reflog_is_not_reported_as_zero() {
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"one\n");
+    repo.commit("first");
+    let stash = repo
+        .path()
+        .join(".git")
+        .join("logs")
+        .join("refs")
+        .join("stash");
+    std::fs::write(stash, [0xff]).unwrap();
+
+    let error = read_ref_state(&repo.handle(), &clock())
+        .expect_err("an unreadable stash reflog must not produce a numeric stash count");
+    assert!(matches!(error, GitError::Unreadable { .. }), "{error:?}");
 }
 
 #[test]

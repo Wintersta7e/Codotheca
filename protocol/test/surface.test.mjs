@@ -128,6 +128,11 @@ test('every project and location command of §2.4 is declared', () => {
   for (const n of PROJECTS) assert.ok(names.includes(n), `${n} is missing`);
 });
 
+test('projects.merge names symmetric inputs without promising a survivor', () => {
+  const c = schema.commands.find((x) => x.name === 'projects.merge');
+  assert.deepEqual(c.args, { a: 'ProjectId', b: 'ProjectId' });
+});
+
 // §2.4: v1 omitted locationId and could not express which copy of a multi-location project to
 // open. §4bis.5: the renderer sends {projectId, locationId, targetId} and nothing else.
 test('projects.launch carries all three ids and no path', () => {

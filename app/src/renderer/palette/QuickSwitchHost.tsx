@@ -122,8 +122,11 @@ export function QuickSwitchHost(props: QuickSwitchHostProps): ReactElement | nul
           const row = visible[cursor];
           if (row === undefined) return;
           const target = paletteRowAction(row);
-          if (target.kind !== 'launch') return;
-          props.onLaunch(row.id, target.locationId);
+          if (target.kind === 'launch') {
+            props.onLaunch(row.id, target.locationId);
+          } else {
+            props.onOpenPage(row.id);
+          }
           dispatch({ type: 'close' });
           return;
         }
