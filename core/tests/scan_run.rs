@@ -257,6 +257,47 @@ fn a_disabled_root_is_not_walked() {
     assert!(outcome.present_stores.is_empty());
 }
 
+/// Two enabled roots where one contains the other: the shared subtree is walked once.
+///
+/// The guard in `firstrun::roots` is one-directional — it asks whether a *new* path sits under an
+/// existing root and never whether it is an *ancestor* of one — so ticking a child before its
+/// parent leaves both as roots. §10.1a's list invites exactly that order, because it sorts by hit
+/// count and an ancestor with fewer hits renders below its own descendants. Discovering the same
+/// repository twice costs a second walk of the subtree, and §4.7's own measurement is that one
+/// repository can be a quarter of a scan.
+#[test]
+fn a_root_nested_in_another_enabled_root_is_walked_once() {
+    let base = tempfile::tempdir().unwrap();
+    let inner = base.path().join("inner");
+    std::fs::create_dir_all(&inner).unwrap();
+    let repo = repo_at(&inner, "p");
+    let r = rig();
+    // The child is added first, which is the order the guard does not catch.
+    r.store.push_root(root_row(1, &inner, true));
+    r.store.push_root(root_row(2, base.path(), true));
+    let runner = runner(&r, mounts_at(base.path(), "store-a", Some("vol-a")));
+
+    let seen = Mutex::new(Vec::new());
+    runner
+        .run(ScanMode::Full, &|event| {
+            if let WalkEvent::Discovered(d) = event {
+                seen.lock().unwrap().push(*d);
+            }
+        })
+        .unwrap();
+
+    let seen = seen.into_inner().unwrap();
+    assert_eq!(
+        seen.len(),
+        1,
+        "the repository under both roots was discovered {} times",
+        seen.len()
+    );
+    let d = seen.first().unwrap();
+    assert_eq!(d.candidate.path, repo);
+    assert_eq!(d.root_id, 2, "the covering root owns the discovery");
+}
+
 #[test]
 fn a_root_that_is_gone_is_reported_and_its_store_is_absent() {
     let base = tempfile::tempdir().unwrap();

@@ -276,8 +276,38 @@ impl ScanRunner<'_> {
         scan_run_id: i64,
         sink: &WalkSink<'_>,
     ) -> Survey<'r> {
+        /// An enabled root lying under another enabled root of the same kind and distro is
+        /// redundant: the covering root's walk reaches the same directories, so walking both
+        /// costs the subtree twice and discovers every repository under it twice.
+        ///
+        /// It is reachable because `firstrun::roots` guards one direction only — it asks whether
+        /// a *new* path sits under an existing root, never whether it is an *ancestor* of one —
+        /// and §10.1a's list sorts by hit count, which can render an ancestor below its own
+        /// descendants and invite exactly that order. The redundant row is left in `scan_root`:
+        /// the user chose it, `presence` still reads it, and removing it here would be a write
+        /// this pass has no mandate for.
+        fn is_covered(root: &ScanRootRow, roots: &[ScanRootRow]) -> bool {
+            roots.iter().any(|other| {
+                if !other.enabled
+                    || other.root_id == root.root_id
+                    || other.kind != root.kind
+                    || other.distro != root.distro
+                {
+                    return false;
+                }
+                if other.path_key == root.path_key {
+                    // Exact duplicates cover each other; keep the lower id so one of the pair walks.
+                    return other.root_id < root.root_id;
+                }
+                crate::paths::is_under(&root.path_key, &other.path_key)
+            })
+        }
+
         let mut survey = Survey::default();
-        for root in roots.iter().filter(|root| root.enabled) {
+        for root in roots
+            .iter()
+            .filter(|root| root.enabled && !is_covered(root, roots))
+        {
             let path = path_from_bytes(&root.path_bytes);
             let probe = Instant::now();
             let reachable = std::fs::metadata(&path).is_ok();
