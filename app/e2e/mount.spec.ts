@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -43,7 +43,9 @@ async function launch(): Promise<ElectronApplication> {
   });
 }
 
-test('the app paints a real first-run screen', async () => {
+// Playwright rejects a non-destructured first argument outright, so the empty pattern is the
+// only way to reach `testInfo`.
+test('the app paints a real first-run screen', async ({}, testInfo) => {
   test.skip(
     !existsSync(coreBinary),
     'the release core binary is not built, so the first-run gate has nothing to wait on',
@@ -75,6 +77,19 @@ test('the app paints a real first-run screen', async () => {
   await window.evaluate(() => {
     document.getElementById('paint-probe')?.remove();
   });
+
+  // Both frames are kept whatever happens. When this assertion fails on a machine nobody can
+  // attach a debugger to, the byte counts alone cannot distinguish "the app drew nothing" from
+  // "the capture returned an uncomposited surface", and those have opposite fixes.
+  // Written through `outputPath`, never `attach({ body })` — a body-only attachment lives in the
+  // reporter and never reaches the output directory a CI job can upload. Both frames are written
+  // on a green run too; `test-results/` is gitignored.
+  writeFileSync(testInfo.outputPath('painted.png'), painted);
+  writeFileSync(testInfo.outputPath('blank.png'), blank);
+  // eslint-disable-next-line no-console -- the measurement is the deliverable
+  console.log(
+    `paint probe: painted=${String(painted.byteLength)} blank=${String(blank.byteLength)}`,
+  );
 
   // A flat frame compresses to almost nothing and is still a valid non-empty PNG, which is why
   // "the screenshot exists" proves nothing at all.
