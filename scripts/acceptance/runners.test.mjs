@@ -27,6 +27,23 @@ test('parseLibtest reads ok, FAILED and ignored', () => {
   ]);
 });
 
+// Regression: `Swatinem/rust-cache` sets CARGO_TERM_COLOR=always, so on CI cargo's own lines
+// arrive wrapped in SGR escapes. `Running` then never matched, every integration test was recorded
+// under its bare function name, and the harness reported the same eight tests twice — as criteria
+// that "did not run" and as results "no check claims". This is that exact stdout.
+test('parseLibtest qualifies the binary even when cargo colours its output', () => {
+  const E = String.fromCharCode(27);
+  const stdout = [
+    `${E}[1m${E}[32m     Running${E}[0m tests/acceptance_art.rs (target/debug/deps/acceptance_art-2)`,
+    'running 1 test',
+    `test ac_56_reroll_offset_is_absolute ... ${E}[32mok${E}[0m`,
+  ].join('\n');
+  assert.deepEqual(
+    parseLibtest(stdout).map((r) => [r.id, r.status]),
+    [['acceptance_art::ac_56_reroll_offset_is_absolute', 'passed']],
+  );
+});
+
 // The shape cargo actually prints. libtest gives a bare function name for an integration test,
 // so the binary has to come from cargo's own Running line or the registry could never say which
 // file a function lives in — and two files defining `ac_14_a` would be one id.

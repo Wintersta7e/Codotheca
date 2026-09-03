@@ -97,7 +97,12 @@ impl TargetProbe for WindowsProbe {
         ProbeFacts::default()
     }
 
+    // 138 lines of registry walking: three hives, each with its own key layout and its own
+    // failure mode. Splitting it would move the hive-specific handling away from the hive it
+    // belongs to for no gain in testability, since none of it is reachable off Windows.
+    // Same allow, same reason, as `core/src/main.rs:105`.
     #[cfg(windows)]
+    #[allow(clippy::too_many_lines)]
     fn probe(&self) -> ProbeFacts {
         use crate::launch::probe::{ProbeSource, ProbedApp};
         use winreg::enums::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};

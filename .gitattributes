@@ -1,0 +1,26 @@
+# Line endings are normalised because the protocol lock hashes tracked file *bytes*
+# (`protocol/generate.mjs:28` hashes `protocol/schema/protocol.json` verbatim). Without this a
+# Windows checkout under the runner default `core.autocrlf=true` produces CRLF, a different hash,
+# and a different `generated.lock` — so the gate that exists to catch an unreviewed generator
+# change instead fails on every Windows run for a reason that has nothing to do with the schema.
+* text=auto eol=lf
+
+# Windows shells will not reliably run an LF batch file.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary: never diffed, never normalised.
+*.png binary
+*.webp binary
+*.ico binary
+*.woff2 binary
+*.exe binary
+*.dll binary
+*.node binary
+
+# Generated and vendored. Collapsed in review and excluded from language statistics, but still
+# diffable — a lockfile change is exactly the thing a reviewer must be able to read.
+package-lock.json linguist-generated=true
+protocol/generated.lock linguist-generated=true
+core/Cargo.lock linguist-generated=true
+licenses/** linguist-vendored=true

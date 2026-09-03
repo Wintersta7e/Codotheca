@@ -93,6 +93,11 @@ impl SystemMountResolver {
 }
 
 /// One row of `/proc/self/mountinfo`, reduced to what §4.7 needs.
+///
+/// `cfg(unix)` because the only caller is the unix resolver below. Ungated, Windows compiles it,
+/// never constructs it, and `-D warnings` fails the build — which is how CI's first Windows
+/// clippy run found it.
+#[cfg(unix)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MountEntry {
     pub(crate) mount_point: std::path::PathBuf,
@@ -103,6 +108,7 @@ pub(crate) struct MountEntry {
 
 /// Longest mount point covering `path`. Malformed lines are skipped, never fatal — this file
 /// is read on every scan and one unexpected row must not blind the scheduler.
+#[cfg(unix)]
 pub(crate) fn parse_mountinfo(contents: &str, path: &Path) -> Option<MountEntry> {
     let mut best: Option<MountEntry> = None;
     for line in contents.lines() {
@@ -140,6 +146,7 @@ pub(crate) fn parse_mountinfo(contents: &str, path: &Path) -> Option<MountEntry>
 }
 
 /// Class from the filesystem type alone. `Unknown` means "ask the block device next".
+#[cfg(unix)]
 pub(crate) fn class_for_fs_type(fs_type: &str) -> StoreClass {
     if fs_type.starts_with("fuse") {
         return StoreClass::Fuse;
@@ -248,7 +255,7 @@ impl MountResolver for SystemMountResolver {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     #![allow(
         clippy::unwrap_used,

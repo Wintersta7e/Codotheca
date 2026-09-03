@@ -36,6 +36,7 @@ acceptance/report.json
 acceptance/results/
 
 # editor and tool state
+.claude/
 .serena/
 .vscode/
 .idea/

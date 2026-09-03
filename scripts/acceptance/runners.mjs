@@ -7,6 +7,18 @@
 import { tagsIn } from './tags.mjs';
 
 const LIBTEST = /^test\s+(\S+)\s+\.\.\.\s+(ok|FAILED|ignored)\b/u;
+
+/**
+ * Cargo's lines arrive wrapped in SGR escapes whenever `CARGO_TERM_COLOR=always`, which
+ * `Swatinem/rust-cache` sets on every runner that uses it. Uncoloured locally, coloured on CI —
+ * so `RUNNING` matched here and never there, `binary` stayed null, and every integration test was
+ * recorded under its bare function name. The harness then reported eight criteria as *did not run*
+ * beside seven results as *no check claims it*: the same tests, seen from either side.
+ *
+ * Stripping is done on the parser side rather than by pinning the environment, because the
+ * environment is set by an action this repository does not own.
+ */
+const SGR = /\u001B\[[0-9;]*m/gu;
 /**
  * Cargo's own line above each binary's output. libtest prints a function's **bare** name — an
  * integration test in `core/tests/acceptance_art.rs` reports `ac_56_reroll_offset_is_absolute`
@@ -26,7 +38,8 @@ function result(id, status, runner) {
 export function parseLibtest(stdout) {
   const out = [];
   let binary = null;
-  for (const line of String(stdout).split('\n')) {
+  for (const raw of String(stdout).split('\n')) {
+    const line = raw.replace(SGR, '');
     const running = RUNNING.exec(line);
     if (running !== null) {
       binary = running[1];

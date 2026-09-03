@@ -4,15 +4,39 @@ on:
   pull_request:
 permissions: { contents: read }
 
+# A second push to the same ref makes the first run's result irrelevant. Without this they both
+# run to completion and the older one can report after the newer.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Nothing else in this file protects this file. `release.yml` carried a `${{ }}` expression
+  # inside a YAML flow mapping — which makes `{` an indicator — and was unparseable from the day
+  # it was written: GitHub reported a 0-second "workflow file issue" and ran no job at all.
+  # actionlint parses every workflow, type-checks every expression, and shellchecks every
+  # `run:` block, so the next one fails here instead of on a release tag.
+  workflows:
+    name: workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.7
+        with: { args: -color }
+
   core:
     name: core (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix: { os: [ubuntu-latest, windows-latest] }
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - uses: dtolnay/rust-toolchain@stable
         with: { components: rustfmt, clippy }
       - uses: Swatinem/rust-cache@v2
@@ -27,9 +51,11 @@ jobs:
       - name: fmt
         run: cargo fmt --manifest-path core/Cargo.toml -- --check
       - name: clippy
-        run: cargo clippy --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings
       - name: test
-        run: cargo test --manifest-path core/Cargo.toml --features testkit
+        # `--locked` on every cargo invocation: a Cargo.lock that no longer matches Cargo.toml
+        # otherwise resolves silently on the runner and the build is not the one committed.
+        run: cargo test --locked --manifest-path core/Cargo.toml --features testkit
       # §13's second binary. It only ever runs on Linux, but it must not rot between releases,
       # and the Windows packaging job cannot stage what was never built. Both architectures are
       # built: WSL2 runs on arm64 Windows too, and a target nobody compiles is one that breaks
@@ -37,23 +63,30 @@ jobs:
       - name: build the WSL worker
         if: runner.os == 'Linux'
         run: |
-          cargo build --manifest-path core/Cargo.toml --bin codotheca-worker
+          cargo build --locked --manifest-path core/Cargo.toml --bin codotheca-worker
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
           rustup target add aarch64-unknown-linux-gnu
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
-            cargo build --manifest-path core/Cargo.toml --bin codotheca-worker \
+            cargo build --locked --manifest-path core/Cargo.toml --bin codotheca-worker \
               --target aarch64-unknown-linux-gnu
       - name: corpus generates on this platform
         # The fixtures whose builders differ by platform: a bare clone, a linked worktree, a
         # recursive submodule, a path git can only hold in the tree, and one over MAX_PATH.
-        run: cargo run --manifest-path core/Cargo.toml --features testkit --bin codotheca-corpus -- --out corpus-check --only bare,linked-worktree,submodule-parent,non-utf8-path,long-path --force
+        run: cargo run --locked --manifest-path core/Cargo.toml --features testkit --bin codotheca-corpus -- --out corpus-check --only bare,linked-worktree,submodule-parent,non-utf8-path,long-path --force
 
   app:
-    name: app
-    runs-on: ubuntu-latest
+    name: app (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # Windows is the primary target and the shell suite had never run there. The main-process
+      # half is full of path handling, and a jsdom suite passing on Linux says nothing about it.
+      matrix: { os: [ubuntu-latest, windows-latest] }
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - uses: actions/setup-node@v4
         # Electron 44 requires >= 22.12.0 and Vite 7 requires ^20.19 || >= 22.12.
         with: { node-version: 22, cache: npm }
@@ -87,30 +120,55 @@ jobs:
         # The TypeScript half of fmt:check only. `cargo fmt --check` already runs in the core
         # job on both runners; installing a Rust toolchain here to repeat it would be a
         # second copy of a gate that is already green.
+        if: runner.os == 'Linux'
         run: npx prettier --check "app/**/*.{ts,tsx}" "scripts/**/*.mjs"
 
   e2e:
     name: e2e (electron)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: core }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run gen
+      # mount.spec.ts calls `test.skip()` when core/target/release/codotheca-core is absent, so
+      # without this the job passed in 41 seconds having asserted nothing about a painted screen.
+      # The first CI run did exactly that. The binary is the test's precondition, not an extra.
+      - name: build the release core
+        run: cargo build --locked --release --manifest-path core/Cargo.toml --bin codotheca-core
+      - name: the precondition the pixel test skips on
+        run: test -x core/target/release/codotheca-core
       - run: npm run build:app
       # Electron ships its own Chromium; only the shared libraries are missing on a runner.
       - run: npx playwright install-deps chromium
       - name: end to end
         # The app has never been launched by CI. One smoke test proves the driver, the build
         # output path and the display before plan 20 wires 67 criteria into this directory.
-        run: xvfb-run --auto-servernum npm run test:e2e --workspace app
+        #
+        # A skip here is a failure: this suite holds the only assertion in the repository about a
+        # pixel, and it degrades to green silently. A gate whose passing run measures nothing is
+        # a failing gate.
+        run: |
+          set -o pipefail
+          xvfb-run --auto-servernum npm run test:e2e --workspace app 2>&1 | tee e2e.log
+          if grep -qiE '[0-9]+ skipped' e2e.log; then
+            echo "::error::an e2e test skipped — it asserted nothing. The release core is the usual cause."
+            exit 1
+          fi
 
   acceptance:
     name: acceptance
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
@@ -134,7 +192,7 @@ jobs:
         # a red suite: this repository has already shipped one gate that could not fail.
         run: |
           set -o pipefail
-          cargo test --manifest-path core/Cargo.toml --features testkit -- --nocapture \
+          cargo test --locked --manifest-path core/Cargo.toml --features testkit -- --nocapture \
             | tee acceptance/results/cargo.txt
       - name: app suite
         run: npm run test --workspace app -- --reporter=json --outputFile=../acceptance/results/vitest.json
