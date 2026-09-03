@@ -7,8 +7,8 @@ One row per criterion; the disposition is the weakest of its checks.
 | Disposition | Criteria | Checks |
 |---|---|---|
 | automated | 1 | 39 |
-| deferred | 61 | 121 |
-| manual | 5 | 6 |
+| deferred | 60 | 121 |
+| manual | 6 | 7 |
 | unmeasurable | 2 | 3 |
 | external | 1 | 1 |
 
@@ -41,7 +41,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | 25 | deferred | Every promised problem is reachable; every never-indexed repository carries an explained error | `AC-25-kinds` automated, runs now — `check-problem-kinds:reachable`<br>`AC-25-summary` deferred, plan 17c — `AC-25 every counted problem is reachable in the scan summary`<br>`AC-25-explained` deferred, plan 09 — `acceptance_jobs::ac_25_never_indexed_carries_an_explained_error`<br>`AC-25-problem-location` deferred, plan 04 — `acceptance_jobs::ac_25_a_problem_row_names_the_location_it_came_from` |
 | 26 | manual | Signed per-user NSIS with a working updater round trip | `AC-26-roundtrip` deferred, plan 19 — `AC-26 the updater round trip completes against a local feed`<br>`AC-26-signature` manual, gate `RELEASE-SIGNING` |
 | 27 | deferred | AppImage self-updates; deb and rpm install with the updater disabled | `AC-27-appimage` deferred, plan 19 — `AC-27 the AppImage self-updates from a local feed`<br>`AC-27-packages` deferred, plan 19 — `check-packages:updater-disabled` |
-| 28 | deferred | diag.bundle exports the stated fields, anonymised by default | `AC-28-fields` deferred, plan 17 — `acceptance_diag::ac_28_bundle_exports_the_stated_fields` |
+| 28 | manual | diag.bundle exports the stated fields, anonymised by default | `AC-28-fields` deferred, plan 17 — `acceptance_diag::ac_28_bundle_exports_the_stated_fields`<br>`AC-28-anonymise` manual, gate `DIAG-ANONYMISATION` |
 | 29 | external | Real Linux GPU rendering across the driver and compositor matrix | `AC-29-linux-gpu` external, not gated |
 | 30 | deferred | Scroll frame pacing | `AC-30-pacing` deferred, plan 13c — `perf::scroll_frame_pacing` |
 | 31 | deferred | Palette painted with its first page of rows | `AC-31-warm` deferred, plan 15 — `perf::palette_warm`<br>`AC-31-cold` deferred, plan 15 — `perf::palette_cold` |
@@ -109,6 +109,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | `AC-26-signature` | manual | The code-signing certificate is a hardware-token procurement and none has been obtained: phase 1 ships unsigned and the packager reports that posture rather than hiding it. The private key could not exist in CI even once it does, so no automated job can produce or verify a genuinely signed artifact. |
 | `AC-27-appimage` | deferred | Phase 1 ships no update channel, so the AppImage self-update has nothing to update from. The AppImage target itself is built and packed. |
 | `AC-27-packages` | deferred | There is no updater to disable and therefore no flag to carry. What ships instead is the stronger statement, gated today by scripts/check-no-updater.mjs in the bundle guard: the updater package is absent from the dependency tree and from the built shell entirely. That gate emits no joinable result row, so the criterion cannot claim it until either it does or this check is rewritten against what actually exists. |
+| `AC-28-anonymise` | manual | A reviewer performs this before a release, against the built binary rather than the source. It is not automated here for two reasons. The cargo half (AC-28-fields, owner 17) asserts the document's shape but builds no bundle from host-shaped paths, so it cannot see an anonymiser that stopped covering a field. And the control half is what makes the result mean anything: without re-exporting the same index with real paths and watching the assertion fail, a clean run is indistinguishable from a run whose fixture never reached the anonymiser at all. That pairing is a judgement about whether the fixture was representative, which is why it is a person's gate and not a machine's. |
 | `AC-29-linux-gpu` | external | Neither the maintainer nor CI can exercise it: development is on Windows with WSL, WSLg is unrepresentative, and CI runners are headless. Criteria 15 and 21 are measured on A and on WSLg only; the Linux figures come from external users during the public beta. This is a known, accepted gap and it is the reason phase 1 ships publicly as a beta. |
 | `AC-50-readability` | manual | The criterion is marked half in the spec: whether condition, tier, rank and safety remain readable from static form alone is a human reading, and absence of a condition dot is a correct static reading rather than a failure. |
 | `AC-51-voice` | manual | The spec marks this criterion as not automatable: no second-person accusation, no editorialised figure and nothing that congratulates volume are judgements about prose, and a machine reading them would be asserting a keyword list rather than the rule. |
