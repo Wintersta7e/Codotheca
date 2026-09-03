@@ -11,7 +11,11 @@ import { readScannedFile } from './lib/read-scanned.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const rendererDir = join(root, 'app/src/renderer');
-const typeSource = readScannedFile(join(rendererDir, 'theme/type.ts')) ?? '';
+// Held as a path rather than a suffix: `join` yields `\` on Windows, so the `theme/type.ts`
+// literal this used to be compared against never matched there. The one file allowed to name a
+// size the scale forbids was then scanned like any other and reported against itself.
+const typeFile = join(rendererDir, 'theme/type.ts');
+const typeSource = readScannedFile(typeFile) ?? '';
 
 const scaleFrom = (name) => {
   const block = new RegExp(`${name}: readonly number\\[\\] = \\[([^\\]]*)\\]`).exec(typeSource);
@@ -46,7 +50,7 @@ const TSX_SIZE = /fontSize\s*:\s*['"]?(\d+(?:\.\d+)?)(?:px)?['"]?/g;
 
 const scanned = [];
 for (const file of files(rendererDir, ['.css', '.tsx', '.ts'])) {
-  if (file.endsWith('theme/type.ts') || file.endsWith('.test.ts') || file.endsWith('.test.tsx')) {
+  if (file === typeFile || file.endsWith('.test.ts') || file.endsWith('.test.tsx')) {
     continue;
   }
   const text = readScannedFile(file);
