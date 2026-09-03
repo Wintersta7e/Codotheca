@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Codotheca's mark: a shelf of spines inside the product's own chamfered card plate.
+
+    The first attempt read as a bar chart, because equal widths and monotonically rising heights
+    standing on a rule IS the bar-chart idiom no matter what it is meant to be. Three things fix
+    it and all three are load-bearing: widths VARY, heights are NOT ordered, and one spine LEANS.
+    A leaning volume is the oldest signifier a shelf has, and no chart contains one.
+
+    Spine bodies use text-5 and fore-edges line-5, both classed ornament-only, which an icon is. Colours are tokens from app/src/renderer/styles/tokens.css and nothing else. Exactly one
+    spine wears `sig` #4a9dff, the colour reserved for "system, alive", so the eye lands in one
+    place at 32px. Token names below omit their leading dashes: XML forbids them in a comment.
+  -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#171d23"/>
+      <stop offset="0.55" stop-color="#101418"/>
+      <stop offset="1" stop-color="#0a0d10"/>
+    </linearGradient>
+    <linearGradient id="bevel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3c454e" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#3c454e" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="live" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8ec2ff"/>
+      <stop offset="1" stop-color="#4a9dff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- The ground: app-bg, the same black the window opens to. -->
+  <rect width="1024" height="1024" rx="184" fill="#07090b"/>
+
+  <!-- The plate, chamfered top-right: the card's own corner, not a generic app tile. -->
+  <path d="M 128 152 H 760 L 896 288 V 872 H 128 Z" fill="url(#plate)"/>
+  <path d="M 128 152 H 760 L 896 288 V 872 H 128 Z" fill="none" stroke="#3c454e" stroke-width="10"/>
+  <!-- The chamfer's edge, caught brighter, which is what makes the cut read as a cut. -->
+  <path d="M 760 152 L 896 288" fill="none" stroke="#8ec2ff" stroke-width="10" stroke-opacity="0.6"/>
+  <path d="M 128 152 H 760 L 896 288 V 320 H 128 Z" fill="url(#bevel)" opacity="0.45"/>
+
+  <!--
+    Six spines. Widths 74/52/96/64/86 and heights that fall as well as rise, so no reading of
+    them is a series. Two carry a fore-edge line, the way a book shows its pages.
+  -->
+  <g>
+    <!-- tall, wide -->
+    <rect x="196" y="352" width="96" height="392" rx="7" fill="#4a5560"/>
+    <rect x="272" y="352" width="10" height="392" fill="#3c454e"/>
+
+    <!-- short, narrow: breaks any ascending order immediately -->
+    <rect x="308" y="470" width="52" height="274" rx="7" fill="#3c454e"/>
+
+    <!-- the live one, upright and central -->
+    <rect x="376" y="398" width="86" height="346" rx="7" fill="url(#live)"/>
+    <rect x="376" y="398" width="86" height="346" rx="7" fill="#4a9dff" opacity="0.16"/>
+
+    <!-- tall again, then short: the sequence goes down as well as up -->
+    <rect x="478" y="424" width="74" height="320" rx="7" fill="#4a5560"/>
+    <rect x="534" y="424" width="9" height="320" fill="#3c454e"/>
+
+    <rect x="568" y="516" width="64" height="228" rx="7" fill="#3c454e"/>
+
+    <!--
+      The leaning volume. This is the element that stops the mark reading as a chart, so it is
+      deliberately the widest gesture: rotated about its own foot, resting on the last upright.
+    -->
+    <g transform="rotate(15 700 744)">
+      <rect x="652" y="418" width="88" height="326" rx="7" fill="#4a5560"/>
+      <rect x="722" y="418" width="10" height="326" fill="#3c454e"/>
+    </g>
+  </g>
+
+  <!-- The shelf: line-5, the rule weight the card chrome already uses. -->
+  <rect x="176" y="752" width="616" height="16" rx="8" fill="#3c454e"/>
+</svg>
