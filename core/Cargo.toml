@@ -83,6 +83,18 @@ image-webp = "0.2"
 # Default features off: the macOS FSEvents backend is the only optional one this needs and the
 # targets are Windows and Linux, which use ReadDirectoryChangesW and inotify unconditionally.
 notify = { version = "6", default-features = false, features = ["macos_fsevent"] }
+# The one HTTP client in the product (R66). Blocking, because every subsystem in this core is
+# blocking threads. `reqwest`'s blocking client is implemented over its async one and starts a
+# background tokio runtime — so tokio IS in the tree; what is NOT in the tree is any async code
+# of ours, which the gate in core/tests/http_transport.rs asserts over every file in core/src/.
+# rustls rather than native-tls: no OpenSSL to build for two targets, and no system library to
+# version-skew.
+reqwest = { version = "0.12.24", default-features = false, features = [
+    "blocking",
+    "rustls-tls",
+    "gzip",
+    "json",
+] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
