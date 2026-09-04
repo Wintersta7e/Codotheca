@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { joinResults } from './join.mjs';
 import { loadRegistry } from './registry.mjs';
-import { countByStatus, renderDispositions, renderRunReport } from './report.mjs';
+import { countByPhase, countByStatus, renderDispositions, renderRunReport } from './report.mjs';
 
 // `fileURLToPath`, never `.pathname`: a file URL's pathname keeps a leading slash, and on
 // Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
@@ -67,4 +67,36 @@ test('the run report says which suites did not run rather than implying they pas
   );
   assert.match(rendered, /Suites not run here: e2e, vitest/u);
   assert.match(rendered, /partial run/u);
+});
+
+test('countByPhase splits the register without a second file', () => {
+  const registry = loadRegistry(registryPath);
+  const counts = countByPhase(registry);
+  assert.equal(counts[1].criteria, 70);
+  assert.equal(counts[1].checks, 171);
+  assert.equal(counts[2].criteria, 0);
+  assert.equal(counts[2].checks, 0);
+  assert.equal(
+    Object.values(counts[1].byStatus).reduce((a, b) => a + b, 0),
+    counts[1].checks,
+  );
+  assert.equal(
+    Object.values(counts[2].byStatus).reduce((a, b) => a + b, 0),
+    0,
+  );
+});
+
+test('the table names both phases, and says phase 2 holds nothing yet rather than nothing', () => {
+  const rendered = renderDispositions(loadRegistry(registryPath));
+  assert.match(rendered, /## Phase 1/u);
+  assert.match(rendered, /## Phase 2/u);
+  assert.match(rendered, /no phase-2 criteria are registered yet/iu);
+});
+
+test('the run report splits its check count by phase', () => {
+  const registry = loadRegistry(registryPath);
+  const join = joinResults(registry, []);
+  const rendered = renderRunReport(registry, join, { newFailures: [], stale: [], missing: [] }, []);
+  assert.match(rendered, /Phase 1: 171 checks/u);
+  assert.match(rendered, /Phase 2: 0 checks/u);
 });

@@ -1,12 +1,23 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { criterionOf, loadRegistry, rollUp, validateRegistry } from './registry.mjs';
+import {
+  DEFERRALS,
+  LIVE_OBSERVATION_CHECKS,
+  PHASE2_SECTIONS,
+  criterionOf,
+  loadRegistry,
+  phaseOf,
+  rollUp,
+  validateRegistry,
+} from './registry.mjs';
 
 // `fileURLToPath`, never `.pathname`: a file URL's pathname keeps a leading slash, and on
 // Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
 const registryPath = fileURLToPath(new URL('../../acceptance/criteria.json', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 
 const entry = (over = {}) => ({
   id: '1',
@@ -260,4 +271,271 @@ test('a budget anywhere in the registry names the measurement it is a budget for
       assert.ok(check.measurement, `${check.id} carries a budget and no measurement`);
     }
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// The second phase. The phase-1 forms above are untouched on purpose: a second id form is added
+// beside the first rather than replacing it, so every assertion in this file still reads the
+// behaviour phase 1 shipped with.
+// ---------------------------------------------------------------------------------------------
+
+const p2Check = (over = {}) => ({
+  id: 'AC-P2-20-1',
+  status: 'deferred',
+  runner: 'cargo',
+  owner: 'p2-20',
+  test: 'acceptance_p2_accounts::ac_p2_20_1',
+  assert: 'a'.repeat(12),
+  ...over,
+});
+
+const p2Entry = (over = {}) => ({
+  id: 'P2-20-1',
+  title: 'A phase-2 criterion',
+  group: 'subsystems',
+  spec: '§20.15',
+  checks: [p2Check()],
+  ...over,
+});
+
+/** §20's criteria `1..n`, so a section-completeness assertion has a whole section to read. */
+function section20(n) {
+  const criteria = [];
+  for (let i = 1; i <= n; i += 1) {
+    criteria.push(
+      p2Entry({
+        id: `P2-20-${String(i)}`,
+        checks: [
+          p2Check({
+            id: `AC-P2-20-${String(i)}`,
+            test: `acceptance_p2_accounts::ac_p2_20_${String(i)}`,
+          }),
+        ],
+      }),
+    );
+  }
+  return criteria;
+}
+
+/** Only the problems this register's phase-2 half produced. The phase-1 sweep still runs. */
+const phase2Problems = (criteria, root = null) =>
+  validateRegistry({ version: 1, criteria }, root).filter((p) => p.includes('P2-'));
+
+const liveCheck = (over = {}) => ({
+  id: 'AC-P2-20-13',
+  status: 'deferred',
+  deferral: 'live-observation',
+  runner: 'none',
+  owner: 'p2-20',
+  reason: 'r'.repeat(30),
+  verification: { recordedAt: null, evidence: null },
+  assert: 'a'.repeat(12),
+  ...over,
+});
+
+const withLive = (over) => [p2Entry({ id: 'P2-20-13', checks: [liveCheck(over)] })];
+
+test('criterionOf reads a phase-2 criterion out of a phase-2 check id', () => {
+  assert.equal(criterionOf('AC-P2-24-3'), 'P2-24-3');
+  assert.equal(criterionOf('AC-P2-25-10-ddl'), 'P2-25-10');
+  assert.equal(criterionOf('AC-P2-21-3-floor'), 'P2-21-3');
+  // §26 holds no criterion of its own, so the id form refuses one rather than a reviewer.
+  assert.equal(criterionOf('AC-P2-26-1'), null);
+  // The phase-1 forms are unchanged.
+  assert.equal(criterionOf('AC-14'), '14');
+  assert.equal(criterionOf('AC-45b-grid-and-hero'), '45b');
+});
+
+test('phaseOf reads a criterion id or a check id', () => {
+  assert.equal(phaseOf('P2-20-1'), 2);
+  assert.equal(phaseOf('AC-P2-24-3'), 2);
+  assert.equal(phaseOf('45b'), 1);
+  assert.equal(phaseOf('AC-14'), 1);
+});
+
+test('the section table is §26.1 and adds up to 102', () => {
+  assert.deepEqual(PHASE2_SECTIONS, { 20: 13, 21: 15, 22: 13, 23: 12, 24: 23, 25: 26 });
+  assert.equal(
+    Object.values(PHASE2_SECTIONS).reduce((a, b) => a + b, 0),
+    102,
+  );
+  assert.deepEqual(DEFERRALS, ['plan', 'live-observation']);
+  assert.deepEqual(LIVE_OBSERVATION_CHECKS, ['AC-P2-20-13', 'AC-P2-21-3-floor']);
+});
+
+test('a live-observation deferral refuses a test id', () => {
+  const problems = validateRegistry({ version: 1, criteria: withLive({ test: 'x::y' }) });
+  assert.ok(problems.some((p) => p.includes('AC-P2-20-13') && p.includes('test')));
+});
+
+test('a date with no record, and a record with no date, are both refused', () => {
+  const dated = withLive({ verification: { recordedAt: '2026-09-04', evidence: 'too short' } });
+  assert.ok(
+    validateRegistry({ version: 1, criteria: dated }).some((p) => p.includes('evidence')),
+    'a date without a record is not a record',
+  );
+  const undated = withLive({ verification: { recordedAt: null, evidence: 'e'.repeat(30) } });
+  assert.ok(
+    validateRegistry({ version: 1, criteria: undated }).some((p) => p.includes('recordedAt')),
+    'evidence with no date it was recorded on is not an observation',
+  );
+});
+
+test('live-observation is the two ids it is ruled for and nothing else', () => {
+  const criteria = [p2Entry({ checks: [liveCheck({ id: 'AC-P2-20-1' })] })];
+  assert.ok(
+    validateRegistry({ version: 1, criteria }).some((p) => p.includes('live-observation')),
+    'a third live-observation needs a ruling, not a field',
+  );
+});
+
+test('a deferral value the register does not know, and one on a check that is not deferred', () => {
+  const unknown = [p2Entry({ checks: [p2Check({ deferral: 'someday' })] })];
+  assert.ok(
+    validateRegistry({ version: 1, criteria: unknown }).some((p) => p.includes('deferral')),
+  );
+  const misplaced = [
+    p2Entry({
+      checks: [
+        p2Check({ status: 'automated', deferral: 'plan', test: 'acceptance_p2_accounts::x' }),
+      ],
+    }),
+  ];
+  assert.ok(
+    validateRegistry({ version: 1, criteria: misplaced }).some((p) => p.includes('deferral')),
+  );
+});
+
+test('a phase-2 check carries no performance figure at all', () => {
+  for (const over of [
+    { runner: 'perf' },
+    { measurement: { kind: 'size', machines: ['A'], thermal: 'n/a' } },
+    { budget: [{ metric: 'bytes', op: '<', value: 1 }] },
+  ]) {
+    const criteria = [p2Entry({ checks: [p2Check(over)] })];
+    const problems = validateRegistry({ version: 1, criteria });
+    assert.ok(
+      problems.some((p) => p.includes('AC-P2-20-1') && p.includes('performance')),
+      `phase 2 records no ${JSON.stringify(over)}`,
+    );
+  }
+});
+
+test('a phase-2 criterion cites its own section, never §16', () => {
+  const criteria = [p2Entry({ id: 'P2-25-10', spec: '§16.1', checks: [] })];
+  assert.ok(validateRegistry({ version: 1, criteria }).some((p) => p.includes('§25.')));
+});
+
+test('external is criterion 29 and is not reachable from phase 2', () => {
+  const criteria = [
+    p2Entry({ checks: [p2Check({ status: 'external', runner: 'none', reason: 'r'.repeat(30) })] }),
+  ];
+  assert.ok(validateRegistry({ version: 1, criteria }).some((p) => p.includes('external')));
+});
+
+test('a section holding twelve of its thirteen criteria names the one that is missing', () => {
+  const problems = phase2Problems(section20(12));
+  assert.deepEqual(problems.length, 1, problems.join('\n'));
+  assert.ok(problems[0].includes('P2-20-13'), problems[0]);
+});
+
+test('a fully registered section validates, and a section with nothing in it is silent', () => {
+  // §21 through §25 hold nothing here. A section with no entry is not yet registered, which is
+  // what lets the harness widening land before the first phase-2 criterion exists.
+  assert.deepEqual(phase2Problems(section20(13)), []);
+});
+
+test('a duplicate inside a section is a problem, not a silent overwrite', () => {
+  const criteria = section20(13);
+  criteria[12] = { ...criteria[12], id: 'P2-20-12' };
+  assert.ok(phase2Problems(criteria).some((p) => p.includes('P2-20')));
+});
+
+test('a scanning check says out loud that it prints a count and fails at zero', () => {
+  const quiet = [p2Entry({ checks: [p2Check({ scanning: true })] })];
+  assert.ok(validateRegistry({ version: 1, criteria: quiet }).some((p) => p.includes('scanning')));
+  const loud = [
+    p2Entry({
+      checks: [
+        p2Check({
+          scanning: true,
+          assert: 'walks core/src, prints the file count and fails at zero files scanned',
+        }),
+      ],
+    }),
+  ];
+  assert.ok(!validateRegistry({ version: 1, criteria: loud }).some((p) => p.includes('scanning')));
+});
+
+test('a source is a citation, a probe or the schema — never a restatement of the number', () => {
+  for (const source of ['§8.0a', '§25.3', 'schema', 'probe:shelf-fps']) {
+    const criteria = [p2Entry({ checks: [p2Check({ source })] })];
+    assert.ok(
+      !validateRegistry({ version: 1, criteria }).some((p) => p.includes('source')),
+      `${source} is a source`,
+    );
+  }
+  for (const source of ['508px', '100', '', 'the spec']) {
+    const criteria = [p2Entry({ checks: [p2Check({ source })] })];
+    assert.ok(
+      validateRegistry({ version: 1, criteria }).some((p) => p.includes('source')),
+      `${JSON.stringify(source)} restates a figure instead of sourcing it`,
+    );
+  }
+});
+
+test('a mirror names a file that exists, and only when the validator is given a root', () => {
+  const good = [p2Entry({ checks: [p2Check({ mirror: { other: 'core/src/index/migrate.rs' } })] })];
+  assert.ok(
+    !validateRegistry({ version: 1, criteria: good }, repoRoot).some((p) => p.includes('mirror')),
+  );
+  const bad = [p2Entry({ checks: [p2Check({ mirror: { other: 'core/src/nowhere.rs' } })] })];
+  assert.ok(
+    validateRegistry({ version: 1, criteria: bad }, repoRoot).some((p) => p.includes('mirror')),
+  );
+  // Without a root the validator does no I/O and checks the shape alone.
+  assert.ok(!validateRegistry({ version: 1, criteria: bad }).some((p) => p.includes('mirror')));
+  const shapeless = [p2Entry({ checks: [p2Check({ mirror: { other: '' } })] })];
+  assert.ok(
+    validateRegistry({ version: 1, criteria: shapeless }).some((p) => p.includes('mirror')),
+  );
+});
+
+test('the freeze holds the nine phase-1 entries the phase-2 sections govern', () => {
+  // Not an equality with the live register: §26.3 says those seven criteria *move*, each with
+  // the plan that lands its section's body, and an equality here would redden the lane doing
+  // the moving. The supersession audits diff against this file; this test proves the record
+  // exists and is well-formed, which is the half that has to be right on the day it is written.
+  const frozen = JSON.parse(
+    readFileSync(fileURLToPath(new URL('../../acceptance/phase1-frozen.json', import.meta.url))),
+  );
+  assert.equal(frozen.version, 1);
+  assert.deepEqual(
+    frozen.criteria.map((c) => c.id),
+    ['2', '10', '42', '44', '45c', '58', '64'],
+  );
+  assert.deepEqual(
+    frozen.checks.map((c) => c.check.id),
+    ['AC-13-no-second-core', 'AC-23-audit'],
+  );
+  assert.deepEqual(
+    frozen.checks.map((c) => c.criterion),
+    ['13', '23'],
+  );
+  // Every frozen entry is a whole entry, not a stub: the record has to be usable as a diff.
+  for (const entry of frozen.criteria) {
+    assert.ok(entry.checks.length > 0, `${entry.id} was frozen without its checks`);
+    assert.ok(typeof entry.title === 'string' && entry.title.length > 0, entry.id);
+  }
+});
+
+test('widening the register adds no criterion — it still holds 70 and 171', () => {
+  const registry = loadRegistry(registryPath);
+  assert.deepEqual(validateRegistry(registry, repoRoot), []);
+  assert.equal(registry.criteria.length, 70);
+  assert.equal(
+    registry.criteria.reduce((n, c) => n + c.checks.length, 0),
+    171,
+  );
+  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 0);
 });

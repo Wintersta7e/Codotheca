@@ -2,8 +2,13 @@
  * Two renderings. `DISPOSITIONS.md` is a pure function of the registry and is committed and
  * diff-gated, so the prose statement of what is automated cannot drift from the JSON. The run
  * report carries results and is an artifact.
+ *
+ * Both split by phase. Phase-1 and phase-2 criteria coexist in one register, so a run must be
+ * able to report them separately without a second file.
  */
-import { STATUSES, rollUp } from './registry.mjs';
+import { STATUSES, phaseOf, rollUp } from './registry.mjs';
+
+const PHASE_TITLE = { 1: 'Phase 1 — §16', 2: 'Phase 2 — §20–§25' };
 
 export function countByStatus(registry) {
   const counts = Object.fromEntries(STATUSES.map((s) => [s, 0]));
@@ -12,17 +17,63 @@ export function countByStatus(registry) {
   return counts;
 }
 
-function rolledUpCounts(registry) {
+const inPhase = (registry, phase) => registry.criteria.filter((c) => phaseOf(c.id) === phase);
+
+export function countByPhase(registry) {
+  const counts = {};
+  for (const phase of [1, 2]) {
+    const criteria = inPhase(registry, phase);
+    counts[phase] = {
+      criteria: criteria.length,
+      checks: criteria.reduce((n, c) => n + c.checks.length, 0),
+      byStatus: countByStatus({ criteria }),
+    };
+  }
+  return counts;
+}
+
+function rolledUpCounts(criteria) {
   const counts = Object.fromEntries(STATUSES.map((s) => [s, 0]));
-  for (const entry of registry.criteria) counts[rollUp(entry)] += 1;
+  for (const entry of criteria) counts[rollUp(entry)] += 1;
   return counts;
 }
 
 function evidence(check) {
   if (check.status === 'automated') return `runs now — \`${check.test}\``;
+  if (check.status === 'deferred' && check.deferral === 'live-observation') {
+    return `plan ${check.owner} — not observed yet`;
+  }
   if (check.status === 'deferred') return `plan ${check.owner} — \`${check.test}\``;
   if (check.status === 'manual') return `gate \`${check.gate}\``;
   return 'not gated';
+}
+
+function phaseSection(lines, registry, phase) {
+  const criteria = inPhase(registry, phase);
+  lines.push(`## ${PHASE_TITLE[phase]}`);
+  lines.push('');
+  const rolled = rolledUpCounts(criteria);
+  const checks = countByStatus({ criteria });
+  lines.push('| Disposition | Criteria | Checks |');
+  lines.push('|---|---|---|');
+  for (const status of STATUSES) {
+    lines.push(`| ${status} | ${String(rolled[status])} | ${String(checks[status])} |`);
+  }
+  lines.push('');
+  if (criteria.length === 0) {
+    // Not an empty table: a reader must be able to tell "none registered yet" from "the
+    // renderer stopped reading", and an empty table says neither.
+    lines.push('No phase-2 criteria are registered yet.');
+    lines.push('');
+    return;
+  }
+  lines.push('| # | Disposition | Title | Checks |');
+  lines.push('|---|---|---|---|');
+  for (const entry of criteria) {
+    const detail = entry.checks.map((c) => `\`${c.id}\` ${c.status}, ${evidence(c)}`).join('<br>');
+    lines.push(`| ${entry.id} | ${rollUp(entry)} | ${entry.title} | ${detail} |`);
+  }
+  lines.push('');
 }
 
 export function renderDispositions(registry) {
@@ -35,21 +86,8 @@ export function renderDispositions(registry) {
   lines.push('');
   lines.push('One row per criterion; the disposition is the weakest of its checks.');
   lines.push('');
-  const rolled = rolledUpCounts(registry);
-  const checks = countByStatus(registry);
-  lines.push('| Disposition | Criteria | Checks |');
-  lines.push('|---|---|---|');
-  for (const status of STATUSES) {
-    lines.push(`| ${status} | ${String(rolled[status])} | ${String(checks[status])} |`);
-  }
-  lines.push('');
-  lines.push('| # | Disposition | Title | Checks |');
-  lines.push('|---|---|---|---|');
-  for (const entry of registry.criteria) {
-    const detail = entry.checks.map((c) => `\`${c.id}\` ${c.status}, ${evidence(c)}`).join('<br>');
-    lines.push(`| ${entry.id} | ${rollUp(entry)} | ${entry.title} | ${detail} |`);
-  }
-  lines.push('');
+  phaseSection(lines, registry, 1);
+  phaseSection(lines, registry, 2);
   lines.push('## Why a check is not automated, or is automated over less than it looks');
   lines.push('');
   // Every reason, not only the three statuses that require one. A deferral whose argument is in
@@ -73,6 +111,10 @@ export function renderRunReport(registry, join, diff, perf, absent = []) {
   const byResult = { passed: 0, failed: 0, 'not-run': 0, skipped: 0 };
   for (const check of join.checks) byResult[check.result] = (byResult[check.result] ?? 0) + 1;
   lines.push(`Checks: ${String(join.checks.length)} — ${JSON.stringify(byResult)}`);
+  const byPhase = { 1: 0, 2: 0 };
+  for (const check of join.checks) byPhase[phaseOf(check.criterion)] += 1;
+  lines.push('');
+  lines.push(`Phase 1: ${String(byPhase[1])} checks. Phase 2: ${String(byPhase[2])} checks.`);
   lines.push('');
   if (absent.length > 0) {
     lines.push(

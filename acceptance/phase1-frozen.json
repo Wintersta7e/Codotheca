@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "why": "The nine phase-1 entries the phase-2 sections govern, copied out of criteria.json before any phase-2 plan touched them. You cannot verify that something is unchanged without a record of what it was, and by the time the supersession audits run, six plans will have merged.",
+  "frozenFrom": "acceptance/criteria.json",
+  "criteria": [
+    {
+      "id": "2",
+      "title": "Copies collapse, forks stay apart, ambiguous lineage is flagged",
+      "group": "functional",
+      "spec": "§16.2",
+      "checks": [
+        {
+          "id": "AC-2-collapse",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_2_two_copies_collapse_to_one_project",
+          "assert": "copy-one and copy-two on two volumes become one project with two locations."
+        },
+        {
+          "id": "AC-2-fork",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_2_fork_and_upstream_stay_two_projects",
+          "assert": "fork and upstream remain two projects sharing a lineage_key with different remote_keys."
+        },
+        {
+          "id": "AC-2-ambiguous",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_2_remoteless_two_candidates_is_flagged",
+          "assert": "ambiguous-lineage becomes its own project with ambiguous_lineage set, and problems.list names both candidate lineages."
+        },
+        {
+          "id": "AC-2-merge-has-no-caller",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:projects-merge",
+          "assert": "Amendment 2: projects.merge has zero call sites outside the test suite; a control wired to it is the §17 breach §11.1 forbids by name."
+        }
+      ]
+    },
+    {
+      "id": "10",
+      "title": "Peek is plain text; view state restores exactly",
+      "group": "functional",
+      "spec": "§16.10",
+      "checks": [
+        {
+          "id": "AC-10-peek",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-10 Space peeks inline as plain text",
+          "assert": "Peek renders the README as literal text — no markup, no fetch, no navigation."
+        },
+        {
+          "id": "AC-10-view-state",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "13b",
+          "test": "AC-10 view state restores exactly across a relaunch",
+          "assert": "Amendment 10: query, sort, view mode (grid|list), density, collapsed sections, scroll offset, selection, dismissed notices and window geometry all restore.",
+          "reason": "No geometry restore exists: viewState always writes null for the window rectangle and nothing in the shell reads it. Whoever lands the restore must clamp to the measured top-bar floor in the same change, or a window narrowed once stays broken."
+        }
+      ]
+    },
+    {
+      "id": "42",
+      "title": "A README renders as literal text on both surfaces",
+      "group": "surfaces",
+      "spec": "§16.42",
+      "checks": [
+        {
+          "id": "AC-42-peek",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-42 markup in a README renders as literal text in Peek",
+          "assert": "Script tags, image tags and link syntax render as text — no markup, no fetch, no navigation."
+        },
+        {
+          "id": "AC-42-page",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-42 markup in a README renders as literal text on the project page",
+          "assert": "Amendment 10 extends the plain-text rule from Peek to the project page's README panel."
+        }
+      ]
+    },
+    {
+      "id": "44",
+      "title": "Nothing on the page mutates disk",
+      "group": "surfaces",
+      "spec": "§16.44",
+      "checks": [
+        {
+          "id": "AC-44-no-destruction",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-44 no surface offers a destructive control and RELOCATE rewrites one row",
+          "assert": "No Remove, no clean, no push, no checkout on any surface; RELOCATE rewrites the location row's path only, verified by hashing the location's tree before and after; setTrusted and requeue are read-only with respect to the filesystem and git config."
+        },
+        {
+          "id": "AC-44-token",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c44-forget-token",
+          "assert": "The forget token appears in no rendered string, no accessible name and no command name anywhere in the built bundle or in the protocol schema."
+        },
+        {
+          "id": "AC-44-readonly-argv",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "git_readonly::no_source_file_names_a_destructive_subcommand",
+          "assert": "Every argv literal the git module can emit is on a read-only allow list and none is on the destructive deny list, audited over the module's own source with its own scanned-nothing guard. It reads core/src/git only and one literal form, which is why the static call-site rule covers argv assembled elsewhere in the core."
+        },
+        {
+          "id": "AC-44-no-destructive-git",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:no-destructive-git",
+          "assert": "No destructive git subcommand appears as an argv literal anywhere in the core — push, clean, checkout, reset, fetch, pull, gc, prune and restore, fetch included because a directional claim would need one."
+        }
+      ]
+    },
+    {
+      "id": "45c",
+      "title": "The layout survives the emptiness",
+      "group": "surfaces",
+      "spec": "§16.45c",
+      "checks": [
+        {
+          "id": "AC-45c-layout",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-45c the empty list columns keep their widths and the header labels only the middle four",
+          "assert": "Columns 2 and 7 still occupy their stated widths with the rows aligned; the header labels columns 3 to 6 only; column 6's em dash is a different value and stays."
+        }
+      ]
+    },
+    {
+      "id": "58",
+      "title": "The condition dot",
+      "group": "subsystems",
+      "spec": "§16.58",
+      "checks": [
+        {
+          "id": "AC-58-surfaces",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-58 the dot renders on all five surfaces from one table and emits no value outside it",
+          "assert": "A NULL condition_signal draws no dot at all on every surface; the not-indexed badge carries the state. Contrast is asserted per row, with the offline disc explicitly exempt. The project page's identity line draws exactly one dot and the page's hero draws band 1's, which is a different surface."
+        },
+        {
+          "id": "AC-58-edges",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_derive::ac_58_condition_day_edges",
+          "assert": "The mapping's day edges are exactly the stated ones and the design's colder boundary, the one edge this document does not carry, appears in none of them."
+        },
+        {
+          "id": "AC-58-vocabulary",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c58-design-band-names",
+          "assert": "The three design band names appear in no CSS class, query field, protocol message, log line or accessible name. The two enum words that look like band names are required verbatim and are not banned."
+        }
+      ]
+    },
+    {
+      "id": "64",
+      "title": "Era sections, header aggregates and the watch set",
+      "group": "subsystems",
+      "spec": "§16.64",
+      "checks": [
+        {
+          "id": "AC-64-sections",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "13",
+          "test": "acceptance_shelf::ac_64_era_section_ids_and_orders",
+          "assert": "The section id table and nothing else, with the tail carrying no year, the not-cloned section never emitted in phase 1, and Reference rendering in its own chrome below the grid rather than as an era section."
+        },
+        {
+          "id": "AC-64-aggregates",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-64 the header renders the indexed and unchecked counts, including all-zero with unchecked above zero",
+          "assert": "The flag line still renders in that case, because an absent flag line may only ever mean observed and nothing to report. The label is absent from the response; order, year and the calendar year grouped against are present."
+        },
+        {
+          "id": "AC-64-watch-set",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_64_watch_set_invalidates_and_never_scans",
+          "assert": "The bounded worktree watch set invalidates the worktree observation time and never starts a scan or discovers a repository."
+        },
+        {
+          "id": "AC-64-copy",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c64-watch-set-copy",
+          "assert": "The sentence claiming nothing is watched inside a repository is false and appears nowhere."
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "criterion": "13",
+      "check": {
+        "id": "AC-13-no-second-core",
+        "status": "deferred",
+        "runner": "e2e",
+        "owner": "03",
+        "test": "AC-13 a second launch opens no window and starts no core",
+        "assert": "With one instance running, a second process exits without opening a window and without taking the core lock.",
+        "reason": "Plan 20's File Structure names app/e2e/acceptance_single_instance.spec.ts and no task in plan 20 or 20b creates it; the single-instance lock itself is the shell plan's code. Registering it automated against a spec nobody wrote would be a criterion marked covered by a test that does not exist."
+      }
+    },
+    {
+      "criterion": "23",
+      "check": {
+        "id": "AC-23-audit",
+        "status": "deferred",
+        "runner": "vitest",
+        "owner": "13c",
+        "test": "AC-23 auditObservationTimes finds a fact rendered without its observation time",
+        "assert": "The audit primitives themselves: a fact node without its observation-time attribute is a violation, a coverage figure without its coverage attribute is a violation, and the word clean in a worktree readout is a violation.",
+        "reason": "The DOM convention the audit would read does not exist. No data-observed-at and no data-coverage attribute appears anywhere in the renderer today; the observation clause is composed in a formatter and rendered as text. An audit written against that convention now would select nothing on every possible tree and report clean — which is the same shape as the dead in-sync CI step. The convention has to land with the shelf first. The one clause that is gated today is the vocabulary: the destructive-token gate already fails the build on the word clean in a rendered string."
+      }
+    }
+  ]
+}

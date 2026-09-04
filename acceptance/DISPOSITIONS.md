@@ -4,6 +4,8 @@
 
 One row per criterion; the disposition is the weakest of its checks.
 
+## Phase 1 — §16
+
 | Disposition | Criteria | Checks |
 |---|---|---|
 | automated | 1 | 39 |
@@ -84,6 +86,18 @@ One row per criterion; the disposition is the weakest of its checks.
 | 65 | deferred | The notice slot, the chips and the completion term | `AC-65-slot` deferred, plan 13b — `AC-65 every notice renders in one slot at its priority, at most one at a time`<br>`AC-65-chips` deferred, plan 13c — `AC-65 chip chrome is asserted once against its owning section for all six chips`<br>`AC-65-completion-term` deferred, plan 13 — `AC-65 a completion comparison parses, soft-errors and does not filter the shelf to zero`<br>`AC-65-identity-notice` deferred, plan 16c — `AC-65 the identity notice's plural line uses the previewed delta` |
 | 66 | deferred | The top bar and density | `AC-66-density` deferred, plan 13b — `AC-66 density cycles exactly three steps and each moves the column count by one`<br>`AC-66-hash-stable` deferred, plan 13b — `AC-66 the scene hash is byte-identical across every density press`<br>`AC-66-sort` deferred, plan 13b — `AC-66 sort cycles exactly three keys with completion absent`<br>`AC-66-shed` deferred, plan 13b — `AC-66 at the minimum window width nothing overlaps and the bar sheds in the stated order` |
 | 67 | deferred | DOM composition and the mid-scan flip | `AC-67-no-canvas` automated, runs now — `check-forbidden:c67-canvas-and-webgl`<br>`AC-67-plate-roles` deferred, plan 12c — `AC-67 the CSS plate has two roles and no third`<br>`AC-67-flip` deferred, plan 12c — `AC-67 during a live scan a mounted card changes appearance exactly once per scene hash` |
+
+## Phase 2 — §20–§25
+
+| Disposition | Criteria | Checks |
+|---|---|---|
+| automated | 0 | 0 |
+| deferred | 0 | 0 |
+| manual | 0 | 0 |
+| unmeasurable | 0 | 0 |
+| external | 0 | 0 |
+
+No phase-2 criteria are registered yet.
 
 ## Why a check is not automated, or is automated over less than it looks
 
