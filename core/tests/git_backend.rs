@@ -14,8 +14,10 @@ use std::time::Duration;
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::{Clock, SystemClock};
 use codotheca_core::git::{
-    require_floor, GitBackend, GitError, GitSlots, JobClass, JobContext, StatusOptions, SystemGit,
+    ensure_empty_hooks_dir, require_floor, GitBackend, GitError, GitExec, GitSlots, JobClass,
+    JobContext, RepoHandle, StatusOptions, StoreKey, SystemGit,
 };
+use codotheca_core::mount::StoreClass;
 use support::TestRepo;
 
 fn backend(repo: &TestRepo) -> Arc<dyn GitBackend> {
@@ -132,6 +134,43 @@ fn a_deadline_of_zero_is_a_budget_failure_not_a_missing_repository() {
         .unwrap_err();
     assert!(matches!(err, GitError::Budget { .. }), "{err:?}");
     assert!(!err.implies_absent());
+}
+
+/// The zero-budget refusal happens **before** the spawn, and **the missing binary is what proves
+/// it**: this backend points at a git that does not exist, so anything reaching a spawn comes back
+/// as a spawn failure. Only a refusal taken ahead of the spawn can answer `Budget` here, which is
+/// what makes the assertion independent of how fast the machine is.
+///
+/// The obvious version of this test — a real git and a directory holding no repository — was
+/// written first and **proved nothing**: with the refusal disabled it still passed, because the
+/// poll loop's own deadline killed a git that took longer than one poll. The control below is the
+/// other half: the same call with a real budget does reach the spawn and does not answer `Budget`.
+#[test]
+fn a_zero_budget_refuses_before_it_spawns_anything() {
+    let dir = tempfile::tempdir().unwrap();
+    let hooks = ensure_empty_hooks_dir(dir.path()).unwrap();
+    let git: Arc<dyn GitBackend> = Arc::new(SystemGit::new(
+        Arc::new(GitExec::new(dir.path().join("no-such-git"), hooks)),
+        Arc::new(GitSlots::for_machine()),
+        Arc::new(SystemClock::new()) as Arc<dyn Clock>,
+    ));
+    let cancel = CancelToken::new();
+    let handle = RepoHandle::bare(dir.path(), StoreKey::new("test-store"), StoreClass::Local);
+
+    let none_left = JobContext::new(JobClass::Background, &cancel, Some(Duration::ZERO));
+    let refused = git
+        .worktree_status(&handle, StatusOptions::full(), &none_left)
+        .unwrap_err();
+    assert!(matches!(refused, GitError::Budget { .. }), "{refused:?}");
+
+    let real = ctx(&cancel, JobClass::Background);
+    let spawned = git
+        .worktree_status(&handle, StatusOptions::full(), &real)
+        .unwrap_err();
+    assert!(
+        !matches!(spawned, GitError::Budget { .. }),
+        "the control must fail at the spawn, not on a budget: {spawned:?}"
+    );
 }
 
 #[test]

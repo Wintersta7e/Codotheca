@@ -158,6 +158,17 @@ impl GitExec {
         T: Send + 'static,
     {
         cancel.check()?;
+        // A budget of zero has nothing left to spend, and the poll loop below cannot enforce it:
+        // it reads `try_wait` first, so a subcommand that exits inside the first 250 µs poll is an
+        // `Exited` result and the deadline never fires at all. `git status` on a one-file
+        // repository does exactly that on a fast machine, which is how
+        // `a_deadline_of_zero_is_a_budget_failure_not_a_missing_repository` passed here and in the
+        // `core` job and failed in `acceptance` on the same commit. Refusing here is also the
+        // honest behaviour — a caller holding no budget must not start a process — and it is the
+        // shape of the cancellation check above.
+        if limits.deadline == Some(Duration::ZERO) {
+            return Err(GitError::Budget { after_ms: 0 });
+        }
 
         let mut cmd = Command::new(&self.git);
         cmd.args(base_args(repo, &self.hooks_dir));
