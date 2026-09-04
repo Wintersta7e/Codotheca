@@ -62,6 +62,32 @@ test('the app paints a real first-run screen', async ({}, testInfo) => {
     .poll(() => window.locator('.cdt-fr-roots').count(), { timeout: 30_000 })
     .toBeGreaterThan(0);
 
+  // The selector resolves on DOM attach, and attach is not paint. `.cdt-fr-view` carries
+  // `animation: viewIn .3s both` (`firstrun/firstRun.css:53-58`) over
+  // `@keyframes viewIn { from { opacity: 0 } … }` (`styles/base.css:51`), and `fill-mode: both`
+  // holds that `from` state until the animation actually runs — so a capture taken the instant
+  // the element exists is a screen at **opacity 0**, and every child of it is invisible while
+  // still laying out and measuring normally. That is what CI captured: a frame of a single
+  // colour, `--app-bg` `#07090b`, with `.cdt-fr-view`'s own `--surface-0` `#0a0d10` absent.
+  // Wait for the entry animation to settle rather than for a duration, then let two frames
+  // compose. Bounded, because an animation that never starts must fail on the paint assertion
+  // with both PNGs on disk rather than hang here with none.
+  const settle = await window.evaluate(async () => {
+    const view = document.querySelector('.cdt-fr-view');
+    if (view === null) return { animations: 0, opacity: 'no view' };
+    const running = view.getAnimations({ subtree: true });
+    await Promise.race([
+      Promise.allSettled(running.map((a) => a.finished)),
+      new Promise((resolve) => setTimeout(resolve, 5_000)),
+    ]);
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(resolve);
+      });
+    });
+    return { animations: running.length, opacity: getComputedStyle(view).opacity };
+  });
+
   // 1. It painted. Compared against a blank frame **of the same window** rather than a golden
   //    image: a fixed reference would fail on any font, DPI or GPU difference and would prove
   //    nothing about whether anything was drawn. The blank frame is this window with one opaque
@@ -88,7 +114,8 @@ test('the app paints a real first-run screen', async ({}, testInfo) => {
   writeFileSync(testInfo.outputPath('blank.png'), blank);
   // eslint-disable-next-line no-console -- the measurement is the deliverable
   console.log(
-    `paint probe: painted=${String(painted.byteLength)} blank=${String(blank.byteLength)}`,
+    `paint probe: painted=${String(painted.byteLength)} blank=${String(blank.byteLength)} ` +
+      `animations=${String(settle.animations)} opacity=${settle.opacity}`,
   );
 
   // A flat frame compresses to almost nothing and is still a valid non-empty PNG, which is why
