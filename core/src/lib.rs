@@ -36,6 +36,7 @@ pub mod paths;
 pub mod projects;
 pub mod proto;
 pub mod protocol;
+pub mod provider;
 pub mod query;
 pub mod scan;
 pub mod session;
