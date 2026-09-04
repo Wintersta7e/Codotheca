@@ -65,8 +65,9 @@ describe('the copy boundary', () => {
   // The generated list rather than a second one written here: a hand-copied enum is this
   // project's dominant defect class, and reading the generated array means a code added to
   // `protocol.json` reaches this loop without anyone remembering to add it.
+  // [p2] 12 + §20.8's TOKEN_INVALID and SSO_REQUIRED.
   it('reads the generated enum, or every loop below is vacuous', () => {
-    expect(ERROR_CODES.length).toBe(12);
+    expect(ERROR_CODES.length).toBe(14);
   });
 
   it('answers for every member of the closed enum', () => {

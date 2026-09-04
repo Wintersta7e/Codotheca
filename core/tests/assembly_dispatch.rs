@@ -293,9 +293,29 @@ mod corehandler {
             .collect();
 
         let loop_only = ["app.hello_ack", "app.shutdown"];
+        // Read from the router's own census, never a second list here: a command declared with
+        // no module must be skipped by exactly the constant that names it, and the assertion
+        // below proves the skip is earned rather than a blanket exemption.
+        let unowned: Vec<&str> = codotheca_core::assembly::route::UNOWNED_COMMANDS
+            .iter()
+            .map(|(c, _)| *c)
+            .collect();
         let mut checked = 0_u32;
+        let mut refused = 0_u32;
         for name in &names {
             if loop_only.contains(&name.as_str()) {
+                continue;
+            }
+            if unowned.contains(&name.as_str()) {
+                let e = h
+                    .handle(name, serde_json::json!({}))
+                    .expect_err("an unowned command must be refused, not answered");
+                assert!(
+                    e.message.contains("no handler in the core"),
+                    "{name} is listed unowned but the router answered it: {}",
+                    e.message
+                );
+                refused += 1;
                 continue;
             }
             checked += 1;
@@ -316,7 +336,17 @@ mod corehandler {
         }
         assert_eq!(
             checked, 40,
-            "the schema's answerable set, minus the loop's pair"
+            "the schema's answerable set, minus the loop's pair and the unowned set"
+        );
+        assert_eq!(
+            refused,
+            u32::try_from(unowned.len()).expect("the census is small"),
+            "every unowned command was reached and refused by name"
+        );
+        assert_eq!(
+            usize::try_from(checked + refused).expect("small") + loop_only.len(),
+            names.len(),
+            "every schema command is answerable, refused by name, or the loop's"
         );
     }
 

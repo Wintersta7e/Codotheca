@@ -34,7 +34,9 @@ test('every infrastructure command of §2.4 is declared', () => {
   for (const n of INFRASTRUCTURE) assert.ok(names.includes(n), `${n} is missing`);
 });
 
-test('the error enum is closed: §2.4 plus §1.6 PROJECT_MERGED and nothing else', () => {
+// [p2] §20.8 adds the two identity errors. Neither overloads PERMISSION_DENIED, which is a
+// filesystem error — a shared name is not a shared shape.
+test('the error enum is closed: §2.4 plus §1.6 PROJECT_MERGED plus §20.8 and nothing else', () => {
   assert.deepEqual([...schema.errors].sort(), [
     'BUDGET_EXCEEDED',
     'CORE_RESTARTED',
@@ -46,7 +48,9 @@ test('the error enum is closed: §2.4 plus §1.6 PROJECT_MERGED and nothing else
     'PROJECT_MERGED',
     'PROTOCOL',
     'REPO_UNREADABLE',
+    'SSO_REQUIRED',
     'STORE_OFFLINE',
+    'TOKEN_INVALID',
     'UNTRUSTED_REPO',
   ]);
 });
@@ -279,8 +283,11 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 // §2.4's table is 40 commands; §9's session.focus and §11.3a's roots.list are the 41st and 42nd
 // and the only two beyond it. The literal and the transcribed lists above move together — a count
 // that disagrees with them moves the failure rather than fixing it.
-test('the whole §2.4 table is present, plus §9 focus and roots.list, and nothing extra is', () => {
-  assert.equal(names.length, 42, `expected 42 commands, found ${names.length}`);
+// [p2] §20.8's eight `accounts.*` commands are the 43rd to the 50th. Each phase-2 plan raises
+// this by its OWN delta, read from the value in the file — never to a running total, which a
+// lane cannot know after the merges ahead of it.
+test('the whole §2.4 table is present, plus §9 focus, roots.list and §20.8, and nothing extra', () => {
+  assert.equal(names.length, 50, `expected 50 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -365,12 +372,14 @@ test('collections.upsert reports which refusal fired', () => {
   assert.equal(schema.types.CollectionUpsert.fields.refusedBecause, 'CollectionRefusal?');
 });
 
-// §2.4's topic table, transcribed.
+// §2.4's topic table, transcribed. [p2] §20.8 adds `accounts`, which declares no `snapshot`:
+// three events and nothing to build a frame from.
 const TOPICS = {
   scan: ['run_started', 'repo_found', 'job_done', 'progress', 'problem', 'finished', 'cancelled'],
   projects: ['upserted', 'merged', 'flags_changed', 'condition_changed', 'art_ready', 'snapshot'],
   session: ['started', 'segment_closed', 'ended'],
   core: ['error', 'degraded', 'snapshot'],
+  accounts: ['connect_progress', 'connected', 'disconnected'],
 };
 
 test('every topic and event of §2.4 is declared, with a payload type', () => {
@@ -419,12 +428,23 @@ test('exactly three commands are privileged', () => {
 
 // §2.2: non-idempotent operations are never auto-replayed — projects.launch, session mutations
 // and flag changes are surfaced to the user instead. Replaying a launch opens the editor twice.
-test('exactly three commands are non-idempotent', () => {
+// [p2] §20.8 adds five: a replayed connect after a core restart genuinely starts a second flow,
+// and a replayed disconnect deletes a keychain entry the user has since re-created.
+test('exactly eight commands are non-idempotent', () => {
   const ni = schema.commands
     .filter((c) => c.idempotent === false)
     .map((c) => c.name)
     .sort();
-  assert.deepEqual(ni, ['projects.launch', 'projects.setFlags', 'session.stop']);
+  assert.deepEqual(ni, [
+    'accounts.connect',
+    'accounts.connectPat',
+    'accounts.disconnect',
+    'accounts.setOrgEnabled',
+    'accounts.upgradeScope',
+    'projects.launch',
+    'projects.setFlags',
+    'session.stop',
+  ]);
 });
 
 // §7.4: a retried, replayed or double-delivered art.rerender writes the same integer and lands
@@ -480,4 +500,101 @@ test('every ledger count is nullable, and the set is the one plan 04 computes', 
 // inputs; without this field the run-wide one is missing and the chip cannot ship.
 test('the core snapshot names when first run ended', () => {
   assert.equal(schema.types.CoreSnapshot.fields.firstRunCompletedAt, 'Timestamp?');
+});
+
+// §20.8's command surface. The eight names are transcribed rather than derived: a command
+// silently renamed in the schema must fail here, which a `startsWith('accounts.')` filter
+// could not do.
+const ACCOUNTS = [
+  'accounts.list',
+  'accounts.orgs',
+  'accounts.connect',
+  'accounts.cancelConnect',
+  'accounts.connectPat',
+  'accounts.upgradeScope',
+  'accounts.disconnect',
+  'accounts.setOrgEnabled',
+];
+
+test('§20.8 declares the eight accounts commands', () => {
+  for (const n of ACCOUNTS) assert.ok(names.includes(n), `${n} is missing`);
+});
+
+// §2.2's auto-replay rule: a replay of any of these five genuinely changes state. The two reads
+// and `cancelConnect` are replayable, so marking them would cost a user-visible `unknown`
+// outcome for nothing.
+test('exactly five accounts commands refuse auto-replay', () => {
+  const refusing = schema.commands
+    .filter((c) => c.name.startsWith('accounts.') && c.idempotent === false)
+    .map((c) => c.name)
+    .sort();
+  assert.deepEqual(refusing, [
+    'accounts.connect',
+    'accounts.connectPat',
+    'accounts.disconnect',
+    'accounts.setOrgEnabled',
+    'accounts.upgradeScope',
+  ]);
+});
+
+// `$privileged` means "may carry Bytes from a native dialog". No account command carries a path
+// or an executable, and `validateSchema`'s second arm throws on a privileged command that takes
+// no Bytes — so marking one would be a shape error rather than extra safety.
+test('no accounts command is privileged', () => {
+  const accounts = schema.commands.filter((x) => x.name.startsWith('accounts.'));
+  // A loop over nothing proves nothing: without this the test reads green on a schema that
+  // declares no accounts command at all.
+  assert.equal(accounts.length, ACCOUNTS.length, 'the privilege check scanned the wrong set');
+  for (const c of accounts) {
+    assert.notEqual(c.privileged, true, `${c.name} must not be privileged`);
+  }
+});
+
+// §20.4: under the public tier the org list is *unknown*, and a non-nullable array cannot say
+// that — `[]` claims there are none. R41's shape and R41's answer.
+test('accounts.orgs is nullable, because an unenumerable org list is unknown', () => {
+  const c = schema.commands.find((x) => x.name === 'accounts.orgs');
+  assert.equal(c.returns, '[AccountOrg]?');
+});
+
+/** Every type name reachable from `root`, following struct fields transitively. */
+function reachableTypes(root) {
+  const seen = new Set();
+  const queue = [root];
+  while (queue.length > 0) {
+    const name = queue.pop();
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const decl = schema.types[name];
+    if (decl?.kind !== 'struct') continue;
+    for (const expr of Object.values(decl.fields)) queue.push(parseTypeExpr(expr).base);
+  }
+  return seen;
+}
+
+// §20.8: "Account carries no token field, at any nesting depth." Structural, not a convention —
+// the database stores `token_ref` and the wire carries neither it nor a secret. Walking the
+// graph rather than one field list is what makes a later nested struct fail this.
+test('Account carries no token field at any nesting depth', () => {
+  const banned = /token|secret|credential/iu;
+  const walked = reachableTypes('Account');
+  assert.ok(walked.size > 1, 'the walk must reach past Account itself');
+  for (const name of walked) {
+    const decl = schema.types[name];
+    if (decl?.kind !== 'struct') continue;
+    for (const field of Object.keys(decl.fields)) {
+      assert.ok(!banned.test(field), `${name}.${field} puts a credential on the wire`);
+    }
+  }
+});
+
+test('the accounts topic carries exactly three events and no snapshot', () => {
+  assert.deepEqual(Object.keys(schema.topics.accounts).sort(), [
+    'connect_progress',
+    'connected',
+    'disconnected',
+  ]);
+  assert.equal(schema.topics.accounts.connect_progress, 'ConnectProgress');
+  assert.equal(schema.topics.accounts.connected, 'Account');
+  assert.equal(schema.topics.accounts.disconnected, 'AccountDisconnected');
 });

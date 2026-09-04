@@ -62,6 +62,18 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'collections.remove': 'write',
   'session.stop': 'write',
   'session.focus': 'write',
+  // [p2] §20.8. Both reads answer out of the index. `accounts.cancelConnect` is idempotent on
+  // the wire and `write` here on purpose: it ends live core-side state, and this table is
+  // deliberately the wider of the two — erring toward `write` costs a refusal, erring toward
+  // `read` acts twice.
+  'accounts.list': 'read',
+  'accounts.orgs': 'read',
+  'accounts.connect': 'write',
+  'accounts.cancelConnect': 'write',
+  'accounts.connectPat': 'write',
+  'accounts.upgradeScope': 'write',
+  'accounts.disconnect': 'write',
+  'accounts.setOrgEnabled': 'write',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {

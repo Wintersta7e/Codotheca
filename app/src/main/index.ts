@@ -59,7 +59,7 @@ import {
 } from './security';
 import { runStartup } from './startup';
 
-const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core'];
+const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts'];
 
 /**
  * The commands the core answers, and therefore the only names the bridge will accept.

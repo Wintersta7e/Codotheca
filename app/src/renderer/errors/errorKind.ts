@@ -111,6 +111,10 @@ export function explainErrorKind(kind: ErrorCode): ExplainedError {
     case 'PROTOCOL':
     case 'INTERNAL':
     case 'PROJECT_MERGED':
+    // [p2] §20.8's two identity errors. An account state is never a project's, so neither gets
+    // a badge on a tile — and neither overloads PERMISSION_DENIED, which is a filesystem error.
+    case 'TOKEN_INVALID':
+    case 'SSO_REQUIRED':
       return NOT_A_PROJECT_STATE;
     default: {
       const unhandled: never = kind;

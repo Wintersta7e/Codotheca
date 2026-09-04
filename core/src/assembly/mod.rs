@@ -154,9 +154,10 @@ impl CoreHandler {
     fn snapshot_of(&mut self, topic: Topic) -> Option<Value> {
         match topic {
             // Plan 02's `topics` block declares a `snapshot` event for `projects` and `core`
-            // only. There is no frame to build for these two, so `Null` is the whole answer —
-            // a command's result is not a topic's snapshot type.
-            Topic::Scan | Topic::Session => None,
+            // only. There is no frame to build for these three, so `Null` is the whole answer —
+            // a command's result is not a topic's snapshot type. [p2] §20.8 declares three
+            // events on `accounts` and no `snapshot`, so it joins them.
+            Topic::Scan | Topic::Session | Topic::Accounts => None,
             Topic::Projects => {
                 let page = self.handle("projects.list", serde_json::json!({})).ok()?;
                 Some(serde_json::json!({

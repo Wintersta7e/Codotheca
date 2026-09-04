@@ -8,11 +8,16 @@
 //!
 //! # The ledger, as it stands
 //!
-//! **All 42 schema commands reach a module; `UNOWNED_COMMANDS` is empty.** It stays empty rather
-//! than being deleted: it is what *names* the next command that arrives without a handler, and a
-//! bare `PROTOCOL` refusal reads to the shell as "no such command" — which is how nineteen
+//! **42 of the 50 schema commands reach a module. The eight `accounts.*` commands are declared
+//! and have no handler yet**, so each routes to `NoOwner("p2-20")` and carries a row in
+//! `UNOWNED_COMMANDS`. That constant is what *names* a command that arrives without a handler; a
+//! bare `PROTOCOL` refusal reads to the shell as "no such command", which is how nineteen
 //! commands stayed invisible for the length of this project. This file's tests pin the constant
 //! against `protocol.json` and against `route`'s own arms, so the two cannot be edited apart.
+//!
+//! **A command leaves the list in the same change that gives it a handler.** The bridge's own
+//! `KNOWN_COMMANDS` is checked against this list, so a name cannot be offered to the renderer
+//! while it is still unowned.
 //!
 //! Two things the dispatcher still cannot do, recorded so they are not rediscovered:
 //!
@@ -65,12 +70,22 @@ pub enum Route {
 /// **A command leaves this list in the same change that gives it a handler.** The test in this
 /// file compares it against the arms of `route`, so the two cannot drift.
 ///
-/// **Empty since R37**, and deliberately not deleted. It is the seam that makes an unhandled
-/// command *named and refused* instead of mis-routed: a `PROTOCOL` refusal reads to the shell as
-/// "no such command", and nineteen commands hid behind exactly that for the length of this
-/// project. The next schema command with no module goes here, with its plan, in the same change
-/// that adds its `NoOwner` arm.
-pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
+/// It is the seam that makes an unhandled command *named and refused* instead of mis-routed: a
+/// `PROTOCOL` refusal reads to the shell as "no such command", and nineteen commands hid behind
+/// exactly that for the length of this project. A schema command with no module goes here, with
+/// its plan, in the same change that adds its `NoOwner` arm.
+///
+/// The eight `accounts.*` rows land with the schema and leave as their handlers do.
+pub const UNOWNED_COMMANDS: [(&str, &str); 8] = [
+    ("accounts.list", "p2-20"),
+    ("accounts.orgs", "p2-20"),
+    ("accounts.connect", "p2-20"),
+    ("accounts.cancelConnect", "p2-20"),
+    ("accounts.connectPat", "p2-20"),
+    ("accounts.upgradeScope", "p2-20"),
+    ("accounts.disconnect", "p2-20"),
+    ("accounts.setOrgEnabled", "p2-20"),
+];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -136,8 +151,17 @@ pub fn route(command: CommandName) -> Route {
         | CommandName::CollectionsList
         | CommandName::CollectionsUpsert
         | CommandName::CollectionsRemove => Route::View,
-        // No `NoOwner` arm today (R37). One returns the moment a schema command lands without a
-        // module, and `UNOWNED_COMMANDS` gains its row in the same edit.
+
+        // §20.8's eight, declared ahead of `crate::accounts`. Each moves to its module's arm in
+        // the change that lands the handler, and drops its `UNOWNED_COMMANDS` row with it.
+        CommandName::AccountsList
+        | CommandName::AccountsOrgs
+        | CommandName::AccountsConnect
+        | CommandName::AccountsCancelConnect
+        | CommandName::AccountsConnectPat
+        | CommandName::AccountsUpgradeScope
+        | CommandName::AccountsDisconnect
+        | CommandName::AccountsSetOrgEnabled => Route::NoOwner("p2-20"),
     }
 }
 
@@ -204,19 +228,25 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_unowned_today_and_the_refusal_is_still_wired() {
-        // R37 closed Gap A, so both sides of the test above are empty. The constant and its
-        // `NoOwner` arm stay: they are what *names* the next command that reaches the schema
-        // with no module. Without them a half-landed command falls back to a PROTOCOL refusal
-        // the shell reads as "no such command", which is how nineteen of them stayed invisible.
+    fn the_unowned_set_is_the_accounts_surface_and_nothing_else() {
+        // R37 closed Gap A and the list was empty; §20.8 reopens it deliberately, with the
+        // eight commands whose handlers land later in the same plan. The constant and its
+        // `NoOwner` arm are what *name* a command that reaches the schema with no module —
+        // without them it falls back to a PROTOCOL refusal the shell reads as "no such
+        // command", which is how nineteen of them stayed invisible.
+        let unowned: BTreeSet<&str> = UNOWNED_COMMANDS.iter().map(|(c, _)| *c).collect();
         assert!(
-            UNOWNED_COMMANDS.is_empty(),
+            unowned.iter().all(|c| c.starts_with("accounts.")),
             "a command joined the list without an arm in route"
+        );
+        assert!(
+            UNOWNED_COMMANDS.iter().all(|(_, plan)| *plan == "p2-20"),
+            "every unowned row names the plan that owes it"
         );
         assert_eq!(
             schema_commands().len(),
-            42,
-            "the schema this plan routes, §2.4 plus R33 gap 1"
+            50,
+            "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight"
         );
     }
 
