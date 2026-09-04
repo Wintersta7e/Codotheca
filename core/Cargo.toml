@@ -61,6 +61,21 @@ fs4 = "1.1"
 # The parallel directory walk (J0). Standard filters off: this is a filesystem census, not a
 # git operation, so nothing may be hidden by a `.gitignore`.
 ignore = "0.4"
+# §20.6's OS keychain: Credential Manager on Windows, Secret Service on Linux. The database
+# stores `token_ref` and never a token.
+#
+# `sync-secret-service`, not the async one: every subsystem in this core is blocking threads and
+# the async backend would need an executor of ours. `crypto-rust` keeps the session encryption
+# pure Rust, so there is no OpenSSL to build for two targets — the doctrine this file already
+# states for `image-webp` and `tiny-skia`.
+#
+# NOT keyring 4.x: its `rust-version` is 1.88.0 against this package's 1.80. Adopting it is a
+# workspace MSRV decision, not an accounts decision.
+keyring = { version = "3.6.3", default-features = false, features = [
+    "windows-native",
+    "sync-secret-service",
+    "crypto-rust",
+] }
 # §7.2's lossless WebP encoder. Pure Rust, so there is no C dependency to build for two
 # targets and no `unsafe` to justify against this crate's own `forbid`.
 image-webp = "0.2"

@@ -6,6 +6,7 @@ mod git;
 mod index;
 mod mount;
 mod scan;
+mod tokens;
 pub mod wsl;
 
 pub use clock::FakeClock;
@@ -13,3 +14,4 @@ pub use git::{FakeGitBackend, GitReply, RecordedGitCall, RecordingGitBackend};
 pub use index::TempIndex;
 pub use mount::FakeMountResolver;
 pub use scan::{MemScanStore, ScanEventFake, ScanLauncherFake};
+pub use tokens::FakeTokenStore;
