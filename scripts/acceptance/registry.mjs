@@ -320,6 +320,15 @@ export function validatePhase2Complete(registry) {
   for (const section of [...bySection.keys()].sort()) {
     const ns = bySection.get(section);
     const expected = PHASE2_SECTIONS[section];
+    // The table is the owner of how many criteria a section holds, and a section it does not
+    // name has no count to be complete against. Without this the loop below runs `n <= undefined`
+    // — never once — and `n > undefined` is false, so a section missing from the table would
+    // validate as **complete and silent**. Today `P2_ID` keeps that unreachable; `P2_ID` and this
+    // table are two statements of the same `2[0-5]`, so it is one regex edit away.
+    if (expected === undefined) {
+      problems.push(`P2-${section}: §${section} is not in PHASE2_SECTIONS and owns no criterion`);
+      continue;
+    }
     const held = `§${section} holds ${String(ns.length)} of its ${String(expected)} criteria`;
     for (let n = 1; n <= expected; n += 1) {
       const hits = ns.filter((x) => x === n).length;

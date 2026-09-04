@@ -11,8 +11,10 @@ import {
   loadRegistry,
   phaseOf,
   rollUp,
+  validatePhase2Complete,
   validateRegistry,
 } from './registry.mjs';
+import { tagsIn } from './tags.mjs';
 
 // `fileURLToPath`, never `.pathname`: a file URL's pathname keeps a leading slash, and on
 // Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
@@ -414,8 +416,11 @@ test('a phase-2 check carries no performance figure at all', () => {
   ]) {
     const criteria = [p2Entry({ checks: [p2Check(over)] })];
     const problems = validateRegistry({ version: 1, criteria });
+    // The new rule's own words. `performance` alone is satisfied by the pre-existing
+    // `a performance check states a measurement or is marked unmeasurable`, which the budget
+    // case triggers too — so this assertion passed with the phase-2 rule deleted.
     assert.ok(
-      problems.some((p) => p.includes('AC-P2-20-1') && p.includes('performance')),
+      problems.some((p) => p.includes('AC-P2-20-1') && p.includes('no performance sample exists')),
       `phase 2 records no ${JSON.stringify(over)}`,
     );
   }
@@ -430,7 +435,43 @@ test('external is criterion 29 and is not reachable from phase 2', () => {
   const criteria = [
     p2Entry({ checks: [p2Check({ status: 'external', runner: 'none', reason: 'r'.repeat(30) })] }),
   ];
-  assert.ok(validateRegistry({ version: 1, criteria }).some((p) => p.includes('external')));
+  // The new rule's own words. `external` alone is satisfied by the pre-existing
+  // `external is criterion 29 and nothing else`, which fires for any id that is not `29` — so
+  // this assertion passed with the phase-2 rule deleted.
+  assert.ok(
+    validateRegistry({ version: 1, criteria }).some((p) =>
+      p.includes('not reachable from phase 2'),
+    ),
+  );
+});
+
+test('the four statements of the phase-2 section range agree', () => {
+  // `2[0-5]` is written four times — CHECK_ID_P2, P2_ID, TAG_P2 and this table's keys — and
+  // nothing binds them. A section the table does not name has no count to be complete against,
+  // and `validatePhase2Complete` would loop `n <= undefined` and report a silent all-clear.
+  for (const section of Object.keys(PHASE2_SECTIONS)) {
+    assert.equal(criterionOf(`AC-P2-${section}-1`), `P2-${section}-1`, section);
+    assert.deepEqual(tagsIn(`ac_p2_${section}_1_x`), [`P2-${section}-1`], section);
+    assert.equal(phaseOf(`P2-${section}-1`), 2, section);
+  }
+  for (const outside of ['19', '26']) {
+    assert.equal(criterionOf(`AC-P2-${outside}-1`), null, outside);
+    assert.deepEqual(tagsIn(`ac_p2_${outside}_1_x`), [], outside);
+    assert.equal(PHASE2_SECTIONS[outside], undefined, outside);
+  }
+  // Two sections, each holding one of its many criteria, both still reported. The
+  // `expected === undefined` branch itself cannot be reached from here — `P2_ID` refuses any
+  // section outside `2[0-5]`, which is exactly the binding this test exists to hold. The branch
+  // is defence for the day someone widens one of the four statements and not the others.
+  assert.ok(
+    validatePhase2Complete({ criteria: [{ id: 'P2-25-1' }, { id: 'P2-20-1' }] }).length > 0,
+    'an incomplete section is still reported',
+  );
+});
+
+test('an empty register is refused, which is why no second zero-check exists downstream', () => {
+  const problems = validateRegistry({ version: 1, criteria: [] });
+  assert.ok(problems.some((p) => p.includes('registry.criteria is empty')));
 });
 
 test('a section holding twelve of its thirteen criteria names the one that is missing', () => {

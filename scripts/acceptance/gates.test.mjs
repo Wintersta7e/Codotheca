@@ -205,12 +205,16 @@ test('a forbidden rule no check claims is a problem unless it says its entry is 
   assert.deepEqual(validateForbidden({ version: 1, rules: [pending] }, registry), []);
 
   // A pending rule that does not name the criterion it belongs to is a rule nobody can find.
-  const anonymous = { ...rule, pendingRegistryEntry: {} };
-  assert.ok(
-    validateForbidden({ version: 1, rules: [anonymous] }, registry).some((p) =>
-      p.includes('criterion'),
-    ),
-  );
+  // `null` is in the list because a rule file is data: the validator must **report** malformed
+  // input, not throw a TypeError that names no rule at all.
+  for (const pendingRegistryEntry of [{}, null, { criterion: 7 }]) {
+    assert.ok(
+      validateForbidden({ version: 1, rules: [{ ...rule, pendingRegistryEntry }] }, registry).some(
+        (p) => p.includes('criterion'),
+      ),
+      `pendingRegistryEntry: ${JSON.stringify(pendingRegistryEntry)}`,
+    );
+  }
 });
 
 test('the problem-kind gate names a kind that is stored but not declared, and vice versa', () => {

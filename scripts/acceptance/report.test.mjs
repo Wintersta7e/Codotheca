@@ -5,7 +5,13 @@ import { fileURLToPath } from 'node:url';
 
 import { joinResults } from './join.mjs';
 import { loadRegistry } from './registry.mjs';
-import { countByPhase, countByStatus, renderDispositions, renderRunReport } from './report.mjs';
+import {
+  countByPhase,
+  countByStatus,
+  renderDispositions,
+  renderRegistryLine,
+  renderRunReport,
+} from './report.mjs';
 
 // `fileURLToPath`, never `.pathname`: a file URL's pathname keeps a leading slash, and on
 // Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
@@ -83,6 +89,19 @@ test('countByPhase splits the register without a second file', () => {
   assert.equal(
     Object.values(counts[2].byStatus).reduce((a, b) => a + b, 0),
     0,
+  );
+});
+
+test('the line a successful run prints states what it validated, per phase', () => {
+  // The whole string, not a fragment: this is the only thing a passing acceptance run says
+  // about the register, and a run that validated nothing must not read like a clean one.
+  assert.equal(
+    renderRegistryLine(loadRegistry(registryPath)),
+    '70 criteria / 171 checks validated — phase 1 70/171, phase 2 0/0',
+  );
+  assert.equal(
+    renderRegistryLine({ criteria: [] }),
+    '0 criteria / 0 checks validated — phase 1 0/0, phase 2 0/0',
   );
 });
 

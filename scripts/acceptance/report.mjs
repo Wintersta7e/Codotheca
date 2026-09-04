@@ -32,6 +32,22 @@ export function countByPhase(registry) {
   return counts;
 }
 
+/**
+ * What a successful validation validated, per phase. A register validator that validated
+ * nothing and said nothing is the gate-that-cannot-fail shape one level inside the gate built
+ * to catch it, so the run states its counts out loud rather than only its problems.
+ */
+export function renderRegistryLine(registry) {
+  const p = countByPhase(registry);
+  const criteria = p[1].criteria + p[2].criteria;
+  const checks = p[1].checks + p[2].checks;
+  return (
+    `${String(criteria)} criteria / ${String(checks)} checks validated — ` +
+    `phase 1 ${String(p[1].criteria)}/${String(p[1].checks)}, ` +
+    `phase 2 ${String(p[2].criteria)}/${String(p[2].checks)}`
+  );
+}
+
 function rolledUpCounts(criteria) {
   const counts = Object.fromEntries(STATUSES.map((s) => [s, 0]));
   for (const entry of criteria) counts[rollUp(entry)] += 1;

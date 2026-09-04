@@ -94,9 +94,12 @@ export function validateForbidden(rules, registry) {
     } else if (!Array.isArray(rule.targets) || rule.targets.length === 0) {
       problems.push(`${where}: needs at least one target set`);
     }
+    // `?.`, because a rule file is data: `"pendingRegistryEntry": null` must be *reported*, not
+    // thrown on. A validator that crashes on malformed input tells the reader nothing about
+    // which rule is malformed.
     if (
       rule.pendingRegistryEntry !== undefined &&
-      typeof rule.pendingRegistryEntry.criterion !== 'string'
+      typeof rule.pendingRegistryEntry?.criterion !== 'string'
     ) {
       problems.push(`${where}: a pending rule names the criterion it belongs to`);
     }

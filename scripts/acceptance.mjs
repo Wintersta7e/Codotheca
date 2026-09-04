@@ -32,7 +32,7 @@ import {
   parseScriptResults,
   parseVitest,
 } from './acceptance/runners.mjs';
-import { countByPhase, renderDispositions, renderRunReport } from './acceptance/report.mjs';
+import { renderDispositions, renderRegistryLine, renderRunReport } from './acceptance/report.mjs';
 
 const EXIT_PROBLEMS = 1;
 const EXIT_CANNOT_RUN = 2;
@@ -66,20 +66,14 @@ function main(argv) {
   }
 
   // What it validated, per phase. A register validator that validated nothing and said nothing
-  // is the gate-that-cannot-fail shape one level inside the gate built to catch it, so a run
-  // that read zero criteria refuses rather than reporting a clean tree.
-  const phases = countByPhase(registry);
-  const total = phases[1].criteria + phases[2].criteria;
-  const checks = phases[1].checks + phases[2].checks;
-  if (total === 0) {
-    console.error('acceptance: registry: validated zero criteria — the register is not readable');
-    return EXIT_CANNOT_RUN;
-  }
-  console.error(
-    `acceptance: registry: ${String(total)} criteria / ${String(checks)} checks validated — ` +
-      `phase 1 ${String(phases[1].criteria)}/${String(phases[1].checks)}, ` +
-      `phase 2 ${String(phases[2].criteria)}/${String(phases[2].checks)}`,
-  );
+  // is the gate-that-cannot-fail shape one level inside the gate built to catch it.
+  //
+  // The zero-criteria refusal is NOT repeated here: `validateRegistry` pushes
+  // `registry.criteria is empty` (`acceptance/registry.mjs`) and this function has already
+  // returned EXIT_CANNOT_RUN above on it. A `total === 0` branch below that line is
+  // unreachable — one value stated twice, with the second copy dead and untestable, which is
+  // the defect the register exists to catch wearing a reassuring shape.
+  console.error(`acceptance: registry: ${renderRegistryLine(registry)}`);
 
   if (argv.includes('--dispositions')) {
     writeFileSync(join(root, 'acceptance/DISPOSITIONS.md'), renderDispositions(registry));
