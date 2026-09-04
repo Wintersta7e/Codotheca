@@ -3,7 +3,7 @@
 // outline without drawing a replacement in the same rule leaves a keyboard user with nothing.
 // The replacement is an inset ring in the element's own box-shadow — never an overlay layer,
 // one of which silently failed to mount in design review.
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readScannedFile } from './lib/read-scanned.mjs';
@@ -12,12 +12,15 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const rendererDir = join(root, 'app/src/renderer');
 const failures = [];
 
+// `withFileTypes`, never a second `statSync`: a parallel test's probe can be gone between the
+// readdir and the stat, and an ENOENT there takes the gate down instead of reporting. See
+// `scripts/lib/read-scanned.mjs`, which guards the same race one step later at the read.
 function files(dir) {
   const out = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...files(full));
-    else if (entry.endsWith('.css') || entry.endsWith('.tsx')) out.push(full);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...files(full));
+    else if (entry.name.endsWith('.css') || entry.name.endsWith('.tsx')) out.push(full);
   }
   return out;
 }

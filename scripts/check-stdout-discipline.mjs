@@ -2,7 +2,7 @@
 // Fails if anything in the core writes to stdout outside the one module that owns it.
 // stdout carries protocol frames and nothing else (spec §2.1); a stray println! corrupts
 // the frame stream and the shell kills the connection with no useful diagnosis.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,11 +16,14 @@ const BANNED = [
   { re: /std::io::stdout\s*\(/, why: 'stdout is owned by proto::transport::claim_stdout' },
 ];
 
+// `withFileTypes`, never a second `statSync`: a parallel test's probe can be gone between the
+// readdir and the stat, and an ENOENT there takes the gate down instead of reporting. See
+// `scripts/lib/read-scanned.mjs`, which guards the same race one step later at the read.
 function* rustFiles(dir) {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) yield* rustFiles(full);
-    else if (entry.endsWith('.rs')) yield full;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) yield* rustFiles(full);
+    else if (entry.name.endsWith('.rs')) yield full;
   }
 }
 

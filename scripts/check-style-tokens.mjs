@@ -7,7 +7,7 @@
 //
 // Vendored @fontsource faces are third-party CSS in the built bundle and are not this
 // stylesheet; plan 20 owns the built-bundle form with that carve-out named.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { readScannedFile } from './lib/read-scanned.mjs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,12 +21,16 @@ const vocabulary = JSON.parse(
 const failures = [];
 const fail = (file, message) => failures.push(`${relative(root, file)}: ${message}`);
 
+// `withFileTypes` answers from the directory entry `readdirSync` already read, so the walk makes
+// no second syscall for something to race. A bare `statSync` on a path a parallel test's probe has
+// just removed throws ENOENT and takes the whole gate down with it — the failure
+// `scripts/lib/read-scanned.mjs` guards one step later, at the read. It fired here on 2026-09-05.
 function cssFiles(dir) {
   const out = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...cssFiles(full));
-    else if (entry.endsWith('.css')) out.push(full);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...cssFiles(full));
+    else if (entry.name.endsWith('.css')) out.push(full);
   }
   return out;
 }

@@ -12,7 +12,7 @@
  * validation error, so neither half can drift away from the other unnoticed.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,12 +26,17 @@ export const EXIT_CANNOT_RUN = 2;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const GATE = 'check-forbidden';
 
+// `withFileTypes`, never a second `statSync`: a parallel test's probe can be gone between the
+// readdir and the stat, and an ENOENT there takes the gate down instead of reporting. See
+// `scripts/lib/read-scanned.mjs`, which guards the same race one step later at the read.
 function* filesUnder(dir, extensions) {
   if (!existsSync(dir)) return;
-  for (const entry of readdirSync(dir).sort()) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) yield* filesUnder(full, extensions);
-    else if (extensions.length === 0 || extensions.includes(extname(entry))) yield full;
+  const entries = readdirSync(dir, { withFileTypes: true });
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) yield* filesUnder(full, extensions);
+    else if (extensions.length === 0 || extensions.includes(extname(entry.name))) yield full;
   }
 }
 

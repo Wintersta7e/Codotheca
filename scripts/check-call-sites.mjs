@@ -10,7 +10,7 @@
  *
  * Exit 1 = a call site was found. Exit 2 = the gate could not run, which is also a failure.
  */
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,12 +29,17 @@ const GATE = 'check-call-sites';
 
 const posix = (path) => path.split(sep).join('/');
 
+// `withFileTypes`, never a second `statSync`: a parallel test's probe can be gone between the
+// readdir and the stat, and an ENOENT there takes the gate down instead of reporting. See
+// `scripts/lib/read-scanned.mjs`, which guards the same race one step later at the read.
 function* filesUnder(dir, extensions) {
   if (!existsSync(dir)) return;
-  for (const entry of readdirSync(dir).sort()) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) yield* filesUnder(full, extensions);
-    else if (extensions.includes(extname(entry))) yield full;
+  const entries = readdirSync(dir, { withFileTypes: true });
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) yield* filesUnder(full, extensions);
+    else if (extensions.includes(extname(entry.name))) yield full;
   }
 }
 

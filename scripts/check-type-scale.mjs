@@ -4,7 +4,7 @@
 //
 // It scans renderer CSS *and* the inline `style={{…}}` objects in renderer `.tsx`, since the card
 // sets per-project geometry inline and a 6.5px there is just as unreadable.
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readScannedFile } from './lib/read-scanned.mjs';
@@ -34,12 +34,15 @@ const everySize = new Set([
 ]);
 
 const failures = [];
+// `withFileTypes`, never a second `statSync`: a parallel test's probe can be gone between the
+// readdir and the stat, and an ENOENT there takes the gate down instead of reporting. See
+// `scripts/lib/read-scanned.mjs`, which guards the same race one step later at the read.
 function files(dir, extensions) {
   const out = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...files(full, extensions));
-    else if (extensions.some((e) => entry.endsWith(e))) out.push(full);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...files(full, extensions));
+    else if (extensions.some((e) => entry.name.endsWith(e))) out.push(full);
   }
   return out;
 }

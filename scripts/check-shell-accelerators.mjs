@@ -6,7 +6,7 @@
 //
 // This file never spells the chord either, or it would fail its own check the moment anyone
 // pointed it at the scripts directory.
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,12 +39,15 @@ const failures = [];
 // module, tree-shaking leaves it out and this gate passes over a bundle carrying none of the
 // code it polices. The shell's own source is always there to read, so it is read too, and both
 // counts are printed.
+// `withFileTypes`, never a second `statSync`: a parallel test's probe can be gone between the
+// readdir and the stat, and an ENOENT there takes the gate down instead of reporting. See
+// `scripts/lib/read-scanned.mjs`, which guards the same race one step later at the read.
 function shellSources(dir) {
   const out = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...shellSources(full));
-    else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) out.push(full);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...shellSources(full));
+    else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) out.push(full);
   }
   return out;
 }

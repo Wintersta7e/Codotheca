@@ -86,9 +86,12 @@ export function scanSource(source, path) {
 export function collectFiles(roots, repoRoot) {
   const files = [];
 
-  const walk = (absolute) => {
-    const stats = statSync(absolute);
-    if (stats.isFile()) {
+  // The kind comes from the directory entry `readdirSync` already read, never from a second
+  // `statSync` on a path the walk reached — a probe removed in that gap throws ENOENT and takes
+  // the gate down, which is the failure `scanFiles` below guards one step later at the read. Only
+  // the roots are stat'd, and a root is a fixed directory nobody plants a probe over.
+  const walk = (absolute, isDirectory) => {
+    if (!isDirectory) {
       // The ban is on what a user reads. A test that asserts the ban must be able to name the
       // token, exactly the same carve-out the gate makes for comments.
       if (
@@ -103,13 +106,16 @@ export function collectFiles(roots, repoRoot) {
       return;
     }
 
-    for (const entry of readdirSync(absolute)) {
-      if (entry === 'node_modules' || entry === 'dist') continue;
-      walk(join(absolute, entry));
+    for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+      walk(join(absolute, entry.name), entry.isDirectory());
     }
   };
 
-  for (const root of roots) walk(join(repoRoot, root));
+  for (const root of roots) {
+    const full = join(repoRoot, root);
+    walk(full, statSync(full).isDirectory());
+  }
   return files.sort();
 }
 
