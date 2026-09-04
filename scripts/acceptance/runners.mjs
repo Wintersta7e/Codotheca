@@ -38,22 +38,38 @@ function result(id, status, runner) {
 export function parseLibtest(stdout) {
   const out = [];
   let binary = null;
+  let sawRunning = false;
+  let unqualified = 0;
   for (const raw of String(stdout).split('\n')) {
     const line = raw.replace(SGR, '');
     const running = RUNNING.exec(line);
     if (running !== null) {
       binary = running[1];
+      sawRunning = true;
       continue;
     }
     if (UNITTESTS.test(line)) {
       binary = null;
+      sawRunning = true;
       continue;
     }
     const m = LIBTEST.exec(line.trim());
     if (m === null) continue;
     const status = m[2] === 'ok' ? 'passed' : m[2] === 'FAILED' ? 'failed' : 'skipped';
+    if (binary === null && !m[1].includes('::')) unqualified += 1;
     const name = binary === null || m[1].includes('::') ? m[1] : `${binary}::${m[1]}`;
     out.push(result(name, status, 'cargo'));
+  }
+  // Cargo prints `Running …` to **stderr** and libtest prints `test <bare name> ... ok` to stdout,
+  // so a capture that takes stdout alone holds every result and no binary to attribute it to. The
+  // harness then reports each integration test twice — once as a criterion that "did not run" and
+  // once as a result "no check claims" — which reads as a suite that was never built. Say the
+  // actual cause instead: the run happened, the redirection dropped half of it.
+  if (unqualified > 0 && !sawRunning) {
+    throw new Error(
+      `cargo output has ${unqualified} unqualified test names and no "Running" line: ` +
+        'cargo writes those to stderr, so this capture dropped them. Pipe with `2>&1`.',
+    );
   }
   return out;
 }

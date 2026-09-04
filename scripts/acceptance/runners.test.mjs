@@ -73,6 +73,14 @@ test('parseLibtest qualifies an integration test with the binary cargo names', (
   );
 });
 
+// Regression: the CI step piped stdout alone into `cargo.txt`, and cargo names each binary on
+// **stderr**. Every integration test therefore arrived bare, and the run read as eight criteria
+// that "did not run" — a suite that had in fact passed. This is that exact capture.
+test('parseLibtest refuses a capture that dropped cargo stderr', () => {
+  const stdout = ['running 1 test', 'test ac_56_reroll_offset_is_absolute ... ok'].join('\n');
+  assert.throws(() => parseLibtest(stdout), /no "Running" line/u);
+});
+
 test('parseVitest reads the jest-compatible json report', () => {
   const report = {
     testResults: [
