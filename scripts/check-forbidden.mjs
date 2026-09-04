@@ -94,6 +94,15 @@ export function validateForbidden(rules, registry) {
     } else if (!Array.isArray(rule.targets) || rule.targets.length === 0) {
       problems.push(`${where}: needs at least one target set`);
     }
+    // `?.`, because a rule file is data: `"pendingRegistryEntry": null` must be *reported*, not
+    // thrown on. A validator that crashes on malformed input tells the reader nothing about
+    // which rule is malformed.
+    if (
+      rule.pendingRegistryEntry !== undefined &&
+      typeof rule.pendingRegistryEntry?.criterion !== 'string'
+    ) {
+      problems.push(`${where}: a pending rule names the criterion it belongs to`);
+    }
   }
   const claimed = new Set();
   for (const entry of registry.criteria ?? []) {
@@ -105,8 +114,14 @@ export function validateForbidden(rules, registry) {
         problems.push(`${check.id}: names ${check.test} and no rule implements it`);
     }
   }
-  for (const id of declared) {
-    if (!claimed.has(id)) problems.push(`${id}: no check in criteria.json claims ${GATE}:${id}`);
+  // The escape `check-call-sites.mjs:112-115` already has, in the same shape: a rule nothing
+  // claims is a rule nobody reads, unless it says out loud that its registry entry has not been
+  // written yet and names the criterion it belongs to. Several plans add a rule here while the
+  // plan that owns `criteria.json` runs last, so without this each of them goes red on a gate
+  // working correctly against a register it is not allowed to edit.
+  for (const rule of rules.rules ?? []) {
+    if (claimed.has(rule.id) || rule.pendingRegistryEntry !== undefined) continue;
+    problems.push(`${rule.id}: no check in criteria.json claims ${GATE}:${rule.id}`);
   }
   return problems;
 }

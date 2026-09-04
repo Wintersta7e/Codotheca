@@ -188,6 +188,35 @@ test('a call-site rule no check claims is a problem unless it says its entry is 
   assert.deepEqual(validateCallSites(pending, registry), []);
 });
 
+// The same escape, on the other static gate. Four phase-2 lanes each add a `forbidden.json`
+// rule, and the plan that owns `criteria.json` runs last — without this, every one of those
+// lanes goes red on a gate working correctly against a register it may not edit.
+test('a forbidden rule no check claims is a problem unless it says its entry is pending', () => {
+  const registry = { criteria: [] };
+  const rule = { id: 'x', kind: 'literal', why: 'w'.repeat(30), spec: '§1', targets: ['t'] };
+
+  assert.ok(
+    validateForbidden({ version: 1, rules: [rule] }, registry).some((p) =>
+      p.includes('no check in criteria.json'),
+    ),
+  );
+
+  const pending = { ...rule, pendingRegistryEntry: { criterion: 'P2-24-5' } };
+  assert.deepEqual(validateForbidden({ version: 1, rules: [pending] }, registry), []);
+
+  // A pending rule that does not name the criterion it belongs to is a rule nobody can find.
+  // `null` is in the list because a rule file is data: the validator must **report** malformed
+  // input, not throw a TypeError that names no rule at all.
+  for (const pendingRegistryEntry of [{}, null, { criterion: 7 }]) {
+    assert.ok(
+      validateForbidden({ version: 1, rules: [{ ...rule, pendingRegistryEntry }] }, registry).some(
+        (p) => p.includes('criterion'),
+      ),
+      `pendingRegistryEntry: ${JSON.stringify(pendingRegistryEntry)}`,
+    );
+  }
+});
+
 test('the problem-kind gate names a kind that is stored but not declared, and vice versa', () => {
   const all = ['permission_denied', 'deferred_slow'];
   const clean = evaluateProblemKinds({

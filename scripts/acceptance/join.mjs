@@ -4,7 +4,8 @@
  * The diff is over identities, never counts: a suite with a known-red baseline hides
  * regressions behind a plausible total.
  */
-const OWNER = /^\d{2}[a-c]?$/u; // R44 — second halves own criteria too
+// R44 — second halves own criteria too, and a phase-2 plan id is `p2-20`.
+const OWNER = /^(?:p2-)?\d{2}[a-c]?$/u;
 
 export function validateBaseline(baseline, registry) {
   const problems = [];
