@@ -1,5 +1,6 @@
 //! Typed provider seam over the raw HTTP transport.
 
+pub mod admit;
 mod github;
 pub mod listing;
 pub mod scopes;
