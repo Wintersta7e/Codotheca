@@ -13,6 +13,7 @@
 //! plan 21's Task 7 uncompletable. This runs a real walk over a real temp tree, through the real
 //! `SqliteScanStore`, and asserts what reaches the `scan` topic.
 
+use codotheca_core::cancel::CancelToken;
 use codotheca_core::git::RepoFacts;
 use codotheca_core::index::Index;
 use codotheca_core::mount::{MountFacts, StoreClass};
@@ -20,11 +21,11 @@ use codotheca_core::paths::path_key;
 use codotheca_core::protocol::ScanMode;
 use codotheca_core::protocol::{LocationId, ProjectId};
 use codotheca_core::scan::launcher::ThreadScanLauncher;
-use codotheca_core::scan::presence::ScanStore;
+use codotheca_core::scan::presence::{ScanStore, ScanStoreError};
 use codotheca_core::scan::run::platform_of;
 use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::store::SqliteScanStore;
-use codotheca_core::scan::ScanSupervisor;
+use codotheca_core::scan::{LaunchedScan, ScanLauncher, ScanProgressCell, ScanSupervisor};
 use codotheca_core::testing::{
     FakeClock, FakeGitBackend, FakeMountResolver, GitReply, ScanEventFake,
 };
@@ -110,6 +111,13 @@ struct Rig {
 }
 
 fn rig(root: &Path) -> Rig {
+    rig_with(root, |launcher| launcher)
+}
+
+/// `wrap` sits between the real `ThreadScanLauncher` and the supervisor. Only the cancellation
+/// test uses it, and it takes the seam rather than a flag so every other test builds the exact
+/// production stack.
+fn rig_with(root: &Path, wrap: impl FnOnce(Arc<dyn ScanLauncher>) -> Arc<dyn ScanLauncher>) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let index = Arc::new(Mutex::new(Index::open(dir.path()).unwrap()));
     seed_root(&index, root);
@@ -158,7 +166,7 @@ fn rig(root: &Path) -> Rig {
         store,
         events,
         jobs,
-        scans: Arc::new(ScanSupervisor::new(launcher as Arc<_>)),
+        scans: Arc::new(ScanSupervisor::new(wrap(launcher as Arc<_>))),
     }
 }
 
@@ -228,15 +236,38 @@ fn a_finished_run_publishes_progress_and_finished_on_the_scan_topic() {
     );
 }
 
+/// Cancels the run's token **before** the walk is launched, so the cancellation the test below
+/// asserts is a fact rather than a race.
+///
+/// `ScanSupervisor::start` creates the token and hands it to `launch`, so a test can only reach it
+/// after `start` has returned — by which time a one-repository tree has often already been walked,
+/// and the run finished normally. That is not hypothetical: it passed on this machine and on the
+/// `core` runner and failed in the `acceptance` job on the same commit, `assertion failed:
+/// row.cancelled`. Cancelling here is deterministic because `core/src/scan/run.rs:368` reads the
+/// token before the walk loop, and `launch` writes the `scan_run` row on the calling thread.
+struct CancelAtLaunch(Arc<dyn ScanLauncher>);
+
+impl ScanLauncher for CancelAtLaunch {
+    fn launch(
+        &self,
+        mode: ScanMode,
+        now: i64,
+        cancel: CancelToken,
+        progress: Arc<ScanProgressCell>,
+    ) -> Result<LaunchedScan, ScanStoreError> {
+        cancel.cancel();
+        self.0.launch(mode, now, cancel, progress)
+    }
+}
+
 /// §4.8: a cancelled run stops, writes `cancelled = 1` on its own row, and applies no presence.
 #[test]
 fn a_cancelled_run_publishes_cancelled_and_marks_its_row() {
     let tree = tempfile::tempdir().unwrap();
     repo_at(tree.path(), "a");
-    let r = rig(tree.path());
+    let r = rig_with(tree.path(), |launcher| Arc::new(CancelAtLaunch(launcher)));
 
-    let (live, _) = r.scans.start(ScanMode::Full, NOW).unwrap();
-    live.cancel.cancel();
+    let (_live, _) = r.scans.start(ScanMode::Full, NOW).unwrap();
     await_idle(&r.scans);
 
     let row = r.store.latest_scan_run().unwrap().expect("row");
