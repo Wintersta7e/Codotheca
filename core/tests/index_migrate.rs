@@ -49,6 +49,69 @@ const BROKEN: Migration = Migration {
     rebuilds_a_table: false,
 };
 
+/// **The upgrade path, which no other test in this file walks.** Every migration test starts from
+/// an empty database, where the `app_meta` mirror is absent and is written at the end — so the
+/// mirror and the pragma agree by construction and the comparison between them can never fail.
+///
+/// A library that has been opened once carries a *stamped* mirror, and nothing updates it while
+/// migrations run. Comparing it against the version migrations just **reached** therefore refuses
+/// every upgrade, permanently. Measured on two real profiles on 2026-09-05, one Windows and one
+/// WSL: `schema version mirror disagrees: user_version 9, app_meta 7`, then a crash loop.
+#[test]
+fn a_library_stamped_at_one_version_still_opens_after_a_new_migration_lands() {
+    let dir = tempfile::tempdir().unwrap();
+    // The real set: `app_meta` is created by `0001`, so the synthetic fixtures above have no such
+    // table and the mirror cannot be exercised against them at all.
+    {
+        let index = codotheca_core::index::open_with_migrations(dir.path(), MIGRATIONS, 1).unwrap();
+        assert_eq!(
+            index.app_meta("schema_version").unwrap(),
+            Some(SUPPORTED_SCHEMA_VERSION.to_string())
+        );
+    }
+    let next = SUPPORTED_SCHEMA_VERSION + 1;
+    let with_one_more: Vec<Migration> = MIGRATIONS
+        .iter()
+        .copied()
+        .chain(std::iter::once(Migration {
+            version: next,
+            name: "one_more",
+            sql: "CREATE TABLE one_more (x INTEGER);",
+            rebuilds_a_table: false,
+        }))
+        .collect();
+
+    let index = codotheca_core::index::open_with_migrations(dir.path(), &with_one_more, 2).unwrap();
+    assert_eq!(schema_version(index.conn()).unwrap(), next);
+    assert_eq!(
+        index.app_meta("schema_version").unwrap(),
+        Some(next.to_string()),
+        "the mirror follows the migration that ran"
+    );
+}
+
+/// The guard the change above must not weaken: a mirror disagreeing with the version **on disk**
+/// still means something that is not this program wrote one of them.
+#[test]
+fn a_mirror_that_disagrees_with_the_version_on_disk_is_still_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let index = codotheca_core::index::open_with_migrations(dir.path(), MIGRATIONS, 1).unwrap();
+        index.set_app_meta("schema_version", "41").unwrap();
+    }
+    let err = codotheca_core::index::open_with_migrations(dir.path(), MIGRATIONS, 2).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            IndexError::VersionMirrorMismatch {
+                pragma: SUPPORTED_SCHEMA_VERSION,
+                meta: 41
+            }
+        ),
+        "{err:?}"
+    );
+}
+
 #[test]
 fn applies_in_order_and_records_the_version() {
     let (_dir, mut conn) = scratch();

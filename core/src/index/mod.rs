@@ -279,29 +279,36 @@ pub fn open_with_migrations(
 
     // §1.12 and §1.9 both name a schema version. The pragma is authoritative and app_meta
     // mirrors it; a disagreement means something that is not this program wrote one of them.
+    //
+    // **The comparison is against `from` — the version found on disk — never against `reached`.**
+    // Nothing updates the mirror while migrations run, so comparing it to the version they just
+    // reached makes every upgrade a mismatch: a library stamped at 7 and migrated to 9 refuses to
+    // open, for ever, with `schema version mirror disagrees: user_version 9, app_meta 7`.
+    //
+    // That is not hypothetical. It was measured on two real profiles on 2026-09-05 — one Windows,
+    // one WSL — and it would have bricked **every existing library** on the first release carrying
+    // a phase-2 migration. It survived both waves' gates because every migration test starts from
+    // an empty database, where the mirror is absent and gets written at the end: the upgrade path
+    // is the only one that fails, and it was the one path no test walked.
     let reached = migrate::schema_version(&conn)?;
-    let mirror: Option<String> = {
+    let mirror: Option<u32> = {
         use rusqlite::OptionalExtension as _;
         conn.query_row("SELECT v FROM app_meta WHERE k='schema_version'", [], |r| {
-            r.get(0)
+            r.get::<_, String>(0)
         })
         .optional()?
+        .and_then(|s| s.parse::<u32>().ok())
     };
-    match mirror.and_then(|s| s.parse::<u32>().ok()) {
-        Some(meta) if meta != reached => {
-            return Err(IndexError::VersionMirrorMismatch {
-                pragma: reached,
-                meta,
-            })
-        }
-        _ => {
-            conn.execute(
-                "INSERT INTO app_meta (k, v) VALUES ('schema_version', ?1)
-                 ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-                [reached.to_string()],
-            )?;
+    if let Some(meta) = mirror {
+        if meta != from {
+            return Err(IndexError::VersionMirrorMismatch { pragma: from, meta });
         }
     }
+    conn.execute(
+        "INSERT INTO app_meta (k, v) VALUES ('schema_version', ?1)
+         ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+        [reached.to_string()],
+    )?;
 
     Ok(Index::from_parts(conn, data_dir.to_path_buf()))
 }
