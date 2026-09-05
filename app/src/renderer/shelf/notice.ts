@@ -12,9 +12,20 @@ export type NoticeKind =
   | 'targetUnresolved'
   | 'identity'
   | 'residency'
-  | 'newArrivals';
+  | 'newArrivals'
+  // [p2] §20.11's connect offer. **Exactly one**, dismissible, and it sorts LAST.
+  | 'connect';
 
-/** Index is the priority. `identity` is §8.0's 4a and sits between 4 and 5. */
+/**
+ * Index is the priority. `identity` is §8.0's 4a and sits between 4 and 5.
+ *
+ * [p2] `connect` is appended **last**. §20.11 calls it *"priority 7, the lowest"* and §20.14
+ * describes §8.0's table as six rows; the shipped table has **seven** (1, 2, 3, 4, 4a, 5, 6) over
+ * *"six obligations"*, because 4a is an inserted half-step — so the obligations and the rows
+ * differ by one. Both readings agree on the only thing that is executable, which is that it
+ * **sorts last**, and that is what this implements. Recorded so a later reader does not "fix"
+ * the array to length 7 and delete a notice.
+ */
 export const NOTICE_PRIORITY: readonly NoticeKind[] = [
   'coreFailure',
   'scanResumed',
@@ -23,6 +34,7 @@ export const NOTICE_PRIORITY: readonly NoticeKind[] = [
   'identity',
   'residency',
   'newArrivals',
+  'connect',
 ];
 
 /** Priority 1 stands until the condition clears; every other row has a dismissal, whether it is
