@@ -17,6 +17,7 @@ impl DescriptionSource {
             DescriptionSource::Readme => "readme",
             DescriptionSource::Note => "note",
             DescriptionSource::Detected => "detected",
+            DescriptionSource::Remote => "remote",
         }
     }
 }
@@ -204,8 +205,12 @@ mod tests {
         assert_eq!(d.source, None);
     }
 
-    /// The slug is stored in `project.description_source`, whose CHECK lists the same four
-    /// words. `core/tests/jobs_content.rs` inserts every one of them against the real column.
+    /// The slug is stored in `project.description_source`, whose CHECK lists the same five
+    /// words after `0009` widened it. `core/tests/index_rebuild_0009.rs` compares the CHECK's
+    /// literals against the schema's variant set in both directions, against a real column.
+    ///
+    /// **`remote` has a slug and no rung.** §25.3's chain — manifest, remote, README, note,
+    /// detected — is p2-25's half; this plan lands the value the column and the wire accept.
     #[test]
     fn every_source_has_a_slug_and_the_wire_form_agrees() {
         for (source, slug) in [
@@ -213,6 +218,7 @@ mod tests {
             (DescriptionSource::Readme, "readme"),
             (DescriptionSource::Note, "note"),
             (DescriptionSource::Detected, "detected"),
+            (DescriptionSource::Remote, "remote"),
         ] {
             assert_eq!(source.slug(), slug);
             assert_eq!(

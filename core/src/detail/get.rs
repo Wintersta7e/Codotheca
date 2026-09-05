@@ -21,7 +21,8 @@ use crate::projects::rows::{
 use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::protocol::{
     Activity, ActivityWeek, AssociationKind, HeadComparison, LaneState, LocationDetail, LocationId,
-    LocationRef, ProjectDetail, ProjectId, ProjectsGetArgs, ResolvedTarget, SessionRef, TargetRow,
+    LocationRef, ProjectDetail, ProjectId, ProjectsGetArgs, RemoteLinkBasis, ResolvedTarget,
+    SessionRef, TargetRow,
 };
 
 /// §8.5.5's chart: 26 weekly slots, the axis running `26 WEEKS AGO` → `THIS WEEK`.
@@ -70,12 +71,15 @@ struct ProjectScalars {
     first_commit_tz_offset_min: Option<i64>,
     size_worktree_bytes: Option<i64>,
     is_shallow: bool,
+    /// §22.11's basis. NULL is *not yet resolved*, which is the honest value for every project
+    /// until a listing or a lookup binds one, and is not the same as either variant.
+    remote_link_basis: Option<String>,
 }
 
 fn project_scalars(conn: &rusqlite::Connection, id: i64) -> Result<ProjectScalars, CommandFailure> {
     conn.query_row(
         "SELECT notes, remote_key, lineage_key, association_kind, first_commit_sha,
-                first_commit_tz_offset_min, size_worktree_bytes, is_shallow
+                first_commit_tz_offset_min, size_worktree_bytes, is_shallow, remote_link_basis
            FROM project WHERE id = ?1",
         [id],
         |r| {
@@ -88,6 +92,7 @@ fn project_scalars(conn: &rusqlite::Connection, id: i64) -> Result<ProjectScalar
                 first_commit_tz_offset_min: r.get(5)?,
                 size_worktree_bytes: r.get(6)?,
                 is_shallow: r.get::<_, i64>(7)? != 0,
+                remote_link_basis: r.get(8)?,
             })
         },
     )
@@ -414,6 +419,10 @@ pub fn handle_project_get(
             .association_kind
             .as_deref()
             .and_then(enum_from_column::<AssociationKind>),
+        remote_link_basis: scalars
+            .remote_link_basis
+            .as_deref()
+            .and_then(enum_from_column::<RemoteLinkBasis>),
         seed_basename: row.seed_basename.clone(),
         reroll_offset: row.reroll_offset,
         playtime_seconds: crate::session::store::playtime_seconds(conn, ProjectId(id))

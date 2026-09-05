@@ -174,6 +174,9 @@ export function detailFixture(over: Partial<ProjectDetail> = {}): ProjectDetail 
     firstCommitSha: 'a1b2c3d4e5f6',
     firstCommitTzOffsetMin: 0,
     sizeWorktreeBytes: 12_000_000,
+    // Null is "not yet resolved", which is what every project carries until a listing or a
+    // lookup binds one — not a third state and not either variant.
+    remoteLinkBasis: null,
     ...over,
   };
 }

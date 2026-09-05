@@ -949,6 +949,135 @@ fn a_facts_row_survives_its_project_being_renamed() {
     );
 }
 
+// ---------------------------------------------------------------------------------------------
+// Task 4 — the wire, and the CHECK ↔ enum mirror.
+// ---------------------------------------------------------------------------------------------
+
+const MIGRATION_0009: &str = include_str!("../migrations/0009_remote_identity_and_facts.sql");
+const SCHEMA_JSON: &str = include_str!("../../protocol/schema/protocol.json");
+
+/// The variants the schema declares. **The schema is the owner**: `core/src/protocol.rs` and
+/// `app/src/generated/protocol.ts` are generated from this file and `npm run gen:check` fails if
+/// either drifts, so reading it here compares the DDL against the one declaration rather than
+/// against a third hand-written copy (R31).
+fn schema_variants(name: &str) -> Vec<String> {
+    let doc: serde_json::Value = serde_json::from_str(SCHEMA_JSON).unwrap();
+    let variants = doc["types"][name]["variants"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{name} declares no variants in protocol.json"));
+    let mut out: Vec<String> = variants
+        .iter()
+        .map(|v| v.as_str().unwrap().to_owned())
+        .collect();
+    assert!(!out.is_empty(), "{name} has no variants to compare");
+    out.sort();
+    out
+}
+
+/// The quoted literals inside `0009`'s `CHECK (<column> IS NULL OR <column> IN (…))`.
+fn check_literals(column: &str) -> Vec<String> {
+    let needle = format!("CHECK ({column} IS NULL OR {column} IN");
+    let start = MIGRATION_0009
+        .find(&needle)
+        .unwrap_or_else(|| panic!("0009 declares no CHECK for {column}"));
+    let rest = &MIGRATION_0009[start + needle.len()..];
+    let end = rest
+        .find(')')
+        .unwrap_or_else(|| panic!("{column}'s CHECK has no closing parenthesis"));
+    let mut out: Vec<String> = rest[..end]
+        .split('\'')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_owned)
+        .collect();
+    assert!(!out.is_empty(), "{column}'s CHECK lists no literals");
+    out.sort();
+    out
+}
+
+/// A column, its CHECK, and the generated enum are one vocabulary. Asserted **in both
+/// directions**: a literal the schema does not declare fails, and a variant the column rejects
+/// fails. R26 is a DDL CHECK that refuses the values its own core emits.
+fn assert_column_mirrors_enum(conn: &rusqlite::Connection, column: &str, enum_name: &str) {
+    let declared = schema_variants(enum_name);
+    assert_eq!(
+        check_literals(column),
+        declared,
+        "{column}'s CHECK and {enum_name}'s variants are one vocabulary"
+    );
+    for variant in &declared {
+        conn.execute(
+            &format!("UPDATE project SET {column} = ?1 WHERE id = 1"),
+            [variant],
+        )
+        .unwrap_or_else(|e| {
+            panic!("{column} refused {variant:?}, which {enum_name} declares: {e}")
+        });
+    }
+    eprintln!(
+        "{column} accepted all {} {enum_name} variants",
+        declared.len()
+    );
+}
+
+/// **AC-P2-25-10, the DDL-and-enum half.** The chain that *writes* `remote` — manifest, remote,
+/// README, note, detected — is p2-25's and is not asserted here.
+#[test]
+fn every_description_source_variant_is_accepted_by_the_column() {
+    let (_dir, conn) = migrated_to(9);
+    conn.execute(
+        "INSERT INTO project (id, name, seed_basename, created_at, updated_at)
+         VALUES (1, 'widget', 'widget', 1, 1)",
+        [],
+    )
+    .unwrap();
+
+    assert_column_mirrors_enum(&conn, "description_source", "DescriptionSource");
+
+    // And the generated Rust takes the same strings off the wire.
+    for variant in schema_variants("DescriptionSource") {
+        let decoded: codotheca_core::protocol::DescriptionSource =
+            serde_json::from_str(&format!("\"{variant}\"")).unwrap();
+        assert_eq!(decoded.slug(), variant);
+    }
+    assert!(
+        check_literals("description_source").contains(&"remote".to_owned()),
+        "0009 is the migration that widens the CHECK by 'remote'"
+    );
+}
+
+#[test]
+fn every_remote_link_basis_variant_is_accepted_by_the_column() {
+    let (_dir, conn) = migrated_to(9);
+    conn.execute(
+        "INSERT INTO project (id, name, seed_basename, created_at, updated_at)
+         VALUES (1, 'widget', 'widget', 1, 1)",
+        [],
+    )
+    .unwrap();
+
+    assert_column_mirrors_enum(&conn, "remote_link_basis", "RemoteLinkBasis");
+
+    // The variant strings ARE the stored strings: codegen emits `#[serde(rename = "<literal>")]`
+    // per variant, so `providerId` — the generated Rust identifier — is never a stored value.
+    for variant in schema_variants("RemoteLinkBasis") {
+        let decoded: codotheca_core::protocol::RemoteLinkBasis =
+            serde_json::from_str(&format!("\"{variant}\"")).unwrap();
+        assert_eq!(
+            serde_json::to_string(&decoded).unwrap(),
+            format!("\"{variant}\"")
+        );
+    }
+
+    // And a value neither side declares is refused rather than stored.
+    assert!(conn
+        .execute(
+            "UPDATE project SET remote_link_basis = 'providerId' WHERE id = 1",
+            [],
+        )
+        .is_err());
+}
+
 /// The chain ends where the constant says it does, and the constant is the count the guard
 /// checked. Three statements of one value, so a migration registered without its bump is red.
 #[test]

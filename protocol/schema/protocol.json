@@ -256,7 +256,11 @@
     "ArtState": { "kind": "enum", "variants": ["pending", "ready", "failed", "stale"] },
     "DescriptionSource": {
       "kind": "enum",
-      "variants": ["manifest", "readme", "note", "detected"]
+      "variants": ["manifest", "readme", "note", "detected", "remote"]
+    },
+    "RemoteLinkBasis": {
+      "kind": "enum",
+      "variants": ["provider_id", "remote_key"]
     },
     "InterruptedOp": {
       "kind": "enum",
@@ -501,7 +505,8 @@
         "recentCommits": "[CommitRef]",
         "firstCommitSha": "String?",
         "firstCommitTzOffsetMin": "i32?",
-        "sizeWorktreeBytes": "i64?"
+        "sizeWorktreeBytes": "i64?",
+        "remoteLinkBasis": "RemoteLinkBasis?"
       }
     },
 
