@@ -19,6 +19,11 @@ const DAY = 86_400;
 /** 2026-06-15T12:00:00Z, so "this year" is 2026 and the ten named years run 2025 → 2016. */
 const NOW = Math.floor(Date.UTC(2026, 5, 15, 12) / 1000);
 
+/** §23.1's shape: the same row with no working copy — the pair, never the location alone. */
+function notCloned(daysAgo: number, over: Record<string, unknown> = {}): ShelfRow {
+  return at(daysAgo, { primaryLocation: null, presence: null, ...over });
+}
+
 function at(daysAgo: number, over: Record<string, unknown> = {}): ShelfRow {
   return toShelfRow({
     id: 1,
@@ -103,6 +108,18 @@ describe('eraSectionIdFor', () => {
     const ids = [0, 5, 40, 100, 400, 4000].map((d) => eraSectionIdFor(at(d), NOW));
     expect(ids).not.toContain('era:notcloned');
   });
+
+  // AC-P2-23-4's ordering half: the location is tested **first**, before isArchived and before
+  // isSubmodule. `isArchived` is a user flag and a user may archive a not-cloned project;
+  // `era:archived` is an interleaved section whose header sums tracked bytes, and a tile with no
+  // bytes and no Play does not belong among tiles that have both.
+  it('classifies a not-cloned project before archived and before submodules', () => {
+    expect(eraSectionIdFor(notCloned(1, { isArchived: true }), NOW)).toBe('era:notcloned');
+    expect(eraSectionIdFor(notCloned(1, { isSubmodule: true }), NOW)).toBe('era:notcloned');
+    expect(eraSectionIdFor(notCloned(1, { isArchived: true, isSubmodule: true }), NOW)).toBe(
+      'era:notcloned',
+    );
+  });
 });
 
 describe('eraSectionOrder', () => {
@@ -137,6 +154,10 @@ describe('eraSectionLabel', () => {
     expect(eraSectionLabel('era:2019', 2026)).toBe('2019');
     expect(eraSectionLabel('era:archived', 2026)).toBe('ARCHIVED');
     expect(eraSectionLabel('era:submodules', 2026)).toBe('SUBMODULES');
+    // AC-P2-23-4's label half. §8.1's table left this one blank and §23.4 owns it. Asserted
+    // through `eraSectionLabel`, never against the id string: with no FIXED_LABEL entry the
+    // fallback prints the header as lowercase `notcloned`, which is what this catches.
+    expect(eraSectionLabel('era:notcloned', 2026)).toBe('NOT CLONED');
   });
   it('rolls the tail label with the year and carries no year in the id', () => {
     expect(eraSectionLabel('era:tail', 2026)).toBe('2015 AND EARLIER');

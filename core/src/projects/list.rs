@@ -29,6 +29,15 @@ const DAY: i64 = 86_400;
 /// New Year.
 #[must_use]
 pub fn era_section_id_for(row: &ProjectRow, now: i64, tz_offset_min: i32) -> String {
+    // §23.4: **tested first**, before both overrides. Order 98 alone does not achieve this —
+    // `is_archived` is a *user* flag (§1.2), a user may archive a not-cloned project, and
+    // `era:archived` at order 92 is an **interleaved** section whose header sums tracked bytes.
+    // Filing a tile with no bytes and no `Play` among tiles that have both breaks the settled
+    // *never interleaved* ruling. §23.1: `primary_location IS NULL` is the whole predicate, and
+    // there is no second expression of it.
+    if row.primary_location.is_none() {
+        return "era:notcloned".to_owned();
+    }
     if row.is_archived {
         return "era:archived".to_owned();
     }

@@ -14,6 +14,12 @@ export const ERA_COLLAPSE_MIN_ORDER = 10;
 const DAY = 86_400;
 
 export function eraSectionIdFor(row: ShelfRow, now: number): string {
+  // §23.4: tested **first**, before both overrides — R13's mirror of `era_section_id_for`.
+  // Order 98 alone does not achieve it: `isArchived` is a user flag, a user may archive a
+  // not-cloned project, and `era:archived` is an interleaved section whose header sums tracked
+  // bytes. §23.1: `primaryLocation IS NULL` is the whole predicate; `presence IS NULL` is the
+  // same predicate rendered, not a second source.
+  if (row.primaryLocation === null) return 'era:notcloned';
   if (row.isArchived) return 'era:archived';
   if (row.isSubmodule) return 'era:submodules';
 
@@ -54,6 +60,9 @@ const FIXED_LABEL: Readonly<Record<string, string>> = {
   'era:year': 'EARLIER THIS YEAR',
   'era:archived': 'ARCHIVED',
   'era:submodules': 'SUBMODULES',
+  // §8.1's table left this one blank and §23.4 owns it. Without the entry the fallback below
+  // prints the header as lowercase `notcloned`.
+  'era:notcloned': 'NOT CLONED',
 };
 
 /** §8.1: labels are shell-owned prose; the core emits the id, the order and the cut year. */

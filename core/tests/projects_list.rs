@@ -78,6 +78,27 @@ fn era_notcloned_is_never_emitted_in_phase_one() {
     }
 }
 
+/// AC-P2-23-4's ordering half. §23.4 tests the location **first**, before `is_archived` and
+/// before `is_submodule`: `is_archived` is a *user* flag, a user may archive a not-cloned
+/// project, and `era:archived` at order 92 is an **interleaved** section whose header sums
+/// tracked bytes. Filing a tile with no bytes and no `Play` among tiles that have both breaks
+/// the settled *never interleaved* ruling.
+#[test]
+fn a_not_cloned_project_is_classified_before_archived_and_before_submodules() {
+    let mut archived = ProjectRow::for_test_not_cloned(1);
+    archived.is_archived = true;
+    assert_eq!(era_section_id_for(&archived, NOW, 0), "era:notcloned");
+
+    let mut submodule = ProjectRow::for_test_not_cloned(2);
+    submodule.is_submodule = true;
+    assert_eq!(era_section_id_for(&submodule, NOW, 0), "era:notcloned");
+
+    let mut both = ProjectRow::for_test_not_cloned(3);
+    both.is_archived = true;
+    both.is_submodule = true;
+    assert_eq!(era_section_id_for(&both, NOW, 0), "era:notcloned");
+}
+
 #[test]
 fn the_order_key_is_the_same_cursor_the_renderer_computes() {
     // FNV-1a over the ordered ids, little-endian, eight hex digits.
@@ -86,6 +107,9 @@ fn the_order_key_is_the_same_cursor_the_renderer_computes() {
     assert_ne!(order_key_of(&[1, 2]), order_key_of(&[1, 2, 3]));
 }
 
+/// Two **located** projects. The location rows are not decoration: §23.4 classifies on
+/// `primary_location IS NULL` **first**, so a seed with no `location` files both rows under
+/// `era:notcloned` and every section assertion below then describes one section instead of two.
 fn seeded() -> (tempfile::TempDir, Index) {
     let dir = tempfile::tempdir().expect("tempdir");
     let index = Index::open(dir.path()).expect("open");
@@ -97,6 +121,18 @@ fn seeded() -> (tempfile::TempDir, Index) {
             rusqlite::params![NOW - DAY, NOW - 400 * DAY],
         )
         .expect("seed");
+    index
+        .conn()
+        .execute(
+            "INSERT INTO location (id, project_id, kind, distro, path_bytes, path_key,
+                                   path_display, volume_key, store_key, presence, repo_kind)
+             VALUES (10, 1, 'linux', '', x'2f612f61', x'2f612f61', '/a/a', 'v', 's', 'present',
+                     'worktree'),
+                    (20, 2, 'linux', '', x'2f622f62', x'2f622f62', '/b/b', 'v', 's', 'present',
+                     'worktree')",
+            [],
+        )
+        .expect("seed locations");
     (dir, index)
 }
 
