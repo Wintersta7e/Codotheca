@@ -53,11 +53,18 @@ fn rust_sources() -> Vec<(std::path::PathBuf, String)> {
     out
 }
 
+/// A path relative to `core/src/`, **always with `/` separators**.
+///
+/// Windows renders the same path as `http\\mod.rs`, and a literal written `http/mod.rs` then
+/// fails a comparison that passes in WSL. That defect class — a POSIX path literal compared
+/// against a native path — has now fired three times in this repository, and it is reachable by
+/// no gate that runs only on one platform.
 fn relative(path: &std::path::Path) -> String {
     path.strip_prefix(core_src())
         .unwrap_or(path)
         .display()
         .to_string()
+        .replace('\\', "/")
 }
 
 // ---------------------------------------------------------------------------

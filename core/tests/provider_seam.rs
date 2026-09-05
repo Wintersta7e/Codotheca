@@ -72,11 +72,13 @@ fn provider_sources_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src/provider")
 }
 
+/// Always `/`-separated, so a reported name reads the same on both platforms.
 fn relative_to_provider(path: &Path) -> String {
     path.strip_prefix(provider_sources_dir())
         .unwrap_or(path)
         .display()
         .to_string()
+        .replace('\\', "/")
 }
 
 fn rust_provider_sources() -> Vec<(PathBuf, String)> {
