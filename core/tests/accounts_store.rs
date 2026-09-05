@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use codotheca_core::accounts::commands::{is_github_sso_required, set_org_enabled_off_lock};
 use codotheca_core::accounts::keychain::{SecretToken, TokenStore};
 use codotheca_core::accounts::store::{
-    api_base_for, insert_account, list_accounts, list_orgs, record_observed_scopes,
-    set_org_enabled, upsert_orgs, NewAccount,
+    insert_account, list_accounts, list_orgs, record_observed_scopes, set_org_enabled, upsert_orgs,
+    NewAccount,
 };
 use codotheca_core::accounts::{dispatch_accounts_command, AccountsCtx, ACCOUNT_COMMANDS};
 use codotheca_core::http::{normalise_headers, HttpResponse, HttpTransport};
@@ -611,18 +611,6 @@ fn record_observed_scopes_round_trips_json_array_values() {
 }
 
 #[test]
-fn api_base_uses_github_dot_com_canonical_and_enterprise_shape() {
-    assert_eq!(
-        api_base_for(GITHUB_CANONICAL_HOST),
-        "https://api.github.com"
-    );
-    assert_eq!(
-        api_base_for("forge.example.invalid"),
-        "https://forge.example.invalid/api/v3"
-    );
-}
-
-#[test]
 fn account_sources_do_not_delete_project_rows() {
     fn walk(dir: &Path, out: &mut Vec<(PathBuf, String)>) {
         for entry in std::fs::read_dir(dir).expect("accounts dir is readable") {
@@ -856,10 +844,6 @@ fn an_enterprise_host_is_reached_at_its_own_api_base() {
             .starts_with("https://forge.example.invalid/api/v3"),
         "{}",
         sent[0].url
-    );
-    assert_eq!(
-        codotheca_core::accounts::store::api_base_for("forge.example.invalid"),
-        "https://forge.example.invalid/api/v3"
     );
 }
 

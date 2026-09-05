@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::protocol::{Account, AccountId, AccountOrg, AuthKind, ScopeTier, SsoState};
-use crate::provider::listing::{OrgListing, GITHUB_CANONICAL_HOST};
+use crate::provider::listing::OrgListing;
 
 /// A new account row. The token itself belongs in the keychain; this struct carries only the
 /// `token_ref` stored in SQLite.
@@ -264,16 +264,6 @@ pub fn set_org_sso_state(
         return Err(not_found_for_org(tx, id, org)?);
     }
     Ok(())
-}
-
-/// The GitHub REST API base for one host.
-#[must_use]
-pub fn api_base_for(host: &str) -> String {
-    if host == GITHUB_CANONICAL_HOST {
-        "https://api.github.com".to_owned()
-    } else {
-        format!("https://{host}/api/v3")
-    }
 }
 
 pub(crate) fn load_account(conn: &Connection, id: AccountId) -> Result<AccountRow, AccountError> {
