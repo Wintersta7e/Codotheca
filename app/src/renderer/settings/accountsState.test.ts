@@ -46,7 +46,16 @@ const grant: DeviceGrant = {
 
 describe('§20.12 as a pure function', () => {
   it('is notConnected with no accounts and no pending flow', () => {
-    expect(accountsViewState([], null, null)).toEqual({ kind: 'notConnected' });
+    expect(accountsViewState([], null, null)).toEqual({ kind: 'notConnected', refusal: null });
+  });
+
+  // R78: a flow that ended in `not_stored` leaves something to say, and `notConnected` with no
+  // explanation is §10.1a's silent no.
+  it('carries the refusal when the last flow ended in not_stored', () => {
+    expect(accountsViewState([], null, null, 'the keychain refused the operation')).toEqual({
+      kind: 'notConnected',
+      refusal: 'the keychain refused the operation',
+    });
   });
 
   it('carries the user code unmodified, including a length the UI does not expect', () => {

@@ -31,7 +31,13 @@ import { GithubPanel } from './accounts';
  * opening called `accounts.connect` again and began a **second** device flow over a connected
  * account.
  */
-const TERMINAL_STAGES: readonly ConnectStage[] = ['granted', 'denied', 'expired', 'cancelled'];
+const TERMINAL_STAGES: readonly ConnectStage[] = [
+  'granted',
+  'denied',
+  'expired',
+  'cancelled',
+  'not_stored',
+];
 
 /**
  * Whether a Device Flow was started from this process, surviving the panel's unmount.
@@ -74,6 +80,8 @@ export function GithubPanelHost(props: GithubPanelHostProps): ReactElement {
   const [accounts, setAccounts] = useState<readonly Account[]>([]);
   const [orgs, setOrgs] = useState<readonly AccountOrg[] | null>(null);
   const [grant, setGrant] = useState<DeviceGrant | null>(null);
+  /** R78: why the last flow ended in `not_stored`. Cleared the moment another one begins. */
+  const [refusal, setRefusal] = useState<string | null>(null);
 
   /**
    * Re-reads the live grant, if one was started. `accounts.connect` with a flow already pending
@@ -125,6 +133,13 @@ export function GithubPanelHost(props: GithubPanelHostProps): ReactElement {
             stage !== undefined &&
             TERMINAL_STAGES.includes(stage));
         if (!ended) return;
+        // `not_stored` is the one stage that leaves something to say. Reading the reason off the
+        // event rather than re-deriving it keeps the core the only author of that sentence.
+        setRefusal(
+          stage === 'not_stored'
+            ? ((event.data as { reason?: string | null } | null)?.reason ?? null)
+            : null,
+        );
         flowWasStarted = false;
         setGrant(null);
         void refresh();
@@ -139,9 +154,11 @@ export function GithubPanelHost(props: GithubPanelHostProps): ReactElement {
       accounts={accounts}
       pendingGrant={grant}
       orgs={orgs}
+      refusal={refusal}
       onConnect={() => {
         void (async () => {
           flowWasStarted = true;
+          setRefusal(null);
           setGrant(await request('accounts.connect', {}));
           await refresh();
         })();

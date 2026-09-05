@@ -25,7 +25,19 @@ export interface ConnectedOrg {
 }
 
 export type AccountsViewState =
-  | { readonly kind: 'notConnected' }
+  | {
+      readonly kind: 'notConnected';
+      /**
+       * R78's `not_stored`, when the last flow ended that way: the forge granted the token and
+       * this machine could not store it.
+       *
+       * `null` is *no flow has failed that way*, which is the ordinary case. It is a field on
+       * `notConnected` rather than a fourth state because the surface **is** not connected; what
+       * would be wrong is arriving there with no account and no explanation, which §10.1a names
+       * by its own words — never a silent no.
+       */
+      readonly refusal: string | null;
+    }
   | {
       readonly kind: 'connecting';
       /** Byte-identical to the server's. Never reformatted, never masked to a fixed width. */
@@ -70,12 +82,13 @@ export function accountsViewState(
   accounts: readonly Account[],
   pendingGrant: DeviceGrant | null,
   orgs: readonly AccountOrg[] | null,
+  refusal: string | null = null,
 ): AccountsViewState {
   const first = accounts.at(0);
   if (first === undefined) {
     // A pending flow with no account yet is the connecting state; otherwise nothing is connected.
     return pendingGrant === null
-      ? { kind: 'notConnected' }
+      ? { kind: 'notConnected', refusal }
       : {
           kind: 'connecting',
           userCode: pendingGrant.userCode,

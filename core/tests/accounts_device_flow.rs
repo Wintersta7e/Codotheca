@@ -583,6 +583,19 @@ impl RecordingEvents {
         ) > 0
     }
 
+    /// Every `connect_progress` payload recorded so far, for assertions about a field rather
+    /// than a stage.
+    #[must_use]
+    fn payloads(&self) -> Vec<serde_json::Value> {
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .filter(|event| event.topic == "accounts" && event.event == "connect_progress")
+            .map(|event| event.payload.clone())
+            .collect()
+    }
+
     #[must_use]
     fn first_stage_at(&self, stage: ConnectStage) -> Option<i64> {
         self.events
@@ -1104,4 +1117,93 @@ fn an_unrecognised_error_field_is_not_quoted() {
         named.contains("device_flow_disabled"),
         "a slug-shaped refusal must still be named: {named}"
     );
+}
+
+/// **R78.** A grant the forge made and this machine could not store gets its **own** terminal
+/// stage, carrying which of the two refused.
+///
+/// Before it existed the flow either reported `expired` — of a code that was spent, not expired —
+/// or ended silently, and the user was watching that screen to learn whether the authorisation
+/// they had just given worked. `denied` is the user refusing at the forge and `expired` is the
+/// deadline; neither is this.
+#[test]
+fn a_grant_the_store_refused_reports_not_stored_and_says_why() {
+    let transport = Arc::new(FakeTransport::new());
+    transport.push(response(&json!({
+        "device_code": DEVICE_SENTINEL,
+        "user_code": "NOT-STORED-CODE",
+        "verification_uri": "https://example.invalid/device",
+        "expires_in": 6,
+        "interval": 1
+    })));
+    transport.push(response(&json!({
+        "access_token": ACCESS_SENTINEL,
+        "scope": "read:user",
+        "token_type": "bearer"
+    })));
+    let clock = Arc::new(FakeClock::new(1_000));
+    let events = Arc::new(RecordingEvents::new(Arc::clone(&clock) as Arc<dyn Clock>));
+    let tokens = Arc::new(FakeTokenStore::available());
+    let sink = Arc::new(RefusingSink::new());
+    let pump = ConnectPump::start(deps(
+        Arc::clone(&transport) as Arc<dyn HttpTransport>,
+        Arc::clone(&clock) as Arc<dyn Clock>,
+        Arc::clone(&events) as Arc<dyn EventSink>,
+        Arc::clone(&tokens) as Arc<dyn TokenStore>,
+        Arc::clone(&sink) as Arc<dyn ConnectSink>,
+    ));
+
+    sink.wait_for_call();
+    events.wait_for_stage(ConnectStage::NotStored, 1);
+    pump.stop();
+
+    assert!(
+        !events.saw_stage(ConnectStage::Granted),
+        "nothing was stored, so nothing may be reported as granted"
+    );
+    assert!(
+        !events.saw_stage(ConnectStage::Expired),
+        "a redeemed code is spent, not expired"
+    );
+    assert!(!events.saw_stage(ConnectStage::Denied));
+
+    let payloads = events.payloads();
+    assert!(
+        !payloads.is_empty(),
+        "no progress event was recorded at all"
+    );
+    let not_stored: Vec<&serde_json::Value> = payloads
+        .iter()
+        .filter(|payload| payload["stage"] == json!("not_stored"))
+        .collect();
+    assert_eq!(not_stored.len(), 1, "{payloads:?}");
+    let reason = not_stored[0]["reason"]
+        .as_str()
+        .expect("not_stored carries its reason");
+    assert!(
+        reason.contains("refuses every grant"),
+        "the reason does not say which side refused: {reason}"
+    );
+
+    // Every other stage carries `null` — a reason on an ordinary poll would make one look like a
+    // failure with nothing to say.
+    for payload in &payloads {
+        if payload["stage"] == json!("not_stored") {
+            continue;
+        }
+        assert_eq!(
+            payload["reason"],
+            serde_json::Value::Null,
+            "a non-terminal stage carried a reason: {payload:?}"
+        );
+    }
+
+    // The reason crosses the protocol, so it is one more place a secret must not reach.
+    for payload in &payloads {
+        let text = payload.to_string();
+        assert!(
+            !text.contains(ACCESS_SENTINEL) && !text.contains(DEVICE_SENTINEL),
+            "a secret reached a progress event: {text}"
+        );
+    }
 }

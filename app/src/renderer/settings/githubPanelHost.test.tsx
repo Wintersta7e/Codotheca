@@ -242,3 +242,58 @@ describe('the panel leaves CONNECTING when the core says the flow ended', () => 
     });
   });
 });
+
+/**
+ * **R78's renderer half.** A grant the machine could not store must not read as *nothing
+ * happened*: the user has just authorised the application on the provider's own site.
+ */
+describe('a grant the store refused', () => {
+  it('says which side refused, and clears when another flow begins', async () => {
+    const core = fakeCore();
+    render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'CONNECT' }));
+    await waitFor(() => {
+      expect(screen.getByText('WXYZ-1234')).toBeTruthy();
+    });
+
+    core.emit({
+      topic: 'accounts',
+      event: 'connect_progress',
+      data: {
+        stage: 'not_stored',
+        intervalSecs: 5,
+        reason: 'the keychain refused the operation',
+      },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
+    });
+    expect(screen.queryByText('WXYZ-1234')).toBeNull();
+
+    const line = screen.getByText(/the keychain refused the operation/u).textContent ?? '';
+    expect(line, 'the line does not say the provider did its part').toContain(
+      'granted the token and this machine could not store it',
+    );
+    expect(line, 'a user who reconnects must be told it is safe').toContain('connecting again');
+
+    // Starting another flow clears it: a stale explanation on a live attempt is its own lie.
+    fireEvent.click(screen.getByRole('button', { name: 'CONNECT' }));
+    await waitFor(() => {
+      expect(screen.getByText('WXYZ-1234')).toBeTruthy();
+    });
+    expect(screen.queryByText(/the keychain refused the operation/u)).toBeNull();
+  });
+
+  it('says nothing when no flow has failed that way', async () => {
+    const core = fakeCore();
+    render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
+    });
+    // The ordinary NOT CONNECTED state explains the consequence and nothing else.
+    expect(document.querySelector('[data-row="github-not-stored"]')).toBeNull();
+  });
+});

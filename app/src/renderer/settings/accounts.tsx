@@ -36,23 +36,40 @@ export interface GithubPanelProps {
   readonly onUpgradeScope: () => void;
   readonly onDisconnect: () => void;
   readonly onSetOrgEnabled: (login: string, enabled: boolean) => void;
+  /** R78: why the last flow ended in `not_stored`, or `null` when none did. */
+  readonly refusal?: string | null | undefined;
 }
 
 /** §20.9: disconnecting does not revoke the grant, and the surface says so plainly. */
 export const REVOCATION_CONSEQUENCE =
   'Disconnecting removes the token from this machine. It does not revoke this application on the provider — do that on the provider’s own settings page:';
 
+/**
+ * R78's `not_stored`, in words. The forge did its part; this machine did not.
+ *
+ * It names **which side** refused, because the user has just authorised the application on a
+ * third-party site and every other reading of an empty screen is wrong: that they mistyped the
+ * code, that the app was denied, that the code ran out.
+ */
+export const NOT_STORED_CONSEQUENCE =
+  'The provider granted the token and this machine could not store it, so nothing was connected. The grant still exists on the provider — connecting again is safe. The reason the keychain gave:';
+
 /** §20.11's consequence, stated where a token would otherwise be assumed. */
 export const NOT_CONNECTED_CONSEQUENCE =
   'Stars, issues, pull requests and CI state stay unknown until a token exists — and unknown is drawn as unknown, never as zero. Stored in the OS keychain, never in a config file.';
 
 export function GithubPanel(props: GithubPanelProps): ReactElement {
-  const state = accountsViewState(props.accounts, props.pendingGrant, props.orgs);
+  const state = accountsViewState(props.accounts, props.pendingGrant, props.orgs, props.refusal ?? null);
 
   if (state.kind === 'notConnected') {
     return (
       <div style={SD.blockAbsent} data-row="github-not-connected">
         <span style={SD.rowLabel}>NOT CONNECTED</span>
+        {state.refusal !== null && (
+          <p style={SD.rowNote} data-row="github-not-stored">
+            {`${NOT_STORED_CONSEQUENCE} ${state.refusal}`}
+          </p>
+        )}
         <p style={SD.rowNote}>{NOT_CONNECTED_CONSEQUENCE}</p>
         <div style={SD.rowActions}>
           <button type="button" style={SD.buttonFilled} onClick={props.onConnect}>

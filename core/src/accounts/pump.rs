@@ -281,14 +281,16 @@ impl ConnectPumpInner {
             Err(error) => {
                 // The device code has been redeemed and is single-use, so every further poll can
                 // only fail. Leaving the flow live spun for the code's whole lifetime and then
-                // reported `expired`, which names the wrong reason for the wrong subsystem.
+                // reported `expired` — a false statement to a user who has just authorised the
+                // application and is watching this screen to learn whether it worked.
                 //
-                // No `ConnectStage` says "the forge granted it and the core could not store it" —
-                // `denied` is the user refusing and `expired` is the deadline — so the reason goes
-                // to the rolling log and the flow simply ends. Naming it on the wire needs a
-                // seventh variant, which is a §20.8 change and not this file's to make.
-                eprintln!("accounts: the granted token could not be recorded: {error}");
-                drop(lock(&self.state).flow.take());
+                // R78 gave that outcome its own terminal stage: the forge granted it and this
+                // machine could not store it, which is neither `denied` (the user refusing) nor
+                // `expired` (the deadline). The reason travels with it, because which of the two
+                // sides refused is the whole of what the user is owed here.
+                let reason = error.to_string();
+                eprintln!("accounts: the granted token could not be recorded: {reason}");
+                self.finish_with(ConnectStage::NotStored, Some(reason));
             }
         }
     }
@@ -333,6 +335,11 @@ impl ConnectPumpInner {
     }
 
     fn finish(&self, stage: ConnectStage) {
+        self.finish_with(stage, None);
+    }
+
+    /// `finish`, with R78's reason. Every stage but `NotStored` passes `None`.
+    fn finish_with(&self, stage: ConnectStage, reason: Option<String>) {
         let interval_secs = {
             let mut pump_state = lock(&self.state);
             let Some(flow) = pump_state.flow.take() else {
@@ -340,7 +347,7 @@ impl ConnectPumpInner {
             };
             flow.interval_secs
         };
-        self.emit_progress(stage, interval_secs);
+        self.emit_stage(stage, interval_secs, reason);
     }
 
     fn cancel_user(&self) {
@@ -389,9 +396,20 @@ impl ConnectPumpInner {
     }
 
     fn emit_progress(&self, stage: ConnectStage, interval_secs: u32) {
+        self.emit_stage(stage, interval_secs, None);
+    }
+
+    /// **`reason` is non-null for exactly one stage.** Carrying it on every stage would make an
+    /// ordinary poll look like a failure with nothing to say.
+    fn emit_stage(&self, stage: ConnectStage, interval_secs: u32, reason: Option<String>) {
+        debug_assert!(
+            reason.is_none() || stage == ConnectStage::NotStored,
+            "only not_stored carries a reason"
+        );
         if let Ok(payload) = serde_json::to_value(ConnectProgress {
             stage,
             interval_secs,
+            reason,
         }) {
             self.deps
                 .events

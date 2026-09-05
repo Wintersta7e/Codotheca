@@ -850,7 +850,16 @@
     },
     "ConnectStage": {
       "kind": "enum",
-      "variants": ["pending", "slow_down", "granted", "denied", "expired", "cancelled"]
+      "$comment": "R78: not_stored is terminal and is neither denied nor expired. denied is the user refusing at the forge and expired is the deadline elapsing; a code that was redeemed and whose grant this machine could not store is a third thing, and reporting it as either of the other two is a false statement about what happened.",
+      "variants": [
+        "pending",
+        "slow_down",
+        "granted",
+        "denied",
+        "expired",
+        "cancelled",
+        "not_stored"
+      ]
     },
     "Account": {
       "kind": "struct",
@@ -894,7 +903,12 @@
     },
     "ConnectProgress": {
       "kind": "struct",
-      "fields": { "stage": "ConnectStage", "intervalSecs": "u32" }
+      "$comment": "R78: reason is non-null for exactly one stage, not_stored — which of the forge and this machine refused is the whole of what the user is owed there. Every other stage carries null.",
+      "fields": {
+        "stage": "ConnectStage",
+        "intervalSecs": "u32",
+        "reason": "String?"
+      }
     },
     "AccountDisconnected": {
       "kind": "struct",
