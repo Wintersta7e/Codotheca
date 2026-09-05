@@ -225,6 +225,37 @@ describe('aggregateSection and its header text', () => {
     const clean = [at(1, { refstateObservedAt: NOW, ahead: 0, isDirty: false })];
     expect(flagLineText(aggregateSection(clean))).toBeNull();
   });
+  /**
+   * AC-P2-23-5's second half. `unchecked` exists so that *an absent flag line may only ever mean
+   * observed, and nothing to report* — it is a coverage warning about **local git state**, and a
+   * not-cloned project has no local git state to be uncovered about.
+   */
+  describe('§23.4: unchecked counts a row only when the project has a working copy', () => {
+    it('renders no flag line at all for an all-not-cloned section', () => {
+      const bare = [notCloned(1), notCloned(400), notCloned(4000)];
+      const agg = aggregateSection(bare);
+      expect(agg.unchecked).toBe(0);
+      // The three remaining counters need no change and this asserts that rather than assuming
+      // it: `ahead > 0`, `isDirty === true` and `interruptedOp !== null` are all false on a NULL
+      // row, so with all four at zero `flagLineText` returns null and no line is rendered.
+      expect(agg.unpushed).toBe(0);
+      expect(agg.uncommitted).toBe(0);
+      expect(agg.interrupted).toBe(0);
+      expect(flagLineText(agg)).toBeNull();
+    });
+
+    it('counts only the located rows in a mixed section', () => {
+      const mixed = [at(1), at(1), notCloned(1), notCloned(1), notCloned(1)];
+      expect(aggregateSection(mixed).unchecked).toBe(2);
+      expect(flagLineText(aggregateSection(mixed))).toBe('2 unchecked');
+    });
+
+    it('still counts every located row that has no J1 result', () => {
+      const located = [at(1), at(1), at(1)];
+      expect(aggregateSection(located).unchecked).toBe(3);
+    });
+  });
+
   it('names the three flags and appends unchecked last', () => {
     expect(flagLineText(aggregateSection(rows))).toBe(
       '1 unpushed · 1 uncommitted · 1 interrupted · 1 unchecked',

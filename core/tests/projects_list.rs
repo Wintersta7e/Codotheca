@@ -308,3 +308,52 @@ fn sort_by_name_reorders_the_rows_and_the_order_key_with_them() {
     let by_size = list(&index, &sink, serde_json::json!({ "sort": "size" }));
     assert_eq!(ids(&by_size), vec![2, 1]);
 }
+
+/// AC-P2-23-5's second half, Rust mirror. `unchecked` exists so that *an absent flag line may
+/// only ever mean observed, and nothing to report* (§8.1) — it is a coverage warning about
+/// **local git state**, and a not-cloned project has no local git state to be uncovered about.
+#[test]
+fn unchecked_counts_only_rows_that_have_a_working_copy() {
+    use codotheca_core::projects::list::aggregate_era;
+    use codotheca_core::projects::rows::{LoadedRow, RowFacts};
+
+    fn loaded(row: ProjectRow) -> LoadedRow {
+        LoadedRow {
+            row,
+            facts: RowFacts {
+                authored_by_user: None,
+                location_kind: None,
+                distro: None,
+                has_remote: false,
+                has_submodules: false,
+                has_readme: None,
+            },
+        }
+    }
+
+    let bare: Vec<LoadedRow> = (1..=3)
+        .map(|id| loaded(ProjectRow::for_test_not_cloned(id)))
+        .collect();
+    let bare_refs: Vec<&LoadedRow> = bare.iter().collect();
+    let agg = aggregate_era(&bare_refs);
+    assert_eq!(agg.unchecked, 0, "there is no local git state to cover");
+    // The three remaining counters need no change, and this asserts that rather than assuming
+    // it: all three are false on a NULL row, so with all four at zero no flag line renders.
+    assert_eq!(agg.unpushed, 0);
+    assert_eq!(agg.uncommitted, 0);
+    assert_eq!(agg.interrupted, 0);
+
+    let mixed: Vec<LoadedRow> = vec![
+        loaded(ProjectRow::for_test(1)),
+        loaded(ProjectRow::for_test(2)),
+        loaded(ProjectRow::for_test_not_cloned(3)),
+        loaded(ProjectRow::for_test_not_cloned(4)),
+    ];
+    let mixed_refs: Vec<&LoadedRow> = mixed.iter().collect();
+    assert_eq!(aggregate_era(&mixed_refs).unchecked, 2);
+
+    // A located section with no J1 result still counts every one of its rows.
+    let located: Vec<LoadedRow> = (1..=3).map(|id| loaded(ProjectRow::for_test(id))).collect();
+    let located_refs: Vec<&LoadedRow> = located.iter().collect();
+    assert_eq!(aggregate_era(&located_refs).unchecked, 3);
+}

@@ -98,7 +98,9 @@ export function aggregateSection(rows: readonly ShelfRow[]): SectionAggregate {
     if ((row.ahead ?? 0) > 0) unpushed += 1;
     if (row.isDirty === true) uncommitted += 1;
     if (row.interruptedOp !== null) interrupted += 1;
-    if (row.refstateObservedAt === null) unchecked += 1;
+    // §23.4, R13's mirror: a coverage warning about **local git state**, so a row counts only
+    // when the project has a working copy to be uncovered about.
+    if (row.primaryLocation !== null && row.refstateObservedAt === null) unchecked += 1;
   }
   return {
     count: rows.length,

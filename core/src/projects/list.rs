@@ -124,7 +124,12 @@ pub fn aggregate_era(rows: &[&LoadedRow]) -> EraAggregate {
             agg.interrupted = add_u32(agg.interrupted, 1);
         }
         // No J1 result: an absent flag line may only ever mean *observed, nothing to report*.
-        if r.refstate_observed_at.is_none() {
+        //
+        // §23.4: the counter is a coverage warning about **local git state**, so it counts a row
+        // only when the project has at least one `location`. A not-cloned project has no local
+        // git state to be uncovered about, and reporting it as `unchecked` would promise a check
+        // that can never run.
+        if r.primary_location.is_some() && r.refstate_observed_at.is_none() {
             agg.unchecked = add_u32(agg.unchecked, 1);
         }
     }
