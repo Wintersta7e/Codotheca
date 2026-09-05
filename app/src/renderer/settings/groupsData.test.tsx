@@ -160,7 +160,10 @@ describe('group 9, GITHUB, and the notification block', () => {
     // [p2] §20.3: the three chips are deleted. Two of the three named strings that are not
     // GitHub OAuth scopes at all, and the third was a promise about what is absent. A granted
     // scope is a read-back fact and is rendered only in the CONNECTED state, from the payload.
-    expect(container.querySelectorAll('[data-row="github-statement"] span')).toHaveLength(1);
+    // The chip container by name, not a span count: counting every span made any unrelated
+    // element added to this row a failure, and it is the chips this asserts the absence of.
+    expect(container.querySelector('[data-row="github-scopes"]')).toBeNull();
+    expect(container.querySelector('[data-row="github-statement"]')).toBeTruthy();
   });
 
   it('marks all three notifications NOT IN THIS BUILD and draws none as a control', () => {

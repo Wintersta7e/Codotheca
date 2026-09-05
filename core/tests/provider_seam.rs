@@ -139,10 +139,14 @@ fn provider_trait_request_method_names() -> Vec<String> {
         .split("pub trait Provider")
         .nth(1)
         .expect("provider trait is declared");
-    let trait_body = &trait_body[..trait_body
-        .find("\n}")
-        .or_else(|| trait_body.find(" }"))
-        .unwrap_or(trait_body.len())];
+    // Newlines are already spaces, so the closing brace at the start of its own line reads as
+    // `" }"` — and a `"\n}"` needle can never match here, which is what the previous pair of
+    // alternatives quietly relied on. Missing is a failure, not a reason to scan to end of file:
+    // running past the trait would collect methods from whatever is declared below it.
+    let end = trait_body
+        .find(" }")
+        .expect("the Provider trait body has a closing brace");
+    let trait_body = &trait_body[..end];
     let mut names = Vec::new();
     for segment in trait_body.split("fn ").skip(1) {
         let signature = segment

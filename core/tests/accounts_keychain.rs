@@ -61,13 +61,28 @@ fn a_secret_token_carries_no_serde_and_no_display() {
         text.len()
     );
 
-    let declaration = text
-        .find("pub struct SecretToken")
+    // The attribute lines immediately above the declaration, and nothing else. A byte window
+    // reaches into the doc comment above them, where the word `Serialize` appears in prose
+    // *about this very rule* — the measured margin was 313 bytes, so roughly 113 bytes of
+    // added prose would have turned this red for the wrong reason.
+    let lines: Vec<&str> = text.lines().collect();
+    let declaration = lines
+        .iter()
+        .position(|line| line.contains("pub struct SecretToken"))
         .expect("SecretToken is declared in this module");
-    let derives = &text[declaration.saturating_sub(200)..declaration];
+    let attributes: Vec<&str> = lines[..declaration]
+        .iter()
+        .rev()
+        .copied()
+        .take_while(|line| line.trim_start().starts_with('#'))
+        .collect();
+    assert!(
+        !attributes.is_empty(),
+        "the declaration carries no attributes, so this scan read nothing"
+    );
     for banned in ["Serialize", "Deserialize"] {
         assert!(
-            !derives.contains(banned),
+            !attributes.iter().any(|line| line.contains(banned)),
             "SecretToken derives {banned}, which puts a credential on the wire"
         );
     }

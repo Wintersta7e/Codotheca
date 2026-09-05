@@ -8,12 +8,13 @@
 //!
 //! # The ledger, as it stands
 //!
-//! **42 of the 50 schema commands reach a module. The eight `accounts.*` commands are declared
-//! and have no handler yet**, so each routes to `NoOwner("p2-20")` and carries a row in
-//! `UNOWNED_COMMANDS`. That constant is what *names* a command that arrives without a handler; a
-//! bare `PROTOCOL` refusal reads to the shell as "no such command", which is how nineteen
-//! commands stayed invisible for the length of this project. This file's tests pin the constant
-//! against `protocol.json` and against `route`'s own arms, so the two cannot be edited apart.
+//! **All 50 schema commands reach a module**, so `UNOWNED_COMMANDS` is empty and nothing routes
+//! to `NoOwner`. The constant stays because it is what *names* a command that arrives without a
+//! handler; a bare `PROTOCOL` refusal reads to the shell as "no such command", which is how
+//! nineteen commands stayed invisible for the length of this project. This file's tests pin the
+//! constant against `protocol.json` and against `route`'s own arms, so the two cannot be edited
+//! apart — and an empty list is asserted as *no command routes to `NoOwner`*, because two
+//! `all()` over an empty set assert nothing.
 //!
 //! **A command leaves the list in the same change that gives it a handler.** The bridge's own
 //! `KNOWN_COMMANDS` is checked against this list, so a name cannot be offered to the renderer
@@ -80,7 +81,9 @@ pub enum Route {
 /// exactly that for the length of this project. A schema command with no module goes here, with
 /// its plan, in the same change that adds its `NoOwner` arm.
 ///
-/// The eight `accounts.*` rows land with the schema and leave as their handlers do.
+/// The eight `accounts.*` rows landed with the schema and left as their handlers did, so it is
+/// empty again. Empty is a state to assert, not a state to stop asserting: the test below reads
+/// the router rather than this list.
 pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
 
 /// The wire name of a command into the generated enum.
@@ -230,25 +233,31 @@ mod tests {
     }
 
     #[test]
-    fn the_unowned_set_is_the_accounts_surface_and_nothing_else() {
-        // R37 closed Gap A and the list was empty; §20.8 reopens it deliberately, with the
-        // eight commands whose handlers land later in the same plan. The constant and its
-        // `NoOwner` arm are what *name* a command that reaches the schema with no module —
-        // without them it falls back to a PROTOCOL refusal the shell reads as "no such
-        // command", which is how nineteen of them stayed invisible.
-        let unowned: BTreeSet<&str> = UNOWNED_COMMANDS.iter().map(|(c, _)| *c).collect();
-        assert!(
-            unowned.iter().all(|c| c.starts_with("accounts.")),
-            "a command joined the list without an arm in route"
-        );
-        assert!(
-            UNOWNED_COMMANDS.iter().all(|(_, plan)| *plan == "p2-20"),
-            "every unowned row names the plan that owes it"
-        );
+    fn every_schema_command_reaches_a_module() {
+        // R37 closed Gap A and the list was empty; §20.8 reopened it with the eight commands
+        // whose handlers landed later in the same plan, and it is empty again. **An empty list
+        // is not a licence to stop asserting**: `UNOWNED_COMMANDS.iter().all(…)` over zero rows
+        // is true whatever the rule says, so what is checked here is the complement, read off
+        // the router — no schema command falls through to `NoOwner`.
+        let commands = schema_commands();
         assert_eq!(
-            schema_commands().len(),
+            commands.len(),
             50,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight"
+        );
+        let unowned: Vec<&str> = commands
+            .iter()
+            .filter(|name| {
+                matches!(
+                    route(command_name(name).expect("routable")),
+                    Route::NoOwner(_)
+                )
+            })
+            .map(String::as_str)
+            .collect();
+        assert!(
+            unowned.is_empty(),
+            "a schema command reaches no module: {unowned:?}"
         );
     }
 
