@@ -4,10 +4,16 @@
 //! for [`insert_location`], whose production counterpart is `super::store::upsert_location`:
 //! the two differ only by module, so read the path before reaching for either.
 #![allow(
-    // Fixtures, reachable only from `cfg(test)`; nothing outside a test binary can call them,
-    // so the documented-public-API lints are noise here.
+    // Fixtures behind the default-off `testkit` feature; nothing outside a test binary can call
+    // them, so the documented-public-API lints are noise here.
     clippy::missing_panics_doc,
-    clippy::must_use_candidate
+    clippy::must_use_candidate,
+    // `expect` and `panic` are denied crate-wide because a panic kills the process the shell
+    // supervises. That reasoning does not reach here — the same exemption `crate::testing::index`
+    // carries, for the same reason: a fixture that cannot build its own database must abort
+    // loudly rather than hand a test a half-made index to assert against.
+    clippy::expect_used,
+    clippy::panic
 )]
 
 use rusqlite::{params, Connection};
@@ -62,6 +68,144 @@ impl Provider for DeclaringForge {
 /// The alias set every identity fixture in this crate compares against.
 pub fn forge_aliases() -> HostAliases {
     HostAliases::from_provider(&DeclaringForge)
+}
+
+/// One local clone, as a **scan** would probe it. No git and no disk: `resolve_identity` takes an
+/// `IdentityProbe`, so a fixture that generated a real corpus would build repositories nothing
+/// under test ever reads.
+#[derive(Debug, Clone, Copy)]
+pub struct LocalClone {
+    /// The directory basename a scan would pass as the seed for a *created* row.
+    pub basename: &'static str,
+    /// The URL `git config` would report for `origin`.
+    pub url: &'static str,
+    /// `None` for a shallow or unborn clone, which is §1.1's no-lineage case.
+    pub lineage: Option<&'static str>,
+    pub is_shallow: bool,
+    /// `git rev-parse --git-common-dir`, folded. A rescan of the same path is `AttachDefinitive`
+    /// because of this value, which is what makes a scan pass idempotent.
+    pub common_dir: &'static str,
+}
+
+/// §22.13's fixture library: N listings, M local clones, and the K rows both ingest orders must
+/// reach.
+#[derive(Debug, Clone)]
+pub struct ListingLibrary {
+    pub listings: Vec<RepoListing>,
+    pub clones: Vec<LocalClone>,
+    /// The `project` row count both orders settle on.
+    pub expected_projects: usize,
+}
+
+fn listing(provider_repo_id: &str, owner: &str, name: &str, is_fork: bool) -> RepoListing {
+    RepoListing {
+        provider: "github",
+        provider_repo_id: provider_repo_id.to_owned(),
+        clone_url: format!("https://forge.example/{owner}/{name}.git"),
+        owner: owner.to_owned(),
+        name: name.to_owned(),
+        can_push: Some(true),
+        is_fork,
+        fork_parent_clone_url: None,
+        is_archived: false,
+        is_private: false,
+        in_org: None,
+    }
+}
+
+/// The library §22.13's first criterion describes, with every case it names.
+///
+/// | Fixture | What it exercises |
+/// |---|---|
+/// | `widget` | the ordinary case: one listing, one clone, one row |
+/// | `gadget` / `gadget-old` | a **renamed** repository — the clone's stored key is the old path |
+/// | `tool` | an **alias-host** clone: stored `ssh.…`, listed on the canonical host |
+/// | `thing` | a **shallow** clone of a listed repository — no lineage at all |
+/// | `upstream` + `mine/upstream` | a **fork with its upstream**, sharing one lineage |
+/// | `rewritten` ×2 | a **rewritten-history duplicate**: one key, two lineages (§22.5) |
+/// | `offsite` | an **undeclared**-alias-host clone, which folds to itself and matches nothing |
+#[must_use]
+pub fn listing_library() -> ListingLibrary {
+    ListingLibrary {
+        listings: vec![
+            listing("1", "acme", "widget", false),
+            listing("2", "acme", "gadget", false),
+            listing("3", "acme", "tool", false),
+            listing("4", "acme", "thing", false),
+            listing("5", "acme", "upstream", false),
+            listing("6", "mine", "upstream", true),
+            listing("7", "acme", "rewritten", false),
+        ],
+        clones: vec![
+            LocalClone {
+                basename: "widget",
+                url: "https://forge.example/acme/widget.git",
+                lineage: Some("root-widget"),
+                is_shallow: false,
+                common_dir: "/w/widget/.git",
+            },
+            LocalClone {
+                basename: "gadget",
+                url: "https://forge.example/acme/gadget-old.git",
+                lineage: Some("root-gadget"),
+                is_shallow: false,
+                common_dir: "/w/gadget/.git",
+            },
+            LocalClone {
+                basename: "tool",
+                url: "git@ssh.forge.example:acme/tool.git",
+                lineage: Some("root-tool"),
+                is_shallow: false,
+                common_dir: "/w/tool/.git",
+            },
+            LocalClone {
+                basename: "thing",
+                url: "https://forge.example/acme/thing.git",
+                lineage: None,
+                is_shallow: true,
+                common_dir: "/w/thing/.git",
+            },
+            LocalClone {
+                basename: "upstream",
+                url: "https://forge.example/acme/upstream.git",
+                lineage: Some("root-upstream"),
+                is_shallow: false,
+                common_dir: "/w/upstream/.git",
+            },
+            LocalClone {
+                basename: "myfork",
+                url: "https://forge.example/mine/upstream.git",
+                lineage: Some("root-upstream"),
+                is_shallow: false,
+                common_dir: "/w/myfork/.git",
+            },
+            LocalClone {
+                basename: "rewritten-a",
+                url: "https://forge.example/acme/rewritten.git",
+                lineage: Some("root-rewritten-a"),
+                is_shallow: false,
+                common_dir: "/w/rewritten-a/.git",
+            },
+            LocalClone {
+                basename: "rewritten-b",
+                url: "https://forge.example/acme/rewritten.git",
+                lineage: Some("root-rewritten-b"),
+                is_shallow: false,
+                common_dir: "/w/rewritten-b/.git",
+            },
+            LocalClone {
+                basename: "offsite",
+                url: "git@forge-work:acme/offsite.git",
+                lineage: Some("root-offsite"),
+                is_shallow: false,
+                common_dir: "/w/offsite/.git",
+            },
+        ],
+        // Seven listings and nine clones, of which six clones fold onto a listing and three do
+        // not: `gadget-old` (the pre-rename key), `rewritten-b` (the second history) and
+        // `offsite` (an undeclared host). 7 + 3 = 10.
+        expected_projects: 10,
+    }
 }
 
 /// An in-memory index with **the migrations the shipped build applies**, in order.

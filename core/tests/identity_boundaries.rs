@@ -218,10 +218,13 @@ fn the_listing_side_is_split_in_exactly_one_place() {
     }
     assert_eq!(splitters, vec!["match_listing.rs".to_owned()]);
 
-    // And nothing else reads a listing's `clone_url` — the field a second splitter would need.
+    // And nothing else **reads** a listing's `clone_url` — the field a second splitter would
+    // need. The needle is the field *access*, `.clone_url`, not the name: a fixture that builds a
+    // `RepoListing` writes `clone_url:` in a struct literal and is not a second splitter, and a
+    // rule that could not tell those apart would be satisfied by whichever it happened to catch.
     let readers: Vec<String> = files
         .iter()
-        .filter(|(_, source)| code_only(source).contains("clone_url"))
+        .filter(|(_, source)| code_only(source).contains(".clone_url"))
         .map(|(name, _)| name.clone())
         .collect();
     assert_eq!(

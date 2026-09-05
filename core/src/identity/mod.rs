@@ -30,7 +30,10 @@ pub mod remote;
 pub mod rename_repair;
 pub mod store;
 pub mod submodule;
-#[cfg(test)]
+/// **`testkit`, not `cfg(test)`.** §22.13's acceptance suite is an integration test and cannot
+/// see a `cfg(test)` module, and its fixture library is the one both ingest orders are compared
+/// over — two copies of it would be two libraries. Off by default, like `crate::testing`.
+#[cfg(any(test, feature = "testkit"))]
 pub mod testutil;
 pub mod user;
 
