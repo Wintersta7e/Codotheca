@@ -13,10 +13,12 @@
 //! keeps the `Clock` seam out of this module.
 
 pub mod alias;
+pub mod candidates;
 pub mod commands;
 pub mod confirm;
 pub mod decide;
 pub mod lineage;
+pub mod match_listing;
 pub mod merge;
 pub mod people;
 pub mod probe;
