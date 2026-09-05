@@ -13,10 +13,12 @@
 //! keeps the `Clock` seam out of this module.
 
 pub mod alias;
+pub mod binding;
 pub mod candidates;
 pub mod commands;
 pub mod confirm;
 pub mod decide;
+pub mod ingest;
 pub mod lineage;
 pub mod match_listing;
 pub mod merge;
@@ -55,6 +57,14 @@ pub enum IdentityError {
     },
     /// `merge_projects` was asked to merge a project into itself.
     SameProject(i64),
+    /// A listing entry whose clone URL names no `<host>/<owner>/<name>`, so it has neither of
+    /// §22.1's two bases. It is **named rather than dropped**: §21.10's summary must account for
+    /// every entry on a page, and an entry that vanished between the page and the tally is the
+    /// silent suppression §11.1 forbids.
+    ListingNotCanonical {
+        provider: String,
+        provider_repo_id: String,
+    },
 }
 
 impl From<rusqlite::Error> for IdentityError {
@@ -72,7 +82,8 @@ impl IdentityError {
             | Self::Index(_)
             | Self::UnknownProject(_)
             | Self::RedirectChain { .. }
-            | Self::SameProject(_) => ErrorCode::Internal,
+            | Self::SameProject(_)
+            | Self::ListingNotCanonical { .. } => ErrorCode::Internal,
         }
     }
 }

@@ -9,6 +9,7 @@
 
 use rusqlite::{params, OptionalExtension as _, Transaction};
 
+use super::alias::{fold_key, HostAliases};
 use super::decide::{
     decide, evidence_from, Candidate, IdentityDecision, IdentityEvidence, IdentityProbe,
 };
@@ -393,39 +394,59 @@ pub struct AmbiguousRow {
 ///
 /// The display path comes back through `index::path::display_paths_for_ui`, the one door §1.10
 /// allows. The plan writes the read inline here instead, which this project's own gate refuses.
-pub fn ambiguous_group(tx: &Transaction<'_>) -> Result<Vec<AmbiguousRow>, IdentityError> {
+///
+/// **Two bases, and the thresholds differ on purpose (§22.5).** The lineage arm is phase 1's and
+/// is unchanged, down to its `< 2`: there the subject is a *remoteless third party* choosing
+/// between candidates, so one candidate is not a choice — it is `AttachInferred`'s case, and
+/// `the_ambiguous_group_names_its_candidates_and_drops_a_project_that_lost_them` asserts exactly
+/// that. The remote arm takes `>= 1`, because there the subject is **one of the two competing
+/// identities** and one other project is the whole ambiguity.
+///
+/// **Phase-1 output is unchanged by construction**: every row `flag_remoteless_ambiguity` can
+/// flag has `remote_key IS NULL`, and NULL matches nothing, so the remote arm contributes an
+/// empty set to every pre-existing row. It also no longer `continue`s on a NULL `lineage_key` —
+/// a not-cloned project's lineage is NULL by construction (§22.4), so skipping on it made §22.5's
+/// case unrepresentable.
+pub fn ambiguous_group(
+    tx: &Transaction<'_>,
+    aliases: &HostAliases,
+) -> Result<Vec<AmbiguousRow>, IdentityError> {
     let mut flagged = tx.prepare(
-        "SELECT id, lineage_key FROM project
+        "SELECT id, lineage_key, remote_key FROM project
           WHERE ambiguous_lineage = 1 AND merged_into IS NULL
           ORDER BY id",
     )?;
     let subjects = flagged
         .query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut out = Vec::new();
-    for (project_id, lineage_key) in subjects {
-        let Some(lineage_key) = lineage_key else {
-            continue;
+    for (project_id, lineage_key, remote_key) in subjects {
+        let by_lineage = match lineage_key {
+            Some(ref key) => lineage_candidates(tx, key, project_id)?,
+            None => Vec::new(),
         };
-
-        let mut cands = tx.prepare(
-            "SELECT name FROM project
-              WHERE lineage_key = ?1 AND remote_key IS NOT NULL AND merged_into IS NULL
-                AND id <> ?2
-              ORDER BY created_at, id",
-        )?;
-        let names = cands
-            .query_map(params![lineage_key, project_id], |r| r.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Fewer than two candidates is no longer ambiguous. The row stops appearing; nothing
-        // is written.
-        if names.len() < 2 {
+        let by_remote = match remote_key.as_deref().and_then(|k| fold_key(k, aliases)) {
+            Some(ref folded) => remote_candidates(tx, folded, project_id, aliases)?,
+            None => Vec::new(),
+        };
+        if by_lineage.len() < 2 && by_remote.is_empty() {
+            // No longer ambiguous on either basis. The row stops appearing; nothing is written.
             continue;
         }
+        let mut names = by_lineage;
+        for (id, name) in by_remote {
+            if !names.iter().any(|(seen, _)| *seen == id) {
+                names.push((id, name));
+            }
+        }
+        let names: Vec<String> = names.into_iter().map(|(_, name)| name).collect();
 
         let location_id: Option<i64> = tx
             .query_row(
@@ -450,6 +471,56 @@ pub fn ambiguous_group(tx: &Transaction<'_>) -> Result<Vec<AmbiguousRow>, Identi
             candidate_total: names.len(),
             candidate_names: names.into_iter().take(2).collect(),
         });
+    }
+    Ok(out)
+}
+
+/// Phase 1's arm, byte for byte: the projects sharing this lineage that carry a remote.
+fn lineage_candidates(
+    tx: &Transaction<'_>,
+    lineage_key: &str,
+    subject: i64,
+) -> Result<Vec<(i64, String)>, IdentityError> {
+    let mut st = tx.prepare(
+        "SELECT id, name FROM project
+          WHERE lineage_key = ?1 AND remote_key IS NOT NULL AND merged_into IS NULL
+            AND id <> ?2
+          ORDER BY created_at, id",
+    )?;
+    let rows = st.query_map(params![lineage_key, subject], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// §22.5's arm: the projects sharing this subject's **folded** `remote_key`.
+///
+/// The fold is applied to both sides in Rust, by the one implementation, for the same reason
+/// §22.2 gives — a stored key carries whichever host spelling the clone used.
+fn remote_candidates(
+    tx: &Transaction<'_>,
+    folded: &str,
+    subject: i64,
+    aliases: &HostAliases,
+) -> Result<Vec<(i64, String)>, IdentityError> {
+    let mut st = tx.prepare(
+        "SELECT id, name, remote_key FROM project
+          WHERE remote_key IS NOT NULL AND merged_into IS NULL AND id <> ?1
+          ORDER BY created_at, id",
+    )?;
+    let rows = st.query_map(params![subject], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (id, name, stored) = row?;
+        if fold_key(&stored, aliases).as_deref() == Some(folded) {
+            out.push((id, name));
+        }
     }
     Ok(out)
 }
@@ -1001,7 +1072,7 @@ mod tests {
         let orphan = resolve_identity(&tx, &probe(&["r1"], &[], None), "local", 102).unwrap();
         super::super::testutil::insert_location(&tx, orphan.project_id, "/w/local", None);
 
-        let group = super::ambiguous_group(&tx).unwrap();
+        let group = super::ambiguous_group(&tx, &super::super::testutil::forge_aliases()).unwrap();
         assert_eq!(group.len(), 1);
         let row = group.first().unwrap();
         assert_eq!(row.project_id, orphan.project_id);
@@ -1019,7 +1090,11 @@ mod tests {
             rusqlite::params![orphan.project_id, mine.project_id],
         )
         .unwrap();
-        assert!(super::ambiguous_group(&tx).unwrap().is_empty());
+        assert!(
+            super::ambiguous_group(&tx, &super::super::testutil::forge_aliases())
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(
             tx.query_row(
                 "SELECT ambiguous_lineage FROM project WHERE id=?1",

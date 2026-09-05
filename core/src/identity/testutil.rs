@@ -12,7 +12,49 @@
 
 use rusqlite::{params, Connection};
 
+use crate::accounts::keychain::SecretToken;
+use crate::identity::alias::HostAliases;
 use crate::index::migrate::{apply_all, MIGRATIONS};
+use crate::provider::listing::{OrgListing, Page, RepoListing, Viewer};
+use crate::provider::{Observed, Provider, ProviderResult};
+
+/// A forge that declares an alias set and issues no request.
+///
+/// §22.2's fold is provider-declared, so a test that needs a [`HostAliases`] needs a `Provider` —
+/// and this one is a fixture rather than an adapter: every request method is unreachable.
+#[derive(Debug)]
+pub struct DeclaringForge;
+
+impl Provider for DeclaringForge {
+    fn viewer(&self, _t: &SecretToken) -> ProviderResult<Observed<Viewer>> {
+        unreachable!("a fixture forge issues no request")
+    }
+    fn list_orgs(
+        &self,
+        _t: &SecretToken,
+        _cur: Option<&str>,
+    ) -> ProviderResult<Observed<Page<OrgListing>>> {
+        unreachable!("a fixture forge issues no request")
+    }
+    fn list_repos(
+        &self,
+        _t: &SecretToken,
+        _cur: Option<&str>,
+    ) -> ProviderResult<Observed<Page<RepoListing>>> {
+        unreachable!("a fixture forge issues no request")
+    }
+    fn canonical_host(&self) -> &'static str {
+        "forge.example"
+    }
+    fn host_aliases(&self) -> &[&str] {
+        &["forge.example", "www.forge.example", "ssh.forge.example"]
+    }
+}
+
+/// The alias set every identity fixture in this crate compares against.
+pub fn forge_aliases() -> HostAliases {
+    HostAliases::from_provider(&DeclaringForge)
+}
 
 /// An in-memory index with **the migrations the shipped build applies**, in order.
 ///
