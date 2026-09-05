@@ -267,3 +267,308 @@ fn a_listing_is_split_once_and_only_here() {
     };
     assert_eq!(listing_parts_from(&local, &aliases), None);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Task 7 — the two loaders. What the matcher is given, read through an index.
+// ---------------------------------------------------------------------------------------------
+
+use codotheca_core::accounts::keychain::SecretToken;
+use codotheca_core::identity::candidates::{
+    load_link_candidates, load_suppressors, LINK_CANDIDATES_BY_ID_SQL, LINK_CANDIDATES_BY_KEY_SQL,
+};
+use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
+use codotheca_core::index::{open_connection, Index};
+use codotheca_core::provider::listing::{OrgListing, Page, Viewer};
+use codotheca_core::provider::{Observed, Provider, ProviderResult};
+
+/// A forge that declares an alias set and issues no request; the loaders reach no network.
+#[derive(Debug)]
+struct DeclaringForge;
+
+impl Provider for DeclaringForge {
+    fn viewer(&self, _t: &SecretToken) -> ProviderResult<Observed<Viewer>> {
+        unreachable!("the loaders issue no request")
+    }
+    fn list_orgs(
+        &self,
+        _t: &SecretToken,
+        _cur: Option<&str>,
+    ) -> ProviderResult<Observed<Page<OrgListing>>> {
+        unreachable!("the loaders issue no request")
+    }
+    fn list_repos(
+        &self,
+        _t: &SecretToken,
+        _cur: Option<&str>,
+    ) -> ProviderResult<Observed<Page<RepoListing>>> {
+        unreachable!("the loaders issue no request")
+    }
+    fn canonical_host(&self) -> &'static str {
+        "forge.example"
+    }
+    fn host_aliases(&self) -> &[&str] {
+        &["forge.example", "www.forge.example", "ssh.forge.example"]
+    }
+}
+
+fn forge_aliases() -> HostAliases {
+    HostAliases::from_provider(&DeclaringForge)
+}
+
+fn migrated() -> (tempfile::TempDir, rusqlite::Connection) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut conn = open_connection(&Index::db_path(dir.path())).unwrap();
+    apply_all(&mut conn, MIGRATIONS).unwrap();
+    (dir, conn)
+}
+
+/// One `project` row, with only the columns these loaders read.
+fn project(
+    conn: &rusqlite::Connection,
+    name: &str,
+    remote_key: Option<&str>,
+    binding: Option<(&str, &str)>,
+    created_at: i64,
+) -> i64 {
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, remote_key, provider, provider_repo_id,
+                              created_at, updated_at)
+         VALUES (?1, ?1, ?2, ?3, ?4, ?5, ?5)",
+        rusqlite::params![
+            name,
+            remote_key,
+            binding.map(|b| b.0),
+            binding.map(|b| b.1),
+            created_at
+        ],
+    )
+    .unwrap();
+    conn.last_insert_rowid()
+}
+
+fn location(conn: &rusqlite::Connection, project_id: i64, path: &str) {
+    conn.execute(
+        "INSERT INTO location (project_id, kind, distro, path_bytes, path_key, path_display,
+                               store_key, presence, repo_kind, scan_generation)
+         VALUES (?1, 'linux', '', ?2, ?2, ?3, 'store', 'present', 'worktree', 1)",
+        rusqlite::params![project_id, path.as_bytes(), path],
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_candidate_is_found_through_an_alias_host() {
+    let (_dir, mut conn) = migrated();
+    // The clone was taken over an alias host, so the stored key is the alias spelling.
+    let stored = project(
+        &conn,
+        "widget",
+        Some("ssh.forge.example/acme/widget"),
+        None,
+        100,
+    );
+    let tx = conn.transaction().unwrap();
+    let found = load_link_candidates(
+        &tx,
+        &evidence("42", "forge.example/acme/widget"),
+        &forge_aliases(),
+    )
+    .unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].project_id, stored);
+    assert_eq!(
+        found[0].folded_key.as_deref(),
+        Some("forge.example/acme/widget"),
+        "the candidate is handed to the matcher in its comparison form"
+    );
+}
+
+#[test]
+fn a_tombstoned_project_is_never_a_candidate() {
+    let (_dir, mut conn) = migrated();
+    let survivor = project(
+        &conn,
+        "survivor",
+        Some("forge.example/acme/widget"),
+        None,
+        100,
+    );
+    let absorbed = project(
+        &conn,
+        "absorbed",
+        Some("forge.example/acme/widget"),
+        None,
+        101,
+    );
+    conn.execute(
+        "UPDATE project SET merged_into = ?1 WHERE id = ?2",
+        rusqlite::params![survivor, absorbed],
+    )
+    .unwrap();
+
+    let tx = conn.transaction().unwrap();
+    let found = load_link_candidates(
+        &tx,
+        &evidence("42", "forge.example/acme/widget"),
+        &forge_aliases(),
+    )
+    .unwrap();
+    let suppressors = load_suppressors(
+        &tx,
+        &evidence("42", "forge.example/acme/widget"),
+        &forge_aliases(),
+    )
+    .unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(
+        found.iter().map(|c| c.project_id).collect::<Vec<_>>(),
+        vec![survivor]
+    );
+    assert!(suppressors.is_empty());
+}
+
+#[test]
+fn candidates_come_back_ordered_by_created_at_then_id() {
+    let (_dir, mut conn) = migrated();
+    // Inserted newest-first, and two share a timestamp, so id breaks the tie.
+    let late = project(&conn, "c", Some("forge.example/acme/widget"), None, 300);
+    let early_a = project(&conn, "a", Some("www.forge.example/acme/widget"), None, 100);
+    let early_b = project(&conn, "b", Some("forge.example/acme/widget"), None, 100);
+    let by_id = project(&conn, "d", None, Some(("github", "42")), 200);
+
+    let tx = conn.transaction().unwrap();
+    let found = load_link_candidates(
+        &tx,
+        &evidence("42", "forge.example/acme/widget"),
+        &forge_aliases(),
+    )
+    .unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(
+        found.iter().map(|c| c.project_id).collect::<Vec<_>>(),
+        vec![early_a, early_b, by_id, late],
+        "the outcome must not depend on the order a walk reached a row in"
+    );
+}
+
+#[test]
+fn a_project_is_returned_once_even_when_both_reads_find_it() {
+    let (_dir, mut conn) = migrated();
+    let both = project(
+        &conn,
+        "widget",
+        Some("forge.example/acme/widget"),
+        Some(("github", "42")),
+        100,
+    );
+    let tx = conn.transaction().unwrap();
+    let found = load_link_candidates(
+        &tx,
+        &evidence("42", "forge.example/acme/widget"),
+        &forge_aliases(),
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    assert_eq!(
+        found.iter().map(|c| c.project_id).collect::<Vec<_>>(),
+        vec![both],
+        "one project, one candidate — two of it would read as §22.5's ambiguity"
+    );
+}
+
+/// §22.6's implicit clause, and it is the one that matters: **a not-cloned project is not a copy
+/// on the user's disk and cannot be the doubt that withholds a claim about the user's disk.**
+#[test]
+fn a_not_cloned_project_never_suppresses() {
+    let (_dir, mut conn) = migrated();
+    let elsewhere = project(
+        &conn,
+        "widget",
+        Some("other.example/acme/widget"),
+        None,
+        100,
+    );
+
+    let tx = conn.transaction().unwrap();
+    let ev = evidence("42", "forge.example/acme/widget");
+    let blockers = load_suppressors(&tx, &ev, &forge_aliases()).unwrap();
+    assert!(blockers.is_empty(), "{blockers:?}");
+    assert_eq!(match_listing(&ev, &[], &blockers), ListingMatch::Create);
+
+    // Give it a copy on disk and the same fixture now withholds the claim — which is what makes
+    // the assertion above about the location clause rather than about an empty fixture.
+    location(&tx, elsewhere, "/w/widget");
+    let blockers = load_suppressors(&tx, &ev, &forge_aliases()).unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(
+        blockers.iter().map(|s| s.project_id).collect::<Vec<_>>(),
+        vec![elsewhere]
+    );
+    assert_eq!(blockers[0].name, "widget");
+    assert_eq!(
+        match_listing(&ev, &[], &blockers),
+        ListingMatch::Suppress {
+            blocked_by: elsewhere
+        }
+    );
+}
+
+#[test]
+fn a_copy_on_the_same_host_is_not_a_suppressor() {
+    let (_dir, mut conn) = migrated();
+    // The alias host folds to the canonical one, so this is the SAME host and the path-component
+    // rule must not fire: it is a candidate, not a doubt.
+    let same = project(
+        &conn,
+        "widget",
+        Some("ssh.forge.example/acme/widget"),
+        None,
+        100,
+    );
+    let tx = conn.transaction().unwrap();
+    location(&tx, same, "/w/widget");
+    let ev = evidence("42", "forge.example/acme/widget");
+    let blockers = load_suppressors(&tx, &ev, &forge_aliases()).unwrap();
+    let found = load_link_candidates(&tx, &ev, &forge_aliases()).unwrap();
+    tx.commit().unwrap();
+
+    assert!(blockers.is_empty(), "{blockers:?}");
+    assert_eq!(found.len(), 1);
+}
+
+#[test]
+fn a_query_plan_uses_the_index() {
+    let (_dir, conn) = migrated();
+    let plan = |sql: &str, args: &[&dyn rusqlite::ToSql]| -> String {
+        let mut st = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+        let rows = st
+            .query_map(args, |r| r.get::<_, String>(3))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>();
+        assert!(!rows.is_empty(), "no plan for {sql}");
+        rows.join(" | ")
+    };
+
+    let by_id = plan(LINK_CANDIDATES_BY_ID_SQL, &[&"github", &"42"]);
+    assert!(
+        by_id.contains("idx_project_provider_repo"),
+        "the id read must not table-scan: {by_id}"
+    );
+    assert!(!by_id.contains("SCAN project"), "{by_id}");
+
+    let by_key = plan(LINK_CANDIDATES_BY_KEY_SQL, &[&"forge.example/acme/widget"]);
+    assert!(
+        by_key.contains("idx_project_remote"),
+        "the key read must not table-scan: {by_key}"
+    );
+    assert!(!by_key.contains("SCAN project"), "{by_key}");
+    eprintln!("by id: {by_id}\nby key: {by_key}");
+}

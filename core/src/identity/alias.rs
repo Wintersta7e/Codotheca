@@ -56,6 +56,20 @@ impl HostAliases {
     pub fn canonical(&self) -> &str {
         &self.canonical
     }
+
+    /// Every spelling that folds to the canonical host, the canonical one included and listed
+    /// once. A caller that has to narrow a stored column by index runs one equality per spelling
+    /// rather than a pattern over the host segment.
+    #[must_use]
+    pub fn spellings(&self) -> Vec<&str> {
+        let mut out = vec![self.canonical.as_str()];
+        for alias in &self.aliases {
+            if !out.iter().any(|seen| seen.eq_ignore_ascii_case(alias)) {
+                out.push(alias.as_str());
+            }
+        }
+        out
+    }
 }
 
 /// The host segment's comparison form. A declared host folds to the canonical one; an undeclared
