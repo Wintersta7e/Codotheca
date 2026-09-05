@@ -15,7 +15,9 @@
     "UNTRUSTED_REPO",
     "PROJECT_MERGED",
     "PROTOCOL",
-    "INTERNAL"
+    "INTERNAL",
+    "TOKEN_INVALID",
+    "SSO_REQUIRED"
   ],
   "types": {
     "ProjectId": { "kind": "id", "repr": "i64" },
@@ -833,6 +835,84 @@
         "restorable": "LedgerCounts",
         "deferred": "LedgerCounts"
       }
+    },
+
+    "AccountId": { "kind": "id", "repr": "i64" },
+    "AuthKind": { "kind": "enum", "variants": ["device", "pat"] },
+    "ScopeTier": { "kind": "enum", "variants": ["public", "private"] },
+    "SsoState": {
+      "kind": "enum",
+      "variants": ["none", "authorized", "unauthorized", "unknown"]
+    },
+    "Affiliation": {
+      "kind": "enum",
+      "variants": ["owner", "organization_member", "collaborator"]
+    },
+    "ConnectStage": {
+      "kind": "enum",
+      "$comment": "R78: not_stored is terminal and is neither denied nor expired. denied is the user refusing at the forge and expired is the deadline elapsing; a code that was redeemed and whose grant this machine could not store is a third thing, and reporting it as either of the other two is a false statement about what happened.",
+      "variants": [
+        "pending",
+        "slow_down",
+        "granted",
+        "denied",
+        "expired",
+        "cancelled",
+        "not_stored"
+      ]
+    },
+    "Account": {
+      "kind": "struct",
+      "$comment": "§20.8: carries no token field at any nesting depth. The database stores token_ref and the keychain stores the secret; the renderer holds neither.",
+      "fields": {
+        "id": "AccountId",
+        "provider": "String",
+        "host": "String",
+        "login": "String",
+        "displayName": "String?",
+        "authKind": "AuthKind",
+        "scopeTier": "ScopeTier",
+        "grantedScopes": "[String]",
+        "scopesObservedAt": "Timestamp?",
+        "connectedAt": "Timestamp",
+        "lastVerifiedAt": "Timestamp?",
+        "lastErrorKind": "String?",
+        "lastErrorAt": "Timestamp?",
+        "enabled": "bool"
+      }
+    },
+    "AccountOrg": {
+      "kind": "struct",
+      "fields": {
+        "accountId": "AccountId",
+        "login": "String",
+        "enabled": "bool",
+        "repoCountSeen": "u32?",
+        "ssoState": "SsoState?",
+        "observedAt": "Timestamp?"
+      }
+    },
+    "DeviceGrant": {
+      "kind": "struct",
+      "fields": {
+        "userCode": "String",
+        "verificationUri": "String",
+        "expiresInSecs": "u32",
+        "intervalSecs": "u32"
+      }
+    },
+    "ConnectProgress": {
+      "kind": "struct",
+      "$comment": "R78: reason is non-null for exactly one stage, not_stored — which of the forge and this machine refused is the whole of what the user is owed there. Every other stage carries null.",
+      "fields": {
+        "stage": "ConnectStage",
+        "intervalSecs": "u32",
+        "reason": "String?"
+      }
+    },
+    "AccountDisconnected": {
+      "kind": "struct",
+      "fields": { "accountId": "AccountId" }
     }
   },
   "commands": [
@@ -1022,6 +1102,45 @@
       "returns": "Empty",
       "idempotent": true,
       "$comment": "§9: app focus extends a segment only while the focused view is that project, so the renderer must report which project's view holds focus; null means none. §2.4's table omits it. Not privileged — it originates no path and no executable"
+    },
+    {
+      "name": "accounts.list",
+      "args": {},
+      "returns": "[Account]",
+      "$comment": "§20.8: an array, so the renderer handles 0, 1 and more than 1 and never indexes [0] unguarded"
+    },
+    {
+      "name": "accounts.orgs",
+      "args": { "accountId": "AccountId" },
+      "returns": "[AccountOrg]?",
+      "$comment": "§20.4: nullable because an org list nobody could enumerate is unknown, and [] would claim there are none"
+    },
+    { "name": "accounts.connect", "args": {}, "returns": "DeviceGrant", "idempotent": false },
+    { "name": "accounts.cancelConnect", "args": {}, "returns": "Empty" },
+    {
+      "name": "accounts.connectPat",
+      "args": { "host": "String", "token": "String" },
+      "returns": "Account",
+      "idempotent": false,
+      "$comment": "§20.2: the token crosses the wire exactly once, inbound, and is never returned by any command"
+    },
+    {
+      "name": "accounts.upgradeScope",
+      "args": { "accountId": "AccountId" },
+      "returns": "DeviceGrant",
+      "idempotent": false
+    },
+    {
+      "name": "accounts.disconnect",
+      "args": { "accountId": "AccountId" },
+      "returns": "Empty",
+      "idempotent": false
+    },
+    {
+      "name": "accounts.setOrgEnabled",
+      "args": { "accountId": "AccountId", "orgLogin": "String", "enabled": "bool" },
+      "returns": "AccountOrg",
+      "idempotent": false
     }
   ],
   "topics": {
@@ -1051,6 +1170,11 @@
       "error": "CoreError",
       "degraded": "CoreDegraded",
       "snapshot": "CoreSnapshot"
+    },
+    "accounts": {
+      "connect_progress": "ConnectProgress",
+      "connected": "Account",
+      "disconnected": "AccountDisconnected"
     }
   }
 }

@@ -31,6 +31,10 @@ const DRAWER_REPLIES: FakeReplies = {
   'roots.list': () => [],
   'targets.list': () => ({ resolved: null, rows: [] }),
   'identity.list': () => [],
+  // [p2] §20.12's panel is a filled slot now, and it reads on mount. `null` for the org list is
+  // *unknown*, which is what an account-less drawer should carry.
+  'accounts.list': () => [],
+  'accounts.orgs': () => null,
 };
 
 function mount(over: Partial<SurfaceHostProps> = {}, replies: FakeReplies = DRAWER_REPLIES): void {

@@ -17,7 +17,10 @@ const notice = (kind: NoticeKind, scope: string | null = null): Notice => ({
 });
 
 describe('the priority order', () => {
-  it("is §8.0's table, in order", () => {
+  // [p2] §20.11 appends `connect` last. The transcription moves with the array rather than the
+  // array being trimmed to keep this literal: a count that disagrees with the table moves the
+  // failure instead of fixing it.
+  it("is §8.0's table, in order, plus §20.11's offer last", () => {
     expect(NOTICE_PRIORITY).toEqual([
       'coreFailure',
       'scanResumed',
@@ -26,6 +29,7 @@ describe('the priority order', () => {
       'identity',
       'residency',
       'newArrivals',
+      'connect',
     ]);
   });
   it('carries no destructive kind', () => {
@@ -95,5 +99,56 @@ describe('noticeAccent', () => {
     // Only the left border varies.
     expect(noticeAccent('coreFailure')).toBe('fail-hot');
     for (const kind of NOTICE_PRIORITY.slice(1)) expect(noticeAccent(kind)).toBe('sig');
+  });
+});
+
+describe('[p2] §20.11 — the connect offer, exactly one and lowest', () => {
+  const offer = (): Notice => ({
+    kind: 'connect',
+    // Unscoped: answering **or** dismissing ends it and it is never re-raised.
+    scope: null,
+    title: 'CONNECT GITHUB',
+    body: 'Stars, issues, pull requests and CI state stay unknown until a token exists.',
+    actions: [],
+  });
+
+  const arrivals = (scanRunId: string): Notice => ({
+    kind: 'newArrivals',
+    scope: scanRunId,
+    title: 'NEW',
+    body: 'new arrivals',
+    actions: [],
+  });
+
+  it('AC-P2-20-9 sorts last, and its length grew rather than a row being replaced', () => {
+    expect(NOTICE_PRIORITY.at(-1)).toBe('connect');
+    expect(NOTICE_PRIORITY).toHaveLength(8);
+    expect(new Set(NOTICE_PRIORITY).size).toBe(NOTICE_PRIORITY.length);
+  });
+
+  it('loses to every other candidate, which is what "exactly one" rests on', () => {
+    for (const kind of NOTICE_PRIORITY) {
+      if (kind === 'connect') continue;
+      const other: Notice = { kind, scope: null, title: 'T', body: 'B', actions: [] };
+      expect(selectNotice([offer(), other], [])?.kind).toBe(kind);
+    }
+  });
+
+  it('is dismissible, and its key is unscoped', () => {
+    expect(noticeIsDismissible('connect')).toBe(true);
+    expect(noticeDismissKey('connect', null)).toBe('notice.dismissed.connect');
+  });
+
+  it('is never re-raised once dismissed, including after a new scan run', () => {
+    const dismissed = [noticeDismissKey('connect', null)];
+    expect(selectNotice([offer()], dismissed)).toBeNull();
+    // Every other dismissible notice is scoped by the run id and comes back on the next scan.
+    // This one must not: an unscoped key is what makes "never re-raised" true.
+    expect(selectNotice([offer(), arrivals('run-2')], dismissed)?.kind).toBe('newArrivals');
+    expect(selectNotice([offer()], dismissed)).toBeNull();
+  });
+
+  it('takes the accent every non-failure notice takes', () => {
+    expect(noticeAccent('connect')).toBe('sig');
   });
 });

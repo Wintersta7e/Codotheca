@@ -217,8 +217,37 @@ fn main() -> ExitCode {
         codotheca_core::scan::store::SqliteScanStore::new(Arc::clone(&index)),
     );
 
+    // §20.6 and §20.13's production implementations, constructed here and nowhere else.
+    //
+    // `ReqwestTransport::new` is the only `reqwest::blocking::Client` in the process, and
+    // `core/tests/http_transport.rs` asserts that by walking the sources. A transport that
+    // cannot be built is not fatal: the product is fully functional with zero accounts, and
+    // every remote value is *unknown* until one exists, so the account surface refuses rather
+    // than the core failing to start.
+    let http_transport: Arc<dyn codotheca_core::http::HttpTransport> =
+        match codotheca_core::http::ReqwestTransport::new() {
+            Ok(transport) => Arc::new(transport),
+            Err(error) => {
+                note(&format!(
+                    "codotheca-core: no HTTP transport ({error}); account commands will refuse"
+                ));
+                Arc::new(codotheca_core::http::RefusingTransport)
+            }
+        };
+    let provider: Arc<dyn codotheca_core::provider::Provider> =
+        Arc::new(codotheca_core::provider::GitHubProvider::new(
+            Arc::clone(&http_transport),
+            codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
+        ));
+    let tokens: Arc<dyn codotheca_core::accounts::keychain::TokenStore> =
+        Arc::new(codotheca_core::accounts::keychain::KeyringTokenStore::new());
+
     let deps = CoreDeps {
         index: Arc::clone(&index),
+        provider,
+        tokens,
+        http: Arc::clone(&http_transport),
+        client_id: codotheca_core::accounts::device::GITHUB_CLIENT_ID.to_owned(),
         clock: Arc::clone(&clock),
         git: Arc::clone(&git),
         mount: Arc::clone(&mount),

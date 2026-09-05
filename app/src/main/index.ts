@@ -59,7 +59,7 @@ import {
 } from './security';
 import { runStartup } from './startup';
 
-const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core'];
+const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts'];
 
 /**
  * The commands the core answers, and therefore the only names the bridge will accept.
@@ -119,6 +119,16 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'collections.list',
   'collections.upsert',
   'collections.remove',
+  // accounts::dispatch_accounts_command. The other five accounts.* names are still unowned in
+  // the core, and `app/test/knownCommands.test.ts` refuses a bridge that offers one of those.
+  'accounts.list',
+  'accounts.orgs',
+  'accounts.setOrgEnabled',
+  'accounts.connect',
+  'accounts.cancelConnect',
+  'accounts.connectPat',
+  'accounts.upgradeScope',
+  'accounts.disconnect',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two

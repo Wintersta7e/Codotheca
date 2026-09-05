@@ -91,13 +91,27 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 0 | 0 |
-| deferred | 0 | 0 |
+| automated | 12 | 22 |
+| deferred | 1 | 1 |
 | manual | 0 | 0 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
 
-No phase-2 criteria are registered yet.
+| # | Disposition | Title | Checks |
+|---|---|---|---|
+| P2-20-1 | automated | Admission is the listing's own push permission, never inferred | `AC-P2-20-1` automated, runs now — `acceptance_accounts::ac_p2_20_1_admission_is_push_permission` |
+| P2-20-2 | automated | No source file in the core sends a scope outside the two tier sets | `AC-P2-20-2` automated, runs now — `provider_scope_audit::every_scope_literal_is_on_a_tier_list`<br>`AC-P2-20-2-denylist` automated, runs now — `provider_scope_audit::the_core_never_names_a_destructive_or_unrequested_scope` |
+| P2-20-3 | automated | The renderer writes no scope string; the chips come from the payload | `AC-P2-20-3` automated, runs now — `check-forbidden:p2-20-scope-strings`<br>`AC-P2-20-3-chips` automated, runs now — `§20.12, mounted AC-P2-20-3 draws the chips the payload carried, whatever they are` |
+| P2-20-4 | automated | A token reaches no log line, no bundle and no error frame | `AC-P2-20-4` automated, runs now — `accounts_redaction::ac_p2_20_4_the_sentinel_appears_nowhere` |
+| P2-20-5 | automated | No keychain, no connection, and nothing is stored | `AC-P2-20-5` automated, runs now — `accounts_keychain::an_unavailable_keychain_refuses_and_stores_nothing`<br>`AC-P2-20-5-nofile` automated, runs now — `accounts_keychain::the_keychain_module_touches_no_file` |
+| P2-20-6 | automated | Disconnect deletes credential state and no project row | `AC-P2-20-6` automated, runs now — `acceptance_accounts::ac_p2_20_6_disconnect_deletes_no_project_row`<br>`AC-P2-20-6-census` automated, runs now — `acceptance_accounts::the_account_referencing_census_is_complete_and_covered` |
+| P2-20-7 | automated | An org admits nothing until it is enabled | `AC-P2-20-7` automated, runs now — `accounts_store::an_org_admits_nothing_until_enabled` |
+| P2-20-8 | automated | The public tier reports the org list as unknown, never as zero | `AC-P2-20-8` automated, runs now — `accounts_store::the_public_tier_reports_unknown_not_zero`<br>`AC-P2-20-8-render` automated, runs now — `§20.12 as a pure function AC-P2-20-8 renders an unenumerable org list as unknown and NOT as zero` |
+| P2-20-9 | automated | GitHub is additive: first run and the shelf work with no account | `AC-P2-20-9` automated, runs now — `the shelf with zero accounts AC-P2-20-9 mounts and paints without an account anywhere in its inputs`<br>`AC-P2-20-9-firstrun` automated, runs now — `first run mentions no account AC-P2-20-9 names no account or connect vocabulary anywhere in first run`<br>`AC-P2-20-9-offer` automated, runs now — `[p2] §20.11 — the connect offer, exactly one and lowest AC-P2-20-9 sorts last, and its length grew rather than a row being replaced` |
+| P2-20-10 | automated | The Device Flow is polled core-side and survives the drawer | `AC-P2-20-10` automated, runs now — `accounts_device_flow::the_poll_is_core_side_and_the_code_is_verbatim`<br>`AC-P2-20-10-drawer` automated, runs now — `the drawer closes without cancelling AC-P2-20-10 returns to the same flow with less time left, and cancels nothing` |
+| P2-20-11 | automated | The provider seam has a production implementation beside it | `AC-P2-20-11` automated, runs now — `provider_seam::the_production_impl_exists_beside_the_trait`<br>`AC-P2-20-11-tripwire` automated, runs now — `provider_seam::request_method_tripwire_is_enumerated_and_callable` |
+| P2-20-12 | automated | The build contains no OAuth client secret, because none exists | `AC-P2-20-12` automated, runs now — `accounts_redaction::ac_p2_20_12_no_client_secret` |
+| P2-20-13 | deferred | The two tier sets authorize what the surface claims | `AC-P2-20-13` deferred, plan p2-20 — not observed yet<br>`AC-P2-20-13-copy` automated, runs now — `accounts_consent_copy::no_rendered_string_names_a_scope` |
 
 ## Why a check is not automated, or is automated over less than it looks
 
@@ -131,3 +145,4 @@ No phase-2 criteria are registered yet.
 | `AC-57-windows` | deferred | The spawn-failure notice is shaped and reaches nothing: the failure facts are assignable to the renderer's notice type and no channel carries them across, and nothing stats the core binary for the mode the copy needs. The window cannot be asserted before it is delivered. |
 | `AC-62-art-state` | deferred | Split out of the address check, which is a renderer assertion and cannot observe a database column. The two clauses were registered as one and only the renderer half exists. |
 | `AC-65-chips` | deferred | The attention chip as built diverges from its owning section in seven values — padding, two gaps, border versus inset, three type sizes and a missing row border. Only the two declarations another section depends on were reconciled; the rest is untouched and unowned, so this check would fail today against the section it cites rather than against the component. |
+| `AC-P2-20-13` | deferred | Documentation knowledge against a live API that neither the decision round nor this lane has called. It is honest as deferred and stops being honest the moment someone reads it as verified. |

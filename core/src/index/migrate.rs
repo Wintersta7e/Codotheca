@@ -52,13 +52,18 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "jobs_derived",
         sql: include_str!("../../migrations/0007_jobs_derived.sql"),
     },
+    Migration {
+        version: 8,
+        name: "accounts",
+        sql: include_str!("../../migrations/0008_accounts.sql"),
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 7;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 8;
 
 pub fn schema_version(conn: &Connection) -> Result<u32, IndexError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;

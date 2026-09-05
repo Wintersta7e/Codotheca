@@ -15,6 +15,7 @@ import { QuickSwitchHost } from '../palette/QuickSwitchHost.js';
 import { seedOf, appearanceFor, fadeFor } from '../art/appearance.js';
 import { SettingsDrawer } from '../settings/Drawer.js';
 import type { SettingsSlots } from '../settings/rows.js';
+import { GithubPanelHost } from '../settings/GithubPanelHost.js';
 import { ScanSummary } from '../summary/ScanSummary.js';
 import type { AppDeps } from './deps.js';
 
@@ -51,7 +52,16 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
    * any landed plan builds. An entry filled with a no-op would draw a row that does nothing,
    * which §11.3a forbids by name — so the absent ones stay absent and the drawer draws no row.
    */
-  const slots = useMemo<SettingsSlots>(() => ({}), []);
+  const slots = useMemo<SettingsSlots>(
+    () => ({
+      // [p2] §20.12: filled, because something now answers it — all eight `accounts.*` commands
+      // reach a module in the core. `onConnectPat` is deliberately not supplied: the PAT path
+      // needs a host field no landed plan draws, so its button stays undrawn rather than
+      // becoming a control that does nothing.
+      githubPanel: () => <GithubPanelHost request={request} subscribe={deps.subscribe} />,
+    }),
+    [request, deps.subscribe],
+  );
 
   // One registration on the shell channel, and the same callback reused for the top bar's own
   // control — a second subscription would be a second palette listening to half the openings.

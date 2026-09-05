@@ -31,9 +31,6 @@ export const REAL_PATHS_NOTE = 'OFF EXPORTS BASENAMES AND VOLUME SHAPES ONLY';
 export const GITHUB_CONSEQUENCE =
   'Stars, issues, pull requests and CI state stay unknown until a token is added — and unknown is drawn as unknown, never as zero. Stored in the OS keychain, never in a config file.';
 
-/** The third names a permission Codotheca will never ask for. It is a promise, not a control. */
-export const GITHUB_SCOPES = ['repo:read', 'workflow:read', 'NEVER delete_repo'] as const;
-
 export const NOT_IN_THIS_BUILD = 'NOT IN THIS BUILD';
 
 /** §11.3a states three that do not exist yet, and none of them can fire in phase 1. */
@@ -111,7 +108,9 @@ export const DATA_GROUP_ROWS: readonly SettingsRowSpec[] = [
     group: 'github',
     label: 'NOT CONNECTED',
     note: null,
-    backing: { kind: 'statement' },
+    // [p2] §20.12: no longer a statement — the mounting surface supplies a panel whose every
+    // row acts. `deadSwitch.test.tsx` walks this registry and the kind is what it reads.
+    backing: { kind: 'host', slot: 'githubPanel' },
   },
   ...NOTIFICATIONS.map((notification, index) => ({
     id: `notification-${String(index)}`,
@@ -140,7 +139,7 @@ export interface DataGroupsProps {
 }
 
 export function DataGroups(props: DataGroupsProps): ReactElement {
-  const { chooseProjectToHide, identityCard, addIdentityAddress } = props.slots;
+  const { chooseProjectToHide, identityCard, addIdentityAddress, githubPanel } = props.slots;
   const bundleText = bundleResultText(props.bundle);
 
   return (
@@ -207,18 +206,22 @@ export function DataGroups(props: DataGroupsProps): ReactElement {
       )}
 
       <SettingsGroup id="github" title="GITHUB">
-        {/* `--absent`, never the accent: amber says *something is wrong here*, and in phase 1
-            the absence of a token is the shipped state, not a defect. */}
-        <div style={SD.blockAbsent} data-row="github-statement">
-          <span style={SD.rowLabel}>NOT CONNECTED</span>
-          <p style={SD.rowNote}>{GITHUB_CONSEQUENCE}</p>
-          <div style={{ ...SD.rowActions, flexWrap: 'wrap', gap: '5px' }}>
-            {GITHUB_SCOPES.map((scope) => (
-              <span key={scope} style={SD.chip}>
-                {scope}
-              </span>
-            ))}
-          </div>
+        {/* [p2] §20.12: a real control, supplied by the mounting surface. `--absent`, never the
+            accent: amber says *something is wrong here*, and the absence of a token is a
+            shipped state rather than a defect. Without the slot the statement stands, which is
+            §11.3a's second limb. */}
+        {/* The registry's row id stays on the wrapper in **both** shapes, so `deadSwitch`'s
+            walk finds the row it declares whichever way the group is drawn. The id predates the
+            control and names the row, not its contents. */}
+        <div data-row="github-statement">
+          {githubPanel === undefined ? (
+            <div style={SD.blockAbsent}>
+              <span style={SD.rowLabel}>NOT CONNECTED</span>
+              <p style={SD.rowNote}>{GITHUB_CONSEQUENCE}</p>
+            </div>
+          ) : (
+            githubPanel()
+          )}
         </div>
       </SettingsGroup>
 

@@ -98,7 +98,12 @@ test('rollUp takes the weakest check', () => {
 test('the shipped registry validates and covers 1..67', () => {
   const registry = loadRegistry(registryPath);
   assert.deepEqual(validateRegistry(registry), []);
-  const integers = new Set(registry.criteria.map((c) => Number.parseInt(c.id, 10)));
+  // Phase 1 only. A phase-2 id is `P2-20-1`, which `parseInt` reads as NaN and which would
+  // otherwise swell this set by one and hide a genuinely missing phase-1 criterion behind a
+  // plausible total.
+  const integers = new Set(
+    registry.criteria.filter((c) => phaseOf(c.id) === 1).map((c) => Number.parseInt(c.id, 10)),
+  );
   for (let n = 1; n <= 67; n += 1) assert.ok(integers.has(n), `criterion ${String(n)} is missing`);
   assert.equal(integers.size, 67);
 });
@@ -246,6 +251,18 @@ test('every deferred check names a plan that exists in the plan set', () => {
     '22',
     '23',
     '24',
+    // The phase-2 lanes. Same rule: a literal rather than a directory listing, because the
+    // plans live under a gitignored directory and a test that read them would scan nothing on
+    // a fresh clone and pass on nothing.
+    'p2-20',
+    'p2-21',
+    'p2-22',
+    'p2-23',
+    'p2-24',
+    'p2-24b',
+    'p2-25',
+    'p2-25b',
+    'p2-26',
   ]);
   for (const entry of registry.criteria) {
     for (const check of entry.checks) {
@@ -570,13 +587,19 @@ test('the freeze holds the nine phase-1 entries the phase-2 sections govern', ()
   }
 });
 
-test('widening the register adds no criterion — it still holds 70 and 171', () => {
+// [p2] This began as wave 0's proof that widening the *validator* added no criterion. §20's
+// registration is the first change that legitimately moves the totals, so the assertion moves
+// with it — and keeps its real content, which is that **phase 1 is untouched**. A phase-2 lane
+// that disturbed a phase-1 criterion still fails here.
+test('registering a phase-2 section leaves phase 1 at 70 and 171', () => {
   const registry = loadRegistry(registryPath);
   assert.deepEqual(validateRegistry(registry, repoRoot), []);
-  assert.equal(registry.criteria.length, 70);
+  const phase1 = registry.criteria.filter((c) => phaseOf(c.id) === 1);
+  assert.equal(phase1.length, 70);
   assert.equal(
-    registry.criteria.reduce((n, c) => n + c.checks.length, 0),
+    phase1.reduce((n, c) => n + c.checks.length, 0),
     171,
   );
-  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 0);
+  // §20 owns thirteen, which is what `PHASE2_SECTIONS` declares for it.
+  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 13);
 });

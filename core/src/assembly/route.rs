@@ -8,11 +8,17 @@
 //!
 //! # The ledger, as it stands
 //!
-//! **All 42 schema commands reach a module; `UNOWNED_COMMANDS` is empty.** It stays empty rather
-//! than being deleted: it is what *names* the next command that arrives without a handler, and a
-//! bare `PROTOCOL` refusal reads to the shell as "no such command" — which is how nineteen
-//! commands stayed invisible for the length of this project. This file's tests pin the constant
-//! against `protocol.json` and against `route`'s own arms, so the two cannot be edited apart.
+//! **All 50 schema commands reach a module**, so `UNOWNED_COMMANDS` is empty and nothing routes
+//! to `NoOwner`. The constant stays because it is what *names* a command that arrives without a
+//! handler; a bare `PROTOCOL` refusal reads to the shell as "no such command", which is how
+//! nineteen commands stayed invisible for the length of this project. This file's tests pin the
+//! constant against `protocol.json` and against `route`'s own arms, so the two cannot be edited
+//! apart — and an empty list is asserted as *no command routes to `NoOwner`*, because two
+//! `all()` over an empty set assert nothing.
+//!
+//! **A command leaves the list in the same change that gives it a handler.** The bridge's own
+//! `KNOWN_COMMANDS` is checked against this list, so a name cannot be offered to the renderer
+//! while it is still unowned.
 //!
 //! Two things the dispatcher still cannot do, recorded so they are not rediscovered:
 //!
@@ -55,6 +61,11 @@ pub enum Route {
     Detail,
     /// `crate::view::dispatch_view_command` — plan 15.
     View,
+    /// `crate::accounts::dispatch_accounts_command` — p2-20, under the index guard.
+    Accounts,
+    /// The `accounts.*` commands that reach the network, answered **without** the index guard
+    /// (R75). Same carve-out as [`Route::Scan`], for the same reason.
+    AccountsNet,
     /// In §2.4 and in the schema, with no module in any plan. The payload names the plan that
     /// owes it, so the diagnostic says who, not just that.
     NoOwner(&'static str),
@@ -65,11 +76,14 @@ pub enum Route {
 /// **A command leaves this list in the same change that gives it a handler.** The test in this
 /// file compares it against the arms of `route`, so the two cannot drift.
 ///
-/// **Empty since R37**, and deliberately not deleted. It is the seam that makes an unhandled
-/// command *named and refused* instead of mis-routed: a `PROTOCOL` refusal reads to the shell as
-/// "no such command", and nineteen commands hid behind exactly that for the length of this
-/// project. The next schema command with no module goes here, with its plan, in the same change
-/// that adds its `NoOwner` arm.
+/// It is the seam that makes an unhandled command *named and refused* instead of mis-routed: a
+/// `PROTOCOL` refusal reads to the shell as "no such command", and nineteen commands hid behind
+/// exactly that for the length of this project. A schema command with no module goes here, with
+/// its plan, in the same change that adds its `NoOwner` arm.
+///
+/// The eight `accounts.*` rows landed with the schema and left as their handlers did, so it is
+/// empty again. Empty is a state to assert, not a state to stop asserting: the test below reads
+/// the router rather than this list.
 pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
 
 /// The wire name of a command into the generated enum.
@@ -136,8 +150,25 @@ pub fn route(command: CommandName) -> Route {
         | CommandName::CollectionsList
         | CommandName::CollectionsUpsert
         | CommandName::CollectionsRemove => Route::View,
-        // No `NoOwner` arm today (R37). One returns the moment a schema command lands without a
-        // module, and `UNOWNED_COMMANDS` gains its row in the same edit.
+
+        // The two §20.8 reads, answered by `crate::accounts` **under the index guard**. These
+        // two only read a row; every other `accounts.*` command is below.
+        CommandName::AccountsList | CommandName::AccountsOrgs => Route::Accounts,
+
+        // R75: everything that makes a call this process cannot bound is answered **without the
+        // index lock**, like `Route::Scan`. Holding the one SQLite mutex across such a call stops
+        // every other command for its whole duration.
+        //
+        // The unbounded call is not always the forge. `setOrgEnabled` preflights it for as long
+        // as `ACCOUNT_LIMITS.total_secs`; `disconnect` makes a **keychain** round trip, which
+        // `keyring` puts no timeout on at all — a locked credential store can prompt and a
+        // secret-service call can wait on D-Bus. Both were answered under the guard.
+        CommandName::AccountsConnect
+        | CommandName::AccountsCancelConnect
+        | CommandName::AccountsConnectPat
+        | CommandName::AccountsUpgradeScope
+        | CommandName::AccountsSetOrgEnabled
+        | CommandName::AccountsDisconnect => Route::AccountsNet,
     }
 }
 
@@ -204,19 +235,31 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_unowned_today_and_the_refusal_is_still_wired() {
-        // R37 closed Gap A, so both sides of the test above are empty. The constant and its
-        // `NoOwner` arm stay: they are what *names* the next command that reaches the schema
-        // with no module. Without them a half-landed command falls back to a PROTOCOL refusal
-        // the shell reads as "no such command", which is how nineteen of them stayed invisible.
-        assert!(
-            UNOWNED_COMMANDS.is_empty(),
-            "a command joined the list without an arm in route"
-        );
+    fn every_schema_command_reaches_a_module() {
+        // R37 closed Gap A and the list was empty; §20.8 reopened it with the eight commands
+        // whose handlers landed later in the same plan, and it is empty again. **An empty list
+        // is not a licence to stop asserting**: `UNOWNED_COMMANDS.iter().all(…)` over zero rows
+        // is true whatever the rule says, so what is checked here is the complement, read off
+        // the router — no schema command falls through to `NoOwner`.
+        let commands = schema_commands();
         assert_eq!(
-            schema_commands().len(),
-            42,
-            "the schema this plan routes, §2.4 plus R33 gap 1"
+            commands.len(),
+            50,
+            "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight"
+        );
+        let unowned: Vec<&str> = commands
+            .iter()
+            .filter(|name| {
+                matches!(
+                    route(command_name(name).expect("routable")),
+                    Route::NoOwner(_)
+                )
+            })
+            .map(String::as_str)
+            .collect();
+        assert!(
+            unowned.is_empty(),
+            "a schema command reaches no module: {unowned:?}"
         );
     }
 

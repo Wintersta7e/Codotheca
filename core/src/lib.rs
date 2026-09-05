@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod accounts;
 pub mod art;
 pub mod assembly;
 pub mod cancel;
@@ -24,6 +25,7 @@ pub mod detail;
 pub mod firstrun;
 pub mod freshness;
 pub mod git;
+pub mod http;
 pub mod identity;
 pub mod index;
 pub mod jobs;
@@ -34,6 +36,7 @@ pub mod paths;
 pub mod projects;
 pub mod proto;
 pub mod protocol;
+pub mod provider;
 pub mod query;
 pub mod scan;
 pub mod session;
