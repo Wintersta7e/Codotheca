@@ -1,17 +1,19 @@
 //! Handlers for the account command subset owned by this task.
 
+use std::sync::{Arc, Mutex};
+
 use serde_json::Value;
 
-use crate::accounts::keychain::KeychainError;
+use crate::accounts::keychain::{KeychainError, SecretToken, TokenStore};
 use crate::accounts::store::{self, AccountError};
 use crate::accounts::AccountsCtx;
 use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::proto::txguard::TxGuard;
 use crate::protocol::{
-    Account, AccountOrg, AccountsListArgs, AccountsOrgsArgs, AccountsSetOrgEnabledArgs, ErrorCode,
-    SsoState,
+    Account, AccountOrg, AccountsListArgs, AccountsOrgsArgs, AccountsSetOrgEnabledArgs, AuthKind,
+    ErrorCode, ScopeTier, SsoState,
 };
-use crate::provider::ProviderError;
+use crate::provider::{Provider as _, ProviderError};
 
 /// Handles `accounts.list`.
 ///
@@ -159,3 +161,108 @@ fn coded_failure(code: ErrorCode, message: String) -> CommandFailure {
 fn internal(error: impl std::fmt::Display) -> CommandFailure {
     CommandFailure::internal(error.to_string())
 }
+
+/// §20.2's PAT fallback — **the advanced path, and the only path against Enterprise Server**,
+/// where the application is not registered so no client id exists to run a Device Flow with.
+///
+/// **Order is normative: verify, then keychain, then row.** A token that does not authenticate
+/// must not create an `account` row, and if the keychain store fails **no row is written** — a
+/// row whose `token_ref` names an entry that does not exist reads to every later caller as a
+/// connected account with an unreadable token.
+///
+/// **The pasted token crosses the wire exactly once, inbound.** It is never returned by any
+/// command, never written to the rolling log, and never quoted in an error message: every
+/// failure below is built from the provider's status, never from its body.
+///
+/// It takes `Arc<Mutex<Index>>` rather than an `&Index` because it is answered off the index
+/// lock (R75): the verification is a forge round trip, and the guard is taken only around the
+/// write that follows it.
+///
+/// # Errors
+/// `TOKEN_INVALID` when the forge refuses the token, and the keychain's or the store's own
+/// failure otherwise.
+pub fn connect_pat(
+    index: &Arc<Mutex<crate::index::Index>>,
+    http: &Arc<dyn crate::http::HttpTransport>,
+    tokens: &dyn TokenStore,
+    host: &str,
+    token: &SecretToken,
+    now: i64,
+) -> Result<Account, CommandFailure> {
+    let host = if host.is_empty() {
+        crate::provider::listing::GITHUB_CANONICAL_HOST.to_owned()
+    } else {
+        host.to_owned()
+    };
+    // A provider for THIS host: on Enterprise the API base is `https://<host>/api/v3`, and the
+    // canonical provider the handler holds would talk to the wrong server.
+    let provider = crate::provider::GitHubProvider::new(Arc::clone(http), host.clone());
+
+    // 1. Verify. No lock is held, and nothing is written yet.
+    let verified = provider.verify_token(token).map_err(|error| {
+        if is_github_sso_required(&error) {
+            coded_failure(ErrorCode::SsoRequired, error.to_string())
+        } else {
+            provider_failure(&error)
+        }
+    })?;
+    let login = verified.value.login.clone();
+    let display_name = verified.value.display_name.clone();
+    let entry = super::keychain::token_ref(GITHUB_PROVIDER_ID, &host, &login);
+
+    // 2. The keychain, before the row.
+    tokens
+        .store(&entry, token)
+        .map_err(|error| keychain_failure(&error))?;
+
+    // 3. The row. `granted_scopes` is the server's set, verbatim — never a source literal.
+    let new = super::store::NewAccount {
+        provider: GITHUB_PROVIDER_ID.to_owned(),
+        host,
+        login,
+        display_name,
+        auth_kind: AuthKind::Pat,
+        scope_tier: tier_for(&verified.value.granted_scopes),
+        granted_scopes: verified.value.granted_scopes.clone(),
+        token_ref: entry,
+    };
+    let mut guard = index
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _tx_guard = crate::proto::txguard::TxGuard::enter();
+    let tx = guard
+        .conn_mut()
+        .transaction()
+        .map_err(|e| CommandFailure::internal(e.to_string()))?;
+    let id = super::store::insert_account(&tx, &new, now)
+        .map_err(|e| CommandFailure::internal(e.to_string()))?;
+    tx.commit()
+        .map_err(|e| CommandFailure::internal(e.to_string()))?;
+
+    super::store::list_accounts(guard.conn())
+        .map_err(|e| CommandFailure::internal(e.to_string()))?
+        .into_iter()
+        .find(|a| a.id == id)
+        .ok_or_else(|| CommandFailure::internal("the account just written was not readable"))
+}
+
+/// The tier a **read-back** grant places the account in.
+///
+/// Derived from what the server actually granted, never from what was asked for: a PAT is pasted
+/// by the user and may carry anything. `repo` is the scope that separates the tiers, and it is
+/// read **and** write — the forge offers no read-only variant, which is the fact §20.3's two-tier
+/// design exists to surface rather than hide.
+fn tier_for(granted: &[String]) -> ScopeTier {
+    if granted.iter().any(|s| s == PRIVATE_TIER_MARKER) {
+        ScopeTier::Private
+    } else {
+        ScopeTier::Public
+    }
+}
+
+/// The adapter id stored in `account.provider`.
+const GITHUB_PROVIDER_ID: &str = "github";
+
+/// The one scope whose presence separates the two tiers. It is `SCOPES_PRIVATE`'s member rather
+/// than a second literal, so the scope audit still sees exactly one home for scope strings.
+const PRIVATE_TIER_MARKER: &str = crate::provider::scopes::PRIVATE_TIER_SCOPE;

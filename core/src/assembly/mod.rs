@@ -180,7 +180,12 @@ impl CoreHandler {
     /// `accounts.connect` with a flow already pending returns **that** flow's grant and starts no
     /// second one, and its `expiresInSecs` is the time actually left — a countdown that restarts
     /// on drawer reopen is the surface lying about the deadline.
-    fn accounts_net_arm(&mut self, command: &str, now: i64) -> Result<Value, CommandFailure> {
+    fn accounts_net_arm(
+        &mut self,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Result<Value, CommandFailure> {
         match command {
             "accounts.connect" => {
                 if let Some(grant) = self.connect.as_ref().and_then(|p| p.grant(now)) {
@@ -211,7 +216,66 @@ impl CoreHandler {
                 }
                 Ok(serde_json::json!({}))
             }
+            "accounts.connectPat" => self.connect_pat_arm(args, now),
+            "accounts.upgradeScope" => self.upgrade_scope_arm(args, now),
             other => Err(Self::declined(other, Route::AccountsNet)),
+        }
+    }
+
+    /// §20.2's PAT path, answered off the index lock: the verification is a forge round trip.
+    fn connect_pat_arm(&mut self, args: Value, now: i64) -> Result<Value, CommandFailure> {
+        let parsed: crate::protocol::AccountsConnectPatArgs =
+            crate::proto::dispatch::parse_args(args)?;
+        let token = crate::accounts::keychain::SecretToken::new(parsed.token);
+        let account = crate::accounts::commands::connect_pat(
+            &self.index,
+            &self.http,
+            self.tokens.as_ref(),
+            &parsed.host,
+            &token,
+            now,
+        )?;
+        serde_json::to_value(account).map_err(|e| CommandFailure::internal(e.to_string()))
+    }
+
+    /// §20.2's upgrade: **a fresh Device Flow requesting the private tier.** On success the new
+    /// token replaces the old in the same keychain entry; **on any failure the existing token is
+    /// untouched and the tier does not change**, because nothing is written until a grant
+    /// arrives. There is no in-place downgrade — a client cannot narrow a grant it already has.
+    fn upgrade_scope_arm(&mut self, args: Value, now: i64) -> Result<Value, CommandFailure> {
+        let parsed: crate::protocol::AccountsUpgradeScopeArgs =
+            crate::proto::dispatch::parse_args(args)?;
+        let identity = {
+            let guard = self
+                .index
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            crate::accounts::store::account_identity(guard.conn(), parsed.account_id)
+                .map_err(|e| CommandFailure::internal(e.to_string()))?
+        };
+
+        if let Some(previous) = self.connect.take() {
+            previous.stop();
+        }
+        let mut deps = self.connect_deps();
+        deps.scopes = crate::provider::scopes::SCOPES_PRIVATE;
+        deps.host.clone_from(&identity.host);
+        deps.sink = Arc::new(crate::accounts::pump::IndexConnectSink::upgrading(
+            Arc::clone(&self.index),
+            Arc::clone(&self.provider),
+            parsed.account_id,
+            identity.token_ref,
+        ));
+        let pump = crate::accounts::pump::ConnectPump::start(deps);
+        let grant = pump.grant(now);
+        self.connect = Some(pump);
+        match grant {
+            Some(grant) => {
+                serde_json::to_value(grant).map_err(|e| CommandFailure::internal(e.to_string()))
+            }
+            None => Err(CommandFailure::internal(
+                "no device flow could be started; no OAuth client id is compiled in".to_owned(),
+            )),
         }
     }
 
@@ -344,7 +408,7 @@ impl CommandHandler for CoreHandler {
             // R75: answered **without** the index lock. `ConnectPump::start` issues the Device
             // Flow's first request synchronously, so taking the guard here would hold the
             // process's one SQLite mutex across a forge round trip.
-            Route::AccountsNet => return self.accounts_net_arm(command, now),
+            Route::AccountsNet => return self.accounts_net_arm(command, args, now),
             // Answered **without** the index lock. `ScanCtx` takes a `&dyn ScanStore`, not an
             // `&Index`, and `SqliteScanStore` locks the same mutex internally; `std::sync::Mutex`
             // is not reentrant, so holding it here would deadlock the core on `scan.status`.

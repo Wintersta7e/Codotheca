@@ -495,3 +495,78 @@ fn repo_count_seen(value: Option<i64>) -> Result<Option<u32>, AccountError> {
 fn bit(value: bool) -> i64 {
     i64::from(value)
 }
+
+/// The fields a caller needs to act on an existing account without re-reading the whole row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountIdentity {
+    pub provider: String,
+    pub host: String,
+    pub login: String,
+    pub token_ref: String,
+    pub scope_tier: ScopeTier,
+}
+
+/// One account's identity, or [`AccountError`]'s not-found variant.
+///
+/// # Errors
+/// Fails when the row does not exist or the read does.
+pub fn account_identity(conn: &Connection, id: AccountId) -> Result<AccountIdentity, AccountError> {
+    conn.query_row(
+        "SELECT provider, host, login, token_ref, scope_tier FROM account WHERE id = ?1",
+        [id.0],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        },
+    )
+    .optional()?
+    .map_or(
+        Err(AccountError::NotFound {
+            account: id,
+            org: None,
+        }),
+        |(provider, host, login, token_ref, tier)| {
+            Ok(AccountIdentity {
+                provider,
+                host,
+                login,
+                token_ref,
+                scope_tier: enum_from_text(&tier)?,
+            })
+        },
+    )
+}
+
+/// §20's upgrade: the tier, the grant and its observation time are rewritten **together**, from
+/// the server, and the `token_ref` is deliberately untouched — the new token replaces the old in
+/// the **same** keychain entry, so nothing else has to be told the name changed.
+///
+/// # Errors
+/// Fails when the row does not exist or the write does.
+pub fn record_upgraded_scope(
+    tx: &Transaction<'_>,
+    id: AccountId,
+    tier: ScopeTier,
+    scopes: &[String],
+    now: i64,
+) -> Result<(), AccountError> {
+    let changed = tx.execute(
+        "UPDATE account
+            SET scope_tier = ?2, granted_scopes = ?3, scopes_observed_at = ?4,
+                last_verified_at = ?4
+          WHERE id = ?1",
+        rusqlite::params![id.0, enum_text(&tier)?, scopes_text(scopes)?, now],
+    )?;
+    if changed == 0 {
+        return Err(AccountError::NotFound {
+            account: id,
+            org: None,
+        });
+    }
+    Ok(())
+}

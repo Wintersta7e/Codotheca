@@ -81,11 +81,7 @@ pub enum Route {
 /// its plan, in the same change that adds its `NoOwner` arm.
 ///
 /// The eight `accounts.*` rows land with the schema and leave as their handlers do.
-pub const UNOWNED_COMMANDS: [(&str, &str); 3] = [
-    ("accounts.connectPat", "p2-20"),
-    ("accounts.upgradeScope", "p2-20"),
-    ("accounts.disconnect", "p2-20"),
-];
+pub const UNOWNED_COMMANDS: [(&str, &str); 1] = [("accounts.disconnect", "p2-20")];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -161,13 +157,14 @@ pub fn route(command: CommandName) -> Route {
         // R75: the two that reach the network are answered **without the index lock**, like
         // `Route::Scan`. Holding the process's one SQLite mutex across a forge round trip would
         // stop every other command for as long as `ACCOUNT_LIMITS.total_secs`.
-        CommandName::AccountsConnect | CommandName::AccountsCancelConnect => Route::AccountsNet,
+        CommandName::AccountsConnect
+        | CommandName::AccountsCancelConnect
+        | CommandName::AccountsConnectPat
+        | CommandName::AccountsUpgradeScope => Route::AccountsNet,
 
-        // The three §20.8 commands whose handlers land later in the same plan. Each moves to an
-        // arm above in the change that gives it one, and drops its `UNOWNED_COMMANDS` row with it.
-        CommandName::AccountsConnectPat
-        | CommandName::AccountsUpgradeScope
-        | CommandName::AccountsDisconnect => Route::NoOwner("p2-20"),
+        // The one §20.8 command whose handler lands later in the same plan. It moves to an arm
+        // above in the change that gives it one, and drops its `UNOWNED_COMMANDS` row with it.
+        CommandName::AccountsDisconnect => Route::NoOwner("p2-20"),
     }
 }
 

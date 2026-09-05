@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use codotheca_core::accounts::commands::is_github_sso_required;
 use codotheca_core::accounts::keychain::{SecretToken, TokenStore};
@@ -652,4 +652,203 @@ fn account_sources_do_not_delete_project_rows() {
         offenders.is_empty(),
         "accounts source deletes project rows: {offenders:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Task 10 — the PAT fallback, Enterprise Server, and the scope upgrade.
+// ---------------------------------------------------------------------------
+
+fn pat_fixture() -> (
+    tempfile::TempDir,
+    Arc<Mutex<codotheca_core::index::Index>>,
+    Arc<FakeTransport>,
+) {
+    let dir = tempfile::tempdir().expect("tmp");
+    let index = Arc::new(Mutex::new(
+        codotheca_core::index::Index::open_at(dir.path(), 1_000).expect("index opens"),
+    ));
+    (dir, index, Arc::new(FakeTransport::new()))
+}
+
+fn account_rows(index: &Arc<Mutex<codotheca_core::index::Index>>) -> i64 {
+    let guard = index.lock().unwrap_or_else(PoisonError::into_inner);
+    guard
+        .conn()
+        .query_row("SELECT count(*) FROM account", [], |row| row.get(0))
+        .expect("countable")
+}
+
+/// §20.2's normative order: **verify, then keychain, then row.** A token the forge refuses must
+/// not create an `account` row, and must not leave a keychain entry either.
+#[test]
+fn a_pat_the_forge_refuses_writes_no_row_and_no_keychain_entry() {
+    let (_dir, index, transport) = pat_fixture();
+    transport.push(codotheca_core::http::HttpResponse {
+        status: 401,
+        headers: Vec::new(),
+        body: b"{}".to_vec(),
+    });
+    let tokens = FakeTokenStore::available();
+
+    let failure = codotheca_core::accounts::commands::connect_pat(
+        &index,
+        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &tokens,
+        "forge.example.invalid",
+        &SecretToken::new("not-a-real-token".to_owned()),
+        2_000,
+    )
+    .expect_err("a refused token must fail");
+
+    assert_eq!(
+        failure.code,
+        codotheca_core::protocol::ErrorCode::TokenInvalid
+    );
+    assert!(tokens.entry_names().is_empty(), "the keychain was written");
+    assert_eq!(
+        account_rows(&index),
+        0,
+        "an unauthenticated token made a row"
+    );
+}
+
+/// The second half of the same rule: the forge said yes, the **keychain** said no, and the row
+/// must still not exist. A row whose `token_ref` names an entry that was never created reads to
+/// every later caller as a connected account with an unreadable token.
+#[test]
+fn a_pat_whose_keychain_store_fails_writes_no_row() {
+    let (_dir, index, transport) = pat_fixture();
+    transport.push(ok_json(
+        &serde_json::json!({ "login": "octo", "name": "Octo Fixture" }),
+        &[("X-OAuth-Scopes", "read:user")],
+    ));
+    let tokens = FakeTokenStore::refusing_store();
+
+    let outcome = codotheca_core::accounts::commands::connect_pat(
+        &index,
+        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &tokens,
+        "forge.example.invalid",
+        &SecretToken::new("pat-sentinel".to_owned()),
+        2_000,
+    );
+    assert!(outcome.is_err(), "a refused keychain must fail the connect");
+    assert_eq!(account_rows(&index), 0, "the row was written anyway");
+}
+
+/// A successful PAT writes exactly one row, `auth_kind` is `pat`, and `granted_scopes` is the
+/// server's set **verbatim** — including a scope no source file in this repository contains.
+#[test]
+fn a_successful_pat_writes_one_row_with_the_servers_own_scope_set() {
+    let (_dir, index, transport) = pat_fixture();
+    transport.push(ok_json(
+        &serde_json::json!({ "login": "octo", "name": null }),
+        &[("X-OAuth-Scopes", "read:user, an:invented:scope")],
+    ));
+    let tokens = FakeTokenStore::available();
+
+    let account = codotheca_core::accounts::commands::connect_pat(
+        &index,
+        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &tokens,
+        "forge.example.invalid",
+        &SecretToken::new("pat-sentinel".to_owned()),
+        2_000,
+    )
+    .expect("a verified token connects");
+
+    assert_eq!(account_rows(&index), 1);
+    assert_eq!(account.login, "octo");
+    assert_eq!(account.auth_kind, codotheca_core::protocol::AuthKind::Pat);
+    assert_eq!(account.host, "forge.example.invalid");
+    assert!(
+        account
+            .granted_scopes
+            .contains(&"an:invented:scope".to_owned()),
+        "the grant was not read back from the server: {:?}",
+        account.granted_scopes
+    );
+    // A PAT without `repo` is the public tier, read back rather than asked for.
+    assert_eq!(
+        account.scope_tier,
+        codotheca_core::protocol::ScopeTier::Public
+    );
+    assert_eq!(
+        tokens.entry_names(),
+        ["github:forge.example.invalid:octo".to_owned()]
+    );
+    assert!(tokens.holds("github:forge.example.invalid:octo", "pat-sentinel"));
+}
+
+/// A PAT the server reports as carrying `repo` lands in the private tier — derived from what was
+/// **granted**, never from what was asked for, because a pasted token may carry anything.
+#[test]
+fn the_tier_is_read_back_from_the_grant_not_assumed() {
+    let (_dir, index, transport) = pat_fixture();
+    transport.push(ok_json(
+        &serde_json::json!({ "login": "octo", "name": null }),
+        &[("X-OAuth-Scopes", "read:user, user:email, repo, read:org")],
+    ));
+    let tokens = FakeTokenStore::available();
+    let account = codotheca_core::accounts::commands::connect_pat(
+        &index,
+        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &tokens,
+        "",
+        &SecretToken::new("pat-sentinel".to_owned()),
+        2_000,
+    )
+    .expect("a verified token connects");
+    assert_eq!(
+        account.scope_tier,
+        codotheca_core::protocol::ScopeTier::Private
+    );
+    // An empty host is the canonical one, not an empty string on the row.
+    assert_eq!(
+        account.host,
+        codotheca_core::provider::listing::GITHUB_CANONICAL_HOST
+    );
+}
+
+/// On Enterprise the API base is `https://<host>/api/v3`, and the request must actually go
+/// there — the canonical provider would talk to the wrong server entirely.
+#[test]
+fn an_enterprise_host_is_reached_at_its_own_api_base() {
+    let (_dir, index, transport) = pat_fixture();
+    transport.push(ok_json(
+        &serde_json::json!({ "login": "octo", "name": null }),
+        &[("X-OAuth-Scopes", "read:user")],
+    ));
+    let _ = codotheca_core::accounts::commands::connect_pat(
+        &index,
+        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &FakeTokenStore::available(),
+        "forge.example.invalid",
+        &SecretToken::new("pat-sentinel".to_owned()),
+        2_000,
+    );
+    let sent = transport.requests();
+    assert_eq!(sent.len(), 1);
+    assert!(
+        sent[0]
+            .url
+            .starts_with("https://forge.example.invalid/api/v3"),
+        "{}",
+        sent[0].url
+    );
+    assert_eq!(
+        codotheca_core::accounts::store::api_base_for("forge.example.invalid"),
+        "https://forge.example.invalid/api/v3"
+    );
+}
+
+fn ok_json(
+    body: &serde_json::Value,
+    headers: &[(&str, &str)],
+) -> codotheca_core::http::HttpResponse {
+    codotheca_core::http::HttpResponse {
+        status: 200,
+        headers: codotheca_core::http::normalise_headers(headers.iter().copied()),
+        body: serde_json::to_vec(body).expect("json encodes"),
+    }
 }

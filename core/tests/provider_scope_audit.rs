@@ -209,3 +209,19 @@ fn the_audit_fails_when_it_scans_nothing() {
     // stated positively, so the guard cannot be deleted without a test going red.
     eprintln!("provider_scope_audit: zero-guard fixture scanned 0 file(s), as intended");
 }
+
+/// `PRIVATE_TIER_SCOPE` is what separates the two tiers, so it must be a member of the private
+/// set and absent from the public one. Without both halves it is a third opinion about the
+/// tiers rather than a name for the difference between them.
+#[test]
+fn the_tier_separator_is_the_scope_the_private_set_adds() {
+    use codotheca_core::provider::scopes::PRIVATE_TIER_SCOPE;
+    assert!(
+        SCOPES_PRIVATE.contains(&PRIVATE_TIER_SCOPE),
+        "the separator is not in the private tier"
+    );
+    assert!(
+        !SCOPES_PUBLIC.contains(&PRIVATE_TIER_SCOPE),
+        "the separator is in the public tier, so it separates nothing"
+    );
+}

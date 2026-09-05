@@ -458,7 +458,7 @@ mod corehandler {
         // guard and two, the network pair, without it (R75). The remaining three stay unowned
         // and are refused by name above, which is what the `refused` count opposite asserts.
         assert_eq!(
-            checked, 45,
+            checked, 47,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(

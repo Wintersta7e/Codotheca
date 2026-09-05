@@ -450,6 +450,11 @@ pub struct IndexConnectSink {
     index: Arc<Mutex<crate::index::Index>>,
     provider: Arc<dyn crate::provider::Provider>,
     scope_tier: crate::protocol::ScopeTier,
+    /// Set when this flow is a **scope upgrade** of an existing account rather than a new
+    /// connection. §20.2: the new token replaces the old **in the same keychain entry**, and the
+    /// tier, the grant and its observation time are rewritten together — so the row is updated,
+    /// never inserted, and `token_ref` is deliberately untouched.
+    upgrading: Option<(crate::protocol::AccountId, String)>,
 }
 
 impl std::fmt::Debug for IndexConnectSink {
@@ -471,6 +476,23 @@ impl IndexConnectSink {
             index,
             provider,
             scope_tier,
+            upgrading: None,
+        }
+    }
+
+    /// The same sink, upgrading `account`'s grant in place under its existing `token_ref`.
+    #[must_use]
+    pub fn upgrading(
+        index: Arc<Mutex<crate::index::Index>>,
+        provider: Arc<dyn crate::provider::Provider>,
+        account: crate::protocol::AccountId,
+        token_ref: String,
+    ) -> Self {
+        Self {
+            index,
+            provider,
+            scope_tier: crate::protocol::ScopeTier::Private,
+            upgrading: Some((account, token_ref)),
         }
     }
 }
@@ -491,7 +513,11 @@ impl ConnectSink for IndexConnectSink {
         let login = viewer.value.login;
         let display_name = viewer.value.display_name;
         let provider_id = self.provider.canonical_host().to_owned();
-        let entry = super::keychain::token_ref(PROVIDER_ID, &grant.host, &login);
+        // An upgrade reuses the account's existing entry name; a new connection composes one.
+        let entry = match &self.upgrading {
+            Some((_, token_ref)) => token_ref.clone(),
+            None => super::keychain::token_ref(PROVIDER_ID, &grant.host, &login),
+        };
 
         // 2. The keychain, before the row. A failure here writes nothing at all.
         tokens
@@ -499,6 +525,33 @@ impl ConnectSink for IndexConnectSink {
             .map_err(|error| ConnectSinkError::token_store(&error))?;
 
         // 3. The row, in one transaction, with the lock taken only now.
+        if let Some((account, _)) = self.upgrading {
+            let mut guard = self
+                .index
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _tx_guard = crate::proto::txguard::TxGuard::enter();
+            let tx = guard
+                .conn_mut()
+                .transaction()
+                .map_err(|error| ConnectSinkError::Refused {
+                    reason: error.to_string(),
+                })?;
+            super::store::record_upgraded_scope(
+                &tx,
+                account,
+                crate::protocol::ScopeTier::Private,
+                &grant.scopes,
+                grant.granted_at,
+            )
+            .map_err(|error| ConnectSinkError::Refused {
+                reason: error.to_string(),
+            })?;
+            return tx.commit().map_err(|error| ConnectSinkError::Refused {
+                reason: error.to_string(),
+            });
+        }
+
         let new = super::store::NewAccount {
             provider: PROVIDER_ID.to_owned(),
             host: if grant.host.is_empty() {

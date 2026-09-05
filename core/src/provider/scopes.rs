@@ -17,3 +17,11 @@ pub const SCOPES_PUBLIC: &[&str] = &["read:user", "user:email"];
 /// scope exists. Keeping it out of [`SCOPES_PUBLIC`] is what makes the default tier incapable of
 /// writing anything.
 pub const SCOPES_PRIVATE: &[&str] = &["read:user", "user:email", "repo", "read:org"];
+
+/// The one scope whose presence separates the public tier from the private one.
+///
+/// It is declared here rather than anywhere else, so this module stays the only place in the
+/// core that writes a scope string and `core/tests/provider_scope_audit.rs` keeps meaning what it
+/// says. A test asserts it is a member of [`SCOPES_PRIVATE`] and absent from [`SCOPES_PUBLIC`],
+/// which is the pair of facts that makes it *the* separator rather than a third opinion.
+pub const PRIVATE_TIER_SCOPE: &str = "repo";
