@@ -195,3 +195,33 @@ fn the_presence_rollup_is_byte_identical_when_a_zero_location_project_is_added()
         .expect("count");
     assert_eq!(locations, 1);
 }
+
+/// Task 3's pairing guard, so the two halves cannot drift apart again.
+///
+/// `primary_location` and `presence` are one fact seen twice (§23.1), so a fixture that carries
+/// a location carries a presence, and one that carries neither carries neither. Before §23 the
+/// default paired a null location with `Presence::Unscanned` — the exact false claim §23.2
+/// deleted from the loader — which would have left the fixture as the last place in the tree
+/// still asserting it.
+#[test]
+fn the_two_fixture_builders_pair_location_and_presence() {
+    use codotheca_core::protocol::ProjectRow;
+
+    let located = ProjectRow::for_test(1);
+    assert!(located.primary_location.is_some());
+    assert!(
+        located.presence.is_some(),
+        "a fixture with a working copy has a presence"
+    );
+
+    let bare = ProjectRow::for_test_not_cloned(2);
+    assert!(bare.primary_location.is_none());
+    assert_eq!(
+        bare.presence, None,
+        "a fixture with no working copy has no presence"
+    );
+
+    // Everything else is the same row: the builder varies the pair and nothing else.
+    assert_eq!(bare.name, ProjectRow::for_test(2).name);
+    assert_eq!(bare.condition_signal, None);
+}

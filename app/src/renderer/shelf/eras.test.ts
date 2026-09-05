@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ProjectRow } from '../../generated/protocol.js';
+import type { LocationRef, ProjectRow } from '../../generated/protocol.js';
 import { formatTrackedBytes } from '../format/size.js';
 import type { ShelfRow } from './row.js';
 import { toShelfRow } from './row.js';
@@ -53,7 +53,10 @@ function at(daysAgo: number, over: Record<string, unknown> = {}): ShelfRow {
     sizeTrackedBytes: null,
     trackedFiles: null,
     collectionIds: [],
-    primaryLocation: null,
+    // §23: the location and the presence are one pair. A null location with 'present'
+    // beside it is a working copy that is here, for a row that has no copy at all — and
+    // after §23.4's classifier every such fixture lands in era:notcloned.
+    primaryLocation: { id: 10 as LocationRef['id'], pathDisplay: '/w/row' },
     presence: 'present',
     branch: null,
     isDirty: null,
