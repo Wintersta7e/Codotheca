@@ -470,6 +470,16 @@ fn forbidden_without_sso_header_does_not_mark_the_org_unauthorized() {
         ErrorCode::SsoRequired,
         "403 alone is not an SSO requirement"
     );
+    assert_ne!(
+        failure.code,
+        ErrorCode::PermissionDenied,
+        "PERMISSION_DENIED is a filesystem error and §20.8 forbids overloading it"
+    );
+    assert_eq!(
+        failure.code,
+        ErrorCode::TokenInvalid,
+        "a forge refusal is an identity error"
+    );
     let guard = index.lock().unwrap_or_else(PoisonError::into_inner);
     assert_eq!(sso_state(&guard, account, "plain-forbidden-org"), None);
 }

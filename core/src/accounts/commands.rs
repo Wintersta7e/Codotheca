@@ -129,14 +129,19 @@ pub fn is_github_sso_required(error: &ProviderError) -> bool {
     }
 }
 
+/// §20.8's two identity errors, and **never `PermissionDenied`**, which is a filesystem error —
+/// the renderer paints it `NOT INDEXED` / "Can't read this folder" on a project tile, which a
+/// forge refusal is not. A shared name is not a shared shape (R15).
+///
+/// A 403 the SSO check already declined is not an SSO requirement: the forge refused this token's
+/// identity for the call — insufficient scope, or an OAuth app the org restricts — and both are
+/// answered on the account surface, so it is `TokenInvalid`. §21 owns rate-limit refusals and will
+/// have to claim its own share of 403 when it lands.
 fn provider_failure(error: &ProviderError) -> CommandFailure {
     match error {
-        ProviderError::Http { status: 401, .. } => {
-            coded_failure(ErrorCode::TokenInvalid, error.to_string())
-        }
-        ProviderError::Http { status: 403, .. } => {
-            coded_failure(ErrorCode::PermissionDenied, error.to_string())
-        }
+        ProviderError::Http {
+            status: 401 | 403, ..
+        } => coded_failure(ErrorCode::TokenInvalid, error.to_string()),
         ProviderError::Http { .. } | ProviderError::Transport(_) | ProviderError::Decode(_) => {
             internal(error)
         }
