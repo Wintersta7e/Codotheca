@@ -60,6 +60,18 @@ export const spawnCoreChild: SpawnCore = (argv) => {
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   });
+  // A write to the core's stdin after the core is gone fails **asynchronously**: `write` returns
+  // normally and the stream then emits `error` with `EPIPE`. Nothing listened for it, and an
+  // unhandled stream error takes the whole main process down with Electron's "A JavaScript error
+  // occurred in the main process" dialog — seen on Windows on 2026-09-05 while the core was
+  // crash-looping, which turned a failure the supervisor already handles into a crash.
+  //
+  // Routed into the same sink as the child's own error, so the shell renders §11.2a's core-failure
+  // notice and names the log. `onExit` remains the authority on what the failure *means*; this
+  // only ensures the process survives long enough to say so.
+  child.stdin.on('error', (error: Error) => {
+    child.emit('error', error);
+  });
   return {
     pid: child.pid ?? null,
     stdin: child.stdin,
