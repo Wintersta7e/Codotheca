@@ -63,6 +63,7 @@ const row = (over: Partial<ProjectRow> = {}): ProjectRow => ({
   // cannot produce.
   primaryLocation: { id: 10 as LocationId, pathDisplay: '/w/atlas' },
   presence: 'present',
+  hasRemote: false,
   branch: 'main',
   isDirty: null,
   untrackedCount: null,

@@ -366,6 +366,12 @@ fn map_loaded_row(
         // `NOT SCANNED` and offers `ENABLE ROOT` on the covering root, and a not-cloned project
         // is covered by no root, so that control named a root that cannot exist.
         presence: primary.map(|l| l.presence),
+        // §23.7: `has:remote` was live here and **dead in the renderer** — the core answered it
+        // and the projection carried no field, so the shelf dropped the term. The value is the
+        // one the core already computes; the location half of §23.6's tightened definition is
+        // NOT folded in, because the domain rule supplies it and is evaluated before the field
+        // is read. One predicate, not two.
+        has_remote: r.get::<_, Option<String>>(34)?.is_some(),
         // §5.1: the tile's branch and divergence come from the primary copy, not the fold.
         branch: primary.and_then(|l| l.branch.clone()),
         is_dirty: any_present_dirty(locations),

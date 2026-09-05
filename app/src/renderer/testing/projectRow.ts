@@ -50,6 +50,7 @@ export function makeProjectRow(overrides: Partial<ProjectRow> = {}): ProjectRow 
     collectionIds: [],
     primaryLocation: { id: 10 as LocationRef['id'], pathDisplay: '/w/row' },
     presence: 'present',
+    hasRemote: false,
     branch: null,
     isDirty: null,
     untrackedCount: null,

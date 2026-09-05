@@ -363,12 +363,6 @@ fn the_database_holds_no_invented_row_column_or_table() {
         built > 0,
         "a run that built no zero-location fixture proves nothing"
     );
-    let sink = CollectingSink::default();
-    let deps = Deps::new();
-    let ctx = ctx(&index, &sink, &deps);
-    let rows = load_project_rows(&ctx).expect("load");
-    let r = &find(&rows, 1).row;
-
     // 8. §23.1 invents nothing. No synthetic `location` row, no fifth `Presence` value, and no
     //    `remote_project` table — read from the database, never trusted from the migration set.
     let locations: i64 = index
@@ -433,6 +427,23 @@ fn the_database_holds_no_invented_row_column_or_table() {
             == 1,
         "the one clock is remote_repo.observed_at, and p2-22 landed it"
     );
+}
+
+/// AC-P2-23-3's core half, split out so each half stays under the pedantic line cap.
+///
+/// With §25's facts row **deleted**, no age is produced at all — no value, no `stale · <age>`
+/// input, and **no substitute computed from `created_at` or `last_touched_at`**. `ProjectRow`
+/// carries no remote field for one to hide in, which is the assertion: the loader manufactures
+/// nothing.
+#[test]
+fn no_age_is_produced_for_a_project_nothing_has_observed() {
+    let (_dir, index) = opened();
+    zero_location_project(index.conn(), 1, "remoteonly");
+    let sink = CollectingSink::default();
+    let deps = Deps::new();
+    let ctx = ctx(&index, &sink, &deps);
+    let rows = load_project_rows(&ctx).expect("load");
+    let r = &find(&rows, 1).row;
 
     // 10. AC-P2-23-3's core half. With §25's facts row **deleted**, no age is produced at all —
     //     no value, no `stale · <age>` input, and no substitute computed from `created_at` or
@@ -454,8 +465,21 @@ fn the_database_holds_no_invented_row_column_or_table() {
             );
         }
     }
+    // The one remote field `ProjectRow` carries is `hasRemote` (§23.7's producer, Deviation 1),
+    // and it is a **boolean the core already computes from `remote_key`** — it carries no
+    // observation time and no observed remote value, so there is nothing on this row for §23 to
+    // date. Any other remote field would be the second clock A12 removed.
+    let remote_fields: Vec<&String> = obj
+        .keys()
+        .filter(|k| k.to_lowercase().contains("remote"))
+        .collect();
+    assert_eq!(
+        remote_fields,
+        vec!["hasRemote"],
+        "ProjectRow carries no remote field §23 could date"
+    );
     assert!(
-        !obj.keys().any(|k| k.to_lowercase().contains("remote")),
-        "ProjectRow carries no remote field for §23 to date"
+        obj["hasRemote"].is_boolean(),
+        "hasRemote is a boolean, never a value with a clock"
     );
 }

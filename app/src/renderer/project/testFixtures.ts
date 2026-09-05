@@ -90,6 +90,7 @@ export function rowFixture(over: Partial<ProjectRow> = {}): ProjectRow {
     collectionIds: [],
     primaryLocation: { id: 1 as unknown as LocationId, pathDisplay: '~/work/aurora' },
     presence: 'present',
+    hasRemote: true,
     branch: 'main',
     isDirty: false,
     untrackedCount: 0,

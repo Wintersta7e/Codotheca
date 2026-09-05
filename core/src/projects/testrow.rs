@@ -62,6 +62,7 @@ impl ProjectRow {
                 path_display: format!("/w/p{id}"),
             }),
             presence: Some(Presence::Present),
+            has_remote: false,
             branch: None,
             is_dirty: None,
             untracked_count: None,

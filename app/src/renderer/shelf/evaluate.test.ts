@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LocationRef, ProjectRow } from '../../generated/protocol.js';
+import type { LocationRef, ProjectId, ProjectRow } from '../../generated/protocol.js';
 import type { QueryTerm } from '../../shared/query/ast.js';
 import { parseQuery } from '../../shared/query/parse.js';
 import { isNewArrival } from '../firstrun/newArrivals.js';
@@ -7,6 +7,9 @@ import type { ShelfRow } from './row.js';
 import { toShelfRow } from './row.js';
 import type { QueryContext } from './evaluate.js';
 import { evaluateQuery, partitionAnswerable, termTruth } from './evaluate.js';
+import { projectionCapabilities } from './row.js';
+import { makeProjectRow } from '../testing/projectRow.js';
+import { HAS_ATTRIBUTES, IS_FLAGS } from '../../shared/query/grammar.js';
 
 const NOW = 1_800_000_000;
 const DAY = 86_400;
@@ -312,5 +315,87 @@ describe('§23.6: the domain rule, and is:notcloned', () => {
     const { runnable, ignored } = partitionAnswerable(parseQuery('has:remote is:notcloned'), wide);
     expect(runnable).toHaveLength(2);
     expect(ignored).toHaveLength(0);
+  });
+});
+
+/**
+ * AC-P2-23-12, **narrowed** (Deviation 5). §23.7's own sentence scopes it: *"`is:notcloned` needs
+ * no new projection field; `has:remote` needs its producer."*
+ *
+ * `has:remote` was live in the core and **dead in the renderer** — the core answered it and the
+ * projection carried no field, so `answerable` dropped it and §8.3's client-side filtering meant
+ * the shipping behaviour was *ignored*. That is R1/R35a/R40/R46 in projection form.
+ *
+ * The literal reading — *no `is:` or `has:` value evaluates to `notAvailable` for any row* —
+ * cannot hold: `ProjectRow` carries none of `ProjectRowExtras`, and `has:license|tests|ci` have
+ * no column in the core either, so there is no producer to land. The narrowed claim is asserted
+ * here and the remaining gap is **printed as an exact named list** rather than left silent.
+ */
+describe('§23.7: no dead predicate ships', () => {
+  // Built through `toShelfRow` over a **real `ProjectRow`**, with no extras carried in. That is
+  // the production path: the wire row is what the shelf receives, and a fixture that passed
+  // `hasRemote` alongside it would answer the capability itself and assert nothing.
+  const located = toShelfRow(makeProjectRow({ id: 1 as ProjectId, hasRemote: true }));
+  const bare = toShelfRow(
+    // `hasRemote: true` deliberately: in phase 2 every not-cloned project carries a remote_key
+    // by construction, so this is the case that would invert. If the Unknown below passed for
+    // the missing-field reason the plan would have shipped the defect it came to fix.
+    makeProjectRow({ id: 2 as ProjectId, primaryLocation: null, presence: null, hasRemote: true }),
+  );
+
+  it('answers has:remote from the projection over a corpus with a located row', () => {
+    const caps = projectionCapabilities([located, bare]);
+    expect(caps.hasRemote).toBe(true);
+  });
+
+  it('makes has:remote and is:notcloned answerable for every row', () => {
+    const wide: QueryContext = { ...ctx, capabilities: projectionCapabilities([located, bare]) };
+    for (const query of ['has:remote', 'is:notcloned', '-has:remote', '-is:notcloned']) {
+      const { runnable, ignored } = partitionAnswerable(parseQuery(query), wide);
+      expect(runnable, `${query} was dropped`).toHaveLength(1);
+      expect(ignored).toHaveLength(0);
+    }
+  });
+
+  it('names the values that remain notAvailable, so the gap cannot grow in silence', () => {
+    const wide: QueryContext = { ...ctx, capabilities: projectionCapabilities([located, bare]) };
+    const candidates = [
+      ...IS_FLAGS.map((flag) => `is:${flag}`),
+      ...HAS_ATTRIBUTES.map((attribute) => `has:${attribute}`),
+      'in:local',
+      'in:wsl',
+      'in:wsl:ubuntu',
+    ];
+    const notAvailable = candidates.filter(
+      (query) => partitionAnswerable(parseQuery(query), wide).ignored.length > 0,
+    );
+    expect(candidates.length, 'a run that examined no term proves nothing').toBeGreaterThan(0);
+    // The exact set, by name. `has:license|tests|ci` have no column in the core either, so no
+    // producer exists to land; the rest are `ProjectRowExtras` fields `ProjectRow` does not
+    // carry. Owner: a phase-1 projection gap that no phase-2 section owns.
+    expect([...notAvailable].sort()).toEqual([
+      'has:ci',
+      'has:license',
+      'has:readme',
+      'has:submodules',
+      'has:tests',
+      'in:local',
+      'in:wsl',
+      'in:wsl:ubuntu',
+      'is:local',
+      'is:wsl',
+    ]);
+    expect(notAvailable).not.toContain('has:remote');
+    expect(notAvailable).not.toContain('is:notcloned');
+  });
+
+  it('still answers has:remote Unknown for a not-cloned row — for the domain reason', () => {
+    // If this passed for the *missing-field* reason the plan would have shipped the defect it
+    // came to fix, so the fixture is given `hasRemote: true` explicitly and the answer must
+    // still be Unknown.
+    const wide: QueryContext = { ...ctx, capabilities: projectionCapabilities([located, bare]) };
+    expect(bare.hasRemote, 'the row carries the field, so Unknown is the domain answer').toBe(true);
+    expect(termTruth(bare, only('has:remote'), wide)).toBeNull();
+    expect(termTruth(located, only('has:remote'), wide)).toBe(true);
   });
 });

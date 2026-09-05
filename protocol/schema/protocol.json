@@ -395,6 +395,7 @@
         "collectionIds": "[CollectionId]",
         "primaryLocation": "LocationRef?",
         "presence": "Presence?",
+        "hasRemote": "bool",
         "branch": "String?",
         "isDirty": "bool?",
         "untrackedCount": "u32?",

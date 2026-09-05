@@ -13,7 +13,10 @@ export interface ProjectRowExtras {
   readonly hasLicense: boolean | null;
   readonly hasTests: boolean | null;
   readonly hasCi: boolean | null;
-  readonly hasRemote: boolean | null;
+  // §23.7: `hasRemote` is **not** here any more. It is a field of `ProjectRow` itself, because
+  // the shelf projection is `ProjectRow` and nothing else — a producer that is not a field on it
+  // is not a producer. `has:remote` was answered by the core and dropped by the renderer, which
+  // is R1/R35a/R40/R46 in projection form.
   readonly hasSubmodules: boolean | null;
 }
 
@@ -27,7 +30,6 @@ const EXTRA_KEYS = [
   'hasLicense',
   'hasTests',
   'hasCi',
-  'hasRemote',
   'hasSubmodules',
 ] as const;
 
@@ -42,7 +44,6 @@ export function toShelfRow(row: ProjectRow): ShelfRow {
     hasLicense: carried.hasLicense ?? null,
     hasTests: carried.hasTests ?? null,
     hasCi: carried.hasCi ?? null,
-    hasRemote: carried.hasRemote ?? null,
     hasSubmodules: carried.hasSubmodules ?? null,
   };
 }
@@ -65,6 +66,9 @@ export function projectionCapabilities(rows: readonly ShelfRow[]): ProjectionCap
     for (const key of EXTRA_KEYS) {
       if (row[key] !== null) answered.add(key);
     }
+    // `hasRemote` is a wire field rather than an extra, so it is answered by any row at all —
+    // and the same rule applies: an empty projection answers nothing.
+    answered.add('hasRemote');
   }
   return {
     authoredByUser: answered.has('authoredByUser'),
