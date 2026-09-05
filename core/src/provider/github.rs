@@ -200,12 +200,6 @@ where
     serde_json::from_slice(&response.body).map_err(|error| ProviderError::Decode(error.to_string()))
 }
 
-/// The `rel="next"` URL out of an RFC 8288 `Link` header, or `None`.
-///
-/// **It walks `<...>` pairs; it does not split the header on `,`.** The repos endpoint's own URL
-/// carries `affiliation=owner,collaborator,organization_member`, so a comma split tears the URL
-/// into pieces, finds no `rel="next"` in any of them, and paginates exactly once — silently, and
-/// only against the real API, because a fixture without a comma passes either way.
 /// The `rel="next"` URL, **bounded to the host that produced it**.
 ///
 /// A `Link` header is attacker-influenceable in exactly the way a `Location` is: it names a URL
@@ -217,11 +211,18 @@ fn next_link_cursor_for(header: Option<&str>, from: &str) -> Option<String> {
     let next = next_link_cursor(header)?;
     match crate::http::same_host(from, &next) {
         Ok(true) => Some(next),
-        // Same-host or nothing: an unparseable next page is not one to guess about either.
+        // A next page on another host is dropped, and so is one whose URL will not parse: an
+        // unparseable next page is not one to guess about either.
         Ok(false) | Err(_) => None,
     }
 }
 
+/// The `rel="next"` URL out of an RFC 8288 `Link` header, or `None`.
+///
+/// **It walks `<...>` pairs; it does not split the header on `,`.** The repos endpoint's own URL
+/// carries `affiliation=owner,collaborator,organization_member`, so a comma split tears the URL
+/// into pieces, finds no `rel="next"` in any of them, and paginates exactly once — silently, and
+/// only against the real API, because a fixture without a comma passes either way.
 fn next_link_cursor(header: Option<&str>) -> Option<String> {
     let header = header?;
     let bytes = header.as_bytes();

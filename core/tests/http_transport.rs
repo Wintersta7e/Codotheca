@@ -506,6 +506,9 @@ fn bearer_request(url: &str) -> HttpRequest {
         headers: normalise_headers([
             ("Authorization", "Bearer SENTINEL-TOKEN-0000"),
             ("Cookie", "session=SENTINEL-TOKEN-0000"),
+            // All three of `CREDENTIAL_HEADERS`, not two: a header named by the constant and by
+            // no fixture is a header the strip is never observed to remove.
+            ("Proxy-Authorization", "Basic SENTINEL-TOKEN-0000"),
             ("Accept", "application/vnd.github+json"),
         ]),
         body: None,
@@ -537,16 +540,23 @@ fn a_cross_host_redirect_receives_no_credential() {
 
     assert_eq!(recorder.url_of(0), "https://api.forge.example.invalid/user");
     assert_eq!(recorder.url_of(1), "https://evil.example.invalid/collect");
+    // Non-vacuity, and over **every** named header: if the first hop did not carry all three,
+    // their absence on the second would prove nothing about the strip.
     let first = recorder.headers_of(0);
-    assert!(
-        first.iter().any(|(k, _)| k == "authorization"),
-        "the first hop, on the original host, must still carry the token"
-    );
+    for name in codotheca_core::http::CREDENTIAL_HEADERS {
+        assert!(
+            first.iter().any(|(k, _)| k == name),
+            "the first hop, on the original host, must still carry {name}"
+        );
+    }
 
     let second = recorder.headers_of(1);
     let leaked: Vec<&(String, String)> = second
         .iter()
-        .filter(|(k, v)| v.contains("SENTINEL-TOKEN-0000") || k == "authorization" || k == "cookie")
+        .filter(|(k, v)| {
+            v.contains("SENTINEL-TOKEN-0000")
+                || codotheca_core::http::CREDENTIAL_HEADERS.contains(&k.as_str())
+        })
         .collect();
     assert!(
         leaked.is_empty(),
