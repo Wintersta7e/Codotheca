@@ -3,6 +3,7 @@
 //! a parameter and is only ever stamped into `art_scene.rendered_at`, which is why
 //! `scene_hash` cannot become a function of wall-clock time (§7.3a, criterion 62).
 
+pub mod blueprint;
 pub mod commands;
 pub mod compose;
 pub mod derive;
