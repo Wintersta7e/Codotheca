@@ -16,9 +16,22 @@ import type {
   CommandArgs,
   CommandName,
   CommandResult,
+  ConnectStage,
   DeviceGrant,
 } from '../../generated/protocol';
+import type { RendererEvent } from '../../shared/channels';
 import { GithubPanel } from './accounts';
+
+/**
+ * The stages after which no flow is live any more.
+ *
+ * `pending` and `slow_down` are the poll continuing; every other stage is the core saying the
+ * flow is over, whichever way it ended. Without this the panel showed `CONNECTING` for a flow
+ * that had already finished, and — because `flowWasStarted` was still true — the next drawer
+ * opening called `accounts.connect` again and began a **second** device flow over a connected
+ * account.
+ */
+const TERMINAL_STAGES: readonly ConnectStage[] = ['granted', 'denied', 'expired', 'cancelled'];
 
 /**
  * Whether a Device Flow was started from this process, surviving the panel's unmount.
@@ -45,6 +58,11 @@ export interface GithubPanelHostProps {
     args: CommandArgs[K],
   ) => Promise<CommandResult[K]>;
   /**
+   * The `accounts` topic. **Required**: the core polls the device flow, so this is the only way
+   * the panel learns a flow ended, and without it `CONNECTING` is a state with no exit.
+   */
+  readonly subscribe: (handler: (event: RendererEvent) => void) => () => void;
+  /**
    * The PAT path needs a host field, which is a text input this plan does not draw. **Absent
    * means the button is not drawn** — a control wired to a no-op is what §11.3a forbids.
    */
@@ -52,7 +70,7 @@ export interface GithubPanelHostProps {
 }
 
 export function GithubPanelHost(props: GithubPanelHostProps): ReactElement {
-  const { request } = props;
+  const { request, subscribe } = props;
   const [accounts, setAccounts] = useState<readonly Account[]>([]);
   const [orgs, setOrgs] = useState<readonly AccountOrg[] | null>(null);
   const [grant, setGrant] = useState<DeviceGrant | null>(null);
@@ -86,6 +104,33 @@ export function GithubPanelHost(props: GithubPanelHostProps): ReactElement {
       await recoverPendingFlow();
     })();
   }, [refresh, recoverPendingFlow]);
+
+  /**
+   * The `accounts` topic, which is how a core-side flow reports that it ended.
+   *
+   * `connected` and a terminal `connect_progress` both mean the same thing here — there is no
+   * live flow any more — so both clear the grant and re-read. Re-reading rather than folding the
+   * event's payload into state keeps one source for what is connected: the event says *that*
+   * something changed, `accounts.list` says what.
+   */
+  useEffect(
+    () =>
+      subscribe((event) => {
+        if (event.topic !== 'accounts') return;
+        const stage = (event.data as { stage?: ConnectStage } | null)?.stage;
+        const ended =
+          event.event === 'connected' ||
+          event.event === 'disconnected' ||
+          (event.event === 'connect_progress' &&
+            stage !== undefined &&
+            TERMINAL_STAGES.includes(stage));
+        if (!ended) return;
+        flowWasStarted = false;
+        setGrant(null);
+        void refresh();
+      }),
+    [subscribe, refresh],
+  );
 
   const first = accounts.at(0);
 

@@ -58,9 +58,9 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
       // reach a module in the core. `onConnectPat` is deliberately not supplied: the PAT path
       // needs a host field no landed plan draws, so its button stays undrawn rather than
       // becoming a control that does nothing.
-      githubPanel: () => <GithubPanelHost request={request} />,
+      githubPanel: () => <GithubPanelHost request={request} subscribe={deps.subscribe} />,
     }),
-    [request],
+    [request, deps.subscribe],
   );
 
   // One registration on the shell channel, and the same callback reused for the top bar's own

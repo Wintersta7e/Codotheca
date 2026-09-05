@@ -8,7 +8,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { CommandArgs, CommandName, CommandResult } from '../../generated/protocol';
+import type { Account, CommandArgs, CommandName, CommandResult } from '../../generated/protocol';
+import type { RendererEvent } from '../../shared/channels';
 import { GithubPanelHost, resetPendingFlowForTest } from './GithubPanelHost';
 
 afterEach(() => {
@@ -22,6 +23,11 @@ interface FakeCore {
     name: K,
     args: CommandArgs[K],
   ) => Promise<CommandResult[K]>;
+  /** The `accounts` topic, as the core's publisher drives it. */
+  readonly emit: (event: RendererEvent) => void;
+  readonly subscribe: (handler: (event: RendererEvent) => void) => () => void;
+  /** What `accounts.list` answers from now on. */
+  readonly setAccounts: (rows: readonly Account[]) => void;
 }
 
 /** Records every command, and answers `accounts.connect` the way the core does. */
@@ -29,13 +35,15 @@ function fakeCore(): FakeCore {
   const calls: CommandName[] = [];
   // The core returns the live flow on a repeat connect, with the time actually left.
   let remaining = 890;
+  let rows: readonly Account[] = [];
+  const handlers = new Set<(event: RendererEvent) => void>();
   const request = <K extends CommandName>(
     name: K,
     args: CommandArgs[K],
   ): Promise<CommandResult[K]> => {
     void args;
     calls.push(name);
-    if (name === 'accounts.list') return Promise.resolve([] as unknown as CommandResult[K]);
+    if (name === 'accounts.list') return Promise.resolve(rows as unknown as CommandResult[K]);
     if (name === 'accounts.orgs') return Promise.resolve(null as unknown as CommandResult[K]);
     if (name === 'accounts.connect') {
       remaining -= 30;
@@ -48,13 +56,46 @@ function fakeCore(): FakeCore {
     }
     return Promise.resolve(undefined as unknown as CommandResult[K]);
   };
-  return { calls, request };
+  return {
+    calls,
+    request,
+    emit: (event) => {
+      for (const fn of [...handlers]) fn(event);
+    },
+    subscribe: (handler) => {
+      handlers.add(handler);
+      return () => handlers.delete(handler);
+    },
+    setAccounts: (next) => {
+      rows = next;
+    },
+  };
+}
+
+/** One connected account, enough for the panel's `CONNECTED` state. */
+function connectedAccount(): Account {
+  return {
+    id: 1 as Account['id'],
+    provider: 'github',
+    host: 'forge.example.invalid',
+    login: 'octo-fixture',
+    displayName: null,
+    authKind: 'device',
+    scopeTier: 'public',
+    grantedScopes: [],
+    scopesObservedAt: null,
+    connectedAt: 1_800_000_000,
+    lastVerifiedAt: null,
+    lastErrorKind: null,
+    lastErrorAt: null,
+    enabled: true,
+  };
 }
 
 describe('the drawer closes without cancelling', () => {
   it('AC-P2-20-10 returns to the same flow with less time left, and cancels nothing', async () => {
     const core = fakeCore();
-    const first = render(<GithubPanelHost request={core.request} />);
+    const first = render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
     });
@@ -72,7 +113,7 @@ describe('the drawer closes without cancelling', () => {
     );
 
     // Reopen it.
-    render(<GithubPanelHost request={core.request} />);
+    render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
     await waitFor(() => {
       expect(screen.getByText('WXYZ-1234')).toBeTruthy();
     });
@@ -85,7 +126,7 @@ describe('the drawer closes without cancelling', () => {
 
   it('starts no flow on mount for a user who never asked', async () => {
     const core = fakeCore();
-    render(<GithubPanelHost request={core.request} />);
+    render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
     });
@@ -96,7 +137,7 @@ describe('the drawer closes without cancelling', () => {
 
   it('stops recovering once the flow is cancelled', async () => {
     const core = fakeCore();
-    const first = render(<GithubPanelHost request={core.request} />);
+    const first = render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
     });
@@ -110,10 +151,94 @@ describe('the drawer closes without cancelling', () => {
     });
     first.unmount();
 
-    render(<GithubPanelHost request={core.request} />);
+    render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
     });
     expect(screen.queryByText('WXYZ-1234')).toBeNull();
+  });
+});
+
+/**
+ * The core polls the device flow, so the panel only learns it ended from the `accounts` topic.
+ * Without that subscription `CONNECTING` had no exit: the panel showed a finished flow's code
+ * until it was remounted, and then — still believing a flow was live — called `accounts.connect`
+ * and began a **second** one over the account that had just connected.
+ */
+describe('the panel leaves CONNECTING when the core says the flow ended', () => {
+  it('a granted flow becomes the connected account, and reopening starts no second flow', async () => {
+    const core = fakeCore();
+    const first = render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'CONNECT' }));
+    await waitFor(() => {
+      expect(screen.getByText('WXYZ-1234')).toBeTruthy();
+    });
+
+    // The user authorises in their browser: the core stores the account and says so.
+    core.setAccounts([connectedAccount()]);
+    core.emit({ topic: 'accounts', event: 'connected', data: connectedAccount() });
+    await waitFor(() => {
+      expect(screen.queryByText('WXYZ-1234')).toBeNull();
+    });
+    expect(screen.getByText('octo-fixture', { exact: false })).toBeTruthy();
+
+    const before = core.calls.filter((name) => name === 'accounts.connect').length;
+    first.unmount();
+    render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
+    await waitFor(() => {
+      expect(screen.getByText('octo-fixture', { exact: false })).toBeTruthy();
+    });
+    expect(
+      core.calls.filter((name) => name === 'accounts.connect').length,
+      'reopening the drawer began a second device flow over a connected account',
+    ).toBe(before);
+  });
+
+  it('a flow that expires clears the code rather than showing a dead one', async () => {
+    const core = fakeCore();
+    render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'CONNECT' }));
+    await waitFor(() => {
+      expect(screen.getByText('WXYZ-1234')).toBeTruthy();
+    });
+
+    core.emit({
+      topic: 'accounts',
+      event: 'connect_progress',
+      data: { stage: 'expired', intervalSecs: 5 },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
+    });
+    expect(screen.queryByText('WXYZ-1234')).toBeNull();
+  });
+
+  it('a still-polling stage leaves the pending flow alone', async () => {
+    const core = fakeCore();
+    render(<GithubPanelHost request={core.request} subscribe={core.subscribe} />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'CONNECT' }));
+    await waitFor(() => {
+      expect(screen.getByText('WXYZ-1234')).toBeTruthy();
+    });
+
+    // `pending` and `slow_down` are the poll continuing, not the flow ending.
+    core.emit({
+      topic: 'accounts',
+      event: 'connect_progress',
+      data: { stage: 'slow_down', intervalSecs: 9 },
+    });
+    core.emit({ topic: 'scan', event: 'progress', data: { walkedDirs: 1 } });
+    await waitFor(() => {
+      expect(screen.getByText('WXYZ-1234')).toBeTruthy();
+    });
   });
 });
