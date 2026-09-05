@@ -736,3 +736,225 @@ fn no_table_takes_remote_key_as_a_primary_or_unique_key() {
         "no table carries remote_key at all — the scan proves nothing"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Task 3 — §25.7's three remote-fact tables.
+// ---------------------------------------------------------------------------------------------
+
+/// §25.7's column lists, whole. The key assertion below passes while `permitted`, `ci_etag`,
+/// `ci_observed_at`, `good_first_issues`, `open_prs_from_user` or `fork_parent_remote_key` is
+/// missing — and every one of those is a column §21 or §25 writes without owning the DDL, so a
+/// silently absent column surfaces three waves later as a runtime `no such column`.
+const FACT_TABLE_COLUMNS: &[(&str, &[&str])] = &[
+    (
+        "remote_repo",
+        &[
+            "provider",
+            "provider_repo_id",
+            "visibility",
+            "description",
+            "fork_parent_remote_key",
+            "stars",
+            "open_issues",
+            "good_first_issues",
+            "open_prs",
+            "open_prs_from_user",
+            "permitted",
+            "observed_at",
+            "etag",
+            "ci_observed_at",
+            "ci_etag",
+        ],
+    ),
+    ("remote_topic", &["provider", "provider_repo_id", "topic"]),
+    (
+        "remote_ci_run",
+        &[
+            "provider",
+            "provider_repo_id",
+            "run_id",
+            "workflow_name",
+            "conclusion",
+            "branch",
+            "run_number",
+            "started_at",
+        ],
+    ),
+];
+
+fn primary_key_of(conn: &rusqlite::Connection, table: &str) -> Vec<String> {
+    let mut st = conn
+        .prepare(&format!("PRAGMA table_info(\"{table}\")"))
+        .unwrap();
+    let mut members: Vec<(i64, String)> = st
+        .query_map([], |r| Ok((r.get::<_, i64>(5)?, r.get::<_, String>(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .filter(|(pk, _)| *pk > 0)
+        .collect();
+    members.sort_by_key(|(pk, _)| *pk);
+    members.into_iter().map(|(_, name)| name).collect()
+}
+
+fn table_sql(conn: &rusqlite::Connection, table: &str) -> String {
+    conn.query_row(
+        "SELECT sql FROM sqlite_schema WHERE type='table' AND name=?1",
+        [table],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn the_three_fact_tables_exist_with_their_keys() {
+    let (_dir, conn) = migrated_to(9);
+
+    assert_eq!(
+        primary_key_of(&conn, "remote_repo"),
+        vec!["provider".to_owned(), "provider_repo_id".to_owned()]
+    );
+    assert_eq!(
+        primary_key_of(&conn, "remote_topic"),
+        vec![
+            "provider".to_owned(),
+            "provider_repo_id".to_owned(),
+            "topic".to_owned()
+        ]
+    );
+    assert_eq!(
+        primary_key_of(&conn, "remote_ci_run"),
+        vec![
+            "provider".to_owned(),
+            "provider_repo_id".to_owned(),
+            "run_id".to_owned()
+        ]
+    );
+
+    assert!(
+        table_sql(&conn, "remote_topic").contains("WITHOUT ROWID"),
+        "remote_topic is WITHOUT ROWID"
+    );
+    for (table, _) in FACT_TABLE_COLUMNS {
+        assert!(
+            table_sql(&conn, table).contains("STRICT"),
+            "{table} lost STRICT"
+        );
+    }
+
+    // The forge owns the conclusion vocabulary, so a closed mirror of it is R26 by construction.
+    let ci = table_sql(&conn, "remote_ci_run");
+    assert!(
+        !ci.contains("CHECK"),
+        "remote_ci_run declares a CHECK; conclusion's vocabulary belongs to the forge:\n{ci}"
+    );
+}
+
+#[test]
+fn the_three_fact_tables_carry_their_whole_column_set() {
+    let (_dir, conn) = migrated_to(9);
+    for (table, expected) in FACT_TABLE_COLUMNS {
+        let actual = columns(&conn, table);
+        let missing: Vec<&&str> = expected
+            .iter()
+            .filter(|c| !actual.iter().any(|a| a == **c))
+            .collect();
+        let extra: Vec<&String> = actual
+            .iter()
+            .filter(|c| !expected.contains(&c.as_str()))
+            .collect();
+        assert_eq!(
+            actual,
+            expected.iter().map(|c| (*c).to_owned()).collect::<Vec<_>>(),
+            "{table}: missing {missing:?}, extra {extra:?}"
+        );
+    }
+}
+
+/// §22.11 makes the three fact tables "a fact cache with no identity role" that **references**
+/// the binding. A basis column on one of them would put identity on a row §22.9 forbids keying
+/// identity on. This is the structural half of the rule Task 8 states for `RemoteBinding::key`,
+/// asserted over the migration this plan owns rather than over source it does not.
+#[test]
+fn no_remote_table_carries_the_link_basis() {
+    let (_dir, conn) = migrated_to(9);
+    let mut scanned = 0_usize;
+    for table in tables(&conn) {
+        if !table.starts_with("remote_") {
+            continue;
+        }
+        scanned += 1;
+        assert!(
+            !columns(&conn, &table)
+                .iter()
+                .any(|c| c == "remote_link_basis"),
+            "{table} carries remote_link_basis; the binding lives on project and nowhere else"
+        );
+    }
+    eprintln!("scanned {scanned} remote_* tables for a link basis");
+    assert_eq!(
+        scanned, 3,
+        "three remote_* tables, or the walk found nothing"
+    );
+}
+
+/// **AC-P2-25-25's schema-level half.** A rename moves `remote_key`; nothing keys a facts row on
+/// it, so the facts and their counts are untouched by one. (§25's behavioural half is p2-25's.)
+#[test]
+fn a_facts_row_survives_its_project_being_renamed() {
+    let (_dir, conn) = migrated_to(9);
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, remote_key, provider, provider_repo_id,
+                              remote_link_basis, created_at, updated_at)
+         VALUES ('widget', 'widget', 'forge.example/acme/widget', 'github', '42',
+                 'provider_id', 1, 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO remote_repo (provider, provider_repo_id, stars, open_issues, observed_at)
+         VALUES ('github', '42', 7, 3, 50)",
+        [],
+    )
+    .unwrap();
+
+    conn.execute(
+        "UPDATE project SET remote_key = 'forge.example/acme/gadget' WHERE provider_repo_id='42'",
+        [],
+    )
+    .unwrap();
+
+    let (stars, open_issues, observed_at): (i64, i64, i64) = conn
+        .query_row(
+            "SELECT stars, open_issues, observed_at FROM remote_repo
+              WHERE provider='github' AND provider_repo_id='42'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!((stars, open_issues, observed_at), (7, 3, 50));
+
+    // And the stable id is on `project` alone.
+    let elsewhere: Vec<String> = tables(&conn)
+        .into_iter()
+        .filter(|t| t != "project" && columns(&conn, t).iter().any(|c| c == "provider_repo_id"))
+        .collect();
+    assert_eq!(
+        elsewhere,
+        vec![
+            "remote_ci_run".to_owned(),
+            "remote_repo".to_owned(),
+            "remote_topic".to_owned()
+        ],
+        "only the fact cache references the pair"
+    );
+}
+
+/// The chain ends where the constant says it does, and the constant is the count the guard
+/// checked. Three statements of one value, so a migration registered without its bump is red.
+#[test]
+fn the_supported_version_is_nine_and_the_chain_reaches_it() {
+    assert_eq!(SUPPORTED_SCHEMA_VERSION, 9);
+    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), 9);
+    let (_dir, conn) = migrated_to(MIGRATIONS.len());
+    assert_eq!(schema_version(&conn).unwrap(), 9);
+}

@@ -198,3 +198,65 @@ UPDATE sqlite_sequence
  WHERE name = 'project'
    AND (SELECT seq FROM project_seq) > seq;
 DROP TABLE project_seq;
+
+-- §25.7's three fact tables. **Keyed `(provider, provider_repo_id)`, never on `remote_key`**
+-- (§22.9): the forge's stable id survives a rename, a transfer and a host alias, so the facts do
+-- too, and `remote_key` is deliberately non-unique because two live projects can legitimately
+-- carry one.
+--
+-- They are a fact cache with **no identity role**. The binding that says *this project row is
+-- that forge repository* — `provider`, `provider_repo_id`, `remote_link_basis` — lives on
+-- `project` above; these rows reference it and are not a second home for it, which is why none
+-- of them carries a `remote_link_basis` column.
+--
+-- This plan creates them and writes **no row** into any of them: §21 writes them per listing
+-- page and §25 reads them. `fork_parent_remote_key` is created here and written there (§22.8):
+-- it is a rendered forge fact the matcher never reads, so it takes this row's observation clock.
+--
+-- Every `*_at` is nullable-means-unknown. A `200` writes a value and its clock together, a `304`
+-- confirms both, and a `403` or `404` dates neither.
+CREATE TABLE remote_repo (
+  provider               TEXT NOT NULL,
+  provider_repo_id       TEXT NOT NULL,
+  visibility             TEXT,
+  description            TEXT,
+  fork_parent_remote_key TEXT,
+  stars                  INTEGER,
+  open_issues            INTEGER,
+  good_first_issues      INTEGER,
+  open_prs               INTEGER,
+  open_prs_from_user     INTEGER,
+  permitted              INTEGER NOT NULL DEFAULT 1,
+  observed_at            INTEGER,
+  etag                   TEXT,
+  -- The Actions read has its own clock and its own validator; one call that did not observe the
+  -- other's value must not move it. There is no `etag_observed_at`: an ETag is never rendered as
+  -- a time (A15).
+  ci_observed_at         INTEGER,
+  ci_etag                TEXT,
+  PRIMARY KEY (provider, provider_repo_id)
+) STRICT;
+
+CREATE TABLE remote_topic (
+  provider         TEXT NOT NULL,
+  provider_repo_id TEXT NOT NULL,
+  topic            TEXT NOT NULL,
+  PRIMARY KEY (provider, provider_repo_id, topic)
+) STRICT, WITHOUT ROWID;
+
+-- At most five rows per pair, trimmed by §21.
+--
+-- `conclusion` is TEXT NULL with **no CHECK**: the vocabulary belongs to the forge, and a closed
+-- mirror of a third party's vocabulary is R26 by construction — a DDL CHECK that rejects the
+-- values the product's own source will one day emit.
+CREATE TABLE remote_ci_run (
+  provider         TEXT NOT NULL,
+  provider_repo_id TEXT NOT NULL,
+  run_id           INTEGER NOT NULL,
+  workflow_name    TEXT NOT NULL,
+  conclusion       TEXT,
+  branch           TEXT NOT NULL,
+  run_number       INTEGER NOT NULL,
+  started_at       INTEGER,
+  PRIMARY KEY (provider, provider_repo_id, run_id)
+) STRICT;
