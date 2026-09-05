@@ -353,7 +353,7 @@ fn error_from_bad_poll() -> codotheca_core::accounts::device::ConnectError {
 #[derive(Debug)]
 struct StoreGrantSink {
     token_ref: String,
-    grants: Mutex<Vec<Vec<String>>>,
+    grants: Mutex<Vec<Option<Vec<String>>>>,
 }
 
 impl StoreGrantSink {
@@ -760,11 +760,7 @@ fn the_production_sink_writes_the_keychain_before_the_row() {
             Arc::clone(&transport) as Arc<dyn HttpTransport>,
             codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
         ));
-    let sink = codotheca_core::accounts::pump::IndexConnectSink::new(
-        Arc::clone(&index),
-        provider,
-        codotheca_core::protocol::ScopeTier::Public,
-    );
+    let sink = codotheca_core::accounts::pump::IndexConnectSink::new(Arc::clone(&index), provider);
 
     let tokens = FakeTokenStore::available();
     sink.connect_granted(
@@ -772,7 +768,7 @@ fn the_production_sink_writes_the_keychain_before_the_row() {
         GrantedToken {
             host: "forge.example.invalid".to_owned(),
             token: codotheca_core::accounts::keychain::SecretToken::new(ACCESS_SENTINEL.to_owned()),
-            scopes: vec!["read:user".to_owned(), "an:invented:scope".to_owned()],
+            scopes: Some(vec!["read:user".to_owned(), "an:invented:scope".to_owned()]),
             granted_at: 2_000,
         },
     )
@@ -818,11 +814,7 @@ fn a_failed_keychain_store_writes_no_account_row() {
             Arc::clone(&transport) as Arc<dyn HttpTransport>,
             codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
         ));
-    let sink = codotheca_core::accounts::pump::IndexConnectSink::new(
-        Arc::clone(&index),
-        provider,
-        codotheca_core::protocol::ScopeTier::Public,
-    );
+    let sink = codotheca_core::accounts::pump::IndexConnectSink::new(Arc::clone(&index), provider);
 
     let tokens = FakeTokenStore::refusing_store();
     let outcome = sink.connect_granted(
@@ -830,7 +822,7 @@ fn a_failed_keychain_store_writes_no_account_row() {
         GrantedToken {
             host: "forge.example.invalid".to_owned(),
             token: codotheca_core::accounts::keychain::SecretToken::new(ACCESS_SENTINEL.to_owned()),
-            scopes: vec!["read:user".to_owned()],
+            scopes: Some(vec!["read:user".to_owned()]),
             granted_at: 2_000,
         },
     );
@@ -842,4 +834,238 @@ fn a_failed_keychain_store_writes_no_account_row() {
         .query_row("SELECT count(*) FROM account", [], |row| row.get(0))
         .expect("countable");
     assert_eq!(rows, 0, "the row was written before the keychain succeeded");
+}
+
+/// A grant the core cannot store **ends the flow**.
+///
+/// The device code is single-use and has just been redeemed, so every further poll can only
+/// fail. A pump that left the flow live spun for the code's whole lifetime and then reported
+/// `expired` — the wrong reason, from the wrong subsystem. Nothing is stored, so `granted` is
+/// never emitted either.
+#[test]
+fn a_refused_sink_ends_the_flow_instead_of_polling_a_redeemed_code() {
+    let transport = Arc::new(FakeTransport::new());
+    transport.push(response(&json!({
+        "device_code": DEVICE_SENTINEL,
+        "user_code": "REFUSED-CODE",
+        "verification_uri": "https://example.invalid/device",
+        "expires_in": 6,
+        "interval": 1
+    })));
+    transport.push(response(&json!({
+        "access_token": ACCESS_SENTINEL,
+        "scope": "read:user",
+        "token_type": "bearer"
+    })));
+    let clock = Arc::new(FakeClock::new(1_000));
+    let events = Arc::new(RecordingEvents::new(Arc::clone(&clock) as Arc<dyn Clock>));
+    let tokens = Arc::new(FakeTokenStore::available());
+    let sink = Arc::new(RefusingSink::new());
+    let pump = ConnectPump::start(deps(
+        Arc::clone(&transport) as Arc<dyn HttpTransport>,
+        Arc::clone(&clock) as Arc<dyn Clock>,
+        Arc::clone(&events) as Arc<dyn EventSink>,
+        Arc::clone(&tokens) as Arc<dyn TokenStore>,
+        Arc::clone(&sink) as Arc<dyn ConnectSink>,
+    ));
+
+    sink.wait_for_call();
+    // `FakeClock::sleep` returns at once, so a flow left live polls its whole six seconds in
+    // microseconds. The window only has to be long enough for a loop that never sleeps.
+    let after = requests_after(&transport, 2, Duration::from_millis(400));
+    pump.stop();
+
+    assert_eq!(
+        after, 2,
+        "the redeemed code was polled again after the sink refused it"
+    );
+    assert!(
+        pump.grant(clock.now_unix()).is_none(),
+        "a redeemed code stayed live"
+    );
+    assert!(
+        !events.saw_stage(ConnectStage::Granted),
+        "nothing was stored, so nothing may be reported as granted"
+    );
+    assert!(
+        !events.saw_stage(ConnectStage::Expired),
+        "the flow ended because the store refused it, not because the code expired"
+    );
+    assert!(tokens.entry_names().is_empty());
+}
+
+/// **The tier is the one the server granted, never the one the request asked for.**
+///
+/// The upgrade requests the private set and the user may grant less. Recording `private` because
+/// it was requested claims an access the token does not have, which is what §20.3's two tiers
+/// exist to surface.
+#[test]
+fn the_recorded_tier_comes_from_the_grant_and_not_from_the_request() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let index = Arc::new(Mutex::new(
+        codotheca_core::index::Index::open_at(dir.path(), 1_000).expect("index opens"),
+    ));
+    let account = {
+        let mut guard = index.lock().unwrap_or_else(PoisonError::into_inner);
+        let tx = guard.conn_mut().transaction().expect("a transaction");
+        let id = codotheca_core::accounts::store::insert_account(
+            &tx,
+            &codotheca_core::accounts::store::NewAccount {
+                provider: "github".to_owned(),
+                host: "github.com".to_owned(),
+                login: "octo".to_owned(),
+                display_name: None,
+                auth_kind: codotheca_core::protocol::AuthKind::Device,
+                scope_tier: codotheca_core::protocol::ScopeTier::Public,
+                granted_scopes: Vec::new(),
+                token_ref: "github:github.com:octo".to_owned(),
+            },
+            1_000,
+        )
+        .expect("the account inserts");
+        tx.commit().expect("the insert commits");
+        id
+    };
+
+    let transport = Arc::new(FakeTransport::new());
+    transport.push(response(&json!({ "login": "octo", "name": null })));
+    let provider: Arc<dyn codotheca_core::provider::Provider> =
+        Arc::new(codotheca_core::provider::GitHubProvider::new(
+            Arc::clone(&transport) as Arc<dyn HttpTransport>,
+            codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
+        ));
+    let sink = codotheca_core::accounts::pump::IndexConnectSink::upgrading(
+        Arc::clone(&index),
+        provider,
+        account,
+        "github:github.com:octo".to_owned(),
+    );
+
+    let tokens = FakeTokenStore::available();
+    sink.connect_granted(
+        &tokens,
+        GrantedToken {
+            host: "github.com".to_owned(),
+            token: codotheca_core::accounts::keychain::SecretToken::new(ACCESS_SENTINEL.to_owned()),
+            // The upgrade asked for the private set; this is what came back.
+            scopes: Some(vec!["read:user".to_owned()]),
+            granted_at: 2_000,
+        },
+    )
+    .expect("the upgrade records");
+
+    let guard = index.lock().unwrap_or_else(PoisonError::into_inner);
+    let tier: String = guard
+        .conn()
+        .query_row("SELECT scope_tier FROM account", [], |row| row.get(0))
+        .expect("exactly one account row");
+    assert_eq!(
+        tier, "public",
+        "a narrower grant was recorded as the tier that was requested"
+    );
+}
+
+/// A token response with **no `scope` field** states no grant, which is unknown — not an empty
+/// one. `Some(vec![])` is a field that was present and empty; the two are different facts.
+#[test]
+fn a_token_response_naming_no_scope_is_unknown_not_an_empty_grant() {
+    let transport = FakeTransport::new();
+    transport.push(response(&json!({
+        "device_code": DEVICE_SENTINEL,
+        "user_code": "NO-SCOPE-CODE",
+        "verification_uri": "https://example.invalid/device",
+        "expires_in": 60,
+        "interval": 1
+    })));
+    transport.push(response(&json!({
+        "access_token": ACCESS_SENTINEL,
+        "token_type": "bearer"
+    })));
+    transport.push(response(&json!({
+        "access_token": ACCESS_SENTINEL,
+        "scope": "",
+        "token_type": "bearer"
+    })));
+    let flow = request_device_code(&transport, HOST, CLIENT_ID, SCOPES_PUBLIC, 1_000)
+        .expect("device flow starts");
+
+    match poll_once(&transport, HOST, CLIENT_ID, &flow).expect("the poll answers") {
+        codotheca_core::accounts::device::PollOutcome::Granted(_, scopes) => {
+            assert_eq!(scopes, None, "an absent scope field is unknown");
+        }
+        other => panic!("expected a grant, got {other:?}"),
+    }
+    match poll_once(&transport, HOST, CLIENT_ID, &flow).expect("the poll answers") {
+        codotheca_core::accounts::device::PollOutcome::Granted(_, scopes) => {
+            assert_eq!(
+                scopes,
+                Some(Vec::new()),
+                "a present but empty scope field is an observed empty grant"
+            );
+        }
+        other => panic!("expected a grant, got {other:?}"),
+    }
+}
+
+/// A sink that refuses every grant, the way a locked keychain does.
+#[derive(Debug)]
+struct RefusingSink {
+    calls: Mutex<usize>,
+    called: Condvar,
+}
+
+impl RefusingSink {
+    #[must_use]
+    fn new() -> Self {
+        Self {
+            calls: Mutex::new(0),
+            called: Condvar::new(),
+        }
+    }
+
+    fn wait_for_call(&self) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        while *calls == 0 {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(!remaining.is_zero(), "the sink was never called");
+            let (next, _) = self
+                .called
+                .wait_timeout(calls, remaining)
+                .unwrap_or_else(PoisonError::into_inner);
+            calls = next;
+        }
+    }
+}
+
+impl ConnectSink for RefusingSink {
+    fn connect_granted(
+        &self,
+        _tokens: &dyn TokenStore,
+        _grant: GrantedToken,
+    ) -> Result<(), codotheca_core::accounts::pump::ConnectSinkError> {
+        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        *calls += 1;
+        self.called.notify_all();
+        Err(codotheca_core::accounts::pump::ConnectSinkError::Refused {
+            reason: "the fixture refuses every grant".to_owned(),
+        })
+    }
+}
+
+/// The request count once it has stopped growing, or once `window` has elapsed.
+///
+/// Returns early the moment it exceeds `expected`, so the failing case costs nothing and only a
+/// passing run waits out the window.
+#[must_use]
+fn requests_after(transport: &FakeTransport, expected: usize, window: Duration) -> usize {
+    let deadline = Instant::now() + window;
+    while Instant::now() < deadline {
+        let count = transport.request_count();
+        if count > expected {
+            return count;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    transport.request_count()
 }

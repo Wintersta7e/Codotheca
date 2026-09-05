@@ -294,7 +294,6 @@ impl CoreHandler {
         let sink = crate::accounts::pump::IndexConnectSink::new(
             Arc::clone(&self.index),
             Arc::clone(&self.provider),
-            crate::protocol::ScopeTier::Public,
         );
         crate::accounts::pump::ConnectPumpDeps {
             transport: Arc::clone(&self.http),

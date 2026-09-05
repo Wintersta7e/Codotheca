@@ -37,7 +37,8 @@ impl std::fmt::Debug for ConnectPumpDeps {
 pub struct GrantedToken {
     pub host: String,
     pub token: SecretToken,
-    pub scopes: Vec<String>,
+    /// The grant the token response named, or `None` when it named none — which is unknown.
+    pub scopes: Option<Vec<String>>,
     pub granted_at: i64,
 }
 
@@ -236,7 +237,7 @@ impl ConnectPumpInner {
         }
     }
 
-    fn granted(&self, token: SecretToken, scopes: Vec<String>) {
+    fn granted(&self, token: SecretToken, scopes: Option<Vec<String>>) {
         if self.is_stopped() {
             self.finish(ConnectStage::Cancelled);
             return;
@@ -247,14 +248,28 @@ impl ConnectPumpInner {
             scopes,
             granted_at: self.deps.clock.now_unix(),
         };
-        if self
+        match self
             .deps
             .sink
             .connect_granted(self.deps.tokens.as_ref(), grant)
-            .is_ok()
-            && !self.is_stopped()
         {
-            self.finish(ConnectStage::Granted);
+            Ok(()) => {
+                if !self.is_stopped() {
+                    self.finish(ConnectStage::Granted);
+                }
+            }
+            Err(error) => {
+                // The device code has been redeemed and is single-use, so every further poll can
+                // only fail. Leaving the flow live spun for the code's whole lifetime and then
+                // reported `expired`, which names the wrong reason for the wrong subsystem.
+                //
+                // No `ConnectStage` says "the forge granted it and the core could not store it" —
+                // `denied` is the user refusing and `expired` is the deadline — so the reason goes
+                // to the rolling log and the flow simply ends. Naming it on the wire needs a
+                // seventh variant, which is a §20.8 change and not this file's to make.
+                eprintln!("accounts: the granted token could not be recorded: {error}");
+                drop(lock(&self.state).flow.take());
+            }
         }
     }
 
@@ -378,7 +393,9 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordedConnectGrant {
     pub host: String,
-    pub scopes: Vec<String>,
+    /// `None` when the token response named no `scope` field — recorded as it arrived, so a test
+    /// can tell an unstated grant from an empty one.
+    pub scopes: Option<Vec<String>>,
     pub granted_at: i64,
 }
 
@@ -446,10 +463,12 @@ impl ConnectSink for RecordingConnectSink {
 /// **It takes the index lock only around the write that follows the response** (R75). The
 /// network call happens on the pump thread before this is reached, so no forge round trip is
 /// ever made while the process's one SQLite mutex is held.
+/// **It carries no requested tier.** The tier is derived from the grant the server returned, so
+/// holding the requested one here would be a second opinion about the same value — and the one
+/// that is wrong whenever the user grants less than was asked for.
 pub struct IndexConnectSink {
     index: Arc<Mutex<crate::index::Index>>,
     provider: Arc<dyn crate::provider::Provider>,
-    scope_tier: crate::protocol::ScopeTier,
     /// Set when this flow is a **scope upgrade** of an existing account rather than a new
     /// connection. §20.2: the new token replaces the old **in the same keychain entry**, and the
     /// tier, the grant and its observation time are rewritten together — so the row is updated,
@@ -460,7 +479,7 @@ pub struct IndexConnectSink {
 impl std::fmt::Debug for IndexConnectSink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IndexConnectSink")
-            .field("scope_tier", &self.scope_tier)
+            .field("upgrading", &self.upgrading)
             .finish_non_exhaustive()
     }
 }
@@ -470,12 +489,10 @@ impl IndexConnectSink {
     pub fn new(
         index: Arc<Mutex<crate::index::Index>>,
         provider: Arc<dyn crate::provider::Provider>,
-        scope_tier: crate::protocol::ScopeTier,
     ) -> Self {
         Self {
             index,
             provider,
-            scope_tier,
             upgrading: None,
         }
     }
@@ -491,7 +508,6 @@ impl IndexConnectSink {
         Self {
             index,
             provider,
-            scope_tier: crate::protocol::ScopeTier::Private,
             upgrading: Some((account, token_ref)),
         }
     }
@@ -513,6 +529,18 @@ impl ConnectSink for IndexConnectSink {
         let login = viewer.value.login;
         let display_name = viewer.value.display_name;
         let provider_id = self.provider.canonical_host().to_owned();
+        // The tier the **server** granted, never the one the request asked for. The upgrade asks
+        // for the private set and the user may grant less; writing `private` because it was
+        // requested claims an access the token does not have, which §20.3's two tiers exist to
+        // stop. `X-OAuth-Scopes` on the viewer response is the authority because it is read back
+        // from the API; the token response's own `scope` field is the fallback; neither present
+        // is unknown, and unknown takes the narrower tier rather than the over-claiming one.
+        let observed = viewer.granted_scopes.or(grant.scopes);
+        let scope_tier = observed.as_deref().map_or(
+            crate::protocol::ScopeTier::Public,
+            super::commands::tier_for,
+        );
+        let granted_scopes = observed.unwrap_or_default();
         // An upgrade reuses the account's existing entry name; a new connection composes one.
         let entry = match &self.upgrading {
             Some((_, token_ref)) => token_ref.clone(),
@@ -540,8 +568,8 @@ impl ConnectSink for IndexConnectSink {
             super::store::record_upgraded_scope(
                 &tx,
                 account,
-                crate::protocol::ScopeTier::Private,
-                &grant.scopes,
+                scope_tier,
+                &granted_scopes,
                 grant.granted_at,
             )
             .map_err(|error| ConnectSinkError::Refused {
@@ -562,9 +590,9 @@ impl ConnectSink for IndexConnectSink {
             login,
             display_name,
             auth_kind: crate::protocol::AuthKind::Device,
-            scope_tier: self.scope_tier,
+            scope_tier,
             // Verbatim from the server, never a source literal.
-            granted_scopes: grant.scopes,
+            granted_scopes,
             token_ref: entry.clone(),
         };
         let mut guard = self

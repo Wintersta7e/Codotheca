@@ -48,7 +48,12 @@ pub enum PollOutcome {
     SlowDown {
         interval_secs: u32,
     },
-    Granted(SecretToken, Vec<String>),
+    /// The token, and the scope set **the response actually named**.
+    ///
+    /// `None` is *the response carried no `scope` field*, which is unknown. `Some(vec![])` is a
+    /// field that was present and empty. Flattening the two writes an empty grant for an account
+    /// whose grant was never stated, which renders as "no scopes at all".
+    Granted(SecretToken, Option<Vec<String>>),
     Denied,
     Expired,
 }
@@ -226,7 +231,7 @@ pub fn poll_once(
         .ok_or_else(|| ConnectError::Decode("neither an error nor a token".to_owned()))?;
     Ok(PollOutcome::Granted(
         SecretToken::new(token),
-        split_scopes(field(&value, "scope").as_deref().unwrap_or_default()),
+        field(&value, "scope").as_deref().map(split_scopes),
     ))
 }
 

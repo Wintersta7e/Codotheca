@@ -268,7 +268,7 @@ pub fn connect_pat(
 /// by the user and may carry anything. `repo` is the scope that separates the tiers, and it is
 /// read **and** write — the forge offers no read-only variant, which is the fact §20.3's two-tier
 /// design exists to surface rather than hide.
-fn tier_for(granted: &[String]) -> ScopeTier {
+pub(crate) fn tier_for(granted: &[String]) -> ScopeTier {
     if granted.iter().any(|s| s == PRIVATE_TIER_MARKER) {
         ScopeTier::Private
     } else {
