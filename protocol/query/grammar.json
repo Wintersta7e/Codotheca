@@ -1,5 +1,5 @@
 {
-  "queryGrammarVersion": 1,
+  "queryGrammarVersion": 2,
   "fields": ["lang", "owner", "in", "is", "has", "touched", "size", "completion", "collection"],
   "is": [
     "dirty",

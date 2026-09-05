@@ -1,17 +1,17 @@
 {
   "corpusVersion": 1,
   "cases": [
-    { "name": "empty", "query": "", "ast": { "grammarVersion": 1, "terms": [], "ignored": [] } },
+    { "name": "empty", "query": "", "ast": { "grammarVersion": 2, "terms": [], "ignored": [] } },
     {
       "name": "whitespace only",
       "query": "   ",
-      "ast": { "grammarVersion": 1, "terms": [], "ignored": [] }
+      "ast": { "grammarVersion": 2, "terms": [], "ignored": [] }
     },
     {
       "name": "bare word lowercases",
       "query": "Codo",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "bare", "negated": false, "text": "codo" }],
         "ignored": []
       }
@@ -20,7 +20,7 @@
       "name": "bare word negated",
       "query": "-codo",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "bare", "negated": true, "text": "codo" }],
         "ignored": []
       }
@@ -29,7 +29,7 @@
       "name": "quoted bare word keeps its space",
       "query": "\"two words\"",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "bare", "negated": false, "text": "two words" }],
         "ignored": []
       }
@@ -38,7 +38,7 @@
       "name": "lang lowercases",
       "query": "lang:Rust",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [
           { "kind": "text", "negated": false, "field": "lang", "value": "rust", "quoted": false }
         ],
@@ -49,7 +49,7 @@
       "name": "owner",
       "query": "owner:someone",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [
           {
             "kind": "text",
@@ -66,7 +66,7 @@
       "name": "in quoted keeps case",
       "query": "in:\"Two Words\"",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [
           { "kind": "text", "negated": false, "field": "in", "value": "Two Words", "quoted": true }
         ],
@@ -77,7 +77,7 @@
       "name": "in wsl distro keeps the second colon",
       "query": "in:wsl:ubuntu",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [
           {
             "kind": "text",
@@ -94,7 +94,7 @@
       "name": "collection quoted",
       "query": "collection:\"side projects\"",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [
           {
             "kind": "text",
@@ -111,7 +111,7 @@
       "name": "is dirty",
       "query": "is:dirty",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "flag", "negated": false, "flag": "dirty" }],
         "ignored": []
       }
@@ -120,7 +120,7 @@
       "name": "is dirty negated",
       "query": "-is:dirty",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "flag", "negated": true, "flag": "dirty" }],
         "ignored": []
       }
@@ -129,7 +129,7 @@
       "name": "is new",
       "query": "is:new",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "flag", "negated": false, "flag": "new" }],
         "ignored": []
       }
@@ -138,7 +138,7 @@
       "name": "is mine is not a flag",
       "query": "is:mine",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [],
         "ignored": [{ "text": "is:mine", "reason": "malformedValue" }]
       }
@@ -147,7 +147,7 @@
       "name": "is notcloned",
       "query": "is:notcloned",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "flag", "negated": false, "flag": "notcloned" }],
         "ignored": []
       }
@@ -156,7 +156,7 @@
       "name": "is notcloned negated",
       "query": "-is:notcloned",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "flag", "negated": true, "flag": "notcloned" }],
         "ignored": []
       }
@@ -165,7 +165,7 @@
       "name": "the AST spells notcloned as one word in both engines",
       "query": "is:notCloned",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "flag", "negated": false, "flag": "notcloned" }],
         "ignored": []
       }
@@ -174,7 +174,7 @@
       "name": "is notcloned beside a working-copy term",
       "query": "is:notcloned -has:remote",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [
           { "kind": "flag", "negated": false, "flag": "notcloned" },
           { "kind": "has", "negated": true, "attribute": "remote" }
@@ -186,7 +186,7 @@
       "name": "is remote is not a flag",
       "query": "is:remote",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [],
         "ignored": [{ "text": "is:remote", "reason": "malformedValue" }]
       }
@@ -195,7 +195,7 @@
       "name": "has remote",
       "query": "has:remote",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "has", "negated": false, "attribute": "remote" }],
         "ignored": []
       }
@@ -204,7 +204,7 @@
       "name": "has stash negated",
       "query": "-has:stash",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "has", "negated": true, "attribute": "stash" }],
         "ignored": []
       }
@@ -213,7 +213,7 @@
       "name": "size greater than mb",
       "query": "size:>10mb",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "size", "negated": false, "op": "gt", "bytes": 10485760 }],
         "ignored": []
       }
@@ -222,7 +222,7 @@
       "name": "size less than kb",
       "query": "size:<512kb",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "size", "negated": false, "op": "lt", "bytes": 524288 }],
         "ignored": []
       }
@@ -231,7 +231,7 @@
       "name": "size gb",
       "query": "size:>2gb",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "size", "negated": false, "op": "gt", "bytes": 2147483648 }],
         "ignored": []
       }
@@ -240,7 +240,7 @@
       "name": "size without a unit is malformed",
       "query": "size:>10",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [],
         "ignored": [{ "text": "size:>10", "reason": "malformedValue" }]
       }
@@ -249,7 +249,7 @@
       "name": "touched months",
       "query": "touched:>6mo",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "touchedAge", "negated": false, "op": "gt", "days": 180 }],
         "ignored": []
       }
@@ -258,7 +258,7 @@
       "name": "touched days",
       "query": "touched:>365d",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "touchedAge", "negated": false, "op": "gt", "days": 365 }],
         "ignored": []
       }
@@ -267,7 +267,7 @@
       "name": "touched weeks",
       "query": "touched:<2w",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "touchedAge", "negated": false, "op": "lt", "days": 14 }],
         "ignored": []
       }
@@ -276,7 +276,7 @@
       "name": "touched years",
       "query": "touched:>1y",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "touchedAge", "negated": false, "op": "gt", "days": 365 }],
         "ignored": []
       }
@@ -285,7 +285,7 @@
       "name": "touched year literal",
       "query": "touched:2019",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "touchedYear", "negated": false, "year": 2019 }],
         "ignored": []
       }
@@ -294,7 +294,7 @@
       "name": "completion is dropped",
       "query": "completion:>5",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [],
         "ignored": [{ "text": "completion:>5", "reason": "notComputed" }]
       }
@@ -303,7 +303,7 @@
       "name": "unknown field is a soft error",
       "query": "nosuch:value",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [],
         "ignored": [{ "text": "nosuch:value", "reason": "unknownField" }]
       }
@@ -312,7 +312,7 @@
       "name": "unknown field does not stop the rest",
       "query": "nosuch:value is:dirty",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "flag", "negated": false, "flag": "dirty" }],
         "ignored": [{ "text": "nosuch:value", "reason": "unknownField" }]
       }
@@ -321,7 +321,7 @@
       "name": "url is free text",
       "query": "http://example.invalid",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "bare", "negated": false, "text": "http://example.invalid" }],
         "ignored": []
       }
@@ -330,7 +330,7 @@
       "name": "drive letter is free text",
       "query": "C:\\work",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "bare", "negated": false, "text": "c:\\work" }],
         "ignored": []
       }
@@ -339,7 +339,7 @@
       "name": "empty value is malformed",
       "query": "lang:",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [],
         "ignored": [{ "text": "lang:", "reason": "malformedValue" }]
       }
@@ -348,7 +348,7 @@
       "name": "escaped quote inside a value",
       "query": "owner:\"a \\\" b\"",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [
           { "kind": "text", "negated": false, "field": "owner", "value": "a \" b", "quoted": true }
         ],
@@ -359,7 +359,7 @@
       "name": "three terms AND together",
       "query": "lang:rust is:dirty touched:>6mo",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [
           { "kind": "text", "negated": false, "field": "lang", "value": "rust", "quoted": false },
           { "kind": "flag", "negated": false, "flag": "dirty" },
@@ -372,7 +372,7 @@
       "name": "OR is free text, not an operator",
       "query": "lang:rust OR is:dirty",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [
           { "kind": "text", "negated": false, "field": "lang", "value": "rust", "quoted": false },
           { "kind": "bare", "negated": false, "text": "or" },
@@ -385,7 +385,7 @@
       "name": "field name is case-insensitive",
       "query": "IS:DIRTY",
       "ast": {
-        "grammarVersion": 1,
+        "grammarVersion": 2,
         "terms": [{ "kind": "flag", "negated": false, "flag": "dirty" }],
         "ignored": []
       }

@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { queryHasField, queryTermCount } from './ast.js';
+import { QUERY_GRAMMAR_VERSION } from './grammar.js';
 import { parseQuery } from './parse.js';
 
 describe('parseQuery', () => {
   it('returns an empty AST for an empty query', () => {
-    expect(parseQuery('   ')).toEqual({ grammarVersion: 1, terms: [], ignored: [] });
+    expect(parseQuery('   ')).toEqual({
+      grammarVersion: QUERY_GRAMMAR_VERSION,
+      terms: [],
+      ignored: [],
+    });
   });
 
   it('parses a bare word as free text, lowercased', () => {
@@ -97,7 +102,10 @@ describe('parseQuery', () => {
   });
 
   it('stamps the grammar version', () => {
-    expect(parseQuery('is:dirty').grammarVersion).toBe(1);
+    // The constant, never a literal: the parser stamps it into every AST it emits, so a literal
+    // here is the same value stated a fourth time and drifts on every bump.
+    expect(parseQuery('is:dirty').grammarVersion).toBe(QUERY_GRAMMAR_VERSION);
+    expect(QUERY_GRAMMAR_VERSION).toBeGreaterThan(0);
   });
 });
 

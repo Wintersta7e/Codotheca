@@ -1,5 +1,5 @@
 /** §8.3's `query_grammar_version`. Adding an enum value bumps it; removing a field is forbidden. */
-export const QUERY_GRAMMAR_VERSION = 1;
+export const QUERY_GRAMMAR_VERSION = 2;
 
 export const QUERY_FIELDS = [
   'lang',

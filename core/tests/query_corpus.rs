@@ -22,7 +22,14 @@ fn corpus() -> Value {
 fn rust_parser_matches_every_corpus_case() {
     let doc = corpus();
     let cases = doc["cases"].as_array().expect("cases is an array");
-    assert!(cases.len() >= 20, "the corpus must exercise every branch");
+    // AC-P2-23-8: the floor rises with the file, and the count is **printed**, so a run that
+    // compared fewer cases than the corpus holds is visible rather than merely green.
+    eprintln!("query_corpus: compared {} case(s)", cases.len());
+    assert!(
+        cases.len() >= 40,
+        "the corpus must exercise every branch; compared {}",
+        cases.len()
+    );
 
     let mut failures: Vec<String> = Vec::new();
     for case in cases {
