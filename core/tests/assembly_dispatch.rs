@@ -6,6 +6,7 @@
 )]
 //! The loop's side of the composition: one publisher, no deadlock, a clean exit.
 
+use codotheca_core::accounts::keychain::TokenStore as _;
 use codotheca_core::proto::dispatch::{run_loop, CommandFailure, CommandHandler, LoopExit};
 use codotheca_core::proto::pubsub::{EventSink, Publisher, PublisherSink, TOPIC_HIGH_WATER};
 use codotheca_core::proto::transport::{FrameSink, Transport, WRITER_CAPACITY};
@@ -226,7 +227,14 @@ mod corehandler {
 
         let http: Arc<dyn codotheca_core::http::HttpTransport> =
             Arc::new(codotheca_core::testing::FakeTransport::new());
-        let handler = handler_over(dir, &index, &events, &clock, http);
+        let handler = handler_over(
+            dir,
+            &index,
+            &events,
+            &clock,
+            http,
+            Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
+        );
         (handler, events, clock)
     }
 
@@ -238,6 +246,7 @@ mod corehandler {
         events: &Arc<PublisherSink>,
         clock: &Arc<codotheca_core::testing::FakeClock>,
         http: Arc<dyn codotheca_core::http::HttpTransport>,
+        tokens: Arc<dyn codotheca_core::accounts::keychain::TokenStore>,
     ) -> CoreHandler {
         let clock = Arc::clone(clock);
         let index = Arc::clone(index);
@@ -250,7 +259,7 @@ mod corehandler {
                 Arc::clone(&http),
                 codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
             )),
-            tokens: Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
+            tokens,
             http,
             // Non-empty, so a test drives the flow's real path rather than the
             // no-application-registered refusal that returns before any request is made.
@@ -335,6 +344,7 @@ mod corehandler {
             &events,
             &clock,
             Arc::clone(&probe) as Arc<dyn codotheca_core::http::HttpTransport>,
+            Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
         );
 
         // The command's own outcome is beside the point: the client id is empty in this build,
@@ -356,6 +366,83 @@ mod corehandler {
         );
     }
 
+    /// R75 again, for the command that already had this defect when the ruling landed:
+    /// `accounts.setOrgEnabled` preflights the forge before it writes, and the guarded form held
+    /// the process's one SQLite mutex for as long as `ACCOUNT_LIMITS.total_secs` — thirty
+    /// seconds in which no other command could be answered.
+    #[test]
+    fn setting_an_org_gate_holds_no_index_lock_while_it_preflights() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let index = Arc::new(std::sync::Mutex::new(
+            codotheca_core::index::Index::open_at(dir.path(), NOW).expect("index opens"),
+        ));
+        // One account, so the preflight gets as far as the network.
+        {
+            let guard = index.lock().expect("lock");
+            let tx = guard.conn().unchecked_transaction().expect("tx");
+            codotheca_core::accounts::store::insert_account(
+                &tx,
+                &codotheca_core::accounts::store::NewAccount {
+                    provider: "github".to_owned(),
+                    host: "forge.example.invalid".to_owned(),
+                    login: "octo".to_owned(),
+                    display_name: None,
+                    auth_kind: codotheca_core::protocol::AuthKind::Device,
+                    scope_tier: codotheca_core::protocol::ScopeTier::Private,
+                    granted_scopes: vec![],
+                    token_ref: "github:forge.example.invalid:octo".to_owned(),
+                },
+                NOW,
+            )
+            .expect("account inserts");
+            tx.commit().expect("commit");
+        }
+
+        let events = Arc::new(PublisherSink::new(Publisher::detached()));
+        let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
+        let probe = Arc::new(LockProbingTransport {
+            index: Arc::clone(&index),
+            lock_was_free: std::sync::atomic::AtomicBool::new(false),
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let mut h = handler_over(
+            dir.path(),
+            &index,
+            &events,
+            &clock,
+            Arc::clone(&probe) as Arc<dyn codotheca_core::http::HttpTransport>,
+            // A keychain that answers, so the preflight reaches the transport rather than
+            // stopping at the token read — the test's own guard caught that first.
+            {
+                let tokens = codotheca_core::testing::FakeTokenStore::available();
+                tokens
+                    .store(
+                        "github:forge.example.invalid:octo",
+                        &codotheca_core::accounts::keychain::SecretToken::new(
+                            "sentinel".to_owned(),
+                        ),
+                    )
+                    .expect("stored");
+                Arc::new(tokens)
+            },
+        );
+        let _ = h.handle(
+            "accounts.setOrgEnabled",
+            serde_json::json!({ "accountId": 1, "orgLogin": "an-org", "enabled": true }),
+        );
+
+        assert!(
+            probe.calls.load(std::sync::atomic::Ordering::SeqCst) > 0,
+            "the preflight never reached the transport, so the lock was never at risk"
+        );
+        assert!(
+            probe
+                .lock_was_free
+                .load(std::sync::atomic::Ordering::SeqCst),
+            "accounts.setOrgEnabled preflighted the forge with the index lock held"
+        );
+    }
+
     /// The other half, stated positively: a command that only reads a row **does** take the
     /// guard, so the split above is a split and not a blanket exemption.
     #[test]
@@ -372,6 +459,14 @@ mod corehandler {
                     .expect("routable")
             ),
             codotheca_core::assembly::route::Route::AccountsNet
+        );
+        assert_eq!(
+            codotheca_core::assembly::route::route(
+                codotheca_core::assembly::route::command_name("accounts.setOrgEnabled")
+                    .expect("routable")
+            ),
+            codotheca_core::assembly::route::Route::AccountsNet,
+            "setOrgEnabled preflights the forge, so it takes no guard"
         );
     }
 

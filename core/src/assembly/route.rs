@@ -150,18 +150,20 @@ pub fn route(command: CommandName) -> Route {
 
         // The three §20.8 reads and the org gate, answered by `crate::accounts` **under the
         // index guard**: each only reads or writes a row.
-        CommandName::AccountsList
-        | CommandName::AccountsOrgs
-        | CommandName::AccountsSetOrgEnabled
-        | CommandName::AccountsDisconnect => Route::Accounts,
+        CommandName::AccountsList | CommandName::AccountsOrgs | CommandName::AccountsDisconnect => {
+            Route::Accounts
+        }
 
         // R75: the two that reach the network are answered **without the index lock**, like
         // `Route::Scan`. Holding the process's one SQLite mutex across a forge round trip would
         // stop every other command for as long as `ACCOUNT_LIMITS.total_secs`.
+        // R75: `setOrgEnabled` preflights the forge before it writes, so it belongs here too —
+        // the guarded form held the one SQLite mutex across a thirty-second call.
         CommandName::AccountsConnect
         | CommandName::AccountsCancelConnect
         | CommandName::AccountsConnectPat
-        | CommandName::AccountsUpgradeScope => Route::AccountsNet,
+        | CommandName::AccountsUpgradeScope
+        | CommandName::AccountsSetOrgEnabled => Route::AccountsNet,
     }
 }
 

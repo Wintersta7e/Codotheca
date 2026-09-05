@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use codotheca_core::accounts::commands::is_github_sso_required;
+use codotheca_core::accounts::commands::{is_github_sso_required, set_org_enabled_off_lock};
 use codotheca_core::accounts::keychain::{SecretToken, TokenStore};
 use codotheca_core::accounts::store::{
     api_base_for, insert_account, list_accounts, list_orgs, record_observed_scopes,
@@ -408,25 +408,28 @@ fn sso_403_sets_unauthorized_keeps_rows_and_raises_sso_required() {
         normalise_headers([("X-GitHub-SSO", "required")]),
         b"{}",
     ));
-    let mut ctx = ctx(&index, &provider, &tokens);
-    let failure = dispatch(
-        &mut ctx,
-        "accounts.setOrgEnabled",
+    let index = Arc::new(Mutex::new(index));
+    let failure = set_org_enabled_off_lock(
+        &index,
+        &provider,
+        &tokens,
         serde_json::json!({
             "accountId": account,
             "orgLogin": "sso-org",
             "enabled": true
         }),
+        NOW,
     )
     .expect_err("SSO requirement refuses enabling");
 
     assert_eq!(failure.code, ErrorCode::SsoRequired);
+    let guard = index.lock().unwrap_or_else(PoisonError::into_inner);
     assert_eq!(
-        sso_state(&index, account, "sso-org"),
+        sso_state(&guard, account, "sso-org"),
         Some(SsoState::Unauthorized)
     );
-    assert_eq!(account_org_count(&index, account, "sso-org"), 1);
-    assert_eq!(project_ids(&index), project_ids_before);
+    assert_eq!(account_org_count(&guard, account, "sso-org"), 1);
+    assert_eq!(project_ids(&guard), project_ids_before);
 }
 
 #[test]
@@ -448,15 +451,17 @@ fn forbidden_without_sso_header_does_not_mark_the_org_unauthorized() {
 
     let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
     transport.push(response(403, Vec::new(), b"{}"));
-    let mut ctx = ctx(&index, &provider, &tokens);
-    let failure = dispatch(
-        &mut ctx,
-        "accounts.setOrgEnabled",
+    let index = Arc::new(Mutex::new(index));
+    let failure = set_org_enabled_off_lock(
+        &index,
+        &provider,
+        &tokens,
         serde_json::json!({
             "accountId": account,
             "orgLogin": "plain-forbidden-org",
             "enabled": true
         }),
+        NOW,
     )
     .expect_err("plain 403 refuses enabling");
 
@@ -465,7 +470,8 @@ fn forbidden_without_sso_header_does_not_mark_the_org_unauthorized() {
         ErrorCode::SsoRequired,
         "403 alone is not an SSO requirement"
     );
-    assert_eq!(sso_state(&index, account, "plain-forbidden-org"), None);
+    let guard = index.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(sso_state(&guard, account, "plain-forbidden-org"), None);
 }
 
 #[test]
@@ -487,15 +493,17 @@ fn token_invalid_from_provider_raises_token_invalid() {
 
     let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
     transport.push(response(401, Vec::new(), b"{}"));
-    let mut ctx = ctx(&index, &provider, &tokens);
-    let failure = dispatch(
-        &mut ctx,
-        "accounts.setOrgEnabled",
+    let index = Arc::new(Mutex::new(index));
+    let failure = set_org_enabled_off_lock(
+        &index,
+        &provider,
+        &tokens,
         serde_json::json!({
             "accountId": account,
             "orgLogin": "expired-org",
             "enabled": true
         }),
+        NOW,
     )
     .expect_err("invalid token refuses enabling");
 
@@ -525,20 +533,23 @@ fn enabling_an_org_records_observed_scopes_from_the_provider_response() {
         normalise_headers([("X-OAuth-Scopes", "fresh:command, comma,scope")]),
         b"[]",
     ));
-    let mut ctx = ctx(&index, &provider, &tokens);
-    let result = dispatch(
-        &mut ctx,
-        "accounts.setOrgEnabled",
+    let index = Arc::new(Mutex::new(index));
+    let result = set_org_enabled_off_lock(
+        &index,
+        &provider,
+        &tokens,
         serde_json::json!({
             "accountId": account,
             "orgLogin": "scope-command-org",
             "enabled": true
         }),
+        NOW,
     )
     .expect("enable succeeds");
 
-    assert_eq!(result["enabled"], serde_json::Value::Bool(true));
-    let rows = list_accounts(index.conn()).expect("list accounts");
+    assert!(result.enabled);
+    let guard = index.lock().unwrap_or_else(PoisonError::into_inner);
+    let rows = list_accounts(guard.conn()).expect("list accounts");
     assert_eq!(
         rows[0].granted_scopes,
         vec![

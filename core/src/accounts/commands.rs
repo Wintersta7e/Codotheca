@@ -37,26 +37,71 @@ pub fn handle_orgs(
     store::list_orgs(ctx.index.conn(), args.account_id).map_err(|error| account_failure(&error))
 }
 
-/// Handles `accounts.setOrgEnabled`.
+/// §20.4's org gate, answered **off the index lock** (R75).
+///
+/// Enabling an org preflights the forge, and that call is bounded only by
+/// `ACCOUNT_LIMITS.total_secs` — thirty seconds during which the guarded form of this command
+/// held the process's one SQLite mutex and no other command could be answered. The preflight runs
+/// with no guard; the two writes are short transactions and take the lock only after it returns.
 ///
 /// # Errors
-/// Fails when arguments are malformed, the account/org row does not exist, the token cannot be
-/// read, the provider refuses the preflight, or the account store cannot be written.
-pub fn handle_set_org_enabled(
-    ctx: &AccountsCtx<'_>,
+/// Malformed arguments, a missing account or org, an unreadable token, a refused preflight, or a
+/// write the store rejects.
+pub fn set_org_enabled_off_lock(
+    index: &Arc<Mutex<crate::index::Index>>,
+    provider: &dyn crate::provider::Provider,
+    tokens: &dyn TokenStore,
     args: Value,
+    now: i64,
 ) -> Result<AccountOrg, CommandFailure> {
     let args: AccountsSetOrgEnabledArgs = parse_args(args)?;
+
+    // 1. The forge, with no lock held. The read of the account row it needs is its own brief
+    //    lock, taken and released before the network call.
     let observed_scopes = if args.enabled {
-        preflight_enable(ctx, args.account_id, &args.org_login)?
+        let row = {
+            let guard = index
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            store::load_account(guard.conn(), args.account_id)
+                .map_err(|error| account_failure(&error))?
+        };
+        let token = tokens
+            .read(&row.token_ref)
+            .map_err(|error| keychain_failure(&error))?;
+        match provider.list_repos(&token, None) {
+            Ok(observed) => observed.granted_scopes,
+            Err(error) if is_github_sso_required(&error) => {
+                let guard = index
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let _tx_guard = TxGuard::enter();
+                let tx = guard.conn().unchecked_transaction().map_err(internal)?;
+                store::set_org_sso_state(
+                    &tx,
+                    args.account_id,
+                    &args.org_login,
+                    SsoState::Unauthorized,
+                    now,
+                )
+                .map_err(|e| account_failure(&e))?;
+                tx.commit().map_err(internal)?;
+                return Err(coded_failure(ErrorCode::SsoRequired, error.to_string()));
+            }
+            Err(error) => return Err(provider_failure(&error)),
+        }
     } else {
         None
     };
 
-    let _guard = TxGuard::enter();
-    let tx = ctx.index.conn().unchecked_transaction().map_err(internal)?;
+    // 2. The writes, in one short transaction, with the lock taken only now.
+    let guard = index
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _tx_guard = TxGuard::enter();
+    let tx = guard.conn().unchecked_transaction().map_err(internal)?;
     if let Some(scopes) = observed_scopes.as_deref() {
-        store::record_observed_scopes(&tx, args.account_id, scopes, ctx.now)
+        store::record_observed_scopes(&tx, args.account_id, scopes, now)
             .map_err(|error| account_failure(&error))?;
     }
     let org = store::set_org_enabled(&tx, args.account_id, &args.org_login, args.enabled)
@@ -82,40 +127,6 @@ pub fn is_github_sso_required(error: &ProviderError) -> bool {
             false
         }
     }
-}
-
-fn preflight_enable(
-    ctx: &AccountsCtx<'_>,
-    account_id: crate::protocol::AccountId,
-    org_login: &str,
-) -> Result<Option<Vec<String>>, CommandFailure> {
-    let row = store::load_account(ctx.index.conn(), account_id)
-        .map_err(|error| account_failure(&error))?;
-    let token = ctx
-        .tokens
-        .read(&row.token_ref)
-        .map_err(|error| keychain_failure(&error))?;
-    match ctx.provider.list_repos(&token, None) {
-        Ok(observed) => Ok(observed.granted_scopes),
-        Err(error) if is_github_sso_required(&error) => {
-            mark_sso_required(ctx, account_id, org_login)?;
-            Err(coded_failure(ErrorCode::SsoRequired, error.to_string()))
-        }
-        Err(error) => Err(provider_failure(&error)),
-    }
-}
-
-fn mark_sso_required(
-    ctx: &AccountsCtx<'_>,
-    account_id: crate::protocol::AccountId,
-    org_login: &str,
-) -> Result<(), CommandFailure> {
-    let _guard = TxGuard::enter();
-    let tx = ctx.index.conn().unchecked_transaction().map_err(internal)?;
-    store::set_org_sso_state(&tx, account_id, org_login, SsoState::Unauthorized, ctx.now)
-        .map_err(|error| account_failure(&error))?;
-    tx.commit().map_err(internal)?;
-    Ok(())
 }
 
 fn provider_failure(error: &ProviderError) -> CommandFailure {

@@ -40,13 +40,10 @@ pub struct AccountsCtx<'a> {
 
 /// Dispatches the `accounts.*` subset implemented by this task.
 ///
-/// This dispatcher answers the account commands that only read or write a row. The ones that
-/// reach the network — `accounts.connect`, `accounts.cancelConnect`, `accounts.connectPat` and
-/// `accounts.upgradeScope` — are answered by the assembly **without the index guard** (R75) and
-/// never reach here.
-/// `accounts.connect`, `accounts.cancelConnect`, `accounts.connectPat`,
-/// `accounts.upgradeScope` and `accounts.disconnect` deliberately return `None` here because
-/// later tasks still own them.
+/// This dispatcher answers the account commands that only read or write a row. Every command
+/// that reaches the network — `accounts.connect`, `accounts.cancelConnect`, `accounts.connectPat`,
+/// `accounts.upgradeScope` and `accounts.setOrgEnabled` — is answered by the assembly **without
+/// the index guard** (R75), returns `None` here, and never reaches this match.
 #[must_use]
 pub fn dispatch_accounts_command(
     ctx: &mut AccountsCtx<'_>,
@@ -56,9 +53,6 @@ pub fn dispatch_accounts_command(
     match command {
         "accounts.list" => Some(commands::handle_list(ctx, args).and_then(|value| encode(&value))),
         "accounts.orgs" => Some(commands::handle_orgs(ctx, args).and_then(|value| encode(&value))),
-        "accounts.setOrgEnabled" => {
-            Some(commands::handle_set_org_enabled(ctx, args).and_then(|value| encode(&value)))
-        }
         "accounts.disconnect" => Some(commands::handle_disconnect(ctx, args)),
         _ => None,
     }

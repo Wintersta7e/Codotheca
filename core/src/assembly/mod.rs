@@ -217,6 +217,16 @@ impl CoreHandler {
                 Ok(serde_json::json!({}))
             }
             "accounts.connectPat" => self.connect_pat_arm(args, now),
+            "accounts.setOrgEnabled" => {
+                let org = crate::accounts::commands::set_org_enabled_off_lock(
+                    &self.index,
+                    self.provider.as_ref(),
+                    self.tokens.as_ref(),
+                    args,
+                    now,
+                )?;
+                serde_json::to_value(org).map_err(|e| CommandFailure::internal(e.to_string()))
+            }
             "accounts.upgradeScope" => self.upgrade_scope_arm(args, now),
             other => Err(Self::declined(other, Route::AccountsNet)),
         }
