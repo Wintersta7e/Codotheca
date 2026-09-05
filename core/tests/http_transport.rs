@@ -73,13 +73,27 @@ fn relative(path: &std::path::Path) -> String {
 
 /// Each `reqwest::blocking::Client` owns its own runtime thread and connection pool, so a second
 /// one is both a leak and a second budget's worth of sockets against the same forge.
+///
+/// The needles are the **unqualified** ones `provider_seam.rs` already uses. Matching only
+/// `blocking::Client::…` reads the path spelling rather than the call: `use reqwest::blocking::
+/// Client;` followed by `Client::builder()` is the same client and matched neither. Every
+/// qualified spelling ends in one of these, so the narrower pair was strictly weaker.
+///
+/// Occurrences are counted, not files: two constructions in one file are two sites. Comment
+/// lines are stripped first, because this file's own neighbours document the rule and a gate
+/// that greps the prose about a rule reports the documentation.
 #[test]
 fn exactly_one_reqwest_client_is_constructed_in_the_core() {
     let sources = rust_sources();
     let mut sites: Vec<String> = Vec::new();
     for (path, text) in &sources {
-        for needle in ["blocking::Client::builder", "blocking::Client::new"] {
-            if text.contains(needle) {
+        let code = text
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for needle in ["Client::builder", "Client::new"] {
+            for _ in code.matches(needle) {
                 sites.push(format!("{}: {needle}", relative(path)));
             }
         }
