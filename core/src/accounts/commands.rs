@@ -10,8 +10,8 @@ use crate::accounts::AccountsCtx;
 use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::proto::txguard::TxGuard;
 use crate::protocol::{
-    Account, AccountOrg, AccountsListArgs, AccountsOrgsArgs, AccountsSetOrgEnabledArgs, AuthKind,
-    ErrorCode, ScopeTier, SsoState,
+    Account, AccountId, AccountOrg, AccountsListArgs, AccountsOrgsArgs, AccountsSetOrgEnabledArgs,
+    AuthKind, ErrorCode, ScopeTier, SsoState,
 };
 use crate::provider::{Provider as _, ProviderError};
 
@@ -266,3 +266,46 @@ const GITHUB_PROVIDER_ID: &str = "github";
 /// The one scope whose presence separates the two tiers. It is `SCOPES_PRIVATE`'s member rather
 /// than a second literal, so the scope audit still sees exactly one home for scope strings.
 const PRIVATE_TIER_MARKER: &str = crate::provider::scopes::PRIVATE_TIER_SCOPE;
+
+/// §20.9's disconnect.
+///
+/// **Order matters and is normative: the keychain entry is deleted first.** If that fails, the
+/// disconnect **fails with the reason and the row stays**. Deleting the row first would lose
+/// `token_ref`, orphan a live secret, and tell the user a token was destroyed when it was not.
+///
+/// **It deletes no `project` row, ever.** Every project that had a local copy is unchanged, and
+/// every zero-location project survives as *unseen since T* with its remote fields stale-marked —
+/// absence is not evidence.
+///
+/// This is not the filesystem boundary: it removes credential state and database rows, and it is
+/// **not** the one warranted removal primitive.
+///
+/// # Errors
+/// The keychain's failure, or the store's.
+pub fn disconnect(ctx: &mut AccountsCtx<'_>, id: AccountId) -> Result<(), CommandFailure> {
+    let identity =
+        store::account_identity(ctx.index.conn(), id).map_err(|e| account_failure(&e))?;
+
+    // 1. The keychain, first. A `NotFound` entry is not a failure: the secret is already gone,
+    //    and refusing here would strand the row for a user who cleared their keychain by hand.
+    match ctx.tokens.delete(&identity.token_ref) {
+        Ok(()) | Err(KeychainError::NotFound) => {}
+        Err(error) => return Err(keychain_failure(&error)),
+    }
+
+    // 2. The rows. `delete_account` refuses if the cascade would not fire.
+    let _tx_guard = TxGuard::enter();
+    let tx = ctx.index.conn().unchecked_transaction().map_err(internal)?;
+    store::delete_account(&tx, id).map_err(|e| account_failure(&e))?;
+    tx.commit().map_err(internal)
+}
+
+/// Handles `accounts.disconnect`.
+///
+/// # Errors
+/// Fails when arguments are malformed, the keychain refuses, or the store does.
+pub fn handle_disconnect(ctx: &mut AccountsCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
+    let parsed: crate::protocol::AccountsDisconnectArgs = parse_args(args)?;
+    disconnect(ctx, parsed.account_id)?;
+    Ok(serde_json::json!({}))
+}

@@ -128,6 +128,7 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'accounts.cancelConnect',
   'accounts.connectPat',
   'accounts.upgradeScope',
+  'accounts.disconnect',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two

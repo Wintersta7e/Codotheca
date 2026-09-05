@@ -387,3 +387,380 @@ fn an_enabled_org_matches_regardless_of_case() {
     assert_eq!(admission.skipped_org_not_enabled, 0);
     assert_accounted(&admission, listings.len());
 }
+
+// ---------------------------------------------------------------------------
+// Task 11 — disconnect: the keychain first, never a project row, R69's census.
+// ---------------------------------------------------------------------------
+
+use codotheca_core::accounts::keychain::TokenStore as _;
+use codotheca_core::accounts::store::ACCOUNT_REFERENCING_TABLES;
+use codotheca_core::accounts::{dispatch_accounts_command, AccountsCtx};
+use std::sync::Arc;
+
+struct Disconnectable {
+    dir: tempfile::TempDir,
+    index: codotheca_core::index::Index,
+    account: codotheca_core::protocol::AccountId,
+    projects: Vec<i64>,
+}
+
+/// One account, one org, one cloned project and one zero-location project, both linked.
+fn disconnectable(now: i64) -> Disconnectable {
+    let dir = tempfile::tempdir().expect("tmp");
+    let index = codotheca_core::index::Index::open_at(dir.path(), now).expect("index opens");
+    let account = {
+        let tx = index.conn().unchecked_transaction().expect("tx");
+        let id = codotheca_core::accounts::store::insert_account(
+            &tx,
+            &codotheca_core::accounts::store::NewAccount {
+                provider: "github".to_owned(),
+                host: "forge.example.invalid".to_owned(),
+                login: "octo".to_owned(),
+                display_name: None,
+                auth_kind: codotheca_core::protocol::AuthKind::Device,
+                scope_tier: codotheca_core::protocol::ScopeTier::Private,
+                granted_scopes: vec!["read:user".to_owned()],
+                token_ref: "github:forge.example.invalid:octo".to_owned(),
+            },
+            now,
+        )
+        .expect("account inserts");
+        tx.execute(
+            "INSERT INTO account_org (account_id, login) VALUES (?1, 'an-org')",
+            [id.0],
+        )
+        .expect("org inserts");
+        tx.commit().expect("commit");
+        id
+    };
+
+    let mut projects = Vec::new();
+    for name in ["cloned", "zero-location"] {
+        index
+            .conn()
+            .execute(
+                "INSERT INTO project (name, seed_basename, created_at, updated_at)
+                 VALUES (?1, ?1, 0, 0)",
+                [name],
+            )
+            .expect("project inserts");
+        let project = index.conn().last_insert_rowid();
+        index
+            .conn()
+            .execute(
+                "INSERT INTO project_account
+                   (project_id, account_id, affiliation, can_push, observed_at)
+                 VALUES (?1, ?2, 'owner', 1, ?3)",
+                rusqlite::params![project, account.0, now],
+            )
+            .expect("link inserts");
+        projects.push(project);
+    }
+    Disconnectable {
+        dir,
+        index,
+        account,
+        projects,
+    }
+}
+
+fn project_ids(index: &codotheca_core::index::Index) -> Vec<i64> {
+    let mut stmt = index
+        .conn()
+        .prepare("SELECT id FROM project ORDER BY id")
+        .expect("prepared");
+    let ids = stmt
+        .query_map([], |row| row.get::<_, i64>(0))
+        .expect("query")
+        .map(Result::unwrap)
+        .collect::<Vec<_>>();
+    ids
+}
+
+fn count(index: &codotheca_core::index::Index, sql: &str, id: i64) -> i64 {
+    index
+        .conn()
+        .query_row(sql, [id], |row| row.get(0))
+        .expect("countable")
+}
+
+/// **AC-P2-20-6.** Disconnect deletes the account and its two side tables and **zero `project`
+/// rows** — asserted as a full id **set** before and after, not as a count, because a count
+/// survives one project being deleted and another created.
+#[test]
+fn ac_p2_20_6_disconnect_deletes_no_project_row() {
+    let fixture = disconnectable(1_000);
+    let index = fixture.index;
+    let before = project_ids(&index);
+    assert_eq!(before.len(), 2);
+
+    let tokens = codotheca_core::testing::FakeTokenStore::available();
+    tokens
+        .store(
+            "github:forge.example.invalid:octo",
+            &codotheca_core::accounts::keychain::SecretToken::new("sentinel".to_owned()),
+        )
+        .expect("stored");
+    let transport = Arc::new(codotheca_core::testing::FakeTransport::new());
+    let provider = codotheca_core::provider::GitHubProvider::new(
+        Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>,
+        codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
+    );
+    let mut ctx = AccountsCtx {
+        index: &index,
+        provider: &provider,
+        tokens: &tokens,
+        now: 2_000,
+    };
+    dispatch_accounts_command(
+        &mut ctx,
+        "accounts.disconnect",
+        serde_json::json!({ "accountId": fixture.account.0 }),
+    )
+    .expect("the command is ours")
+    .expect("disconnect succeeds");
+
+    assert_eq!(
+        count(
+            &index,
+            "SELECT count(*) FROM account WHERE id = ?1",
+            fixture.account.0
+        ),
+        0
+    );
+    assert_eq!(
+        count(
+            &index,
+            "SELECT count(*) FROM account_org WHERE account_id = ?1",
+            fixture.account.0
+        ),
+        0,
+        "account_org did not cascade"
+    );
+    assert_eq!(
+        count(
+            &index,
+            "SELECT count(*) FROM project_account WHERE account_id = ?1",
+            fixture.account.0
+        ),
+        0,
+        "project_account did not cascade"
+    );
+    assert_eq!(
+        project_ids(&index),
+        before,
+        "disconnect deleted a project row"
+    );
+    assert!(
+        tokens.entry_names().is_empty(),
+        "the keychain entry survived"
+    );
+    drop(fixture.dir);
+    let _ = fixture.projects;
+}
+
+/// **Order: the keychain first.** With deletion failing, the command fails and the `account` row
+/// **and both of its side tables** survive — deleting the row first would lose `token_ref`,
+/// orphan a live secret, and tell the user a token was destroyed when it was not.
+#[test]
+fn a_failing_keychain_deletion_leaves_the_account_and_its_side_tables() {
+    let fixture = disconnectable(1_000);
+    let index = fixture.index;
+    let tokens = codotheca_core::testing::FakeTokenStore::refusing_delete();
+    let transport = Arc::new(codotheca_core::testing::FakeTransport::new());
+    let provider = codotheca_core::provider::GitHubProvider::new(
+        Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>,
+        codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
+    );
+    let mut ctx = AccountsCtx {
+        index: &index,
+        provider: &provider,
+        tokens: &tokens,
+        now: 2_000,
+    };
+    let outcome = dispatch_accounts_command(
+        &mut ctx,
+        "accounts.disconnect",
+        serde_json::json!({ "accountId": fixture.account.0 }),
+    )
+    .expect("the command is ours");
+    assert!(outcome.is_err(), "a refused keychain must fail the command");
+
+    assert_eq!(
+        count(
+            &index,
+            "SELECT count(*) FROM account WHERE id = ?1",
+            fixture.account.0
+        ),
+        1,
+        "the row was deleted while its secret is still alive"
+    );
+    assert_eq!(
+        count(
+            &index,
+            "SELECT count(*) FROM account_org WHERE account_id = ?1",
+            fixture.account.0
+        ),
+        1
+    );
+    assert_eq!(
+        count(
+            &index,
+            "SELECT count(*) FROM project_account WHERE account_id = ?1",
+            fixture.account.0
+        ),
+        2
+    );
+    drop(fixture.dir);
+}
+
+/// R69's three assertions over the census, each printing its counts.
+///
+/// 1. **Completeness** — every table in the *migrated* schema with an `account_id` column is in
+///    the census, and `sync_task_state`/`sync_budget` are absent from the schema or listed.
+/// 2. **Coverage by mechanism** — `PRAGMA foreign_key_list` per census table: a cascading key
+///    into `account` covers it; a table without one must be named in `delete_account`'s source.
+/// 3. Behaviour is the two tests above.
+#[test]
+fn the_account_referencing_census_is_complete_and_covered() {
+    let fixture = disconnectable(1_000);
+    let index = fixture.index;
+
+    // 1. Completeness.
+    let mut stmt = index
+        .conn()
+        .prepare(
+            "SELECT m.name FROM sqlite_master m
+             JOIN pragma_table_info(m.name) c
+             WHERE m.type = 'table' AND c.name = 'account_id'
+             ORDER BY m.name",
+        )
+        .expect("prepared");
+    let holders: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query")
+        .map(Result::unwrap)
+        .collect();
+    assert!(
+        !holders.is_empty(),
+        "no table holds an account_id, so this proved nothing"
+    );
+    for table in &holders {
+        assert!(
+            ACCOUNT_REFERENCING_TABLES.contains(&table.as_str()),
+            "{table} holds an account_id and is not in the census"
+        );
+    }
+    for polymorphic in ["sync_task_state", "sync_budget"] {
+        let present: i64 = index
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                [polymorphic],
+                |row| row.get(0),
+            )
+            .expect("countable");
+        assert!(
+            present == 0 || ACCOUNT_REFERENCING_TABLES.contains(&polymorphic),
+            "{polymorphic} exists in the schema and is not in the census"
+        );
+    }
+
+    // 2. Coverage by mechanism.
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/accounts/store.rs"),
+    )
+    .expect("store source is readable");
+    assert!(!source.is_empty());
+    let mut by_cascade = 0_usize;
+    let mut explicit = 0_usize;
+    let mut handled = 0_usize;
+    for table in ACCOUNT_REFERENCING_TABLES {
+        let mut keys = index
+            .conn()
+            .prepare(&format!(
+                "SELECT \"table\", on_delete FROM pragma_foreign_key_list('{table}')"
+            ))
+            .expect("prepared");
+        let cascades = keys
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .expect("query")
+            .map(Result::unwrap)
+            .any(|(target, on_delete)| target == "account" && on_delete == "CASCADE");
+        if cascades {
+            by_cascade += 1;
+        } else {
+            explicit += 1;
+            // A table with no cascading key must be named in `delete_account`'s source, which is
+            // the weaker of the two forms this project has ruled on and is recorded as such.
+            if source.contains(table) {
+                handled += 1;
+            }
+        }
+    }
+    eprintln!(
+        "acceptance_accounts: {} census tables, {by_cascade} by cascade, {explicit} explicit",
+        ACCOUNT_REFERENCING_TABLES.len()
+    );
+    assert_eq!(
+        ACCOUNT_REFERENCING_TABLES.len(),
+        2,
+        "the census at version 8"
+    );
+    assert_eq!(by_cascade, 2);
+    assert_eq!(explicit, 0);
+    assert_eq!(
+        explicit, handled,
+        "{explicit} explicit, {handled} handled: a census table with no cascading key is not \
+         named in delete_account's source"
+    );
+    drop(fixture.dir);
+}
+
+/// **The precondition is a refusal, not a comment.** With `foreign_keys` off the cascade would
+/// not fire, and `account_org` and `project_account` would silently retain rows while every
+/// other assertion still passed. A warning is exactly what that silent case survives.
+#[test]
+fn delete_account_refuses_when_the_cascade_would_not_fire() {
+    let fixture = disconnectable(1_000);
+    let index = fixture.index;
+    index
+        .conn()
+        .execute_batch("PRAGMA foreign_keys=OFF;")
+        .expect("pragma");
+
+    let tx = index.conn().unchecked_transaction().expect("tx");
+    let outcome = codotheca_core::accounts::store::delete_account(&tx, fixture.account);
+    assert!(
+        outcome.is_err(),
+        "delete_account proceeded with the cascade disabled"
+    );
+    drop(tx);
+
+    assert_eq!(
+        count(
+            &index,
+            "SELECT count(*) FROM account WHERE id = ?1",
+            fixture.account.0
+        ),
+        1,
+        "the account row was deleted anyway"
+    );
+    drop(fixture.dir);
+}
+
+/// The list this plan added to `UNOWNED_COMMANDS` is empty again: every `accounts.*` command now
+/// reaches a module.
+#[test]
+fn no_accounts_command_is_unowned_any_more() {
+    let unowned: Vec<&str> = codotheca_core::assembly::route::UNOWNED_COMMANDS
+        .iter()
+        .map(|(c, _)| *c)
+        .collect();
+    assert!(
+        unowned.is_empty(),
+        "an accounts command is still unowned: {unowned:?}"
+    );
+}

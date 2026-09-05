@@ -570,3 +570,59 @@ pub fn record_upgraded_scope(
     }
     Ok(())
 }
+
+/// **R69's census: which tables hold an account reference.** `&[&str]`, ruled four times and
+/// frozen on the fourth.
+///
+/// It says *which tables hold a reference* and **nothing about how each is cleared**, so naming
+/// a table is a true claim about the schema. That is the whole point: an earlier form paired each
+/// table with a column, and `("sync_task_state", "key")` would have *satisfied* the enumeration
+/// while deleting every sync task whose **project** id happened to equal the disconnected
+/// account id — `key` there is polymorphic. In this form that entry is not representable.
+///
+/// **Read by the test and by nothing else. It is not a delete list.** p2-21 appends
+/// `"sync_budget"` and `"sync_task_state"` when `0011` creates them, and `delete_account_tasks`
+/// — filtered `WHERE task = 'account_repos' AND key = ?1` — is the sole explicit call.
+pub const ACCOUNT_REFERENCING_TABLES: &[&str] = &["account_org", "project_account"];
+
+/// Deletes the `account` row and lets SQLite cascade. **It deletes no `project` row, ever.**
+///
+/// Every account-referencing table in phase 2 carries `ON DELETE CASCADE` into `account(id)`
+/// **except one**: `sync_task_state.key` is a bare polymorphic integer and can carry no foreign
+/// key at all. So there is no per-table `DELETE` loop here — the one table that needs an explicit
+/// call is exactly the one with no key, which is the whole statement of the problem rather than a
+/// special case inside it.
+///
+/// **The precondition is a refusal, not a comment.** All of the above rests on
+/// `PRAGMA foreign_keys=ON`, which `Index::open_connection` sets — and which R59's rebuild
+/// machinery turns **off** inside the migration runner and restores. If a later change ever left
+/// it off around this call, `account_org`, `project_account` and `sync_budget` would all silently
+/// retain rows **while every other assertion still passed**. A warning is precisely what that
+/// silent case survives, so this reads the pragma back and refuses.
+///
+/// If this ever moves to a form that iterates and dispatches per table, **delete the refusal in
+/// the same change**: `delete_account` would then clear each table itself, the pragma would stop
+/// being load-bearing, and the guard would become unreachable rather than merely redundant —
+/// still passing, still read as protection, guarding nothing.
+///
+/// # Errors
+/// Refuses when `PRAGMA foreign_keys` is off, and fails when the row does not exist or the
+/// delete does.
+pub fn delete_account(tx: &Transaction<'_>, id: AccountId) -> Result<(), AccountError> {
+    let enforced: i64 = tx.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
+    if enforced != 1 {
+        return Err(AccountError::Codec(
+            "refusing to delete an account with foreign_keys off: the cascade would not fire and \
+             account_org, project_account and sync_budget would silently retain rows"
+                .to_owned(),
+        ));
+    }
+    let removed = tx.execute("DELETE FROM account WHERE id = ?1", [id.0])?;
+    if removed == 0 {
+        return Err(AccountError::NotFound {
+            account: id,
+            org: None,
+        });
+    }
+    Ok(())
+}
