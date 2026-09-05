@@ -108,7 +108,9 @@ export const DATA_GROUP_ROWS: readonly SettingsRowSpec[] = [
     group: 'github',
     label: 'NOT CONNECTED',
     note: null,
-    backing: { kind: 'statement' },
+    // [p2] §20.12: no longer a statement — the mounting surface supplies a panel whose every
+    // row acts. `deadSwitch.test.tsx` walks this registry and the kind is what it reads.
+    backing: { kind: 'host', slot: 'githubPanel' },
   },
   ...NOTIFICATIONS.map((notification, index) => ({
     id: `notification-${String(index)}`,
@@ -137,7 +139,7 @@ export interface DataGroupsProps {
 }
 
 export function DataGroups(props: DataGroupsProps): ReactElement {
-  const { chooseProjectToHide, identityCard, addIdentityAddress } = props.slots;
+  const { chooseProjectToHide, identityCard, addIdentityAddress, githubPanel } = props.slots;
   const bundleText = bundleResultText(props.bundle);
 
   return (
@@ -204,11 +206,22 @@ export function DataGroups(props: DataGroupsProps): ReactElement {
       )}
 
       <SettingsGroup id="github" title="GITHUB">
-        {/* `--absent`, never the accent: amber says *something is wrong here*, and in phase 1
-            the absence of a token is the shipped state, not a defect. */}
-        <div style={SD.blockAbsent} data-row="github-statement">
-          <span style={SD.rowLabel}>NOT CONNECTED</span>
-          <p style={SD.rowNote}>{GITHUB_CONSEQUENCE}</p>
+        {/* [p2] §20.12: a real control, supplied by the mounting surface. `--absent`, never the
+            accent: amber says *something is wrong here*, and the absence of a token is a
+            shipped state rather than a defect. Without the slot the statement stands, which is
+            §11.3a's second limb. */}
+        {/* The registry's row id stays on the wrapper in **both** shapes, so `deadSwitch`'s
+            walk finds the row it declares whichever way the group is drawn. The id predates the
+            control and names the row, not its contents. */}
+        <div data-row="github-statement">
+          {githubPanel === undefined ? (
+            <div style={SD.blockAbsent}>
+              <span style={SD.rowLabel}>NOT CONNECTED</span>
+              <p style={SD.rowNote}>{GITHUB_CONSEQUENCE}</p>
+            </div>
+          ) : (
+            githubPanel()
+          )}
         </div>
       </SettingsGroup>
 

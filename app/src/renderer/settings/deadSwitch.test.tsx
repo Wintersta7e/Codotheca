@@ -41,6 +41,7 @@ const slots = (): Required<SettingsSlots> => ({
   chooseLaunchTarget: vi.fn(),
   identityCard: () => null,
   addIdentityAddress: vi.fn(),
+  githubPanel: () => null,
 });
 
 function harness(): {

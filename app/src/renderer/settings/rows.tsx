@@ -55,6 +55,9 @@ export interface SettingsSlots {
   readonly chooseLaunchTarget?: (language: string) => void;
   readonly identityCard?: () => ReactElement | null;
   readonly addIdentityAddress?: () => void;
+  /** [p2] §20.12's account panel, on `identityCard`'s precedent: `groupsData.tsx` stays free of
+   *  protocol calls and the mounting surface owns the commands. */
+  readonly githubPanel?: () => ReactElement | null;
 }
 
 export type SettingsSlotName = keyof SettingsSlots;
