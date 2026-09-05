@@ -90,6 +90,18 @@ fn opened() -> (tempfile::TempDir, Index) {
     (dir, index)
 }
 
+/// `PRAGMA table_info` as a list, so a column claim is read from the database rather than
+/// inferred from the migration set.
+fn table_columns(conn: &rusqlite::Connection, table: &str) -> Vec<String> {
+    let mut stmt = conn
+        .prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
+        .expect("prepare");
+    let rows = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .expect("query");
+    rows.map(|r| r.expect("row")).collect()
+}
+
 fn find(rows: &[LoadedRow], id: i64) -> &LoadedRow {
     rows.iter()
         .find(|r| r.row.id.0 == id)
@@ -224,4 +236,226 @@ fn the_two_fixture_builders_pair_location_and_presence() {
     // Everything else is the same row: the builder varies the pair and nothing else.
     assert_eq!(bare.name, ProjectRow::for_test(2).name);
     assert_eq!(bare.condition_signal, None);
+}
+
+/// AC-P2-23-1 and AC-P2-23-3's core half: §23.3's render contract, asserted over one fixture.
+///
+/// **Most of this table is a claim about code that exists today**, and that is the point — a
+/// claim nothing tests is a claim that rots. A later plan that breaks one of these is told which.
+/// The test prints how many zero-location fixtures it built and fails at zero: a passing run that
+/// scanned none of them is a failing gate.
+#[test]
+fn the_render_contract_over_a_zero_location_row() {
+    use codotheca_core::projects::list::aggregate_era;
+    use codotheca_core::projects::peek::load_peek;
+    use codotheca_core::protocol::{ProjectId, ReadmeStateKind};
+
+    let (_dir, index) = opened();
+    let mut built = 0_usize;
+    for (id, name) in [(1_i64, "remoteonly"), (3, "alsoremote")] {
+        zero_location_project(index.conn(), id, name);
+        built += 1;
+    }
+    located_project(index.conn(), 2, "cloned");
+    eprintln!("notcloned_row: built {built} zero-location fixture(s)");
+    assert!(
+        built > 0,
+        "a run that built no zero-location fixture proves nothing"
+    );
+
+    let sink = CollectingSink::default();
+    let deps = Deps::new();
+    let ctx = ctx(&index, &sink, &deps);
+    let rows = load_project_rows(&ctx).expect("load");
+    let bare = find(&rows, 1);
+    let r = &bare.row;
+
+    // 1. Freshness. Each of these is a statement about a working copy, and there is none: no
+    //    `as of T`, no age slot, no `no fetch recorded`.
+    assert_eq!(r.refstate_observed_at, None);
+    assert_eq!(r.worktree_observed_at, None);
+    assert_eq!(r.fetch_head_at, None);
+
+    // 2. No job ever ran, so `condition_signal` is NULL and §5.4a draws **no dot at all** (A5).
+    assert_eq!(r.condition_signal, None);
+
+    // 3. Nothing failed, so no `NOT INDEXED` badge is keyed — §11.1 keys it on BUDGET_EXCEEDED,
+    //    never on the absent dot.
+    assert_eq!(r.error_kind, None);
+    assert_eq!(r.error_at, None);
+
+    // 4. No HEAD, so no inventory — and the row contributes 0 to the header's coverage count.
+    assert_eq!(r.size_tracked_bytes, None);
+    assert_eq!(r.tracked_files, None);
+    let agg = aggregate_era(&[bare]);
+    assert_eq!(
+        agg.indexed_count, 0,
+        "an unmeasured row is not a measurement"
+    );
+    assert_eq!(agg.tracked_bytes, 0);
+
+    // 5. `last_touched_at` falls back to `created_at` (`rows.rs:310-313`). It stays, and from
+    //    here it orders rows **within** the not-cloned tail and does nothing else.
+    assert_eq!(r.last_touched_at, r.created_at);
+
+    // 6. Every working-copy fact is unknown, and `is_dirty` is None rather than Some(false):
+    //    absence of dirty means "no changes as of T", never "clean".
+    assert_eq!(r.is_dirty, None);
+    assert_eq!(r.ahead, None);
+    assert_eq!(r.behind, None);
+    assert_eq!(r.stash_count, None);
+    assert_eq!(r.untracked_count, None);
+    assert_eq!(r.interrupted_op, None);
+    assert_eq!(r.branch, None);
+
+    // 7. Peek's bound (§23.3's eleventh row). No content is promised and no clock is claimed,
+    //    and `ReadmeStateKind` still has exactly **three** variants — §23.3 forbids a fourth,
+    //    and it forbids `not_indexed` for this row, so §23 lands the bound and p2-25 lands the
+    //    answer. This is a count assertion in the shape of R49's tripwire: enumerate, do not
+    //    grep. Adding a variant to the schema fails here rather than silently widening Peek.
+    let peek = load_peek(&ctx, ProjectId(1)).expect("peek");
+    assert_eq!(peek.readme.text, None);
+    assert_eq!(peek.readme.read_at, None);
+    let readme_kinds = [
+        ReadmeStateKind::NotIndexed,
+        ReadmeStateKind::Absent,
+        ReadmeStateKind::Present,
+    ];
+    assert_eq!(
+        readme_kinds.len(),
+        3,
+        "ReadmeStateKind gains no fourth variant (§23.3)"
+    );
+    for kind in readme_kinds {
+        let slug = serde_json::to_value(kind).expect("encode");
+        assert!(slug.is_string());
+    }
+    // The schema is the other side of that count, so the two cannot drift.
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../../protocol/schema/protocol.json"))
+            .expect("schema parses");
+    let variants = schema["types"]["ReadmeStateKind"]["variants"]
+        .as_array()
+        .expect("ReadmeStateKind is an enum");
+    assert_eq!(
+        variants.len(),
+        3,
+        "the schema declares three too: {variants:?}"
+    );
+}
+
+/// AC-P2-23-1's database half and **AC-P2-23-3's positive claim that §23 adds no schema** (A12).
+///
+/// Stated positively and read back from the database, because an absent migration block states
+/// nothing and a migration set is a claim about files rather than about the schema that exists.
+/// This test also prints the number of zero-location fixtures it built and fails at zero.
+#[test]
+fn the_database_holds_no_invented_row_column_or_table() {
+    let (_dir, index) = opened();
+    let mut built = 0_usize;
+    for (id, name) in [(1_i64, "remoteonly"), (3, "alsoremote")] {
+        zero_location_project(index.conn(), id, name);
+        built += 1;
+    }
+    located_project(index.conn(), 2, "cloned");
+    eprintln!("notcloned_row: built {built} zero-location fixture(s) for the schema half");
+    assert!(
+        built > 0,
+        "a run that built no zero-location fixture proves nothing"
+    );
+    let sink = CollectingSink::default();
+    let deps = Deps::new();
+    let ctx = ctx(&index, &sink, &deps);
+    let rows = load_project_rows(&ctx).expect("load");
+    let r = &find(&rows, 1).row;
+
+    // 8. §23.1 invents nothing. No synthetic `location` row, no fifth `Presence` value, and no
+    //    `remote_project` table — read from the database, never trusted from the migration set.
+    let locations: i64 = index
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM location WHERE project_id = 1",
+            [],
+            |r| r.get(0),
+        )
+        .expect("count");
+    assert_eq!(locations, 0);
+    let presence_check: String = index
+        .conn()
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='location'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("location DDL");
+    for value in ["present", "offline", "missing", "unscanned"] {
+        assert!(presence_check.contains(value), "{value} left the enum");
+    }
+    for invented in ["not_cloned", "notcloned", "remote_only"] {
+        assert!(
+            !presence_check.contains(invented),
+            "a fifth Presence value appeared: {invented}"
+        );
+    }
+    let remote_project: i64 = index
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='remote_project'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("count");
+    assert_eq!(remote_project, 0, "§23 creates no remote_project table");
+
+    // 9. **§23 introduced no column and no table** (A12). Stated positively, because an absent
+    //    migration block states nothing. The clock a not-cloned tile resolves to is §25's
+    //    `remote_repo.observed_at`, joined through §22's binding — never a second one here.
+    let project_columns = table_columns(index.conn(), "project");
+    for absent in [
+        "remote_observed_at",
+        "remote_read_at",
+        "listing_observed_at",
+    ] {
+        assert!(
+            !project_columns.iter().any(|c| c == absent),
+            "§23 declares no column, and project.{absent} exists"
+        );
+    }
+    assert!(
+        index
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('remote_repo') WHERE name='observed_at'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .expect("count")
+            == 1,
+        "the one clock is remote_repo.observed_at, and p2-22 landed it"
+    );
+
+    // 10. AC-P2-23-3's core half. With §25's facts row **deleted**, no age is produced at all —
+    //     no value, no `stale · <age>` input, and no substitute computed from `created_at` or
+    //     `last_touched_at`. `ProjectRow` carries no remote field for one to hide in, which is
+    //     the assertion: the loader manufactures nothing.
+    let facts_rows: i64 = index
+        .conn()
+        .query_row("SELECT count(*) FROM remote_repo", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(facts_rows, 0, "the fixture writes no facts row");
+    let wire = serde_json::to_value(r).expect("serialise");
+    let obj = wire.as_object().expect("object");
+    for (key, value) in obj {
+        if key.ends_with("At") || key.ends_with("Age") {
+            let dated = matches!(key.as_str(), "lastTouchedAt" | "createdAt");
+            assert!(
+                dated || value.is_null(),
+                "{key} carried {value} for a project nothing has observed"
+            );
+        }
+    }
+    assert!(
+        !obj.keys().any(|k| k.to_lowercase().contains("remote")),
+        "ProjectRow carries no remote field for §23 to date"
+    );
 }
