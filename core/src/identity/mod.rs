@@ -18,6 +18,7 @@ pub mod candidates;
 pub mod commands;
 pub mod confirm;
 pub mod decide;
+pub mod hydrate;
 pub mod ingest;
 pub mod lineage;
 pub mod match_listing;
@@ -65,6 +66,14 @@ pub enum IdentityError {
         provider: String,
         provider_repo_id: String,
     },
+    /// §22.4's guard. The not-cloned row this scan would hydrate already carries git-track
+    /// `xp_events` rows, so hydrating it would attach this repository's history to another
+    /// repository's ledger. It **fails the transaction**; a guard with no failing case is not a
+    /// guard.
+    HydrateWouldOrphanXp {
+        project_id: i64,
+        count: i64,
+    },
 }
 
 impl From<rusqlite::Error> for IdentityError {
@@ -83,7 +92,8 @@ impl IdentityError {
             | Self::UnknownProject(_)
             | Self::RedirectChain { .. }
             | Self::SameProject(_)
-            | Self::ListingNotCanonical { .. } => ErrorCode::Internal,
+            | Self::ListingNotCanonical { .. }
+            | Self::HydrateWouldOrphanXp { .. } => ErrorCode::Internal,
         }
     }
 }

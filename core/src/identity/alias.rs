@@ -28,13 +28,19 @@ impl HostAliases {
     /// Read the set off the adapter that declares it.
     #[must_use]
     pub fn from_provider(provider: &dyn Provider) -> Self {
+        Self::declared(provider.canonical_host(), provider.host_aliases())
+    }
+
+    /// The same set from an adapter's **declaration** rather than from an instance of it.
+    ///
+    /// A scan folds a clone's key with no account and no transport in hand; the alias set is
+    /// static per adapter, so it reads the declaration. `core::provider::declared_host_aliases`
+    /// is the only intended caller — this is not a door for inventing a set.
+    #[must_use]
+    pub fn declared(canonical: &str, aliases: &[&str]) -> Self {
         Self {
-            canonical: provider.canonical_host().to_owned(),
-            aliases: provider
-                .host_aliases()
-                .iter()
-                .map(|host| (*host).to_owned())
-                .collect(),
+            canonical: canonical.to_owned(),
+            aliases: aliases.iter().map(|host| (*host).to_owned()).collect(),
         }
     }
 

@@ -13,6 +13,7 @@ use super::alias::{fold_key, HostAliases};
 use super::decide::{
     decide, evidence_from, Candidate, IdentityDecision, IdentityEvidence, IdentityProbe,
 };
+use super::hydrate::{find_hydration_target, hydrate, HydrationTarget};
 use super::{AssociationKind, IdentityError};
 use crate::derive::LocationKind;
 use crate::index::path::{display_paths_for_ui, DisplayPathTable, StoredPath};
@@ -201,10 +202,15 @@ pub fn upsert_location(
 
 /// Assign this repository its project (§1.1). Writes `project` only; the `location` row for the
 /// path goes through [`upsert_location`] under the returned id, in this same transaction.
+///
+/// **§22.4's amendment: the creating arms route through create-or-hydrate.** A not-cloned project
+/// has a NULL `lineage_key` and is therefore in no candidate set `decide` can see, so without
+/// this the ordinary *connect → sync → clone → rescan* sequence mints a second tile.
 pub fn resolve_identity(
     tx: &Transaction<'_>,
     probe: &IdentityProbe,
     basename: &str,
+    aliases: &HostAliases,
     now: i64,
 ) -> Result<IdentityOutcome, IdentityError> {
     let evidence = evidence_from(probe);
@@ -229,7 +235,7 @@ pub fn resolve_identity(
             attach(tx, project_id, AssociationKind::Inferred, now)
         }
         IdentityDecision::NewFork { related } => {
-            let id = create(tx, &evidence, probe.is_shallow, basename, true, false, now)?;
+            let landed = create_or_hydrate(tx, &evidence, probe, basename, true, aliases, now)?;
             for other in related {
                 tx.execute(
                     "UPDATE project SET is_fork = 1, updated_at = ?2 WHERE id = ?1",
@@ -242,14 +248,19 @@ pub fn resolve_identity(
                 flag_remoteless_ambiguity(tx, l, now)?;
             }
             Ok(IdentityOutcome {
-                project_id: id,
-                created: true,
+                project_id: landed.project_id,
+                created: landed.created,
                 association: None,
-                ambiguous: false,
+                ambiguous: landed.ambiguous,
                 is_fork: true,
             })
         }
         IdentityDecision::NewAmbiguous { .. } => {
+            // **This arm calls `create` directly, and the reason is reachability, not taste.**
+            // `NewAmbiguous` is produced only where our own `remote_key` is NULL
+            // (`decide.rs:92`, `:143-147`), and a NULL key folds to nothing and matches nothing —
+            // so there is no hydration target it could ever have. Do not "unify" the three
+            // creating arms.
             let id = create(tx, &evidence, probe.is_shallow, basename, false, true, now)?;
             Ok(IdentityOutcome {
                 project_id: id,
@@ -260,13 +271,102 @@ pub fn resolve_identity(
             })
         }
         IdentityDecision::New => {
-            let id = create(tx, &evidence, probe.is_shallow, basename, false, false, now)?;
+            let landed = create_or_hydrate(tx, &evidence, probe, basename, false, aliases, now)?;
             Ok(IdentityOutcome {
+                project_id: landed.project_id,
+                created: landed.created,
+                association: None,
+                ambiguous: landed.ambiguous,
+                is_fork: landed.is_fork,
+            })
+        }
+    }
+}
+
+/// What create-or-hydrate landed on.
+struct Landed {
+    project_id: i64,
+    created: bool,
+    ambiguous: bool,
+    is_fork: bool,
+}
+
+/// §22.4: hydrate the **single** not-cloned project on this repository's folded key, or create.
+///
+/// Zero or two-or-more targets both create, unchanged — and two-or-more additionally flags the
+/// group for §22.5. **Never pick one.**
+fn create_or_hydrate(
+    tx: &Transaction<'_>,
+    evidence: &IdentityEvidence,
+    probe: &IdentityProbe,
+    basename: &str,
+    is_fork: bool,
+    aliases: &HostAliases,
+    now: i64,
+) -> Result<Landed, IdentityError> {
+    let folded = evidence
+        .remote_key
+        .as_deref()
+        .and_then(|key| fold_key(key, aliases));
+    let target = match folded.as_deref() {
+        Some(key) => find_hydration_target(tx, key, aliases)?,
+        // No remote key folds to nothing and matches nothing.
+        None => HydrationTarget::None,
+    };
+
+    match target {
+        HydrationTarget::One(project_id) => {
+            hydrate(tx, project_id, evidence, probe.is_shallow, is_fork, now)?;
+            // The same call and the same reason as the `NewFork` arm: a project that had one
+            // candidate a moment ago may have two now that this lineage is known.
+            if let Some(l) = evidence.lineage_key.as_deref() {
+                flag_remoteless_ambiguity(tx, l, now)?;
+            }
+            let (ambiguous, is_fork) = tx
+                .query_row(
+                    "SELECT ambiguous_lineage, is_fork FROM project WHERE id = ?1",
+                    params![project_id],
+                    |r| Ok((r.get::<_, i64>(0)? == 1, r.get::<_, i64>(1)? == 1)),
+                )
+                .optional()?
+                .ok_or(IdentityError::UnknownProject(project_id))?;
+            Ok(Landed {
+                project_id,
+                created: false,
+                ambiguous,
+                is_fork,
+            })
+        }
+        HydrationTarget::None => {
+            let id = create(
+                tx,
+                evidence,
+                probe.is_shallow,
+                basename,
+                is_fork,
+                false,
+                now,
+            )?;
+            Ok(Landed {
                 project_id: id,
                 created: true,
-                association: None,
                 ambiguous: false,
-                is_fork: false,
+                is_fork,
+            })
+        }
+        HydrationTarget::Many(targets) => {
+            let id = create(tx, evidence, probe.is_shallow, basename, is_fork, true, now)?;
+            for other in targets {
+                tx.execute(
+                    "UPDATE project SET ambiguous_lineage = 1, updated_at = ?2 WHERE id = ?1",
+                    params![other, now],
+                )?;
+            }
+            Ok(Landed {
+                project_id: id,
+                created: true,
+                ambiguous: true,
+                is_fork,
             })
         }
     }
@@ -529,8 +629,19 @@ fn remote_candidates(
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::super::decide::IdentityProbe;
-    use super::super::testutil::open_test_index;
-    use super::resolve_identity;
+    use super::super::testutil::{forge_aliases, open_test_index};
+    use super::IdentityOutcome;
+
+    /// Every test below calls the production function with the one alias set this crate's
+    /// fixtures use, so §22.4's amendment did not turn into fifteen edited call sites.
+    fn resolve_identity(
+        tx: &rusqlite::Transaction<'_>,
+        probe: &IdentityProbe,
+        basename: &str,
+        at: i64,
+    ) -> Result<IdentityOutcome, IdentityError> {
+        super::resolve_identity(tx, probe, basename, &forge_aliases(), at)
+    }
 
     fn probe(roots: &[&str], remotes: &[(&str, &str)], common: Option<&[u8]>) -> IdentityProbe {
         IdentityProbe {

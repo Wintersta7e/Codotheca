@@ -24,6 +24,22 @@ pub use github::GitHubProvider;
 /// `verify_token` into `viewer`, so two entries became one and only the arithmetic changed.
 pub const PROVIDER_REQUEST_METHODS: &[&str] = &["viewer", "list_orgs", "list_repos"];
 
+/// §22.2's host-alias set for a caller that has **no account and no transport in hand**.
+///
+/// A scan folds a clone's remote key to compare it against a listing's, and it holds no
+/// `Provider`: the alias sets are *declarations*, static per adapter, so the scan reads the
+/// declaration rather than constructing an adapter with a transport it does not need.
+///
+/// **One adapter, so one set.** A second forge makes this a slice and every caller a loop; it is
+/// a function rather than a constant so that change is one signature rather than a search.
+#[must_use]
+pub fn declared_host_aliases() -> crate::identity::alias::HostAliases {
+    crate::identity::alias::HostAliases::declared(
+        listing::GITHUB_CANONICAL_HOST,
+        listing::GITHUB_HOST_ALIASES,
+    )
+}
+
 /// A typed provider value plus the scopes observed on that response.
 ///
 /// `None` means the response carried no `X-OAuth-Scopes` header, which is unknown. `Some(vec![])`
