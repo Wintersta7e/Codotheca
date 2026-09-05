@@ -157,3 +157,97 @@ describe('EraHeader', () => {
     expect(document.querySelector('.cdt-era-label')?.textContent).toBe('2015 AND EARLIER');
   });
 });
+
+/**
+ * AC-P2-23-5's first half, asserted over the **rendered** header and over its accessible name.
+ *
+ * The rule lives in `summaryText`, not here: `EraHeader` builds the chevron's accessible name
+ * from the un-truncated string, so a rule applied at the render site would leave `0 MB tracked`
+ * in an accessible name while removing it from the screen. One owner per value.
+ */
+describe('§23.4: a total over zero measurements is not a measurement', () => {
+  const both = (el: Element | null, button: HTMLElement): string =>
+    `${el?.textContent ?? ''}|${button.getAttribute('aria-label') ?? ''}`;
+
+  it('drops the byte aggregate and its parenthetical for a not-cloned section', () => {
+    render(
+      <EraHeader
+        section={section({
+          id: 'era:notcloned',
+          label: 'NOT CLONED',
+          order: 98,
+          year: null,
+          agg: agg({
+            count: 41,
+            trackedBytes: 0,
+            indexedCount: 0,
+            unpushed: 0,
+            uncommitted: 0,
+            interrupted: 0,
+            unchecked: 0,
+          }),
+        })}
+        collapsed={false}
+        onToggle={() => {}}
+        probe={() => false}
+      />,
+    );
+    const button = screen.getByRole('button');
+    const text = both(document.querySelector('.cdt-era-summary'), button);
+    expect(document.querySelector('.cdt-era-summary')?.textContent).toBe('41 projects');
+    expect(text).not.toContain('0 MB tracked');
+    expect(text).not.toContain('tracked');
+    expect(text).not.toContain('indexed');
+  });
+
+  /**
+   * The case that proves the rule is **one rule**: a located section during a live scan, before
+   * any inventory has completed, makes the same false claim one surface earlier. The
+   * implementation branches on `indexedCount === 0` and never on the section id.
+   */
+  it('drops it for a located section with no completed inventory either', () => {
+    render(
+      <EraHeader
+        section={section({
+          id: 'era:live',
+          label: 'LIVE',
+          order: 0,
+          year: null,
+          agg: agg({
+            count: 7,
+            trackedBytes: 0,
+            indexedCount: 0,
+            unpushed: 0,
+            uncommitted: 0,
+            interrupted: 0,
+            unchecked: 7,
+          }),
+        })}
+        collapsed={false}
+        onToggle={() => {}}
+        probe={() => false}
+      />,
+    );
+    const button = screen.getByRole('button');
+    const text = both(document.querySelector('.cdt-era-summary'), button);
+    expect(document.querySelector('.cdt-era-summary')?.textContent).toBe('7 projects');
+    expect(text).not.toContain('0 MB tracked');
+    // The flag line is a different rule and still renders: those seven rows have a working copy
+    // and nothing has checked it.
+    expect(document.querySelector('.cdt-era-flags')?.textContent).toBe('7 unchecked');
+  });
+
+  it('keeps the aggregate the moment one row has been measured', () => {
+    render(
+      <EraHeader
+        section={section({ agg: agg({ count: 7, trackedBytes: 1024 ** 2, indexedCount: 1 }) })}
+        collapsed={false}
+        onToggle={() => {}}
+        probe={() => false}
+      />,
+    );
+    expect(document.querySelector('.cdt-era-summary')?.textContent).toBe(
+      '7 projects · 1 MB tracked (of 1 indexed)',
+    );
+  });
+});

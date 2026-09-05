@@ -118,6 +118,16 @@ export function aggregateSection(rows: readonly ShelfRow[]): SectionAggregate {
 export { formatTrackedBytes };
 
 export function summaryText(agg: SectionAggregate): string {
+  // §23.4: **a total over zero measurements is not a measurement.** With nothing indexed the
+  // byte aggregate and its coverage parenthetical are dropped as one unit — the same unit and
+  // the same minimum §8.1's truncation rule already defines — leaving the count, which §8.1
+  // rules is never dropped. `(of 0 indexed)` qualifies a number that should not have been
+  // printed at all.
+  //
+  // **One rule, not a section-id special case.** It branches on `indexedCount` and nothing else,
+  // so it also fires for a *located* section during a live scan before any inventory has
+  // completed, which is the same false claim one surface earlier.
+  if (agg.indexedCount === 0) return summaryTextTruncated(agg);
   const plural = agg.count === 1 ? 'project' : 'projects';
   const coverage = agg.indexedCount < agg.count ? ` (of ${String(agg.indexedCount)} indexed)` : '';
   return `${String(agg.count)} ${plural} · ${formatTrackedBytes(agg.trackedBytes)} tracked${coverage}`;
