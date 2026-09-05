@@ -119,6 +119,11 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'collections.list',
   'collections.upsert',
   'collections.remove',
+  // accounts::dispatch_accounts_command. The other five accounts.* names are still unowned in
+  // the core, and `app/test/knownCommands.test.ts` refuses a bridge that offers one of those.
+  'accounts.list',
+  'accounts.orgs',
+  'accounts.setOrgEnabled',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two

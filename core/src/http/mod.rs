@@ -329,3 +329,20 @@ fn classify(error: &reqwest::Error) -> TransportError {
         detail: error.to_string(),
     }
 }
+
+/// The transport a core with no working HTTP client holds.
+///
+/// It exists so the composition root can always hand `CoreDeps` a real `HttpTransport`: a core
+/// that cannot build a client must still start, because the product is fully functional with
+/// zero accounts and every remote value is *unknown* until one exists. Every call refuses by
+/// name, which is a statement about the machine rather than a silent absence of network.
+#[derive(Debug, Clone, Copy)]
+pub struct RefusingTransport;
+
+impl HttpTransport for RefusingTransport {
+    fn send(&self, _req: &HttpRequest) -> Result<HttpResponse, TransportError> {
+        Err(TransportError::Connect {
+            detail: "no HTTP transport could be built on this machine".to_owned(),
+        })
+    }
+}

@@ -48,6 +48,11 @@ pub struct CoreDeps {
     /// tree outliving the app.
     pub jobs: jobs::JobPump,
     pub events: Arc<PublisherSink>,
+    /// §20.13's one typed forge seam, and §20.6's keychain. Both arrive as production
+    /// implementations from the composition root: a seam whose only implementation is a fake
+    /// compiles, passes, and fails at assembly, which has cost this project four rulings.
+    pub provider: Arc<dyn crate::provider::Provider>,
+    pub tokens: Arc<dyn crate::accounts::keychain::TokenStore>,
     /// `ProjectsCtx`'s (plan 13). §8.1's era bands cut on the local calendar year and nothing
     /// under `crate::projects` reads a clock or a zone, so the offset arrives with the deps.
     pub tz_offset_min: i32,
@@ -78,6 +83,8 @@ pub struct CoreHandler {
     firstrun: crate::firstrun::FirstRunEnv,
     jobs: jobs::JobPump,
     events: Arc<PublisherSink>,
+    provider: Arc<dyn crate::provider::Provider>,
+    tokens: Arc<dyn crate::accounts::keychain::TokenStore>,
     tz_offset_min: i32,
     /// Measured against `Clock::monotonic_ms`, never wall time: a clock step backwards must not
     /// fire a burst of ticks, and `now_unix` is something a user or NTP can move.
@@ -110,6 +117,8 @@ impl CoreHandler {
             firstrun: deps.firstrun,
             jobs: deps.jobs,
             events: deps.events,
+            provider: deps.provider,
+            tokens: deps.tokens,
             tz_offset_min: deps.tz_offset_min,
             last_tick_ms,
             ticks: 0,
@@ -129,6 +138,42 @@ impl CoreHandler {
     #[must_use]
     pub fn index(&self) -> &Arc<Mutex<Index>> {
         &self.index
+    }
+
+    /// §7's arm. Extracted for the same reason as the accounts one below, and it keeps the
+    /// no-index-lock rule visible: this context takes a `&dyn ScanStore`, never an `&Index`.
+    fn scan_arm(
+        &self,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = ScanCtx {
+            store: self.scan_store.as_ref(),
+            events: self.events.as_ref(),
+            scans: &self.scans,
+            now,
+        };
+        crate::scan::dispatch_scan_command(&ctx, command, args)
+    }
+
+    /// §20.8's arm, extracted so `handle` stays under the line cap rather than growing one
+    /// module's context inline. `&self` and the guard are both shared borrows, so this composes
+    /// with the one lock `handle` takes for the length of a command.
+    fn accounts_arm(
+        &self,
+        guard: &Index,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let mut ctx = crate::accounts::AccountsCtx {
+            index: guard,
+            provider: self.provider.as_ref(),
+            tokens: self.tokens.as_ref(),
+            now,
+        };
+        crate::accounts::dispatch_accounts_command(&mut ctx, command, args)
     }
 
     fn unowned(command: &str, plan: &str) -> CommandFailure {
@@ -223,13 +268,8 @@ impl CommandHandler for CoreHandler {
             // `&Index`, and `SqliteScanStore` locks the same mutex internally; `std::sync::Mutex`
             // is not reentrant, so holding it here would deadlock the core on `scan.status`.
             Route::Scan => {
-                let ctx = ScanCtx {
-                    store: self.scan_store.as_ref(),
-                    events: self.events.as_ref(),
-                    scans: &self.scans,
-                    now,
-                };
-                return crate::scan::dispatch_scan_command(&ctx, command, args)
+                return self
+                    .scan_arm(command, args, now)
                     .unwrap_or_else(|| Err(Self::declined(command, dest)));
             }
             _ => {}
@@ -261,6 +301,7 @@ impl CommandHandler for CoreHandler {
                 let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
                 crate::surfaces::dispatch_surface_command(&ctx, command, args)
             }
+            Route::Accounts => self.accounts_arm(&guard, command, args, now),
             Route::Targets => {
                 let mut ctx = targets_cmd::TargetsCtx {
                     index: &mut guard,

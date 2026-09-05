@@ -226,6 +226,13 @@ mod corehandler {
 
         let handler = CoreHandler::new(CoreDeps {
             index: Arc::clone(&index),
+            // The seam and a fake of it. `FakeTransport` answers nothing here: every accounts
+            // command in this file is a routing assertion, not a network one.
+            provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
+                Arc::new(codotheca_core::testing::FakeTransport::new()),
+                codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
+            )),
+            tokens: Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
             clock: clock.clone(),
             git: Arc::new(codotheca_core::testing::FakeGitBackend::new()),
             mount: Arc::new(codotheca_core::testing::FakeMountResolver::default()),
@@ -334,8 +341,11 @@ mod corehandler {
                 );
             }
         }
+        // [p2] 40, plus the three §20.8 commands `crate::accounts` now answers. The remaining
+        // five stay unowned and are refused by name above, which is what the `refused` count
+        // opposite this one asserts.
         assert_eq!(
-            checked, 40,
+            checked, 43,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(

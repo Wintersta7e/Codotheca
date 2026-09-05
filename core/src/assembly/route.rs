@@ -60,6 +60,8 @@ pub enum Route {
     Detail,
     /// `crate::view::dispatch_view_command` — plan 15.
     View,
+    /// `crate::accounts::dispatch_accounts_command` — p2-20.
+    Accounts,
     /// In §2.4 and in the schema, with no module in any plan. The payload names the plan that
     /// owes it, so the diagnostic says who, not just that.
     NoOwner(&'static str),
@@ -76,15 +78,12 @@ pub enum Route {
 /// its plan, in the same change that adds its `NoOwner` arm.
 ///
 /// The eight `accounts.*` rows land with the schema and leave as their handlers do.
-pub const UNOWNED_COMMANDS: [(&str, &str); 8] = [
-    ("accounts.list", "p2-20"),
-    ("accounts.orgs", "p2-20"),
+pub const UNOWNED_COMMANDS: [(&str, &str); 5] = [
     ("accounts.connect", "p2-20"),
     ("accounts.cancelConnect", "p2-20"),
     ("accounts.connectPat", "p2-20"),
     ("accounts.upgradeScope", "p2-20"),
     ("accounts.disconnect", "p2-20"),
-    ("accounts.setOrgEnabled", "p2-20"),
 ];
 
 /// The wire name of a command into the generated enum.
@@ -152,16 +151,18 @@ pub fn route(command: CommandName) -> Route {
         | CommandName::CollectionsUpsert
         | CommandName::CollectionsRemove => Route::View,
 
-        // §20.8's eight, declared ahead of `crate::accounts`. Each moves to its module's arm in
-        // the change that lands the handler, and drops its `UNOWNED_COMMANDS` row with it.
+        // The three §20.8 reads and the org gate, answered by `crate::accounts`.
         CommandName::AccountsList
         | CommandName::AccountsOrgs
-        | CommandName::AccountsConnect
+        | CommandName::AccountsSetOrgEnabled => Route::Accounts,
+
+        // The five §20.8 commands whose handlers land later in the same plan. Each moves to the
+        // arm above in the change that gives it one, and drops its `UNOWNED_COMMANDS` row with it.
+        CommandName::AccountsConnect
         | CommandName::AccountsCancelConnect
         | CommandName::AccountsConnectPat
         | CommandName::AccountsUpgradeScope
-        | CommandName::AccountsDisconnect
-        | CommandName::AccountsSetOrgEnabled => Route::NoOwner("p2-20"),
+        | CommandName::AccountsDisconnect => Route::NoOwner("p2-20"),
     }
 }
 
