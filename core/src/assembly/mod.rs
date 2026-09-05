@@ -311,21 +311,17 @@ impl CoreHandler {
     }
 
     /// §20.8's arm, extracted so `handle` stays under the line cap rather than growing one
-    /// module's context inline. `&self` and the guard are both shared borrows, so this composes
-    /// with the one lock `handle` takes for the length of a command.
+    /// module's context inline.
+    ///
+    /// It takes the guard and **nothing else** — no `&self`, so it cannot reach the provider, the
+    /// keychain or the transport, and no clock, because the two commands left here read a row and
+    /// nothing more. R75 as a signature rather than a convention.
     fn accounts_arm(
-        &self,
         guard: &Index,
         command: &str,
         args: Value,
-        now: i64,
     ) -> Option<Result<Value, CommandFailure>> {
-        let mut ctx = crate::accounts::AccountsCtx {
-            index: guard,
-            provider: self.provider.as_ref(),
-            tokens: self.tokens.as_ref(),
-            now,
-        };
+        let mut ctx = crate::accounts::AccountsCtx { index: guard };
         crate::accounts::dispatch_accounts_command(&mut ctx, command, args)
     }
 
@@ -471,7 +467,7 @@ impl CommandHandler for CoreHandler {
                 let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
                 crate::surfaces::dispatch_surface_command(&ctx, command, args)
             }
-            Route::Accounts => self.accounts_arm(&guard, command, args, now),
+            Route::Accounts => Self::accounts_arm(&guard, command, args),
             Route::Targets => {
                 let mut ctx = targets_cmd::TargetsCtx {
                     index: &mut guard,

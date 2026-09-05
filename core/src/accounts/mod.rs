@@ -11,10 +11,8 @@ pub mod store;
 
 use serde_json::Value;
 
-use crate::accounts::keychain::TokenStore;
 use crate::index::Index;
 use crate::proto::dispatch::CommandFailure;
-use crate::provider::Provider;
 
 /// Every `accounts.*` command declared by the protocol schema, in schema order.
 pub const ACCOUNT_COMMANDS: [&str; 8] = [
@@ -28,14 +26,15 @@ pub const ACCOUNT_COMMANDS: [&str; 8] = [
     "accounts.setOrgEnabled",
 ];
 
-/// Context for account commands. `now` is unix seconds supplied by the caller, so command handlers
-/// do not read the wall clock themselves.
+/// Context for the account commands answered **under the index guard**.
+///
+/// It carries the index and nothing else, and that is the point: the guarded arm must not be
+/// *able* to reach the forge or the keychain, because holding the process's one SQLite mutex
+/// across either has now been fixed twice. A `provider` and a `tokens` here were read by nothing
+/// and were an invitation to do it a third time; R75 is structural rather than a convention.
 #[derive(Debug)]
 pub struct AccountsCtx<'a> {
     pub index: &'a Index,
-    pub provider: &'a dyn Provider,
-    pub tokens: &'a dyn TokenStore,
-    pub now: i64,
 }
 
 /// Dispatches the `accounts.*` subset implemented by this task.

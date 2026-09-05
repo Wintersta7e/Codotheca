@@ -23,7 +23,7 @@ use codotheca_core::proto::txguard::TxGuard;
 use codotheca_core::protocol::{AccountId, AuthKind, ErrorCode, ProjectId, ScopeTier, SsoState};
 use codotheca_core::provider::admit::admit;
 use codotheca_core::provider::listing::{OrgListing, RepoListing, GITHUB_CANONICAL_HOST};
-use codotheca_core::provider::{GitHubProvider, Provider, ProviderError};
+use codotheca_core::provider::{GitHubProvider, ProviderError};
 use codotheca_core::testing::{FakeTokenStore, FakeTransport};
 use rusqlite::OptionalExtension as _;
 
@@ -153,17 +153,8 @@ fn response(status: u16, headers: Vec<(String, String)>, body: &[u8]) -> HttpRes
     }
 }
 
-fn ctx<'a>(
-    index: &'a Index,
-    provider: &'a dyn Provider,
-    tokens: &'a dyn TokenStore,
-) -> AccountsCtx<'a> {
-    AccountsCtx {
-        index,
-        provider,
-        tokens,
-        now: NOW,
-    }
+fn ctx(index: &Index) -> AccountsCtx<'_> {
+    AccountsCtx { index }
 }
 
 fn dispatch(
@@ -278,14 +269,12 @@ fn an_org_admits_nothing_until_enabled() {
 #[test]
 fn the_public_tier_reports_unknown_not_zero() {
     let (_dir, mut index) = fresh_index();
-    let tokens = FakeTokenStore::available();
-    let (_transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
     let public = insert_new_account(&mut index, &new_account("public-member", ScopeTier::Public));
     let private = insert_new_account(
         &mut index,
         &new_account("private-member", ScopeTier::Private),
     );
-    let mut ctx = ctx(&index, &provider, &tokens);
+    let mut ctx = ctx(&index);
 
     let public_result = dispatch(
         &mut ctx,
@@ -315,9 +304,7 @@ fn the_public_tier_reports_unknown_not_zero() {
 #[test]
 fn accounts_list_over_zero_accounts_is_an_empty_array() {
     let (_dir, index) = fresh_index();
-    let tokens = FakeTokenStore::available();
-    let (_transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
-    let mut ctx = ctx(&index, &provider, &tokens);
+    let mut ctx = ctx(&index);
     let result =
         dispatch(&mut ctx, "accounts.list", serde_json::json!({})).expect("accounts list succeeds");
     assert_eq!(result, serde_json::json!([]));
