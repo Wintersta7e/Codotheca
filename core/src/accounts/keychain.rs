@@ -98,6 +98,14 @@ impl KeyringTokenStore {
 ///
 /// `NoEntry` is *not* a broken keychain: it is a working one with nothing under that name, which
 /// is why `probe` treats it as success.
+///
+/// **`other.to_string()` interpolates the upstream crate's own text, so what that text can
+/// contain is a checked fact and not an assumption.** Read off `keyring` 3.6.3's `Display`
+/// (`error.rs:61-86`): the two variants carrying a boxed platform error are classified above and
+/// never reach here; of the four that do, `BadEncoding` prints *"Data is not UTF-8 encoded"* and
+/// not its bytes, `TooLong` and `Invalid` print an attribute **name**, and `Ambiguous` prints the
+/// matching credentials' attributes — which are the `token_ref` the database already holds, never
+/// a password. **Re-check this on any `keyring` upgrade**: it is the crate's rendering, not ours.
 fn classify(error: keyring::Error) -> KeychainError {
     match error {
         keyring::Error::NoEntry => KeychainError::NotFound,

@@ -65,8 +65,13 @@ pub enum ConnectError {
     NoClientId,
     #[error("the forge could not be reached: {0}")]
     Transport(String),
-    /// The provider answered, and its own `error` slug is the whole message. **The response
-    /// body is never quoted**: it is the one place a token could be echoed back.
+    /// The provider answered, and its own `error` slug is the whole message.
+    ///
+    /// **Only a slug-shaped value is quoted**, and `refusal` is what decides that. The slug comes
+    /// out of the response body, which is the one place a token could be echoed back, so quoting
+    /// it verbatim would have made a hostile or broken server's `error` field a channel out of
+    /// this process. An OAuth error slug is lower-case ASCII and underscores; anything else is
+    /// reported without its text rather than not reported at all.
     #[error("the forge refused the device flow: {0}")]
     Refused(String),
     #[error("the forge's answer could not be read: {0}")]
@@ -159,7 +164,7 @@ pub fn request_device_code(
     let value = decode(&response)?;
 
     if let Some(slug) = field(&value, "error") {
-        return Err(ConnectError::Refused(slug));
+        return Err(refusal(&slug));
     }
     let device_code = field(&value, "device_code")
         .ok_or_else(|| ConnectError::Decode("no device_code".to_owned()))?;
@@ -223,7 +228,7 @@ pub fn poll_once(
             },
             "expired_token" => PollOutcome::Expired,
             "access_denied" => PollOutcome::Denied,
-            other => return Err(ConnectError::Refused(other.to_owned())),
+            other => return Err(refusal(other)),
         });
     }
 
@@ -234,6 +239,46 @@ pub fn poll_once(
         field(&value, "scope").as_deref().map(split_scopes),
     ))
 }
+
+/// A refusal naming the forge's `error` slug, **only when the slug is one we know**.
+///
+/// The slug is read out of the response body, and the body is the one place a token could be
+/// echoed back — so what reaches an error message is enumerated here rather than trusted. A shape
+/// test is not enough and was tried: `access-secret-sentinel` is lower-case with hyphens and
+/// passes any such rule, and so would a lower-case hex credential. §19.4's own instruction is to
+/// **enumerate the variants rather than grep the source**, and this is that.
+///
+/// An unrecognised slug is reported **without its text**, which keeps the refusal visible and
+/// tells a maintainer to extend the list rather than leaving the user with nothing.
+fn refusal(slug: &str) -> ConnectError {
+    if KNOWN_REFUSALS.contains(&slug) {
+        return ConnectError::Refused(slug.to_owned());
+    }
+    ConnectError::Refused("an unrecognised refusal, whose text is not quoted".to_owned())
+}
+
+/// Every `error` slug RFC 6749 §5.2, RFC 8628 §3.5 and the forge's own Device Flow define.
+///
+/// `authorization_pending`, `slow_down`, `expired_token` and `access_denied` are handled as poll
+/// outcomes before they reach `refusal`; they are listed anyway, because the device-code request
+/// can return them too and a list that is not the whole vocabulary invites a second one.
+const KNOWN_REFUSALS: &[&str] = &[
+    "access_denied",
+    "authorization_pending",
+    "device_flow_disabled",
+    "expired_token",
+    "incorrect_client_credentials",
+    "incorrect_device_code",
+    "invalid_client",
+    "invalid_grant",
+    "invalid_request",
+    "invalid_scope",
+    "server_error",
+    "slow_down",
+    "temporarily_unavailable",
+    "unauthorized_client",
+    "unsupported_grant_type",
+];
 
 /// The grant's own scope set, split on space **and** comma: the Device Flow spec says space and
 /// the forge has been observed to use comma, and guessing wrong loses the whole grant.

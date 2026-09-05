@@ -1069,3 +1069,39 @@ fn requests_after(transport: &FakeTransport, expected: usize, window: Duration) 
     }
     transport.request_count()
 }
+
+/// The refusal quotes the forge's `error` slug, and **the slug comes out of the response body**.
+///
+/// The body is the one place a token can be echoed back, so a server that puts a credential in
+/// its `error` field would otherwise have written it straight into an error message. Known slugs
+/// still reach the message: reporting nothing would trade one failure for another.
+///
+/// The fixture is this file's own access-token sentinel, which is **lower-case with hyphens** —
+/// it passes any shape rule, which is why the production check enumerates instead.
+#[test]
+fn an_unrecognised_error_field_is_not_quoted() {
+    let transport = FakeTransport::new();
+    transport.push(response(&json!({ "error": ACCESS_SENTINEL })));
+    let error = request_device_code(&transport, HOST, CLIENT_ID, SCOPES_PUBLIC, 1_000)
+        .expect_err("a refusal is a refusal");
+    let text = error.to_string();
+    assert!(
+        !text.contains(ACCESS_SENTINEL),
+        "the forge's own error field was quoted verbatim: {text}"
+    );
+    assert!(
+        text.contains("refused"),
+        "the refusal stopped being reported at all: {text}"
+    );
+
+    // The ordinary case still names the reason, or this would trade a leak for a silence.
+    let transport = FakeTransport::new();
+    transport.push(response(&json!({ "error": "device_flow_disabled" })));
+    let named = request_device_code(&transport, HOST, CLIENT_ID, SCOPES_PUBLIC, 1_000)
+        .expect_err("a refusal is a refusal")
+        .to_string();
+    assert!(
+        named.contains("device_flow_disabled"),
+        "a slug-shaped refusal must still be named: {named}"
+    );
+}
