@@ -22,7 +22,7 @@ pub use github::GitHubProvider;
 /// `repo_facts` and `ci_runs`, and an array's length would make each of those a second edit to
 /// this same line. **Six by the end of phase 2, three of them this plan's** — R79 collapsed
 /// `verify_token` into `viewer`, so two entries became one and only the arithmetic changed.
-pub const PROVIDER_REQUEST_METHODS: &[&str] = &["viewer", "list_orgs", "list_repos"];
+pub const PROVIDER_REQUEST_METHODS: &[&str] = &["viewer", "list_orgs", "list_repos", "lookup_repo"];
 
 /// §22.2's host-alias set for a caller that has **no account and no transport in hand**.
 ///
@@ -88,6 +88,21 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
         t: &SecretToken,
         cur: Option<&str>,
     ) -> ProviderResult<Observed<Page<RepoListing>>>;
+    /// One listing read of a stored `owner`/`name` (§22.7's rename repair).
+    ///
+    /// **A listing read, not a fetch**: no git object, no history, no working copy. `Ok(None)` is
+    /// *no such repository for this token* — a 404 answers "not found" and "not visible to you"
+    /// identically, and neither is an error, so the fields stay **unknown** rather than `failed`.
+    ///
+    /// It returns `ProviderResult<Observed<_>>` like the rest, and that is now part of the seam's
+    /// contract (R76): the census tripwire classifies a request method by exactly that return
+    /// shape, so a request method returning anything else would pass the census unseen.
+    fn lookup_repo(
+        &self,
+        t: &SecretToken,
+        owner: &str,
+        name: &str,
+    ) -> ProviderResult<Observed<Option<RepoListing>>>;
     fn canonical_host(&self) -> &str;
     fn host_aliases(&self) -> &[&str];
 }

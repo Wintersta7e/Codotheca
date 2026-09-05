@@ -27,6 +27,7 @@ pub mod people;
 pub mod probe;
 pub mod redirect;
 pub mod remote;
+pub mod rename_repair;
 pub mod store;
 pub mod submodule;
 #[cfg(test)]

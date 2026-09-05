@@ -45,6 +45,14 @@ impl Provider for DeclaringForge {
     ) -> ProviderResult<Observed<Page<RepoListing>>> {
         unreachable!("ingest issues no request")
     }
+    fn lookup_repo(
+        &self,
+        _t: &SecretToken,
+        _owner: &str,
+        _name: &str,
+    ) -> ProviderResult<Observed<Option<RepoListing>>> {
+        unreachable!("this fixture forge issues no request")
+    }
     fn canonical_host(&self) -> &'static str {
         "forge.example"
     }

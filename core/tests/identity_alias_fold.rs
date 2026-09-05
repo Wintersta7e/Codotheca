@@ -49,6 +49,14 @@ impl Provider for DeclaringForge {
     ) -> ProviderResult<Observed<Page<RepoListing>>> {
         unreachable!("the alias fold issues no request")
     }
+    fn lookup_repo(
+        &self,
+        _t: &SecretToken,
+        _owner: &str,
+        _name: &str,
+    ) -> ProviderResult<Observed<Option<RepoListing>>> {
+        unreachable!("the alias fold issues no request")
+    }
     fn canonical_host(&self) -> &str {
         self.canonical
     }

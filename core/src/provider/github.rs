@@ -129,6 +129,42 @@ impl Provider for GitHubProvider {
         })
     }
 
+    fn lookup_repo(
+        &self,
+        t: &SecretToken,
+        owner: &str,
+        name: &str,
+    ) -> ProviderResult<Observed<Option<RepoListing>>> {
+        // `owner` and `name` come from a stored `remote_key`, whose segments are already the
+        // path segments of a URL this build canonicalised. A key with more than two path
+        // segments loses its middle here, which is §22.7's own rule — the repair asks for the
+        // stored owner and the stored name and nothing else.
+        let request = HttpRequest {
+            method: "GET",
+            url: format!("{}/repos/{owner}/{name}", self.api_base()),
+            headers: request_headers(t),
+            body: None,
+            limits: ACCOUNT_LIMITS,
+        };
+        let response = self
+            .transport
+            .send(&request)
+            .map_err(ProviderError::Transport)?;
+        let granted_scopes = observed_scopes(&response);
+        if response.status == 404 {
+            return Ok(Observed {
+                value: None,
+                granted_scopes,
+            });
+        }
+        let response = success(response)?;
+        let repo: GitHubRepo = decode(&response)?;
+        Ok(Observed {
+            value: Some(RepoListing::from(repo)),
+            granted_scopes,
+        })
+    }
+
     fn canonical_host(&self) -> &str {
         &self.host
     }
