@@ -59,7 +59,12 @@ export const NOT_CONNECTED_CONSEQUENCE =
   'Stars, issues, pull requests and CI state stay unknown until a token exists — and unknown is drawn as unknown, never as zero. Stored in the OS keychain, never in a config file.';
 
 export function GithubPanel(props: GithubPanelProps): ReactElement {
-  const state = accountsViewState(props.accounts, props.pendingGrant, props.orgs, props.refusal ?? null);
+  const state = accountsViewState(
+    props.accounts,
+    props.pendingGrant,
+    props.orgs,
+    props.refusal ?? null,
+  );
 
   if (state.kind === 'notConnected') {
     return (
