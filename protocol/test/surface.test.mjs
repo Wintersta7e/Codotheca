@@ -572,20 +572,37 @@ function reachableTypes(root) {
   return seen;
 }
 
+// `Account`'s own fields are all primitives, ids and enums, so the test below cannot prove the
+// walk recurses: a `reachableTypes` that queued nothing would walk `Account` and read green.
+// `struct` is the only kind that has fields at all — `enum` carries string variants and `id` a
+// scalar repr — so following struct fields is the whole graph, and this proves it is followed.
+test('reachableTypes follows struct fields to the bottom', () => {
+  const walked = reachableTypes('Problems');
+  for (const name of ['Problems', 'ProblemGroup', 'ProblemItem']) {
+    assert.ok(walked.has(name), `the walk stopped before ${name}`);
+  }
+});
+
 // §20.8: "Account carries no token field, at any nesting depth." Structural, not a convention —
 // the database stores `token_ref` and the wire carries neither it nor a secret. Walking the
 // graph rather than one field list is what makes a later nested struct fail this.
 test('Account carries no token field at any nesting depth', () => {
   const banned = /token|secret|credential/iu;
   const walked = reachableTypes('Account');
-  assert.ok(walked.size > 1, 'the walk must reach past Account itself');
+  let checked = 0;
   for (const name of walked) {
     const decl = schema.types[name];
     if (decl?.kind !== 'struct') continue;
     for (const field of Object.keys(decl.fields)) {
+      checked += 1;
       assert.ok(!banned.test(field), `${name}.${field} puts a credential on the wire`);
     }
   }
+  // Counting names would count `"String"`; counting fields counts what was actually tested.
+  assert.ok(
+    checked >= Object.keys(schema.types.Account.fields).length,
+    `the walk tested ${checked} field(s), fewer than Account declares`,
+  );
 });
 
 test('the accounts topic carries exactly three events and no snapshot', () => {

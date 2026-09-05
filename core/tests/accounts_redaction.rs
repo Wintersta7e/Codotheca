@@ -236,19 +236,16 @@ fn ac_p2_20_12_no_client_secret() {
     }
 }
 
-/// AC-P2-20-4's second half, structural: **no `Account` value carries a token field at any
-/// nesting depth.** Read from the schema and walked transitively, so a nested struct added later
-/// fails here. `token_ref` deliberately does not appear — `Account` does not carry it.
-#[test]
-fn an_account_carries_no_credential_field_at_any_depth() {
-    let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../../protocol/schema/protocol.json"))
-            .expect("protocol.json parses");
-    let types = schema["types"].as_object().expect("types is an object");
-
-    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut queue = vec!["Account".to_owned()];
-    let mut fields_checked = 0_usize;
+/// Every type name reachable from `root`, following struct fields transitively.
+///
+/// `struct` is the only kind with fields — `enum` declares string variants and `id` a scalar
+/// repr — so following struct fields walks the whole graph.
+fn reachable_types(
+    types: &serde_json::Map<String, serde_json::Value>,
+    root: &str,
+) -> std::collections::BTreeSet<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut queue = vec![root.to_owned()];
     while let Some(name) = queue.pop() {
         if !seen.insert(name.clone()) {
             continue;
@@ -259,7 +256,67 @@ fn an_account_carries_no_credential_field_at_any_depth() {
         if decl["kind"] != "struct" {
             continue;
         }
-        for (field, expr) in decl["fields"].as_object().expect("fields is an object") {
+        for expr in decl["fields"]
+            .as_object()
+            .expect("fields is an object")
+            .values()
+        {
+            queue.push(base_type(expr));
+        }
+    }
+    seen
+}
+
+fn base_type(expr: &serde_json::Value) -> String {
+    expr.as_str()
+        .expect("a type expression")
+        .trim_start_matches('[')
+        .trim_end_matches('?')
+        .trim_end_matches(']')
+        .to_owned()
+}
+
+fn schema_types() -> serde_json::Map<String, serde_json::Value> {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../../protocol/schema/protocol.json"))
+            .expect("protocol.json parses");
+    schema["types"]
+        .as_object()
+        .expect("types is an object")
+        .clone()
+}
+
+/// `Account`'s own fields are all primitives, ids and enums, so the credential test below cannot
+/// prove the walk recurses: a `reachable_types` that queued nothing would walk `Account` and read
+/// green. This proves the recursion on a type that actually nests.
+#[test]
+fn the_type_walk_follows_struct_fields_to_the_bottom() {
+    let types = schema_types();
+    let walked = reachable_types(&types, "Problems");
+    for name in ["Problems", "ProblemGroup", "ProblemItem"] {
+        assert!(walked.contains(name), "the walk stopped before {name}");
+    }
+}
+
+/// AC-P2-20-4's second half, structural: **no `Account` value carries a token field at any
+/// nesting depth.** Read from the schema and walked transitively, so a nested struct added later
+/// fails here. `token_ref` deliberately does not appear — `Account` does not carry it.
+#[test]
+fn an_account_carries_no_credential_field_at_any_depth() {
+    let types = schema_types();
+    let mut fields_checked = 0_usize;
+    for name in reachable_types(&types, "Account") {
+        let Some(decl) = types.get(&name) else {
+            continue;
+        };
+        if decl["kind"] != "struct" {
+            continue;
+        }
+        for field in decl["fields"]
+            .as_object()
+            .expect("fields is an object")
+            .keys()
+        {
             fields_checked += 1;
             let lower = field.to_ascii_lowercase();
             assert!(
@@ -268,16 +325,16 @@ fn an_account_carries_no_credential_field_at_any_depth() {
                     || lower.contains("credential")),
                 "{name}.{field} puts a credential on the wire"
             );
-            let base = expr
-                .as_str()
-                .expect("a type expression")
-                .trim_start_matches('[')
-                .trim_end_matches('?')
-                .trim_end_matches(']');
-            queue.push(base.to_owned());
         }
     }
     eprintln!("accounts_redaction: walked {fields_checked} field(s) from Account");
-    assert!(fields_checked > 0, "the walk read no field");
-    assert!(seen.len() > 1, "the walk never left Account itself");
+    // Counting names would count `"String"`; counting fields counts what was actually tested.
+    let declared = types["Account"]["fields"]
+        .as_object()
+        .expect("Account has fields")
+        .len();
+    assert!(
+        fields_checked >= declared,
+        "the walk tested {fields_checked} field(s), fewer than Account declares"
+    );
 }
