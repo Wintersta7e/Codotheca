@@ -215,7 +215,7 @@ pub fn connect_pat(
     let provider = crate::provider::GitHubProvider::new(Arc::clone(http), host.clone());
 
     // 1. Verify. No lock is held, and nothing is written yet.
-    let verified = provider.verify_token(token).map_err(|error| {
+    let verified = provider.viewer(token).map_err(|error| {
         if is_github_sso_required(&error) {
             coded_failure(ErrorCode::SsoRequired, error.to_string())
         } else {
@@ -232,8 +232,8 @@ pub fn connect_pat(
         .map_err(|error| keychain_failure(&error))?;
 
     // 3. The row. `granted_scopes` is the server's set, verbatim — never a source literal, and
-    //    read off `Observed` rather than the copy flattened into `Verified`: a response with no
-    //    `X-OAuth-Scopes` header states no grant, and `[]` would claim it granted nothing.
+    //    read off `Observed`, which is where it lives: a response with no `X-OAuth-Scopes`
+    //    header states no grant, and `[]` would claim it granted nothing.
     let observed = verified.granted_scopes;
     let new = super::store::NewAccount {
         provider: GITHUB_PROVIDER_ID.to_owned(),

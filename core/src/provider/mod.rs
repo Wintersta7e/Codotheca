@@ -7,7 +7,7 @@ pub mod scopes;
 
 use crate::accounts::keychain::SecretToken;
 use crate::http::TransportError;
-use crate::provider::listing::{OrgListing, Page, RepoListing, Verified, Viewer};
+use crate::provider::listing::{OrgListing, Page, RepoListing, Viewer};
 
 pub use github::GitHubProvider;
 
@@ -20,9 +20,9 @@ pub use github::GitHubProvider;
 ///
 /// A slice rather than a fixed-size array, per R73: p2-22 appends `lookup_repo` and p2-25 appends
 /// `repo_facts` and `ci_runs`, and an array's length would make each of those a second edit to
-/// this same line.
-pub const PROVIDER_REQUEST_METHODS: &[&str] =
-    &["verify_token", "viewer", "list_orgs", "list_repos"];
+/// this same line. **Six by the end of phase 2, three of them this plan's** — R79 collapsed
+/// `verify_token` into `viewer`, so two entries became one and only the arithmetic changed.
+pub const PROVIDER_REQUEST_METHODS: &[&str] = &["viewer", "list_orgs", "list_repos"];
 
 /// A typed provider value plus the scopes observed on that response.
 ///
@@ -50,14 +50,17 @@ pub enum ProviderError {
 pub type ProviderResult<T> = Result<T, ProviderError>;
 
 pub trait Provider: Send + Sync + std::fmt::Debug {
-    /// Verifies the token by reading the current user.
+    /// Who this token is, and what it was granted — **in one request** (R79).
     ///
-    /// The token response has no body field for grants, so `Verified.granted_scopes` is copied
-    /// from the response's `X-OAuth-Scopes` header. If the header is absent,
-    /// `Verified.granted_scopes` is empty but [`Observed::granted_scopes`] is `None`; callers act
-    /// on the `None`, because an absent header is unknown and writing an empty grant would render
-    /// the account as having no scopes at all.
-    fn verify_token(&self, t: &SecretToken) -> ProviderResult<Observed<Verified>>;
+    /// It was two methods, `verify_token` and `viewer`, which resolved to the same `GET /user`
+    /// and decoded the same body: two forge requests to learn one thing, against a budgeted and
+    /// rate-limited resource whose exhaustion §21 exists to handle. R48 ruled the same shape one
+    /// level up — two names for one shape is R15 inverted.
+    ///
+    /// **Verification is what a caller does with the failure**, not a second call: a 401 here is
+    /// a token that does not authenticate. The grant travels on [`Observed::granted_scopes`],
+    /// which is `None` when the response carried no `X-OAuth-Scopes` header — unknown, and not an
+    /// empty grant, which would render the account as having no scopes at all.
     fn viewer(&self, t: &SecretToken) -> ProviderResult<Observed<Viewer>>;
     fn list_orgs(
         &self,

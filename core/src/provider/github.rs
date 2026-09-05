@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::accounts::keychain::SecretToken;
 use crate::http::{HttpRequest, HttpResponse, HttpTransport, ACCOUNT_LIMITS};
 use crate::provider::listing::{
-    OrgListing, Page, RepoListing, Verified, Viewer, GITHUB_CANONICAL_HOST, GITHUB_HOST_ALIASES,
+    OrgListing, Page, RepoListing, Viewer, GITHUB_CANONICAL_HOST, GITHUB_HOST_ALIASES,
 };
 use crate::provider::{Observed, Provider, ProviderError, ProviderResult};
 
@@ -76,20 +76,6 @@ impl GitHubProvider {
 }
 
 impl Provider for GitHubProvider {
-    fn verify_token(&self, t: &SecretToken) -> ProviderResult<Observed<Verified>> {
-        let response = self.get(t, self.user_url())?;
-        let granted_scopes = observed_scopes(&response);
-        let user: GitHubUser = decode(&response)?;
-        Ok(Observed {
-            value: Verified {
-                login: user.login,
-                display_name: user.name,
-                granted_scopes: granted_scopes.clone().unwrap_or_default(),
-            },
-            granted_scopes,
-        })
-    }
-
     fn viewer(&self, t: &SecretToken) -> ProviderResult<Observed<Viewer>> {
         let response = self.get(t, self.user_url())?;
         let granted_scopes = observed_scopes(&response);

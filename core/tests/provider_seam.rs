@@ -31,10 +31,9 @@ const fn same_str(left: &str, right: &str) -> bool {
     true
 }
 
-const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[0], "verify_token"));
-const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[1], "viewer"));
-const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[2], "list_orgs"));
-const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[3], "list_repos"));
+const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[0], "viewer"));
+const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[1], "list_orgs"));
+const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[2], "list_repos"));
 
 fn token() -> SecretToken {
     SecretToken::new("provider-seam-token".to_owned())
@@ -186,19 +185,20 @@ where
 
 #[test]
 fn request_method_tripwire_is_enumerated_and_callable() {
+    // R79: three, not four. `verify_token` and `viewer` resolved to the same GET /user, so the
+    // seam spent two requests to learn one thing. The count moves in the same commit as the
+    // collapse, or the tripwire fails — which is the tripwire working.
     assert_eq!(
         PROVIDER_REQUEST_METHODS,
-        ["verify_token", "viewer", "list_orgs", "list_repos"]
+        ["viewer", "list_orgs", "list_repos"]
     );
 
     let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
-    transport.push(ok(user_body()));
     transport.push(ok(user_body()));
     transport.push(ok(b"[]"));
     transport.push(ok(b"[]"));
     let secret = token();
 
-    provider.verify_token(&secret).unwrap();
     provider.viewer(&secret).unwrap();
     provider.list_orgs(&secret, None).unwrap();
     provider.list_repos(&secret, None).unwrap();
@@ -230,9 +230,6 @@ fn helpers_issue_no_requests_and_request_methods_issue_one_each() {
     assert!(provider.host_aliases().contains(&GITHUB_CANONICAL_HOST));
     assert_eq!(transport.request_count(), 0);
 
-    assert_one_request_for(|provider, secret| {
-        provider.verify_token(secret).unwrap();
-    });
     assert_one_request_for(|provider, secret| {
         provider.viewer(secret).unwrap();
     });
@@ -291,7 +288,7 @@ fn provider_sources_never_construct_or_name_an_http_client() {
 }
 
 #[test]
-fn verify_token_round_trips_observed_scopes_from_the_response() {
+fn the_viewer_call_round_trips_observed_scopes_from_the_response() {
     let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
     transport.push(ok_with_headers(
         normalise_headers([(
@@ -301,14 +298,15 @@ fn verify_token_round_trips_observed_scopes_from_the_response() {
         user_body(),
     ));
 
-    let observed = provider.verify_token(&token()).unwrap();
+    let observed = provider.viewer(&token()).unwrap();
     let expected = vec![
         "read:user".to_owned(),
         "user:email".to_owned(),
         "some:invented:scope".to_owned(),
     ];
-    assert_eq!(observed.granted_scopes, Some(expected.clone()));
-    assert_eq!(observed.value.granted_scopes, expected);
+    // One place the grant lives, not two. `Verified` carried a second, lossy copy of this and
+    // R79 removed it with the method that returned it.
+    assert_eq!(observed.granted_scopes, Some(expected));
 }
 
 #[test]
@@ -316,9 +314,8 @@ fn an_absent_oauth_scope_header_stays_unknown() {
     let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
     transport.push(ok(user_body()));
 
-    let observed = provider.verify_token(&token()).unwrap();
+    let observed = provider.viewer(&token()).unwrap();
     assert_eq!(observed.granted_scopes, None);
-    assert!(observed.value.granted_scopes.is_empty());
 }
 
 #[test]

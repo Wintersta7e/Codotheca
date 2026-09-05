@@ -9,13 +9,6 @@ pub const GITHUB_CANONICAL_HOST: &str = "github.com";
 pub const GITHUB_HOST_ALIASES: &[&str] = &["github.com", "www.github.com", "ssh.github.com"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Verified {
-    pub login: String,
-    pub display_name: Option<String>,
-    pub granted_scopes: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Viewer {
     pub login: String,
     pub display_name: Option<String>,
