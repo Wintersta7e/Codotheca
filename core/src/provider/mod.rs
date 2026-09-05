@@ -11,14 +11,18 @@ use crate::provider::listing::{OrgListing, Page, RepoListing, Verified, Viewer};
 
 pub use github::GitHubProvider;
 
-/// The request-issuing provider methods.
+/// The request-issuing provider methods — R73's census.
 ///
-/// This is deliberately a module-level constant, not an associated const on [`Provider`]:
-/// a trait with an associated const is not dyn-compatible (`E0038`), and real consumers store
-/// `Arc<dyn Provider>`. The tripwire still enumerates request methods rather than grepping `fn`
-/// declarations, so helpers such as [`Provider::canonical_host`] cannot be miscounted.
-pub const PROVIDER_REQUEST_METHODS: [&str; 4] =
-    ["verify_token", "viewer", "list_orgs", "list_repos"];
+/// A module-level constant, not an associated const on [`Provider`]: a trait carrying one is not
+/// dyn-compatible (`E0038`), and the seam is held as `Arc<dyn Provider>`. R49's substance is
+/// unchanged and is the part that matters — the list is **enumerated**, never grepped out of the
+/// source, so helpers such as [`Provider::canonical_host`] cannot be miscounted.
+///
+/// A slice rather than a fixed-size array, per R73: p2-22 appends `lookup_repo` and p2-25 appends
+/// `repo_facts` and `ci_runs`, and an array's length would make each of those a second edit to
+/// this same line.
+pub const PROVIDER_REQUEST_METHODS: &[&str] =
+    &["verify_token", "viewer", "list_orgs", "list_repos"];
 
 /// A typed provider value plus the scopes observed on that response.
 ///
