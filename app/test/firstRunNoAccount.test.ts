@@ -41,8 +41,8 @@ function sources(): { name: string; code: string }[] {
   return out;
 }
 
-describe('AC-P2-20-9 — first run mentions no account', () => {
-  it('names no account, connect, token or scope vocabulary anywhere in first run', () => {
+describe('first run mentions no account', () => {
+  it('AC-P2-20-9 names no account or connect vocabulary anywhere in first run', () => {
     const files = sources();
     // A gate that scanned nothing must say so.
     process.stderr.write(

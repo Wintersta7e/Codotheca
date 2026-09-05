@@ -120,7 +120,7 @@ describe('[p2] §20.11 — the connect offer, exactly one and lowest', () => {
     actions: [],
   });
 
-  it('sorts last, and its length grew rather than a row being replaced', () => {
+  it('AC-P2-20-9 sorts last, and its length grew rather than a row being replaced', () => {
     expect(NOTICE_PRIORITY.at(-1)).toBe('connect');
     expect(NOTICE_PRIORITY).toHaveLength(8);
     expect(new Set(NOTICE_PRIORITY).size).toBe(NOTICE_PRIORITY.length);

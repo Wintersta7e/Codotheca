@@ -20,6 +20,25 @@ import type {
 } from '../../generated/protocol';
 import { GithubPanel } from './accounts';
 
+/**
+ * Whether a Device Flow was started from this process, surviving the panel's unmount.
+ *
+ * **Closing the settings drawer unmounts the panel; it does not cancel the flow** — the poll is
+ * core-side state and `accounts.cancelConnect` or the deadline elapsing are its only two endings.
+ * A panel that kept the grant only in component state would show `NOT CONNECTED` on reopen while
+ * the core was still polling, which is the surface lying about what is happening.
+ *
+ * Module-scoped because there is exactly one flow in the process, which is the core's own model.
+ * It records only *that* one was started: the grant itself is re-read from the core on remount,
+ * so the countdown shown is the time actually left rather than the value first returned.
+ */
+let flowWasStarted = false;
+
+/** Test seam: a fresh module per test file is not something vitest guarantees. */
+export function resetPendingFlowForTest(): void {
+  flowWasStarted = false;
+}
+
 export interface GithubPanelHostProps {
   readonly request: <K extends CommandName>(
     name: K,
@@ -38,6 +57,16 @@ export function GithubPanelHost(props: GithubPanelHostProps): ReactElement {
   const [orgs, setOrgs] = useState<readonly AccountOrg[] | null>(null);
   const [grant, setGrant] = useState<DeviceGrant | null>(null);
 
+  /**
+   * Re-reads the live grant, if one was started. `accounts.connect` with a flow already pending
+   * **returns that flow and starts no second one** (§20.2), so this recovers the same `userCode`
+   * with a smaller `expiresInSecs` rather than beginning anything.
+   */
+  const recoverPendingFlow = useCallback(async (): Promise<void> => {
+    if (!flowWasStarted) return;
+    setGrant(await request('accounts.connect', {}));
+  }, [request]);
+
   const refresh = useCallback(async (): Promise<void> => {
     const listed = await request('accounts.list', {});
     setAccounts(listed);
@@ -52,8 +81,11 @@ export function GithubPanelHost(props: GithubPanelHostProps): ReactElement {
   }, [request]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void (async () => {
+      await refresh();
+      await recoverPendingFlow();
+    })();
+  }, [refresh, recoverPendingFlow]);
 
   const first = accounts.at(0);
 
@@ -64,6 +96,7 @@ export function GithubPanelHost(props: GithubPanelHostProps): ReactElement {
       orgs={orgs}
       onConnect={() => {
         void (async () => {
+          flowWasStarted = true;
           setGrant(await request('accounts.connect', {}));
           await refresh();
         })();
@@ -72,6 +105,7 @@ export function GithubPanelHost(props: GithubPanelHostProps): ReactElement {
       onCancelConnect={() => {
         void (async () => {
           await request('accounts.cancelConnect', {});
+          flowWasStarted = false;
           setGrant(null);
           await refresh();
         })();
@@ -86,6 +120,7 @@ export function GithubPanelHost(props: GithubPanelHostProps): ReactElement {
         if (first === undefined) return;
         void (async () => {
           await request('accounts.disconnect', { accountId: first.id });
+          flowWasStarted = false;
           setGrant(null);
           await refresh();
         })();

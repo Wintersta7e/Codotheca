@@ -66,7 +66,7 @@ describe('§20.12 as a pure function', () => {
     expect(state.lastVerified).toBe(UNKNOWN);
   });
 
-  it('renders an unenumerable org list as unknown and NOT as zero', () => {
+  it('AC-P2-20-8 renders an unenumerable org list as unknown and NOT as zero', () => {
     // `orgs === null` is the public tier: no `read:org`, so the list is not enumerable.
     const state = accountsViewState([account()], null, null);
     if (state.kind !== 'connected') throw new Error('unreachable');

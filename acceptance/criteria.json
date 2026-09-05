@@ -429,7 +429,10 @@
             "from": "main process start",
             "to": "first tile pixel composited",
             "thermal": "cold",
-            "machines": ["A", "B"],
+            "machines": [
+              "A",
+              "B"
+            ],
             "state": "warm database, cold page cache"
           },
           "budget": [
@@ -476,7 +479,9 @@
             "from": "shell global-shortcut callback entry",
             "to": "a composited frame of the window",
             "thermal": "warm",
-            "machines": ["A"],
+            "machines": [
+              "A"
+            ],
             "state": "window alive, chord bound by the harness"
           },
           "budget": [
@@ -501,7 +506,9 @@
             "from": "shell global-shortcut callback entry",
             "to": "a composited frame of the recreated window",
             "thermal": "cold",
-            "machines": ["A"],
+            "machines": [
+              "A"
+            ],
             "state": "window destroyed under the 30-minute hybrid"
           },
           "budget": [
@@ -534,7 +541,9 @@
             "from": "renderer keydown",
             "to": "the refiltered grid presented",
             "thermal": "warm",
-            "machines": ["A"],
+            "machines": [
+              "A"
+            ],
             "state": "1,000 projects, client-side projection"
           },
           "budget": [
@@ -567,7 +576,9 @@
             "from": "the scan.start response",
             "to": "the scan/finished event",
             "thermal": "warm",
-            "machines": ["A"],
+            "machines": [
+              "A"
+            ],
             "state": "1,000 repositories, all fingerprints unchanged, no J2 re-run"
           },
           "budget": [
@@ -600,7 +611,9 @@
             "from": "the scan.start response",
             "to": "the scan/finished event",
             "thermal": "warm",
-            "machines": ["A"],
+            "machines": [
+              "A"
+            ],
             "state": "1,000 repositories on local SSD, freshness reset, fully backgrounded"
           },
           "budget": [
@@ -624,7 +637,9 @@
             "kind": "rate",
             "run": "wheel-driven scrolling through the shelf for at least 450 frames while the forced refresh runs",
             "thermal": "warm",
-            "machines": ["A"]
+            "machines": [
+              "A"
+            ]
           },
           "budget": [
             {
@@ -694,7 +709,9 @@
             "kind": "rate",
             "run": "at least 60 s with the shelf visible and focused, no project page open, no session open, no job running, and no pointer or keyboard input for at least 5 s",
             "thermal": "warm",
-            "machines": ["A"]
+            "machines": [
+              "A"
+            ]
           },
           "budget": [
             {
@@ -748,7 +765,9 @@
           "measurement": {
             "kind": "size",
             "thermal": "n/a",
-            "machines": ["A"],
+            "machines": [
+              "A"
+            ],
             "state": "1,000 projects, 200,000 commit subjects, 100,000 events"
           },
           "budget": [
@@ -770,7 +789,9 @@
           "measurement": {
             "kind": "size",
             "thermal": "n/a",
-            "machines": ["A"],
+            "machines": [
+              "A"
+            ],
             "state": "the worst of a 24-scene sample projected to 1,000 projects, with more hero opens than the cap"
           },
           "budget": [
@@ -987,7 +1008,7 @@
           "status": "manual",
           "runner": "manual",
           "gate": "DIAG-ANONYMISATION",
-          "assert": "Against a real index whose locations sit under a home directory, a bundle exported with the default setting carries no home directory, no drive letter, no mount root and no user name \u2014 only the basename and the per-volume pseudonym \u00a711.4 specifies. The same export with SHOW REAL PATHS must put them back, so a clean default run is known to have had something to remove.",
+          "assert": "Against a real index whose locations sit under a home directory, a bundle exported with the default setting carries no home directory, no drive letter, no mount root and no user name — only the basename and the per-volume pseudonym §11.4 specifies. The same export with SHOW REAL PATHS must put them back, so a clean default run is known to have had something to remove.",
           "reason": "A reviewer performs this before a release, against the built binary rather than the source. It is not automated here for two reasons. The cargo half (AC-28-fields, owner 17) asserts the document's shape but builds no bundle from host-shaped paths, so it cannot see an anonymiser that stopped covering a field. And the control half is what makes the result mean anything: without re-exporting the same index with real paths and watching the assertion fail, a clean run is indistinguishable from a run whose fixture never reached the anonymiser at all. That pairing is a judgement about whether the fixture was representative, which is why it is a person's gate and not a machine's."
         }
       ]
@@ -1024,7 +1045,9 @@
             "kind": "rate",
             "run": "1,000 logical cards with 140 mounted, virtualized, driven by injected wheel events through the real compositor path and never by assigning scrollTop, over at least 450 frames, with the window alive, the shelf already painted and the virtualizer settled",
             "thermal": "warm",
-            "machines": ["A"]
+            "machines": [
+              "A"
+            ]
           },
           "budget": [
             {
@@ -1056,7 +1079,9 @@
             "from": "renderer keydown",
             "to": "the palette painted with its first page of rows and the field focused",
             "thermal": "warm",
-            "machines": ["A"],
+            "machines": [
+              "A"
+            ],
             "state": "window alive"
           },
           "budget": [
@@ -1081,7 +1106,9 @@
             "from": "shell global-shortcut callback entry",
             "to": "the palette painted with its first page of rows and the field focused",
             "thermal": "cold",
-            "machines": ["A"],
+            "machines": [
+              "A"
+            ],
             "state": "window destroyed, chord bound by the harness"
           },
           "budget": [
@@ -2132,6 +2159,304 @@
           "owner": "12c",
           "test": "AC-67 during a live scan a mounted card changes appearance exactly once per scene hash",
           "assert": "The plate is held until the bitmap for that exact hash exists and has decoded, then swapped with no transition, no cross-fade, no re-layout, no intermediate plate flash, at identical geometry."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-1",
+      "title": "Admission is the listing's own push permission, never inferred",
+      "group": "functional",
+      "spec": "§20.1",
+      "checks": [
+        {
+          "id": "AC-P2-20-1",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "acceptance_accounts::ac_p2_20_1_admission_is_push_permission",
+          "assert": "Of an owned public repo, an owned private repo, an owned fork, a push-permission repo not owned, a read-only repo, a starred repo and an entry with no permission object, exactly the first four are admitted and the last is counted as skipped for unknown permission rather than denied."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-2",
+      "title": "No source file in the core sends a scope outside the two tier sets",
+      "group": "functional",
+      "spec": "§20.3",
+      "checks": [
+        {
+          "id": "AC-P2-20-2",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "provider_scope_audit::every_scope_literal_is_on_a_tier_list",
+          "assert": "Walks every .rs under core/src/, prints the count of files scanned and fails at zero, and asserts a scope literal is written only in provider/scopes.rs.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-20-2-denylist",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "provider_scope_audit::the_core_never_names_a_destructive_or_unrequested_scope",
+          "assert": "Prints the count of files scanned and fails at zero; no file in the core names delete_repo, gist, notifications, workflow, or any admin: or write: scope.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-20-3",
+      "title": "The renderer writes no scope string; the chips come from the payload",
+      "group": "functional",
+      "spec": "§20.10",
+      "checks": [
+        {
+          "id": "AC-P2-20-3",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p2-20",
+          "test": "check-forbidden:p2-20-scope-strings",
+          "assert": "Six substring patterns are absent from app/src and from the built renderer bundle; the rule prints its per-rule scanned count and fails a rule that read zero files."
+        },
+        {
+          "id": "AC-P2-20-3-chips",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-20",
+          "test": "§20.12, mounted AC-P2-20-3 draws the chips the payload carried, whatever they are",
+          "assert": "A grantedScopes payload whose strings appear in no source file renders as chips, and the NOT CONNECTED state renders no scope chip at all."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-4",
+      "title": "A token reaches no log line, no bundle and no error frame",
+      "group": "functional",
+      "spec": "§20.5",
+      "checks": [
+        {
+          "id": "AC-P2-20-4",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "accounts_redaction::ac_p2_20_4_the_sentinel_appears_nowhere",
+          "assert": "A connect driven with a sentinel token leaves it out of the command's answer, out of every error frame, out of diag.bundle's serialised bytes, and out of the Debug of the request that carried it."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-5",
+      "title": "No keychain, no connection, and nothing is stored",
+      "group": "functional",
+      "spec": "§20.6",
+      "checks": [
+        {
+          "id": "AC-P2-20-5",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "accounts_keychain::an_unavailable_keychain_refuses_and_stores_nothing",
+          "assert": "With a token store reporting the keychain unavailable, a store attempt fails with that named reason and the entry set stays empty."
+        },
+        {
+          "id": "AC-P2-20-5-nofile",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "accounts_keychain::the_keychain_module_touches_no_file",
+          "assert": "Prints the byte count read and fails at zero bytes; the keychain module names no filesystem API, so there is no file fallback to take."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-6",
+      "title": "Disconnect deletes credential state and no project row",
+      "group": "functional",
+      "spec": "§20.9",
+      "checks": [
+        {
+          "id": "AC-P2-20-6",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "acceptance_accounts::ac_p2_20_6_disconnect_deletes_no_project_row",
+          "assert": "Against one cloned and one zero-location project, disconnect removes the account and both side tables and leaves the full project id set unchanged."
+        },
+        {
+          "id": "AC-P2-20-6-census",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "acceptance_accounts::the_account_referencing_census_is_complete_and_covered",
+          "assert": "Prints the census size, the count covered by cascade and the count needing an explicit call, and fails at zero tables scanned."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-7",
+      "title": "An org admits nothing until it is enabled",
+      "group": "functional",
+      "spec": "§20.4",
+      "checks": [
+        {
+          "id": "AC-P2-20-7",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "accounts_store::an_org_admits_nothing_until_enabled",
+          "assert": "account_org.is_enabled defaults to 0, a newly enumerated org admits no repository until enabled, and disabling one deletes no project row."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-8",
+      "title": "The public tier reports the org list as unknown, never as zero",
+      "group": "functional",
+      "spec": "§20.4",
+      "checks": [
+        {
+          "id": "AC-P2-20-8",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "accounts_store::the_public_tier_reports_unknown_not_zero",
+          "assert": "accounts.orgs serialises to null under the public tier and to [] under the private tier with no orgs, which are different claims on the wire."
+        },
+        {
+          "id": "AC-P2-20-8-render",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-20",
+          "test": "§20.12 as a pure function AC-P2-20-8 renders an unenumerable org list as unknown and NOT as zero",
+          "assert": "A null org list renders the unknown glyph and never a zero, and an uncounted org keeps a working toggle."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-9",
+      "title": "GitHub is additive: first run and the shelf work with no account",
+      "group": "functional",
+      "spec": "§20.11",
+      "checks": [
+        {
+          "id": "AC-P2-20-9",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-20",
+          "test": "the shelf with zero accounts AC-P2-20-9 mounts and paints without an account anywhere in its inputs",
+          "assert": "The shelf mounts with no account in its inputs, paints its rows, disables no control, and renders no section whose only content is a connect placeholder."
+        },
+        {
+          "id": "AC-P2-20-9-firstrun",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-20",
+          "test": "first run mentions no account AC-P2-20-9 names no account or connect vocabulary anywhere in first run",
+          "assert": "Prints the count of first-run source files scanned and fails at zero; none names an account command, a connect control or the grant payload, and the gate predicate reads no account state.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-20-9-offer",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-20",
+          "test": "[p2] §20.11 — the connect offer, exactly one and lowest AC-P2-20-9 sorts last, and its length grew rather than a row being replaced",
+          "assert": "The connect offer sorts last, loses to every other candidate, and its unscoped dismissal key keeps it from being re-raised after a new scan run."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-10",
+      "title": "The Device Flow is polled core-side and survives the drawer",
+      "group": "functional",
+      "spec": "§20.2",
+      "checks": [
+        {
+          "id": "AC-P2-20-10",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "accounts_device_flow::the_poll_is_core_side_and_the_code_is_verbatim",
+          "assert": "A slow_down response replaces the poll interval with the server's, a second connect returns the same user code with strictly less time left and issues no second device-code request, and the code is carried byte-identical."
+        },
+        {
+          "id": "AC-P2-20-10-drawer",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-20",
+          "test": "the drawer closes without cancelling AC-P2-20-10 returns to the same flow with less time left, and cancels nothing",
+          "assert": "Unmounting and remounting the panel returns the same user code with a smaller countdown and never calls accounts.cancelConnect."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-11",
+      "title": "The provider seam has a production implementation beside it",
+      "group": "functional",
+      "spec": "§20.13",
+      "checks": [
+        {
+          "id": "AC-P2-20-11",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "provider_seam::the_production_impl_exists_beside_the_trait",
+          "assert": "Prints the byte count read and fails at zero bytes; core/src/provider/github.rs carries impl Provider for GitHubProvider.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-20-11-tripwire",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "provider_seam::request_method_tripwire_is_enumerated_and_callable",
+          "assert": "Every name in the request-method census is called through Arc<dyn Provider>, and the count of requests issued equals the number of request-shaped methods the trait declares."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-12",
+      "title": "The build contains no OAuth client secret, because none exists",
+      "group": "functional",
+      "spec": "§20.10",
+      "checks": [
+        {
+          "id": "AC-P2-20-12",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "accounts_redaction::ac_p2_20_12_no_client_secret",
+          "assert": "Prints the count of source files and the count of binary bytes scanned and fails at zero; no source declares a client-secret-shaped constant and the built binary sends none."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-13",
+      "title": "The two tier sets authorize what the surface claims",
+      "group": "functional",
+      "spec": "§20.3",
+      "checks": [
+        {
+          "id": "AC-P2-20-13",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "assert": "That the two tier sets authorize the reads §20 makes, that permissions.push is present on listings under the public tier, that a slow_down response carries a replacement interval, and that requesting a narrower set does not narrow an existing grant.",
+          "deferral": "live-observation",
+          "reason": "Documentation knowledge against a live API that neither the decision round nor this lane has called. It is honest as deferred and stops being honest the moment someone reads it as verified.",
+          "verification": {
+            "recordedAt": null,
+            "evidence": null
+          }
+        },
+        {
+          "id": "AC-P2-20-13-copy",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "accounts_consent_copy::no_rendered_string_names_a_scope",
+          "assert": "Prints the count of settings source files scanned and fails at zero; no rendered string names a scope, so no consent copy asserting one can ship before the live check runs.",
+          "scanning": true
         }
       ]
     }

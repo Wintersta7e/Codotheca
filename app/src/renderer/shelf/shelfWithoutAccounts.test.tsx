@@ -116,8 +116,8 @@ const props = (over: Partial<ShelfProps> = {}): ShelfProps => ({
   ...over,
 });
 
-describe('AC-P2-20-9 — the shelf with zero accounts', () => {
-  it('mounts and paints without an account anywhere in its inputs', () => {
+describe('the shelf with zero accounts', () => {
+  it('AC-P2-20-9 mounts and paints without an account anywhere in its inputs', () => {
     const { container } = render(<Shelf {...props()} />);
     // It painted: the bar, exactly one scroll container, and the body inside it.
     expect(container.querySelector('.cdt-shelf-bar')).toBeTruthy();

@@ -77,7 +77,7 @@ describe('§20.12, mounted', () => {
     expect(screen.getByRole('button', { name: 'CONNECT' })).toBeTruthy();
   });
 
-  it('draws the chips the payload carried, whatever they are', () => {
+  it('AC-P2-20-3 draws the chips the payload carried, whatever they are', () => {
     // AC-P2-20-3's second half: values that appear in no source file, so a hard-coded list
     // could not produce them.
     const served = ['read:user', 'an:invented:scope'];

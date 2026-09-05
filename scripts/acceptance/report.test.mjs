@@ -80,15 +80,16 @@ test('countByPhase splits the register without a second file', () => {
   const counts = countByPhase(registry);
   assert.equal(counts[1].criteria, 70);
   assert.equal(counts[1].checks, 171);
-  assert.equal(counts[2].criteria, 0);
-  assert.equal(counts[2].checks, 0);
+  // [p2] §20's thirteen. Phase 1's figures are the ones that must not move.
+  assert.equal(counts[2].criteria, 13);
+  assert.equal(counts[2].checks, 23);
   assert.equal(
     Object.values(counts[1].byStatus).reduce((a, b) => a + b, 0),
     counts[1].checks,
   );
   assert.equal(
     Object.values(counts[2].byStatus).reduce((a, b) => a + b, 0),
-    0,
+    counts[2].checks,
   );
 });
 
@@ -97,7 +98,7 @@ test('the line a successful run prints states what it validated, per phase', () 
   // about the register, and a run that validated nothing must not read like a clean one.
   assert.equal(
     renderRegistryLine(loadRegistry(registryPath)),
-    '70 criteria / 171 checks validated — phase 1 70/171, phase 2 0/0',
+    '83 criteria / 194 checks validated — phase 1 70/171, phase 2 13/23',
   );
   assert.equal(
     renderRegistryLine({ criteria: [] }),
@@ -109,7 +110,11 @@ test('the table names both phases, and says phase 2 holds nothing yet rather tha
   const rendered = renderDispositions(loadRegistry(registryPath));
   assert.match(rendered, /## Phase 1/u);
   assert.match(rendered, /## Phase 2/u);
-  assert.match(rendered, /no phase-2 criteria are registered yet/iu);
+  // [p2] It no longer holds nothing: §20 is registered, so the table names its criteria instead
+  // of the placeholder. The placeholder must be gone — a table still saying "none yet" over
+  // thirteen rows would be the register lying about itself.
+  assert.doesNotMatch(rendered, /no phase-2 criteria are registered yet/iu);
+  assert.match(rendered, /P2-20-1/u);
 });
 
 test('the run report splits its check count by phase', () => {
@@ -117,5 +122,5 @@ test('the run report splits its check count by phase', () => {
   const join = joinResults(registry, []);
   const rendered = renderRunReport(registry, join, { newFailures: [], stale: [], missing: [] }, []);
   assert.match(rendered, /Phase 1: 171 checks/u);
-  assert.match(rendered, /Phase 2: 0 checks/u);
+  assert.match(rendered, /Phase 2: 23 checks/u);
 });
