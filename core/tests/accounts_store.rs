@@ -857,3 +857,56 @@ fn ok_json(
         body: serde_json::to_vec(body).expect("json encodes"),
     }
 }
+
+/// A response with **no `X-OAuth-Scopes` header** states no grant, and that is unknown.
+///
+/// `scopes_observed_at` is the column that carries the difference: NULL is *never observed*, and
+/// a timestamp beside an empty array is *observed, and the grant is empty*. Writing the second
+/// for the first would render the account as having been checked and found to hold no scopes.
+#[test]
+fn a_grant_the_response_never_stated_is_unknown_not_an_empty_one() {
+    let (_dir, index, transport) = pat_fixture();
+    // No `X-OAuth-Scopes` at all.
+    transport.push(ok_json(
+        &serde_json::json!({ "login": "octo", "name": null }),
+        &[],
+    ));
+    let unstated = codotheca_core::accounts::commands::connect_pat(
+        &index,
+        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &FakeTokenStore::available(),
+        "forge.example.invalid",
+        &SecretToken::new("pat-sentinel".to_owned()),
+        2_000,
+    )
+    .expect("a verified token connects");
+
+    assert_eq!(
+        unstated.scopes_observed_at, None,
+        "an absent header was recorded as an observation"
+    );
+    assert!(unstated.granted_scopes.is_empty());
+
+    // The other half of the pair: a header that is present and empty **is** an observation.
+    let (_dir2, index2, transport2) = pat_fixture();
+    transport2.push(ok_json(
+        &serde_json::json!({ "login": "octo", "name": null }),
+        &[("X-OAuth-Scopes", "")],
+    ));
+    let observed = codotheca_core::accounts::commands::connect_pat(
+        &index2,
+        &(Arc::clone(&transport2) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &FakeTokenStore::available(),
+        "forge.example.invalid",
+        &SecretToken::new("pat-sentinel".to_owned()),
+        2_000,
+    )
+    .expect("a verified token connects");
+
+    assert_eq!(
+        observed.scopes_observed_at,
+        Some(2_000),
+        "a present but empty header is an observed empty grant"
+    );
+    assert!(observed.granted_scopes.is_empty());
+}

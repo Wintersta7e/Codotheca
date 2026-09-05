@@ -231,15 +231,18 @@ pub fn connect_pat(
         .store(&entry, token)
         .map_err(|error| keychain_failure(&error))?;
 
-    // 3. The row. `granted_scopes` is the server's set, verbatim — never a source literal.
+    // 3. The row. `granted_scopes` is the server's set, verbatim — never a source literal, and
+    //    read off `Observed` rather than the copy flattened into `Verified`: a response with no
+    //    `X-OAuth-Scopes` header states no grant, and `[]` would claim it granted nothing.
+    let observed = verified.granted_scopes;
     let new = super::store::NewAccount {
         provider: GITHUB_PROVIDER_ID.to_owned(),
         host,
         login,
         display_name,
         auth_kind: AuthKind::Pat,
-        scope_tier: tier_for(&verified.value.granted_scopes),
-        granted_scopes: verified.value.granted_scopes.clone(),
+        scope_tier: observed.as_deref().map_or(ScopeTier::Public, tier_for),
+        granted_scopes: observed.clone().unwrap_or_default(),
         token_ref: entry,
     };
     let mut guard = index
@@ -252,6 +255,13 @@ pub fn connect_pat(
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
     let id = super::store::insert_account(&tx, &new, now)
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
+    // `insert_account` leaves `scopes_observed_at` NULL, which is *never observed*. Stamping it
+    // is what separates an observed empty grant from a grant the response never stated, and it
+    // happens only when the header was actually there.
+    if let Some(scopes) = observed.as_deref() {
+        super::store::record_observed_scopes(&tx, id, scopes, now)
+            .map_err(|error| account_failure(&error))?;
+    }
     tx.commit()
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
 
