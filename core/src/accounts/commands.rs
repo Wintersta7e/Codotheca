@@ -308,20 +308,42 @@ const PRIVATE_TIER_MARKER: &str = crate::provider::scopes::PRIVATE_TIER_SCOPE;
 ///
 /// # Errors
 /// The keychain's failure, or the store's.
-pub fn disconnect(ctx: &mut AccountsCtx<'_>, id: AccountId) -> Result<(), CommandFailure> {
-    let identity =
-        store::account_identity(ctx.index.conn(), id).map_err(|e| account_failure(&e))?;
+/// Answered **off the index lock** (R75), for the same reason `setOrgEnabled` is.
+///
+/// The keychain round trip is not bounded by anything this process controls: `keyring` has no
+/// timeout, a locked Windows credential store can prompt, and a secret-service call can wait on
+/// D-Bus. Holding the process's one SQLite mutex across it stops every other command for however
+/// long that takes. The identity read is its own brief lock, the delete runs with none, and the
+/// row transaction takes the lock only afterwards — which the normative order already wanted.
+///
+/// # Errors
+/// Fails when the account does not exist, the keychain refuses, or the store does.
+pub fn disconnect_off_lock(
+    index: &Arc<Mutex<crate::index::Index>>,
+    tokens: &dyn TokenStore,
+    id: AccountId,
+) -> Result<(), CommandFailure> {
+    let identity = {
+        let guard = index
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        store::account_identity(guard.conn(), id).map_err(|e| account_failure(&e))?
+    };
 
-    // 1. The keychain, first. A `NotFound` entry is not a failure: the secret is already gone,
-    //    and refusing here would strand the row for a user who cleared their keychain by hand.
-    match ctx.tokens.delete(&identity.token_ref) {
+    // 1. The keychain, first, with no lock held. A `NotFound` entry is not a failure: the secret
+    //    is already gone, and refusing here would strand the row for a user who cleared their
+    //    keychain by hand.
+    match tokens.delete(&identity.token_ref) {
         Ok(()) | Err(KeychainError::NotFound) => {}
         Err(error) => return Err(keychain_failure(&error)),
     }
 
     // 2. The rows. `delete_account` refuses if the cascade would not fire.
+    let guard = index
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _tx_guard = TxGuard::enter();
-    let tx = ctx.index.conn().unchecked_transaction().map_err(internal)?;
+    let tx = guard.conn().unchecked_transaction().map_err(internal)?;
     store::delete_account(&tx, id).map_err(|e| account_failure(&e))?;
     tx.commit().map_err(internal)
 }
@@ -330,8 +352,12 @@ pub fn disconnect(ctx: &mut AccountsCtx<'_>, id: AccountId) -> Result<(), Comman
 ///
 /// # Errors
 /// Fails when arguments are malformed, the keychain refuses, or the store does.
-pub fn handle_disconnect(ctx: &mut AccountsCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
+pub fn handle_disconnect(
+    index: &Arc<Mutex<crate::index::Index>>,
+    tokens: &dyn TokenStore,
+    args: Value,
+) -> Result<Value, CommandFailure> {
     let parsed: crate::protocol::AccountsDisconnectArgs = parse_args(args)?;
-    disconnect(ctx, parsed.account_id)?;
+    disconnect_off_lock(index, tokens, parsed.account_id)?;
     Ok(serde_json::json!({}))
 }

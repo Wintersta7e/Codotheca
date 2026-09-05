@@ -40,10 +40,12 @@ pub struct AccountsCtx<'a> {
 
 /// Dispatches the `accounts.*` subset implemented by this task.
 ///
-/// This dispatcher answers the account commands that only read or write a row. Every command
-/// that reaches the network — `accounts.connect`, `accounts.cancelConnect`, `accounts.connectPat`,
-/// `accounts.upgradeScope` and `accounts.setOrgEnabled` — is answered by the assembly **without
-/// the index guard** (R75), returns `None` here, and never reaches this match.
+/// This dispatcher answers the account commands that **only read a row**. Every command that
+/// makes an unbounded call — `accounts.connect`, `accounts.cancelConnect`, `accounts.connectPat`,
+/// `accounts.upgradeScope`, `accounts.setOrgEnabled` and `accounts.disconnect` — is answered by
+/// the assembly **without the index guard** (R75), returns `None` here, and never reaches this
+/// match. `disconnect` is on that list for its **keychain** round trip, not a forge one: nothing
+/// bounds it either.
 #[must_use]
 pub fn dispatch_accounts_command(
     ctx: &mut AccountsCtx<'_>,
@@ -53,7 +55,6 @@ pub fn dispatch_accounts_command(
     match command {
         "accounts.list" => Some(commands::handle_list(ctx, args).and_then(|value| encode(&value))),
         "accounts.orgs" => Some(commands::handle_orgs(ctx, args).and_then(|value| encode(&value))),
-        "accounts.disconnect" => Some(commands::handle_disconnect(ctx, args)),
         _ => None,
     }
 }

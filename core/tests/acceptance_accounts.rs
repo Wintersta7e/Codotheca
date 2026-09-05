@@ -394,7 +394,6 @@ fn an_enabled_org_matches_regardless_of_case() {
 
 use codotheca_core::accounts::keychain::TokenStore as _;
 use codotheca_core::accounts::store::ACCOUNT_REFERENCING_TABLES;
-use codotheca_core::accounts::{dispatch_accounts_command, AccountsCtx};
 use std::sync::Arc;
 
 struct Disconnectable {
@@ -501,24 +500,18 @@ fn ac_p2_20_6_disconnect_deletes_no_project_row() {
             &codotheca_core::accounts::keychain::SecretToken::new("sentinel".to_owned()),
         )
         .expect("stored");
-    let transport = Arc::new(codotheca_core::testing::FakeTransport::new());
-    let provider = codotheca_core::provider::GitHubProvider::new(
-        Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>,
-        codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
-    );
-    let mut ctx = AccountsCtx {
-        index: &index,
-        provider: &provider,
-        tokens: &tokens,
-        now: 2_000,
-    };
-    dispatch_accounts_command(
-        &mut ctx,
-        "accounts.disconnect",
+    // R75: `accounts.disconnect` is answered off the index lock, so it takes the shared handle
+    // the assembly hands it rather than an `AccountsCtx`.
+    let index = Arc::new(std::sync::Mutex::new(index));
+    codotheca_core::accounts::commands::handle_disconnect(
+        &index,
+        &tokens,
         serde_json::json!({ "accountId": fixture.account.0 }),
     )
-    .expect("the command is ours")
     .expect("disconnect succeeds");
+    let index = index
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
 
     assert_eq!(
         count(
@@ -567,24 +560,16 @@ fn a_failing_keychain_deletion_leaves_the_account_and_its_side_tables() {
     let fixture = disconnectable(1_000);
     let index = fixture.index;
     let tokens = codotheca_core::testing::FakeTokenStore::refusing_delete();
-    let transport = Arc::new(codotheca_core::testing::FakeTransport::new());
-    let provider = codotheca_core::provider::GitHubProvider::new(
-        Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>,
-        codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
-    );
-    let mut ctx = AccountsCtx {
-        index: &index,
-        provider: &provider,
-        tokens: &tokens,
-        now: 2_000,
-    };
-    let outcome = dispatch_accounts_command(
-        &mut ctx,
-        "accounts.disconnect",
+    let index = Arc::new(std::sync::Mutex::new(index));
+    let outcome = codotheca_core::accounts::commands::handle_disconnect(
+        &index,
+        &tokens,
         serde_json::json!({ "accountId": fixture.account.0 }),
-    )
-    .expect("the command is ours");
+    );
     assert!(outcome.is_err(), "a refused keychain must fail the command");
+    let index = index
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
 
     assert_eq!(
         count(

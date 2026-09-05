@@ -151,22 +151,24 @@ pub fn route(command: CommandName) -> Route {
         | CommandName::CollectionsUpsert
         | CommandName::CollectionsRemove => Route::View,
 
-        // The three §20.8 reads and the org gate, answered by `crate::accounts` **under the
-        // index guard**: each only reads or writes a row.
-        CommandName::AccountsList | CommandName::AccountsOrgs | CommandName::AccountsDisconnect => {
-            Route::Accounts
-        }
+        // The two §20.8 reads, answered by `crate::accounts` **under the index guard**. These
+        // two only read a row; every other `accounts.*` command is below.
+        CommandName::AccountsList | CommandName::AccountsOrgs => Route::Accounts,
 
-        // R75: the two that reach the network are answered **without the index lock**, like
-        // `Route::Scan`. Holding the process's one SQLite mutex across a forge round trip would
-        // stop every other command for as long as `ACCOUNT_LIMITS.total_secs`.
-        // R75: `setOrgEnabled` preflights the forge before it writes, so it belongs here too —
-        // the guarded form held the one SQLite mutex across a thirty-second call.
+        // R75: everything that makes a call this process cannot bound is answered **without the
+        // index lock**, like `Route::Scan`. Holding the one SQLite mutex across such a call stops
+        // every other command for its whole duration.
+        //
+        // The unbounded call is not always the forge. `setOrgEnabled` preflights it for as long
+        // as `ACCOUNT_LIMITS.total_secs`; `disconnect` makes a **keychain** round trip, which
+        // `keyring` puts no timeout on at all — a locked credential store can prompt and a
+        // secret-service call can wait on D-Bus. Both were answered under the guard.
         CommandName::AccountsConnect
         | CommandName::AccountsCancelConnect
         | CommandName::AccountsConnectPat
         | CommandName::AccountsUpgradeScope
-        | CommandName::AccountsSetOrgEnabled => Route::AccountsNet,
+        | CommandName::AccountsSetOrgEnabled
+        | CommandName::AccountsDisconnect => Route::AccountsNet,
     }
 }
 
