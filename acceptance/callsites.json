@@ -4,7 +4,7 @@
     {
       "id": "projects-merge",
       "spec": "§16.2 amendment, §11.1",
-      "why": "projects.merge ships, has no phase-1 caller and is exercised by tests only: criterion 3 drives it directly against the command surface. Its inverse, the split, is deferred to phase 4, so a control wired to it is an irreversible join with no undo — the §17 breach §11.1 forbids by name.",
+      "why": "projects.merge ships, has no phase-1 caller and is exercised by tests only: criterion 3 drives it directly against the command surface. Its inverse, the split, is deferred to phase 4, so a control wired to it is an irreversible join with no undo — the §17 breach §11.1 forbids by name. §22.4's hydration was considered and excluded: it is a third thing, not a merge — one project row existed for the repository throughout, so nothing is absorbed and nothing is tombstoned, and a build in which it called merge_projects would tombstone a row that never existed and let the earliest created_at win, so a blueprint synced on Monday would absorb a local project cloned on Tuesday.",
       "roots": ["app/src", "core/src"],
       "ext": [".ts", ".tsx", ".rs"],
       "patterns": ["projects\\.merge", "\\bmerge_projects\\b"],
