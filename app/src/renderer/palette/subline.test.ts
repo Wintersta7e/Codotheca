@@ -14,6 +14,7 @@ describe('paletteSubLine', () => {
         lastTouchedAt: NOW - 2 * DAY,
         inSession: false,
         nowSecs: NOW,
+        hasWorkingCopy: true,
       }),
     ).toBe('.rs · main · opened this month');
   });
@@ -26,6 +27,7 @@ describe('paletteSubLine', () => {
         lastTouchedAt: NOW - 900 * DAY,
         inSession: true,
         nowSecs: NOW,
+        hasWorkingCopy: true,
       }),
     ).toBe('.rs · main · in session');
   });
@@ -38,6 +40,7 @@ describe('paletteSubLine', () => {
         lastTouchedAt: NOW - days * DAY,
         inSession: false,
         nowSecs: NOW,
+        hasWorkingCopy: true,
       });
     expect(at(30)).toBe('opened this month');
     expect(at(31)).toBe('1 months cold');
@@ -55,6 +58,7 @@ describe('paletteSubLine', () => {
         lastTouchedAt: NOW,
         inSession: false,
         nowSecs: NOW,
+        hasWorkingCopy: true,
       }),
     ).toBe('main · opened this month');
     expect(
@@ -64,6 +68,7 @@ describe('paletteSubLine', () => {
         lastTouchedAt: NOW,
         inSession: false,
         nowSecs: NOW,
+        hasWorkingCopy: true,
       }),
     ).toBe('.go · opened this month');
   });
@@ -76,6 +81,7 @@ describe('paletteSubLine', () => {
         lastTouchedAt: NOW + 5 * DAY,
         inSession: false,
         nowSecs: NOW,
+        hasWorkingCopy: true,
       }),
     ).toBe('opened this month');
   });
@@ -94,6 +100,56 @@ describe('subLineInputFor', () => {
       lastTouchedAt: NOW - DAY,
       inSession: true,
       nowSecs: NOW,
+      hasWorkingCopy: true,
     });
+  });
+});
+
+/**
+ * AC-P2-23-6's unit half. It does not satisfy the criterion on its own — §23.9 requires the row
+ * to be rendered — but it pins the rule at the one place that owns it.
+ */
+describe('§23.4: no tail for a project with no working copy', () => {
+  const line = (hasWorkingCopy: boolean, over: Record<string, unknown> = {}): string =>
+    paletteSubLine({
+      primaryLanguage: 'Rust',
+      branch: 'main',
+      lastTouchedAt: NOW - 2 * DAY,
+      inSession: false,
+      nowSecs: NOW,
+      hasWorkingCopy,
+      ...over,
+    });
+
+  it('omits the tail field and renders the rest of the line', () => {
+    expect(line(false)).toBe('.rs · main');
+    expect(line(true)).toBe('.rs · main · opened this month');
+  });
+
+  it('omits it whatever the clock and whatever the session says', () => {
+    for (const days of [0, 1, 30, 31, 400]) {
+      expect(line(false, { lastTouchedAt: NOW - days * DAY })).toBe('.rs · main');
+    }
+    expect(line(false, { inSession: true })).toBe('.rs · main');
+  });
+
+  it('renders nothing at all when the tail is the only field it had', () => {
+    expect(
+      paletteSubLine({
+        primaryLanguage: null,
+        branch: null,
+        lastTouchedAt: NOW,
+        inSession: false,
+        nowSecs: NOW,
+        hasWorkingCopy: false,
+      }),
+    ).toBe('');
+  });
+
+  it('reads the one predicate §23.1 names and never a second one', () => {
+    expect(
+      subLineInputFor(makeProjectRow({ primaryLocation: null }), false, NOW).hasWorkingCopy,
+    ).toBe(false);
+    expect(subLineInputFor(makeProjectRow(), false, NOW).hasWorkingCopy).toBe(true);
   });
 });
