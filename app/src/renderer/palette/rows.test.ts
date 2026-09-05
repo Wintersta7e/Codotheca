@@ -93,7 +93,7 @@ describe('paletteRowAction', () => {
   // Never claim currency you do not have: with no primary location there is nothing to open,
   // and the row says so rather than offering an inert LAUNCH.
   it('is unavailable when no location is primary', () => {
-    expect(paletteRowAction(makeProjectRow({ primaryLocation: null }))).toEqual({
+    expect(paletteRowAction(makeProjectRow({ primaryLocation: null, presence: null }))).toEqual({
       kind: 'unavailable',
     });
     expect(PALETTE_UNAVAILABLE_TEXT).toBe('NO COPY ON THIS MACHINE');

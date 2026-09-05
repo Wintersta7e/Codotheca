@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ProjectRow } from '../../generated/protocol.js';
+import type { LocationRef, ProjectRow } from '../../generated/protocol.js';
 import type { ShelfRow } from './row.js';
 import { toShelfRow } from './row.js';
 import type { QueryContext } from './evaluate.js';
@@ -41,7 +41,10 @@ function r(id: number, over: Record<string, unknown> = {}): ShelfRow {
     sizeTrackedBytes: null,
     trackedFiles: null,
     collectionIds: [],
-    primaryLocation: null,
+    // §23: location and presence are one pair — a null location beside 'present'
+    // describes a state the product cannot produce, and §23.4's classifier files
+    // every such row under era:notcloned.
+    primaryLocation: { id: 10 as LocationRef['id'], pathDisplay: '/w/row' },
     presence: 'present',
     branch: null,
     isDirty: null,

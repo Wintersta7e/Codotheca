@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectId, ProjectRow } from '../../generated/protocol.js';
+import type { LocationRef, ProjectId, ProjectRow } from '../../generated/protocol.js';
 import { CARD_ROLE } from '../a11y/names.js';
 import { GridSection, gridRunsOf } from './GridSection.js';
 import type { GridSectionProps } from './GridSection.js';
@@ -270,7 +270,10 @@ describe('GridSection over the real card', () => {
       sizeTrackedBytes: null,
       trackedFiles: null,
       collectionIds: [],
-      primaryLocation: null,
+      // §23: location and presence are one pair — a null location beside 'present'
+      // describes a state the product cannot produce, and §23.4's classifier files
+      // every such row under era:notcloned.
+      primaryLocation: { id: 10 as LocationRef['id'], pathDisplay: '/w/row' },
       presence: 'present',
       branch: null,
       isDirty: null,

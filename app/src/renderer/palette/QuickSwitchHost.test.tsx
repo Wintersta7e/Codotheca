@@ -130,6 +130,7 @@ describe('QuickSwitchHost', () => {
       id: 3 as ProjectId,
       name: 'Remote only',
       primaryLocation: null,
+      presence: null,
     });
     const { props } = host({ rows: [unavailable] });
     altSpace();

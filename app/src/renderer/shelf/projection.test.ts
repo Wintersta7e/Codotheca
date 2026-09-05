@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ProjectId, ProjectRow } from '../../generated/protocol.js';
+import type { LocationRef, ProjectId, ProjectRow } from '../../generated/protocol.js';
 import { ProjectionStore } from './projection.js';
 import { projectionCapabilities, toShelfRow } from './row.js';
 
@@ -40,7 +40,10 @@ function row(id: number, over: Partial<ProjectRow> = {}): ProjectRow {
     sizeTrackedBytes: null,
     trackedFiles: null,
     collectionIds: [],
-    primaryLocation: null,
+    // §23: location and presence are one pair — a null location beside 'present'
+    // describes a state the product cannot produce, and §23.4's classifier files
+    // every such row under era:notcloned.
+    primaryLocation: { id: 10 as LocationRef['id'], pathDisplay: '/w/row' },
     presence: 'present',
     branch: null,
     isDirty: null,

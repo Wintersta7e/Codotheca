@@ -26,6 +26,7 @@ const rows: ProjectRow[] = [
     conditionSignal: null,
     lastTouchedAt: 1_800_000_000 - 800 * 86_400,
     primaryLocation: null,
+    presence: null,
   }),
 ];
 
