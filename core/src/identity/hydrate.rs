@@ -19,7 +19,7 @@
 
 use rusqlite::{params, Transaction};
 
-use super::alias::{fold_key, HostAliases};
+use super::alias::{fold_key, stored_spellings, HostAliases};
 use super::decide::IdentityEvidence;
 use super::IdentityError;
 
@@ -35,30 +35,56 @@ pub enum HydrationTarget {
     Many(Vec<i64>),
 }
 
+/// The read §22.4's lookup runs, once per stored spelling of the folded key.
+///
+/// **No index is added for this** — `idx_project_remote` and `location(project_id)` already serve
+/// it (§1.11, §22.4) — which is only true if the statement lets them. A scan reaches this once per
+/// repository that would create a row, so a table scan here is `O(n²)` over a first scan of the
+/// library. Exposed so a test can `EXPLAIN QUERY PLAN` the statement that actually runs.
+pub const HYDRATION_TARGET_SQL: &str = "SELECT id, remote_key, created_at
+   FROM project
+  WHERE remote_key = ?1 AND merged_into IS NULL
+    AND NOT EXISTS (SELECT 1 FROM location WHERE location.project_id = project.id)";
+
 /// The not-cloned projects on this folded key, ordered `(created_at, id)`.
 ///
 /// **Not-cloned is zero `location` rows**, which is the only honest reading: a project with a
 /// copy on disk is not the row a scan of that disk should hydrate.
+///
+/// The rows are narrowed by index on each **stored** spelling — one equality per declared host,
+/// never a `LIKE` — and the fold is then applied in Rust to both sides, by the one
+/// implementation, so a row a spelling read reached whose folded key does not in fact match is
+/// dropped.
 pub fn find_hydration_target(
     tx: &Transaction<'_>,
     folded_key: &str,
     aliases: &HostAliases,
 ) -> Result<HydrationTarget, IdentityError> {
-    let mut st = tx.prepare(
-        "SELECT id, remote_key FROM project
-          WHERE remote_key IS NOT NULL AND merged_into IS NULL
-            AND NOT EXISTS (SELECT 1 FROM location WHERE location.project_id = project.id)
-          ORDER BY created_at, id",
-    )?;
-    let rows = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
-
-    let mut matched = Vec::new();
-    for row in rows {
-        let (project_id, stored) = row?;
-        if fold_key(&stored, aliases).as_deref() == Some(folded_key) {
-            matched.push(project_id);
+    let mut st = tx.prepare(HYDRATION_TARGET_SQL)?;
+    let mut matched: Vec<(i64, i64)> = Vec::new();
+    for spelling in stored_spellings(folded_key, aliases) {
+        let rows = st.query_map(params![spelling], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (project_id, stored, created_at) = row?;
+            if fold_key(&stored, aliases).as_deref() != Some(folded_key) {
+                continue;
+            }
+            if !matched.iter().any(|(seen, _)| *seen == project_id) {
+                matched.push((project_id, created_at));
+            }
         }
     }
+    matched.sort_by_key(|(project_id, created_at)| (*created_at, *project_id));
+    let matched: Vec<i64> = matched
+        .into_iter()
+        .map(|(project_id, _)| project_id)
+        .collect();
     Ok(match matched.as_slice() {
         [] => HydrationTarget::None,
         [only] => HydrationTarget::One(*only),

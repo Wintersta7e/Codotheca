@@ -10,7 +10,7 @@
 
 use rusqlite::{params, Transaction};
 
-use super::alias::{fold_host, fold_key, HostAliases};
+use super::alias::{fold_host, fold_key, stored_spellings, HostAliases};
 use super::match_listing::ListingEvidence;
 use super::IdentityError;
 
@@ -60,7 +60,7 @@ pub fn load_link_candidates(
     // per spelling. The listing's own key is always probed, which is what covers an undeclared
     // host — it folds to itself and belongs to no alias set.
     let mut by_key = tx.prepare(LINK_CANDIDATES_BY_KEY_SQL)?;
-    for spelling in stored_spellings(ev, aliases) {
+    for spelling in stored_spellings(&ev.folded_key, aliases) {
         for row in by_key.query_map(params![spelling], read_candidate)? {
             push_once(&mut found, row?, aliases);
         }
@@ -118,24 +118,6 @@ pub fn load_suppressors(
         }
     }
     Ok(out)
-}
-
-/// Every spelling of this listing's key that a stored `remote_key` could carry.
-fn stored_spellings(ev: &ListingEvidence, aliases: &HostAliases) -> Vec<String> {
-    let mut out = vec![ev.remote_key.clone()];
-    let Some((host, path)) = ev.folded_key.split_once('/') else {
-        return out;
-    };
-    if !aliases.contains(host) {
-        return out;
-    }
-    for spelling in aliases.spellings() {
-        let candidate = format!("{spelling}/{path}");
-        if !out.contains(&candidate) {
-            out.push(candidate);
-        }
-    }
-    out
 }
 
 fn read_candidate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawCandidate> {

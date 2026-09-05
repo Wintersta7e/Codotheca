@@ -88,6 +88,30 @@ pub fn fold_host(host: &str, aliases: &HostAliases) -> String {
     host.to_owned()
 }
 
+/// Every spelling a **stored** `remote_key` could carry for one folded key.
+///
+/// A caller narrowing `project.remote_key` by `idx_project_remote` runs **one equality per
+/// spelling** — never a `LIKE` over the host segment, which is the pattern-guessing §22.2 forbids
+/// — and then applies the fold in Rust to both sides. An undeclared host belongs to no alias set,
+/// so its only spelling is itself, which is what makes it fold to itself and match nothing else.
+#[must_use]
+pub fn stored_spellings(folded_key: &str, aliases: &HostAliases) -> Vec<String> {
+    let mut out = vec![folded_key.to_owned()];
+    let Some((host, path)) = folded_key.split_once('/') else {
+        return out;
+    };
+    if !aliases.contains(host) {
+        return out;
+    }
+    for spelling in aliases.spellings() {
+        let candidate = format!("{spelling}/{path}");
+        if !out.contains(&candidate) {
+            out.push(candidate);
+        }
+    }
+    out
+}
+
 /// A whole `remote_key`'s comparison form: the host segment folded, the rest byte-identical.
 ///
 /// It splits on the **first** `/` and rejoins. It never re-parses the path and never assembles a

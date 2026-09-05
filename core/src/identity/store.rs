@@ -9,7 +9,7 @@
 
 use rusqlite::{params, OptionalExtension as _, Transaction};
 
-use super::alias::{fold_key, HostAliases};
+use super::alias::{fold_key, stored_spellings, HostAliases};
 use super::decide::{
     decide, evidence_from, Candidate, IdentityDecision, IdentityEvidence, IdentityProbe,
 };
@@ -595,8 +595,10 @@ fn lineage_candidates(
 
 /// §22.5's arm: the projects sharing this subject's **folded** `remote_key`.
 ///
-/// The fold is applied to both sides in Rust, by the one implementation, for the same reason
-/// §22.2 gives — a stored key carries whichever host spelling the clone used.
+/// Narrowed by `idx_project_remote` on each stored spelling — one equality per declared host,
+/// never a `LIKE` — and folded in Rust on both sides, for the same reason §22.2 gives: a stored
+/// key carries whichever host spelling the clone used. This is a **live query** run per flagged
+/// subject at render time, so a table scan here would be `O(flagged × library)`.
 fn remote_candidates(
     tx: &Transaction<'_>,
     folded: &str,
@@ -604,25 +606,31 @@ fn remote_candidates(
     aliases: &HostAliases,
 ) -> Result<Vec<(i64, String)>, IdentityError> {
     let mut st = tx.prepare(
-        "SELECT id, name, remote_key FROM project
-          WHERE remote_key IS NOT NULL AND merged_into IS NULL AND id <> ?1
-          ORDER BY created_at, id",
+        "SELECT id, name, remote_key, created_at FROM project
+          WHERE remote_key = ?1 AND merged_into IS NULL AND id <> ?2",
     )?;
-    let rows = st.query_map(params![subject], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-        ))
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let (id, name, stored) = row?;
-        if fold_key(&stored, aliases).as_deref() == Some(folded) {
-            out.push((id, name));
+    let mut found: Vec<(i64, i64, String)> = Vec::new();
+    for spelling in stored_spellings(folded, aliases) {
+        let rows = st.query_map(params![spelling, subject], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, name, stored, created_at) = row?;
+            if fold_key(&stored, aliases).as_deref() != Some(folded) {
+                continue;
+            }
+            if !found.iter().any(|(seen, _, _)| *seen == id) {
+                found.push((id, created_at, name));
+            }
         }
     }
-    Ok(out)
+    found.sort_by_key(|(id, created_at, _)| (*created_at, *id));
+    Ok(found.into_iter().map(|(id, _, name)| (id, name)).collect())
 }
 
 #[cfg(test)]

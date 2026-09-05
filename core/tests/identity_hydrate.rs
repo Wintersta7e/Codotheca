@@ -14,7 +14,9 @@
 use codotheca_core::accounts::keychain::SecretToken;
 use codotheca_core::identity::alias::HostAliases;
 use codotheca_core::identity::decide::IdentityProbe;
-use codotheca_core::identity::hydrate::{find_hydration_target, HydrationTarget};
+use codotheca_core::identity::hydrate::{
+    find_hydration_target, HydrationTarget, HYDRATION_TARGET_SQL,
+};
 use codotheca_core::identity::ingest::ingest_listing;
 use codotheca_core::identity::store::resolve_identity;
 use codotheca_core::identity::IdentityError;
@@ -433,6 +435,37 @@ fn two_not_cloned_rows_on_one_key_create_and_flag() {
         )
         .unwrap();
     assert_eq!(flagged, 3, "the whole group is flagged, not one of it");
+}
+
+/// §22.4: *"No index is added for §22.4's not-cloned lookup — `idx_project_remote` and
+/// `location(project_id)` already serve it"*, which is only true if the statement lets them.
+///
+/// A scan reaches this **once per repository that would create a row**, so a table scan here is
+/// quadratic over a first scan of the library — and no test that only checks the answer would say
+/// so.
+#[test]
+fn the_hydration_lookup_uses_the_index() {
+    let (_dir, conn) = migrated();
+    let mut st = conn
+        .prepare(&format!("EXPLAIN QUERY PLAN {HYDRATION_TARGET_SQL}"))
+        .unwrap();
+    let plan = st
+        .query_map(["forge.example/acme/widget"], |r| r.get::<_, String>(3))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect::<Vec<_>>()
+        .join(" | ");
+    eprintln!("hydration target: {plan}");
+    assert!(!plan.is_empty(), "no plan at all");
+    assert!(
+        plan.contains("idx_project_remote"),
+        "the not-cloned lookup must not table-scan: {plan}"
+    );
+    assert!(!plan.contains("SCAN project"), "{plan}");
+    assert!(
+        plan.contains("idx_location_project"),
+        "the zero-location test must not scan location either: {plan}"
+    );
 }
 
 #[test]
