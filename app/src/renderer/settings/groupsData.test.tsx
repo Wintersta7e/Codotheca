@@ -5,7 +5,6 @@ import {
   DATA_GROUP_ROWS,
   DataGroups,
   GITHUB_CONSEQUENCE,
-  GITHUB_SCOPES,
   NOT_IN_THIS_BUILD,
   bundleResultText,
   identityCaption,
@@ -152,13 +151,16 @@ describe('group 8a, IDENTITY', () => {
 
 describe('group 9, GITHUB, and the notification block', () => {
   it('keeps the consequence verbatim and offers no control', () => {
-    render(<DataGroups {...props} />);
+    const { container } = render(<DataGroups {...props} />);
     expect(screen.getByText('NOT CONNECTED')).toBeTruthy();
     expect(screen.getByText(GITHUB_CONSEQUENCE)).toBeTruthy();
     expect(GITHUB_CONSEQUENCE).toContain('unknown is drawn as unknown, never as zero');
     // CONNECT GITHUB opens nothing in phase 1, so it is cut and its line stands.
     expect(screen.queryByRole('button', { name: /CONNECT/i })).toBeNull();
-    for (const scope of GITHUB_SCOPES) expect(screen.getByText(scope)).toBeTruthy();
+    // [p2] §20.3: the three chips are deleted. Two of the three named strings that are not
+    // GitHub OAuth scopes at all, and the third was a promise about what is absent. A granted
+    // scope is a read-back fact and is rendered only in the CONNECTED state, from the payload.
+    expect(container.querySelectorAll('[data-row="github-statement"] span')).toHaveLength(1);
   });
 
   it('marks all three notifications NOT IN THIS BUILD and draws none as a control', () => {

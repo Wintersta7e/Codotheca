@@ -31,9 +31,6 @@ export const REAL_PATHS_NOTE = 'OFF EXPORTS BASENAMES AND VOLUME SHAPES ONLY';
 export const GITHUB_CONSEQUENCE =
   'Stars, issues, pull requests and CI state stay unknown until a token is added — and unknown is drawn as unknown, never as zero. Stored in the OS keychain, never in a config file.';
 
-/** The third names a permission Codotheca will never ask for. It is a promise, not a control. */
-export const GITHUB_SCOPES = ['repo:read', 'workflow:read', 'NEVER delete_repo'] as const;
-
 export const NOT_IN_THIS_BUILD = 'NOT IN THIS BUILD';
 
 /** §11.3a states three that do not exist yet, and none of them can fire in phase 1. */
@@ -212,13 +209,6 @@ export function DataGroups(props: DataGroupsProps): ReactElement {
         <div style={SD.blockAbsent} data-row="github-statement">
           <span style={SD.rowLabel}>NOT CONNECTED</span>
           <p style={SD.rowNote}>{GITHUB_CONSEQUENCE}</p>
-          <div style={{ ...SD.rowActions, flexWrap: 'wrap', gap: '5px' }}>
-            {GITHUB_SCOPES.map((scope) => (
-              <span key={scope} style={SD.chip}>
-                {scope}
-              </span>
-            ))}
-          </div>
         </div>
       </SettingsGroup>
 
