@@ -73,13 +73,23 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0008_accounts.sql"),
         rebuilds_a_table: false,
     },
+    Migration {
+        version: 9,
+        name: "remote_identity_and_facts",
+        sql: include_str!("../../migrations/0009_remote_identity_and_facts.sql"),
+        // The one `project` rebuild phase 2 performs. `project` is STRICT and SQLite has no
+        // ALTER CONSTRAINT, so widening `description_source`'s CHECK is a
+        // create-copy-drop-rename — which drops a table seven `ON DELETE CASCADE` children
+        // hang off.
+        rebuilds_a_table: true,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 8;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 9;
 
 pub fn schema_version(conn: &Connection) -> Result<u32, IndexError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
