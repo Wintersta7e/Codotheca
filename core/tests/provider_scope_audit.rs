@@ -69,6 +69,24 @@ fn sources(root: &std::path::Path) -> Vec<(String, String)> {
     out
 }
 
+/// `sources`, plus the count and the zero guard both audits open with.
+///
+/// The guard lives here and nowhere else so that `the_audit_fails_when_it_scans_nothing` can run
+/// **this** predicate against an empty directory. A zero-guard test that restates the predicate in
+/// its own words tests its own words: delete the guard and it still reads green.
+fn scanned(root: &std::path::Path, label: &str) -> Vec<(String, String)> {
+    let files = sources(root);
+    eprintln!(
+        "provider_scope_audit: {label} scanned {} file(s)",
+        files.len()
+    );
+    assert!(
+        !files.is_empty(),
+        "{label} read no file, so the audit proved nothing"
+    );
+    files
+}
+
 /// A double-quoted string literal is the only way a scope reaches the wire from this core.
 fn string_literals(code: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -109,15 +127,7 @@ const SCOPE_LITERAL_HOME: &str = "provider/scopes.rs";
 /// reference `SCOPES_PUBLIC` or `SCOPES_PRIVATE`, which is also what stops a second copy drifting.
 #[test]
 fn every_scope_literal_is_on_a_tier_list() {
-    let files = sources(&core_src());
-    eprintln!(
-        "provider_scope_audit: scanned {} file(s) under core/src/",
-        files.len()
-    );
-    assert!(
-        !files.is_empty(),
-        "the walk read no file, so the audit proved nothing"
-    );
+    let files = scanned(&core_src(), "the allowlist over core/src/");
 
     let allowed: BTreeSet<&str> = SCOPES_PUBLIC
         .iter()
@@ -169,12 +179,7 @@ fn every_scope_literal_is_on_a_tier_list() {
 /// to `core/src/provider/` would let a stray `"gist"` in a caller through unnoticed.
 #[test]
 fn the_core_never_names_a_destructive_or_unrequested_scope() {
-    let files = sources(&core_src());
-    eprintln!(
-        "provider_scope_audit: denylist scanned {} file(s) under core/src/",
-        files.len()
-    );
-    assert!(!files.is_empty(), "the denylist scanned nothing");
+    let files = scanned(&core_src(), "the denylist over core/src/");
 
     let mut offenders: Vec<String> = Vec::new();
     for (name, code) in &files {
@@ -197,17 +202,22 @@ fn the_core_never_names_a_destructive_or_unrequested_scope() {
 
 /// A gate whose passing run scans nothing is a failing gate. Pointing the walk at a directory
 /// with no `.rs` in it must fail rather than read green.
+///
+/// It calls `scanned` — the function both audits above open with — and asserts it panics. Nothing
+/// short of that proves the guard is load-bearing: assert the fixture is empty and the guard can
+/// be deleted with every test still green.
 #[test]
 fn the_audit_fails_when_it_scans_nothing() {
     let empty = tempfile::tempdir().expect("tmp");
-    let files = sources(empty.path());
+    let outcome = std::panic::catch_unwind(|| scanned(empty.path(), "the zero-guard fixture"));
+    let files = outcome.expect_err("scanning a directory with no Rust in it must fail the audit");
+    let message = files
+        .downcast_ref::<String>()
+        .map_or("<not a string>", String::as_str);
     assert!(
-        files.is_empty(),
-        "the fixture directory was supposed to hold no Rust"
+        message.contains("proved nothing"),
+        "the zero guard failed for some other reason: {message:?}"
     );
-    // The production assertion is `assert!(!files.is_empty(), …)`; this is the same predicate,
-    // stated positively, so the guard cannot be deleted without a test going red.
-    eprintln!("provider_scope_audit: zero-guard fixture scanned 0 file(s), as intended");
 }
 
 /// `PRIVATE_TIER_SCOPE` is what separates the two tiers, so it must be a member of the private
