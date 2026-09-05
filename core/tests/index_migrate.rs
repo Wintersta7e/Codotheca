@@ -33,17 +33,20 @@ const A: Migration = Migration {
     version: 1,
     name: "a",
     sql: "CREATE TABLE a (x INTEGER);",
+    rebuilds_a_table: false,
 };
 const B: Migration = Migration {
     version: 2,
     name: "b",
     sql: "CREATE TABLE b (y INTEGER);",
+    rebuilds_a_table: false,
 };
 /// Creates a table and then fails, so a rollback is observable as the table's absence.
 const BROKEN: Migration = Migration {
     version: 3,
     name: "broken",
     sql: "CREATE TABLE c (z INTEGER); SELECT nonexistent_function(1);",
+    rebuilds_a_table: false,
 };
 
 #[test]
@@ -299,6 +302,7 @@ fn a_failed_migration_restores_the_backup_and_names_what_it_restored_to() {
             version: 2,
             name: "poisoned",
             sql: "CREATE TABLE t (x INTEGER); SELECT nonexistent_function(1);",
+            rebuilds_a_table: false,
         }))
         .collect();
 

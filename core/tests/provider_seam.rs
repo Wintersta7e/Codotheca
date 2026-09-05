@@ -34,6 +34,7 @@ const fn same_str(left: &str, right: &str) -> bool {
 const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[0], "viewer"));
 const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[1], "list_orgs"));
 const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[2], "list_repos"));
+const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[3], "lookup_repo"));
 
 fn token() -> SecretToken {
     SecretToken::new("provider-seam-token".to_owned())
@@ -57,6 +58,13 @@ fn ok_with_headers(headers: Vec<(String, String)>, body: &[u8]) -> HttpResponse 
 
 fn user_body() -> &'static [u8] {
     br#"{"login":"fixture-login","name":"Fixture Login"}"#
+}
+
+/// One repository object, as §22.7's lookup reads it back.
+fn repo_body() -> &'static [u8] {
+    br#"{"id":909,"clone_url":"https://github.com/acme/widget.git",
+         "owner":{"login":"acme","type":"User"},"name":"widget",
+         "fork":false,"archived":false,"private":false}"#
 }
 
 fn provider_with_transport(host: &str) -> (Arc<FakeTransport>, Arc<dyn Provider>) {
@@ -185,23 +193,25 @@ where
 
 #[test]
 fn request_method_tripwire_is_enumerated_and_callable() {
-    // R79: three, not four. `verify_token` and `viewer` resolved to the same GET /user, so the
-    // seam spent two requests to learn one thing. The count moves in the same commit as the
-    // collapse, or the tripwire fails — which is the tripwire working.
+    // R79 collapsed `verify_token` into `viewer`, leaving three; §22.7's `lookup_repo` is the
+    // fourth. The count moves in the same commit as the method, or the tripwire fails — which is
+    // the tripwire working. **Six by the end of phase 2**, the last two §25's.
     assert_eq!(
         PROVIDER_REQUEST_METHODS,
-        ["viewer", "list_orgs", "list_repos"]
+        ["viewer", "list_orgs", "list_repos", "lookup_repo"]
     );
 
     let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
     transport.push(ok(user_body()));
     transport.push(ok(b"[]"));
     transport.push(ok(b"[]"));
+    transport.push(ok(repo_body()));
     let secret = token();
 
     provider.viewer(&secret).unwrap();
     provider.list_orgs(&secret, None).unwrap();
     provider.list_repos(&secret, None).unwrap();
+    provider.lookup_repo(&secret, "acme", "widget").unwrap();
     let declared = provider_trait_request_method_names();
     assert_eq!(
         transport.request_count(),
@@ -243,6 +253,40 @@ fn helpers_issue_no_requests_and_request_methods_issue_one_each() {
     transport.push(ok(b"[]"));
     provider.list_repos(&token(), None).unwrap();
     assert_eq!(transport.request_count(), 1);
+
+    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    transport.push(ok(repo_body()));
+    provider.lookup_repo(&token(), "acme", "widget").unwrap();
+    assert_eq!(transport.request_count(), 1);
+    assert_eq!(
+        transport.requests()[0].url,
+        "https://api.github.com/repos/acme/widget"
+    );
+}
+
+/// §22.7's lookup answers *not found* rather than failing: a repository that does not exist and
+/// one this token cannot see are the same 404, and neither is an error the sync reports.
+#[test]
+fn a_lookup_that_finds_nothing_is_unknown_and_not_a_failure() {
+    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    transport.push(HttpResponse {
+        status: 404,
+        headers: Vec::new(),
+        body: br#"{"message":"Not Found"}"#.to_vec(),
+    });
+    let observed = provider
+        .lookup_repo(&token(), "acme", "gone")
+        .expect("a 404 is an answer, not an error");
+    assert_eq!(observed.value, None);
+
+    // A 403 is still an error the caller classifies; it is not folded into "not found".
+    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    transport.push(HttpResponse {
+        status: 403,
+        headers: Vec::new(),
+        body: Vec::new(),
+    });
+    assert!(provider.lookup_repo(&token(), "acme", "widget").is_err());
 }
 
 #[test]

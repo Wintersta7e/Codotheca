@@ -34,6 +34,34 @@ pub enum IndexError {
     #[error("completion is not computable with zero applicable checks")]
     CompletionNotComputable,
 
+    /// A rebuilding migration asked for `PRAGMA foreign_keys=OFF` and the connection read back
+    /// something else, so nothing is applied. R59: the pragma is a documented no-op inside a
+    /// transaction, and a pragma that silently did nothing is indistinguishable from one that
+    /// worked — which is the whole failure this read-back exists to catch.
+    #[error("foreign keys could not be disabled for a rebuilding migration; read back {reported}")]
+    ForeignKeysNotDisabled { reported: i64 },
+
+    /// The rebuild ran and `PRAGMA foreign_key_check` returned rows, so the transaction is
+    /// dropped and rolled back. The check cannot live in the `.sql` file: it returns rows and
+    /// never errors, and `execute_batch` discards them.
+    #[error("a rebuilding migration left {count} foreign-key violation(s); rolled back")]
+    ForeignKeyViolations { count: i64 },
+
+    /// The pragma the rebuild turned off would not go back to the value the connection started
+    /// with. Every later write on that connection would skip referential integrity silently.
+    #[error("foreign keys could not be restored to {expected}; read back {reported}")]
+    ForeignKeysNotRestored { expected: i64, reported: i64 },
+
+    /// The registered migration chain is not `1..=n`: a gap or a repeat. `apply_all` skips any
+    /// migration with `version <= current`, so a database that passes through a gap skips the
+    /// missing file **forever**, silently, on the user's machine.
+    #[error("migration chain is broken: expected version {expected}, found {found}")]
+    MigrationChainBroken { expected: u32, found: u32 },
+
+    /// A guard that validated an empty list is a failing guard.
+    #[error("migration chain is empty; there is nothing to apply and nothing was checked")]
+    MigrationChainEmpty,
+
     #[error("sidecar: {0}")]
     Sidecar(String),
 }

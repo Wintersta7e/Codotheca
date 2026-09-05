@@ -12,18 +12,28 @@
 //! caller owns the transaction and the clock, which is what lets §1.5 be one transaction and
 //! keeps the `Clock` seam out of this module.
 
+pub mod alias;
+pub mod binding;
+pub mod candidates;
 pub mod commands;
 pub mod confirm;
 pub mod decide;
+pub mod hydrate;
+pub mod ingest;
 pub mod lineage;
+pub mod match_listing;
 pub mod merge;
 pub mod people;
 pub mod probe;
 pub mod redirect;
 pub mod remote;
+pub mod rename_repair;
 pub mod store;
 pub mod submodule;
-#[cfg(test)]
+/// **`testkit`, not `cfg(test)`.** §22.13's acceptance suite is an integration test and cannot
+/// see a `cfg(test)` module, and its fixture library is the one both ingest orders are compared
+/// over — two copies of it would be two libraries. Off by default, like `crate::testing`.
+#[cfg(any(test, feature = "testkit"))]
 pub mod testutil;
 pub mod user;
 
@@ -52,6 +62,22 @@ pub enum IdentityError {
     },
     /// `merge_projects` was asked to merge a project into itself.
     SameProject(i64),
+    /// A listing entry whose clone URL names no `<host>/<owner>/<name>`, so it has neither of
+    /// §22.1's two bases. It is **named rather than dropped**: §21.10's summary must account for
+    /// every entry on a page, and an entry that vanished between the page and the tally is the
+    /// silent suppression §11.1 forbids.
+    ListingNotCanonical {
+        provider: String,
+        provider_repo_id: String,
+    },
+    /// §22.4's guard. The not-cloned row this scan would hydrate already carries git-track
+    /// `xp_events` rows, so hydrating it would attach this repository's history to another
+    /// repository's ledger. It **fails the transaction**; a guard with no failing case is not a
+    /// guard.
+    HydrateWouldOrphanXp {
+        project_id: i64,
+        count: i64,
+    },
 }
 
 impl From<rusqlite::Error> for IdentityError {
@@ -69,7 +95,9 @@ impl IdentityError {
             | Self::Index(_)
             | Self::UnknownProject(_)
             | Self::RedirectChain { .. }
-            | Self::SameProject(_) => ErrorCode::Internal,
+            | Self::SameProject(_)
+            | Self::ListingNotCanonical { .. }
+            | Self::HydrateWouldOrphanXp { .. } => ErrorCode::Internal,
         }
     }
 }

@@ -261,6 +261,7 @@ pub fn open_with_migrations(
                 version: from,
                 name: "unknown",
                 sql: "",
+                rebuilds_a_table: false,
             });
         let detail = e.to_string();
         drop(conn);

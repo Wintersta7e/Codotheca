@@ -9,9 +9,11 @@
 
 use rusqlite::{params, OptionalExtension as _, Transaction};
 
+use super::alias::{fold_key, stored_spellings, HostAliases};
 use super::decide::{
     decide, evidence_from, Candidate, IdentityDecision, IdentityEvidence, IdentityProbe,
 };
+use super::hydrate::{find_hydration_target, hydrate, HydrationTarget};
 use super::{AssociationKind, IdentityError};
 use crate::derive::LocationKind;
 use crate::index::path::{display_paths_for_ui, DisplayPathTable, StoredPath};
@@ -200,10 +202,15 @@ pub fn upsert_location(
 
 /// Assign this repository its project (§1.1). Writes `project` only; the `location` row for the
 /// path goes through [`upsert_location`] under the returned id, in this same transaction.
+///
+/// **§22.4's amendment: the creating arms route through create-or-hydrate.** A not-cloned project
+/// has a NULL `lineage_key` and is therefore in no candidate set `decide` can see, so without
+/// this the ordinary *connect → sync → clone → rescan* sequence mints a second tile.
 pub fn resolve_identity(
     tx: &Transaction<'_>,
     probe: &IdentityProbe,
     basename: &str,
+    aliases: &HostAliases,
     now: i64,
 ) -> Result<IdentityOutcome, IdentityError> {
     let evidence = evidence_from(probe);
@@ -228,7 +235,7 @@ pub fn resolve_identity(
             attach(tx, project_id, AssociationKind::Inferred, now)
         }
         IdentityDecision::NewFork { related } => {
-            let id = create(tx, &evidence, probe.is_shallow, basename, true, false, now)?;
+            let landed = create_or_hydrate(tx, &evidence, probe, basename, true, aliases, now)?;
             for other in related {
                 tx.execute(
                     "UPDATE project SET is_fork = 1, updated_at = ?2 WHERE id = ?1",
@@ -241,14 +248,19 @@ pub fn resolve_identity(
                 flag_remoteless_ambiguity(tx, l, now)?;
             }
             Ok(IdentityOutcome {
-                project_id: id,
-                created: true,
+                project_id: landed.project_id,
+                created: landed.created,
                 association: None,
-                ambiguous: false,
+                ambiguous: landed.ambiguous,
                 is_fork: true,
             })
         }
         IdentityDecision::NewAmbiguous { .. } => {
+            // **This arm calls `create` directly, and the reason is reachability, not taste.**
+            // `NewAmbiguous` is produced only where our own `remote_key` is NULL
+            // (`decide.rs:92`, `:143-147`), and a NULL key folds to nothing and matches nothing —
+            // so there is no hydration target it could ever have. Do not "unify" the three
+            // creating arms.
             let id = create(tx, &evidence, probe.is_shallow, basename, false, true, now)?;
             Ok(IdentityOutcome {
                 project_id: id,
@@ -259,13 +271,102 @@ pub fn resolve_identity(
             })
         }
         IdentityDecision::New => {
-            let id = create(tx, &evidence, probe.is_shallow, basename, false, false, now)?;
+            let landed = create_or_hydrate(tx, &evidence, probe, basename, false, aliases, now)?;
             Ok(IdentityOutcome {
+                project_id: landed.project_id,
+                created: landed.created,
+                association: None,
+                ambiguous: landed.ambiguous,
+                is_fork: landed.is_fork,
+            })
+        }
+    }
+}
+
+/// What create-or-hydrate landed on.
+struct Landed {
+    project_id: i64,
+    created: bool,
+    ambiguous: bool,
+    is_fork: bool,
+}
+
+/// §22.4: hydrate the **single** not-cloned project on this repository's folded key, or create.
+///
+/// Zero or two-or-more targets both create, unchanged — and two-or-more additionally flags the
+/// group for §22.5. **Never pick one.**
+fn create_or_hydrate(
+    tx: &Transaction<'_>,
+    evidence: &IdentityEvidence,
+    probe: &IdentityProbe,
+    basename: &str,
+    is_fork: bool,
+    aliases: &HostAliases,
+    now: i64,
+) -> Result<Landed, IdentityError> {
+    let folded = evidence
+        .remote_key
+        .as_deref()
+        .and_then(|key| fold_key(key, aliases));
+    let target = match folded.as_deref() {
+        Some(key) => find_hydration_target(tx, key, aliases)?,
+        // No remote key folds to nothing and matches nothing.
+        None => HydrationTarget::None,
+    };
+
+    match target {
+        HydrationTarget::One(project_id) => {
+            hydrate(tx, project_id, evidence, probe.is_shallow, is_fork, now)?;
+            // The same call and the same reason as the `NewFork` arm: a project that had one
+            // candidate a moment ago may have two now that this lineage is known.
+            if let Some(l) = evidence.lineage_key.as_deref() {
+                flag_remoteless_ambiguity(tx, l, now)?;
+            }
+            let (ambiguous, is_fork) = tx
+                .query_row(
+                    "SELECT ambiguous_lineage, is_fork FROM project WHERE id = ?1",
+                    params![project_id],
+                    |r| Ok((r.get::<_, i64>(0)? == 1, r.get::<_, i64>(1)? == 1)),
+                )
+                .optional()?
+                .ok_or(IdentityError::UnknownProject(project_id))?;
+            Ok(Landed {
+                project_id,
+                created: false,
+                ambiguous,
+                is_fork,
+            })
+        }
+        HydrationTarget::None => {
+            let id = create(
+                tx,
+                evidence,
+                probe.is_shallow,
+                basename,
+                is_fork,
+                false,
+                now,
+            )?;
+            Ok(Landed {
                 project_id: id,
                 created: true,
-                association: None,
                 ambiguous: false,
-                is_fork: false,
+                is_fork,
+            })
+        }
+        HydrationTarget::Many(targets) => {
+            let id = create(tx, evidence, probe.is_shallow, basename, is_fork, true, now)?;
+            for other in targets {
+                tx.execute(
+                    "UPDATE project SET ambiguous_lineage = 1, updated_at = ?2 WHERE id = ?1",
+                    params![other, now],
+                )?;
+            }
+            Ok(Landed {
+                project_id: id,
+                created: true,
+                ambiguous: true,
+                is_fork,
             })
         }
     }
@@ -393,39 +494,59 @@ pub struct AmbiguousRow {
 ///
 /// The display path comes back through `index::path::display_paths_for_ui`, the one door §1.10
 /// allows. The plan writes the read inline here instead, which this project's own gate refuses.
-pub fn ambiguous_group(tx: &Transaction<'_>) -> Result<Vec<AmbiguousRow>, IdentityError> {
+///
+/// **Two bases, and the thresholds differ on purpose (§22.5).** The lineage arm is phase 1's and
+/// is unchanged, down to its `< 2`: there the subject is a *remoteless third party* choosing
+/// between candidates, so one candidate is not a choice — it is `AttachInferred`'s case, and
+/// `the_ambiguous_group_names_its_candidates_and_drops_a_project_that_lost_them` asserts exactly
+/// that. The remote arm takes `>= 1`, because there the subject is **one of the two competing
+/// identities** and one other project is the whole ambiguity.
+///
+/// **Phase-1 output is unchanged by construction**: every row `flag_remoteless_ambiguity` can
+/// flag has `remote_key IS NULL`, and NULL matches nothing, so the remote arm contributes an
+/// empty set to every pre-existing row. It also no longer `continue`s on a NULL `lineage_key` —
+/// a not-cloned project's lineage is NULL by construction (§22.4), so skipping on it made §22.5's
+/// case unrepresentable.
+pub fn ambiguous_group(
+    tx: &Transaction<'_>,
+    aliases: &HostAliases,
+) -> Result<Vec<AmbiguousRow>, IdentityError> {
     let mut flagged = tx.prepare(
-        "SELECT id, lineage_key FROM project
+        "SELECT id, lineage_key, remote_key FROM project
           WHERE ambiguous_lineage = 1 AND merged_into IS NULL
           ORDER BY id",
     )?;
     let subjects = flagged
         .query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut out = Vec::new();
-    for (project_id, lineage_key) in subjects {
-        let Some(lineage_key) = lineage_key else {
-            continue;
+    for (project_id, lineage_key, remote_key) in subjects {
+        let by_lineage = match lineage_key {
+            Some(ref key) => lineage_candidates(tx, key, project_id)?,
+            None => Vec::new(),
         };
-
-        let mut cands = tx.prepare(
-            "SELECT name FROM project
-              WHERE lineage_key = ?1 AND remote_key IS NOT NULL AND merged_into IS NULL
-                AND id <> ?2
-              ORDER BY created_at, id",
-        )?;
-        let names = cands
-            .query_map(params![lineage_key, project_id], |r| r.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Fewer than two candidates is no longer ambiguous. The row stops appearing; nothing
-        // is written.
-        if names.len() < 2 {
+        let by_remote = match remote_key.as_deref().and_then(|k| fold_key(k, aliases)) {
+            Some(ref folded) => remote_candidates(tx, folded, project_id, aliases)?,
+            None => Vec::new(),
+        };
+        if by_lineage.len() < 2 && by_remote.is_empty() {
+            // No longer ambiguous on either basis. The row stops appearing; nothing is written.
             continue;
         }
+        let mut names = by_lineage;
+        for (id, name) in by_remote {
+            if !names.iter().any(|(seen, _)| *seen == id) {
+                names.push((id, name));
+            }
+        }
+        let names: Vec<String> = names.into_iter().map(|(_, name)| name).collect();
 
         let location_id: Option<i64> = tx
             .query_row(
@@ -454,12 +575,81 @@ pub fn ambiguous_group(tx: &Transaction<'_>) -> Result<Vec<AmbiguousRow>, Identi
     Ok(out)
 }
 
+/// Phase 1's arm, byte for byte: the projects sharing this lineage that carry a remote.
+fn lineage_candidates(
+    tx: &Transaction<'_>,
+    lineage_key: &str,
+    subject: i64,
+) -> Result<Vec<(i64, String)>, IdentityError> {
+    let mut st = tx.prepare(
+        "SELECT id, name FROM project
+          WHERE lineage_key = ?1 AND remote_key IS NOT NULL AND merged_into IS NULL
+            AND id <> ?2
+          ORDER BY created_at, id",
+    )?;
+    let rows = st.query_map(params![lineage_key, subject], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// §22.5's arm: the projects sharing this subject's **folded** `remote_key`.
+///
+/// Narrowed by `idx_project_remote` on each stored spelling — one equality per declared host,
+/// never a `LIKE` — and folded in Rust on both sides, for the same reason §22.2 gives: a stored
+/// key carries whichever host spelling the clone used. This is a **live query** run per flagged
+/// subject at render time, so a table scan here would be `O(flagged × library)`.
+fn remote_candidates(
+    tx: &Transaction<'_>,
+    folded: &str,
+    subject: i64,
+    aliases: &HostAliases,
+) -> Result<Vec<(i64, String)>, IdentityError> {
+    let mut st = tx.prepare(
+        "SELECT id, name, remote_key, created_at FROM project
+          WHERE remote_key = ?1 AND merged_into IS NULL AND id <> ?2",
+    )?;
+    let mut found: Vec<(i64, i64, String)> = Vec::new();
+    for spelling in stored_spellings(folded, aliases) {
+        let rows = st.query_map(params![spelling, subject], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, name, stored, created_at) = row?;
+            if fold_key(&stored, aliases).as_deref() != Some(folded) {
+                continue;
+            }
+            if !found.iter().any(|(seen, _, _)| *seen == id) {
+                found.push((id, created_at, name));
+            }
+        }
+    }
+    found.sort_by_key(|(id, created_at, _)| (*created_at, *id));
+    Ok(found.into_iter().map(|(id, _, name)| (id, name)).collect())
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::super::decide::IdentityProbe;
-    use super::super::testutil::open_test_index;
-    use super::resolve_identity;
+    use super::super::testutil::{forge_aliases, open_test_index};
+    use super::IdentityOutcome;
+
+    /// Every test below calls the production function with the one alias set this crate's
+    /// fixtures use, so §22.4's amendment did not turn into fifteen edited call sites.
+    fn resolve_identity(
+        tx: &rusqlite::Transaction<'_>,
+        probe: &IdentityProbe,
+        basename: &str,
+        at: i64,
+    ) -> Result<IdentityOutcome, IdentityError> {
+        super::resolve_identity(tx, probe, basename, &forge_aliases(), at)
+    }
 
     fn probe(roots: &[&str], remotes: &[(&str, &str)], common: Option<&[u8]>) -> IdentityProbe {
         IdentityProbe {
@@ -1001,7 +1191,7 @@ mod tests {
         let orphan = resolve_identity(&tx, &probe(&["r1"], &[], None), "local", 102).unwrap();
         super::super::testutil::insert_location(&tx, orphan.project_id, "/w/local", None);
 
-        let group = super::ambiguous_group(&tx).unwrap();
+        let group = super::ambiguous_group(&tx, &super::super::testutil::forge_aliases()).unwrap();
         assert_eq!(group.len(), 1);
         let row = group.first().unwrap();
         assert_eq!(row.project_id, orphan.project_id);
@@ -1019,7 +1209,11 @@ mod tests {
             rusqlite::params![orphan.project_id, mine.project_id],
         )
         .unwrap();
-        assert!(super::ambiguous_group(&tx).unwrap().is_empty());
+        assert!(
+            super::ambiguous_group(&tx, &super::super::testutil::forge_aliases())
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(
             tx.query_row(
                 "SELECT ambiguous_lineage FROM project WHERE id=?1",

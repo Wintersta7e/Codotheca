@@ -136,12 +136,17 @@ pub fn hand_off_discovered(
     };
     let basename = basename_of(discovered);
     let now = ctx.now;
+    let aliases = crate::provider::declared_host_aliases();
 
     let mut guard = index.lock().map_err(|_| HandoffError::Poisoned)?;
     let indexed = guard.with_tx(|tx| {
         // R1: the decision and the row it decides are **one** transaction. A committed decision
         // without its row is a repository that was discovered and then vanished.
-        let outcome = resolve_identity(tx, &probe, &basename, now).map_err(as_index_error)?;
+        // §22.4: a scan that would create a row hydrates the single not-cloned project on this
+        // repository's folded key instead. The fold needs the adapters' declared alias sets and
+        // not an account — a scan holds none.
+        let outcome =
+            resolve_identity(tx, &probe, &basename, &aliases, now).map_err(as_index_error)?;
         let location =
             upsert_location(tx, outcome.project_id, &input, now).map_err(as_index_error)?;
         Ok(Indexed {
