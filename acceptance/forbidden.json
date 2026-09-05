@@ -179,7 +179,7 @@
       "id": "c58-design-band-names",
       "kind": "regex",
       "spec": "§16.58, §5.4a",
-      "why": "The design's band vocabulary is forbidden in every machine-readable surface: a CSS class, a query field, a protocol message, a log line or an accessible name. The two enum words that look like band names are NOT banned — §11.7 requires them verbatim in an accessible name, so a grep for those would fail a correct build.",
+      "why": "The design's band vocabulary is forbidden in every machine-readable surface: a CSS class, a query field, a protocol message, a log line or an accessible name. The two enum words that look like band names are NOT banned — §11.7 requires them verbatim in an accessible name, so a grep for those would fail a correct build. A4 narrows the rule rather than retiring it: `blueprint` is a tile art state, not a condition band, and the claim it stood for — that no band name reaches a machine-readable surface as a condition_signal VALUE — is enforced structurally by the DDL CHECK and by the generated ConditionSignal union type, both stronger than a grep. `warm` and `cooling` stay banned over all three target sets, unchanged.",
       "targets": [
         "renderer",
         "schema",
@@ -187,8 +187,7 @@
       ],
       "patterns": [
         "\\bwarm\\b",
-        "\\bcooling\\b",
-        "\\bblueprint\\b"
+        "\\bcooling\\b"
       ],
       "flags": "iu",
       "exempt": []

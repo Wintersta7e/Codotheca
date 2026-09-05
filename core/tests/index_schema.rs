@@ -146,10 +146,17 @@ fn the_schema_refuses_a_lit_count_with_no_applicable_count() {
     .unwrap();
 }
 
+/// A4's structural half. The `\bblueprint\b` grep leaves `c58-design-band-names`; what replaces
+/// it is this — the DDL `CHECK` refusing `blueprint` as a `condition_signal` **value**, which is
+/// what criterion 58 was ever about and is stronger than a text search over three directories.
+///
+/// The accepted count is printed and asserted, so a run that inserted nothing is a failing run
+/// rather than a quiet pass over an empty loop.
 #[test]
 fn condition_signal_takes_only_section_5_4_words() {
     let (_d, conn) = fresh();
     let id = insert_project(&conn, "thing");
+    let mut accepted = 0_usize;
     for good in [
         "live",
         "idle",
@@ -164,7 +171,15 @@ fn condition_signal_takes_only_section_5_4_words() {
             rusqlite::params![id, good],
         )
         .unwrap();
+        accepted += 1;
     }
+    // stderr, never stdout: `print_stdout` is denied crate-wide (core/Cargo.toml).
+    eprintln!("condition_signal: {accepted} of §5.4a's slugs accepted by the column");
+    assert_eq!(
+        accepted, 7,
+        "§5.4a has seven slugs; a run that accepted {accepted} proves nothing"
+    );
+    let mut refused = 0_usize;
     for banned in ["warm", "cooling", "blueprint"] {
         let r = conn.execute(
             "UPDATE project SET condition_signal = ?2 WHERE id = ?1",
@@ -174,6 +189,33 @@ fn condition_signal_takes_only_section_5_4_words() {
             r.is_err(),
             "{banned} is the design's vocabulary, not §5.4's"
         );
+        refused += 1;
+    }
+    eprintln!("condition_signal: {refused} band words refused by the CHECK");
+    assert_eq!(refused, 3, "warm, cooling and blueprint are all three");
+
+    // The second structural refusal A4 names: the generated union type. Both halves are
+    // asserted here so the narrowing loses nothing when the grep pattern goes.
+    for banned in ["warm", "cooling", "blueprint"] {
+        let decoded: Result<codotheca_core::protocol::ConditionSignal, _> =
+            serde_json::from_value(serde_json::Value::String(banned.to_owned()));
+        assert!(
+            decoded.is_err(),
+            "{banned} must not decode as a ConditionSignal"
+        );
+    }
+    for good in [
+        "live",
+        "idle",
+        "dormant",
+        "neglected",
+        "abandoned",
+        "offline",
+        "empty",
+    ] {
+        let decoded: Result<codotheca_core::protocol::ConditionSignal, _> =
+            serde_json::from_value(serde_json::Value::String(good.to_owned()));
+        assert!(decoded.is_ok(), "{good} is one of §5.4a's seven");
     }
 }
 

@@ -1823,7 +1823,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-forbidden:c58-design-band-names",
-          "assert": "The three design band names appear in no CSS class, query field, protocol message, log line or accessible name. The two enum words that look like band names are required verbatim and are not banned."
+          "assert": "The two design band names warm and cooling appear in no CSS class, query field, protocol message, log line or accessible name, over all three of criterion 58's target sets. blueprint is asserted absent as a condition_signal VALUE instead — by the DDL CHECK and the generated ConditionSignal union type, both structural (A4) — and is permitted as a rendition name and a tier token. The two enum words that look like band names are required verbatim and are not banned."
         }
       ]
     },
