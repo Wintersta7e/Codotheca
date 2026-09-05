@@ -2,6 +2,7 @@ import type { ProjectId } from '../../generated/protocol.js';
 import { isNewArrival } from '../firstrun/newArrivals.js';
 import type { IgnoredTerm, QueryAst, QueryTerm } from '../../shared/query/ast.js';
 import { renderTerm } from '../../shared/query/format.js';
+import type { IsFlag } from '../../shared/query/grammar.js';
 import type { ProjectionCapabilities, ShelfRow } from './row.js';
 
 export type Truth = true | false | null;
@@ -41,7 +42,42 @@ function localYear(epochSeconds: number): number {
   return new Date(epochSeconds * 1000).getFullYear();
 }
 
+/** §23.1's predicate, named once — R13's mirror of `has_no_working_copy`. */
+export function hasNoWorkingCopy(row: ShelfRow): boolean {
+  return row.primaryLocation === null;
+}
+
+/**
+ * §23.6's domain rule: *a `has:` attribute, the working-copy `is:` flags, and `touched:` are
+ * predicates **about a working copy***. For a project with zero `location` rows every one of
+ * them is Unknown, and Unknown matches neither polarity — so `-has:remote` keeps meaning *a
+ * local copy with no remote configured* and never silently acquires the whole not-cloned tail.
+ *
+ * `touched:` is in the family because `lastTouchedAt` falls back to `createdAt` — the moment
+ * Codotheca wrote the row — so answering it would date an interaction that never happened.
+ */
+const WORKING_COPY_FLAGS: ReadonlySet<IsFlag> = new Set<IsFlag>([
+  'dirty',
+  'unpushed',
+  'behind',
+  'interrupted',
+  'empty',
+  'bare',
+  'shallow',
+  'local',
+  'wsl',
+]);
+
+function isOutsideTheWorkingCopyDomain(term: QueryTerm): boolean {
+  if (term.kind === 'has' || term.kind === 'touchedAge' || term.kind === 'touchedYear') return true;
+  if (term.kind === 'flag') return WORKING_COPY_FLAGS.has(term.flag);
+  return false;
+}
+
 export function termTruth(row: ShelfRow, term: QueryTerm, ctx: QueryContext): Truth {
+  // Evaluated **before** any field is read: that ordering is what stops the stored `is_bare`
+  // zero being observable through the grammar, and what stops the inversion §23.6 names.
+  if (hasNoWorkingCopy(row) && isOutsideTheWorkingCopyDomain(term)) return null;
   switch (term.kind) {
     case 'bare': {
       const needle = term.text;
@@ -124,6 +160,11 @@ export function termTruth(row: ShelfRow, term: QueryTerm, ctx: QueryContext): Tr
           if (ctx.firstRunCompletedAt === null) return null;
           return isNewArrival(row, ctx.firstRunCompletedAt);
         }
+        // §23.6: known for every project, never null. Whether the index holds a location is a
+        // fact the index always has, and `primaryLocation` already carries it — so this needs no
+        // new projection field.
+        case 'notcloned':
+          return hasNoWorkingCopy(row);
       }
     case 'has':
       switch (term.attribute) {
@@ -163,6 +204,7 @@ function answerable(term: QueryTerm, ctx: QueryContext): boolean {
   if (term.kind === 'flag') {
     if (term.flag === 'local' || term.flag === 'wsl') return caps.location;
     if (term.flag === 'new') return ctx.firstRunCompletedAt !== null;
+    // `is:notcloned` needs no projection field beyond `primaryLocation`, which every row carries.
     return true;
   }
   if (term.kind === 'has') {

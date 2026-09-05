@@ -144,6 +144,45 @@
       }
     },
     {
+      "name": "is notcloned",
+      "query": "is:notcloned",
+      "ast": {
+        "grammarVersion": 1,
+        "terms": [{ "kind": "flag", "negated": false, "flag": "notcloned" }],
+        "ignored": []
+      }
+    },
+    {
+      "name": "is notcloned negated",
+      "query": "-is:notcloned",
+      "ast": {
+        "grammarVersion": 1,
+        "terms": [{ "kind": "flag", "negated": true, "flag": "notcloned" }],
+        "ignored": []
+      }
+    },
+    {
+      "name": "the AST spells notcloned as one word in both engines",
+      "query": "is:notCloned",
+      "ast": {
+        "grammarVersion": 1,
+        "terms": [{ "kind": "flag", "negated": false, "flag": "notcloned" }],
+        "ignored": []
+      }
+    },
+    {
+      "name": "is notcloned beside a working-copy term",
+      "query": "is:notcloned -has:remote",
+      "ast": {
+        "grammarVersion": 1,
+        "terms": [
+          { "kind": "flag", "negated": false, "flag": "notcloned" },
+          { "kind": "has", "negated": true, "attribute": "remote" }
+        ],
+        "ignored": []
+      }
+    },
+    {
       "name": "is remote is not a flag",
       "query": "is:remote",
       "ast": {

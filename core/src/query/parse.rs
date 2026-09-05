@@ -75,6 +75,7 @@ fn parse_is(value: &str) -> Option<IsFlag> {
         "local" => IsFlag::Local,
         "wsl" => IsFlag::Wsl,
         "new" => IsFlag::New,
+        "notcloned" => IsFlag::Notcloned,
         _ => return None,
     })
 }

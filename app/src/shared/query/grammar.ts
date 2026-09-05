@@ -30,6 +30,11 @@ export const IS_FLAGS = [
   'local',
   'wsl',
   'new',
+  // §23.6. `is:remote` never ships under that name: the design's `is:remote` means `remoteOnly`
+  // in its own prototype — the identical predicate — so this keeps the word the shelf already
+  // prints over that section. One added VALUE, and no new field: `newfield:x` is an ignored term
+  // today and would become a filter, which is not backward-compatible.
+  'notcloned',
 ] as const;
 export type IsFlag = (typeof IS_FLAGS)[number];
 

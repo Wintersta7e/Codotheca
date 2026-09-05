@@ -208,3 +208,109 @@ describe('partitionAnswerable', () => {
     expect(partitionAnswerable(parseQuery('in:"/w"'), ctx).runnable).toHaveLength(1);
   });
 });
+
+/**
+ * AC-P2-23-7, TypeScript engine — the same fixture shape the Rust half runs, so the two mirrors
+ * are asserted against one contract rather than two.
+ *
+ * > A `has:` attribute, the working-copy `is:` flags, and `touched:` are predicates **about a
+ * > working copy**. For a project with zero `location` rows every one of them evaluates to
+ * > Unknown.
+ */
+describe('§23.6: the domain rule, and is:notcloned', () => {
+  const notCloned = base(1, {
+    primaryLocation: null,
+    presence: null,
+    primaryLanguage: 'Rust',
+    lastTouchedAt: NOW - 10 * DAY,
+    hasRemote: true,
+  });
+  const locatedWithRemote = base(2, { lastTouchedAt: NOW - 10 * DAY, hasRemote: true });
+  const locatedWithoutRemote = base(3, { lastTouchedAt: NOW - 10 * DAY, hasRemote: false });
+  const rows = [notCloned, locatedWithRemote, locatedWithoutRemote];
+
+  // Everything the projection can answer, so `answerable` does not drop a term before the domain
+  // rule gets to it — the two mechanisms must not be confused.
+  const wide: QueryContext = {
+    ...ctx,
+    capabilities: {
+      authoredByUser: true,
+      location: true,
+      hasReadme: true,
+      hasLicense: true,
+      hasTests: true,
+      hasCi: true,
+      hasRemote: true,
+      hasSubmodules: true,
+    },
+  };
+
+  const ids = (query: string): number[] =>
+    evaluateQuery(rows, parseQuery(query), wide).rows.map((r) => r.id as number);
+
+  it('answers Unknown for every working-copy predicate, under neither polarity', () => {
+    const outside = [
+      'has:remote',
+      'has:submodules',
+      'has:readme',
+      'has:stash',
+      'is:bare',
+      'is:shallow',
+      'is:dirty',
+      'is:unpushed',
+      'is:behind',
+      'is:interrupted',
+      'is:empty',
+      'is:local',
+      'is:wsl',
+      'touched:>1d',
+      'touched:<1d',
+    ];
+    let evaluated = 0;
+    for (const query of outside) {
+      expect(termTruth(notCloned, only(query), wide), `${query} answered about no copy`).toBeNull();
+      expect(ids(query), `${query} matched the zero-location row`).not.toContain(1);
+      expect(ids(`-${query}`), `-${query} matched the zero-location row`).not.toContain(1);
+      evaluated += 3;
+    }
+    expect(evaluated, 'a run that evaluated no term proves nothing').toBe(outside.length * 3);
+    expect(rows.length).toBeGreaterThan(0);
+  });
+
+  it('leaves the project-row facts known', () => {
+    for (const query of [
+      'is:archived',
+      'is:pinned',
+      'is:hidden',
+      'is:reference',
+      'is:fork',
+      'is:notcloned',
+    ]) {
+      expect(termTruth(notCloned, only(query), wide), `${query} lost its answer`).not.toBeNull();
+    }
+  });
+
+  it('returns exactly the zero-location rows for is:notcloned', () => {
+    expect(ids('is:notcloned')).toEqual([1]);
+    expect(ids('-is:notcloned')).toEqual([2, 3]);
+  });
+
+  it('keeps -has:remote meaning a local copy with no remote configured', () => {
+    // The inversion, in one assertion: without the rule this returns [1, 3].
+    expect(ids('-has:remote')).toEqual([3]);
+    expect(ids('has:remote')).toEqual([2]);
+  });
+
+  it('keeps not-cloned rows in the base set and lets lang: match them', () => {
+    expect(ids('')).toEqual([1, 2, 3]);
+    expect(ids('lang:rust')).toEqual([1]);
+  });
+
+  it('drops no term for a not-cloned row: the rule is truth, not answerability', () => {
+    // §8.3 drops a term the *projection* cannot answer. The domain rule is a different
+    // mechanism — the projection answers it, and the answer is Unknown.
+    const { runnable, ignored } = partitionAnswerable(parseQuery('has:remote is:notcloned'), wide);
+    expect(runnable).toHaveLength(2);
+    expect(ignored).toHaveLength(0);
+  });
+});

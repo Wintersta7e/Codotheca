@@ -39,7 +39,10 @@ rows (§8.0b). is:reference and is:hidden opt their own rows back in; a negated 
 pub enum TermTruth {
     True,
     False,
-    /// Never observed. Matched by no polarity — this is the invariant the whole module exists for.
+    /// Never observed, **or outside the term's domain** (§23.6). Matched by no polarity — this
+    /// is the invariant the whole module exists for. There is no fourth truth value: one would
+    /// thread through both evaluators, both partition functions and the corpus, and render
+    /// identically to this everywhere.
     Unknown,
 }
 
@@ -184,6 +187,57 @@ fn flag_truth(row: &LoadedRow, flag: IsFlag, ctx: &ExecContext<'_>) -> TermTruth
             None => TermTruth::Unknown,
             Some(stamp) => TermTruth::known(r.acknowledged_at.is_none() && r.created_at > stamp),
         },
+        // §23.6: known-true or known-false for every project, never Unknown — whether the index
+        // holds a location is a fact the index always has. §23.1's one predicate, and there is no
+        // second expression of it.
+        IsFlag::Notcloned => TermTruth::known(r.primary_location.is_none()),
+    }
+}
+
+/// §23.1's predicate, named once so the domain rule below and the flag above read the same fact.
+#[must_use]
+pub fn has_no_working_copy(row: &LoadedRow) -> bool {
+    row.row.primary_location.is_none()
+}
+
+/// Total over the flag set, so a flag added later is a compile error here rather than a silent
+/// answer about a working copy that does not exist.
+const fn is_about_a_working_copy(flag: IsFlag) -> bool {
+    match flag {
+        IsFlag::Dirty
+        | IsFlag::Unpushed
+        | IsFlag::Behind
+        | IsFlag::Interrupted
+        | IsFlag::Empty
+        | IsFlag::Bare
+        | IsFlag::Shallow
+        | IsFlag::Local
+        | IsFlag::Wsl => true,
+        // Project-row facts. `is:notcloned` is the predicate itself and can never be outside its
+        // own domain.
+        IsFlag::Archived
+        | IsFlag::Pinned
+        | IsFlag::Hidden
+        | IsFlag::Reference
+        | IsFlag::Fork
+        | IsFlag::New
+        | IsFlag::Notcloned => false,
+    }
+}
+
+/// §23.6's domain rule, stated once: *a `has:` attribute, the working-copy `is:` flags, and
+/// `touched:` are predicates **about a working copy***.
+///
+/// `touched:` is included because `last_touched_at` falls back to `created_at` — the moment
+/// Codotheca wrote the row — so answering it for a not-cloned project would date an interaction
+/// that never happened.
+fn is_outside_the_working_copy_domain(term: &QueryTerm) -> bool {
+    match term {
+        QueryTerm::Has { .. } | QueryTerm::TouchedAge { .. } | QueryTerm::TouchedYear { .. } => {
+            true
+        }
+        QueryTerm::Flag { flag, .. } => is_about_a_working_copy(*flag),
+        QueryTerm::Bare { .. } | QueryTerm::Text { .. } | QueryTerm::Size { .. } => false,
     }
 }
 
@@ -200,6 +254,12 @@ fn has_truth(row: &LoadedRow, attribute: HasAttribute) -> TermTruth {
 
 #[must_use]
 pub fn term_truth(row: &LoadedRow, term: &QueryTerm, ctx: &ExecContext<'_>) -> TermTruth {
+    // §23.6's domain rule, evaluated **before** any column is read. That ordering is what keeps
+    // `is_bare` and `is_shallow` storing `0` without the value ever being observable through the
+    // grammar — and it is what stops `-has:remote` acquiring the whole not-cloned tail.
+    if has_no_working_copy(row) && is_outside_the_working_copy_domain(term) {
+        return TermTruth::Unknown;
+    }
     let r = &row.row;
     match term {
         QueryTerm::Bare { text, .. } => bare_truth(r, text, ctx),
