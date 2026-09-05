@@ -224,15 +224,37 @@ mod corehandler {
         let events = Arc::new(PublisherSink::new(Publisher::detached()));
         let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
 
-        let handler = CoreHandler::new(CoreDeps {
+        let http: Arc<dyn codotheca_core::http::HttpTransport> =
+            Arc::new(codotheca_core::testing::FakeTransport::new());
+        let handler = handler_over(dir, &index, &events, &clock, http);
+        (handler, events, clock)
+    }
+
+    /// The same handler, over a caller-supplied transport, so a test can watch what the
+    /// account commands do to the one index lock while a request is in flight.
+    fn handler_over(
+        dir: &std::path::Path,
+        index: &Arc<std::sync::Mutex<codotheca_core::index::Index>>,
+        events: &Arc<PublisherSink>,
+        clock: &Arc<codotheca_core::testing::FakeClock>,
+        http: Arc<dyn codotheca_core::http::HttpTransport>,
+    ) -> CoreHandler {
+        let clock = Arc::clone(clock);
+        let index = Arc::clone(index);
+        let events = Arc::clone(events);
+        CoreHandler::new(CoreDeps {
             index: Arc::clone(&index),
             // The seam and a fake of it. `FakeTransport` answers nothing here: every accounts
             // command in this file is a routing assertion, not a network one.
             provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
-                Arc::new(codotheca_core::testing::FakeTransport::new()),
+                Arc::clone(&http),
                 codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
             )),
             tokens: Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
+            http,
+            // Non-empty, so a test drives the flow's real path rather than the
+            // no-application-registered refusal that returns before any request is made.
+            client_id: "test-client-id".to_owned(),
             clock: clock.clone(),
             git: Arc::new(codotheca_core::testing::FakeGitBackend::new()),
             mount: Arc::new(codotheca_core::testing::FakeMountResolver::default()),
@@ -258,8 +280,99 @@ mod corehandler {
             ),
             events: Arc::clone(&events),
             tz_offset_min: 0,
+        })
+    }
+
+    /// A transport that tries the index lock **from inside `send`**, on the very thread that is
+    /// answering the command.
+    ///
+    /// `std::sync::Mutex` is not reentrant, so this discriminates with no threads and no timing:
+    /// if the arm answering `accounts.connect` held the guard, this `try_lock` returns `Err` on
+    /// the same thread; if it takes no guard, it succeeds. Forcing the condition rather than
+    /// waiting for one is R72's rule.
+    #[derive(Debug)]
+    struct LockProbingTransport {
+        index: Arc<std::sync::Mutex<codotheca_core::index::Index>>,
+        lock_was_free: std::sync::atomic::AtomicBool,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl codotheca_core::http::HttpTransport for LockProbingTransport {
+        fn send(
+            &self,
+            _req: &codotheca_core::http::HttpRequest,
+        ) -> Result<codotheca_core::http::HttpResponse, codotheca_core::http::TransportError>
+        {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let free = self.index.try_lock().is_ok();
+            self.lock_was_free
+                .store(free, std::sync::atomic::Ordering::SeqCst);
+            Err(codotheca_core::http::TransportError::Timeout)
+        }
+    }
+
+    /// R75: the account commands that reach the network are answered **without** the index lock.
+    ///
+    /// Holding the process's one SQLite mutex across a forge round trip would stop every other
+    /// command for as long as `ACCOUNT_LIMITS.total_secs` — thirty seconds — and nothing else in
+    /// the core would say so.
+    #[test]
+    fn a_network_account_command_holds_no_index_lock_while_it_is_in_flight() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let index = Arc::new(std::sync::Mutex::new(
+            codotheca_core::index::Index::open_at(dir.path(), NOW).expect("index opens"),
+        ));
+        let events = Arc::new(PublisherSink::new(Publisher::detached()));
+        let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
+        let probe = Arc::new(LockProbingTransport {
+            index: Arc::clone(&index),
+            lock_was_free: std::sync::atomic::AtomicBool::new(false),
+            calls: std::sync::atomic::AtomicUsize::new(0),
         });
-        (handler, events, clock)
+        let mut h = handler_over(
+            dir.path(),
+            &index,
+            &events,
+            &clock,
+            Arc::clone(&probe) as Arc<dyn codotheca_core::http::HttpTransport>,
+        );
+
+        // The command's own outcome is beside the point: the client id is empty in this build,
+        // so it may refuse before it ever reaches the transport. What must never happen is that
+        // it reaches the transport *while holding the guard*.
+        let _ = h.handle("accounts.connect", serde_json::json!({}));
+
+        // No escape hatch: the request MUST have been issued, or this test proves nothing
+        // about what the arm holds while it is in flight.
+        assert!(
+            probe.calls.load(std::sync::atomic::Ordering::SeqCst) > 0,
+            "the command never reached the transport, so the lock was never at risk"
+        );
+        assert!(
+            probe
+                .lock_was_free
+                .load(std::sync::atomic::Ordering::SeqCst),
+            "accounts.connect reached the network with the index lock held"
+        );
+    }
+
+    /// The other half, stated positively: a command that only reads a row **does** take the
+    /// guard, so the split above is a split and not a blanket exemption.
+    #[test]
+    fn a_reading_account_command_is_answered_under_the_index_guard() {
+        assert_eq!(
+            codotheca_core::assembly::route::route(
+                codotheca_core::assembly::route::command_name("accounts.list").expect("routable")
+            ),
+            codotheca_core::assembly::route::Route::Accounts
+        );
+        assert_eq!(
+            codotheca_core::assembly::route::route(
+                codotheca_core::assembly::route::command_name("accounts.cancelConnect")
+                    .expect("routable")
+            ),
+            codotheca_core::assembly::route::Route::AccountsNet
+        );
     }
 
     fn firstrun_env(home: &std::path::Path) -> codotheca_core::firstrun::FirstRunEnv {
@@ -341,11 +454,11 @@ mod corehandler {
                 );
             }
         }
-        // [p2] 40, plus the three §20.8 commands `crate::accounts` now answers. The remaining
-        // five stay unowned and are refused by name above, which is what the `refused` count
-        // opposite this one asserts.
+        // [p2] 40, plus the five §20.8 commands the core now answers — three under the index
+        // guard and two, the network pair, without it (R75). The remaining three stay unowned
+        // and are refused by name above, which is what the `refused` count opposite asserts.
         assert_eq!(
-            checked, 43,
+            checked, 45,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(

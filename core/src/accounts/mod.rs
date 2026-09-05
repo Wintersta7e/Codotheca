@@ -4,7 +4,9 @@
 //! the secret, and the renderer holds neither.
 
 pub mod commands;
+pub mod device;
 pub mod keychain;
+pub mod pump;
 pub mod store;
 
 use serde_json::Value;

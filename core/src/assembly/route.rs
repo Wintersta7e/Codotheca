@@ -60,8 +60,11 @@ pub enum Route {
     Detail,
     /// `crate::view::dispatch_view_command` — plan 15.
     View,
-    /// `crate::accounts::dispatch_accounts_command` — p2-20.
+    /// `crate::accounts::dispatch_accounts_command` — p2-20, under the index guard.
     Accounts,
+    /// The `accounts.*` commands that reach the network, answered **without** the index guard
+    /// (R75). Same carve-out as [`Route::Scan`], for the same reason.
+    AccountsNet,
     /// In §2.4 and in the schema, with no module in any plan. The payload names the plan that
     /// owes it, so the diagnostic says who, not just that.
     NoOwner(&'static str),
@@ -78,9 +81,7 @@ pub enum Route {
 /// its plan, in the same change that adds its `NoOwner` arm.
 ///
 /// The eight `accounts.*` rows land with the schema and leave as their handlers do.
-pub const UNOWNED_COMMANDS: [(&str, &str); 5] = [
-    ("accounts.connect", "p2-20"),
-    ("accounts.cancelConnect", "p2-20"),
+pub const UNOWNED_COMMANDS: [(&str, &str); 3] = [
     ("accounts.connectPat", "p2-20"),
     ("accounts.upgradeScope", "p2-20"),
     ("accounts.disconnect", "p2-20"),
@@ -151,16 +152,20 @@ pub fn route(command: CommandName) -> Route {
         | CommandName::CollectionsUpsert
         | CommandName::CollectionsRemove => Route::View,
 
-        // The three §20.8 reads and the org gate, answered by `crate::accounts`.
+        // The three §20.8 reads and the org gate, answered by `crate::accounts` **under the
+        // index guard**: each only reads or writes a row.
         CommandName::AccountsList
         | CommandName::AccountsOrgs
         | CommandName::AccountsSetOrgEnabled => Route::Accounts,
 
-        // The five §20.8 commands whose handlers land later in the same plan. Each moves to the
+        // R75: the two that reach the network are answered **without the index lock**, like
+        // `Route::Scan`. Holding the process's one SQLite mutex across a forge round trip would
+        // stop every other command for as long as `ACCOUNT_LIMITS.total_secs`.
+        CommandName::AccountsConnect | CommandName::AccountsCancelConnect => Route::AccountsNet,
+
+        // The three §20.8 commands whose handlers land later in the same plan. Each moves to an
         // arm above in the change that gives it one, and drops its `UNOWNED_COMMANDS` row with it.
-        CommandName::AccountsConnect
-        | CommandName::AccountsCancelConnect
-        | CommandName::AccountsConnectPat
+        CommandName::AccountsConnectPat
         | CommandName::AccountsUpgradeScope
         | CommandName::AccountsDisconnect => Route::NoOwner("p2-20"),
     }

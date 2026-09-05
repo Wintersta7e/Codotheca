@@ -53,6 +53,15 @@ pub struct CoreDeps {
     /// compiles, passes, and fails at assembly, which has cost this project four rulings.
     pub provider: Arc<dyn crate::provider::Provider>,
     pub tokens: Arc<dyn crate::accounts::keychain::TokenStore>,
+    /// The one HTTP client (R66), shared rather than rebuilt: each `reqwest::blocking::Client`
+    /// owns a runtime thread and a connection pool, and the Device Flow's pump needs the same
+    /// one the provider reads through.
+    pub http: Arc<dyn crate::http::HttpTransport>,
+    /// §20.2's public client id. Injected rather than read from the constant so a test can drive
+    /// the Device Flow's real path: with the shipped empty value `request_device_code` refuses
+    /// before it issues anything, and a test that took that branch would assert nothing about
+    /// what happens when a request *is* made.
+    pub client_id: String,
     /// `ProjectsCtx`'s (plan 13). §8.1's era bands cut on the local calendar year and nothing
     /// under `crate::projects` reads a clock or a zone, so the offset arrives with the deps.
     pub tz_offset_min: i32,
@@ -85,6 +94,12 @@ pub struct CoreHandler {
     events: Arc<PublisherSink>,
     provider: Arc<dyn crate::provider::Provider>,
     tokens: Arc<dyn crate::accounts::keychain::TokenStore>,
+    http: Arc<dyn crate::http::HttpTransport>,
+    client_id: String,
+    /// The live Device Flow, or none. **Core-side state, not renderer state**: closing the
+    /// settings drawer does not cancel it, and `accounts.cancelConnect` or the deadline elapsing
+    /// are the only two endings (§20.2).
+    connect: Option<crate::accounts::pump::ConnectPump>,
     tz_offset_min: i32,
     /// Measured against `Clock::monotonic_ms`, never wall time: a clock step backwards must not
     /// fire a burst of ticks, and `now_unix` is something a user or NTP can move.
@@ -119,6 +134,9 @@ impl CoreHandler {
             events: deps.events,
             provider: deps.provider,
             tokens: deps.tokens,
+            http: deps.http,
+            client_id: deps.client_id,
+            connect: None,
             tz_offset_min: deps.tz_offset_min,
             last_tick_ms,
             ticks: 0,
@@ -155,6 +173,65 @@ impl CoreHandler {
             now,
         };
         crate::scan::dispatch_scan_command(&ctx, command, args)
+    }
+
+    /// §20.2's two network commands, answered with **no index guard held** (R75).
+    ///
+    /// `accounts.connect` with a flow already pending returns **that** flow's grant and starts no
+    /// second one, and its `expiresInSecs` is the time actually left — a countdown that restarts
+    /// on drawer reopen is the surface lying about the deadline.
+    fn accounts_net_arm(&mut self, command: &str, now: i64) -> Result<Value, CommandFailure> {
+        match command {
+            "accounts.connect" => {
+                if let Some(grant) = self.connect.as_ref().and_then(|p| p.grant(now)) {
+                    return serde_json::to_value(grant)
+                        .map_err(|e| CommandFailure::internal(e.to_string()));
+                }
+                // A pump whose flow has ended is replaced, not reused: its worker has returned.
+                if let Some(previous) = self.connect.take() {
+                    previous.stop();
+                }
+                let pump = crate::accounts::pump::ConnectPump::start(self.connect_deps());
+                let grant = pump.grant(now);
+                self.connect = Some(pump);
+                match grant {
+                    Some(grant) => serde_json::to_value(grant)
+                        .map_err(|e| CommandFailure::internal(e.to_string())),
+                    // §20.2: an unregistered application fails by name rather than issuing a
+                    // request that cannot succeed.
+                    None => Err(CommandFailure::internal(
+                        "no device flow could be started; no OAuth client id is compiled in"
+                            .to_owned(),
+                    )),
+                }
+            }
+            "accounts.cancelConnect" => {
+                if let Some(pump) = self.connect.as_ref() {
+                    pump.cancel();
+                }
+                Ok(serde_json::json!({}))
+            }
+            other => Err(Self::declined(other, Route::AccountsNet)),
+        }
+    }
+
+    /// Everything the pump needs, assembled from the deps the handler already holds.
+    fn connect_deps(&self) -> crate::accounts::pump::ConnectPumpDeps {
+        let sink = crate::accounts::pump::IndexConnectSink::new(
+            Arc::clone(&self.index),
+            Arc::clone(&self.provider),
+            crate::protocol::ScopeTier::Public,
+        );
+        crate::accounts::pump::ConnectPumpDeps {
+            transport: Arc::clone(&self.http),
+            clock: Arc::clone(&self.clock),
+            events: Arc::clone(&self.events) as Arc<dyn EventSink>,
+            tokens: Arc::clone(&self.tokens),
+            sink: Arc::new(sink),
+            host: self.provider.canonical_host().to_owned(),
+            client_id: self.client_id.clone(),
+            scopes: crate::provider::scopes::SCOPES_PUBLIC,
+        }
     }
 
     /// §20.8's arm, extracted so `handle` stays under the line cap rather than growing one
@@ -264,6 +341,10 @@ impl CommandHandler for CoreHandler {
                 )))
             }
             Route::NoOwner(plan) => return Err(Self::unowned(command, plan)),
+            // R75: answered **without** the index lock. `ConnectPump::start` issues the Device
+            // Flow's first request synchronously, so taking the guard here would hold the
+            // process's one SQLite mutex across a forge round trip.
+            Route::AccountsNet => return self.accounts_net_arm(command, now),
             // Answered **without** the index lock. `ScanCtx` takes a `&dyn ScanStore`, not an
             // `&Index`, and `SqliteScanStore` locks the same mutex internally; `std::sync::Mutex`
             // is not reentrant, so holding it here would deadlock the core on `scan.status`.
@@ -285,7 +366,7 @@ impl CommandHandler for CoreHandler {
 
         let claimed = match dest {
             // Handled above; a second arm keeps the match total without a wildcard on Route.
-            Route::Loop | Route::NoOwner(_) | Route::Scan => unreachable!(),
+            Route::Loop | Route::NoOwner(_) | Route::Scan | Route::AccountsNet => unreachable!(),
             Route::FirstRun => {
                 crate::firstrun::dispatch(guard.conn_mut(), &self.firstrun, command, &args, now)
             }
@@ -442,6 +523,11 @@ impl CommandHandler for CoreHandler {
     /// gone.
     fn shutdown(&mut self) {
         self.jobs.stop();
+        // Before `Publisher::close()`, so the last `connect_progress` still reaches the shell,
+        // and before the process exits, so no poll thread is mid-write.
+        if let Some(pump) = self.connect.take() {
+            pump.stop();
+        }
         let Some(mut sessions) = self.sessions.take() else {
             return;
         };

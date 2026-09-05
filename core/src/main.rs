@@ -246,6 +246,8 @@ fn main() -> ExitCode {
         index: Arc::clone(&index),
         provider,
         tokens,
+        http: Arc::clone(&http_transport),
+        client_id: codotheca_core::accounts::device::GITHUB_CLIENT_ID.to_owned(),
         clock: Arc::clone(&clock),
         git: Arc::clone(&git),
         mount: Arc::clone(&mount),

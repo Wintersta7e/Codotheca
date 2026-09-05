@@ -124,6 +124,8 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'accounts.list',
   'accounts.orgs',
   'accounts.setOrgEnabled',
+  'accounts.connect',
+  'accounts.cancelConnect',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two
