@@ -113,6 +113,16 @@ impl ConnectPump {
         self.inner.grant(now)
     }
 
+    /// Why no flow started, when none did.
+    ///
+    /// `grant()` answering `None` has four possible causes and they are not interchangeable: an
+    /// unregistered application, an unreachable forge, a refusal, and an unreadable answer. A
+    /// caller that reports one sentence for all four tells three users the wrong thing.
+    #[must_use]
+    pub fn start_error(&self) -> Option<&device::ConnectError> {
+        self.inner.start_error.as_ref()
+    }
+
     /// Cancels the live flow.
     pub fn cancel(&self) {
         self.inner.cancel_user();
@@ -131,6 +141,8 @@ impl ConnectPump {
 struct ConnectPumpInner {
     deps: ConnectPumpDeps,
     cancel: CancelToken,
+    /// Why no flow started, when none did. Kept for the caller to report **by name**.
+    start_error: Option<device::ConnectError>,
     state: Mutex<PumpState>,
     worker: Mutex<Option<JoinHandle<()>>>,
 }
@@ -163,10 +175,18 @@ impl ConnectPumpInner {
         cancel: CancelToken,
         flow: Result<DeviceFlow, device::ConnectError>,
     ) -> Self {
-        let flow = flow.ok();
+        // The reason is kept, not discarded. `flow.ok()` threw away all four `ConnectError`
+        // variants, and the caller then reported the same sentence for every one of them — so an
+        // offline user was told this build has no OAuth client id compiled in, which is a lie
+        // about the product's own build and sends them to fix the wrong thing.
+        let (flow, start_error) = match flow {
+            Ok(flow) => (Some(flow), None),
+            Err(error) => (None, Some(error)),
+        };
         Self {
             deps,
             cancel,
+            start_error,
             state: Mutex::new(PumpState {
                 flow,
                 stopping: false,

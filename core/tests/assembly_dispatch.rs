@@ -292,6 +292,164 @@ mod corehandler {
         })
     }
 
+    /// An unreachable forge and an unregistered application are **different facts**.
+    ///
+    /// The pump discarded its `ConnectError` and the arm reported one sentence for all four
+    /// causes, so an offline user was told this build has no OAuth client id compiled in — a
+    /// claim about the build, which sends them to fix something that is not broken.
+    #[test]
+    fn a_forge_it_cannot_reach_is_not_reported_as_a_build_with_no_client_id() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let index = Arc::new(std::sync::Mutex::new(
+            codotheca_core::index::Index::open_at(dir.path(), NOW).expect("index opens"),
+        ));
+        let events = Arc::new(PublisherSink::new(Publisher::detached()));
+        let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
+        let mut h = handler_over(
+            dir.path(),
+            &index,
+            &events,
+            &clock,
+            // A machine with no route to the forge. `client_id` is non-empty in `handler_over`,
+            // so the only thing wrong here is the network.
+            Arc::new(codotheca_core::http::RefusingTransport),
+            Arc::new(codotheca_core::testing::FakeTokenStore::available()),
+        );
+
+        let failure = h
+            .handle("accounts.connect", serde_json::json!({}))
+            .expect_err("an unreachable forge cannot start a flow");
+        let message = failure.message.to_ascii_lowercase();
+        assert!(
+            !message.contains("client id"),
+            "an unreachable forge was reported as a build defect: {}",
+            failure.message
+        );
+        assert!(
+            message.contains("could not be reached"),
+            "the refusal does not name the network: {}",
+            failure.message
+        );
+        h.shutdown();
+    }
+
+    /// A `TokenStore` that tries the index lock **from inside `delete`**, on the answering thread.
+    ///
+    /// The same discriminator as `LockProbingTransport` and for the same reason: `std::sync::
+    /// Mutex` is not reentrant, so a guard held by the arm makes this `try_lock` fail with no
+    /// threads and no timing involved.
+    #[derive(Debug)]
+    struct LockProbingTokenStore {
+        index: Arc<std::sync::Mutex<codotheca_core::index::Index>>,
+        lock_was_free: std::sync::atomic::AtomicBool,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl codotheca_core::accounts::keychain::TokenStore for LockProbingTokenStore {
+        fn probe(&self) -> Result<(), codotheca_core::accounts::keychain::KeychainError> {
+            Ok(())
+        }
+
+        fn store(
+            &self,
+            _entry: &str,
+            _token: &codotheca_core::accounts::keychain::SecretToken,
+        ) -> Result<(), codotheca_core::accounts::keychain::KeychainError> {
+            Ok(())
+        }
+
+        fn read(
+            &self,
+            _entry: &str,
+        ) -> Result<
+            codotheca_core::accounts::keychain::SecretToken,
+            codotheca_core::accounts::keychain::KeychainError,
+        > {
+            Err(codotheca_core::accounts::keychain::KeychainError::NotFound)
+        }
+
+        fn delete(
+            &self,
+            _entry: &str,
+        ) -> Result<(), codotheca_core::accounts::keychain::KeychainError> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let free = self.index.try_lock().is_ok();
+            self.lock_was_free
+                .store(free, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    /// R75 again, for the call that is **not** a forge round trip.
+    ///
+    /// `accounts.disconnect` deletes the keychain entry before the row, and `keyring` puts no
+    /// timeout on that: a locked Windows credential store can prompt, and a secret-service call
+    /// can wait on D-Bus. Holding the process's one SQLite mutex across it stops every other
+    /// command for however long the user takes to answer a dialog.
+    #[test]
+    fn disconnect_holds_no_index_lock_while_it_deletes_the_keychain_entry() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let index = Arc::new(std::sync::Mutex::new(
+            codotheca_core::index::Index::open_at(dir.path(), NOW).expect("index opens"),
+        ));
+        let account = {
+            let mut guard = index.lock().unwrap();
+            let tx = guard.conn_mut().transaction().expect("a transaction");
+            let id = codotheca_core::accounts::store::insert_account(
+                &tx,
+                &codotheca_core::accounts::store::NewAccount {
+                    provider: "github".to_owned(),
+                    host: "forge.example.invalid".to_owned(),
+                    login: "octo".to_owned(),
+                    display_name: None,
+                    auth_kind: codotheca_core::protocol::AuthKind::Device,
+                    scope_tier: codotheca_core::protocol::ScopeTier::Public,
+                    granted_scopes: Vec::new(),
+                    token_ref: "github:forge.example.invalid:octo".to_owned(),
+                },
+                NOW,
+            )
+            .expect("the account inserts");
+            tx.commit().expect("the insert commits");
+            id
+        };
+
+        let events = Arc::new(PublisherSink::new(Publisher::detached()));
+        let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
+        let probe = Arc::new(LockProbingTokenStore {
+            index: Arc::clone(&index),
+            lock_was_free: std::sync::atomic::AtomicBool::new(false),
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let mut h = handler_over(
+            dir.path(),
+            &index,
+            &events,
+            &clock,
+            Arc::new(codotheca_core::testing::FakeTransport::new()),
+            Arc::clone(&probe) as Arc<dyn codotheca_core::accounts::keychain::TokenStore>,
+        );
+
+        h.handle(
+            "accounts.disconnect",
+            serde_json::json!({ "accountId": account.0 }),
+        )
+        .expect("the disconnect succeeds");
+
+        // No escape hatch: the keychain MUST have been reached, or this proves nothing.
+        assert!(
+            probe.calls.load(std::sync::atomic::Ordering::SeqCst) > 0,
+            "the command never reached the keychain, so the lock was never at risk"
+        );
+        assert!(
+            probe
+                .lock_was_free
+                .load(std::sync::atomic::Ordering::SeqCst),
+            "accounts.disconnect deleted the keychain entry with the index lock held"
+        );
+        h.shutdown();
+    }
+
     /// A transport that tries the index lock **from inside `send`**, on the very thread that is
     /// answering the command.
     ///

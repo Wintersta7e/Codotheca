@@ -198,16 +198,15 @@ impl CoreHandler {
                 }
                 let pump = crate::accounts::pump::ConnectPump::start(self.connect_deps());
                 let grant = pump.grant(now);
+                let refusal = no_flow_reason(&pump);
                 self.connect = Some(pump);
                 match grant {
                     Some(grant) => serde_json::to_value(grant)
                         .map_err(|e| CommandFailure::internal(e.to_string())),
-                    // §20.2: an unregistered application fails by name rather than issuing a
-                    // request that cannot succeed.
-                    None => Err(CommandFailure::internal(
-                        "no device flow could be started; no OAuth client id is compiled in"
-                            .to_owned(),
-                    )),
+                    // §20.2: a flow that cannot start fails **by its own reason**. An
+                    // unregistered application and an unreachable forge are different facts and
+                    // send the user to different places.
+                    None => Err(CommandFailure::internal(refusal)),
                 }
             }
             "accounts.cancelConnect" => {
@@ -228,6 +227,11 @@ impl CoreHandler {
                 serde_json::to_value(org).map_err(|e| CommandFailure::internal(e.to_string()))
             }
             "accounts.upgradeScope" => self.upgrade_scope_arm(args, now),
+            "accounts.disconnect" => crate::accounts::commands::handle_disconnect(
+                &self.index,
+                self.tokens.as_ref(),
+                args,
+            ),
             other => Err(Self::declined(other, Route::AccountsNet)),
         }
     }
@@ -278,14 +282,13 @@ impl CoreHandler {
         ));
         let pump = crate::accounts::pump::ConnectPump::start(deps);
         let grant = pump.grant(now);
+        let refusal = no_flow_reason(&pump);
         self.connect = Some(pump);
         match grant {
             Some(grant) => {
                 serde_json::to_value(grant).map_err(|e| CommandFailure::internal(e.to_string()))
             }
-            None => Err(CommandFailure::internal(
-                "no device flow could be started; no OAuth client id is compiled in".to_owned(),
-            )),
+            None => Err(CommandFailure::internal(refusal)),
         }
     }
 
@@ -399,6 +402,19 @@ impl CoreHandler {
              disagree about ownership"
         ))
     }
+}
+
+/// Why a device flow did not start, in the pump's own words.
+///
+/// Read **before** the pump is stored, because storing it moves it. The four `ConnectError`
+/// variants are four different user actions — register the application, reconnect the network,
+/// read the forge's refusal, report a malformed answer — and one sentence for all four sent
+/// every offline user to check a build setting.
+fn no_flow_reason(pump: &crate::accounts::pump::ConnectPump) -> String {
+    pump.start_error().map_or_else(
+        || "no device flow could be started".to_owned(),
+        |error| format!("no device flow could be started: {error}"),
+    )
 }
 
 impl CommandHandler for CoreHandler {
