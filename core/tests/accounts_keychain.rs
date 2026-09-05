@@ -179,3 +179,58 @@ fn the_production_store_exists_beside_the_trait_and_the_seam_is_object_safe() {
         "the trait has no production implementation in this module"
     );
 }
+
+/// The production store's three writing methods, **run**.
+///
+/// R49 is satisfied by the impl existing beside the trait; coverage is a different claim, and
+/// `probe()` alone never calls `set_password`, `get_password` or `delete_credential` on an entry
+/// this code composes. Whether those three name the *same* entry is exactly the kind of thing
+/// only a round trip catches.
+///
+/// There is not always a backend: a headless WSL session has no secret service, which §20.6
+/// names as a real state rather than a failure. So this asserts in **both** branches and prints
+/// which one it took — a test that skips silently is how an untested impl stays untested. The
+/// entry it writes is named for this test and this process, and is deleted before it returns.
+#[test]
+fn the_production_store_round_trips_or_says_it_cannot() {
+    let store = KeyringTokenStore::new();
+    let entry = format!("codotheca-test:round-trip:{}", std::process::id());
+
+    match store.probe() {
+        Ok(()) => {
+            eprintln!("accounts_keychain: a live backend answered, running the round trip");
+            let secret = SecretToken::new(format!("round-trip-{}", std::process::id()));
+            store
+                .store(&entry, &secret)
+                .expect("the backend took a write");
+            let read = store.read(&entry).expect("the backend returned the entry");
+            assert_eq!(
+                read.expose(),
+                secret.expose(),
+                "read and store name different entries"
+            );
+            store.delete(&entry).expect("the backend deleted the entry");
+            assert!(
+                matches!(store.read(&entry), Err(KeychainError::NotFound)),
+                "the entry survived its own deletion"
+            );
+        }
+        Err(error) => {
+            eprintln!("accounts_keychain: no backend here ({error}), asserting the refusal");
+            assert!(
+                matches!(
+                    error,
+                    KeychainError::Unavailable | KeychainError::Backend(_)
+                ),
+                "a missing backend must not be reported as NotFound: {error}"
+            );
+            // §20.6: no file fallback and no plaintext, so every method refuses rather than
+            // finding somewhere else to put a credential.
+            assert!(store
+                .store(&entry, &SecretToken::new("unused".to_owned()))
+                .is_err());
+            assert!(store.read(&entry).is_err());
+            assert!(store.delete(&entry).is_err());
+        }
+    }
+}
