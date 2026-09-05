@@ -76,8 +76,13 @@ fn relative(path: &std::path::Path) -> String {
 ///
 /// The needles are the **unqualified** ones `provider_seam.rs` already uses. Matching only
 /// `blocking::Client::…` reads the path spelling rather than the call: `use reqwest::blocking::
-/// Client;` followed by `Client::builder()` is the same client and matched neither. Every
-/// qualified spelling ends in one of these, so the narrower pair was strictly weaker.
+/// Client;` followed by `Client::builder()` is the same client and matched neither.
+///
+/// `ClientBuilder::new` is the third, and it is here because the sentence that used to stand in
+/// its place — *"every qualified spelling ends in one of these"* — was false: `ClientBuilder::new()`
+/// contains neither `Client::builder` nor `Client::new`, so the gate's own doc asserted a
+/// completeness the needle list did not have. **This list is the claim; do not restate it in
+/// prose.**
 ///
 /// Occurrences are counted, not files: two constructions in one file are two sites. Comment
 /// lines are stripped first, because this file's own neighbours document the rule and a gate
@@ -92,7 +97,7 @@ fn exactly_one_reqwest_client_is_constructed_in_the_core() {
             .filter(|line| !line.trim_start().starts_with("//"))
             .collect::<Vec<_>>()
             .join("\n");
-        for needle in ["Client::builder", "Client::new"] {
+        for needle in ["Client::builder", "Client::new", "ClientBuilder::new"] {
             for _ in code.matches(needle) {
                 sites.push(format!("{}: {needle}", relative(path)));
             }
