@@ -88,20 +88,32 @@ fn scanned(root: &std::path::Path, label: &str) -> Vec<(String, String)> {
 }
 
 /// A double-quoted string literal is the only way a scope reaches the wire from this core.
+///
+/// **Raw strings are read as raw strings.** `r#"rel="next""#` is one literal, and a scanner that
+/// only knows `"` tears it into `rel=`, `next` and a fragment — which both invents literals that
+/// are not there and, worse for a gate whose job is not to miss, ends its scan in the wrong
+/// place. The provider already writes exactly that form.
 fn string_literals(code: &str) -> Vec<String> {
+    let chars: Vec<char> = code.chars().collect();
     let mut out = Vec::new();
-    let bytes: Vec<char> = code.chars().collect();
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == '"' {
+    while i < chars.len() {
+        if chars[i] == 'r' {
+            if let Some((value, next)) = raw_literal(&chars, i) {
+                out.push(value);
+                i = next;
+                continue;
+            }
+        }
+        if chars[i] == '"' {
             let mut j = i + 1;
             let mut value = String::new();
-            while j < bytes.len() && bytes[j] != '"' {
-                if bytes[j] == '\\' {
+            while j < chars.len() && chars[j] != '"' {
+                if chars[j] == '\\' {
                     j += 1;
                 }
-                if j < bytes.len() {
-                    value.push(bytes[j]);
+                if j < chars.len() {
+                    value.push(chars[j]);
                 }
                 j += 1;
             }
@@ -112,6 +124,57 @@ fn string_literals(code: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// One raw string starting at `at` (the `r`), as `(contents, index just past it)`.
+///
+/// `None` when `at` is an ordinary `r` — an identifier, or `r` in a word — rather than the start
+/// of `r"…"` / `r#"…"#`. The closing delimiter is a quote followed by the **same** number of
+/// hashes, which is what makes an embedded `"` part of the literal.
+fn raw_literal(chars: &[char], at: usize) -> Option<(String, usize)> {
+    let mut i = at + 1;
+    let mut hashes = 0_usize;
+    while chars.get(i) == Some(&'#') {
+        hashes += 1;
+        i += 1;
+    }
+    if chars.get(i) != Some(&'"') {
+        return None;
+    }
+    i += 1;
+    let start = i;
+    while i < chars.len() {
+        if chars[i] == '"' && chars[i + 1..].iter().take(hashes).all(|c| *c == '#') {
+            let closing = i + 1 + hashes;
+            if closing <= chars.len() {
+                return Some((chars[start..i].iter().collect(), closing));
+            }
+        }
+        i += 1;
+    }
+    // Unterminated: treat it as no literal rather than swallowing the rest of the file.
+    None
+}
+
+/// The scanner's own self-test. A gate that misreads its input reports on something else.
+#[test]
+fn the_literal_scanner_reads_raw_strings_as_one_literal() {
+    let raw = "let link = r#\"rel=\"next\"\"#; let plain = \"read:org\";";
+    assert_eq!(
+        string_literals(raw),
+        vec![r#"rel="next""#.to_owned(), "read:org".to_owned()],
+        "a raw string containing a quote was torn into pieces"
+    );
+    // An ordinary identifier beginning with `r` is not a raw string.
+    assert_eq!(
+        string_literals("let repo = \"repo\";"),
+        vec!["repo".to_owned()]
+    );
+    // `r"…"` without hashes, and an escaped quote in an ordinary literal.
+    assert_eq!(
+        string_literals("r\"plain-raw\" \"esc\\\"aped\""),
+        vec!["plain-raw".to_owned(), "esc\"aped".to_owned()]
+    );
 }
 
 /// The one file allowed to write a scope literal at all.
