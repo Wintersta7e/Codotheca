@@ -109,9 +109,9 @@ impl Provider for GitHubProvider {
         cur: Option<&str>,
     ) -> ProviderResult<Observed<Page<OrgListing>>> {
         let url = cur.map_or_else(|| self.orgs_url(), str::to_owned);
-        let response = self.get(t, url)?;
+        let response = self.get(t, url.clone())?;
         let granted_scopes = observed_scopes(&response);
-        let next_cursor = next_link_cursor(response.header("link"));
+        let next_cursor = next_link_cursor_for(response.header("link"), &url);
         let orgs: Vec<GitHubOrg> = decode(&response)?;
         let items = orgs
             .into_iter()
@@ -132,9 +132,9 @@ impl Provider for GitHubProvider {
         cur: Option<&str>,
     ) -> ProviderResult<Observed<Page<RepoListing>>> {
         let url = cur.map_or_else(|| self.repos_url(), str::to_owned);
-        let response = self.get(t, url)?;
+        let response = self.get(t, url.clone())?;
         let granted_scopes = observed_scopes(&response);
-        let next_cursor = next_link_cursor(response.header("link"));
+        let next_cursor = next_link_cursor_for(response.header("link"), &url);
         let repos: Vec<GitHubRepo> = decode(&response)?;
         let items = repos.into_iter().map(RepoListing::from).collect();
         Ok(Observed {
@@ -206,6 +206,22 @@ where
 /// carries `affiliation=owner,collaborator,organization_member`, so a comma split tears the URL
 /// into pieces, finds no `rel="next"` in any of them, and paginates exactly once — silently, and
 /// only against the real API, because a fixture without a comma passes either way.
+/// The `rel="next"` URL, **bounded to the host that produced it**.
+///
+/// A `Link` header is attacker-influenceable in exactly the way a `Location` is: it names a URL
+/// this provider will then fetch **with the account's token attached**. Following one off-host
+/// would hand the token to whatever the header named, so a cross-host next page is dropped and
+/// pagination simply ends — the alternative is sending a credential somewhere the user never
+/// authorised.
+fn next_link_cursor_for(header: Option<&str>, from: &str) -> Option<String> {
+    let next = next_link_cursor(header)?;
+    match crate::http::same_host(from, &next) {
+        Ok(true) => Some(next),
+        // Same-host or nothing: an unparseable next page is not one to guess about either.
+        Ok(false) | Err(_) => None,
+    }
+}
+
 fn next_link_cursor(header: Option<&str>) -> Option<String> {
     let header = header?;
     let bytes = header.as_bytes();

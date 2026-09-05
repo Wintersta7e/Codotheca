@@ -195,6 +195,122 @@ pub fn require_https(url: &str) -> Result<(), TransportError> {
     })
 }
 
+/// Header names whose **values authenticate the caller**. They may never cross a host boundary.
+///
+/// `reqwest`'s own redirect policy strips these on a cross-origin hop; `Policy::none()` opts out
+/// of that, and this transport follows redirects itself so that `redirect_limit` and
+/// `allow_scheme_change` stay per-request. Opting out of the policy therefore means opting **in**
+/// to doing the stripping here, and the first version of this loop did not.
+pub const CREDENTIAL_HEADERS: &[&str] = &["authorization", "cookie", "proxy-authorization"];
+
+/// Whether two URLs address the same host, comparing host and port and ignoring case.
+///
+/// # Errors
+/// Fails when either URL cannot be parsed, because an unparseable next hop is not a hop this
+/// transport is willing to guess about.
+pub fn same_host(base: &str, next: &str) -> Result<bool, TransportError> {
+    let parse = |u: &str| {
+        reqwest::Url::parse(u).map_err(|e| TransportError::Io {
+            detail: e.to_string(),
+        })
+    };
+    let (a, b) = (parse(base)?, parse(next)?);
+    Ok(
+        a.host_str().map(str::to_ascii_lowercase) == b.host_str().map(str::to_ascii_lowercase)
+            && a.port_or_known_default() == b.port_or_known_default(),
+    )
+}
+
+/// The headers the next hop may carry.
+///
+/// **A credential is stripped the moment the host changes.** Without this a `302` to any host
+/// receives the user's forge token, and the no-injection gate cannot see it because that gate
+/// reads the client's *construction site* rather than what a later hop is handed.
+///
+/// # Errors
+/// Propagates a URL that cannot be parsed.
+pub fn headers_for_hop(
+    headers: &[(String, String)],
+    base: &str,
+    next: &str,
+) -> Result<Vec<(String, String)>, TransportError> {
+    if same_host(base, next)? {
+        return Ok(headers.to_vec());
+    }
+    Ok(headers
+        .iter()
+        .filter(|(name, _)| {
+            !CREDENTIAL_HEADERS
+                .iter()
+                .any(|secret| name.eq_ignore_ascii_case(secret))
+        })
+        .cloned()
+        .collect())
+}
+
+/// The redirect loop, over a caller-supplied hop.
+///
+/// It is a free function taking the hop as a closure so the loop itself is testable without a
+/// socket: `ReqwestTransport` supplies the real hop, and a test supplies one that answers a
+/// cross-host `302` and records what the second hop was handed.
+///
+/// # Errors
+/// The hop's own failure, a plaintext or scheme-changing redirect, an unparseable location, or
+/// more redirects than `redirect_limit` allows.
+pub fn follow_redirects<F>(req: &HttpRequest, mut hop: F) -> Result<HttpResponse, TransportError>
+where
+    F: FnMut(
+        &str,
+        &str,
+        &[(String, String)],
+        Option<&Vec<u8>>,
+    ) -> Result<HttpResponse, TransportError>,
+{
+    let mut method: &str = req.method;
+    let mut url = req.url.clone();
+    let mut headers = req.headers.clone();
+    let mut body = req.body.clone();
+    let mut hops = 0_u8;
+
+    loop {
+        require_https(&url)?;
+        let response = hop(method, &url, &headers, body.as_ref())?;
+
+        let Some(keeps_method) = redirect_keeps_method(response.status) else {
+            return Ok(response);
+        };
+        // A redirect status with no `location` is not a redirect; it is a response.
+        let Some(location) = response.header("location").map(str::to_owned) else {
+            return Ok(response);
+        };
+        if hops >= req.limits.redirect_limit {
+            return Err(TransportError::Io {
+                detail: format!("more than {} redirects", req.limits.redirect_limit),
+            });
+        }
+
+        let base = reqwest::Url::parse(&url).map_err(|e| TransportError::Io {
+            detail: e.to_string(),
+        })?;
+        let next = base.join(&location).map_err(|e| TransportError::Io {
+            detail: e.to_string(),
+        })?;
+        if next.scheme() != base.scheme() && !req.limits.allow_scheme_change {
+            return Err(TransportError::Connect {
+                detail: "a redirect changed scheme".to_owned(),
+            });
+        }
+        let next = next.to_string();
+        headers = headers_for_hop(&headers, &url, &next)?;
+        if !keeps_method {
+            method = "GET";
+            body = None;
+        }
+        url = next;
+        hops += 1;
+    }
+}
+
 /// The connect timeout, and the one bound this transport cannot take per request.
 ///
 /// `reqwest::blocking::RequestBuilder` has no `connect_timeout` — the setting lives on
@@ -298,56 +414,13 @@ impl HttpTransport for ReqwestTransport {
                 ),
             });
         }
-
-        let mut method =
-            reqwest::Method::from_bytes(req.method.as_bytes()).map_err(|e| TransportError::Io {
-                detail: e.to_string(),
-            })?;
-        let mut url = req.url.clone();
-        let mut body = req.body.clone();
-        let mut hops = 0_u8;
-
-        loop {
-            require_https(&url)?;
-            let response = self.hop(
-                method.clone(),
-                &url,
-                &req.headers,
-                body.as_ref(),
-                req.limits,
-            )?;
-
-            let Some(keeps_method) = redirect_keeps_method(response.status) else {
-                return Ok(response);
-            };
-            // A redirect status with no `location` is not a redirect; it is a response.
-            let Some(location) = response.header("location").map(str::to_owned) else {
-                return Ok(response);
-            };
-            if hops >= req.limits.redirect_limit {
-                return Err(TransportError::Io {
-                    detail: format!("more than {} redirects", req.limits.redirect_limit),
-                });
-            }
-
-            let base = reqwest::Url::parse(&url).map_err(|e| TransportError::Io {
-                detail: e.to_string(),
-            })?;
-            let next = base.join(&location).map_err(|e| TransportError::Io {
-                detail: e.to_string(),
-            })?;
-            if next.scheme() != base.scheme() && !req.limits.allow_scheme_change {
-                return Err(TransportError::Connect {
-                    detail: "a redirect changed scheme".to_owned(),
-                });
-            }
-            if !keeps_method {
-                method = reqwest::Method::GET;
-                body = None;
-            }
-            url = next.to_string();
-            hops += 1;
-        }
+        follow_redirects(req, |method, url, headers, body| {
+            let method =
+                reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| TransportError::Io {
+                    detail: e.to_string(),
+                })?;
+            self.hop(method, url, headers, body, req.limits)
+        })
     }
 }
 

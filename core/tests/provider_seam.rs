@@ -559,3 +559,40 @@ fn the_next_link_survives_a_url_that_contains_commas() {
         "the Link parser tore the URL apart at its commas"
     );
 }
+
+/// A `Link` header naming **another host** must not become a next page: this provider fetches
+/// that URL with the account's token attached, so following one off-host hands the credential to
+/// whatever the header named. Pagination ends instead.
+#[test]
+fn a_cross_host_next_link_is_not_followed() {
+    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    transport.push(ok_with_headers(
+        normalise_headers([(
+            "Link",
+            "<https://evil.example.invalid/user/repos?page=2>; rel=\"next\"",
+        )]),
+        b"[]",
+    ));
+    let page = provider.list_repos(&token(), None).unwrap().value;
+    assert_eq!(
+        page.next_cursor, None,
+        "a next page on another host was accepted, and the token would follow it"
+    );
+
+    // The same header on the same host is still a next page — this bounds, it does not disable.
+    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    let same = "https://api.github.com/user/repos?page=2";
+    transport.push(ok_with_headers(
+        normalise_headers([("Link", format!("<{same}>; rel=\"next\"").as_str())]),
+        b"[]",
+    ));
+    assert_eq!(
+        provider
+            .list_repos(&token(), None)
+            .unwrap()
+            .value
+            .next_cursor
+            .as_deref(),
+        Some(same)
+    );
+}

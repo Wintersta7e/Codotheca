@@ -433,3 +433,172 @@ fn a_temporary_redirect_keeps_the_method_and_a_see_other_does_not() {
         assert_eq!(redirect_keeps_method(not_a_redirect), None);
     }
 }
+
+// ---------------------------------------------------------------------------
+// A credential never crosses a host boundary.
+// ---------------------------------------------------------------------------
+
+/// One hop as it reached the wire.
+#[derive(Debug, Clone)]
+struct SeenHop {
+    url: String,
+    headers: Vec<(String, String)>,
+}
+
+/// Records what every hop was handed, and answers a scripted status per hop.
+#[derive(Debug, Default)]
+struct HopRecorder {
+    seen: std::cell::RefCell<Vec<SeenHop>>,
+}
+
+impl HopRecorder {
+    fn answer(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+        location: Option<&str>,
+    ) -> HttpResponse {
+        self.seen.borrow_mut().push(SeenHop {
+            url: url.to_owned(),
+            headers: headers.to_vec(),
+        });
+        match location {
+            Some(next) => HttpResponse {
+                status: 302,
+                headers: normalise_headers([("Location", next)]),
+                body: Vec::new(),
+            },
+            None => HttpResponse {
+                status: 200,
+                headers: Vec::new(),
+                body: b"{}".to_vec(),
+            },
+        }
+    }
+
+    fn headers_of(&self, hop: usize) -> Vec<(String, String)> {
+        self.seen.borrow()[hop].headers.clone()
+    }
+
+    fn url_of(&self, hop: usize) -> String {
+        self.seen.borrow()[hop].url.clone()
+    }
+}
+
+fn bearer_request(url: &str) -> HttpRequest {
+    HttpRequest {
+        method: "GET",
+        url: url.to_owned(),
+        headers: normalise_headers([
+            ("Authorization", "Bearer SENTINEL-TOKEN-0000"),
+            ("Cookie", "session=SENTINEL-TOKEN-0000"),
+            ("Accept", "application/vnd.github+json"),
+        ]),
+        body: None,
+        limits: ACCOUNT_LIMITS,
+    }
+}
+
+/// **A `302` to another host must not receive the caller's token.**
+///
+/// `reqwest`'s own redirect policy strips `Authorization` and `Cookie` cross-origin; this
+/// transport sets `Policy::none()` so that `redirect_limit` and `allow_scheme_change` stay
+/// per-request, which opts out of that stripping and makes it this loop's job.
+#[test]
+fn a_cross_host_redirect_receives_no_credential() {
+    let recorder = HopRecorder::default();
+    let response = codotheca_core::http::follow_redirects(
+        &bearer_request("https://api.forge.example.invalid/user"),
+        |_method, url, headers, _body| {
+            let location = if url.starts_with("https://api.forge.example.invalid") {
+                Some("https://evil.example.invalid/collect")
+            } else {
+                None
+            };
+            Ok(recorder.answer(url, headers, location))
+        },
+    )
+    .expect("the redirect is followed");
+    assert_eq!(response.status, 200);
+
+    assert_eq!(recorder.url_of(0), "https://api.forge.example.invalid/user");
+    assert_eq!(recorder.url_of(1), "https://evil.example.invalid/collect");
+    let first = recorder.headers_of(0);
+    assert!(
+        first.iter().any(|(k, _)| k == "authorization"),
+        "the first hop, on the original host, must still carry the token"
+    );
+
+    let second = recorder.headers_of(1);
+    let leaked: Vec<&(String, String)> = second
+        .iter()
+        .filter(|(k, v)| v.contains("SENTINEL-TOKEN-0000") || k == "authorization" || k == "cookie")
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "a credential reached another host across a redirect: {leaked:?}"
+    );
+    // The non-credential header survives: this strips secrets, not everything.
+    assert!(second.iter().any(|(k, _)| k == "accept"));
+}
+
+/// Same host, so nothing is stripped — otherwise the fix would break paginated reads that
+/// legitimately redirect within the forge.
+#[test]
+fn a_same_host_redirect_keeps_the_credential() {
+    let recorder = HopRecorder::default();
+    codotheca_core::http::follow_redirects(
+        &bearer_request("https://api.forge.example.invalid/user"),
+        |_method, url, headers, _body| {
+            let location = if url.ends_with("/user") {
+                Some("https://api.forge.example.invalid/user/moved")
+            } else {
+                None
+            };
+            Ok(recorder.answer(url, headers, location))
+        },
+    )
+    .expect("the redirect is followed");
+    assert!(recorder
+        .headers_of(1)
+        .iter()
+        .any(|(k, _)| k == "authorization"));
+}
+
+#[test]
+fn the_host_comparison_ignores_case_and_reads_the_port() {
+    use codotheca_core::http::{headers_for_hop, same_host};
+    assert!(same_host(
+        "https://API.Forge.Example.Invalid/a",
+        "https://api.forge.example.invalid/b"
+    )
+    .unwrap());
+    assert!(same_host(
+        "https://a.example.invalid/x",
+        "https://a.example.invalid:443/y"
+    )
+    .unwrap());
+    assert!(!same_host(
+        "https://a.example.invalid/x",
+        "https://a.example.invalid:8443/y"
+    )
+    .unwrap());
+    assert!(!same_host("https://a.example.invalid/x", "https://b.example.invalid/y").unwrap());
+
+    let headers = normalise_headers([("Authorization", "Bearer x"), ("Accept", "j")]);
+    let kept = headers_for_hop(
+        &headers,
+        "https://a.example.invalid",
+        "https://a.example.invalid/2",
+    )
+    .unwrap();
+    assert_eq!(kept.len(), 2);
+    let stripped = headers_for_hop(
+        &headers,
+        "https://a.example.invalid",
+        "https://b.example.invalid",
+    )
+    .unwrap();
+    assert_eq!(stripped.len(), 1);
+    assert_eq!(stripped[0].0, "accept");
+}
