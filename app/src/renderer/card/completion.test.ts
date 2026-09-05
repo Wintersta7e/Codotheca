@@ -10,7 +10,14 @@ import {
   uncomputedRank,
 } from './completion';
 
-const uncomputed = { completionLit: null, isReference: false, density: 186 };
+// A located project: `hasWorkingCopy` is set beside `isReference`, because §23.5 decides the
+// frame from the pair and a fixture that carried only one would be describing half a row.
+const uncomputed = {
+  completionLit: null,
+  isReference: false,
+  hasWorkingCopy: true,
+  density: 186,
+};
 
 describe('the grid card states the absence, because the slot is drawn anyway', () => {
   it('takes the unknown frame and cuts the gap in its top edge', () => {
@@ -74,8 +81,8 @@ describe('every other readout draws no element at all', () => {
 
 describe('the frame is decided above the ladder', () => {
   it('is tier-ref for a reference project and unknown for everything else', () => {
-    expect(frameToken({ isReference: true })).toBe('tier-ref');
-    expect(frameToken({ isReference: false })).toBe('unknown');
+    expect(frameToken({ isReference: true, hasWorkingCopy: true })).toBe('tier-ref');
+    expect(frameToken({ isReference: false, hasWorkingCopy: true })).toBe('unknown');
     expect(uncomputedRank('gridCard', { ...uncomputed, isReference: true })?.frameToken).toBe(
       'tier-ref',
     );

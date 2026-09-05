@@ -2,7 +2,7 @@ import { type ReactElement, useState } from 'react';
 import type { ProjectRow, SessionRef } from '../../generated/protocol';
 import { CARD_ROLE } from '../a11y/names';
 import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
-import { useCardBitmap } from '../art/useCardBitmap';
+import { renditionFor, useCardBitmap } from '../art/useCardBitmap';
 import { glowShadow, glowStrength } from '../derive/condition';
 import { formatTrackedBytes } from '../format/size';
 import { Card } from './Card';
@@ -54,9 +54,12 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
   const [hovered, setHovered] = useState(false);
   const step = densityStep(props.density);
   const appearance = appearanceFor(seedOf(row), fadeFor(row), row.primaryLanguage);
+  // §23.5: a project with no working copy asks for the second pass, at its own address. The
+  // predicate is §23.1's one and only — `primaryLocation !== null`.
+  const hasWorkingCopy = row.primaryLocation !== null;
   const bitmap = useCardBitmap({
     sceneHash: row.artSceneHash,
-    rendition: props.rendition,
+    rendition: renditionFor(props.rendition, hasWorkingCopy),
     artState: row.artState,
   });
   const bench = useBenchElapsed(
@@ -88,7 +91,7 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
     <Card
       surface="card"
       appearance={appearance}
-      frameToken={frameToken(row)}
+      frameToken={frameToken({ isReference: row.isReference, hasWorkingCopy })}
       density={props.density}
       isArchived={row.isArchived}
       isReference={row.isReference}
@@ -133,6 +136,7 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
         rank: uncomputedRank('gridCard', {
           completionLit: row.completionLit,
           isReference: row.isReference,
+          hasWorkingCopy,
           density: props.density,
         }),
         chips: statusChips(row, props.now, props.firstRunCompletedAt),

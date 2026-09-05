@@ -9,7 +9,12 @@ import { HAZARD_TAPE_HEIGHT_PX, bandsFor } from './geometry';
 afterEach(cleanup);
 
 const look = appearanceFor({ seedBasename: 'atlas', rerollOffset: 0 }, 0, 'Rust');
-const rank = uncomputedRank('gridCard', { completionLit: null, isReference: false, density: 186 });
+const rank = uncomputedRank('gridCard', {
+  completionLit: null,
+  isReference: false,
+  hasWorkingCopy: true,
+  density: 186,
+});
 
 const props = (over: Partial<CardProps> = {}): CardProps => ({
   surface: 'card',
@@ -72,6 +77,7 @@ describe('clip-path deletes what sits outside it, so three things are unclipped 
     const heroRank = uncomputedRank('hero', {
       completionLit: null,
       isReference: false,
+      hasWorkingCopy: true,
       density: 186,
     });
     const hero = draw({ surface: 'hero', bands: { ...props().bands, rank: heroRank } });
@@ -179,6 +185,7 @@ describe('§7.7: no element may occupy two bands', () => {
     const heroRank = uncomputedRank('hero', {
       completionLit: null,
       isReference: false,
+      hasWorkingCopy: true,
       density: 186,
     });
     const container = draw({ surface: 'hero', bands: { ...props().bands, rank: heroRank } });

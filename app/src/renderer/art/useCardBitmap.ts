@@ -1,8 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ProjectRow, SceneHash } from '../../generated/protocol';
+import type { ProjectRow, Rendition, SceneHash } from '../../generated/protocol';
 import { artUrl } from '../../shared/artAddress';
 
 export { artUrl };
+
+/**
+ * §23.5: which pass a surface asks for. A project with no working copy renders as the line-art
+ * drawing of the same seeded machine, and R47 gives that pass its own address per surface —
+ * `card-blueprint` on the tile, `hero-blueprint` on the hero — because one variant cannot address
+ * two passes over one `scene_hash`.
+ */
+export function renditionFor(surface: 'card' | 'hero', hasWorkingCopy: boolean): Rendition {
+  if (hasWorkingCopy) return surface;
+  return surface === 'card' ? 'card-blueprint' : 'hero-blueprint';
+}
 
 /**
  * §7.1a's mid-scan flip, closed. A card holds its plate until the bitmap for **that exact**
@@ -15,7 +26,7 @@ export { artUrl };
  */
 export interface CardBitmapInput {
   readonly sceneHash: SceneHash | null;
-  readonly rendition: 'card' | 'hero';
+  readonly rendition: Rendition;
   readonly artState: ProjectRow['artState'];
   /**
    * The hero's address, from `art.url {rendition:'hero'}` — that request *is* the demand that

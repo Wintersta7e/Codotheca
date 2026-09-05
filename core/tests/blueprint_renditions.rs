@@ -292,10 +292,10 @@ fn the_blueprint_ink_and_ground_are_the_tokens_the_renderer_declares() {
 
     let css = include_str!("../../app/src/renderer/styles/tokens.css");
     let hex = |(r, g, b): (u8, u8, u8)| format!("#{r:02x}{g:02x}{b:02x}");
-    // `--tier-blue-ink` joins this list in the change that declares it (§23.5's tile), so the
-    // test never asserts a token that does not exist yet — and the count below is what stops it
-    // from passing over an empty list.
-    let mirrored: Vec<(&str, String)> = vec![("--tier-blue", hex(TIER_BLUE))];
+    let mirrored: Vec<(&str, String)> = vec![
+        ("--tier-blue", hex(TIER_BLUE)),
+        ("--tier-blue-ink", hex(TIER_BLUE_INK)),
+    ];
     let mut found = 0_usize;
     for (token, value) in &mirrored {
         let needle = format!("{token}: {value}");
@@ -310,9 +310,7 @@ fn the_blueprint_ink_and_ground_are_the_tokens_the_renderer_declares() {
         mirrored.len(),
         "a run that compared no token proves nothing"
     );
-    assert!(found > 0);
-    // The ink is declared in Rust already and its own mirror assertion lands with the token.
-    assert_eq!(hex(TIER_BLUE_INK), "#9fc2d6");
+    assert_eq!(found, 2, "both halves of §8.7's pair are compared");
 }
 
 /// A `SceneHash` is what the wire carries; this pins that the address builder takes one and that

@@ -50,8 +50,10 @@ describe('the token block', () => {
     // Holo cyan, Shadow violet — deferred by §8.7, and a token nothing reads is a dead switch.
     expect(values).not.toContain('#6fd0e8');
     expect(values).not.toContain('#7c5cff');
-    // --tier-blue-ink is deferred with `Not cloned`.
-    expect(anyToken['tier-blue-ink']).toBeUndefined();
+    // §23.5 lands `Not cloned`, so `--tier-blue-ink` stops being deferred and is asserted as a
+    // value rather than as an absence. §8.7 owns it: 10.14:1 against the plate.
+    expect(tokenValue('tier-blue-ink')).toBe('#9fc2d6');
+    expect(tokenValue('tier-blue')).toBe('#2f4a5c');
   });
 
   it('declares none of the four snapped grounds and none of the off-token greys', () => {

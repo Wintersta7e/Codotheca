@@ -24,6 +24,7 @@ import { statusChips } from '../../card/chips';
 import { HeroFrame } from '../../card/HeroFrame';
 import { glowShadow, glowStrength } from '../../derive/condition';
 import { useProjectPageDeps } from '../deps';
+import { renditionFor } from '../../art/useCardBitmap';
 import { useHeroArt } from './useHeroArt';
 
 export interface HeroTileProps {
@@ -68,7 +69,13 @@ export function HeroTile({
   onTogglePin,
 }: HeroTileProps): ReactElement {
   const deps = useProjectPageDeps();
-  const heroSrc = useHeroArt(heroHash, row.artState);
+  // §23.5: the hero asks the core for the pass it needs, and that request **is** the demand that
+  // renders it. `renditionFor` names the pass; §23.1's one predicate decides which.
+  const heroSrc = useHeroArt(
+    heroHash,
+    row.artState,
+    renditionFor('hero', row.primaryLocation !== null),
+  );
   const identity = heroIdentityLine(row);
 
   // §5.4a's steady glow. There is no session on this surface to raise it and no flicker to dip

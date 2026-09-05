@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { SceneHash } from '../../generated/protocol';
+import type { LocationRef, SceneHash } from '../../generated/protocol';
 import { HeroFrame, type HeroRow } from './HeroFrame';
 import { bandsFor } from './geometry';
 
@@ -19,6 +19,8 @@ const row = (over: Partial<HeroRow> = {}): HeroRow => ({
   completionLit: null,
   artSceneHash: 'aa' as SceneHash,
   artState: 'ready',
+  // A located project. §23.5's blueprint hero is the zero-location case and asks for it by name.
+  primaryLocation: { id: 10 as LocationRef['id'], pathDisplay: '/w/atlas' },
   ...over,
 });
 

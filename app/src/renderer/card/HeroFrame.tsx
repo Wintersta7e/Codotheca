@@ -1,7 +1,7 @@
 import type { ReactElement, ReactNode } from 'react';
 import type { ProjectRow } from '../../generated/protocol';
 import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
-import { useCardBitmap } from '../art/useCardBitmap';
+import { renditionFor, useCardBitmap } from '../art/useCardBitmap';
 import { Card, type CardHalo } from './Card';
 import type { StatusChip } from './chips';
 import { frameToken, uncomputedRank } from './completion';
@@ -33,6 +33,9 @@ export type HeroRow = Pick<
   | 'completionLit'
   | 'artSceneHash'
   | 'artState'
+  // §23.5: the hero asks for `hero-blueprint` and takes the blueprint frame when the project has
+  // no working copy. §23.1's one predicate, so the row has to carry it.
+  | 'primaryLocation'
 >;
 
 export interface HeroFrameProps {
@@ -61,9 +64,10 @@ const HERO_DENSITY = 186;
 export function HeroFrame(props: HeroFrameProps): ReactElement {
   const { row } = props;
   const appearance = appearanceFor(seedOf(row), fadeFor(row), row.primaryLanguage);
+  const hasWorkingCopy = row.primaryLocation !== null;
   const bitmap = useCardBitmap({
     sceneHash: row.artSceneHash,
-    rendition: 'hero',
+    rendition: renditionFor('hero', hasWorkingCopy),
     artState: row.artState,
     src: props.heroSrc,
   });
@@ -72,7 +76,7 @@ export function HeroFrame(props: HeroFrameProps): ReactElement {
     <Card
       surface="hero"
       appearance={appearance}
-      frameToken={frameToken(row)}
+      frameToken={frameToken({ isReference: row.isReference, hasWorkingCopy })}
       density={HERO_DENSITY}
       isArchived={row.isArchived}
       isReference={row.isReference}
@@ -105,6 +109,7 @@ export function HeroFrame(props: HeroFrameProps): ReactElement {
         rank: uncomputedRank('hero', {
           completionLit: row.completionLit,
           isReference: row.isReference,
+          hasWorkingCopy,
           density: HERO_DENSITY,
         }),
         // §7.7 gives the hero column a geometry and §8.5 owns what goes in it.

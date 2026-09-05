@@ -58,7 +58,10 @@ const row = (over: Partial<ProjectRow> = {}): ProjectRow => ({
   sizeTrackedBytes: 100 * MB,
   trackedFiles: null,
   collectionIds: [],
-  primaryLocation: null,
+  // §23.5 decides the frame from the pair, so a null location beside 'present' would draw the
+  // blueprint frame on every case in this file — a fixture describing a state the product
+  // cannot produce.
+  primaryLocation: { id: 10 as LocationId, pathDisplay: '/w/atlas' },
   presence: 'present',
   branch: 'main',
   isDirty: null,

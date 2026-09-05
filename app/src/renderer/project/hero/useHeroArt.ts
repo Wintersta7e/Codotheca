@@ -10,11 +10,15 @@
  */
 import { useEffect, useState } from 'react';
 
-import type { ArtState, SceneHash } from '../../../generated/protocol';
+import type { ArtState, Rendition, SceneHash } from '../../../generated/protocol';
 import { useProjectPageDeps } from '../deps';
 
 /** `''` means *no address*: §7.5's plate stands. */
-export function useHeroArt(hash: SceneHash | null, artState: ArtState): string {
+export function useHeroArt(
+  hash: SceneHash | null,
+  artState: ArtState,
+  rendition: Rendition = 'hero',
+): string {
   const deps = useProjectPageDeps();
   const [src, setSrc] = useState('');
 
@@ -24,7 +28,7 @@ export function useHeroArt(hash: SceneHash | null, artState: ArtState): string {
     if (hash === null || artState === 'failed') return undefined;
     let live = true;
     deps
-      .request('art.url', { hash, rendition: 'hero' })
+      .request('art.url', { hash, rendition })
       .then((url) => {
         if (live && url !== '') setSrc(url);
       })
@@ -35,7 +39,7 @@ export function useHeroArt(hash: SceneHash | null, artState: ArtState): string {
     return () => {
       live = false;
     };
-  }, [deps, hash, artState]);
+  }, [deps, hash, artState, rendition]);
 
   return src;
 }

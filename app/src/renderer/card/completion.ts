@@ -23,8 +23,10 @@ export interface FrameGap {
   readonly fillToken: 'surface-1' | 'surface-0';
 }
 
+export type FrameToken = 'unknown' | 'tier-ref' | 'tier-blue';
+
 export interface UncomputedRank {
-  readonly frameToken: 'unknown' | 'tier-ref';
+  readonly frameToken: FrameToken;
   readonly gap: FrameGap;
   readonly glyph: string;
   readonly glyphPx: number;
@@ -38,6 +40,12 @@ export interface UncomputedRank {
 export interface CompletionInput {
   readonly completionLit: number | null;
   readonly isReference: boolean;
+  /**
+   * §23.5: `primaryLocation !== null`, the one predicate §23.1 names. The blueprint frame is
+   * decided from *is there a working copy at all*, which is a fact about the row and not a
+   * measurement of it.
+   */
+  readonly hasWorkingCopy: boolean;
   /** The `--tile` value in px. Ignored on the hero, which is one size. */
   readonly density: number;
 }
@@ -46,11 +54,27 @@ export interface CompletionInput {
  * `is_reference → --tier-ref` is decided *above* the ladder, from `authored_by_user` (§5.5),
  * and §5.5 writes `is_reference = 1` only from a computed `authored_by_user`. A row whose
  * authorship has not been computed therefore arrives here as `isReference === false` and takes
- * the unknown frame, which is what §7.7a asks for. `#2f4a5c` needs a remote-only project and is
- * unreachable in phase 1.
+ * the unknown frame, which is what §7.7a asks for.
+ *
+ * **§23.5 makes `--tier-blue` reachable, and it is not a rung.** §7.7's generating rule — *no
+ * surface may render a member of the completion ladder while `completion_lit IS NULL`* — is not
+ * breached, because this is decided **above** the ladder from *is there a working copy at all*,
+ * exactly as `--tier-ref` is decided above it from authorship. `paintsLadderRung('#2f4a5c')` is
+ * false, and it stays false.
+ *
+ * **`isReference` is tested first**, and §23 does not rule the pair. The reading taken: a
+ * reference row renders in §8.1's own Reference chrome below the grid rather than in the
+ * not-cloned tail, so its frame is that chrome's. In practice the two are disjoint for a project
+ * that was never cloned — `is_reference` is written only from a computed `authored_by_user`,
+ * which needs commits — so the ordering is observable only for a project that was cloned, marked
+ * reference and later uninstalled, which is p2-24b's state and not §23's.
  */
-export function frameToken(input: Pick<CompletionInput, 'isReference'>): 'unknown' | 'tier-ref' {
-  return input.isReference ? 'tier-ref' : 'unknown';
+export function frameToken(
+  input: Pick<CompletionInput, 'isReference' | 'hasWorkingCopy'>,
+): FrameToken {
+  if (input.isReference) return 'tier-ref';
+  if (!input.hasWorkingCopy) return 'tier-blue';
+  return 'unknown';
 }
 
 /** §7.7a: the notch qualifies a measurement, the gap says there is none. Never both. */
