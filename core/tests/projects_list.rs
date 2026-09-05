@@ -68,14 +68,41 @@ fn archived_and_submodules_are_overrides_and_archived_wins() {
     assert_eq!(era_section_id_for(&row, NOW, 0), "era:archived");
 }
 
+/// AC-P2-23-9, replacing `era_notcloned_is_never_emitted_in_phase_one`.
+///
+/// The old bar iterated day offsets over rows that were **all zero-location**, so after §23.4 it
+/// would have kept passing while proving nothing — a bar written past its own defect. The
+/// replacement builds the shape both ways and **prints the number of zero-location fixtures it
+/// scanned**: a passing run that scanned none of them is a failing gate.
 #[test]
-fn era_notcloned_is_never_emitted_in_phase_one() {
+fn era_notcloned_is_emitted_for_a_zero_location_row_and_only_for_one() {
+    let mut zero_location = 0_usize;
+    let mut located = 0_usize;
     for days in [0, 5, 40, 100, 400, 4000] {
+        let mut bare = ProjectRow::for_test_not_cloned(1);
+        bare.last_touched_at = NOW - days * DAY;
+        assert_eq!(
+            era_section_id_for(&bare, NOW, 0),
+            "era:notcloned",
+            "a project with no working copy is not filed by recency ({days} days)"
+        );
+        zero_location += 1;
+
         assert_ne!(
             era_section_id_for(&at(NOW - days * DAY), NOW, 0),
-            "era:notcloned"
+            "era:notcloned",
+            "a located project never lands there ({days} days)"
         );
+        located += 1;
     }
+    eprintln!(
+        "projects_list: scanned {zero_location} zero-location and {located} located fixtures"
+    );
+    assert!(
+        zero_location > 0,
+        "scanned {zero_location} zero-location fixtures; a run that scanned none proves nothing"
+    );
+    assert_eq!(zero_location, located);
 }
 
 /// AC-P2-23-4's ordering half. §23.4 tests the location **first**, before `is_archived` and

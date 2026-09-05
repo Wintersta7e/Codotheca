@@ -104,9 +104,28 @@ describe('eraSectionIdFor', () => {
       'era:archived',
     );
   });
-  it('never emits era:notcloned in phase 1', () => {
-    const ids = [0, 5, 40, 100, 400, 4000].map((d) => eraSectionIdFor(at(d), NOW));
-    expect(ids).not.toContain('era:notcloned');
+  // AC-P2-23-9, replacing `never emits era:notcloned in phase 1`. The old bar iterated day
+  // offsets over rows that were **all zero-location**, so after §23.4 it would have kept passing
+  // while proving nothing. The replacement builds the shape both ways and prints the number of
+  // zero-location fixtures it scanned; a passing run that scanned none of them fails.
+  it('emits era:notcloned for a zero-location row and for nothing else', () => {
+    const offsets = [0, 5, 40, 100, 400, 4000];
+    let zeroLocation = 0;
+    let located = 0;
+    for (const d of offsets) {
+      expect(eraSectionIdFor(notCloned(d), NOW)).toBe('era:notcloned');
+      zeroLocation += 1;
+      expect(eraSectionIdFor(at(d), NOW)).not.toBe('era:notcloned');
+      located += 1;
+    }
+    // A floor, not `toBe(offsets.length)`: with an empty list that comparison is 0 === 0 and
+    // the whole case passes having scanned nothing — the exact shape this test replaces.
+    expect(
+      zeroLocation,
+      'a run that scanned no zero-location fixture proves nothing',
+    ).toBeGreaterThan(0);
+    expect(zeroLocation).toBe(offsets.length);
+    expect(located).toBe(offsets.length);
   });
 
   // AC-P2-23-4's ordering half: the location is tested **first**, before isArchived and before
