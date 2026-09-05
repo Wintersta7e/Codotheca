@@ -54,7 +54,7 @@ pub const ACCOUNT_LIMITS: RequestLimits = RequestLimits {
     allow_scheme_change: false,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct HttpRequest {
     pub method: &'static str,
     pub url: String,
@@ -62,6 +62,41 @@ pub struct HttpRequest {
     pub headers: Vec<(String, String)>,
     pub body: Option<Vec<u8>>,
     pub limits: RequestLimits,
+}
+
+/// Header names whose **values** are secrets. A `Debug` that printed one would put a bearer
+/// token into the rolling log the moment anyone debugged a request, which is the single most
+/// likely way a token reaches stderr.
+const SECRET_HEADERS: &[&str] = &["authorization", "proxy-authorization", "cookie"];
+
+/// Written by hand: the derived `Debug` printed `Authorization: Bearer <token>` verbatim, and
+/// `core/tests/accounts_redaction.rs` caught it. Header **names** are kept — which headers were
+/// sent is diagnostic — and the values of the secret-bearing ones are replaced. The body is
+/// summarised by length for the same reason: a form-encoded body carries the device code.
+impl std::fmt::Debug for HttpRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let headers: Vec<(&str, &str)> = self
+            .headers
+            .iter()
+            .map(|(name, value)| {
+                if SECRET_HEADERS
+                    .iter()
+                    .any(|secret| name.eq_ignore_ascii_case(secret))
+                {
+                    (name.as_str(), "<redacted>")
+                } else {
+                    (name.as_str(), value.as_str())
+                }
+            })
+            .collect();
+        f.debug_struct("HttpRequest")
+            .field("method", &self.method)
+            .field("url", &self.url)
+            .field("headers", &headers)
+            .field("body_bytes", &self.body.as_ref().map(Vec::len))
+            .field("limits", &self.limits)
+            .finish()
+    }
 }
 
 /// A response, whatever its status.
