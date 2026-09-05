@@ -347,6 +347,9 @@ pub fn forget_hero(data_dir: &Path, hash: &str) -> Result<(), ArtError> {
 pub struct SweepReport {
     pub cards_removed: usize,
     pub heroes_removed: usize,
+    /// §23.5's second render pass, both targets. A blueprint is neither a card nor a hero, and
+    /// folding it into either counter would make that counter say a number it did not measure.
+    pub blueprints_removed: usize,
 }
 
 /// §7.5: superseded files are swept when no `art_scene` row references them. Only files this
@@ -402,6 +405,11 @@ pub fn sweep_unreferenced(
                 Rendition::Hero => {
                     report.heroes_removed += 1;
                     orphaned.push(hash.to_owned());
+                }
+                // Only the `hero` rendition is journalled by `touch_hero`, so a swept blueprint
+                // has no LRU entry to forget and must not push one.
+                Rendition::CardBlueprint | Rendition::HeroBlueprint => {
+                    report.blueprints_removed += 1;
                 }
             }
         }

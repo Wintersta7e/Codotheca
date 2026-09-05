@@ -41,6 +41,11 @@ pub fn handle_url(ctx: &ArtCtx<'_>, args: Value) -> Result<Value, CommandFailure
     let address = match args.rendition {
         Rendition::Card => card_address(ctx, hash),
         Rendition::Hero => hero_address(ctx, hash),
+        // R47 declares the two blueprint variants; the second render pass that fills them is
+        // §23.5's and lands with `blueprint_address`. Until it does there is no blueprint raster
+        // anywhere, so `""` — ruling 9's answer for *no address* — is the true answer here and
+        // §7.5's nameplate stands.
+        Rendition::CardBlueprint | Rendition::HeroBlueprint => Ok(String::new()),
     }
     .map_err(|e| failure(&e))?;
     Ok(Value::String(address))

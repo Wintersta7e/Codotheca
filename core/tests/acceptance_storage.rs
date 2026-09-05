@@ -61,6 +61,12 @@ fn ac_22_art_cache_under_50mb() {
             match rendition {
                 Rendition::Card => worst_card = worst_card.max(bytes),
                 Rendition::Hero => worst_hero = worst_hero.max(bytes),
+                // §7.6 budgets the two rasters the cache holds. §23.5's blueprint passes are
+                // rendered on demand like the hero and take the same targets, so they add no
+                // new worst case here — and the loop above does not produce one.
+                Rendition::CardBlueprint | Rendition::HeroBlueprint => {
+                    panic!("the loop iterates Card and Hero only")
+                }
             }
         }
         hashes.push(hash);
