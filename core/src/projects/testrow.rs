@@ -50,7 +50,7 @@ impl ProjectRow {
             tracked_files: None,
             collection_ids: Vec::new(),
             primary_location: None,
-            presence: Presence::Unscanned,
+            presence: Some(Presence::Unscanned),
             branch: None,
             is_dirty: None,
             untracked_count: None,

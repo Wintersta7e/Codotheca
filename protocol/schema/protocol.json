@@ -394,7 +394,7 @@
         "trackedFiles": "i64?",
         "collectionIds": "[CollectionId]",
         "primaryLocation": "LocationRef?",
-        "presence": "Presence",
+        "presence": "Presence?",
         "branch": "String?",
         "isDirty": "bool?",
         "untrackedCount": "u32?",
