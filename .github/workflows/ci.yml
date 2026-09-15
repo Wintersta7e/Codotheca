@@ -90,14 +90,17 @@ jobs:
       # silently on exactly the machines that cannot diagnose it.
       - name: build the WSL worker
         if: runner.os == 'Linux'
+        # `--no-default-features` drops §20.6's keychain, which the worker does not use and which
+        # reaches `libdbus-sys` on Linux: a system-header dependency with no arm64 sysroot here,
+        # so the cross-build died in its build script from the day accounts landed.
         run: |
-          cargo build --locked --manifest-path core/Cargo.toml --bin codotheca-worker
+          cargo build --locked --no-default-features --manifest-path core/Cargo.toml --bin codotheca-worker
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
           rustup target add aarch64-unknown-linux-gnu
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
-            cargo build --locked --manifest-path core/Cargo.toml --bin codotheca-worker \
-              --target aarch64-unknown-linux-gnu
+            cargo build --locked --no-default-features --manifest-path core/Cargo.toml \
+              --bin codotheca-worker --target aarch64-unknown-linux-gnu
       - name: corpus generates on this platform
         # The fixtures whose builders differ by platform: a bare clone, a linked worktree, a
         # recursive submodule, a path git can only hold in the tree, and one over MAX_PATH.

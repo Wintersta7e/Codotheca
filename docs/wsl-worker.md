@@ -21,7 +21,7 @@ green for work nobody ran.
 
 Build the ELF on a Linux target, then point the suite at it from Windows:
 
-    cargo build --release --manifest-path core/Cargo.toml --bin codotheca-worker
+    cargo build --release --no-default-features --manifest-path core/Cargo.toml --bin codotheca-worker
     set CODOTHECA_WORKER_ELF=<path to the built codotheca-worker>
     cargo test --manifest-path core/Cargo.toml --test wsl_live -- --ignored --nocapture
 

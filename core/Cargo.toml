@@ -29,7 +29,11 @@ name = "codotheca-worker"
 path = "src/bin/worker.rs"
 
 [features]
-default = []
+default = ["keychain"]
+# §20.6's OS keychain. Optional so §13's WSL worker — the same crate, a different binary — can be
+# built without `keyring`, whose Linux backend is `libdbus-sys`: a system-header dependency that
+# cannot cross-compile to aarch64 without a sysroot, for a helper that stores no credentials.
+keychain = ["dep:keyring"]
 # Test doubles and the corpus generator. Off by default so the shipped binary contains no
 # fake clock, no fake mount table and no fixture builder.
 #
@@ -71,7 +75,7 @@ ignore = "0.4"
 #
 # NOT keyring 4.x: its `rust-version` is 1.88.0 against this package's 1.80. Adopting it is a
 # workspace MSRV decision, not an accounts decision.
-keyring = { version = "3.6.3", default-features = false, features = [
+keyring = { version = "3.6.3", optional = true, default-features = false, features = [
     "windows-native",
     "sync-secret-service",
     "crypto-rust",

@@ -80,9 +80,17 @@ pub fn token_ref(provider: &str, host: &str, login: &str) -> String {
 }
 
 /// The one production implementation, over the `keyring` crate.
+///
+/// Behind the default-on `keychain` feature, and everything above it — the trait, the token
+/// type, the error vocabulary, `token_ref` — is not. §13's WSL worker is built from this same
+/// crate and holds no credentials of its own, so it is built **without** the feature: `keyring`'s
+/// Linux backend is `libdbus-sys`, which needs system headers to compile and an arm64 sysroot to
+/// cross-compile, and a 67-line helper copied into a distro has no business carrying either.
+#[cfg(feature = "keychain")]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct KeyringTokenStore;
 
+#[cfg(feature = "keychain")]
 impl KeyringTokenStore {
     #[must_use]
     pub fn new() -> Self {
@@ -106,6 +114,7 @@ impl KeyringTokenStore {
 /// not its bytes, `TooLong` and `Invalid` print an attribute **name**, and `Ambiguous` prints the
 /// matching credentials' attributes — which are the `token_ref` the database already holds, never
 /// a password. **Re-check this on any `keyring` upgrade**: it is the crate's rendering, not ours.
+#[cfg(feature = "keychain")]
 fn classify(error: keyring::Error) -> KeychainError {
     match error {
         keyring::Error::NoEntry => KeychainError::NotFound,
@@ -116,6 +125,7 @@ fn classify(error: keyring::Error) -> KeychainError {
     }
 }
 
+#[cfg(feature = "keychain")]
 impl TokenStore for KeyringTokenStore {
     fn probe(&self) -> Result<(), KeychainError> {
         let entry = Self::entry(PROBE_ENTRY)?;
