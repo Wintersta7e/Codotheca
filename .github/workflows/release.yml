@@ -27,6 +27,14 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run gen
+      # §20's keychain reaches the Secret Service over D-Bus on Linux, so `libdbus-sys` compiles
+      # against system headers this image does not ship. The same step is in every Linux job of
+      # `ci.yml`; without it the packaged Linux build dies in a build script before it starts.
+      - name: dbus development headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
       - run: npm run build:core
       - run: npm run build:app
       # NOTE: Windows code signing needs a certificate and a hardware token or a cloud signer.

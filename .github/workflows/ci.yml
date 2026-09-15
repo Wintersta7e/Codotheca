@@ -48,6 +48,15 @@ jobs:
       - run: npm ci
       - name: generate protocol
         run: npm run gen
+      # §20's keychain reaches the Secret Service over D-Bus on Linux, so `libdbus-sys` compiles
+      # against system headers this image does not ship. Without it every Linux cargo invocation
+      # dies in a build script — which is what took `core (ubuntu)`, `e2e` and `acceptance` red
+      # from the moment accounts landed, on a machine where the headers were already installed.
+      - name: dbus development headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
       - name: fmt
         run: cargo fmt --manifest-path core/Cargo.toml -- --check
       - name: clippy
@@ -140,6 +149,11 @@ jobs:
       # mount.spec.ts calls `test.skip()` when core/target/release/codotheca-core is absent, so
       # without this the job passed in 41 seconds having asserted nothing about a painted screen.
       # The first CI run did exactly that. The binary is the test's precondition, not an extra.
+      # §20's keychain reaches the Secret Service over D-Bus, so `libdbus-sys` needs the headers.
+      - name: dbus development headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
       - name: build the release core
         run: cargo build --locked --release --manifest-path core/Cargo.toml --bin codotheca-core
       - name: the precondition the pixel test skips on
@@ -187,6 +201,11 @@ jobs:
       - run: npm ci
       - run: npm run gen
       - run: npm run build:app
+      # §20's keychain reaches the Secret Service over D-Bus, so `libdbus-sys` needs the headers.
+      - name: dbus development headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
       # The static gates and the suites write here; the gate reads the directory. It must exist
       # before the first writer or every gate reports its result into nothing.
       - name: results directory
