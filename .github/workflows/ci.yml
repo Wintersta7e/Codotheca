@@ -4,11 +4,24 @@ on:
   pull_request:
 permissions: { contents: read }
 
+# A hosted runner has ~14 GB free and this workspace does not fit in it twice. Ninety-six test
+# binaries carrying debug info filled the disk and the linker died with `signal 7 [Bus error]`
+# at 86 MB free — a failure that names the linker and not the cause. Nothing in CI attaches a
+# debugger, and a panic still names its frames.
+env:
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  CARGO_INCREMENTAL: 0
+
 # A second push to the same ref makes the first run's result irrelevant. Without this they both
 # run to completion and the older one can report after the newer.
+#
+# **Except on `main`.** A cancelled run leaves no verdict and takes its logs with it, and two
+# pushes to `main` went red for ten days with nobody the wiser. Every commit on the branch that
+# ships gets a full answer of its own.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # Nothing else in this file protects this file. `release.yml` carried a `${{ }}` expression
@@ -52,6 +65,12 @@ jobs:
       # against system headers this image does not ship. Without it every Linux cargo invocation
       # dies in a build script — which is what took `core (ubuntu)`, `e2e` and `acceptance` red
       # from the moment accounts landed, on a machine where the headers were already installed.
+      - name: room to link in
+        # The runner ships toolchains this project never uses; the linker needs the space more.
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
       - name: dbus development headers
         if: runner.os == 'Linux'
         run: |
@@ -99,6 +118,20 @@ jobs:
       - uses: actions/setup-node@v5
         # Electron 44 requires >= 22.12.0 and Vite 7 requires ^20.19 || >= 22.12.
         with: { node-version: 22, cache: npm }
+      # This job installs no Rust toolchain and still compiles the core: `test/corpus.test.ts`
+      # shells out to `cargo run --bin codotheca-corpus`, against the cargo the image ships. So
+      # it needs the same two things every other Linux job needs, and it is the reason this job
+      # was red on Linux and green on Windows, where the keychain uses no D-Bus at all.
+      - name: room to link in
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
+      - name: dbus development headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
       - run: npm ci
       - name: generate protocol
         run: npm run gen
@@ -133,9 +166,19 @@ jobs:
         run: npx prettier --check "app/**/*.{ts,tsx}" "scripts/**/*.mjs"
 
   e2e:
-    name: e2e (electron)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    name: e2e (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      # Windows is the primary target and the app had never been launched there by anything but
+      # a person. Everything this suite asserts — a painted screen, the top bar's floor, a scan
+      # that reaches the shelf — is geometry and paths, which is where the two platforms differ.
+      matrix: { os: [ubuntu-latest, windows-latest] }
+    env:
+      # Playwright's own report, read by `check-e2e-skips.mjs`. A `grep` over console output
+      # would tie this job to bash and is why it could only ever run on one platform.
+      PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report.json
     steps:
       - uses: actions/checkout@v5
         with: { persist-credentials: false }
@@ -150,31 +193,39 @@ jobs:
       # without this the job passed in 41 seconds having asserted nothing about a painted screen.
       # The first CI run did exactly that. The binary is the test's precondition, not an extra.
       # §20's keychain reaches the Secret Service over D-Bus, so `libdbus-sys` needs the headers.
+      - name: room to link in
+        # The runner ships toolchains this project never uses; the linker needs the space more.
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
       - name: dbus development headers
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libdbus-1-dev pkg-config
       - name: build the release core
         run: cargo build --locked --release --manifest-path core/Cargo.toml --bin codotheca-core
-      - name: the precondition the pixel test skips on
-        run: test -x core/target/release/codotheca-core
       - run: npm run build:app
       # Electron ships its own Chromium; only the shared libraries are missing on a runner.
-      - run: npx playwright install-deps chromium
+      - if: runner.os == 'Linux'
+        run: npx playwright install-deps chromium
+      # A skip is a failure: this suite holds the only assertions in the repository about a
+      # painted screen and about a scan reaching the shelf, and it degrades to green silently.
+      # A gate whose passing run measures nothing is a failing gate.
       - name: end to end
-        # The app has never been launched by CI. One smoke test proves the driver, the build
-        # output path and the display before plan 20 wires 67 criteria into this directory.
-        #
-        # A skip here is a failure: this suite holds the only assertion in the repository about a
-        # pixel, and it degrades to green silently. A gate whose passing run measures nothing is
-        # a failing gate.
-        run: |
-          set -o pipefail
-          xvfb-run --auto-servernum npm run test:e2e --workspace app 2>&1 | tee e2e.log
-          if grep -qiE '[0-9]+ skipped' e2e.log; then
-            echo "::error::an e2e test skipped — it asserted nothing. The release core is the usual cause."
-            exit 1
-          fi
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run test:e2e --workspace app -- --reporter=list,json
+      - name: end to end
+        if: runner.os == 'Windows'
+        # A Windows runner has a desktop session of its own, so there is no display to start.
+        run: npm run test:e2e --workspace app -- --reporter=list,json
+      - name: no spec may skip
+        # Always: a suite that failed **and** skipped is two defects, and the second one is the
+        # quiet one. Playwright exits zero over a skipped spec, which is how a green run can
+        # assert nothing at all.
+        if: always()
+        run: node scripts/check-e2e-skips.mjs
       # The pixel test writes both frames it compares into its output directory. Byte counts
       # alone cannot tell "the app drew nothing" from "the capture returned an uncomposited
       # surface", and the two have opposite fixes — on a runner the images are the only evidence.
@@ -202,6 +253,11 @@ jobs:
       - run: npm run gen
       - run: npm run build:app
       # §20's keychain reaches the Secret Service over D-Bus, so `libdbus-sys` needs the headers.
+      - name: room to link in
+        # The runner ships toolchains this project never uses; the linker needs the space more.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
       - name: dbus development headers
         run: |
           sudo apt-get update
@@ -238,3 +294,55 @@ jobs:
       - uses: actions/upload-artifact@v5
         if: always()
         with: { name: acceptance-report, path: acceptance/report.md }
+
+  # Two ecosystems, two lockfiles, one question: is anything we ship known to be vulnerable?
+  # The toolchain was replaced once because the pinned set carried twenty advisories, and
+  # nothing since then has asked again.
+  advisories:
+    name: advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with: { persist-credentials: false }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: core }
+      - uses: actions/setup-node@v5
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: cargo advisories
+        # The lockfile, not the manifest: what resolves is what ships.
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --file core/Cargo.lock
+      - name: npm advisories
+        # Production dependencies only. A dev-tree advisory does not reach a user's machine, and
+        # a gate that goes red for one teaches everyone to ignore a red gate.
+        run: npm audit --omit=dev --audit-level=high
+
+  # One check that means "everything passed", because a job can fail, be skipped or be
+  # cancelled, and a reader who glances at a run sees a green tick beside the jobs that did
+  # succeed. Two pushes to `main` sat red for ten days behind exactly that.
+  all-green:
+    name: all green
+    if: always()
+    needs: [workflows, core, app, e2e, acceptance, advisories]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Through the environment rather than inlined into the script: `run:` is a shell, and a
+      # value interpolated into one is a value that can end a quote.
+      RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - name: every job succeeded
+        run: |
+          echo "results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::a job did not succeed: $result"
+              exit 1
+            fi
+          done
+          echo "all jobs succeeded"
+

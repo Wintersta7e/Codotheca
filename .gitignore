@@ -46,3 +46,6 @@ corpus-check/
 
 # Playwright's per-run artefacts.
 test-results/
+# Playwright's JSON report, which `scripts/check-e2e-skips.mjs` reads. A run's output, not a
+# committed baseline.
+app/e2e-report.json
