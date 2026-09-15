@@ -113,6 +113,15 @@ shelf and cycle tabs on the project page, and only one of those contexts is ever
 
 Requires Rust (stable), Node `>=22.12.0`, and `git` 2.22 or newer on `PATH`.
 
+On Linux the core also needs the D-Bus development headers, because the keychain reaches the
+Secret Service over D-Bus. Without them the build fails inside a build script, naming
+`libdbus-sys` rather than the package:
+
+```sh
+sudo apt-get install libdbus-1-dev pkg-config   # Debian and Ubuntu
+sudo dnf install dbus-devel pkgconf-pkg-config  # Fedora
+```
+
 ```sh
 npm install              # workspace dependencies
 npm run gen              # generate the protocol bindings for both languages
