@@ -36,6 +36,8 @@ interface Harness {
   readonly emit: (event: ScanFeedEvent) => void;
   readonly released: Mock<() => void>;
   readonly unmount: () => void;
+  /** Re-render with new props, which is how the core's own status reaches a mounted gate. */
+  readonly setStatus: (next: ScanStatus | null) => void;
 }
 
 afterEach(() => {
@@ -139,6 +141,13 @@ function harness(over: Partial<Parameters<typeof FirstRunGate>[0]> = {}): Harnes
     },
     released,
     unmount: view.unmount,
+    setStatus: (next: ScanStatus | null) => {
+      view.rerender(
+        <FirstRunGate deps={deps} status={next} hasStoredShelf={false} tier="full" {...over}>
+          <div data-testid="shelf">the shelf</div>
+        </FirstRunGate>,
+      );
+    },
   };
 }
 
@@ -163,6 +172,31 @@ test('a library that has scanned once goes straight to the shelf', () => {
   harness({ status: status(7) });
   expect(screen.getByTestId('shelf')).toBeTruthy();
   expect(screen.queryByText(copy.ROOTS_HEADLINE)).toBeNull();
+});
+
+// The decision is an **entry** condition. `DIG` creates the very run that `gateDecision` reads as
+// proof first run is over, so re-deciding on every render ended first run from inside first run —
+// measured in the real app, the scanning screen, the reveal and the turn were gone within a second
+// of `DIG`. The test above mounts with a run already present and could never see it.
+test('a run that first run itself started does not end first run', async () => {
+  const view = harness();
+  await screen.findByText('/somewhere/dev');
+  dig();
+  await waitFor(() => {
+    expect(view.deps.startScan).toHaveBeenCalledTimes(1);
+  });
+
+  // What `scan/run_started` does to the status the host holds.
+  act(() => {
+    view.setStatus(status(7));
+  });
+  expect(screen.queryByTestId('shelf')).toBeNull();
+
+  // And the walk finishing does not release it either; the beats own the screen to their end.
+  act(() => {
+    view.setStatus({ ...status(7), endedAt: 1_760_000_100, indexedProjects: 3 });
+  });
+  expect(screen.queryByTestId('shelf')).toBeNull();
 });
 
 // §11.2a: every full-screen flow unmounts the shelf. 522 MB of cards behind a screen nobody can

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { App } from './App';
 import { fakeAppDeps, type FakeAppDeps, type FakeReplies } from './app/testDeps';
 import type {
+  IdentityId,
   ProjectId,
   ProjectPage,
   ProjectRow,
@@ -190,6 +191,91 @@ describe('App — the composition root', () => {
     for (const command of ['projects.list', 'scan.status', 'view.get'] as const) {
       expect(fake.calls.filter((call) => call.name === command)).toHaveLength(1);
     }
+  });
+
+  it('draws §1.4 card in §8.0 slot when the seeded set has not been confirmed', async () => {
+    // `IdentityCard` was mounted nowhere: the component, its copy, its priority row and the
+    // slot's own `renderContent` seam all existed, and nothing supplied it — so
+    // `identity.confirm` was never called on any machine. The bar is the card **on screen**,
+    // not the hook that would raise it.
+    const fake = fakeAppDeps(
+      {
+        ...repliesFor([row(1, 'alpha')], scanned),
+        'identity.list': () => [
+          {
+            id: 1 as IdentityId,
+            isUser: true,
+            email: 'a@example.invalid',
+            name: null,
+            source: 'gitconfig' as const,
+            confirmedAt: null,
+            commits: 12,
+            projects: 1,
+            repositories: null,
+            primaryEmail: null,
+            aliasReason: null,
+          },
+        ],
+        'identity.confirm': () => ({
+          movedToReference: 0,
+          commitDaysRemoved: 0,
+          applied: true,
+        }),
+      },
+      { effectsTier: 'off' },
+    );
+    fake.setNow(NOW);
+    render(<App deps={fake.deps} />);
+
+    const card = await screen.findByText('WHAT COUNTS AS YOURS');
+    expect(card).not.toBeNull();
+    const tick = await screen.findByLabelText('a@example.invalid');
+    expect(tick.getAttribute('type')).toBe('checkbox');
+
+    fireEvent.click(screen.getByRole('button', { name: 'CONFIRM' }));
+    await waitFor(() => {
+      expect(
+        fake.calls.filter(
+          (call) =>
+            call.name === 'identity.confirm' && (call.args as { apply?: boolean }).apply === true,
+        ),
+      ).toHaveLength(1);
+    });
+    // Authorship just moved, so the shelf it is computed into is re-read rather than left as it
+    // was until the next launch.
+    await waitFor(() => {
+      expect(fake.calls.filter((call) => call.name === 'projects.list').length).toBeGreaterThan(1);
+    });
+  });
+
+  it('raises no identity card over a set that has already been confirmed', async () => {
+    const fake = fakeAppDeps(
+      {
+        ...repliesFor([row(1, 'alpha')], scanned),
+        'identity.list': () => [
+          {
+            id: 1 as IdentityId,
+            isUser: true,
+            email: 'a@example.invalid',
+            name: null,
+            source: 'gitconfig' as const,
+            confirmedAt: NOW - 100,
+            commits: 12,
+            projects: 1,
+            repositories: null,
+            primaryEmail: null,
+            aliasReason: null,
+          },
+        ],
+      },
+      { effectsTier: 'off' },
+    );
+    fake.setNow(NOW);
+    render(<App deps={fake.deps} />);
+    await waitFor(() => {
+      expect(document.querySelector('.cdt-shelf')).not.toBeNull();
+    });
+    expect(screen.queryByText('WHAT COUNTS AS YOURS')).toBeNull();
   });
 
   it('writes no view.set for a shelf nobody touched', async () => {

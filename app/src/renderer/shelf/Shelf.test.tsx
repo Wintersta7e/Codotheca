@@ -1,12 +1,24 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectId } from '../../generated/protocol.js';
+import type { Problems, ProjectId, ScanRunId } from '../../generated/protocol.js';
 import css from './shelf.css?raw';
 import type { ShelfProps } from './Shelf.js';
 import { SHELF_SCROLL_CLASS, Shelf } from './Shelf.js';
 import { DEFAULT_SHELF_VIEW } from './viewState.js';
 
 afterEach(cleanup);
+
+/** §11.1's report as the summary panel receives it. `null` is a count nothing computed. */
+const problemsWith = (count: number | null): Problems => ({
+  runId: 4 as ScanRunId,
+  header: {
+    walkedDirs: 10,
+    repositories: 2,
+    problemCount: count,
+    ambiguousLineageCount: null,
+  },
+  groups: [],
+});
 
 const emptyPage = {
   sections: [],
@@ -33,7 +45,8 @@ const props = (over: Partial<ShelfProps> = {}): ShelfProps => ({
   counts,
   notices: [],
   scan: { running: false, foundRepos: 0, problemCount: 0 },
-  libraryIsEmpty: false,
+  problems: null,
+  library: 'present',
   now: 1_760_000_000,
   onViewChange: vi.fn(),
   onOpenPalette: vi.fn(),
@@ -94,7 +107,7 @@ describe('the four blocks', () => {
   });
 
   it('replaces the body with the empty state, inside block 4', () => {
-    const { container, queryByTestId } = render(<Shelf {...props({ libraryIsEmpty: true })} />);
+    const { container, queryByTestId } = render(<Shelf {...props({ library: 'empty' })} />);
     expect(queryByTestId('body')).toBeNull();
     const empty = container.querySelector('.cdt-shelf-empty');
     expect(container.querySelector(`.${SHELF_SCROLL_CLASS}`)?.contains(empty)).toBe(true);
@@ -114,17 +127,28 @@ describe('the four blocks', () => {
     expect(queryByTestId('body')).toBeTruthy();
   });
 
-  it('offers the scan summary only when the last run counted problems', () => {
-    const scan = { running: false, foundRepos: 0, problemCount: 3 };
-    const { container } = render(<Shelf {...props({ libraryIsEmpty: true, scan })} />);
+  it('offers the scan summary only when the report it opens has problems in it', () => {
+    const { container } = render(
+      <Shelf {...props({ library: 'empty', problems: problemsWith(3) })} />,
+    );
     expect(container.querySelectorAll('.cdt-shelf-empty-action')).toHaveLength(2);
   });
 
   it('offers no scan summary when the problem count was never computed', () => {
     // `null` is *not computed*, and it is not zero. An uncomputed run is not evidence of a
     // clean one, so it earns no link.
-    const scan = { running: false, foundRepos: 0, problemCount: null };
-    const { container } = render(<Shelf {...props({ libraryIsEmpty: true, scan })} />);
+    const { container } = render(
+      <Shelf {...props({ library: 'empty', problems: problemsWith(null) })} />,
+    );
+    expect(container.querySelectorAll('.cdt-shelf-empty-action')).toHaveLength(1);
+  });
+
+  it('offers no scan summary when the report has not been read, whatever the scan counted', () => {
+    // The shipped dead control: the link was offered from `scan.status` and the panel it opens
+    // is drawn from `problems.list`. A run that counted three problems whose report never
+    // arrived drew a button that silently did nothing (§11.3a).
+    const scan = { running: false, foundRepos: 0, problemCount: 3 };
+    const { container } = render(<Shelf {...props({ library: 'empty', scan, problems: null })} />);
     expect(container.querySelectorAll('.cdt-shelf-empty-action')).toHaveLength(1);
   });
 

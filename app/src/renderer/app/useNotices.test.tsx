@@ -24,6 +24,7 @@ function input(over: Partial<NoticeInput> = {}): NoticeInput {
     gitVersion: null,
     spawnFailure: null,
     problems: null,
+    identityToConfirm: false,
     onOpenLog: vi.fn(),
     onOpenScanSummary: vi.fn(),
     ...over,

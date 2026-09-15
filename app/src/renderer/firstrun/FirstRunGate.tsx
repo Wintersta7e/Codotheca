@@ -88,9 +88,26 @@ export function gateDecision(
 
 export function FirstRunGate(props: FirstRunGateProps): ReactElement {
   const { deps, status, hasStoredShelf, tier, children } = props;
-  const decision = gateDecision(status, hasStoredShelf);
+  /**
+   * §10 is a **sequence**, so its gate is an entry condition and not a live one.
+   *
+   * `gateDecision` reads `scan_run.id` and a painted shelf, and **`DIG` creates both**: the
+   * `run_started` event gives the status a `runId` within milliseconds, and the walk it starts
+   * fills the projection. Re-deciding on every render therefore ended first run **from inside
+   * first run** — measured against the real app, the scanning screen, the reveal and the turn
+   * were all gone within a second of `DIG`, replaced by an empty shelf, and §10's entire beat
+   * sequence had never once run in the product.
+   *
+   * Once the gate has entered, the reducer owns the screen until it reaches `shelf`, which is
+   * what §10.5's *the reveal never replays* is really about: a run that exists is proof first
+   * run is **over**, except while it is the run first run just started.
+   */
+  const entry = gateDecision(status, hasStoredShelf);
+  const entered = useRef(false);
+  if (entry === 'first-run') entered.current = true;
 
   const [state, dispatch] = useReducer(firstRunReducer, INITIAL_FIRST_RUN);
+  const decision = entered.current && state.phase !== 'shelf' ? 'first-run' : entry;
   const [feed, feedDispatch] = useReducer(scanFeedReducer, INITIAL_SCAN_FEED);
   const [suggestions, setSuggestions] = useState<readonly RootSuggestion[]>([]);
   const [extra, setExtra] = useState<readonly RootRow[]>([]);

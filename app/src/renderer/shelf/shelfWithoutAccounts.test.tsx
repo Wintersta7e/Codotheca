@@ -104,7 +104,8 @@ const props = (over: Partial<ShelfProps> = {}): ShelfProps => ({
   // No account exists, so no account-derived notice qualifies.
   notices: [],
   scan: { running: false, foundRepos: 0, problemCount: 0 },
-  libraryIsEmpty: false,
+  problems: null,
+  library: 'present',
   now: 1_760_000_000,
   onViewChange: vi.fn(),
   onOpenPalette: vi.fn(),
