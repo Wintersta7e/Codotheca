@@ -172,6 +172,69 @@ mod binary {
         );
     }
 
+    /// Startup seeds the identity set, and `identity.list` is what proves it against the binary.
+    ///
+    /// `identity::people::seed` had **no production caller**: the table was empty on every real
+    /// machine, so J1.5 folded every repository against an empty set, wrote `is_reference = 1`
+    /// for all of them, and §8.0b's base predicate — *a bare query returns no `is_reference`
+    /// rows* — left `projects.list` answering zero rows over a full index. The unit tests could
+    /// not see it; every one of them seeds by hand.
+    #[test]
+    fn startup_seeds_the_identity_set_from_the_user_s_git_configuration() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let home = tempfile::tempdir().expect("home");
+        std::fs::write(
+            home.path().join(".gitconfig"),
+            "[user]\n\tname = A Person\n\temail = a@example.invalid\n",
+        )
+        .expect("gitconfig");
+
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_codotheca-core"))
+            .arg(format!("--data-dir={}", dir.path().display()))
+            .arg("--epoch=7")
+            .arg(format!("--parent-pid={}", std::process::id()))
+            .env("HOME", home.path())
+            .env("USERPROFILE", home.path())
+            .env_remove("XDG_CONFIG_HOME")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("core spawns");
+
+        let hello = recv(&mut child);
+        assert_eq!(hello["t"], "hello", "{hello}");
+        send(
+            &mut child,
+            &serde_json::json!({"t": "request", "id": 1, "command": "app.hello_ack", "args": {}}),
+        );
+        let _ack = recv(&mut child);
+
+        send(
+            &mut child,
+            &serde_json::json!({"t": "request", "id": 2, "command": "identity.list", "args": {}}),
+        );
+        let reply = recv(&mut child);
+        assert_eq!(reply["t"], "response", "{reply}");
+        // §2.4's response frame carries its payload on `ok`.
+        let rows = reply["ok"]
+            .as_array()
+            .unwrap_or_else(|| panic!("a list of identities: {reply}"));
+        assert_eq!(
+            rows.len(),
+            1,
+            "the configured address, and nothing invented beside it: {reply}"
+        );
+        assert_eq!(rows[0]["email"], "a@example.invalid", "{reply}");
+
+        send(
+            &mut child,
+            &serde_json::json!({"t": "request", "id": 3, "command": "app.shutdown", "args": {}}),
+        );
+        let status = child.wait().expect("exits");
+        assert!(status.success(), "{status:?}");
+    }
+
     /// stdout carries protocol frames and nothing else. The startup sequence and the tick now sit
     /// behind the loop, and every one of their diagnostics must still go to stderr.
     #[test]

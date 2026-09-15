@@ -12,13 +12,16 @@ use crate::surfaces::startup_failure;
 use std::path::Path;
 use std::sync::PoisonError;
 
-/// What the three non-fatal steps managed to do. A `None` field is a step that failed and
+/// What the four non-fatal steps managed to do. A `None` field is a step that failed and
 /// emitted `core/error`; it is never a step that was skipped silently.
 #[derive(Debug, Default)]
 pub struct StartupSummary {
     pub git: Option<crate::git::GitVersion>,
     pub art: Option<crate::art::StartupReport>,
     pub orphans: Option<crate::session::orphan::OrphanReport>,
+    /// What seeding the identity set added. `Some(SeedReport::default())` is a set already in
+    /// force — which is the ordinary second launch — and is not the same as a failed seed.
+    pub identity: Option<crate::identity::people::SeedReport>,
 }
 
 /// Open the index, or write §11.2a's report and exit.
@@ -52,7 +55,13 @@ pub fn open_index(data_dir: &Path, now: i64) -> Result<Index, IndexError> {
     }
 }
 
-/// The three calls that must happen before `run_loop`, in the order their side effects require.
+/// The four calls that must happen before `run_loop`, in the order their side effects require.
+///
+/// 4. **The identity set, before any scan can run.** J1.5 folds each repository's committers
+///    against the set and writes §5.5's `is_reference` from the result, so a set seeded *after*
+///    the first walk would classify every project as somebody else's. Seeding here — earlier than
+///    any command can arrive — is what makes the first scan of a fresh install compute authorship
+///    against the addresses the user already commits with.
 ///
 /// 1. **Orphan closure first.** A crash left sessions open; §9 credits their segments and closes
 ///    them `orphaned`. It runs before the art sweep because it is the only step that can change
@@ -117,6 +126,22 @@ pub fn run_startup(handler: &mut CoreHandler) -> StartupSummary {
             summary.git = Some(version);
         }
         Err(e) => emit_startup_error(handler.events.as_ref(), "git floor", &e.to_string()),
+    }
+
+    // 4. The identity set, which nothing else seeds.
+    {
+        let emails = crate::identity::gitconfig::user_emails(
+            &handler.firstrun.sources.home,
+            handler.firstrun.sources.xdg_config.as_deref(),
+        );
+        let guard = handler.index.lock().unwrap_or_else(PoisonError::into_inner);
+        match crate::identity::people::seed(guard.conn(), &emails, now) {
+            Ok(report) => summary.identity = Some(report),
+            Err(e) => {
+                drop(guard);
+                emit_startup_error(handler.events.as_ref(), "identity seed", &e.to_string());
+            }
+        }
     }
 
     summary

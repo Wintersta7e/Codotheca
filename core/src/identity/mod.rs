@@ -18,6 +18,7 @@ pub mod candidates;
 pub mod commands;
 pub mod confirm;
 pub mod decide;
+pub mod gitconfig;
 pub mod hydrate;
 pub mod ingest;
 pub mod lineage;
