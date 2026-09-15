@@ -1,10 +1,13 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectRow, SceneHash } from '../../generated/protocol';
+import type { ReactElement, ReactNode } from 'react';
+import type { ProjectRow, Rendition, SceneHash } from '../../generated/protocol';
+import { ProjectPageDepsContext, type ProjectPageDeps } from '../project/deps';
 import { renditionFor } from '../art/useCardBitmap';
 import cardCss from '../styles/card.css?raw';
 import motionCss from '../styles/motion.css?raw';
 import { notClonedRow } from '../testing/projectRow';
+import { withProjectDeps } from '../testing/deps';
 import { LADDER_RUNGS, TOKENS } from '../theme/tokens';
 import { ProjectCard, type ProjectCardProps } from './ProjectCard';
 import { frameToken, paintsLadderRung } from './completion';
@@ -13,8 +16,17 @@ const HASH = '0123456789abcdef'.repeat(4) as SceneHash;
 
 /** Every address a mounted card asked a detached `Image` to decode, in order. */
 let requested: string[] = [];
+/**
+ * The addresses a raster actually exists at. **The 404 is the whole point**: the shell answers a
+ * missing rendition with 404 (`artProtocol.ts`), the decode rejects, and §7.5's plate stands.
+ *
+ * An `Image` stub that resolves whatever it is handed cannot tell a card that *composed* an
+ * address from a card that got one from a core that had rendered it — which is exactly how the
+ * grid tile shipped asking for a file nothing writes, with a green suite.
+ */
+let rendered = new Set<string>();
 
-class RecordingImage {
+class ArtServer {
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
   #src = '';
@@ -24,15 +36,48 @@ class RecordingImage {
   set src(value: string) {
     this.#src = value;
     requested.push(value);
-    // Resolve, so the card actually swaps to the bitmap and the `<img>` carries the address.
-    queueMicrotask(() => this.onload?.());
+    queueMicrotask(() => {
+      if (rendered.has(value)) this.onload?.();
+      else this.onerror?.();
+    });
   }
+}
+
+/**
+ * The core's half. §23.5: **the request is the demand** — `art.url` for a blueprint rendition is
+ * what causes `blueprint_address` to rasterise the file, so this fake renders on being asked and
+ * returns the address it rendered. Nothing else writes a blueprint: J5 draws the `card` rendition
+ * only, and the shell serves files rather than making them.
+ */
+function artServer(): {
+  readonly request: ReturnType<typeof vi.fn>;
+  readonly wrapper: (props: { children: ReactNode }) => ReactElement;
+} {
+  const request = vi.fn((name: string, args: { hash: string; rendition: Rendition }) => {
+    if (name !== 'art.url') return Promise.resolve(undefined);
+    const address = `codotheca://art/${args.hash}/${args.rendition}`;
+    rendered.add(address);
+    return Promise.resolve(address);
+  });
+  const deps = {
+    request,
+    relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    subscribe: () => () => undefined,
+    now: () => 1_800_000_000,
+  } as unknown as ProjectPageDeps;
+  return {
+    request,
+    wrapper: ({ children }) => (
+      <ProjectPageDepsContext.Provider value={deps}>{children}</ProjectPageDepsContext.Provider>
+    ),
+  };
 }
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   requested = [];
+  rendered = new Set<string>();
   document.head.querySelectorAll('style').forEach((node) => {
     node.remove();
   });
@@ -60,7 +105,7 @@ const props = (over: Partial<ProjectCardProps> = {}): ProjectCardProps => ({
 });
 
 const draw = (over: Partial<ProjectCardProps> = {}): HTMLElement =>
-  render(<ProjectCard {...props(over)} />).container;
+  render(<ProjectCard {...props(over)} />, { wrapper: withProjectDeps() }).container;
 
 const frameOf = (container: HTMLElement): string =>
   container.querySelector<HTMLElement>('.cdt-card-frame')?.style.getPropertyValue('--cdt-frame') ??
@@ -139,37 +184,80 @@ describe('§23.5: the tile asks for the pass it needs, at its own address', () =
     expect(renditionFor('hero', false)).toBe('hero-blueprint');
   });
 
-  it('requests codotheca://art/<hash>/card-blueprint for a not-cloned tile', async () => {
-    vi.stubGlobal('Image', RecordingImage);
+  /**
+   * The bar this replaces asserted the **request** and passed against a card that made none: an
+   * `Image` stub that resolves anything cannot tell a composed address from an answered one. What
+   * is asserted here is a **bitmap on screen**, over a fake that renders only what it was asked
+   * for — which is the production path, because a blueprint has no writer but the request itself.
+   */
+  it('paints a decoded blueprint on a not-cloned tile', async () => {
+    vi.stubGlobal('Image', ArtServer);
+    const { request, wrapper } = artServer();
     let container!: HTMLElement;
-    // `act`, so the decode's microtask and the state update it causes both land before the
-    // assertions: the point of this case is that the address reaches the DOM, not only the seam.
     await act(async () => {
-      container = draw();
+      container = render(<ProjectCard {...props()} />, { wrapper }).container;
+      await Promise.resolve();
       await Promise.resolve();
     });
-    expect(requested.length, 'the card decoded nothing').toBeGreaterThan(0);
+    // The demand, and the pass it demanded.
+    expect(request).toHaveBeenCalledWith('art.url', {
+      hash: HASH,
+      rendition: 'card-blueprint',
+    });
+    // And the bitmap that demand produced, decoded and mounted.
+    const img = container.querySelector<HTMLImageElement>('img.cdt-art');
+    expect(img, 'the tile painted no bitmap — the plate is standing').not.toBeNull();
+    expect(img?.getAttribute('src')).toBe(`codotheca://art/${HASH}/card-blueprint`);
     expect(requested).toContain(`codotheca://art/${HASH}/card-blueprint`);
     expect(requested).not.toContain(`codotheca://art/${HASH}/card`);
-    // And the address the request produced is the one the DOM paints.
-    const img = container.querySelector<HTMLImageElement>('img.cdt-art');
-    expect(img?.getAttribute('src')).toBe(`codotheca://art/${HASH}/card-blueprint`);
   });
 
-  it('requests the plain card for a located tile, so the swap has two addresses', async () => {
-    vi.stubGlobal('Image', RecordingImage);
+  it('paints nothing when the core answers no address, rather than a broken image', async () => {
+    // §7.5: an unrendered rendition is a 404 and the plate is the finished fallback.
+    vi.stubGlobal('Image', ArtServer);
+    const request = vi.fn(() => Promise.resolve(''));
+    const deps = {
+      request,
+      relocate: () => Promise.resolve({ kind: 'cancelled' }),
+      subscribe: () => () => undefined,
+      now: () => 1_800_000_000,
+    } as unknown as ProjectPageDeps;
+    let container!: HTMLElement;
     await act(async () => {
-      draw({
-        row: notClonedRow({
-          artSceneHash: HASH,
-          primaryLocation: { id: 10 as never, pathDisplay: '/w/row' },
-          presence: 'present',
-        }),
-      });
+      container = render(<ProjectCard {...props()} />, {
+        wrapper: ({ children }) => (
+          <ProjectPageDepsContext.Provider value={deps}>{children}</ProjectPageDepsContext.Provider>
+        ),
+      }).container;
+      await Promise.resolve();
       await Promise.resolve();
     });
-    expect(requested.length, 'the card decoded nothing').toBeGreaterThan(0);
-    expect(requested).toContain(`codotheca://art/${HASH}/card`);
+    expect(request).toHaveBeenCalled();
+    expect(container.querySelector('img.cdt-art')).toBeNull();
+  });
+
+  it('asks for nothing on a located tile, and paints the card J5 already wrote', async () => {
+    vi.stubGlobal('Image', ArtServer);
+    // J5 wrote this one during the scan, so it exists without anybody asking.
+    rendered.add(`codotheca://art/${HASH}/card`);
+    const { request, wrapper } = artServer();
+    const located = notClonedRow({
+      artSceneHash: HASH,
+      artState: 'ready',
+      primaryLocation: { id: 10 as never, pathDisplay: '/w/row' },
+      presence: 'present',
+    });
+    let container!: HTMLElement;
+    await act(async () => {
+      container = render(<ProjectCard {...props({ row: located })} />, { wrapper }).container;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // Byte-identical to before this change: a located tile issues no command at all.
+    expect(request).not.toHaveBeenCalled();
+    expect(container.querySelector<HTMLImageElement>('img.cdt-art')?.getAttribute('src')).toBe(
+      `codotheca://art/${HASH}/card`,
+    );
     expect(requested).not.toContain(`codotheca://art/${HASH}/card-blueprint`);
   });
 });

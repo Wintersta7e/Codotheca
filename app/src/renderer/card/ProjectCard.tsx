@@ -2,7 +2,7 @@ import { type ReactElement, useState } from 'react';
 import type { ProjectRow, SessionRef } from '../../generated/protocol';
 import { CARD_ROLE } from '../a11y/names';
 import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
-import { renditionFor, useCardBitmap } from '../art/useCardBitmap';
+import { renditionFor, useArtAddress, useCardBitmap } from '../art/useCardBitmap';
 import { glowShadow, glowStrength } from '../derive/condition';
 import { formatTrackedBytes } from '../format/size';
 import { Card } from './Card';
@@ -57,10 +57,18 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
   // §23.5: a project with no working copy asks for the second pass, at its own address. The
   // predicate is §23.1's one and only — `primaryLocation !== null`.
   const hasWorkingCopy = row.primaryLocation !== null;
+  const rendition = renditionFor(props.rendition, hasWorkingCopy);
+  // **The request is the demand** (§7.6), and the blueprint needs it. J5 writes the `card`
+  // rendition and nothing else, so a located tile composes its address and the file is already
+  // on disk — that path is untouched, and `null` here issues no command. A `card-blueprint` has
+  // no writer but `art.url` itself, so composing its address without asking gets a 404 from the
+  // shell and §7.5's plate, for ever. That is the hero's rule, one surface down.
+  const demanded = useArtAddress(hasWorkingCopy ? null : row.artSceneHash, row.artState, rendition);
   const bitmap = useCardBitmap({
     sceneHash: row.artSceneHash,
-    rendition: renditionFor(props.rendition, hasWorkingCopy),
+    rendition,
     artState: row.artState,
+    ...(hasWorkingCopy ? {} : { src: demanded }),
   });
   const bench = useBenchElapsed(
     props.session === null || props.session.endedAt !== null ? null : props.session.startedAt,

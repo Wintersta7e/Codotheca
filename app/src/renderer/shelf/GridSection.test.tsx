@@ -6,6 +6,7 @@ import { GridSection, gridRunsOf } from './GridSection.js';
 import type { GridSectionProps } from './GridSection.js';
 import type { SectionExtent } from './measure.js';
 import type { ShelfSection } from './page.js';
+import { withProjectDeps } from '../testing/deps';
 import { toShelfRow } from './row.js';
 
 vi.mock('../card/ProjectCard.js', () => ({
@@ -96,7 +97,7 @@ const props = (over: Partial<GridSectionProps> = {}): GridSectionProps => ({
   ...over,
 });
 const draw = (over: Partial<GridSectionProps> = {}): ReturnType<typeof render> =>
-  render(<GridSection {...props(over)} />);
+  render(<GridSection {...props(over)} />, { wrapper: withProjectDeps() });
 
 describe('gridRunsOf', () => {
   it('groups a contiguous window into grid rows', () => {
@@ -294,6 +295,10 @@ describe('GridSection over the real card', () => {
     vi.doUnmock('../card/ProjectCard.js');
     vi.resetModules();
     const { GridSection: Real } = await import('./GridSection.js');
+    // From the SAME fresh module graph: `resetModules` gives the re-imported card a different
+    // instance of `ProjectPageDepsContext`, so a provider built from the top-level import would
+    // sit above a card that cannot see it — and the card throws rather than degrading.
+    const { withProjectDeps: freshDeps } = await import('../testing/deps.js');
     const rows = [realRow(1), realRow(2), realRow(3), realRow(4)];
     const { container } = render(
       <Real
@@ -304,6 +309,7 @@ describe('GridSection over the real card', () => {
           focus: { projectId: 3 as unknown as ProjectId, desiredColumn: 2 },
         })}
       />,
+      { wrapper: freshDeps() },
     );
     // Discriminate against the mock first, or this whole test passes over the mock: the mock also
     // renders a `gridcell` with a roving tabindex, and `.cdt-card` is the real component's.

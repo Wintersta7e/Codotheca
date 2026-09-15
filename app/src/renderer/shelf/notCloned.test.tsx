@@ -8,6 +8,7 @@ import { QuickSwitch, type QuickSwitchProps } from '../palette/QuickSwitch';
 import cardCss from '../styles/card.css?raw';
 import motionCss from '../styles/motion.css?raw';
 import { notClonedRow } from '../testing/projectRow';
+import { withProjectDeps } from '../testing/deps';
 import { ListView } from './ListView';
 import { toShelfRow } from './row';
 
@@ -51,7 +52,7 @@ const cardProps = (over: Partial<ProjectCardProps> = {}): ProjectCardProps => ({
 });
 
 const drawCard = (over: Partial<ProjectCardProps> = {}): HTMLElement =>
-  render(<ProjectCard {...cardProps(over)} />).container;
+  render(<ProjectCard {...cardProps(over)} />, { wrapper: withProjectDeps() }).container;
 
 const paletteProps = (rows: readonly ProjectRow[]): QuickSwitchProps => ({
   rows,
@@ -175,7 +176,9 @@ describe('§11.6: a project with no working copy never dips', () => {
     style.textContent = `${cardCss}\n${motionCss}`;
     document.head.append(style);
     document.documentElement.setAttribute('data-effects-tier', tier);
-    const { container } = render(<ProjectCard {...cardProps({ haloOpacity: 0.8 })} />);
+    const { container } = render(<ProjectCard {...cardProps({ haloOpacity: 0.8 })} />, {
+      wrapper: withProjectDeps(),
+    });
     const halo = container.querySelector('.cdt-card-halo');
     if (halo === null) throw new Error('the card mounted no .cdt-card-halo');
     return getComputedStyle(halo).opacity;

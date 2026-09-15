@@ -12,6 +12,7 @@ import type {
 import motionCss from '../styles/motion.css?raw';
 import { LADDER_RUNGS } from '../theme/tokens';
 import { ProjectCard, type ProjectCardProps } from './ProjectCard';
+import { withProjectDeps } from '../testing/deps';
 
 afterEach(cleanup);
 
@@ -109,7 +110,7 @@ const props = (over: Partial<ProjectCardProps> = {}): ProjectCardProps => ({
 });
 
 const draw = (over: Partial<ProjectCardProps> = {}): HTMLElement =>
-  render(<ProjectCard {...props(over)} />).container;
+  render(<ProjectCard {...props(over)} />, { wrapper: withProjectDeps() }).container;
 
 describe('band 5 carries the name, the identity line and the hover strip', () => {
   it('renders the name and the identity line, and no description at the default density', () => {
