@@ -8,34 +8,20 @@
  * `''` in between would blank the bitmap and flash the plate, which is the exact thing the swap
  * exists to prevent.
  */
-import { useEffect, useState } from 'react';
+import type { ArtState, Rendition, SceneHash } from '../../../generated/protocol';
+import { useArtAddress } from '../../art/useCardBitmap';
 
-import type { ArtState, SceneHash } from '../../../generated/protocol';
-import { useProjectPageDeps } from '../deps';
-
-/** `''` means *no address*: §7.5's plate stands. */
-export function useHeroArt(hash: SceneHash | null, artState: ArtState): string {
-  const deps = useProjectPageDeps();
-  const [src, setSrc] = useState('');
-
-  useEffect(() => {
-    // A rendition the core has already failed on is not worth asking for; the plate is the
-    // finished fallback, not a degraded one.
-    if (hash === null || artState === 'failed') return undefined;
-    let live = true;
-    deps
-      .request('art.url', { hash, rendition: 'hero' })
-      .then((url) => {
-        if (live && url !== '') setSrc(url);
-      })
-      .catch(() => {
-        // Whatever is on screen stays there. A hero that cannot be addressed keeps the last one
-        // rather than blanking, and a project with no bitmap yet keeps the plate.
-      });
-    return () => {
-      live = false;
-    };
-  }, [deps, hash, artState]);
-
-  return src;
+/**
+ * `''` means *no address*: §7.5's plate stands.
+ *
+ * The body moved to `useArtAddress`, which the grid tile needs too: a `card-blueprint` has no
+ * writer but this request either, and a second copy of the rule would be a second place for it
+ * to stop being true.
+ */
+export function useHeroArt(
+  hash: SceneHash | null,
+  artState: ArtState,
+  rendition: Rendition = 'hero',
+): string {
+  return useArtAddress(hash, artState, rendition);
 }

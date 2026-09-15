@@ -45,6 +45,15 @@ describe('§11.6 eligibility, which the old acceptance wording omitted entirely'
     expect(flickerEligible(row({ presence: 'missing' }))).toBe(false);
     expect(flickerEligible(row({ presence: 'unscanned' }))).toBe(false);
   });
+
+  // §23.2: `presence` becomes nullable on the row and a not-cloned project carries `null`.
+  // `presence !== 'present'` is already correct under it, so this is an assertion and not a
+  // change — the design says the same thing: "Only genuinely absent things (blueprint,
+  // reference) sit at zero".
+  it('rejects a project with no working copy at all', () => {
+    expect(flickerEligible(row({ presence: null }))).toBe(false);
+    expect(flickerEligible(row({ presence: null, conditionSignal: 'abandoned' }))).toBe(false);
+  });
 });
 
 describe('the schedule carries §11.6‘s parameters and not the design‘s', () => {

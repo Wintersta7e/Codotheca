@@ -48,6 +48,9 @@ export const TOKENS = {
   'tier-steel': '#5c7c85',
   'tier-plain': '#333c45',
   'tier-blue': '#2f4a5c',
+  // §8.7's readable variant of --tier-blue (10.14:1). Reachable from §23.5's blueprint
+  // tile: whenever a tier is named in type the readable variant is used, never the frame colour.
+  'tier-blue-ink': '#9fc2d6',
   'tier-ref': '#232a31',
   'tier-gold-ink': '#f0d493',
   'tier-brass-ink': '#dca972',

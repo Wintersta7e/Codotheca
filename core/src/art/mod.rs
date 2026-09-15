@@ -3,6 +3,7 @@
 //! a parameter and is only ever stamped into `art_scene.rendered_at`, which is why
 //! `scene_hash` cannot become a function of wall-clock time (§7.3a, criterion 62).
 
+pub mod blueprint;
 pub mod commands;
 pub mod compose;
 pub mod derive;
@@ -130,11 +131,16 @@ impl ArtError {
     }
 }
 
+/// §7.6's path segment, one per rendition. R47: the blueprint pass needs **two** names, because
+/// the address is `codotheca://art/<hash>/<rendition>` — with one, a cached raster of the card
+/// pass would be served for the hero pass at exactly the moment the project changes state.
 #[must_use]
 pub fn rendition_slug(r: Rendition) -> &'static str {
     match r {
         Rendition::Card => "card",
         Rendition::Hero => "hero",
+        Rendition::CardBlueprint => "card-blueprint",
+        Rendition::HeroBlueprint => "hero-blueprint",
     }
 }
 
@@ -143,6 +149,8 @@ pub fn rendition_from_slug(s: &str) -> Option<Rendition> {
     match s {
         "card" => Some(Rendition::Card),
         "hero" => Some(Rendition::Hero),
+        "card-blueprint" => Some(Rendition::CardBlueprint),
+        "hero-blueprint" => Some(Rendition::HeroBlueprint),
         _ => None,
     }
 }
@@ -274,6 +282,56 @@ mod tests {
         assert_eq!(rendition_slug(Rendition::Card), "card");
         assert_eq!(rendition_from_slug("hero"), Some(Rendition::Hero));
         assert_eq!(rendition_from_slug("thumbnail"), None);
+    }
+
+    /// R47: one variant cannot address two render passes. The hazard §23.5 names is a cached
+    /// raster of one pass being served for the other at exactly the moment the project changes
+    /// state, and a distinct one-segment slug per pass is what closes it.
+    #[test]
+    fn the_two_blueprint_passes_have_their_own_addresses_and_their_own_files() {
+        assert_eq!(
+            art_url(H, Rendition::CardBlueprint),
+            Some(format!("codotheca://art/{H}/card-blueprint"))
+        );
+        assert_ne!(
+            art_url(H, Rendition::CardBlueprint),
+            art_url(H, Rendition::Card)
+        );
+        assert_ne!(
+            art_url(H, Rendition::CardBlueprint),
+            art_url(H, Rendition::HeroBlueprint)
+        );
+        assert_ne!(
+            art_url(H, Rendition::HeroBlueprint),
+            art_url(H, Rendition::Hero)
+        );
+
+        // The slugs round-trip, so a swept file's name resolves back to the rendition that wrote
+        // it — which is what `sweep_unreferenced` reads.
+        for r in [
+            Rendition::Card,
+            Rendition::Hero,
+            Rendition::CardBlueprint,
+            Rendition::HeroBlueprint,
+        ] {
+            assert_eq!(rendition_from_slug(rendition_slug(r)), Some(r));
+            // One path segment each: a slug carrying a separator would break §7.6's two-segment
+            // address and `renditionFilePath`'s containment check at once.
+            assert!(!rendition_slug(r).contains('/'));
+            assert!(!rendition_slug(r).contains('.'));
+        }
+
+        // Four distinct files under one hash.
+        let paths: std::collections::BTreeSet<_> = [
+            Rendition::Card,
+            Rendition::Hero,
+            Rendition::CardBlueprint,
+            Rendition::HeroBlueprint,
+        ]
+        .into_iter()
+        .filter_map(|r| rendition_path(Path::new("/data"), H, r))
+        .collect();
+        assert_eq!(paths.len(), 4, "two passes must not share a file");
     }
 
     #[test]

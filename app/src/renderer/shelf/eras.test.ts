@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ProjectRow } from '../../generated/protocol.js';
+import type { LocationRef, ProjectRow } from '../../generated/protocol.js';
 import { formatTrackedBytes } from '../format/size.js';
 import type { ShelfRow } from './row.js';
 import { toShelfRow } from './row.js';
@@ -18,6 +18,11 @@ import {
 const DAY = 86_400;
 /** 2026-06-15T12:00:00Z, so "this year" is 2026 and the ten named years run 2025 → 2016. */
 const NOW = Math.floor(Date.UTC(2026, 5, 15, 12) / 1000);
+
+/** §23.1's shape: the same row with no working copy — the pair, never the location alone. */
+function notCloned(daysAgo: number, over: Record<string, unknown> = {}): ShelfRow {
+  return at(daysAgo, { primaryLocation: null, presence: null, ...over });
+}
 
 function at(daysAgo: number, over: Record<string, unknown> = {}): ShelfRow {
   return toShelfRow({
@@ -53,7 +58,10 @@ function at(daysAgo: number, over: Record<string, unknown> = {}): ShelfRow {
     sizeTrackedBytes: null,
     trackedFiles: null,
     collectionIds: [],
-    primaryLocation: null,
+    // §23: the location and the presence are one pair. A null location with 'present'
+    // beside it is a working copy that is here, for a row that has no copy at all — and
+    // after §23.4's classifier every such fixture lands in era:notcloned.
+    primaryLocation: { id: 10 as LocationRef['id'], pathDisplay: '/w/row' },
     presence: 'present',
     branch: null,
     isDirty: null,
@@ -96,9 +104,40 @@ describe('eraSectionIdFor', () => {
       'era:archived',
     );
   });
-  it('never emits era:notcloned in phase 1', () => {
-    const ids = [0, 5, 40, 100, 400, 4000].map((d) => eraSectionIdFor(at(d), NOW));
-    expect(ids).not.toContain('era:notcloned');
+  // AC-P2-23-9, replacing `never emits era:notcloned in phase 1`. The old bar iterated day
+  // offsets over rows that were **all zero-location**, so after §23.4 it would have kept passing
+  // while proving nothing. The replacement builds the shape both ways and prints the number of
+  // zero-location fixtures it scanned; a passing run that scanned none of them fails.
+  it('emits era:notcloned for a zero-location row and for nothing else', () => {
+    const offsets = [0, 5, 40, 100, 400, 4000];
+    let zeroLocation = 0;
+    let located = 0;
+    for (const d of offsets) {
+      expect(eraSectionIdFor(notCloned(d), NOW)).toBe('era:notcloned');
+      zeroLocation += 1;
+      expect(eraSectionIdFor(at(d), NOW)).not.toBe('era:notcloned');
+      located += 1;
+    }
+    // A floor, not `toBe(offsets.length)`: with an empty list that comparison is 0 === 0 and
+    // the whole case passes having scanned nothing — the exact shape this test replaces.
+    expect(
+      zeroLocation,
+      'a run that scanned no zero-location fixture proves nothing',
+    ).toBeGreaterThan(0);
+    expect(zeroLocation).toBe(offsets.length);
+    expect(located).toBe(offsets.length);
+  });
+
+  // AC-P2-23-4's ordering half: the location is tested **first**, before isArchived and before
+  // isSubmodule. `isArchived` is a user flag and a user may archive a not-cloned project;
+  // `era:archived` is an interleaved section whose header sums tracked bytes, and a tile with no
+  // bytes and no Play does not belong among tiles that have both.
+  it('classifies a not-cloned project before archived and before submodules', () => {
+    expect(eraSectionIdFor(notCloned(1, { isArchived: true }), NOW)).toBe('era:notcloned');
+    expect(eraSectionIdFor(notCloned(1, { isSubmodule: true }), NOW)).toBe('era:notcloned');
+    expect(eraSectionIdFor(notCloned(1, { isArchived: true, isSubmodule: true }), NOW)).toBe(
+      'era:notcloned',
+    );
   });
 });
 
@@ -134,6 +173,10 @@ describe('eraSectionLabel', () => {
     expect(eraSectionLabel('era:2019', 2026)).toBe('2019');
     expect(eraSectionLabel('era:archived', 2026)).toBe('ARCHIVED');
     expect(eraSectionLabel('era:submodules', 2026)).toBe('SUBMODULES');
+    // AC-P2-23-4's label half. §8.1's table left this one blank and §23.4 owns it. Asserted
+    // through `eraSectionLabel`, never against the id string: with no FIXED_LABEL entry the
+    // fallback prints the header as lowercase `notcloned`, which is what this catches.
+    expect(eraSectionLabel('era:notcloned', 2026)).toBe('NOT CLONED');
   });
   it('rolls the tail label with the year and carries no year in the id', () => {
     expect(eraSectionLabel('era:tail', 2026)).toBe('2015 AND EARLIER');
@@ -182,6 +225,37 @@ describe('aggregateSection and its header text', () => {
     const clean = [at(1, { refstateObservedAt: NOW, ahead: 0, isDirty: false })];
     expect(flagLineText(aggregateSection(clean))).toBeNull();
   });
+  /**
+   * AC-P2-23-5's second half. `unchecked` exists so that *an absent flag line may only ever mean
+   * observed, and nothing to report* — it is a coverage warning about **local git state**, and a
+   * not-cloned project has no local git state to be uncovered about.
+   */
+  describe('§23.4: unchecked counts a row only when the project has a working copy', () => {
+    it('renders no flag line at all for an all-not-cloned section', () => {
+      const bare = [notCloned(1), notCloned(400), notCloned(4000)];
+      const agg = aggregateSection(bare);
+      expect(agg.unchecked).toBe(0);
+      // The three remaining counters need no change and this asserts that rather than assuming
+      // it: `ahead > 0`, `isDirty === true` and `interruptedOp !== null` are all false on a NULL
+      // row, so with all four at zero `flagLineText` returns null and no line is rendered.
+      expect(agg.unpushed).toBe(0);
+      expect(agg.uncommitted).toBe(0);
+      expect(agg.interrupted).toBe(0);
+      expect(flagLineText(agg)).toBeNull();
+    });
+
+    it('counts only the located rows in a mixed section', () => {
+      const mixed = [at(1), at(1), notCloned(1), notCloned(1), notCloned(1)];
+      expect(aggregateSection(mixed).unchecked).toBe(2);
+      expect(flagLineText(aggregateSection(mixed))).toBe('2 unchecked');
+    });
+
+    it('still counts every located row that has no J1 result', () => {
+      const located = [at(1), at(1), at(1)];
+      expect(aggregateSection(located).unchecked).toBe(3);
+    });
+  });
+
   it('names the three flags and appends unchecked last', () => {
     expect(flagLineText(aggregateSection(rows))).toBe(
       '1 unpushed · 1 uncommitted · 1 interrupted · 1 unchecked',

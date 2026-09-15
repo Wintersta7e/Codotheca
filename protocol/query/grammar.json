@@ -1,5 +1,5 @@
 {
-  "queryGrammarVersion": 1,
+  "queryGrammarVersion": 2,
   "fields": ["lang", "owner", "in", "is", "has", "touched", "size", "completion", "collection"],
   "is": [
     "dirty",
@@ -16,7 +16,8 @@
     "shallow",
     "local",
     "wsl",
-    "new"
+    "new",
+    "notcloned"
   ],
   "has": ["readme", "license", "tests", "ci", "remote", "stash", "submodules"],
   "sizeUnitBytes": { "kb": 1024, "mb": 1048576, "gb": 1073741824 },

@@ -41,6 +41,13 @@ pub fn handle_url(ctx: &ArtCtx<'_>, args: Value) -> Result<Value, CommandFailure
     let address = match args.rendition {
         Rendition::Card => card_address(ctx, hash),
         Rendition::Hero => hero_address(ctx, hash),
+        // §23.5: **the request is the demand**, exactly as the hero's is. J5 keeps rendering the
+        // `card` rendition only, and `art_state` / `fail_count` keep tracking `card` alone (§7.6)
+        // — a blueprint that fails to draw must not mark the project's art failed, because the
+        // card is what that state describes.
+        r @ (Rendition::CardBlueprint | Rendition::HeroBlueprint) => {
+            blueprint_address(ctx, hash, r)
+        }
     }
     .map_err(|e| failure(&e))?;
     Ok(Value::String(address))
@@ -88,6 +95,37 @@ pub fn hero_address(ctx: &ArtCtx<'_>, hash: &str) -> Result<String, ArtError> {
         ctx.events.emit("projects", "art_ready", payload);
     }
     Ok(art_url(hash, Rendition::Hero).unwrap_or_default())
+}
+
+/// §23.5's second pass, answered the way `hero_address` answers the hero's: the request **is**
+/// the demand, because the core cannot observe an open tile.
+///
+/// Two things it deliberately does not do. It does **not** touch the hero LRU — only the `hero`
+/// rendition is journalled, and a blueprint has no entry there — and it does **not** write
+/// `art_state` or `fail_count`, which track the `card` rendition only (§7.6): a blueprint that
+/// fails to draw must not mark the project's art failed, because the card is what that state
+/// describes. A project with no scene answers `""`, ruling 9's *no address*, and §7.5's
+/// nameplate stands.
+pub fn blueprint_address(
+    ctx: &ArtCtx<'_>,
+    hash: &str,
+    rendition: Rendition,
+) -> Result<String, ArtError> {
+    let data_dir = ctx.index.data_dir();
+    if rendition_exists(data_dir, hash, rendition) {
+        return Ok(art_url(hash, rendition).unwrap_or_default());
+    }
+    let Some(project_id) = find_project_by_hash(ctx.index.conn(), hash)? else {
+        return Ok(String::new());
+    };
+    let Some(row) = load_row(ctx.index.conn(), project_id)? else {
+        return Ok(String::new());
+    };
+    let scene: Scene = serde_json::from_str(&row.scene_json)
+        .map_err(|e| ArtError::Encode(format!("scene_json for project {project_id}: {e}")))?;
+
+    write_rendition(data_dir, hash, rendition, &scene)?;
+    Ok(art_url(hash, rendition).unwrap_or_default())
 }
 
 /// §7.4: "±1 per press. Never a random draw, never a wrap, floored at 0 and unbounded above."

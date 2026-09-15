@@ -394,7 +394,8 @@
         "trackedFiles": "i64?",
         "collectionIds": "[CollectionId]",
         "primaryLocation": "LocationRef?",
-        "presence": "Presence",
+        "presence": "Presence?",
+        "hasRemote": "bool",
         "branch": "String?",
         "isDirty": "bool?",
         "untrackedCount": "u32?",
@@ -571,7 +572,11 @@
       }
     },
 
-    "Rendition": { "kind": "enum", "variants": ["card", "hero"] },
+    "Rendition": {
+      "kind": "enum",
+      "variants": ["card", "hero", "card-blueprint", "hero-blueprint"],
+      "$comment": "R47: two blueprint variants, not one. §7.6 addresses a rendition as codotheca://art/<hash>/<rendition>, so one variant cannot address two render passes — a cached raster of one would be served for the other at exactly the moment the project changes state."
+    },
     "ArtRerender": {
       "kind": "struct",
       "fields": {

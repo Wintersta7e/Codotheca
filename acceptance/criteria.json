@@ -1823,7 +1823,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-forbidden:c58-design-band-names",
-          "assert": "The three design band names appear in no CSS class, query field, protocol message, log line or accessible name. The two enum words that look like band names are required verbatim and are not banned."
+          "assert": "The two design band names warm and cooling appear in no CSS class, query field, protocol message, log line or accessible name, over all three of criterion 58's target sets. blueprint is asserted absent as a condition_signal VALUE instead — by the DDL CHECK and the generated ConditionSignal union type, both structural (A4) — and is permitted as a rendition name and a tier token. The two enum words that look like band names are required verbatim and are not banned."
         }
       ]
     },
@@ -2457,6 +2457,428 @@
           "test": "accounts_consent_copy::no_rendered_string_names_a_scope",
           "assert": "Prints the count of settings source files scanned and fails at zero; no rendered string names a scope, so no consent copy asserting one can ship before the live check runs.",
           "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-23-1",
+      "title": "A project with zero location rows loads, crosses the wire and renders",
+      "group": "functional",
+      "spec": "§23.1, §23.3",
+      "checks": [
+        {
+          "id": "AC-P2-23-1",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "notcloned_row::the_render_contract_over_a_zero_location_row",
+          "assert": "primary_location and presence are null; condition_signal, error_kind, size_tracked_bytes and tracked_files are NULL; the row contributes 0 to indexed_count; every working-copy fact is None rather than Some(false); readme.text and readme.read_at are null and ReadmeStateKind still holds exactly three variants. Prints the count of zero-location fixtures it built and fails at zero.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-23-1-schema",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "notcloned_row::the_database_holds_no_invented_row_column_or_table",
+          "assert": "Read from the migrated database rather than from the migration set: no synthetic location row, no fifth Presence value, no remote_project table. Prints the count of zero-location fixtures it built and fails at zero.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-23-1-rendered",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "§5.4a: no dot is drawn on any of the five surfaces draws none on the grid tile and none on the hero",
+          "assert": "No dot on any of §5.4a's five surfaces, no NOT INDEXED badge, no size or file figure and never a zero, no freshness age slot and no stale marker, no playtime figure, no tick row, and no dip at any effects tier — the tier clamp resolved on a real element rather than matched in the stylesheet."
+        }
+      ]
+    },
+    {
+      "id": "P2-23-2",
+      "title": "presence is nullable on the row and unchanged on the location",
+      "group": "functional",
+      "spec": "§23.2",
+      "checks": [
+        {
+          "id": "AC-P2-23-2",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "notcloned_row::a_zero_location_project_carries_no_presence_and_a_located_one_keeps_its_own",
+          "assert": "ProjectRow.presence is Presence? and null for a zero-location project, crossing the wire as null rather than the string unscanned; a located project's presence is unchanged. LocationDetail.presence stays non-optional in the schema."
+        },
+        {
+          "id": "AC-P2-23-2-rollup",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "notcloned_row::the_presence_rollup_is_byte_identical_when_a_zero_location_project_is_added",
+          "assert": "core/src/scan/presence.rs's rollup is unchanged: adding a zero-location project leaves every PresenceSummary field byte-identical, and the project contributes no location row."
+        },
+        {
+          "id": "AC-P2-23-2-flicker",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "§11.6 eligibility, which the old acceptance wording omitted entirely rejects a project with no working copy at all",
+          "assert": "flickerEligible is false for a null presence whatever the condition band says, so no surface renders NOT SCANNED or offers ENABLE ROOT for a project with zero locations."
+        }
+      ]
+    },
+    {
+      "id": "P2-23-3",
+      "title": "One observation clock, and §23 adds no schema",
+      "group": "functional",
+      "spec": "§23.1, §23.3",
+      "checks": [
+        {
+          "id": "AC-P2-23-3",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "notcloned_row::no_age_is_produced_for_a_project_nothing_has_observed",
+          "assert": "With no remote_repo facts row, no dated field on ProjectRow carries a value except lastTouchedAt and createdAt, and no substitute is computed from either; the one remote field the row carries is the hasRemote boolean, which has no clock. project carries no remote_observed_at and §23 introduces no column and no table."
+        },
+        {
+          "id": "AC-P2-23-3-rendered",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "the tile claims nothing it has not established renders no freshness age slot and no stale marker",
+          "assert": "A not-cloned tile renders no interaction clock at all: no as of clause, no age, no stale marker, no no-fetch-recorded line, and band 4 carries no chip."
+        },
+        {
+          "id": "AC-P2-23-3-remote-surface",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "deferral": "plan",
+          "reason": "The positive half — with the facts row deleted the remote surface renders not observed — has no §23 surface to bite on: ProjectRow carries no remote field, and remote_repo.observed_at reaches the screen through the REMOTE tab and OVERVIEW, which are §25's. Split, not dropped: the core half and the local half are automated above.",
+          "test": "p2-25's REMOTE tab and OVERVIEW render not observed",
+          "assert": "With §25's facts row deleted, the remote surface renders not observed — no age, no stale marker, and no substitute clock."
+        }
+      ]
+    },
+    {
+      "id": "P2-23-4",
+      "title": "The classifier order and the section label",
+      "group": "functional",
+      "spec": "§23.4",
+      "checks": [
+        {
+          "id": "AC-P2-23-4",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "projects_list::a_not_cloned_project_is_classified_before_archived_and_before_submodules",
+          "assert": "A zero-location project with is_archived = 1 and one with is_submodule = 1 both land in era:notcloned, and so does one carrying both.",
+          "mirror": {
+            "other": "app/src/renderer/shelf/eras.test.ts",
+            "why": "R13: one classifier, two language mirrors, and the ordering must hold in both or the shelf and the core disagree about which section a row is in."
+          }
+        },
+        {
+          "id": "AC-P2-23-4-mirror",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "eraSectionIdFor classifies a not-cloned project before archived and before submodules",
+          "assert": "The same three cases in the renderer mirror, and eraSectionLabel('era:notcloned', cut) is NOT CLONED — asserted through the label function, never against the id string, because with no FIXED_LABEL entry the fallback prints lowercase notcloned.",
+          "mirror": {
+            "other": "core/tests/projects_list.rs",
+            "why": "R13's other side: the label is shell-owned prose and the order table is the core's, so both are asserted against the same section id."
+          }
+        }
+      ]
+    },
+    {
+      "id": "P2-23-5",
+      "title": "The header makes no zero claim",
+      "group": "functional",
+      "spec": "§23.4",
+      "checks": [
+        {
+          "id": "AC-P2-23-5",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "§23.4: a total over zero measurements is not a measurement drops the byte aggregate and its parenthetical for a not-cloned section",
+          "assert": "For a section whose indexedCount is 0 the summary is the project count alone, over the rendered header and over its aria-label: the byte aggregate and its (of n indexed) parenthetical are absent as a unit and 0 MB tracked appears nowhere. Asserted for an era:notcloned section and for a located section with no completed inventory — the second is the case that proves the rule is one rule."
+        },
+        {
+          "id": "AC-P2-23-5-unchecked",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "aggregateSection and its header text §23.4: unchecked counts a row only when the project has a working copy renders no flag line at all for an all-not-cloned section",
+          "assert": "An all-not-cloned section renders no flag line at all, with the other three counters asserted at zero rather than assumed; a mixed section counts only the located rows; a located section with no J1 result still counts them all.",
+          "mirror": {
+            "other": "core/tests/projects_list.rs",
+            "why": "R13: aggregate_era and aggregateSection are one rule in two languages, and a header computed differently on the two sides is a number the shelf and the core disagree about."
+          }
+        },
+        {
+          "id": "AC-P2-23-5-core",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "projects_list::unchecked_counts_only_rows_that_have_a_working_copy",
+          "assert": "The Rust mirror of the unchecked gate over the same three cases.",
+          "mirror": {
+            "other": "app/src/renderer/shelf/eras.test.ts",
+            "why": "R13's other side."
+          }
+        }
+      ]
+    },
+    {
+      "id": "P2-23-6",
+      "title": "The palette claims no interaction it never had",
+      "group": "functional",
+      "spec": "§23.4, §8.6",
+      "checks": [
+        {
+          "id": "AC-P2-23-6",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "§23.4: the palette sub-line claims no interaction it never had renders no tail for a not-cloned row, for any value of the clock",
+          "assert": "With a zero-location project in the projection the RENDERED sub-line contains neither opened this month nor N months cold nor in session, over a spread of lastTouchedAt values including nowSecs itself and with a live session open; the remaining fields still render, and a located row's sub-line is byte-identical."
+        },
+        {
+          "id": "AC-P2-23-6-unit",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "§23.4: no tail for a project with no working copy omits the tail field and renders the rest of the line",
+          "assert": "paletteSubLine omits the tail field when hasWorkingCopy is false, whatever the clock and whatever the session says, and subLineInputFor reads row.primaryLocation and never a second predicate."
+        }
+      ]
+    },
+    {
+      "id": "P2-23-7",
+      "title": "The grammar's domain rule, five terms",
+      "group": "functional",
+      "spec": "§23.6",
+      "checks": [
+        {
+          "id": "AC-P2-23-7",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "notcloned_grammar::the_domain_rule_and_is_notcloned_over_one_fixture_set",
+          "assert": "Over one fixture set with a zero-location row and two located rows: every has: attribute, every working-copy is: flag and both touched: comparisons are Unknown for the zero-location row and match it under neither polarity; is:notcloned returns exactly the zero-location rows and -is:notcloned exactly the located ones; -has:remote returns the located row with no remote and no not-cloned row; a bare query returns them all; lang:rust matches the not-cloned row. Prints the row count and the count of term evaluations and fails at zero of either.",
+          "scanning": true,
+          "mirror": {
+            "other": "app/src/renderer/shelf/evaluate.test.ts",
+            "why": "R13: two evaluators, one rule. A domain rule landed in one engine and not the other answers the same query two ways, and §8.3 filters client-side."
+          }
+        },
+        {
+          "id": "AC-P2-23-7-mirror",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "§23.6: the domain rule, and is:notcloned answers Unknown for every working-copy predicate, under neither polarity",
+          "assert": "The same fixture shape in the TypeScript engine, with the capabilities widened so answerability never stands in for the domain rule; also asserts no term is DROPPED for a not-cloned row, because the rule is truth and not answerability.",
+          "mirror": {
+            "other": "core/tests/notcloned_grammar.rs",
+            "why": "R13's other side."
+          }
+        }
+      ]
+    },
+    {
+      "id": "P2-23-8",
+      "title": "The version bump is atomic",
+      "group": "functional",
+      "spec": "§23.6",
+      "checks": [
+        {
+          "id": "AC-P2-23-8",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "query_corpus::rust_parser_matches_every_corpus_case",
+          "assert": "Prints the count of corpus cases it compared and fails below the corpus total — and at zero — so a run that compared fewer cases than the file holds is visible rather than green; every case carries grammarVersion 2 and a corpus case asserts the AST spelling of the new flag is notcloned rather than either enum being read.",
+          "scanning": true,
+          "mirror": {
+            "other": "app/src/shared/query/corpus.test.ts",
+            "why": "R24: the same corpus file is run by both engines, so the version and the AST spelling are asserted cross-language rather than twice independently."
+          }
+        },
+        {
+          "id": "AC-P2-23-8-owners",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "query_corpus::rust_tables_transcribe_the_production",
+          "assert": "queryGrammarVersion in protocol/query/grammar.json equals the Rust constant, every value in the production parses, and is:mine still yields zero terms.",
+          "mirror": {
+            "other": "app/src/shared/query/grammar.ts",
+            "why": "R24: three owners of one version, tied together by a test on each side reading the production file."
+          }
+        },
+        {
+          "id": "AC-P2-23-8-mirror",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "the shared conformance corpus covers every branch the grammar has, so a divergence has somewhere to show up",
+          "assert": "Reports the case count it compared and fails below the corpus total, and at zero; the TypeScript tables agree with the production on the version, and IS_FLAGS still contains neither mine nor remote.",
+          "scanning": true,
+          "mirror": {
+            "other": "protocol/query/grammar.json",
+            "why": "R24: the TypeScript tables are a transcription of the production file and the test reads it."
+          }
+        }
+      ]
+    },
+    {
+      "id": "P2-23-9",
+      "title": "The two never-emitted bars exercise the shape",
+      "group": "functional",
+      "spec": "§23.8",
+      "checks": [
+        {
+          "id": "AC-P2-23-9",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "projects_list::era_notcloned_is_emitted_for_a_zero_location_row_and_only_for_one",
+          "assert": "Replaces the bar that iterated day offsets over rows that all lacked a location: builds a zero-location row and asserts it gets era:notcloned, builds a located row and asserts it never does, prints the count of zero-location fixtures it scanned and fails at zero.",
+          "scanning": true,
+          "mirror": {
+            "other": "app/src/renderer/shelf/eras.test.ts",
+            "why": "R13: both shipped bars had the same shape and the same defect, so both are replaced together."
+          }
+        },
+        {
+          "id": "AC-P2-23-9-mirror",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "eraSectionIdFor emits era:notcloned for a zero-location row and for nothing else",
+          "assert": "The TypeScript replacement, with a positive floor on the scanned count rather than a comparison against the list it iterates, so it fails at zero — an equality there is 0 === 0 on an empty list and passes having scanned nothing.",
+          "scanning": true,
+          "mirror": {
+            "other": "core/tests/projects_list.rs",
+            "why": "R13's other side."
+          }
+        },
+        {
+          "id": "AC-P2-23-9-fixtures",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "notcloned_row::the_two_fixture_builders_pair_location_and_presence",
+          "assert": "The fixture pairing that made the old bars vacuous cannot return: a builder with a location has a presence and one without has neither, so a default can no longer silently satisfy the predicate under test.",
+          "mirror": {
+            "other": "app/src/renderer/testing/projectRow.test.ts",
+            "why": "R13: the same pairing guard in the renderer's shared fixture, which fifteen test files import."
+          }
+        }
+      ]
+    },
+    {
+      "id": "P2-23-10",
+      "title": "A4's narrowing loses nothing",
+      "group": "functional",
+      "spec": "§23.5, §16.58",
+      "checks": [
+        {
+          "id": "AC-P2-23-10",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "index_schema::condition_signal_takes_only_section_5_4_words",
+          "assert": "Against a real migrated database, every one of §5.4a's seven slugs inserts and warm, cooling and blueprint are each refused by the DDL CHECK and by the generated ConditionSignal union; the accepted count and the refused count are printed and asserted, so a run that accepted zero fails.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-23-10-grep",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p2-23",
+          "test": "check-forbidden:c58-design-band-names",
+          "assert": "warm and cooling remain banned over all three of criterion 58's target sets, which still resolve to a non-zero file count; blueprint is permitted as a rendition name and a tier token and is refused as a condition_signal value structurally instead."
+        }
+      ]
+    },
+    {
+      "id": "P2-23-11",
+      "title": "The blueprint tile is the same machine",
+      "group": "functional",
+      "spec": "§23.5",
+      "checks": [
+        {
+          "id": "AC-P2-23-11",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "blueprint_renditions::the_scene_hash_does_not_move_when_a_project_is_cloned",
+          "assert": "scene_hash re-read through load_inputs is byte-identical before and after a location row is written and after it is deleted; an inventory, which is an input, does move it."
+        },
+        {
+          "id": "AC-P2-23-11-addresses",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "blueprint_renditions::the_card_and_its_blueprint_share_a_hash_and_share_no_file",
+          "assert": "Over one hash the card and card-blueprint resolve to different addresses and different bytes on disk, all four renditions are four distinct files, and the blueprint is rendered by the request that asks for its address."
+        },
+        {
+          "id": "AC-P2-23-11-tile",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "§23.5: the blueprint frame is --tier-blue, and it is not a rung resolves var(--tier-blue) on the real frame element",
+          "assert": "A zero-location row's card resolves var(--tier-blue) on the real frame element, draws no member of the completion ladder once every token reference is resolved, keeps §7.7a's em dash and NOT COMPUTED, and produces no dip at full, reduced or off."
+        },
+        {
+          "id": "AC-P2-23-11-paint",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "§23.5: the tile asks for the pass it needs, at its own address paints a decoded blueprint on a not-cloned tile",
+          "assert": "R88: the evidence is the bitmap, not the call. A zero-location tile mounts an img.cdt-art carrying codotheca://art/<hash>/card-blueprint, decoded against a fake that renders only what art.url was asked for — so a tile that composes the address without demanding it gets the 404 production gets, and the plate."
+        },
+        {
+          "id": "AC-P2-23-11-state",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "blueprint_renditions::drawing_a_blueprint_moves_no_art_state_and_no_hero_journal",
+          "assert": "art_state and fail_count track the card rendition only, so drawing either blueprint moves neither, writes no hero LRU entry and emits no event."
+        },
+        {
+          "id": "AC-P2-23-11-tokens",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-23",
+          "test": "blueprint_renditions::the_blueprint_ink_and_ground_are_the_tokens_the_renderer_declares",
+          "assert": "The raster's ground and ink equal the --tier-blue and --tier-blue-ink the renderer declares, compared against the count of tokens mirrored so an empty list cannot pass.",
+          "mirror": {
+            "other": "app/src/renderer/styles/tokens.css",
+            "why": "R12: §8.7 owns both values and there are two producers — the raster in the core and the frame token in the renderer — so the mirror is tested by reading the other side."
+          }
+        }
+      ]
+    },
+    {
+      "id": "P2-23-12",
+      "title": "No dead predicate ships",
+      "group": "functional",
+      "spec": "§23.7",
+      "checks": [
+        {
+          "id": "AC-P2-23-12",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "§23.7: no dead predicate ships answers has:remote from the projection over a corpus with a located row",
+          "assert": "Narrowed to what §23.7 scopes: over a projection built through toShelfRow from real ProjectRows, projectionCapabilities().hasRemote is true, has:remote and is:notcloned are answerable for every row, and the values that remain notAvailable are asserted as an exact named list so the gap cannot grow in silence. has:remote still answers Unknown for a not-cloned row for the DOMAIN reason, proved by giving that row hasRemote true."
         }
       ]
     }

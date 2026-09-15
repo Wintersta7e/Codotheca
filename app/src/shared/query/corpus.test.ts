@@ -23,7 +23,12 @@ const corpus = JSON.parse(
 
 describe('the shared conformance corpus', () => {
   it('covers every branch the grammar has, so a divergence has somewhere to show up', () => {
-    expect(corpus.cases.length).toBeGreaterThanOrEqual(20);
+    // AC-P2-23-8: the floor rises with the file, and the count is reported, so a run that
+    // compared fewer cases than the corpus holds is visible rather than merely green.
+    expect(
+      corpus.cases.length,
+      `compared ${String(corpus.cases.length)} case(s)`,
+    ).toBeGreaterThanOrEqual(40);
   });
   it('has unique case names, since both languages report failures by name', () => {
     expect(new Set(corpus.cases.map((c) => c.name)).size).toBe(corpus.cases.length);

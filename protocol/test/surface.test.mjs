@@ -334,7 +334,18 @@ test('art.rerender is an absolute offset for one project', () => {
 test('art.url names both the hash and the rendition', () => {
   const c = schema.commands.find((x) => x.name === 'art.url');
   assert.deepEqual(c.args, { hash: 'SceneHash', rendition: 'Rendition' });
-  assert.deepEqual(schema.types.Rendition.variants, ['card', 'hero']);
+  // R47: four, and the two blueprint names carry a hyphen so each stays **one** path segment.
+  // One variant cannot address two render passes — a cached raster of the card pass would be
+  // served for the hero pass at exactly the moment the project changes state.
+  assert.deepEqual(schema.types.Rendition.variants, [
+    'card',
+    'hero',
+    'card-blueprint',
+    'hero-blueprint',
+  ]);
+  for (const v of schema.types.Rendition.variants) {
+    assert.doesNotMatch(v, /[/.]/, `${v} must be one path segment`);
+  }
 });
 
 // §1.4: apply:false returns the delta and writes nothing — the effect is stated before the write.

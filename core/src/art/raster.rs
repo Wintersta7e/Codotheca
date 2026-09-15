@@ -38,11 +38,13 @@ pub const CARD_TARGET: RenderTarget = RenderTarget { w: 600, h: 900 };
 /// §7.6: the design's fixed 268 px hero rail at 2×, at the scene space's own 2:3.
 pub const HERO_TARGET: RenderTarget = RenderTarget { w: 536, h: 804 };
 
+/// §23.5: the second pass changes the **ink**, never the geometry — a blueprint takes the same
+/// target as the pass it mirrors, so the two renditions of one surface are the same size.
 #[must_use]
 pub fn target_for(rendition: Rendition) -> RenderTarget {
     match rendition {
-        Rendition::Card => CARD_TARGET,
-        Rendition::Hero => HERO_TARGET,
+        Rendition::Card | Rendition::CardBlueprint => CARD_TARGET,
+        Rendition::Hero | Rendition::HeroBlueprint => HERO_TARGET,
     }
 }
 

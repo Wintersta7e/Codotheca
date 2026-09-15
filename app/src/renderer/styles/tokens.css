@@ -64,6 +64,7 @@
   --tier-steel: #5c7c85;
   --tier-plain: #333c45;
   --tier-blue: #2f4a5c;
+  --tier-blue-ink: #9fc2d6;
   --tier-ref: #232a31;
 
   /* tier ink — used whenever a tier is named in type, never the frame colour */

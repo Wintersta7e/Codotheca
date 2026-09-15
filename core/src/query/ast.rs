@@ -40,6 +40,12 @@ pub enum IsFlag {
     Local,
     Wsl,
     New,
+    /// §23.6, **one word**: `rename_all = "camelCase"` emits `"notcloned"`, the same string
+    /// `IS_FLAGS` carries and the corpus holds. `NotCloned` would emit `"notCloned"` and put the
+    /// two mirrors' ASTs one capital apart in a file both are tested against. This is the query
+    /// AST's convention and **not** the generated protocol enum's — R47's hyphenated renditions
+    /// are a different mechanism and the two must not be conflated.
+    Notcloned,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

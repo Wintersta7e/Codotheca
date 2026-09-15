@@ -29,6 +29,15 @@ const DAY: i64 = 86_400;
 /// New Year.
 #[must_use]
 pub fn era_section_id_for(row: &ProjectRow, now: i64, tz_offset_min: i32) -> String {
+    // §23.4: **tested first**, before both overrides. Order 98 alone does not achieve this —
+    // `is_archived` is a *user* flag (§1.2), a user may archive a not-cloned project, and
+    // `era:archived` at order 92 is an **interleaved** section whose header sums tracked bytes.
+    // Filing a tile with no bytes and no `Play` among tiles that have both breaks the settled
+    // *never interleaved* ruling. §23.1: `primary_location IS NULL` is the whole predicate, and
+    // there is no second expression of it.
+    if row.primary_location.is_none() {
+        return "era:notcloned".to_owned();
+    }
     if row.is_archived {
         return "era:archived".to_owned();
     }
@@ -115,7 +124,12 @@ pub fn aggregate_era(rows: &[&LoadedRow]) -> EraAggregate {
             agg.interrupted = add_u32(agg.interrupted, 1);
         }
         // No J1 result: an absent flag line may only ever mean *observed, nothing to report*.
-        if r.refstate_observed_at.is_none() {
+        //
+        // §23.4: the counter is a coverage warning about **local git state**, so it counts a row
+        // only when the project has at least one `location`. A not-cloned project has no local
+        // git state to be uncovered about, and reporting it as `unchecked` would promise a check
+        // that can never run.
+        if r.primary_location.is_some() && r.refstate_observed_at.is_none() {
             agg.unchecked = add_u32(agg.unchecked, 1);
         }
     }

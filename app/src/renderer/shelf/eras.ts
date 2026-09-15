@@ -14,6 +14,12 @@ export const ERA_COLLAPSE_MIN_ORDER = 10;
 const DAY = 86_400;
 
 export function eraSectionIdFor(row: ShelfRow, now: number): string {
+  // §23.4: tested **first**, before both overrides — R13's mirror of `era_section_id_for`.
+  // Order 98 alone does not achieve it: `isArchived` is a user flag, a user may archive a
+  // not-cloned project, and `era:archived` is an interleaved section whose header sums tracked
+  // bytes. §23.1: `primaryLocation IS NULL` is the whole predicate; `presence IS NULL` is the
+  // same predicate rendered, not a second source.
+  if (row.primaryLocation === null) return 'era:notcloned';
   if (row.isArchived) return 'era:archived';
   if (row.isSubmodule) return 'era:submodules';
 
@@ -54,6 +60,9 @@ const FIXED_LABEL: Readonly<Record<string, string>> = {
   'era:year': 'EARLIER THIS YEAR',
   'era:archived': 'ARCHIVED',
   'era:submodules': 'SUBMODULES',
+  // §8.1's table left this one blank and §23.4 owns it. Without the entry the fallback below
+  // prints the header as lowercase `notcloned`.
+  'era:notcloned': 'NOT CLONED',
 };
 
 /** §8.1: labels are shell-owned prose; the core emits the id, the order and the cut year. */
@@ -89,7 +98,9 @@ export function aggregateSection(rows: readonly ShelfRow[]): SectionAggregate {
     if ((row.ahead ?? 0) > 0) unpushed += 1;
     if (row.isDirty === true) uncommitted += 1;
     if (row.interruptedOp !== null) interrupted += 1;
-    if (row.refstateObservedAt === null) unchecked += 1;
+    // §23.4, R13's mirror: a coverage warning about **local git state**, so a row counts only
+    // when the project has a working copy to be uncovered about.
+    if (row.primaryLocation !== null && row.refstateObservedAt === null) unchecked += 1;
   }
   return {
     count: rows.length,
@@ -109,6 +120,16 @@ export function aggregateSection(rows: readonly ShelfRow[]): SectionAggregate {
 export { formatTrackedBytes };
 
 export function summaryText(agg: SectionAggregate): string {
+  // §23.4: **a total over zero measurements is not a measurement.** With nothing indexed the
+  // byte aggregate and its coverage parenthetical are dropped as one unit — the same unit and
+  // the same minimum §8.1's truncation rule already defines — leaving the count, which §8.1
+  // rules is never dropped. `(of 0 indexed)` qualifies a number that should not have been
+  // printed at all.
+  //
+  // **One rule, not a section-id special case.** It branches on `indexedCount` and nothing else,
+  // so it also fires for a *located* section during a live scan before any inventory has
+  // completed, which is the same false claim one surface earlier.
+  if (agg.indexedCount === 0) return summaryTextTruncated(agg);
   const plural = agg.count === 1 ? 'project' : 'projects';
   const coverage = agg.indexedCount < agg.count ? ` (of ${String(agg.indexedCount)} indexed)` : '';
   return `${String(agg.count)} ${plural} · ${formatTrackedBytes(agg.trackedBytes)} tracked${coverage}`;

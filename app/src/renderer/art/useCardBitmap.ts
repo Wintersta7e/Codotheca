@@ -1,8 +1,64 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ProjectRow, SceneHash } from '../../generated/protocol';
+import type { ArtState, ProjectRow, Rendition, SceneHash } from '../../generated/protocol';
 import { artUrl } from '../../shared/artAddress';
+import { useProjectPageDeps } from '../project/deps';
 
 export { artUrl };
+
+/**
+ * §23.5: which pass a surface asks for. A project with no working copy renders as the line-art
+ * drawing of the same seeded machine, and R47 gives that pass its own address per surface —
+ * `card-blueprint` on the tile, `hero-blueprint` on the hero — because one variant cannot address
+ * two passes over one `scene_hash`.
+ */
+export function renditionFor(surface: 'card' | 'hero', hasWorkingCopy: boolean): Rendition {
+  if (hasWorkingCopy) return surface;
+  return surface === 'card' ? 'card-blueprint' : 'hero-blueprint';
+}
+
+/**
+ * §7.6: **the request is the demand.** The core cannot observe a mounted surface, so a rendition
+ * that nothing else writes exists only because somebody asked the core for its address — and
+ * `art.url` is what rasterises it.
+ *
+ * Two renditions need this and one does not. J5 writes the `card` rendition during the scan
+ * (`core/src/art/job.rs`), so a located tile composes that address and the file is already there.
+ * **`hero`, `card-blueprint` and `hero-blueprint` have no other writer at all**: composing their
+ * address without asking gets a 404 from the shell and §7.5's plate, permanently. A `null` hash
+ * means the caller wants no demand issued, so the hook is still called unconditionally.
+ *
+ * One implementation, two callers (R12): the hero page and the grid tile. A second copy would be
+ * two places for "the request is the demand" to stop being true in.
+ */
+export function useArtAddress(
+  hash: SceneHash | null,
+  artState: ArtState,
+  rendition: Rendition,
+): string {
+  const deps = useProjectPageDeps();
+  const [src, setSrc] = useState('');
+
+  useEffect(() => {
+    // A rendition the core has already failed on is not worth asking for; the plate is the
+    // finished fallback, not a degraded one.
+    if (hash === null || artState === 'failed') return undefined;
+    let live = true;
+    deps
+      .request('art.url', { hash, rendition })
+      .then((url) => {
+        if (live && url !== '') setSrc(url);
+      })
+      .catch(() => {
+        // Whatever is on screen stays there. A rendition that cannot be addressed keeps the last
+        // one rather than blanking, and a surface with no bitmap yet keeps the plate.
+      });
+    return () => {
+      live = false;
+    };
+  }, [deps, hash, artState, rendition]);
+
+  return src;
+}
 
 /**
  * §7.1a's mid-scan flip, closed. A card holds its plate until the bitmap for **that exact**
@@ -15,7 +71,7 @@ export { artUrl };
  */
 export interface CardBitmapInput {
   readonly sceneHash: SceneHash | null;
-  readonly rendition: 'card' | 'hero';
+  readonly rendition: Rendition;
   readonly artState: ProjectRow['artState'];
   /**
    * The hero's address, from `art.url {rendition:'hero'}` — that request *is* the demand that

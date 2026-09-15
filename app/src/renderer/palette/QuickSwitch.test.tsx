@@ -26,6 +26,7 @@ const rows: ProjectRow[] = [
     conditionSignal: null,
     lastTouchedAt: 1_800_000_000 - 800 * 86_400,
     primaryLocation: null,
+    presence: null,
   }),
 ];
 
@@ -181,5 +182,80 @@ describe('QuickSwitch', () => {
     for (const name of classes) {
       expect(document.querySelectorAll(`.${name}`).length, name).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * AC-P2-23-6, asserted **by rendering the row** (§23.9), not by reading `paletteSubLine`'s
+ * inputs. For a zero-location project `lastTouchedAt` is the `created_at` fallback — the moment
+ * Codotheca wrote the row — so §8.6's tail would read `opened this month` about a repository
+ * that has never been on this machine. That is the phase-1 defect §19.7 records.
+ */
+describe('§23.4: the palette sub-line claims no interaction it never had', () => {
+  const subLineOf = (name: string): string => {
+    const row = within(listbox()).getByText(name).closest('.qs-row');
+    if (row === null) throw new Error(`no row for ${name}`);
+    const sub = row.querySelector('.qs-sub');
+    if (sub === null) throw new Error(`no sub-line for ${name}`);
+    return sub.textContent ?? '';
+  };
+
+  it('renders no tail for a not-cloned row, for any value of the clock', () => {
+    const NOW_SECS = 1_800_000_000;
+    for (const touched of [
+      NOW_SECS,
+      NOW_SECS - 86_400,
+      NOW_SECS - 29 * 86_400,
+      NOW_SECS - 400 * 86_400,
+      0,
+    ]) {
+      view({
+        rows: [
+          makeProjectRow({
+            id: 2 as ProjectId,
+            name: 'Offshore',
+            primaryLanguage: 'Rust',
+            branch: 'main',
+            primaryLocation: null,
+            presence: null,
+            lastTouchedAt: touched,
+          }),
+        ],
+        nowSecs: NOW_SECS,
+      });
+      const sub = subLineOf('Offshore');
+      expect(sub, `tail leaked at lastTouchedAt=${String(touched)}`).not.toContain(
+        'opened this month',
+      );
+      expect(sub).not.toContain('months cold');
+      expect(sub).not.toContain('in session');
+      // The remaining fields still render: a hydrated not-cloned project legitimately has a
+      // language and a branch, and §23 invents no fourth tail word for the gap.
+      expect(sub).toBe('.rs · main');
+      cleanup();
+    }
+  });
+
+  it('leaves a located row byte-identical', () => {
+    // The fix is a regression wearing a fix's clothes if this moves.
+    view();
+    expect(subLineOf('Nightfall')).toBe('.rs · main · 13 months cold');
+  });
+
+  it('renders the tail for a not-cloned row that is somehow in session — it does not', () => {
+    // `in session` is the one tail word a not-cloned project could reach through a different
+    // input, so it is asserted explicitly rather than left to the clock spread above.
+    view({
+      rows: [
+        makeProjectRow({
+          id: 2 as ProjectId,
+          name: 'Offshore',
+          primaryLocation: null,
+          presence: null,
+        }),
+      ],
+      liveSessionProjectIds: new Set<ProjectId>([2 as ProjectId]),
+    });
+    expect(subLineOf('Offshore')).not.toContain('in session');
   });
 });

@@ -26,7 +26,10 @@ export const ART_IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 /** 64 lowercase hex and nothing else — the same total guard as `core::art::is_scene_hash`. */
 export const SCENE_HASH_PATTERN = /^[0-9a-f]{64}$/u;
 
-const RENDITIONS: readonly Rendition[] = ['card', 'hero'];
+// R47: four, not three. The slug guard below is an array-membership test, so it admits the
+// hyphen the moment the array carries it — and `parseArtAddress` still rejects a third
+// segment, a trailing slash and a doubled slash, because those are decided by the split.
+const RENDITIONS: readonly Rendition[] = ['card', 'hero', 'card-blueprint', 'hero-blueprint'];
 
 export interface ArtAddress {
   readonly hash: string;

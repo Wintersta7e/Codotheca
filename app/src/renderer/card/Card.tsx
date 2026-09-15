@@ -6,7 +6,7 @@ import { CardPlate } from './CardPlate';
 import { ConditionDotMark } from './ConditionDotMark';
 import { PinControl, type PinControlProps } from './PinControl';
 import type { StatusChip } from './chips';
-import type { UncomputedRank } from './completion';
+import type { FrameToken, UncomputedRank } from './completion';
 import { HAZARD_TAPE_HEIGHT_PX, type CardSurface, bandsFor, densityStep } from './geometry';
 import { bloomShadow, cardCustomProperties } from './interaction';
 
@@ -48,7 +48,7 @@ export interface CardBands {
 export interface CardProps {
   readonly surface: CardSurface;
   readonly appearance: CardAppearance;
-  readonly frameToken: 'unknown' | 'tier-ref';
+  readonly frameToken: FrameToken;
   readonly density: number;
   readonly isArchived: boolean;
   readonly isReference: boolean;

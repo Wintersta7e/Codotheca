@@ -68,14 +68,62 @@ fn archived_and_submodules_are_overrides_and_archived_wins() {
     assert_eq!(era_section_id_for(&row, NOW, 0), "era:archived");
 }
 
+/// AC-P2-23-9, replacing `era_notcloned_is_never_emitted_in_phase_one`.
+///
+/// The old bar iterated day offsets over rows that were **all zero-location**, so after §23.4 it
+/// would have kept passing while proving nothing — a bar written past its own defect. The
+/// replacement builds the shape both ways and **prints the number of zero-location fixtures it
+/// scanned**: a passing run that scanned none of them is a failing gate.
 #[test]
-fn era_notcloned_is_never_emitted_in_phase_one() {
+fn era_notcloned_is_emitted_for_a_zero_location_row_and_only_for_one() {
+    let mut zero_location = 0_usize;
+    let mut located = 0_usize;
     for days in [0, 5, 40, 100, 400, 4000] {
+        let mut bare = ProjectRow::for_test_not_cloned(1);
+        bare.last_touched_at = NOW - days * DAY;
+        assert_eq!(
+            era_section_id_for(&bare, NOW, 0),
+            "era:notcloned",
+            "a project with no working copy is not filed by recency ({days} days)"
+        );
+        zero_location += 1;
+
         assert_ne!(
             era_section_id_for(&at(NOW - days * DAY), NOW, 0),
-            "era:notcloned"
+            "era:notcloned",
+            "a located project never lands there ({days} days)"
         );
+        located += 1;
     }
+    eprintln!(
+        "projects_list: scanned {zero_location} zero-location and {located} located fixtures"
+    );
+    assert!(
+        zero_location > 0,
+        "scanned {zero_location} zero-location fixtures; a run that scanned none proves nothing"
+    );
+    assert_eq!(zero_location, located);
+}
+
+/// AC-P2-23-4's ordering half. §23.4 tests the location **first**, before `is_archived` and
+/// before `is_submodule`: `is_archived` is a *user* flag, a user may archive a not-cloned
+/// project, and `era:archived` at order 92 is an **interleaved** section whose header sums
+/// tracked bytes. Filing a tile with no bytes and no `Play` among tiles that have both breaks
+/// the settled *never interleaved* ruling.
+#[test]
+fn a_not_cloned_project_is_classified_before_archived_and_before_submodules() {
+    let mut archived = ProjectRow::for_test_not_cloned(1);
+    archived.is_archived = true;
+    assert_eq!(era_section_id_for(&archived, NOW, 0), "era:notcloned");
+
+    let mut submodule = ProjectRow::for_test_not_cloned(2);
+    submodule.is_submodule = true;
+    assert_eq!(era_section_id_for(&submodule, NOW, 0), "era:notcloned");
+
+    let mut both = ProjectRow::for_test_not_cloned(3);
+    both.is_archived = true;
+    both.is_submodule = true;
+    assert_eq!(era_section_id_for(&both, NOW, 0), "era:notcloned");
 }
 
 #[test]
@@ -86,6 +134,9 @@ fn the_order_key_is_the_same_cursor_the_renderer_computes() {
     assert_ne!(order_key_of(&[1, 2]), order_key_of(&[1, 2, 3]));
 }
 
+/// Two **located** projects. The location rows are not decoration: §23.4 classifies on
+/// `primary_location IS NULL` **first**, so a seed with no `location` files both rows under
+/// `era:notcloned` and every section assertion below then describes one section instead of two.
 fn seeded() -> (tempfile::TempDir, Index) {
     let dir = tempfile::tempdir().expect("tempdir");
     let index = Index::open(dir.path()).expect("open");
@@ -97,6 +148,18 @@ fn seeded() -> (tempfile::TempDir, Index) {
             rusqlite::params![NOW - DAY, NOW - 400 * DAY],
         )
         .expect("seed");
+    index
+        .conn()
+        .execute(
+            "INSERT INTO location (id, project_id, kind, distro, path_bytes, path_key,
+                                   path_display, volume_key, store_key, presence, repo_kind)
+             VALUES (10, 1, 'linux', '', x'2f612f61', x'2f612f61', '/a/a', 'v', 's', 'present',
+                     'worktree'),
+                    (20, 2, 'linux', '', x'2f622f62', x'2f622f62', '/b/b', 'v', 's', 'present',
+                     'worktree')",
+            [],
+        )
+        .expect("seed locations");
     (dir, index)
 }
 
@@ -244,4 +307,53 @@ fn sort_by_name_reorders_the_rows_and_the_order_key_with_them() {
         .expect("inventory");
     let by_size = list(&index, &sink, serde_json::json!({ "sort": "size" }));
     assert_eq!(ids(&by_size), vec![2, 1]);
+}
+
+/// AC-P2-23-5's second half, Rust mirror. `unchecked` exists so that *an absent flag line may
+/// only ever mean observed, and nothing to report* (§8.1) — it is a coverage warning about
+/// **local git state**, and a not-cloned project has no local git state to be uncovered about.
+#[test]
+fn unchecked_counts_only_rows_that_have_a_working_copy() {
+    use codotheca_core::projects::list::aggregate_era;
+    use codotheca_core::projects::rows::{LoadedRow, RowFacts};
+
+    fn loaded(row: ProjectRow) -> LoadedRow {
+        LoadedRow {
+            row,
+            facts: RowFacts {
+                authored_by_user: None,
+                location_kind: None,
+                distro: None,
+                has_remote: false,
+                has_submodules: false,
+                has_readme: None,
+            },
+        }
+    }
+
+    let bare: Vec<LoadedRow> = (1..=3)
+        .map(|id| loaded(ProjectRow::for_test_not_cloned(id)))
+        .collect();
+    let bare_refs: Vec<&LoadedRow> = bare.iter().collect();
+    let agg = aggregate_era(&bare_refs);
+    assert_eq!(agg.unchecked, 0, "there is no local git state to cover");
+    // The three remaining counters need no change, and this asserts that rather than assuming
+    // it: all three are false on a NULL row, so with all four at zero no flag line renders.
+    assert_eq!(agg.unpushed, 0);
+    assert_eq!(agg.uncommitted, 0);
+    assert_eq!(agg.interrupted, 0);
+
+    let mixed: Vec<LoadedRow> = vec![
+        loaded(ProjectRow::for_test(1)),
+        loaded(ProjectRow::for_test(2)),
+        loaded(ProjectRow::for_test_not_cloned(3)),
+        loaded(ProjectRow::for_test_not_cloned(4)),
+    ];
+    let mixed_refs: Vec<&LoadedRow> = mixed.iter().collect();
+    assert_eq!(aggregate_era(&mixed_refs).unchecked, 2);
+
+    // A located section with no J1 result still counts every one of its rows.
+    let located: Vec<LoadedRow> = (1..=3).map(|id| loaded(ProjectRow::for_test(id))).collect();
+    let located_refs: Vec<&LoadedRow> = located.iter().collect();
+    assert_eq!(aggregate_era(&located_refs).unchecked, 3);
 }

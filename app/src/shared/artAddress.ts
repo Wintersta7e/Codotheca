@@ -1,4 +1,4 @@
-import type { SceneHash } from '../generated/protocol';
+import type { Rendition, SceneHash } from '../generated/protocol';
 
 /**
  * `codotheca://art/<hash>/<rendition>` (§7.2, §7.6). The scheme is **two-segment**: a fetch of
@@ -15,7 +15,11 @@ export const ART_SCHEME = 'codotheca';
 /** The single host segment. */
 export const ART_SCHEME_HOST = 'art';
 
-export function artUrl(sceneHash: SceneHash | null, rendition: 'card' | 'hero'): string | null {
+/**
+ * R47: the rendition is the generated `Rendition`, not a hand-written pair of literals — the
+ * schema declares four and a second list here would be one value stated twice.
+ */
+export function artUrl(sceneHash: SceneHash | null, rendition: Rendition): string | null {
   if (sceneHash === null || sceneHash === '') return null;
   return `${ART_SCHEME}://${ART_SCHEME_HOST}/${sceneHash}/${rendition}`;
 }

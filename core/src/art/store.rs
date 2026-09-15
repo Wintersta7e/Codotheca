@@ -49,6 +49,10 @@ pub fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), ArtError> {
 }
 
 /// Rasterize one rendition of a scene and put it at its content address.
+///
+/// §23.5: a two-way dispatch over the **same** `Scene` and the same target geometry. The
+/// blueprint is a second render *pass*, not a second scene — so `card` and `card-blueprint`
+/// share a `scene_hash` and differ only in the file the address names.
 pub fn write_rendition(
     data_dir: &Path,
     hash: &str,
@@ -57,7 +61,12 @@ pub fn write_rendition(
 ) -> Result<PathBuf, ArtError> {
     let path = rendition_path(data_dir, hash, rendition)
         .ok_or_else(|| ArtError::BadHash(hash.to_owned()))?;
-    let pixmap = render(scene, target_for(rendition))?;
+    let target = target_for(rendition);
+    let pixmap = if crate::art::blueprint::is_blueprint(rendition) {
+        crate::art::blueprint::render_blueprint(scene, target)?
+    } else {
+        render(scene, target)?
+    };
     let bytes = encode_webp(&pixmap)?;
     write_atomically(&path, &bytes)?;
     Ok(path)
@@ -347,6 +356,9 @@ pub fn forget_hero(data_dir: &Path, hash: &str) -> Result<(), ArtError> {
 pub struct SweepReport {
     pub cards_removed: usize,
     pub heroes_removed: usize,
+    /// §23.5's second render pass, both targets. A blueprint is neither a card nor a hero, and
+    /// folding it into either counter would make that counter say a number it did not measure.
+    pub blueprints_removed: usize,
 }
 
 /// §7.5: superseded files are swept when no `art_scene` row references them. Only files this
@@ -402,6 +414,11 @@ pub fn sweep_unreferenced(
                 Rendition::Hero => {
                     report.heroes_removed += 1;
                     orphaned.push(hash.to_owned());
+                }
+                // Only the `hero` rendition is journalled by `touch_hero`, so a swept blueprint
+                // has no LRU entry to forget and must not push one.
+                Rendition::CardBlueprint | Rendition::HeroBlueprint => {
+                    report.blueprints_removed += 1;
                 }
             }
         }

@@ -12,6 +12,7 @@ import type {
 import motionCss from '../styles/motion.css?raw';
 import { LADDER_RUNGS } from '../theme/tokens';
 import { ProjectCard, type ProjectCardProps } from './ProjectCard';
+import { withProjectDeps } from '../testing/deps';
 
 afterEach(cleanup);
 
@@ -58,8 +59,12 @@ const row = (over: Partial<ProjectRow> = {}): ProjectRow => ({
   sizeTrackedBytes: 100 * MB,
   trackedFiles: null,
   collectionIds: [],
-  primaryLocation: null,
+  // §23.5 decides the frame from the pair, so a null location beside 'present' would draw the
+  // blueprint frame on every case in this file — a fixture describing a state the product
+  // cannot produce.
+  primaryLocation: { id: 10 as LocationId, pathDisplay: '/w/atlas' },
   presence: 'present',
+  hasRemote: false,
   branch: 'main',
   isDirty: null,
   untrackedCount: null,
@@ -105,7 +110,7 @@ const props = (over: Partial<ProjectCardProps> = {}): ProjectCardProps => ({
 });
 
 const draw = (over: Partial<ProjectCardProps> = {}): HTMLElement =>
-  render(<ProjectCard {...props(over)} />).container;
+  render(<ProjectCard {...props(over)} />, { wrapper: withProjectDeps() }).container;
 
 describe('band 5 carries the name, the identity line and the hover strip', () => {
   it('renders the name and the identity line, and no description at the default density', () => {

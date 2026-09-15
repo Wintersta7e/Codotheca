@@ -238,7 +238,7 @@ fn branch_and_ahead_come_from_the_primary_location_not_from_the_or() {
         Some("/b")
     );
     // An offline copy is still named, and its presence is reported rather than `unscanned`.
-    assert_eq!(rows[0].row.presence, Presence::Present);
+    assert_eq!(rows[0].row.presence, Some(Presence::Present));
 }
 
 #[test]
@@ -257,7 +257,7 @@ fn an_all_offline_project_still_names_a_copy_and_reports_offline() {
     );
     let sink = CollectingSink::default();
     let rows = load_project_rows(&ctx(&index, &sink, &Deps::new())).expect("load");
-    assert_eq!(rows[0].row.presence, Presence::Offline);
+    assert_eq!(rows[0].row.presence, Some(Presence::Offline));
     assert!(rows[0].row.primary_location.is_some());
 }
 

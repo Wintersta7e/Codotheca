@@ -9,6 +9,8 @@ import {
   registerArtProtocol,
   renditionFilePath,
 } from '../src/main/art/artProtocol';
+import { artUrl } from '../src/shared/artAddress';
+import type { SceneHash } from '../src/generated/protocol';
 
 const HASH = '0123456789abcdef'.repeat(4);
 const DATA_DIR = path.join('/data', 'codotheca');
@@ -142,5 +144,51 @@ describe('registration', () => {
     registerArtProtocol({ handle }, deps());
     expect(handle).toHaveBeenCalledTimes(1);
     expect(handle.mock.calls[0]?.[0]).toBe('codotheca');
+  });
+});
+
+/**
+ * R47's shell half. `isRendition` is an array-membership test, so it admits the hyphen the moment
+ * `RENDITIONS` carries it — but the two-segment rule is decided by the `/` split and must still
+ * hold, and the filename literal is pinned on both sides.
+ */
+describe('§23.5: the two blueprint addresses', () => {
+  it('parses a hyphenated slug as one segment', () => {
+    expect(parseArtAddress(`codotheca://art/${HASH}/card-blueprint`)).toEqual({
+      hash: HASH,
+      rendition: 'card-blueprint',
+    });
+    expect(parseArtAddress(`codotheca://art/${HASH}/hero-blueprint`)).toEqual({
+      hash: HASH,
+      rendition: 'hero-blueprint',
+    });
+  });
+
+  it('still refuses a trailing slash, a doubled slash and a third segment', () => {
+    expect(parseArtAddress(`codotheca://art/${HASH}/card-blueprint/`)).toBeNull();
+    expect(parseArtAddress(`codotheca://art/${HASH}//card-blueprint`)).toBeNull();
+    expect(parseArtAddress(`codotheca://art/${HASH}/card-blueprint/extra`)).toBeNull();
+    expect(parseArtAddress(`codotheca://art/${HASH}/card/blueprint`)).toBeNull();
+    // A hyphen does not make every slug legal.
+    expect(parseArtAddress(`codotheca://art/${HASH}/card-thumbnail`)).toBeNull();
+  });
+
+  it('builds the filename the core writes, pinned on both sides', () => {
+    expect(renditionFilePath(DATA_DIR, { hash: HASH, rendition: 'card-blueprint' })).toBe(
+      path.join(DATA_DIR, 'art', HASH.slice(0, 2), `${HASH}.card-blueprint.webp`),
+    );
+    expect(renditionFilePath(DATA_DIR, { hash: HASH, rendition: 'hero-blueprint' })).toBe(
+      path.join(DATA_DIR, 'art', HASH.slice(0, 2), `${HASH}.hero-blueprint.webp`),
+    );
+  });
+
+  it('gives the card and its blueprint different addresses over one hash', () => {
+    // The hazard §23.5 names: without a distinct address a cached raster of one pass would be
+    // served for the other at exactly the moment the project changes state.
+    const card = artUrl(HASH as SceneHash, 'card');
+    const blueprint = artUrl(HASH as SceneHash, 'card-blueprint');
+    expect(card).not.toBe(blueprint);
+    expect(blueprint).toBe(`codotheca://art/${HASH}/card-blueprint`);
+    expect(artUrl(HASH as SceneHash, 'hero')).not.toBe(artUrl(HASH as SceneHash, 'hero-blueprint'));
   });
 });
