@@ -1,10 +1,11 @@
 import type { CSSProperties, ReactElement, ReactNode, RefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import type { ScanStatus } from '../../generated/protocol.js';
+import type { Problems, ScanStatus } from '../../generated/protocol.js';
+import { hasReportableProblems } from '../notices/copy.js';
 import { parseQuery } from '../../shared/query/parse.js';
 import type { KeyAction, KeyEventLike } from '../keyboard/contexts.js';
 import type { ShelfCounts } from './counts.js';
-import { EmptyState, emptyStateModel } from './EmptyState.js';
+import { EmptyState, emptyStateModel, type LibraryPresence } from './EmptyState.js';
 import { shelfKeyIntent } from './keyboard.js';
 import type { Notice } from './notice.js';
 import { NoticeSlot } from './NoticeSlot.js';
@@ -27,7 +28,20 @@ export interface ShelfProps {
   readonly counts: ShelfCounts;
   readonly notices: readonly Notice[];
   readonly scan: Pick<ScanStatus, 'running' | 'foundRepos' | 'problemCount'>;
-  readonly libraryIsEmpty: boolean;
+  /**
+   * §11.1's report, or `null` for *not read*. It decides whether the empty state offers a way
+   * into the scan summary, because it is what that summary is drawn from.
+   */
+  readonly problems: Problems | null;
+  /**
+   * The inside of §8.0's box, for a section whose row is more than a string — §1.4's identity
+   * card is a list of tickable rows. Undefined draws the generic notice, which is every other
+   * kind; a supplier takes the body, the actions and the way out (`NoticeSlot`).
+   */
+  readonly renderNotice?: (notice: Notice, dismiss: () => void) => ReactNode;
+  /** Three states, not two: see `LibraryPresence`. A shelf that has not read may not say the
+   *  library is empty, and a boolean here is where that distinction used to die. */
+  readonly library: LibraryPresence;
   /** Unix seconds, advanced by the owner. A frozen clock freezes every `as of` string below. */
   readonly now: number;
   /** True while a Peek is open. Owned by whoever mounts it; without it `Esc` declines, which is
@@ -143,9 +157,10 @@ export function Shelf(props: ShelfProps): ReactElement {
   };
 
   const queryRanAndMatchedNothing = props.page.matched === 0 && view.query.length > 0;
-  const showEmpty = props.libraryIsEmpty || queryRanAndMatchedNothing;
-  // A null count is *not computed*, never zero, so an uncomputed run offers no link.
-  const hadProblems = props.scan.problemCount !== null && props.scan.problemCount > 0;
+  const showEmpty = props.library !== 'present' || queryRanAndMatchedNothing;
+  // From the report itself, never from `scan.status`: the panel this link opens is drawn from
+  // the report, so offering the link on a different reading is how it came to open nothing.
+  const hadProblems = hasReportableProblems(props.problems);
 
   const scrollStyle = { '--cdt-tile': `${String(view.density)}px` } as CSSProperties;
 
@@ -180,13 +195,14 @@ export function Shelf(props: ShelfProps): ReactElement {
           onDismiss={(key) => {
             change({ dismissedNotices: [...view.dismissedNotices, key] });
           }}
+          {...(props.renderNotice === undefined ? {} : { renderContent: props.renderNotice })}
         />
         {showEmpty ? (
           <EmptyState
             model={emptyStateModel({
               ast: props.page.ast,
               counts: props.counts,
-              libraryIsEmpty: props.libraryIsEmpty,
+              library: props.library,
               now: props.now,
             })}
             onClearQuery={() => {

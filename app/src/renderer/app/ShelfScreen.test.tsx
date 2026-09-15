@@ -79,6 +79,8 @@ function propsFor(
   return {
     deps: fake.deps,
     rows,
+    library: rows.length === 0 ? 'empty' : 'present',
+    problems: null,
     generation: 7,
     view: DEFAULT_SHELF_VIEW,
     onViewChange: vi.fn(),

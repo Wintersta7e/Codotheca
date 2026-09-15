@@ -15,6 +15,7 @@ import { routeFor } from './app/route';
 import { ShelfScreen } from './app/ShelfScreen';
 import { SurfaceHost } from './app/SurfaceHost';
 import { useCoreStatus } from './app/useCoreStatus';
+import { useIdentity, identityNeedsConfirming } from './app/useIdentity';
 import { useLibrary } from './app/useLibrary';
 import { useNotices } from './app/useNotices';
 import { useProblems } from './app/useProblems';
@@ -22,6 +23,7 @@ import { useScanStatus } from './app/useScanStatus';
 import { useSessions } from './app/useSessions';
 import { useViewState } from './app/useViewState';
 import { useResolvedTier } from './motion/tier';
+import { IdentityCard } from './firstrun/IdentityCard';
 import { ProjectPageDepsContext } from './project/deps';
 import { ProjectPageView } from './project/ProjectPage';
 import { DEFAULT_DENSITY_PX } from './shelf/viewState';
@@ -47,6 +49,9 @@ export function App(props: AppProps = {}): ReactElement {
   const sessions = useSessions(deps);
   const [view, setView] = useViewState(deps, VIEW_WRITE_DEBOUNCE_MS);
   const problems = useProblems(deps, scan);
+  // §1.4's set decides `authored_by_user` for every project, so confirming it changes the shelf
+  // under the user: the library is re-read on the write rather than on the next launch.
+  const identity = useIdentity(deps, library.reload);
 
   const [openProjectId, setOpenProjectId] = useState<ProjectId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -75,6 +80,7 @@ export function App(props: AppProps = {}): ReactElement {
     // invented here, so a core that failed to spawn raises no notice — recorded, not papered.
     spawnFailure: null,
     problems: problems.problems,
+    identityToConfirm: identityNeedsConfirming(identity.rows),
     onOpenLog: openLog,
     onOpenScanSummary: openScanSummary,
   });
@@ -116,6 +122,8 @@ export function App(props: AppProps = {}): ReactElement {
       <ShelfScreen
         deps={deps}
         rows={rows ?? []}
+        library={library.presence}
+        problems={problems.problems}
         generation={library.generation}
         view={view}
         onViewChange={setView}
@@ -130,6 +138,20 @@ export function App(props: AppProps = {}): ReactElement {
           setSettingsOpen(true);
         }}
         onOpenScanSummary={openScanSummary}
+        renderNotice={(notice, dismiss) =>
+          notice.kind !== 'identity' || identity.rows === null ? null : (
+            <IdentityCard
+              rows={identity.rows}
+              preview={identity.preview}
+              onPreview={identity.askPreview}
+              onConfirm={(emails) => {
+                identity.confirm(emails);
+                dismiss();
+              }}
+              onLeaveAsIs={dismiss}
+            />
+          )
+        }
         onAddScanRoot={() => {
           void deps.pickRoot(false).then(
             (reply) => {

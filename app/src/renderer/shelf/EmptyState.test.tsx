@@ -34,7 +34,7 @@ describe('emptyStateModel', () => {
     const model = emptyStateModel({
       ast: parseQuery('nosuch:value is:dirty'),
       counts,
-      libraryIsEmpty: false,
+      library: 'present',
       now: NOW,
     });
     expect(model.variant).toBe('noMatchWithIgnored');
@@ -52,7 +52,7 @@ describe('emptyStateModel', () => {
     const model = emptyStateModel({
       ast: parseQuery('nosuch:value is:dirty'),
       counts,
-      libraryIsEmpty: false,
+      library: 'present',
       now: NOW,
     });
     const clause = model.reason.slice('Query: '.length, model.reason.indexOf(' · '));
@@ -64,7 +64,7 @@ describe('emptyStateModel', () => {
     const model = emptyStateModel({
       ast: parseQuery('is:dirty'),
       counts,
-      libraryIsEmpty: false,
+      library: 'present',
       now: NOW,
     });
     expect(model.variant).toBe('noMatch');
@@ -77,7 +77,7 @@ describe('emptyStateModel', () => {
     const model = emptyStateModel({
       ast: parseQuery(''),
       counts: emptyCounts,
-      libraryIsEmpty: true,
+      library: 'empty',
       now: NOW,
     });
     expect(model.variant).toBe('noLibrary');
@@ -89,11 +89,38 @@ describe('emptyStateModel', () => {
     expect(model.action).toBe('ADD A SCAN ROOT');
   });
 
+  it('says nothing about the disk when the library has not been read', () => {
+    // The shipped defect: a read that had not answered arrived here as `[]` and printed the
+    // absence sentence over twenty-six indexed projects. Uncomputed is not empty.
+    const model = emptyStateModel({
+      ast: parseQuery(''),
+      counts: emptyCounts,
+      library: 'uncomputed',
+      now: NOW,
+    });
+    expect(model.variant).toBe('uncomputed');
+    expect(model.reason).toBe('—');
+    expect(model.reason).not.toMatch(/repositories|roots|projects/);
+    expect(model.heading).not.toBe('NOTHING INDEXED YET');
+    // And no control: there is nothing to act on until something has been read.
+    expect(model.action).toBeNull();
+  });
+
+  it('an unread library beats a query too, for the same reason an empty one does', () => {
+    const model = emptyStateModel({
+      ast: parseQuery('is:dirty'),
+      counts: emptyCounts,
+      library: 'uncomputed',
+      now: NOW,
+    });
+    expect(model.variant).toBe('uncomputed');
+  });
+
   it('states when it looked, so the line claims no currency it does not have', () => {
     const model = emptyStateModel({
       ast: parseQuery(''),
       counts: emptyCounts,
-      libraryIsEmpty: true,
+      library: 'empty',
       now: NOW,
     });
     expect(model.reason).toContain(formatClock(NOW));
@@ -103,7 +130,7 @@ describe('emptyStateModel', () => {
     const model = emptyStateModel({
       ast: parseQuery('is:dirty'),
       counts: emptyCounts,
-      libraryIsEmpty: true,
+      library: 'empty',
       now: NOW,
     });
     expect(model.variant).toBe('noLibrary');
@@ -115,13 +142,13 @@ describe('EmptyState', () => {
   const model = emptyStateModel({
     ast: parseQuery('is:dirty'),
     counts,
-    libraryIsEmpty: false,
+    library: 'present',
     now: NOW,
   });
   const empty = emptyStateModel({
     ast: parseQuery(''),
     counts: emptyCounts,
-    libraryIsEmpty: true,
+    library: 'empty',
     now: NOW,
   });
 

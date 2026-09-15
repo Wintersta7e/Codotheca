@@ -14,6 +14,7 @@ import type {
   ProjectRow,
 } from '../../generated/protocol.js';
 import type { RendererEvent } from '../../shared/channels.js';
+import type { LibraryPresence } from '../shelf/EmptyState.js';
 import { ProjectionStore } from '../shelf/projection.js';
 import type { ShelfRow } from '../shelf/row.js';
 import type { AppDeps } from './deps.js';
@@ -24,6 +25,11 @@ export interface LibraryState {
    * different sentence — the one §8.3a's empty state is written about.
    */
   readonly rows: readonly ShelfRow[] | null;
+  /**
+   * The same three states `rows` carries, named — so the surfaces that cannot hold a `null` row
+   * list still receive the distinction instead of a boolean that has already thrown it away.
+   */
+  readonly presence: LibraryPresence;
   readonly generation: number;
   readonly store: ProjectionStore;
   readonly reload: () => void;
@@ -148,13 +154,14 @@ export function useLibrary(deps: AppDeps): LibraryState {
     [subscribe, store, reload],
   );
 
-  return useMemo(
-    () => ({
-      rows: snapshot?.rows ?? null,
+  return useMemo(() => {
+    const rows = snapshot?.rows ?? null;
+    return {
+      rows,
+      presence: rows === null ? 'uncomputed' : rows.length === 0 ? 'empty' : 'present',
       generation: snapshot?.generation ?? store.generation,
       store,
       reload,
-    }),
-    [snapshot, store, reload],
-  );
+    } satisfies LibraryState;
+  }, [snapshot, store, reload]);
 }

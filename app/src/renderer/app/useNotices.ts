@@ -13,6 +13,7 @@ import { useMemo } from 'react';
 
 import type { DegradedReason, Problems } from '../../generated/protocol.js';
 import type { NoticeCopy, SpawnFailureFacts } from '../notices/copy.js';
+import { IDENTITY_BODY_1, IDENTITY_TITLE } from '../firstrun/copy.js';
 import { degradedNotice, problemsNotice, spawnFailureNotice } from '../notices/copy.js';
 import type { Notice, NoticeAction, NoticeKind } from '../shelf/notice.js';
 
@@ -28,6 +29,12 @@ export interface NoticeInput {
   readonly spawnFailure: SpawnFailureFacts | null;
   /** §11.1's problem count. `null` is a scan that has not reported one. */
   readonly problems: Problems | null;
+  /**
+   * §8.0's row 4a. True when §1.4's card has something to ask — the set is seeded and nothing in
+   * it has been confirmed. The card draws its own contents through the slot's `renderContent`;
+   * what belongs here is only whether the row qualifies at all.
+   */
+  readonly identityToConfirm: boolean;
   readonly onOpenLog: () => void;
   readonly onOpenScanSummary: () => void;
 }
@@ -74,7 +81,15 @@ function toNotice(
 }
 
 export function useNotices(input: NoticeInput): readonly Notice[] {
-  const { degraded, gitVersion, spawnFailure, problems, onOpenLog, onOpenScanSummary } = input;
+  const {
+    degraded,
+    gitVersion,
+    spawnFailure,
+    problems,
+    identityToConfirm,
+    onOpenLog,
+    onOpenScanSummary,
+  } = input;
 
   return useMemo(() => {
     const out: Notice[] = [];
@@ -97,6 +112,27 @@ export function useNotices(input: NoticeInput): readonly Notice[] {
       out.push(toNotice('problems', String(problems.runId), scan, runners));
     }
 
+    if (identityToConfirm) {
+      // Unscoped: §1.4's card is one-shot and belongs to the library, not to a run. The title
+      // is what the slot uses as its accessible name; the body and every action are the card's,
+      // supplied through `renderContent`.
+      out.push({
+        kind: 'identity',
+        scope: null,
+        title: IDENTITY_TITLE,
+        body: IDENTITY_BODY_1,
+        actions: [],
+      });
+    }
+
     return out;
-  }, [degraded, gitVersion, spawnFailure, problems, onOpenLog, onOpenScanSummary]);
+  }, [
+    degraded,
+    gitVersion,
+    spawnFailure,
+    problems,
+    identityToConfirm,
+    onOpenLog,
+    onOpenScanSummary,
+  ]);
 }

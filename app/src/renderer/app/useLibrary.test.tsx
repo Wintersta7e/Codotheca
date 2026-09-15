@@ -55,6 +55,38 @@ describe('useLibrary', () => {
     expect(view.last().rows).toHaveLength(0);
   });
 
+  it('names the three states, so a surface taking a row list still receives the distinction', async () => {
+    const fake = fakeAppDeps({ 'projects.list': () => page([]) });
+    const view = mount(fake);
+    // Before the answer. `[]` here would be §8.3a's empty state speaking for a read that has
+    // not happened.
+    expect(view.last().presence).toBe('uncomputed');
+
+    await waitFor(() => {
+      expect(view.last().presence).toBe('empty');
+    });
+
+    act(() => {
+      view.last().store.upsert(row(1));
+    });
+    await waitFor(() => {
+      expect(view.last().presence).toBe('present');
+    });
+  });
+
+  it('a library that could not be read stays uncomputed rather than becoming empty', async () => {
+    const fake = fakeAppDeps({
+      'projects.list': () => {
+        throw new Error('core is down');
+      },
+    });
+    const view = mount(fake);
+    await waitFor(() => {
+      expect(fake.calls).toHaveLength(1);
+    });
+    expect(view.last().presence).toBe('uncomputed');
+  });
+
   it('seeds from projects.list and takes the store generation, not a counter of its own', async () => {
     const fake = fakeAppDeps({ 'projects.list': () => page([row(1), row(2)], 7) });
     const view = mount(fake);

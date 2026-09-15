@@ -103,6 +103,19 @@ export function spawnFailureNotice(notice: SpawnFailureFacts): NoticeCopy {
   };
 }
 
+/**
+ * Whether §11.1's report is worth offering a way into — the one rule, for the two surfaces that
+ * offer it.
+ *
+ * §8.0's banner asked `problemsNotice`; §8.3a's empty-state link asked **`scan.status`**, and the
+ * panel it opens is gated on the report having been read. So a report that had not been read left
+ * a drawn button that silently did nothing, which is §11.3a's dead control arriving through a
+ * second reading of one run.
+ */
+export function hasReportableProblems(problems: Problems | null): boolean {
+  return problems !== null && problemsNotice(problems) !== null;
+}
+
 export function problemsNotice(problems: Problems): NoticeCopy | null {
   const count = problems.header.problemCount;
   // `null` is a scan still running; `0` is a finished scan with nothing to report. Neither

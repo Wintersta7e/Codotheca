@@ -18,7 +18,7 @@ export interface NoticeSlotProps {
    * `view_state` key. Returning non-null takes the body, the actions **and** the generic
    * `DISMISS` — the section is then responsible for every way out of its own row.
    */
-  readonly renderContent?: (notice: Notice) => ReactNode;
+  readonly renderContent?: (notice: Notice, dismiss: () => void) => ReactNode;
 }
 
 /** Block 2. Returns `null` — not an empty wrapper — when nothing qualifies: the wrapper's
@@ -32,7 +32,12 @@ export function NoticeSlot(props: NoticeSlotProps): ReactElement | null {
   // reads that is not declared in the token sheet, and this one is set per instance.
   const style = { '--cdt-notice-accent': `var(--${noticeAccent(notice.kind)})` } as CSSProperties;
 
-  const supplied = props.renderContent?.(notice) ?? null;
+  // The dismissal key is computed here and nowhere else, so a section owning its own way out
+  // still writes the key §8.0 declared for it rather than a second spelling of one.
+  const dismiss = (): void => {
+    props.onDismiss(noticeDismissKey(notice.kind, notice.scope));
+  };
+  const supplied = props.renderContent?.(notice, dismiss) ?? null;
   if (supplied !== null) {
     return (
       <div className="cdt-shelf-notice-slot">

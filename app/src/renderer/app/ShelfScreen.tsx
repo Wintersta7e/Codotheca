@@ -1,5 +1,19 @@
-import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Peek, ProjectId, ScanStatus, SessionRef } from '../../generated/protocol.js';
+import {
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import type {
+  Peek,
+  Problems,
+  ProjectId,
+  ScanStatus,
+  SessionRef,
+} from '../../generated/protocol.js';
 import { parseQuery } from '../../shared/query/parse.js';
 import type { KeyAction } from '../keyboard/contexts.js';
 import {
@@ -16,6 +30,7 @@ import { AttentionRow } from '../shelf/AttentionRow.js';
 import { isCollapsed, toggled } from '../shelf/collapse.js';
 import { shelfCounts } from '../shelf/counts.js';
 import type { QueryContext } from '../shelf/evaluate.js';
+import type { LibraryPresence } from '../shelf/EmptyState.js';
 import { EraHeader } from '../shelf/EraHeader.js';
 import { GridSection } from '../shelf/GridSection.js';
 import { ListView } from '../shelf/ListView.js';
@@ -54,6 +69,14 @@ interface PeekMeasurement {
 export interface ShelfScreenProps {
   readonly deps: AppDeps;
   readonly rows: readonly ShelfRow[];
+  /**
+   * What the projection said, which `rows` alone cannot carry: this screen takes a row list and
+   * an unread library arrives here as `[]`, indistinguishable from a library that is empty.
+   */
+  readonly library: LibraryPresence;
+  /** §11.1's report, or `null` for *not read* — the shelf's link into the summary is offered
+   *  from this and never from `scan.status`, which is a second reading of the same run. */
+  readonly problems: Problems | null;
   readonly generation: number;
   readonly view: ShelfView;
   readonly onViewChange: (next: ShelfView) => void;
@@ -68,6 +91,8 @@ export interface ShelfScreenProps {
   readonly onOpenScanSummary: () => void;
   readonly onAddScanRoot: () => void;
   readonly savedChips?: ReactElement | null;
+  /** §8.0's box, for the one section whose row is a card rather than a string (§1.4). */
+  readonly renderNotice?: (notice: Notice, dismiss: () => void) => ReactNode;
 }
 
 function directionFor(action: KeyAction): GridDirection | null {
@@ -375,7 +400,9 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
       counts={counts}
       notices={props.notices}
       scan={props.scan ?? UNKNOWN_SCAN}
-      libraryIsEmpty={rows.length === 0}
+      library={props.library}
+      problems={props.problems}
+      {...(props.renderNotice === undefined ? {} : { renderNotice: props.renderNotice })}
       now={now}
       peekOpen={peekOpen}
       onViewChange={onViewChange}
