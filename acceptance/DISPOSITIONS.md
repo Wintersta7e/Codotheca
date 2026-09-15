@@ -91,7 +91,7 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 23 | 53 |
+| automated | 23 | 54 |
 | deferred | 2 | 2 |
 | manual | 0 | 0 |
 | unmeasurable | 0 | 0 |
@@ -122,7 +122,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P2-23-8 | automated | The version bump is atomic | `AC-P2-23-8` automated, runs now — `query_corpus::rust_parser_matches_every_corpus_case`<br>`AC-P2-23-8-owners` automated, runs now — `query_corpus::rust_tables_transcribe_the_production`<br>`AC-P2-23-8-mirror` automated, runs now — `the shared conformance corpus covers every branch the grammar has, so a divergence has somewhere to show up` |
 | P2-23-9 | automated | The two never-emitted bars exercise the shape | `AC-P2-23-9` automated, runs now — `projects_list::era_notcloned_is_emitted_for_a_zero_location_row_and_only_for_one`<br>`AC-P2-23-9-mirror` automated, runs now — `eraSectionIdFor emits era:notcloned for a zero-location row and for nothing else`<br>`AC-P2-23-9-fixtures` automated, runs now — `notcloned_row::the_two_fixture_builders_pair_location_and_presence` |
 | P2-23-10 | automated | A4's narrowing loses nothing | `AC-P2-23-10` automated, runs now — `index_schema::condition_signal_takes_only_section_5_4_words`<br>`AC-P2-23-10-grep` automated, runs now — `check-forbidden:c58-design-band-names` |
-| P2-23-11 | automated | The blueprint tile is the same machine | `AC-P2-23-11` automated, runs now — `blueprint_renditions::the_scene_hash_does_not_move_when_a_project_is_cloned`<br>`AC-P2-23-11-addresses` automated, runs now — `blueprint_renditions::the_card_and_its_blueprint_share_a_hash_and_share_no_file`<br>`AC-P2-23-11-tile` automated, runs now — `§23.5: the blueprint frame is --tier-blue, and it is not a rung resolves var(--tier-blue) on the real frame element`<br>`AC-P2-23-11-state` automated, runs now — `blueprint_renditions::drawing_a_blueprint_moves_no_art_state_and_no_hero_journal`<br>`AC-P2-23-11-tokens` automated, runs now — `blueprint_renditions::the_blueprint_ink_and_ground_are_the_tokens_the_renderer_declares` |
+| P2-23-11 | automated | The blueprint tile is the same machine | `AC-P2-23-11` automated, runs now — `blueprint_renditions::the_scene_hash_does_not_move_when_a_project_is_cloned`<br>`AC-P2-23-11-addresses` automated, runs now — `blueprint_renditions::the_card_and_its_blueprint_share_a_hash_and_share_no_file`<br>`AC-P2-23-11-tile` automated, runs now — `§23.5: the blueprint frame is --tier-blue, and it is not a rung resolves var(--tier-blue) on the real frame element`<br>`AC-P2-23-11-paint` automated, runs now — `§23.5: the tile asks for the pass it needs, at its own address paints a decoded blueprint on a not-cloned tile`<br>`AC-P2-23-11-state` automated, runs now — `blueprint_renditions::drawing_a_blueprint_moves_no_art_state_and_no_hero_journal`<br>`AC-P2-23-11-tokens` automated, runs now — `blueprint_renditions::the_blueprint_ink_and_ground_are_the_tokens_the_renderer_declares` |
 | P2-23-12 | automated | No dead predicate ships | `AC-P2-23-12` automated, runs now — `§23.7: no dead predicate ships answers has:remote from the projection over a corpus with a located row` |
 
 ## Why a check is not automated, or is automated over less than it looks

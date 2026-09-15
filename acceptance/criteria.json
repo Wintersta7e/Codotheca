@@ -2834,7 +2834,15 @@
           "runner": "vitest",
           "owner": "p2-23",
           "test": "§23.5: the blueprint frame is --tier-blue, and it is not a rung resolves var(--tier-blue) on the real frame element",
-          "assert": "A zero-location row's card resolves var(--tier-blue) on the real frame element, draws no member of the completion ladder once every token reference is resolved, keeps §7.7a's em dash and NOT COMPUTED, requests codotheca://art/<hash>/card-blueprint, and produces no dip at full, reduced or off."
+          "assert": "A zero-location row's card resolves var(--tier-blue) on the real frame element, draws no member of the completion ladder once every token reference is resolved, keeps §7.7a's em dash and NOT COMPUTED, and produces no dip at full, reduced or off."
+        },
+        {
+          "id": "AC-P2-23-11-paint",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-23",
+          "test": "§23.5: the tile asks for the pass it needs, at its own address paints a decoded blueprint on a not-cloned tile",
+          "assert": "R88: the evidence is the bitmap, not the call. A zero-location tile mounts an img.cdt-art carrying codotheca://art/<hash>/card-blueprint, decoded against a fake that renders only what art.url was asked for — so a tile that composes the address without demanding it gets the 404 production gets, and the plate."
         },
         {
           "id": "AC-P2-23-11-state",
