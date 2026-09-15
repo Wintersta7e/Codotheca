@@ -1,5 +1,5 @@
 /**
- * The resident §8.3 projection, one store, fed by one topic.
+ * The resident §8.3 projection: one store, fed by one topic and re-read when a scan run ends.
  *
  * The store is `shelf/ProjectionStore` and the generation is **the store's**. A counter kept
  * beside it is how `orderKey` comes to disagree with the rows it addresses: the page is built
@@ -80,6 +80,22 @@ export function applyProjectsEvent(store: ProjectionStore, event: RendererEvent)
   }
 }
 
+/**
+ * Whether this event is a scan run's last word.
+ *
+ * **The `projects` topic does not announce what a walk writes.** It carries `upserted` for a
+ * project something read, `merged`, `flags_changed`, `condition_changed` and `art_ready` — never
+ * the scan's own inserts, which land in SQLite and are published by nobody. A run ending is
+ * therefore the one moment the resident projection is known to be stale, and re-reading it is
+ * what turns a finished scan into a shelf. Without it a first run indexes everything and shows
+ * §8.3a's empty state until the app is restarted, which is what a packaged build did.
+ *
+ * `cancelled` counts: a cancelled run still wrote every project it reached before it stopped.
+ */
+export function endsAScanRun(event: RendererEvent): boolean {
+  return event.topic === 'scan' && (event.event === 'finished' || event.event === 'cancelled');
+}
+
 interface Snapshot {
   readonly rows: readonly ShelfRow[];
   readonly generation: number;
@@ -127,8 +143,9 @@ export function useLibrary(deps: AppDeps): LibraryState {
     () =>
       subscribe((event) => {
         applyProjectsEvent(store, event);
+        if (endsAScanRun(event)) reload();
       }),
-    [subscribe, store],
+    [subscribe, store, reload],
   );
 
   return useMemo(

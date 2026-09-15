@@ -159,6 +159,60 @@ describe('useLibrary', () => {
     expect(fake.calls.filter((call) => call.name === 'projects.list')).toHaveLength(2);
   });
 
+  it('re-reads the projection when a scan run ends, because no projects event announces a walk', async () => {
+    // The shipped defect: `projects.list` ran once, at mount, over an empty library; the scan
+    // then wrote every project and the shelf said `NOTHING INDEXED YET` until the app was
+    // restarted. The `projects` topic never carries the walk's inserts.
+    let rows: readonly ProjectRow[] = [];
+    const fake = fakeAppDeps({ 'projects.list': () => page(rows, rows.length) });
+    const view = mount(fake);
+    await waitFor(() => {
+      expect(view.last().rows).toEqual([]);
+    });
+
+    rows = [row(1), row(2)];
+    act(() => {
+      fake.emit({ topic: 'scan', event: 'finished', data: {} });
+    });
+    await waitFor(() => {
+      expect(view.last().rows).toHaveLength(2);
+    });
+    expect(fake.calls.filter((call) => call.name === 'projects.list')).toHaveLength(2);
+  });
+
+  it('re-reads on a cancelled run too, which still wrote every project it reached', async () => {
+    let rows: readonly ProjectRow[] = [];
+    const fake = fakeAppDeps({ 'projects.list': () => page(rows, rows.length) });
+    const view = mount(fake);
+    await waitFor(() => {
+      expect(view.last().rows).toEqual([]);
+    });
+
+    rows = [row(4)];
+    act(() => {
+      fake.emit({ topic: 'scan', event: 'cancelled', data: {} });
+    });
+    await waitFor(() => {
+      expect(view.last().rows).toHaveLength(1);
+    });
+  });
+
+  it('does not re-read on a scan event that is not a run ending', async () => {
+    // `progress` arrives many times a second on a large walk. A read per frame would put the
+    // shelf's whole projection on the critical path of the scan it is watching.
+    const fake = fakeAppDeps({ 'projects.list': () => page([]) });
+    mount(fake);
+    await waitFor(() => {
+      expect(fake.calls).toHaveLength(1);
+    });
+    act(() => {
+      fake.emit({ topic: 'scan', event: 'progress', data: { walkedDirs: 10 } });
+      fake.emit({ topic: 'scan', event: 'repo_found', data: {} });
+      fake.emit({ topic: 'scan', event: 'run_started', data: {} });
+    });
+    expect(fake.calls.filter((call) => call.name === 'projects.list')).toHaveLength(1);
+  });
+
   it('a refused projects.list leaves the library uncomputed rather than empty', async () => {
     const fake = fakeAppDeps({
       'projects.list': () => {
