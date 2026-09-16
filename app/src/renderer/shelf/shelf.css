@@ -725,3 +725,34 @@
   border-color: var(--sig);
   box-shadow: inset 0 0 0 1px var(--sig);
 }
+
+/* [p2] §25.3a — what a not-cloned row renders in place of the facts it has no history for. */
+.cdt-peek-remote {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+}
+.cdt-peek-remote-key {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+.cdt-peek-remote-visibility {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+}
+.cdt-peek-remote-blocks {
+  display: flex;
+  gap: 8px;
+}
+.cdt-peek-remote-observed {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}

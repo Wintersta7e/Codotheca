@@ -167,6 +167,33 @@ describe('§25.4: the forge types are imported only by the surfaces that render 
 });
 
 /**
+ * **AC-P2-25-23's import half.** §25.3a renders the tab's blocks *at Peek's size*, **from the
+ * same producer** — it is not a second place they are computed.
+ *
+ * §25.4's importer gate cannot catch this on its own: it **admits** `Peek.tsx` deliberately, so
+ * a copy of the four-state logic written inside that file passes it. The plan expected that gate
+ * to name the file; it cannot, and this is the assertion that can — the same import shape
+ * AC-P2-25-5 uses for `fetchClause`.
+ */
+describe('AC-P2-25-23 Peek draws the blocks from the tab producer, not a copy', () => {
+  it('imports RemoteBlock rather than declaring one', () => {
+    const found = files.find(([path]) => path === 'src/renderer/shelf/Peek.tsx');
+    expect(found, 'Peek.tsx was not scanned').toBeDefined();
+    const source = found?.[1] ?? '';
+    expect(source.length, 'the source was not read').toBeGreaterThan(200);
+    expect(source).toMatch(
+      /import \{[^}]*\bRemoteBlock\b[^}]*\} from '\.\.\/project\/remote\/remoteBlocks\.js'/u,
+    );
+    const code = codeOf(source);
+    expect(code).not.toMatch(/function RemoteBlock\b/u);
+    expect(code).not.toMatch(/const RemoteBlock\b/u);
+    // The four-state vocabulary belongs to the producer. A copy here would have to name one.
+    expect(code.includes("'not_observed'")).toBe(false);
+    expect(code.includes("'no_account'")).toBe(false);
+  });
+});
+
+/**
  * **AC-P2-25-8's source half.** *"A build capable of rendering `PRIVATE` while having no code
  * path that renders `PUBLIC` fails."* A rendered-output test alone cannot see that: a build with
  * no `PUBLIC` branch renders correctly on every `private` fixture, and the absence of the word is

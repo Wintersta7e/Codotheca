@@ -571,9 +571,11 @@
 
     "Peek": {
       "kind": "struct",
+      "$comment": "[p2] §25.3a: `remote` is NULL iff project.remote_key is NULL, the same predicate ProjectDetail.remote carries. Peek draws §25.1's blocks at Peek's size from the same producer; it is not a second place they are computed.",
       "fields": {
         "id": "ProjectId",
         "readme": "ReadmeState",
+        "remote": "RemoteFacts?",
         "commits": "[CommitRef]",
         "location": "LocationRef?",
         "worktree": "WorktreeObservation",

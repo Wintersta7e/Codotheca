@@ -106,11 +106,15 @@ describe('commit rows', () => {
 });
 
 describe('peekFacts', () => {
+  // [p2] A **cloned** project with nothing computed. The fixture carried `location: null`,
+  // which is now a different row shape entirely (§25.3a) — and the five-fact rule below is
+  // about a project that has a working copy and no job has run over it yet.
   const base = {
     id: 1,
     readme: readme('absent'),
     commits: [],
-    location: null,
+    location: { id: 1, pathDisplay: '~/work/aurora' },
+    remote: null,
     worktree: { observedAt: null, isDirty: null, untrackedCount: null },
     birthYear: null,
     primaryLanguage: null,
@@ -122,7 +126,7 @@ describe('peekFacts', () => {
   const valueOf = (peek: Peek, key: string): string | undefined =>
     peekFacts(peek, NOW).find((f) => f.key === key)?.value;
 
-  it('renders exactly five facts, and COMPLETION is not among them', () => {
+  it('renders exactly five facts for a cloned row, and COMPLETION is not among them', () => {
     expect(peekFacts(base, NOW).map((f) => f.key)).toEqual([...PEEK_FACT_KEYS]);
     expect(PEEK_FACT_KEYS).toHaveLength(5);
     expect(PEEK_FACT_KEYS.join(' ')).not.toContain('COMPLETION');
@@ -149,5 +153,55 @@ describe('peekFacts', () => {
     const peek = { ...base, playtimeSeconds: 2 * 3600 + 7 * 60 } as Peek;
     expect(valueOf(peek, 'PLAYTIME')).toBe(formatPlaytime(2 * 3600 + 7 * 60));
     expect(valueOf(peek, 'PLAYTIME')).toBe('2.1h');
+  });
+});
+
+/**
+ * **AC-P2-25-23, the fact-set half.** §25.3a: a not-cloned row renders a **different set**, not
+ * §8.4.1's five with dashes in them.
+ *
+ * `PLAYTIME` is the one that leaves. `PLAYTIME 0h` is §8.4.1's one honest zero and that carve-out
+ * is about a *cloned* project that was never launched; printing `0h` beside an install affordance
+ * borrows it for a case it was never true of.
+ */
+describe('AC-P2-25-23 the not-cloned fact set', () => {
+  const notCloned = {
+    id: 1,
+    readme: readme('absent'),
+    commits: [],
+    location: null,
+    remote: null,
+    worktree: { observedAt: null, isDirty: null, untrackedCount: null },
+    birthYear: null,
+    primaryLanguage: null,
+    sizeTrackedBytes: null,
+    lastCommitAt: null,
+    playtimeSeconds: 0,
+    interruptedOp: null,
+  } as unknown as Peek;
+
+  it('drops PLAYTIME entirely, asserted as an absence and not as a dash', () => {
+    const keys = peekFacts(notCloned, NOW).map((f) => f.key);
+    expect(keys).not.toContain('PLAYTIME');
+    expect(keys).toEqual(['BIRTH', 'LANGUAGE', 'TRACKED', 'LAST COMMIT']);
+    expect(
+      peekFacts(notCloned, NOW)
+        .map((f) => f.value)
+        .join(' '),
+    ).not.toContain('0h');
+  });
+
+  it('renders the glyph for the three history-derived facts', () => {
+    const byKey = new Map(peekFacts(notCloned, NOW).map((f) => [f.key, f.value]));
+    for (const key of ['BIRTH', 'TRACKED', 'LAST COMMIT'] as const) {
+      expect(byKey.get(key)).toBe(UNCOMPUTED_FACT);
+    }
+  });
+
+  it('renders the forge language when observed and the glyph otherwise', () => {
+    const byKey = new Map(peekFacts(notCloned, NOW).map((f) => [f.key, f.value]));
+    expect(byKey.get('LANGUAGE')).toBe(UNCOMPUTED_FACT);
+    const observed = { ...notCloned, primaryLanguage: 'Rust' } as Peek;
+    expect(peekFacts(observed, NOW).find((f) => f.key === 'LANGUAGE')?.value).toBe('Rust');
   });
 });
