@@ -15,7 +15,7 @@ use codotheca_core::art::testsupport::CollectingSink;
 use codotheca_core::jobs::j6_content::J6_BYTE_CAP;
 use codotheca_core::protocol::{ErrorCode, ReadmeSource, ReadmeStateKind};
 use codotheca_core::readme::source::read_readme_source;
-use codotheca_core::readme::{dispatch_readme_command, ReadmeCtx, ReadmeError};
+use codotheca_core::readme::{dispatch_readme_command, ReadmeCtx, ReadmeError, README_COMMANDS};
 use codotheca_core::testing::TempIndex;
 
 const NOW: i64 = 1_781_179_200;
@@ -205,5 +205,41 @@ fn the_command_is_dispatched_by_name_and_serialises_the_wire_shape() {
     assert!(
         dispatch_readme_command(&ctx, "projects.get", serde_json::json!({})).is_none(),
         "a command this module does not own is None, which is what the router chains on"
+    );
+}
+
+/// R37's defect, in this module's terms: the schema, the router and the module's own census must
+/// name the same three commands. The Rust side is compared here because no JavaScript test can
+/// read a Rust constant, and `protocol/test/surface.test.mjs` declares its own list of the same
+/// names — two lists, so something has to compare them to the thing they describe.
+#[test]
+fn the_census_is_exactly_what_the_router_sends_to_this_module() {
+    use codotheca_core::assembly::route::{command_name, route, Route};
+
+    let schema = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../protocol/schema/protocol.json"),
+    )
+    .expect("protocol.json is readable");
+    let doc: serde_json::Value = serde_json::from_str(&schema).expect("protocol.json parses");
+    let mut routed: Vec<String> = doc["commands"]
+        .as_array()
+        .expect("commands is an array")
+        .iter()
+        .filter_map(|c| c["name"].as_str())
+        .filter(|name| {
+            matches!(
+                route(command_name(name).expect("routable")),
+                Route::Readme | Route::ReadmeNet
+            )
+        })
+        .map(str::to_owned)
+        .collect();
+    routed.sort();
+
+    let mut census: Vec<String> = README_COMMANDS.iter().map(|c| (*c).to_owned()).collect();
+    census.sort();
+    assert_eq!(
+        census, routed,
+        "the census and the router name different commands"
     );
 }

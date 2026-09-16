@@ -14,6 +14,21 @@
 //! **The header constraint is inherited, not re-imposed.** `HttpTransport` adds no
 //! `Authorization`, no cookie jar and no `Referer` (`core/src/http/mod.rs:15-20`), and a header
 //! set in wave 1 cannot be unset by a consumer in wave 5. This module adds none of its own.
+//!
+//! # Two limits this build does not close, recorded rather than implied
+//!
+//! **1. No redirect is followed at all.** See [`REDIRECT_LIMIT`]. Some real badge services answer
+//! a `302`; those badges render as an unfetched placeholder for as long as this stands.
+//!
+//! **2. The addresses vetted are not the addresses connected to.** The host clause below resolves
+//! the name and checks every answer, and then hands the **URL** — not an address — to the
+//! transport, which resolves again. An attacker who controls DNS for a host their README names
+//! can answer public on the first lookup and private on the second, which defeats the address
+//! clause and the mapped-address fold with it. Closing it means connecting to the vetted address
+//! with `Host` and SNI pinned to the name, which `core::http` does not offer and which is
+//! p2-20's file to widen, not this one's. **Nothing here should be read as covering it**: the
+//! tests below exercise a resolver that answers consistently, which is this guard's happy path
+//! and not rebinding.
 
 use std::net::IpAddr;
 
@@ -78,12 +93,27 @@ pub fn is_public_address(addr: IpAddr) -> bool {
                 || (v4.octets()[0] == 100 && (64..128).contains(&v4.octets()[1])))
         }
         IpAddr::V6(v6) => {
-            !(v6.is_loopback()
+            // **The v6 refusals run first, and the order is load-bearing.** `to_ipv4` folds the
+            // deprecated IPv4-compatible form, and under it `::1` becomes `0.0.0.1` — which the
+            // v4 arm calls public, because it is. Asking v6's own questions first is what keeps
+            // loopback refused; measured, the other order reported `::1` as reachable.
+            let v6_refused = v6.is_loopback()
                 || v6.is_unspecified()
                 // RFC4193 unique-local fc00::/7 and RFC4291 link-local fe80::/10. Neither has a
                 // stable predicate on stable Rust, so the prefixes are read from the octets.
                 || (v6.octets()[0] & 0xfe) == 0xfc
-                || (v6.octets()[0] == 0xfe && (v6.octets()[1] & 0xc0) == 0x80))
+                || (v6.octets()[0] == 0xfe && (v6.octets()[1] & 0xc0) == 0x80);
+            if v6_refused {
+                return false;
+            }
+            // **An IPv4 address wearing a v6 hat is still that address.**
+            // `::ffff:169.254.169.254` is the cloud metadata endpoint the v4 arm refuses by
+            // name, and `Ipv6Addr::is_loopback` is `::1` and nothing else — so without this the
+            // v4 arm's whole refusal set had a second door standing open, reachable from any
+            // AAAA record a stranger's README points at.
+            // `map_or(true, …)` rather than `is_none_or`, which is newer than this crate's MSRV.
+            v6.to_ipv4()
+                .map_or(true, |v4| is_public_address(IpAddr::V4(v4)))
         }
     }
 }

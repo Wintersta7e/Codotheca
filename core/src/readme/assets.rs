@@ -64,8 +64,50 @@ pub fn classify_ref(raw: &str) -> AssetRef {
     match reqwest::Url::parse(raw) {
         Ok(url) if url.scheme() == "https" => AssetRef::Remote(Box::new(url)),
         Ok(_) => AssetRef::Rejected(ReadmeAssetState::Unreachable),
-        Err(_) => AssetRef::Local(raw.to_owned()),
+        // **Decoded here, before anything looks at its components.** `markdown-it` percent-encodes
+        // a link destination, so `docs/架构.png` arrives as `docs/%E6%9E%B6%E6%9E%84.png` and a
+        // space arrives as `%20`; joined literally, neither file is ever found and an ordinary
+        // repository's own diagram is reported `not_an_image` — a false claim about a file that
+        // exists. The reply still echoes the **original** reference, because that is what the
+        // renderer matches its placeholder on.
+        Err(_) => AssetRef::Local(percent_decoded(raw)),
     }
+}
+
+/// One pass of `%XX` decoding, or the input unchanged.
+///
+/// **Order matters and is the whole safety argument**: this runs in `classify_ref`, *before*
+/// [`resolve_local_asset`]'s lexical clause, so `..%2Fsecret.png` becomes `../secret.png` and is
+/// then refused as the `..` it is. Decoding *after* that clause would walk it straight through.
+///
+/// One pass, never recursive: `%252e` decodes to `%2e` and stops, so a doubly-encoded traversal
+/// cannot be assembled by decoding twice. A sequence that is not valid UTF-8 once decoded is left
+/// alone — a filename this build cannot name in a `String` is one it does not open.
+#[must_use]
+pub fn percent_decoded(raw: &str) -> String {
+    if !raw.contains('%') {
+        return raw.to_owned();
+    }
+    let bytes = raw.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes.get(index).copied().unwrap_or(b'\0');
+        let decoded = if byte == b'%' {
+            let hex = raw.get(index + 1..index + 3);
+            hex.and_then(|hex| u8::from_str_radix(hex, 16).ok())
+        } else {
+            None
+        };
+        if let Some(value) = decoded {
+            out.push(value);
+            index += 3;
+        } else {
+            out.push(byte);
+            index += 1;
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| raw.to_owned())
 }
 
 /// The media type of `bytes`, sniffed from the bytes themselves.
@@ -186,6 +228,12 @@ impl std::fmt::Debug for AssetDeps<'_> {
 /// References are **de-duplicated on first appearance**: one entry per distinct reference, and
 /// therefore at most one request per distinct URL. The renderer matches rows back to nodes by
 /// `ref`, so a document naming one badge three times renders three images from one read.
+///
+/// **The two lists are interleaved, and that is a correctness fix rather than a nicety.** Taking
+/// locals first meant a README with 24 or more local images and one badge produced **no row at
+/// all** for the badge — so nothing was `blocked`, the panel's consent block is drawn only when
+/// something is, and the one control that would let the user load remote images was never
+/// rendered. The cap is deliberate; removing the user's only way to act was not.
 #[must_use]
 pub fn read_readme_assets(
     deps: &AssetDeps<'_>,
@@ -196,7 +244,7 @@ pub fn read_readme_assets(
     let mut answers: Vec<ReadmeAsset> = Vec::new();
     let mut source_bytes: usize = 0;
 
-    for reference in local.iter().chain(remote.iter()) {
+    for reference in interleaved(local, remote) {
         if seen.len() >= ASSET_COUNT_CAP {
             break;
         }
@@ -241,6 +289,25 @@ pub fn read_readme_assets(
     }
 
     answers
+}
+
+/// The two lists, one from each in turn, so neither can starve the other out of the count cap.
+///
+/// Order within the reply does not matter — the renderer matches by `ref` — so the only thing this
+/// decides is **which** references get a row when there are more than [`ASSET_COUNT_CAP`] of them.
+fn interleaved<'a>(local: &'a [String], remote: &'a [String]) -> Vec<&'a String> {
+    let mut out: Vec<&String> = Vec::with_capacity(local.len() + remote.len());
+    let mut index = 0;
+    while index < local.len() || index < remote.len() {
+        if let Some(reference) = local.get(index) {
+            out.push(reference);
+        }
+        if let Some(reference) = remote.get(index) {
+            out.push(reference);
+        }
+        index += 1;
+    }
+    out
 }
 
 /// A row carrying a state and nothing else. `dataUri` absent because there are no bytes, and

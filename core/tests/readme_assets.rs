@@ -35,8 +35,12 @@ fn public_resolver(_host: &str, _port: u16) -> std::io::Result<Vec<std::net::IpA
     Ok(vec!["203.0.113.10".parse().expect("literal")])
 }
 
-/// A resolver that answers with a private address, which is the DNS-rebinding shape: the literal
-/// is innocent and the answer is not.
+/// A resolver that answers with a private address **consistently**.
+///
+/// **This is not the rebinding shape**, and saying so is the point: rebinding is answering public
+/// to the check and private to the connection, which this build cannot see at all because the
+/// transport resolves the name a second time (`core/src/readme/fetch.rs`'s header, limit 2). What
+/// this fixture exercises is the guard's happy path — a name whose answer is private every time.
 #[allow(clippy::unnecessary_wraps)]
 fn private_resolver(_host: &str, _port: u16) -> std::io::Result<Vec<std::net::IpAddr>> {
     Ok(vec!["192.168.1.7".parse().expect("literal")])
@@ -143,6 +147,78 @@ fn traversal_and_absolute_paths_are_refused_before_the_disk_is_touched() {
     assert_eq!(
         resolve_local_asset(&root, &absolute.to_string_lossy()),
         Err(ReadmeAssetState::NotAnImage)
+    );
+}
+
+#[test]
+fn a_percent_encoded_local_reference_resolves_to_the_file_it_names() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir(tmp.path().join("docs")).expect("mkdir");
+    // The two shapes `markdown-it` produces: a non-ASCII name and a name with a space.
+    std::fs::write(tmp.path().join("docs/架构.png"), png(32)).expect("write");
+    std::fs::write(tmp.path().join("docs/my image.png"), png(32)).expect("write");
+    let http = FakeTransport::new();
+    let deps = deps(tmp.path(), None, &http, public_resolver);
+
+    let refs = vec![
+        "docs/%E6%9E%B6%E6%9E%84.png".to_owned(),
+        "docs/my%20image.png".to_owned(),
+    ];
+    let rows = read_readme_assets(&deps, &refs, &[]);
+    for reference in &refs {
+        assert_eq!(
+            state_of(&rows, reference),
+            ReadmeAssetState::Ok,
+            "{reference} names a real PNG"
+        );
+    }
+    // The reply echoes the reference **as the document wrote it**, because that is what the
+    // renderer matches its placeholder on.
+    assert_eq!(rows[0].r#ref, refs[0]);
+}
+
+/// An encoded traversal, judged **the way production judges one**: `classify_ref` decodes and
+/// `resolve_local_asset` rules on what it returns. Calling the resolver with an already-decoded
+/// string would assert the predicate and skip the composition, which is where the ordering lives.
+///
+/// **Three mutations were run against this, and they say exactly what each guard is worth.**
+/// Decode moved after the lexical clause, clause 2 intact: still refused — canonicalisation sees
+/// the escape. Decode first, clause 2 reduced to the lexical check: still refused — clause 1 sees
+/// a real `..`. **Both weakened at once: `..%2Fsecret.png` resolves and this test fails.** The two
+/// are redundant on this input by design, which is why neither alone is the answer and why the
+/// decode's position is argued in `percent_decoded`'s doc comment rather than by this assertion
+/// alone.
+#[test]
+fn an_encoded_traversal_is_refused_through_the_composition_production_uses() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().join("repo");
+    std::fs::create_dir(&root).expect("mkdir");
+    std::fs::write(tmp.path().join("secret.png"), png(32)).expect("write");
+
+    for reference in [
+        "..%2Fsecret.png",
+        "%2E%2E%2Fsecret.png",
+        "docs%2F..%2F..%2Fsecret.png",
+        // A doubly-encoded traversal decodes **once**, to `%2e%2e/`, which is not a component.
+        "%252E%252E%2Fsecret.png",
+    ] {
+        let AssetRef::Local(local) = classify_ref(reference) else {
+            panic!("{reference} must classify as local");
+        };
+        assert_eq!(
+            resolve_local_asset(&root, &local),
+            Err(ReadmeAssetState::NotAnImage),
+            "{reference} must be refused"
+        );
+    }
+
+    // …and the whole command answers the same way, which is what a reader sees.
+    let http = FakeTransport::new();
+    let deps = deps(&root, None, &http, public_resolver);
+    let rows = read_readme_assets(&deps, &["..%2Fsecret.png".to_owned()], &[]);
+    assert_eq!(
+        state_of(&rows, "..%2Fsecret.png"),
+        ReadmeAssetState::NotAnImage
     );
 }
 
@@ -318,6 +394,40 @@ fn the_twenty_fifth_reference_is_dropped_from_the_reply_entirely() {
     );
 }
 
+/// **A README with more than a cap's worth of local images still gets a row for its badge.**
+///
+/// With the two lists taken in sequence, locals first, a document like this produced no row for
+/// the remote reference at all: nothing was `blocked`, so the panel drew no consent control, and
+/// the user had no way to load remote images for that repository — the cap silently removing the
+/// only affordance that answers it.
+#[test]
+fn a_remote_reference_still_gets_a_row_behind_a_cap_of_local_ones() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mut locals = Vec::new();
+    for n in 0..(ASSET_COUNT_CAP * 2) {
+        let name = format!("img{n}.png");
+        std::fs::write(tmp.path().join(&name), png(32)).expect("write");
+        locals.push(name);
+    }
+    let http = FakeTransport::new();
+    let deps = deps(tmp.path(), None, &http, public_resolver);
+    let badge = "https://cdn.example.test/badge.svg".to_owned();
+
+    let rows = read_readme_assets(&deps, &locals, std::slice::from_ref(&badge));
+    assert_eq!(rows.len(), ASSET_COUNT_CAP, "the cap still holds");
+    assert_eq!(
+        state_of(&rows, &badge),
+        ReadmeAssetState::Blocked,
+        "the badge has a row, so the panel can offer the consent that would load it"
+    );
+    // …and it cost one local slot, not the whole reply.
+    let locals_answered = rows
+        .iter()
+        .filter(|r| !r.r#ref.starts_with("https:"))
+        .count();
+    assert_eq!(locals_answered, ASSET_COUNT_CAP - 1);
+}
+
 #[test]
 fn a_reference_named_twice_is_read_once_and_answered_once() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -444,16 +554,74 @@ fn a_private_or_loopback_host_is_refused_before_a_socket_is_opened() {
     assert!(is_fetchable_host(&allowed));
 }
 
+/// **Every range the v4 arm refuses, in its v6 clothes.**
+///
+/// `::ffff:169.254.169.254` is the cloud metadata endpoint; `Ipv6Addr::is_loopback` is `::1` and
+/// nothing else, so a predicate that only asked the v6 questions answered *public* for all of
+/// these. Asserting the whole set rather than the one that was found first is what stops the next
+/// range being the next hole.
 #[test]
-fn a_public_name_resolving_to_a_private_address_is_refused() {
+fn an_ipv4_address_in_v6_clothes_is_refused_exactly_as_the_v4_address_is() {
+    for refused in [
+        "::ffff:127.0.0.1",
+        "::ffff:169.254.169.254",
+        "::ffff:10.0.0.1",
+        "::ffff:192.168.0.1",
+        "::ffff:172.16.0.1",
+        "::ffff:0.0.0.0",
+        "::ffff:255.255.255.255",
+        "::ffff:100.64.0.1",
+        // The deprecated IPv4-compatible form routes the same way.
+        "::127.0.0.1",
+        "::169.254.169.254",
+        // …and the v6 ranges themselves, which the other arm answers.
+        "::1",
+        "fc00::1",
+        "fd12:3456::1",
+        "fe80::1",
+        "::",
+    ] {
+        let addr: std::net::IpAddr = refused.parse().expect("literal");
+        assert!(!is_public_address(addr), "{refused} must be refused");
+    }
+
+    // …and a real v6 address is still reachable, so the arm refuses a set rather than everything.
+    for allowed in ["2001:db8::1", "2606:4700::1111"] {
+        let addr: std::net::IpAddr = allowed.parse().expect("literal");
+        assert!(is_public_address(addr), "{allowed} must be allowed");
+    }
+}
+
+/// A resolver that answers with a mapped private address — the shape a hostile AAAA record has.
+#[allow(clippy::unnecessary_wraps)]
+fn mapped_private_resolver(_host: &str, _port: u16) -> std::io::Result<Vec<std::net::IpAddr>> {
+    Ok(vec!["::ffff:169.254.169.254".parse().expect("literal")])
+}
+
+#[test]
+fn a_name_resolving_to_a_mapped_metadata_address_opens_no_socket() {
     let http = FakeTransport::new();
     http.push(ok_response(png(64)));
-    let url = reqwest::Url::parse("https://rebind.example.test/badge.png").expect("parse");
+    let url = reqwest::Url::parse("https://badge.example.test/b.png").expect("parse");
+    assert_eq!(
+        fetch_remote_asset(&http, &url, mapped_private_resolver),
+        Err(ReadmeAssetState::Unreachable)
+    );
+    assert_eq!(http.request_count(), 0);
+}
+
+/// The host clause refuses a name whose **every** answer is private. It does not — and cannot —
+/// refuse one that answers public here and private to the socket: see `fetch.rs`'s limit 2.
+#[test]
+fn a_name_whose_every_answer_is_private_is_refused() {
+    let http = FakeTransport::new();
+    http.push(ok_response(png(64)));
+    let url = reqwest::Url::parse("https://private.example.test/badge.png").expect("parse");
 
     assert_eq!(
         fetch_remote_asset(&http, &url, private_resolver),
         Err(ReadmeAssetState::Unreachable),
-        "the literal is innocent and the answer is not"
+        "the literal is innocent and every answer is not"
     );
     assert_eq!(http.request_count(), 0);
     assert!(!is_public_address("192.168.1.7".parse().expect("literal")));

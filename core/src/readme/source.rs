@@ -84,25 +84,15 @@ pub fn read_readme_source(
 ) -> Result<ReadmeSource, ReadmeError> {
     let work_dir = work_dir_of(ctx.index.conn(), project, location)?;
 
-    // The listing is what separates *absent* from *unreadable*. `File::open` alone cannot: a
-    // missing file and an unreadable directory both answer `NotFound` on some platforms, and
-    // answering `absent` there would claim the user has no README when nothing looked.
-    let entries = std::fs::read_dir(&work_dir).map_err(ReadmeError::Unreadable)?;
-    let mut present: std::collections::BTreeSet<std::ffi::OsString> =
-        std::collections::BTreeSet::new();
-    for entry in entries {
-        let entry = entry.map_err(ReadmeError::Unreadable)?;
-        present.insert(entry.file_name());
-    }
-
+    // **Five `open` calls, not a directory listing.** This runs under the process's one SQLite
+    // mutex (`Route::Readme`), once per project-page open, and the corpus this project measures
+    // itself against includes a 14,000-file working tree — reading every entry of it to decide
+    // membership of a five-element list is an unbounded wait on the writer lock, which is the
+    // thing R75's carve-out exists to keep off it. The listing below still happens, but only on
+    // the branch that needs it.
     for name in README_NAMES {
-        if !present.contains(std::ffi::OsStr::new(name)) {
-            continue;
-        }
         let path = work_dir.join(name);
         let Ok(file) = std::fs::File::open(&path) else {
-            // A name the directory listed and this process cannot open is not an absence
-            // either: it is a file that is there and unreadable.
             continue;
         };
         let mut bytes = Vec::new();
@@ -121,9 +111,13 @@ pub fn read_readme_source(
         });
     }
 
-    // The directory listed and held none of them. That is a fact about the disk, so it is a
-    // positive answer rather than an error — and it carries no `readAt`, because there is no
-    // document a read happened to.
+    // **Nothing opened — and only now does the distinction cost anything.** A missing file and an
+    // unreadable directory both answer `NotFound` on some platforms, so a failed `open` alone
+    // cannot tell *absent* from *we could not look*: `absent` is a positive claim about the user's
+    // disk and is never made on a directory this process could not read. One `read_dir` answers
+    // that, on the one branch where the answer is in doubt.
+    std::fs::read_dir(&work_dir).map_err(ReadmeError::Unreadable)?;
+
     Ok(ReadmeSource {
         state: ReadmeStateKind::Absent,
         path: None,

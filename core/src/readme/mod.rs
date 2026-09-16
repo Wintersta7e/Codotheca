@@ -41,6 +41,11 @@ impl std::fmt::Debug for ReadmeCtx<'_> {
 
 /// The commands this module owns, as data, so the seam and the router cannot drift apart — the
 /// shape of the defect R37 found between the schema and the handlers.
+///
+/// **It is read, not decorative.** [`dispatch_readme_command`] refuses anything outside it before
+/// it matches, and `core/tests/readme_source.rs` compares it against the commands
+/// `crate::assembly::route` actually sends here. A constant that nothing reads is a comment
+/// claiming a guarantee it does not provide (R90).
 pub const README_COMMANDS: [&str; 3] = [
     "projects.readme",
     "projects.readmeAssets",
@@ -148,9 +153,16 @@ pub fn dispatch_readme_command(
     command: &str,
     args: serde_json::Value,
 ) -> Option<Result<serde_json::Value, CommandFailure>> {
+    // The census decides ownership; the match below only decides which handler. Two lists that
+    // could disagree are one list too many.
+    if !README_COMMANDS.contains(&command) {
+        return None;
+    }
     match command {
         "projects.readme" => Some(source::handle_readme(ctx, args)),
         "projects.setReadmeRemote" => Some(consent::handle_set_readme_remote(ctx, args)),
+        // `projects.readmeAssets` is in the census and is answered off the index guard, so it
+        // never reaches this dispatcher — `Route::ReadmeNet` returns before the lock is taken.
         _ => None,
     }
 }
