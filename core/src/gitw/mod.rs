@@ -22,8 +22,14 @@
 //! > phase list**. The four exclusions above are scheduling, not omission, and a reader who takes
 //! > that line as a phase list adds them back.
 
+pub mod backend;
+pub mod credential;
+pub mod exec;
 pub mod intent;
 
+pub use backend::{MutatingGit, SystemMutatingGit};
+pub use credential::CredentialChannel;
+pub use exec::{write_base_args, FilterDrivers, WriteEnv, WriteExec};
 #[cfg(feature = "testkit")]
 pub use intent::AuditFixture;
 pub use intent::{Intent, IntentKind, IntentRefusal, RemoteName, RemoteUrl};
