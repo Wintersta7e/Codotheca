@@ -6,7 +6,7 @@
  * stylesheets and document reach for nothing off the machine, and that the three type
  * families were emitted as local assets.
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -217,6 +217,36 @@ if (typeof rootPackage.main !== 'string') {
   fail('the root package.json declares no main, so electron-builder has no entry point');
 } else if (!existsSync(join(root, rootPackage.main))) {
   fail(`the root package.json main does not exist: ${rootPackage.main}`);
+}
+
+/**
+ * [p2] AC-P2-25-21's row, for the acceptance register.
+ *
+ * Written only when `acceptance/results/` exists, which is the shape the other static gates use:
+ * the directory is gitignored and the register joins whatever is in it, so a run that did not
+ * produce one is *absent* rather than silently passing.
+ */
+const MARKUP_CHUNK_CHECK = 'check-bundle:markup-lazy-chunk';
+const resultsDir = join(root, 'acceptance/results');
+if (existsSync(resultsDir)) {
+  const chunkFailures = failures.filter(
+    (message) =>
+      message.includes('chunk') || message.includes('first paint') || message.includes('mermaid'),
+  );
+  writeFileSync(
+    join(resultsDir, 'script-bundle.json'),
+    `${JSON.stringify(
+      [
+        {
+          id: MARKUP_CHUNK_CHECK,
+          status: chunkFailures.length === 0 ? 'passed' : 'failed',
+          detail: chunkFailures.join('; '),
+        },
+      ],
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 if (failures.length > 0) {
