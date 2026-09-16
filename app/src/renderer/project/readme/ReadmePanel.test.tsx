@@ -228,6 +228,49 @@ describe('§25.5 the panel renders the document in a frame', () => {
     expect(calls).toEqual(['projects.readme', 'projects.readmeAssets']);
   });
 
+  /**
+   * **AC-P2-25-16, on the element the panel renders.**
+   *
+   * The whole threat model rests on this one attribute: present and **exactly empty** is an opaque
+   * origin with every flag off, and script execution dead twice over. The assertion has to read it
+   * off what `ReadmePanel` produced — an earlier version built its own `iframe` and asserted that
+   * `setAttribute` works, under which deleting the attribute from the component left every gate in
+   * the repository green.
+   */
+  it('readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty', async () => {
+    const { request, release } = bridge('# widget\n');
+    render(
+      withDeps(
+        <ReadmePanel readme={present} row={rowFixture()} now={NOW} locationId={LOCATION} />,
+        request,
+      ),
+    );
+    release();
+    const frame = await screen.findByTestId('cp-readme-frame', undefined, SETTLE);
+
+    expect(frame.tagName.toLowerCase()).toBe('iframe');
+    expect(frame.hasAttribute('sandbox')).toBe(true);
+    expect(frame.getAttribute('sandbox')).toBe('');
+    // Every flag, by name, off the rendered attribute — so widening it fails as loudly as
+    // removing it.
+    for (const flag of [
+      'allow-scripts',
+      'allow-same-origin',
+      'allow-forms',
+      'allow-popups',
+      'allow-top-navigation',
+      'allow-downloads',
+      'allow-modals',
+      'allow-pointer-lock',
+      'allow-presentation',
+      'allow-orientation-lock',
+    ]) {
+      expect((frame.getAttribute('sandbox') ?? '').includes(flag), flag).toBe(false);
+    }
+    // …and the frame is carrying a document, so this is not an assertion about an empty element.
+    expect((frame.getAttribute('srcdoc') ?? '').length).toBeGreaterThan(100);
+  });
+
   it('states that the document was cut, and that its links are inert', async () => {
     const { request, release } = bridge('# widget\n\n[docs](https://example.test)\n');
     render(

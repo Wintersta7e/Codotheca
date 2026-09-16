@@ -153,6 +153,11 @@ test('AC-P2-25-18 the request census with consent absent', async () => {
     // **The artefact.** The frame exists and its document rendered.
     const frame = window.locator('[data-testid="cp-readme-frame"]');
     await expect(frame).toHaveCount(1, { timeout: 60_000 });
+
+    // **AC-P2-25-16 off the real element, in the real engine.** The attribute present and exactly
+    // empty is the whole threat model: an opaque origin with every flag off. Asserted here as well
+    // as in jsdom because this is the one place it is read by the Chromium that enforces it.
+    await expect(frame).toHaveAttribute('sandbox', '');
     interface FrameContents {
       blocks: number;
       images: number;

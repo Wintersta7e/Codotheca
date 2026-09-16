@@ -122,10 +122,26 @@ describe('the anchors statement', () => {
   });
 });
 
-describe('readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty', () => {
-  it('is exactly empty on the element the panel renders', () => {
-    // The panel's own element, built the way React builds it, so this asserts the attribute a
-    // browser would see rather than the props object.
+/**
+ * **This file does NOT carry AC-P2-25-16.** It asserts what the DOM does with an attribute, which
+ * is a fact about the browser and not about the product: an earlier version of it claimed to
+ * assert "the element the panel renders" while building its own `iframe`, so deleting
+ * `sandbox=""` from `ReadmePanel.tsx` left every gate green. The criterion now lives on
+ * `ReadmePanel.test.tsx`, which renders the panel and reads the attribute off the element React
+ * produced, and on the census, which reads it off the real Chromium element.
+ *
+ * What is left here is the **serialised flag vocabulary**: whatever the sandbox attribute is, the
+ * document it wraps must never name a flag that would undo it.
+ */
+describe('the sandbox vocabulary', () => {
+  it('names no flag in the document the frame carries', () => {
+    const srcdoc = srcdocFor('# widget\n\n[docs](https://example.test)\n');
+    for (const flag of ['allow-scripts', 'allow-same-origin', 'allow-top-navigation']) {
+      expect(srcdoc.includes(flag), flag).toBe(false);
+    }
+  });
+
+  it('is exactly empty when the DOM is asked for it', () => {
     const frame = document.createElement('iframe');
     frame.setAttribute('sandbox', '');
     frame.setAttribute('srcdoc', srcdocFor('# widget\n'));
