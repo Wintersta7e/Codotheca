@@ -84,7 +84,15 @@ export function PeekPanel({ peek, now, tier }: PeekPanelProps): ReactElement {
           </div>
         ))}
       </dl>
-      <PeekRemote remote={peek.remote} now={now} />
+      {/*
+        §25.3a's authority is the **not-cloned** row and only that: the blocks stand *in place of*
+        the five facts a row with no copy has no history for. A cloned row already has those five,
+        and adding the key, the visibility word and three blocks to it widens §8.4.1 — a phase-1
+        surface this plan does not own, and one that deliberately refuses roast, notes and
+        completion. Gated on the same predicate §25.3a is written against rather than on
+        `remote !== null`, which is a different question.
+      */}
+      {peek.location === null ? <PeekRemote remote={peek.remote} now={now} /> : null}
     </section>
   );
 }
