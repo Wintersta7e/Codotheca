@@ -262,6 +262,11 @@
       "kind": "enum",
       "variants": ["provider_id", "remote_key"]
     },
+    "RemoteLinkKind": {
+      "kind": "enum",
+      "variants": ["repository", "issues", "pulls", "actions", "releases"],
+      "$comment": "§25.2: the five links out of the REMOTE tab. The renderer names a kind and never a URL; the core builds the string from this project's own remote_key against the host allowlist."
+    },
     "InterruptedOp": {
       "kind": "enum",
       "variants": ["merge", "rebase", "cherry_pick", "revert", "bisect", "am"]
@@ -1151,6 +1156,12 @@
       "args": { "accountId": "AccountId", "orgLogin": "String", "enabled": "bool" },
       "returns": "AccountOrg",
       "idempotent": false
+    },
+    {
+      "name": "remote.webUrl",
+      "args": { "projectId": "ProjectId", "kind": "RemoteLinkKind" },
+      "returns": "String?",
+      "$comment": "§25.2: NULL when remote_key is NULL, when it is not <host>/<owner>/<name>, or when its host is not allowlisted. Not privileged — it carries no Bytes — and the shell is its only caller: the answer is opened, and only the main process may open it."
     }
   ],
   "topics": {

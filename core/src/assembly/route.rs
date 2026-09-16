@@ -61,6 +61,9 @@ pub enum Route {
     Detail,
     /// `crate::view::dispatch_view_command` — plan 15.
     View,
+    /// `crate::remote::dispatch_remote_command` — p2-25. It reads one stored key and the account
+    /// hosts and reaches no network, so it takes the index guard like every other read.
+    Remote,
     /// `crate::accounts::dispatch_accounts_command` — p2-20, under the index guard.
     Accounts,
     /// The `accounts.*` commands that reach the network, answered **without** the index guard
@@ -150,6 +153,9 @@ pub fn route(command: CommandName) -> Route {
         | CommandName::CollectionsList
         | CommandName::CollectionsUpsert
         | CommandName::CollectionsRemove => Route::View,
+
+        // §25.2's opener, answered from the stored `remote_key` and the account hosts.
+        CommandName::RemoteWebUrl => Route::Remote,
 
         // The two §20.8 reads, answered by `crate::accounts` **under the index guard**. These
         // two only read a row; every other `accounts.*` command is below.

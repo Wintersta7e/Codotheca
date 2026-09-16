@@ -325,6 +325,18 @@ impl CoreHandler {
         crate::accounts::dispatch_accounts_command(&mut ctx, command, args)
     }
 
+    /// §25.2's opener. Its own method for the same reason `accounts_arm` is one: `handle` is at
+    /// clippy's `too_many_lines` ceiling, and a two-line arm there costs the whole function.
+    fn remote_arm(
+        guard: &Index,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::remote::RemoteCtx { index: guard, now };
+        crate::remote::dispatch_remote_command(&ctx, command, args)
+    }
+
     fn unowned(command: &str, plan: &str) -> CommandFailure {
         CommandFailure::internal(format!(
             "{command}: no handler in the core; plan {plan} owns it"
@@ -529,6 +541,7 @@ impl CommandHandler for CoreHandler {
                 let ctx = crate::view::ViewCtx { index: &guard, now };
                 crate::view::dispatch_view_command(&ctx, command, args)
             }
+            Route::Remote => Self::remote_arm(&guard, command, args, now),
         };
 
         claimed.unwrap_or_else(|| Err(Self::declined(command, dest)))

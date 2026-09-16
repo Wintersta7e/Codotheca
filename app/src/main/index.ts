@@ -129,6 +129,12 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'accounts.connectPat',
   'accounts.upgradeScope',
   'accounts.disconnect',
+  // remote::dispatch_remote_command — the one name §25.8 spends from the `remote.*` prefix.
+  // The answer is a URL the renderer could already rebuild from ProjectDetail.remoteKey; what
+  // it does not gain is the ability to OPEN one, which stays in this process behind a
+  // confirmation. No apostrophe in this block: app/test/knownCommands.test.ts reads the array
+  // by matching single-quoted strings, so a comment carrying one becomes an entry.
+  'remote.webUrl',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two

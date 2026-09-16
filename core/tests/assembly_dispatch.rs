@@ -710,8 +710,9 @@ mod corehandler {
         // [p2] 40, plus the five §20.8 commands the core now answers — three under the index
         // guard and two, the network pair, without it (R75). The remaining three stay unowned
         // and are refused by name above, which is what the `refused` count opposite asserts.
+        // [p2] §25.8's `remote.webUrl` is the 49th, answered under the index guard.
         assert_eq!(
-            checked, 48,
+            checked, 49,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(
