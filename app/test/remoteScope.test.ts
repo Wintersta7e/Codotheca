@@ -92,3 +92,33 @@ describe('§25.8: the shell is `remote.webUrl`s only caller', () => {
     expect(matching(/openExternal/u).filter((p) => p.startsWith('src/renderer/'))).toEqual([]);
   });
 });
+
+/**
+ * **AC-P2-25-5's import half.** §25.1's `BEHIND` is produced by the module §8.5.2 already uses,
+ * *asserted by import and not by matching text*: a copy inlined into the tab would render the
+ * same strings and pass every rendered-output assertion in this repository.
+ */
+describe('AC-P2-25-5 BEHIND comes from the producer §8.5.2 already uses', () => {
+  function sourceOf(path: string): string {
+    const found = files.find(([name]) => name === path);
+    expect(found, `${path} was not scanned`).toBeDefined();
+    return found?.[1] ?? '';
+  }
+
+  it('imports the fetch clause rather than re-writing it', () => {
+    const source = sourceOf('src/renderer/project/remote/behindBlock.ts');
+    expect(source.length, 'the source was not read').toBeGreaterThan(200);
+    expect(source).toMatch(/import \{ fetchClause \} from '\.\.\/locations\/locationCopy'/u);
+  });
+
+  it('holds neither half of the clause as a literal of its own', () => {
+    // Comment lines are stripped: the module explains the import, and the explanation names the
+    // strings it must not own.
+    const code = sourceOf('src/renderer/project/remote/behindBlock.ts')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('*') && !line.trimStart().startsWith('//'))
+      .join('\n');
+    expect(code.includes('no fetch recorded')).toBe(false);
+    expect(code.includes('last fetch')).toBe(false);
+  });
+});

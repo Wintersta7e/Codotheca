@@ -17,6 +17,16 @@ export const WORKTREE_STALE_AFTER_SECS = 900;
 /** §5.6: past 24 hours the dirty clause is not produced at all. */
 export const ROAST_DIRTY_MAX_AGE_SECS = 86_400;
 
+/**
+ * [p2] §25.1 defers the remote staleness threshold to §21, and **§21 sets no number**. This is
+ * that number, and it is derived rather than invented: six hours is §21.5's own `account_repos`
+ * cadence, so a remote observation older than it has missed at least one scheduled read.
+ *
+ * It lives here beside `WORKTREE_STALE_AFTER_SECS` because it is the same kind of decision — a
+ * rendering threshold with one owner. The core uses no threshold at all.
+ */
+export const REMOTE_STALE_AFTER_SECS = 21_600;
+
 export function formatClock(epochSecs: number): string {
   return new Date(epochSecs * 1000).toLocaleTimeString([], {
     hour: '2-digit',

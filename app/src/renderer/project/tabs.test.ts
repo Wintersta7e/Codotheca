@@ -36,11 +36,7 @@ describe('AC-P2-25-1 the tab list is per project, not per phase', () => {
       expect(list.map((t) => t.label).join(' ')).not.toMatch(/HEALTH|COMPLETION|CONDITION/u);
     }
     expect(tabsFor(detail(null)).map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY']);
-    expect(tabsFor(detail(FACTS)).map((t) => t.label)).toEqual([
-      'OVERVIEW',
-      'ACTIVITY',
-      'REMOTE',
-    ]);
+    expect(tabsFor(detail(FACTS)).map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY', 'REMOTE']);
   });
 
   it('cycles the three-tab ring forwards and backwards', () => {

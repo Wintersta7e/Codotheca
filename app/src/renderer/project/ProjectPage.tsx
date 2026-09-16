@@ -31,6 +31,7 @@ import { cascadeDelay } from './motion';
 import { NotePanel } from './note/NotePanel';
 import { Rail } from './rail/Rail';
 import { ReadmePanel } from './readme/ReadmePanel';
+import { RemoteTab } from './remote/RemoteTab';
 import { RoastNote } from './RoastNote';
 import { BASE_PROJECT_TABS, fallbackTab, nextTab, tabsFor, type ProjectTab } from './tabs';
 import { useProjectDetail } from './useProjectDetail';
@@ -303,6 +304,20 @@ export function ProjectPageView({
                 </>
               ) : null}
               {shownTab === 'activity' ? <ActivityTab detail={detail} /> : null}
+              {shownTab === 'remote' && detail.remote !== null ? (
+                <RemoteTab
+                  projectId={detail.row.id}
+                  facts={detail.remote}
+                  shown={shown}
+                  now={deps.now()}
+                  onOpenLink={(projectId, kind) => {
+                    // The reply is a discriminated value the shell already acted on: `opened`,
+                    // `declined`, `not_linkable` or `failed`. Nothing on this page changes on
+                    // any of them, so it is awaited for its rejection and not for its answer.
+                    void deps.openRemoteLink(projectId, kind).catch(() => undefined);
+                  }}
+                />
+              ) : null}
             </div>
           </div>
         </div>
