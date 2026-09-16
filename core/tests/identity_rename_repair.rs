@@ -18,7 +18,9 @@ use codotheca_core::identity::alias::HostAliases;
 use codotheca_core::identity::rename_repair::{repair_renames, RepairReport};
 use codotheca_core::index::Index;
 use codotheca_core::provider::listing::{OrgListing, Page, RepoListing, Viewer};
-use codotheca_core::provider::{Observed, Provider, ProviderError, ProviderResult};
+use codotheca_core::provider::{
+    CiRunsRead, Observed, Provider, ProviderError, ProviderResult, RepoFactsRead,
+};
 
 /// What a scripted lookup answers.
 #[derive(Debug, Clone)]
@@ -124,6 +126,25 @@ impl Provider for RecordingForge {
             value,
             granted_scopes: None,
         })
+    }
+    // §25's two reads. This fixture is about identity, which never touches them.
+    fn repo_facts(
+        &self,
+        _t: &SecretToken,
+        _owner: &str,
+        _name: &str,
+        _etag: Option<&str>,
+    ) -> ProviderResult<Observed<RepoFactsRead>> {
+        unreachable!("this fixture forge issues no §25 request")
+    }
+    fn ci_runs(
+        &self,
+        _t: &SecretToken,
+        _owner: &str,
+        _name: &str,
+        _etag: Option<&str>,
+    ) -> ProviderResult<Observed<CiRunsRead>> {
+        unreachable!("this fixture forge issues no §25 request")
     }
     fn canonical_host(&self) -> &'static str {
         "forge.example"

@@ -240,3 +240,208 @@ fn a_key_on_an_unlisted_host_is_not_linkable() {
     assert!(!facts.linkable);
     assert_eq!(facts.key, "forge.example.invalid/acme/widget");
 }
+
+// ---------------------------------------------------------------------------------------------
+// §25.1's two provider reads, against a stubbed transport. The production caller is p2-21's
+// `run_project_remote`, which arrives in **wave 5** (R65) — until it lands, every `RemoteFacts`
+// on every surface reads `not_observed`, which is the honest render and not a gap.
+// ---------------------------------------------------------------------------------------------
+
+use codotheca_core::accounts::keychain::SecretToken;
+use codotheca_core::http::{normalise_headers, HttpResponse, HttpTransport};
+use codotheca_core::provider::listing::GITHUB_CANONICAL_HOST;
+use codotheca_core::provider::{GitHubProvider, Provider, PROVIDER_REQUEST_METHODS};
+use codotheca_core::testing::FakeTransport;
+use std::sync::Arc;
+
+fn forge() -> (Arc<FakeTransport>, Arc<dyn Provider>) {
+    let transport = Arc::new(FakeTransport::new());
+    let http: Arc<dyn HttpTransport> = transport.clone();
+    let provider: Arc<dyn Provider> =
+        Arc::new(GitHubProvider::new(http, GITHUB_CANONICAL_HOST.to_owned()));
+    (transport, provider)
+}
+
+fn token() -> SecretToken {
+    SecretToken::new("remote-facts-token".to_owned())
+}
+
+fn answer(status: u16, headers: Vec<(String, String)>, body: &[u8]) -> HttpResponse {
+    HttpResponse {
+        status,
+        headers,
+        body: body.to_vec(),
+    }
+}
+
+const REPO_BODY: &[u8] = br#"{"id":909,"clone_url":"https://github.com/acme/widget.git",
+     "owner":{"login":"acme","type":"User"},"name":"widget","fork":true,
+     "parent":{"clone_url":"https://github.com/upstream/widget.git"},
+     "archived":false,"private":false,"description":"a widget",
+     "stargazers_count":41,"topics":["rust","cli"]}"#;
+
+const RUNS_BODY: &[u8] = br#"{"total_count":1,"workflow_runs":[
+     {"id":11,"name":"ci","conclusion":"success","head_branch":"main",
+      "run_number":41,"run_started_at":"2026-09-01T10:00:00Z"}]}"#;
+
+#[test]
+fn a_two_hundred_yields_facts_and_the_response_etag() {
+    let (transport, provider) = forge();
+    transport.push(answer(
+        200,
+        normalise_headers([("ETag", "W/\"abc\"")]),
+        REPO_BODY,
+    ));
+    let read = provider
+        .repo_facts(&token(), "acme", "widget", None)
+        .expect("a 200 is an answer")
+        .value;
+    assert_eq!(read.status, 200);
+    assert_eq!(read.etag.as_deref(), Some("W/\"abc\""));
+    let facts = read.facts.expect("a 200 carries facts");
+    assert_eq!(facts.stars, Some(41));
+    assert_eq!(facts.visibility.as_deref(), Some("public"));
+    assert_eq!(facts.description.as_deref(), Some("a widget"));
+    assert_eq!(
+        facts.fork_parent_remote_key.as_deref(),
+        Some("github.com/upstream/widget")
+    );
+    assert_eq!(facts.topics, vec!["rust".to_owned(), "cli".to_owned()]);
+    // `open_issues_count` counts issues **and** pull requests, so it answers neither block
+    // §25.1 draws. Unobserved renders `—`; a wrong number under a labelled block renders as a
+    // fact. See this plan's report for who closes it.
+    assert_eq!(facts.open_issues, None);
+    assert_eq!(facts.open_prs, None);
+    assert_eq!(facts.good_first_issues, None);
+    assert_eq!(facts.open_prs_from_user, None);
+}
+
+/// A14: a `304` is a completed conditional read. It carries no body, and the validator the
+/// caller sent is the one that is still current.
+#[test]
+fn a_three_oh_four_yields_no_body_and_carries_the_callers_validator() {
+    let (transport, provider) = forge();
+    transport.push(answer(304, Vec::new(), b""));
+    let read = provider
+        .repo_facts(&token(), "acme", "widget", Some("W/\"abc\""))
+        .expect("a 304 is an answer, not an error")
+        .value;
+    assert_eq!(read.status, 304);
+    assert_eq!(read.etag.as_deref(), Some("W/\"abc\""));
+    assert!(read.facts.is_none());
+
+    // …and the validator reached the wire as a conditional request rather than being dropped.
+    let sent = &transport.requests()[0];
+    assert!(sent
+        .headers
+        .iter()
+        .any(|(name, value)| name == "if-none-match" && value == "W/\"abc\""));
+}
+
+#[test]
+fn a_four_oh_three_and_a_four_oh_four_observe_the_access_state_and_no_facts() {
+    for status in [403_u16, 404] {
+        let (transport, provider) = forge();
+        transport.push(answer(status, Vec::new(), b"{}"));
+        let read = provider
+            .repo_facts(&token(), "acme", "widget", Some("W/\"abc\""))
+            .unwrap_or_else(|e| panic!("{status} must be an answer, not an error: {e}"))
+            .value;
+        assert_eq!(read.status, status);
+        assert!(read.facts.is_none());
+        // It observed no representation, so it carries no validator forward either.
+        assert_eq!(read.etag, None);
+    }
+}
+
+#[test]
+fn an_unparseable_body_is_a_failure_and_not_a_panic() {
+    let (transport, provider) = forge();
+    transport.push(answer(200, Vec::new(), b"{not json"));
+    assert!(provider
+        .repo_facts(&token(), "acme", "widget", None)
+        .is_err());
+
+    let (transport, provider) = forge();
+    transport.push(answer(200, Vec::new(), b"{not json"));
+    assert!(provider.ci_runs(&token(), "acme", "widget", None).is_err());
+}
+
+#[test]
+fn the_actions_read_carries_its_own_validator_and_its_own_rows() {
+    let (transport, provider) = forge();
+    transport.push(answer(
+        200,
+        normalise_headers([("ETag", "W/\"def\"")]),
+        RUNS_BODY,
+    ));
+    let read = provider
+        .ci_runs(&token(), "acme", "widget", None)
+        .expect("a 200 is an answer")
+        .value;
+    assert_eq!(read.etag.as_deref(), Some("W/\"def\""));
+    let runs = read.runs.expect("a 200 carries runs");
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].run_id, 11);
+    assert_eq!(runs[0].workflow_name, "ci");
+    assert_eq!(runs[0].conclusion.as_deref(), Some("success"));
+    assert_eq!(runs[0].branch, "main");
+    assert_eq!(runs[0].run_number, 41);
+    // 2026-09-01T10:00:00Z. A time that cannot be read is unknown, never the epoch.
+    assert_eq!(runs[0].started_at, Some(1_788_256_800));
+}
+
+/// AC-P2-25-5's census, and it runs over the only two methods that read §25's field set.
+///
+/// §25.1 makes `BEHIND` the **local** figure deliberately: one owner per value, and a compare
+/// call per project per sync is a rate-budget cost for a number already stored. There is no sync
+/// runner in wave 4 (R65) and there is nowhere else such a call could originate — `repo_facts`
+/// and `ci_runs` are the whole of this section's forge surface — so the census runs over them.
+#[test]
+fn no_request_this_section_issues_asks_the_forge_for_divergence() {
+    let (transport, provider) = forge();
+    transport.push(answer(200, Vec::new(), REPO_BODY));
+    transport.push(answer(200, Vec::new(), RUNS_BODY));
+    provider
+        .repo_facts(&token(), "acme", "widget", None)
+        .expect("facts");
+    provider
+        .ci_runs(&token(), "acme", "widget", None)
+        .expect("runs");
+
+    let requests = transport.requests();
+    eprintln!(
+        "remote_facts_read: divergence census examined {} request(s)",
+        requests.len()
+    );
+    assert!(
+        !requests.is_empty(),
+        "a census that examined zero requests proves nothing"
+    );
+    for request in &requests {
+        assert!(
+            !request.url.contains("/compare"),
+            "a divergence call reached the forge: {}",
+            request.url
+        );
+        assert!(
+            !request.url.contains("basehead"),
+            "a divergence parameter reached the forge: {}",
+            request.url
+        );
+        assert!(
+            !request.url.contains("..."),
+            "a base...head range reached the forge: {}",
+            request.url
+        );
+    }
+}
+
+/// The census names both of this section's methods. The **count** is pinned once, in
+/// `core/tests/provider_seam.rs`, against the trait's own signature scan — a second copy of the
+/// number here is the drift this project keeps paying for.
+#[test]
+fn the_request_census_names_both_of_this_sections_methods() {
+    assert!(PROVIDER_REQUEST_METHODS.contains(&"repo_facts"));
+    assert!(PROVIDER_REQUEST_METHODS.contains(&"ci_runs"));
+}

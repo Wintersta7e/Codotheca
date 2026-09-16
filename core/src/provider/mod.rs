@@ -22,7 +22,14 @@ pub use github::GitHubProvider;
 /// `repo_facts` and `ci_runs`, and an array's length would make each of those a second edit to
 /// this same line. **Six by the end of phase 2, three of them this plan's** — R79 collapsed
 /// `verify_token` into `viewer`, so two entries became one and only the arithmetic changed.
-pub const PROVIDER_REQUEST_METHODS: &[&str] = &["viewer", "list_orgs", "list_repos", "lookup_repo"];
+pub const PROVIDER_REQUEST_METHODS: &[&str] = &[
+    "viewer",
+    "list_orgs",
+    "list_repos",
+    "lookup_repo",
+    "repo_facts",
+    "ci_runs",
+];
 
 /// §22.2's host-alias set for a caller that has **no account and no transport in hand**.
 ///
@@ -103,6 +110,94 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
         owner: &str,
         name: &str,
     ) -> ProviderResult<Observed<Option<RepoListing>>>;
+    /// §25.1's repository facts, as **one conditional read**.
+    ///
+    /// It takes the caller's validator and returns the response's, per §21.7's
+    /// one-pair-per-resource rule, and there is **no `etag_observed_at`** (A15): an `ETag` is never
+    /// rendered as a time, so §6 grants it no column of its own.
+    ///
+    /// A `403` and a `404` are **answers, not errors**: they observe the *access* state and
+    /// nothing else, and the writer turns them into `permitted = 0` while dating nothing. Only a
+    /// transport failure, an unexpected status or an unparseable body is an `Err`.
+    fn repo_facts(
+        &self,
+        t: &SecretToken,
+        owner: &str,
+        name: &str,
+        etag: Option<&str>,
+    ) -> ProviderResult<Observed<RepoFactsRead>>;
+
+    /// §25.1's `LATEST CI` — the Actions runs, as one conditional read with **its own**
+    /// validator and therefore its own clock.
+    ///
+    /// **A8: this requests no scope this project does not hold.** There is no `workflow:read`;
+    /// the real scope is `workflow`, a *write* scope granting the addition and update of workflow
+    /// files, and this project must never request it. Runs on a public repository need no scope
+    /// at all, and on a private one they ride `repo`, which §20 already requests.
+    fn ci_runs(
+        &self,
+        t: &SecretToken,
+        owner: &str,
+        name: &str,
+        etag: Option<&str>,
+    ) -> ProviderResult<Observed<CiRunsRead>>;
+
     fn canonical_host(&self) -> &str;
     fn host_aliases(&self) -> &[&str];
+}
+
+/// One conditional repo-facts read: what the server said, and what it said it with.
+///
+/// `facts` is `None` for a `304` (the caller's copy is current), and for a `403`/`404` (the
+/// token may not see it). `status` is what lets the caller tell those apart without a second
+/// vocabulary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoFactsRead {
+    pub status: u16,
+    pub etag: Option<String>,
+    pub facts: Option<RepoFactsPayload>,
+}
+
+/// One conditional Actions read. Same shape, its own validator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CiRunsRead {
+    pub status: u16,
+    pub etag: Option<String>,
+    pub runs: Option<Vec<CiRunPayload>>,
+}
+
+/// The **parse** shape of §25.7's `remote_repo` row: column-shaped, rendered nowhere.
+///
+/// It is deliberately not `RemoteFacts`, which is the **render** shape keyed to §25.1's blocks.
+/// Collapsing them would make one struct answer two questions and would put `permitted` — which
+/// has no wire field, and can only be written by the store — onto a wire type.
+///
+/// **Four counts this read cannot separate are `None`, and that is the invariant rather than a
+/// shortfall.** `GET /repos/{owner}/{name}` carries `open_issues_count`, which is issues **plus**
+/// pull requests, so rendering it under a block labelled `OPEN ISSUES` would be a wrong number.
+/// Unobserved renders `—`; a wrong number renders as a fact.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RepoFactsPayload {
+    pub visibility: Option<String>,
+    pub description: Option<String>,
+    pub fork_parent_remote_key: Option<String>,
+    pub stars: Option<u32>,
+    pub open_issues: Option<u32>,
+    pub good_first_issues: Option<u32>,
+    pub open_prs: Option<u32>,
+    pub open_prs_from_user: Option<u32>,
+    pub topics: Vec<String>,
+}
+
+/// One `remote_ci_run` row, as parsed. `conclusion` is a nullable `String` and **not** an enum:
+/// the vocabulary belongs to the forge, and a closed mirror of a third party's vocabulary is R26
+/// by construction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CiRunPayload {
+    pub run_id: i64,
+    pub workflow_name: String,
+    pub conclusion: Option<String>,
+    pub branch: String,
+    pub run_number: u32,
+    pub started_at: Option<i64>,
 }

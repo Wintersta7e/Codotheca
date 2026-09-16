@@ -35,6 +35,8 @@ const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[0], "viewer"));
 const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[1], "list_orgs"));
 const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[2], "list_repos"));
 const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[3], "lookup_repo"));
+const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[4], "repo_facts"));
+const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[5], "ci_runs"));
 
 fn token() -> SecretToken {
     SecretToken::new("provider-seam-token".to_owned())
@@ -65,6 +67,15 @@ fn repo_body() -> &'static [u8] {
     br#"{"id":909,"clone_url":"https://github.com/acme/widget.git",
          "owner":{"login":"acme","type":"User"},"name":"widget",
          "fork":false,"archived":false,"private":false}"#
+}
+
+/// One Actions listing page, as §25.1 reads it back.
+fn runs_body() -> &'static [u8] {
+    br#"{"total_count":2,"workflow_runs":[
+          {"id":11,"name":"ci","conclusion":"success","head_branch":"main",
+           "run_number":41,"run_started_at":"2026-09-01T10:00:00Z"},
+          {"id":12,"name":"release","conclusion":null,"head_branch":"main",
+           "run_number":42,"run_started_at":"2026-09-02T10:00:00Z"}]}"#
 }
 
 fn provider_with_transport(host: &str) -> (Arc<FakeTransport>, Arc<dyn Provider>) {
@@ -195,10 +206,17 @@ where
 fn request_method_tripwire_is_enumerated_and_callable() {
     // R79 collapsed `verify_token` into `viewer`, leaving three; §22.7's `lookup_repo` is the
     // fourth. The count moves in the same commit as the method, or the tripwire fails — which is
-    // the tripwire working. **Six by the end of phase 2**, the last two §25's.
+    // the tripwire working. **Six by the end of phase 2**, the last two §25's, and they are here.
     assert_eq!(
         PROVIDER_REQUEST_METHODS,
-        ["viewer", "list_orgs", "list_repos", "lookup_repo"]
+        [
+            "viewer",
+            "list_orgs",
+            "list_repos",
+            "lookup_repo",
+            "repo_facts",
+            "ci_runs"
+        ]
     );
 
     let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
@@ -206,12 +224,18 @@ fn request_method_tripwire_is_enumerated_and_callable() {
     transport.push(ok(b"[]"));
     transport.push(ok(b"[]"));
     transport.push(ok(repo_body()));
+    transport.push(ok(repo_body()));
+    transport.push(ok(runs_body()));
     let secret = token();
 
     provider.viewer(&secret).unwrap();
     provider.list_orgs(&secret, None).unwrap();
     provider.list_repos(&secret, None).unwrap();
     provider.lookup_repo(&secret, "acme", "widget").unwrap();
+    provider
+        .repo_facts(&secret, "acme", "widget", None)
+        .unwrap();
+    provider.ci_runs(&secret, "acme", "widget", None).unwrap();
     let declared = provider_trait_request_method_names();
     assert_eq!(
         transport.request_count(),
@@ -261,6 +285,22 @@ fn helpers_issue_no_requests_and_request_methods_issue_one_each() {
     assert_eq!(
         transport.requests()[0].url,
         "https://api.github.com/repos/acme/widget"
+    );
+
+    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    transport.push(ok(repo_body()));
+    provider
+        .repo_facts(&token(), "acme", "widget", None)
+        .unwrap();
+    assert_eq!(transport.request_count(), 1);
+
+    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    transport.push(ok(runs_body()));
+    provider.ci_runs(&token(), "acme", "widget", None).unwrap();
+    assert_eq!(transport.request_count(), 1);
+    assert_eq!(
+        transport.requests()[0].url,
+        "https://api.github.com/repos/acme/widget/actions/runs?per_page=5"
     );
 }
 
