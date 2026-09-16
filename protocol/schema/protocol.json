@@ -336,6 +336,17 @@
       "kind": "struct",
       "fields": { "state": "ReadmeStateKind", "text": "String?", "readAt": "Timestamp?" }
     },
+    "ReadmeSource": {
+      "kind": "struct",
+      "$comment": "[p2] §25.5: the document projects.readme reads, as against ReadmeState's stored first paragraph. `path` is which of README_NAMES matched, so the panel's header names the file it actually read. `truncated` is a stated fact, never an implication that the document ended.",
+      "fields": {
+        "state": "ReadmeStateKind",
+        "path": "String?",
+        "text": "String?",
+        "readAt": "Timestamp?",
+        "truncated": "bool"
+      }
+    },
     "LaneState": {
       "kind": "enum",
       "variants": ["measured", "not_computed", "shallow_excluded"]
@@ -1030,6 +1041,12 @@
     },
     { "name": "projects.get", "args": { "id": "ProjectId" }, "returns": "ProjectDetail" },
     { "name": "projects.peek", "args": { "id": "ProjectId" }, "returns": "Peek" },
+    {
+      "name": "projects.readme",
+      "args": { "projectId": "ProjectId", "locationId": "LocationId" },
+      "returns": "ReadmeSource",
+      "$comment": "§25.5: the whole document under J6_BYTE_CAP, which this command reads from the existing constant rather than declaring a second cap. ReadmeState.text is first_paragraph's output and is a different value with a different job"
+    },
     {
       "name": "projects.setFlags",
       "args": {

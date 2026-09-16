@@ -76,6 +76,8 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'accounts.setOrgEnabled': 'write',
   // Reads one stored key and the account hosts, writes nothing and spawns nothing.
   'remote.webUrl': 'read',
+  // [p2] §25.5. Opens one file under a location root; no write, no process, no socket.
+  'projects.readme': 'read',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {

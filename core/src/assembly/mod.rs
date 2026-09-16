@@ -337,6 +337,18 @@ impl CoreHandler {
         crate::remote::dispatch_remote_command(&ctx, command, args)
     }
 
+    /// §25.5's README reads. Its own method for the same reason `remote_arm` is one: `handle` is
+    /// at clippy's `too_many_lines` ceiling.
+    fn readme_arm(
+        guard: &Index,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::readme::ReadmeCtx { index: guard, now };
+        crate::readme::dispatch_readme_command(&ctx, command, args)
+    }
+
     fn unowned(command: &str, plan: &str) -> CommandFailure {
         CommandFailure::internal(format!(
             "{command}: no handler in the core; plan {plan} owns it"
@@ -542,6 +554,7 @@ impl CommandHandler for CoreHandler {
                 crate::view::dispatch_view_command(&ctx, command, args)
             }
             Route::Remote => Self::remote_arm(&guard, command, args, now),
+            Route::Readme => Self::readme_arm(&guard, command, args, now),
         };
 
         claimed.unwrap_or_else(|| Err(Self::declined(command, dest)))

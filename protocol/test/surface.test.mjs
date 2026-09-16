@@ -287,8 +287,9 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 // this by its OWN delta, read from the value in the file — never to a running total, which a
 // lane cannot know after the merges ahead of it.
 // [p2] §25.8's `remote.webUrl` is the 51st, and it is the only name §25 spends from `remote.*`.
+// [p2] §25.8's `projects.readme` is the 52nd.
 test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8 and §25.8, and nothing extra', () => {
-  assert.equal(names.length, 51, `expected 51 commands, found ${names.length}`);
+  assert.equal(names.length, 52, `expected 52 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -593,6 +594,37 @@ test('remote.webUrl answers a nullable string and carries no Bytes', () => {
     'actions',
     'releases',
   ]);
+});
+
+// [p2] §25.8's README commands. The prefix is `projects.` and not a new top-level `readme.`:
+// D9 proposed `readme.assets`, and §25.8 renamed it because a one-command top-level prefix
+// invites a second, forge-agnostic namespace nobody owns while these three are project-scoped.
+const README_COMMANDS = ['projects.readme'];
+
+test('§25.8 declares its README commands under the projects prefix and nowhere else', () => {
+  const declared = names.filter((n) => n === 'projects.readme' || n.startsWith('readme.')).sort();
+  assert.deepEqual(declared, README_COMMANDS);
+});
+
+// §25.5: the panel needs the document, not the paragraph. `J6_BYTE_CAP` is the cap and the
+// command reads that existing constant rather than declaring a second one, so `truncated` is
+// the only thing the wire adds — the panel says the document was cut rather than implying it
+// ended. `state` reuses `ReadmeStateKind`: the command takes a `locationId`, so a location
+// exists by construction and `not_indexed` is never borrowed for a project no pass is coming for.
+test('projects.readme returns the whole document, with the state enum §8.4 already declares', () => {
+  const c = schema.commands.find((x) => x.name === 'projects.readme');
+  assert.deepEqual(c.args, { projectId: 'ProjectId', locationId: 'LocationId' });
+  assert.equal(c.returns, 'ReadmeSource');
+  assert.notEqual(c.privileged, true);
+  assert.equal(schema.types.ReadmeSource.kind, 'struct');
+  assert.deepEqual(schema.types.ReadmeSource.fields, {
+    state: 'ReadmeStateKind',
+    path: 'String?',
+    text: 'String?',
+    readAt: 'Timestamp?',
+    truncated: 'bool',
+  });
+  assert.deepEqual(schema.types.ReadmeStateKind.variants, ['not_indexed', 'absent', 'present']);
 });
 
 /** Every type name reachable from `root`, following struct fields transitively. */
