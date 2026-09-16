@@ -28,6 +28,7 @@ pub mod git;
 pub mod http;
 pub mod identity;
 pub mod index;
+pub mod install;
 pub mod jobs;
 pub mod launch;
 pub mod lifecycle;
