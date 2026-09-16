@@ -262,7 +262,7 @@ export function ProjectPageView({
           </div>
           <div className="cp-col-right">
             <div className="cp-rise" style={{ animationDelay: cascadeDelay(0) }}>
-              <Identity row={detail.row} />
+              <Identity row={detail.row} visibility={detail.remote?.visibility ?? null} />
               {/* §8.5.1 sits the note under the description, inside the identity block. */}
               <RoastNote
                 detail={detail}
@@ -294,7 +294,12 @@ export function ProjectPageView({
                     onShow={setShownId}
                     onChanged={reload}
                   />
-                  <ReadmePanel readme={detail.readme} row={detail.row} now={deps.now()} />
+                  <ReadmePanel
+                    readme={detail.readme}
+                    row={detail.row}
+                    now={deps.now()}
+                    topics={detail.remote?.topics ?? []}
+                  />
                   <NotePanel
                     projectId={detail.row.id}
                     row={detail.row}

@@ -49,6 +49,17 @@ const files: readonly (readonly [string, string])[] = walk(srcDir).flatMap((path
   return text === null ? [] : [[relative(appDir, path).replace(/\\/gu, '/'), text] as const];
 });
 
+/** A file's source with its comment lines removed. */
+function codeOf(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => {
+      const t = line.trimStart();
+      return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+    })
+    .join('\n');
+}
+
 function matching(pattern: RegExp): string[] {
   return files
     .filter(([, text]) => pattern.test(text))
@@ -137,15 +148,42 @@ describe('§25.4: the forge types are imported only by the surfaces that render 
   });
 
   it('names them nowhere else under src/renderer', () => {
+    // Comment lines are stripped first. *Grepping a declaration also matches prose about it* is
+    // a recorded defect of this project, and it fired here immediately: `ReadmePanel.tsx` says
+    // in a comment that it takes `readonly string[]` and **not** `RemoteFacts`, which is the
+    // rule this gate enforces rather than a violation of it.
     const naming = files
       .filter(([path]) => path.startsWith('src/renderer/'))
-      .filter(([, text]) => FORGE_TYPES.some((type) => new RegExp(`\\b${type}\\b`, 'u').test(text)))
+      .filter(([, text]) =>
+        FORGE_TYPES.some((type) => new RegExp(`\\b${type}\\b`, 'u').test(codeOf(text))),
+      )
       .map(([path]) => path)
       .sort();
     // A naming set that matched nothing would satisfy the filter above while proving nothing,
     // so the tab's own module has to be in it.
     expect(naming).toContain('src/renderer/project/remote/RemoteTab.tsx');
     expect(naming.filter((path) => !ALLOWED.includes(path))).toEqual([]);
+  });
+});
+
+/**
+ * **AC-P2-25-8's source half.** *"A build capable of rendering `PRIVATE` while having no code
+ * path that renders `PUBLIC` fails."* A rendered-output test alone cannot see that: a build with
+ * no `PUBLIC` branch renders correctly on every `private` fixture, and the absence of the word is
+ * exactly what makes its absence assert public.
+ */
+describe('AC-P2-25-8 the identity line has a code path for each word', () => {
+  it('names both words, in code and not only in prose', () => {
+    const found = files.find(([path]) => path === 'src/renderer/project/Identity.tsx');
+    expect(found, 'Identity.tsx was not scanned').toBeDefined();
+    const source = found?.[1] ?? '';
+    expect(source.length, 'the source was not read').toBeGreaterThan(200);
+    const code = source
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('*') && !line.trimStart().startsWith('//'))
+      .join('\n');
+    expect(code).toContain("'PUBLIC'");
+    expect(code).toContain("'PRIVATE'");
   });
 });
 

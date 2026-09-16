@@ -1047,3 +1047,20 @@
   color: var(--text-1);
   border-color: var(--line-3);
 }
+
+/* [p2] §25.3's topic chips, in §8.5.3's own chrome. Zero topics renders no row at all. */
+.cp-readme-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.cp-readme-topic {
+  padding: 3px 7px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
