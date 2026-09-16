@@ -94,6 +94,62 @@ describe('§25.8: the shell is `remote.webUrl`s only caller', () => {
 });
 
 /**
+ * **§25.4's renderer gate (AC-P2-25-7's second half).** *"Phase 2 displays the CI record. It may
+ * not judge it."* The cheap half of that is keeping the forge types out of every surface that
+ * would then acquire a reason to score them, and it is automated rather than remembered.
+ *
+ * **The allowed set is an array, not a bound, and it is narrower than §25.4 in one direction and
+ * wider in another. Both are deliberate.**
+ *
+ * - **Narrower**: §25.4 admits *"the identity line's visibility segment"*, and `Identity.tsx`
+ *   takes `RemoteVisibility | null` rather than the whole struct — so it imports neither
+ *   `RemoteFacts` nor a CI type. `ReadmePanel.tsx` takes `readonly string[]` for the same
+ *   reason. *"Only by X"* is satisfied by a subset, so dropping them is stricter.
+ * - **Wider**: `shelf/Peek.tsx` renders §25.3a's positive half **from the same producer**, at
+ *   Peek's size. §25.4 was written before that producer was placed, and refusing the import
+ *   would force a copy — the defect this gate exists to catch.
+ * - `project/testFixtures.ts` builds the shape every test on this page uses. It renders
+ *   nothing, and excluding it would push each test to hand-build a `RemoteFacts`, which is the
+ *   drift one fixture exists to prevent.
+ *
+ * Record both in this comment, or a later reader narrows the list back and Peek grows its own
+ * four-state logic.
+ */
+describe('§25.4: the forge types are imported only by the surfaces that render them', () => {
+  const FORGE_TYPES = ['RemoteFacts', 'CiList', 'CiRun'] as const;
+
+  const ALLOWED = [
+    'src/renderer/project/remote/RemoteTab.tsx',
+    'src/renderer/project/remote/ciCopy.ts',
+    'src/renderer/project/remote/links.tsx',
+    'src/renderer/project/remote/remoteBlocks.tsx',
+    'src/renderer/project/testFixtures.ts',
+    'src/renderer/shelf/Peek.tsx',
+    'src/renderer/shelf/peekText.ts',
+  ];
+
+  it('scanned a real renderer tree, or every assertion below is vacuous', () => {
+    const renderer = files.filter(([path]) => path.startsWith('src/renderer/'));
+    process.stderr.write(
+      `remoteScope: import gate scanned ${String(renderer.length)} renderer source file(s)\n`,
+    );
+    expect(renderer.length, 'the import gate scanned nothing').toBeGreaterThan(20);
+  });
+
+  it('names them nowhere else under src/renderer', () => {
+    const naming = files
+      .filter(([path]) => path.startsWith('src/renderer/'))
+      .filter(([, text]) => FORGE_TYPES.some((type) => new RegExp(`\\b${type}\\b`, 'u').test(text)))
+      .map(([path]) => path)
+      .sort();
+    // A naming set that matched nothing would satisfy the filter above while proving nothing,
+    // so the tab's own module has to be in it.
+    expect(naming).toContain('src/renderer/project/remote/RemoteTab.tsx');
+    expect(naming.filter((path) => !ALLOWED.includes(path))).toEqual([]);
+  });
+});
+
+/**
  * **AC-P2-25-5's import half.** §25.1's `BEHIND` is produced by the module §8.5.2 already uses,
  * *asserted by import and not by matching text*: a copy inlined into the tab would render the
  * same strings and pass every rendered-output assertion in this repository.
