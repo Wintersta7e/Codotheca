@@ -42,7 +42,7 @@
     "check:packaging": "node scripts/check-packaging.mjs",
     "dist": "node scripts/build-dist.mjs",
     "prepare:win": "node scripts/win-prepare.mjs",
-    "test:harness": "node --test \"scripts/acceptance/*.test.mjs\"",
+    "test:harness": "node --test \"scripts/acceptance/*.test.mjs\" \"scripts/*.test.mjs\"",
     "test": "npm run gen && npm run test --workspace protocol && cargo test --manifest-path core/Cargo.toml --features testkit && npm run test --workspace app && npm run test:harness",
     "fmt:check": "cargo fmt --manifest-path core/Cargo.toml -- --check && prettier --check \"app/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"protocol/**/*.mjs\""
   },

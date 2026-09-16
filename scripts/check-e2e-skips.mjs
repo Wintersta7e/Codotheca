@@ -13,7 +13,7 @@
  *
  * Usage: node scripts/check-e2e-skips.mjs [report.json]
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,9 +21,32 @@ import { fileURLToPath } from 'node:url';
 // Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const reportPath = process.argv[2] ?? join(root, 'app', 'e2e-report.json');
+const specDir = join(root, 'app', 'e2e');
 
 if (!existsSync(reportPath)) {
   console.error(`check-e2e-skips: no report at ${reportPath} — the suite did not run.`);
+  process.exit(2);
+}
+
+// **Absence was loud and staleness was silent, which is the wrong way round.** The report is
+// gitignored, so it never travels with a merge, and `playwright.config.ts` emitted no JSON
+// locally — so this read a report from the previous day and reported two specs as skipped that
+// had just passed. The inverse is the dangerous one: break a spec into skipping, and an older
+// report in which nothing skipped reads as green. A capture is only evidence about the tree it
+// was taken from, so refuse one older than the specs it claims to cover.
+const newestSpec = existsSync(specDir)
+  ? readdirSync(specDir, { withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => statSync(join(specDir, e.name)).mtimeMs)
+      .reduce((a, b) => Math.max(a, b), 0)
+  : 0;
+const reportAge = statSync(reportPath).mtimeMs;
+if (newestSpec > reportAge) {
+  console.error(
+    `check-e2e-skips: the report at ${reportPath} predates the specs it claims to cover ` +
+      `(report ${new Date(reportAge).toISOString()}, newest spec ` +
+      `${new Date(newestSpec).toISOString()}). Re-run the suite: a stale report is not evidence.`,
+  );
   process.exit(2);
 }
 
