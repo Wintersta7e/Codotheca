@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -31,14 +31,25 @@ const passing = [
   { title: 'a spec that ran', ok: true, tests: [{ results: [{ status: 'passed' }] }] },
 ];
 
+/** The newest mtime under `app/e2e`, which is what the checker compares a report against. */
+function newestSpecMs() {
+  const dir = join(root, 'app', 'e2e');
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => statSync(join(dir, e.name)).mtimeMs)
+    .reduce((a, b) => Math.max(a, b), 0);
+}
+
 test('a report older than the specs it covers is refused, not read', () => {
   const path = reportWith(passing);
-  // An hour before any source file in the tree. The report *parses* and holds a passing spec:
-  // if vintage were not checked this would read as a clean run, which is exactly how a report
-  // from the previous day called two specs skipped that had just passed — and how the same
-  // mechanism reports green over a spec that has started skipping.
-  const old = new Date(Date.now() - 3_600_000);
-  utimesSync(path, old, old);
+  // **Stamped relative to the specs, never to `Date.now()`.** The first version of this test used
+  // "an hour ago" and passed only where the specs happened to be newer than that — true in a
+  // worktree whose specs were edited today, false in one `git worktree add` stamped at checkout,
+  // where every spec is hours old and a one-hour-old report is the *newer* file. It went green
+  // in the tree that wrote it and red in the next lane's, which is a test depending on ambient
+  // state it does not control. Deriving the instant from the thing under comparison removes it.
+  const stale = new Date(newestSpecMs() - 1000);
+  utimesSync(path, stale, stale);
   const { status, stderr } = run(path);
   assert.equal(status, 2, 'a stale report must refuse rather than report on the wrong run');
   assert.match(stderr, /predates the specs it claims to cover/u);
