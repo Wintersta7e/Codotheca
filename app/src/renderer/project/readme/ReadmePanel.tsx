@@ -110,6 +110,12 @@ export function ReadmePanel({
         <div className="cp-readme-stripe" aria-hidden="true" />
         {framed && srcdoc !== null ? (
           <iframe
+            /* Keyed on the document's revision, because Chromium does **not** re-navigate a
+               sandboxed frame when `srcdoc` is replaced: the attribute changes and the frame keeps
+               the document it first committed. Measured in the built app — the substituted
+               document reached the attribute and the frame still rendered the placeholders. A new
+               key mounts a new element, which commits its own srcdoc. */
+            key={`readme-${String(document.revision)}`}
             className="cp-readme-frame"
             data-testid="cp-readme-frame"
             title={`${row.name} README`}

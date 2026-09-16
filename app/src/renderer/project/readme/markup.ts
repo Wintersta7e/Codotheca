@@ -30,6 +30,16 @@ export const ASSET_REF_ATTR = 'data-readme-ref';
 export const ASSET_STATE_ATTR = 'data-asset-state';
 
 /**
+ * What a placeholder carries **before anything has been asked about it**.
+ *
+ * Not `blocked`: that is the consent state, and a reference nobody has asked the core about yet is
+ * not one consent refused. The distinction is visible in the built app — the end-to-end census
+ * reads this attribute on the first frame and after the round trip, and with `blocked` as the
+ * initial value the two frames were indistinguishable.
+ */
+export const ASSET_STATE_UNASKED = 'unasked';
+
+/**
  * The five media types the core is allowed to hand back, restated here because this is the side
  * that decides whether a `data:` URI reaches a document. The core's list is
  * `core/src/readme/assets.rs`'s `ALLOWED_MEDIA_TYPES`, and `app/test/acceptance/readmePanel.test.ts`
@@ -312,7 +322,7 @@ export function renderMarkup(source: string): RenderedMarkup {
     const alt = image.getAttribute('alt') ?? '';
     const placeholder = image.ownerDocument.createElement('span');
     placeholder.className = ASSET_PLACEHOLDER_CLASS;
-    placeholder.setAttribute(ASSET_STATE_ATTR, 'blocked');
+    placeholder.setAttribute(ASSET_STATE_ATTR, ASSET_STATE_UNASKED);
     placeholder.textContent = alt;
     if (reference !== null && reference !== '') {
       placeholder.setAttribute(ASSET_REF_ATTR, reference);

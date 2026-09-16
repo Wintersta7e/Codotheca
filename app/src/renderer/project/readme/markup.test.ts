@@ -171,6 +171,14 @@ describe('applyAssets', () => {
     }
   });
 
+  it('starts unasked, because a reference nobody asked about is not one consent refused', () => {
+    const rendered = renderMarkup('![alt](https://cdn.example.test/badge.svg)\n');
+    const placeholder = elementsOf(rendered.fragment).find((el) =>
+      el.hasAttribute('data-asset-state'),
+    );
+    expect(placeholder?.getAttribute('data-asset-state')).toBe('unasked');
+  });
+
   it('records a state that is not ok on the placeholder, and blocked is not a failure', () => {
     const rendered = renderMarkup('![alt](https://cdn.example.test/badge.svg)\n');
     applyAssets(

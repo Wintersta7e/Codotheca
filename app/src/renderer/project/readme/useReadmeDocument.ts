@@ -23,6 +23,16 @@ export interface ReadmeDocumentState {
   /** `stored` is §8.5.3's paragraph; `frame` is the rendered document. */
   readonly phase: 'stored' | 'frame';
   readonly srcdoc: string | null;
+  /**
+   * Which document this is, counting from 1.
+   *
+   * **Chromium does not re-navigate a sandboxed `srcdoc` frame when the attribute is replaced** —
+   * measured in the built app: the attribute held the substituted document and the frame kept
+   * rendering the first one, with `will-frame-navigate` firing zero times for the reassignment.
+   * The panel therefore keys the element on this number, so a new document is a **new element**
+   * that mounts with its own `srcdoc` and commits it. Nothing about the sandbox is relaxed.
+   */
+  readonly revision: number;
   readonly anchorCount: number;
   readonly truncated: boolean;
   /** How many references the core refused for **consent**, which is not a failure. */
@@ -39,6 +49,7 @@ export interface ReadmeDocument extends ReadmeDocumentState {
 const STORED: ReadmeDocumentState = {
   phase: 'stored',
   srcdoc: null,
+  revision: 0,
   anchorCount: 0,
   truncated: false,
   blockedRemote: 0,
@@ -105,14 +116,15 @@ export function useReadmeDocument({
 
       const rendered = pipeline.renderMarkup(source.text);
       const tokens = pipeline.readFrameTokens(document.documentElement);
-      setState({
+      setState((previous) => ({
         phase: 'frame',
         srcdoc: pipeline.buildSrcdoc(rendered.fragment, tokens),
+        revision: previous.revision + 1,
         anchorCount: rendered.anchorCount,
         truncated: source.truncated,
         blockedRemote: 0,
         path: source.path,
-      });
+      }));
       if (rendered.imageRefs.length === 0) return;
 
       const { local, remote } = splitRefs(rendered.imageRefs);
@@ -128,6 +140,7 @@ export function useReadmeDocument({
       setState((previous) => ({
         ...previous,
         srcdoc: pipeline.buildSrcdoc(rendered.fragment, tokens),
+        revision: previous.revision + 1,
         blockedRemote,
       }));
     };
