@@ -398,7 +398,7 @@ fn the_actions_read_carries_its_own_validator_and_its_own_rows() {
 /// runner in wave 4 (R65) and there is nowhere else such a call could originate — `repo_facts`
 /// and `ci_runs` are the whole of this section's forge surface — so the census runs over them.
 #[test]
-fn no_request_this_section_issues_asks_the_forge_for_divergence() {
+fn ac_p2_25_5_census_no_request_asks_the_forge_for_divergence() {
     let (transport, provider) = forge();
     transport.push(answer(200, Vec::new(), REPO_BODY));
     transport.push(answer(200, Vec::new(), RUNS_BODY));

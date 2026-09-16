@@ -164,7 +164,7 @@ describe('peekFacts', () => {
  * is about a *cloned* project that was never launched; printing `0h` beside an install affordance
  * borrows it for a case it was never true of.
  */
-describe('AC-P2-25-23 the not-cloned fact set', () => {
+describe('§25.3a the not-cloned fact set', () => {
   const notCloned = {
     id: 1,
     readme: readme('absent'),
@@ -180,7 +180,7 @@ describe('AC-P2-25-23 the not-cloned fact set', () => {
     interruptedOp: null,
   } as unknown as Peek;
 
-  it('drops PLAYTIME entirely, asserted as an absence and not as a dash', () => {
+  it('AC-P2-25-23-facts drops PLAYTIME entirely, asserted as an absence and not as a dash', () => {
     const keys = peekFacts(notCloned, NOW).map((f) => f.key);
     expect(keys).not.toContain('PLAYTIME');
     expect(keys).toEqual(['BIRTH', 'LANGUAGE', 'TRACKED', 'LAST COMMIT']);

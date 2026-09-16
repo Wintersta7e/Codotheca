@@ -79,7 +79,7 @@ fn peek_of(index: &Index, project: i64) -> codotheca_core::protocol::Peek {
 }
 
 #[test]
-fn a_not_cloned_row_carries_no_location_and_no_commit_history() {
+fn ac_p2_25_23_core_a_not_cloned_row_carries_no_location_and_no_history() {
     let (_dir, index) = not_cloned();
     let peek = peek_of(&index, 1);
     assert!(peek.location.is_none(), "there is no path and no copy");

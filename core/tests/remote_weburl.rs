@@ -108,7 +108,7 @@ fn a_key_that_is_not_three_segments_produces_no_url() {
 /// must not make an off-allowlist project linkable — `fork_parent_remote_key` is a rendered
 /// string and reaches no URL construction (AC-P2-25-26).
 #[test]
-fn a_fork_parent_on_the_allowlist_does_not_make_its_child_linkable() {
+fn ac_p2_25_26_url_a_fork_parent_does_not_make_its_child_linkable() {
     let own = "forge.example.invalid/acme/widget";
     let fork_parent = "github.com/upstream/widget";
     assert_eq!(

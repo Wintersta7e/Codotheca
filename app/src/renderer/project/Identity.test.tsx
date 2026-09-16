@@ -99,8 +99,8 @@ describe('the identity block', () => {
  * rendered-output test alone cannot see that, because a build with no `PUBLIC` branch renders
  * correctly on every `private` fixture. So the source is read as well.
  */
-describe('AC-P2-25-8 visibility renders as both words or as neither', () => {
-  it('appends PUBLIC after the language', () => {
+describe('§25.3 visibility renders as both words or as neither', () => {
+  it('AC-P2-25-8 appends PUBLIC after the language', () => {
     expect(identityLine(rowFixture(), 'public')).toBe('IDLE · 2019 · RUST · PUBLIC');
   });
 

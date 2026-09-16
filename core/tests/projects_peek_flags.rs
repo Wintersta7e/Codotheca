@@ -29,6 +29,23 @@ fn seeded() -> (tempfile::TempDir, Index) {
             rusqlite::params![NOW],
         )
         .expect("seed");
+    // [p2] Each project gets a **location**. §23.2 makes zero locations the *not-cloned* shape,
+    // and §23.3 forbids Peek sending `not_indexed` for such a row — so a fixture with no
+    // location is no longer a cloned project whose content pass has not run, which is what
+    // every assertion in this file is about. The fixture was the wrong shape the moment §23
+    // landed; it went on passing because nothing produced the other shape until now.
+    index
+        .conn()
+        .execute(
+            "INSERT INTO location (id, project_id, kind, distro, path_bytes, path_key,
+                                   path_display, volume_key, store_key, presence, repo_kind)
+             VALUES (10, 1, 'linux', '', X'2f61', X'2f61', '<project-path>/a', 'v', 's',
+                     'present', 'worktree'),
+                    (20, 2, 'linux', '', X'2f62', X'2f62', '<project-path>/b', 'v', 's',
+                     'present', 'worktree')",
+            [],
+        )
+        .expect("each project has a working copy");
     (dir, index)
 }
 

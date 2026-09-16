@@ -147,7 +147,7 @@ describe('§25.4: the forge types are imported only by the surfaces that render 
     expect(renderer.length, 'the import gate scanned nothing').toBeGreaterThan(20);
   });
 
-  it('names them nowhere else under src/renderer', () => {
+  it('AC-P2-25-7-renderer names them nowhere else under src/renderer', () => {
     // Comment lines are stripped first. *Grepping a declaration also matches prose about it* is
     // a recorded defect of this project, and it fired here immediately: `ReadmePanel.tsx` says
     // in a comment that it takes `readonly string[]` and **not** `RemoteFacts`, which is the
@@ -175,8 +175,8 @@ describe('§25.4: the forge types are imported only by the surfaces that render 
  * to name the file; it cannot, and this is the assertion that can — the same import shape
  * AC-P2-25-5 uses for `fetchClause`.
  */
-describe('AC-P2-25-23 Peek draws the blocks from the tab producer, not a copy', () => {
-  it('imports RemoteBlock rather than declaring one', () => {
+describe('§25.3a Peek draws the blocks from the tab producer, not a copy', () => {
+  it('AC-P2-25-23-producer imports RemoteBlock rather than declaring one', () => {
     const found = files.find(([path]) => path === 'src/renderer/shelf/Peek.tsx');
     expect(found, 'Peek.tsx was not scanned').toBeDefined();
     const source = found?.[1] ?? '';
@@ -199,8 +199,8 @@ describe('AC-P2-25-23 Peek draws the blocks from the tab producer, not a copy', 
  * no `PUBLIC` branch renders correctly on every `private` fixture, and the absence of the word is
  * exactly what makes its absence assert public.
  */
-describe('AC-P2-25-8 the identity line has a code path for each word', () => {
-  it('names both words, in code and not only in prose', () => {
+describe('§25.3 the identity line has a code path for each word', () => {
+  it('AC-P2-25-8-source names both words, in code and not only in prose', () => {
     const found = files.find(([path]) => path === 'src/renderer/project/Identity.tsx');
     expect(found, 'Identity.tsx was not scanned').toBeDefined();
     const source = found?.[1] ?? '';
@@ -219,14 +219,14 @@ describe('AC-P2-25-8 the identity line has a code path for each word', () => {
  * *asserted by import and not by matching text*: a copy inlined into the tab would render the
  * same strings and pass every rendered-output assertion in this repository.
  */
-describe('AC-P2-25-5 BEHIND comes from the producer §8.5.2 already uses', () => {
+describe('§25.1 BEHIND comes from the producer §8.5.2 already uses', () => {
   function sourceOf(path: string): string {
     const found = files.find(([name]) => name === path);
     expect(found, `${path} was not scanned`).toBeDefined();
     return found?.[1] ?? '';
   }
 
-  it('imports the fetch clause rather than re-writing it', () => {
+  it('AC-P2-25-5-import imports the fetch clause rather than re-writing it', () => {
     const source = sourceOf('src/renderer/project/remote/behindBlock.ts');
     expect(source.length, 'the source was not read').toBeGreaterThan(200);
     expect(source).toMatch(/import \{ fetchClause \} from '\.\.\/locations\/locationCopy'/u);

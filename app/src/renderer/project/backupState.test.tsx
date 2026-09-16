@@ -28,8 +28,8 @@ function plate(): string {
  * `core/src/git/refstate.rs:142`'s `u32` cannot represent today. **`AC-P2-25-11-unknown` owns
  * that limb and it is p2-24b's**, landing with `RefState.stash_count: Option<u32>`.
  */
-describe('AC-P2-25-11-producer the backup line states a fact and offers no control', () => {
-  it('renders the only-copy row with its plate and its edge token', () => {
+describe('§25.3 the backup line states a fact and offers no control', () => {
+  it('AC-P2-25-11-producer renders the only-copy row with its plate and its edge token', () => {
     draw('only_copy');
     expect(line()).toBe('No remote. This machine is the only copy.');
     expect(plate()).toBe('ONLY COPY ON EARTH');

@@ -35,8 +35,8 @@ function blockText(label: string): string {
   return screen.getByTestId(`cp-remote-${label}`).textContent ?? '';
 }
 
-describe('AC-P2-25-2 with no account the forge blocks and the CI list do not render', () => {
-  it('draws the header, BEHIND and the links row, and nothing that needs a token', () => {
+describe('§25.1 with no account the forge blocks and the CI list do not render', () => {
+  it('AC-P2-25-2 draws the header, BEHIND and the links row, and nothing that needs a token', () => {
     draw(
       { state: 'no_account', ci: { state: 'no_account', runs: [], observedAt: null } },
       locationFixture({ behind: 3 }),
@@ -53,14 +53,14 @@ describe('AC-P2-25-2 with no account the forge blocks and the CI list do not ren
     expect(screen.getByTestId('cp-remote-no-account')).toBeTruthy();
   });
 
-  it('renders the string UNKNOWN zero times', () => {
+  it('AC-P2-25-2-unknown renders the string UNKNOWN zero times', () => {
     draw({ state: 'no_account', ci: { state: 'no_account', runs: [], observedAt: null } });
     expect(pageText().match(/UNKNOWN/gu)).toBeNull();
   });
 });
 
-describe('AC-P2-25-3 an unobserved value renders the glyph and never a zero', () => {
-  it('renders — and NOT YET FETCHED for every forge slot, and 0 for none', () => {
+describe('§25.1 an unobserved value renders the glyph and never a zero', () => {
+  it('AC-P2-25-3 renders — and NOT YET FETCHED for every forge slot, and 0 for none', () => {
     draw();
     for (const label of ['open-issues', 'open-prs', 'stars']) {
       expect(blockText(label)).toContain('—');
@@ -69,7 +69,7 @@ describe('AC-P2-25-3 an unobserved value renders the glyph and never a zero', ()
     }
   });
 
-  it('renders — and NOT PERMITTED rather than an absent block for a repository the token may not see', () => {
+  it('AC-P2-25-3-permitted renders — and NOT PERMITTED rather than an absent block', () => {
     draw({
       state: 'not_permitted',
       ci: { state: 'not_permitted', runs: [], observedAt: null },
@@ -80,15 +80,15 @@ describe('AC-P2-25-3 an unobserved value renders the glyph and never a zero', ()
   });
 });
 
-describe('AC-P2-25-4 a measured zero and an unobserved value are different renders', () => {
-  it('renders 0 with its meaning for a measured zero', () => {
+describe('§25.1 a measured zero and an unobserved value are different renders', () => {
+  it('AC-P2-25-4 renders 0 with its meaning for a measured zero', () => {
     draw({ state: 'observed', observedAt: NOW - 60, openPrs: 0, openPrsFromUser: 0 });
     expect(blockText('open-prs')).toContain('0');
     expect(blockText('open-prs')).toContain('none from you');
     expect(blockText('open-prs')).not.toContain('—');
   });
 
-  it('renders — for an unobserved value inside an observed read', () => {
+  it('AC-P2-25-4-unobserved renders — for an unobserved value inside an observed read', () => {
     draw({ state: 'observed', observedAt: NOW - 60, stars: 41, openIssues: null });
     expect(blockText('stars')).toContain('41');
     expect(blockText('open-issues')).toContain('—');
@@ -145,8 +145,8 @@ describe('§25.1 the observation line, and staleness is a function of now', () =
   });
 });
 
-describe('AC-P2-25-26 the fork line renders as text and carries no link', () => {
-  it('renders FORK OF only when the parent key is observed', () => {
+describe('§25.1 the fork line renders as text and carries no link', () => {
+  it('AC-P2-25-26 renders FORK OF only when the parent key is observed', () => {
     draw({ state: 'observed', observedAt: NOW - 60 });
     expect(screen.queryByTestId('cp-remote-fork')).toBeNull();
     cleanup();
@@ -163,8 +163,8 @@ describe('AC-P2-25-26 the fork line renders as text and carries no link', () => 
   });
 });
 
-describe('AC-P2-25-12 an unlinkable key draws no links row and no link affordance', () => {
-  it('draws the key as text and the row not at all', () => {
+describe('§25.2 an unlinkable key draws no links row and no link affordance', () => {
+  it('AC-P2-25-12-render draws the key as text and the row not at all', () => {
     draw({ linkable: false, key: 'forge.example.invalid/acme/widget' });
     expect(screen.queryByTestId('cp-remote-links')).toBeNull();
     const key = screen.getByTestId('cp-remote-key');
@@ -172,7 +172,7 @@ describe('AC-P2-25-12 an unlinkable key draws no links row and no link affordanc
     expect(key.querySelector('a')).toBeNull();
   });
 
-  it('sends an id and a kind, never a URL', () => {
+  it('AC-P2-25-12-payload sends an id and a kind, never a URL', () => {
     const { onOpenLink } = draw({ linkable: true });
     screen.getByRole('button', { name: 'ISSUES' }).click();
     expect(onOpenLink).toHaveBeenCalledWith(PROJECT, 'issues');
@@ -180,8 +180,8 @@ describe('AC-P2-25-12 an unlinkable key draws no links row and no link affordanc
   });
 });
 
-describe('AC-P2-25-5 BEHIND is the local figure, through §8.5.2s own producer', () => {
-  it('renders a measured zero with its meaning and the fetch age', () => {
+describe('§25.1 BEHIND is the local figure, through the producer §8.5.2 uses', () => {
+  it('AC-P2-25-5 renders a measured zero with its meaning and the fetch age', () => {
     draw({}, locationFixture({ behind: 0, fetchHeadAt: NOW - 3600 }));
     expect(blockText('behind')).toContain('0');
     expect(blockText('behind')).toContain('no known divergence');

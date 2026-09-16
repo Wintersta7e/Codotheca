@@ -211,7 +211,7 @@ describe('PeekPanel', () => {
  * query**, not as dashes — each of them would otherwise be a claim about a repository nothing has
  * read or a disk nothing has looked at.
  */
-describe('AC-P2-25-23 Peek on a not-cloned row', () => {
+describe('§25.3a Peek on a not-cloned row', () => {
   const notCloned = (over: Record<string, unknown> = {}): Peek =>
     peek({
       location: null,
@@ -226,7 +226,7 @@ describe('AC-P2-25-23 Peek on a not-cloned row', () => {
       ...over,
     });
 
-  it('renders no README string, no commit list, no path and no worktree line', () => {
+  it('AC-P2-25-23 renders no README string, no commit list, no path and no worktree line', () => {
     const { container } = render(<PeekPanel peek={notCloned()} now={NOW} tier="full" />);
     expect(container.querySelector('.cdt-peek-readme')).toBeNull();
     expect(container.querySelector('.cdt-peek-commits')).toBeNull();

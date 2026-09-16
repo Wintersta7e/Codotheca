@@ -41,8 +41,8 @@ function rows(): HTMLElement[] {
   );
 }
 
-describe('AC-P2-25-6 the CI list renders the record and never judges it', () => {
-  it('renders at most five runs out of seven', () => {
+describe('§25.4 the CI list renders the record and never judges it', () => {
+  it('AC-P2-25-6 renders at most five runs out of seven', () => {
     const seven = Array.from({ length: 7 }, (_, i) => run({ runId: i + 1, runNumber: i + 1 }));
     draw({ ci: { state: 'observed', runs: seven, observedAt: NOW - 300 } });
     expect(rows()).toHaveLength(5);

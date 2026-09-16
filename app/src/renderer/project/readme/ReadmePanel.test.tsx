@@ -78,7 +78,7 @@ describe('the two cut elements', () => {
  * never an empty rail — §5.6's *nothing selected, no block renders*, and an empty rail is
  * furniture.
  */
-describe('AC-P2-25-9 the topic rail renders only when there is a topic', () => {
+describe('§25.3 the topic rail renders only when there is a topic', () => {
   const readme: ReadmeState = { state: 'present', text: 'A paragraph.', readAt: NOW - 3600 };
 
   it('renders one chip for one topic', () => {
@@ -95,7 +95,7 @@ describe('AC-P2-25-9 the topic rail renders only when there is a topic', () => {
     expect(screen.getByTestId('cp-readme-topics').children).toHaveLength(3);
   });
 
-  it('renders no rail element at all for zero topics, asserted as an absence', () => {
+  it('AC-P2-25-9 renders no rail element at all for zero topics, asserted as an absence', () => {
     render(<ReadmePanel readme={readme} row={rowFixture()} now={NOW} topics={[]} />);
     expect(screen.queryByTestId('cp-readme-topics')).toBeNull();
   });

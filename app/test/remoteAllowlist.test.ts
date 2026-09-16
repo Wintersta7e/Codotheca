@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import { CI_RUN_LIMIT } from '../src/renderer/project/remote/ciCopy';
 import { REMOTE_HOST_ALLOWLIST } from '../src/main/dialogs/externalLink';
 
 /**
@@ -21,6 +22,7 @@ import { REMOTE_HOST_ALLOWLIST } from '../src/main/dialogs/externalLink';
  */
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const CORE_WEBURL = join(REPO, 'core/src/remote/weburl.rs');
+const CORE_FACTS = join(REPO, 'core/src/remote/facts.rs');
 const SHELL_OPENER = join(REPO, 'app/src/main/dialogs/externalLink.ts');
 
 function coreSource(): string {
@@ -96,5 +98,21 @@ describe('§25.2: the host allowlist is one value with two readers', () => {
     const shell = readFileSync(SHELL_OPENER, 'utf8');
     expect(shell).toMatch(/accounts\.list/u);
     expect(shell).toMatch(/account\.host/u);
+  });
+});
+
+/**
+ * §25.1 renders **at most five** runs and §25.7 stores at most five per pair. That is one value
+ * in two languages: the core trims the rows and the renderer bounds the list, and a change to
+ * either alone leaves the surface and the table disagreeing about what "latest" means. R24's
+ * remedy — the mirror reads the other side rather than repeating the number.
+ */
+describe('§25.1: the CI run bound is one value with two readers', () => {
+  it('the renderer bound equals the core one', () => {
+    const source = readFileSync(CORE_FACTS, 'utf8');
+    expect(source.length, 'the core facts source was not read').toBeGreaterThan(200);
+    const found = /pub const CI_RUN_LIMIT: usize = (\d+);/u.exec(source);
+    expect(found, 'CI_RUN_LIMIT is declared in core/src/remote/facts.rs').not.toBeNull();
+    expect(CI_RUN_LIMIT).toBe(Number(found?.[1]));
   });
 });

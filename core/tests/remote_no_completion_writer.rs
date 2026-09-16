@@ -69,7 +69,7 @@ fn rust_sources(root: &Path) -> Vec<(String, String)> {
 }
 
 #[test]
-fn no_remote_path_writes_a_completion_column() {
+fn ac_p2_25_7_rust_no_remote_path_writes_a_completion_column() {
     let sources = rust_sources(&core_src());
     eprintln!(
         "remote_no_completion_writer: walked {} core source file(s)",

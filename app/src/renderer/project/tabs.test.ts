@@ -23,8 +23,8 @@ function detail(remote: RemoteFacts | null): ProjectDetail {
   return { remote } as unknown as ProjectDetail;
 }
 
-describe('AC-P2-25-1 the tab list is per project, not per phase', () => {
-  it('mounts two tabs with no remote and three with one, and four in neither case', () => {
+describe('§25.1 the tab list is per project, not per phase', () => {
+  it('AC-P2-25-1 mounts two tabs with no remote and three with one, and four in neither case', () => {
     expect(tabsFor(detail(null)).map((t) => t.id)).toEqual(['overview', 'activity']);
     expect(tabsFor(detail(FACTS)).map((t) => t.id)).toEqual(['overview', 'activity', 'remote']);
     expect(tabsFor(detail(null))).toHaveLength(2);
@@ -39,7 +39,7 @@ describe('AC-P2-25-1 the tab list is per project, not per phase', () => {
     expect(tabsFor(detail(FACTS)).map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY', 'REMOTE']);
   });
 
-  it('cycles the three-tab ring forwards and backwards', () => {
+  it('AC-P2-25-1-cycle3 cycles the three-tab ring forwards and backwards', () => {
     const tabs = tabsFor(detail(FACTS));
     expect(nextTab(tabs, 'overview', 1)).toBe('activity');
     expect(nextTab(tabs, 'activity', 1)).toBe('remote');
@@ -51,7 +51,7 @@ describe('AC-P2-25-1 the tab list is per project, not per phase', () => {
 
   // Two tests, not one: a modulo bug over two elements is invisible, so the two-tab ring is
   // asserted separately rather than as a special case of the three-tab one.
-  it('cycles the two-tab ring forwards and backwards', () => {
+  it('AC-P2-25-1-cycle2 cycles the two-tab ring forwards and backwards', () => {
     const tabs = tabsFor(detail(null));
     expect(nextTab(tabs, 'overview', 1)).toBe('activity');
     expect(nextTab(tabs, 'activity', 1)).toBe('overview');

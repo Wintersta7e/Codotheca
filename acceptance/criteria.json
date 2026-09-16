@@ -2881,6 +2881,572 @@
           "assert": "Narrowed to what §23.7 scopes: over a projection built through toShelfRow from real ProjectRows, projectionCapabilities().hasRemote is true, has:remote and is:notcloned are answerable for every row, and the values that remain notAvailable are asserted as an exact named list so the gap cannot grow in silence. has:remote still answers Unknown for a not-cloned row for the DOMAIN reason, proved by giving that row hasRemote true."
         }
       ]
+    },
+    {
+      "id": "P2-25-1",
+      "title": "The REMOTE tab is mounted per project, and the cycle walks the mounted list",
+      "group": "surfaces",
+      "spec": "§25.1",
+      "checks": [
+        {
+          "id": "AC-P2-25-1",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 the tab list is per project, not per phase AC-P2-25-1 mounts two tabs with no remote and three with one, and four in neither case",
+          "assert": "A project whose ProjectDetail.remote is non-null mounts three tabs and one with null mounts two; neither mounts four, and HEALTH is named in neither label set."
+        },
+        {
+          "id": "AC-P2-25-1-cycle3",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 the tab list is per project, not per phase AC-P2-25-1-cycle3 cycles the three-tab ring forwards and backwards",
+          "assert": "The three-tab ring walks overview to activity to remote and back, in both directions. Asserted apart from the two-tab ring because a modulo bug over two elements is invisible."
+        },
+        {
+          "id": "AC-P2-25-1-cycle2",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 the tab list is per project, not per phase AC-P2-25-1-cycle2 cycles the two-tab ring forwards and backwards",
+          "assert": "The two-tab ring walks overview to activity and back, in both directions. Two tests, not one, which is what §25.1 asks for."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-2",
+      "title": "With no account connected the forge blocks and the CI list do not render",
+      "group": "surfaces",
+      "spec": "§25.1",
+      "checks": [
+        {
+          "id": "AC-P2-25-2",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 with no account the forge blocks and the CI list do not render AC-P2-25-2 draws the header, BEHIND and the links row, and nothing that needs a token",
+          "assert": "OPEN ISSUES, OPEN PRS, STARS and LATEST CI are absent as elements; the header, BEHIND and the links row render, and one statement replaces the blocks. A surface that exists to advertise a feature is an ad."
+        },
+        {
+          "id": "AC-P2-25-2-unknown",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 with no account the forge blocks and the CI list do not render AC-P2-25-2-unknown renders the string UNKNOWN zero times",
+          "assert": "The rendered page contains the string UNKNOWN zero times. The design's UNKNOWN NEEDS GITHUB treatment is phase 3's check vocabulary; importing it here would be two glyphs for one meaning."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-3",
+      "title": "An unobserved forge value renders the glyph, and a refusal says so",
+      "group": "surfaces",
+      "spec": "§25.1",
+      "checks": [
+        {
+          "id": "AC-P2-25-3",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 an unobserved value renders the glyph and never a zero AC-P2-25-3 renders — and NOT YET FETCHED for every forge slot, and 0 for none",
+          "assert": "With an account connected and nothing observed, every forge value slot renders the em dash glyph sub-lined NOT YET FETCHED, and no slot renders a zero."
+        },
+        {
+          "id": "AC-P2-25-3-permitted",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 an unobserved value renders the glyph and never a zero AC-P2-25-3-permitted renders — and NOT PERMITTED rather than an absent block",
+          "assert": "A repository the token may not see renders the glyph and NOT PERMITTED, as a rendered block rather than an absent one: the refusal is a fact about access and is stated."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-4",
+      "title": "A measured zero and an unobserved value render differently",
+      "group": "surfaces",
+      "spec": "§25.1",
+      "checks": [
+        {
+          "id": "AC-P2-25-4",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 a measured zero and an unobserved value are different renders AC-P2-25-4 renders 0 with its meaning for a measured zero",
+          "assert": "An observed measured zero renders 0 with its meaning line and never the glyph. A build that renders the glyph for a measured zero fails this."
+        },
+        {
+          "id": "AC-P2-25-4-unobserved",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 a measured zero and an unobserved value are different renders AC-P2-25-4-unobserved renders — for an unobserved value inside an observed read",
+          "assert": "A value the read did not carry renders the glyph and NOT YET FETCHED while its neighbours render their numbers. A build that renders 0 for an unobserved value fails this."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-5",
+      "title": "BEHIND is the local figure, from the module §8.5.2 already uses",
+      "group": "surfaces",
+      "spec": "§25.1",
+      "checks": [
+        {
+          "id": "AC-P2-25-5",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 BEHIND is the local figure, through the producer §8.5.2 uses AC-P2-25-5 renders a measured zero with its meaning and the fetch age",
+          "assert": "BEHIND renders location.behind for the shown copy: a measured zero renders 0 with no known divergence, and the block carries fetch_head_at's age or no fetch recorded."
+        },
+        {
+          "id": "AC-P2-25-5-import",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 BEHIND comes from the producer §8.5.2 already uses AC-P2-25-5-import imports the fetch clause rather than re-writing it",
+          "assert": "Asserted by import and not by matching text: behindBlock.ts imports fetchClause from locationCopy.ts and holds neither half of the clause as a literal. A copy would render the same strings and pass a text assertion."
+        },
+        {
+          "id": "AC-P2-25-5-census",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-25",
+          "test": "remote_facts_read::ac_p2_25_5_census_no_request_asks_the_forge_for_divergence",
+          "assert": "A request census over this section's only two forge reads prints the count it examined and fails at zero examined; no request carries a compare path segment, a basehead parameter or a base...head range.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-25-6",
+      "title": "The CI list renders the record and never judges it",
+      "group": "surfaces",
+      "spec": "§25.4",
+      "checks": [
+        {
+          "id": "AC-P2-25-6",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.4 the CI list renders the record and never judges it AC-P2-25-6 renders at most five runs out of seven",
+          "assert": "Seven runs render five. The suite around it prints the branch exactly once per row by counting occurrences, maps every conclusion §25.4 names to its label and ink token, renders an unrecognised conclusion uppercased and verbatim, renders a NULL conclusion as RUNNING, and finds no aggregate string in the output."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-7",
+      "title": "The two CI-boundary gates pass and print what they scanned",
+      "group": "surfaces",
+      "spec": "§25.4",
+      "checks": [
+        {
+          "id": "AC-P2-25-7-rust",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-25",
+          "test": "remote_no_completion_writer::ac_p2_25_7_rust_no_remote_path_writes_a_completion_column",
+          "assert": "A walk over core/src prints its file count and fails at zero scanned, then prints how many of those files name a remote fact and fails at zero of those too; none of them names completion_lit or completion_applicable.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-25-7-renderer",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.4: the forge types are imported only by the surfaces that render them AC-P2-25-7-renderer names them nowhere else under src/renderer",
+          "assert": "A renderer walk prints its scanned count and fails at zero scanned; RemoteFacts, CiList and CiRun are named only by the tab's own modules, Peek and the fixture builder, with comment lines stripped first.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-25-8",
+      "title": "Visibility renders as both words or as neither",
+      "group": "surfaces",
+      "spec": "§25.3",
+      "checks": [
+        {
+          "id": "AC-P2-25-8",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.3 visibility renders as both words or as neither AC-P2-25-8 appends PUBLIC after the language",
+          "assert": "PUBLIC renders after the language segment; PRIVATE renders in its place; null omits the segment entirely with no placeholder and no glyph. ProjectRow carries no visibility field."
+        },
+        {
+          "id": "AC-P2-25-8-source",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.3 the identity line has a code path for each word AC-P2-25-8-source names both words, in code and not only in prose",
+          "assert": "The identity module's code, comments stripped, carries a path for each word. A build capable of rendering PRIVATE while having no code path that renders PUBLIC fails, which a rendered-output test alone cannot see."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-9",
+      "title": "The topic rail renders only when there is a topic",
+      "group": "surfaces",
+      "spec": "§25.3",
+      "checks": [
+        {
+          "id": "AC-P2-25-9",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.3 the topic rail renders only when there is a topic AC-P2-25-9 renders no rail element at all for zero topics, asserted as an absence",
+          "assert": "One stored topic renders one chip and three render three; zero renders no rail element at all, asserted as an absence by query rather than as an empty string. An empty rail is furniture."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-10",
+      "title": "description_source accepts remote, and the chain resolves five rungs",
+      "group": "surfaces",
+      "spec": "§25.3",
+      "checks": [
+        {
+          "id": "AC-P2-25-10-chain",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-25",
+          "test": "acceptance_p2_remote_facts::ac_p2_25_10_chain_resolves_manifest_then_remote_then_readme_then_note_then_detected",
+          "assert": "A project holding all five sources resolves to manifest; removing each rung in turn resolves to remote, then README, then note, then detected. A project with a remote description and no clone resolves to remote, which is the case the rank exists for."
+        },
+        {
+          "id": "AC-P2-25-10-ddl",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "index_rebuild_0009::every_description_source_variant_is_accepted_by_the_column",
+          "assert": "The DDL CHECK text is read out of the migration and compared to the generated variant set in both directions, and the widened CHECK is asserted to carry remote. p2-22 owns it because it owns the CHECK."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-11",
+      "title": "The backup state is one producer with two consumers",
+      "group": "surfaces",
+      "spec": "§25.3",
+      "checks": [
+        {
+          "id": "AC-P2-25-11-producer",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.3 the backup line states a fact and offers no control AC-P2-25-11-producer renders the only-copy row with its plate and its edge token",
+          "assert": "Three of the four rows are exercised — only_copy, not_anywhere_else and verified — plus the NULL that row 4 produces, with singularisation at one and at two and no zero clause. The word clean appears in no rendered output. The fourth row's unreadable-stash limb is AC-P2-25-11-unknown's, p2-24b's, because RefState.stash_count is a u32 today and cannot represent it."
+        },
+        {
+          "id": "AC-P2-25-11-unknown",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "acceptance_uninstall::ac_p2_25_11_unknown_an_unreadable_stash_falls_through_to_no_block",
+          "assert": "Row 4's unreadable-stash limb: with RefState.stash_count an Option<u32>, a location whose stash reflog cannot be read falls through to no block rather than to verified. Not representable until p2-24b lands the nullable field (R51)."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-12",
+      "title": "No URL crosses IPC, and only the shell opens one",
+      "group": "surfaces",
+      "spec": "§25.2",
+      "checks": [
+        {
+          "id": "AC-P2-25-12",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "remote surfaces: the opener AC-P2-25-12 no URL crosses IPC and the shell is the only thing that opens one",
+          "assert": "The renderer's message carries projectId and kind only, and a url field on the payload reaches nothing; a non-allowlisted host makes remote.webUrl answer NULL and nothing opens. A renderer walk prints its file count, fails at zero scanned, and finds shell.openExternal in no renderer module.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-25-12-render",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.2 an unlinkable key draws no links row and no link affordance AC-P2-25-12-render draws the key as text and the row not at all",
+          "assert": "An unlinkable key renders as a span with no anchor and the links row is absent entirely. An https form guessed from an arbitrary remote host is a URL the product invented."
+        },
+        {
+          "id": "AC-P2-25-12-payload",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.2 an unlinkable key draws no links row and no link affordance AC-P2-25-12-payload sends an id and a kind, never a URL",
+          "assert": "Pressing a link calls the opener with the project id and the link kind and with exactly two arguments, so the renderer originates no URL."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-13",
+      "title": "denyPermissionRequest still refuses every permission",
+      "group": "surfaces",
+      "spec": "§25.2",
+      "checks": [
+        {
+          "id": "AC-P2-25-13",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "remote surfaces: the opener AC-P2-25-13 denyPermissionRequest refuses every permission, openExternal included",
+          "assert": "Every permission name is refused, openExternal among them, and the check prints the count of names it covered and fails at zero covered. That handler grants for a whole session, so the opener is a channel rather than a grant.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-25-14",
+      "title": "The CSP delta is exactly one directive",
+      "group": "surfaces",
+      "spec": "§25.5",
+      "checks": [
+        {
+          "id": "AC-P2-25-14",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p2-25b",
+          "test": "csp::ac_p2_25_14_frame_src_self_and_every_other_directive_byte_identical",
+          "assert": "remoteOriginsIn(CONTENT_SECURITY_POLICY) returns an empty list, and a directive-by-directive comparison asserts frame-src 'self' with every other directive byte-identical to phase 1's. A toContain assertion does not satisfy it."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-15",
+      "title": "Both navigation guards share one predicate",
+      "group": "surfaces",
+      "spec": "§25.5",
+      "checks": [
+        {
+          "id": "AC-P2-25-15",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p2-25b",
+          "test": "security::ac_p2_25_15_will_navigate_and_will_frame_navigate_share_one_predicate",
+          "assert": "will-navigate and will-frame-navigate are both bound on the window's webContents and share isNavigationAllowed, which refuses about:srcdoc, an external https URL and a data:text/html payload. Whether Chromium fires will-frame-navigate for the initial about:srcdoc commit is a measurement p2-25b schedules."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-16",
+      "title": "The frame's sandbox attribute is present and exactly empty",
+      "group": "surfaces",
+      "spec": "§25.5",
+      "checks": [
+        {
+          "id": "AC-P2-25-16",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p2-25b",
+          "test": "readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty",
+          "assert": "The sandbox attribute is present and exactly empty, and the strings allow-scripts and allow-same-origin appear nowhere in the panel's sources — a tree walk through scripts/lib/read-scanned.mjs printing its file count and failing at zero."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-17",
+      "title": "Hostile markup renders as text",
+      "group": "surfaces",
+      "spec": "§25.5",
+      "checks": [
+        {
+          "id": "AC-P2-25-17",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p2-25b",
+          "test": "readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text",
+          "assert": "A README carrying a script tag, an onerror attribute, a javascript: link, a data:text/html link and a details block renders the script tag as visible text, keeps no on* attribute and no non-http(s)/mailto href. Reverting the sanitiser turns at least one red."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-18",
+      "title": "The panel's first frame issues no request",
+      "group": "surfaces",
+      "spec": "§25.5",
+      "checks": [
+        {
+          "id": "AC-P2-25-18",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p2-25b",
+          "test": "readmeAssets::ac_p2_25_18_the_request_census_with_consent_absent",
+          "assert": "An end-to-end request census with consent absent prints both numbers: requests to schemes other than file: and codotheca: are zero, and rendered block elements in the frame are above zero. After consent the request count equals the number of distinct remote URLs and every one was issued by the core."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-19",
+      "title": "projects.readme returns the whole document",
+      "group": "surfaces",
+      "spec": "§25.5",
+      "checks": [
+        {
+          "id": "AC-P2-25-19",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p2-25b",
+          "test": "projects_readme::ac_p2_25_19_the_whole_document_is_returned_under_the_existing_cap",
+          "assert": "A README with two paragraphs returns both, and truncated is true only past J6_BYTE_CAP, which the command reads from the existing constant rather than declaring a second cap."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-20",
+      "title": "A mermaid fence renders as a code block",
+      "group": "surfaces",
+      "spec": "§25.6",
+      "checks": [
+        {
+          "id": "AC-P2-25-20",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p2-25b",
+          "test": "readmeMarkup::ac_p2_25_20_a_mermaid_fence_renders_its_source",
+          "assert": "A mermaid fence renders as a code block showing its source, and no bundled chunk contains a mermaid runtime."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-21",
+      "title": "The markup libraries stay off the first-paint chunk",
+      "group": "surfaces",
+      "spec": "§25.5",
+      "checks": [
+        {
+          "id": "AC-P2-25-21",
+          "status": "deferred",
+          "runner": "script",
+          "owner": "p2-25b",
+          "test": "check-bundle:markup-lazy-chunk",
+          "assert": "check:bundle names the lazy chunk, asserts none of the four libraries appears in the first-paint chunk, and prints the chunk list it scanned."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-22",
+      "title": "The panel states once that its links are inert",
+      "group": "surfaces",
+      "spec": "§25.5",
+      "checks": [
+        {
+          "id": "AC-P2-25-22",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p2-25b",
+          "test": "readmeFrame::ac_p2_25_22_the_links_are_not_active_statement_renders_once",
+          "assert": "A document with at least one anchor renders the LINKS ARE NOT ACTIVE IN THIS PANEL statement exactly once and renders no element carrying a link affordance; a document with none renders no such statement."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-23",
+      "title": "Peek on a not-cloned row renders absences, not dashes",
+      "group": "surfaces",
+      "spec": "§25.3a",
+      "checks": [
+        {
+          "id": "AC-P2-25-23",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.3a Peek on a not-cloned row AC-P2-25-23 renders no README string, no commit list, no path and no worktree line",
+          "assert": "The four elements are asserted as absences by query rather than as dashes, and the strings No README indexed yet., No README in this repository. and 0h appear nowhere on the row."
+        },
+        {
+          "id": "AC-P2-25-23-facts",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.3a the not-cloned fact set AC-P2-25-23-facts drops PLAYTIME entirely, asserted as an absence and not as a dash",
+          "assert": "The key set for a row with no location is BIRTH, LANGUAGE, TRACKED and LAST COMMIT; PLAYTIME is absent rather than dashed, and the three history-derived facts render the glyph while LANGUAGE renders the forge's value when observed."
+        },
+        {
+          "id": "AC-P2-25-23-core",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-25",
+          "test": "peek_not_cloned::ac_p2_25_23_core_a_not_cloned_row_carries_no_location_and_no_history",
+          "assert": "The core answers a zero-location project with no location, no commits and no history-derived fact, and its readme state is never not_indexed — a promise no pass can keep (§23.3)."
+        },
+        {
+          "id": "AC-P2-25-23-producer",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.3a Peek draws the blocks from the tab producer, not a copy AC-P2-25-23-producer imports RemoteBlock rather than declaring one",
+          "assert": "Peek imports the tab's block rather than declaring one, and its code names none of the four-state vocabulary. §25.4's importer gate admits Peek deliberately, so it cannot catch a copy written inside that file; this can."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-24",
+      "title": "The observation clock moves only for a read that observed something",
+      "group": "surfaces",
+      "spec": "§25.7",
+      "checks": [
+        {
+          "id": "AC-P2-25-24",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-25",
+          "test": "acceptance_p2_remote_facts::ac_p2_25_24_the_clock_moves_only_for_a_read_that_observed_something",
+          "assert": "Six outcomes in sequence, asserted through the reader: a 200 and a 304 move observed_at, a throttled and a skipped attempt leave it exactly where it was, and a 403 and a 404 set not_permitted while dating nothing. The test prints the number of outcomes it exercised and fails below six."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-25",
+      "title": "The facts row is keyed on the forge's stable id",
+      "group": "surfaces",
+      "spec": "§25.7",
+      "checks": [
+        {
+          "id": "AC-P2-25-25-facts",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-25",
+          "test": "acceptance_p2_remote_facts::ac_p2_25_25_facts_are_keyed_on_the_stable_id_and_survive_a_rename",
+          "assert": "Two projects sharing one remote_key share exactly one facts row, and a remote_key rewritten under a rename leaves the row, its counts and its clock intact. The schema scan prints the table count it read, fails at zero read, and asserts no remote table carries the identity basis or a second clock for its validator.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-25-25-schema",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "index_rebuild_0009::no_table_takes_remote_key_as_a_primary_or_unique_key",
+          "assert": "No table takes remote_key as a primary or unique key, asserted over the migrated schema and printing the table count it scanned. p2-22 owns it because it owns the migration."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-26",
+      "title": "The fork line is text, and a URL derives from this project's key alone",
+      "group": "surfaces",
+      "spec": "§25.1",
+      "checks": [
+        {
+          "id": "AC-P2-25-26",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 the fork line renders as text and carries no link AC-P2-25-26 renders FORK OF only when the parent key is observed",
+          "assert": "The FORK OF line renders only when fork_parent_remote_key is observed and carries no anchor and no button."
+        },
+        {
+          "id": "AC-P2-25-26-url",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-25",
+          "test": "remote_weburl::ac_p2_25_26_url_a_fork_parent_does_not_make_its_child_linkable",
+          "assert": "A project whose fork parent is on an allowlisted host and whose own host is not answers NULL, so the opener derives from this project's own remote_key and from nothing else."
+        }
+      ]
     }
   ]
 }
