@@ -78,7 +78,9 @@ export function ReadmePanel({
   locationId = null,
   topics = [],
 }: ReadmePanelProps): ReactElement {
-  const document = useReadmeDocument({ projectId: row.id, locationId, readme });
+  // Not named `document`: this file's whole subject is DOM construction, and shadowing the global
+  // there is a trap for the next edit rather than a bug today.
+  const rendered = useReadmeDocument({ projectId: row.id, locationId, readme });
 
   const text =
     readme.state === 'present' && readme.text !== null && readme.text !== ''
@@ -88,8 +90,8 @@ export function ReadmePanel({
         : README_NOT_INDEXED;
 
   const appearance = appearanceFor(seedOf(row), fadeFor(row), row.primaryLanguage);
-  const srcdoc = document.srcdoc;
-  const framed = document.phase === 'frame' && srcdoc !== null;
+  const srcdoc = rendered.srcdoc;
+  const framed = rendered.phase === 'frame' && srcdoc !== null;
 
   return (
     <section
@@ -97,7 +99,7 @@ export function ReadmePanel({
       style={{ animationDelay: cascadeDelay(2), '--cdt-jewel': appearance.jewel } as CSSProperties}
     >
       <div className="cp-readme-header" data-testid="cp-readme-header">
-        <span data-testid="cp-readme-name-slot">{document.path ?? README_DEFAULT_NAME}</span>
+        <span data-testid="cp-readme-name-slot">{rendered.path ?? README_DEFAULT_NAME}</span>
         {readme.readAt === null ? null : (
           <span className="cp-readme-age" data-testid="cp-readme-age">
             {formatAge(now - readme.readAt)}
@@ -114,7 +116,7 @@ export function ReadmePanel({
                the document it first committed. Measured in the built app — the substituted
                document reached the attribute and the frame still rendered the placeholders. A new
                key mounts a new element, which commits its own srcdoc. */
-            key={`readme-${String(document.revision)}`}
+            key={`readme-${String(rendered.revision)}`}
             className="cp-readme-frame"
             data-testid="cp-readme-frame"
             title={`${row.name} README`}
@@ -127,20 +129,20 @@ export function ReadmePanel({
             {text}
           </p>
         )}
-        {framed && document.truncated ? (
+        {framed && rendered.truncated ? (
           <p className="cp-readme-statement" data-testid="cp-readme-truncated">
             {README_TRUNCATED_STATEMENT}
           </p>
         ) : null}
-        {framed && document.anchorCount > 0 ? (
+        {framed && rendered.anchorCount > 0 ? (
           <p className="cp-readme-statement" data-testid="cp-readme-links-inert">
             {LINKS_INERT_NOTICE}
           </p>
         ) : null}
-        {framed && document.blockedRemote > 0 ? (
+        {framed && rendered.blockedRemote > 0 ? (
           <div className="cp-readme-consent" data-testid="cp-readme-consent">
             <span>{REMOTE_BLOCKED_STATEMENT}</span>
-            <button type="button" onClick={document.grantRemote}>
+            <button type="button" onClick={rendered.grantRemote}>
               {REMOTE_GRANT_LABEL}
             </button>
           </div>

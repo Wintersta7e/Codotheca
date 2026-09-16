@@ -211,10 +211,23 @@ export const FORBID_TAGS: readonly string[] = [
   'svg',
 ];
 
+declare const sanitised: unique symbol;
+/**
+ * A fragment **this module produced**, and the only kind the frame will serialise.
+ *
+ * R100, applied to the distinction this whole section exists to preserve: `applyAssets`,
+ * `serialiseFragment` and `buildSrcdoc` used to take any `DocumentFragment`, so a second render
+ * path — a test helper promoted to production, a paste path, a future "preview" — could reach
+ * `srcdoc` with markup the sanitiser never saw, and nothing would have complained. The brand is
+ * applied by {@link renderMarkup} and by nothing else, so *unsanitised markup reaches the frame*
+ * stops being a rule somebody has to remember and becomes a state that cannot be constructed.
+ */
+export type SanitisedFragment = DocumentFragment & { readonly [sanitised]: true };
+
 /** What one README parse produced. */
 export interface RenderedMarkup {
   /** The sanitised document, with every image already replaced by a placeholder. */
-  readonly fragment: DocumentFragment;
+  readonly fragment: SanitisedFragment;
   /** Every `img[src]` value, in document order, de-duplicated nowhere: the core does that. */
   readonly imageRefs: readonly string[];
   /** How many anchors survived, which is what decides whether the panel states they are inert. */
@@ -309,7 +322,9 @@ function sanitiseConfig(): Parameters<typeof DOMPurify.sanitize>[1] {
  */
 export function renderMarkup(source: string): RenderedMarkup {
   const html = parser.render(source);
-  const fragment = DOMPurify.sanitize(html, sanitiseConfig()) as unknown as DocumentFragment;
+  // The one place the brand is applied, and the cast is the whole of it: DOMPurify returns a
+  // `DocumentFragment` and what makes this one sanitised is that it came from here.
+  const fragment = DOMPurify.sanitize(html, sanitiseConfig()) as unknown as SanitisedFragment;
 
   const imageRefs: string[] = [];
   for (const image of [...fragment.querySelectorAll('img')]) {
@@ -348,7 +363,7 @@ function isAllowedAssetUri(value: string | null): value is string {
  * consent state and is never rendered as a failure** — the panel reads the attribute and says so
  * in its own voice, below the frame.
  */
-export function applyAssets(fragment: DocumentFragment, assets: readonly ReadmeAsset[]): void {
+export function applyAssets(fragment: SanitisedFragment, assets: readonly ReadmeAsset[]): void {
   const byRef = new Map(assets.map((asset) => [asset.ref, asset]));
   for (const placeholder of [...fragment.querySelectorAll(`[${ASSET_REF_ATTR}]`)]) {
     const reference = placeholder.getAttribute(ASSET_REF_ATTR);
@@ -372,7 +387,7 @@ export function applyAssets(fragment: DocumentFragment, assets: readonly ReadmeA
  * `innerHTML` on a detached host is what escapes both text nodes and attribute values; building
  * the string by hand is how a sanitised document becomes an unsanitised one on the way out.
  */
-export function serialiseFragment(fragment: DocumentFragment): string {
+export function serialiseFragment(fragment: SanitisedFragment): string {
   const host = fragment.ownerDocument.createElement('div');
   host.appendChild(fragment.cloneNode(true));
   return host.innerHTML;

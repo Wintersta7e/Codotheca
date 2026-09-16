@@ -7,6 +7,7 @@
  * families were emitted as local assets.
  */
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { MARKUP_PACKAGES, README_MARKUP_CHUNK } from './lib/markup-chunk.mjs';
 import { dirname, extname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -110,8 +111,7 @@ if (scripts.length === 0) {
  * of minified text would be a guess; the build already knows the answer, so the renderer's Vite
  * config writes `.chunk-map.json` in `generateBundle` and this reads it.
  */
-export const README_MARKUP_CHUNK = 'readme-markup';
-export const MARKUP_PACKAGES = ['markdown-it', 'dompurify', 'highlight.js', 'katex'];
+export { MARKUP_PACKAGES, README_MARKUP_CHUNK } from './lib/markup-chunk.mjs';
 
 const chunkMapPath = join(rendererDir, '.chunk-map.json');
 if (!existsSync(chunkMapPath)) {

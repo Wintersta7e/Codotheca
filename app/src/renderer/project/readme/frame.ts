@@ -19,6 +19,7 @@
  * - **Every `font-size` here is a member of §8.7's scale.** `scripts/check-type-scale.mjs` scans
  *   renderer `.ts` as well as `.css` and `.tsx`, so this template literal is in its walk.
  */
+import type { SanitisedFragment } from './markup';
 import { serialiseFragment } from './markup';
 
 /**
@@ -28,7 +29,7 @@ import { serialiseFragment } from './markup';
  * one entry point is what makes "off the first-paint chunk" a single assertion.
  */
 export { applyAssets, renderMarkup, serialiseFragment } from './markup';
-export type { RenderedMarkup } from './markup';
+export type { RenderedMarkup, SanitisedFragment } from './markup';
 
 /** The panel's two values, re-exported so this module is still the one door to the pipeline. */
 export { FRAME_HEIGHT_PX, LINKS_INERT_NOTICE } from './frameFacts';
@@ -105,7 +106,7 @@ function tokenBlock(tokens: FrameTokens): string {
  * and README anchors do not ride §25.2's opener (A9): they are pass-through URLs from hostile
  * content, and the opener's whole guarantee is that it never passes one through.
  */
-export function buildSrcdoc(fragment: DocumentFragment, tokens: FrameTokens): string {
+export function buildSrcdoc(fragment: SanitisedFragment, tokens: FrameTokens): string {
   const style = `
 ${tokenBlock(tokens)}  html, body {
     margin: 0;

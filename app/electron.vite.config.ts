@@ -8,10 +8,11 @@ import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from './src
  * [p2] §25.5's four libraries, in one chunk with a name.
  *
  * One chunk rather than four, because the panel enters the whole stack through **one** dynamic
- * `import()` and `scripts/check-bundle.mjs` would otherwise have four names to chase.
+ * `import()` and `scripts/check-bundle.mjs` would otherwise have four names to chase — and the
+ * names come from the module both this config and that gate read, so the set that goes **in** and
+ * the set the gate keeps **out of first paint** cannot drift apart.
  */
-const MARKUP_PACKAGES = ['markdown-it', 'dompurify', 'highlight.js', 'katex'];
-const README_MARKUP_CHUNK = 'readme-markup';
+import { MARKUP_PACKAGES, README_MARKUP_CHUNK } from '../scripts/lib/markup-chunk.mjs';
 
 /** Which `node_modules` package a module id belongs to, or `null` for our own source. */
 function packageOf(id: string): string | null {
