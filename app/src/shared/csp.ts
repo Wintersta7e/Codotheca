@@ -35,7 +35,12 @@ export const CONTENT_SECURITY_POLICY = [
   "worker-src 'self'",
   "media-src 'none'",
   "object-src 'none'",
-  "frame-src 'none'",
+  // [p2] §25.5's whole CSP delta, and it is one directive. `about:srcdoc`'s treatment under
+  // `frame-src 'none'` is implementation-defined and has moved between Chromium versions, and a
+  // README panel that silently renders nothing after an Electron upgrade is the worst failure
+  // mode available. `'self'` is in ALLOWED_SOURCES, so `remoteOriginsIn` still returns [] and the
+  // test that proves this policy names no remote origin keeps its exact meaning.
+  "frame-src 'self'",
   "child-src 'none'",
   "manifest-src 'none'",
   "base-uri 'none'",

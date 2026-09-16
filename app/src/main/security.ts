@@ -45,6 +45,11 @@ export function denyPermissionRequest(
  * The window loads exactly one document and never leaves it. A fragment change is the same
  * document; anything else — including the art scheme, which is only ever a subresource — is a
  * navigation the renderer must not be able to perform.
+ *
+ * [p2] §25.5: the caller binds this to **both** `will-navigate` and `will-frame-navigate`. The
+ * first fires for the main frame only, and the README panel is the app's first subframe, so one
+ * binding alone would have made the sentence above true of the window and false of what is in it.
+ * One predicate, two events: a subframe may go exactly where the main frame may.
  */
 export function isNavigationAllowed(entryUrl: string, targetUrl: string): boolean {
   let entry: URL;
