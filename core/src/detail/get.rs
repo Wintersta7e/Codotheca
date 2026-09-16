@@ -395,7 +395,7 @@ pub fn handle_project_get(
     // updates it and publishes a change. Absence of dirty stays "no changes as of T".
     if let Some(location) = primary_location {
         crate::jobs::visible::notify_visible(
-            conn,
+            ctx.index,
             ctx.mount,
             ctx.jobs,
             ProjectId(id),

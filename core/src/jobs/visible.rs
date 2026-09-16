@@ -22,12 +22,13 @@ use super::JobSink;
 /// A location that cannot be read is not an error the user should see. §6 is a request for
 /// freshness, so failing to make one leaves the stored answer exactly as honest as it was.
 pub fn notify_visible(
-    conn: &rusqlite::Connection,
+    index: &crate::index::Index,
     mounts: &dyn MountResolver,
     jobs: &dyn JobSink,
     project: ProjectId,
     location: LocationId,
 ) {
+    let conn = index.conn();
     let Ok((store_key, path_bytes)) = conn.query_row(
         "SELECT store_key, path_bytes FROM location WHERE id = ?1",
         [location.0],
@@ -45,5 +46,12 @@ pub fn notify_visible(
     let class = mounts
         .resolve(&path_from_bytes(&path_bytes))
         .map_or(StoreClass::Unknown, |facts| facts.class);
-    jobs.on_visible(project, location, &store_key, class);
+    // §7.5's redraw question is answered **here**, where the index is already open, and never
+    // inside the sink: `Assembly` calls both of this function's callers with the one index guard
+    // held, and `std::sync::Mutex` is not reentrant, so a sink that re-locked it would wedge the
+    // guard for the life of the process. A read that fails is `true` — redrawing a card that did
+    // not need it costs one job; skipping one that did leaves §7.5's plate on the tile.
+    let needs_art =
+        crate::art::job::needs_art_at(conn, index.data_dir(), project.0).unwrap_or(true);
+    jobs.on_visible(project, location, &store_key, class, needs_art);
 }

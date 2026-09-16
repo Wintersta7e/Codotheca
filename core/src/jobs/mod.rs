@@ -294,12 +294,20 @@ pub trait JobSink: Send + Sync + std::fmt::Debug {
         store_kind: crate::mount::StoreClass,
     );
     /// A visible tile, an opened page or a Peek asked for a current worktree reading (§6).
+    ///
+    /// **`needs_art` is decided by the caller, and that is R75's rule arriving on `Route::Detail`
+    /// and `Route::Projects`.** Every call site reaches this method while `Assembly` holds the one
+    /// `Arc<Mutex<Index>>` guard (`assembly/mod.rs:508,519` pass `index: &guard`), so a sink that
+    /// takes that mutex again self-deadlocks — `std::sync::Mutex` is not reentrant — and the guard
+    /// is then never released, wedging every later command behind it. The caller already has the
+    /// connection; it answers the art question there and hands the answer over.
     fn on_visible(
         &self,
         project: ProjectId,
         location: LocationId,
         store_key: &str,
         store_kind: crate::mount::StoreClass,
+        needs_art: bool,
     );
 }
 
@@ -316,7 +324,15 @@ impl JobSink for NullJobSink {
         _: crate::mount::StoreClass,
     ) {
     }
-    fn on_visible(&self, _: ProjectId, _: LocationId, _: &str, _: crate::mount::StoreClass) {}
+    fn on_visible(
+        &self,
+        _: ProjectId,
+        _: LocationId,
+        _: &str,
+        _: crate::mount::StoreClass,
+        _: bool,
+    ) {
+    }
 }
 
 /// Everything one job run needs besides the index: the git seam, the clock, and the scan run's

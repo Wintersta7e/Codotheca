@@ -329,6 +329,7 @@ impl codotheca_core::jobs::JobSink for RecordingJobs {
         location: codotheca_core::protocol::LocationId,
         _: &str,
         _: codotheca_core::mount::StoreClass,
+        _: bool,
     ) {
         self.visible
             .lock()

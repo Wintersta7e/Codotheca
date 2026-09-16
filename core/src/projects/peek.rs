@@ -167,13 +167,7 @@ pub fn handle(
     // below is still the **stored** one with its own `as_of`; the job updates it and publishes
     // a change. Nothing here waits, and nothing here claims currency it does not have.
     if let Some(location) = peek.location.as_ref() {
-        crate::jobs::visible::notify_visible(
-            ctx.index.conn(),
-            ctx.mounts,
-            ctx.jobs,
-            peek.id,
-            location.id,
-        );
+        crate::jobs::visible::notify_visible(ctx.index, ctx.mounts, ctx.jobs, peek.id, location.id);
     }
     serde_json::to_value(peek).map_err(|e| CommandFailure::internal(e.to_string()))
 }
