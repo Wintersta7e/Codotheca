@@ -102,6 +102,87 @@ if (scripts.length === 0) {
   }
 }
 
+/**
+ * 3b. **The markup stack is off the first-paint chunk, and there is a chunk to say so.**
+ *
+ * This file used to concatenate every emitted `.js` into one string, which has no notion of which
+ * chunk a module landed in and therefore **cannot** assert this at all. Sniffing library names out
+ * of minified text would be a guess; the build already knows the answer, so the renderer's Vite
+ * config writes `.chunk-map.json` in `generateBundle` and this reads it.
+ */
+export const README_MARKUP_CHUNK = 'readme-markup';
+export const MARKUP_PACKAGES = ['markdown-it', 'dompurify', 'highlight.js', 'katex'];
+
+const chunkMapPath = join(rendererDir, '.chunk-map.json');
+if (!existsSync(chunkMapPath)) {
+  fail(
+    'app/out/renderer/.chunk-map.json is missing, so nothing here knows which chunk a module ' +
+      'landed in — the renderer build must emit it',
+  );
+} else {
+  const chunkMap = JSON.parse(readFileSync(chunkMapPath, 'utf8'));
+  const chunks = Array.isArray(chunkMap.chunks) ? chunkMap.chunks : [];
+  console.error(
+    `check-bundle: ${String(chunks.length)} chunk(s): ` +
+      chunks
+        .map((c) => `${c.fileName}${c.isEntry ? ' (entry)' : ''}[${c.packages.join(' ')}]`)
+        .join(', '),
+  );
+  // 1. A build that emitted one chunk has no lazy chunk at all, and a gate that read one chunk
+  //    would pass vacuously rather than saying so.
+  if (chunks.length < 2) {
+    fail(
+      `the renderer emitted ${String(chunks.length)} chunk(s): with no second chunk there is no ` +
+        'lazy chunk, and the assertions below would pass having tested nothing',
+    );
+  }
+  // 2. The lazy chunk exists and is named.
+  const markup = chunks.filter((c) => c.name === README_MARKUP_CHUNK);
+  if (markup.length === 0) {
+    fail(`no chunk named ${README_MARKUP_CHUNK} was emitted`);
+  }
+  /**
+   * 3. None of the four is loaded at first paint.
+   *
+   * **Not "is it in the entry chunk".** `manualChunks` puts the four in a chunk of their own
+   * whoever imports them, so a static `import 'markdown-it'` from the panel leaves the entry
+   * chunk's own package list unchanged and makes the entry chunk *statically depend* on the
+   * markup chunk — which the browser then loads before it paints. Measured: the first version of
+   * this clause read the entry chunk's packages and stayed green through exactly that mutation.
+   *
+   * So what is walked is the **static** import graph from every entry: the set of chunks first
+   * paint pulls in. A dynamic import is what keeps a chunk out of it, which is the property.
+   */
+  const entries = chunks.filter((c) => c.isEntry === true);
+  if (entries.length === 0) {
+    fail('the chunk map names no entry chunk, so "off the first-paint chunk" is unmeasurable');
+  }
+  const byFileName = new Map(chunks.map((c) => [c.fileName, c]));
+  const firstPaint = new Set();
+  const queue = entries.map((c) => c.fileName);
+  while (queue.length > 0) {
+    const fileName = queue.pop();
+    if (firstPaint.has(fileName)) continue;
+    firstPaint.add(fileName);
+    for (const next of byFileName.get(fileName)?.imports ?? []) queue.push(next);
+  }
+  console.error(
+    `check-bundle: first paint loads ${String(firstPaint.size)} chunk(s): ${[...firstPaint].join(', ')}`,
+  );
+  for (const fileName of firstPaint) {
+    const chunk = byFileName.get(fileName);
+    const found = MARKUP_PACKAGES.filter((pkg) => (chunk?.packages ?? []).includes(pkg));
+    if (found.length > 0) {
+      fail(`${found.join(', ')} is loaded at first paint, in ${fileName}`);
+    }
+  }
+  // 4. …and nothing anywhere in the bundle ships a mermaid runtime (AC-P2-25-20's second half).
+  const mermaid = chunks.filter((c) => c.packages.some((pkg) => pkg.startsWith('mermaid')));
+  if (mermaid.length > 0) {
+    fail(`a mermaid runtime is in the bundle: ${mermaid.map((c) => c.fileName).join(', ')}`);
+  }
+}
+
 // 4. The three families were emitted as local assets.
 const woff2 = files.filter((f) => extname(f) === '.woff2');
 for (const family of ['rajdhani', 'barlow', 'jetbrains-mono']) {
