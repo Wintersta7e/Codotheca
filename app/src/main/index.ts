@@ -114,6 +114,11 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'projects.get',
   'projects.setNote',
   'locations.relocate',
+  // readme::dispatch_readme_command — the document the project page renders as markup. It is a
+  // different value from ProjectDetail.readme, which carries the stored first paragraph.
+  'projects.readme',
+  'projects.readmeAssets',
+  'projects.setReadmeRemote',
   // view::dispatch_view_command
   'view.get',
   'view.set',
@@ -197,6 +202,19 @@ function createWindow(): BrowserWindow {
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   w.webContents.on('will-navigate', (event, url) => {
     if (!isNavigationAllowed(entry, url)) {
+      event.preventDefault();
+    }
+  });
+  // [p2] §25.5: `will-navigate` fires for the **main frame only**, and the README panel is the
+  // app's first subframe — so without this the comment in security.ts would claim a coverage the
+  // window no longer had. The predicate is the same one, deliberately: a subframe may go exactly
+  // where the main frame may, which is nowhere but the document the window was opened with.
+  //
+  // Measured on Electron 44.4.1: a sandboxed `srcdoc` frame fires this **zero** times, for both
+  // the initial commit and a reassignment, while the same listener saw one event for a
+  // same-origin subframe `src`. Binding it therefore costs the panel nothing and closes the gap.
+  w.webContents.on('will-frame-navigate', (event) => {
+    if (!isNavigationAllowed(entry, event.url)) {
       event.preventDefault();
     }
   });

@@ -64,6 +64,13 @@ pub enum Route {
     /// `crate::remote::dispatch_remote_command` — p2-25. It reads one stored key and the account
     /// hosts and reaches no network, so it takes the index guard like every other read.
     Remote,
+    /// `crate::readme::dispatch_readme_command` — p2-25b. A file read under a location root and
+    /// a consent column; no network, so it takes the index guard.
+    Readme,
+    /// `projects.readmeAssets`, answered **without** the index guard (R75). Same carve-out as
+    /// [`Route::Scan`] and [`Route::AccountsNet`], for the same reason: it fetches up to 24
+    /// remote assets of 5 s each, and the one SQLite mutex may not be held across them.
+    ReadmeNet,
     /// `crate::accounts::dispatch_accounts_command` — p2-20, under the index guard.
     Accounts,
     /// The `accounts.*` commands that reach the network, answered **without** the index guard
@@ -157,6 +164,12 @@ pub fn route(command: CommandName) -> Route {
         // §25.2's opener, answered from the stored `remote_key` and the account hosts.
         CommandName::RemoteWebUrl => Route::Remote,
 
+        // §25.5's document read and its consent write.
+        CommandName::ProjectsReadme | CommandName::ProjectsSetReadmeRemote => Route::Readme,
+
+        // §25.5's asset read, which reaches arbitrary hosts and therefore takes no guard.
+        CommandName::ProjectsReadmeAssets => Route::ReadmeNet,
+
         // The two §20.8 reads, answered by `crate::accounts` **under the index guard**. These
         // two only read a row; every other `accounts.*` command is below.
         CommandName::AccountsList | CommandName::AccountsOrgs => Route::Accounts,
@@ -248,10 +261,14 @@ mod tests {
         // is true whatever the rule says, so what is checked here is the complement, read off
         // the router — no schema command falls through to `NoOwner`.
         let commands = schema_commands();
+        // R67 names three assertions that go red on a phase-2 schema change; this is a fourth,
+        // and it is raised by each plan's own delta read from the branch base — never to a
+        // running total a lane cannot know after the merges ahead of it.
         assert_eq!(
             commands.len(),
-            51,
-            "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's one"
+            54,
+            "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
+             remote.webUrl plus §25.8's three projects.readme* commands"
         );
         let unowned: Vec<&str> = commands
             .iter()

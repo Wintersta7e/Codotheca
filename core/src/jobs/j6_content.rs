@@ -7,7 +7,10 @@ use std::path::Path;
 /// §4.1's cap on any one file J6 reads.
 pub const J6_BYTE_CAP: usize = 256 * 1024;
 
-const README_NAMES: &[&str] = &[
+/// The filenames J6 looks for, in order, and the **one** owner of that list: `projects.readme`
+/// (§25.5) reads the same five so the panel's header can name the file that was actually read
+/// rather than a literal. One value stated twice drifts.
+pub const README_NAMES: &[&str] = &[
     "README.md",
     "README.rst",
     "README.txt",

@@ -88,7 +88,7 @@
       "id": "c33-keycap-glyphs",
       "kind": "literal",
       "spec": "§16.33, §11.7",
-      "why": "Quick switch's footer prints the two keycap glyphs the target keyboards actually carry. The Option and Space glyphs are not among them, and a keycap a keyboard does not print is an instruction the user cannot follow.",
+      "why": "Quick switch's footer prints the two keycap glyphs the target keyboards actually carry. The Option and Space glyphs are not among them, and a keycap a keyboard does not print is an instruction the user cannot follow. [p2] KaTeX's `\\verb*` renderer substitutes U+2423 for a space (`makeVerb`), and §25.5 lazy-loads KaTeX into the README chunk. A third-party library's internal substitution is not a keycap this product prints, so the line that defines it is exempt — by the identifier, so a different line carrying the glyph still fails.",
       "targets": [
         "renderer"
       ],
@@ -96,7 +96,9 @@
         "⌥",
         "␣"
       ],
-      "exempt": []
+      "exempt": [
+        "makeVerb"
+      ]
     },
     {
       "id": "c38-superseded-footer",
@@ -267,7 +269,7 @@
       "id": "p2-20-scope-strings",
       "kind": "regex",
       "spec": "§20.3, §20.10, §20.12",
-      "why": "No scope string is written in renderer source. The list the CONNECTED state draws comes from accounts.list's grantedScopes, which is read back from the server, because a hard-coded list is how two scope names that do not exist came to be drawn on a settings screen. Its limitation is part of the rule: the bare string `repo` is NOT bannable, being an unavoidable English word, and that is precisely why the displayed list must come from the payload and not from a grep's silence. [p2] Narrowed by \u00a725: `workflow` was a bare substring, and \u00a725.8 declares `CiRun.workflow` \u2014 the NAME of a CI workflow, which the REMOTE tab reads and which is not a scope. A8 is about the scope, so the pattern now requires the quoting a scope string carries (`'workflow'`, `\"workflow\"`, or a template literal) or the colon form (`workflow:read`), and the field access `run.workflow` no longer trips it. The rule became a regex to express that; the other five patterns are unchanged and match exactly as before.",
+      "why": "No scope string is written in renderer source. The list the CONNECTED state draws comes from accounts.list's grantedScopes, which is read back from the server, because a hard-coded list is how two scope names that do not exist came to be drawn on a settings screen. Its limitation is part of the rule: the bare string `repo` is NOT bannable, being an unavoidable English word, and that is precisely why the displayed list must come from the payload and not from a grep's silence. [p2] Narrowed by §25: `workflow` was a bare substring, and §25.8 declares `CiRun.workflow` — the NAME of a CI workflow, which the REMOTE tab reads and which is not a scope. A8 is about the scope, so the pattern now requires the quoting a scope string carries (`'workflow'`, `\"workflow\"`, or a template literal) or the colon form (`workflow:read`), and the field access `run.workflow` no longer trips it. The rule became a regex to express that; the other five patterns are unchanged and match exactly as before.",
       "targets": [
         "app-src",
         "renderer"

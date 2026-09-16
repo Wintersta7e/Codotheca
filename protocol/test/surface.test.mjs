@@ -287,8 +287,10 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 // this by its OWN delta, read from the value in the file — never to a running total, which a
 // lane cannot know after the merges ahead of it.
 // [p2] §25.8's `remote.webUrl` is the 51st, and it is the only name §25 spends from `remote.*`.
+// [p2] §25.8's `projects.readme` is the 52nd, `projects.setReadmeRemote` the 53rd and
+// `projects.readmeAssets` the 54th.
 test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8 and §25.8, and nothing extra', () => {
-  assert.equal(names.length, 51, `expected 51 commands, found ${names.length}`);
+  assert.equal(names.length, 54, `expected 54 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -388,7 +390,17 @@ test('collections.upsert reports which refusal fired', () => {
 // three events and nothing to build a frame from.
 const TOPICS = {
   scan: ['run_started', 'repo_found', 'job_done', 'progress', 'problem', 'finished', 'cancelled'],
-  projects: ['upserted', 'merged', 'flags_changed', 'condition_changed', 'art_ready', 'snapshot'],
+  // [p2] §25.8 adds `readme_remote_changed` to the **existing** topic, on the `flags_changed`
+  // precedent, so an optimistic flip in the renderer and the wire cannot disagree. No new topic.
+  projects: [
+    'upserted',
+    'merged',
+    'flags_changed',
+    'condition_changed',
+    'art_ready',
+    'snapshot',
+    'readme_remote_changed',
+  ],
   session: ['started', 'segment_closed', 'ended'],
   core: ['error', 'degraded', 'snapshot'],
   accounts: ['connect_progress', 'connected', 'disconnected'],
@@ -442,7 +454,9 @@ test('exactly three commands are privileged', () => {
 // and flag changes are surfaced to the user instead. Replaying a launch opens the editor twice.
 // [p2] §20.8 adds five: a replayed connect after a core restart genuinely starts a second flow,
 // and a replayed disconnect deletes a keychain entry the user has since re-created.
-test('exactly eight commands are non-idempotent', () => {
+// [p2] §25.8 adds the ninth: a consent is a decision the user made once, and replaying one
+// through a core restart would re-grant it without them.
+test('exactly nine commands are non-idempotent', () => {
   const ni = schema.commands
     .filter((c) => c.idempotent === false)
     .map((c) => c.name)
@@ -455,6 +469,7 @@ test('exactly eight commands are non-idempotent', () => {
     'accounts.upgradeScope',
     'projects.launch',
     'projects.setFlags',
+    'projects.setReadmeRemote',
     'session.stop',
   ]);
 });
@@ -592,6 +607,88 @@ test('remote.webUrl answers a nullable string and carries no Bytes', () => {
     'pulls',
     'actions',
     'releases',
+  ]);
+});
+
+// [p2] §25.8's README commands. The prefix is `projects.` and not a new top-level `readme.`:
+// D9 proposed `readme.assets`, and §25.8 renamed it because a one-command top-level prefix
+// invites a second, forge-agnostic namespace nobody owns while these three are project-scoped.
+const README_COMMANDS = ['projects.readme', 'projects.readmeAssets', 'projects.setReadmeRemote'];
+
+test('§25.8 declares its README commands under the projects prefix and nowhere else', () => {
+  const declared = names.filter((n) => /^(?:projects\.(?:readme|setReadme)|readme\.)/u.test(n));
+  assert.deepEqual([...declared].sort(), [...README_COMMANDS].sort());
+});
+
+// §25.5: NULL is *never granted* and a timestamp is *granted at T*, mirroring `location.trusted_at`
+// — a per-thing consent whose absence must never read as a denial the user made. `allowedAt` is
+// therefore nullable on the event, and the command is non-idempotent because §2.2 never auto-
+// replays a consent change.
+test('projects.setReadmeRemote is a consent change, and is never auto-replayed', () => {
+  const c = schema.commands.find((x) => x.name === 'projects.setReadmeRemote');
+  assert.deepEqual(c.args, { projectId: 'ProjectId', allow: 'bool' });
+  assert.equal(c.returns, 'Empty');
+  assert.equal(c.idempotent, false);
+  assert.notEqual(c.privileged, true);
+  assert.equal(schema.topics.projects.readme_remote_changed, 'ReadmeRemoteChanged');
+  assert.deepEqual(schema.types.ReadmeRemoteChanged.fields, {
+    id: 'ProjectId',
+    allowedAt: 'Timestamp?',
+  });
+});
+
+// §25.5: the panel needs the document, not the paragraph. `J6_BYTE_CAP` is the cap and the
+// command reads that existing constant rather than declaring a second one, so `truncated` is
+// the only thing the wire adds — the panel says the document was cut rather than implying it
+// ended. `state` reuses `ReadmeStateKind`: the command takes a `locationId`, so a location
+// exists by construction and `not_indexed` is never borrowed for a project no pass is coming for.
+test('projects.readme returns the whole document, with the state enum §8.4 already declares', () => {
+  const c = schema.commands.find((x) => x.name === 'projects.readme');
+  assert.deepEqual(c.args, { projectId: 'ProjectId', locationId: 'LocationId' });
+  assert.equal(c.returns, 'ReadmeSource');
+  assert.notEqual(c.privileged, true);
+  assert.equal(schema.types.ReadmeSource.kind, 'struct');
+  assert.deepEqual(schema.types.ReadmeSource.fields, {
+    state: 'ReadmeStateKind',
+    path: 'String?',
+    text: 'String?',
+    readAt: 'Timestamp?',
+    truncated: 'bool',
+  });
+  assert.deepEqual(schema.types.ReadmeStateKind.variants, ['not_indexed', 'absent', 'present']);
+});
+
+// §25.5: one command answers both branches, because the renderer parsed one list of img[src]
+// values and does not know which is which. Classification is the core's, so the rule has one
+// owner — the two arrays are a hint and the core re-classifies anyway.
+test('projects.readmeAssets takes both reference lists and answers one row each', () => {
+  const c = schema.commands.find((x) => x.name === 'projects.readmeAssets');
+  assert.deepEqual(c.args, {
+    projectId: 'ProjectId',
+    locationId: 'LocationId',
+    local: '[String]',
+    remote: '[String]',
+  });
+  assert.equal(c.returns, '[ReadmeAsset]');
+  assert.notEqual(c.privileged, true);
+  assert.deepEqual(schema.types.ReadmeAsset.fields, {
+    ref: 'String',
+    state: 'ReadmeAssetState',
+    dataUri: 'String?',
+    fetchedAt: 'Timestamp?',
+  });
+});
+
+// `blocked` is the consent state and is never rendered as a failure, which is why it is a
+// variant of its own rather than an absence: an asset nobody was allowed to fetch and an asset
+// that could not be fetched are two different sentences.
+test('ReadmeAssetState names five outcomes, and blocked is one of them', () => {
+  assert.deepEqual(schema.types.ReadmeAssetState.variants, [
+    'ok',
+    'blocked',
+    'too_large',
+    'unreachable',
+    'not_an_image',
   ]);
 });
 

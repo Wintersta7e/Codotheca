@@ -8,8 +8,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 1 | 39 |
-| deferred | 60 | 121 |
+| automated | 1 | 40 |
+| deferred | 60 | 120 |
 | manual | 6 | 7 |
 | unmeasurable | 2 | 3 |
 | external | 1 | 1 |
@@ -57,7 +57,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | 39 | deferred | A copy on a different commit, and the directional claims that are forbidden | `AC-39-note` deferred, plan 14b — `AC-39 a differing head carries the note and a NULL head reads NOT COMPARED`<br>`AC-39-no-direction` automated, runs now — `check-forbidden:c39-directional-claims` |
 | 40 | deferred | Activity draws two lanes and never a count | `AC-40-lanes` deferred, plan 14b — `AC-40 the two lanes share a slot, each with its own baseline and normalisation`<br>`AC-40-legend` automated, runs now — `check-forbidden:c40-commit-counts` |
 | 41 | deferred | A week outside J4's coverage is not computed | `AC-41-uncovered` deferred, plan 14b — `AC-41 an uncovered week renders as not computed, never as a zero-height bar` |
-| 42 | deferred | A README renders as literal text on both surfaces | `AC-42-peek` deferred, plan 13c — `AC-42 markup in a README renders as literal text in Peek`<br>`AC-42-page` deferred, plan 14b — `AC-42 markup in a README renders as literal text on the project page` |
+| 42 | deferred | A README renders as literal text on both surfaces | `AC-42-peek` deferred, plan 13c — `AC-42 markup in a README renders as literal text in Peek`<br>`AC-42-page` automated, runs now — `the README pipeline readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text` |
 | 43 | deferred | The scratchpad persists, is project-scoped and reconciles on merge | `AC-43-note` deferred, plan 14b — `AC-43 the scratchpad persists, scopes and reconciles` |
 | 44 | deferred | Nothing on the page mutates disk | `AC-44-no-destruction` deferred, plan 14b — `AC-44 no surface offers a destructive control and RELOCATE rewrites one row`<br>`AC-44-token` automated, runs now — `check-forbidden:c44-forget-token`<br>`AC-44-readonly-argv` automated, runs now — `git_readonly::no_source_file_names_a_destructive_subcommand`<br>`AC-44-no-destructive-git` automated, runs now — `check-call-sites:no-destructive-git` |
 | 45a | deferred | The grid card and the hero state the absence | `AC-45a-uncomputed` deferred, plan 12b — `AC-45a the uncomputed band draws its frame, gap, glyph and label` |
@@ -91,8 +91,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 39 | 88 |
-| deferred | 12 | 12 |
+| automated | 48 | 97 |
+| deferred | 3 | 3 |
 | manual | 0 | 0 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -137,15 +137,15 @@ One row per criterion; the disposition is the weakest of its checks.
 | P2-25-11 | deferred | The backup state is one producer with two consumers | `AC-P2-25-11-producer` automated, runs now — `§25.3 the backup line states a fact and offers no control AC-P2-25-11-producer renders the only-copy row with its plate and its edge token`<br>`AC-P2-25-11-unknown` deferred, plan p2-24b — `acceptance_uninstall::ac_p2_25_11_unknown_an_unreadable_stash_falls_through_to_no_block` |
 | P2-25-12 | automated | No URL crosses IPC, and only the shell opens one | `AC-P2-25-12` automated, runs now — `remote surfaces: the opener AC-P2-25-12 no URL crosses IPC and the shell is the only thing that opens one`<br>`AC-P2-25-12-render` automated, runs now — `§25.2 an unlinkable key draws no links row and no link affordance AC-P2-25-12-render draws the key as text and the row not at all`<br>`AC-P2-25-12-payload` automated, runs now — `§25.2 an unlinkable key draws no links row and no link affordance AC-P2-25-12-payload sends an id and a kind, never a URL` |
 | P2-25-13 | automated | denyPermissionRequest still refuses every permission | `AC-P2-25-13` automated, runs now — `remote surfaces: the opener AC-P2-25-13 denyPermissionRequest refuses every permission, openExternal included` |
-| P2-25-14 | deferred | The CSP delta is exactly one directive | `AC-P2-25-14` deferred, plan p2-25b — `csp::ac_p2_25_14_frame_src_self_and_every_other_directive_byte_identical` |
-| P2-25-15 | deferred | Both navigation guards share one predicate | `AC-P2-25-15` deferred, plan p2-25b — `security::ac_p2_25_15_will_navigate_and_will_frame_navigate_share_one_predicate` |
-| P2-25-16 | deferred | The frame's sandbox attribute is present and exactly empty | `AC-P2-25-16` deferred, plan p2-25b — `readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty` |
-| P2-25-17 | deferred | Hostile markup renders as text | `AC-P2-25-17` deferred, plan p2-25b — `readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text` |
-| P2-25-18 | deferred | The panel's first frame issues no request | `AC-P2-25-18` deferred, plan p2-25b — `readmeAssets::ac_p2_25_18_the_request_census_with_consent_absent` |
-| P2-25-19 | deferred | projects.readme returns the whole document | `AC-P2-25-19` deferred, plan p2-25b — `projects_readme::ac_p2_25_19_the_whole_document_is_returned_under_the_existing_cap` |
-| P2-25-20 | deferred | A mermaid fence renders as a code block | `AC-P2-25-20` deferred, plan p2-25b — `readmeMarkup::ac_p2_25_20_a_mermaid_fence_renders_its_source` |
-| P2-25-21 | deferred | The markup libraries stay off the first-paint chunk | `AC-P2-25-21` deferred, plan p2-25b — `check-bundle:markup-lazy-chunk` |
-| P2-25-22 | deferred | The panel states once that its links are inert | `AC-P2-25-22` deferred, plan p2-25b — `readmeFrame::ac_p2_25_22_the_links_are_not_active_statement_renders_once` |
+| P2-25-14 | automated | The CSP delta is exactly one directive | `AC-P2-25-14` automated, runs now — `the production content security policy csp::ac_p2_25_14_frame_src_self_and_every_other_directive_byte_identical` |
+| P2-25-15 | automated | Both navigation guards share one predicate | `AC-P2-25-15` automated, runs now — `isNavigationAllowed security::ac_p2_25_15_will_navigate_and_will_frame_navigate_share_one_predicate` |
+| P2-25-16 | automated | The frame's sandbox attribute is present and exactly empty | `AC-P2-25-16` automated, runs now — `§25.5 the panel renders the document in a frame readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty` |
+| P2-25-17 | automated | Hostile markup renders as text | `AC-P2-25-17` automated, runs now — `the README pipeline readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text` |
+| P2-25-18 | automated | The panel's first frame issues no request | `AC-P2-25-18` automated, runs now — `AC-P2-25-18 the request census with consent absent` |
+| P2-25-19 | automated | projects.readme returns the whole document | `AC-P2-25-19` automated, runs now — `readme_source::ac_p2_25_19_the_whole_document_is_returned_under_the_existing_cap` |
+| P2-25-20 | automated | A mermaid fence renders as a code block | `AC-P2-25-20` automated, runs now — `code fences readmeMarkup::ac_p2_25_20_a_mermaid_fence_renders_its_source` |
+| P2-25-21 | automated | The markup libraries stay off the first-paint chunk | `AC-P2-25-21` automated, runs now — `check-bundle:markup-lazy-chunk` |
+| P2-25-22 | automated | The panel states once that its links are inert | `AC-P2-25-22` automated, runs now — `the anchors statement readmeFrame::ac_p2_25_22_the_links_are_not_active_statement_renders_once` |
 | P2-25-23 | automated | Peek on a not-cloned row renders absences, not dashes | `AC-P2-25-23` automated, runs now — `§25.3a Peek on a not-cloned row AC-P2-25-23 renders no README string, no commit list, no path and no worktree line`<br>`AC-P2-25-23-facts` automated, runs now — `§25.3a the not-cloned fact set AC-P2-25-23-facts drops PLAYTIME entirely, asserted as an absence and not as a dash`<br>`AC-P2-25-23-core` automated, runs now — `peek_not_cloned::ac_p2_25_23_core_a_not_cloned_row_carries_no_location_and_no_history`<br>`AC-P2-25-23-producer` automated, runs now — `§25.3a Peek draws the blocks from the tab producer, not a copy AC-P2-25-23-producer imports RemoteBlock rather than declaring one` |
 | P2-25-24 | automated | The observation clock moves only for a read that observed something | `AC-P2-25-24` automated, runs now — `acceptance_p2_remote_facts::ac_p2_25_24_the_clock_moves_only_for_a_read_that_observed_something` |
 | P2-25-25 | automated | The facts row is keyed on the forge's stable id | `AC-P2-25-25-facts` automated, runs now — `acceptance_p2_remote_facts::ac_p2_25_25_facts_are_keyed_on_the_stable_id_and_survive_a_rename`<br>`AC-P2-25-25-schema` automated, runs now — `index_rebuild_0009::no_table_takes_remote_key_as_a_primary_or_unique_key` |

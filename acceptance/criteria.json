@@ -1335,11 +1335,11 @@
         },
         {
           "id": "AC-42-page",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
-          "owner": "14b",
-          "test": "AC-42 markup in a README renders as literal text on the project page",
-          "assert": "Amendment 10 extends the plain-text rule from Peek to the project page's README panel."
+          "owner": "p2-25b",
+          "test": "the README pipeline readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text",
+          "assert": "[p2] The project page's half is superseded by §25.5: the panel renders markup inside a sandboxed frame, and what replaces the plain-text rule is §25.10's hostile document — a script tag as visible text, no on* attribute, no non-http(s) href. Peek's half is AC-42-peek and is unchanged."
         }
       ]
     },
@@ -3207,10 +3207,10 @@
       "checks": [
         {
           "id": "AC-P2-25-14",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
-          "test": "csp::ac_p2_25_14_frame_src_self_and_every_other_directive_byte_identical",
+          "test": "the production content security policy csp::ac_p2_25_14_frame_src_self_and_every_other_directive_byte_identical",
           "assert": "remoteOriginsIn(CONTENT_SECURITY_POLICY) returns an empty list, and a directive-by-directive comparison asserts frame-src 'self' with every other directive byte-identical to phase 1's. A toContain assertion does not satisfy it."
         }
       ]
@@ -3223,10 +3223,10 @@
       "checks": [
         {
           "id": "AC-P2-25-15",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
-          "test": "security::ac_p2_25_15_will_navigate_and_will_frame_navigate_share_one_predicate",
+          "test": "isNavigationAllowed security::ac_p2_25_15_will_navigate_and_will_frame_navigate_share_one_predicate",
           "assert": "will-navigate and will-frame-navigate are both bound on the window's webContents and share isNavigationAllowed, which refuses about:srcdoc, an external https URL and a data:text/html payload. Whether Chromium fires will-frame-navigate for the initial about:srcdoc commit is a measurement p2-25b schedules."
         }
       ]
@@ -3239,11 +3239,11 @@
       "checks": [
         {
           "id": "AC-P2-25-16",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
-          "test": "readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty",
-          "assert": "The sandbox attribute is present and exactly empty, and the strings allow-scripts and allow-same-origin appear nowhere in the panel's sources — a tree walk through scripts/lib/read-scanned.mjs printing its file count and failing at zero."
+          "test": "§25.5 the panel renders the document in a frame readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty",
+          "assert": "The frame's sandbox attribute is present and exactly empty, read off the element ReadmePanel renders and off Chromium's own in the census; the strings allow-scripts and allow-same-origin appear in no panel source, over a walk that prints its file count."
         }
       ]
     },
@@ -3255,10 +3255,10 @@
       "checks": [
         {
           "id": "AC-P2-25-17",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
-          "test": "readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text",
+          "test": "the README pipeline readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text",
           "assert": "A README carrying a script tag, an onerror attribute, a javascript: link, a data:text/html link and a details block renders the script tag as visible text, keeps no on* attribute and no non-http(s)/mailto href. Reverting the sanitiser turns at least one red."
         }
       ]
@@ -3271,10 +3271,10 @@
       "checks": [
         {
           "id": "AC-P2-25-18",
-          "status": "deferred",
-          "runner": "vitest",
+          "status": "automated",
+          "runner": "e2e",
           "owner": "p2-25b",
-          "test": "readmeAssets::ac_p2_25_18_the_request_census_with_consent_absent",
+          "test": "AC-P2-25-18 the request census with consent absent",
           "assert": "An end-to-end request census with consent absent prints both numbers: requests to schemes other than file: and codotheca: are zero, and rendered block elements in the frame are above zero. After consent the request count equals the number of distinct remote URLs and every one was issued by the core."
         }
       ]
@@ -3287,10 +3287,10 @@
       "checks": [
         {
           "id": "AC-P2-25-19",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p2-25b",
-          "test": "projects_readme::ac_p2_25_19_the_whole_document_is_returned_under_the_existing_cap",
+          "test": "readme_source::ac_p2_25_19_the_whole_document_is_returned_under_the_existing_cap",
           "assert": "A README with two paragraphs returns both, and truncated is true only past J6_BYTE_CAP, which the command reads from the existing constant rather than declaring a second cap."
         }
       ]
@@ -3303,10 +3303,10 @@
       "checks": [
         {
           "id": "AC-P2-25-20",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
-          "test": "readmeMarkup::ac_p2_25_20_a_mermaid_fence_renders_its_source",
+          "test": "code fences readmeMarkup::ac_p2_25_20_a_mermaid_fence_renders_its_source",
           "assert": "A mermaid fence renders as a code block showing its source, and no bundled chunk contains a mermaid runtime."
         }
       ]
@@ -3319,7 +3319,7 @@
       "checks": [
         {
           "id": "AC-P2-25-21",
-          "status": "deferred",
+          "status": "automated",
           "runner": "script",
           "owner": "p2-25b",
           "test": "check-bundle:markup-lazy-chunk",
@@ -3335,10 +3335,10 @@
       "checks": [
         {
           "id": "AC-P2-25-22",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
-          "test": "readmeFrame::ac_p2_25_22_the_links_are_not_active_statement_renders_once",
+          "test": "the anchors statement readmeFrame::ac_p2_25_22_the_links_are_not_active_statement_renders_once",
           "assert": "A document with at least one anchor renders the LINKS ARE NOT ACTIVE IN THIS PANEL statement exactly once and renders no element carrying a link affordance; a document with none renders no such statement."
         }
       ]

@@ -303,6 +303,7 @@ export function ProjectPageView({
                     readme={detail.readme}
                     row={detail.row}
                     now={deps.now()}
+                    locationId={shown?.location.id ?? null}
                     topics={detail.remote?.topics ?? []}
                   />
                   <NotePanel
