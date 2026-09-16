@@ -2982,7 +2982,7 @@
           "runner": "vitest",
           "owner": "p2-25",
           "test": "§25.1 a measured zero and an unobserved value are different renders AC-P2-25-4-unobserved renders — for an unobserved value inside an observed read",
-          "assert": "A value the read did not carry renders the glyph and NOT YET FETCHED while its neighbours render their numbers. A build that renders 0 for an unobserved value fails this."
+          "assert": "A value the read did not carry renders the glyph and NO sub-line while its neighbours render their numbers: the read completed, so NOT YET FETCHED would be false and sits directly under the observation line. A build that renders 0, or that claims the fetch did not happen, fails this."
         }
       ]
     },

@@ -59,8 +59,14 @@ export interface RemoteBlockProps {
   readonly state: RemoteFactsState;
   readonly value: number | null;
   /**
-   * The design's sub-line for an **observed** value. `null` renders no sub-line at all — never
-   * one built from a value nobody observed, which is the invariant's exact failure mode.
+   * The design's sub-line for a read that **completed**, whether or not it carried this value.
+   * `null` renders no sub-line at all — never one built from a value nobody observed, which is
+   * the invariant's exact failure mode.
+   *
+   * It survives a `null` value on purpose. `BEHIND` is the case: `behindFact` says the fetch
+   * clause "travels with it in every case", and a branch with no upstream has no number while
+   * its fetch is still recorded. Discarding the clause there printed `NOT YET FETCHED` over a
+   * fetch that happened.
    */
   readonly subLine?: string | null;
 }
@@ -76,11 +82,20 @@ export function RemoteBlock({
   subLine = null,
 }: RemoteBlockProps): ReactElement | null {
   if (state === 'no_account') return null;
-  const resolved = valueState(state, value);
+  // **The note is decided by the READ, not by the value.** `not_observed` means nothing fetched
+  // this fact yet, which is what `NOT YET FETCHED` says. A read that *completed* and carried no
+  // number for this block is a different thing: the value slot renders `—` and the note is
+  // whatever the caller supplies, which for a forge count is nothing at all.
+  //
+  // Deciding it from `valueState` instead printed `NOT YET FETCHED` directly beneath
+  // `OBSERVED 4m` — a false statement about the product's own behaviour, and the *never claim
+  // currency you do not have* invariant failing in the opposite direction. Two of §25.1's three
+  // forge blocks hit it on every successful read, because `GET /repos/{owner}/{name}` carries no
+  // separated issue or PR counts.
   const note =
-    resolved === 'not_observed'
+    state === 'not_observed'
       ? NOT_YET_FETCHED
-      : resolved === 'not_permitted'
+      : state === 'not_permitted'
         ? NOT_PERMITTED
         : subLine;
 

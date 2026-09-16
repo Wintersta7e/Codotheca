@@ -92,7 +92,13 @@ describe('§25.1 a measured zero and an unobserved value are different renders',
     draw({ state: 'observed', observedAt: NOW - 60, stars: 41, openIssues: null });
     expect(blockText('stars')).toContain('41');
     expect(blockText('open-issues')).toContain('—');
-    expect(blockText('open-issues')).toContain('NOT YET FETCHED');
+    // **The glyph, and no sentence.** This read completed — the observation line says so — so
+    // `NOT YET FETCHED` would be a false claim about the product's own behaviour, printed
+    // directly beneath `OBSERVED 1m`. It is the *never claim currency you do not have*
+    // invariant in the opposite direction, and two of the three forge blocks hit it on every
+    // successful read because the repository endpoint carries no separated issue or PR counts.
+    expect(blockText('open-issues')).not.toContain('NOT YET FETCHED');
+    expect(pageText()).toContain('OBSERVED');
   });
 });
 
@@ -192,6 +198,17 @@ describe('§25.1 BEHIND is the local figure, through the producer §8.5.2 uses',
     draw({}, locationFixture({ behind: 2, fetchHeadAt: null }));
     expect(blockText('behind')).toContain('2');
     expect(blockText('behind')).toContain('no fetch recorded');
+  });
+
+  it('keeps the fetch clause when there is no number — a branch with no upstream', () => {
+    // `behindFact` says the clause "travels with it in every case", and §25.1's BEHIND row
+    // requires the age or `no fetch recorded` in every case. A branch with no upstream has no
+    // number while its fetch is still recorded, and the block used to discard the clause and
+    // print `NOT YET FETCHED` over a fetch that demonstrably happened.
+    draw({}, locationFixture({ behind: null, fetchHeadAt: NOW - 3600 }));
+    expect(blockText('behind')).toContain('—');
+    expect(blockText('behind')).toContain('last fetch 1h');
+    expect(blockText('behind')).not.toContain('NOT YET FETCHED');
   });
 
   it('renders the glyph rather than a zero when nothing has compared this copy', () => {
