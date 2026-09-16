@@ -79,8 +79,15 @@ export interface OpenRemoteLinkCall {
  * which is what a non-allowlisted host, a NULL `remote_key` and a key that is not
  * `<host>/<owner>/<name>` all mean. `declined` is the user saying no to the confirmation.
  */
+/**
+ * `opened` carries **no URL**. §25.2's rule is that the URL is reconstructed by the core and
+ * never passed through, and a reply is still a crossing: it put the address the shell built back
+ * into the sandboxed process, in the one direction the rule does not spell out, for a field no
+ * caller reads. The renderer names a project and a kind; what that resolves to is not its
+ * business in either direction.
+ */
 export type OpenRemoteLinkReply =
-  | { readonly kind: 'opened'; readonly url: string }
+  | { readonly kind: 'opened' }
   | { readonly kind: 'declined' }
   | { readonly kind: 'not_linkable' }
   | { readonly kind: 'failed'; readonly error: BridgeError };

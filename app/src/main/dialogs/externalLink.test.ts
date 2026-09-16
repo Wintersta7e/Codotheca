@@ -63,7 +63,10 @@ describe('§25.2: the opener carries no URL inbound and opens only what the core
     const h = harness({ url: 'https://github.com/acme/widget' });
     const reply = await h.invoke({ ...CALL, url: 'https://evil.example.invalid/pwn' });
 
-    expect(reply).toEqual({ kind: 'opened', url: 'https://github.com/acme/widget' });
+    // The reply names no URL: §25.2 says the address is reconstructed by the core and never
+    // passed through, and a reply is a crossing too. What was opened is the evidence, and it is
+    // asserted on the next line — where it was always the stronger assertion of the two.
+    expect(reply).toEqual({ kind: 'opened' });
     expect(h.opened).toEqual(['https://github.com/acme/widget']);
     // The hostile field reached nothing: the only string that was ever considered is the one
     // `remote.webUrl` answered with.
@@ -135,10 +138,10 @@ describe('§25.2: the opener carries no URL inbound and opens only what the core
       url: 'https://forge.example.invalid/acme/widget',
       accounts: [{ host: 'forge.example.invalid' }],
     });
-    expect(await connected.invoke(CALL)).toEqual({
-      kind: 'opened',
-      url: 'https://forge.example.invalid/acme/widget',
-    });
+    expect(await connected.invoke(CALL)).toEqual({ kind: 'opened' });
+    // The reply carries no URL — §25.2's rule runs in both directions — so what was admitted is
+    // asserted where it actually happened, on the address handed to the OS.
+    expect(connected.opened).toEqual(['https://forge.example.invalid/acme/widget']);
 
     const other = harness({
       url: 'https://other.example.invalid/acme/widget',

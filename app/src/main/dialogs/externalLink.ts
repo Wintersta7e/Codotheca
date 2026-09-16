@@ -168,6 +168,6 @@ export function registerExternalLink(deps: ExternalLinkDeps): void {
     } catch (err: unknown) {
       return { kind: 'failed', error: asBridgeError(err) };
     }
-    return { kind: 'opened', url };
+    return { kind: 'opened' };
   });
 }
