@@ -47,6 +47,8 @@
     "fmt:check": "cargo fmt --manifest-path core/Cargo.toml -- --check && prettier --check \"app/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"protocol/**/*.mjs\""
   },
   "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "electron-builder": "^26.15.3",
     "prettier": "^3.3.0"
   },
