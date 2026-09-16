@@ -11,6 +11,7 @@
 //! computed at render time, because it is a function of *now*.
 
 pub mod facts;
+pub mod store;
 pub mod weburl;
 
 use crate::index::Index;

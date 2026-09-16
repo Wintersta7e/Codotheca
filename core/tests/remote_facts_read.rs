@@ -445,3 +445,281 @@ fn the_request_census_names_both_of_this_sections_methods() {
     assert!(PROVIDER_REQUEST_METHODS.contains(&"repo_facts"));
     assert!(PROVIDER_REQUEST_METHODS.contains(&"ci_runs"));
 }
+
+// ---------------------------------------------------------------------------------------------
+// §25.7's writers, against the stored columns. The read-back contract — what `remote_facts()`
+// **reports** after each outcome — is `core/tests/acceptance_p2_remote_facts.rs`, because a
+// column written correctly and read back into the wrong state is a defect neither test alone
+// can see.
+// ---------------------------------------------------------------------------------------------
+
+use codotheca_core::identity::binding::RemoteBinding;
+use codotheca_core::provider::{CiRunPayload, RepoFactsPayload};
+use codotheca_core::remote::store::{
+    confirm_ci_observation, confirm_repo_facts, mark_not_permitted, write_ci_runs,
+    write_repo_facts, write_topics,
+};
+
+fn binding() -> RemoteBinding {
+    RemoteBinding {
+        provider: "github".to_owned(),
+        provider_repo_id: "909".to_owned(),
+        remote_link_basis: None,
+    }
+}
+
+fn payload() -> RepoFactsPayload {
+    RepoFactsPayload {
+        visibility: Some("public".to_owned()),
+        description: Some("a widget".to_owned()),
+        fork_parent_remote_key: Some("github.com/upstream/widget".to_owned()),
+        stars: Some(41),
+        open_issues: Some(7),
+        good_first_issues: Some(0),
+        open_prs: Some(2),
+        open_prs_from_user: Some(0),
+        topics: vec!["rust".to_owned(), "cli".to_owned()],
+    }
+}
+
+fn ci_payload(run_id: i64, started_at: i64) -> CiRunPayload {
+    CiRunPayload {
+        run_id,
+        workflow_name: "ci".to_owned(),
+        conclusion: Some("success".to_owned()),
+        branch: "main".to_owned(),
+        run_number: u32::try_from(run_id).unwrap_or(0),
+        started_at: Some(started_at),
+    }
+}
+
+/// Every stored column of the facts row, so a 304 can be asserted **field by field against the
+/// pre-state** rather than by spot-checking one of them.
+type StoredRow = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    i64,
+    Option<i64>,
+    Option<String>,
+    Option<i64>,
+    Option<String>,
+);
+
+fn stored(index: &Index) -> StoredRow {
+    index
+        .conn()
+        .query_row(
+            "SELECT visibility, description, fork_parent_remote_key, stars, open_issues,
+                    good_first_issues, open_prs, open_prs_from_user, permitted, observed_at,
+                    etag, ci_observed_at, ci_etag
+               FROM remote_repo WHERE provider = 'github' AND provider_repo_id = '909'",
+            [],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                    r.get(7)?,
+                    r.get(8)?,
+                    r.get(9)?,
+                    r.get(10)?,
+                    r.get(11)?,
+                    r.get(12)?,
+                ))
+            },
+        )
+        .expect("the facts row exists")
+}
+
+fn in_tx<F>(index: &mut Index, f: F)
+where
+    F: FnOnce(&rusqlite::Transaction<'_>),
+{
+    let tx = index.conn_mut().transaction().expect("transaction");
+    f(&tx);
+    tx.commit().expect("commit");
+}
+
+#[test]
+fn a_two_hundred_writes_every_column_and_moves_the_clock() {
+    let (_dir, mut index) = seeded();
+    in_tx(&mut index, |tx| {
+        write_repo_facts(tx, &binding(), &payload(), Some("W/\"abc\""), NOW).expect("write");
+    });
+    let row = stored(&index);
+    assert_eq!(row.0.as_deref(), Some("public"));
+    assert_eq!(row.3, Some(41));
+    assert_eq!(row.4, Some(7));
+    // A measured zero is stored as a zero, not dropped.
+    assert_eq!(row.5, Some(0));
+    assert_eq!(row.8, 1, "a successful read restores permission");
+    assert_eq!(row.9, Some(NOW));
+    assert_eq!(row.10.as_deref(), Some("W/\"abc\""));
+
+    let topics: Vec<String> = {
+        let mut stmt = index
+            .conn()
+            .prepare("SELECT topic FROM remote_topic ORDER BY topic")
+            .expect("prepare");
+        let rows = stmt.query_map([], |r| r.get(0)).expect("query");
+        rows.collect::<Result<_, _>>().expect("topics")
+    };
+    assert_eq!(topics, vec!["cli".to_owned(), "rust".to_owned()]);
+}
+
+#[test]
+fn a_three_oh_four_moves_the_clock_and_rewrites_no_value() {
+    let (_dir, mut index) = seeded();
+    in_tx(&mut index, |tx| {
+        write_repo_facts(tx, &binding(), &payload(), Some("W/\"abc\""), NOW).expect("write");
+    });
+    let before = stored(&index);
+    in_tx(&mut index, |tx| {
+        confirm_repo_facts(tx, &binding(), NOW + 60).expect("confirm");
+    });
+    let after = stored(&index);
+
+    // Field by field against the pre-state. Spot-checking one column passes against a writer
+    // that rewrote the other twelve.
+    assert_eq!(after.0, before.0);
+    assert_eq!(after.1, before.1);
+    assert_eq!(after.2, before.2);
+    assert_eq!(after.3, before.3);
+    assert_eq!(after.4, before.4);
+    assert_eq!(after.5, before.5);
+    assert_eq!(after.6, before.6);
+    assert_eq!(after.7, before.7);
+    assert_eq!(after.8, before.8);
+    assert_eq!(after.10, before.10);
+    assert_eq!(after.11, before.11);
+    assert_eq!(after.12, before.12);
+    // …and the one thing a 304 is: the clock.
+    assert_eq!(after.9, Some(NOW + 60));
+}
+
+#[test]
+fn writing_a_topic_set_twice_leaves_one_set_and_drops_what_the_forge_dropped() {
+    let (_dir, mut index) = seeded();
+    in_tx(&mut index, |tx| {
+        write_topics(
+            tx,
+            &binding(),
+            &["rust".to_owned(), "cli".to_owned(), "tui".to_owned()],
+        )
+        .expect("first");
+        write_topics(
+            tx,
+            &binding(),
+            &["rust".to_owned(), "cli".to_owned(), "tui".to_owned()],
+        )
+        .expect("second");
+    });
+    let count: i64 = index
+        .conn()
+        .query_row("SELECT COUNT(*) FROM remote_topic", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(count, 3, "three topics written twice are three rows");
+
+    in_tx(&mut index, |tx| {
+        write_topics(tx, &binding(), &["rust".to_owned()]).expect("narrow");
+    });
+    let count: i64 = index
+        .conn()
+        .query_row("SELECT COUNT(*) FROM remote_topic", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(count, 1, "a topic the forge dropped is gone here too");
+}
+
+#[test]
+fn seven_runs_leave_the_five_most_recent() {
+    let (_dir, mut index) = seeded();
+    let runs: Vec<CiRunPayload> = (1..=7)
+        .map(|n| ci_payload(n, NOW - 1000 + n * 10))
+        .collect();
+    in_tx(&mut index, |tx| {
+        write_ci_runs(tx, &binding(), &runs, Some("W/\"def\""), NOW).expect("runs");
+    });
+
+    let kept: Vec<i64> = {
+        let mut stmt = index
+            .conn()
+            .prepare("SELECT run_id FROM remote_ci_run ORDER BY run_id")
+            .expect("prepare");
+        let rows = stmt.query_map([], |r| r.get(0)).expect("query");
+        rows.collect::<Result<_, _>>().expect("ids")
+    };
+    assert_eq!(
+        kept,
+        vec![3, 4, 5, 6, 7],
+        "the five most recent, and only those"
+    );
+    assert_eq!(stored(&index).11, Some(NOW));
+    assert_eq!(stored(&index).12.as_deref(), Some("W/\"def\""));
+}
+
+#[test]
+fn a_four_oh_three_sets_permitted_to_zero_and_leaves_the_clock_exactly_where_it_was() {
+    let (_dir, mut index) = seeded();
+    in_tx(&mut index, |tx| {
+        write_repo_facts(tx, &binding(), &payload(), Some("W/\"abc\""), NOW).expect("write");
+    });
+    let before = stored(&index);
+    in_tx(&mut index, |tx| {
+        mark_not_permitted(tx, &binding()).expect("refuse");
+    });
+    let after = stored(&index);
+    assert_eq!(after.8, 0);
+    assert_eq!(
+        after.9, before.9,
+        "the clock moved on a read that observed nothing"
+    );
+    assert_eq!(after.11, before.11);
+    // The counts stay dated by the read that produced them.
+    assert_eq!(after.3, before.3);
+}
+
+/// A refusal on a pair nobody has read yet still has to be readable back as *not permitted*, so
+/// it creates the row rather than writing into nothing.
+#[test]
+fn a_refusal_on_an_unread_pair_still_records_the_access_state() {
+    let (_dir, mut index) = seeded();
+    in_tx(&mut index, |tx| {
+        mark_not_permitted(tx, &binding()).expect("refuse");
+    });
+    let row = stored(&index);
+    assert_eq!(row.8, 0);
+    assert_eq!(row.9, None, "a refusal dates nothing");
+}
+
+#[test]
+fn confirming_the_actions_read_moves_its_own_clock_and_rewrites_no_run() {
+    let (_dir, mut index) = seeded();
+    in_tx(&mut index, |tx| {
+        write_ci_runs(tx, &binding(), &[ci_payload(11, NOW - 900)], None, NOW).expect("runs");
+    });
+    let before = stored(&index);
+    in_tx(&mut index, |tx| {
+        confirm_ci_observation(tx, &binding(), NOW + 120).expect("confirm");
+    });
+    let after = stored(&index);
+    assert_eq!(after.11, Some(NOW + 120));
+    assert_eq!(
+        after.9, before.9,
+        "the Actions read moved the repo-facts clock"
+    );
+    let runs: i64 = index
+        .conn()
+        .query_row("SELECT COUNT(*) FROM remote_ci_run", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(runs, 1);
+}
