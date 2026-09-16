@@ -25,6 +25,7 @@ pub mod detail;
 pub mod firstrun;
 pub mod freshness;
 pub mod git;
+pub mod gitw;
 pub mod http;
 pub mod identity;
 pub mod index;

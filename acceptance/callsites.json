@@ -71,9 +71,15 @@
         "\"prune\"",
         "\"restore\""
       ],
-      "allow": ["core/src/corpus/", "core/src/testing/", "core/src/git/", "core/src/protocol.rs"],
+      "allow": [
+        "core/src/corpus/",
+        "core/src/testing/",
+        "core/src/git/",
+        "core/src/gitw/",
+        "core/src/protocol.rs"
+      ],
       "allowLines": [],
-      "allowWhy": "core/src/git is excluded because core/tests/git_readonly.rs already audits it properly — an allow list plus a deny list over its argv literals, with its own scanned-nothing guard — and a second, weaker grep over the same directory would be the copy that drifts. This rule covers what that audit cannot reach: argv assembled elsewhere in the core. The corpus generator and the seam fakes build fixture repositories behind the testkit feature."
+      "allowWhy": "core/src/git is excluded because core/tests/git_readonly.rs already audits it properly — an allow list plus a deny list over its argv literals, with its own scanned-nothing guard — and a second, weaker grep over the same directory would be the copy that drifts. core/src/gitw is excluded for the same reason and not a weaker one: core/tests/git_write_audit.rs audits it by ENUMERATING Intent::ALL and rendering every variant, which is strictly stronger than this grep — it also asserts the eight-entry flag denylist that no text search over quoted literals can express, because this rule matches subcommand vocabulary and the difference between an additive fetch and a destructive one is a flag. This rule covers what neither audit reaches: argv assembled elsewhere in the core. The corpus generator and the seam fakes build fixture repositories behind the testkit feature."
     }
   ]
 }
