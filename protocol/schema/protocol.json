@@ -829,6 +829,11 @@
         "isHidden": "bool"
       }
     },
+    "ReadmeRemoteChanged": {
+      "kind": "struct",
+      "$comment": "[p2] §25.5: `allowedAt` NULL is never granted, a timestamp is granted at T. The event carries the value rather than a boolean so the renderer's optimistic flip and the wire cannot disagree — the ProjectFlagsChanged precedent.",
+      "fields": { "id": "ProjectId", "allowedAt": "Timestamp?" }
+    },
     "ProjectConditionChanged": {
       "kind": "struct",
       "fields": { "id": "ProjectId", "conditionSignal": "ConditionSignal?" }
@@ -1048,6 +1053,13 @@
       "$comment": "§25.5: the whole document under J6_BYTE_CAP, which this command reads from the existing constant rather than declaring a second cap. ReadmeState.text is first_paragraph's output and is a different value with a different job"
     },
     {
+      "name": "projects.setReadmeRemote",
+      "args": { "projectId": "ProjectId", "allow": "bool" },
+      "returns": "Empty",
+      "idempotent": false,
+      "$comment": "§25.5: the per-repository consent for remote README images. NULL is never granted and a timestamp is granted at T, mirroring location.trusted_at. §2.2: a consent change is never auto-replayed. Not folded into projects.setFlags, which §1.2 scopes to the three organisation primitives"
+    },
+    {
       "name": "projects.setFlags",
       "args": {
         "id": "ProjectId",
@@ -1252,7 +1264,8 @@
       "flags_changed": "ProjectFlagsChanged",
       "condition_changed": "ProjectConditionChanged",
       "art_ready": "ArtReady",
-      "snapshot": "ProjectsSnapshot"
+      "snapshot": "ProjectsSnapshot",
+      "readme_remote_changed": "ReadmeRemoteChanged"
     },
     "session": {
       "started": "SessionStarted",

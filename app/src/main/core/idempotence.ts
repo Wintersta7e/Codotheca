@@ -78,6 +78,9 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'remote.webUrl': 'read',
   // [p2] §25.5. Opens one file under a location root; no write, no process, no socket.
   'projects.readme': 'read',
+  // [p2] §25.5. Writes the consent column, and the schema calls it non-idempotent for the same
+  // reason: a consent replayed through a core restart re-grants a decision the user made once.
+  'projects.setReadmeRemote': 'write',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {

@@ -11,23 +11,35 @@
 //! sandbox cannot help with: which file was read, whether it was cut, whether an image reference
 //! is inside the location root, and whether a remote host may be reached at all.
 
+pub mod consent;
 pub mod source;
 
 use crate::index::Index;
 use crate::proto::dispatch::CommandFailure;
+use crate::proto::pubsub::EventSink;
 use crate::protocol::ErrorCode;
 
 /// Everything §25.5's index-only commands need. `now` is unix **seconds**, supplied by the
 /// caller so no handler reads the clock itself.
-#[derive(Debug)]
 pub struct ReadmeCtx<'a> {
     pub index: &'a Index,
+    pub events: &'a dyn EventSink,
     pub now: i64,
+}
+
+/// Written by hand: `&dyn EventSink` does not require `Debug`, and a derived one would demand it
+/// of every implementor.
+impl std::fmt::Debug for ReadmeCtx<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReadmeCtx")
+            .field("now", &self.now)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The commands this module owns, as data, so the seam and the router cannot drift apart — the
 /// shape of the defect R37 found between the schema and the handlers.
-pub const README_COMMANDS: [&str; 1] = ["projects.readme"];
+pub const README_COMMANDS: [&str; 2] = ["projects.readme", "projects.setReadmeRemote"];
 
 /// What a README read can refuse with, and the closed code each maps to.
 ///
@@ -93,6 +105,7 @@ pub fn dispatch_readme_command(
 ) -> Option<Result<serde_json::Value, CommandFailure>> {
     match command {
         "projects.readme" => Some(source::handle_readme(ctx, args)),
+        "projects.setReadmeRemote" => Some(consent::handle_set_readme_remote(ctx, args)),
         _ => None,
     }
 }

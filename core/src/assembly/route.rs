@@ -160,8 +160,8 @@ pub fn route(command: CommandName) -> Route {
         // §25.2's opener, answered from the stored `remote_key` and the account hosts.
         CommandName::RemoteWebUrl => Route::Remote,
 
-        // §25.5's document read.
-        CommandName::ProjectsReadme => Route::Readme,
+        // §25.5's document read and its consent write.
+        CommandName::ProjectsReadme | CommandName::ProjectsSetReadmeRemote => Route::Readme,
 
         // The two §20.8 reads, answered by `crate::accounts` **under the index guard**. These
         // two only read a row; every other `accounts.*` command is below.
@@ -259,9 +259,9 @@ mod tests {
         // running total a lane cannot know after the merges ahead of it.
         assert_eq!(
             commands.len(),
-            52,
+            53,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
-             remote.webUrl plus §25.8's projects.readme"
+             remote.webUrl plus §25.8's projects.readme and projects.setReadmeRemote"
         );
         let unowned: Vec<&str> = commands
             .iter()

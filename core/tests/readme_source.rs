@@ -11,6 +11,7 @@
 //! Every assertion here is against a real temporary tree and the real migrated index — a mock
 //! would agree with whatever the code happened to do about a directory it cannot list.
 
+use codotheca_core::art::testsupport::CollectingSink;
 use codotheca_core::jobs::j6_content::J6_BYTE_CAP;
 use codotheca_core::protocol::{ErrorCode, ReadmeSource, ReadmeStateKind};
 use codotheca_core::readme::source::read_readme_source;
@@ -38,8 +39,10 @@ fn read(
     project: codotheca_core::protocol::ProjectId,
     location: codotheca_core::protocol::LocationId,
 ) -> Result<ReadmeSource, ReadmeError> {
+    let sink = CollectingSink::default();
     let ctx = ReadmeCtx {
         index: index.index(),
+        events: &sink,
         now: NOW,
     };
     read_readme_source(&ctx, project, location)
@@ -160,8 +163,10 @@ fn a_location_that_is_not_that_projects_is_a_protocol_error() {
     let (index, project, location) = seeded(tmp.path());
     let other = index.insert_project();
 
+    let sink = CollectingSink::default();
     let ctx = ReadmeCtx {
         index: index.index(),
+        events: &sink,
         now: NOW,
     };
     let error = read_readme_source(&ctx, other, location).expect_err("must refuse");
@@ -179,8 +184,10 @@ fn the_command_is_dispatched_by_name_and_serialises_the_wire_shape() {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::write(tmp.path().join("README.md"), "# widget\n").expect("write");
     let (index, project, location) = seeded(tmp.path());
+    let sink = CollectingSink::default();
     let ctx = ReadmeCtx {
         index: index.index(),
+        events: &sink,
         now: NOW,
     };
 
