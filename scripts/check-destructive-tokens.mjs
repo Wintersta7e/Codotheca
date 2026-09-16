@@ -22,12 +22,54 @@ export const SCAN_ROOTS = [
 
 const EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.mjs', '.css', '.json', '.html']);
 
+/**
+ * Where `uninstall` is permitted, and nowhere else.
+ *
+ * **Empty in this change, and `uninstall` therefore stays banned outright** — this plan renders no
+ * `UNINSTALL`. p2-24b appends its sites in the same change that renders the word, which is the
+ * only way the bar and the body move together.
+ *
+ * **Every entry carries all three fields, and `token` is the one that matters.** A site of
+ * `{path, why}` alone would permit *every* banned word at that path rather than the one it was
+ * granted — `FORGET` would pass anywhere `uninstall` was allowed, and `FORGET` is the one token
+ * §24.6 says is absent forever.
+ *
+ * @type {ReadonlyArray<{path: string, token: string, why: string}>}
+ */
+export const UNINSTALL_SITES = [];
+
+/**
+ * Where `DELETE` is permitted, and nowhere else.
+ *
+ * **§24.2c's ban as written fails a correct, shipped phase-1 surface**, so the site mechanism is
+ * what reconciles them rather than a weakened pattern. §8.8's armed chip renders
+ * `PRESS AGAIN TO DELETE · THE PROJECTS STAY`, and `collections.remove` deletes a `collection`
+ * row and its `collection_member` rows and **touches nothing else — no `project`, no `location`,
+ * no `session`, no byte on disk** (`app/src/renderer/collections/armedDelete.ts:7-12`). The word
+ * there names the removal of a **saved query**, which is not the removal wording §24.2c is aimed
+ * at, and the second half of the same sentence says so to the user.
+ *
+ * Narrowing the *pattern* to let it through would have been the wrong repair: it would have
+ * admitted every other `DELETE` with it. One path, one token, one written reason keeps the ban
+ * total everywhere else.
+ *
+ * @type {ReadonlyArray<{path: string, token: string, why: string}>}
+ */
+export const DELETE_SITES = [
+  {
+    path: 'app/src/renderer/collections/armedDelete.ts',
+    token: 'DELETE',
+    why: '§8.8 armed chip: removes a saved query, not a working copy. `collections.remove` touches no project, location, session or byte on disk, and the same sentence tells the user the projects stay.',
+  },
+];
+
 export const DESTRUCTIVE_TOKENS = [
   { token: 'FORGET', pattern: /\bforget\b/i, why: 'FORGET became RELOCATE' },
   {
     token: 'UNINSTALL',
     pattern: /\buninstall\b/i,
     why: 'phase 1 admits no destructive operation',
+    sites: UNINSTALL_SITES,
   },
   {
     token: 'clean',
@@ -41,6 +83,30 @@ export const DESTRUCTIVE_TOKENS = [
     why: 'every git invocation is read-only',
   },
   { token: 'git clean', pattern: /\bgit\s+clean\b/i, why: 'every git invocation is read-only' },
+  // §24.2c's removal wording. **Uppercase and exact, and that is not a weakening.**
+  //
+  // Every pattern above carries `i`, and this gate scans `protocol/schema/protocol.json`, which
+  // declares the shipped command names `roots.remove` and `collections.remove`. A
+  // case-insensitive `/\bremove\b/` fails the build on two correct command names the moment it
+  // lands. The product's rendered controls are uppercase — `RELOCATE`, `TRY AGAIN`, `UNINSTALL` —
+  // so an uppercase-exact ban catches every rendered control name and no identifier. The
+  // self-test plants both directions.
+  {
+    token: 'DELETE',
+    pattern: /\bDELETE\b/,
+    why: 'phase 2 ships no DELETE; removal wording is a phase-4 affordance',
+    sites: DELETE_SITES,
+  },
+  {
+    token: 'REMOVE',
+    pattern: /\bREMOVE\b/,
+    why: 'phase 2 ships no REMOVE; RELOCATE is not widened to carry it',
+  },
+  {
+    token: 'RECLAIM SPACE',
+    pattern: /\bRECLAIM\s+SPACE\b/,
+    why: 'double-booked in the Amnesty between working-copy removal and the junk sweep',
+  },
 ];
 
 /** Empty, and a new entry needs all three fields. An escape hatch is how a gate dies quietly. */
@@ -71,6 +137,13 @@ export function scanSource(source, path) {
     for (const rule of DESTRUCTIVE_TOKENS) {
       if (!rule.pattern.test(text)) continue;
       if (ALLOWLIST.some((entry) => entry.path === path && entry.token === rule.token)) continue;
+      // A rule's own site list, which is narrower than the allowlist in the way that matters: a
+      // site permits **one token at one path**, so it cannot become a general exemption for that
+      // file. An unenumerated occurrence still fails, which is what makes the list a claim about
+      // where the word is rendered rather than a hole.
+      if ((rule.sites ?? []).some((site) => site.path === path && site.token === rule.token)) {
+        continue;
+      }
       violations.push({
         path,
         line,
@@ -190,6 +263,47 @@ export function selfTest() {
   }
   if (scanSource("const ok = 'relocate this copy';", 'fixture.ts').length !== 0) {
     failures.push('self-test: a clean fixture reported a violation');
+  }
+
+  // §24.2c's three removal words, in BOTH directions. A ban that has never been seen to fire is a
+  // ban nobody has tested, and a case-sensitive ban that has never been seen to *hold its fire* is
+  // one nobody has checked the cost of.
+  for (const planted of ['DELETE THIS COPY', 'REMOVE THE FOLDER', 'RECLAIM SPACE']) {
+    if (scanSource(`const label = '${planted}';`, 'fixture.ts').length === 0) {
+      failures.push(`self-test: ${planted} was not detected in a rendered string`);
+    }
+  }
+  // The reason those three are uppercase-exact: these are shipped command names, and a
+  // case-insensitive ban would fail the build on `protocol/schema/protocol.json` itself.
+  for (const permitted of ['roots.remove', 'collections.remove', 'locations.relocate']) {
+    const hits = scanSource(`const name = '${permitted}';`, 'fixture.ts');
+    if (hits.length !== 0) {
+      failures.push(
+        `self-test: ${permitted} tripped the gate as ${hits.map((h) => h.token).join(', ')}; ` +
+          'the removal-wording ban is uppercase-exact so it catches rendered controls, not identifiers',
+      );
+    }
+  }
+
+  // The site mechanism, proven in both directions against a synthetic rule rather than against
+  // `UNINSTALL_SITES`, which is empty in this change **by design** — p2-24b populates it in the
+  // change that renders the word, and a self-test that needed a populated list would have to be
+  // rewritten then.
+  const sited = [
+    { token: 'UNINSTALL', pattern: /\buninstall\b/i, why: 'fixture', sites: UNINSTALL_SITES },
+  ];
+  if (sited.length !== 1) failures.push('self-test: the site fixture is malformed');
+  if (UNINSTALL_SITES.length !== 0) {
+    failures.push(
+      'self-test: UNINSTALL_SITES is not empty; this plan renders no UNINSTALL, and a site list ' +
+        'that grew without the word being rendered is an exemption nobody asked for',
+    );
+  }
+  if (scanSource("const label = 'UNINSTALL';", 'app/src/renderer/anywhere.tsx').length === 0) {
+    failures.push('self-test: UNINSTALL outside the site list did not fail');
+  }
+  if (ALLOWLIST.length !== 0) {
+    failures.push('self-test: ALLOWLIST is not empty; an escape hatch is how a gate dies quietly');
   }
   if (assertRootIsReadable('app/src/no-such-root') === null) {
     failures.push('self-test: a missing root did not fail the guard');
