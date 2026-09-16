@@ -86,10 +86,7 @@ describe('isNavigationAllowed', () => {
 
     // Both guards are bound on the window's webContents, read off the source that binds them:
     // a predicate that refuses everything proves nothing if nothing calls it.
-    const main = readFileSync(
-      fileURLToPath(new URL('./index.ts', import.meta.url)),
-      'utf8',
-    );
+    const main = readFileSync(fileURLToPath(new URL('./index.ts', import.meta.url)), 'utf8');
     expect(main.length, 'read real source, or the assertions below are vacuous').toBeGreaterThan(
       2000,
     );
