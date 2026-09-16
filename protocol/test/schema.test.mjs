@@ -78,15 +78,30 @@ test('an unprivileged command taking Bytes is rejected', () => {
   assert.throws(() => validateSchema(s), /roots\.add.*privileged/s);
 });
 
-test('a privileged command taking no Bytes is rejected', () => {
+test('an unprivileged command mutating the filesystem is rejected', () => {
   const s = base();
   s.commands.push({
+    name: 'locations.uninstall',
+    args: { id: 'ProjectId' },
+    returns: 'Empty',
+    mutatesFilesystem: true,
+  });
+  assert.throws(() => validateSchema(s), /locations\.uninstall.*privileged/s);
+});
+
+test('a privileged command needs Bytes or filesystem mutation', () => {
+  const s = base();
+  const command = {
     name: 'roots.add',
     args: { id: 'ProjectId' },
     returns: 'Empty',
     privileged: true,
-  });
+  };
+  s.commands.push(command);
   assert.throws(() => validateSchema(s), /roots\.add.*Bytes/s);
+
+  command.mutatesFilesystem = true;
+  assert.doesNotThrow(() => validateSchema(s));
 });
 
 test('ErrorCode may not be hand-declared; it is synthesised from errors', () => {
