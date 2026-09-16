@@ -130,13 +130,27 @@ pub fn persist(
     facts: &ContentFacts,
     now: i64,
 ) -> Result<(), crate::index::IndexError> {
-    let (lang, arch, note): (Option<String>, Option<String>, Option<String>) = tx.query_row(
-        "SELECT primary_language, archetype, notes FROM project WHERE id = ?1",
+    // [p2] §25.3 puts the forge's description at rank 2, so the chain needs it here. The join
+    // is on §22.11's binding — never on `remote_key`, which is non-unique by requirement — and
+    // it is a LEFT JOIN because most projects have no binding and every one of them still gets
+    // a description.
+    let (lang, arch, note, remote): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = tx.query_row(
+        "SELECT p.primary_language, p.archetype, p.notes, r.description
+           FROM project p
+           LEFT JOIN remote_repo r
+             ON r.provider = p.provider AND r.provider_repo_id = p.provider_repo_id
+          WHERE p.id = ?1",
         [project.0],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     )?;
     let described = crate::derive::description::describe(
         facts.manifest_description.as_deref(),
+        remote.as_deref(),
         facts.readme_excerpt.as_deref(),
         note.as_deref(),
         lang.as_deref(),

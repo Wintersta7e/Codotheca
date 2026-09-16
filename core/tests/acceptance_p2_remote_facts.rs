@@ -257,3 +257,54 @@ fn ac_p2_25_25_facts_are_keyed_on_the_stable_id_and_survive_a_rename() {
         );
     }
 }
+
+/// **AC-P2-25-10-chain.** §5.2's chain becomes `manifest → remote → README → note → detected`,
+/// and the whole chain is walked rather than one rung.
+///
+/// The DDL-and-enum mirror is **`AC-P2-25-10-ddl`**, p2-22's, in
+/// `core/tests/index_rebuild_0009.rs`: it reads the CHECK text out of the migration and compares
+/// it to the generated variant set. One value, one mirror test — a second copy here would be the
+/// defect the mirror exists to catch, wearing the reviewer's coat.
+#[test]
+fn ac_p2_25_10_chain_resolves_manifest_then_remote_then_readme_then_note_then_detected() {
+    use codotheca_core::derive::description::{describe, DescriptionSource};
+
+    let manifest = Some("A tiny thing");
+    let remote = Some("The forge's About line");
+    let readme = Some("# Thing\nA library for one job.\n");
+    let note = Some("my scratch pad");
+    let lang = Some("Rust");
+    let arch = Some("cli");
+
+    // All five sources present.
+    let all = describe(manifest, remote, readme, note, lang, arch);
+    assert_eq!(all.source, Some(DescriptionSource::Manifest));
+    assert_eq!(all.text.as_deref(), Some("A tiny thing"));
+
+    // Remove the manifest — the forge's line, not the README's first sentence.
+    let without_manifest = describe(None, remote, readme, note, lang, arch);
+    assert_eq!(without_manifest.source, Some(DescriptionSource::Remote));
+    assert_eq!(
+        without_manifest.text.as_deref(),
+        Some("The forge's About line")
+    );
+
+    let without_remote = describe(None, None, readme, note, lang, arch);
+    assert_eq!(without_remote.source, Some(DescriptionSource::Readme));
+    assert_eq!(
+        without_remote.text.as_deref(),
+        Some("A library for one job.")
+    );
+
+    let without_readme = describe(None, None, None, note, lang, arch);
+    assert_eq!(without_readme.source, Some(DescriptionSource::Note));
+
+    let detected = describe(None, None, None, None, lang, arch);
+    assert_eq!(detected.source, Some(DescriptionSource::Detected));
+    assert_eq!(detected.text.as_deref(), Some("Rust CLI"));
+
+    // The case the rank exists for: a project that was never cloned has no manifest, no README
+    // and no note, so the forge's line is the only description that exists.
+    let never_cloned = describe(None, remote, None, None, None, None);
+    assert_eq!(never_cloned.source, Some(DescriptionSource::Remote));
+}

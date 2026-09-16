@@ -87,10 +87,20 @@ pub fn synthesise(primary_language: Option<&str>, archetype: Option<&str>) -> Op
     Some(format!("{lang} {word}"))
 }
 
-/// §5.2's chain: manifest, then README, then the user's note, then synthesis, then nothing.
+/// §5.2's chain: manifest, then the forge, then README, then the user's note, then synthesis.
+///
+/// [p2] §25.3 inserts `remote` at **rank 2**, and the two boundaries are the whole of the
+/// argument. Below `manifest`, because an in-repo, versioned, offline-available string must not
+/// be displaced by a network fact — *GitHub is additive, never a gate*. Above `README`, because
+/// the forge's About line is an **authored** one-line summary of exactly this project rather
+/// than a sentence extracted heuristically, and for a project that was never cloned it is the
+/// only description that exists.
+///
+/// **The note's rank moves from third to fourth**, which supersedes §8.5.4's sentence.
 #[must_use]
 pub fn describe(
     manifest: Option<&str>,
+    remote: Option<&str>,
     readme: Option<&str>,
     note: Option<&str>,
     primary_language: Option<&str>,
@@ -100,6 +110,12 @@ pub fn describe(
         return Described {
             text: Some(text.to_owned()),
             source: Some(DescriptionSource::Manifest),
+        };
+    }
+    if let Some(text) = remote.map(str::trim).filter(|t| !t.is_empty()) {
+        return Described {
+            text: Some(text.to_owned()),
+            source: Some(DescriptionSource::Remote),
         };
     }
     if let Some(text) = readme.and_then(readme_description) {
@@ -141,6 +157,7 @@ mod tests {
     fn the_chain_prefers_a_manifest_description() {
         let d = describe(
             Some("A tiny thing"),
+            Some("The forge's About line"),
             Some("# Title\n\nProse."),
             Some("note"),
             Some("Rust"),
@@ -173,6 +190,7 @@ mod tests {
         let d = describe(
             None,
             None,
+            None,
             Some("my scratch pad\nsecond line"),
             Some("Rust"),
             Some("cli"),
@@ -200,7 +218,7 @@ mod tests {
 
     #[test]
     fn nothing_known_describes_nothing_and_says_so_by_being_absent() {
-        let d = describe(None, None, None, None, None);
+        let d = describe(None, None, None, None, None, None);
         assert_eq!(d.text, None);
         assert_eq!(d.source, None);
     }
