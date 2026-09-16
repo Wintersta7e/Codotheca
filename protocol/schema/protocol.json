@@ -1,7 +1,8 @@
 {
   "version": 2,
   "$comment": "Single source of truth for the core<->shell contract. Both languages are GENERATED from this file; neither is written by hand. See the protocol spec §2.4 and §2.5.",
-  "$privileged": "A command may carry Bytes only behind `privileged: true` (§2.4). The value comes from a native dialog owned by the shell; the renderer may never originate a path or an executable and must never call one of these directly.",
+  "$privileged": "A command that carries Bytes or mutates the filesystem must be `privileged: true` (§2.4, §24.8). A Bytes value comes from a native dialog owned by the shell; the renderer may never originate a path or an executable and must never call one of these directly.",
+  "$mutatesFilesystem": "A command that mutates the filesystem is `privileged: true` (§24.8), so `isRendererCallable` refuses it on `IPC_REQUEST` and it travels a shell-owned channel.",
   "$idempotent": "`idempotent: false` marks the operations §2.2 forbids auto-replaying: a launch, a session mutation, a flag change. On core death these are rejected with `outcome: \"unknown\"` and surfaced to the user.",
   "errors": [
     "CORE_RESTARTED",

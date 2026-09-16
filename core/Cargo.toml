@@ -22,6 +22,16 @@ name = "codotheca-corpus"
 path = "src/bin/corpus.rs"
 required-features = ["testkit"]
 
+# §24.2a's recording stand-in for `git`. A declared binary rather than a script because Windows
+# `CreateProcess` will not spawn a shebang file, and because the write audit must read the argv
+# and environment the child ACTUALLY received — R88: an assertion over the argv a builder returns
+# is an assertion about an intention, and between that builder and the child sit `write_base_args`
+# and the `Command` builder. Testkit-only, so no release build contains it.
+[[bin]]
+name = "codotheca-recording-git"
+path = "src/bin/recording_git.rs"
+required-features = ["testkit"]
+
 # §13: the WSL worker. One per supported architecture, built alongside the Windows core and
 # shipped inside the Windows installer (plan 19 stages it).
 [[bin]]

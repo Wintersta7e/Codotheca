@@ -1,0 +1,107 @@
+//! A stand-in for `git` that records what it was **actually given**, for the write audit.
+//!
+//! **Why this exists rather than an assertion over `Intent::argv()`.** R88: *"a test that asserts
+//! a URL, an argv, a command name or a function call is asserting an intention, and an intention
+//! passes whether or not anything acts on it."* Between `Intent::argv()` and the child sit
+//! `write_base_args`, `WriteExec` and the `Command` builder — which is exactly where `--prune`, a
+//! re-inherited `credential.helper` or a restored `GIT_ASKPASS` would enter unseen. So the audit
+//! points the write path at **this** program and reads the file it writes: that file is the
+//! artefact, and the `Vec<OsString>` is the intention.
+//!
+//! **Why a declared `[[bin]]` rather than a script.** Windows `CreateProcess` will not spawn a
+//! shebang file, and a stand-in that silently fails to spawn on the one target the orphan-lock
+//! trap lives on is the same class as the plan-16 tests that fed Unix paths to a Windows parser
+//! and read green on the platform that never ran them. Declared with
+//! `required-features = ["testkit"]` beside `codotheca-corpus`, so `--all-features` clippy builds
+//! it and a missing path is a hard error at gate time rather than at spawn time.
+//!
+//! **Two invocations, because the write path makes two.** `SystemMutatingGit::run` first reads
+//! the effective config to enumerate filter drivers, then clones. This program answers both.
+//!
+//! **Mode comes from argv\[0\], not from the environment.** A test that needs the
+//! no-filters-configured answer copies this binary under a name containing `nofilters`. An
+//! environment variable would be process-global and therefore racy across parallel tests — and
+//! worse, `neutralise_env` is part of what this program exists to observe, so a recorder needing
+//! a variable to survive it would be observing itself.
+
+use std::ffi::OsString;
+use std::io::Write as _;
+use std::path::PathBuf;
+
+/// Separator between records. NUL, because an argv element or an environment value may contain
+/// anything else — including a newline.
+const SEP: u8 = 0;
+
+/// The driver this stand-in reports as configured, so the audit can prove the production path
+/// enumerated it **and** rendered its three neutralising options into the child's real argv.
+const AUDIT_DRIVER: &str = "auditdriver";
+
+fn main() {
+    let argv0 = std::env::args_os().next().unwrap_or_default();
+    let no_filters = PathBuf::from(&argv0)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .contains("nofilters");
+
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+
+    // The precondition read. `git config --get-regexp` exits 1 when it matches nothing, and the
+    // write path must tell that apart from a failure — so this stand-in can produce both.
+    if args.iter().any(|a| a == "config") {
+        if no_filters {
+            std::process::exit(1);
+        }
+        let record = format!("filter.{AUDIT_DRIVER}.clean\ngit-audit-filter");
+        // Through `claim_stdout`, never `std::io::stdout()` directly. That function hands the
+        // handle out **once**, behind an `AtomicBool`, which is what makes *"stdout carries
+        // protocol frames and nothing else"* checkable at runtime rather than merely stated —
+        // and `scripts/check-stdout-discipline.mjs` bans the direct call everywhere in
+        // `core/src` but the one module that owns it. A stand-in for git legitimately writes to
+        // stdout, because that is where `git config` answers; it takes the handle the same way
+        // `core/src/bin/worker.rs` does.
+        let Some(mut out) = codotheca_core::proto::transport::claim_stdout() else {
+            std::process::exit(5);
+        };
+        if out.write_all(record.as_bytes()).is_err() || out.write_all(&[SEP]).is_err() {
+            std::process::exit(4);
+        }
+        return;
+    }
+
+    let Some(last) = args.last() else {
+        // Nothing to key the recording on. Exit non-zero so the audit fails loudly rather than
+        // reading a file that was never written.
+        std::process::exit(2);
+    };
+
+    let mut target = PathBuf::from(last);
+    let mut name = target.file_name().unwrap_or_default().to_os_string();
+    name.push(".recorded");
+    target.set_file_name(name);
+
+    let mut blob: Vec<u8> = Vec::new();
+    for arg in &args {
+        blob.extend_from_slice(b"ARGV\t");
+        blob.extend_from_slice(arg.to_string_lossy().as_bytes());
+        blob.push(SEP);
+    }
+    for (key, value) in std::env::vars_os() {
+        blob.extend_from_slice(b"ENV\t");
+        blob.extend_from_slice(key.to_string_lossy().as_bytes());
+        blob.push(b'=');
+        blob.extend_from_slice(value.to_string_lossy().as_bytes());
+        blob.push(SEP);
+    }
+
+    let Ok(mut file) = std::fs::File::create(&target) else {
+        std::process::exit(3);
+    };
+    if file.write_all(&blob).is_err() {
+        std::process::exit(4);
+    }
+
+    // A real `git clone` creates its destination. Creating it here keeps the caller's own
+    // post-conditions meaningful without pretending to be git in any other way.
+    let _ = std::fs::create_dir_all(PathBuf::from(last));
+}

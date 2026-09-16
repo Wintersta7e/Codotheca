@@ -572,7 +572,21 @@ fn every_foreign_key_into_project_survives_the_rebuild() {
         .count();
     assert_eq!(cascading, 7, "seven cascading children: {before:?}");
 
-    apply_all(&mut conn, MIGRATIONS).unwrap();
+    // The chain runs **through the rebuild and stops there**. A later migration that legitimately
+    // adds a foreign key into `project` — `0010`'s `install_run` does — is not a rebuild defect,
+    // and letting it into this comparison would fail the assertion for the one reason it is not
+    // about. Derived from `rebuilds_a_table` rather than sliced at a position, so inserting or
+    // renumbering a migration cannot silently move what this test runs.
+    assert_eq!(
+        MIGRATIONS.iter().filter(|m| m.rebuilds_a_table).count(),
+        1,
+        "R80's subject is the one rebuild; with two, the search below silently picks the first"
+    );
+    let rebuild_at = MIGRATIONS
+        .iter()
+        .position(|m| m.rebuilds_a_table)
+        .expect("phase 2 performs exactly one table rebuild");
+    apply_all(&mut conn, &MIGRATIONS[..=rebuild_at]).unwrap();
 
     assert_eq!(
         foreign_keys_into_project(&conn),
@@ -1081,9 +1095,9 @@ fn every_remote_link_basis_variant_is_accepted_by_the_column() {
 /// The chain ends where the constant says it does, and the constant is the count the guard
 /// checked. Three statements of one value, so a migration registered without its bump is red.
 #[test]
-fn the_supported_version_is_nine_and_the_chain_reaches_it() {
-    assert_eq!(SUPPORTED_SCHEMA_VERSION, 9);
-    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), 9);
+fn the_supported_version_is_ten_and_the_chain_reaches_it() {
+    assert_eq!(SUPPORTED_SCHEMA_VERSION, 10);
+    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), 10);
     let (_dir, conn) = migrated_to(MIGRATIONS.len());
-    assert_eq!(schema_version(&conn).unwrap(), 9);
+    assert_eq!(schema_version(&conn).unwrap(), 10);
 }

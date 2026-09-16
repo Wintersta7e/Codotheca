@@ -55,6 +55,22 @@
       "allowWhy": "The corpus generator and the seam fakes build fixture repositories and are gated behind the testkit feature; constructing a repository is their whole job and is not a product git invocation."
     },
     {
+      "id": "no-unaudited-git-spawn",
+      "spec": "§24.2b, §19.4",
+      "why": "This rule pins SPAWN SITES rather than subcommand vocabulary: no file outside the three named here constructs a process whose program is git. Auditing the seam instead of the words is what makes it survive phases 3 and 4 unchanged, and it is the complement of no-destructive-git, which matches quoted subcommand literals and therefore cannot see a program name held in a variable. The pattern is a substring, so it catches the fully-qualified std::process::Command::new spelling as well as the bare one — half the real sites in this core use the qualified form, and a matcher that saw only one spelling would let four spawns past while reporting green.",
+      "roots": ["core/src"],
+      "ext": [".rs"],
+      "patterns": ["Command::new"],
+      "allow": ["core/src/git/exec.rs", "core/src/gitw/exec.rs", "core/src/corpus/git_cmd.rs"],
+      "allowLines": [
+        "Command::new\\(&inv\\.program\\)",
+        "Command::new\\(program\\)",
+        "Command::new\\(WSL_EXE\\)"
+      ],
+      "allowWhy": "The three allowed files are the git spawn sites: the read seam, the write seam, and the corpus generator behind the testkit feature. The three allowLines are the non-git spawns and are justified per line rather than per file, because allowing their files would make this rule read nothing in them at all — an editor chosen by the user, a launch probe, and wsl.exe. Two further occurrences sit inside #[cfg(test)] mod tests and are removed by stripRustTestModules before this rule sees them.",
+      "pendingRegistryEntry": { "criterion": "AC-P2-24-3" }
+    },
+    {
       "id": "no-destructive-git",
       "spec": "§16.44, §17",
       "why": "Every git invocation in phase 1 is read-only and argv-only. These subcommands as quoted argv literals are the whole destructive surface, fetch included: a directional claim needs a merge-base across two object stores, which needs a fetch, which §17 forbids. Quoted rather than bare words on purpose — fetch_head_at and reset_at are legitimate column names and a bare-word pattern would fail every correct build.",
@@ -71,9 +87,15 @@
         "\"prune\"",
         "\"restore\""
       ],
-      "allow": ["core/src/corpus/", "core/src/testing/", "core/src/git/", "core/src/protocol.rs"],
+      "allow": [
+        "core/src/corpus/",
+        "core/src/testing/",
+        "core/src/git/",
+        "core/src/gitw/",
+        "core/src/protocol.rs"
+      ],
       "allowLines": [],
-      "allowWhy": "core/src/git is excluded because core/tests/git_readonly.rs already audits it properly — an allow list plus a deny list over its argv literals, with its own scanned-nothing guard — and a second, weaker grep over the same directory would be the copy that drifts. This rule covers what that audit cannot reach: argv assembled elsewhere in the core. The corpus generator and the seam fakes build fixture repositories behind the testkit feature."
+      "allowWhy": "core/src/git is excluded because core/tests/git_readonly.rs already audits it properly — an allow list plus a deny list over its argv literals, with its own scanned-nothing guard — and a second, weaker grep over the same directory would be the copy that drifts. core/src/gitw is excluded for the same reason and not a weaker one: core/tests/git_write_audit.rs audits it by ENUMERATING Intent::ALL and rendering every variant, which is strictly stronger than this grep — it also asserts the eight-entry flag denylist that no text search over quoted literals can express, because this rule matches subcommand vocabulary and the difference between an additive fetch and a destructive one is a flag. This rule covers what neither audit reaches: argv assembled elsewhere in the core. The corpus generator and the seam fakes build fixture repositories behind the testkit feature."
     }
   ]
 }

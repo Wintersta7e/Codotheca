@@ -83,12 +83,18 @@ export function validateSchema(schema) {
       if (parseTypeExpr(expr).base === 'Bytes') takesBytes = true;
     }
     checkRef(schema, c.returns, `command ${c.name} returns`);
-    // §2.4's trust rule, enforced rather than documented.
+    const mutatesFilesystem = c.mutatesFilesystem === true;
+    // §2.4 and §24.8's trust rules, enforced rather than documented.
     if (takesBytes && c.privileged !== true) {
       throw new Error(`command ${c.name} takes Bytes and must be marked privileged`);
     }
-    if (c.privileged === true && !takesBytes) {
-      throw new Error(`command ${c.name} is privileged but takes no Bytes argument`);
+    if (mutatesFilesystem && c.privileged !== true) {
+      throw new Error(`command ${c.name} mutates the filesystem and must be marked privileged`);
+    }
+    if (c.privileged === true && !takesBytes && !mutatesFilesystem) {
+      throw new Error(
+        `command ${c.name} is privileged but neither takes Bytes nor mutates the filesystem`,
+      );
     }
   }
 
