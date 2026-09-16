@@ -262,6 +262,62 @@
       "kind": "enum",
       "variants": ["provider_id", "remote_key"]
     },
+    "RemoteLinkKind": {
+      "kind": "enum",
+      "variants": ["repository", "issues", "pulls", "actions", "releases"],
+      "$comment": "§25.2: the five links out of the REMOTE tab. The renderer names a kind and never a URL; the core builds the string from this project's own remote_key against the host allowlist."
+    },
+    "BackupState": {
+      "kind": "enum",
+      "variants": ["only_copy", "not_anywhere_else", "verified"],
+      "$comment": "§25.3's backup state, as a DECISION and never as copy. Three variants, not four: the fourth row of the table is the absent field, and an absent field plus a variant meaning nothing would be one value stated twice. Per §19.4 phase 2 has no push, so this states a fact and offers no control."
+    },
+    "RemoteFactsState": {
+      "kind": "enum",
+      "variants": ["no_account", "not_observed", "not_permitted", "observed"],
+      "$comment": "§25.1's four states of a forge-derived value. Staleness is NOT one of them: it is now minus observedAt past a threshold, and therefore a function of the moment it is rendered."
+    },
+    "RemoteVisibility": {
+      "kind": "enum",
+      "variants": ["public", "private"],
+      "$comment": "§25.3: both render or neither does. Rendering only `private` makes its absence assert public, which is the invented fact §8.5.1 cut the field for."
+    },
+    "CiRun": {
+      "kind": "struct",
+      "fields": {
+        "runId": "i64",
+        "workflow": "String",
+        "conclusion": "String?",
+        "branch": "String",
+        "runNumber": "u32",
+        "startedAt": "Timestamp?"
+      },
+      "$comment": "§25.4: `conclusion` is a nullable String and NOT an enum. The vocabulary belongs to the forge, and a closed mirror of a third party's vocabulary is R26 by construction. NULL means the run had not concluded when it was observed."
+    },
+    "CiList": {
+      "kind": "struct",
+      "fields": { "state": "RemoteFactsState", "runs": "[CiRun]", "observedAt": "Timestamp?" },
+      "$comment": "§25.7: its own state and its own clock. The Actions read and the repo-facts read are two reads, and a CI list dated by the other one is the staleness marker lying."
+    },
+    "RemoteFacts": {
+      "kind": "struct",
+      "fields": {
+        "key": "String",
+        "linkable": "bool",
+        "state": "RemoteFactsState",
+        "visibility": "RemoteVisibility?",
+        "forkParentKey": "String?",
+        "stars": "u32?",
+        "openIssues": "u32?",
+        "goodFirstIssues": "u32?",
+        "openPrs": "u32?",
+        "openPrsFromUser": "u32?",
+        "topics": "[String]",
+        "observedAt": "Timestamp?",
+        "ci": "CiList"
+      },
+      "$comment": "§25.1. `key` is the project's remote_key, carried for rendering only; the wire shape names no provider_repo_id, which is §22's binding and not a fact. `linkable` is the core's answer to whether this key produces a link, so the renderer holds no second copy of the host allowlist."
+    },
     "InterruptedOp": {
       "kind": "enum",
       "variants": ["merge", "rebase", "cherry_pick", "revert", "bisect", "am"]
@@ -507,15 +563,19 @@
         "firstCommitSha": "String?",
         "firstCommitTzOffsetMin": "i32?",
         "sizeWorktreeBytes": "i64?",
-        "remoteLinkBasis": "RemoteLinkBasis?"
+        "remoteLinkBasis": "RemoteLinkBasis?",
+        "remote": "RemoteFacts?",
+        "backup": "BackupState?"
       }
     },
 
     "Peek": {
       "kind": "struct",
+      "$comment": "[p2] §25.3a: `remote` is NULL iff project.remote_key is NULL, the same predicate ProjectDetail.remote carries. Peek draws §25.1's blocks at Peek's size from the same producer; it is not a second place they are computed.",
       "fields": {
         "id": "ProjectId",
         "readme": "ReadmeState",
+        "remote": "RemoteFacts?",
         "commits": "[CommitRef]",
         "location": "LocationRef?",
         "worktree": "WorktreeObservation",
@@ -1151,6 +1211,12 @@
       "args": { "accountId": "AccountId", "orgLogin": "String", "enabled": "bool" },
       "returns": "AccountOrg",
       "idempotent": false
+    },
+    {
+      "name": "remote.webUrl",
+      "args": { "projectId": "ProjectId", "kind": "RemoteLinkKind" },
+      "returns": "String?",
+      "$comment": "§25.2: NULL when remote_key is NULL, when it is not <host>/<owner>/<name>, or when its host is not allowlisted. Not privileged — it carries no Bytes — and the shell is its only caller: the answer is opened, and only the main process may open it."
     }
   ],
   "topics": {

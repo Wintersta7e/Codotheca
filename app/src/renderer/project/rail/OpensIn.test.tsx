@@ -17,6 +17,7 @@ function provide(request: ReturnType<typeof vi.fn>, children: ReactElement): Rea
   const deps: ProjectPageDeps = {
     request: request as unknown as ProjectPageDeps['request'],
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: () => () => undefined,
     now: () => NOW,
   };

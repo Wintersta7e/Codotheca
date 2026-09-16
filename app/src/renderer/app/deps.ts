@@ -106,6 +106,7 @@ export function createDefaultAppDeps(): AppDeps {
     // `callWith` over the same bridge is a second place for §2.2's retry decision to be made.
     request: call,
     relocate: (locationId) => bridge.relocate(locationId),
+    openRemoteLink: (projectId, kind) => bridge.openRemoteLink(projectId, kind),
     subscribe: createEventFanout((cb) => {
       bridge.onCoreEvents(cb);
     }),

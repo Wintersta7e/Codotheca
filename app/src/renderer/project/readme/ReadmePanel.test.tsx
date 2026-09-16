@@ -71,3 +71,32 @@ describe('the two cut elements', () => {
     expect(container.innerHTML).not.toMatch(/npm install|INSTALL|cp-readme-topics/i);
   });
 });
+
+/**
+ * **AC-P2-25-9.** §25.3 restores §8.5.3's topic chips, which phase 1 cut because *"nothing local
+ * supplies topics"*. One or more stored topics renders the rail; **zero renders no row at all**,
+ * never an empty rail — §5.6's *nothing selected, no block renders*, and an empty rail is
+ * furniture.
+ */
+describe('§25.3 the topic rail renders only when there is a topic', () => {
+  const readme: ReadmeState = { state: 'present', text: 'A paragraph.', readAt: NOW - 3600 };
+
+  it('renders one chip for one topic', () => {
+    render(<ReadmePanel readme={readme} row={rowFixture()} now={NOW} topics={['rust']} />);
+    const rail = screen.getByTestId('cp-readme-topics');
+    expect(rail.children).toHaveLength(1);
+    expect(rail.textContent).toBe('rust');
+  });
+
+  it('renders three chips for three topics', () => {
+    render(
+      <ReadmePanel readme={readme} row={rowFixture()} now={NOW} topics={['rust', 'cli', 'tui']} />,
+    );
+    expect(screen.getByTestId('cp-readme-topics').children).toHaveLength(3);
+  });
+
+  it('AC-P2-25-9 renders no rail element at all for zero topics, asserted as an absence', () => {
+    render(<ReadmePanel readme={readme} row={rowFixture()} now={NOW} topics={[]} />);
+    expect(screen.queryByTestId('cp-readme-topics')).toBeNull();
+  });
+});

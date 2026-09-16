@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
-import type { Peek } from '../../generated/protocol.js';
+import type { Peek, RemoteFacts } from '../../generated/protocol.js';
 import { allowsTransforms, type ResolvedTier } from '../motion/tier.js';
+import { observationLine, RemoteBlock } from '../project/remote/remoteBlocks.js';
 import {
   commitDate,
   firstParagraph,
@@ -21,11 +22,15 @@ export interface PeekPanelProps {
 
 export function PeekPanel({ peek, now, tier }: PeekPanelProps): ReactElement {
   const className = `cdt-peek${allowsTransforms(tier) ? ` ${PEEK_ENTER_CLASS}` : ''}`;
+  // [p2] §25.3a: **absent**, and not filled with the remote key. A path slot holding a URL
+  // invites the one gesture the row cannot serve.
   const header = (
     <div className="cdt-peek-head">
       <span>PEEK</span>
       <span className="cdt-peek-rule" aria-hidden="true" />
-      <span className="cdt-peek-path">{peek?.location?.pathDisplay ?? ''}</span>
+      {peek === null || peek.location === null ? null : (
+        <span className="cdt-peek-path">{peek.location.pathDisplay}</span>
+      )}
     </div>
   );
 
@@ -38,28 +43,39 @@ export function PeekPanel({ peek, now, tier }: PeekPanelProps): ReactElement {
   }
 
   const observation = worktreeLine(peek.worktree, now);
+  // [p2] §25.3a: a row with no working copy renders **a different set**, not the same five with
+  // dashes in them. The README paragraph, the commit list, the path and the worktree line are
+  // absent — each of them is a claim about a repository nothing has read or a disk nothing has
+  // looked at.
+  const cloned = peek.location !== null;
 
   return (
     <section className={className} aria-label="Peek">
       {header}
-      <p className="cdt-peek-readme">
-        {readmeFallback(peek.readme) ?? firstParagraph(peek.readme.text ?? '')}
-      </p>
+      {cloned ? (
+        <p className="cdt-peek-readme">
+          {readmeFallback(peek.readme) ?? firstParagraph(peek.readme.text ?? '')}
+        </p>
+      ) : null}
       {peek.interruptedOp === null ? null : (
         <span className="cdt-chip" data-chip="interrupted">
           INTERRUPTED
         </span>
       )}
-      <div className="cdt-peek-commits">
-        {peek.commits.slice(0, 3).map((commit) => (
-          <div className="cdt-peek-commit" key={commit.sha}>
-            <span className="cdt-peek-sha">{shortSha(commit.sha)}</span>
-            <span className="cdt-peek-subject">{commit.subject}</span>
-            <span className="cdt-peek-date">{commitDate(commit)}</span>
-          </div>
-        ))}
-      </div>
-      {observation === null ? null : <p className="cdt-peek-observation">{observation}</p>}
+      {cloned ? (
+        <div className="cdt-peek-commits">
+          {peek.commits.slice(0, 3).map((commit) => (
+            <div className="cdt-peek-commit" key={commit.sha}>
+              <span className="cdt-peek-sha">{shortSha(commit.sha)}</span>
+              <span className="cdt-peek-subject">{commit.subject}</span>
+              <span className="cdt-peek-date">{commitDate(commit)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {cloned && observation !== null ? (
+        <p className="cdt-peek-observation">{observation}</p>
+      ) : null}
       <dl className="cdt-peek-facts">
         {peekFacts(peek, now).map((fact) => (
           <div key={fact.key}>
@@ -68,6 +84,53 @@ export function PeekPanel({ peek, now, tier }: PeekPanelProps): ReactElement {
           </div>
         ))}
       </dl>
+      <PeekRemote remote={peek.remote} now={now} />
     </section>
+  );
+}
+
+/**
+ * §25.3a's **positive half**: what a not-cloned row renders in place of the facts it has no
+ * history for — the key, visibility, and stars / open issues / open PRs where observed, under
+ * §25.1's four states and its observation line.
+ *
+ * `RemoteBlock` is **imported, not re-implemented**: this is the same producer at Peek's size,
+ * which is what §25.3a asks for and what §25.4's import gate admits this module for. A cloned
+ * project's Peek gains the same blocks and that is not a regression — the five facts are
+ * unchanged for a row with a location.
+ *
+ * §24 owns the install control; Peek adds none of its own.
+ */
+function PeekRemote({
+  remote,
+  now,
+}: {
+  readonly remote: RemoteFacts | null;
+  readonly now: number;
+}): ReactElement | null {
+  if (remote === null) return null;
+  const observed = observationLine(remote.observedAt, now);
+  const visibility =
+    remote.visibility === 'public' ? 'PUBLIC' : remote.visibility === 'private' ? 'PRIVATE' : null;
+
+  return (
+    <div className="cdt-peek-remote" data-testid="cdt-peek-remote">
+      <span className="cdt-peek-remote-key" data-testid="cdt-peek-remote-key">
+        {remote.key}
+      </span>
+      {visibility === null ? null : (
+        <span className="cdt-peek-remote-visibility">{visibility}</span>
+      )}
+      <div className="cdt-peek-remote-blocks">
+        <RemoteBlock label="STARS" state={remote.state} value={remote.stars} />
+        <RemoteBlock label="OPEN ISSUES" state={remote.state} value={remote.openIssues} />
+        <RemoteBlock label="OPEN PRS" state={remote.state} value={remote.openPrs} />
+      </div>
+      {observed === null ? null : (
+        <p className="cdt-peek-remote-observed" data-testid="cdt-peek-remote-observed">
+          {observed}
+        </p>
+      )}
+    </div>
   );
 }

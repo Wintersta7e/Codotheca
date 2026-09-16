@@ -39,6 +39,7 @@ import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
 import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
+import { registerExternalLink } from './dialogs/externalLink';
 import { registerRelocateDialog } from './dialogs/relocate';
 import { registerRootPicker, registerSuggestionCommit, SuggestionCache } from './rootPicker';
 import { CoreClient } from './core/client';
@@ -129,6 +130,12 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'accounts.connectPat',
   'accounts.upgradeScope',
   'accounts.disconnect',
+  // remote::dispatch_remote_command — the one name §25.8 spends from the `remote.*` prefix.
+  // The answer is a URL the renderer could already rebuild from ProjectDetail.remoteKey; what
+  // it does not gain is the ability to OPEN one, which stays in this process behind a
+  // confirmation. No apostrophe in this block: app/test/knownCommands.test.ts reads the array
+  // by matching single-quoted strings, so a comment carrying one becomes an entry.
+  'remote.webUrl',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two
@@ -373,6 +380,32 @@ async function main(): Promise<void> {
       return result.canceled || result.filePaths[0] === undefined ? null : result.filePaths[0];
     },
     request,
+  });
+
+  // §25.2 (A9): the external opener. It is the relocate shape with a URL where the folder dialog
+  // was — an opaque id in, the privileged thing done here, a discriminated reply out. The
+  // permission handler is untouched: `openExternal` stays denied for the renderer, because that
+  // handler grants for a whole session.
+  registerExternalLink({
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
+    },
+    request,
+    // Per click, naming the whole URL. No "always allow" and no settings suppression.
+    confirm: async (url: string) => {
+      const result = await dialog.showMessageBox({
+        type: 'question',
+        buttons: ['Open', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Open in your browser?',
+        message: 'Open this page in your browser?',
+        detail: url,
+        noLink: true,
+      });
+      return result.response === 0;
+    },
+    openExternal: (url: string) => shell.openExternal(url),
   });
 
   // §2.4 again, for the other privileged path: `roots.add` carries `pathBytes`, so the folder

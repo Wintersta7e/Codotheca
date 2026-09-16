@@ -53,8 +53,14 @@ export interface LocationFact {
   readonly value: string;
 }
 
-/** §8.5.2, §6: a count is only as true as the fetch that produced it, so it carries that age. */
-function fetchClause(fetchHeadAt: number | null, now: number): string {
+/**
+ * §8.5.2, §6: a count is only as true as the fetch that produced it, so it carries that age.
+ *
+ * [p2] Exported for §25.1's `BEHIND` block, which renders the same stored value at a different
+ * size. It is already the single owner of `no fetch recorded` and `last fetch <age>`, and a
+ * second copy on that tab would be R12 exactly.
+ */
+export function fetchClause(fetchHeadAt: number | null, now: number): string {
   return fetchHeadAt === null ? 'no fetch recorded' : `last fetch ${formatAge(now - fetchHeadAt)}`;
 }
 

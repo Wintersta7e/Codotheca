@@ -27,9 +27,19 @@ export interface ReadmePanelProps {
   row: ProjectRow;
   /** Unix seconds, from `deps.now()`. §8.5.3's age slot is the only reader. */
   now: number;
+  /**
+   * [p2] §25.3's topic chips, restored with the chrome §8.5.3 already specifies. **Zero topics
+   * renders no row at all**, never an empty rail — §5.6's *nothing selected, no block renders*,
+   * and an empty rail is furniture.
+   *
+   * It is `readonly string[]` and not `RemoteFacts` deliberately: §25.4's gate keeps the forge
+   * types out of every surface that would then acquire a reason to score them, and this panel
+   * already has one source gate reading it.
+   */
+  topics?: readonly string[];
 }
 
-export function ReadmePanel({ readme, row, now }: ReadmePanelProps): ReactElement {
+export function ReadmePanel({ readme, row, now, topics = [] }: ReadmePanelProps): ReactElement {
   const text =
     readme.state === 'present' && readme.text !== null && readme.text !== ''
       ? readme.text
@@ -58,6 +68,15 @@ export function ReadmePanel({ readme, row, now }: ReadmePanelProps): ReactElemen
         <p className="cp-readme-text" data-testid="cp-readme-body">
           {text}
         </p>
+        {topics.length === 0 ? null : (
+          <div className="cp-readme-topics" data-testid="cp-readme-topics">
+            {topics.map((topic) => (
+              <span className="cp-readme-topic" key={topic}>
+                {topic}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

@@ -23,6 +23,7 @@ import type {
 } from '../../generated/protocol';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
 import { ActivityTab } from './activity/ActivityTab';
+import { BackupStateBlock } from './BackupState';
 import { useProjectPageDeps } from './deps';
 import { HeroTile } from './hero/HeroTile';
 import { Identity } from './Identity';
@@ -31,8 +32,9 @@ import { cascadeDelay } from './motion';
 import { NotePanel } from './note/NotePanel';
 import { Rail } from './rail/Rail';
 import { ReadmePanel } from './readme/ReadmePanel';
+import { RemoteTab } from './remote/RemoteTab';
 import { RoastNote } from './RoastNote';
-import { nextTab, PROJECT_TABS, type ProjectTab } from './tabs';
+import { BASE_PROJECT_TABS, fallbackTab, nextTab, tabsFor, type ProjectTab } from './tabs';
 import { useProjectDetail } from './useProjectDetail';
 
 export const PROJECT_PAGE_ROOT_CLASS = 'cp-page';
@@ -164,6 +166,14 @@ export function ProjectPageView({
       });
   }, [deps, detailPinned, pinnedOverride, projectId]);
 
+  const detail = state.kind === 'ready' ? state.detail : null;
+  // §25.1: the mounted list is this project's. While the detail is still loading the bar draws
+  // the two every project has, so it gains a tab rather than emptying and refilling.
+  const tabs = detail === null ? BASE_PROJECT_TABS : tabsFor(detail);
+  // A held tab that is no longer mounted — the remote binding went away while the page was open
+  // — lands on `overview` rather than leaving the page pointing at a panel that is not there.
+  const shownTab = fallbackTab(tabs, tab);
+
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       const hit = resolveKey('projectPage', asKeyEvent(event));
@@ -172,13 +182,12 @@ export function ProjectPageView({
       if (hit.action === 'quickSwitch') return;
       if (hit.preventDefault) event.preventDefault();
       if (hit.action === 'page.back') onBack();
-      else if (hit.action === 'page.nextTab') setTab((current) => nextTab(current, 1));
-      else if (hit.action === 'page.prevTab') setTab((current) => nextTab(current, -1));
+      else if (hit.action === 'page.nextTab') setTab((current) => nextTab(tabs, current, 1));
+      else if (hit.action === 'page.prevTab') setTab((current) => nextTab(tabs, current, -1));
     },
-    [onBack],
+    [onBack, tabs],
   );
 
-  const detail = state.kind === 'ready' ? state.detail : null;
   const shown = detail === null ? null : shownLocation(detail, shownId);
   const primary = detail === null ? null : primaryLocation(detail);
   const pathDisplay = shown?.location.pathDisplay ?? '';
@@ -205,16 +214,16 @@ export function ProjectPageView({
           ESC · ←→
         </span>
         <div className="cp-tabs" role="tablist" aria-label="Project sections">
-          {PROJECT_TABS.map((entry) => (
+          {tabs.map((entry) => (
             <button
               key={entry.id}
               id={`cp-tab-${entry.id}`}
               type="button"
               role="tab"
               className="cp-tab"
-              aria-selected={tab === entry.id}
+              aria-selected={shownTab === entry.id}
               aria-controls="cp-tabpanel"
-              tabIndex={tab === entry.id ? 0 : -1}
+              tabIndex={shownTab === entry.id ? 0 : -1}
               onClick={() => {
                 setTab(entry.id);
               }}
@@ -254,7 +263,7 @@ export function ProjectPageView({
           </div>
           <div className="cp-col-right">
             <div className="cp-rise" style={{ animationDelay: cascadeDelay(0) }}>
-              <Identity row={detail.row} />
+              <Identity row={detail.row} visibility={detail.remote?.visibility ?? null} />
               {/* §8.5.1 sits the note under the description, inside the identity block. */}
               <RoastNote
                 detail={detail}
@@ -272,21 +281,30 @@ export function ProjectPageView({
               className="cp-tabpanel"
               id="cp-tabpanel"
               role="tabpanel"
-              aria-labelledby={`cp-tab-${tab}`}
+              aria-labelledby={`cp-tab-${shownTab}`}
               data-testid="cp-tabpanel"
-              data-tab={tab}
+              data-tab={shownTab}
               data-shown-location={String(shown?.location.id ?? '')}
               data-primary-location={String(primary?.location.id ?? '')}
             >
-              {tab === 'overview' ? (
+              {shownTab === 'overview' ? (
                 <>
+                  {/* §25.3: between the description and the NOTE block, for every project with
+                      at least one location. §23 rules the zero-location case, where there is no
+                      local copy to be the only copy of. */}
+                  <BackupStateBlock state={detail.backup} location={primary} now={deps.now()} />
                   <LocationsPanel
                     detail={detail}
                     shownId={shownId}
                     onShow={setShownId}
                     onChanged={reload}
                   />
-                  <ReadmePanel readme={detail.readme} row={detail.row} now={deps.now()} />
+                  <ReadmePanel
+                    readme={detail.readme}
+                    row={detail.row}
+                    now={deps.now()}
+                    topics={detail.remote?.topics ?? []}
+                  />
                   <NotePanel
                     projectId={detail.row.id}
                     row={detail.row}
@@ -294,9 +312,22 @@ export function ProjectPageView({
                     onChanged={reload}
                   />
                 </>
-              ) : (
-                <ActivityTab detail={detail} />
-              )}
+              ) : null}
+              {shownTab === 'activity' ? <ActivityTab detail={detail} /> : null}
+              {shownTab === 'remote' && detail.remote !== null ? (
+                <RemoteTab
+                  projectId={detail.row.id}
+                  facts={detail.remote}
+                  shown={shown}
+                  now={deps.now()}
+                  onOpenLink={(projectId, kind) => {
+                    // The reply is a discriminated value the shell already acted on: `opened`,
+                    // `declined`, `not_linkable` or `failed`. Nothing on this page changes on
+                    // any of them, so it is awaited for its rejection and not for its answer.
+                    void deps.openRemoteLink(projectId, kind).catch(() => undefined);
+                  }}
+                />
+              ) : null}
             </div>
           </div>
         </div>

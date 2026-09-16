@@ -34,10 +34,19 @@ describe('contentSecurityPolicyListener', () => {
 
 describe('denyPermissionRequest', () => {
   it('denies every permission', () => {
-    for (const permission of ['media', 'geolocation', 'notifications', 'openExternal']) {
+    // [p2] §25.2: `openExternal` stays denied after the external opener ships. That handler
+    // grants for a whole session, and the opener is a channel the shell owns rather than a
+    // capability the renderer holds. The count is printed because a loop over nothing denies
+    // nothing and reads exactly like a loop that denied everything.
+    const permissions = ['media', 'geolocation', 'notifications', 'openExternal'];
+    process.stderr.write(
+      `security: permission loop covered ${String(permissions.length)} name(s)\n`,
+    );
+    expect(permissions.length, 'the permission loop covered no name').toBeGreaterThan(0);
+    for (const permission of permissions) {
       const callback = vi.fn();
       denyPermissionRequest(null, permission, callback);
-      expect(callback).toHaveBeenCalledWith(false);
+      expect(callback, permission).toHaveBeenCalledWith(false);
     }
   });
 });

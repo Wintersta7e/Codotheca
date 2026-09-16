@@ -14,6 +14,7 @@ function draw(
   const deps: ProjectPageDeps = {
     request: request as unknown as ProjectPageDeps['request'],
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: () => () => undefined,
     now: () => NOW,
   };

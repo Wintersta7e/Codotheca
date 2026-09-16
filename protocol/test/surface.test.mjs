@@ -286,8 +286,9 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 // [p2] §20.8's eight `accounts.*` commands are the 43rd to the 50th. Each phase-2 plan raises
 // this by its OWN delta, read from the value in the file — never to a running total, which a
 // lane cannot know after the merges ahead of it.
-test('the whole §2.4 table is present, plus §9 focus, roots.list and §20.8, and nothing extra', () => {
-  assert.equal(names.length, 50, `expected 50 commands, found ${names.length}`);
+// [p2] §25.8's `remote.webUrl` is the 51st, and it is the only name §25 spends from `remote.*`.
+test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8 and §25.8, and nothing extra', () => {
+  assert.equal(names.length, 51, `expected 51 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -566,6 +567,32 @@ test('no accounts command is privileged', () => {
 test('accounts.orgs is nullable, because an unenumerable org list is unknown', () => {
   const c = schema.commands.find((x) => x.name === 'accounts.orgs');
   assert.equal(c.returns, '[AccountOrg]?');
+});
+
+// [p2] §25.8's command surface, transcribed for the same reason §20.8's is: `remote.*` is §25's
+// under A11 and phase 2 spends **exactly one** name from it. A second `remote.*` command
+// appearing here is a namespace growing without a ruling, and a prefix filter could not say so.
+const REMOTE_COMMANDS = ['remote.webUrl'];
+
+test('§25.8 spends exactly one name from the remote.* prefix', () => {
+  const declared = names.filter((n) => n.startsWith('remote.')).sort();
+  assert.deepEqual(declared, REMOTE_COMMANDS);
+});
+
+// §25.2: the answer is a URL, and NULL is the honest answer for a key this build cannot address.
+// A non-nullable `String` would force the core to invent one.
+test('remote.webUrl answers a nullable string and carries no Bytes', () => {
+  const c = schema.commands.find((x) => x.name === 'remote.webUrl');
+  assert.deepEqual(c.args, { projectId: 'ProjectId', kind: 'RemoteLinkKind' });
+  assert.equal(c.returns, 'String?');
+  assert.notEqual(c.privileged, true);
+  assert.deepEqual(schema.types.RemoteLinkKind.variants, [
+    'repository',
+    'issues',
+    'pulls',
+    'actions',
+    'releases',
+  ]);
 });
 
 /** Every type name reachable from `root`, following struct fields transitively. */

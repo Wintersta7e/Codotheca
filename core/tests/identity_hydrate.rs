@@ -23,7 +23,7 @@ use codotheca_core::identity::IdentityError;
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::provider::listing::{OrgListing, Page, RepoListing, Viewer};
-use codotheca_core::provider::{Observed, Provider, ProviderResult};
+use codotheca_core::provider::{CiRunsRead, Observed, Provider, ProviderResult, RepoFactsRead};
 
 #[derive(Debug)]
 struct DeclaringForge;
@@ -52,6 +52,25 @@ impl Provider for DeclaringForge {
         _owner: &str,
         _name: &str,
     ) -> ProviderResult<Observed<Option<RepoListing>>> {
+        unreachable!("this fixture forge issues no request")
+    }
+    // §25's two reads. This fixture is about identity, which never touches them.
+    fn repo_facts(
+        &self,
+        _t: &SecretToken,
+        _owner: &str,
+        _name: &str,
+        _etag: Option<&str>,
+    ) -> ProviderResult<Observed<RepoFactsRead>> {
+        unreachable!("this fixture forge issues no request")
+    }
+    fn ci_runs(
+        &self,
+        _t: &SecretToken,
+        _owner: &str,
+        _name: &str,
+        _etag: Option<&str>,
+    ) -> ProviderResult<Observed<CiRunsRead>> {
         unreachable!("this fixture forge issues no request")
     }
     fn canonical_host(&self) -> &'static str {

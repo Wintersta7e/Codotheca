@@ -265,9 +265,9 @@
     },
     {
       "id": "p2-20-scope-strings",
-      "kind": "literal",
+      "kind": "regex",
       "spec": "§20.3, §20.10, §20.12",
-      "why": "No scope string is written in renderer source. The list the CONNECTED state draws comes from accounts.list's grantedScopes, which is read back from the server, because a hard-coded list is how two scope names that do not exist came to be drawn on a settings screen. The patterns are substrings, so `workflow` subsumes `workflow:read`. Its limitation is part of the rule: the bare string `repo` is NOT bannable, being an unavoidable English word, and that is precisely why the displayed list must come from the payload and not from a grep's silence.",
+      "why": "No scope string is written in renderer source. The list the CONNECTED state draws comes from accounts.list's grantedScopes, which is read back from the server, because a hard-coded list is how two scope names that do not exist came to be drawn on a settings screen. Its limitation is part of the rule: the bare string `repo` is NOT bannable, being an unavoidable English word, and that is precisely why the displayed list must come from the payload and not from a grep's silence. [p2] Narrowed by \u00a725: `workflow` was a bare substring, and \u00a725.8 declares `CiRun.workflow` \u2014 the NAME of a CI workflow, which the REMOTE tab reads and which is not a scope. A8 is about the scope, so the pattern now requires the quoting a scope string carries (`'workflow'`, `\"workflow\"`) or the colon form (`workflow:read`), and the field access `run.workflow` no longer trips it. The rule became a regex to express that; the other five patterns are unchanged and match exactly as before.",
       "targets": [
         "app-src",
         "renderer"
@@ -277,7 +277,8 @@
         "user:email",
         "read:org",
         "delete_repo",
-        "workflow",
+        "['\"]workflow['\"]",
+        "workflow:",
         "repo:read"
       ],
       "exempt": [],

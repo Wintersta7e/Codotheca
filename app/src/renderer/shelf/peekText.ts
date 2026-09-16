@@ -30,6 +30,20 @@ export const PEEK_FACT_KEYS: readonly PeekFactKey[] = [
   'PLAYTIME',
 ];
 
+/**
+ * [p2] §25.3a: the keys a row of **this shape** carries.
+ *
+ * A project with no location drops `PLAYTIME`. `PLAYTIME 0h` is §8.4.1's one honest zero, and
+ * that carve-out is about a *cloned* project that was never launched — printing `0h` beside an
+ * install affordance borrows it for a case it was never true of. The other four stay and render
+ * `—`, because they are history- or HEAD-derived and neither exists.
+ */
+export function peekFactKeys(peek: Peek): readonly PeekFactKey[] {
+  return peek.location === null
+    ? PEEK_FACT_KEYS.filter((key) => key !== 'PLAYTIME')
+    : PEEK_FACT_KEYS;
+}
+
 export interface PeekFact {
   readonly key: PeekFactKey;
   readonly value: string;
@@ -99,22 +113,16 @@ export function commitDate(commit: CommitRef): string {
 }
 
 export function peekFacts(peek: Peek, now: number): readonly PeekFact[] {
-  return [
-    { key: 'BIRTH', value: peek.birthYear === null ? UNCOMPUTED_FACT : String(peek.birthYear) },
-    { key: 'LANGUAGE', value: peek.primaryLanguage ?? UNCOMPUTED_FACT },
-    {
-      key: 'TRACKED',
-      value:
-        peek.sizeTrackedBytes === null
-          ? UNCOMPUTED_FACT
-          : formatTrackedBytes(peek.sizeTrackedBytes),
-    },
-    {
-      key: 'LAST COMMIT',
-      value:
-        peek.lastCommitAt === null ? UNCOMPUTED_FACT : `${formatAge(now - peek.lastCommitAt)} ago`,
-    },
-    // The one exception §8.4.1 states: this ledger starts at install, so 0 is true.
-    { key: 'PLAYTIME', value: formatPlaytime(peek.playtimeSeconds) },
-  ];
+  const values: Record<PeekFactKey, string> = {
+    BIRTH: peek.birthYear === null ? UNCOMPUTED_FACT : String(peek.birthYear),
+    LANGUAGE: peek.primaryLanguage ?? UNCOMPUTED_FACT,
+    TRACKED:
+      peek.sizeTrackedBytes === null ? UNCOMPUTED_FACT : formatTrackedBytes(peek.sizeTrackedBytes),
+    'LAST COMMIT':
+      peek.lastCommitAt === null ? UNCOMPUTED_FACT : `${formatAge(now - peek.lastCommitAt)} ago`,
+    // The one exception §8.4.1 states: this ledger starts at install, so 0 is true — and
+    // `peekFactKeys` drops the key entirely for a project that was never installed.
+    PLAYTIME: formatPlaytime(peek.playtimeSeconds),
+  };
+  return peekFactKeys(peek).map((key) => ({ key, value: values[key] }));
 }

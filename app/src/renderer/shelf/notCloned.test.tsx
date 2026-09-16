@@ -99,7 +99,7 @@ describe('§5.4a: no dot is drawn on any of the five surfaces', () => {
   });
 
   it('draws none on the project page identity line', () => {
-    const { container } = render(<Identity row={row()} />);
+    const { container } = render(<Identity visibility={null} row={row()} />);
     expect(container.querySelector('[data-testid="cp-identity-dot"]')).toBeNull();
   });
 

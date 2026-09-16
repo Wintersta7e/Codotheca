@@ -25,6 +25,9 @@ const peek = (over: Record<string, unknown> = {}): Peek =>
       },
     ],
     location: { id: 7, pathDisplay: 'D:\\work\\atlas' },
+    // [p2] §25.3a's field. `null` — not absent: the wire always carries it, and a fixture that
+    // omits it is a shape the core cannot produce.
+    remote: null,
     worktree: { observedAt: NOW - 120, isDirty: false, untrackedCount: 0 },
     birthYear: 2019,
     primaryLanguage: 'Rust',
@@ -199,5 +202,122 @@ describe('PeekPanel', () => {
     );
 
     expect(container.querySelector('.cdt-peek-observation')).toBeNull();
+  });
+});
+
+/**
+ * **AC-P2-25-23, the rendered half.** §25.3a: `Space` opens Peek on a not-cloned row, and it
+ * renders **only what is actually known**. The four elements below are asserted as **absences by
+ * query**, not as dashes — each of them would otherwise be a claim about a repository nothing has
+ * read or a disk nothing has looked at.
+ */
+describe('§25.3a Peek on a not-cloned row', () => {
+  const notCloned = (over: Record<string, unknown> = {}): Peek =>
+    peek({
+      location: null,
+      commits: [],
+      readme: { state: 'absent', text: null, readAt: null },
+      worktree: { observedAt: null, isDirty: null, untrackedCount: null },
+      birthYear: null,
+      primaryLanguage: null,
+      sizeTrackedBytes: null,
+      lastCommitAt: null,
+      remote: null,
+      ...over,
+    });
+
+  it('AC-P2-25-23 renders no README string, no commit list, no path and no worktree line', () => {
+    const { container } = render(<PeekPanel peek={notCloned()} now={NOW} tier="full" />);
+    expect(container.querySelector('.cdt-peek-readme')).toBeNull();
+    expect(container.querySelector('.cdt-peek-commits')).toBeNull();
+    expect(container.querySelector('.cdt-peek-path')).toBeNull();
+    expect(container.querySelector('.cdt-peek-observation')).toBeNull();
+  });
+
+  it('names none of the three sentences §25.3a forbids on this row', () => {
+    const { container } = render(<PeekPanel peek={notCloned()} now={NOW} tier="full" />);
+    const text = container.textContent ?? '';
+    expect(text).not.toContain('No README indexed yet.');
+    expect(text).not.toContain('No README in this repository.');
+    expect(text).not.toContain('0h');
+  });
+
+  it('renders the glyph for BIRTH, TRACKED and LAST COMMIT, and no PLAYTIME row', () => {
+    render(<PeekPanel peek={notCloned()} now={NOW} tier="full" />);
+    const keys = screen.getAllByText(/BIRTH|LANGUAGE|TRACKED|LAST COMMIT|PLAYTIME/u);
+    expect(keys.map((n) => n.textContent)).toEqual(['BIRTH', 'LANGUAGE', 'TRACKED', 'LAST COMMIT']);
+  });
+
+  it('renders the key, the visibility and the three counts in their place', () => {
+    render(
+      <PeekPanel
+        peek={notCloned({
+          remote: {
+            key: 'github.com/acme/widget',
+            linkable: true,
+            state: 'observed',
+            visibility: 'public',
+            forkParentKey: null,
+            stars: 41,
+            openIssues: 7,
+            goodFirstIssues: null,
+            openPrs: 0,
+            openPrsFromUser: null,
+            topics: [],
+            observedAt: NOW - 600,
+            ci: { state: 'not_observed', runs: [], observedAt: null },
+          },
+        })}
+        now={NOW}
+        tier="full"
+      />,
+    );
+    expect(screen.getByTestId('cdt-peek-remote-key').textContent).toBe('github.com/acme/widget');
+    expect(screen.getByTestId('cdt-peek-remote').textContent).toContain('PUBLIC');
+    expect(screen.getByTestId('cp-remote-stars').textContent).toContain('41');
+    // A measured zero renders its number; an unobserved count renders the glyph, never a zero.
+    expect(screen.getByTestId('cp-remote-open-prs').textContent).toContain('0');
+    expect(screen.getByTestId('cdt-peek-remote-observed').textContent).toBe('OBSERVED 10m');
+  });
+
+  it('renders the glyph and never a zero for an unobserved count', () => {
+    render(
+      <PeekPanel
+        peek={notCloned({
+          remote: {
+            key: 'github.com/acme/widget',
+            linkable: true,
+            state: 'not_observed',
+            visibility: null,
+            forkParentKey: null,
+            stars: null,
+            openIssues: null,
+            goodFirstIssues: null,
+            openPrs: null,
+            openPrsFromUser: null,
+            topics: [],
+            observedAt: null,
+            ci: { state: 'not_observed', runs: [], observedAt: null },
+          },
+        })}
+        now={NOW}
+        tier="full"
+      />,
+    );
+    expect(screen.getByTestId('cp-remote-stars').textContent).toContain('—');
+    expect(screen.getByTestId('cp-remote-stars').textContent).not.toMatch(/\b0\b/u);
+    expect(screen.queryByTestId('cdt-peek-remote-observed')).toBeNull();
+  });
+
+  it('renders no remote block at all for a project with no remote key', () => {
+    render(<PeekPanel peek={notCloned({ remote: null })} now={NOW} tier="full" />);
+    expect(screen.queryByTestId('cdt-peek-remote')).toBeNull();
+  });
+
+  it('leaves a cloned row unchanged', () => {
+    const { container } = render(<PeekPanel peek={peek({ remote: null })} now={NOW} tier="full" />);
+    expect(container.querySelector('.cdt-peek-readme')).not.toBeNull();
+    expect(container.querySelector('.cdt-peek-path')?.textContent).toBe('D:\\work\\atlas');
+    expect(screen.getByText('PLAYTIME')).toBeTruthy();
   });
 });

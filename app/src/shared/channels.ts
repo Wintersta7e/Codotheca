@@ -2,7 +2,7 @@
  * The IPC surface between the shell and the renderer. Imported by both ends, so a channel
  * name cannot drift between them.
  */
-import type { ErrorCode, Outcome, RootAdd, Topic } from '../generated/protocol';
+import type { ErrorCode, Outcome, RemoteLinkKind, RootAdd, Topic } from '../generated/protocol';
 
 export const IPC_REQUEST = 'codotheca:request';
 export const IPC_CORE_STATUS = 'codotheca:core-status';
@@ -57,6 +57,33 @@ export const IPC_RELOCATE = 'codotheca:relocate';
 export interface RelocateCall {
   locationId: number;
 }
+
+/**
+ * §25.2's external opener, and it is `IPC_RELOCATE`'s shape with a URL where the folder dialog
+ * was. The renderer sends an opaque project id and a link kind; **no URL crosses this channel
+ * inbound**, because `remote_key` is derived from repository content the user may not have
+ * written and a relayed URL is hostile input aimed at the process that owns the dialogs.
+ *
+ * The URL the shell opens is the one the core built from the stored key, re-asserted here
+ * against the same host allowlist, and confirmed by the user **per click**.
+ */
+export const IPC_OPEN_REMOTE_LINK = 'codotheca:open-remote-link';
+
+export interface OpenRemoteLinkCall {
+  readonly projectId: number;
+  readonly kind: RemoteLinkKind;
+}
+
+/**
+ * `not_linkable` is not a failure: it is the core answering that this project produces no link,
+ * which is what a non-allowlisted host, a NULL `remote_key` and a key that is not
+ * `<host>/<owner>/<name>` all mean. `declined` is the user saying no to the confirmation.
+ */
+export type OpenRemoteLinkReply =
+  | { readonly kind: 'opened'; readonly url: string }
+  | { readonly kind: 'declined' }
+  | { readonly kind: 'not_linkable' }
+  | { readonly kind: 'failed'; readonly error: BridgeError };
 
 // R11: `IPC_PICK_ROOT` and `PickRootReply` are declared in this file by plan 16, whose
 // first-run flow picks the first root (§10.1b) and owns the only `ipcMain.handle` for that

@@ -22,7 +22,7 @@ use crate::accounts::keychain::SecretToken;
 use crate::identity::alias::HostAliases;
 use crate::index::migrate::{apply_all, MIGRATIONS};
 use crate::provider::listing::{OrgListing, Page, RepoListing, Viewer};
-use crate::provider::{Observed, Provider, ProviderResult};
+use crate::provider::{CiRunsRead, Observed, Provider, ProviderResult, RepoFactsRead};
 
 /// A forge that declares an alias set and issues no request.
 ///
@@ -55,6 +55,24 @@ impl Provider for DeclaringForge {
         _owner: &str,
         _name: &str,
     ) -> ProviderResult<Observed<Option<RepoListing>>> {
+        unreachable!("a fixture forge issues no request")
+    }
+    fn repo_facts(
+        &self,
+        _t: &SecretToken,
+        _owner: &str,
+        _name: &str,
+        _etag: Option<&str>,
+    ) -> ProviderResult<Observed<RepoFactsRead>> {
+        unreachable!("a fixture forge issues no request")
+    }
+    fn ci_runs(
+        &self,
+        _t: &SecretToken,
+        _owner: &str,
+        _name: &str,
+        _etag: Option<&str>,
+    ) -> ProviderResult<Observed<CiRunsRead>> {
         unreachable!("a fixture forge issues no request")
     }
     fn canonical_host(&self) -> &'static str {
