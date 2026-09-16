@@ -287,9 +287,10 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 // this by its OWN delta, read from the value in the file — never to a running total, which a
 // lane cannot know after the merges ahead of it.
 // [p2] §25.8's `remote.webUrl` is the 51st, and it is the only name §25 spends from `remote.*`.
-// [p2] §25.8's `projects.readme` is the 52nd and its `projects.setReadmeRemote` the 53rd.
+// [p2] §25.8's `projects.readme` is the 52nd, `projects.setReadmeRemote` the 53rd and
+// `projects.readmeAssets` the 54th.
 test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8 and §25.8, and nothing extra', () => {
-  assert.equal(names.length, 53, `expected 53 commands, found ${names.length}`);
+  assert.equal(names.length, 54, `expected 54 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -612,7 +613,7 @@ test('remote.webUrl answers a nullable string and carries no Bytes', () => {
 // [p2] §25.8's README commands. The prefix is `projects.` and not a new top-level `readme.`:
 // D9 proposed `readme.assets`, and §25.8 renamed it because a one-command top-level prefix
 // invites a second, forge-agnostic namespace nobody owns while these three are project-scoped.
-const README_COMMANDS = ['projects.readme', 'projects.setReadmeRemote'];
+const README_COMMANDS = ['projects.readme', 'projects.readmeAssets', 'projects.setReadmeRemote'];
 
 test('§25.8 declares its README commands under the projects prefix and nowhere else', () => {
   const declared = names.filter((n) => /^(?:projects\.(?:readme|setReadme)|readme\.)/u.test(n));
@@ -655,6 +656,40 @@ test('projects.readme returns the whole document, with the state enum §8.4 alre
     truncated: 'bool',
   });
   assert.deepEqual(schema.types.ReadmeStateKind.variants, ['not_indexed', 'absent', 'present']);
+});
+
+// §25.5: one command answers both branches, because the renderer parsed one list of img[src]
+// values and does not know which is which. Classification is the core's, so the rule has one
+// owner — the two arrays are a hint and the core re-classifies anyway.
+test('projects.readmeAssets takes both reference lists and answers one row each', () => {
+  const c = schema.commands.find((x) => x.name === 'projects.readmeAssets');
+  assert.deepEqual(c.args, {
+    projectId: 'ProjectId',
+    locationId: 'LocationId',
+    local: '[String]',
+    remote: '[String]',
+  });
+  assert.equal(c.returns, '[ReadmeAsset]');
+  assert.notEqual(c.privileged, true);
+  assert.deepEqual(schema.types.ReadmeAsset.fields, {
+    ref: 'String',
+    state: 'ReadmeAssetState',
+    dataUri: 'String?',
+    fetchedAt: 'Timestamp?',
+  });
+});
+
+// `blocked` is the consent state and is never rendered as a failure, which is why it is a
+// variant of its own rather than an absence: an asset nobody was allowed to fetch and an asset
+// that could not be fetched are two different sentences.
+test('ReadmeAssetState names five outcomes, and blocked is one of them', () => {
+  assert.deepEqual(schema.types.ReadmeAssetState.variants, [
+    'ok',
+    'blocked',
+    'too_large',
+    'unreachable',
+    'not_an_image',
+  ]);
 });
 
 /** Every type name reachable from `root`, following struct fields transitively. */

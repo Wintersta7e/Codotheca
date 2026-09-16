@@ -713,8 +713,10 @@ mod corehandler {
         // [p2] §25.8's `remote.webUrl` is the 49th, answered under the index guard; its
         // `projects.readme` is the 50th and `projects.setReadmeRemote` the 51st, answered the
         // same way — a file read under a location root and a consent column reach no network.
+        // `projects.readmeAssets` is the 52nd and is answered **without** the guard (R75),
+        // because it reaches arbitrary hosts.
         assert_eq!(
-            checked, 51,
+            checked, 52,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(

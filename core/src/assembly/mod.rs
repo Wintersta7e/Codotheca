@@ -337,6 +337,20 @@ impl CoreHandler {
         crate::remote::dispatch_remote_command(&ctx, command, args)
     }
 
+    /// §25.5's asset read, answered off the index lock.
+    ///
+    /// It takes the `Arc<Mutex<Index>>` and locks it itself, which is R94's second side: nothing
+    /// above it holds the guard, so it must take one — briefly, before the first socket.
+    fn readme_net_arm(&self, args: Value, now: i64) -> Result<Value, CommandFailure> {
+        crate::readme::handle_readme_assets_off_lock(
+            &self.index,
+            self.http.as_ref(),
+            crate::readme::fetch::system_resolver,
+            args,
+            now,
+        )
+    }
+
     /// §25.5's README reads and its consent write. Its own method for the same reason
     /// `remote_arm` is one: `handle` is at clippy's `too_many_lines` ceiling, and a four-line arm
     /// there costs the whole function.
@@ -353,6 +367,13 @@ impl CoreHandler {
             now,
         };
         crate::readme::dispatch_readme_command(&ctx, command, args)
+    }
+
+    /// §2.2's handshake pair, which `run_loop` answers before the handler is consulted.
+    fn loop_only(command: &str) -> CommandFailure {
+        CommandFailure::protocol(format!(
+            "{command} is answered by the command loop and must not reach the handler"
+        ))
     }
 
     fn unowned(command: &str, plan: &str) -> CommandFailure {
@@ -450,16 +471,15 @@ impl CommandHandler for CoreHandler {
         let now = self.clock.now_unix();
 
         match dest {
-            Route::Loop => {
-                return Err(CommandFailure::protocol(format!(
-                    "{command} is answered by the command loop and must not reach the handler"
-                )))
-            }
+            Route::Loop => return Err(Self::loop_only(command)),
             Route::NoOwner(plan) => return Err(Self::unowned(command, plan)),
             // R75: answered **without** the index lock. `ConnectPump::start` issues the Device
             // Flow's first request synchronously, so taking the guard here would hold the
             // process's one SQLite mutex across a forge round trip.
             Route::AccountsNet => return self.accounts_net_arm(command, args, now),
+            // Answered **without** the index lock for the same reason: up to 24 asset fetches of
+            // 5 s each, and the one SQLite mutex may not be held across them.
+            Route::ReadmeNet => return self.readme_net_arm(args, now),
             // Answered **without** the index lock. `ScanCtx` takes a `&dyn ScanStore`, not an
             // `&Index`, and `SqliteScanStore` locks the same mutex internally; `std::sync::Mutex`
             // is not reentrant, so holding it here would deadlock the core on `scan.status`.
@@ -481,7 +501,11 @@ impl CommandHandler for CoreHandler {
 
         let claimed = match dest {
             // Handled above; a second arm keeps the match total without a wildcard on Route.
-            Route::Loop | Route::NoOwner(_) | Route::Scan | Route::AccountsNet => unreachable!(),
+            Route::Loop
+            | Route::NoOwner(_)
+            | Route::Scan
+            | Route::AccountsNet
+            | Route::ReadmeNet => unreachable!(),
             Route::FirstRun => {
                 crate::firstrun::dispatch(guard.conn_mut(), &self.firstrun, command, &args, now)
             }

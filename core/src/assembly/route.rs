@@ -67,6 +67,10 @@ pub enum Route {
     /// `crate::readme::dispatch_readme_command` — p2-25b. A file read under a location root and
     /// a consent column; no network, so it takes the index guard.
     Readme,
+    /// `projects.readmeAssets`, answered **without** the index guard (R75). Same carve-out as
+    /// [`Route::Scan`] and [`Route::AccountsNet`], for the same reason: it fetches up to 24
+    /// remote assets of 5 s each, and the one SQLite mutex may not be held across them.
+    ReadmeNet,
     /// `crate::accounts::dispatch_accounts_command` — p2-20, under the index guard.
     Accounts,
     /// The `accounts.*` commands that reach the network, answered **without** the index guard
@@ -162,6 +166,9 @@ pub fn route(command: CommandName) -> Route {
 
         // §25.5's document read and its consent write.
         CommandName::ProjectsReadme | CommandName::ProjectsSetReadmeRemote => Route::Readme,
+
+        // §25.5's asset read, which reaches arbitrary hosts and therefore takes no guard.
+        CommandName::ProjectsReadmeAssets => Route::ReadmeNet,
 
         // The two §20.8 reads, answered by `crate::accounts` **under the index guard**. These
         // two only read a row; every other `accounts.*` command is below.
@@ -259,9 +266,9 @@ mod tests {
         // running total a lane cannot know after the merges ahead of it.
         assert_eq!(
             commands.len(),
-            53,
+            54,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
-             remote.webUrl plus §25.8's projects.readme and projects.setReadmeRemote"
+             remote.webUrl plus §25.8's three projects.readme* commands"
         );
         let unowned: Vec<&str> = commands
             .iter()

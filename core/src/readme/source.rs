@@ -22,7 +22,13 @@ use crate::readme::{ReadmeCtx, ReadmeError};
 /// Where one location's working copy lives, read the way `read_place` reads it
 /// (`jobs/mod.rs:352-383`): from `path_bytes` through `path_from_bytes`, never from
 /// `path_display`, which §1.10 makes lossy and forbids for opening.
-fn work_dir_of(
+///
+/// `pub` because `projects.readmeAssets` resolves the same root, off the index guard, and a
+/// second copy of this query would be two answers to *where does this location live*.
+///
+/// # Errors
+/// `UnknownSubject` when the pair names no live location; `Sqlite` for an index fault.
+pub fn work_dir_of(
     conn: &rusqlite::Connection,
     project: ProjectId,
     location: LocationId,

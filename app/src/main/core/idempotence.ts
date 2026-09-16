@@ -81,6 +81,9 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   // [p2] §25.5. Writes the consent column, and the schema calls it non-idempotent for the same
   // reason: a consent replayed through a core restart re-grants a decision the user made once.
   'projects.setReadmeRemote': 'write',
+  // [p2] §25.5. Reads bytes and issues requests; it writes nothing and spawns nothing, and a
+  // replayed read costs at worst the same images again.
+  'projects.readmeAssets': 'read',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {

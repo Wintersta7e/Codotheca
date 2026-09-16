@@ -117,6 +117,7 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   // readme::dispatch_readme_command — the document the project page renders as markup. It is a
   // different value from ProjectDetail.readme, which carries the stored first paragraph.
   'projects.readme',
+  'projects.readmeAssets',
   'projects.setReadmeRemote',
   // view::dispatch_view_command
   'view.get',

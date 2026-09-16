@@ -829,6 +829,21 @@
         "isHidden": "bool"
       }
     },
+    "ReadmeAssetState": {
+      "kind": "enum",
+      "$comment": "[p2] §25.5: `blocked` is the CONSENT state and is never rendered as a failure. The other four are outcomes of a read that was allowed to happen.",
+      "variants": ["ok", "blocked", "too_large", "unreachable", "not_an_image"]
+    },
+    "ReadmeAsset": {
+      "kind": "struct",
+      "$comment": "[p2] §25.5: `ref` is the reference verbatim as it appeared in the document, so the renderer can put the bytes back on the node it took it from. `dataUri` is present only for `ok`, and `fetchedAt` dates a read that happened — a blocked asset observed nothing.",
+      "fields": {
+        "ref": "String",
+        "state": "ReadmeAssetState",
+        "dataUri": "String?",
+        "fetchedAt": "Timestamp?"
+      }
+    },
     "ReadmeRemoteChanged": {
       "kind": "struct",
       "$comment": "[p2] §25.5: `allowedAt` NULL is never granted, a timestamp is granted at T. The event carries the value rather than a boolean so the renderer's optimistic flip and the wire cannot disagree — the ProjectFlagsChanged precedent.",
@@ -1051,6 +1066,17 @@
       "args": { "projectId": "ProjectId", "locationId": "LocationId" },
       "returns": "ReadmeSource",
       "$comment": "§25.5: the whole document under J6_BYTE_CAP, which this command reads from the existing constant rather than declaring a second cap. ReadmeState.text is first_paragraph's output and is a different value with a different job"
+    },
+    {
+      "name": "projects.readmeAssets",
+      "args": {
+        "projectId": "ProjectId",
+        "locationId": "LocationId",
+        "local": "[String]",
+        "remote": "[String]"
+      },
+      "returns": "[ReadmeAsset]",
+      "$comment": "§25.5: the bytes behind a README's images, as data: URIs the core produced. The two arrays are the renderer's split on ://; the core re-classifies, so the rule has one owner. Answered without the index guard (R75) because the remote branch reaches the network"
     },
     {
       "name": "projects.setReadmeRemote",

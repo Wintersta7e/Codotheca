@@ -11,7 +11,9 @@
 //! sandbox cannot help with: which file was read, whether it was cut, whether an image reference
 //! is inside the location root, and whether a remote host may be reached at all.
 
+pub mod assets;
 pub mod consent;
+pub mod fetch;
 pub mod source;
 
 use crate::index::Index;
@@ -39,7 +41,11 @@ impl std::fmt::Debug for ReadmeCtx<'_> {
 
 /// The commands this module owns, as data, so the seam and the router cannot drift apart — the
 /// shape of the defect R37 found between the schema and the handlers.
-pub const README_COMMANDS: [&str; 2] = ["projects.readme", "projects.setReadmeRemote"];
+pub const README_COMMANDS: [&str; 3] = [
+    "projects.readme",
+    "projects.readmeAssets",
+    "projects.setReadmeRemote",
+];
 
 /// What a README read can refuse with, and the closed code each maps to.
 ///
@@ -94,6 +100,45 @@ impl From<ReadmeError> for CommandFailure {
             outcome: None,
         }
     }
+}
+
+/// `projects.readmeAssets`, answered **without** the index guard (R75).
+///
+/// **R94, clause 2 — this is the side that MUST lock**, because nothing above it holds the
+/// guard: `Route::ReadmeNet` reaches it from `handle` before the lock is taken. It locks once,
+/// reads the two values the read needs, and releases before the first socket. The remote branch
+/// makes up to `ASSET_COUNT_CAP` calls of `REMOTE_TIMEOUT_SECS` each, and holding the process's
+/// one SQLite mutex across them would stop every other command for as long as two minutes.
+///
+/// # Errors
+/// `PROTOCOL` for an argument shape the schema does not admit or a pair that names no live
+/// location; `INTERNAL` for an index fault.
+pub fn handle_readme_assets_off_lock(
+    index: &std::sync::Mutex<Index>,
+    http: &dyn crate::http::HttpTransport,
+    resolve: fetch::HostResolver,
+    args: serde_json::Value,
+    now: i64,
+) -> Result<serde_json::Value, CommandFailure> {
+    let args: crate::protocol::ProjectsReadmeAssetsArgs = crate::proto::dispatch::parse_args(args)?;
+    let (work_dir, consent) = {
+        let guard = index
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let work_dir = source::work_dir_of(guard.conn(), args.project_id, args.location_id)?;
+        let consent = consent::readme_remote_at(guard.conn(), args.project_id)?;
+        (work_dir, consent)
+    };
+
+    let deps = assets::AssetDeps {
+        work_dir,
+        consent,
+        http,
+        resolve,
+        now,
+    };
+    let rows = assets::read_readme_assets(&deps, &args.local, &args.remote);
+    serde_json::to_value(rows).map_err(|e| CommandFailure::internal(e.to_string()))
 }
 
 /// `None` means "this module does not own that command", which is what the router chains on.
