@@ -1,13 +1,41 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ReadmeState } from '../../../generated/protocol';
+import type { LocationId, ReadmeState } from '../../../generated/protocol';
+import { ProjectPageDepsContext, type ProjectPageDeps } from '../deps';
 import { DAY, NOW, rowFixture } from '../testFixtures';
-import { README_ABSENT, README_NOT_INDEXED, ReadmePanel } from './ReadmePanel';
+import {
+  README_ABSENT,
+  README_NOT_INDEXED,
+  README_TRUNCATED_STATEMENT,
+  ReadmePanel,
+  REMOTE_BLOCKED_STATEMENT,
+  REMOTE_GRANT_LABEL,
+} from './ReadmePanel';
 
 afterEach(cleanup);
 
+/**
+ * [p2] §25.5: the panel now asks the core for the document, so every render needs the page's one
+ * door to the outside. The default bridge **refuses**, which is the fallback §25.5 specifies —
+ * the stored paragraph, which is a real fact — so every phase-1 assertion below still describes
+ * what a reader sees when the document read does not answer.
+ */
+function withDeps(children: ReactNode, request?: ProjectPageDeps['request']): ReactElement {
+  const deps: ProjectPageDeps = {
+    request: request ?? (() => Promise.reject(new Error('no bridge in this test'))),
+    relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
+    subscribe: () => () => undefined,
+    now: () => NOW,
+  };
+  return <ProjectPageDepsContext.Provider value={deps}>{children}</ProjectPageDepsContext.Provider>;
+}
+
+const LOCATION = 3 as unknown as LocationId;
+
 const draw = (readme: ReadmeState, now = NOW): HTMLElement =>
-  render(<ReadmePanel readme={readme} row={rowFixture()} now={now} />).container;
+  render(withDeps(<ReadmePanel readme={readme} row={rowFixture()} now={now} />)).container;
 
 describe('the body', () => {
   it('renders markup as literal text — no element is created from the bytes', () => {
@@ -82,7 +110,9 @@ describe('§25.3 the topic rail renders only when there is a topic', () => {
   const readme: ReadmeState = { state: 'present', text: 'A paragraph.', readAt: NOW - 3600 };
 
   it('renders one chip for one topic', () => {
-    render(<ReadmePanel readme={readme} row={rowFixture()} now={NOW} topics={['rust']} />);
+    render(
+      withDeps(<ReadmePanel readme={readme} row={rowFixture()} now={NOW} topics={['rust']} />),
+    );
     const rail = screen.getByTestId('cp-readme-topics');
     expect(rail.children).toHaveLength(1);
     expect(rail.textContent).toBe('rust');
@@ -90,13 +120,192 @@ describe('§25.3 the topic rail renders only when there is a topic', () => {
 
   it('renders three chips for three topics', () => {
     render(
-      <ReadmePanel readme={readme} row={rowFixture()} now={NOW} topics={['rust', 'cli', 'tui']} />,
+      withDeps(
+        <ReadmePanel
+          readme={readme}
+          row={rowFixture()}
+          now={NOW}
+          topics={['rust', 'cli', 'tui']}
+        />,
+      ),
     );
     expect(screen.getByTestId('cp-readme-topics').children).toHaveLength(3);
   });
 
   it('AC-P2-25-9 renders no rail element at all for zero topics, asserted as an absence', () => {
-    render(<ReadmePanel readme={readme} row={rowFixture()} now={NOW} topics={[]} />);
+    render(withDeps(<ReadmePanel readme={readme} row={rowFixture()} now={NOW} topics={[]} />));
     expect(screen.queryByTestId('cp-readme-topics')).toBeNull();
+  });
+});
+
+/**
+ * [p2] §25.5's panel: the document, its frame, and the three statements below it.
+ *
+ * The **ordering** assertion is the one this file exists for: `srcdoc` is set once with no `src`
+ * attribute anywhere before `projects.readmeAssets` resolves, and again after. That is
+ * AC-P2-25-18's request census one level down and far cheaper to run — an image that reached the
+ * frame before the core vetted it would be a request from inside the sandbox.
+ */
+describe('§25.5 the panel renders the document in a frame', () => {
+  const present: ReadmeState = { state: 'present', text: 'stored paragraph', readAt: NOW - 3600 };
+
+  /**
+   * The first frame waits on a real dynamic `import()` of the whole markup stack — parser,
+   * sanitiser, highlighter, typesetter — which is slower than the library's one-second default
+   * when the suite is running the rest of the renderer beside it. Measured: 1005 ms, failing only
+   * in the full run. The wait is generous rather than tuned; what is under test is the ordering,
+   * not the load time.
+   */
+  const SETTLE = { timeout: 20_000 };
+
+  function bridge(
+    document: string,
+    assets: unknown[] = [],
+  ): {
+    request: ProjectPageDeps['request'];
+    calls: string[];
+    release: () => void;
+  } {
+    const calls: string[] = [];
+    let releaseAssets = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      releaseAssets = () => {
+        resolve();
+      };
+    });
+    const request = (async (name: string) => {
+      calls.push(name);
+      if (name === 'projects.readme') {
+        return {
+          state: 'present',
+          path: 'README.rst',
+          text: document,
+          readAt: NOW - 3600,
+          truncated: true,
+        };
+      }
+      if (name === 'projects.readmeAssets') {
+        await held;
+        return assets;
+      }
+      return {};
+    }) as unknown as ProjectPageDeps['request'];
+    return { request, calls, release: releaseAssets };
+  }
+
+  it('sets the first srcdoc with no src attribute anywhere, then substitutes', async () => {
+    const { request, calls, release } = bridge(
+      '# widget\n\n![badge](https://cdn.example.test/badge.svg)\n\n[docs](https://example.test)\n',
+      [
+        {
+          ref: 'https://cdn.example.test/badge.svg',
+          state: 'ok',
+          dataUri: 'data:image/png;base64,iVBORw0KGgo=',
+          fetchedAt: NOW,
+        },
+      ],
+    );
+    render(
+      withDeps(
+        <ReadmePanel readme={present} row={rowFixture()} now={NOW} locationId={LOCATION} />,
+        request,
+      ),
+    );
+
+    const frame = await screen.findByTestId('cp-readme-frame', undefined, SETTLE);
+    const first = frame.getAttribute('srcdoc') ?? '';
+    expect(first).toContain('widget');
+    expect(first).not.toContain('src=');
+    expect(first).toContain('cdt-readme-asset');
+    expect(calls).toContain('projects.readme');
+
+    release();
+    await waitFor(() => {
+      expect(screen.getByTestId('cp-readme-frame').getAttribute('srcdoc') ?? '').toContain(
+        'data:image/png;base64,',
+      );
+    }, SETTLE);
+    expect(calls).toEqual(['projects.readme', 'projects.readmeAssets']);
+  });
+
+  it('states that the document was cut, and that its links are inert', async () => {
+    const { request, release } = bridge('# widget\n\n[docs](https://example.test)\n');
+    render(
+      withDeps(
+        <ReadmePanel readme={present} row={rowFixture()} now={NOW} locationId={LOCATION} />,
+        request,
+      ),
+    );
+    release();
+    await screen.findByTestId('cp-readme-frame', undefined, SETTLE);
+    expect(screen.getByTestId('cp-readme-truncated').textContent).toBe(README_TRUNCATED_STATEMENT);
+    // Exactly once, however many anchors the document has.
+    expect(screen.getAllByTestId('cp-readme-links-inert')).toHaveLength(1);
+    // …and the stored paragraph is gone: the frame replaced it rather than joining it.
+    expect(screen.queryByTestId('cp-readme-body')).toBeNull();
+  });
+
+  it('draws no inert-links statement for a document with no anchors', async () => {
+    const { request, release } = bridge('# widget\n\nJust prose.\n');
+    render(
+      withDeps(
+        <ReadmePanel readme={present} row={rowFixture()} now={NOW} locationId={LOCATION} />,
+        request,
+      ),
+    );
+    release();
+    await screen.findByTestId('cp-readme-frame', undefined, SETTLE);
+    expect(screen.queryByTestId('cp-readme-links-inert')).toBeNull();
+  });
+
+  it('offers the consent as a sentence and a control, with no failure ink', async () => {
+    const { request, release } = bridge('![badge](https://cdn.example.test/badge.svg)\n', [
+      {
+        ref: 'https://cdn.example.test/badge.svg',
+        state: 'blocked',
+        dataUri: null,
+        fetchedAt: null,
+      },
+    ]);
+    render(
+      withDeps(
+        <ReadmePanel readme={present} row={rowFixture()} now={NOW} locationId={LOCATION} />,
+        request,
+      ),
+    );
+    release();
+    const consent = await screen.findByTestId('cp-readme-consent', undefined, SETTLE);
+    expect(consent.textContent).toContain(REMOTE_BLOCKED_STATEMENT);
+    expect(consent.textContent).toContain(REMOTE_GRANT_LABEL);
+    // `blocked` is the consent state: no failure vocabulary anywhere in the panel.
+    expect(consent.textContent).not.toMatch(/fail|error|unreachable|refused/iu);
+  });
+
+  it('names the file the core actually read', async () => {
+    const { request, release } = bridge('# widget\n');
+    render(
+      withDeps(
+        <ReadmePanel readme={present} row={rowFixture()} now={NOW} locationId={LOCATION} />,
+        request,
+      ),
+    );
+    release();
+    await screen.findByTestId('cp-readme-frame', undefined, SETTLE);
+    expect(screen.getByTestId('cp-readme-name-slot').textContent).toBe('README.rst');
+  });
+
+  it('keeps the stored paragraph when the document read refuses', async () => {
+    const request = (() =>
+      Promise.reject(new Error('REPO_UNREADABLE'))) as unknown as ProjectPageDeps['request'];
+    render(
+      withDeps(
+        <ReadmePanel readme={present} row={rowFixture()} now={NOW} locationId={LOCATION} />,
+        request,
+      ),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('cp-readme-body').textContent).toBe('stored paragraph');
+    }, SETTLE);
+    expect(screen.queryByTestId('cp-readme-frame')).toBeNull();
   });
 });
