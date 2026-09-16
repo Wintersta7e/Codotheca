@@ -6,7 +6,23 @@
  */
 import { tagsIn } from './tags.mjs';
 
-const LIBTEST = /^test\s+(\S+)\s+\.\.\.\s+(ok|FAILED|ignored)\b/u;
+/**
+ * **No `\b` after the verdict, deliberately.** libtest writes `test <name> ... `, runs the test,
+ * and completes the line with `ok`. A test that spawns the core inherits this process's stderr, so
+ * the child's own diagnostics land **between the verdict and its newline** —
+ * `test a::b ... okcodotheca-core: dropped progress` — and a word-boundary assertion fails between
+ * `k` and `c`, dropping a test that ran.
+ *
+ * It loses failures as well as passes: `FAILEDsome noise` was dropped by the same clause, which is
+ * the direction that hides a defect rather than merely under-counting. Measured on one tree as two
+ * results lost from 1665, and `stdbuf -oL -eL` does **not** fix it — two processes share one fd and
+ * neither is line-buffering the other's writes. `--nocapture` is a second, separate cause of the
+ * same shape and is why the CI capture no longer passes it.
+ *
+ * Accepting a verdict with anything after it is safe: libtest emits exactly `ok`, `FAILED` and
+ * `ignored` in this position, and the position is fixed by the `... ` that precedes it.
+ */
+const LIBTEST = /^test\s+(\S+)\s+\.\.\.\s+(ok|FAILED|ignored)/u;
 
 /**
  * Cargo's lines arrive wrapped in SGR escapes whenever `CARGO_TERM_COLOR=always`, which

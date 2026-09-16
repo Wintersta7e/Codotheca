@@ -27,6 +27,30 @@ test('parseLibtest reads ok, FAILED and ignored', () => {
   ]);
 });
 
+// Regression: a test that spawns the core shares this process's stderr, so the child's own
+// diagnostics land **between libtest's verdict and its newline**. A word boundary after the
+// verdict then fails between `k` and `c` and the result is dropped — silently, and biased toward
+// exactly the tests that spawn something. Measured as two results lost from 1665 on one tree.
+// `stdbuf -oL -eL` does not fix it: two processes, one fd.
+//
+// The FAILED case is the one that matters most. Losing a pass under-counts; losing a failure
+// hides a defect and leaves the gate green.
+test('parseLibtest keeps a verdict a spawned child wrote over', () => {
+  const stdout = [
+    '     Running tests/acceptance_http.rs (target/debug/deps/acceptance_http-9)',
+    'running 2 tests',
+    'test ac_31_head_without_reading_the_body ... okcodotheca-core: dropped progress',
+    'test ac_32_refuses_a_redirect ... FAILEDcodotheca-core: shutting down',
+  ].join('\n');
+  assert.deepEqual(
+    parseLibtest(stdout).map((r) => [r.id, r.status]),
+    [
+      ['acceptance_http::ac_31_head_without_reading_the_body', 'passed'],
+      ['acceptance_http::ac_32_refuses_a_redirect', 'failed'],
+    ],
+  );
+});
+
 // Regression: `Swatinem/rust-cache` sets CARGO_TERM_COLOR=always, so on CI cargo's own lines
 // arrive wrapped in SGR escapes. `Running` then never matched, every integration test was recorded
 // under its bare function name, and the harness reported the same eight tests twice — as criteria
