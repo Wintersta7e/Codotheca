@@ -17,8 +17,10 @@
  */
 import DOMPurify from 'dompurify';
 import MarkdownIt from 'markdown-it';
+import type { StateInline } from 'markdown-it';
 
 import type { ReadmeAsset } from '../../../generated/protocol';
+import { highlightFence, renderMath } from './highlight';
 
 /** The class a blocked or refused image renders as, and what the frame's stylesheet targets. */
 export const ASSET_PLACEHOLDER_CLASS = 'cdt-readme-asset';
@@ -216,7 +218,65 @@ export interface RenderedMarkup {
  * inside the frame like every other anchor. `typographer: false` because a README is source text
  * and replacing its quotes is an edit.
  */
-const parser = new MarkdownIt({ html: false, linkify: true, typographer: false });
+const parser = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: false,
+  // §25.5: the highlighter plugs in here rather than in a second AST pass, and its output goes
+  // through the sanitiser like everything else — the allowlist admits `<span class>` and nothing
+  // more. An unregistered language returns `''`, which is what makes markdown-it escape the
+  // source itself.
+  highlight: (code: string, language: string) => highlightFence(code, language),
+});
+
+/**
+ * `$…$` and `$$…$$`, as an inline rule.
+ *
+ * It is a rule rather than a pass over the rendered text because KaTeX's output must reach the
+ * **sanitiser**: a substitution performed afterwards would put unsanitised markup into a
+ * sanitised document, which is the one ordering this whole pipeline exists to get right.
+ *
+ * Deliberately narrow, and the limits are stated rather than discovered: no multi-line `$$` block
+ * — a display span is one line — and a delimiter with whitespace just inside it is not a
+ * delimiter, which is what keeps `it costs $5 and $6` out of the typesetter.
+ */
+function mathInline(state: StateInline, silent: boolean): boolean {
+  const start = state.pos;
+  if (state.src.charAt(start) !== '$') return false;
+  const display = state.src.startsWith('$$', start);
+  const marker = display ? '$$' : '$';
+  const from = start + marker.length;
+  if (/^\s|^$/u.test(state.src.charAt(from))) return false;
+
+  let pos = from;
+  let close = -1;
+  while (pos < state.posMax) {
+    if (state.src.charAt(pos) === '\\') {
+      pos += 2;
+      continue;
+    }
+    if (state.src.startsWith(marker, pos)) {
+      close = pos;
+      break;
+    }
+    pos += 1;
+  }
+  if (close < 0 || close === from || /\s/u.test(state.src.charAt(close - 1))) return false;
+
+  if (!silent) {
+    const token = state.push(display ? 'math_display' : 'math_inline', 'math', 0);
+    token.content = state.src.slice(from, close);
+    token.markup = marker;
+  }
+  state.pos = close + marker.length;
+  return true;
+}
+
+parser.inline.ruler.before('escape', 'math_inline', mathInline);
+parser.renderer.rules['math_inline'] = (tokens, index) =>
+  renderMath(tokens[index]?.content ?? '', false);
+parser.renderer.rules['math_display'] = (tokens, index) =>
+  renderMath(tokens[index]?.content ?? '', true);
 
 /** The parser, exposed so §25.6's highlighter can install its hook without a second instance. */
 export function markdownParser(): MarkdownIt {
