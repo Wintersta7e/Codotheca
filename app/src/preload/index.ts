@@ -7,12 +7,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { PROTOCOL_VERSION } from '../generated/protocol';
 import { CODOTHECA_BRIDGE_KEY, type CodothecaBridge } from '../shared/bridge';
+import type { RemoteLinkKind } from '../generated/protocol';
 import {
   IPC_CLEAR_PAINT_FAILURE,
   IPC_CORE_STATUS,
   IPC_EVENTS,
   IPC_INDEX_LOCATION,
   IPC_OPEN_PALETTE,
+  IPC_OPEN_REMOTE_LINK,
   IPC_PICK_EXECUTABLE,
   IPC_PICK_ROOT,
   IPC_RELOCATE,
@@ -21,6 +23,7 @@ import {
   IPC_SHORTCUT_STATE,
   type CommitSuggestionReply,
   IPC_COMMIT_SUGGESTION,
+  type OpenRemoteLinkReply,
   type PickRootReply,
   type RelocateReply,
   type RevealTarget,
@@ -46,6 +49,10 @@ const bridge: CodothecaBridge = {
   // An id and nothing else. The folder is chosen in the main process, where the dialog lives.
   relocate: (locationId: number): Promise<RelocateReply> =>
     ipcRenderer.invoke(IPC_RELOCATE, { locationId }) as Promise<RelocateReply>,
+  // An id and a kind. §25.2: no URL crosses this channel inbound, because `remote_key` is
+  // derived from repository content the user may not have written.
+  openRemoteLink: (projectId: number, kind: RemoteLinkKind): Promise<OpenRemoteLinkReply> =>
+    ipcRenderer.invoke(IPC_OPEN_REMOTE_LINK, { projectId, kind }) as Promise<OpenRemoteLinkReply>,
   // A flag and nothing else. The folder is chosen in the main process, where the dialog lives,
   // and its path never enters the sandbox — §2.4.
   pickRoot: (confirmLarge: boolean): Promise<PickRootReply> =>

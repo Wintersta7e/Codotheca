@@ -23,6 +23,7 @@ function stubBridge(): StubBridge {
     logPath: '/tmp/codotheca/logs/codotheca.log',
     request: () => Promise.resolve({ ok: true, value: null }),
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     pickRoot: () => Promise.resolve({ kind: 'cancelled' }),
     commitSuggestion: () => Promise.resolve({ kind: 'unknown' as const }),
     onCoreStatus: () => undefined,

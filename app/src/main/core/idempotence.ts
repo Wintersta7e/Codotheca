@@ -74,6 +74,8 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'accounts.upgradeScope': 'write',
   'accounts.disconnect': 'write',
   'accounts.setOrgEnabled': 'write',
+  // Reads one stored key and the account hosts, writes nothing and spawns nothing.
+  'remote.webUrl': 'read',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {

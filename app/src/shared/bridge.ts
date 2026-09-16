@@ -1,5 +1,7 @@
+import type { RemoteLinkKind } from '../generated/protocol';
 import type {
   CommitSuggestionReply,
+  OpenRemoteLinkReply,
   PickRootReply,
   RelocateReply,
   RevealTarget,
@@ -53,6 +55,12 @@ export interface CodothecaBridge {
    * renderer from originating one.
    */
   relocate(locationId: number): Promise<RelocateReply>;
+  /**
+   * §25.2: open one of the five remote links. The renderer sends an opaque project id and a
+   * link kind — **never a URL**. The shell asks the core for the string, re-asserts the host
+   * allowlist on it, names the whole URL in a confirmation, and only then opens it.
+   */
+  openRemoteLink(projectId: number, kind: RemoteLinkKind): Promise<OpenRemoteLinkReply>;
   /**
    * The native folder dialog, and the only path by which a folder reaches `roots.add`.
    *
