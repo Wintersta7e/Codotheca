@@ -3242,8 +3242,8 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
-          "test": "readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty is exactly empty on the element the panel renders",
-          "assert": "The sandbox attribute is present and exactly empty, and the strings allow-scripts and allow-same-origin appear nowhere in the panel's sources — a tree walk through scripts/lib/read-scanned.mjs printing its file count and failing at zero."
+          "test": "§25.5 the panel renders the document in a frame readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty",
+          "assert": "The frame's sandbox attribute is present and exactly empty, read off the element ReadmePanel renders and off Chromium's own in the census; the strings allow-scripts and allow-same-origin appear in no panel source, over a walk that prints its file count."
         }
       ]
     },

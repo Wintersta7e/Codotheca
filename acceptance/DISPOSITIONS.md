@@ -139,7 +139,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P2-25-13 | automated | denyPermissionRequest still refuses every permission | `AC-P2-25-13` automated, runs now — `remote surfaces: the opener AC-P2-25-13 denyPermissionRequest refuses every permission, openExternal included` |
 | P2-25-14 | automated | The CSP delta is exactly one directive | `AC-P2-25-14` automated, runs now — `the production content security policy csp::ac_p2_25_14_frame_src_self_and_every_other_directive_byte_identical` |
 | P2-25-15 | automated | Both navigation guards share one predicate | `AC-P2-25-15` automated, runs now — `isNavigationAllowed security::ac_p2_25_15_will_navigate_and_will_frame_navigate_share_one_predicate` |
-| P2-25-16 | automated | The frame's sandbox attribute is present and exactly empty | `AC-P2-25-16` automated, runs now — `readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty is exactly empty on the element the panel renders` |
+| P2-25-16 | automated | The frame's sandbox attribute is present and exactly empty | `AC-P2-25-16` automated, runs now — `§25.5 the panel renders the document in a frame readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty` |
 | P2-25-17 | automated | Hostile markup renders as text | `AC-P2-25-17` automated, runs now — `the README pipeline readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text` |
 | P2-25-18 | automated | The panel's first frame issues no request | `AC-P2-25-18` automated, runs now — `AC-P2-25-18 the request census with consent absent` |
 | P2-25-19 | automated | projects.readme returns the whole document | `AC-P2-25-19` automated, runs now — `readme_source::ac_p2_25_19_the_whole_document_is_returned_under_the_existing_cap` |
