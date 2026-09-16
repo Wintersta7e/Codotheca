@@ -30,14 +30,8 @@ import { serialiseFragment } from './markup';
 export { applyAssets, renderMarkup, serialiseFragment } from './markup';
 export type { RenderedMarkup } from './markup';
 
-/** A scriptless frame cannot report its own height, so the panel gives it one and it scrolls. */
-export { FRAME_HEIGHT_PX } from './frameHeight';
-
-/**
- * §25.5's statement, rendered **once** below the frame and only where the document has an anchor.
- * Never as standing furniture on a document that has no links.
- */
-export const LINKS_INERT_NOTICE = 'LINKS ARE NOT ACTIVE IN THIS PANEL';
+/** The panel's two values, re-exported so this module is still the one door to the pipeline. */
+export { FRAME_HEIGHT_PX, LINKS_INERT_NOTICE } from './frameFacts';
 
 /** The §8.7 custom properties the frame's stylesheet uses, named once. */
 export const FRAME_TOKEN_NAMES = [

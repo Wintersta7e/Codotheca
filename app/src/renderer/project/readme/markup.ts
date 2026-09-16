@@ -288,11 +288,6 @@ parser.renderer.rules['math_inline'] = (tokens, index) =>
 parser.renderer.rules['math_display'] = (tokens, index) =>
   renderMath(tokens[index]?.content ?? '', true);
 
-/** The parser, exposed so §25.6's highlighter can install its hook without a second instance. */
-export function markdownParser(): MarkdownIt {
-  return parser;
-}
-
 function sanitiseConfig(): Parameters<typeof DOMPurify.sanitize>[1] {
   return {
     ALLOWED_TAGS: [...ALLOWED_TAGS],

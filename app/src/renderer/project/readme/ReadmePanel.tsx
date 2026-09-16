@@ -26,16 +26,15 @@ import { formatAge } from '../../derive/observation';
 // panel's callers can name it without a second copy of the bytes (R12).
 import { README_ABSENT } from '../../shelf/peekText';
 import { cascadeDelay } from '../motion';
-import { FRAME_HEIGHT_PX } from './frameHeight';
+import { FRAME_HEIGHT_PX, LINKS_INERT_NOTICE } from './frameFacts';
 import { useReadmeDocument } from './useReadmeDocument';
 
 export { README_ABSENT };
+/** [p2] §25.5's statement, below the frame, where the document has at least one anchor. */
+export { LINKS_INERT_NOTICE };
 
 /** A promise: the pass has not run. §8.5.3, with v1's dead "tier" vocabulary removed. */
 export const README_NOT_INDEXED = 'No README paragraph indexed yet — waiting on the content pass.';
-
-/** [p2] §25.5's statement, below the frame, where the document has at least one anchor. */
-export const LINKS_INERT_STATEMENT = 'LINKS ARE NOT ACTIVE IN THIS PANEL';
 
 /** [p2] §25.5: a document that was cut says so rather than appearing to end. */
 export const README_TRUNCATED_STATEMENT = 'READ TO THE SIZE CAP — THE DOCUMENT CONTINUES';
@@ -135,7 +134,7 @@ export function ReadmePanel({
         ) : null}
         {framed && document.anchorCount > 0 ? (
           <p className="cp-readme-statement" data-testid="cp-readme-links-inert">
-            {LINKS_INERT_STATEMENT}
+            {LINKS_INERT_NOTICE}
           </p>
         ) : null}
         {framed && document.blockedRemote > 0 ? (
