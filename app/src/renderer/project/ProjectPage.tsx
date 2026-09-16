@@ -32,7 +32,7 @@ import { NotePanel } from './note/NotePanel';
 import { Rail } from './rail/Rail';
 import { ReadmePanel } from './readme/ReadmePanel';
 import { RoastNote } from './RoastNote';
-import { nextTab, PROJECT_TABS, type ProjectTab } from './tabs';
+import { BASE_PROJECT_TABS, fallbackTab, nextTab, tabsFor, type ProjectTab } from './tabs';
 import { useProjectDetail } from './useProjectDetail';
 
 export const PROJECT_PAGE_ROOT_CLASS = 'cp-page';
@@ -164,6 +164,14 @@ export function ProjectPageView({
       });
   }, [deps, detailPinned, pinnedOverride, projectId]);
 
+  const detail = state.kind === 'ready' ? state.detail : null;
+  // §25.1: the mounted list is this project's. While the detail is still loading the bar draws
+  // the two every project has, so it gains a tab rather than emptying and refilling.
+  const tabs = detail === null ? BASE_PROJECT_TABS : tabsFor(detail);
+  // A held tab that is no longer mounted — the remote binding went away while the page was open
+  // — lands on `overview` rather than leaving the page pointing at a panel that is not there.
+  const shownTab = fallbackTab(tabs, tab);
+
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       const hit = resolveKey('projectPage', asKeyEvent(event));
@@ -172,13 +180,12 @@ export function ProjectPageView({
       if (hit.action === 'quickSwitch') return;
       if (hit.preventDefault) event.preventDefault();
       if (hit.action === 'page.back') onBack();
-      else if (hit.action === 'page.nextTab') setTab((current) => nextTab(current, 1));
-      else if (hit.action === 'page.prevTab') setTab((current) => nextTab(current, -1));
+      else if (hit.action === 'page.nextTab') setTab((current) => nextTab(tabs, current, 1));
+      else if (hit.action === 'page.prevTab') setTab((current) => nextTab(tabs, current, -1));
     },
-    [onBack],
+    [onBack, tabs],
   );
 
-  const detail = state.kind === 'ready' ? state.detail : null;
   const shown = detail === null ? null : shownLocation(detail, shownId);
   const primary = detail === null ? null : primaryLocation(detail);
   const pathDisplay = shown?.location.pathDisplay ?? '';
@@ -205,16 +212,16 @@ export function ProjectPageView({
           ESC · ←→
         </span>
         <div className="cp-tabs" role="tablist" aria-label="Project sections">
-          {PROJECT_TABS.map((entry) => (
+          {tabs.map((entry) => (
             <button
               key={entry.id}
               id={`cp-tab-${entry.id}`}
               type="button"
               role="tab"
               className="cp-tab"
-              aria-selected={tab === entry.id}
+              aria-selected={shownTab === entry.id}
               aria-controls="cp-tabpanel"
-              tabIndex={tab === entry.id ? 0 : -1}
+              tabIndex={shownTab === entry.id ? 0 : -1}
               onClick={() => {
                 setTab(entry.id);
               }}
@@ -272,13 +279,13 @@ export function ProjectPageView({
               className="cp-tabpanel"
               id="cp-tabpanel"
               role="tabpanel"
-              aria-labelledby={`cp-tab-${tab}`}
+              aria-labelledby={`cp-tab-${shownTab}`}
               data-testid="cp-tabpanel"
-              data-tab={tab}
+              data-tab={shownTab}
               data-shown-location={String(shown?.location.id ?? '')}
               data-primary-location={String(primary?.location.id ?? '')}
             >
-              {tab === 'overview' ? (
+              {shownTab === 'overview' ? (
                 <>
                   <LocationsPanel
                     detail={detail}
@@ -294,9 +301,8 @@ export function ProjectPageView({
                     onChanged={reload}
                   />
                 </>
-              ) : (
-                <ActivityTab detail={detail} />
-              )}
+              ) : null}
+              {shownTab === 'activity' ? <ActivityTab detail={detail} /> : null}
             </div>
           </div>
         </div>

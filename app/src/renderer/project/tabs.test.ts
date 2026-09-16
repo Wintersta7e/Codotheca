@@ -1,23 +1,75 @@
 import { describe, expect, it } from 'vitest';
+import type { ProjectDetail, RemoteFacts } from '../../generated/protocol';
 import { cascadeDelay, PAGE_ENTRY, PAGE_EXIT } from './motion';
-import { nextTab, PROJECT_TABS } from './tabs';
+import { fallbackTab, nextTab, tabsFor } from './tabs';
 
-describe('the tab list', () => {
-  it('ships exactly two tabs — Health and Remote are absent, not disabled', () => {
-    expect(PROJECT_TABS.map((t) => t.id)).toEqual(['overview', 'activity']);
-    expect(PROJECT_TABS.map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY']);
+const FACTS = {
+  key: 'github.com/acme/widget',
+  linkable: true,
+  state: 'not_observed',
+  visibility: null,
+  forkParentKey: null,
+  stars: null,
+  openIssues: null,
+  goodFirstIssues: null,
+  openPrs: null,
+  openPrsFromUser: null,
+  topics: [],
+  observedAt: null,
+  ci: { state: 'not_observed', runs: [], observedAt: null },
+} as unknown as RemoteFacts;
+
+function detail(remote: RemoteFacts | null): ProjectDetail {
+  return { remote } as unknown as ProjectDetail;
+}
+
+describe('AC-P2-25-1 the tab list is per project, not per phase', () => {
+  it('mounts two tabs with no remote and three with one, and four in neither case', () => {
+    expect(tabsFor(detail(null)).map((t) => t.id)).toEqual(['overview', 'activity']);
+    expect(tabsFor(detail(FACTS)).map((t) => t.id)).toEqual(['overview', 'activity', 'remote']);
+    expect(tabsFor(detail(null))).toHaveLength(2);
+    expect(tabsFor(detail(FACTS))).toHaveLength(3);
   });
 
-  it('names no tab phase 1 cannot fill', () => {
-    const labels = PROJECT_TABS.map((t) => t.label).join(' ');
-    expect(labels).not.toMatch(/HEALTH|REMOTE|COMPLETION|CONDITION/);
+  it('names HEALTH in neither, because nothing in phase 2 writes completion_lit', () => {
+    for (const list of [tabsFor(detail(null)), tabsFor(detail(FACTS))]) {
+      expect(list.map((t) => t.label).join(' ')).not.toMatch(/HEALTH|COMPLETION|CONDITION/u);
+    }
+    expect(tabsFor(detail(null)).map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY']);
+    expect(tabsFor(detail(FACTS)).map((t) => t.label)).toEqual([
+      'OVERVIEW',
+      'ACTIVITY',
+      'REMOTE',
+    ]);
   });
 
-  it('cycles over the mounted list, not a modulo-4 ring', () => {
-    expect(nextTab('overview', 1)).toBe('activity');
-    expect(nextTab('activity', 1)).toBe('overview');
-    expect(nextTab('overview', -1)).toBe('activity');
-    expect(nextTab('activity', -1)).toBe('overview');
+  it('cycles the three-tab ring forwards and backwards', () => {
+    const tabs = tabsFor(detail(FACTS));
+    expect(nextTab(tabs, 'overview', 1)).toBe('activity');
+    expect(nextTab(tabs, 'activity', 1)).toBe('remote');
+    expect(nextTab(tabs, 'remote', 1)).toBe('overview');
+    expect(nextTab(tabs, 'overview', -1)).toBe('remote');
+    expect(nextTab(tabs, 'remote', -1)).toBe('activity');
+    expect(nextTab(tabs, 'activity', -1)).toBe('overview');
+  });
+
+  // Two tests, not one: a modulo bug over two elements is invisible, so the two-tab ring is
+  // asserted separately rather than as a special case of the three-tab one.
+  it('cycles the two-tab ring forwards and backwards', () => {
+    const tabs = tabsFor(detail(null));
+    expect(nextTab(tabs, 'overview', 1)).toBe('activity');
+    expect(nextTab(tabs, 'activity', 1)).toBe('overview');
+    expect(nextTab(tabs, 'overview', -1)).toBe('activity');
+    expect(nextTab(tabs, 'activity', -1)).toBe('overview');
+  });
+
+  it('falls back to overview when the held tab is no longer mounted', () => {
+    const tabs = tabsFor(detail(null));
+    // A project whose remote binding went away while its page was open would otherwise leave the
+    // page pointing at a panel that is not in the list — the dead control §8.5 exists to stop.
+    expect(fallbackTab(tabs, 'remote')).toBe('overview');
+    expect(fallbackTab(tabs, 'activity')).toBe('activity');
+    expect(nextTab(tabs, 'remote', 1)).toBe('overview');
   });
 });
 

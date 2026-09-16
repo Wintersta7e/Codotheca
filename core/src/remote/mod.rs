@@ -10,6 +10,7 @@
 //! decision the core made rather than a rule the renderer re-derives; staleness is the one thing
 //! computed at render time, because it is a function of *now*.
 
+pub mod facts;
 pub mod weburl;
 
 use crate::index::Index;

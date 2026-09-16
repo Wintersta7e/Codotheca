@@ -14,6 +14,7 @@ import type {
   ProjectDetail,
   ProjectId,
   ProjectRow,
+  RemoteFacts,
   SceneHash,
   TargetId,
   TargetRow,
@@ -21,6 +22,30 @@ import type {
 
 export const NOW = 1_800_000_000;
 export const DAY = 86_400;
+
+/**
+ * §25.1's facts, defaulted to *nothing observed* — which is what every project reads until
+ * §21's runner lands in wave 5. A test that is about an observed value says so by overriding,
+ * so a fixture never quietly asserts a number the product cannot have produced yet.
+ */
+export function remoteFactsFixture(over: Partial<RemoteFacts> = {}): RemoteFacts {
+  return {
+    key: 'github.com/acme/widget',
+    linkable: true,
+    state: 'not_observed',
+    visibility: null,
+    forkParentKey: null,
+    stars: null,
+    openIssues: null,
+    goodFirstIssues: null,
+    openPrs: null,
+    openPrsFromUser: null,
+    topics: [],
+    observedAt: null,
+    ci: { state: 'not_observed', runs: [], observedAt: null },
+    ...over,
+  };
+}
 
 let nextLocationId = 1;
 
@@ -178,6 +203,10 @@ export function detailFixture(over: Partial<ProjectDetail> = {}): ProjectDetail 
     // Null is "not yet resolved", which is what every project carries until a listing or a
     // lookup binds one — not a third state and not either variant.
     remoteLinkBasis: null,
+    // §25.1: NULL **iff** `remote_key` is NULL, and `remoteKey` above is null — so the default
+    // fixture is a project with no remote and two tabs. A test about the REMOTE tab overrides
+    // both, which is what keeps the pair from drifting into a shape the core cannot produce.
+    remote: null,
     ...over,
   };
 }

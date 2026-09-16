@@ -423,6 +423,9 @@ pub fn handle_project_get(
             .remote_link_basis
             .as_deref()
             .and_then(enum_from_column::<RemoteLinkBasis>),
+        // §25.1's presence predicate: NULL **iff** `remote_key` is NULL. The field and its
+        // producer land together (R1), so the tab cannot mount against a field nothing fills.
+        remote: crate::remote::facts::remote_facts(conn, ProjectId(id)).map_err(internal)?,
         seed_basename: row.seed_basename.clone(),
         reroll_offset: row.reroll_offset,
         playtime_seconds: crate::session::store::playtime_seconds(conn, ProjectId(id))

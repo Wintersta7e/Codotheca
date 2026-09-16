@@ -250,8 +250,8 @@ mod tests {
         let commands = schema_commands();
         assert_eq!(
             commands.len(),
-            50,
-            "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight"
+            51,
+            "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's one"
         );
         let unowned: Vec<&str> = commands
             .iter()
