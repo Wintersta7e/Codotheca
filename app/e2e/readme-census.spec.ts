@@ -168,17 +168,32 @@ test('AC-P2-25-18 the request census with consent absent', async () => {
       math: number;
     }
     /**
-     * What the frame is rendering, or `null` while it has no document yet.
+     * **Read the document the panel has settled on, named rather than waited for.**
      *
-     * `null` rather than a throw: the panel **replaces** the element when the document changes —
-     * Chromium does not re-navigate a sandboxed `srcdoc` frame otherwise — so a read that lands
-     * in that instant finds a frame with no content, which is a moment to poll through rather
-     * than a failure.
+     * The panel destroys and recreates the `iframe` for each document — Chromium will not
+     * re-navigate a sandboxed `srcdoc` frame when the attribute is replaced, so a new document is
+     * a new element. "The frame" is therefore not one object over time, and a handle taken before
+     * a transition points at a frame that is detached after it: `frame.evaluate: Frame was
+     * detached`, which this spec produced in **two runs of four** before this was written.
+     *
+     * R72 says force the condition rather than wait for it, so nothing here polls the *contents*
+     * until they look right. The element carries `data-revision` — which document it is showing —
+     * and the count is arithmetic rather than a guess: **one document per `srcdoc` the panel
+     * assigns.** Before consent that is 2 (the placeholder-only first paint, then the assets); the
+     * grant re-runs the same pair, so it is 4. Waiting for the number and *then* reading means the
+     * transition is over by construction, and a flow that stops producing exactly those documents
+     * fails loudly here instead of racing.
      */
-    const readOrNull = async (): Promise<FrameContents | null> => {
-      const handle = await window.locator('[data-testid="cp-readme-frame"]').elementHandle();
+    const readRevision = async (revision: number): Promise<FrameContents> => {
+      const settled = window.locator(
+        `[data-testid="cp-readme-frame"][data-revision="${String(revision)}"]`,
+      );
+      await expect(settled).toHaveCount(1, { timeout: 60_000 });
+      const handle = await settled.elementHandle();
       const inner = await handle?.contentFrame();
-      if (inner === null || inner === undefined) return null;
+      if (inner === null || inner === undefined) {
+        throw new Error(`document ${String(revision)} has no content frame`);
+      }
       return inner.evaluate(() => ({
         blocks: document.body.querySelectorAll('p, h1, h2, h3, table, pre, ul, ol, blockquote')
           .length,
@@ -192,23 +207,21 @@ test('AC-P2-25-18 the request census with consent absent', async () => {
         math: document.body.querySelectorAll('math').length,
       }));
     };
-    const read = async (): Promise<FrameContents> => {
-      const contents = await readOrNull();
-      if (contents === null) throw new Error('the README frame has no content frame at all');
-      return contents;
-    };
-    const placeholders = async (): Promise<string[]> =>
-      (await readOrNull())?.placeholders ?? ['pending'];
-    // **Wait for the document the panel settles on.** The first frame — every reference a
-    // placeholder nobody has asked about — is asserted in jsdom with its own mutation proof
-    // (`ReadmePanel.test.tsx`), because in the built app the asset round trip is local and
-    // completes faster than this spec's first read: racing it here would make the assertion
-    // flaky rather than strict. What cannot race is the request count, which is this file's
-    // subject, and it is read after everything has settled.
+
+    /** One document per `srcdoc` assignment: first paint, then the assets applied to it. */
+    const BEFORE_CONSENT = 2;
+    /** The grant re-runs the same pair, so the settled document after it is the fourth. */
+    const AFTER_CONSENT = 4;
+
+    // The **first** document — every reference a placeholder nobody has asked about — is asserted
+    // in jsdom with its own mutation proof (`ReadmePanel.test.tsx`), because in the built app the
+    // asset round trip is local and completes before this spec could read it. What cannot race is
+    // the request count, which is this file's subject.
+    //
     // An `ok` asset **stops being a placeholder**: it is replaced by the image the core produced,
-    // so the settled document carries one image and one placeholder, not two of either.
-    await expect.poll(placeholders, { timeout: 60_000 }).toEqual(['blocked']);
-    const rendered = await read();
+    // so document 2 carries one image and one placeholder, not two of either.
+    const rendered = await readRevision(BEFORE_CONSENT);
+    expect(rendered.placeholders).toEqual(['blocked']);
 
     const offenders = await app.evaluate(
       () => (globalThis as unknown as { __census: string[] }).__census,
@@ -253,7 +266,10 @@ test('AC-P2-25-18 the request census with consent absent', async () => {
 
     // After the grant the core attempts the fetch. The host is `.invalid`, so it cannot
     // resolve — and `unreachable` is a state only a consent-passed attempt can produce.
-    await expect.poll(placeholders, { timeout: 60_000 }).toEqual(['unreachable']);
+    const afterGrant = await readRevision(AFTER_CONSENT);
+    expect(afterGrant.placeholders).toEqual(['unreachable']);
+    // …and the local image is still there, so the grant re-read everything rather than losing it.
+    expect(afterGrant.images).toBe(1);
 
     const afterConsent = await app.evaluate(
       () => (globalThis as unknown as { __census: string[] }).__census,

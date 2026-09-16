@@ -219,6 +219,11 @@ describe('§25.5 the panel renders the document in a frame', () => {
     expect(first).toContain('cdt-readme-asset');
     expect(calls).toContain('projects.readme');
 
+    // Document 1 is the first paint, and it says so. The number is what the end-to-end census
+    // names to read a settled document rather than racing the element's replacement, so it has an
+    // owner here rather than only in a spec that takes four minutes to tell anyone it is gone.
+    expect(frame.getAttribute('data-revision')).toBe('1');
+
     release();
     await waitFor(() => {
       expect(screen.getByTestId('cp-readme-frame').getAttribute('srcdoc') ?? '').toContain(
@@ -226,6 +231,9 @@ describe('§25.5 the panel renders the document in a frame', () => {
       );
     }, SETTLE);
     expect(calls).toEqual(['projects.readme', 'projects.readmeAssets']);
+    // …and the substituted document is the second, which is what makes it a different element:
+    // Chromium does not re-navigate a sandboxed frame when `srcdoc` is replaced.
+    expect(screen.getByTestId('cp-readme-frame').getAttribute('data-revision')).toBe('2');
   });
 
   /**

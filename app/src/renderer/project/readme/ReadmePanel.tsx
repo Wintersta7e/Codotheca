@@ -119,6 +119,11 @@ export function ReadmePanel({
             key={`readme-${String(rendered.revision)}`}
             className="cp-readme-frame"
             data-testid="cp-readme-frame"
+            /* Which document this element is showing, counting from 1. The element is destroyed
+               and recreated per document (see the key above), so *"the frame"* is not one thing
+               over time: a reader that wants the settled document has to be able to name it, and
+               a reader holding a handle to the previous one gets a detached frame. */
+            data-revision={String(rendered.revision)}
             title={`${row.name} README`}
             sandbox=""
             srcDoc={srcdoc}
