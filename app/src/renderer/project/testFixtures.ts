@@ -207,6 +207,10 @@ export function detailFixture(over: Partial<ProjectDetail> = {}): ProjectDetail 
     // fixture is a project with no remote and two tabs. A test about the REMOTE tab overrides
     // both, which is what keeps the pair from drifting into a shape the core cannot produce.
     remote: null,
+    // §25.3's row 1 follows from that same null `remoteKey`: a project with no remote is the
+    // only copy on earth, whatever its working tree says. A fixture answering anything else
+    // here would be a shape the producer cannot make.
+    backup: 'only_copy',
     ...over,
   };
 }

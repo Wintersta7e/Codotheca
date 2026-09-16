@@ -267,6 +267,11 @@
       "variants": ["repository", "issues", "pulls", "actions", "releases"],
       "$comment": "§25.2: the five links out of the REMOTE tab. The renderer names a kind and never a URL; the core builds the string from this project's own remote_key against the host allowlist."
     },
+    "BackupState": {
+      "kind": "enum",
+      "variants": ["only_copy", "not_anywhere_else", "verified"],
+      "$comment": "§25.3's backup state, as a DECISION and never as copy. Three variants, not four: the fourth row of the table is the absent field, and an absent field plus a variant meaning nothing would be one value stated twice. Per §19.4 phase 2 has no push, so this states a fact and offers no control."
+    },
     "RemoteFactsState": {
       "kind": "enum",
       "variants": ["no_account", "not_observed", "not_permitted", "observed"],
@@ -559,7 +564,8 @@
         "firstCommitTzOffsetMin": "i32?",
         "sizeWorktreeBytes": "i64?",
         "remoteLinkBasis": "RemoteLinkBasis?",
-        "remote": "RemoteFacts?"
+        "remote": "RemoteFacts?",
+        "backup": "BackupState?"
       }
     },
 

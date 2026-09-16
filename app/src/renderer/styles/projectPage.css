@@ -1064,3 +1064,27 @@
   background: var(--surface-2);
   border: 1px solid var(--line-2);
 }
+
+/* [p2] §25.3's backup-state line. Colour goes on the EDGE, never on the type: the sentence is
+   decision-carrying and stays at --text-2, §8.5.2's precedent. */
+.cp-backup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px 10px;
+  background: var(--surface-2);
+  box-shadow:
+    inset 0 0 0 1px var(--line-2),
+    inset 3px 0 0 0 var(--cdt-backup-edge);
+}
+.cp-backup-plate {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+}
+.cp-backup-line {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}

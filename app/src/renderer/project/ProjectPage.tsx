@@ -23,6 +23,7 @@ import type {
 } from '../../generated/protocol';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
 import { ActivityTab } from './activity/ActivityTab';
+import { BackupStateBlock } from './BackupState';
 import { useProjectPageDeps } from './deps';
 import { HeroTile } from './hero/HeroTile';
 import { Identity } from './Identity';
@@ -288,6 +289,10 @@ export function ProjectPageView({
             >
               {shownTab === 'overview' ? (
                 <>
+                  {/* §25.3: between the description and the NOTE block, for every project with
+                      at least one location. §23 rules the zero-location case, where there is no
+                      local copy to be the only copy of. */}
+                  <BackupStateBlock state={detail.backup} location={primary} now={deps.now()} />
                   <LocationsPanel
                     detail={detail}
                     shownId={shownId}
