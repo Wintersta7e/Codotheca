@@ -242,11 +242,16 @@ impl Provider for GitHubProvider {
         name: &str,
         etag: Option<&str>,
     ) -> ProviderResult<Observed<CiRunsRead>> {
-        // Five, because §25.1 renders at most five and §25.7 stores at most five. Asking for
-        // more would spend budget on rows the writer trims away.
+        // §25.1 renders at most `CI_RUN_LIMIT` and §25.7 stores at most `CI_RUN_LIMIT`, so
+        // asking for more spends budget on rows the writer trims away. **Derived, not typed:**
+        // the literal `5` here was a third copy of a bound whose other two are mirror-tested
+        // against each other (`core/src/remote/facts.rs` and `ciCopy.ts`, via
+        // `app/test/remoteAllowlist.test.ts`), so raising the limit would have left the request
+        // fetching five for ever with nothing to say so — R12's one-owner rule.
         let url = format!(
-            "{}/repos/{owner}/{name}/actions/runs?per_page=5",
-            self.api_base()
+            "{}/repos/{owner}/{name}/actions/runs?per_page={}",
+            self.api_base(),
+            crate::remote::facts::CI_RUN_LIMIT
         );
         let response = self.get_raw(t, url, etag)?;
         let granted_scopes = observed_scopes(&response);
@@ -303,9 +308,13 @@ impl Provider for GitHubProvider {
 /// until a read exists that can separate them.
 fn repo_facts_of(repo: GitHubRepo) -> RepoFactsPayload {
     RepoFactsPayload {
-        // `visibility` is the field that can say `internal` on an Enterprise install;
-        // `private` cannot. An unrecognised value renders nothing rather than one of the two
-        // words §25.3 admits.
+        // **Read from `private`, deliberately, and the comment used to argue for the field this
+        // does not use.** §25.3 admits exactly two words, and `private` is total over them: an
+        // Enterprise `internal` repository is certainly not public, so it maps to `private`
+        // rather than to a third word the surface cannot render or to nothing at all. The
+        // `visibility` field would carry `internal` and then need collapsing here anyway, and a
+        // value neither branch recognised would render an absence where access is actually
+        // restricted — the worse of the two failures.
         visibility: Some(if repo.private { "private" } else { "public" }.to_owned()),
         description: repo.description,
         fork_parent_remote_key: repo

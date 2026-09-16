@@ -342,3 +342,77 @@ fn opening_a_page_asks_for_one_fresh_reading_of_the_copy_it_shows() {
     assert_eq!(v["row"]["isDirty"], json!(null));
     assert_eq!(v["row"]["worktreeObservedAt"], json!(null));
 }
+
+/// `projects.get` fills `remote` and `backup`, and **nothing else in this file asserted that**.
+///
+/// Both fields reach the renderer only through this handler, and every renderer test mounts a
+/// fixture, so a handler that answered `None` for either would have passed the whole suite and
+/// rendered an empty `REMOTE` tab. That is R90's shape one layer up: the producer exists, and
+/// nothing on a production path checked that it produces. A jsdom test cannot see it and the
+/// e2e spec needs a built app; this needs neither.
+#[test]
+fn the_page_carries_the_remote_facts_and_the_backup_state_it_is_the_only_source_of() {
+    let rig = rig_with_nothing_computed();
+    rig.location(1, 1, "/srv/work/thing", "present", Some("main"), None, None);
+    rig.conn()
+        .execute(
+            "UPDATE project SET remote_key = 'github.com/acme/widget' WHERE id = 1",
+            [],
+        )
+        .expect("give the project a remote");
+
+    let v = serde_json::to_value(handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("get"))
+        .expect("encode");
+
+    // Non-null because the row has a `remote_key`: the predicate is the key's presence, not
+    // whether a forge has ever answered. An unobserved read is a *state* inside the payload.
+    assert!(
+        !v["remote"].is_null(),
+        "a project with a remote_key must carry remote facts: {v}"
+    );
+    assert_eq!(v["remote"]["key"], json!("github.com/acme/widget"));
+    // `no_account`, not `not_observed`: this rig has connected nothing, and §25.1 distinguishes
+    // *there is no token to ask with* from *there is one and it has not asked yet*. Asserted
+    // against what the handler answers rather than against what this test first assumed — the
+    // two states render differently, and `no_account` draws no forge block at all rather than a
+    // row of dashes advertising a feature nobody can use.
+    assert_eq!(
+        v["remote"]["state"],
+        json!("no_account"),
+        "with nothing connected the state is a fact about this machine, not about the forge"
+    );
+    // **Null, and that is the honest answer.** `backup_state` has a remote to compare against
+    // but no `ahead`, no stash count and no recorded fetch, so whether a copy exists elsewhere
+    // is *uncomputed* — and §25.3 draws no block rather than claiming one. Asserted explicitly
+    // because the tempting reading of a null here is "the producer is not wired", and the test
+    // below distinguishes the two by making the same producer answer.
+    assert_eq!(
+        v["backup"],
+        json!(null),
+        "an unobserved copy has no backup verdict, and silence is not a claim"
+    );
+}
+
+/// A project with no `remote_key` carries **no** remote facts — the same predicate, the other way.
+///
+/// Asserted because a producer that returned a default `RemoteFacts` for every project would
+/// satisfy the test above and would make §23's not-cloned rendering claim a remote that no
+/// repository has.
+#[test]
+fn a_project_with_no_remote_key_carries_no_remote_facts() {
+    let rig = rig_with_nothing_computed();
+    rig.location(1, 1, "/srv/work/thing", "present", Some("main"), None, None);
+
+    let v = serde_json::to_value(handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("get"))
+        .expect("encode");
+    assert_eq!(v["remote"], json!(null));
+    // And the backup producer **is** wired on this path: a project with no remote is the only
+    // copy whatever its working tree says, which is `backup_state`'s first row and the one that
+    // cannot be reached by falling through. This is what separates "the producer answered null"
+    // from "nothing called the producer" — R90's question asked of a value rather than a name.
+    assert_eq!(
+        v["backup"],
+        json!("only_copy"),
+        "a project with no remote is the only copy, and the handler must say so"
+    );
+}

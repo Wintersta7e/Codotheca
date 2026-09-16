@@ -308,3 +308,53 @@ fn ac_p2_25_10_chain_resolves_manifest_then_remote_then_readme_then_note_then_de
     let never_cloned = describe(None, remote, None, None, None, None);
     assert_eq!(never_cloned.source, Some(DescriptionSource::Remote));
 }
+
+/// The chain above is a **pure function** called with literals, and that is the whole gap: it
+/// proves `describe` ranks correctly and says nothing about whether the forge's line ever
+/// reaches it.
+///
+/// `j6_content::persist`'s `LEFT JOIN remote_repo` is the sole supplier of rank 2 on any
+/// production path, joined on §22.11's binding rather than on the non-unique `remote_key`. No
+/// test put a `remote_repo.description` in a database and asserted a project's description
+/// changed — so a join that silently matched nothing would leave the chain passing and rank 2
+/// dead. R88's question, asked of the rung rather than of the ladder.
+#[test]
+fn the_forge_description_reaches_the_chain_through_j6s_own_join() {
+    use codotheca_core::jobs::j6_content::{persist, ContentFacts};
+
+    let (_dir, mut index) = seeded();
+    in_tx(&mut index, |tx| {
+        write_repo_facts(tx, &binding(), &payload(), None, NOW).expect("200");
+    });
+
+    // No manifest, no README, no note: rank 2 is the only rung with anything in it, so the
+    // description that comes back is the forge's or the join did not fire.
+    let facts = ContentFacts {
+        manifest_description: None,
+        readme_path: None,
+        readme_excerpt: None,
+        readme_seen: true,
+    };
+    in_tx(&mut index, |tx| {
+        persist(tx, ProjectId(1), &facts, NOW).expect("j6 persists");
+    });
+
+    let (text, source): (Option<String>, Option<String>) = index
+        .conn()
+        .query_row(
+            "SELECT description, description_source FROM project WHERE id = 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("read the project back");
+    assert_eq!(
+        text.as_deref(),
+        Some("a widget"),
+        "rank 2 is `remote_repo.description`, and it must arrive through the join"
+    );
+    assert_eq!(
+        source.as_deref(),
+        Some("remote"),
+        "the source is stored, so a later reader can say where the sentence came from"
+    );
+}
