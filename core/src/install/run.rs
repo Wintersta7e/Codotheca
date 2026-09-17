@@ -30,10 +30,13 @@ use crate::gitw::backend::MutatingGit;
 use crate::gitw::intent::{Intent, RemoteUrl};
 use crate::index::Index;
 use crate::install::queue::InstallRequest;
+use crate::install::stage::{parse_progress_line, StageMachine};
 use crate::install::staging::staging_path_for;
+use crate::install::state::InstallStateStore;
 use crate::jobs::JobSink;
 use crate::mount::MountResolver;
 use crate::paths::{path_bytes, path_display, path_key};
+use crate::proto::pubsub::EventSink;
 use crate::protocol::{InstallFailure, InstallRunId, LocationId};
 use crate::scan::discover::{RepoCandidate, RepoKind};
 use crate::scan::run::{platform_of, Discovered};
@@ -55,6 +58,10 @@ pub struct InstallCtx<'a> {
     pub index: &'a Arc<Mutex<Index>>,
     pub jobs: &'a dyn JobSink,
     pub mounts: &'a dyn MountResolver,
+    /// §24.4's stage state, so a tile that mounts mid-clone reads a snapshot rather than waiting
+    /// for the next event (R54).
+    pub stages: &'a InstallStateStore,
+    pub events: &'a dyn EventSink,
     pub cancel: &'a CancelToken,
     pub now: i64,
 }
@@ -127,8 +134,18 @@ pub fn run_install(
         dest: paths.staging.clone(),
         depth: None,
     };
+    // The child's stderr is read here and never forwarded to this process's stdout, which
+    // carries protocol frames and nothing else.
+    let mut machine = StageMachine::new();
     ctx.git
-        .run(&intent, ctx.cancel, &mut |_line| {})
+        .run(&intent, ctx.cancel, &mut |line| {
+            let Some(observed) = parse_progress_line(line) else {
+                return;
+            };
+            for entered in machine.advance(observed) {
+                publish(ctx, run, entered);
+            }
+        })
         .map_err(|_| {
             if ctx.cancel.is_cancelled() {
                 InstallFailure::Cancelled
@@ -145,6 +162,13 @@ pub fn run_install(
 
     // 3. Index it through the ordinary hand-off, which decides identity and writes the row.
     let location = index_destination(ctx, request, root, paths)?;
+
+    // The run has settled: the location row is committed, which is the milestone §24.4's last
+    // stage names. Entered after the row and not before it, so the readout cannot say `settled`
+    // about a project that is not yet cloned.
+    for entered in machine.settle() {
+        publish(ctx, run, entered);
+    }
 
     // 4. The ordinary pipeline, through the same sink the scanner uses.
     let facts = ctx.mounts.resolve(&paths.destination);
@@ -247,4 +271,27 @@ pub fn root_facts(
         },
     )
     .optional()
+}
+
+/// Record a stage and put it on the wire, in that order.
+///
+/// The store first: a subscriber that arrives between the two reads the snapshot and sees the
+/// stage anyway, whereas the reverse order has a window in which the event has been sent and the
+/// snapshot still says something older.
+fn publish(
+    ctx: &InstallCtx<'_>,
+    run: InstallRunId,
+    observed: crate::install::stage::StageObservation,
+) {
+    let stage = crate::protocol::InstallStage {
+        run_id: run,
+        stage: observed.kind,
+        done: observed.done,
+        total: observed.total,
+        bytes: observed.bytes,
+    };
+    ctx.stages.record(stage.clone());
+    if let Ok(payload) = serde_json::to_value(&stage) {
+        ctx.events.emit("install", "stage", payload);
+    }
 }

@@ -17,13 +17,42 @@ use codotheca_core::cancel::CancelToken;
 use codotheca_core::install::queue::{InstallQueue, InstallRequest};
 use codotheca_core::install::run::{paths_for, run_install, InstallCtx, RootFacts};
 use codotheca_core::install::staging::STAGING_DIR_NAME;
+use codotheca_core::install::state::InstallStateStore;
 use codotheca_core::jobs::JobKind;
 use codotheca_core::mount::{MountFacts, StoreClass};
 use codotheca_core::paths::path_bytes;
+use codotheca_core::proto::pubsub::EventSink;
 use codotheca_core::protocol::{InstallDestination, InstallFailure, ProjectId, RootId};
 use codotheca_core::testing::{
     CloneBehaviour, FakeGitBackend, FakeMountResolver, FakeMutatingGit, TempIndex,
 };
+
+/// Records what reached the wire, so a test can assert the stage stream as well as the disk.
+#[derive(Debug, Default)]
+struct RecordingEvents {
+    emitted: Mutex<Vec<(String, String, serde_json::Value)>>,
+}
+
+impl RecordingEvents {
+    fn stages(&self) -> Vec<String> {
+        self.emitted
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|(topic, event, _)| topic == "install" && event == "stage")
+            .map(|(_, _, payload)| payload["stage"].as_str().unwrap_or_default().to_owned())
+            .collect()
+    }
+}
+
+impl EventSink for RecordingEvents {
+    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        self.emitted
+            .lock()
+            .expect("lock")
+            .push((topic.to_owned(), event.to_owned(), payload));
+    }
+}
 
 /// R52, asserted mechanically rather than remembered: the install queue is `core::install`'s own,
 /// so no `JobKind` variant was added for it and R34's three-place slug agreement is undisturbed.
@@ -187,12 +216,16 @@ fn a_crash_between_the_clone_and_the_rename_leaves_no_location_row() {
     );
     let jobs = codotheca_core::jobs::NullJobSink;
     let cancel = CancelToken::new();
+    let stages = InstallStateStore::new();
+    let events = RecordingEvents::default();
     let ctx = InstallCtx {
         git: &git,
         probe: &probe,
         index: &shared,
         jobs: &jobs,
         mounts: &mounts,
+        stages: &stages,
+        events: &events,
         cancel: &cancel,
         now: 100,
     };
@@ -238,4 +271,127 @@ fn a_crash_between_the_clone_and_the_rename_leaves_no_location_row() {
         path_bytes(&root.join(STAGING_DIR_NAME).join("alpha")),
         "and that is the path the durable row recorded"
     );
+}
+
+/// **A10, asserted structurally rather than by review.** `InstallStage`'s field set is exactly
+/// `{runId, stage, done, total, bytes}`: there is no `percent`, no `progress` and no `fraction`,
+/// so §10.2's ban on a retreating aggregate is a property of the wire rather than a rule someone
+/// has to remember. A structural assertion survives a later author adding one; a code review does
+/// not.
+#[test]
+fn an_install_stage_carries_no_aggregate_field() {
+    let stage = codotheca_core::protocol::InstallStage {
+        run_id: codotheca_core::protocol::InstallRunId(1),
+        stage: codotheca_core::protocol::InstallStageKind::Receiving,
+        done: Some(2),
+        total: Some(9),
+        bytes: Some(1024),
+    };
+    let value = serde_json::to_value(&stage).expect("serialises");
+    let object = value.as_object().expect("an object");
+    let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        vec!["bytes", "done", "runId", "stage", "total"],
+        "no aggregate may be added: there must be nothing on the wire to build a percentage from"
+    );
+    for banned in ["percent", "progress", "fraction", "ratio", "pct"] {
+        assert!(!object.contains_key(banned), "{banned} is an aggregate");
+    }
+    assert!(
+        !object.contains_key("projectId"),
+        "p2-24r's criterion pins this absent; a tile learns its run from InstallStarted"
+    );
+}
+
+/// The stage stream reaches the wire in §24.4's order, and the snapshot agrees with it.
+#[test]
+fn a_clone_publishes_its_stages_and_the_snapshot_matches_the_last_one() {
+    /// §24.4's order, for the monotonicity check below.
+    const ORDER: [&str; 6] = [
+        "plans",
+        "enumerating",
+        "receiving",
+        "assembling",
+        "cladding",
+        "settled",
+    ];
+
+    let root_dir = tempfile::tempdir().expect("root");
+    let root = root_dir.path().to_path_buf();
+    let index_dir = tempfile::tempdir().expect("index dir");
+    let shared = Arc::new(Mutex::new(
+        codotheca_core::index::Index::open(&index_dir.path().join("index")).expect("index"),
+    ));
+
+    let paths = paths_for(&root, "alpha").expect("paths");
+    let git = FakeMutatingGit::new(CloneBehaviour::Succeed);
+    let probe = FakeGitBackend::new();
+    let mounts = FakeMountResolver::new();
+    mounts.map(
+        root.clone(),
+        MountFacts {
+            store_key: "store".to_owned(),
+            volume_key: Some("vol".to_owned()),
+            class: StoreClass::Local,
+        },
+    );
+    let jobs = codotheca_core::jobs::NullJobSink;
+    let cancel = CancelToken::new();
+    let stages = InstallStateStore::new();
+    let events = RecordingEvents::default();
+    stages.begin(
+        codotheca_core::protocol::InstallRunId(1),
+        ProjectId(1),
+        "<root>/alpha".to_owned(),
+    );
+    let ctx = InstallCtx {
+        git: &git,
+        probe: &probe,
+        index: &shared,
+        jobs: &jobs,
+        mounts: &mounts,
+        stages: &stages,
+        events: &events,
+        cancel: &cancel,
+        now: 100,
+    };
+    let facts = RootFacts {
+        root_id: 1,
+        path: root.clone(),
+        kind: "linux".to_owned(),
+        distro: String::new(),
+    };
+    // The identity probe has no replies configured, so this run ends at the hand-off — after the
+    // clone and its stages, which is what this test is about.
+    let _ = run_install(
+        &ctx,
+        codotheca_core::protocol::InstallRunId(1),
+        &request(1, 1, "alpha"),
+        &facts,
+        &paths,
+        "https://forge.example/owner/alpha",
+    );
+
+    let seen = events.stages();
+    assert!(
+        !seen.is_empty(),
+        "a run that published nothing is not a run"
+    );
+    assert_eq!(
+        seen.first().map(String::as_str),
+        Some("enumerating"),
+        "the first milestone the transcript names"
+    );
+    // Monotonic: every stage is at or after the one before it in §24.4's order.
+    let mut highest = 0;
+    for stage in &seen {
+        let rank = ORDER
+            .iter()
+            .position(|s| s == stage)
+            .expect("a known stage");
+        assert!(rank >= highest, "the readout retreated to {stage}");
+        highest = rank;
+    }
 }

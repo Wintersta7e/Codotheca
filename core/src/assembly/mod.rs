@@ -94,6 +94,8 @@ pub struct CoreHandler {
     /// §24.3e's queue — one install in flight, FIFO. Held here rather than in `jobs` because
     /// R52 keeps installs out of the scheduler entirely.
     installs: Arc<crate::install::queue::InstallQueue>,
+    /// R54's snapshot store, so `install.snapshot` answers a tile that mounted mid-clone.
+    install_stages: Arc<crate::install::state::InstallStateStore>,
     mount: Arc<dyn crate::mount::MountResolver>,
     spawner: Box<dyn crate::launch::spawn::Spawner>,
     /// `Option` so `shutdown` can drop the manager, and with it the `Arc<PublisherSink>` clone
@@ -139,6 +141,7 @@ impl CoreHandler {
             git: deps.git,
             write_git: deps.write_git,
             installs: Arc::new(crate::install::queue::InstallQueue::new()),
+            install_stages: Arc::new(crate::install::state::InstallStateStore::new()),
             mount: deps.mount,
             spawner: deps.spawner,
             sessions: Some(deps.sessions),
@@ -454,13 +457,22 @@ impl CoreHandler {
         let mounts = Arc::clone(&self.mount);
         let jobs = self.jobs.sink();
         let queue = Arc::clone(&self.installs);
-        let begin = move |run, request, root, paths, clone_url: String| {
+        let stages = Arc::clone(&self.install_stages);
+        let events = Arc::clone(&self.events);
+        let begin = move |run,
+                          request: crate::install::queue::InstallRequest,
+                          root,
+                          paths,
+                          clone_url: String| {
+            stages.begin(run, request.project, request.destination.display.clone());
             let index = Arc::clone(&index);
             let write_git = Arc::clone(&write_git);
             let probe = Arc::clone(&probe);
             let mounts = Arc::clone(&mounts);
             let jobs = Arc::clone(&jobs);
             let queue = Arc::clone(&queue);
+            let stages = Arc::clone(&stages);
+            let events = Arc::clone(&events);
             // Detached on purpose: `install.cancel` (Task 15) stops a run through its process
             // group, never by joining this handle.
             std::thread::spawn(move || {
@@ -471,12 +483,17 @@ impl CoreHandler {
                     index: &index,
                     jobs: jobs.as_ref(),
                     mounts: mounts.as_ref(),
+                    stages: stages.as_ref(),
+                    events: events.as_ref(),
                     cancel: &cancel,
                     now,
                 };
-                let _ = crate::install::run::run_install(
+                let outcome = crate::install::run::run_install(
                     &ctx, run, &request, &root, &paths, &clone_url,
                 );
+                if outcome.is_err() {
+                    stages.end(run);
+                }
                 queue.finish(run);
             });
         };
@@ -563,7 +580,17 @@ impl CoreHandler {
             // this is `None` meaning *not computed*, and deliberately not `{"runs": []}` — an
             // empty list would say *nothing is installing*, which a core that records nothing
             // cannot know. Task 13 gives it an arm of its own.
-            Topic::Scan | Topic::Session | Topic::Accounts | Topic::Install => None,
+            Topic::Scan | Topic::Session | Topic::Accounts => None,
+            // [p2] §24.9's `install.snapshot` (R54). `None` while nothing is known means *not
+            // computed*; an empty `InstallState` would say *nothing is installing*, which a core
+            // that has recorded nothing cannot claim.
+            Topic::Install => {
+                if self.install_stages.is_empty() {
+                    None
+                } else {
+                    serde_json::to_value(self.install_stages.snapshot()).ok()
+                }
+            }
             // [p2] §21.13 declares one, and it is the command's own answer: a subscriber that
             // missed every delta renders exactly what `sync.status` would have told it.
             Topic::Sync => self.handle("sync.status", serde_json::json!({})).ok(),
