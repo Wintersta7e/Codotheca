@@ -60,6 +60,22 @@ pub fn transient_backoff_secs(fail_count: u32) -> i64 {
     doubled.clamp(5, 300)
 }
 
+/// The floor under a park whose instant the server did not usefully name (§21.4).
+///
+/// **The same 60 s `secondary_park_secs` floors at, and it is the same question**: the forge
+/// declined to say when, so this process picks the number. §21.4's table sends a primary yield
+/// *"to `reset_at` exactly"*, which presumes a `reset_at`; a `429` carrying neither `retry-after`
+/// nor `x-ratelimit-reset` names no instant at all, and both of the places that fold that absence
+/// into "now" (`crate::sync::classify` and `crate::sync::budget::may_spend`) then produce a park
+/// that has already expired.
+///
+/// A park that releases at or before the instant it was made is not a park. `run_loop` re-picks a
+/// runnable row with no sleep between iterations, so before this floor existed an independent
+/// review measured **2,413 requests in 500 ms** against a forge already answering `429`, and
+/// **3,334 park/re-pick cycles in 500 ms** on the reserve path — with a real clock as well as a
+/// frozen one, because the park instant is `<= now` on the very next iteration either way.
+pub const SYNC_UNNAMED_PARK_SECS: i64 = 60;
+
 /// §21.4's secondary schedule: `Retry-After`, **floored at 60 s**, doubled per consecutive
 /// `throttle_count`, capped at **1 h**.
 ///
@@ -223,6 +239,15 @@ pub fn apply_outcome(
                 // A primary yield goes to `reset_at` **exactly** and increments nothing.
                 next.reason = Some("rate_limited".to_owned());
                 *until
+            };
+            // **A park releases strictly after the instant it was made** — see
+            // [`SYNC_UNNAMED_PARK_SECS`]. The floor lives here rather than at the two call sites
+            // that can produce an expired instant, because here it is the only arm that writes a
+            // `parked` row: a third caller cannot reintroduce the loop (R100).
+            let at = if at > now {
+                at
+            } else {
+                now.saturating_add(SYNC_UNNAMED_PARK_SECS)
             };
             next.not_before = at;
             (next, Some(at))

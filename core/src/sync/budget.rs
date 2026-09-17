@@ -199,10 +199,12 @@ pub fn read_budget(
 /// what refreshes it, so the answer is `Spend` — one request, self-correcting, rather than a park
 /// that never ends.
 ///
-/// **A park with no observed `reset_at` releases at `now`**, which is the next wake. The server
-/// named no instant, and holding the task on a number nobody observed would be worse than
-/// releasing it; the runner's on-demand-first ordering is what keeps the reserve meaningful in
-/// that case. Recorded rather than hidden, because it is the one place the reserve is soft.
+/// **A reserve with no observed `reset_at` names `now`**, meaning *nothing observed an instant* —
+/// not *release immediately*. `crate::sync::state::apply_outcome` is what turns the verdict into a
+/// clock and floors an expired one at `crate::sync::state::SYNC_UNNAMED_PARK_SECS`; unfloored,
+/// this path was measured at 3,334 park/re-pick cycles in 500 ms, each taking the process's one
+/// index mutex twice and emitting three events. Recorded rather than hidden, because it is the one
+/// place the reserve rests on a number nobody observed.
 #[must_use]
 pub fn may_spend(row: Option<&BudgetRow>, on_demand: bool, now: i64) -> BudgetVerdict {
     // Never observed, or observed without the number: unknown, and unknown spends.

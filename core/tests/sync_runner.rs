@@ -28,10 +28,12 @@ use codotheca_core::protocol::{
     AccountId, AuthKind, ProjectId, ScopeTier, SyncTaskKind, SyncTaskState,
 };
 use codotheca_core::provider::GitHubProvider;
+use codotheca_core::sync::budget::mirror;
+use codotheca_core::sync::classify::classify;
 use codotheca_core::sync::events::SyncLive;
 use codotheca_core::sync::http::ObservingTransport;
 use codotheca_core::sync::runner::SyncRunner;
-use codotheca_core::sync::state::SyncTaskStateRow;
+use codotheca_core::sync::state::{SyncTaskStateRow, SYNC_UNNAMED_PARK_SECS};
 use codotheca_core::sync::store::{load, put};
 use codotheca_core::sync::task::SyncTask;
 use codotheca_core::sync::SyncDeps;
@@ -79,14 +81,14 @@ impl EventSink for Recorder {
 /// of the behaviour.
 #[derive(Debug)]
 struct ConcurrencyProbe {
-    inner: Arc<FakeTransport>,
+    inner: Arc<dyn HttpTransport>,
     live: AtomicUsize,
     max: AtomicUsize,
     dwell: Duration,
 }
 
 impl ConcurrencyProbe {
-    fn new(inner: Arc<FakeTransport>, dwell: Duration) -> Arc<Self> {
+    fn new(inner: Arc<dyn HttpTransport>, dwell: Duration) -> Arc<Self> {
         Arc::new(ConcurrencyProbe {
             inner,
             live: AtomicUsize::new(0),
@@ -120,6 +122,15 @@ struct Fixture {
 }
 
 fn fixture(dwell: Duration) -> Fixture {
+    fixture_over(dwell, None)
+}
+
+/// The same lane over a transport of the caller's choosing.
+///
+/// **A scripted transport runs out**, and a loop with no floor under its park would then be
+/// measuring the script's length rather than the loop's behaviour — so the two tests that measure
+/// a retry loop hand in a forge that answers for ever.
+fn fixture_over(dwell: Duration, forge: Option<Arc<dyn HttpTransport>>) -> Fixture {
     let temp = TempIndex::new();
     let dir = tempfile::tempdir().expect("tmp");
     let mut index = Index::open_at(dir.path(), NOW).expect("index");
@@ -153,7 +164,10 @@ fn fixture(dwell: Duration) -> Fixture {
         .expect("seed");
 
     let scripted = Arc::new(FakeTransport::new());
-    let probe = ConcurrencyProbe::new(Arc::clone(&scripted), dwell);
+    let probe = ConcurrencyProbe::new(
+        forge.unwrap_or_else(|| Arc::clone(&scripted) as Arc<dyn HttpTransport>),
+        dwell,
+    );
     let clock = Arc::new(FakeClock::new(NOW));
     let observing = Arc::new(ObservingTransport::new(
         Arc::clone(&probe) as Arc<dyn HttpTransport>,
@@ -445,7 +459,16 @@ fn a_park_whose_clock_has_come_is_picked_up_with_no_external_trigger() {
         !f.events.events("started").is_empty()
     });
     pump.stop();
-    assert_eq!(f.events.events("started").len(), 1);
+    // Counted by kind: the listing's terminal `Done` queues §22.7's rename probe, so *"how many
+    // tasks started"* is no longer the same question as *"how many times did the clock release
+    // this one"*.
+    let listings = f
+        .events
+        .events("started")
+        .into_iter()
+        .filter(|event| event["kind"] == "account_repos")
+        .count();
+    assert_eq!(listings, 1);
 }
 
 /// §21.5: **an on-demand task queued behind a scheduled one runs first.** The allowance belongs
@@ -554,6 +577,170 @@ fn a_fresh_process_knows_nothing_and_says_so() {
     assert_eq!(live.listing, None);
     assert_eq!(live.notice, None);
     assert!(live.last.is_empty());
+}
+
+/// A forge that answers the same thing for ever, and counts what it was asked.
+#[derive(Debug)]
+struct AlwaysAnswers {
+    response: HttpResponse,
+    calls: AtomicUsize,
+}
+
+impl HttpTransport for AlwaysAnswers {
+    fn send(&self, _req: &HttpRequest) -> Result<HttpResponse, TransportError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self.response.clone())
+    }
+}
+
+/// **A throttle that names no instant parks; it does not retry.**
+///
+/// §21's goal sentence: *"a throttled or unauthorised forge produces one non-modal banner and **no
+/// retry loop**."* A `429` carrying neither `retry-after` nor `x-ratelimit-reset` classifies as
+/// `Throttled { until: now }` — the classifier saying *the server named no instant*, not *retry
+/// now* — and `run_loop` re-picks a runnable row with no sleep between iterations. Before
+/// `apply_outcome` floored the park, this exact shape was measured at **2,413 requests in 500 ms**
+/// against a forge already answering `429`.
+///
+/// **What makes this bar different from the nine above it: it lets the loop run.**
+/// `sync_classify.rs` asserts the classification and stops there, and `sync_budget.rs`'s
+/// `drain_queue` waits for the queue to empty — so a test written that way against this defect
+/// would hang rather than fail. Here the assertion is on requests issued *after* the row parked,
+/// which is a number no run length can flatter.
+#[test]
+fn a_throttle_naming_no_instant_parks_once_instead_of_retrying() {
+    let forge = Arc::new(AlwaysAnswers {
+        response: HttpResponse {
+            status: 429,
+            headers: codotheca_core::http::normalise_headers([("x-ratelimit-resource", "core")]),
+            body: Vec::new(),
+        },
+        calls: AtomicUsize::new(0),
+    });
+    let f = fixture_over(
+        Duration::ZERO,
+        Some(Arc::clone(&forge) as Arc<dyn HttpTransport>),
+    );
+    let index = Arc::clone(&f.index);
+    let account = f.account.0;
+    let runner = SyncRunner::new(
+        Arc::clone(&f.index),
+        f.deps,
+        Arc::clone(&f.events) as Arc<dyn EventSink>,
+    );
+    runner.enqueue(SyncTask::AccountRepos {
+        account_id: f.account,
+    });
+    runner.start();
+    until("the listing to park", || {
+        state_of(&index, SyncTaskKind::AccountRepos, account)
+            .is_some_and(|row| row.state == SyncTaskState::Parked)
+    });
+
+    // **The window is the measurement, not a race** (R72): a correct build issues nothing in it
+    // whatever its length, and a longer one only makes a loop look worse.
+    let at_park = forge.calls.load(Ordering::SeqCst);
+    std::thread::sleep(Duration::from_millis(300));
+    let after = forge.calls.load(Ordering::SeqCst);
+    runner.request_stop();
+    runner.join();
+
+    eprintln!("sync_runner: {at_park} request(s) to reach the park, {after} after 300 ms");
+    assert!(
+        at_park >= 1,
+        "the forge was never asked, so nothing was measured"
+    );
+    assert_eq!(
+        after, at_park,
+        "a forge that has just said stop was asked again while its task was parked"
+    );
+
+    let row = state_of(&index, SyncTaskKind::AccountRepos, account).expect("row");
+    assert_eq!(
+        row.not_before,
+        NOW + SYNC_UNNAMED_PARK_SECS,
+        "a park that releases at the instant it was made is not a park"
+    );
+    assert_eq!(row.reason.as_deref(), Some("rate_limited"));
+}
+
+/// **A reserve with no observed `reset_at` parks; it does not cycle.**
+///
+/// `may_spend` answers `Reserved(reset_at.unwrap_or(now))`, which names no instant either. This
+/// path issues **no** request, so nothing about it is visible at a forge: what it costs is the
+/// process's one index mutex, taken twice per cycle, and three protocol events per cycle — an
+/// idle-looking app starving every command. Measured at **3,334 cycles in 500 ms** before the
+/// floor.
+#[test]
+fn a_reserve_with_no_observed_reset_parks_once_instead_of_cycling() {
+    let f = fixture(Duration::ZERO);
+    // A known `remaining` below the reserve and **no** `x-ratelimit-reset`: the row exists, the
+    // instant does not. Mirrored through the real classifier, because the parse is part of it.
+    {
+        let observed: Result<HttpResponse, TransportError> = Ok(HttpResponse {
+            status: 200,
+            headers: codotheca_core::http::normalise_headers([
+                ("x-ratelimit-resource", "core"),
+                ("x-ratelimit-remaining", "150"),
+                ("x-ratelimit-limit", "5000"),
+            ]),
+            body: b"{}".to_vec(),
+        });
+        let rate = classify(&observed, NOW).1;
+        assert_eq!(
+            rate.reset_at, None,
+            "the fixture named an instant after all"
+        );
+        let mut guard = f.index.lock().expect("index");
+        guard
+            .with_tx(|tx| {
+                mirror(tx, Some(f.account), &rate, NOW)?;
+                Ok(())
+            })
+            .expect("mirror");
+    }
+
+    let index = Arc::clone(&f.index);
+    let account = f.account.0;
+    let events = Arc::clone(&f.events);
+    let runner = SyncRunner::new(
+        Arc::clone(&f.index),
+        f.deps,
+        Arc::clone(&f.events) as Arc<dyn EventSink>,
+    );
+    runner.enqueue(SyncTask::AccountRepos {
+        account_id: f.account,
+    });
+    runner.start();
+    until("the scheduled listing to yield to the reserve", || {
+        state_of(&index, SyncTaskKind::AccountRepos, account)
+            .is_some_and(|row| row.state == SyncTaskState::Parked)
+    });
+
+    let at_park = events.events("settled").len();
+    std::thread::sleep(Duration::from_millis(300));
+    let after = events.events("settled").len();
+    runner.request_stop();
+    runner.join();
+
+    eprintln!("sync_runner: {at_park} settle(s) to reach the reserve park, {after} after 300 ms");
+    assert_eq!(
+        after, at_park,
+        "a reserved task was re-picked and re-settled in a loop"
+    );
+    assert_eq!(
+        f.scripted.request_count(),
+        0,
+        "a task held back by the reserve must not spend"
+    );
+
+    let row = state_of(&index, SyncTaskKind::AccountRepos, account).expect("row");
+    assert_eq!(row.reason.as_deref(), Some("reserve"));
+    assert_eq!(
+        row.not_before,
+        NOW + SYNC_UNNAMED_PARK_SECS,
+        "a reserve that releases at the instant it was made holds nothing back"
+    );
 }
 
 /// **Cancelling alone stops the loop**, with no `request_stop` at all.
