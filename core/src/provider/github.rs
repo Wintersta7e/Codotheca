@@ -8,7 +8,10 @@ use crate::http::{HttpRequest, HttpResponse, HttpTransport, ACCOUNT_LIMITS};
 use crate::provider::listing::{
     OrgListing, Page, RepoListing, Viewer, GITHUB_CANONICAL_HOST, GITHUB_HOST_ALIASES,
 };
-use crate::provider::{Observed, Provider, ProviderError, ProviderResult};
+use crate::provider::{
+    CiRunPayload, CiRunsRead, Observed, Provider, ProviderError, ProviderResult, RepoFactsPayload,
+    RepoFactsRead,
+};
 
 const GITHUB_PROVIDER_ID: &str = "github";
 const GITHUB_API_BASE: &str = "https://api.github.com";
@@ -57,6 +60,30 @@ impl GitHubProvider {
             "{}/user/repos?per_page=100&affiliation=owner,collaborator,organization_member",
             self.api_base()
         )
+    }
+
+    /// One GET, **whatever the status**. `success` is applied by the caller, because §25's two
+    /// conditional reads need a `304`, a `403` and a `404` as answers rather than as errors.
+    fn get_raw(
+        &self,
+        token: &SecretToken,
+        url: String,
+        etag: Option<&str>,
+    ) -> ProviderResult<HttpResponse> {
+        let mut headers = request_headers(token);
+        if let Some(etag) = etag {
+            headers.push(("if-none-match".to_owned(), etag.to_owned()));
+        }
+        let request = HttpRequest {
+            method: "GET",
+            url,
+            headers,
+            body: None,
+            limits: ACCOUNT_LIMITS,
+        };
+        self.transport
+            .send(&request)
+            .map_err(ProviderError::Transport)
     }
 
     fn get(&self, token: &SecretToken, url: String) -> ProviderResult<HttpResponse> {
@@ -165,6 +192,102 @@ impl Provider for GitHubProvider {
         })
     }
 
+    fn repo_facts(
+        &self,
+        t: &SecretToken,
+        owner: &str,
+        name: &str,
+        etag: Option<&str>,
+    ) -> ProviderResult<Observed<RepoFactsRead>> {
+        let url = format!("{}/repos/{owner}/{name}", self.api_base());
+        let response = self.get_raw(t, url, etag)?;
+        let granted_scopes = observed_scopes(&response);
+        let status = response.status;
+        // A read that observed the access state and nothing else. The caller writes
+        // `permitted = 0` and dates nothing; dating the counts by a read that returned none of
+        // them is the staleness marker lying.
+        if status == 304 || status == 403 || status == 404 {
+            return Ok(Observed {
+                value: RepoFactsRead {
+                    status,
+                    // A 304 confirms the caller's validator, so it is carried forward rather
+                    // than dropped; the other two observed no representation at all.
+                    etag: if status == 304 {
+                        etag.map(str::to_owned)
+                    } else {
+                        None
+                    },
+                    facts: None,
+                },
+                granted_scopes,
+            });
+        }
+        let response = success(response)?;
+        let observed_etag = response.header("etag").map(str::to_owned);
+        let repo: GitHubRepo = decode(&response)?;
+        Ok(Observed {
+            value: RepoFactsRead {
+                status,
+                etag: observed_etag,
+                facts: Some(repo_facts_of(repo)),
+            },
+            granted_scopes,
+        })
+    }
+
+    fn ci_runs(
+        &self,
+        t: &SecretToken,
+        owner: &str,
+        name: &str,
+        etag: Option<&str>,
+    ) -> ProviderResult<Observed<CiRunsRead>> {
+        // §25.1 renders at most `CI_RUN_LIMIT` and §25.7 stores at most `CI_RUN_LIMIT`, so
+        // asking for more spends budget on rows the writer trims away. **Derived, not typed:**
+        // the literal `5` here was a third copy of a bound whose other two are mirror-tested
+        // against each other (`core/src/remote/facts.rs` and `ciCopy.ts`, via
+        // `app/test/remoteAllowlist.test.ts`), so raising the limit would have left the request
+        // fetching five for ever with nothing to say so — R12's one-owner rule.
+        let url = format!(
+            "{}/repos/{owner}/{name}/actions/runs?per_page={}",
+            self.api_base(),
+            crate::remote::facts::CI_RUN_LIMIT
+        );
+        let response = self.get_raw(t, url, etag)?;
+        let granted_scopes = observed_scopes(&response);
+        let status = response.status;
+        if status == 304 || status == 403 || status == 404 {
+            return Ok(Observed {
+                value: CiRunsRead {
+                    status,
+                    etag: if status == 304 {
+                        etag.map(str::to_owned)
+                    } else {
+                        None
+                    },
+                    runs: None,
+                },
+                granted_scopes,
+            });
+        }
+        let response = success(response)?;
+        let observed_etag = response.header("etag").map(str::to_owned);
+        let body: GitHubRuns = decode(&response)?;
+        Ok(Observed {
+            value: CiRunsRead {
+                status,
+                etag: observed_etag,
+                runs: Some(
+                    body.workflow_runs
+                        .into_iter()
+                        .map(CiRunPayload::from)
+                        .collect(),
+                ),
+            },
+            granted_scopes,
+        })
+    }
+
     fn canonical_host(&self) -> &str {
         &self.host
     }
@@ -174,6 +297,37 @@ impl Provider for GitHubProvider {
             return GITHUB_HOST_ALIASES;
         }
         &[]
+    }
+}
+
+/// The repository object into §25.7's columns.
+///
+/// **`open_issues_count` is deliberately not read.** It counts issues *and* pull requests, so it
+/// answers neither of the two blocks §25.1 draws, and a wrong number under a labelled block is
+/// worse than `—`. Those two counts, and the two sub-line counts beside them, stay unobserved
+/// until a read exists that can separate them.
+fn repo_facts_of(repo: GitHubRepo) -> RepoFactsPayload {
+    RepoFactsPayload {
+        // **Read from `private`, deliberately, and the comment used to argue for the field this
+        // does not use.** §25.3 admits exactly two words, and `private` is total over them: an
+        // Enterprise `internal` repository is certainly not public, so it maps to `private`
+        // rather than to a third word the surface cannot render or to nothing at all. The
+        // `visibility` field would carry `internal` and then need collapsing here anyway, and a
+        // value neither branch recognised would render an absence where access is actually
+        // restricted — the worse of the two failures.
+        visibility: Some(if repo.private { "private" } else { "public" }.to_owned()),
+        description: repo.description,
+        fork_parent_remote_key: repo
+            .parent
+            .as_ref()
+            .and_then(|parent| crate::identity::remote::canonical_remote_key(&parent.clone_url))
+            .map(|key| key.key),
+        stars: repo.stargazers_count,
+        open_issues: None,
+        good_first_issues: None,
+        open_prs: None,
+        open_prs_from_user: None,
+        topics: repo.topics.unwrap_or_default(),
     }
 }
 
@@ -311,6 +465,77 @@ struct GitHubRepo {
     parent: Option<GitHubParent>,
     archived: bool,
     private: bool,
+    // §25.1's fields. Every one is optional: a forge that omits one has not observed it, and a
+    // missing key must never cost the whole page the way a decode failure would.
+    description: Option<String>,
+    stargazers_count: Option<u32>,
+    topics: Option<Vec<String>>,
+}
+
+/// The Actions listing. `total_count` is deliberately unread: §25.1 renders the runs, never a
+/// count of them, and there is no aggregate anywhere in phase 2.
+#[derive(Debug, Deserialize)]
+struct GitHubRuns {
+    workflow_runs: Vec<GitHubRun>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubRun {
+    id: i64,
+    name: Option<String>,
+    conclusion: Option<String>,
+    head_branch: Option<String>,
+    run_number: Option<u32>,
+    run_started_at: Option<String>,
+}
+
+impl From<GitHubRun> for CiRunPayload {
+    fn from(run: GitHubRun) -> Self {
+        Self {
+            run_id: run.id,
+            // A run with no workflow name is not a run with an empty name; the column is NOT
+            // NULL, so the id it is keyed on is the honest stand-in for a name nobody sent.
+            workflow_name: run.name.unwrap_or_else(|| format!("run {}", run.id)),
+            conclusion: run.conclusion,
+            branch: run.head_branch.unwrap_or_default(),
+            run_number: run.run_number.unwrap_or_default(),
+            started_at: run.run_started_at.as_deref().and_then(parse_rfc3339_secs),
+        }
+    }
+}
+
+/// An RFC 3339 instant into unix seconds, or `None`.
+///
+/// Hand-rolled because the core carries no date crate and this is the only place a forge sends a
+/// formatted time. A string this cannot read is **unknown**, never the epoch: a run dated
+/// 1970 would sort to the bottom of a list headed *latest* and read as a fact.
+fn parse_rfc3339_secs(text: &str) -> Option<i64> {
+    let bytes = text.as_bytes();
+    let at = |i: usize| bytes.get(i).copied();
+    if bytes.len() < 20 || at(4) != Some(b'-') || at(7) != Some(b'-') || at(10) != Some(b'T') {
+        return None;
+    }
+    let num = |from: usize, to: usize| text.get(from..to)?.parse::<i64>().ok();
+    let (year, month, day) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
+    let (hour, minute, second) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    if hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+    Some(days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second)
+}
+
+/// Days since 1970-01-01 from a proleptic Gregorian date — Howard Hinnant's `days_from_civil`,
+/// which is the algorithm every date library uses and is exact for every year this can see.
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let yoe = year - era * 400;
+    let doy = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
 }
 
 impl From<GitHubRepo> for RepoListing {

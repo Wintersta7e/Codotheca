@@ -38,6 +38,7 @@ impl codotheca_core::jobs::JobSink for RecordingJobs {
         location: codotheca_core::protocol::LocationId,
         _store_key: &str,
         _store_kind: StoreClass,
+        _needs_art: bool,
     ) {
         self.visible
             .lock()

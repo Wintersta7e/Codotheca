@@ -15,6 +15,7 @@ function depsFor(detail: ProjectDetail): ProjectPageDeps {
       return Promise.resolve({});
     }) as unknown as ProjectPageDeps['request'],
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: () => () => undefined,
     now: () => NOW,
   };
@@ -118,6 +119,7 @@ describe('the shell', () => {
     const failing: ProjectPageDeps = {
       request: () => Promise.reject(new Error('nope')),
       relocate: () => Promise.resolve({ kind: 'cancelled' }),
+      openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
       subscribe: () => () => undefined,
       now: () => NOW,
     };
@@ -145,6 +147,7 @@ describe('pinning from the hero', () => {
     const deps: ProjectPageDeps = {
       request: request as unknown as ProjectPageDeps['request'],
       relocate: () => Promise.resolve({ kind: 'cancelled' }),
+      openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
       subscribe: () => () => undefined,
       now: () => NOW,
     };

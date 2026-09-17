@@ -1,4 +1,5 @@
 import { act, cleanup, render } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useWindowActive } from './useWindowActive';
 
@@ -7,7 +8,7 @@ import { useWindowActive } from './useWindowActive';
 // and the second test finds two `active` nodes — which reads as a query bug, not a leak.
 afterEach(cleanup);
 
-function Probe(): JSX.Element {
+function Probe(): ReactElement {
   return <span data-testid="active">{String(useWindowActive())}</span>;
 }
 

@@ -93,14 +93,33 @@ describe('QuickSwitch', () => {
     expect(screen.getByLabelText('Condition: dormant')).toBeTruthy();
   });
 
-  it('shows ↵ LAUNCH on the selected row and the reason when there is no copy here', () => {
+  it('shows ↵ LAUNCH on the selected row and ↵ INSTALL… when the project is not cloned', () => {
     // Scoped to the listbox: the footer legend carries the same words, and an unscoped query
     // would find it and pass whatever the row does.
     const { unmount } = view({ cursor: 0 });
     expect(within(listbox()).getByText('↵ LAUNCH')).toBeTruthy();
     unmount();
     view({ cursor: 1 });
+    expect(within(listbox()).getByText('↵ INSTALL…')).toBeTruthy();
+    expect(within(listbox()).queryByText('↵ LAUNCH')).toBeNull();
+  });
+
+  // §24.5 keeps `unavailable` its own words for the other fact: copies exist and none can be
+  // opened. It is a different row from the not-cloned one and renders differently.
+  it('states the reason when every copy is offline, and offers no INSTALL for it', () => {
+    view({
+      cursor: 0,
+      rows: [
+        makeProjectRow({
+          id: 3 as ProjectId,
+          name: 'Faraway',
+          primaryLocation: makeLocationRef(13),
+          presence: 'offline',
+        }),
+      ],
+    });
     expect(within(listbox()).getByText('NO COPY ON THIS MACHINE')).toBeTruthy();
+    expect(within(listbox()).queryByText('↵ INSTALL…')).toBeNull();
     expect(within(listbox()).queryByText('↵ LAUNCH')).toBeNull();
   });
 
@@ -111,12 +130,66 @@ describe('QuickSwitch', () => {
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('opens the page instead of leaving a dead row when there is no local copy', () => {
-    const { props } = view({ cursor: 1 });
-    fireEvent.click(screen.getAllByRole('option')[1] as HTMLElement);
+  /**
+   * AC-P2-24-12's first half. **The palette does not clone**: what is asserted is that nothing
+   * crossed the one channel a clone could travel on, not merely that navigation happened.
+   * `request` is the renderer's whole vocabulary for reaching the core, so a zero there is the
+   * absence of every install command rather than of one name someone remembered to exclude.
+   */
+  it('opens the page with Install asked for, and starts no clone', () => {
+    const request = vi.fn(async () => Promise.resolve({ ok: true, value: {} }));
+    const previous = (globalThis as { codotheca?: unknown }).codotheca;
+    (globalThis as { codotheca?: unknown }).codotheca = { request };
+    try {
+      const { props } = view({ cursor: 1 });
+      fireEvent.click(screen.getAllByRole('option')[1] as HTMLElement);
+      expect(props.onLaunch).not.toHaveBeenCalled();
+      expect(props.onOpenPage).toHaveBeenCalledWith(2 as ProjectId, 'install');
+      expect(props.onClose).toHaveBeenCalledTimes(1);
+      expect(request).not.toHaveBeenCalled();
+    } finally {
+      (globalThis as { codotheca?: unknown }).codotheca = previous;
+    }
+  });
+
+  // The `unavailable` row keeps phase 1's behaviour exactly: the page opens and nothing is
+  // focused, because there is nothing on it to install.
+  it('opens the page with nothing asked for when every copy is offline', () => {
+    const { props } = view({
+      cursor: 0,
+      rows: [
+        makeProjectRow({
+          id: 3 as ProjectId,
+          name: 'Faraway',
+          primaryLocation: makeLocationRef(13),
+          presence: 'offline',
+        }),
+      ],
+    });
+    fireEvent.click(screen.getAllByRole('option')[0] as HTMLElement);
     expect(props.onLaunch).not.toHaveBeenCalled();
-    expect(props.onOpenPage).toHaveBeenCalledWith(2 as ProjectId);
-    expect(props.onClose).toHaveBeenCalledTimes(1);
+    expect(props.onOpenPage).toHaveBeenCalledWith(3 as ProjectId);
+  });
+
+  // §8.6's footer is byte-identical to phase 1's. It describes the majority case; a footer that
+  // mutates per row is a moving target, and the row's trailing slot is the per-row channel.
+  it('leaves §8.6’s footer byte-identical with a not-cloned row selected', () => {
+    view({ cursor: 1 });
+    const footer = document.querySelector('.qs-footer');
+    if (footer === null) throw new Error('the footer did not render');
+    expect([...footer.querySelectorAll('.qs-hint')].map((n) => n.textContent)).toEqual([
+      '↑↓ MOVE',
+      '↵ LAUNCH',
+      '⇧↵ OPEN THE PAGE',
+      'ESC',
+    ]);
+  });
+
+  // It matched, so it counts. Excluding it would need a second denominator.
+  it('counts a not-cloned row in <matched> OF <total>', () => {
+    view();
+    expect(screen.getByText('2 OF 2')).toBeTruthy();
+    expect(screen.getAllByRole('option')).toHaveLength(2);
   });
 
   it('closes on a backdrop click and not on a click inside the panel', () => {
@@ -230,8 +303,9 @@ describe('§23.4: the palette sub-line claims no interaction it never had', () =
       expect(sub).not.toContain('months cold');
       expect(sub).not.toContain('in session');
       // The remaining fields still render: a hydrated not-cloned project legitimately has a
-      // language and a branch, and §23 invents no fourth tail word for the gap.
-      expect(sub).toBe('.rs · main');
+      // language and a branch. §23 invented no fourth tail word and named §24 as the supplier;
+      // §24.5 supplied it, and it is a fact rather than an interaction.
+      expect(sub).toBe('.rs · main · not cloned');
       cleanup();
     }
   });

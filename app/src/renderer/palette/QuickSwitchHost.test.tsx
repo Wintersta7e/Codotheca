@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LocationId, ProjectId, ProjectRow } from '../../generated/protocol.js';
-import { makeLocationRef, makeProjectRow } from '../testing/projectRow.js';
+import { makeLocationRef, makeProjectRow, notClonedRow } from '../testing/projectRow.js';
 import { QuickSwitchHost } from './QuickSwitchHost.js';
 import type { QuickSwitchHostProps } from './QuickSwitchHost.js';
 
@@ -125,17 +125,50 @@ describe('QuickSwitchHost', () => {
     expect(document.querySelector('.qs-panel')).toBeNull();
   });
 
-  it('Enter opens the page when the selected row has no local copy', () => {
-    const unavailable = makeProjectRow({
-      id: 3 as ProjectId,
-      name: 'Remote only',
-      primaryLocation: null,
-      presence: null,
+  /**
+   * AC-P2-24-12 through the keyboard, which is the path the product uses: the panel autofocuses
+   * its query field, so `↵` arrives there and not on `window`. The clone assertion is a zero on
+   * `request` — the renderer's whole vocabulary for reaching the core — rather than the absence
+   * of one command name someone remembered to exclude.
+   */
+  it('Enter on a not-cloned row opens the page with Install asked for, and clones nothing', () => {
+    const request = vi.fn(async () => Promise.resolve({ ok: true, value: {} }));
+    const previous = (globalThis as { codotheca?: unknown }).codotheca;
+    (globalThis as { codotheca?: unknown }).codotheca = { request };
+    try {
+      const { props } = host({ rows: [notClonedRow({ id: 3 as ProjectId, name: 'Remote only' })] });
+      altSpace();
+      fireEvent.keyDown(screen.getByRole('combobox'), { code: 'Enter' });
+      expect(props.onOpenPage).toHaveBeenCalledWith(3 as ProjectId, 'install');
+      expect(props.onLaunch).not.toHaveBeenCalled();
+      expect(request).not.toHaveBeenCalled();
+      expect(document.querySelector('.qs-panel')).toBeNull();
+    } finally {
+      (globalThis as { codotheca?: unknown }).codotheca = previous;
+    }
+  });
+
+  // §8.6's `⇧↵` is *open the page*, unchanged. §24.5 rules `↵` and nothing else, so the second
+  // chord must not acquire a focus request it was never given.
+  it('Shift+Enter on a not-cloned row opens the page and asks for no focus', () => {
+    const { props } = host({ rows: [notClonedRow({ id: 3 as ProjectId, name: 'Remote only' })] });
+    altSpace();
+    fireEvent.keyDown(screen.getByRole('combobox'), { code: 'Enter', shiftKey: true });
+    expect(props.onOpenPage).toHaveBeenCalledWith(3 as ProjectId);
+    expect(props.onLaunch).not.toHaveBeenCalled();
+  });
+
+  it('Enter opens the page when every copy is offline, and asks for no focus', () => {
+    const offline = makeProjectRow({
+      id: 4 as ProjectId,
+      name: 'Faraway',
+      primaryLocation: makeLocationRef(14),
+      presence: 'offline',
     });
-    const { props } = host({ rows: [unavailable] });
+    const { props } = host({ rows: [offline] });
     altSpace();
     fireEvent.keyDown(screen.getByRole('combobox'), { code: 'Enter' });
-    expect(props.onOpenPage).toHaveBeenCalledWith(3 as ProjectId);
+    expect(props.onOpenPage).toHaveBeenCalledWith(4 as ProjectId);
     expect(props.onLaunch).not.toHaveBeenCalled();
     expect(document.querySelector('.qs-panel')).toBeNull();
   });

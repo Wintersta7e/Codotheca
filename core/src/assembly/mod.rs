@@ -325,6 +325,57 @@ impl CoreHandler {
         crate::accounts::dispatch_accounts_command(&mut ctx, command, args)
     }
 
+    /// §25.2's opener. Its own method for the same reason `accounts_arm` is one: `handle` is at
+    /// clippy's `too_many_lines` ceiling, and a two-line arm there costs the whole function.
+    fn remote_arm(
+        guard: &Index,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::remote::RemoteCtx { index: guard, now };
+        crate::remote::dispatch_remote_command(&ctx, command, args)
+    }
+
+    /// §25.5's asset read, answered off the index lock.
+    ///
+    /// It takes the `Arc<Mutex<Index>>` and locks it itself, which is R94's second side: nothing
+    /// above it holds the guard, so it must take one — briefly, before the first socket.
+    fn readme_net_arm(&self, args: Value, now: i64) -> Result<Value, CommandFailure> {
+        crate::readme::handle_readme_assets_off_lock(
+            &self.index,
+            self.http.as_ref(),
+            crate::readme::fetch::system_resolver,
+            args,
+            now,
+        )
+    }
+
+    /// §25.5's README reads and its consent write. Its own method for the same reason
+    /// `remote_arm` is one: `handle` is at clippy's `too_many_lines` ceiling, and a four-line arm
+    /// there costs the whole function.
+    fn readme_arm(
+        guard: &Index,
+        events: &dyn EventSink,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::readme::ReadmeCtx {
+            index: guard,
+            events,
+            now,
+        };
+        crate::readme::dispatch_readme_command(&ctx, command, args)
+    }
+
+    /// §2.2's handshake pair, which `run_loop` answers before the handler is consulted.
+    fn loop_only(command: &str) -> CommandFailure {
+        CommandFailure::protocol(format!(
+            "{command} is answered by the command loop and must not reach the handler"
+        ))
+    }
+
     fn unowned(command: &str, plan: &str) -> CommandFailure {
         CommandFailure::internal(format!(
             "{command}: no handler in the core; plan {plan} owns it"
@@ -351,7 +402,15 @@ impl CoreHandler {
             // only. There is no frame to build for these three, so `Null` is the whole answer —
             // a command's result is not a topic's snapshot type. [p2] §20.8 declares three
             // events on `accounts` and no `snapshot`, so it joins them.
-            Topic::Scan | Topic::Session | Topic::Accounts => None,
+            //
+            // **[p2] `install` shares the arm and not the reason, and must not be read as a
+            // fourth topic without a snapshot.** §24.9 *does* declare `install.snapshot` (R54):
+            // a renderer that opens mid-clone has to build a frame from something. The store
+            // that answers it is p2-24 Task 13's `InstallStateStore` and does not exist yet, so
+            // this is `None` meaning *not computed*, and deliberately not `{"runs": []}` — an
+            // empty list would say *nothing is installing*, which a core that records nothing
+            // cannot know. Task 13 gives it an arm of its own.
+            Topic::Scan | Topic::Session | Topic::Accounts | Topic::Install => None,
             Topic::Projects => {
                 let page = self.handle("projects.list", serde_json::json!({})).ok()?;
                 Some(serde_json::json!({
@@ -420,16 +479,15 @@ impl CommandHandler for CoreHandler {
         let now = self.clock.now_unix();
 
         match dest {
-            Route::Loop => {
-                return Err(CommandFailure::protocol(format!(
-                    "{command} is answered by the command loop and must not reach the handler"
-                )))
-            }
+            Route::Loop => return Err(Self::loop_only(command)),
             Route::NoOwner(plan) => return Err(Self::unowned(command, plan)),
             // R75: answered **without** the index lock. `ConnectPump::start` issues the Device
             // Flow's first request synchronously, so taking the guard here would hold the
             // process's one SQLite mutex across a forge round trip.
             Route::AccountsNet => return self.accounts_net_arm(command, args, now),
+            // Answered **without** the index lock for the same reason: up to 24 asset fetches of
+            // 5 s each, and the one SQLite mutex may not be held across them.
+            Route::ReadmeNet => return self.readme_net_arm(args, now),
             // Answered **without** the index lock. `ScanCtx` takes a `&dyn ScanStore`, not an
             // `&Index`, and `SqliteScanStore` locks the same mutex internally; `std::sync::Mutex`
             // is not reentrant, so holding it here would deadlock the core on `scan.status`.
@@ -451,7 +509,11 @@ impl CommandHandler for CoreHandler {
 
         let claimed = match dest {
             // Handled above; a second arm keeps the match total without a wildcard on Route.
-            Route::Loop | Route::NoOwner(_) | Route::Scan | Route::AccountsNet => unreachable!(),
+            Route::Loop
+            | Route::NoOwner(_)
+            | Route::Scan
+            | Route::AccountsNet
+            | Route::ReadmeNet => unreachable!(),
             Route::FirstRun => {
                 crate::firstrun::dispatch(guard.conn_mut(), &self.firstrun, command, &args, now)
             }
@@ -529,6 +591,8 @@ impl CommandHandler for CoreHandler {
                 let ctx = crate::view::ViewCtx { index: &guard, now };
                 crate::view::dispatch_view_command(&ctx, command, args)
             }
+            Route::Remote => Self::remote_arm(&guard, command, args, now),
+            Route::Readme => Self::readme_arm(&guard, self.events.as_ref(), command, args, now),
         };
 
         claimed.unwrap_or_else(|| Err(Self::declined(command, dest)))

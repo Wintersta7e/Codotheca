@@ -20,7 +20,9 @@ use codotheca_core::identity::remote::canonical_remote_key;
 use codotheca_core::provider::listing::{
     OrgListing, Page, RepoListing, Viewer, GITHUB_CANONICAL_HOST, GITHUB_HOST_ALIASES,
 };
-use codotheca_core::provider::{GitHubProvider, Observed, Provider, ProviderResult};
+use codotheca_core::provider::{
+    CiRunsRead, GitHubProvider, Observed, Provider, ProviderResult, RepoFactsRead,
+};
 use codotheca_core::testing::{FakeTransport, TempIndex};
 
 /// A provider that declares an alias set and issues no request. The fold is a pure comparison
@@ -55,6 +57,25 @@ impl Provider for DeclaringForge {
         _owner: &str,
         _name: &str,
     ) -> ProviderResult<Observed<Option<RepoListing>>> {
+        unreachable!("the alias fold issues no request")
+    }
+    // §25's two reads. This fixture is about identity, which never touches them.
+    fn repo_facts(
+        &self,
+        _t: &SecretToken,
+        _owner: &str,
+        _name: &str,
+        _etag: Option<&str>,
+    ) -> ProviderResult<Observed<RepoFactsRead>> {
+        unreachable!("the alias fold issues no request")
+    }
+    fn ci_runs(
+        &self,
+        _t: &SecretToken,
+        _owner: &str,
+        _name: &str,
+        _etag: Option<&str>,
+    ) -> ProviderResult<Observed<CiRunsRead>> {
         unreachable!("the alias fold issues no request")
     }
     fn canonical_host(&self) -> &str {

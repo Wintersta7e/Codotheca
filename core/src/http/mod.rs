@@ -178,10 +178,22 @@ pub fn read_capped<R: std::io::Read>(reader: R, max: usize) -> Result<Vec<u8>, T
         })?;
     if read > max {
         return Err(TransportError::Io {
-            detail: format!("response body exceeds {max} bytes"),
+            detail: body_cap_detail(max),
         });
     }
     Ok(body)
+}
+
+/// The detail an over-cap body carries, **stated once**.
+///
+/// A consumer that renders *too large* differently from *could not be reached* has to tell the
+/// two apart, and `TransportError` deliberately carries only the three failures that have no
+/// response at all — widening that enum is a change to every match in the tree. So the string has
+/// one owner instead: [`read_capped`] writes it and §25.5's asset fetch compares against this
+/// same function rather than against a second copy of the words.
+#[must_use]
+pub fn body_cap_detail(max: usize) -> String {
+    format!("response body exceeds {max} bytes")
 }
 
 /// `https` and nothing else. A plaintext URL carrying a bearer token is the failure this refuses

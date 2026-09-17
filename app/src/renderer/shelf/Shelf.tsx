@@ -61,7 +61,9 @@ export interface ShelfProps {
    * are `children` and cannot reach it otherwise, and a second scroller for the grid would make
    * the era headers scroll independently of the rows they head.
    */
-  readonly scrollRef?: RefObject<HTMLDivElement>;
+  // React 19's `useRef<T>(null)` yields `RefObject<T | null>`: a ref genuinely is null before
+  // mount, and the 18 types said otherwise. Widened rather than cast at the call site.
+  readonly scrollRef?: RefObject<HTMLDivElement | null>;
   readonly children: ReactNode;
 }
 

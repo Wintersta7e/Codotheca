@@ -286,8 +286,13 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 // [p2] §20.8's eight `accounts.*` commands are the 43rd to the 50th. Each phase-2 plan raises
 // this by its OWN delta, read from the value in the file — never to a running total, which a
 // lane cannot know after the merges ahead of it.
-test('the whole §2.4 table is present, plus §9 focus, roots.list and §20.8, and nothing extra', () => {
-  assert.equal(names.length, 50, `expected 50 commands, found ${names.length}`);
+// [p2] §25.8's `remote.webUrl` is the 51st, and it is the only name §25 spends from `remote.*`.
+// [p2] §25.8's `projects.readme` is the 52nd, `projects.setReadmeRemote` the 53rd and
+// `projects.readmeAssets` the 54th.
+// [p2] §24.9's three `install.*` commands are the 55th to the 57th — this plan's own +3, added
+// to the 54 read off the branch base. `locations.uninstall*` is p2-24b's and is not here.
+test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8, §25.8 and §24.9, and nothing extra', () => {
+  assert.equal(names.length, 57, `expected 57 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -385,9 +390,22 @@ test('collections.upsert reports which refusal fired', () => {
 
 // §2.4's topic table, transcribed. [p2] §20.8 adds `accounts`, which declares no `snapshot`:
 // three events and nothing to build a frame from.
+// [p2] §24.9 adds `install`: a fifth topic rather than events on `projects`, so the shelf is not
+// woken at stage cadence when no install is running — the separation `scan` already has.
 const TOPICS = {
   scan: ['run_started', 'repo_found', 'job_done', 'progress', 'problem', 'finished', 'cancelled'],
-  projects: ['upserted', 'merged', 'flags_changed', 'condition_changed', 'art_ready', 'snapshot'],
+  install: ['started', 'stage', 'finished', 'failed', 'snapshot'],
+  // [p2] §25.8 adds `readme_remote_changed` to the **existing** topic, on the `flags_changed`
+  // precedent, so an optimistic flip in the renderer and the wire cannot disagree. No new topic.
+  projects: [
+    'upserted',
+    'merged',
+    'flags_changed',
+    'condition_changed',
+    'art_ready',
+    'snapshot',
+    'readme_remote_changed',
+  ],
   session: ['started', 'segment_closed', 'ended'],
   core: ['error', 'degraded', 'snapshot'],
   accounts: ['connect_progress', 'connected', 'disconnected'],
@@ -429,19 +447,39 @@ test('job_done names one of the eight jobs', () => {
 // §2.4: paths and executables enter only from a native file dialog owned by the shell, and each
 // such call is a privileged capability-issuance endpoint requiring explicit user confirmation.
 // Three commands qualify. Widening this set is a security decision, not a schema edit.
-test('exactly three commands are privileged', () => {
+// [p2] §24.8 extends what `privileged` means from *carries Bytes* to *carries Bytes or mutates
+// the filesystem*, and the two mutating install commands join on the second clause while
+// carrying no Bytes at all. Widening this set is still a security decision, not a schema edit:
+// the list is what states it, and `mutatesFilesystem` is a declared flag rather than an
+// inference from a name prefix, so a command's safety class cannot depend on its spelling.
+test('the privileged set is closed, and every member says which clause admits it', () => {
   const priv = schema.commands
     .filter((c) => c.privileged === true)
     .map((c) => c.name)
     .sort();
-  assert.deepEqual(priv, ['locations.relocate', 'roots.add', 'targets.upsert']);
+  assert.deepEqual(priv, [
+    'install.cancel',
+    'install.start',
+    'locations.relocate',
+    'roots.add',
+    'targets.upsert',
+  ]);
+  for (const c of schema.commands.filter((x) => x.privileged === true)) {
+    const bytes = Object.values(c.args).some((e) => parseTypeExpr(e).base === 'Bytes');
+    assert.ok(bytes || c.mutatesFilesystem === true, c.name);
+  }
 });
 
 // §2.2: non-idempotent operations are never auto-replayed — projects.launch, session mutations
 // and flag changes are surfaced to the user instead. Replaying a launch opens the editor twice.
 // [p2] §20.8 adds five: a replayed connect after a core restart genuinely starts a second flow,
 // and a replayed disconnect deletes a keychain entry the user has since re-created.
-test('exactly eight commands are non-idempotent', () => {
+// [p2] §25.8 adds the ninth: a consent is a decision the user made once, and replaying one
+// through a core restart would re-grant it without them.
+// [p2] §24.9 adds two: a replayed `install.start` after a core restart begins a second clone
+// into a destination the first one is still writing, and a replayed `install.cancel` kills a
+// process group that a later run may by then own.
+test('the non-idempotent set is closed', () => {
   const ni = schema.commands
     .filter((c) => c.idempotent === false)
     .map((c) => c.name)
@@ -452,8 +490,11 @@ test('exactly eight commands are non-idempotent', () => {
     'accounts.disconnect',
     'accounts.setOrgEnabled',
     'accounts.upgradeScope',
+    'install.cancel',
+    'install.start',
     'projects.launch',
     'projects.setFlags',
+    'projects.setReadmeRemote',
     'session.stop',
   ]);
 });
@@ -568,6 +609,114 @@ test('accounts.orgs is nullable, because an unenumerable org list is unknown', (
   assert.equal(c.returns, '[AccountOrg]?');
 });
 
+// [p2] §25.8's command surface, transcribed for the same reason §20.8's is: `remote.*` is §25's
+// under A11 and phase 2 spends **exactly one** name from it. A second `remote.*` command
+// appearing here is a namespace growing without a ruling, and a prefix filter could not say so.
+const REMOTE_COMMANDS = ['remote.webUrl'];
+
+test('§25.8 spends exactly one name from the remote.* prefix', () => {
+  const declared = names.filter((n) => n.startsWith('remote.')).sort();
+  assert.deepEqual(declared, REMOTE_COMMANDS);
+});
+
+// §25.2: the answer is a URL, and NULL is the honest answer for a key this build cannot address.
+// A non-nullable `String` would force the core to invent one.
+test('remote.webUrl answers a nullable string and carries no Bytes', () => {
+  const c = schema.commands.find((x) => x.name === 'remote.webUrl');
+  assert.deepEqual(c.args, { projectId: 'ProjectId', kind: 'RemoteLinkKind' });
+  assert.equal(c.returns, 'String?');
+  assert.notEqual(c.privileged, true);
+  assert.deepEqual(schema.types.RemoteLinkKind.variants, [
+    'repository',
+    'issues',
+    'pulls',
+    'actions',
+    'releases',
+  ]);
+});
+
+// [p2] §25.8's README commands. The prefix is `projects.` and not a new top-level `readme.`:
+// D9 proposed `readme.assets`, and §25.8 renamed it because a one-command top-level prefix
+// invites a second, forge-agnostic namespace nobody owns while these three are project-scoped.
+const README_COMMANDS = ['projects.readme', 'projects.readmeAssets', 'projects.setReadmeRemote'];
+
+test('§25.8 declares its README commands under the projects prefix and nowhere else', () => {
+  const declared = names.filter((n) => /^(?:projects\.(?:readme|setReadme)|readme\.)/u.test(n));
+  assert.deepEqual([...declared].sort(), [...README_COMMANDS].sort());
+});
+
+// §25.5: NULL is *never granted* and a timestamp is *granted at T*, mirroring `location.trusted_at`
+// — a per-thing consent whose absence must never read as a denial the user made. `allowedAt` is
+// therefore nullable on the event, and the command is non-idempotent because §2.2 never auto-
+// replays a consent change.
+test('projects.setReadmeRemote is a consent change, and is never auto-replayed', () => {
+  const c = schema.commands.find((x) => x.name === 'projects.setReadmeRemote');
+  assert.deepEqual(c.args, { projectId: 'ProjectId', allow: 'bool' });
+  assert.equal(c.returns, 'Empty');
+  assert.equal(c.idempotent, false);
+  assert.notEqual(c.privileged, true);
+  assert.equal(schema.topics.projects.readme_remote_changed, 'ReadmeRemoteChanged');
+  assert.deepEqual(schema.types.ReadmeRemoteChanged.fields, {
+    id: 'ProjectId',
+    allowedAt: 'Timestamp?',
+  });
+});
+
+// §25.5: the panel needs the document, not the paragraph. `J6_BYTE_CAP` is the cap and the
+// command reads that existing constant rather than declaring a second one, so `truncated` is
+// the only thing the wire adds — the panel says the document was cut rather than implying it
+// ended. `state` reuses `ReadmeStateKind`: the command takes a `locationId`, so a location
+// exists by construction and `not_indexed` is never borrowed for a project no pass is coming for.
+test('projects.readme returns the whole document, with the state enum §8.4 already declares', () => {
+  const c = schema.commands.find((x) => x.name === 'projects.readme');
+  assert.deepEqual(c.args, { projectId: 'ProjectId', locationId: 'LocationId' });
+  assert.equal(c.returns, 'ReadmeSource');
+  assert.notEqual(c.privileged, true);
+  assert.equal(schema.types.ReadmeSource.kind, 'struct');
+  assert.deepEqual(schema.types.ReadmeSource.fields, {
+    state: 'ReadmeStateKind',
+    path: 'String?',
+    text: 'String?',
+    readAt: 'Timestamp?',
+    truncated: 'bool',
+  });
+  assert.deepEqual(schema.types.ReadmeStateKind.variants, ['not_indexed', 'absent', 'present']);
+});
+
+// §25.5: one command answers both branches, because the renderer parsed one list of img[src]
+// values and does not know which is which. Classification is the core's, so the rule has one
+// owner — the two arrays are a hint and the core re-classifies anyway.
+test('projects.readmeAssets takes both reference lists and answers one row each', () => {
+  const c = schema.commands.find((x) => x.name === 'projects.readmeAssets');
+  assert.deepEqual(c.args, {
+    projectId: 'ProjectId',
+    locationId: 'LocationId',
+    local: '[String]',
+    remote: '[String]',
+  });
+  assert.equal(c.returns, '[ReadmeAsset]');
+  assert.notEqual(c.privileged, true);
+  assert.deepEqual(schema.types.ReadmeAsset.fields, {
+    ref: 'String',
+    state: 'ReadmeAssetState',
+    dataUri: 'String?',
+    fetchedAt: 'Timestamp?',
+  });
+});
+
+// `blocked` is the consent state and is never rendered as a failure, which is why it is a
+// variant of its own rather than an absence: an asset nobody was allowed to fetch and an asset
+// that could not be fetched are two different sentences.
+test('ReadmeAssetState names five outcomes, and blocked is one of them', () => {
+  assert.deepEqual(schema.types.ReadmeAssetState.variants, [
+    'ok',
+    'blocked',
+    'too_large',
+    'unreachable',
+    'not_an_image',
+  ]);
+});
+
 /** Every type name reachable from `root`, following struct fields transitively. */
 function reachableTypes(root) {
   const seen = new Set();
@@ -614,6 +763,136 @@ test('Account carries no token field at any nesting depth', () => {
     checked >= Object.keys(schema.types.Account.fields).length,
     `the walk tested ${checked} field(s), fewer than Account declares`,
   );
+});
+
+// [p2] §24.9's command surface, transcribed for the same reason §20.8's and §25.8's are.
+// `install.*` is §24's namespace (A11); `github.*` is left unused so the provider seam is not
+// pre-named after one forge. `locations.uninstall*` is p2-24b's and is declared by neither.
+const INSTALL_COMMANDS = ['install.cancel', 'install.preview', 'install.start'];
+
+test('§24.9 declares its three install commands and spends no other name on the prefix', () => {
+  assert.deepEqual(names.filter((n) => n.startsWith('install.')).sort(), INSTALL_COMMANDS);
+});
+
+// §24.3a: the destination is a `RootId` and the subpath is the project's stored `seed_basename`,
+// so `install.start` carries no `Bytes` at all. §24.8 is why it is privileged anyway — every
+// command that mutates disk is, which is the arm Task 8 added to the validator.
+test('the two mutating install commands carry no Bytes and are privileged regardless', () => {
+  for (const name of ['install.start', 'install.cancel']) {
+    const c = schema.commands.find((x) => x.name === name);
+    assert.equal(c.privileged, true, name);
+    assert.equal(c.mutatesFilesystem, true, name);
+    assert.equal(c.idempotent, false, name);
+    for (const [arg, expr] of Object.entries(c.args)) {
+      assert.notEqual(parseTypeExpr(expr).base, 'Bytes', `${name}.${arg}`);
+    }
+  }
+  assert.deepEqual(schema.commands.find((x) => x.name === 'install.start').args, {
+    projectId: 'ProjectId',
+    rootId: 'RootId',
+  });
+  assert.deepEqual(schema.commands.find((x) => x.name === 'install.cancel').args, {
+    runId: 'InstallRunId',
+  });
+});
+
+test('install.preview reads, so the page may ask before the user has committed to anything', () => {
+  const c = schema.commands.find((x) => x.name === 'install.preview');
+  assert.deepEqual(c.args, { projectId: 'ProjectId', rootId: 'RootId' });
+  assert.equal(c.returns, 'InstallPreview');
+  assert.notEqual(c.privileged, true);
+  assert.notEqual(c.mutatesFilesystem, true);
+  assert.notEqual(c.idempotent, false);
+});
+
+// §24.3d: a collision refuses and never auto-suffixes, and the refusal comes back as a value on
+// the reply rather than as an error frame — the same shape `collections.upsert` already uses.
+// Folding it into the display string is how a refusal stops being a reply, so the composed
+// destination is its own type beside it rather than a sentence.
+test('an install refusal is a reply, and the composed destination is its own field', () => {
+  assert.equal(schema.types.InstallPreview.fields.destination, 'InstallDestination?');
+  assert.equal(schema.types.InstallPreview.fields.refusedBecause, 'InstallRefusal?');
+  assert.equal(schema.types.InstallStart.fields.runId, 'InstallRunId?');
+  assert.equal(schema.types.InstallStart.fields.refusedBecause, 'InstallRefusal?');
+  assert.deepEqual(
+    schema.errors.filter((e) => /INSTALL/u.test(e)),
+    [],
+  );
+});
+
+// §24.3a: the renderer names a `RootId` and never composes the path. `display` is §1.10's lossy
+// form and is never opened, launched or compared; `rootId` and `seedBasename` are what the core
+// re-derives the real path from.
+test('InstallDestination carries the display form beside the identity it was composed from', () => {
+  assert.deepEqual(schema.types.InstallDestination.fields, {
+    rootId: 'RootId',
+    seedBasename: 'String',
+    display: 'String',
+  });
+});
+
+test('§24.9 declares its three install enums with exactly their variants', () => {
+  assert.deepEqual(schema.types.InstallStageKind.variants, [
+    'plans',
+    'enumerating',
+    'receiving',
+    'assembling',
+    'cladding',
+    'settled',
+  ]);
+  assert.deepEqual(schema.types.InstallRefusal.variants, [
+    'destination_exists',
+    'already_installed',
+    'unsafe_name',
+    'root_unavailable',
+    'no_clone_url',
+    'no_install_root_chosen',
+    'private_needs_upgrade',
+  ]);
+  assert.deepEqual(schema.types.InstallFailure.variants, [
+    'network',
+    'auth',
+    'disk_full',
+    'cancelled',
+    'git_failed',
+    'rename_failed',
+    'filter_neutralisation_failed',
+  ]);
+});
+
+// A10: `done` and `total` are per-phase and both nullable, and there is no aggregate field **by
+// construction** — so no surface can render the retreating percentage §10.2 bans. A field set
+// asserted exhaustively is what keeps a later author from adding one.
+test('an install stage carries per-phase counts and nothing to compute a percentage from', () => {
+  assert.deepEqual(Object.keys(schema.types.InstallStage.fields).sort(), [
+    'bytes',
+    'done',
+    'runId',
+    'stage',
+    'total',
+  ]);
+  assert.equal(schema.types.InstallStage.fields.stage, 'InstallStageKind');
+  for (const field of ['done', 'total', 'bytes']) {
+    assert.equal(schema.types.InstallStage.fields[field], 'i64?', field);
+  }
+});
+
+// R54: the topic carries a snapshot, like `scan` and `projects` and unlike `accounts` — a
+// renderer that opens mid-clone has to be able to build a frame from something.
+test('the install topic carries §24.9’s four events plus the snapshot', () => {
+  assert.deepEqual(Object.keys(schema.topics.install).sort(), [
+    'failed',
+    'finished',
+    'snapshot',
+    'stage',
+    'started',
+  ]);
+  assert.equal(schema.topics.install.started, 'InstallStarted');
+  assert.equal(schema.topics.install.stage, 'InstallStage');
+  assert.equal(schema.topics.install.finished, 'InstallFinished');
+  assert.equal(schema.topics.install.failed, 'InstallFailed');
+  assert.equal(schema.topics.install.snapshot, 'InstallState');
+  assert.equal(schema.types.InstallState.fields.runs, '[InstallStage]');
 });
 
 test('the accounts topic carries exactly three events and no snapshot', () => {

@@ -129,10 +129,31 @@ pub fn load_peek(ctx: &ProjectsCtx<'_>, project: ProjectId) -> Result<Peek, Proj
     let primary = pick_primary(&locations);
     let (readme, commits) = readme_and_commits(conn, project)?;
 
+    // [p2] §23.3: **Peek may not send `not_indexed`** for a project with no location. J6 can
+    // never look at a repository that was never cloned, so the promise cannot be kept, and
+    // `ReadmeStateKind` gains no fourth variant by ruling. What is left is `absent`, and the
+    // surface renders **no README element at all** for such a row (§25.3a) — so the value
+    // reaches no sentence. Recorded rather than assumed: neither remaining variant is a true
+    // statement about a repository nothing has read, and the ruling picks the one that is not a
+    // promise.
+    let readme = if primary.is_none() {
+        ReadmeState {
+            state: ReadmeStateKind::Absent,
+            text: None,
+            read_at: None,
+        }
+    } else {
+        readme
+    };
+
     Ok(Peek {
         id: project,
         readme,
         commits,
+        // §25.3a's positive half: what a not-cloned row renders **in place of** the five facts
+        // it has no history for. NULL iff `remote_key` is NULL, the same predicate
+        // `ProjectDetail.remote` carries — one producer, two surfaces.
+        remote: crate::remote::facts::remote_facts(conn, project).map_err(ProjectsError::Index)?,
         location: primary.map(|l| LocationRef {
             id: l.id,
             path_display: l.path_display.clone(),
@@ -167,13 +188,7 @@ pub fn handle(
     // below is still the **stored** one with its own `as_of`; the job updates it and publishes
     // a change. Nothing here waits, and nothing here claims currency it does not have.
     if let Some(location) = peek.location.as_ref() {
-        crate::jobs::visible::notify_visible(
-            ctx.index.conn(),
-            ctx.mounts,
-            ctx.jobs,
-            peek.id,
-            location.id,
-        );
+        crate::jobs::visible::notify_visible(ctx.index, ctx.mounts, ctx.jobs, peek.id, location.id);
     }
     serde_json::to_value(peek).map_err(|e| CommandFailure::internal(e.to_string()))
 }

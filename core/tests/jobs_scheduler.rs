@@ -240,7 +240,7 @@ fn a_visible_tile_queues_status_at_interactive_priority() {
     rig.runner
         .enqueue(job(&rig, JobKind::J2Status, Priority::Deferred));
     rig.runner
-        .on_visible(rig.project, rig.location, "store", StoreClass::Local);
+        .on_visible(rig.project, rig.location, "store", StoreClass::Local, true);
     // Re-pushing at anything worse is refused, which is how the queued entry's priority is
     // observable from outside: `Standard` is better than the `Deferred` first push and would
     // have been accepted had `on_visible` not already raised it to `Interactive`.
@@ -365,5 +365,80 @@ fn the_pump_the_composition_root_builds_drains_a_handed_off_location() {
     assert!(
         !events.seen().is_empty(),
         "a drained job publishes `scan/job_done`; silence would leave the shelf stale"
+    );
+}
+
+/// The sink the composition root hands its command handlers must answer **while the one index
+/// guard is held**, because that is the only way it is ever called.
+///
+/// `Assembly` dispatches `Route::Projects` and `Route::Detail` with the guard held
+/// (`core/src/assembly/mod.rs:508,519` — `index: &guard`), and `projects.peek`
+/// (`core/src/projects/peek.rs:170`) and `projects.get` (`core/src/detail/get.rs:397`) both call
+/// `jobs::visible::notify_visible`, which calls `JobSink::on_visible` on that same thread. A sink
+/// that re-locks the index self-deadlocks — `std::sync::Mutex` is not reentrant — the guard is
+/// never released, and **every later command wedges behind it**, which is why a project page that
+/// never loads also stops `projects.list` answering. R75 states this rule for `Route::Scan` and
+/// `Route::Accounts`; these two routes were never covered by it.
+///
+/// Driven on a watchdog thread because the failure is a hang, not a panic: a test that simply
+/// called this would hang the suite instead of reporting.
+#[test]
+fn the_visible_sink_answers_while_the_index_guard_is_held() {
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"one\n");
+    repo.git(&["add", "a.txt"]);
+    repo.commit("first");
+
+    let dir = tempfile::tempdir().unwrap();
+    let index = Arc::new(Mutex::new(Index::open_at(dir.path(), 0).unwrap()));
+    let (project, location) = {
+        let guard = index.lock().unwrap();
+        let conn = guard.conn();
+        conn.execute(
+            "INSERT INTO project (name, seed_basename, created_at, updated_at)
+             VALUES ('p', 'p', 0, 0)",
+            [],
+        )
+        .unwrap();
+        let project = ProjectId(conn.last_insert_rowid());
+        let path = repo.path().to_string_lossy().into_owned();
+        conn.execute(
+            "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                   store_key, presence, repo_kind)
+             VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree')",
+            rusqlite::params![project.0, path.as_bytes(), path],
+        )
+        .unwrap();
+        (project, LocationId(conn.last_insert_rowid()))
+    };
+
+    let events = Arc::new(RecordingSink::default());
+    let pump = codotheca_core::assembly::jobs::JobPump::start(
+        Arc::clone(&index),
+        Arc::new(SystemGit::new(
+            Arc::new(repo.exec()),
+            Arc::new(GitSlots::new(4)),
+            Arc::new(SystemClock::new()),
+        )),
+        Arc::new(SystemClock::new()),
+        Arc::clone(&events) as Arc<dyn EventSink>,
+    );
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let index_for_call = Arc::clone(&index);
+    std::thread::spawn(move || {
+        // Exactly what `Assembly::handle` does before it builds a `ProjectsCtx` or a `DetailCtx`.
+        let guard = index_for_call.lock().unwrap();
+        pump.sink()
+            .on_visible(project, location, "store", StoreClass::Local, true);
+        drop(guard);
+        let _ = done_tx.send(());
+    });
+
+    assert!(
+        done_rx.recv_timeout(Duration::from_secs(20)).is_ok(),
+        "on_visible did not return while the index guard was held. The sink re-entered the one \
+         index mutex, which is not reentrant, so the guard is never released and every later \
+         command wedges behind it."
     );
 }

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { LocationId, ProjectId } from '../../generated/protocol.js';
-import { makeLocationRef, makeProjectRow } from '../testing/projectRow.js';
+import { makeLocationRef, makeProjectRow, notClonedRow } from '../testing/projectRow.js';
 import {
+  PALETTE_INSTALL_TEXT,
   PALETTE_ROW_CAP,
   PALETTE_UNAVAILABLE_TEXT,
   isPaletteCandidate,
@@ -70,6 +71,41 @@ describe('selectPaletteRows', () => {
     expect(sel.total).toBe(57);
   });
 
+  // §24.5's leading key. The tail-section rule expressed in the one dimension a flat list has:
+  // whatever §23 gives a zero-location project for `last_touched_at` must not defeat it, which
+  // is why the fixture gives the not-cloned row the largest value in the set.
+  it('sorts every not-cloned row after every row that has a location', () => {
+    const all = [
+      notClonedRow({ id: 1 as ProjectId, name: 'blueprint', lastTouchedAt: 9_999 }),
+      makeProjectRow({ id: 2 as ProjectId, name: 'cold', lastTouchedAt: 100 }),
+      notClonedRow({ id: 3 as ProjectId, name: 'blueprint two', lastTouchedAt: 9_998 }),
+      makeProjectRow({ id: 4 as ProjectId, name: 'warm', lastTouchedAt: 300 }),
+    ];
+    expect(selectPaletteRows(all, '').rows.map((r) => r.name)).toEqual([
+      'warm',
+      'cold',
+      'blueprint',
+      'blueprint two',
+    ]);
+  });
+
+  // The cap is what the key protects: 40 blueprints must not consume a list of 41 projects.
+  it('keeps not-cloned rows from consuming the 40-row cap', () => {
+    const all = [
+      ...Array.from({ length: 40 }, (_, i) =>
+        notClonedRow({
+          id: (i + 1) as ProjectId,
+          name: `hit-blueprint-${String(i)}`,
+          lastTouchedAt: 9_000 + i,
+        }),
+      ),
+      makeProjectRow({ id: 99 as ProjectId, name: 'hit-located', lastTouchedAt: 1 }),
+    ];
+    const sel = selectPaletteRows(all, 'hit');
+    expect(sel.rows[0]?.name).toBe('hit-located');
+    expect(sel.matched).toBe(41);
+  });
+
   it('counts candidates in the denominator, never the whole library', () => {
     const all = [
       makeProjectRow({ id: 1 as ProjectId, name: 'keep' }),
@@ -90,12 +126,36 @@ describe('paletteRowAction', () => {
     expect(paletteRowAction(row)).toEqual({ kind: 'launch', locationId: 7 as LocationId });
   });
 
-  // Never claim currency you do not have: with no primary location there is nothing to open,
-  // and the row says so rather than offering an inert LAUNCH.
-  it('is unavailable when no location is primary', () => {
-    expect(paletteRowAction(makeProjectRow({ primaryLocation: null, presence: null }))).toEqual({
-      kind: 'unavailable',
+  // §24.5: a project with no `location` row at all. The palette does not clone — it offers the
+  // page where the destination is chosen, and the ellipsis is that promise.
+  it('offers INSTALL for a project with no location row', () => {
+    expect(paletteRowAction(notClonedRow({ id: 4 as ProjectId }))).toEqual({
+      kind: 'install',
+      projectId: 4 as ProjectId,
     });
+    expect(PALETTE_INSTALL_TEXT).toBe('↵ INSTALL…');
+  });
+
+  // Never claim currency you do not have: a copy that is offline or gone cannot be opened, and
+  // the row states the reason rather than offering an inert LAUNCH. §24.5 keeps this case its
+  // own words — it is a different fact from having no copy at all.
+  it('is unavailable when every copy is offline or missing', () => {
+    for (const presence of ['offline', 'missing'] as const) {
+      expect(
+        paletteRowAction(makeProjectRow({ primaryLocation: makeLocationRef(7), presence })),
+        presence,
+      ).toEqual({ kind: 'unavailable' });
+    }
     expect(PALETTE_UNAVAILABLE_TEXT).toBe('NO COPY ON THIS MACHINE');
+  });
+
+  // `unscanned` is a location nobody has looked at, not a location that is gone. Claiming
+  // NO COPY ON THIS MACHINE about it would be the false-absence defect wearing the fix's clothes.
+  it('leaves an unscanned copy launchable rather than claiming it is absent', () => {
+    expect(
+      paletteRowAction(
+        makeProjectRow({ primaryLocation: makeLocationRef(9), presence: 'unscanned' }),
+      ),
+    ).toEqual({ kind: 'launch', locationId: 9 as LocationId });
   });
 });

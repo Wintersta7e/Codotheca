@@ -395,13 +395,29 @@ pub fn handle_project_get(
     // updates it and publishes a change. Absence of dirty stays "no changes as of T".
     if let Some(location) = primary_location {
         crate::jobs::visible::notify_visible(
-            conn,
+            ctx.index,
             ctx.mount,
             ctx.jobs,
             ProjectId(id),
             crate::protocol::LocationId(location),
         );
     }
+
+    // §25.3's decision, taken from the **primary** copy — the one §5.3 measures the project by.
+    // A project with no location has no local copy to be the only copy of, and §23 rules that
+    // case, so the answer there is NULL and OVERVIEW draws no block.
+    let backup = locations
+        .iter()
+        .find(|l| l.is_primary)
+        .or_else(|| locations.first())
+        .and_then(|primary| {
+            crate::remote::backup::backup_state(
+                scalars.remote_key.as_deref(),
+                primary.ahead,
+                primary.stash_count,
+                primary.fetch_head_at,
+            )
+        });
 
     Ok(ProjectDetail {
         resolved_target: resolved_target(
@@ -423,6 +439,10 @@ pub fn handle_project_get(
             .remote_link_basis
             .as_deref()
             .and_then(enum_from_column::<RemoteLinkBasis>),
+        // §25.1's presence predicate: NULL **iff** `remote_key` is NULL. The field and its
+        // producer land together (R1), so the tab cannot mount against a field nothing fills.
+        remote: crate::remote::facts::remote_facts(conn, ProjectId(id)).map_err(internal)?,
+        backup,
         seed_basename: row.seed_basename.clone(),
         reroll_offset: row.reroll_offset,
         playtime_seconds: crate::session::store::playtime_seconds(conn, ProjectId(id))

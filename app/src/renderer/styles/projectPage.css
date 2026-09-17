@@ -722,6 +722,51 @@
   overflow-wrap: anywhere;
 }
 
+/* [p2] §25.5's frame. Its height is set inline from FRAME_HEIGHT_PX — a scriptless frame cannot
+   report its own height, and the number has one owner in frame.ts rather than a second copy
+   here. It scrolls internally, inside §8.5.3's existing box and border. */
+.cp-readme-frame {
+  display: block;
+  width: 100%;
+  margin: 12px 0 0;
+  border: 0;
+  background: transparent;
+  color-scheme: dark;
+}
+
+/* The statement below the frame, and the cut statement beside it. Both are facts about the
+   document rather than controls, so they carry no affordance at all. */
+.cp-readme-statement {
+  margin: 10px 0 0;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+}
+
+/* §25.5's consent, which is one control. `blocked` is the consent state and is never rendered as
+   a failure: no error ink, no warning plate — a sentence and a button. */
+.cp-readme-consent {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 10px 0 0;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+.cp-readme-consent button {
+  padding: 4px 9px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border: 1px solid var(--line-2);
+  cursor: pointer;
+}
+
 /* --- §8.5.4 the note ------------------------------------------------------------------- */
 
 .cp-note {
@@ -890,4 +935,201 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+/* --- [p2] §25.1 the REMOTE tab --------------------------------------------------------- */
+
+.cp-remote {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cp-remote-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.cp-remote-title {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+/* The key verbatim, in mono. It carries no link affordance: §25.2's opener is the links row,
+   and a key that looked clickable would promise a navigation this element cannot perform. */
+.cp-remote-key {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+.cp-remote-fork {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+.cp-remote-statement {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.cp-remote-blocks {
+  display: flex;
+  gap: 12px;
+}
+.cp-remote-block {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  padding: 9px 11px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
+.cp-remote-block-label {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+}
+.cp-remote-block-value {
+  margin-top: 3px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.cp-remote-block-sub {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+.cp-remote-observed,
+.cp-remote-ci-observed {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+.cp-remote-ci {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cp-remote-ci-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cp-remote-ci-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+}
+.cp-remote-ci-left {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.cp-remote-ci-workflow {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-remote-ci-dash {
+  color: var(--text-3);
+}
+.cp-remote-ci-conclusion {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+}
+.cp-remote-ci-right {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+.cp-remote-ci-state {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+.cp-remote-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* A button, never an anchor: this document holds no URL, and an anchor with no href is a dead
+   control. The shell builds, re-checks, confirms and opens the address. */
+.cp-remote-link {
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  cursor: pointer;
+}
+.cp-remote-link:hover,
+.cp-remote-link:focus-visible {
+  color: var(--text-1);
+  border-color: var(--line-3);
+}
+
+/* [p2] §25.3's topic chips, in §8.5.3's own chrome. Zero topics renders no row at all. */
+.cp-readme-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.cp-readme-topic {
+  padding: 3px 7px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
+
+/* [p2] §25.3's backup-state line. Colour goes on the EDGE, never on the type: the sentence is
+   decision-carrying and stays at --text-2, §8.5.2's precedent. */
+.cp-backup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px 10px;
+  background: var(--surface-2);
+  box-shadow:
+    inset 0 0 0 1px var(--line-2),
+    inset 3px 0 0 0 var(--cdt-backup-edge);
+}
+.cp-backup-plate {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+}
+.cp-backup-line {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
 }

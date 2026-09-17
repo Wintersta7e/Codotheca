@@ -15,8 +15,16 @@ import type {
   ErrorCode,
   LocationId,
   Outcome,
+  ProjectId,
+  RemoteLinkKind,
 } from '../../generated/protocol';
-import type { BridgeError, BridgeReply, RelocateReply, RendererEvent } from '../../shared/channels';
+import type {
+  BridgeError,
+  BridgeReply,
+  OpenRemoteLinkReply,
+  RelocateReply,
+  RendererEvent,
+} from '../../shared/channels';
 
 /**
  * §2.2's three fields, carried together. `outcome` is the generated `Outcome | null` and not a
@@ -41,6 +49,11 @@ export interface ProjectPageDeps {
   request: <K extends CommandName>(name: K, args: CommandArgs[K]) => Promise<CommandResult[K]>;
   /** Privileged (§2.4): the shell owns the folder dialog, the renderer originates no path. */
   relocate: (locationId: LocationId) => Promise<RelocateReply>;
+  /**
+   * §25.2: an id and a link kind, never a URL. The shell asks the core for the string, checks it
+   * again, confirms it with the user by name, and opens it.
+   */
+  openRemoteLink: (projectId: ProjectId, kind: RemoteLinkKind) => Promise<OpenRemoteLinkReply>;
   subscribe: (handler: (event: RendererEvent) => void) => () => void;
   /** Unix seconds. */
   now: () => number;
@@ -113,6 +126,7 @@ export function createDefaultDeps(): ProjectPageDeps {
       return reply.value as CommandResult[K];
     },
     relocate: (locationId) => bridge.relocate(locationId),
+    openRemoteLink: (projectId, kind) => bridge.openRemoteLink(projectId, kind),
     subscribe,
     now: () => Math.floor(Date.now() / 1000),
   };

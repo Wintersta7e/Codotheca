@@ -49,6 +49,7 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
       }
     },
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: (handler) => {
       subscribers.add(handler);
       return () => {

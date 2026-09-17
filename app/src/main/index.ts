@@ -39,6 +39,7 @@ import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
 import { bootstrap, clearPaintFailure } from './bootstrap';
 import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
+import { registerExternalLink } from './dialogs/externalLink';
 import { registerRelocateDialog } from './dialogs/relocate';
 import { registerRootPicker, registerSuggestionCommit, SuggestionCache } from './rootPicker';
 import { CoreClient } from './core/client';
@@ -59,7 +60,10 @@ import {
 } from './security';
 import { runStartup } from './startup';
 
-const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts'];
+// [p2] §24.9's `install` is subscribed in the same change that declares it. A topic the schema
+// carries and the shell does not subscribe to delivers nothing, and the surface built on it
+// would be discovered dark rather than red — the shape R88 was ruled on.
+const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts', 'install'];
 
 /**
  * The commands the core answers, and therefore the only names the bridge will accept.
@@ -113,6 +117,11 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'projects.get',
   'projects.setNote',
   'locations.relocate',
+  // readme::dispatch_readme_command — the document the project page renders as markup. It is a
+  // different value from ProjectDetail.readme, which carries the stored first paragraph.
+  'projects.readme',
+  'projects.readmeAssets',
+  'projects.setReadmeRemote',
   // view::dispatch_view_command
   'view.get',
   'view.set',
@@ -129,6 +138,12 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'accounts.connectPat',
   'accounts.upgradeScope',
   'accounts.disconnect',
+  // remote::dispatch_remote_command — the one name §25.8 spends from the `remote.*` prefix.
+  // The answer is a URL the renderer could already rebuild from ProjectDetail.remoteKey; what
+  // it does not gain is the ability to OPEN one, which stays in this process behind a
+  // confirmation. No apostrophe in this block: app/test/knownCommands.test.ts reads the array
+  // by matching single-quoted strings, so a comment carrying one becomes an entry.
+  'remote.webUrl',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two
@@ -190,6 +205,19 @@ function createWindow(): BrowserWindow {
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   w.webContents.on('will-navigate', (event, url) => {
     if (!isNavigationAllowed(entry, url)) {
+      event.preventDefault();
+    }
+  });
+  // [p2] §25.5: `will-navigate` fires for the **main frame only**, and the README panel is the
+  // app's first subframe — so without this the comment in security.ts would claim a coverage the
+  // window no longer had. The predicate is the same one, deliberately: a subframe may go exactly
+  // where the main frame may, which is nowhere but the document the window was opened with.
+  //
+  // Measured on Electron 44.4.1: a sandboxed `srcdoc` frame fires this **zero** times, for both
+  // the initial commit and a reassignment, while the same listener saw one event for a
+  // same-origin subframe `src`. Binding it therefore costs the panel nothing and closes the gap.
+  w.webContents.on('will-frame-navigate', (event) => {
+    if (!isNavigationAllowed(entry, event.url)) {
       event.preventDefault();
     }
   });
@@ -373,6 +401,32 @@ async function main(): Promise<void> {
       return result.canceled || result.filePaths[0] === undefined ? null : result.filePaths[0];
     },
     request,
+  });
+
+  // §25.2 (A9): the external opener. It is the relocate shape with a URL where the folder dialog
+  // was — an opaque id in, the privileged thing done here, a discriminated reply out. The
+  // permission handler is untouched: `openExternal` stays denied for the renderer, because that
+  // handler grants for a whole session.
+  registerExternalLink({
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
+    },
+    request,
+    // Per click, naming the whole URL. No "always allow" and no settings suppression.
+    confirm: async (url: string) => {
+      const result = await dialog.showMessageBox({
+        type: 'question',
+        buttons: ['Open', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Open in your browser?',
+        message: 'Open this page in your browser?',
+        detail: url,
+        noLink: true,
+      });
+      return result.response === 0;
+    },
+    openExternal: (url: string) => shell.openExternal(url),
   });
 
   // §2.4 again, for the other privileged path: `roots.add` carries `pathBytes`, so the folder

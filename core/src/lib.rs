@@ -40,6 +40,8 @@ pub mod proto;
 pub mod protocol;
 pub mod provider;
 pub mod query;
+pub mod readme;
+pub mod remote;
 pub mod scan;
 pub mod session;
 pub mod stats;

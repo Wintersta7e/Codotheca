@@ -45,6 +45,22 @@ describe('renderer bridge', () => {
     expect(isRendererCallable('nope.notacommand', KNOWN)).toBe(false);
   });
 
+  /**
+   * AC-P2-24-19, per command and by name. The loop above reads `PRIVILEGED_COMMANDS`, which is
+   * generated: if §24.9's two entries ever lost their flag, that loop would keep passing over a
+   * shorter list. These names are written out so that losing the flag is what fails.
+   *
+   * `install.preview` is the control. It is unprivileged on purpose — a door that refused
+   * everything beginning with `install.` would satisfy the two refusals while leaving the page
+   * unable to ask what the destination would be.
+   */
+  it('refuses each privileged install command from the renderer, and admits the preview', () => {
+    const known = [...KNOWN, 'install.preview', 'install.start', 'install.cancel'];
+    expect(isRendererCallable('install.start', known)).toBe(false);
+    expect(isRendererCallable('install.cancel', known)).toBe(false);
+    expect(isRendererCallable('install.preview', known)).toBe(true);
+  });
+
   it('refuses a renderer call for a privileged command before the core is asked', async () => {
     const r = rig(async () => Promise.resolve({}));
     registerBridge(r.deps);

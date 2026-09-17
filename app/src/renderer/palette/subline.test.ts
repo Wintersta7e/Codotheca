@@ -106,10 +106,11 @@ describe('subLineInputFor', () => {
 });
 
 /**
- * AC-P2-23-6's unit half. It does not satisfy the criterion on its own — §23.9 requires the row
- * to be rendered — but it pins the rule at the one place that owns it.
+ * AC-P2-23-6's unit half, now carrying §24.5's word. It does not satisfy either criterion on its
+ * own — §23.9 requires the row to be rendered — but it pins the rule at the one place that owns
+ * it. §23 left this seam for §24 and named p2-24 as the supplier; nothing here is a second field.
  */
-describe('§23.4: no tail for a project with no working copy', () => {
+describe('§24.5: the tail of a project with no working copy is `not cloned`', () => {
   const line = (hasWorkingCopy: boolean, over: Record<string, unknown> = {}): string =>
     paletteSubLine({
       primaryLanguage: 'Rust',
@@ -121,19 +122,21 @@ describe('§23.4: no tail for a project with no working copy', () => {
       ...over,
     });
 
-  it('omits the tail field and renders the rest of the line', () => {
-    expect(line(false)).toBe('.rs · main');
+  it('states the fact instead of computing an age, and leaves a located line alone', () => {
+    expect(line(false)).toBe('.rs · main · not cloned');
     expect(line(true)).toBe('.rs · main · opened this month');
   });
 
-  it('omits it whatever the clock and whatever the session says', () => {
+  it('never renders an age, whatever the clock and whatever the session says', () => {
     for (const days of [0, 1, 30, 31, 400]) {
-      expect(line(false, { lastTouchedAt: NOW - days * DAY })).toBe('.rs · main');
+      expect(line(false, { lastTouchedAt: NOW - days * DAY })).toBe('.rs · main · not cloned');
     }
-    expect(line(false, { inSession: true })).toBe('.rs · main');
+    // `in session` is the one tail word a not-cloned project could reach through a different
+    // input, so it is asserted explicitly rather than left to the clock spread above.
+    expect(line(false, { inSession: true })).toBe('.rs · main · not cloned');
   });
 
-  it('renders nothing at all when the tail is the only field it had', () => {
+  it('is the whole line when the tail is the only field it had', () => {
     expect(
       paletteSubLine({
         primaryLanguage: null,
@@ -143,7 +146,7 @@ describe('§23.4: no tail for a project with no working copy', () => {
         nowSecs: NOW,
         hasWorkingCopy: false,
       }),
-    ).toBe('');
+    ).toBe('not cloned');
   });
 
   it('reads the one predicate §23.1 names and never a second one', () => {
@@ -151,5 +154,15 @@ describe('§23.4: no tail for a project with no working copy', () => {
       subLineInputFor(makeProjectRow({ primaryLocation: null }), false, NOW).hasWorkingCopy,
     ).toBe(false);
     expect(subLineInputFor(makeProjectRow(), false, NOW).hasWorkingCopy).toBe(true);
+    // R92: §24 fills the seam §23 left; it adds no `hasLocation` beside it. A second field would
+    // be one value stated twice over the predicate §23.1 says has exactly one expression.
+    expect(Object.keys(subLineInputFor(makeProjectRow(), false, NOW)).sort()).toEqual([
+      'branch',
+      'hasWorkingCopy',
+      'inSession',
+      'lastTouchedAt',
+      'nowSecs',
+      'primaryLanguage',
+    ]);
   });
 });

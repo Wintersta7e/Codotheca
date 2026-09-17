@@ -74,6 +74,23 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'accounts.upgradeScope': 'write',
   'accounts.disconnect': 'write',
   'accounts.setOrgEnabled': 'write',
+  // Reads one stored key and the account hosts, writes nothing and spawns nothing.
+  'remote.webUrl': 'read',
+  // [p2] §25.5. Opens one file under a location root; no write, no process, no socket.
+  'projects.readme': 'read',
+  // [p2] §25.5. Writes the consent column, and the schema calls it non-idempotent for the same
+  // reason: a consent replayed through a core restart re-grants a decision the user made once.
+  'projects.setReadmeRemote': 'write',
+  // [p2] §25.5. Reads bytes and issues requests; it writes nothing and spawns nothing, and a
+  // replayed read costs at worst the same images again.
+  'projects.readmeAssets': 'read',
+  // [p2] §24.9. The preview composes a destination and compares it against what is on disk; it
+  // spawns nothing and writes nothing. The other two spawn git and remove a staging directory,
+  // and a replay of either acts twice on a filesystem — which is the whole of why this table is
+  // wider than the schema's `idempotent` flag.
+  'install.preview': 'read',
+  'install.start': 'write',
+  'install.cancel': 'write',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {

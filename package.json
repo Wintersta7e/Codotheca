@@ -42,11 +42,13 @@
     "check:packaging": "node scripts/check-packaging.mjs",
     "dist": "node scripts/build-dist.mjs",
     "prepare:win": "node scripts/win-prepare.mjs",
-    "test:harness": "node --test \"scripts/acceptance/*.test.mjs\"",
+    "test:harness": "node --test \"scripts/acceptance/*.test.mjs\" \"scripts/*.test.mjs\"",
     "test": "npm run gen && npm run test --workspace protocol && cargo test --manifest-path core/Cargo.toml --features testkit && npm run test --workspace app && npm run test:harness",
     "fmt:check": "cargo fmt --manifest-path core/Cargo.toml -- --check && prettier --check \"app/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"protocol/**/*.mjs\""
   },
   "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "electron-builder": "^26.15.3",
     "prettier": "^3.3.0"
   },

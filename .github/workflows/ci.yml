@@ -282,9 +282,18 @@ jobs:
         # prints `test <bare name> ... ok` to stdout. Piping stdout alone gave the harness no binary
         # for any integration test, so eight criteria read as "did not run" beside seven results as
         # "no check claims it" — the same tests, seen from either side.
+        #
+        # **NO `--nocapture`.** libtest prints `test <name> ... ` and completes the line with `ok`
+        # after the test returns; with `--nocapture` the test's own stdout lands between the two,
+        # so `parseLibtest`'s line-anchored `^test … \.\.\. (ok|FAILED|ignored)` never matches and
+        # the result is dropped. It is silent and it is non-deterministic — it loses exactly the
+        # tests that happened to print. Measured on one tree: 4041 results / 0 problems on one run
+        # and 3993 / 4 on the next, and a two-test sample parses as one. Capturing normally is
+        # stable at 4039 / 0. `2>&1` stays: cargo writes `Running tests/<name>.rs` to stderr and
+        # that line is what attributes every result to its binary.
         run: |
           set -o pipefail
-          cargo test --locked --manifest-path core/Cargo.toml --features testkit -- --nocapture \
+          cargo test --locked --manifest-path core/Cargo.toml --features testkit \
             2>&1 | tee acceptance/results/cargo.txt
       - name: app suite
         run: npm run test --workspace app -- --reporter=json --outputFile=../acceptance/results/vitest.json
@@ -348,4 +357,3 @@ jobs:
             fi
           done
           echo "all jobs succeeded"
-

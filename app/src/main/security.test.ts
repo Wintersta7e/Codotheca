@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { CONTENT_SECURITY_POLICY } from '../shared/csp';
 import {
@@ -34,10 +36,19 @@ describe('contentSecurityPolicyListener', () => {
 
 describe('denyPermissionRequest', () => {
   it('denies every permission', () => {
-    for (const permission of ['media', 'geolocation', 'notifications', 'openExternal']) {
+    // [p2] §25.2: `openExternal` stays denied after the external opener ships. That handler
+    // grants for a whole session, and the opener is a channel the shell owns rather than a
+    // capability the renderer holds. The count is printed because a loop over nothing denies
+    // nothing and reads exactly like a loop that denied everything.
+    const permissions = ['media', 'geolocation', 'notifications', 'openExternal'];
+    process.stderr.write(
+      `security: permission loop covered ${String(permissions.length)} name(s)\n`,
+    );
+    expect(permissions.length, 'the permission loop covered no name').toBeGreaterThan(0);
+    for (const permission of permissions) {
       const callback = vi.fn();
       denyPermissionRequest(null, permission, callback);
-      expect(callback).toHaveBeenCalledWith(false);
+      expect(callback, permission).toHaveBeenCalledWith(false);
     }
   });
 });
@@ -54,5 +65,37 @@ describe('isNavigationAllowed', () => {
     expect(isNavigationAllowed(entry, 'https://example.invalid')).toBe(false);
     expect(isNavigationAllowed(entry, 'file:///etc/passwd')).toBe(false);
     expect(isNavigationAllowed(entry, 'codotheca://art/abc/card')).toBe(false);
+  });
+
+  /**
+   * [p2] §25.5 registers `will-frame-navigate` beside `will-navigate` with the **same**
+   * predicate, because `will-navigate` fires for the main frame only and §25.5 adds the app's
+   * first subframe.
+   *
+   * **Branch A, measured** (`app/e2e/frame-nav-probe.spec.ts`, Electron 44.4.1, 2026-09-16, now
+   * deleted): a sandboxed `srcdoc` frame produces **zero** `will-frame-navigate` events — none
+   * for the initial `about:srcdoc` commit and none for a `srcdoc` reassignment — while the same
+   * listener saw exactly one event for a same-origin subframe `src`, which is what proves the
+   * instrument could see one at all. So the predicate is bound verbatim, it stays
+   * byte-identical, and there is no second export.
+   */
+  it('security::ac_p2_25_15_will_navigate_and_will_frame_navigate_share_one_predicate', () => {
+    expect(isNavigationAllowed(entry, 'about:srcdoc')).toBe(false);
+    expect(isNavigationAllowed(entry, 'https://example.com/')).toBe(false);
+    expect(isNavigationAllowed(entry, 'data:text/html,<script>alert(1)</script>')).toBe(false);
+
+    // Both guards are bound on the window's webContents, read off the source that binds them:
+    // a predicate that refuses everything proves nothing if nothing calls it.
+    const main = readFileSync(fileURLToPath(new URL('./index.ts', import.meta.url)), 'utf8');
+    expect(main.length, 'read real source, or the assertions below are vacuous').toBeGreaterThan(
+      2000,
+    );
+    const bindings = [...main.matchAll(/webContents\.on\('(will-navigate|will-frame-navigate)'/gu)]
+      .map((match) => match[1])
+      .sort();
+    process.stderr.write(`security: navigation guards bound: ${bindings.join(', ')}\n`);
+    expect(bindings).toEqual(['will-frame-navigate', 'will-navigate']);
+    // …and both of them through this one predicate, not two.
+    expect(main.match(/isNavigationAllowed\(entry, /gu)?.length).toBe(2);
   });
 });

@@ -2,7 +2,7 @@
  * The IPC surface between the shell and the renderer. Imported by both ends, so a channel
  * name cannot drift between them.
  */
-import type { ErrorCode, Outcome, RootAdd, Topic } from '../generated/protocol';
+import type { ErrorCode, Outcome, RemoteLinkKind, RootAdd, Topic } from '../generated/protocol';
 
 export const IPC_REQUEST = 'codotheca:request';
 export const IPC_CORE_STATUS = 'codotheca:core-status';
@@ -57,6 +57,66 @@ export const IPC_RELOCATE = 'codotheca:relocate';
 export interface RelocateCall {
   locationId: number;
 }
+
+/**
+ * §24.8's reachability rule, on `IPC_RELOCATE`'s shape. `install.start` mutates the filesystem,
+ * so it is privileged and `isRendererCallable` refuses it on IPC_REQUEST; it travels here
+ * instead. The renderer supplies an opaque ProjectId and an opaque RootId and **no path in
+ * either direction** — §24.3a makes the destination a root the user already added, and a folder
+ * that is not yet one is reached through `IPC_PICK_ROOT`, which stays the only path-origination
+ * channel the product has.
+ */
+export const IPC_INSTALL_START = 'codotheca:install-start';
+
+export interface InstallStartCall {
+  readonly projectId: number;
+  readonly rootId: number;
+}
+
+/**
+ * §24.3c: cancel kills the clone's process group and removes the staging directory, so it is
+ * privileged for the same reason the start is and takes the same route. It names a run and
+ * nothing else — there is no path to send and none to accept back.
+ */
+export const IPC_INSTALL_CANCEL = 'codotheca:install-cancel';
+
+export interface InstallCancelCall {
+  readonly runId: number;
+}
+
+/**
+ * §25.2's external opener, and it is `IPC_RELOCATE`'s shape with a URL where the folder dialog
+ * was. The renderer sends an opaque project id and a link kind; **no URL crosses this channel
+ * inbound**, because `remote_key` is derived from repository content the user may not have
+ * written and a relayed URL is hostile input aimed at the process that owns the dialogs.
+ *
+ * The URL the shell opens is the one the core built from the stored key, re-asserted here
+ * against the same host allowlist, and confirmed by the user **per click**.
+ */
+export const IPC_OPEN_REMOTE_LINK = 'codotheca:open-remote-link';
+
+export interface OpenRemoteLinkCall {
+  readonly projectId: number;
+  readonly kind: RemoteLinkKind;
+}
+
+/**
+ * `not_linkable` is not a failure: it is the core answering that this project produces no link,
+ * which is what a non-allowlisted host, a NULL `remote_key` and a key that is not
+ * `<host>/<owner>/<name>` all mean. `declined` is the user saying no to the confirmation.
+ */
+/**
+ * `opened` carries **no URL**. §25.2's rule is that the URL is reconstructed by the core and
+ * never passed through, and a reply is still a crossing: it put the address the shell built back
+ * into the sandboxed process, in the one direction the rule does not spell out, for a field no
+ * caller reads. The renderer names a project and a kind; what that resolves to is not its
+ * business in either direction.
+ */
+export type OpenRemoteLinkReply =
+  | { readonly kind: 'opened' }
+  | { readonly kind: 'declined' }
+  | { readonly kind: 'not_linkable' }
+  | { readonly kind: 'failed'; readonly error: BridgeError };
 
 // R11: `IPC_PICK_ROOT` and `PickRootReply` are declared in this file by plan 16, whose
 // first-run flow picks the first root (§10.1b) and owns the only `ipcMain.handle` for that

@@ -395,6 +395,7 @@ impl JobSink for JobRunner {
         location: LocationId,
         store_key: &str,
         store_kind: StoreClass,
+        needs_art: bool,
     ) {
         // §6: visible tiles re-observe on scroll-idle and on window focus, and an opened page
         // re-observes the location it is showing. Worktree state is never cacheable, so this
@@ -413,11 +414,10 @@ impl JobSink for JobRunner {
         // view, at the priority of the thing the user is looking at. This is what makes a
         // schema bump repaint shelf-visible first rather than four hundred cards at once on
         // the launch after an update.
-        let needs = self.index.lock().is_ok_and(|guard| {
-            let data_dir = guard.data_dir().to_path_buf();
-            crate::art::job::needs_art_at(guard.conn(), &data_dir, project.0).unwrap_or(true)
-        });
-        if needs {
+        //
+        // **The answer arrives as an argument and this method takes no lock.** It is called under
+        // the one index guard on every real path, and `std::sync::Mutex` is not reentrant.
+        if needs_art {
             self.enqueue(Job {
                 kind: JobKind::J5Art,
                 project_id: project,

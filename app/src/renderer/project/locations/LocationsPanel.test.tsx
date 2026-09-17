@@ -30,6 +30,7 @@ function draw(detail: ProjectDetail, over: Partial<ProjectPageDeps> = {}): Drawn
   const deps: ProjectPageDeps = {
     request: request as unknown as ProjectPageDeps['request'],
     relocate,
+    openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' as const }),
     subscribe: () => () => undefined,
     now: () => NOW,
     ...over,

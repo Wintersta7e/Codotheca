@@ -98,7 +98,7 @@ impl codotheca_core::jobs::JobSink for RecordingJobs {
         self.indexed.lock().unwrap().push((project.0, location.0));
     }
 
-    fn on_visible(&self, _: ProjectId, _: LocationId, _: &str, _: StoreClass) {}
+    fn on_visible(&self, _: ProjectId, _: LocationId, _: &str, _: StoreClass, _: bool) {}
 }
 
 struct Rig {
