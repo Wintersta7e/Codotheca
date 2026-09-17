@@ -356,11 +356,37 @@ mod corehandler {
         h.shutdown();
     }
 
+    /// Whether the process's one index guard can be taken from **this** thread, retried to a
+    /// deadline.
+    ///
+    /// **A bare `try_lock` stopped being able to answer the question these probes ask**, and what
+    /// exposed it is p2-21 scheduling a listing at start-up: the sync runner now does DB work of
+    /// its own while a command is answered, so a failed `try_lock` no longer means *the arm under
+    /// test holds the guard* — it can equally mean *another thread held it for a hundred
+    /// microseconds*. Measured on a build with no defect in it: five runs in six red.
+    ///
+    /// Retrying to a deadline separates the two exactly and **does not weaken the assertion**
+    /// (R99): `std::sync::Mutex` is not reentrant, so a guard held by the calling path can never
+    /// be taken here however long this waits. Same thread means never; another thread means
+    /// microseconds.
+    fn index_lock_is_free(index: &Arc<std::sync::Mutex<codotheca_core::index::Index>>) -> bool {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            if index.try_lock().is_ok() {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
     /// A `TokenStore` that tries the index lock **from inside `delete`**, on the answering thread.
     ///
     /// The same discriminator as `LockProbingTransport` and for the same reason: `std::sync::
-    /// Mutex` is not reentrant, so a guard held by the arm makes this `try_lock` fail with no
-    /// threads and no timing involved.
+    /// Mutex` is not reentrant, so a guard held by the arm can never be taken, whatever
+    /// [`index_lock_is_free`] waits.
     #[derive(Debug)]
     struct LockProbingTokenStore {
         index: Arc<std::sync::Mutex<codotheca_core::index::Index>>,
@@ -396,7 +422,7 @@ mod corehandler {
             _entry: &str,
         ) -> Result<(), codotheca_core::accounts::keychain::KeychainError> {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let free = self.index.try_lock().is_ok();
+            let free = index_lock_is_free(&self.index);
             self.lock_was_free
                 .store(free, std::sync::atomic::Ordering::SeqCst);
             Ok(())
@@ -476,10 +502,11 @@ mod corehandler {
     /// A transport that tries the index lock **from inside `send`**, on the very thread that is
     /// answering the command.
     ///
-    /// `std::sync::Mutex` is not reentrant, so this discriminates with no threads and no timing:
-    /// if the arm answering `accounts.connect` held the guard, this `try_lock` returns `Err` on
-    /// the same thread; if it takes no guard, it succeeds. Forcing the condition rather than
-    /// waiting for one is R72's rule.
+    /// `std::sync::Mutex` is not reentrant, so this discriminates without depending on timing: if
+    /// the arm answering `accounts.connect` held the guard, no wait on the same thread can ever
+    /// take it; if it takes no guard, [`index_lock_is_free`] succeeds on the first try or as soon
+    /// as whatever other thread had it lets go. Forcing the condition rather than waiting for one
+    /// is R72's rule.
     #[derive(Debug)]
     struct LockProbingTransport {
         index: Arc<std::sync::Mutex<codotheca_core::index::Index>>,
@@ -494,7 +521,7 @@ mod corehandler {
         ) -> Result<codotheca_core::http::HttpResponse, codotheca_core::http::TransportError>
         {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let free = self.index.try_lock().is_ok();
+            let free = index_lock_is_free(&self.index);
             self.lock_was_free
                 .store(free, std::sync::atomic::Ordering::SeqCst);
             Err(codotheca_core::http::TransportError::Timeout)
