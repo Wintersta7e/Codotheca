@@ -1,4 +1,8 @@
-//! Install's durable run-state vocabulary.
+//! Install's durable run-state vocabulary, and where a clone lands.
+
+pub mod destination;
+
+pub use destination::{is_safe_path_segment, refuse_unsafe_name};
 
 /// The lifecycle state stored in `install_run.state`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
