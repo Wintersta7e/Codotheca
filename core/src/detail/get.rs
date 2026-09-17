@@ -167,6 +167,9 @@ fn to_location_detail(
         fetch_head_at: facts.fetch_head_at,
         trusted_at: facts.trusted_at,
         covering_root_id: None,
+        // [p2] §24.6a. Carried straight through: a surface that re-derived *removed* from
+        // `presence` would be a second owner for the fact, and `presence` cannot express it.
+        removed_at: facts.removed_at,
     }
 }
 

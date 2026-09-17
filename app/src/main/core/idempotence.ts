@@ -48,6 +48,10 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'projects.launch': 'write',
   'locations.setTrusted': 'write',
   'locations.relocate': 'write',
+  // [p2] §24.7: read-only and unprivileged, but it fetches — so it is not callable on hover.
+  'locations.uninstallPreflight': 'read',
+  // [p2] §24.8: the one phase-2 command that removes a user's working copy.
+  'locations.uninstall': 'write',
   'targets.list': 'read',
   'targets.setDefault': 'write',
   'targets.upsert': 'write',

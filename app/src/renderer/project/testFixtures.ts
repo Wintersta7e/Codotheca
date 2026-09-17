@@ -72,6 +72,9 @@ export function locationFixture(over: Partial<LocationDetail> = {}): LocationDet
     fetchHeadAt: NOW - 6 * DAY,
     trustedAt: null,
     coveringRootId: null,
+    // [p2] §24.6a: NULL is *not removed*. A location that was uninstalled carries the instant,
+    // and that instant takes precedence over `presence` on every surface.
+    removedAt: null,
     ...over,
   };
 }

@@ -108,9 +108,21 @@ test('the sort key set excludes completion', () => {
   assert.deepEqual(schema.types.SortKey.variants, ['last_touched', 'name', 'size']);
 });
 
+// [p2] §24.7 lands Uninstall, so `uninstall` is no longer banned outright — it is **narrowed to
+// an enumerated pair**, in the same shape Task 7 narrowed `check-destructive-tokens`. The list is
+// what permits them; a third command spelling `uninstall` fails here, and every other verb in the
+// original set stays banned outright. `FORGET` still appears nowhere at all.
+const UNINSTALL_COMMANDS = ['locations.uninstall', 'locations.uninstallPreflight'];
+
 test('§17: no command name carries a destructive verb, and FORGET appears nowhere', () => {
-  const banned = /(forget|delete|uninstall|clean|push|checkout|prune|discard|reset)/i;
+  const banned = /(forget|delete|clean|push|checkout|prune|discard|reset)/i;
   for (const n of names) assert.doesNotMatch(n, banned, `${n} names a destructive operation`);
+  const uninstall = names.filter((n) => /uninstall/i.test(n)).sort();
+  assert.deepEqual(
+    uninstall,
+    [...UNINSTALL_COMMANDS].sort(),
+    'uninstall is permitted at exactly two command names and nowhere else',
+  );
   assert.doesNotMatch(JSON.stringify(schema), /FORGET/);
 });
 
@@ -294,7 +306,7 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 // the merged one — 57 and 55 are both right about their own tree and wrong about this one.
 // `locations.uninstall*` is p2-24b's and is not here.
 test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8, §25.8, §24.9, §21.13 and nothing extra', () => {
-  assert.equal(names.length, 58, `expected 58 commands, found ${names.length}`);
+  assert.equal(names.length, 60, `expected 60 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -498,6 +510,9 @@ test('the privileged set is closed, and every member says which clause admits it
     'install.cancel',
     'install.start',
     'locations.relocate',
+    // [p2] §24.8: the sixth, and the only one that removes a user's working copy. It carries no
+    // Bytes either — the renderer sends a LocationId and originates no path.
+    'locations.uninstall',
     'roots.add',
     'targets.upsert',
   ]);
@@ -516,6 +531,8 @@ test('the privileged set is closed, and every member says which clause admits it
 // [p2] §24.9 adds two: a replayed `install.start` after a core restart begins a second clone
 // into a destination the first one is still writing, and a replayed `install.cancel` kills a
 // process group that a later run may by then own.
+// [p2] §24.8 adds the twelfth: a replayed `locations.uninstall` after a core restart would remove
+// a working copy the user has since reinstated.
 test('the non-idempotent set is closed', () => {
   const ni = schema.commands
     .filter((c) => c.idempotent === false)
@@ -529,6 +546,7 @@ test('the non-idempotent set is closed', () => {
     'accounts.upgradeScope',
     'install.cancel',
     'install.start',
+    'locations.uninstall',
     'projects.launch',
     'projects.setFlags',
     'projects.setReadmeRemote',
@@ -960,4 +978,56 @@ test('the accounts topic carries exactly three events and no snapshot', () => {
   assert.equal(schema.topics.accounts.connect_progress, 'ConnectProgress');
   assert.equal(schema.topics.accounts.connected, 'Account');
   assert.equal(schema.topics.accounts.disconnected, 'AccountDisconnected');
+});
+
+// ---------------------------------------------------------------------------
+// [p2] §24.7/§24.8 — Uninstall's two commands and three types.
+// ---------------------------------------------------------------------------
+
+test('§24.8: uninstall is two commands with opposite trust classes', () => {
+  const preflight = schema.commands.find((c) => c.name === 'locations.uninstallPreflight');
+  const uninstall = schema.commands.find((c) => c.name === 'locations.uninstall');
+  assert.ok(preflight, 'locations.uninstallPreflight must exist');
+  assert.ok(uninstall, 'locations.uninstall must exist');
+
+  // The preflight writes nothing and originates no path, so marking it privileged would be a
+  // security claim it does not need — and the validator would reject it anyway.
+  assert.notEqual(preflight.privileged, true);
+  assert.notEqual(preflight.idempotent, false);
+  assert.equal(preflight.returns, 'UninstallVerdict');
+
+  assert.equal(uninstall.privileged, true);
+  assert.equal(uninstall.idempotent, false);
+  assert.equal(uninstall.mutatesFilesystem, true);
+  assert.equal(uninstall.returns, 'LocationDetail');
+  // It carries a LocationId and nothing else: no path crosses the wire in either direction.
+  assert.deepEqual(Object.keys(uninstall.args), ['locationId']);
+});
+
+test('§24.8: the blocker vocabulary is fourteen, and the disposition is three', () => {
+  assert.equal(schema.types.UninstallBlocker.variants.length, 14);
+  assert.deepEqual(schema.types.UninstallDisposition.variants, ['safe', 'blocked', 'unknown']);
+  // `unknown` is a disposition of its own, not a flag on `blocked`: collapsing the two would
+  // render an absence as a fact.
+  assert.ok(schema.types.UninstallDisposition.variants.includes('unknown'));
+});
+
+test('§24.8: the verdict carries every blocker and no token', () => {
+  const fields = Object.keys(schema.types.UninstallVerdict.fields);
+  assert.deepEqual(fields, [
+    'disposition',
+    'blockers',
+    'remoteVerifiedAt',
+    'trashAvailable',
+    'computedAt',
+  ]);
+  // The seal `locations.uninstall` compares against is in-core only. A token on the wire would
+  // be a capability the renderer could hold, and §24.8 gives it none.
+  for (const banned of ['seal', 'token', 'verdictSeal', 'nonce']) {
+    assert.ok(!fields.includes(banned), `${banned} must not cross the boundary`);
+  }
+});
+
+test('§24.6a: a location can say when it was removed, and NULL is not removed', () => {
+  assert.equal(schema.types.LocationDetail.fields.removedAt, 'Timestamp?');
 });

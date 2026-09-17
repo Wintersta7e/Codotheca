@@ -146,5 +146,8 @@ test('every privileged command is known, or is unowned with its owner named', ()
   expect(
     deferred.sort(),
     'the privileged commands still waiting on a core handler, exhaustively',
-  ).toEqual([]);
+    // [p2] §24.8's `locations.uninstall` is privileged and lands its handler in p2-24b's Task 11;
+    // until then it is unowned with its owner named, which is exactly the state this exception
+    // exists for. `locations.uninstallPreflight` is unprivileged and never appears here.
+  ).toEqual(['locations.uninstall']);
 });

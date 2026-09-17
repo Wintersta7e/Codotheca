@@ -199,11 +199,21 @@ describe('the destructive-token gate', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('keeps UNINSTALL banned outright while its site list is empty', async () => {
+  // [p2] The ban is no longer outright — §24.7 lands Uninstall — so what is asserted is the
+  // narrowing: permitted at its enumerated sites and **nowhere else**. The second half is the
+  // half with teeth, and it is unchanged from when the list was empty.
+  it('permits UNINSTALL only at its enumerated sites', async () => {
     const gate = await importGate();
-    expect(gate.UNINSTALL_SITES).toHaveLength(0);
+    expect(gate.UNINSTALL_SITES.length, 'the word is rendered now').toBeGreaterThan(0);
+    for (const site of gate.UNINSTALL_SITES) {
+      expect(
+        gate.scanSource("export const x = 'UNINSTALL';", site.path).length,
+        `${site.path} is an enumerated site`,
+      ).toBe(0);
+    }
     expect(
       gate.scanSource("export const x = 'UNINSTALL';", 'app/src/renderer/anywhere.tsx').length,
+      'anywhere else is still banned',
     ).toBeGreaterThan(0);
   });
 

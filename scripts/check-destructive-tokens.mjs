@@ -36,7 +36,18 @@ const EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.mjs', '.css', '.json', '.htm
  *
  * @type {ReadonlyArray<{path: string, token: string, why: string}>}
  */
-export const UNINSTALL_SITES = [];
+export const UNINSTALL_SITES = [
+  {
+    path: 'protocol/schema/protocol.json',
+    token: 'UNINSTALL',
+    why: '§24.7/§24.8 declare `locations.uninstall` and `locations.uninstallPreflight`, their verdict types and the comments that state the trust rules. The schema is the one place the two command names are spelled; `protocol/test/surface.test.mjs` asserts the pair is closed, so a third `uninstall` command fails there rather than passing quietly here.',
+  },
+  {
+    path: 'app/src/main/core/idempotence.ts',
+    token: 'UNINSTALL',
+    why: '`COMMAND_EFFECT` is `Record<CommandName, …>`, so it must name every command the schema declares — including the two above. Omitting them is a type error, which is why this entry is unavoidable rather than a convenience.',
+  },
+];
 
 /**
  * Where `DELETE` is permitted, and nowhere else.
@@ -286,18 +297,26 @@ export function selfTest() {
   }
 
   // The site mechanism, proven in both directions against a synthetic rule rather than against
-  // `UNINSTALL_SITES`, which is empty in this change **by design** — p2-24b populates it in the
-  // change that renders the word, and a self-test that needed a populated list would have to be
-  // rewritten then.
+  // `UNINSTALL_SITES`, so the fixture keeps working whatever that list holds.
   const sited = [
     { token: 'UNINSTALL', pattern: /\buninstall\b/i, why: 'fixture', sites: UNINSTALL_SITES },
   ];
   if (sited.length !== 1) failures.push('self-test: the site fixture is malformed');
-  if (UNINSTALL_SITES.length !== 0) {
-    failures.push(
-      'self-test: UNINSTALL_SITES is not empty; this plan renders no UNINSTALL, and a site list ' +
-        'that grew without the word being rendered is an exemption nobody asked for',
-    );
+  // [p2] **The empty assertion has moved, not been dropped.** p2-24 rendered no `UNINSTALL`, so
+  // an empty list was the honest state and a non-empty one would have been an exemption nobody
+  // asked for. p2-24b renders the word, so what is asserted now is that every entry carries a
+  // real path and a written reason — an entry with an empty `why` is the escape hatch the
+  // original assertion existed to prevent, wearing a different shape.
+  for (const site of UNINSTALL_SITES) {
+    if (typeof site.path !== 'string' || site.path.length === 0) {
+      failures.push('self-test: an UNINSTALL site has no path');
+    }
+    if (typeof site.why !== 'string' || site.why.length < 40) {
+      failures.push(`self-test: ${site.path} is permitted with no written reason`);
+    }
+    if (site.token !== 'UNINSTALL') {
+      failures.push(`self-test: ${site.path} is sited for ${site.token}, not UNINSTALL`);
+    }
   }
   if (scanSource("const label = 'UNINSTALL';", 'app/src/renderer/anywhere.tsx').length === 0) {
     failures.push('self-test: UNINSTALL outside the site list did not fail');

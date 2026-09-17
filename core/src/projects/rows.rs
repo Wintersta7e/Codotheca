@@ -75,6 +75,10 @@ pub struct LocationFacts {
     /// §5.1's "most recently touched". J3 writes it; `pick_primary` reads it.
     pub worktree_newest_mtime: Option<i64>,
     pub last_seen_at: Option<i64>,
+    /// [p2] §24.6a: when this copy was uninstalled. **NULL is *not removed*, never zero and never
+    /// an age.** It takes precedence over `presence` on every surface, which is why the producer
+    /// carries it rather than each surface re-deriving it.
+    pub removed_at: Option<i64>,
 }
 
 /// What §8.3's grammar filters on and the wire row does not carry yet — the core-side view of
@@ -162,7 +166,7 @@ pub fn scan_generation(conn: &rusqlite::Connection) -> Result<i64, ProjectsError
 const LOCATION_COLUMNS: &str = "SELECT id, project_id, kind, distro, presence, branch,
                 is_dirty, untracked_count, ahead, behind, stash_count, interrupted_op,
                 fetch_head_at, refstate_observed_at, worktree_observed_at, worktree_newest_mtime,
-                last_seen_at, head_oid, trusted_at
+                last_seen_at, head_oid, trusted_at, removed_at
            FROM location";
 
 fn map_location(r: &rusqlite::Row<'_>) -> Result<LocationFacts, ProjectsError> {
@@ -190,6 +194,7 @@ fn map_location(r: &rusqlite::Row<'_>) -> Result<LocationFacts, ProjectsError> {
         last_seen_at: r.get(16)?,
         head_oid: r.get(17)?,
         trusted_at: r.get(18)?,
+        removed_at: r.get(19)?,
     })
 }
 

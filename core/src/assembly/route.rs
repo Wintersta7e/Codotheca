@@ -104,7 +104,10 @@ pub enum Route {
 /// **Empty, and that is a state to assert rather than a state to stop asserting.** The test
 /// below reads the router rather than this list, so an empty constant still proves that no
 /// command routes to `NoOwner` — two `all()` calls over an empty set assert nothing.
-pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
+pub const UNOWNED_COMMANDS: [(&str, &str); 2] = [
+    ("locations.uninstallPreflight", "p2-24b Task 10"),
+    ("locations.uninstall", "p2-24b Task 11"),
+];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -206,6 +209,11 @@ pub fn route(command: CommandName) -> Route {
         CommandName::InstallPreview | CommandName::InstallStart | CommandName::InstallCancel => {
             Route::Install
         }
+
+        // [p2] §24.7's two, declared with the schema and answered by the uninstall runtime. Each
+        // names the task that owes it, so the refusal says *who* rather than only *that*.
+        CommandName::LocationsUninstallPreflight => Route::NoOwner("p2-24b Task 10"),
+        CommandName::LocationsUninstall => Route::NoOwner("p2-24b Task 11"),
     }
 }
 
@@ -287,10 +295,11 @@ mod tests {
         // running total a lane cannot know after the merges ahead of it.
         assert_eq!(
             commands.len(),
-            58,
+            60,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
              remote.webUrl plus §25.8's three projects.readme* commands plus §24.9's three \
-             install.* commands plus §21.13's sync.status"
+             install.* commands plus §21.13's sync.status plus §24.7's two locations.uninstall* \
+             commands"
         );
         let unnamed: Vec<&str> = commands
             .iter()

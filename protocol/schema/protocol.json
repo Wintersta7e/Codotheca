@@ -540,7 +540,47 @@
         "worktreeObservedAt": "Timestamp?",
         "fetchHeadAt": "Timestamp?",
         "trustedAt": "Timestamp?",
-        "coveringRootId": "RootId?"
+        "coveringRootId": "RootId?",
+        "removedAt": "Timestamp?"
+      }
+    },
+
+    "UninstallDisposition": {
+      "kind": "enum",
+      "$comment": "§24.8. `unknown` is distinct from `blocked` at the TYPE level, not by convention: collapsing them would render an absence as a fact, and neither disposition reaches removal anyway.",
+      "variants": ["safe", "blocked", "unknown"]
+    },
+
+    "UninstallBlocker": {
+      "kind": "enum",
+      "$comment": "§24.8: the verdict is never a boolean. Every failing condition is named so a surface states WHY a control is disabled rather than only disabling it. Ten are known-bad; four — shallow_clone, remote_unreachable, stash_unreadable, never_observed — are unknowns.",
+      "variants": [
+        "unpushed_commits",
+        "uncommitted_changes",
+        "stash_present",
+        "untracked_precious",
+        "ignored_precious",
+        "submodule_unsafe",
+        "linked_worktree",
+        "shallow_clone",
+        "remote_unreachable",
+        "remote_is_local_mirror",
+        "stash_unreadable",
+        "live_session",
+        "refused_path",
+        "never_observed"
+      ]
+    },
+
+    "UninstallVerdict": {
+      "kind": "struct",
+      "$comment": "§24.8's per-item value. `blockers` always carries EVERY blocker found, of both classes, so the fold never hides one. No token crosses this boundary: the seal `locations.uninstall` compares against is in-core only.",
+      "fields": {
+        "disposition": "UninstallDisposition",
+        "blockers": "[UninstallBlocker]",
+        "remoteVerifiedAt": "Timestamp?",
+        "trashAvailable": "bool",
+        "computedAt": "Timestamp"
       }
     },
 
@@ -1319,6 +1359,21 @@
       "returns": "LocationDetail",
       "privileged": true,
       "$comment": "§17: rewrites path_bytes in place and keeps scan_generation. It is the only phase-1 write to a location's path"
+    },
+    {
+      "name": "locations.uninstallPreflight",
+      "args": { "locationId": "LocationId" },
+      "returns": "UninstallVerdict",
+      "$comment": "§24.7: read-only and UNPRIVILEGED — it writes nothing and originates no path. It does perform a network fetch to verify the remote rather than believe it, so it is not callable on hover"
+    },
+    {
+      "name": "locations.uninstall",
+      "args": { "locationId": "LocationId" },
+      "returns": "LocationDetail",
+      "idempotent": false,
+      "privileged": true,
+      "mutatesFilesystem": true,
+      "$comment": "§24.8: the verdict is recomputed inside this call and the removal is refused if it changed — a verdict rendered a moment ago is a cache. Non-idempotent: a replay after a core restart would remove a working copy the user has since reinstated"
     },
     {
       "name": "targets.list",
