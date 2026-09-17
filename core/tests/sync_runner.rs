@@ -823,10 +823,18 @@ fn a_reserve_with_no_observed_reset_parks_once_instead_of_cycling() {
         account_id: f.account,
     });
     runner.start();
+    // **Wait for the settle, not for the row.** `settle` writes the row and *then* emits, so a
+    // waiter watching the row can snapshot the event count at zero and then see that same settle
+    // land inside the measurement window — which reads as a loop. Measured before this line
+    // existed: red in two runs of three, and green in every single run (R104).
     until("the scheduled listing to yield to the reserve", || {
-        state_of(&index, SyncTaskKind::AccountRepos, account)
-            .is_some_and(|row| row.state == SyncTaskState::Parked)
+        !events.events("settled").is_empty()
     });
+    assert_eq!(
+        state_of(&index, SyncTaskKind::AccountRepos, account).map(|row| row.state),
+        Some(SyncTaskState::Parked),
+        "the reserve did not park the scheduled listing"
+    );
 
     let at_park = events.events("settled").len();
     std::thread::sleep(Duration::from_millis(300));
