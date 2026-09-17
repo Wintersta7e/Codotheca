@@ -716,7 +716,17 @@ fn notice_for(outcome: &SyncOutcome) -> Option<SyncNotice> {
         | SyncOutcome::NotModified
         | SyncOutcome::NextPage { .. }
         | SyncOutcome::NotFound => None,
-        SyncOutcome::Rejected { .. } => Some(SyncNotice::Forbidden),
+        // **A client defect is not a permission state, and §21.13 has no banner for it.**
+        // §21.8 step 6 makes `Rejected` *any other 4xx* — a 400, a 422, a 409 — and the
+        // classifier's own note says a request this client formed wrongly will be formed wrongly
+        // again. `Forbidden`'s copy names three causes, all of them about the account, and sends
+        // the user to a screen where none of them is true and nothing can be fixed; `Offline` is
+        // no better. So: no banner, a line on stderr for the log the shell keeps, and a `blocked`
+        // row that says `rejected_<status>` for whoever reads the status.
+        SyncOutcome::Rejected { status } => {
+            eprintln!("sync: the forge rejected a request this build formed: {status}");
+            None
+        }
     }
 }
 
