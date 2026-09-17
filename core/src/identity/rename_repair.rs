@@ -47,11 +47,26 @@ struct Unmatched {
     name: String,
 }
 
+/// One pass, of at most `limit` lookups.
+///
+/// **`limit` is the caller's, and that is why this takes one.** The bound stated above is *one
+/// request per unmatched key, **once***, which bounds repetition and not size: a library whose
+/// first scan left three hundred keys unmatched would issue three hundred requests from the
+/// **one** budget decision its caller made before the step, because §21's budget is read per task
+/// step and not per request. So the caller that owns that budget says how many requests one step
+/// may be worth, and this module still holds no budget row and implements no budget of its own.
+///
+/// Whatever the limit leaves over is asked on the next pass. Nothing is lost and nothing loops: a
+/// key that resolves carries an id afterwards and leaves the candidate set for good.
+///
+/// # Errors
+/// Fails when the index refuses. A forge **refusal** is not an error — it is `unknown`.
 pub fn repair_renames(
     index: &Arc<Mutex<Index>>,
     provider: &dyn Provider,
     token: &SecretToken,
     aliases: &HostAliases,
+    limit: usize,
     now: i64,
 ) -> Result<RepairReport, IdentityError> {
     let unmatched = read_unmatched(index, aliases)?;
@@ -59,7 +74,7 @@ pub fn repair_renames(
     // No guard is held here, and that is the point.
     let mut report = RepairReport::default();
     let mut resolved: Vec<(i64, RemoteBinding)> = Vec::new();
-    for candidate in &unmatched {
+    for candidate in unmatched.iter().take(limit) {
         report.attempted += 1;
         match provider.lookup_repo(token, &candidate.owner, &candidate.name) {
             Ok(observed) => match observed.value {

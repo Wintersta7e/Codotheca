@@ -31,6 +31,9 @@ pub struct DetailCtx<'a> {
     pub events: &'a dyn EventSink,
     /// §6: an opened page asks for a current worktree reading for the copy it is showing.
     pub jobs: &'a dyn crate::jobs::JobSink,
+    /// §21.5: an opened page also asks for its **remote** facts, at the priority of the thing the
+    /// user is looking at. One of exactly two sites.
+    pub sync: &'a dyn crate::sync::runner::SyncSink,
     pub now: i64,
 }
 

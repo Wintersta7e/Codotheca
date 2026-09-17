@@ -91,6 +91,9 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'install.preview': 'read',
   'install.start': 'write',
   'install.cancel': 'write',
+  // [p2] §21.13. A read of two tables and the runner's own process state. It queues nothing and
+  // spawns nothing, so replaying it costs a second answer to the same question.
+  'sync.status': 'read',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {

@@ -6,7 +6,12 @@
  * obligations becoming six surfaces again. `Notice`, `selectNotice` and the dismissal key stay
  * with the slot; this produces only the payload one carries.
  */
-import type { DegradedReason, Problems, TargetVerification } from '../../generated/protocol';
+import type {
+  DegradedReason,
+  Problems,
+  SyncNotice,
+  TargetVerification,
+} from '../../generated/protocol';
 import { GIT_FLOOR } from '../../shared/gitFloor';
 
 export interface NoticeCopy {
@@ -184,4 +189,71 @@ export function residencyNotice(): NoticeCopy {
     primary: 'START WITH THE SYSTEM',
     secondary: 'LEAVE IT OFF',
   };
+}
+
+/**
+ * §21.10's four sentences, one per `SyncNotice` variant.
+ *
+ * **Every outcome other than a success leaves cached values rendering normally with their stale
+ * marker**, sets each affected remote field to *unknown* — never `failed`, never zero — raises
+ * exactly one non-modal banner, and downgrades no score. There is no second `UNKNOWN` vocabulary
+ * here and no glyph: `—` is §8.4.1's and belongs to the surface that renders a field, not to a
+ * banner about the whole lane.
+ *
+ * **The switch is exhaustive by type.** A fifth variant added to the generated enum fails
+ * `tsc` here rather than falling through to a sentence written for something else, which is the
+ * failure a `default` arm would hide.
+ */
+export function remoteSyncNotice(kind: SyncNotice): NoticeCopy {
+  switch (kind) {
+    case 'throttled':
+      return {
+        title: 'THE FORGE IS RATE LIMITING THIS APP',
+        body:
+          'Remote details will fill in by themselves once the limit resets. Everything already ' +
+          'read is still on screen, with the time it was read.',
+        note: null,
+        primary: null,
+        secondary: null,
+      };
+    case 'unauthorized':
+      return {
+        title: 'THIS CONNECTION NEEDS SIGNING IN AGAIN',
+        body:
+          'The forge no longer accepts this token, so remote details stopped updating. Nothing ' +
+          'local has changed and nothing has been removed.',
+        note: null,
+        primary: 'OPEN ACCOUNTS',
+        secondary: null,
+      };
+    case 'forbidden':
+      return {
+        title: 'THE FORGE REFUSED THIS CONNECTION',
+        body:
+          'A missing permission, an organisation that has not authorised this app, or access ' +
+          'that was withdrawn. Waiting will not change it; the accounts screen will say which.',
+        note: null,
+        primary: 'OPEN ACCOUNTS',
+        secondary: null,
+      };
+    case 'offline':
+      return {
+        title: 'THE FORGE COULD NOT BE REACHED',
+        // **It promises no retry.** §21.4 defers a task at three transient failures, and a
+        // deferred row is left only through a revival cause, none of which has a production
+        // caller. "This retries on its own" was true of the first two failures and false for ever
+        // after the third — *never claim currency you do not have*, pointed forwards: copy
+        // asserting a future behaviour instead of a past observation.
+        body:
+          'Remote details are whatever was last read, with the time beside them. Nothing local ' +
+          'has changed, and nothing here needs doing.',
+        note: null,
+        primary: null,
+        secondary: null,
+      };
+    default: {
+      const unhandled: never = kind;
+      return unhandled;
+    }
+  }
 }

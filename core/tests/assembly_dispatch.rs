@@ -251,6 +251,12 @@ mod corehandler {
         let clock = Arc::clone(clock);
         let index = Arc::clone(index);
         let events = Arc::clone(events);
+        let sync_observing = Arc::new(codotheca_core::sync::http::ObservingTransport::new(
+            Arc::clone(&http),
+            Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        ));
+        let sync_http: Arc<dyn codotheca_core::http::HttpTransport> =
+            Arc::clone(&sync_observing) as Arc<dyn codotheca_core::http::HttpTransport>;
         CoreHandler::new(CoreDeps {
             index: Arc::clone(&index),
             // The seam and a fake of it. `FakeTransport` answers nothing here: every accounts
@@ -285,6 +291,23 @@ mod corehandler {
                 Arc::clone(&index),
                 Arc::new(codotheca_core::testing::FakeGitBackend::new()),
                 Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+                Arc::clone(&events) as Arc<dyn EventSink>,
+            ),
+            // [p2] §21.1's runner, real and started, for the same reason the job pump above is:
+            // `shutdown` stops it, and a handler built with one that never started would not
+            // exercise that.
+            sync: codotheca_core::assembly::sync::SyncPump::start(
+                Arc::clone(&index),
+                codotheca_core::sync::SyncDeps {
+                    provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
+                        Arc::clone(&sync_http),
+                        codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
+                    )),
+                    transport: Arc::clone(&sync_observing),
+                    tokens: Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
+                    clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+                    cancel: codotheca_core::cancel::CancelToken::new(),
+                },
                 Arc::clone(&events) as Arc<dyn EventSink>,
             ),
             events: Arc::clone(&events),
@@ -333,11 +356,37 @@ mod corehandler {
         h.shutdown();
     }
 
+    /// Whether the process's one index guard can be taken from **this** thread, retried to a
+    /// deadline.
+    ///
+    /// **A bare `try_lock` stopped being able to answer the question these probes ask**, and what
+    /// exposed it is p2-21 scheduling a listing at start-up: the sync runner now does DB work of
+    /// its own while a command is answered, so a failed `try_lock` no longer means *the arm under
+    /// test holds the guard* — it can equally mean *another thread held it for a hundred
+    /// microseconds*. Measured on a build with no defect in it: five runs in six red.
+    ///
+    /// Retrying to a deadline separates the two exactly and **does not weaken the assertion**
+    /// (R99): `std::sync::Mutex` is not reentrant, so a guard held by the calling path can never
+    /// be taken here however long this waits. Same thread means never; another thread means
+    /// microseconds.
+    fn index_lock_is_free(index: &Arc<std::sync::Mutex<codotheca_core::index::Index>>) -> bool {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            if index.try_lock().is_ok() {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
     /// A `TokenStore` that tries the index lock **from inside `delete`**, on the answering thread.
     ///
     /// The same discriminator as `LockProbingTransport` and for the same reason: `std::sync::
-    /// Mutex` is not reentrant, so a guard held by the arm makes this `try_lock` fail with no
-    /// threads and no timing involved.
+    /// Mutex` is not reentrant, so a guard held by the arm can never be taken, whatever
+    /// [`index_lock_is_free`] waits.
     #[derive(Debug)]
     struct LockProbingTokenStore {
         index: Arc<std::sync::Mutex<codotheca_core::index::Index>>,
@@ -373,7 +422,7 @@ mod corehandler {
             _entry: &str,
         ) -> Result<(), codotheca_core::accounts::keychain::KeychainError> {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let free = self.index.try_lock().is_ok();
+            let free = index_lock_is_free(&self.index);
             self.lock_was_free
                 .store(free, std::sync::atomic::Ordering::SeqCst);
             Ok(())
@@ -453,10 +502,11 @@ mod corehandler {
     /// A transport that tries the index lock **from inside `send`**, on the very thread that is
     /// answering the command.
     ///
-    /// `std::sync::Mutex` is not reentrant, so this discriminates with no threads and no timing:
-    /// if the arm answering `accounts.connect` held the guard, this `try_lock` returns `Err` on
-    /// the same thread; if it takes no guard, it succeeds. Forcing the condition rather than
-    /// waiting for one is R72's rule.
+    /// `std::sync::Mutex` is not reentrant, so this discriminates without depending on timing: if
+    /// the arm answering `accounts.connect` held the guard, no wait on the same thread can ever
+    /// take it; if it takes no guard, [`index_lock_is_free`] succeeds on the first try or as soon
+    /// as whatever other thread had it lets go. Forcing the condition rather than waiting for one
+    /// is R72's rule.
     #[derive(Debug)]
     struct LockProbingTransport {
         index: Arc<std::sync::Mutex<codotheca_core::index::Index>>,
@@ -471,7 +521,7 @@ mod corehandler {
         ) -> Result<codotheca_core::http::HttpResponse, codotheca_core::http::TransportError>
         {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let free = self.index.try_lock().is_ok();
+            let free = index_lock_is_free(&self.index);
             self.lock_was_free
                 .store(free, std::sync::atomic::Ordering::SeqCst);
             Err(codotheca_core::http::TransportError::Timeout)
@@ -715,8 +765,10 @@ mod corehandler {
         // same way — a file read under a location root and a consent column reach no network.
         // `projects.readmeAssets` is the 52nd and is answered **without** the guard (R75),
         // because it reaches arbitrary hosts.
+        // [p2] §21.13's `sync.status` is the 53rd, answered **under** the guard: it reads two
+        // tables and the runner's own process state, and the runner is what reaches the network.
         assert_eq!(
-            checked, 52,
+            checked, 53,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(
@@ -794,6 +846,93 @@ mod corehandler {
             snap.get("epoch").is_none() && snap.get("throughSeq").is_none(),
             "epoch and throughSeq are the publisher's and are stamped by supply_snapshot"
         );
+    }
+
+    /// **R94's first side, over the real runner.** `projects.get` and `projects.peek` reach
+    /// `SyncSink::on_project_visible` while `Assembly` holds the process's one index guard, and
+    /// `std::sync::Mutex` is not reentrant — a sink that locked it again would wedge the guard for
+    /// the life of the process and the project page would simply never arrive.
+    ///
+    /// **This is a repeat, and it shipped as far as the e2e suite before anything said so.**
+    /// `f182452` fixed exactly this for `JobSink::on_visible`; p2-21 reintroduced it on the sync
+    /// sink, and the unit tests missed it because they drive a recording sink rather than the
+    /// runner. Two project-page specs timed out at sixty seconds apiece waiting for a tab panel
+    /// the core never answered for. The cheap guard belongs here, where the handler holds the
+    /// real guard and the pump is the real one.
+    #[test]
+    fn a_project_command_answers_while_the_real_sync_pump_is_wired() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let index = Arc::new(std::sync::Mutex::new(
+            codotheca_core::index::Index::open_at(dir.path(), NOW).expect("index opens"),
+        ));
+        // **A project that exists.** The first version of this test passed an id naming no
+        // project, so `projects.get` refused before it ever reached the sink — a bar written
+        // past the defect it was added for, caught by reverting the fix and watching it stay
+        // green.
+        let project = {
+            let mut guard = index.lock().expect("index");
+            guard
+                .with_tx(|tx| {
+                    tx.execute(
+                        "INSERT INTO project (name, seed_basename, created_at, updated_at)
+                         VALUES ('alpha', 'alpha', ?1, ?1)",
+                        [NOW],
+                    )?;
+                    Ok(tx.last_insert_rowid())
+                })
+                .expect("seeded")
+        };
+
+        let events = Arc::new(PublisherSink::new(Publisher::detached()));
+        let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
+        let mut h = handler_over(
+            dir.path(),
+            &index,
+            &events,
+            &clock,
+            Arc::new(codotheca_core::testing::FakeTransport::new()),
+            Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
+        );
+
+        // A bounded wait in another thread: a deadlock here would hang the suite for ever
+        // otherwise, and a test that hangs reports nothing. Forcing the bound is R72's rule.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            // Both commands, because both reach the sink and each holds the guard its own way.
+            let got = h.handle("projects.get", serde_json::json!({ "id": project }));
+            let peek = h.handle("projects.peek", serde_json::json!({ "id": project }));
+            let _ = tx.send((got.is_ok(), peek.is_ok()));
+            h
+        });
+        let answered = rx
+            .recv_timeout(std::time::Duration::from_secs(20))
+            .expect("projects.get and projects.peek answered while the sync pump was wired");
+        assert_eq!(
+            answered,
+            (true, true),
+            "both commands must answer, not merely return"
+        );
+    }
+
+    /// [p2] §21.13: the `sync` snapshot **is** `sync.status`' answer, byte for byte. Two
+    /// producers for one payload would let a subscriber and a caller disagree about the same
+    /// moment, which is the whole reason `snapshot_of` delegates through `handle` rather than
+    /// reaching into a module.
+    #[test]
+    fn the_sync_snapshot_is_exactly_what_sync_status_returns() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        let answered = h
+            .handle("sync.status", serde_json::json!({}))
+            .expect("sync.status answers");
+        let snap = h.snapshot(Topic::Sync);
+        assert_eq!(snap, answered, "the snapshot must not be a second producer");
+        // And an empty runner is *measured, none*: empty arrays, and null for the two fields
+        // that have no observation rather than a zero nobody made.
+        assert_eq!(snap["tasks"], serde_json::json!([]));
+        assert_eq!(snap["budgets"], serde_json::json!([]));
+        assert_eq!(snap["listing"], serde_json::Value::Null);
+        assert_eq!(snap["notice"], serde_json::Value::Null);
     }
 
     /// Every `?` field is read, never synthesised. An unset `git_version` is a real null.

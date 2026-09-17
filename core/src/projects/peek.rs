@@ -187,6 +187,9 @@ pub fn handle(
     // §6: a Peek asks for a current worktree reading for the copy it is showing. The answer
     // below is still the **stored** one with its own `as_of`; the job updates it and publishes
     // a change. Nothing here waits, and nothing here claims currency it does not have.
+    // §21.5, and **outside the location guard**: a not-cloned project has no location and is the
+    // row whose Peek is made entirely of remote facts.
+    ctx.sync.on_project_visible(peek.id);
     if let Some(location) = peek.location.as_ref() {
         crate::jobs::visible::notify_visible(ctx.index, ctx.mounts, ctx.jobs, peek.id, location.id);
     }

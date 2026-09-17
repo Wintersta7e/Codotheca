@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { Problems, TargetVerification } from '../../generated/protocol';
+import type { Problems, SyncNotice, TargetVerification } from '../../generated/protocol';
 import { GIT_FLOOR } from '../../shared/gitFloor';
 import {
   degradedNotice,
   GIT_FLOOR_DISPLAY,
   problemsNotice,
+  remoteSyncNotice,
   residencyNotice,
   RESIDENCY_MEASUREMENTS,
   spawnFailureNotice,
@@ -164,5 +165,60 @@ describe('priority 5: the residency ask', () => {
     const n = residencyNotice();
     expect(n.secondary).not.toMatch(/not now|later|remind/i);
     expect(n.body).toMatch(/settings/i);
+  });
+});
+
+/**
+ * §21.10's four sentences.
+ *
+ * **Exhaustive by type**: the array below is the generated enum's whole vocabulary, and a fifth
+ * variant added to the schema fails `remoteSyncNotice`'s `never` arm at type-check rather than
+ * falling through to a sentence written for something else.
+ */
+describe('remoteSyncNotice', () => {
+  const ALL: readonly SyncNotice[] = ['throttled', 'unauthorized', 'forbidden', 'offline'];
+
+  it('gives each of the four variants its own sentence', () => {
+    const titles = ALL.map((kind) => remoteSyncNotice(kind).title);
+    const bodies = ALL.map((kind) => remoteSyncNotice(kind).body);
+    expect(new Set(titles).size).toBe(ALL.length);
+    expect(new Set(bodies).size).toBe(ALL.length);
+  });
+
+  /**
+   * §21.10: every affected remote field is **unknown — never `failed`, never zero**, and the
+   * glyph is §8.4.1's `—`, which belongs to the field and not to a banner about the lane. A
+   * banner that printed `0` or `failed` would be the invariant broken in the one place the user
+   * is looking when something has gone wrong.
+   */
+  it('never says failed, never prints a zero, and draws no glyph of its own', () => {
+    for (const kind of ALL) {
+      const copy = remoteSyncNotice(kind);
+      const text = `${copy.title} ${copy.body} ${copy.note ?? ''}`;
+      expect(text.toLowerCase()).not.toContain('failed');
+      expect(text).not.toMatch(/\b0\b/);
+      expect(text).not.toContain('—');
+    }
+  });
+
+  /** A control with nothing behind it is §11.3a's forbidden shape, so only the two that lead
+   *  somewhere carry one — and neither offers a RETRY the user cannot make happen. */
+  it('offers an action only where one exists', () => {
+    expect(remoteSyncNotice('throttled').primary).toBeNull();
+    expect(remoteSyncNotice('offline').primary).toBeNull();
+    expect(remoteSyncNotice('unauthorized').primary).toBe('OPEN ACCOUNTS');
+    expect(remoteSyncNotice('forbidden').primary).toBe('OPEN ACCOUNTS');
+    for (const kind of ALL) {
+      expect(remoteSyncNotice(kind).secondary).toBeNull();
+    }
+  });
+
+  /** §21.10 forbids a blocking dialog and a score change; the copy must not imply either. */
+  it('promises no retry the user has to make and threatens no score', () => {
+    for (const kind of ALL) {
+      const text = `${remoteSyncNotice(kind).title} ${remoteSyncNotice(kind).body}`.toLowerCase();
+      expect(text).not.toContain('score');
+      expect(text).not.toContain('xp');
+    }
   });
 });

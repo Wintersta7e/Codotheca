@@ -81,12 +81,12 @@ fn insert_account(
 
 /// The literal moves with every phase-2 migration, by reading the base value off the failure
 /// rather than by writing a running total. `0008` put it at 8; `0009`'s `project` rebuild raised
-/// it to 9; `0010`'s install tables raised it to 10. The name deliberately does not carry the
-/// number, so raising it is one line.
+/// it to 9; `0010`'s install tables raised it to 10; `0011`'s sync tables raise it to 11. The
+/// name deliberately does not carry the number, so raising it is one line.
 #[test]
 fn a_fresh_index_migrates_to_the_version_this_build_supports() {
     let (_dir, conn) = fresh();
-    assert_eq!(schema_version(&conn).unwrap(), 10);
+    assert_eq!(schema_version(&conn).unwrap(), 11);
     assert_eq!(
         MIGRATIONS.last().map(|m| m.version),
         Some(codotheca_core::index::migrate::SUPPORTED_SCHEMA_VERSION),

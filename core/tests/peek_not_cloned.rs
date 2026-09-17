@@ -72,6 +72,7 @@ fn peek_of(index: &Index, project: i64) -> codotheca_core::protocol::Peek {
         events: &sink,
         jobs: &jobs,
         mounts: &mounts,
+        sync: &codotheca_core::sync::runner::NullSyncSink,
         now: NOW,
         tz_offset_min: 0,
     };
