@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { App } from './App';
+import { EFFECTS_TIER_ATTRIBUTE } from './effectsTier';
 import { fakeAppDeps, type FakeAppDeps, type FakeReplies } from './app/testDeps';
 import type {
   IdentityId,
@@ -122,6 +123,67 @@ describe('App — the composition root', () => {
     });
     // The top bar and the one scroll container, from the real components rather than a stub.
     expect(document.querySelector('.cdt-shelf-scroll')).not.toBeNull();
+  });
+
+  // The resolver ran and its answer never reached the DOM. `main.tsx` writes the boot value once
+  // before mount, `auto` is the default (`shared/bootFile.ts:49`), and nothing resolved it
+  // afterwards — so every `[data-effects-tier='full'|'reduced'|'off']` rule in the repository
+  // selected nothing, the project page's entrance and cascade among them. Asserted at the
+  // composition root rather than on the hook, because the defect was a missing CALL: a hook-only
+  // test passes while nobody calls it, which is the shape this project keeps getting caught by.
+  it('resolves auto onto the document element, so no CSS tier rule is inert', async () => {
+    const fake = fakeAppDeps(repliesFor([row(1, 'alpha')], scanned), { effectsTier: 'auto' });
+    fake.setNow(NOW);
+    render(<App deps={fake.deps} />);
+    await waitFor(() => {
+      expect(document.documentElement.getAttribute(EFFECTS_TIER_ATTRIBUTE)).toBe('full');
+    });
+  });
+
+  /**
+   * §11.3a forbids a control that promises something and does nothing, and this is the one the
+   * user pressed. Every unit below it is covered — `NoticeSlot` dismisses by the scoped key,
+   * `selectNotice` filters on that key, `useViewState` sets local state before it writes — but
+   * nothing had ever asserted the chain end to end with a *real* scan notice, because the App
+   * fixture answers `problems.list` with `runId: null`, which produces no banner at all.
+   */
+  it('dismisses a scan problems notice, and it stays dismissed', async () => {
+    // A run id on both sides: `useProblems` asks for nothing without one, and `problemsNotice`
+    // returns null without one, so the default fixture's `runId: null` raises no banner at all.
+    const withRun: ScanStatus = { ...scanned, runId: 7 as ScanStatus['runId'], problemCount: 2 };
+    const fake = fakeAppDeps(
+      {
+        ...repliesFor([row(1, 'alpha')], withRun),
+        'problems.list': () => ({
+          runId: withRun.runId,
+          header: {
+            walkedDirs: 12,
+            repositories: 3,
+            problemCount: 2,
+            ambiguousLineageCount: null,
+          },
+          groups: [],
+        }),
+      },
+      { effectsTier: 'off' },
+    );
+    fake.setNow(NOW);
+    render(<App deps={fake.deps} />);
+
+    const banner = await screen.findByText(/THE LAST SCAN LEFT 2 PROBLEMS/u);
+    expect(banner).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/THE LAST SCAN LEFT 2 PROBLEMS/u)).toBeNull();
+    });
+    // And it does not come back on the next paint: a banner that returns is the same dead control
+    // wearing a delay.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(/THE LAST SCAN LEFT 2 PROBLEMS/u)).toBeNull();
   });
 
   it('runs first run for a library that has never been scanned', async () => {

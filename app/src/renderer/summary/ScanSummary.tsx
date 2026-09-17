@@ -23,12 +23,18 @@ import {
   NO_SCAN_YET_HEADING,
   OPEN_PROJECT_LABEL,
   PROBLEM_GROUP_LABEL,
+  PROBLEMS_DISMISSED_HEADING,
   summaryDetailLine,
   summaryHeaderClauses,
 } from './copy';
 
 export interface ScanSummaryProps {
   readonly problems: Problems;
+  /**
+   * This run's banner was dismissed, so its problem list goes with it. Passed in rather than read
+   * here: the dismissal lives in the view state, which is the shelf's, not this panel's.
+   */
+  readonly problemsDismissed?: boolean;
   readonly request: ErrorRequest;
   readonly onOpenProject: (id: ProjectId) => void;
   readonly onChanged: () => void;
@@ -159,9 +165,9 @@ function GroupRows(props: {
 }
 
 export function ScanSummary(props: ScanSummaryProps): ReactElement {
-  const { problems, request, onOpenProject, onChanged } = props;
-  const clauses = summaryHeaderClauses(problems);
-  const groups = problems.groups.filter((g) => g.items.length > 0);
+  const { problems, problemsDismissed = false, request, onOpenProject, onChanged } = props;
+  const clauses = summaryHeaderClauses(problems, problemsDismissed);
+  const groups = problemsDismissed ? [] : problems.groups.filter((g) => g.items.length > 0);
 
   if (clauses === null) {
     return (
@@ -184,7 +190,9 @@ export function ScanSummary(props: ScanSummaryProps): ReactElement {
         ))}
       </p>
       {groups.length === 0 ? (
-        <h2 style={emptyHeading}>{NO_PROBLEMS_HEADING}</h2>
+        <h2 style={emptyHeading}>
+          {problemsDismissed ? PROBLEMS_DISMISSED_HEADING : NO_PROBLEMS_HEADING}
+        </h2>
       ) : (
         groups.map((group) => (
           <GroupRows

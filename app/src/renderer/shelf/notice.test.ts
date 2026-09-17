@@ -26,6 +26,9 @@ describe('the priority order', () => {
       'scanResumed',
       'problems',
       'targetUnresolved',
+      // [p2] §21.10's banner. **Below `problems`**, because letting an offline forge outrank a
+      // local unreadable repository inverts §19.3's *"GitHub is additive, never a gate"*.
+      'remoteSync',
       'identity',
       'residency',
       'newArrivals',
@@ -122,7 +125,7 @@ describe('[p2] §20.11 — the connect offer, exactly one and lowest', () => {
 
   it('AC-P2-20-9 sorts last, and its length grew rather than a row being replaced', () => {
     expect(NOTICE_PRIORITY.at(-1)).toBe('connect');
-    expect(NOTICE_PRIORITY).toHaveLength(8);
+    expect(NOTICE_PRIORITY).toHaveLength(9);
     expect(new Set(NOTICE_PRIORITY).size).toBe(NOTICE_PRIORITY.length);
   });
 
@@ -150,5 +153,81 @@ describe('[p2] §20.11 — the connect offer, exactly one and lowest', () => {
 
   it('takes the accent every non-failure notice takes', () => {
     expect(noticeAccent('connect')).toBe('sig');
+  });
+});
+
+/**
+ * §21.10's banner in §8.0's one slot.
+ *
+ * The obligations this carries are all about *one*: one banner whatever the number of failed
+ * tasks, one position in the table, and one dismissal per **variant** rather than per kind.
+ */
+describe("[p2] §21.10's sync banner", () => {
+  const sync = (variant: string): Notice => ({
+    kind: 'remoteSync',
+    scope: variant,
+    title: 'SYNC',
+    body: 'sync',
+    actions: [],
+  });
+
+  it('sorts below problems and above the identity ask', () => {
+    const problems: Notice = {
+      kind: 'problems',
+      scope: '1',
+      title: 'P',
+      body: 'B',
+      actions: [],
+    };
+    const identity: Notice = {
+      kind: 'identity',
+      scope: null,
+      title: 'I',
+      body: 'B',
+      actions: [],
+    };
+    expect(selectNotice([sync('throttled'), problems], [])?.kind).toBe('problems');
+    expect(selectNotice([identity, sync('throttled')], [])?.kind).toBe('remoteSync');
+  });
+
+  /** §20.14: *"Any phase-2 notice §21 adds sorts above it"*. */
+  it('sorts above the connect offer', () => {
+    const connect: Notice = {
+      kind: 'connect',
+      scope: null,
+      title: 'C',
+      body: 'B',
+      actions: [],
+    };
+    expect(selectNotice([connect, sync('offline')], [])?.kind).toBe('remoteSync');
+  });
+
+  /**
+   * **Dismissal is scoped to the variant.** Dismissing `throttled` must not hide a later
+   * `unauthorized`: the two ask for different actions, and one is not the other's repeat.
+   */
+  it('dismissing one variant still renders a later one', () => {
+    const dismissed = [noticeDismissKey('remoteSync', 'throttled')];
+    expect(dismissed).toEqual(['notice.dismissed.remoteSync:throttled']);
+    expect(selectNotice([sync('throttled')], dismissed)).toBeNull();
+    expect(selectNotice([sync('unauthorized')], dismissed)?.scope).toBe('unauthorized');
+  });
+
+  it('is dismissible, which every row but priority 1 is', () => {
+    expect(noticeIsDismissible('remoteSync')).toBe(true);
+    expect(noticeAccent('remoteSync')).toBe('sig');
+  });
+
+  /**
+   * **One banner, not one per failed task.** `selectNotice` renders a single `Notice`, so three
+   * candidates of this kind collapse to one slot whatever order they arrive in — which is the
+   * property §21.10 states and the one a list-shaped notice would lose.
+   */
+  it('renders one slot for three simultaneous sync failures', () => {
+    const three = [sync('throttled'), sync('unauthorized'), sync('offline')];
+    const picked = selectNotice(three, []);
+    expect(picked).not.toBeNull();
+    expect(picked?.kind).toBe('remoteSync');
+    expect(three.filter((n) => n.kind === picked?.kind)).toHaveLength(3);
   });
 });

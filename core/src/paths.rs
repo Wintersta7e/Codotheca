@@ -57,10 +57,35 @@ pub fn path_key(path: &Path, platform: PathPlatform) -> Vec<u8> {
         .to_vec()
 }
 
+/// True when a displayed path begins `X:`, which is what makes it a Windows path.
+///
+/// Read off the path itself and never off the host (**R2**): the core indexes Windows paths from
+/// a Linux worker and Linux paths from a Windows host, so `cfg!(windows)` would answer about the
+/// wrong machine.
+fn has_drive_letter(raw: &str) -> bool {
+    let bytes = raw.as_bytes();
+    bytes.get(1) == Some(&b':') && bytes.first().is_some_and(u8::is_ascii_alphabetic)
+}
+
 /// Lossy, for the UI only. Never used to open, launch or compare (§1.3).
+///
+/// **One separator per path, chosen by the path.** A scan root stored as `C:/P` and joined with a
+/// child rendered as `C:/P\0` on screen — two separators in one string, which reads as a corrupt
+/// value rather than a location, and was reported as a defect against a path that was perfectly
+/// valid. `Path::join` appends the *host's* separator regardless of how the root was spelled, so
+/// the mix is produced at display time and has to be resolved there.
+///
+/// Only a drive-lettered path is rewritten. A UNC share and §4bis.4's `\\wsl.localhost\…` form
+/// already carry backslashes, and a POSIX path must keep its forward slashes — rewriting either
+/// by the host's convention is how a WSL path gets shown as a Windows one.
 #[must_use]
 pub fn path_display(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+    let raw = path.to_string_lossy().into_owned();
+    if has_drive_letter(&raw) {
+        raw.replace('/', "\\")
+    } else {
+        raw
+    }
 }
 
 /// True when `child_key` is `parent_key` or lies beneath it on a component boundary.

@@ -25,6 +25,7 @@ function input(over: Partial<NoticeInput> = {}): NoticeInput {
     spawnFailure: null,
     problems: null,
     identityToConfirm: false,
+    sync: null,
     onOpenLog: vi.fn(),
     onOpenScanSummary: vi.fn(),
     ...over,
@@ -98,5 +99,45 @@ describe('useNotices', () => {
     const raised = notices({ degraded: 'git_missing', onOpenLog });
     raised[0]?.actions.find((action) => action.label === 'OPEN THE LOG')?.run();
     expect(onOpenLog).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * [p2] §21.10's banner, as a candidate.
+ *
+ * `null` is *no sync failure* and raises nothing; a variant raises **one** candidate, scoped to
+ * that variant so its dismissal cannot hide a different failure later.
+ */
+describe("§21.10's sync candidate", () => {
+  it('raises nothing when there is no sync failure', () => {
+    const notices = renderHook(() => useNotices(input({ sync: null }))).result.current;
+    expect(notices.filter((n) => n.kind === 'remoteSync')).toHaveLength(0);
+  });
+
+  it('raises exactly one candidate, scoped to the variant', () => {
+    const notices = renderHook(() => useNotices(input({ sync: 'throttled' }))).result.current;
+    const raised = notices.filter((n) => n.kind === 'remoteSync');
+    expect(raised).toHaveLength(1);
+    expect(raised[0]?.scope).toBe('throttled');
+    expect(raised[0]?.title).toBe('THE FORGE IS RATE LIMITING THIS APP');
+  });
+
+  /**
+   * **One banner, not one per failed task.** The hook takes a single variant and not a list, so
+   * three failed tasks at once cannot become three candidates — the shape is what enforces it,
+   * which is why this asserts the shape rather than counting a list that does not exist.
+   */
+  it('cannot raise more than one however many tasks failed', () => {
+    for (const variant of ['throttled', 'unauthorized', 'forbidden', 'offline'] as const) {
+      const notices = renderHook(() => useNotices(input({ sync: variant }))).result.current;
+      expect(notices.filter((n) => n.kind === 'remoteSync')).toHaveLength(1);
+    }
+  });
+
+  /** It loses to a scan's problems, which is §19.3's *"GitHub is additive, never a gate"*. */
+  it('does not outrank a local problem', () => {
+    const notices = renderHook(() => useNotices(input({ sync: 'offline', problems: problems(4) })))
+      .result.current;
+    expect(selectNotice(notices, [])?.kind).toBe('problems');
   });
 });

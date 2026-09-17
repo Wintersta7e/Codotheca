@@ -108,6 +108,7 @@ fn ctx<'a>(index: &'a Index, sink: &'a CollectingSink, deps: &'a Deps) -> Projec
         events: sink,
         jobs: &deps.jobs,
         mounts: &deps.mounts,
+        sync: &codotheca_core::sync::runner::NullSyncSink,
         now: NOW,
         tz_offset_min: 0,
     }

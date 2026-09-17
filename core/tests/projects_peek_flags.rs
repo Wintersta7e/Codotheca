@@ -62,6 +62,7 @@ fn call(
         events: sink,
         jobs: &jobs,
         mounts: &mounts,
+        sync: &codotheca_core::sync::runner::NullSyncSink,
         now: NOW,
         tz_offset_min: 0,
     };
@@ -263,6 +264,7 @@ fn an_unknown_project_is_refused_rather_than_silently_creating_one() {
         events: &sink,
         jobs: &jobs,
         mounts: &mounts,
+        sync: &codotheca_core::sync::runner::NullSyncSink,
         now: NOW,
         tz_offset_min: 0,
     };
@@ -304,6 +306,7 @@ fn a_merged_away_project_is_not_reachable_through_either_command() {
         events: &sink,
         jobs: &jobs,
         mounts: &mounts,
+        sync: &codotheca_core::sync::runner::NullSyncSink,
         now: NOW,
         tz_offset_min: 0,
     };
@@ -382,6 +385,7 @@ fn a_peek_asks_for_one_fresh_reading_and_a_list_asks_for_none() {
         events: &sink,
         jobs: &jobs,
         mounts: &mounts,
+        sync: &codotheca_core::sync::runner::NullSyncSink,
         now: NOW,
         tz_offset_min: 0,
     };

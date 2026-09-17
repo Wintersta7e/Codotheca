@@ -11,10 +11,15 @@
  */
 import { useMemo } from 'react';
 
-import type { DegradedReason, Problems } from '../../generated/protocol.js';
+import type { DegradedReason, Problems, SyncNotice } from '../../generated/protocol.js';
 import type { NoticeCopy, SpawnFailureFacts } from '../notices/copy.js';
 import { IDENTITY_BODY_1, IDENTITY_TITLE } from '../firstrun/copy.js';
-import { degradedNotice, problemsNotice, spawnFailureNotice } from '../notices/copy.js';
+import {
+  degradedNotice,
+  problemsNotice,
+  remoteSyncNotice,
+  spawnFailureNotice,
+} from '../notices/copy.js';
 import type { Notice, NoticeAction, NoticeKind } from '../shelf/notice.js';
 
 export interface NoticeInput {
@@ -35,6 +40,14 @@ export interface NoticeInput {
    * what belongs here is only whether the row qualifies at all.
    */
   readonly identityToConfirm: boolean;
+  /**
+   * §21.10's banner. **`null` is *no sync failure*, never a default variant** — a banner that
+   * defaulted to one of the four would tell the user which failure had happened before one had.
+   *
+   * One value and not a list: three failed sync tasks at once produce **one** candidate, because
+   * §8.0 admits one banner and one banner is what the lane is about.
+   */
+  readonly sync: SyncNotice | null;
   readonly onOpenLog: () => void;
   readonly onOpenScanSummary: () => void;
 }
@@ -87,6 +100,7 @@ export function useNotices(input: NoticeInput): readonly Notice[] {
     spawnFailure,
     problems,
     identityToConfirm,
+    sync,
     onOpenLog,
     onOpenScanSummary,
   } = input;
@@ -112,6 +126,13 @@ export function useNotices(input: NoticeInput): readonly Notice[] {
       out.push(toNotice('problems', String(problems.runId), scan, runners));
     }
 
+    if (sync !== null) {
+      // **Scoped to the variant.** `noticeDismissKey` renders `notice.dismissed.remoteSync:<v>`,
+      // so dismissing `throttled` does not also hide a later `unauthorized`: the two ask for
+      // different actions and one is not the other's repeat.
+      out.push(toNotice('remoteSync', sync, remoteSyncNotice(sync), runners));
+    }
+
     if (identityToConfirm) {
       // Unscoped: §1.4's card is one-shot and belongs to the library, not to a run. The title
       // is what the slot uses as its accessible name; the body and every action are the card's,
@@ -132,6 +153,7 @@ export function useNotices(input: NoticeInput): readonly Notice[] {
     spawnFailure,
     problems,
     identityToConfirm,
+    sync,
     onOpenLog,
     onOpenScanSummary,
   ]);

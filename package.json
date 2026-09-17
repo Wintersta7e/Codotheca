@@ -32,6 +32,7 @@
     "check:forbidden": "node scripts/check-forbidden.mjs",
     "check:callsites": "node scripts/check-call-sites.mjs",
     "check:problems": "node scripts/check-problem-kinds.mjs",
+    "check:suite": "node scripts/check-suite-coverage.mjs",
     "acceptance": "node scripts/acceptance.mjs",
     "typecheck": "npm run typecheck --workspace app",
     "check:bundle": "node scripts/check-bundle.mjs && npm run lint:accelerators && npm run lint:updater",

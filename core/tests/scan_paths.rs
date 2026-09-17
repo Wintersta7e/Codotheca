@@ -57,6 +57,46 @@ fn non_utf8_bytes_survive_the_round_trip() {
     assert!(path_display(&p).contains('\u{fffd}'));
 }
 
+/// Measured in the shipped app: a scan root stored with forward slashes, joined with a child,
+/// rendered with both separators in one string — which reads as a corrupt value rather than a
+/// location, and was reported as a defect against a path that was perfectly valid. `Path::join`
+/// appends the host's separator whatever the root was spelled with, so the mix is made at display
+/// time and has to be resolved there.
+#[test]
+fn a_drive_lettered_path_is_displayed_with_one_separator() {
+    use codotheca_core::paths::path_display;
+    assert_eq!(path_display(&PathBuf::from(r"D:/Work\0")), r"D:\Work\0");
+    assert_eq!(
+        path_display(&PathBuf::from("E:/Shelf/Widget/widget-source")),
+        r"E:\Shelf\Widget\widget-source"
+    );
+    // Already consistent, and unchanged.
+    assert_eq!(
+        path_display(&PathBuf::from(r"D:\Work\alpha")),
+        r"D:\Work\alpha"
+    );
+}
+
+/// The rewrite is keyed on the drive letter and nothing else. A POSIX path keeps its forward
+/// slashes, and §4bis.4's display-only `\\wsl.localhost\…` form already carries backslashes —
+/// rewriting either by the host's convention is how a Linux path gets shown as a Windows one.
+#[test]
+fn a_path_with_no_drive_letter_is_left_exactly_as_it_is() {
+    use codotheca_core::paths::path_display;
+    assert_eq!(
+        path_display(&PathBuf::from("/srv/work/alpha")),
+        "/srv/work/alpha"
+    );
+    assert_eq!(
+        path_display(&PathBuf::from(r"\\wsl.localhost\Ubuntu\home\x")),
+        r"\\wsl.localhost\Ubuntu\home\x"
+    );
+    assert_eq!(
+        path_display(&PathBuf::from("relative/child")),
+        "relative/child"
+    );
+}
+
 #[test]
 fn path_key_strips_a_trailing_separator_but_never_the_root() {
     assert_eq!(ukey("/a/b/"), ukey("/a/b"));

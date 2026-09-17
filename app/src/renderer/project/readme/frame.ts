@@ -111,6 +111,12 @@ export function buildSrcdoc(fragment: SanitisedFragment, tokens: FrameTokens): s
 ${tokenBlock(tokens)}  html, body {
     margin: 0;
     padding: 0;
+    /* The frame is see-through so the panel's own surface shows, which only works while the
+       frame's OWN document is dark: color-scheme does not cross the boundary, so the copy on
+       .cp-readme-frame styles the element and leaves this document light. A light document
+       takes Chromium's white base background, and a transparent body reveals it rather than
+       hiding it — the README then rendered as a white page inside a dark app. */
+    color-scheme: dark;
     background: transparent;
     color: var(--text-2, currentColor);
   }

@@ -322,18 +322,41 @@ fn main() -> ExitCode {
                 Arc::new(codotheca_core::http::RefusingTransport)
             }
         };
-    let provider: Arc<dyn codotheca_core::provider::Provider> =
-        Arc::new(codotheca_core::provider::GitHubProvider::new(
-            Arc::clone(&http_transport),
-            codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
-        ));
+    // §21's decorator over §20's transport, and **the provider is handed the decorated one**.
+    //
+    // Assembled by `assembly::sync::build_forge` rather than inline, so the wiring can be
+    // asserted by **running** it: `core/tests/sync_assembly.rs` calls the same function over a
+    // fake and proves a provider call drains an observation. A check that read this file could
+    // only see that a decorator was constructed, not what the provider was handed — which is
+    // exactly the difference that matters (R88).
+    let (provider, observing) = codotheca_core::assembly::sync::build_forge(
+        Arc::clone(&http_transport),
+        Arc::clone(&clock),
+        codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
+    );
     let tokens: Arc<dyn codotheca_core::accounts::keychain::TokenStore> =
         Arc::new(codotheca_core::accounts::keychain::KeyringTokenStore::new());
+
+    // §21.1's runner, beside the job pump and stopped in the same order. It is started here for
+    // the same reason `jobs` is: nothing schedules a forge read without it, and a runner
+    // constructed in a test and never in the product is the defect R1's family catalogues.
+    let sync = codotheca_core::assembly::sync::SyncPump::start(
+        Arc::clone(&index),
+        codotheca_core::sync::SyncDeps {
+            provider: Arc::clone(&provider),
+            transport: Arc::clone(&observing),
+            tokens: Arc::clone(&tokens),
+            clock: Arc::clone(&clock),
+            cancel: codotheca_core::cancel::CancelToken::new(),
+        },
+        Arc::clone(&events) as Arc<dyn EventSink>,
+    );
 
     let deps = CoreDeps {
         index: Arc::clone(&index),
         provider,
         tokens,
+        sync,
         http: Arc::clone(&http_transport),
         client_id: codotheca_core::accounts::device::GITHUB_CLIENT_ID.to_owned(),
         clock: Arc::clone(&clock),

@@ -393,6 +393,11 @@ pub fn handle_project_get(
     // §6: an opened page asks for a current worktree reading for the copy it is showing. What
     // this command returns is still the **stored** reading with its own `as_of` — the job
     // updates it and publishes a change. Absence of dirty stays "no changes as of T".
+    // §21.5, and **outside the location guard below**: a project with no location is exactly the
+    // not-cloned project §23 introduces, and it is the case that most needs its remote facts.
+    // Putting this inside the guard would make the one surface that has nothing but remote data
+    // the one surface that never fetches any.
+    ctx.sync.on_project_visible(ProjectId(id));
     if let Some(location) = primary_location {
         crate::jobs::visible::notify_visible(
             ctx.index,

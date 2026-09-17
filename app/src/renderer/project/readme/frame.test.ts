@@ -34,6 +34,16 @@ describe('the frame document', () => {
     expect(srcdoc.match(/<style>/gu)).toHaveLength(1);
   });
 
+  // `color-scheme` does not cross the frame boundary, so the declaration on `.cp-readme-frame`
+  // styles the element and leaves this document light — and a light document takes Chromium's
+  // white base background, which `background: transparent` reveals. The README rendered as a
+  // white page inside a dark app. The frame's own stylesheet is the only place that fixes it.
+  it('declares its own dark colour scheme, which the parent cannot declare for it', () => {
+    const srcdoc = srcdocFor('# widget\n\nProse.\n');
+    expect(srcdoc).toContain('color-scheme: dark;');
+    expect(srcdoc).toContain('background: transparent;');
+  });
+
   it('types no colour literal of its own and drops a token that is not a colour', () => {
     const srcdoc = srcdocFor('# widget\n');
     // Every hex colour in the document came from the injected token set, and nothing else.

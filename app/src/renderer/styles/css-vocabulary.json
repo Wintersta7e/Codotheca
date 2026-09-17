@@ -28,8 +28,32 @@
     "#ffffff"
   ],
   "durationsMs": [
-    90, 140, 160, 180, 200, 220, 240, 260, 280, 300, 340, 350, 400, 420, 500, 560, 620, 700, 720,
-    1150, 2600, 30, 60
+    90,
+    140,
+    160,
+    180,
+    200,
+    220,
+    240,
+    260,
+    280,
+    300,
+    340,
+    350,
+    400,
+    420,
+    500,
+    560,
+    620,
+    700,
+    720,
+    1150,
+    2600,
+    30,
+    60,
+    100,
+    440,
+    580
   ],
   "timingFunctions": [
     "cubic-bezier(.25,.8,.3,1)",
@@ -41,7 +65,15 @@
     "cubic-bezier(.5,.05,.7,1)",
     "cubic-bezier(.3,.7,.2,1)",
     "cubic-bezier(.34,.6,.24,1)",
-    "linear"
+    "linear",
+    "cubic-bezier(.3,.8,.2,1)",
+    "cubic-bezier(.3,.8,.25,1)",
+    "cubic-bezier(.32,.6,.3,1)",
+    "ease-out"
   ],
-  "sharedKeyframes": ["viewIn", "panelIn", "turnIn"]
+  "sharedKeyframes": [
+    "viewIn",
+    "panelIn",
+    "turnIn"
+  ]
 }

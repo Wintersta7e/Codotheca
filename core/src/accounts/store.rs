@@ -570,10 +570,15 @@ pub fn record_upgraded_scope(
 /// while deleting every sync task whose **project** id happened to equal the disconnected
 /// account id — `key` there is polymorphic. In this form that entry is not representable.
 ///
-/// **Read by the test and by nothing else. It is not a delete list.** p2-21 appends
-/// `"sync_budget"` and `"sync_task_state"` when `0011` creates them, and `delete_account_tasks`
+/// **Read by the test and by nothing else. It is not a delete list.** p2-21 appended
+/// `"sync_budget"` and `"sync_task_state"` when `0011` created them, and `delete_account_tasks`
 /// — filtered `WHERE task = 'account_repos' AND key = ?1` — is the sole explicit call.
-pub const ACCOUNT_REFERENCING_TABLES: &[&str] = &["account_org", "project_account"];
+pub const ACCOUNT_REFERENCING_TABLES: &[&str] = &[
+    "account_org",
+    "project_account",
+    "sync_budget",
+    "sync_task_state",
+];
 
 /// Deletes the `account` row and lets SQLite cascade. **It deletes no `project` row, ever.**
 ///
@@ -607,6 +612,13 @@ pub fn delete_account(tx: &Transaction<'_>, id: AccountId) -> Result<(), Account
                 .to_owned(),
         ));
     }
+    // The one table no cascade reaches, cleared by name and **filtered by task**: `key` is
+    // polymorphic, so a bare `key = ?1` would delete `project_remote` and `rename_probe` rows for
+    // whichever project happens to share this account's integer.
+    crate::sync::store::delete_account_tasks(tx, id).map_err(|e| match e {
+        crate::index::IndexError::Sqlite(e) => AccountError::Sqlite(e),
+        other => AccountError::Codec(other.to_string()),
+    })?;
     let removed = tx.execute("DELETE FROM account WHERE id = ?1", [id.0])?;
     if removed == 0 {
         return Err(AccountError::NotFound {

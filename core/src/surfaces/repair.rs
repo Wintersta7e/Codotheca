@@ -67,6 +67,22 @@ pub fn set_trusted(
 /// §11.1: re-queues exactly this project's failed and deferred rows, and clears the
 /// never-succeeded state the button is offered from.
 ///
+/// **It revives both ledgers, and that asymmetry was a real defect** (R111). A deferred *job* has
+/// always had this escape — `core/src/jobs/state.rs` says outright that `deferred_slow` *"is never
+/// permanent"* — while a deferred *sync* task had none, so the same guarantee was written twice
+/// and wired once. §21.4 names `user_requested` as a revival cause precisely for a control like
+/// this one; TRY AGAIN is the user-reachable command that supplies it, and no new command is
+/// needed, which matters because §21.5 rules out shipping a manual refresh in phase 2.
+///
+/// **The account's two tasks as well as the project's one.** A project's remote facts are
+/// unreachable while the listing that binds it is deferred, so reviving only `project_remote`
+/// would be a button that reports success and changes nothing the user can see. The account is
+/// resolved by the same function the runner's budget check uses, so both agree about which
+/// account reads a project.
+///
+/// The count returned is still the **job** count: `RequeueResult.jobsRequeued` is §11.1's wire
+/// shape and this adds no field to it.
+///
 /// # Errors
 /// Fails when the index cannot be written.
 pub fn requeue(
@@ -87,6 +103,22 @@ pub fn requeue(
          WHERE id = ?1",
         [project.0],
     )?;
+    // In the same transaction as the jobs above: one press, one commit, and never a tree in which
+    // one ledger was revived and the other was not.
+    crate::sync::store::reset_for(
+        &tx,
+        crate::sync::store::SyncResetScope::Project(project),
+        crate::sync::state::SyncResetCause::UserRequested,
+        now,
+    )?;
+    if let Some(account) = crate::sync::tasks::remote::account_for_project(&tx, project) {
+        crate::sync::store::reset_for(
+            &tx,
+            crate::sync::store::SyncResetScope::Account(account),
+            crate::sync::state::SyncResetCause::UserRequested,
+            now,
+        )?;
+    }
     tx.commit()?;
     Ok(u32::try_from(changed).unwrap_or(u32::MAX))
 }

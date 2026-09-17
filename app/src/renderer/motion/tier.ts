@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { EffectsTier } from '../../shared/effectsTier';
+import { applyEffectsTier } from '../effectsTier';
 
 /**
  * §11.6's tier contract. `auto` is a resolver, not a stored state; every rule reads the
@@ -86,4 +87,23 @@ export function useResolvedTier(
     }),
     reducedMotionOverride,
   );
+}
+
+/**
+ * Put the RESOLVED tier on the document element, which is what every CSS rule reads.
+ *
+ * `main.tsx` writes the boot value before anything mounts, so the first frame agrees with a shell
+ * that may already have disabled the GPU — but it writes `auto` **unresolved**, and `auto` is the
+ * default (`shared/bootFile.ts:49`). Nothing resolved it afterwards, so `data-effects-tier="auto"`
+ * was permanent and **every tier rule in the repository selected nothing**: the project page's
+ * entrance, column cascade and `cp-rise` (`styles/projectPage.css:408-426`) never ran, and
+ * `motion.css`'s clamps were equally inert in the other direction. `motion.css:2-4` asserts the
+ * resolved tier reaches it and `effectsTier.ts` says a resolver "calls this again" — this hook is
+ * the caller both of them were written against. First run was the one surface that worked, because
+ * its screens set the attribute on their own subtrees.
+ */
+export function useTierOnDocument(tier: ResolvedTier): void {
+  useEffect(() => {
+    applyEffectsTier(document.documentElement, tier);
+  }, [tier]);
 }

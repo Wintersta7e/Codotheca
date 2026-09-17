@@ -289,10 +289,12 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 // [p2] §25.8's `remote.webUrl` is the 51st, and it is the only name §25 spends from `remote.*`.
 // [p2] §25.8's `projects.readme` is the 52nd, `projects.setReadmeRemote` the 53rd and
 // `projects.readmeAssets` the 54th.
-// [p2] §24.9's three `install.*` commands are the 55th to the 57th — this plan's own +3, added
-// to the 54 read off the branch base. `locations.uninstall*` is p2-24b's and is not here.
-test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8, §25.8 and §24.9, and nothing extra', () => {
-  assert.equal(names.length, 57, `expected 57 commands, found ${names.length}`);
+// [p2] 54 off the branch base, plus §24.9's three `install.*` and §21.13's one `sync.status` =
+// **58**. Two lanes each added to this number from the same base, so neither branch's figure is
+// the merged one — 57 and 55 are both right about their own tree and wrong about this one.
+// `locations.uninstall*` is p2-24b's and is not here.
+test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8, §25.8, §24.9, §21.13 and nothing extra', () => {
+  assert.equal(names.length, 58, `expected 58 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -409,6 +411,9 @@ const TOPICS = {
   session: ['started', 'segment_closed', 'ended'],
   core: ['error', 'degraded', 'snapshot'],
   accounts: ['connect_progress', 'connected', 'disconnected'],
+  // [p2] §21.13 adds `sync`, with a `snapshot` because §8.0's notice slot and the progress line
+  // both have to render correctly for a window that opened after the events fired.
+  sync: ['started', 'settled', 'listing_progress', 'budget', 'notice', 'snapshot'],
 };
 
 test('every topic and event of §2.4 is declared, with a payload type', () => {
@@ -417,6 +422,38 @@ test('every topic and event of §2.4 is declared, with a payload type', () => {
     assert.deepEqual(Object.keys(schema.topics[t]).sort(), [...events].sort(), t);
     for (const e of events) assert.equal(typeof schema.topics[t][e], 'string', `${t}/${e}`);
   }
+});
+
+// [p2] §21.13: the six events are the whole of what §21 puts on the wire, and `snapshot` carries
+// exactly what `sync.status` returns, so a subscriber that missed every delta still renders the
+// truth.
+test('the sync topic declares exactly six events and its snapshot is sync.status answer', () => {
+  assert.equal(Object.keys(schema.topics.sync).length, 6);
+  assert.equal(schema.topics.sync.snapshot, 'SyncStatus');
+  const status = schema.commands.find((c) => c.name === 'sync.status');
+  assert.equal(status.returns, 'SyncStatus');
+  assert.deepEqual(status.args, {});
+  assert.notEqual(status.idempotent, false, 'every sync task is a GET');
+  assert.notEqual(status.privileged, true);
+});
+
+// [p2] §21.13: `SyncStatus.tasks` is the settled shape, so a queued row that has never run has a
+// null outcome rather than an invented one, and `notBefore` is absent for a terminal row.
+test('a sync status task is a settled row carrying its state and a nullable outcome', () => {
+  assert.equal(schema.types.SyncStatus.fields.tasks, '[SyncTaskSettled]');
+  const settled = schema.types.SyncTaskSettled.fields;
+  assert.equal(settled.state, 'SyncTaskState');
+  assert.equal(settled.outcome, 'SyncOutcomeKind?', 'a queued row has no outcome to render');
+  assert.equal(settled.notBefore, 'Timestamp?');
+});
+
+// [p2] R62: §22.6 requires a suppression be reported with the project that blocked it **named**,
+// and a count cannot name one. AC-P2-22-7 fails a suppression that produces no report.
+test('a listing summary names the projects that suppressed, not only how many', () => {
+  const summary = schema.types.SyncListingSummary.fields;
+  assert.equal(summary.suppressedBy, '[ProjectId]');
+  assert.equal(summary.suppressed, 'i64', 'the count stays beside the list');
+  assert.equal(summary.skippedUnknownPermission, 'i64');
 });
 
 // §2.4: projects.merged did not exist in v1, so the renderer had no way to collapse two visible

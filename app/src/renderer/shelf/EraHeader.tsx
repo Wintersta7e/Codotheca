@@ -11,12 +11,17 @@ export const measuresOverflow: OverflowProbe = (el) => el.scrollWidth > el.clien
 export interface EraHeaderProps {
   readonly section: ShelfSection;
   readonly collapsed: boolean;
+  /**
+   * §8.5.1: the header of the section you land back in lights along its length, so the shelf says
+   * which one you returned to rather than leaving you to find it. Exactly one section flares.
+   */
+  readonly flaring?: boolean;
   readonly onToggle: () => void;
   readonly probe?: OverflowProbe;
 }
 
 export function EraHeader(props: EraHeaderProps): ReactElement {
-  const { section, collapsed, onToggle, probe = measuresOverflow } = props;
+  const { section, collapsed, flaring = false, onToggle, probe = measuresOverflow } = props;
   const summaryRef = useRef<HTMLSpanElement | null>(null);
 
   const full = summaryText(section.agg);
@@ -57,6 +62,9 @@ export function EraHeader(props: EraHeaderProps): ReactElement {
             nothing to report*. */}
         {flags === null ? null : <span className="cdt-era-flags">{flags}</span>}
       </button>
+      {/* Outside the button: it is light, not a control, and it must never be in the accessible
+          name of one. Rendered only while it plays, so nothing inert is left behind it. */}
+      {flaring ? <span className="cdt-era-flare" data-gesture="flare" aria-hidden="true" /> : null}
     </div>
   );
 }

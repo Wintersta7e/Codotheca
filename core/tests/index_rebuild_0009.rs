@@ -1095,9 +1095,9 @@ fn every_remote_link_basis_variant_is_accepted_by_the_column() {
 /// The chain ends where the constant says it does, and the constant is the count the guard
 /// checked. Three statements of one value, so a migration registered without its bump is red.
 #[test]
-fn the_supported_version_is_ten_and_the_chain_reaches_it() {
-    assert_eq!(SUPPORTED_SCHEMA_VERSION, 10);
-    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), 10);
+fn the_supported_version_is_eleven_and_the_chain_reaches_it() {
+    assert_eq!(SUPPORTED_SCHEMA_VERSION, 11);
+    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), 11);
     let (_dir, conn) = migrated_to(MIGRATIONS.len());
-    assert_eq!(schema_version(&conn).unwrap(), 10);
+    assert_eq!(schema_version(&conn).unwrap(), 11);
 }

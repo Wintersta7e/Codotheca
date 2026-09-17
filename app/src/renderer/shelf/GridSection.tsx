@@ -4,6 +4,7 @@ import { GRID_ROLE, GRID_ROW_ROLE } from '../a11y/names.js';
 import { ProjectCard } from '../card/ProjectCard.js';
 import type { GridFocus, GridState, MountWindow } from '../keyboard/gridNavigation.js';
 import { mountedIndices } from '../keyboard/gridNavigation.js';
+import { rippleDelay, type TransitionPhase } from '../motion/transition.js';
 import type { GridMetrics, SectionExtent } from './measure.js';
 import { GRID_ROW_GAP } from './measure.js';
 import type { ShelfSection } from './page.js';
@@ -49,6 +50,12 @@ export interface GridSectionProps {
   readonly now: number;
   readonly firstRunCompletedAt: number | null;
   readonly selectedId: ProjectId | null;
+  /**
+   * §8.5.1's per-card half of the gesture. The section derives it rather than being told, because
+   * the ripple's distance is an index **within this section** — the prototype computes it that
+   * way, and a shelf-wide index would stagger a neighbour by its position in the library.
+   */
+  readonly phase?: TransitionPhase | undefined;
   /** §7.8's live tile. A project with no open session is absent, never a zero-length one. */
   readonly sessions: ReadonlyMap<ProjectId, SessionRef>;
   /**
@@ -75,6 +82,7 @@ export function GridSection(props: GridSectionProps): ReactElement {
     now,
     firstRunCompletedAt,
     selectedId,
+    phase,
     sessions,
     halo,
     peek,
@@ -84,6 +92,16 @@ export function GridSection(props: GridSectionProps): ReactElement {
     onTogglePin,
     onStopSession,
   } = props;
+
+  // §8.5.1's per-card gesture, resolved once per section rather than per card.
+  //
+  // `landingAt` is the returning tile's index **in this section**, and `-1` means the tile is not
+  // here — in which case this section plays nothing at all. Only the section you came back to
+  // ripples, which is what makes the ripple say *where* rather than just *something happened*.
+  const landingAt =
+    phase?.kind === 'landing' ? section.rows.findIndex((row) => row.id === phase.id) : -1;
+  const collapsingId = phase?.kind === 'opening' ? phase.id : null;
+
   const peekRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -137,10 +155,22 @@ export function GridSection(props: GridSectionProps): ReactElement {
           const row = section.rows[index];
           if (!row) return null;
           const id = row.id;
+          const gesture =
+            collapsingId === id
+              ? 'collapse'
+              : landingAt < 0
+                ? null
+                : index === landingAt
+                  ? 'unfold'
+                  : 'ripple';
           return (
             <ProjectCard
               key={id}
               row={row}
+              gesture={gesture}
+              {...(gesture === 'ripple'
+                ? { gestureDelay: rippleDelay(Math.abs(index - landingAt)) }
+                : {})}
               density={density}
               rendition="card"
               selected={selectedId === id}

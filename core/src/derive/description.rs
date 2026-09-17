@@ -37,6 +37,16 @@ fn is_badge(line: &str) -> bool {
     t.starts_with("[![") || t.starts_with("![") || (t.starts_with('[') && t.contains("](http"))
 }
 
+/// A raw HTML line, which is never a description.
+///
+/// `is_badge` knows only markdown forms, so a README that centres its header with
+/// `<div align="center">` — the common shape, not an exotic one — put that tag verbatim into the
+/// project's summary line under the title. §25.5 renders raw HTML as visible text by design
+/// (`markdown-it` with `html: false`), so nothing downstream strips it either.
+fn is_markup(line: &str) -> bool {
+    line.trim_start().starts_with('<')
+}
+
 /// The H1 subtitle — the line directly under a `# ` heading — or the first sentence that is
 /// not a badge row.
 #[must_use]
@@ -49,7 +59,7 @@ pub fn readme_description(readme: &str) -> Option<String> {
         lines.next();
         if let Some(next) = lines.peek() {
             let t = next.trim();
-            if !t.is_empty() && !is_badge(t) && !t.starts_with('#') {
+            if !t.is_empty() && !is_badge(t) && !is_markup(t) && !t.starts_with('#') {
                 return Some(t.to_owned());
             }
         }
@@ -57,7 +67,7 @@ pub fn readme_description(readme: &str) -> Option<String> {
     readme
         .lines()
         .map(str::trim)
-        .find(|l| !l.is_empty() && !is_badge(l) && !l.starts_with('#'))
+        .find(|l| !l.is_empty() && !is_badge(l) && !is_markup(l) && !l.starts_with('#'))
         .map(|l| {
             l.split_once(". ")
                 .map_or_else(|| l.to_owned(), |(s, _)| format!("{s}."))
@@ -173,6 +183,40 @@ mod tests {
         assert_eq!(
             readme_description(readme).as_deref(),
             Some("It indexes things.")
+        );
+    }
+
+    /// Measured in the built app: a project's summary line under its title read
+    /// `<div align="center">` verbatim. `is_badge` knows only markdown forms, so the HTML wrapper
+    /// a centred README header opens with passed every filter and became the description.
+    #[test]
+    fn an_html_wrapper_is_not_the_description() {
+        let readme = "<div align=\"center\">\n\n# Thing\n\nIt indexes things.\n\n</div>\n";
+        assert_eq!(
+            readme_description(readme).as_deref(),
+            Some("It indexes things.")
+        );
+    }
+
+    /// The same shape one line further in: an HTML badge row is a badge, and `is_badge` cannot
+    /// see it because it carries no `![`.
+    #[test]
+    fn an_html_badge_row_is_not_the_description() {
+        let readme = "# Thing\n<img src=\"https://img.example/badge.svg\" alt=\"build\">\n\nIt indexes things.\n";
+        assert_eq!(
+            readme_description(readme).as_deref(),
+            Some("It indexes things.")
+        );
+    }
+
+    /// The counter-case, so the filter is a filter and not a blanket: prose that merely mentions
+    /// a comparison still describes the project.
+    #[test]
+    fn prose_that_is_not_a_tag_survives() {
+        let readme = "# Thing\nIndexes 10 < 20 repositories at a time.\n";
+        assert_eq!(
+            readme_description(readme).as_deref(),
+            Some("Indexes 10 < 20 repositories at a time.")
         );
     }
 

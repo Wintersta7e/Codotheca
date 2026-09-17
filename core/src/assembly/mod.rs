@@ -4,6 +4,7 @@ pub mod handoff;
 pub mod jobs;
 pub mod route;
 pub mod startup;
+pub mod sync;
 
 use crate::art::ArtCtx;
 use crate::commands::launch as launch_cmd;
@@ -47,6 +48,10 @@ pub struct CoreDeps {
     /// a torn observation, and a worker inside a twenty-second history read is a git process
     /// tree outliving the app.
     pub jobs: jobs::JobPump,
+    /// The sync runner (§21.1). Held here for the same reason `jobs` is: `shutdown` stops it
+    /// **before** the publisher closes, so a thread mid-write to SQLite when `main` returns is
+    /// not a torn observation.
+    pub sync: sync::SyncPump,
     pub events: Arc<PublisherSink>,
     /// §20.13's one typed forge seam, and §20.6's keychain. Both arrive as production
     /// implementations from the composition root: a seam whose only implementation is a fake
@@ -91,6 +96,7 @@ pub struct CoreHandler {
     scan_store: Arc<dyn ScanStore>,
     firstrun: crate::firstrun::FirstRunEnv,
     jobs: jobs::JobPump,
+    sync: sync::SyncPump,
     events: Arc<PublisherSink>,
     provider: Arc<dyn crate::provider::Provider>,
     tokens: Arc<dyn crate::accounts::keychain::TokenStore>,
@@ -131,6 +137,7 @@ impl CoreHandler {
             scan_store: deps.scan_store,
             firstrun: deps.firstrun,
             jobs: deps.jobs,
+            sync: deps.sync,
             events: deps.events,
             provider: deps.provider,
             tokens: deps.tokens,
@@ -325,6 +332,34 @@ impl CoreHandler {
         crate::accounts::dispatch_accounts_command(&mut ctx, command, args)
     }
 
+    /// §11's arm. Extracted for the same reason every other arm here is: `handle` sits on
+    /// clippy's `too_many_lines` ceiling, so a route added anywhere costs one of these.
+    fn surfaces_arm(
+        guard: &Index,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::surfaces::SurfaceCtx { index: guard, now };
+        crate::surfaces::dispatch_surface_command(&ctx, command, args)
+    }
+
+    /// §21.13's one read. Its own method for the same reason `accounts_arm` is one: `handle` is
+    /// at clippy's `too_many_lines` ceiling.
+    ///
+    /// It takes the guard and **nothing else**, which is R94's first side as a signature rather
+    /// than a convention: a handler path is already under the one index mutex and may not take it
+    /// again. The runner is what locks the index, on its own thread.
+    fn sync_arm(
+        guard: &Index,
+        live: crate::sync::events::SyncLive,
+        command: crate::protocol::CommandName,
+        args: Value,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::sync::commands::SyncCtx { index: guard, live };
+        crate::sync::commands::dispatch_sync_command(&ctx, command, args)
+    }
+
     /// §25.2's opener. Its own method for the same reason `accounts_arm` is one: `handle` is at
     /// clippy's `too_many_lines` ceiling, and a two-line arm there costs the whole function.
     fn remote_arm(
@@ -411,6 +446,9 @@ impl CoreHandler {
             // empty list would say *nothing is installing*, which a core that records nothing
             // cannot know. Task 13 gives it an arm of its own.
             Topic::Scan | Topic::Session | Topic::Accounts | Topic::Install => None,
+            // [p2] §21.13 declares one, and it is the command's own answer: a subscriber that
+            // missed every delta renders exactly what `sync.status` would have told it.
+            Topic::Sync => self.handle("sync.status", serde_json::json!({})).ok(),
             Topic::Projects => {
                 let page = self.handle("projects.list", serde_json::json!({})).ok()?;
                 Some(serde_json::json!({
@@ -525,11 +563,9 @@ impl CommandHandler for CoreHandler {
                 };
                 crate::art::dispatch_art_command(&ctx, command, args)
             }
-            Route::Surfaces => {
-                let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
-                crate::surfaces::dispatch_surface_command(&ctx, command, args)
-            }
+            Route::Surfaces => Self::surfaces_arm(&guard, command, args, now),
             Route::Accounts => Self::accounts_arm(&guard, command, args),
+            Route::Sync => Self::sync_arm(&guard, self.sync.live(), name, args),
             Route::Targets => {
                 let mut ctx = targets_cmd::TargetsCtx {
                     index: &mut guard,
@@ -571,6 +607,7 @@ impl CommandHandler for CoreHandler {
                     events: self.events.as_ref(),
                     jobs: self.jobs.sink_ref(),
                     mounts: self.mount.as_ref(),
+                    sync: self.sync.sink_ref(),
                     now,
                     tz_offset_min: self.tz_offset_min,
                 };
@@ -583,6 +620,7 @@ impl CommandHandler for CoreHandler {
                     mount: self.mount.as_ref(),
                     events: self.events.as_ref(),
                     jobs: self.jobs.sink_ref(),
+                    sync: self.sync.sink_ref(),
                     now,
                 };
                 crate::detail::dispatch_detail_command(&ctx, command, args)
@@ -672,6 +710,9 @@ impl CommandHandler for CoreHandler {
     /// gone.
     fn shutdown(&mut self) {
         self.jobs.stop();
+        // Beside `jobs`, in the same place and the same order, and **before** `Publisher::close()`
+        // for the same reason: a sync thread mid-write when `main` returns is a torn observation.
+        self.sync.stop();
         // Before `Publisher::close()`, so the last `connect_progress` still reaches the shell,
         // and before the process exits, so no poll thread is mid-write.
         if let Some(pump) = self.connect.take() {

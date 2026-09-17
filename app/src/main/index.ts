@@ -60,10 +60,13 @@ import {
 } from './security';
 import { runStartup } from './startup';
 
-// [p2] §24.9's `install` is subscribed in the same change that declares it. A topic the schema
-// carries and the shell does not subscribe to delivers nothing, and the surface built on it
-// would be discovered dark rather than red — the shape R88 was ruled on.
-const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts', 'install'];
+// [p2] §24.9's `install` and §21's `sync` are each subscribed in the change that declares them.
+// A topic the schema carries and the shell does not subscribe to delivers nothing, and the surface
+// built on it would be discovered dark rather than red — the shape R88 was ruled on.
+//
+// This line is why: two lanes added one topic each here, and a merge that took either side alone
+// would compile, pass every suite, and ship a dead surface. The gate below is the bar for it.
+const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts', 'install', 'sync'];
 
 /**
  * The commands the core answers, and therefore the only names the bridge will accept.
@@ -122,6 +125,12 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'projects.readme',
   'projects.readmeAssets',
   'projects.setReadmeRemote',
+  // sync::commands::dispatch_sync_command — the one read §21.13 adds. The runner does the
+  // network; this name only asks what the runner has already observed.
+  // NOTE: no apostrophe may appear anywhere in this array body, comments included.
+  // app/test/knownCommands.test.ts reads the entries by matching single-quoted runs, so one
+  // stray apostrophe pairs with the next command name and the whole list parses wrong.
+  'sync.status',
   // view::dispatch_view_command
   'view.get',
   'view.set',

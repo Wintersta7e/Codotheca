@@ -90,6 +90,104 @@ fn a_missing_location_is_a_path_gone_failure_that_definitely_did_not_take_effect
     );
 }
 
+/// **R111.** TRY AGAIN revives the sync ledger too, and a deferred account is not a dead end.
+///
+/// §21.4 defers a sync task after three transient failures and leaves it only through a revival
+/// cause. Every one of those causes had test-only callers, so a listing that failed three times was
+/// left with no user-reachable way out — while a deferred *job* had this very button. The same
+/// guarantee, written twice and wired once.
+///
+/// **The account's two tasks as well as the project's one**, because a project's remote facts are
+/// unreachable while the listing that binds it is deferred: reviving `project_remote` alone would
+/// be a button that reports success and changes nothing.
+///
+/// **And nobody else's.** The fixture is built so that the owning account's id **collides with
+/// another project's id** — `key` is polymorphic, so a revival without a task filter moves
+/// whichever row happens to share that integer, which is the defect `delete_account_tasks` was
+/// written against. A first version of this test put the account and the project at the same id
+/// and the collision was unobservable: dropping the filter stayed green.
+#[test]
+fn try_again_revives_this_accounts_deferred_sync_and_no_others() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let index = seeded(dir.path());
+    index
+        .conn()
+        .execute_batch(
+            // Account 1 is on another host, so `account_for_project` — which matches provider and
+            // host and takes the lowest enabled id — resolves project 1 to account **2**.
+            "INSERT INTO account (id, provider, host, login, auth_kind, scope_tier,
+                                  granted_scopes, token_ref, is_enabled, connected_at)
+             VALUES (1, 'github', 'other.example.invalid', 'owner', 'device', 'private',
+                     '[\"repo\"]', 'github:other.example.invalid:owner', 1, 5),
+                    (2, 'github', 'forge.example.invalid', 'other', 'device', 'private',
+                     '[\"repo\"]', 'github:forge.example.invalid:other', 1, 5);
+             UPDATE project SET remote_key = 'forge.example.invalid/other/alpha',
+                                provider = 'github', provider_repo_id = '7',
+                                remote_link_basis = 'provider_id'
+              WHERE id = 1;
+             INSERT INTO sync_task_state (task, key, state, fail_count, reason, at, not_before)
+             VALUES ('account_repos',  2, 'deferred', 3, 'offline', 10, 0),
+                    ('rename_probe',   2, 'deferred', 3, 'offline', 10, 0),
+                    ('project_remote', 1, 'deferred', 3, 'offline', 10, 0),
+                    ('account_repos',  1, 'deferred', 3, 'offline', 10, 0),
+                    ('project_remote', 2, 'deferred', 3, 'offline', 10, 0),
+                    ('account_repos',  9, 'blocked',  0, 'token_invalid', 10, 0);",
+        )
+        .expect("seed sync rows");
+
+    repair::requeue(index.conn(), ProjectId(1), 777).expect("requeue");
+
+    let state_of = |task: &str, key: i64| -> String {
+        index
+            .conn()
+            .query_row(
+                "SELECT state FROM sync_task_state WHERE task = ?1 AND key = ?2",
+                rusqlite::params![task, key],
+                |r| r.get(0),
+            )
+            .expect("row")
+    };
+    for (task, key) in [
+        ("account_repos", 2),
+        ("rename_probe", 2),
+        ("project_remote", 1),
+    ] {
+        assert_eq!(
+            state_of(task, key),
+            "queued",
+            "{task} for this project's own account is still a dead end"
+        );
+    }
+    assert_eq!(
+        state_of("project_remote", 2),
+        "deferred",
+        "the account's id is 2 and so is another project's — a revival with no task filter \
+         reaches a project this button was not pressed on"
+    );
+    assert_eq!(
+        state_of("account_repos", 1),
+        "deferred",
+        "TRY AGAIN on one tile means one account, never every forge connected"
+    );
+    assert_eq!(
+        state_of("account_repos", 9),
+        "blocked",
+        "a blocked row is left only through an account change, never by a button"
+    );
+
+    let (reason, fails): (String, i64) = index
+        .conn()
+        .query_row(
+            "SELECT reason, fail_count FROM sync_task_state
+              WHERE task = 'account_repos' AND key = 2",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("row");
+    assert_eq!(reason, "user_requested", "§21.4 names the cause");
+    assert_eq!(fails, 0, "the count that deferred it is cleared");
+}
+
 #[test]
 fn requeue_touches_one_project_and_leaves_every_other_alone() {
     let dir = tempfile::tempdir().expect("tempdir");

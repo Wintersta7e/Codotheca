@@ -689,13 +689,13 @@ fn the_account_referencing_census_is_complete_and_covered() {
         "acceptance_accounts: {} census tables, {by_cascade} by cascade, {explicit} explicit",
         ACCOUNT_REFERENCING_TABLES.len()
     );
-    assert_eq!(
-        ACCOUNT_REFERENCING_TABLES.len(),
-        2,
-        "the census at version 8"
-    );
-    assert_eq!(by_cascade, 2);
-    assert_eq!(explicit, 0);
+    // [p2-21] `0011` adds `sync_budget` (cascading) and `sync_task_state` (no key at all), so
+    // R69's figures move from `2, 2, 0` at version 8 to `4, 3, 1` here. **`0` handled by a call
+    // would mean `sync_task_state` is being left behind**, which is the one case these three
+    // numbers exist to make visible.
+    assert_eq!(ACCOUNT_REFERENCING_TABLES.len(), 4, "the census at 0011");
+    assert_eq!(by_cascade, 3);
+    assert_eq!(explicit, 1, "sync_task_state, the one table with no key");
     assert_eq!(
         explicit, handled,
         "{explicit} explicit, {handled} handled: a census table with no cascading key is not \

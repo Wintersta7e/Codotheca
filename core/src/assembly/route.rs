@@ -8,7 +8,7 @@
 //!
 //! # The ledger, as it stands
 //!
-//! **All 50 schema commands reach a module**, so `UNOWNED_COMMANDS` is empty and nothing routes
+//! **All 55 schema commands reach a module**, so `UNOWNED_COMMANDS` is empty and nothing routes
 //! to `NoOwner`. The constant stays because it is what *names* a command that arrives without a
 //! handler; a bare `PROTOCOL` refusal reads to the shell as "no such command", which is how
 //! nineteen commands stayed invisible for the length of this project. This file's tests pin the
@@ -71,6 +71,10 @@ pub enum Route {
     /// [`Route::Scan`] and [`Route::AccountsNet`], for the same reason: it fetches up to 24
     /// remote assets of 5 s each, and the one SQLite mutex may not be held across them.
     ReadmeNet,
+    /// `crate::sync::commands::dispatch_sync_command` — p2-21. A read of two tables plus the
+    /// runner's own process state; it reaches no network, so it takes the index guard like every
+    /// other read (R94's first side).
+    Sync,
     /// `crate::accounts::dispatch_accounts_command` — p2-20, under the index guard.
     Accounts,
     /// The `accounts.*` commands that reach the network, answered **without** the index guard
@@ -169,6 +173,9 @@ pub fn route(command: CommandName) -> Route {
 
         // §25.2's opener, answered from the stored `remote_key` and the account hosts.
         CommandName::RemoteWebUrl => Route::Remote,
+
+        // §21.13's one command. A read; the runner does the network, never this arm.
+        CommandName::SyncStatus => Route::Sync,
 
         // §25.5's document read and its consent write.
         CommandName::ProjectsReadme | CommandName::ProjectsSetReadmeRemote => Route::Readme,
@@ -282,10 +289,10 @@ mod tests {
         // running total a lane cannot know after the merges ahead of it.
         assert_eq!(
             commands.len(),
-            57,
+            58,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
              remote.webUrl plus §25.8's three projects.readme* commands plus §24.9's three \
-             install.* commands"
+             install.* commands plus §21.13's sync.status"
         );
         let unnamed: Vec<&str> = commands
             .iter()
