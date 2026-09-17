@@ -12,8 +12,14 @@ use std::path::Path;
 
 use crate::paths::path_display;
 
-/// §4.3, in §4.3's order: caches, then build outputs, then system paths.
-pub const SKIP_LIST: [&str; 29] = [
+/// §4.3, in §4.3's order: caches, then build outputs, then system paths, and last this app's own
+/// staging directory.
+///
+/// `.codotheca-installing` is appended rather than filed among the caches so that every existing
+/// index is unmoved — `EXCLUSION_CHIPS_BEFORE_EXPANDER` still draws the same first eleven — and
+/// because a reader of the rendered policy meets the third-party caches first and this app's own
+/// scratch last, which is the order they will recognise it in.
+pub const SKIP_LIST: [&str; 30] = [
     "node_modules",
     ".venv",
     "venv",
@@ -43,6 +49,10 @@ pub const SKIP_LIST: [&str; 29] = [
     "/sys",
     "/snap",
     "AppData",
+    // §24.3b: a partial clone lives here, so the next scan cannot discover a half-written
+    // repository — by the value the scanner already reads, rather than a second matcher.
+    // `install::staging::STAGING_DIR_NAME` is where this string is owned.
+    ".codotheca-installing",
 ];
 
 /// The three shapes the list has. The spec states none of them, so this type states them:
@@ -169,4 +179,32 @@ fn normalise(raw: &str) -> String {
         s.pop();
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use super::SKIP_LIST;
+    use crate::install::staging::STAGING_DIR_NAME;
+
+    /// The list carries a **literal** rather than the const, because `app/test/skipList.test.ts`
+    /// mirrors this array by parsing its string literals out of this file — an identifier would
+    /// be invisible to it and the rendered privacy policy would silently lose an entry.
+    ///
+    /// So the value has one owner (`STAGING_DIR_NAME`) and this asserts the literal still equals
+    /// it. Without this, the skip list and the staging directory could drift to two different
+    /// names and a partial clone would become discoverable by the very next scan.
+    #[test]
+    fn the_staging_directory_is_skipped_under_the_name_it_is_actually_created_with() {
+        assert!(
+            SKIP_LIST.contains(&STAGING_DIR_NAME),
+            "SKIP_LIST must carry {STAGING_DIR_NAME:?} verbatim"
+        );
+    }
 }

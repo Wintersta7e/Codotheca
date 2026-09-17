@@ -26,10 +26,11 @@ test('the drawn exclusion list is the core exclusion list, character for charact
   expect([...EXCLUSION_LIST]).toEqual(fromCore);
 });
 
-// §10.1b: all 29 entries, in §4.3's order — caches, then build outputs, then system paths —
-// never alphabetised, so it can be checked against a real machine.
-test('the list is all 29 entries and is not alphabetised', () => {
-  expect(EXCLUSION_LIST.length).toBe(29);
+// §10.1b: all 30 entries, in §4.3's order — caches, then build outputs, then system paths, and
+// last §24.3b's staging directory — never alphabetised, so it can be checked against a real
+// machine.
+test('the list is all 30 entries and is not alphabetised', () => {
+  expect(EXCLUSION_LIST.length).toBe(30);
   const sorted = [...EXCLUSION_LIST].sort();
   expect([...EXCLUSION_LIST]).not.toEqual(sorted);
 });
