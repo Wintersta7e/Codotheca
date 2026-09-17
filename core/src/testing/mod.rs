@@ -3,6 +3,7 @@
 
 mod clock;
 mod git;
+mod gitw;
 mod http;
 mod index;
 mod mount;
@@ -12,6 +13,7 @@ pub mod wsl;
 
 pub use clock::FakeClock;
 pub use git::{FakeGitBackend, GitReply, RecordedGitCall, RecordingGitBackend};
+pub use gitw::{CloneBehaviour, FakeMutatingGit};
 pub use http::FakeTransport;
 pub use index::TempIndex;
 pub use mount::FakeMountResolver;

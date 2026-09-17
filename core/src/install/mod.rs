@@ -1,6 +1,8 @@
 //! Install's durable run-state vocabulary, and where a clone lands.
 
 pub mod destination;
+pub mod queue;
+pub mod run;
 pub mod staging;
 
 pub use destination::{compose_destination, is_safe_path_segment, refuse_unsafe_name};
