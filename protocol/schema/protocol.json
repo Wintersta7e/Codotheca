@@ -1026,6 +1026,20 @@
       "kind": "enum",
       "$comment": "§21.4's state table. deferred and blocked are both terminal to the clock and differ in what revives them: deferred takes a revival cause, blocked takes an account state change or an explicit user action and is never left on a backoff",
       "variants": ["queued", "running", "parked", "ok", "deferred", "blocked"]
+    },
+    "SyncOutcomeKind": {
+      "kind": "enum",
+      "$comment": "§21.9's closed outcome enum, flattened: the wire carries which outcome it was and none of its data. The Rust SyncOutcome::Throttled additionally carries whether the limit was secondary, because §21.4 backs the two off differently and the headers are gone by then — that is a Rust widening and not a wire one, so this list is §21.13's exactly",
+      "variants": [
+        "done",
+        "not_modified",
+        "next_page",
+        "throttled",
+        "unauthorized",
+        "not_found",
+        "rejected",
+        "transient_fail"
+      ]
     }
   },
   "commands": [

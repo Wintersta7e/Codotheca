@@ -15,6 +15,8 @@
 //! what lives here is `http::ObservingTransport`, the decorator that mirrors `x-ratelimit-*` from
 //! **every** response — error responses included — and runs §21.8's classification.
 
+pub mod classify;
+pub mod outcome;
 pub mod state;
 pub mod store;
 pub mod task;
