@@ -137,6 +137,24 @@ pub fn emit_notice(events: &dyn EventSink, notice: SyncNotice) {
     emit(events, "notice", &notice);
 }
 
+/// The whole of `sync.status`, re-sent.
+///
+/// **This exists because a `notice` event cannot say *none*.** `SyncNotice` is a bare enum on the
+/// wire, so a settle that clears the banner had nothing to send — and the renderer sets its notice
+/// from a `notice` event or from a snapshot and from nothing else, so a `throttled` banner raised
+/// at T stayed on screen for the life of the session after sync recovered. Making the bare enum
+/// nullable would give one value two representations (R12); the snapshot already carries
+/// `notice: SyncNotice | null`, which is the honest carrier for the cleared case.
+///
+/// **A delta named `snapshot`, not a §2.3 snapshot frame, and that is load-bearing.** The shell
+/// subscribes with `onSnapshot: () => undefined` (`app/src/main/index.ts`), so a real snapshot
+/// frame is discarded before it reaches the renderer: what `useSync` calls a snapshot is an
+/// **event** named `snapshot`, delivered through `onEvent`. Sent any other way this would arrive
+/// nowhere.
+pub fn emit_snapshot(events: &dyn EventSink, status: &SyncStatus) {
+    emit(events, "snapshot", status);
+}
+
 /// The one serialisation point, so a payload that cannot be serialised is dropped in one place
 /// rather than panicking a worker thread — the core supervises a window, and a panic closes it.
 fn emit<T: serde::Serialize>(events: &dyn EventSink, event: &str, payload: &T) {

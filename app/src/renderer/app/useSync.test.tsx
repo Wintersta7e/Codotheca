@@ -128,6 +128,32 @@ describe('useSync', () => {
     expect(result.current.status).toEqual(snapshot);
   });
 
+  /**
+   * **The banner comes down.** The core clears its notice on a clean settle, and `notice` is a
+   * bare enum on the wire, so the cleared case travels as the whole status. Without that event
+   * the hook held a `throttled` banner for the life of the session after sync recovered.
+   */
+  it('clears a raised notice when a status arrives carrying none', () => {
+    const { deps, emit } = depsWith();
+    const { result } = renderHook(() => useSync(deps));
+    act(() => {
+      emit({ topic: 'sync', event: 'notice', data: 'throttled' });
+    });
+    expect(result.current.notice).toBe('throttled');
+
+    const recovered: SyncStatus = {
+      tasks: [],
+      budgets: [],
+      listing: null,
+      notice: null,
+    } as unknown as SyncStatus;
+    act(() => {
+      emit({ topic: 'sync', event: 'snapshot', data: recovered });
+    });
+    expect(result.current.notice).toBeNull();
+    expect(result.current.progressLine).toBeNull();
+  });
+
   it('ignores every topic but its own', () => {
     const { deps, emit } = depsWith();
     const { result } = renderHook(() => useSync(deps));

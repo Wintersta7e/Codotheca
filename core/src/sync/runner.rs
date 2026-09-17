@@ -602,20 +602,39 @@ impl SyncRunner {
             summary: summary.as_ref().map(repos::ListingSummary::payload),
         };
         let payload = settled_of(&settled_row, Some(&observed));
-        {
+        let cleared = {
             let mut live = self.live.lock().unwrap_or_else(PoisonError::into_inner);
             live.last.insert((kind, Some(key)), observed);
             // **One banner, whatever the number of failed tasks**: a single value, so three
             // failures at once cannot produce three candidates. A success clears it.
+            let had = live.notice.is_some();
             live.notice = notice_for(&outcome);
-        }
+            had && live.notice.is_none()
+        };
         if let Some(notice) = notice_for(&outcome) {
             emit_notice(self.events.as_ref(), notice);
+        } else if cleared {
+            // The wire has no event for *no notice*, so a cleared banner travels as the whole
+            // status — see `emit_snapshot`. **On the transition only**: one per settle would
+            // re-send every task and every budget for every page of every listing.
+            self.emit_status_snapshot();
         }
         emit_settled(self.events.as_ref(), &payload);
         // A settle that parked or re-queued the row leaves work outstanding; one that ended it
         // may have emptied the table, and the next `take_next` is what establishes which.
         self.outstanding.store(true, Ordering::SeqCst);
+    }
+
+    /// Re-send the whole of `sync.status`, so a subscriber sees a banner that is gone.
+    fn emit_status_snapshot(&self) {
+        let live = self.live();
+        let status = {
+            let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+            crate::sync::events::status_payload(guard.conn(), &live)
+        };
+        if let Ok(status) = status {
+            crate::sync::events::emit_snapshot(self.events.as_ref(), &status);
+        }
     }
 
     fn read_budgets(&self) -> Result<Vec<crate::protocol::SyncBudget>, crate::index::IndexError> {

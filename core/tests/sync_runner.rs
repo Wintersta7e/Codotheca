@@ -786,6 +786,72 @@ fn a_connected_account_is_listed_with_nothing_enqueueing_it() {
     );
 }
 
+/// **A banner that was raised is taken down**, and the wire is what could not say so.
+///
+/// `live.notice` was already cleared by a clean settle and the core's own state was right the
+/// whole time — but `notice` is a bare enum on the wire, so the cleared case had no event, and the
+/// renderer sets its banner from a `notice` event or from a snapshot and from nothing else. A
+/// `throttled` banner raised at T therefore stayed on screen for the life of the session after
+/// sync recovered, unless the user dismissed it.
+#[test]
+fn a_clean_settle_publishes_the_status_that_carries_the_cleared_banner() {
+    let f = fixture(Duration::ZERO);
+    let reset = NOW + 600;
+    f.scripted.push(HttpResponse {
+        status: 429,
+        headers: codotheca_core::http::normalise_headers([
+            ("x-ratelimit-resource", "core"),
+            ("x-ratelimit-reset", &reset.to_string()),
+        ]),
+        body: Vec::new(),
+    });
+    for _ in 0..3 {
+        f.scripted.push(ok_page("[]"));
+    }
+
+    let events = Arc::clone(&f.events);
+    let runner = SyncRunner::new(
+        Arc::clone(&f.index),
+        f.deps,
+        Arc::clone(&f.events) as Arc<dyn EventSink>,
+    );
+    runner.enqueue(SyncTask::AccountRepos {
+        account_id: f.account,
+    });
+    runner.start();
+    until("the throttle to raise a banner", || {
+        !events.events("notice").is_empty()
+    });
+    assert!(
+        events.events("snapshot").is_empty(),
+        "a status was published before anything had been cleared"
+    );
+
+    // The park's clock comes round and the listing succeeds.
+    f.clock.set_unix(reset + 1);
+    until("the status that carries the cleared banner", || {
+        !events.events("snapshot").is_empty()
+    });
+    runner.request_stop();
+    runner.join();
+
+    let published = events.events("snapshot");
+    eprintln!(
+        "sync_runner: {} status event(s) after recovery",
+        published.len()
+    );
+    assert!(
+        published[0]["notice"].is_null(),
+        "the status still names a banner the core has cleared: {}",
+        published[0]
+    );
+    assert_eq!(
+        events.events("notice").len(),
+        1,
+        "a clean settle must not raise a second banner"
+    );
+}
+
 /// **Cancelling alone stops the loop**, with no `request_stop` at all.
 ///
 /// This is what the cancel half of `stop()` actually contributes, and the plan's own mutation
