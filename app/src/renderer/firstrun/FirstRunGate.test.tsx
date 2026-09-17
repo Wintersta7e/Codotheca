@@ -303,11 +303,13 @@ test('only an accepted pick becomes a row; cancelling and failing draw nothing',
 
 // §10.3: batches on a fixed ~600 ms cadence, never one per discovery.
 test('discoveries land in batches, not one at a time', async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.useFakeTimers();
   const { emit } = harness();
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await act(async () => {});
+  expect(screen.getByText(copy.ROOTS_HEADLINE)).toBeTruthy();
   dig();
-  await screen.findByRole('button', { name: SKIP_AHEAD_LABEL });
+  await act(async () => {});
+  expect(screen.getByRole('button', { name: SKIP_AHEAD_LABEL })).toBeTruthy();
   emit({ kind: 'upserted', id: 1 as ProjectId, name: 'alpha', primaryLanguage: null });
   expect(screen.queryByText('alpha')).toBeNull();
   act(() => {
@@ -319,11 +321,13 @@ test('discoveries land in batches, not one at a time', async () => {
 // §10.3a: exactly one settle at walk completion, then 700 ms before the reveal takes the
 // screen. The reveal must not pre-empt it.
 test('the reveal waits out the settle hold and then loads once', async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.useFakeTimers();
   const { deps, emit } = harness();
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await act(async () => {});
+  expect(screen.getByText(copy.ROOTS_HEADLINE)).toBeTruthy();
   dig();
-  await screen.findByRole('button', { name: SKIP_AHEAD_LABEL });
+  await act(async () => {});
+  expect(screen.getByRole('button', { name: SKIP_AHEAD_LABEL })).toBeTruthy();
   emit({ kind: 'upserted', id: 1 as ProjectId, name: 'alpha', primaryLanguage: 'Rust' });
   emit({ kind: 'progress', indexedProjects: 1, walkedDirs: 10, foundRepos: 1 });
   emit({ kind: 'finished' });
@@ -334,9 +338,8 @@ test('the reveal waits out the settle hold and then loads once', async () => {
   act(() => {
     vi.advanceTimersByTime(2);
   });
-  await waitFor(() => {
-    expect(screen.getByText(copy.EVIDENCE_FOOTER)).toBeTruthy();
-  });
+  await act(async () => {});
+  expect(screen.getByText(copy.EVIDENCE_FOOTER)).toBeTruthy();
   expect(deps.loadReveal).toHaveBeenCalledTimes(1);
 });
 
@@ -355,19 +358,20 @@ test('skip ahead reaches the reveal without waiting for the walk', async () => {
 
 // §10.4a: a shelf with no projects never reaches the reveal and gets §11.1 instead.
 test('an empty library skips the reveal and the turn entirely', async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.useFakeTimers();
   const { deps, emit } = harness();
   deps.loadReveal.mockResolvedValue({ ...reveal, projectCount: { value: 0, basis } });
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await act(async () => {});
+  expect(screen.getByText(copy.ROOTS_HEADLINE)).toBeTruthy();
   dig();
-  await screen.findByRole('button', { name: SKIP_AHEAD_LABEL });
+  await act(async () => {});
+  expect(screen.getByRole('button', { name: SKIP_AHEAD_LABEL })).toBeTruthy();
   emit({ kind: 'finished' });
   act(() => {
     vi.advanceTimersByTime(SETTLE_HOLD_MS + 1);
   });
-  await waitFor(() => {
-    expect(screen.getByTestId('shelf')).toBeTruthy();
-  });
+  await act(async () => {});
+  expect(screen.getByTestId('shelf')).toBeTruthy();
   expect(screen.queryByText(copy.EVIDENCE_FOOTER)).toBeNull();
   expect(screen.queryByRole('button', { name: copy.SHOW_ME_LABEL })).toBeNull();
 });
