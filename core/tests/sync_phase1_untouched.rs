@@ -154,20 +154,26 @@ fn a_full_sync_run_writes_no_job_row() {
         project_id: ProjectId(1),
     });
     runner.start();
+    // **The rows must exist before "nothing is pending" means anything**: `enqueue` records a
+    // task in memory and the loop writes its row, so an empty table satisfies the settle
+    // condition vacuously.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while std::time::Instant::now() < deadline {
-        let pending: i64 = {
+        let (rows, pending): (i64, i64) = {
             let guard = index.lock().expect("index");
-            guard
-                .conn()
-                .query_row(
+            let conn = guard.conn();
+            (
+                conn.query_row("SELECT count(*) FROM sync_task_state", [], |r| r.get(0))
+                    .unwrap_or(0),
+                conn.query_row(
                     "SELECT count(*) FROM sync_task_state WHERE state IN ('queued', 'running')",
                     [],
                     |r| r.get(0),
                 )
-                .unwrap_or(1)
+                .unwrap_or(1),
+            )
         };
-        if pending == 0 {
+        if rows >= 3 && pending == 0 {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(5));

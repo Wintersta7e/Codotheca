@@ -5,7 +5,7 @@
       "id": "1",
       "title": "Every repository under the enabled roots appears exactly once",
       "group": "functional",
-      "spec": "§16.1",
+      "spec": "\u00a716.1",
       "checks": [
         {
           "id": "AC-1-discovery",
@@ -38,7 +38,7 @@
       "id": "2",
       "title": "Copies collapse, forks stay apart, ambiguous lineage is flagged",
       "group": "functional",
-      "spec": "§16.2",
+      "spec": "\u00a716.2",
       "checks": [
         {
           "id": "AC-2-collapse",
@@ -69,7 +69,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-call-sites:projects-merge",
-          "assert": "Amendment 2: projects.merge has zero call sites outside the test suite; a control wired to it is the §17 breach §11.1 forbids by name."
+          "assert": "Amendment 2: projects.merge has zero call sites outside the test suite; a control wired to it is the \u00a717 breach \u00a711.1 forbids by name."
         }
       ]
     },
@@ -77,7 +77,7 @@
       "id": "3",
       "title": "A merge is transactional and loses no work",
       "group": "functional",
-      "spec": "§16.3",
+      "spec": "\u00a716.3",
       "checks": [
         {
           "id": "AC-3-transactional",
@@ -93,7 +93,7 @@
       "id": "4",
       "title": "Unplugging a volume freezes and deletes nothing; re-plugging restores",
       "group": "functional",
-      "spec": "§16.4",
+      "spec": "\u00a716.4",
       "checks": [
         {
           "id": "AC-4-offline",
@@ -117,7 +117,7 @@
       "id": "5",
       "title": "Hostile repositories index without crashing and contribute no wrong date",
       "group": "functional",
-      "spec": "§16.5",
+      "spec": "\u00a716.5",
       "checks": [
         {
           "id": "AC-5-index",
@@ -141,7 +141,7 @@
       "id": "6",
       "title": "Editing a tracked file and re-observing flips is:dirty to true",
       "group": "functional",
-      "spec": "§16.6",
+      "spec": "\u00a716.6",
       "checks": [
         {
           "id": "AC-6-reobserve",
@@ -165,7 +165,7 @@
       "id": "7",
       "title": "Play, the dropdown, the overrides and the five resolution tiers",
       "group": "functional",
-      "spec": "§16.7",
+      "spec": "\u00a716.7",
       "checks": [
         {
           "id": "AC-7-tiers",
@@ -173,7 +173,7 @@
           "runner": "cargo",
           "owner": "11c",
           "test": "acceptance_targets::ac_7_resolution_walks_five_tiers",
-          "assert": "Amendment 7: project override, location override, language default, global default, ask — first hit wins, a tier with no row is skipped, primary_language NULL resolves at global, targets.list returns the tier that resolved, resolution never consults verify_state."
+          "assert": "Amendment 7: project override, location override, language default, global default, ask \u2014 first hit wins, a tier with no row is skipped, primary_language NULL resolves at global, targets.list returns the tier that resolved, resolution never consults verify_state."
         },
         {
           "id": "AC-7-detection",
@@ -197,7 +197,7 @@
       "id": "8",
       "title": "A WSL-resident repository launches with translated paths",
       "group": "functional",
-      "spec": "§16.8",
+      "spec": "\u00a716.8",
       "checks": [
         {
           "id": "AC-8-translate",
@@ -212,7 +212,7 @@
           "status": "manual",
           "runner": "manual",
           "gate": "WSL-LAUNCH",
-          "reason": "No CI runner provides a WSL distro: nested virtualisation is not available on hosted Windows runners, so the in-distro worker cannot be started. Run on Reference A before a release. The bridge has never been crossed on a real machine here either — the dispatcher is asserted over a loopback worker only.",
+          "reason": "No CI runner provides a WSL distro: nested virtualisation is not available on hosted Windows runners, so the in-distro worker cannot be started. Run on Reference A before a release. The bridge has never been crossed on a real machine here either \u2014 the dispatcher is asserted over a loopback worker only.",
           "assert": "A repository inside a distro launches its target and runs git inside the distro."
         }
       ]
@@ -221,7 +221,7 @@
       "id": "9",
       "title": "The query grammar, its soft errors and saved queries",
       "group": "functional",
-      "spec": "§16.9",
+      "spec": "\u00a716.9",
       "checks": [
         {
           "id": "AC-9-grammar",
@@ -253,7 +253,7 @@
       "id": "10",
       "title": "Peek is plain text; view state restores exactly",
       "group": "functional",
-      "spec": "§16.10",
+      "spec": "\u00a716.10",
       "checks": [
         {
           "id": "AC-10-peek",
@@ -261,7 +261,7 @@
           "runner": "vitest",
           "owner": "13c",
           "test": "AC-10 Space peeks inline as plain text",
-          "assert": "Peek renders the README as literal text — no markup, no fetch, no navigation."
+          "assert": "Peek renders the README as literal text \u2014 no markup, no fetch, no navigation."
         },
         {
           "id": "AC-10-view-state",
@@ -278,7 +278,7 @@
       "id": "11",
       "title": "Sessions: wait mode, idle segmentation, isolation, orphan recovery",
       "group": "functional",
-      "spec": "§16.11",
+      "spec": "\u00a716.11",
       "checks": [
         {
           "id": "AC-11-wait-mode",
@@ -318,14 +318,14 @@
       "id": "12",
       "title": "First run asks nothing, shows no percentage, states its coverage",
       "group": "functional",
-      "spec": "§16.12",
+      "spec": "\u00a716.12",
       "checks": [
         {
           "id": "AC-12-no-questions",
           "status": "automated",
           "runner": "vitest",
           "test": "AC-12 first run asks nothing, shows no percentage, and states its coverage",
-          "assert": "The first-run flow presents no configuration input and no percentage anywhere, and the word setup appears in no rendered string. Asserted over the mounted gate in jsdom, which has no layout engine — the same clause against a real frame is AC-12-paints."
+          "assert": "The first-run flow presents no configuration input and no percentage anywhere, and the word setup appears in no rendered string. Asserted over the mounted gate in jsdom, which has no layout engine \u2014 the same clause against a real frame is AC-12-paints."
         },
         {
           "id": "AC-12-paints",
@@ -334,7 +334,7 @@
           "owner": "22",
           "test": "AC-12 the first-run screen paints and the word setup is absent from it",
           "assert": "The same clause against a composited frame rather than a jsdom tree.",
-          "reason": "The e2e that renders the first-run screen skips itself when core/target/release/codotheca-core is absent — honestly, rather than passing over a blank window — so on any machine or CI job that has not built a release core the check does not run at all. Making it automated would mark a criterion covered by a test that silently declines to execute."
+          "reason": "The e2e that renders the first-run screen skips itself when core/target/release/codotheca-core is absent \u2014 honestly, rather than passing over a blank window \u2014 so on any machine or CI job that has not built a release core the check does not run at all. Making it automated would mark a criterion covered by a test that silently declines to execute."
         },
         {
           "id": "AC-12-coverage",
@@ -350,7 +350,7 @@
           "runner": "vitest",
           "owner": "16b",
           "test": "AC-12 a refused suggestion says why rather than nothing",
-          "assert": "§10.1a requires an explanation and never a silent no.",
+          "assert": "\u00a710.1a requires an explanation and never a silent no.",
           "reason": "The shell distinguishes an unknown suggestion from an ambiguous one and the renderer collapses both to no root added: the commit path returns a root-add reply and the refusal type has no variant for it. What a user sees today is a scan that found nothing under a root nobody added. Closing it is a schema change plus 16b's surface."
         }
       ]
@@ -359,7 +359,7 @@
       "id": "13",
       "title": "Two launches: the second focuses the first and starts no second core",
       "group": "functional",
-      "spec": "§16.13",
+      "spec": "\u00a716.13",
       "checks": [
         {
           "id": "AC-13-no-second-core",
@@ -384,7 +384,7 @@
       "id": "14",
       "title": "A future schema refuses to open; a corrupt database quarantines and rebuilds",
       "group": "functional",
-      "spec": "§16.14",
+      "spec": "\u00a716.14",
       "checks": [
         {
           "id": "AC-14-future-schema",
@@ -414,7 +414,7 @@
       "id": "15",
       "title": "Cold launch to first painted tiles",
       "group": "performance",
-      "spec": "§16.15",
+      "spec": "\u00a716.15",
       "checks": [
         {
           "id": "AC-15-cold",
@@ -465,7 +465,7 @@
       "id": "16",
       "title": "Resident hotkey to window visible",
       "group": "performance",
-      "spec": "§16.16",
+      "spec": "\u00a716.16",
       "checks": [
         {
           "id": "AC-16-warm",
@@ -527,7 +527,7 @@
       "id": "17",
       "title": "Keystroke to refiltered grid at 1,000 projects",
       "group": "performance",
-      "spec": "§16.17",
+      "spec": "\u00a716.17",
       "checks": [
         {
           "id": "AC-17-refilter",
@@ -562,7 +562,7 @@
       "id": "18",
       "title": "Cache-validation pass over 1,000 repositories",
       "group": "performance",
-      "spec": "§16.18",
+      "spec": "\u00a716.18",
       "checks": [
         {
           "id": "AC-18-validate",
@@ -597,7 +597,7 @@
       "id": "19",
       "title": "Forced J2 and J3 refresh over 1,000 repositories",
       "group": "performance",
-      "spec": "§16.19",
+      "spec": "\u00a716.19",
       "checks": [
         {
           "id": "AC-19-refresh",
@@ -657,7 +657,7 @@
       "id": "20",
       "title": "First full J4 history index over 1,000 repositories",
       "group": "performance",
-      "spec": "§16.20",
+      "spec": "\u00a716.20",
       "checks": [
         {
           "id": "AC-20-resumable",
@@ -666,7 +666,7 @@
           "owner": "09",
           "test": "acceptance_jobs::ac_20_j4_resumes_from_its_cursor",
           "assert": "J4 stopped mid-run resumes from project_job_state.cursor and produces the same commit-day set as an uninterrupted run.",
-          "reason": "§4.1's chunking is unreachable today and accepted for phase 1: the git backend exposes atomic calls with no yield point, so there is nowhere to write a cursor. The contract is built — a partial outcome, its application and the cursor column all exist — so closing it is additive. Overturn on measurement, not taste."
+          "reason": "\u00a74.1's chunking is unreachable today and accepted for phase 1: the git backend exposes atomic calls with no yield point, so there is nowhere to write a cursor. The contract is built \u2014 a partial outcome, its application and the cursor column all exist \u2014 so closing it is additive. Overturn on measurement, not taste."
         },
         {
           "id": "AC-20-coverage",
@@ -680,7 +680,7 @@
           "id": "AC-20-duration",
           "status": "unmeasurable",
           "runner": "none",
-          "reason": "The criterion states no deadline — 'minutes, resumable, with a visible coverage indicator. No deadline.' There is nothing to gate on, and a ceiling invented here would gate on a number the spec deliberately declined to state.",
+          "reason": "The criterion states no deadline \u2014 'minutes, resumable, with a visible coverage indicator. No deadline.' There is nothing to gate on, and a ceiling invented here would gate on a number the spec deliberately declined to state.",
           "assert": "No duration budget exists for the first full J4 pass."
         },
         {
@@ -696,7 +696,7 @@
       "id": "21",
       "title": "Idle on Reference A",
       "group": "performance",
-      "spec": "§16.21",
+      "spec": "\u00a716.21",
       "checks": [
         {
           "id": "AC-21-frames",
@@ -729,7 +729,7 @@
           "runner": "vitest",
           "owner": "12c",
           "test": "AC-21 the scheduled flicker obeys its eligibility and its parameters",
-          "assert": "At most one card in the viewport — mounted is not enough; 1 to 2 sub-dips of 15 to 25% of steady glow, each 80 to 140 ms, a deterministic Poisson process at about 9 s mean seeded per session, suspended while unfocused and resuming with no backlog. Eligibility is condition_signal in {neglected, abandoned}, location present, is_reference = 0. The design's 50% depth, fixed 130 ms hold and fixed 9,000 ms period are cut and must not be asserted."
+          "assert": "At most one card in the viewport \u2014 mounted is not enough; 1 to 2 sub-dips of 15 to 25% of steady glow, each 80 to 140 ms, a deterministic Poisson process at about 9 s mean seeded per session, suspended while unfocused and resuming with no backlog. Eligibility is condition_signal in {neglected, abandoned}, location present, is_reference = 0. The design's 50% depth, fixed 130 ms hold and fixed 9,000 ms period are cut and must not be asserted."
         },
         {
           "id": "AC-21-cpu",
@@ -752,7 +752,7 @@
       "id": "22",
       "title": "Storage against the 1,000-project fixture",
       "group": "performance",
-      "spec": "§16.22",
+      "spec": "\u00a716.22",
       "checks": [
         {
           "id": "AC-22-database",
@@ -817,7 +817,7 @@
       "id": "23",
       "title": "No value is presented as current without its observation time",
       "group": "honesty",
-      "spec": "§16.23",
+      "spec": "\u00a716.23",
       "checks": [
         {
           "id": "AC-23-audit",
@@ -826,7 +826,7 @@
           "owner": "13c",
           "test": "AC-23 auditObservationTimes finds a fact rendered without its observation time",
           "assert": "The audit primitives themselves: a fact node without its observation-time attribute is a violation, a coverage figure without its coverage attribute is a violation, and the word clean in a worktree readout is a violation.",
-          "reason": "The DOM convention the audit would read does not exist. No data-observed-at and no data-coverage attribute appears anywhere in the renderer today; the observation clause is composed in a formatter and rendered as text. An audit written against that convention now would select nothing on every possible tree and report clean — which is the same shape as the dead in-sync CI step. The convention has to land with the shelf first. The one clause that is gated today is the vocabulary: the destructive-token gate already fails the build on the word clean in a rendered string."
+          "reason": "The DOM convention the audit would read does not exist. No data-observed-at and no data-coverage attribute appears anywhere in the renderer today; the observation clause is composed in a formatter and rendered as text. An audit written against that convention now would select nothing on every possible tree and report clean \u2014 which is the same shape as the dead in-sync CI step. The convention has to land with the shelf first. The one clause that is gated today is the vocabulary: the destructive-token gate already fails the build on the word clean in a rendered string."
         },
         {
           "id": "AC-23-shelf",
@@ -841,7 +841,7 @@
           "status": "automated",
           "runner": "vitest",
           "test": "AC-23 no figure over a partial index is presented bare",
-          "assert": "Every reveal figure renders with its basis rather than bare — the projects it was computed over and whether history is complete."
+          "assert": "Every reveal figure renders with its basis rather than bare \u2014 the projects it was computed over and whether history is complete."
         },
         {
           "id": "AC-23-shallow",
@@ -857,7 +857,7 @@
       "id": "24",
       "title": "Killing the core loses no committed data and replays nothing non-idempotent",
       "group": "honesty",
-      "spec": "§16.24",
+      "spec": "\u00a716.24",
       "checks": [
         {
           "id": "AC-24-restarted",
@@ -878,7 +878,7 @@
           "status": "automated",
           "runner": "vitest",
           "test": "CoreSupervisor.stopAndWait resolves once the core has actually exited",
-          "assert": "The orderly half only: quitting waits for the core to exit rather than assuming it did, and kills it when the deadline passes. This is not the kill-mid-scan clause — a clean stop is the case where nothing was interrupted."
+          "assert": "The orderly half only: quitting waits for the core to exit rather than assuming it did, and kills it when the deadline passes. This is not the kill-mid-scan clause \u2014 a clean stop is the case where nothing was interrupted."
         },
         {
           "id": "AC-24-durable",
@@ -902,7 +902,7 @@
       "id": "25",
       "title": "Every promised problem is reachable; every never-indexed repository carries an explained error",
       "group": "honesty",
-      "spec": "§16.25",
+      "spec": "\u00a716.25",
       "checks": [
         {
           "id": "AC-25-kinds",
@@ -942,7 +942,7 @@
       "id": "26",
       "title": "Signed per-user NSIS with a working updater round trip",
       "group": "distribution",
-      "spec": "§16.26",
+      "spec": "\u00a716.26",
       "checks": [
         {
           "id": "AC-26-roundtrip",
@@ -951,7 +951,7 @@
           "owner": "19",
           "test": "AC-26 the updater round trip completes against a local feed",
           "assert": "A per-user NSIS install updates from a locally served feed, including an update staged while the core is running, which completes the shutdown first.",
-          "reason": "Phase 1 ships no update channel. There is no auto-updater, no update server and no feed: distribution is a release page downloaded by hand. electron-updater is not a dependency and a gate asserts its absence, so the round trip has nothing to round-trip against. This is neither covered nor failing — the criterion's subject does not exist in this phase, and the check is here so that adding an updater later cannot arrive without it."
+          "reason": "Phase 1 ships no update channel. There is no auto-updater, no update server and no feed: distribution is a release page downloaded by hand. electron-updater is not a dependency and a gate asserts its absence, so the round trip has nothing to round-trip against. This is neither covered nor failing \u2014 the criterion's subject does not exist in this phase, and the check is here so that adding an updater later cannot arrive without it."
         },
         {
           "id": "AC-26-signature",
@@ -967,7 +967,7 @@
       "id": "27",
       "title": "AppImage self-updates; deb and rpm install with the updater disabled",
       "group": "distribution",
-      "spec": "§16.27",
+      "spec": "\u00a716.27",
       "checks": [
         {
           "id": "AC-27-appimage",
@@ -993,7 +993,7 @@
       "id": "28",
       "title": "diag.bundle exports the stated fields, anonymised by default",
       "group": "distribution",
-      "spec": "§16.28",
+      "spec": "\u00a716.28",
       "checks": [
         {
           "id": "AC-28-fields",
@@ -1008,7 +1008,7 @@
           "status": "manual",
           "runner": "manual",
           "gate": "DIAG-ANONYMISATION",
-          "assert": "Against a real index whose locations sit under a home directory, a bundle exported with the default setting carries no home directory, no drive letter, no mount root and no user name — only the basename and the per-volume pseudonym §11.4 specifies. The same export with SHOW REAL PATHS must put them back, so a clean default run is known to have had something to remove.",
+          "assert": "Against a real index whose locations sit under a home directory, a bundle exported with the default setting carries no home directory, no drive letter, no mount root and no user name \u2014 only the basename and the per-volume pseudonym \u00a711.4 specifies. The same export with SHOW REAL PATHS must put them back, so a clean default run is known to have had something to remove.",
           "reason": "A reviewer performs this before a release, against the built binary rather than the source. It is not automated here for two reasons. The cargo half (AC-28-fields, owner 17) asserts the document's shape but builds no bundle from host-shaped paths, so it cannot see an anonymiser that stopped covering a field. And the control half is what makes the result mean anything: without re-exporting the same index with real paths and watching the assertion fail, a clean run is indistinguishable from a run whose fixture never reached the anonymiser at all. That pairing is a judgement about whether the fixture was representative, which is why it is a person's gate and not a machine's."
         }
       ]
@@ -1017,7 +1017,7 @@
       "id": "29",
       "title": "Real Linux GPU rendering across the driver and compositor matrix",
       "group": "external",
-      "spec": "§16.29",
+      "spec": "\u00a716.29",
       "checks": [
         {
           "id": "AC-29-linux-gpu",
@@ -1032,7 +1032,7 @@
       "id": "30",
       "title": "Scroll frame pacing",
       "group": "performance",
-      "spec": "§16.30",
+      "spec": "\u00a716.30",
       "checks": [
         {
           "id": "AC-30-pacing",
@@ -1065,7 +1065,7 @@
       "id": "31",
       "title": "Palette painted with its first page of rows",
       "group": "performance",
-      "spec": "§16.31",
+      "spec": "\u00a716.31",
       "checks": [
         {
           "id": "AC-31-warm",
@@ -1127,7 +1127,7 @@
       "id": "32",
       "title": "The palette hotkey wins over the query field",
       "group": "surfaces",
-      "spec": "§16.32",
+      "spec": "\u00a716.32",
       "checks": [
         {
           "id": "AC-32-preventdefault",
@@ -1143,7 +1143,7 @@
       "id": "33",
       "title": "Quick switch keys, order, empty state and footer",
       "group": "surfaces",
-      "spec": "§16.33",
+      "spec": "\u00a716.33",
       "checks": [
         {
           "id": "AC-33-keys",
@@ -1166,7 +1166,7 @@
       "id": "34",
       "title": "The page plays once and stays put",
       "group": "surfaces",
-      "spec": "§16.34",
+      "spec": "\u00a716.34",
       "checks": [
         {
           "id": "AC-34-once",
@@ -1182,7 +1182,7 @@
       "id": "35",
       "title": "The page unmounts the shelf and stops the session tick",
       "group": "surfaces",
-      "spec": "§16.35",
+      "spec": "\u00a716.35",
       "checks": [
         {
           "id": "AC-35-unmount",
@@ -1198,7 +1198,7 @@
       "id": "36",
       "title": "Esc on the page restores the shelf exactly",
       "group": "surfaces",
-      "spec": "§16.36",
+      "spec": "\u00a716.36",
       "checks": [
         {
           "id": "AC-36-return",
@@ -1214,7 +1214,7 @@
       "id": "37",
       "title": "The tab strip is OVERVIEW and ACTIVITY and nothing else",
       "group": "surfaces",
-      "spec": "§16.37",
+      "spec": "\u00a716.37",
       "checks": [
         {
           "id": "AC-37-tabs",
@@ -1230,7 +1230,7 @@
       "id": "38",
       "title": "The Locations footer, its association wording and its row states",
       "group": "surfaces",
-      "spec": "§16.38",
+      "spec": "\u00a716.38",
       "checks": [
         {
           "id": "AC-38-footer",
@@ -1253,7 +1253,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-forbidden:c38-superseded-footer",
-          "assert": "The superseded root-commit footer, quoted byte-for-byte with its ellipsis, appears nowhere in the built renderer — it asserts the inference a shared root commit cannot support."
+          "assert": "The superseded root-commit footer, quoted byte-for-byte with its ellipsis, appears nowhere in the built renderer \u2014 it asserts the inference a shared root commit cannot support."
         }
       ]
     },
@@ -1261,7 +1261,7 @@
       "id": "39",
       "title": "A copy on a different commit, and the directional claims that are forbidden",
       "group": "surfaces",
-      "spec": "§16.39",
+      "spec": "\u00a716.39",
       "checks": [
         {
           "id": "AC-39-note",
@@ -1284,7 +1284,7 @@
       "id": "40",
       "title": "Activity draws two lanes and never a count",
       "group": "surfaces",
-      "spec": "§16.40",
+      "spec": "\u00a716.40",
       "checks": [
         {
           "id": "AC-40-lanes",
@@ -1307,7 +1307,7 @@
       "id": "41",
       "title": "A week outside J4's coverage is not computed",
       "group": "surfaces",
-      "spec": "§16.41",
+      "spec": "\u00a716.41",
       "checks": [
         {
           "id": "AC-41-uncovered",
@@ -1323,7 +1323,7 @@
       "id": "42",
       "title": "A README renders as literal text on both surfaces",
       "group": "surfaces",
-      "spec": "§16.42",
+      "spec": "\u00a716.42",
       "checks": [
         {
           "id": "AC-42-peek",
@@ -1331,7 +1331,7 @@
           "runner": "vitest",
           "owner": "13c",
           "test": "AC-42 markup in a README renders as literal text in Peek",
-          "assert": "Script tags, image tags and link syntax render as text — no markup, no fetch, no navigation."
+          "assert": "Script tags, image tags and link syntax render as text \u2014 no markup, no fetch, no navigation."
         },
         {
           "id": "AC-42-page",
@@ -1339,7 +1339,7 @@
           "runner": "vitest",
           "owner": "p2-25b",
           "test": "the README pipeline readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text",
-          "assert": "[p2] The project page's half is superseded by §25.5: the panel renders markup inside a sandboxed frame, and what replaces the plain-text rule is §25.10's hostile document — a script tag as visible text, no on* attribute, no non-http(s) href. Peek's half is AC-42-peek and is unchanged."
+          "assert": "[p2] The project page's half is superseded by \u00a725.5: the panel renders markup inside a sandboxed frame, and what replaces the plain-text rule is \u00a725.10's hostile document \u2014 a script tag as visible text, no on* attribute, no non-http(s) href. Peek's half is AC-42-peek and is unchanged."
         }
       ]
     },
@@ -1347,7 +1347,7 @@
       "id": "43",
       "title": "The scratchpad persists, is project-scoped and reconciles on merge",
       "group": "surfaces",
-      "spec": "§16.43",
+      "spec": "\u00a716.43",
       "checks": [
         {
           "id": "AC-43-note",
@@ -1363,7 +1363,7 @@
       "id": "44",
       "title": "Nothing on the page mutates disk",
       "group": "surfaces",
-      "spec": "§16.44",
+      "spec": "\u00a716.44",
       "checks": [
         {
           "id": "AC-44-no-destruction",
@@ -1392,7 +1392,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-call-sites:no-destructive-git",
-          "assert": "No destructive git subcommand appears as an argv literal anywhere in the core — push, clean, checkout, reset, fetch, pull, gc, prune and restore, fetch included because a directional claim would need one."
+          "assert": "No destructive git subcommand appears as an argv literal anywhere in the core \u2014 push, clean, checkout, reset, fetch, pull, gc, prune and restore, fetch included because a directional claim would need one."
         }
       ]
     },
@@ -1400,7 +1400,7 @@
       "id": "45a",
       "title": "The grid card and the hero state the absence",
       "group": "surfaces",
-      "spec": "§16.45a",
+      "spec": "\u00a716.45a",
       "checks": [
         {
           "id": "AC-45a-uncomputed",
@@ -1416,7 +1416,7 @@
       "id": "45b",
       "title": "Every other completion readout renders no element at all",
       "group": "surfaces",
-      "spec": "§16.45b",
+      "spec": "\u00a716.45b",
       "checks": [
         {
           "id": "AC-45b-empty",
@@ -1424,7 +1424,7 @@
           "runner": "vitest",
           "owner": "13c",
           "test": "AC-45b the rank and score columns, the palette slot, the hero band and Peek contain no node",
-          "assert": "Assert the emptiness of the node, not the absence of a digit — a dash placed there passes a digits-only check."
+          "assert": "Assert the emptiness of the node, not the absence of a digit \u2014 a dash placed there passes a digits-only check."
         }
       ]
     },
@@ -1432,7 +1432,7 @@
       "id": "45c",
       "title": "The layout survives the emptiness",
       "group": "surfaces",
-      "spec": "§16.45c",
+      "spec": "\u00a716.45c",
       "checks": [
         {
           "id": "AC-45c-layout",
@@ -1448,7 +1448,7 @@
       "id": "46",
       "title": "Every colour and every motion value resolves to a declared one",
       "group": "surfaces",
-      "spec": "§16.46",
+      "spec": "\u00a716.46",
       "checks": [
         {
           "id": "AC-46-colour",
@@ -1470,7 +1470,7 @@
       "id": "47",
       "title": "Decision text clears the floor against its own ancestor",
       "group": "surfaces",
-      "spec": "§16.47",
+      "spec": "\u00a716.47",
       "checks": [
         {
           "id": "AC-47-contrast",
@@ -1494,7 +1494,7 @@
       "id": "48a",
       "title": "The grid tile's reserved bands",
       "group": "surfaces",
-      "spec": "§16.48a",
+      "spec": "\u00a716.48a",
       "checks": [
         {
           "id": "AC-48a-bands",
@@ -1510,7 +1510,7 @@
       "id": "48b",
       "title": "The hero's reserved bands",
       "group": "surfaces",
-      "spec": "§16.48b",
+      "spec": "\u00a716.48b",
       "checks": [
         {
           "id": "AC-48b-bands",
@@ -1526,7 +1526,7 @@
       "id": "49",
       "title": "Chamfer geometry and the one permitted circle",
       "group": "surfaces",
-      "spec": "§16.49",
+      "spec": "\u00a716.49",
       "checks": [
         {
           "id": "AC-49-chamfer",
@@ -1542,7 +1542,7 @@
       "id": "50",
       "title": "Effects tier off",
       "group": "surfaces",
-      "spec": "§16.50",
+      "spec": "\u00a716.50",
       "checks": [
         {
           "id": "AC-50-zero-animation",
@@ -1550,7 +1550,7 @@
           "runner": "vitest",
           "owner": "12",
           "test": "AC-50 tier off runs zero animations and schedules zero frames",
-          "assert": "At reduced and off the scheduled flicker is absent — steady glow, no dip. Hazard tape renders identically and the pin mark is a static silhouette no tier deletes. Verified by resolving a style on a real element under each tier, never by matching the stylesheet's text: the clamp selects nine class names exactly and a tenth name makes it select nothing."
+          "assert": "At reduced and off the scheduled flicker is absent \u2014 steady glow, no dip. Hazard tape renders identically and the pin mark is a static silhouette no tier deletes. Verified by resolving a style on a real element under each tier, never by matching the stylesheet's text: the clamp selects nine class names exactly and a tenth name makes it select nothing."
         },
         {
           "id": "AC-50-readability",
@@ -1566,7 +1566,7 @@
       "id": "51",
       "title": "Copy voice",
       "group": "surfaces",
-      "spec": "§16.51",
+      "spec": "\u00a716.51",
       "checks": [
         {
           "id": "AC-51-voice",
@@ -1582,7 +1582,7 @@
       "id": "52",
       "title": "Saved collections, their degraded states and their removal",
       "group": "surfaces",
-      "spec": "§16.52",
+      "spec": "\u00a716.52",
       "checks": [
         {
           "id": "AC-52-save",
@@ -1598,7 +1598,7 @@
           "runner": "vitest",
           "owner": "15b",
           "test": "AC-52 a stored query whose grammar moved on renders degraded or broken",
-          "assert": "Surviving terms run with dropped terms struck and the count attributed to what ran, or no number at all and not activatable — never an empty grid and never a zero."
+          "assert": "Surviving terms run with dropped terms struck and the count attributed to what ran, or no number at all and not activatable \u2014 never an empty grid and never a zero."
         },
         {
           "id": "AC-52-remove",
@@ -1614,7 +1614,7 @@
       "id": "53",
       "title": "Keyboard, focus and accessibility",
       "group": "subsystems",
-      "spec": "§16.53",
+      "spec": "\u00a716.53",
       "checks": [
         {
           "id": "AC-53-grid-keys",
@@ -1637,7 +1637,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-forbidden:c53-outline-replacement",
-          "assert": "No rule in the built stylesheet removes the outline without a box-shadow replacement in the same rule — the only indicator that survives clip-path clipping every outline away."
+          "assert": "No rule in the built stylesheet removes the outline without a box-shadow replacement in the same rule \u2014 the only indicator that survives clip-path clipping every outline away."
         },
         {
           "id": "AC-53-escape-copy",
@@ -1660,7 +1660,7 @@
       "id": "54",
       "title": "The roast producer",
       "group": "subsystems",
-      "spec": "§16.54",
+      "spec": "\u00a716.54",
       "checks": [
         {
           "id": "AC-54-selection",
@@ -1691,7 +1691,7 @@
       "id": "55",
       "title": "The pin",
       "group": "subsystems",
-      "spec": "§16.55",
+      "spec": "\u00a716.55",
       "checks": [
         {
           "id": "AC-55-control",
@@ -1723,7 +1723,7 @@
       "id": "56",
       "title": "The art reroll",
       "group": "subsystems",
-      "spec": "§16.56",
+      "spec": "\u00a716.56",
       "checks": [
         {
           "id": "AC-56-absolute",
@@ -1746,7 +1746,7 @@
           "owner": "17",
           "test": "AC-56 a reroll writes no xp_events row and fires no notification",
           "assert": "A reroll leaves the identity fields and the name unchanged, writes no xp_events row and raises no notification.",
-          "reason": "Split out of a single check that mixed runners. The notification clause has no shell module to assert against until the tray and the notice surfaces land, and the xp_events clause is a cargo assertion — registering all three together would have reported the criterion covered while a third of it was not."
+          "reason": "Split out of a single check that mixed runners. The notification clause has no shell module to assert against until the tray and the notice surfaces land, and the xp_events clause is a cargo assertion \u2014 registering all three together would have reported the criterion covered while a third of it was not."
         },
         {
           "id": "AC-56-stepper",
@@ -1754,7 +1754,7 @@
           "runner": "vitest",
           "owner": "10b",
           "test": "AC-56 the back step and the readout are absent at offset zero",
-          "assert": "At offset zero the reroll control renders no back step and no readout — there is nothing to go back to and no number to state."
+          "assert": "At offset zero the reroll control renders no back step and no readout \u2014 there is nothing to go back to and no number to state."
         }
       ]
     },
@@ -1762,7 +1762,7 @@
       "id": "57",
       "title": "Startup, boot.json and the three failure windows",
       "group": "subsystems",
-      "spec": "§16.57",
+      "spec": "\u00a716.57",
       "checks": [
         {
           "id": "AC-57-boot-file",
@@ -1800,7 +1800,7 @@
       "id": "58",
       "title": "The condition dot",
       "group": "subsystems",
-      "spec": "§16.58",
+      "spec": "\u00a716.58",
       "checks": [
         {
           "id": "AC-58-surfaces",
@@ -1823,7 +1823,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-forbidden:c58-design-band-names",
-          "assert": "The two design band names warm and cooling appear in no CSS class, query field, protocol message, log line or accessible name, over all three of criterion 58's target sets. blueprint is asserted absent as a condition_signal VALUE instead — by the DDL CHECK and the generated ConditionSignal union type, both structural (A4) — and is permitted as a rendition name and a tier token. The two enum words that look like band names are required verbatim and are not banned."
+          "assert": "The two design band names warm and cooling appear in no CSS class, query field, protocol message, log line or accessible name, over all three of criterion 58's target sets. blueprint is asserted absent as a condition_signal VALUE instead \u2014 by the DDL CHECK and the generated ConditionSignal union type, both structural (A4) \u2014 and is permitted as a rendition name and a tier token. The two enum words that look like band names are required verbatim and are not banned."
         }
       ]
     },
@@ -1831,7 +1831,7 @@
       "id": "59",
       "title": "Hazard tape",
       "group": "subsystems",
-      "spec": "§16.59",
+      "spec": "\u00a716.59",
       "checks": [
         {
           "id": "AC-59-scope",
@@ -1855,7 +1855,7 @@
       "id": "60",
       "title": "The type floor and the scale",
       "group": "subsystems",
-      "spec": "§16.60",
+      "spec": "\u00a716.60",
       "checks": [
         {
           "id": "AC-60-floor",
@@ -1878,7 +1878,7 @@
       "id": "61",
       "title": "The binding model",
       "group": "subsystems",
-      "spec": "§16.61",
+      "spec": "\u00a716.61",
       "checks": [
         {
           "id": "AC-61-never-registered",
@@ -1909,7 +1909,7 @@
       "id": "62",
       "title": "fade, the art address and the two caches",
       "group": "subsystems",
-      "spec": "§16.62",
+      "spec": "\u00a716.62",
       "checks": [
         {
           "id": "AC-62-fade",
@@ -1954,7 +1954,7 @@
       "id": "63",
       "title": "Existence: a surface may render only what is stored or commandable",
       "group": "subsystems",
-      "spec": "§16.63",
+      "spec": "\u00a716.63",
       "checks": [
         {
           "id": "AC-63-behind-chip",
@@ -1977,7 +1977,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-call-sites:no-git-config-write",
-          "assert": "No git invocation in the core carries a config-writing flag as an argv literal — the greppable complement to the byte-identical-config assertion."
+          "assert": "No git invocation in the core carries a config-writing flag as an argv literal \u2014 the greppable complement to the byte-identical-config assertion."
         },
         {
           "id": "AC-63-requeue",
@@ -2015,7 +2015,7 @@
       "id": "64",
       "title": "Era sections, header aggregates and the watch set",
       "group": "subsystems",
-      "spec": "§16.64",
+      "spec": "\u00a716.64",
       "checks": [
         {
           "id": "AC-64-sections",
@@ -2054,7 +2054,7 @@
       "id": "65",
       "title": "The notice slot, the chips and the completion term",
       "group": "subsystems",
-      "spec": "§16.65",
+      "spec": "\u00a716.65",
       "checks": [
         {
           "id": "AC-65-slot",
@@ -2071,7 +2071,7 @@
           "owner": "13c",
           "test": "AC-65 chip chrome is asserted once against its owning section for all six chips",
           "assert": "The stated padding, gap, ground and inset shadows, with the hover and active rule that the sub-line takes text-2 on the hover fill.",
-          "reason": "The attention chip as built diverges from its owning section in seven values — padding, two gaps, border versus inset, three type sizes and a missing row border. Only the two declarations another section depends on were reconciled; the rest is untouched and unowned, so this check would fail today against the section it cites rather than against the component."
+          "reason": "The attention chip as built diverges from its owning section in seven values \u2014 padding, two gaps, border versus inset, three type sizes and a missing row border. Only the two declarations another section depends on were reconciled; the rest is untouched and unowned, so this check would fail today against the section it cites rather than against the component."
         },
         {
           "id": "AC-65-completion-term",
@@ -2095,7 +2095,7 @@
       "id": "66",
       "title": "The top bar and density",
       "group": "subsystems",
-      "spec": "§16.66",
+      "spec": "\u00a716.66",
       "checks": [
         {
           "id": "AC-66-density",
@@ -2135,14 +2135,14 @@
       "id": "67",
       "title": "DOM composition and the mid-scan flip",
       "group": "subsystems",
-      "spec": "§16.67",
+      "spec": "\u00a716.67",
       "checks": [
         {
           "id": "AC-67-no-canvas",
           "status": "automated",
           "runner": "script",
           "test": "check-forbidden:c67-canvas-and-webgl",
-          "assert": "The built renderer creates no WebGL context and no canvas element — statically checkable over the renderer bundle. Nothing asserted this before, which is how a negative rule comes back by accident."
+          "assert": "The built renderer creates no WebGL context and no canvas element \u2014 statically checkable over the renderer bundle. Nothing asserted this before, which is how a negative rule comes back by accident."
         },
         {
           "id": "AC-67-plate-roles",
@@ -2150,7 +2150,7 @@
           "runner": "vitest",
           "owner": "12c",
           "test": "AC-67 the CSS plate has two roles and no third",
-          "assert": "The state every card is born in, and the fallback where the art failed or the file is gone — never drawn over a decoded bitmap."
+          "assert": "The state every card is born in, and the fallback where the art failed or the file is gone \u2014 never drawn over a decoded bitmap."
         },
         {
           "id": "AC-67-flip",
@@ -2166,7 +2166,7 @@
       "id": "P2-20-1",
       "title": "Admission is the listing's own push permission, never inferred",
       "group": "functional",
-      "spec": "§20.1",
+      "spec": "\u00a720.1",
       "checks": [
         {
           "id": "AC-P2-20-1",
@@ -2182,7 +2182,7 @@
       "id": "P2-20-2",
       "title": "No source file in the core sends a scope outside the two tier sets",
       "group": "functional",
-      "spec": "§20.3",
+      "spec": "\u00a720.3",
       "checks": [
         {
           "id": "AC-P2-20-2",
@@ -2208,7 +2208,7 @@
       "id": "P2-20-3",
       "title": "The renderer writes no scope string; the chips come from the payload",
       "group": "functional",
-      "spec": "§20.10",
+      "spec": "\u00a720.10",
       "checks": [
         {
           "id": "AC-P2-20-3",
@@ -2223,7 +2223,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-20",
-          "test": "§20.12, mounted AC-P2-20-3 draws the chips the payload carried, whatever they are",
+          "test": "\u00a720.12, mounted AC-P2-20-3 draws the chips the payload carried, whatever they are",
           "assert": "A grantedScopes payload whose strings appear in no source file renders as chips, and the NOT CONNECTED state renders no scope chip at all."
         }
       ]
@@ -2232,7 +2232,7 @@
       "id": "P2-20-4",
       "title": "A token reaches no log line, no bundle and no error frame",
       "group": "functional",
-      "spec": "§20.5",
+      "spec": "\u00a720.5",
       "checks": [
         {
           "id": "AC-P2-20-4",
@@ -2248,7 +2248,7 @@
       "id": "P2-20-5",
       "title": "No keychain, no connection, and nothing is stored",
       "group": "functional",
-      "spec": "§20.6",
+      "spec": "\u00a720.6",
       "checks": [
         {
           "id": "AC-P2-20-5",
@@ -2272,7 +2272,7 @@
       "id": "P2-20-6",
       "title": "Disconnect deletes credential state and no project row",
       "group": "functional",
-      "spec": "§20.9",
+      "spec": "\u00a720.9",
       "checks": [
         {
           "id": "AC-P2-20-6",
@@ -2296,7 +2296,7 @@
       "id": "P2-20-7",
       "title": "An org admits nothing until it is enabled",
       "group": "functional",
-      "spec": "§20.4",
+      "spec": "\u00a720.4",
       "checks": [
         {
           "id": "AC-P2-20-7",
@@ -2312,7 +2312,7 @@
       "id": "P2-20-8",
       "title": "The public tier reports the org list as unknown, never as zero",
       "group": "functional",
-      "spec": "§20.4",
+      "spec": "\u00a720.4",
       "checks": [
         {
           "id": "AC-P2-20-8",
@@ -2327,7 +2327,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-20",
-          "test": "§20.12 as a pure function AC-P2-20-8 renders an unenumerable org list as unknown and NOT as zero",
+          "test": "\u00a720.12 as a pure function AC-P2-20-8 renders an unenumerable org list as unknown and NOT as zero",
           "assert": "A null org list renders the unknown glyph and never a zero, and an uncounted org keeps a working toggle."
         }
       ]
@@ -2336,7 +2336,7 @@
       "id": "P2-20-9",
       "title": "GitHub is additive: first run and the shelf work with no account",
       "group": "functional",
-      "spec": "§20.11",
+      "spec": "\u00a720.11",
       "checks": [
         {
           "id": "AC-P2-20-9",
@@ -2360,7 +2360,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-20",
-          "test": "[p2] §20.11 — the connect offer, exactly one and lowest AC-P2-20-9 sorts last, and its length grew rather than a row being replaced",
+          "test": "[p2] \u00a720.11 \u2014 the connect offer, exactly one and lowest AC-P2-20-9 sorts last, and its length grew rather than a row being replaced",
           "assert": "The connect offer sorts last, loses to every other candidate, and its unscoped dismissal key keeps it from being re-raised after a new scan run."
         }
       ]
@@ -2369,7 +2369,7 @@
       "id": "P2-20-10",
       "title": "The Device Flow is polled core-side and survives the drawer",
       "group": "functional",
-      "spec": "§20.2",
+      "spec": "\u00a720.2",
       "checks": [
         {
           "id": "AC-P2-20-10",
@@ -2393,7 +2393,7 @@
       "id": "P2-20-11",
       "title": "The provider seam has a production implementation beside it",
       "group": "functional",
-      "spec": "§20.13",
+      "spec": "\u00a720.13",
       "checks": [
         {
           "id": "AC-P2-20-11",
@@ -2418,7 +2418,7 @@
       "id": "P2-20-12",
       "title": "The build contains no OAuth client secret, because none exists",
       "group": "functional",
-      "spec": "§20.10",
+      "spec": "\u00a720.10",
       "checks": [
         {
           "id": "AC-P2-20-12",
@@ -2434,14 +2434,14 @@
       "id": "P2-20-13",
       "title": "The two tier sets authorize what the surface claims",
       "group": "functional",
-      "spec": "§20.3",
+      "spec": "\u00a720.3",
       "checks": [
         {
           "id": "AC-P2-20-13",
           "status": "deferred",
           "runner": "cargo",
           "owner": "p2-20",
-          "assert": "That the two tier sets authorize the reads §20 makes, that permissions.push is present on listings under the public tier, that a slow_down response carries a replacement interval, and that requesting a narrower set does not narrow an existing grant.",
+          "assert": "That the two tier sets authorize the reads \u00a720 makes, that permissions.push is present on listings under the public tier, that a slow_down response carries a replacement interval, and that requesting a narrower set does not narrow an existing grant.",
           "deferral": "live-observation",
           "reason": "Documentation knowledge against a live API that neither the decision round nor this lane has called. It is honest as deferred and stops being honest the moment someone reads it as verified.",
           "verification": {
@@ -2464,7 +2464,7 @@
       "id": "P2-23-1",
       "title": "A project with zero location rows loads, crosses the wire and renders",
       "group": "functional",
-      "spec": "§23.1, §23.3",
+      "spec": "\u00a723.1, \u00a723.3",
       "checks": [
         {
           "id": "AC-P2-23-1",
@@ -2489,8 +2489,8 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§5.4a: no dot is drawn on any of the five surfaces draws none on the grid tile and none on the hero",
-          "assert": "No dot on any of §5.4a's five surfaces, no NOT INDEXED badge, no size or file figure and never a zero, no freshness age slot and no stale marker, no playtime figure, no tick row, and no dip at any effects tier — the tier clamp resolved on a real element rather than matched in the stylesheet."
+          "test": "\u00a75.4a: no dot is drawn on any of the five surfaces draws none on the grid tile and none on the hero",
+          "assert": "No dot on any of \u00a75.4a's five surfaces, no NOT INDEXED badge, no size or file figure and never a zero, no freshness age slot and no stale marker, no playtime figure, no tick row, and no dip at any effects tier \u2014 the tier clamp resolved on a real element rather than matched in the stylesheet."
         }
       ]
     },
@@ -2498,7 +2498,7 @@
       "id": "P2-23-2",
       "title": "presence is nullable on the row and unchanged on the location",
       "group": "functional",
-      "spec": "§23.2",
+      "spec": "\u00a723.2",
       "checks": [
         {
           "id": "AC-P2-23-2",
@@ -2521,16 +2521,16 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§11.6 eligibility, which the old acceptance wording omitted entirely rejects a project with no working copy at all",
+          "test": "\u00a711.6 eligibility, which the old acceptance wording omitted entirely rejects a project with no working copy at all",
           "assert": "flickerEligible is false for a null presence whatever the condition band says, so no surface renders NOT SCANNED or offers ENABLE ROOT for a project with zero locations."
         }
       ]
     },
     {
       "id": "P2-23-3",
-      "title": "One observation clock, and §23 adds no schema",
+      "title": "One observation clock, and \u00a723 adds no schema",
       "group": "functional",
-      "spec": "§23.1, §23.3",
+      "spec": "\u00a723.1, \u00a723.3",
       "checks": [
         {
           "id": "AC-P2-23-3",
@@ -2538,7 +2538,7 @@
           "runner": "cargo",
           "owner": "p2-23",
           "test": "notcloned_row::no_age_is_produced_for_a_project_nothing_has_observed",
-          "assert": "With no remote_repo facts row, no dated field on ProjectRow carries a value except lastTouchedAt and createdAt, and no substitute is computed from either; the one remote field the row carries is the hasRemote boolean, which has no clock. project carries no remote_observed_at and §23 introduces no column and no table."
+          "assert": "With no remote_repo facts row, no dated field on ProjectRow carries a value except lastTouchedAt and createdAt, and no substitute is computed from either; the one remote field the row carries is the hasRemote boolean, which has no clock. project carries no remote_observed_at and \u00a723 introduces no column and no table."
         },
         {
           "id": "AC-P2-23-3-rendered",
@@ -2554,9 +2554,9 @@
           "runner": "vitest",
           "owner": "p2-25",
           "deferral": "plan",
-          "reason": "The positive half — with the facts row deleted the remote surface renders not observed — has no §23 surface to bite on: ProjectRow carries no remote field, and remote_repo.observed_at reaches the screen through the REMOTE tab and OVERVIEW, which are §25's. Split, not dropped: the core half and the local half are automated above.",
+          "reason": "The positive half \u2014 with the facts row deleted the remote surface renders not observed \u2014 has no \u00a723 surface to bite on: ProjectRow carries no remote field, and remote_repo.observed_at reaches the screen through the REMOTE tab and OVERVIEW, which are \u00a725's. Split, not dropped: the core half and the local half are automated above.",
           "test": "p2-25's REMOTE tab and OVERVIEW render not observed",
-          "assert": "With §25's facts row deleted, the remote surface renders not observed — no age, no stale marker, and no substitute clock."
+          "assert": "With \u00a725's facts row deleted, the remote surface renders not observed \u2014 no age, no stale marker, and no substitute clock."
         }
       ]
     },
@@ -2564,7 +2564,7 @@
       "id": "P2-23-4",
       "title": "The classifier order and the section label",
       "group": "functional",
-      "spec": "§23.4",
+      "spec": "\u00a723.4",
       "checks": [
         {
           "id": "AC-P2-23-4",
@@ -2584,7 +2584,7 @@
           "runner": "vitest",
           "owner": "p2-23",
           "test": "eraSectionIdFor classifies a not-cloned project before archived and before submodules",
-          "assert": "The same three cases in the renderer mirror, and eraSectionLabel('era:notcloned', cut) is NOT CLONED — asserted through the label function, never against the id string, because with no FIXED_LABEL entry the fallback prints lowercase notcloned.",
+          "assert": "The same three cases in the renderer mirror, and eraSectionLabel('era:notcloned', cut) is NOT CLONED \u2014 asserted through the label function, never against the id string, because with no FIXED_LABEL entry the fallback prints lowercase notcloned.",
           "mirror": {
             "other": "core/tests/projects_list.rs",
             "why": "R13's other side: the label is shell-owned prose and the order table is the core's, so both are asserted against the same section id."
@@ -2596,22 +2596,22 @@
       "id": "P2-23-5",
       "title": "The header makes no zero claim",
       "group": "functional",
-      "spec": "§23.4",
+      "spec": "\u00a723.4",
       "checks": [
         {
           "id": "AC-P2-23-5",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§23.4: a total over zero measurements is not a measurement drops the byte aggregate and its parenthetical for a not-cloned section",
-          "assert": "For a section whose indexedCount is 0 the summary is the project count alone, over the rendered header and over its aria-label: the byte aggregate and its (of n indexed) parenthetical are absent as a unit and 0 MB tracked appears nowhere. Asserted for an era:notcloned section and for a located section with no completed inventory — the second is the case that proves the rule is one rule."
+          "test": "\u00a723.4: a total over zero measurements is not a measurement drops the byte aggregate and its parenthetical for a not-cloned section",
+          "assert": "For a section whose indexedCount is 0 the summary is the project count alone, over the rendered header and over its aria-label: the byte aggregate and its (of n indexed) parenthetical are absent as a unit and 0 MB tracked appears nowhere. Asserted for an era:notcloned section and for a located section with no completed inventory \u2014 the second is the case that proves the rule is one rule."
         },
         {
           "id": "AC-P2-23-5-unchecked",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "aggregateSection and its header text §23.4: unchecked counts a row only when the project has a working copy renders no flag line at all for an all-not-cloned section",
+          "test": "aggregateSection and its header text \u00a723.4: unchecked counts a row only when the project has a working copy renders no flag line at all for an all-not-cloned section",
           "assert": "An all-not-cloned section renders no flag line at all, with the other three counters asserted at zero rather than assumed; a mixed section counts only the located rows; a located section with no J1 result still counts them all.",
           "mirror": {
             "other": "core/tests/projects_list.rs",
@@ -2636,14 +2636,14 @@
       "id": "P2-23-6",
       "title": "The palette claims no interaction it never had",
       "group": "functional",
-      "spec": "§23.4, §8.6",
+      "spec": "\u00a723.4, \u00a78.6",
       "checks": [
         {
           "id": "AC-P2-23-6",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§23.4: the palette sub-line claims no interaction it never had renders no tail for a not-cloned row, for any value of the clock",
+          "test": "\u00a723.4: the palette sub-line claims no interaction it never had renders no tail for a not-cloned row, for any value of the clock",
           "assert": "With a zero-location project in the projection the RENDERED sub-line contains neither opened this month nor N months cold nor in session, over a spread of lastTouchedAt values including nowSecs itself and with a live session open; the remaining fields still render, and a located row's sub-line is byte-identical."
         },
         {
@@ -2651,7 +2651,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§23.4: no tail for a project with no working copy omits the tail field and renders the rest of the line",
+          "test": "\u00a723.4: no tail for a project with no working copy omits the tail field and renders the rest of the line",
           "assert": "paletteSubLine omits the tail field when hasWorkingCopy is false, whatever the clock and whatever the session says, and subLineInputFor reads row.primaryLocation and never a second predicate."
         }
       ]
@@ -2660,7 +2660,7 @@
       "id": "P2-23-7",
       "title": "The grammar's domain rule, five terms",
       "group": "functional",
-      "spec": "§23.6",
+      "spec": "\u00a723.6",
       "checks": [
         {
           "id": "AC-P2-23-7",
@@ -2672,7 +2672,7 @@
           "scanning": true,
           "mirror": {
             "other": "app/src/renderer/shelf/evaluate.test.ts",
-            "why": "R13: two evaluators, one rule. A domain rule landed in one engine and not the other answers the same query two ways, and §8.3 filters client-side."
+            "why": "R13: two evaluators, one rule. A domain rule landed in one engine and not the other answers the same query two ways, and \u00a78.3 filters client-side."
           }
         },
         {
@@ -2680,7 +2680,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§23.6: the domain rule, and is:notcloned answers Unknown for every working-copy predicate, under neither polarity",
+          "test": "\u00a723.6: the domain rule, and is:notcloned answers Unknown for every working-copy predicate, under neither polarity",
           "assert": "The same fixture shape in the TypeScript engine, with the capabilities widened so answerability never stands in for the domain rule; also asserts no term is DROPPED for a not-cloned row, because the rule is truth and not answerability.",
           "mirror": {
             "other": "core/tests/notcloned_grammar.rs",
@@ -2693,7 +2693,7 @@
       "id": "P2-23-8",
       "title": "The version bump is atomic",
       "group": "functional",
-      "spec": "§23.6",
+      "spec": "\u00a723.6",
       "checks": [
         {
           "id": "AC-P2-23-8",
@@ -2701,7 +2701,7 @@
           "runner": "cargo",
           "owner": "p2-23",
           "test": "query_corpus::rust_parser_matches_every_corpus_case",
-          "assert": "Prints the count of corpus cases it compared and fails below the corpus total — and at zero — so a run that compared fewer cases than the file holds is visible rather than green; every case carries grammarVersion 2 and a corpus case asserts the AST spelling of the new flag is notcloned rather than either enum being read.",
+          "assert": "Prints the count of corpus cases it compared and fails below the corpus total \u2014 and at zero \u2014 so a run that compared fewer cases than the file holds is visible rather than green; every case carries grammarVersion 2 and a corpus case asserts the AST spelling of the new flag is notcloned rather than either enum being read.",
           "scanning": true,
           "mirror": {
             "other": "app/src/shared/query/corpus.test.ts",
@@ -2739,7 +2739,7 @@
       "id": "P2-23-9",
       "title": "The two never-emitted bars exercise the shape",
       "group": "functional",
-      "spec": "§23.8",
+      "spec": "\u00a723.8",
       "checks": [
         {
           "id": "AC-P2-23-9",
@@ -2760,7 +2760,7 @@
           "runner": "vitest",
           "owner": "p2-23",
           "test": "eraSectionIdFor emits era:notcloned for a zero-location row and for nothing else",
-          "assert": "The TypeScript replacement, with a positive floor on the scanned count rather than a comparison against the list it iterates, so it fails at zero — an equality there is 0 === 0 on an empty list and passes having scanned nothing.",
+          "assert": "The TypeScript replacement, with a positive floor on the scanned count rather than a comparison against the list it iterates, so it fails at zero \u2014 an equality there is 0 === 0 on an empty list and passes having scanned nothing.",
           "scanning": true,
           "mirror": {
             "other": "core/tests/projects_list.rs",
@@ -2785,7 +2785,7 @@
       "id": "P2-23-10",
       "title": "A4's narrowing loses nothing",
       "group": "functional",
-      "spec": "§23.5, §16.58",
+      "spec": "\u00a723.5, \u00a716.58",
       "checks": [
         {
           "id": "AC-P2-23-10",
@@ -2793,7 +2793,7 @@
           "runner": "cargo",
           "owner": "p2-23",
           "test": "index_schema::condition_signal_takes_only_section_5_4_words",
-          "assert": "Against a real migrated database, every one of §5.4a's seven slugs inserts and warm, cooling and blueprint are each refused by the DDL CHECK and by the generated ConditionSignal union; the accepted count and the refused count are printed and asserted, so a run that accepted zero fails.",
+          "assert": "Against a real migrated database, every one of \u00a75.4a's seven slugs inserts and warm, cooling and blueprint are each refused by the DDL CHECK and by the generated ConditionSignal union; the accepted count and the refused count are printed and asserted, so a run that accepted zero fails.",
           "scanning": true
         },
         {
@@ -2810,7 +2810,7 @@
       "id": "P2-23-11",
       "title": "The blueprint tile is the same machine",
       "group": "functional",
-      "spec": "§23.5",
+      "spec": "\u00a723.5",
       "checks": [
         {
           "id": "AC-P2-23-11",
@@ -2833,16 +2833,16 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§23.5: the blueprint frame is --tier-blue, and it is not a rung resolves var(--tier-blue) on the real frame element",
-          "assert": "A zero-location row's card resolves var(--tier-blue) on the real frame element, draws no member of the completion ladder once every token reference is resolved, keeps §7.7a's em dash and NOT COMPUTED, and produces no dip at full, reduced or off."
+          "test": "\u00a723.5: the blueprint frame is --tier-blue, and it is not a rung resolves var(--tier-blue) on the real frame element",
+          "assert": "A zero-location row's card resolves var(--tier-blue) on the real frame element, draws no member of the completion ladder once every token reference is resolved, keeps \u00a77.7a's em dash and NOT COMPUTED, and produces no dip at full, reduced or off."
         },
         {
           "id": "AC-P2-23-11-paint",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§23.5: the tile asks for the pass it needs, at its own address paints a decoded blueprint on a not-cloned tile",
-          "assert": "R88: the evidence is the bitmap, not the call. A zero-location tile mounts an img.cdt-art carrying codotheca://art/<hash>/card-blueprint, decoded against a fake that renders only what art.url was asked for — so a tile that composes the address without demanding it gets the 404 production gets, and the plate."
+          "test": "\u00a723.5: the tile asks for the pass it needs, at its own address paints a decoded blueprint on a not-cloned tile",
+          "assert": "R88: the evidence is the bitmap, not the call. A zero-location tile mounts an img.cdt-art carrying codotheca://art/<hash>/card-blueprint, decoded against a fake that renders only what art.url was asked for \u2014 so a tile that composes the address without demanding it gets the 404 production gets, and the plate."
         },
         {
           "id": "AC-P2-23-11-state",
@@ -2861,7 +2861,7 @@
           "assert": "The raster's ground and ink equal the --tier-blue and --tier-blue-ink the renderer declares, compared against the count of tokens mirrored so an empty list cannot pass.",
           "mirror": {
             "other": "app/src/renderer/styles/tokens.css",
-            "why": "R12: §8.7 owns both values and there are two producers — the raster in the core and the frame token in the renderer — so the mirror is tested by reading the other side."
+            "why": "R12: \u00a78.7 owns both values and there are two producers \u2014 the raster in the core and the frame token in the renderer \u2014 so the mirror is tested by reading the other side."
           }
         }
       ]
@@ -2870,15 +2870,15 @@
       "id": "P2-23-12",
       "title": "No dead predicate ships",
       "group": "functional",
-      "spec": "§23.7",
+      "spec": "\u00a723.7",
       "checks": [
         {
           "id": "AC-P2-23-12",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§23.7: no dead predicate ships answers has:remote from the projection over a corpus with a located row",
-          "assert": "Narrowed to what §23.7 scopes: over a projection built through toShelfRow from real ProjectRows, projectionCapabilities().hasRemote is true, has:remote and is:notcloned are answerable for every row, and the values that remain notAvailable are asserted as an exact named list so the gap cannot grow in silence. has:remote still answers Unknown for a not-cloned row for the DOMAIN reason, proved by giving that row hasRemote true."
+          "test": "\u00a723.7: no dead predicate ships answers has:remote from the projection over a corpus with a located row",
+          "assert": "Narrowed to what \u00a723.7 scopes: over a projection built through toShelfRow from real ProjectRows, projectionCapabilities().hasRemote is true, has:remote and is:notcloned are answerable for every row, and the values that remain notAvailable are asserted as an exact named list so the gap cannot grow in silence. has:remote still answers Unknown for a not-cloned row for the DOMAIN reason, proved by giving that row hasRemote true."
         }
       ]
     },
@@ -2886,14 +2886,14 @@
       "id": "P2-25-1",
       "title": "The REMOTE tab is mounted per project, and the cycle walks the mounted list",
       "group": "surfaces",
-      "spec": "§25.1",
+      "spec": "\u00a725.1",
       "checks": [
         {
           "id": "AC-P2-25-1",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 the tab list is per project, not per phase AC-P2-25-1 mounts two tabs with no remote and three with one, and four in neither case",
+          "test": "\u00a725.1 the tab list is per project, not per phase AC-P2-25-1 mounts two tabs with no remote and three with one, and four in neither case",
           "assert": "A project whose ProjectDetail.remote is non-null mounts three tabs and one with null mounts two; neither mounts four, and HEALTH is named in neither label set."
         },
         {
@@ -2901,7 +2901,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 the tab list is per project, not per phase AC-P2-25-1-cycle3 cycles the three-tab ring forwards and backwards",
+          "test": "\u00a725.1 the tab list is per project, not per phase AC-P2-25-1-cycle3 cycles the three-tab ring forwards and backwards",
           "assert": "The three-tab ring walks overview to activity to remote and back, in both directions. Asserted apart from the two-tab ring because a modulo bug over two elements is invisible."
         },
         {
@@ -2909,8 +2909,8 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 the tab list is per project, not per phase AC-P2-25-1-cycle2 cycles the two-tab ring forwards and backwards",
-          "assert": "The two-tab ring walks overview to activity and back, in both directions. Two tests, not one, which is what §25.1 asks for."
+          "test": "\u00a725.1 the tab list is per project, not per phase AC-P2-25-1-cycle2 cycles the two-tab ring forwards and backwards",
+          "assert": "The two-tab ring walks overview to activity and back, in both directions. Two tests, not one, which is what \u00a725.1 asks for."
         }
       ]
     },
@@ -2918,14 +2918,14 @@
       "id": "P2-25-2",
       "title": "With no account connected the forge blocks and the CI list do not render",
       "group": "surfaces",
-      "spec": "§25.1",
+      "spec": "\u00a725.1",
       "checks": [
         {
           "id": "AC-P2-25-2",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 with no account the forge blocks and the CI list do not render AC-P2-25-2 draws the header, BEHIND and the links row, and nothing that needs a token",
+          "test": "\u00a725.1 with no account the forge blocks and the CI list do not render AC-P2-25-2 draws the header, BEHIND and the links row, and nothing that needs a token",
           "assert": "OPEN ISSUES, OPEN PRS, STARS and LATEST CI are absent as elements; the header, BEHIND and the links row render, and one statement replaces the blocks. A surface that exists to advertise a feature is an ad."
         },
         {
@@ -2933,7 +2933,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 with no account the forge blocks and the CI list do not render AC-P2-25-2-unknown renders the string UNKNOWN zero times",
+          "test": "\u00a725.1 with no account the forge blocks and the CI list do not render AC-P2-25-2-unknown renders the string UNKNOWN zero times",
           "assert": "The rendered page contains the string UNKNOWN zero times. The design's UNKNOWN NEEDS GITHUB treatment is phase 3's check vocabulary; importing it here would be two glyphs for one meaning."
         }
       ]
@@ -2942,14 +2942,14 @@
       "id": "P2-25-3",
       "title": "An unobserved forge value renders the glyph, and a refusal says so",
       "group": "surfaces",
-      "spec": "§25.1",
+      "spec": "\u00a725.1",
       "checks": [
         {
           "id": "AC-P2-25-3",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 an unobserved value renders the glyph and never a zero AC-P2-25-3 renders — and NOT YET FETCHED for every forge slot, and 0 for none",
+          "test": "\u00a725.1 an unobserved value renders the glyph and never a zero AC-P2-25-3 renders \u2014 and NOT YET FETCHED for every forge slot, and 0 for none",
           "assert": "With an account connected and nothing observed, every forge value slot renders the em dash glyph sub-lined NOT YET FETCHED, and no slot renders a zero."
         },
         {
@@ -2957,7 +2957,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 an unobserved value renders the glyph and never a zero AC-P2-25-3-permitted renders — and NOT PERMITTED rather than an absent block",
+          "test": "\u00a725.1 an unobserved value renders the glyph and never a zero AC-P2-25-3-permitted renders \u2014 and NOT PERMITTED rather than an absent block",
           "assert": "A repository the token may not see renders the glyph and NOT PERMITTED, as a rendered block rather than an absent one: the refusal is a fact about access and is stated."
         }
       ]
@@ -2966,14 +2966,14 @@
       "id": "P2-25-4",
       "title": "A measured zero and an unobserved value render differently",
       "group": "surfaces",
-      "spec": "§25.1",
+      "spec": "\u00a725.1",
       "checks": [
         {
           "id": "AC-P2-25-4",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 a measured zero and an unobserved value are different renders AC-P2-25-4 renders 0 with its meaning for a measured zero",
+          "test": "\u00a725.1 a measured zero and an unobserved value are different renders AC-P2-25-4 renders 0 with its meaning for a measured zero",
           "assert": "An observed measured zero renders 0 with its meaning line and never the glyph. A build that renders the glyph for a measured zero fails this."
         },
         {
@@ -2981,23 +2981,23 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 a measured zero and an unobserved value are different renders AC-P2-25-4-unobserved renders — for an unobserved value inside an observed read",
+          "test": "\u00a725.1 a measured zero and an unobserved value are different renders AC-P2-25-4-unobserved renders \u2014 for an unobserved value inside an observed read",
           "assert": "A value the read did not carry renders the glyph and NO sub-line while its neighbours render their numbers: the read completed, so NOT YET FETCHED would be false and sits directly under the observation line. A build that renders 0, or that claims the fetch did not happen, fails this."
         }
       ]
     },
     {
       "id": "P2-25-5",
-      "title": "BEHIND is the local figure, from the module §8.5.2 already uses",
+      "title": "BEHIND is the local figure, from the module \u00a78.5.2 already uses",
       "group": "surfaces",
-      "spec": "§25.1",
+      "spec": "\u00a725.1",
       "checks": [
         {
           "id": "AC-P2-25-5",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 BEHIND is the local figure, through the producer §8.5.2 uses AC-P2-25-5 renders a measured zero with its meaning and the fetch age",
+          "test": "\u00a725.1 BEHIND is the local figure, through the producer \u00a78.5.2 uses AC-P2-25-5 renders a measured zero with its meaning and the fetch age",
           "assert": "BEHIND renders location.behind for the shown copy: a measured zero renders 0 with no known divergence, and the block carries fetch_head_at's age or no fetch recorded."
         },
         {
@@ -3005,7 +3005,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 BEHIND comes from the producer §8.5.2 already uses AC-P2-25-5-import imports the fetch clause rather than re-writing it",
+          "test": "\u00a725.1 BEHIND comes from the producer \u00a78.5.2 already uses AC-P2-25-5-import imports the fetch clause rather than re-writing it",
           "assert": "Asserted by import and not by matching text: behindBlock.ts imports fetchClause from locationCopy.ts and holds neither half of the clause as a literal. A copy would render the same strings and pass a text assertion."
         },
         {
@@ -3023,15 +3023,15 @@
       "id": "P2-25-6",
       "title": "The CI list renders the record and never judges it",
       "group": "surfaces",
-      "spec": "§25.4",
+      "spec": "\u00a725.4",
       "checks": [
         {
           "id": "AC-P2-25-6",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.4 the CI list renders the record and never judges it AC-P2-25-6 renders at most five runs out of seven",
-          "assert": "Seven runs render five. The suite around it prints the branch exactly once per row by counting occurrences, maps every conclusion §25.4 names to its label and ink token, renders an unrecognised conclusion uppercased and verbatim, renders a NULL conclusion as RUNNING, and finds no aggregate string in the output."
+          "test": "\u00a725.4 the CI list renders the record and never judges it AC-P2-25-6 renders at most five runs out of seven",
+          "assert": "Seven runs render five. The suite around it prints the branch exactly once per row by counting occurrences, maps every conclusion \u00a725.4 names to its label and ink token, renders an unrecognised conclusion uppercased and verbatim, renders a NULL conclusion as RUNNING, and finds no aggregate string in the output."
         }
       ]
     },
@@ -3039,7 +3039,7 @@
       "id": "P2-25-7",
       "title": "The two CI-boundary gates pass and print what they scanned",
       "group": "surfaces",
-      "spec": "§25.4",
+      "spec": "\u00a725.4",
       "checks": [
         {
           "id": "AC-P2-25-7-rust",
@@ -3055,7 +3055,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.4: the forge types are imported only by the surfaces that render them AC-P2-25-7-renderer names them nowhere else under src/renderer",
+          "test": "\u00a725.4: the forge types are imported only by the surfaces that render them AC-P2-25-7-renderer names them nowhere else under src/renderer",
           "assert": "A renderer walk prints its scanned count and fails at zero scanned; RemoteFacts, CiList and CiRun are named only by the tab's own modules, Peek and the fixture builder, with comment lines stripped first.",
           "scanning": true
         }
@@ -3065,14 +3065,14 @@
       "id": "P2-25-8",
       "title": "Visibility renders as both words or as neither",
       "group": "surfaces",
-      "spec": "§25.3",
+      "spec": "\u00a725.3",
       "checks": [
         {
           "id": "AC-P2-25-8",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.3 visibility renders as both words or as neither AC-P2-25-8 appends PUBLIC after the language",
+          "test": "\u00a725.3 visibility renders as both words or as neither AC-P2-25-8 appends PUBLIC after the language",
           "assert": "PUBLIC renders after the language segment; PRIVATE renders in its place; null omits the segment entirely with no placeholder and no glyph. ProjectRow carries no visibility field."
         },
         {
@@ -3080,7 +3080,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.3 the identity line has a code path for each word AC-P2-25-8-source names both words, in code and not only in prose",
+          "test": "\u00a725.3 the identity line has a code path for each word AC-P2-25-8-source names both words, in code and not only in prose",
           "assert": "The identity module's code, comments stripped, carries a path for each word. A build capable of rendering PRIVATE while having no code path that renders PUBLIC fails, which a rendered-output test alone cannot see."
         }
       ]
@@ -3089,14 +3089,14 @@
       "id": "P2-25-9",
       "title": "The topic rail renders only when there is a topic",
       "group": "surfaces",
-      "spec": "§25.3",
+      "spec": "\u00a725.3",
       "checks": [
         {
           "id": "AC-P2-25-9",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.3 the topic rail renders only when there is a topic AC-P2-25-9 renders no rail element at all for zero topics, asserted as an absence",
+          "test": "\u00a725.3 the topic rail renders only when there is a topic AC-P2-25-9 renders no rail element at all for zero topics, asserted as an absence",
           "assert": "One stored topic renders one chip and three render three; zero renders no rail element at all, asserted as an absence by query rather than as an empty string. An empty rail is furniture."
         }
       ]
@@ -3105,7 +3105,7 @@
       "id": "P2-25-10",
       "title": "description_source accepts remote, and the chain resolves five rungs",
       "group": "surfaces",
-      "spec": "§25.3",
+      "spec": "\u00a725.3",
       "checks": [
         {
           "id": "AC-P2-25-10-chain",
@@ -3129,15 +3129,15 @@
       "id": "P2-25-11",
       "title": "The backup state is one producer with two consumers",
       "group": "surfaces",
-      "spec": "§25.3",
+      "spec": "\u00a725.3",
       "checks": [
         {
           "id": "AC-P2-25-11-producer",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.3 the backup line states a fact and offers no control AC-P2-25-11-producer renders the only-copy row with its plate and its edge token",
-          "assert": "Three of the four rows are exercised — only_copy, not_anywhere_else and verified — plus the NULL that row 4 produces, with singularisation at one and at two and no zero clause. The word clean appears in no rendered output. The fourth row's unreadable-stash limb is AC-P2-25-11-unknown's, p2-24b's, because RefState.stash_count is a u32 today and cannot represent it."
+          "test": "\u00a725.3 the backup line states a fact and offers no control AC-P2-25-11-producer renders the only-copy row with its plate and its edge token",
+          "assert": "Three of the four rows are exercised \u2014 only_copy, not_anywhere_else and verified \u2014 plus the NULL that row 4 produces, with singularisation at one and at two and no zero clause. The word clean appears in no rendered output. The fourth row's unreadable-stash limb is AC-P2-25-11-unknown's, p2-24b's, because RefState.stash_count is a u32 today and cannot represent it."
         },
         {
           "id": "AC-P2-25-11-unknown",
@@ -3153,7 +3153,7 @@
       "id": "P2-25-12",
       "title": "No URL crosses IPC, and only the shell opens one",
       "group": "surfaces",
-      "spec": "§25.2",
+      "spec": "\u00a725.2",
       "checks": [
         {
           "id": "AC-P2-25-12",
@@ -3169,7 +3169,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.2 an unlinkable key draws no links row and no link affordance AC-P2-25-12-render draws the key as text and the row not at all",
+          "test": "\u00a725.2 an unlinkable key draws no links row and no link affordance AC-P2-25-12-render draws the key as text and the row not at all",
           "assert": "An unlinkable key renders as a span with no anchor and the links row is absent entirely. An https form guessed from an arbitrary remote host is a URL the product invented."
         },
         {
@@ -3177,7 +3177,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.2 an unlinkable key draws no links row and no link affordance AC-P2-25-12-payload sends an id and a kind, never a URL",
+          "test": "\u00a725.2 an unlinkable key draws no links row and no link affordance AC-P2-25-12-payload sends an id and a kind, never a URL",
           "assert": "Pressing a link calls the opener with the project id and the link kind and with exactly two arguments, so the renderer originates no URL."
         }
       ]
@@ -3186,7 +3186,7 @@
       "id": "P2-25-13",
       "title": "denyPermissionRequest still refuses every permission",
       "group": "surfaces",
-      "spec": "§25.2",
+      "spec": "\u00a725.2",
       "checks": [
         {
           "id": "AC-P2-25-13",
@@ -3203,7 +3203,7 @@
       "id": "P2-25-14",
       "title": "The CSP delta is exactly one directive",
       "group": "surfaces",
-      "spec": "§25.5",
+      "spec": "\u00a725.5",
       "checks": [
         {
           "id": "AC-P2-25-14",
@@ -3219,7 +3219,7 @@
       "id": "P2-25-15",
       "title": "Both navigation guards share one predicate",
       "group": "surfaces",
-      "spec": "§25.5",
+      "spec": "\u00a725.5",
       "checks": [
         {
           "id": "AC-P2-25-15",
@@ -3235,14 +3235,14 @@
       "id": "P2-25-16",
       "title": "The frame's sandbox attribute is present and exactly empty",
       "group": "surfaces",
-      "spec": "§25.5",
+      "spec": "\u00a725.5",
       "checks": [
         {
           "id": "AC-P2-25-16",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
-          "test": "§25.5 the panel renders the document in a frame readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty",
+          "test": "\u00a725.5 the panel renders the document in a frame readmeFrame::ac_p2_25_16_the_sandbox_attribute_is_present_and_empty",
           "assert": "The frame's sandbox attribute is present and exactly empty, read off the element ReadmePanel renders and off Chromium's own in the census; the strings allow-scripts and allow-same-origin appear in no panel source, over a walk that prints its file count."
         }
       ]
@@ -3251,7 +3251,7 @@
       "id": "P2-25-17",
       "title": "Hostile markup renders as text",
       "group": "surfaces",
-      "spec": "§25.5",
+      "spec": "\u00a725.5",
       "checks": [
         {
           "id": "AC-P2-25-17",
@@ -3267,7 +3267,7 @@
       "id": "P2-25-18",
       "title": "The panel's first frame issues no request",
       "group": "surfaces",
-      "spec": "§25.5",
+      "spec": "\u00a725.5",
       "checks": [
         {
           "id": "AC-P2-25-18",
@@ -3283,7 +3283,7 @@
       "id": "P2-25-19",
       "title": "projects.readme returns the whole document",
       "group": "surfaces",
-      "spec": "§25.5",
+      "spec": "\u00a725.5",
       "checks": [
         {
           "id": "AC-P2-25-19",
@@ -3299,7 +3299,7 @@
       "id": "P2-25-20",
       "title": "A mermaid fence renders as a code block",
       "group": "surfaces",
-      "spec": "§25.6",
+      "spec": "\u00a725.6",
       "checks": [
         {
           "id": "AC-P2-25-20",
@@ -3315,7 +3315,7 @@
       "id": "P2-25-21",
       "title": "The markup libraries stay off the first-paint chunk",
       "group": "surfaces",
-      "spec": "§25.5",
+      "spec": "\u00a725.5",
       "checks": [
         {
           "id": "AC-P2-25-21",
@@ -3331,7 +3331,7 @@
       "id": "P2-25-22",
       "title": "The panel states once that its links are inert",
       "group": "surfaces",
-      "spec": "§25.5",
+      "spec": "\u00a725.5",
       "checks": [
         {
           "id": "AC-P2-25-22",
@@ -3347,14 +3347,14 @@
       "id": "P2-25-23",
       "title": "Peek on a not-cloned row renders absences, not dashes",
       "group": "surfaces",
-      "spec": "§25.3a",
+      "spec": "\u00a725.3a",
       "checks": [
         {
           "id": "AC-P2-25-23",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.3a Peek on a not-cloned row AC-P2-25-23 renders no README string, no commit list, no path and no worktree line",
+          "test": "\u00a725.3a Peek on a not-cloned row AC-P2-25-23 renders no README string, no commit list, no path and no worktree line",
           "assert": "The four elements are asserted as absences by query rather than as dashes, and the strings No README indexed yet., No README in this repository. and 0h appear nowhere on the row."
         },
         {
@@ -3362,7 +3362,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.3a the not-cloned fact set AC-P2-25-23-facts drops PLAYTIME entirely, asserted as an absence and not as a dash",
+          "test": "\u00a725.3a the not-cloned fact set AC-P2-25-23-facts drops PLAYTIME entirely, asserted as an absence and not as a dash",
           "assert": "The key set for a row with no location is BIRTH, LANGUAGE, TRACKED and LAST COMMIT; PLAYTIME is absent rather than dashed, and the three history-derived facts render the glyph while LANGUAGE renders the forge's value when observed."
         },
         {
@@ -3371,15 +3371,15 @@
           "runner": "cargo",
           "owner": "p2-25",
           "test": "peek_not_cloned::ac_p2_25_23_core_a_not_cloned_row_carries_no_location_and_no_history",
-          "assert": "The core answers a zero-location project with no location, no commits and no history-derived fact, and its readme state is never not_indexed — a promise no pass can keep (§23.3)."
+          "assert": "The core answers a zero-location project with no location, no commits and no history-derived fact, and its readme state is never not_indexed \u2014 a promise no pass can keep (\u00a723.3)."
         },
         {
           "id": "AC-P2-25-23-producer",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.3a Peek draws the blocks from the tab producer, not a copy AC-P2-25-23-producer imports RemoteBlock rather than declaring one",
-          "assert": "Peek imports the tab's block rather than declaring one, and its code names none of the four-state vocabulary. §25.4's importer gate admits Peek deliberately, so it cannot catch a copy written inside that file; this can."
+          "test": "\u00a725.3a Peek draws the blocks from the tab producer, not a copy AC-P2-25-23-producer imports RemoteBlock rather than declaring one",
+          "assert": "Peek imports the tab's block rather than declaring one, and its code names none of the four-state vocabulary. \u00a725.4's importer gate admits Peek deliberately, so it cannot catch a copy written inside that file; this can."
         }
       ]
     },
@@ -3387,7 +3387,7 @@
       "id": "P2-25-24",
       "title": "The observation clock moves only for a read that observed something",
       "group": "surfaces",
-      "spec": "§25.7",
+      "spec": "\u00a725.7",
       "checks": [
         {
           "id": "AC-P2-25-24",
@@ -3403,7 +3403,7 @@
       "id": "P2-25-25",
       "title": "The facts row is keyed on the forge's stable id",
       "group": "surfaces",
-      "spec": "§25.7",
+      "spec": "\u00a725.7",
       "checks": [
         {
           "id": "AC-P2-25-25-facts",
@@ -3428,14 +3428,14 @@
       "id": "P2-25-26",
       "title": "The fork line is text, and a URL derives from this project's key alone",
       "group": "surfaces",
-      "spec": "§25.1",
+      "spec": "\u00a725.1",
       "checks": [
         {
           "id": "AC-P2-25-26",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "test": "§25.1 the fork line renders as text and carries no link AC-P2-25-26 renders FORK OF only when the parent key is observed",
+          "test": "\u00a725.1 the fork line renders as text and carries no link AC-P2-25-26 renders FORK OF only when the parent key is observed",
           "assert": "The FORK OF line renders only when fork_parent_remote_key is observed and carries no anchor and no button."
         },
         {
@@ -3445,6 +3445,404 @@
           "owner": "p2-25",
           "test": "remote_weburl::ac_p2_25_26_url_a_fork_parent_does_not_make_its_child_linkable",
           "assert": "A project whose fork parent is on an allowlisted host and whose own host is not answers NULL, so the opener derives from this project's own remote_key and from nothing else."
+        }
+      ]
+    },
+    {
+      "id": "P2-21-1",
+      "title": "The sync and job vocabularies share no slug",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-1",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_schema::the_sync_and_job_vocabularies_are_disjoint",
+          "assert": "Walks JobKind::ALL and SyncTaskKind::ALL, prints the count of slugs on each side and fails at zero on either, and asserts no slug appears in both.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-21-2",
+      "title": "Every stored slug is accepted by its column",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-2",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_schema::every_sync_slug_is_accepted_by_its_column",
+          "assert": "Inserts every (task, state) pair into sync_task_state on a migrated database, prints the count inserted and fails at zero, so a CHECK that rejects a value the core emits is caught.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-21-2-mirror",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_schema::every_slug_round_trips_through_the_generated_enum",
+          "assert": "Each slug function agrees with the generated serde spelling in both directions, so the Rust and wire vocabularies are one value with one owner.",
+          "source": "schema"
+        }
+      ]
+    },
+    {
+      "id": "P2-21-3",
+      "title": "The three 403 shapes settle three different ways",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-3-primary",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_state::a_primary_yield_parks_to_the_reset_and_moves_neither_counter",
+          "assert": "A 403 carrying x-ratelimit-remaining: 0 parks to reset_at with fail_count and throttle_count both unchanged."
+        },
+        {
+          "id": "AC-P2-21-3-secondary",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_state::a_secondary_limit_increments_its_own_counter_and_lengthens_the_park",
+          "assert": "A 403 carrying retry-after with remaining above zero parks and increments throttle_count, floored at 60 s and doubled on the second consecutive one."
+        },
+        {
+          "id": "AC-P2-21-3-terminal",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_state::a_terminal_403_blocks_with_no_scheduled_retry",
+          "assert": "A 403 carrying neither header leaves the task blocked with no not_before and no scheduled retry, and no passage of time makes it runnable."
+        },
+        {
+          "id": "AC-P2-21-3-floor",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "assert": "That a forge's secondary rate limit is not usefully retried inside 60 seconds, which is what the floor in secondary_park_secs is set from.",
+          "deferral": "live-observation",
+          "reason": "\u00a721.4 states the 60 s floor as documentation knowledge, and no call has been made against a live forge by the decision round or by this lane. The implementation carries the floor; whether 60 s is the right number is the part that is unverified.",
+          "verification": {
+            "recordedAt": null,
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "P2-21-4",
+      "title": "A 401 is terminal",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-4",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_state::a_401_is_terminal_and_names_the_token",
+          "assert": "A 401 leaves the task blocked with no scheduled retry and records token_invalid, which is the failure the settled row actually names."
+        }
+      ]
+    },
+    {
+      "id": "P2-21-5",
+      "title": "An unobserved budget is unknown, never zero and never the limit",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-5",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_budget::an_unobserved_budget_is_unknown_and_a_task_holding_one_proceeds",
+          "assert": "With no sync_budget row the verdict is Unknown and the task proceeds; an observed row whose remaining header was absent reads as unknown rather than as zero or as the limit."
+        },
+        {
+          "id": "AC-P2-21-5-unsent",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_budget::a_response_with_no_resource_header_writes_no_row_and_moves_no_clock",
+          "assert": "Rate headers arriving without x-ratelimit-resource cannot be keyed, so they write no row and move no observed_at."
+        }
+      ]
+    },
+    {
+      "id": "P2-21-6",
+      "title": "The observation clock moves only for a call that observed something",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-6",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_observation_clock::a_200_writes_a_304_confirms_and_every_refusal_dates_nothing",
+          "assert": "Against one fake in one test: a 200 writes the values and dates them, a 304 dates them without rewriting one, and a throttled, 401, 403, 404, rejected or skipped call dates nothing; the count of outcomes exercised is printed and zero fails.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-21-7",
+      "title": "The per-IP budget pool is one row",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-7",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_schema::two_per_ip_budget_rows_for_one_resource_cannot_both_exist",
+          "assert": "Against a migrated database, two sync_budget rows with account_id IS NULL and one resource cannot both exist, while two accounts on that resource can."
+        }
+      ]
+    },
+    {
+      "id": "P2-21-8",
+      "title": "A park instant is derived from the response's own Date",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-8",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_classify::the_park_instant_is_translated_onto_our_clock_from_the_responses_own_date",
+          "assert": "With a server clock offset by plus seven hours, by minus seven hours, and with the Date header absent, reset_at lands on this machine s clock rather than on the server s."
+        },
+        {
+          "id": "AC-P2-21-8-table",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_classify::every_row_of_the_response_table_classifies_to_its_own_outcome",
+          "assert": "All ten rows of the response table, each asserted for what it produces, with the count of rows exercised printed so a row cannot be dropped and fail at zero unnoticed.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-21-9",
+      "title": "The production provider reads through \u00a721's decorator",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-9",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_assembly::a_request_through_the_production_wiring_produces_an_observation",
+          "assert": "A provider call through assembly::sync::build_forge, which is the function the composition root calls, drains exactly one observation carrying the response s rate headers."
+        },
+        {
+          "id": "AC-P2-21-9-root",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_assembly::the_composition_root_builds_its_forge_through_the_one_wiring_function",
+          "assert": "Prints the count of composition files scanned and fails at zero; the root calls build_forge once and constructs neither the provider nor the decorator by hand.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-21-9-nofake",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_assembly::no_test_double_appears_in_the_composition_root",
+          "assert": "Prints the count of composition files checked and fails at zero; no test double appears in the shipped composition root.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-21-9-binary",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_assembly::the_real_binary_answers_sync_status_and_exits",
+          "assert": "The real binary completes the handshake, answers sync.status with empty arrays and two nulls, and exits cleanly after app.shutdown, which is the shutdown order stopping the pump."
+        }
+      ]
+    },
+    {
+      "id": "P2-21-10",
+      "title": "Phase 1 is untouched",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-10",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_phase1_untouched::a_full_sync_run_writes_no_job_row",
+          "assert": "After a run over all three task kinds the project_job_state count is unchanged, and the sync rows prove the run happened rather than passing on an empty queue."
+        },
+        {
+          "id": "AC-P2-21-10-kinds",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_phase1_untouched::the_job_vocabulary_is_still_seven",
+          "assert": "JobKind::ALL still holds seven members, so no j7 was added for symmetry."
+        },
+        {
+          "id": "AC-P2-21-10-partial",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_phase1_untouched::job_outcome_partial_is_mentioned_by_one_production_file_once",
+          "assert": "Prints the count of files scanned and fails at zero; exactly one production file mentions JobOutcome::Partial, it is the state machine that must match on it, and it mentions it once.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-21-11",
+      "title": "Listing progress never guesses a denominator and never retreats",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-11",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_runner::listing_progress_never_retreats_and_never_invents_a_denominator",
+          "assert": "Over a listing whose second page reports fewer entries, every listing_progress event carries a non-decreasing listed and a null total, and no payload contains a percent sign."
+        },
+        {
+          "id": "AC-P2-21-11-render",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-21",
+          "test": "useSync renders a non-decreasing figure over the sequence the core produces",
+          "assert": "Feeding the hook the sequence the core produces renders a non-decreasing figure, because the hook renders what arrived rather than computing one of its own."
+        },
+        {
+          "id": "AC-P2-21-11-denominator",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-21",
+          "test": "formatListingProgress never renders a percentage, with or without a total",
+          "assert": "Neither rendering carries a percent sign, because a percentage over an unknown denominator is an unknown rendered as a fact."
+        }
+      ]
+    },
+    {
+      "id": "P2-21-12",
+      "title": "An interrupted task is re-queued, not surfaced as a failure",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-12",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_runner::the_startup_sweep_requeues_a_running_row_and_moves_neither_counter",
+          "assert": "The start-up sweep moves a running row to queued with not_before zero and both counters untouched, and returns the count it moved."
+        },
+        {
+          "id": "AC-P2-21-12-quiet",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_runner::an_interrupted_task_is_never_surfaced_as_a_failure",
+          "assert": "The pump sweeps the row and runs it, and no settled event reports the interrupted task as deferred or blocked."
+        }
+      ]
+    },
+    {
+      "id": "P2-21-13",
+      "title": "A remote read is enqueued from exactly two visibility sites",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-13",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_enqueue_sites::project_remote_is_enqueued_from_exactly_the_two_visibility_sites",
+          "assert": "Prints the count of files scanned and fails at zero; on_project_visible has exactly two call sites and they are detail/get.rs and projects/peek.rs.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-21-13-nolocation",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_enqueue_sites::a_project_with_no_location_still_enqueues_from_both_commands",
+          "assert": "A project with no location row still enqueues from projects.get and projects.peek, because the enqueue sits outside the location guard."
+        },
+        {
+          "id": "AC-P2-21-13-shelf",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_enqueue_sites::the_two_commands_enqueue_once_each_and_the_shelf_enqueues_nothing",
+          "assert": "projects.get and projects.peek enqueue once each and projects.list enqueues nothing, so a shelf of a thousand rows queues no network task."
+        }
+      ]
+    },
+    {
+      "id": "P2-21-14",
+      "title": "A scarce allowance is held for on-demand work",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-14",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_budget::a_scarce_budget_yields_the_listing_and_spends_on_the_opened_page",
+          "assert": "With remaining at 150 and both kinds queued, exactly one request is issued and it is the on-demand one; the scheduled row is parked to the reset with both counters unchanged and reason reserve."
+        },
+        {
+          "id": "AC-P2-21-14-unknown",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_budget::an_unknown_budget_lets_both_kinds_of_task_through",
+          "assert": "With no observation at all both kinds issue their request, because unknown is not below the reserve \u2014 it is unknown, and it spends."
+        }
+      ]
+    },
+    {
+      "id": "P2-21-15",
+      "title": "An entry with no permission object is counted, never dropped",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-15",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_listing::an_entry_with_no_permission_object_is_counted_and_admitted_nowhere",
+          "assert": "A listing entry with no permission object settles counted in skippedUnknownPermission, admitted nowhere, and dropped silently nowhere; the project set is exactly the admissible repository."
+        },
+        {
+          "id": "AC-P2-21-15-suppressed",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_listing::a_suppression_names_the_project_that_blocked_it_once_per_entry",
+          "assert": "Two entries blocked by one project settle with suppressed equal to two and suppressedBy naming that project twice, and the list length equals the count in every case."
         }
       ]
     }

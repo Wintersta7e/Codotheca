@@ -821,6 +821,72 @@ mod corehandler {
         );
     }
 
+    /// **R94's first side, over the real runner.** `projects.get` and `projects.peek` reach
+    /// `SyncSink::on_project_visible` while `Assembly` holds the process's one index guard, and
+    /// `std::sync::Mutex` is not reentrant — a sink that locked it again would wedge the guard for
+    /// the life of the process and the project page would simply never arrive.
+    ///
+    /// **This is a repeat, and it shipped as far as the e2e suite before anything said so.**
+    /// `f182452` fixed exactly this for `JobSink::on_visible`; p2-21 reintroduced it on the sync
+    /// sink, and the unit tests missed it because they drive a recording sink rather than the
+    /// runner. Two project-page specs timed out at sixty seconds apiece waiting for a tab panel
+    /// the core never answered for. The cheap guard belongs here, where the handler holds the
+    /// real guard and the pump is the real one.
+    #[test]
+    fn a_project_command_answers_while_the_real_sync_pump_is_wired() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let index = Arc::new(std::sync::Mutex::new(
+            codotheca_core::index::Index::open_at(dir.path(), NOW).expect("index opens"),
+        ));
+        // **A project that exists.** The first version of this test passed an id naming no
+        // project, so `projects.get` refused before it ever reached the sink — a bar written
+        // past the defect it was added for, caught by reverting the fix and watching it stay
+        // green.
+        let project = {
+            let mut guard = index.lock().expect("index");
+            guard
+                .with_tx(|tx| {
+                    tx.execute(
+                        "INSERT INTO project (name, seed_basename, created_at, updated_at)
+                         VALUES ('alpha', 'alpha', ?1, ?1)",
+                        [NOW],
+                    )?;
+                    Ok(tx.last_insert_rowid())
+                })
+                .expect("seeded")
+        };
+
+        let events = Arc::new(PublisherSink::new(Publisher::detached()));
+        let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
+        let mut h = handler_over(
+            dir.path(),
+            &index,
+            &events,
+            &clock,
+            Arc::new(codotheca_core::testing::FakeTransport::new()),
+            Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
+        );
+
+        // A bounded wait in another thread: a deadlock here would hang the suite for ever
+        // otherwise, and a test that hangs reports nothing. Forcing the bound is R72's rule.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            // Both commands, because both reach the sink and each holds the guard its own way.
+            let got = h.handle("projects.get", serde_json::json!({ "id": project }));
+            let peek = h.handle("projects.peek", serde_json::json!({ "id": project }));
+            let _ = tx.send((got.is_ok(), peek.is_ok()));
+            h
+        });
+        let answered = rx
+            .recv_timeout(std::time::Duration::from_secs(20))
+            .expect("projects.get and projects.peek answered while the sync pump was wired");
+        assert_eq!(
+            answered,
+            (true, true),
+            "both commands must answer, not merely return"
+        );
+    }
+
     /// [p2] §21.13: the `sync` snapshot **is** `sync.status`' answer, byte for byte. Two
     /// producers for one payload would let a subscriber and a caller disagree about the same
     /// moment, which is the whole reason `snapshot_of` delegates through `handle` rather than

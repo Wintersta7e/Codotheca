@@ -169,65 +169,74 @@ fn a_request_through_the_production_wiring_produces_an_observation() {
 ///
 /// A unit test over `CoreHandler` cannot see a composition root that forgot to start the pump or
 /// to route the command; this is the shape `core/tests/assembly_startup.rs` established.
-mod binary {
+/// **Not in a `mod`, deliberately.** libtest reports a test inside a module as
+/// `binary::<name>`, and the acceptance harness prefixes a result with its binary **only when
+/// the name has no `::` already** (`scripts/acceptance/runners.mjs:75`) — so a nested test
+/// records as `binary::…` with no file in front of it, and the criterion registered against
+/// `sync_assembly::…` reads as *did not run*. Flat, it records as
+/// `sync_assembly::the_real_binary_answers_sync_status_and_exits`, like every other cargo id in
+/// the register.
+mod frames {
     use codotheca_core::proto::frame::{read_frame, write_frame};
     use std::io::Write as _;
 
-    fn send(child: &mut std::process::Child, frame: &serde_json::Value) {
+    pub fn send(child: &mut std::process::Child, frame: &serde_json::Value) {
         let body = serde_json::to_vec(frame).expect("frame");
         let stdin = child.stdin.as_mut().expect("stdin");
         write_frame(stdin, &body).expect("write");
         stdin.flush().expect("flush");
     }
 
-    fn recv(child: &mut std::process::Child) -> serde_json::Value {
+    pub fn recv(child: &mut std::process::Child) -> serde_json::Value {
         let stdout = child.stdout.as_mut().expect("stdout");
         let mut buf = Vec::new();
         read_frame(stdout, &mut buf).expect("read");
         serde_json::from_slice(&buf).expect("json")
     }
+}
 
-    #[test]
-    fn the_real_binary_answers_sync_status_and_exits() {
-        let dir = tempfile::tempdir().expect("tmp");
-        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_codotheca-core"))
-            .arg(format!("--data-dir={}", dir.path().display()))
-            .arg("--epoch=7")
-            .arg(format!("--parent-pid={}", std::process::id()))
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .expect("core spawns");
+use frames::{recv, send};
 
-        let hello = recv(&mut child);
-        assert_eq!(hello["t"], "hello", "{hello}");
-        send(
-            &mut child,
-            &serde_json::json!({"t": "request", "id": 1, "command": "app.hello_ack", "args": {}}),
-        );
-        let _ack = recv(&mut child);
+#[test]
+fn the_real_binary_answers_sync_status_and_exits() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_codotheca-core"))
+        .arg(format!("--data-dir={}", dir.path().display()))
+        .arg("--epoch=7")
+        .arg(format!("--parent-pid={}", std::process::id()))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("core spawns");
 
-        send(
-            &mut child,
-            &serde_json::json!({"t": "request", "id": 2, "command": "sync.status", "args": {}}),
-        );
-        let reply = recv(&mut child);
-        assert_eq!(reply["t"], "response", "{reply}");
-        let status = &reply["ok"];
-        assert_eq!(status["tasks"], serde_json::json!([]), "{reply}");
-        assert_eq!(status["budgets"], serde_json::json!([]), "{reply}");
-        assert!(status["listing"].is_null(), "{reply}");
-        assert!(status["notice"].is_null(), "{reply}");
+    let hello = recv(&mut child);
+    assert_eq!(hello["t"], "hello", "{hello}");
+    send(
+        &mut child,
+        &serde_json::json!({"t": "request", "id": 1, "command": "app.hello_ack", "args": {}}),
+    );
+    let _ack = recv(&mut child);
 
-        // **The shutdown order.** `CoreHandler::shutdown` stops the sync pump beside the job
-        // pump and before the publisher closes; a pump it did not stop would keep the process
-        // alive past this wait.
-        send(
-            &mut child,
-            &serde_json::json!({"t": "request", "id": 3, "command": "app.shutdown", "args": {}}),
-        );
-        let status = child.wait().expect("exits");
-        assert!(status.success(), "{status:?}");
-    }
+    send(
+        &mut child,
+        &serde_json::json!({"t": "request", "id": 2, "command": "sync.status", "args": {}}),
+    );
+    let reply = recv(&mut child);
+    assert_eq!(reply["t"], "response", "{reply}");
+    let status = &reply["ok"];
+    assert_eq!(status["tasks"], serde_json::json!([]), "{reply}");
+    assert_eq!(status["budgets"], serde_json::json!([]), "{reply}");
+    assert!(status["listing"].is_null(), "{reply}");
+    assert!(status["notice"].is_null(), "{reply}");
+
+    // **The shutdown order.** `CoreHandler::shutdown` stops the sync pump beside the job
+    // pump and before the publisher closes; a pump it did not stop would keep the process
+    // alive past this wait.
+    send(
+        &mut child,
+        &serde_json::json!({"t": "request", "id": 3, "command": "app.shutdown", "args": {}}),
+    );
+    let status = child.wait().expect("exits");
+    assert!(status.success(), "{status:?}");
 }

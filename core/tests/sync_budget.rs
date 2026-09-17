@@ -534,28 +534,48 @@ fn seed_budget(lane: &Lane, remaining: i64, reset: i64) {
         .expect("seeded");
 }
 
-fn drain_queue(lane: &Lane) {
+/// Run the loop until `expected` tasks have **reached the table and settled**.
+///
+/// **Both halves, and the first is not decoration.** `enqueue` records a task in memory and the
+/// loop writes its row, so *"no queued or running rows"* is true before the loop has written
+/// anything at all — a predicate that would let this return having run nothing and assert zero
+/// requests as a pass. Waiting for the rows to exist first is what makes the settle mean a settle.
+fn drain_queue(lane: &Lane, expected: i64) {
     lane.runner.start();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while std::time::Instant::now() < deadline {
-        let pending: i64 = {
+        let (rows, pending): (i64, i64) = {
             let guard = lane.index.lock().expect("index");
-            guard
-                .conn()
-                .query_row(
+            let conn = guard.conn();
+            (
+                conn.query_row("SELECT count(*) FROM sync_task_state", [], |r| r.get(0))
+                    .unwrap_or(0),
+                conn.query_row(
                     "SELECT count(*) FROM sync_task_state WHERE state IN ('queued', 'running')",
                     [],
                     |r| r.get(0),
                 )
-                .unwrap_or(1)
+                .unwrap_or(1),
+            )
         };
-        if pending == 0 {
+        if rows >= expected && pending == 0 {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     lane.runner.request_stop();
     lane.runner.join();
+    let rows: i64 = {
+        let guard = lane.index.lock().expect("index");
+        guard
+            .conn()
+            .query_row("SELECT count(*) FROM sync_task_state", [], |r| r.get(0))
+            .unwrap_or(0)
+    };
+    assert_eq!(
+        rows, expected,
+        "the loop did not run every task that was queued"
+    );
 }
 
 /// **AC-P2-21-14.** With `remaining = 150` mirrored and both a scheduled and an on-demand task
@@ -597,7 +617,7 @@ fn a_scarce_budget_yields_the_listing_and_spends_on_the_opened_page() {
         .enqueue(codotheca_core::sync::task::SyncTask::ProjectRemote {
             project_id: lane.project,
         });
-    drain_queue(&lane);
+    drain_queue(&lane, 2);
 
     let requests = lane.scripted.request_count();
     eprintln!("sync_budget: {requests} request(s) issued under a 150-remaining budget");
@@ -657,7 +677,7 @@ fn an_unknown_budget_lets_both_kinds_of_task_through() {
         .enqueue(codotheca_core::sync::task::SyncTask::ProjectRemote {
             project_id: lane.project,
         });
-    drain_queue(&lane);
+    drain_queue(&lane, 2);
 
     let sent = lane.scripted.requests();
     eprintln!(

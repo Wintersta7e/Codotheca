@@ -600,8 +600,8 @@ test('registering a phase-2 section leaves phase 1 at 70 and 171', () => {
     phase1.reduce((n, c) => n + c.checks.length, 0),
     171,
   );
-  // §20 owns thirteen, §23 twelve and §25 twenty-six, which is what `PHASE2_SECTIONS` declares
-  // for each. Raised by this lane's own delta, read from the branch base — never to a running
-  // total a later lane would have to guess at.
-  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 51);
+  // §20 owns thirteen, §21 fifteen, §23 twelve and §25 twenty-six, which is what
+  // `PHASE2_SECTIONS` declares for each. Raised by this lane's own delta, read from the branch
+  // base — never to a running total a later lane would have to guess at.
+  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 66);
 });

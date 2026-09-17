@@ -17,12 +17,12 @@
 //! taking further work rather than aborting the request in flight. So `stop()` is bounded, not
 //! immediate, and the bound is a number `core/tests/http_transport.rs` already pins.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::Duration;
 
-use crate::index::Index;
+use crate::index::{Index, IndexError};
 use crate::proto::EventSink;
 use crate::protocol::{
     AccountId, ProjectId, SyncNotice, SyncTaskKind, SyncTaskStarted, SyncTaskState,
@@ -114,6 +114,19 @@ pub struct SyncRunner {
     /// One in-flight listing's running tally, keyed by account. It accumulates across the pages of
     /// one listing and is emitted **once**, at settle, with the rest of the summary.
     listings: Mutex<HashMap<i64, (ListingProgress, repos::ListingSummary)>>,
+    /// Tasks asked for but not yet written to the table.
+    ///
+    /// **This exists so `enqueue` takes no index lock** (R94's first side). `on_project_visible`
+    /// is reached from `projects.get` and `projects.peek`, and `Assembly` dispatches both while
+    /// holding the process's one `Arc<Mutex<Index>>` guard — `std::sync::Mutex` is not reentrant,
+    /// so a sink that locked it again would wedge the guard for the life of the process and the
+    /// project page would simply never arrive. That is `f182452`'s defect, which `JobSink` already
+    /// paid for; the e2e suite caught this lane repeating it, and the unit tests did not, because
+    /// they drive a recording sink rather than the runner.
+    ///
+    /// The **loop** drains this inside the transaction it already holds, which is R94's second
+    /// side: a worker thread must lock, because nothing above it does.
+    inbox: Mutex<VecDeque<SyncTask>>,
 }
 
 impl std::fmt::Debug for SyncRunner {
@@ -140,6 +153,7 @@ impl SyncRunner {
             handle: Mutex::new(None),
             live: Mutex::new(SyncLive::default()),
             listings: Mutex::new(HashMap::new()),
+            inbox: Mutex::new(VecDeque::new()),
         })
     }
 
@@ -164,7 +178,11 @@ impl SyncRunner {
                     // else.
                     eprintln!("sync: re-queued {moved} task(s) interrupted by a restart");
                 }
-                self.outstanding.store(outstanding, Ordering::SeqCst);
+                // **Or the inbox**: `enqueue` may have been called before the pump started,
+                // and a flag set from the table alone would clear it and leave the loop
+                // asleep over work it had already been handed.
+                self.outstanding
+                    .store(outstanding || !self.inbox_is_empty(), Ordering::SeqCst);
             }
         }
 
@@ -194,35 +212,53 @@ impl SyncRunner {
         }
     }
 
-    /// Queue one task, now.
+    /// Queue one task.
+    ///
+    /// **It takes no index lock, and that is load-bearing** — see [`SyncRunner::inbox`]. The task
+    /// is recorded in memory and the loop writes the row, so a caller already under the index
+    /// guard (which both `on_project_visible` sites are) cannot deadlock the process.
     ///
     /// **No priority parameter**, which deviates from this plan's task table. §21.5's priority is
     /// `crate::sync::is_on_demand`, a property of the task's own kind; a `Priority` argument would
     /// let a caller contradict the kind, and no caller needs to.
-    ///
-    /// A task already queued, running or parked is left alone — re-queueing a parked row would
-    /// discard the instant the server named.
     pub fn enqueue(&self, task: SyncTask) {
-        let now = self.deps.clock.now_unix();
-        let kind = task.kind();
-        let key = Some(task.key());
-        {
-            let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-            let existing = load(guard.conn(), kind, key).ok().flatten();
-            match existing.as_ref().map(|row| row.state) {
-                Some(SyncTaskState::Queued | SyncTaskState::Running | SyncTaskState::Parked) => {
-                    return;
-                }
-                // `blocked` is left only through an account state change or an explicit user
-                // action, never by something asking again.
-                Some(SyncTaskState::Blocked) => return,
-                _ => {}
-            }
-            let row = SyncTaskStateRow::queued(kind, key, now);
-            let _ = guard.with_tx(|tx| put(tx, &row));
-        }
+        self.inbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push_back(task);
         self.outstanding.store(true, Ordering::SeqCst);
         self.signal();
+    }
+
+    /// Write every task the inbox holds, applying §21.4's re-queue rule.
+    ///
+    /// A task already `queued`, `running` or `parked` is left alone — re-queueing a parked row
+    /// would discard the instant the server named. `blocked` is left alone too: it is left only
+    /// through an account state change or an explicit user action, never by something asking
+    /// again.
+    fn drain_inbox(&self, tx: &rusqlite::Transaction<'_>, now: i64) -> Result<(), IndexError> {
+        let pending: Vec<SyncTask> = {
+            let mut inbox = self.inbox.lock().unwrap_or_else(PoisonError::into_inner);
+            inbox.drain(..).collect()
+        };
+        for task in pending {
+            let kind = task.kind();
+            let key = Some(task.key());
+            let existing = load(tx, kind, key)?;
+            if matches!(
+                existing.as_ref().map(|row| row.state),
+                Some(
+                    SyncTaskState::Queued
+                        | SyncTaskState::Running
+                        | SyncTaskState::Parked
+                        | SyncTaskState::Blocked
+                )
+            ) {
+                continue;
+            }
+            put(tx, &SyncTaskStateRow::queued(kind, key, now))?;
+        }
+        Ok(())
     }
 
     /// A snapshot of what only this process knows.
@@ -232,6 +268,13 @@ impl SyncRunner {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    fn inbox_is_empty(&self) -> bool {
+        self.inbox
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_empty()
     }
 
     fn signal(&self) {
@@ -280,6 +323,9 @@ impl SyncRunner {
         let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         guard
             .with_tx(|tx| {
+                // Everything asked for since the last wake, written here where the lock is
+                // already held rather than by the caller that asked.
+                self.drain_inbox(tx, now)?;
                 for row in load_all(tx)? {
                     if row.is_due_park(now) {
                         let mut promoted = row.clone();
@@ -314,7 +360,8 @@ impl SyncRunner {
                 Ok((task_of(&row), true))
             })
             .map_or(None, |(task, outstanding)| {
-                self.outstanding.store(outstanding, Ordering::SeqCst);
+                self.outstanding
+                    .store(outstanding || !self.inbox_is_empty(), Ordering::SeqCst);
                 task
             })
     }

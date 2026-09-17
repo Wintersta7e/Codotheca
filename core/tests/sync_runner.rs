@@ -341,17 +341,22 @@ fn at_most_one_request_is_in_flight_and_at_most_one_row_is_running() {
     };
 
     runner.start();
-    until("every queued task to settle", || {
+    // The rows must **exist** before "nothing is pending" means anything: `enqueue` records a
+    // task in memory and the loop writes its row.
+    until("all three tasks to reach the table and settle", || {
         let guard = f.index.lock().expect("index");
-        let pending: i64 = guard
-            .conn()
+        let conn = guard.conn();
+        let rows: i64 = conn
+            .query_row("SELECT count(*) FROM sync_task_state", [], |r| r.get(0))
+            .unwrap_or(0);
+        let pending: i64 = conn
             .query_row(
                 "SELECT count(*) FROM sync_task_state WHERE state IN ('queued', 'running')",
                 [],
                 |r| r.get(0),
             )
             .unwrap_or(1);
-        pending == 0
+        rows >= 3 && pending == 0
     });
     runner.request_stop();
     runner.join();
