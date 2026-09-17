@@ -579,6 +579,117 @@ fn a_fresh_process_knows_nothing_and_says_so() {
     assert!(live.last.is_empty());
 }
 
+/// A `TokenStore` that tries the index guard **from inside `read`**, on the thread that asked.
+///
+/// Retried to a deadline rather than tried once, for the reason `assembly_dispatch.rs`'s probe
+/// records: `std::sync::Mutex` is not reentrant, so a guard held by the *calling* path can never
+/// be taken here however long this waits, while another thread holding it for a moment is
+/// ordinary — and this test's own main thread reads the table while it waits.
+#[derive(Debug)]
+struct LockProbingTokens {
+    index: Arc<Mutex<Index>>,
+    inner: Arc<FakeTokenStore>,
+    /// **Sticky, and never "the last call was fine".** The listing's read and the rename probe's
+    /// read both land here, and a flag the last writer wins would let a correct second call erase
+    /// a first one that held the guard — which is exactly how the first version of this bar passed
+    /// against the defect it was written for.
+    lock_was_held: std::sync::atomic::AtomicBool,
+    calls: AtomicUsize,
+}
+
+impl codotheca_core::accounts::keychain::TokenStore for LockProbingTokens {
+    fn probe(&self) -> Result<(), codotheca_core::accounts::keychain::KeychainError> {
+        self.inner.probe()
+    }
+    fn store(
+        &self,
+        entry: &str,
+        token: &SecretToken,
+    ) -> Result<(), codotheca_core::accounts::keychain::KeychainError> {
+        self.inner.store(entry, token)
+    }
+    fn delete(&self, entry: &str) -> Result<(), codotheca_core::accounts::keychain::KeychainError> {
+        self.inner.delete(entry)
+    }
+    fn read(
+        &self,
+        entry: &str,
+    ) -> Result<SecretToken, codotheca_core::accounts::keychain::KeychainError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut free = false;
+        while Instant::now() < deadline {
+            if self.index.try_lock().is_ok() {
+                free = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        if !free {
+            self.lock_was_held.store(true, Ordering::SeqCst);
+        }
+        self.inner.read(entry)
+    }
+}
+
+/// **R75, on the sync worker's own path.** A listing must not hold the process's one index guard
+/// while it reads a secret.
+///
+/// Reading a secret is a call into the OS credential store, and the guard it would be holding is
+/// the mutex every command needs. `rename.rs` and `remote.rs` were already this shape and
+/// `repos.rs` was not — invisible for as long as nothing in the product ever ran a listing, which
+/// is what made this lane's R90 gap expensive rather than merely untidy.
+#[test]
+fn a_listing_holds_no_index_lock_while_it_reads_the_keychain() {
+    let f = fixture(Duration::ZERO);
+    for _ in 0..4 {
+        f.scripted.push(ok_page("[]"));
+    }
+    let inner = Arc::new(FakeTokenStore::available());
+    inner
+        .store(
+            &token_ref("github", HOST, "owner"),
+            &SecretToken::new("t".to_owned()),
+        )
+        .expect("token");
+    let probe = Arc::new(LockProbingTokens {
+        index: Arc::clone(&f.index),
+        inner,
+        lock_was_held: std::sync::atomic::AtomicBool::new(false),
+        calls: AtomicUsize::new(0),
+    });
+
+    let mut deps = f.deps;
+    deps.tokens = Arc::clone(&probe) as Arc<dyn codotheca_core::accounts::keychain::TokenStore>;
+    let index = Arc::clone(&f.index);
+    let account = f.account.0;
+    let runner = SyncRunner::new(
+        Arc::clone(&f.index),
+        deps,
+        Arc::clone(&f.events) as Arc<dyn EventSink>,
+    );
+    runner.enqueue(SyncTask::AccountRepos {
+        account_id: f.account,
+    });
+    runner.start();
+    until("the listing to settle", || {
+        state_of(&index, SyncTaskKind::AccountRepos, account)
+            .is_some_and(|row| row.state == SyncTaskState::Ok)
+    });
+    runner.request_stop();
+    runner.join();
+
+    // No escape hatch: the keychain MUST have been reached, or this proves nothing.
+    assert!(
+        probe.calls.load(Ordering::SeqCst) > 0,
+        "the listing never read a secret, so the guard was never at risk"
+    );
+    assert!(
+        !probe.lock_was_held.load(Ordering::SeqCst),
+        "a sync task read the keychain with the index lock held"
+    );
+}
+
 /// A forge that answers the same thing for ever, and counts what it was asked.
 #[derive(Debug)]
 struct AlwaysAnswers {

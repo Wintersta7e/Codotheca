@@ -91,7 +91,7 @@ pub fn run_account_repos(
     cursor: Option<&str>,
 ) -> Result<(SyncOutcome, ListingSummary), SyncError> {
     let now = deps.clock.now_unix();
-    let (token, viewer, tier, enabled_orgs) = {
+    let (token_ref, viewer, tier, enabled_orgs) = {
         let guard = index
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -106,12 +106,20 @@ pub fn run_account_repos(
             .map(|o| o.login)
             .collect();
         (
-            token_for(deps, &identity.token_ref)?,
+            identity.token_ref,
             identity.login,
             identity.scope_tier,
             enabled,
         )
     };
+    // **The keychain read happens outside the guard** (R75), which is why the block above yields
+    // a `token_ref` rather than a token: reading a secret is a call into the OS credential store,
+    // and the process's one SQLite mutex may not be held across it. `rename.rs` and `remote.rs`
+    // were already this shape. A p2-20 test caught this one the first time a listing actually
+    // ran — `disconnect_holds_no_index_lock_while_it_deletes_the_keychain_entry` probes whether
+    // the mutex is free at the moment the keychain is reached, and nothing had ever reached it
+    // from this path before.
+    let token = token_for(deps, &token_ref)?;
 
     let answer = deps.provider.list_repos(&token, cursor);
     let observation = observe_one(deps, &answer);
