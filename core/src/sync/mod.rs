@@ -16,6 +16,7 @@
 //! **every** response — error responses included — and runs §21.8's classification.
 
 pub mod classify;
+pub mod http;
 pub mod outcome;
 pub mod state;
 pub mod store;
