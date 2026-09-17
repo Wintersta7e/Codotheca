@@ -88,6 +88,7 @@ test('the call names autostart under the key the command takes, and disturbs not
       residentShortcut: null,
       roastEnabled: null,
       logLevel: null,
+      installRootId: null,
     },
   });
 });

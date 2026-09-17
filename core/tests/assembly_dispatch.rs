@@ -272,6 +272,9 @@ mod corehandler {
             client_id: "test-client-id".to_owned(),
             clock: clock.clone(),
             git: Arc::new(codotheca_core::testing::FakeGitBackend::new()),
+            write_git: Arc::new(codotheca_core::testing::FakeMutatingGit::new(
+                codotheca_core::testing::CloneBehaviour::Succeed,
+            )),
             mount: Arc::new(codotheca_core::testing::FakeMountResolver::default()),
             spawner: Box::new(codotheca_core::launch::spawn::RecordingSpawner::new()),
             sessions: codotheca_core::session::manager::SessionManager::new(
@@ -767,8 +770,18 @@ mod corehandler {
         // because it reaches arbitrary hosts.
         // [p2] §21.13's `sync.status` is the 53rd, answered **under** the guard: it reads two
         // tables and the runner's own process state, and the runner is what reaches the network.
+        // [p2] §24.3d's `install.preview` is the 54th. It takes the guard itself rather than
+        // through the common arm, because `handle_preview` opens its own read transaction and
+        // `std::sync::Mutex` is not reentrant.
+        // [p2] §24.9's `install.start` is the 55th, answered the same way: it takes and releases
+        // the guard, then hands the clone to a thread, because a command may not hold the
+        // protocol loop for the length of a clone. `install.cancel` stays unowned, so this
+        // [p2] §24.3c's `install.cancel` is the 56th and the last of §24.9's three. It takes no
+        // index guard at all — cancelling is firing a token, and the run thread does the cleanup
+        // that touches SQLite. `UNOWNED_COMMANDS` is now empty, which the sibling assertion below
+        // proves by reading the router rather than the list.
         assert_eq!(
-            checked, 53,
+            checked, 56,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(

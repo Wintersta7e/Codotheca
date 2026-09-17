@@ -75,6 +75,21 @@ fn main() {
         std::process::exit(2);
     };
 
+    // **The recording is keyed on an ABSOLUTE path, and a relative one is refused.**
+    //
+    // Measured, not hypothetical: an earlier version keyed on the last argv element whatever it
+    // was. `Intent::Fetch` renders its **remote name** last — `origin` — so this wrote
+    // `origin.recorded` relative to its own working directory, which is the crate root, and left
+    // a 9 KB file **inside the repository**. A test binary that writes into the source tree is a
+    // defect whether or not anyone notices the file; this one was visible in `git status` only
+    // because the name happened not to be ignored.
+    //
+    // Refusing here also keeps the audit honest: a variant with no path to key on cannot be
+    // spawn-recorded at all, and the test must say so rather than read a file from somewhere else.
+    if !PathBuf::from(last).is_absolute() {
+        std::process::exit(6);
+    }
+
     let mut target = PathBuf::from(last);
     let mut name = target.file_name().unwrap_or_default().to_os_string();
     name.push(".recorded");

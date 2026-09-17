@@ -128,8 +128,11 @@ test('WHAT EXACTLY holds the consent paragraph, verbatim', () => {
 test('the exclusion list is drawn in full behind one chip, in the core list order', () => {
   draw();
   expect(visibleExclusions(false)).toHaveLength(11);
-  expect(moreChipLabel(EXCLUSION_LIST.length - 11)).toBe('+ 18 MORE');
-  fireEvent.click(screen.getByRole('button', { name: '+ 18 MORE' }));
+  // [p2] 19, not 18: §24.3b's staging directory is the thirtieth entry. The literal is kept
+  // rather than computed so that the rendered string itself is asserted — a label derived from
+  // the same array it is checked against would agree with any list at all.
+  expect(moreChipLabel(EXCLUSION_LIST.length - 11)).toBe('+ 19 MORE');
+  fireEvent.click(screen.getByRole('button', { name: '+ 19 MORE' }));
   for (const entry of EXCLUSION_LIST) expect(screen.getByText(entry)).toBeTruthy();
   // A privacy policy that misspells what it matches is false.
   expect(screen.getByText('$RECYCLE.BIN')).toBeTruthy();

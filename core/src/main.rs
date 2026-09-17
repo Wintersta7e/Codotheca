@@ -14,6 +14,9 @@ use codotheca_core::assembly::startup::{open_index, run_startup};
 use codotheca_core::assembly::{CoreDeps, CoreHandler};
 use codotheca_core::clock::{local_utc_offset_min, Clock, SystemClock};
 use codotheca_core::git::{GitBackend, GitExec, GitSlots, SystemGit};
+use codotheca_core::gitw::credential::{
+    configure_data_dir, run_credential_helper, CREDENTIAL_MODE_FLAG,
+};
 use codotheca_core::lifecycle::{
     parse_args, CoreLock, LockError, OsParentProbe, EXIT_BAD_ARGS, EXIT_LOCK_HELD,
 };
@@ -24,13 +27,82 @@ use codotheca_core::proto::transport::{claim_stdout, Transport, WRITER_CAPACITY}
 use codotheca_core::proto::wire::Epoch;
 use codotheca_core::scan::ScanSupervisor;
 use codotheca_core::session::manager::SessionManager;
-use std::io::Write as _;
+use std::ffi::OsStr;
+use std::io::{Read as _, Write as _};
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
 fn note(line: &str) {
     let _ = writeln!(std::io::stderr(), "{line}");
+}
+
+fn credential_helper_mode() -> Option<ExitCode> {
+    let mut args = std::env::args_os().skip(1);
+    if args.next().as_deref() != Some(OsStr::new(CREDENTIAL_MODE_FLAG)) {
+        return None;
+    }
+    let Some(nonce_path) = args.next() else {
+        note("codotheca-core: credential helper is missing its nonce path");
+        return Some(ExitCode::from(EXIT_BAD_ARGS));
+    };
+    let Some(channel) = args.next() else {
+        note("codotheca-core: credential helper is missing its channel");
+        return Some(ExitCode::from(EXIT_BAD_ARGS));
+    };
+    let Some(operation) = args.next() else {
+        note("codotheca-core: credential helper is missing its operation");
+        return Some(ExitCode::from(EXIT_BAD_ARGS));
+    };
+    if args.next().is_some() {
+        note("codotheca-core: credential helper received an unexpected argument");
+        return Some(ExitCode::from(EXIT_BAD_ARGS));
+    }
+
+    let Some(mut out) = claim_stdout() else {
+        note("codotheca-core: stdout was already claimed");
+        return Some(ExitCode::FAILURE);
+    };
+    let operation = operation.to_string_lossy();
+    let result = match operation.as_ref() {
+        // Git may ask to persist or remove what `get` returned. This helper is one-shot and stores
+        // nothing, so both operations deliberately answer with no credential protocol records.
+        "store" | "erase" => Ok(()),
+        "get" => {
+            let mut nonce = String::new();
+            let read = std::fs::File::open(&nonce_path)
+                .and_then(|file| file.take(1_025).read_to_string(&mut nonce));
+            match read {
+                Ok(_)
+                    if nonce.len() == 64 && nonce.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
+                {
+                    channel.to_str().map_or_else(
+                        || {
+                            Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidInput,
+                                "credential channel is not valid Unicode",
+                            ))
+                        },
+                        |channel| run_credential_helper(&nonce, channel, &mut out),
+                    )
+                }
+                Ok(_) => Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "credential nonce file is malformed",
+                )),
+                Err(error) => Err(error),
+            }
+        }
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "unsupported credential helper operation",
+        )),
+    };
+    if let Err(error) = result {
+        note(&format!("codotheca-core: credential helper: {error}"));
+        return Some(ExitCode::FAILURE);
+    }
+    Some(ExitCode::SUCCESS)
 }
 
 /// Plan 16's `FirstRunEnv`, assembled from the environment.
@@ -104,6 +176,15 @@ fn build_wsl_dispatcher(
 
 #[allow(clippy::too_many_lines)]
 fn main() -> ExitCode {
+    // This mode runs while the core that started Git holds the advisory lock, by design, so it
+    // must return before ordinary argv parsing or lock acquisition. Its stdout carries Git's
+    // credential protocol, not length-prefixed protocol frames. No stdout-discipline exemption is
+    // needed: `claim_stdout()` hands the handle out once behind the transport module's `AtomicBool`,
+    // and that single ownership is the invariant the gate enforces (the worker binary is precedent).
+    if let Some(exit) = credential_helper_mode() {
+        return exit;
+    }
+
     let args = match parse_args(std::env::args().skip(1)) {
         Ok(a) => a,
         Err(e) => {
@@ -111,6 +192,13 @@ fn main() -> ExitCode {
             return ExitCode::from(EXIT_BAD_ARGS);
         }
     };
+
+    if let Err(error) = configure_data_dir(&args.data_dir) {
+        note(&format!(
+            "codotheca-core: credential data directory: {error}"
+        ));
+        return ExitCode::from(EXIT_BAD_ARGS);
+    }
 
     let _lock = match CoreLock::acquire(&args.data_dir) {
         Ok(l) => l,
@@ -273,6 +361,12 @@ fn main() -> ExitCode {
         client_id: codotheca_core::accounts::device::GITHUB_CLIENT_ID.to_owned(),
         clock: Arc::clone(&clock),
         git: Arc::clone(&git),
+        // §24.1's write seam, pointed at the same empty hooks directory every read invocation
+        // uses. A second `SystemMutatingGit` would be a second `core.hooksPath` to keep in step.
+        write_git: Arc::new(codotheca_core::gitw::backend::SystemMutatingGit::new(
+            std::path::PathBuf::from("git"),
+            args.data_dir.join("empty-hooks"),
+        )),
         mount: Arc::clone(&mount),
         spawner: Box::new(codotheca_core::launch::spawn::OsSpawner),
         sessions: SessionManager::new(

@@ -153,6 +153,12 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   // confirmation. No apostrophe in this block: app/test/knownCommands.test.ts reads the array
   // by matching single-quoted strings, so a comment carrying one becomes an entry.
   'remote.webUrl',
+  // install::handle_preview — read-only destination composition.
+  'install.preview',
+  // install::handle_start and install::handle_cancel — privileged and filesystem-mutating, and
+  // both answered by the core, so the shell knows both. Nothing is deferred any more.
+  'install.start',
+  'install.cancel',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two

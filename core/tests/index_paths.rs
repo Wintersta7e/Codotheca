@@ -95,6 +95,32 @@ fn string_literals(text: &str) -> Vec<String> {
             i = (i + 2).min(chars.len());
             continue;
         }
+        // A char literal's quote is not a string's. Without this arm `'"'` opens a "string" that
+        // runs to the next quote in the file and **every quote after it pairs wrongly**, so the
+        // scanner reports SQL that does not exist and, worse, can swallow SQL that does. It
+        // named `core/src/install/destination.rs` for reading `path_display` back when that file
+        // holds no such query — measured by replacing the one `'"'` with `'\u{22}'` and watching
+        // the gate go green.
+        //
+        // Lifetimes must fall through: `'a` and `'static` are not char literals and have no
+        // closing quote. Consuming exactly one character-or-escape and then *requiring* the
+        // closing quote is what separates the two.
+        if chars[i] == '\'' {
+            let mut k = i + 1;
+            if chars.get(k) == Some(&'\\') {
+                k += 1;
+                if chars.get(k) == Some(&'u') {
+                    while k < chars.len() && chars[k] != '}' {
+                        k += 1;
+                    }
+                }
+            }
+            k += 1;
+            if chars.get(k) == Some(&'\'') {
+                i = k + 1;
+                continue;
+            }
+        }
         if chars[i] == 'r' {
             let mut hashes = 0;
             let mut j = i + 1;

@@ -83,7 +83,7 @@ describe('the header line', () => {
   });
 });
 
-describe('the eight labels', () => {
+describe('the nine labels', () => {
   it('names every group §11.1 names, in its uppercase mono form', () => {
     expect(PROBLEM_GROUP_LABEL).toEqual({
       permission_denied: 'PERMISSION DENIED',
@@ -94,6 +94,9 @@ describe('the eight labels', () => {
       non_utf8_path: 'NON-UTF-8 PATHS',
       offline_store: 'OFFLINE STORES',
       ambiguous_lineage: 'AMBIGUOUS LINEAGE',
+      // [p2] §24.3c's ninth group. The record is keyed by `ProblemKind`, so this is a type error
+      // until the label exists — and `toEqual` makes it a test failure until it is named here too.
+      abandoned_install: 'ABANDONED INSTALLS',
     });
   });
 });

@@ -16,13 +16,15 @@
 //! looking at nothing. [`rendered`] therefore checks the floor **once, before any caller sees
 //! the set**, rather than leaving each test to remember.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use codotheca_core::accounts::keychain::SecretToken;
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::gitw::{
     write_base_args, AuditFixture, CredentialChannel, FilterDrivers, Intent, MutatingGit,
-    SystemMutatingGit, WriteEnv,
+    SystemMutatingGit, WriteEnv, WriteExec,
 };
 
 /// §24.2a assertion 1's allow list.
@@ -188,7 +190,11 @@ impl Recorded {
             .to_os_string();
         name.push(".recorded");
         path.set_file_name(name);
-        let blob = std::fs::read(&path).unwrap_or_else(|e| {
+        Self::read_path(&path)
+    }
+
+    fn read_path(path: &Path) -> Recorded {
+        let blob = std::fs::read(path).unwrap_or_else(|e| {
             panic!(
                 "no recording at {}: the write path never spawned the child ({e})",
                 path.display()
@@ -226,6 +232,287 @@ impl Recorded {
 
 fn recording_git() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_codotheca-recording-git"))
+}
+
+fn authenticated_env(root: &Path, host: &str, work_dir: Option<PathBuf>) -> WriteEnv {
+    WriteEnv {
+        work_dir,
+        hooks_dir: root.join("hooks-empty"),
+        credential: CredentialChannel::one_shot(&SecretToken::new(SENTINEL.to_owned()), host)
+            .expect("one-shot credential channel"),
+        filters: FilterDrivers::enumerated(Vec::new()),
+    }
+}
+
+/// Drive one variant into the recording stand-in and read what the child received.
+///
+/// **Only `Clone` can be spawn-recorded, and that is a property of the variant rather than a gap
+/// in the audit.** The recorder keys its output on the last argv element, which must be an
+/// absolute path; `Intent::Fetch` renders its **remote name** last, so there is nothing to key on
+/// and the stand-in refuses. An earlier version of this helper pointed the `Fetch` case at a file
+/// name it invented, which is a test reading a recording no child wrote.
+fn drive_recorded_clone(root: &Path, intent: &Intent, host: &str) -> Recorded {
+    let Intent::Clone { dest, .. } = intent else {
+        panic!("only Intent::Clone can be spawn-recorded; Fetch renders no path to key on");
+    };
+    let env = authenticated_env(root, host, None);
+    std::fs::create_dir_all(&env.hooks_dir).expect("hooks dir");
+    let cancel = CancelToken::new();
+    WriteExec::new(recording_git())
+        .run(intent, &env, &cancel, &mut |_| {})
+        .expect("the recording stand-in exits 0");
+    Recorded::read(dest)
+}
+
+/// The sentinel must appear in none of these, whichever way the argv was obtained.
+fn assert_no_sentinel(kind: codotheca_core::gitw::IntentKind, argv: &[String], env: &[String]) {
+    let mut urls = 0;
+    for arg in argv {
+        assert!(
+            !arg.contains(SENTINEL),
+            "credential sentinel appeared in argv for {kind:?}: {arg:?}"
+        );
+        if let Some(url) = arg.strip_prefix("https://") {
+            urls += 1;
+            let authority = url.split(['/', '?', '#']).next().unwrap_or("");
+            assert!(
+                !authority.contains('@'),
+                "credential sentinel URL userinfo reached argv for {kind:?}: {arg:?}"
+            );
+        }
+    }
+    for config in argv
+        .windows(2)
+        .filter_map(|pair| (pair.first().map(String::as_str) == Some("-c")).then_some(&pair[1]))
+    {
+        assert!(
+            !config.contains(SENTINEL),
+            "credential sentinel appeared in -c config for {kind:?}: {config:?}"
+        );
+    }
+    for entry in env {
+        assert!(
+            !entry.contains(SENTINEL),
+            "credential sentinel appeared in the environment for {kind:?}: {entry:?}"
+        );
+    }
+    assert!(urls <= 1, "a variant rendered more than one https URL");
+}
+
+/// **Assertion 3, for `Clone`: over what the spawned child actually received.**
+///
+/// The channel is built from the sentinel, and the helper value is required to be **non-empty** —
+/// an anonymous channel would make every absence assertion below vacuously true.
+#[test]
+fn the_sentinel_reaches_no_child_argv_config_url_or_environment() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let fixture =
+        AuditFixture::new(temp.path(), SecretToken::new(SENTINEL.to_owned())).expect("fixture");
+    let intents = Intent::all_for_audit(&fixture);
+    assert_eq!(intents.len(), Intent::ALL.len(), "audit variant floor");
+
+    let clone = intents
+        .iter()
+        .find(|i| matches!(i, Intent::Clone { .. }))
+        .expect("the exhaustive set contains a Clone");
+    let recorded = drive_recorded_clone(temp.path(), clone, fixture.url().host());
+    assert!(
+        recorded
+            .argv
+            .iter()
+            .any(|arg| arg.starts_with("credential.helper=") && arg != "credential.helper="),
+        "Clone was not rendered with the authenticated sentinel channel: {:?}",
+        recorded.argv
+    );
+    assert_no_sentinel(clone.kind(), &recorded.argv, &recorded.env);
+}
+
+/// **Assertion 3, for `Fetch`: over the rendered argv, and stated as such.**
+///
+/// `Intent::Fetch` **cannot be spawn-recorded**: it renders a remote name rather than a path, so
+/// the stand-in has nothing to key its recording on and refuses. It also has no production caller
+/// in this plan — the in-session fetch is p2-24b's §24.7C — and `SystemMutatingGit::run` refuses
+/// it outright rather than guessing a repository.
+///
+/// So this half asserts over `write_base_args`'s output rather than over a child's. **That is a
+/// weaker claim than the `Clone` half and it is labelled weaker**: claiming it observed a spawn
+/// would be the bar written past its defect. What it does prove is that the credential never
+/// enters the rendering, which is the only layer `Fetch` has.
+#[test]
+fn the_sentinel_reaches_no_rendered_fetch_argv_although_fetch_never_spawns() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let fixture =
+        AuditFixture::new(temp.path(), SecretToken::new(SENTINEL.to_owned())).expect("fixture");
+    let fetch = Intent::all_for_audit(&fixture)
+        .into_iter()
+        .find(|i| matches!(i, Intent::Fetch { .. }))
+        .expect("the exhaustive set contains a Fetch");
+
+    let env = authenticated_env(
+        temp.path(),
+        fixture.url().host(),
+        Some(temp.path().to_path_buf()),
+    );
+    let mut argv: Vec<String> = write_base_args(&fetch, &env)
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    argv.extend(
+        fetch
+            .argv()
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned()),
+    );
+    assert!(
+        argv.iter()
+            .any(|arg| arg.starts_with("credential.helper=") && arg != "credential.helper="),
+        "Fetch was not rendered with the authenticated sentinel channel: {argv:?}"
+    );
+    assert_no_sentinel(fetch.kind(), &argv, &[]);
+}
+
+fn run_git(cwd: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .current_dir(cwd)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .expect("spawn fixture git");
+    assert!(
+        output.status.success(),
+        "fixture git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A `file://` URL for a local fixture repository.
+///
+/// **`canonicalize` returns a VERBATIM path on Windows** — `\\?\C:\…` — and joining that naively
+/// produced `file:////?/C:/…`, which git rejected with *"does not appear to be a git repository"*
+/// against a repository that was plainly there. It failed **only** on Windows and **only** in the
+/// one test that drives a real clone; every WSL gate was green over it. The `\\?\` prefix is an
+/// API-level escape from the 260-character limit rather than part of the path's identity, so it
+/// is stripped before the URL is built.
+fn file_url(path: &Path) -> String {
+    let canonical = path.canonicalize().expect("canonical fixture path");
+    let text = canonical.to_string_lossy();
+    // `\\?\UNC\server\share` is the other verbatim form. These fixtures are always local, so the
+    // drive form is the only one reachable here and a UNC path would need a different URL shape.
+    let raw = text
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&text)
+        .replace('\\', "/");
+    let mut encoded = String::with_capacity(raw.len());
+    for byte in raw.bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-._~:".contains(&byte) {
+            encoded.push(char::from(byte));
+        } else {
+            let _ = write!(encoded, "%{byte:02X}");
+        }
+    }
+    if cfg!(windows) {
+        format!("file:///{encoded}")
+    } else {
+        format!("file://{encoded}")
+    }
+}
+
+fn clone_url_arg(intent: &Intent) -> String {
+    intent
+        .argv()
+        .into_iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .find(|arg| arg.starts_with("https://"))
+        .expect("clone argv has an https URL")
+}
+
+fn origin_url(config: &str) -> Option<&str> {
+    let mut in_origin = false;
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_origin = trimmed == r#"[remote "origin"]"#;
+        } else if in_origin {
+            if let Some(value) = trimmed.strip_prefix("url = ") {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
+/// **Assertion 7**, over the bytes Git persisted rather than the argv that asked it to clone.
+#[test]
+fn a_real_clone_persists_no_sentinel_and_an_origin_without_userinfo() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let source = temp.path().join("fixture remote");
+    std::fs::create_dir_all(&source).expect("fixture directory");
+    run_git(&source, &["init", "--quiet"]);
+    std::fs::write(source.join("README.md"), "fixture\n").expect("fixture file");
+    run_git(&source, &["add", "README.md"]);
+    run_git(
+        &source,
+        &[
+            "-c",
+            "user.name=Fixture Author",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "fixture",
+        ],
+    );
+
+    let dest = temp.path().join("produced clone");
+    let intent = Intent::Clone {
+        url: codotheca_core::gitw::RemoteUrl::parse(
+            "https://fixture.example.invalid/acme/widget.git",
+        )
+        .expect("fixture URL"),
+        dest: dest.clone(),
+        depth: Some(1),
+    };
+    let rendered_url = clone_url_arg(&intent);
+    let env = authenticated_env(temp.path(), "fixture.example.invalid", None);
+    std::fs::create_dir_all(&env.hooks_dir).expect("hooks dir");
+
+    let mut command = Command::new("git");
+    command.args(write_base_args(&intent, &env));
+    command.args([
+        "-c",
+        &format!("url.{}.insteadOf={rendered_url}", file_url(&source)),
+    ]);
+    command.args(intent.argv());
+    codotheca_core::git::neutralise_env(&mut command);
+    let output = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("spawn real clone");
+    assert!(
+        output.status.success(),
+        "real fixture clone failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let config = std::fs::read_to_string(dest.join(".git/config")).expect("produced .git/config");
+    assert!(
+        !config.contains(SENTINEL),
+        "produced clone's .git/config contains credential sentinel {SENTINEL}: {config}"
+    );
+    let persisted = origin_url(&config).expect("origin URL in produced .git/config");
+    let authority = persisted
+        .strip_prefix("https://")
+        .expect("origin URL stays https")
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("");
+    assert!(
+        !authority.contains('@'),
+        "produced clone's origin URL carries userinfo: {persisted}"
+    );
 }
 
 /// Drive the real `SystemMutatingGit` at the recording stand-in and return what the child got.
@@ -439,4 +726,70 @@ fn every_variant_renders_exactly_one_credential_option() {
             intent.kind()
         );
     }
+}
+
+/// **AC-P2-24-22's second half: an invalid credential RETURNS, it does not hang.**
+///
+/// This is what `GIT_TERMINAL_PROMPT=0` buys, and it is asserted rather than assumed. Without it
+/// git blocks on a TTY prompt forever against a remote that refuses the credential, and the clone
+/// never comes back — a hang is worse than a failure, because a failure has a rendering.
+///
+/// **Forced, not raced** (R72). The remote is a `file://` URL naming a path that does not exist,
+/// so git fails on a real remote it can evaluate immediately, and the deadline is a wall-clock
+/// bound this test would blow through by seconds rather than milliseconds if the prompt fired.
+/// Nothing here sleeps and nothing waits for a timing window to open.
+#[test]
+fn an_unusable_remote_returns_rather_than_blocking_on_a_prompt() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let env = authenticated_env(temp.path(), "fixture.example.invalid", None);
+    std::fs::create_dir_all(&env.hooks_dir).expect("hooks dir");
+
+    // The URL git actually contacts is rewritten to a path that is not there; the intent's own
+    // URL stays https, because a non-https scheme cannot be built at all.
+    let dest = temp.path().join("never-arrives");
+    let intent = Intent::Clone {
+        url: codotheca_core::gitw::RemoteUrl::parse("https://fixture.example.invalid/acme/w.git")
+            .expect("fixture URL"),
+        dest: dest.clone(),
+        depth: Some(1),
+    };
+    // A directory that exists and is not a repository. `file_url` canonicalises, so a path that
+    // is simply absent cannot be named; an empty directory fails the clone for a reason git
+    // evaluates locally and immediately, which is what keeps this deterministic.
+    let not_a_repo = temp.path().join("not-a-repository");
+    std::fs::create_dir_all(&not_a_repo).expect("empty directory");
+    let missing = file_url(&not_a_repo);
+    let rendered_url = clone_url_arg(&intent);
+
+    let started = std::time::Instant::now();
+    let mut command = Command::new("git");
+    command.args(write_base_args(&intent, &env));
+    command.args(["-c", &format!("url.{missing}.insteadOf={rendered_url}")]);
+    command.args(intent.argv());
+    codotheca_core::git::neutralise_env(&mut command);
+    let output = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("git runs");
+    let elapsed = started.elapsed();
+
+    assert!(
+        !output.status.success(),
+        "a remote that is not there must fail rather than succeed"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(30),
+        "the clone took {elapsed:?}; with GIT_TERMINAL_PROMPT unset git blocks on a prompt and \
+         never returns at all"
+    );
+    assert!(
+        // `is_ok_and` rather than `map(..).unwrap_or(..)`: an unreadable destination is not the
+        // same as an empty one, and treating it as empty would make this pass on a failure it
+        // cannot see.
+        !dest.exists() || std::fs::read_dir(&dest).is_ok_and(|d| d.count() == 0),
+        "a failed clone must leave no populated destination behind"
+    );
+    eprintln!("git-write-audit: an unusable remote returned in {elapsed:?}");
 }

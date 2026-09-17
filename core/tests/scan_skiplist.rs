@@ -12,12 +12,15 @@ use codotheca_core::scan::skiplist::{SkipList, SKIP_LIST};
 use std::path::Path;
 
 #[test]
-fn the_list_is_the_twenty_nine_entries_of_the_spec_in_order() {
-    assert_eq!(SKIP_LIST.len(), 29);
+fn the_list_is_the_thirty_entries_of_the_spec_in_order() {
+    assert_eq!(SKIP_LIST.len(), 30);
     assert_eq!(SKIP_LIST.first(), Some(&"node_modules"));
     assert_eq!(SKIP_LIST.get(5), Some(&".cargo/registry"));
     assert_eq!(SKIP_LIST.get(21), Some(&"$RECYCLE.BIN"));
-    assert_eq!(SKIP_LIST.last(), Some(&"AppData"));
+    // [p2] §24.3b's staging directory is appended last, so every index above is unmoved and
+    // `EXCLUSION_CHIPS_BEFORE_EXPANDER` still draws the same first eleven chips.
+    assert_eq!(SKIP_LIST.get(28), Some(&"AppData"));
+    assert_eq!(SKIP_LIST.last(), Some(&".codotheca-installing"));
     // Not alphabetised: caches, then build outputs, then system paths.
     let mut sorted = SKIP_LIST.to_vec();
     sorted.sort_unstable();
@@ -53,9 +56,9 @@ fn an_absolute_entry_matches_itself_and_its_subtree() {
 }
 
 #[test]
-fn user_entries_are_appended_after_the_twenty_nine_and_match_the_same_way() {
+fn user_entries_are_appended_after_the_thirty_and_match_the_same_way() {
     let s = SkipList::with_user_entries(&["Archive".to_owned()]);
-    assert_eq!(s.entries().len(), 30);
+    assert_eq!(s.entries().len(), 31);
     assert_eq!(
         s.entries().first().map(String::as_str),
         Some("node_modules")

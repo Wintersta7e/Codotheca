@@ -142,3 +142,59 @@ export function useCardBitmap(input: CardBitmapInput): CardBitmap {
 
   return { src: shown, held: shown !== null && shown !== wanted };
 }
+
+/**
+ * §24.4's rendition swap: the flip, and the hold.
+ *
+ * **R47 consumed, not re-declared.** `Rendition`'s four variants, `RENDITIONS` and `renditionFor`
+ * are all p2-23's; this hook only decides *when* `hasWorkingCopy` becomes true and what is on
+ * screen while the new raster decodes.
+ *
+ * On `install.finished` the project has a working copy, so `renditionFor` returns `card` on the
+ * tile and `hero` on the hero. The swap therefore reads `card-blueprint` → `card` and
+ * `hero-blueprint` → `hero` and **never crosses the two** — which is the failure a single
+ * `blueprint` variant would have made unavoidable, because one address cannot name two passes.
+ *
+ * **The hold is §7.1a's.** The decoded blueprint stays on screen until the new rendition's file
+ * exists and has decoded, then the swap happens with no transition and identical geometry.
+ * `scene_hash` is unchanged and **no art re-render is enqueued**: this is two rasters of one
+ * scene, which is why §24.4 calls it a rendition swap and not a re-render.
+ *
+ * The scene is a parameter rather than module state: two tiles can be mid-flip at once, and a
+ * shared mutable scene would let one clobber the other's address.
+ */
+export function useInstalledRenditionFlip(
+  surface: 'card' | 'hero',
+  sceneHash: SceneHash | null,
+  hasWorkingCopy: boolean,
+  installFinished: boolean,
+): Rendition {
+  const target = renditionFor(surface, hasWorkingCopy || installFinished);
+  const [shown, setShown] = useState<Rendition>(target);
+
+  useEffect(() => {
+    if (target === shown) return undefined;
+    // No scene means no address to preload — `artUrl` answers `null` for an absent or empty
+    // hash. The blueprint stays up rather than being swapped for a plate: an old raster of the
+    // right scene beats an empty frame.
+    const address = artUrl(sceneHash, target);
+    if (address === null) return undefined;
+    let live = true;
+    // The blueprint is held until the new rendition has actually decoded. Swapping on the event
+    // alone would blank the tile for as long as the raster takes, at exactly the moment the user
+    // is watching it.
+    const image = new Image();
+    image.onload = () => {
+      if (live) setShown(target);
+    };
+    // A rendition that never decodes leaves the blueprint up, which is the honest outcome: the
+    // old raster is a real picture of the same scene, and an empty plate is not.
+    image.onerror = () => {};
+    image.src = address;
+    return () => {
+      live = false;
+    };
+  }, [target, shown, sceneHash]);
+
+  return shown;
+}

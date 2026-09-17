@@ -1,11 +1,11 @@
 //! §11.3's settings, stored in `app_meta` and migrated with the schema.
-//! §1.9 lists `effects_tier`; the other five keys are added here — `app_meta`
+//! §1.9 lists `effects_tier`; the other six keys are added here — `app_meta`
 //! is a key/value table, so no migration is involved.
 
 use crate::index::IndexError;
 use crate::proto::dispatch::{parse_args, CommandFailure}; // R15: one helper, plan 03's
 use crate::proto::txguard::TxGuard;
-use crate::protocol::{EffectsTier, LogLevel, Settings, SettingsPatch, SettingsSetArgs};
+use crate::protocol::{EffectsTier, LogLevel, RootId, Settings, SettingsPatch, SettingsSetArgs};
 use crate::surfaces::SurfaceCtx;
 
 pub const KEY_EFFECTS_TIER: &str = "effects_tier";
@@ -15,7 +15,18 @@ pub const KEY_RESIDENT_SHORTCUT: &str = "resident_shortcut";
 pub const KEY_ROAST_ENABLED: &str = "roast_enabled";
 pub const KEY_LOG_LEVEL: &str = "log_level";
 
+/// §24.3a's install root, chosen once from the roots that already exist.
+///
+/// `app_meta` is key/value, so this costs **no migration**. It stores a `RootId` rather than a
+/// path because the renderer may never originate one: it picks from `roots.list`, and a folder
+/// that is not yet a root reaches the product only through the shell-owned `IPC_PICK_ROOT` dialog.
+pub const KEY_INSTALL_ROOT_ID: &str = "install_root_id";
+
 /// §11.3 and §8.6 fix every one of these.
+///
+/// `install_root_id` defaults to `None` — **no root chosen**, which `install.preview` reports as
+/// `InstallRefusal::NoInstallRootChosen`: a refusal the user can act on, and a different fact from
+/// a root that *was* chosen and has since gone away (`RootUnavailable`).
 pub const DEFAULTS: Settings = Settings {
     effects_tier: EffectsTier::Auto,
     reduced_motion_override: false,
@@ -23,6 +34,7 @@ pub const DEFAULTS: Settings = Settings {
     resident_shortcut: None,
     roast_enabled: true,
     log_level: LogLevel::Info,
+    install_root_id: None,
 };
 
 /// # Errors
@@ -87,6 +99,11 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings, IndexError> {
         resident_shortcut: shortcut,
         roast_enabled: get(conn, KEY_ROAST_ENABLED)?.map_or(DEFAULTS.roast_enabled, |v| v == "1"),
         log_level: parse_enum(get(conn, KEY_LOG_LEVEL)?, DEFAULTS.log_level),
+        // An unparseable stored id is **no root chosen**, not a failed read — the same rule
+        // `parse_enum` applies to a value written by a newer build. §11.3's drawer must open.
+        install_root_id: get(conn, KEY_INSTALL_ROOT_ID)?
+            .and_then(|v| v.parse::<i64>().ok())
+            .map(RootId),
     })
 }
 
@@ -135,6 +152,9 @@ pub fn write(
         }
         if let Some(v) = patch.log_level {
             put(&tx, KEY_LOG_LEVEL, enum_str(&v)?.as_str())?;
+        }
+        if let Some(v) = patch.install_root_id {
+            put(&tx, KEY_INSTALL_ROOT_ID, &v.0.to_string())?;
         }
         tx.commit()?;
     }

@@ -119,8 +119,8 @@ test('the list is exactly the schema minus loop-only and unowned commands', () =
 /**
  * A privileged command is refused at the renderer door and travels a shell-owned channel, so the
  * shell has to know it — *unless the core has no handler for it yet*, where offering the name
- * would hand the renderer a command the core answers with a named refusal. §24.9's two mutating
- * install commands land in exactly that state: the schema delta and the install runtime are
+ * would hand the renderer a command the core answers with a named refusal. §24.9's cancel lands in
+ * exactly that state: the schema delta and the install runtime are
  * separate changes.
  *
  * The exception is **closed**, and that is the whole of why this relaxation is not an escape
@@ -146,5 +146,5 @@ test('every privileged command is known, or is unowned with its owner named', ()
   expect(
     deferred.sort(),
     'the privileged commands still waiting on a core handler, exhaustively',
-  ).toEqual(['install.cancel', 'install.start']);
+  ).toEqual([]);
 });

@@ -36,6 +36,10 @@ export const EXCLUSION_LIST: readonly string[] = [
   '/sys',
   '/snap',
   'AppData',
+  // §24.3b: this app's own staging directory, where a partial clone lives until it is renamed
+  // into place. It is in the rendered policy because the policy states what is skipped, and
+  // this is skipped — a privacy policy that omits an entry is as false as one that misspells it.
+  '.codotheca-installing',
 ];
 
 /** §10.1b's caption for the list. */

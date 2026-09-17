@@ -1,8 +1,9 @@
 import { type ReactElement, useState } from 'react';
-import type { ProjectRow, SessionRef } from '../../generated/protocol';
+import type { InstallPreview, ProjectRow, SessionRef } from '../../generated/protocol';
 import { CARD_ROLE } from '../a11y/names';
 import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
 import { renditionFor, useArtAddress, useCardBitmap } from '../art/useCardBitmap';
+import { InstallControl } from '../install/InstallControl';
 import { glowShadow, glowStrength } from '../derive/condition';
 import { formatTrackedBytes } from '../format/size';
 import type { CardGesture } from '../motion/transition';
@@ -52,6 +53,14 @@ export interface ProjectCardProps {
   readonly onOpen: () => void;
   readonly onTogglePin: () => void;
   readonly onStopSession: () => void;
+  /**
+   * [p2] §24.3d's preview for this project, or `undefined` when the shelf is not offering
+   * Install here at all. **`undefined` is not the same as `null`**: `null` is *not computed yet*
+   * and renders nothing, while absent means this surface never asks.
+   */
+  readonly installPreview?: InstallPreview | null;
+  readonly onInstall?: () => void;
+  readonly onOpenUpgrade?: () => void;
 }
 
 export function ProjectCard(props: ProjectCardProps): ReactElement {
@@ -180,6 +189,26 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
           )}
         </div>
       ) : null}
+      {/* [p2] §24.3d: Install sits in the slot Play occupies on a cloned project, which on a
+          blueprint card is the card body itself. One of exactly two mount points in the whole
+          renderer; `app/test/installSites.test.ts` fails on a third. */}
+      {hasWorkingCopy || props.installPreview === undefined ? null : (
+        <div
+          className="cdt-card-install"
+          onClick={(event) => {
+            // The card body is Play; on a blueprint there is nothing to play, and the control
+            // must not inherit a launch the project cannot perform.
+            event.stopPropagation();
+          }}
+          role="presentation"
+        >
+          <InstallControl
+            preview={props.installPreview}
+            onInstall={props.onInstall ?? (() => {})}
+            onOpenUpgrade={props.onOpenUpgrade ?? (() => {})}
+          />
+        </div>
+      )}
       {bench === null ? null : (
         <div className="cdt-bench">
           <span>{`${BENCH_LABEL} · ${bench}`}</span>

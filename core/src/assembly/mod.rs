@@ -33,6 +33,9 @@ pub struct CoreDeps {
     pub index: Arc<Mutex<Index>>,
     pub clock: Arc<dyn crate::clock::Clock>,
     pub git: Arc<dyn crate::git::GitBackend>,
+    /// §24.1's write seam. Separate from `git` because the two have different argv prefixes and
+    /// different audits — one is proven read-only, the other is the only thing that may write.
+    pub write_git: Arc<dyn crate::gitw::backend::MutatingGit>,
     pub mount: Arc<dyn crate::mount::MountResolver>,
     pub spawner: Box<dyn crate::launch::spawn::Spawner>,
     pub sessions: SessionManager,
@@ -87,6 +90,12 @@ pub struct CoreHandler {
     index: Arc<Mutex<Index>>,
     clock: Arc<dyn crate::clock::Clock>,
     git: Arc<dyn crate::git::GitBackend>,
+    write_git: Arc<dyn crate::gitw::backend::MutatingGit>,
+    /// §24.3e's queue — one install in flight, FIFO. Held here rather than in `jobs` because
+    /// R52 keeps installs out of the scheduler entirely.
+    installs: Arc<crate::install::queue::InstallQueue>,
+    /// R54's snapshot store, so `install.snapshot` answers a tile that mounted mid-clone.
+    install_stages: Arc<crate::install::state::InstallStateStore>,
     mount: Arc<dyn crate::mount::MountResolver>,
     spawner: Box<dyn crate::launch::spawn::Spawner>,
     /// `Option` so `shutdown` can drop the manager, and with it the `Arc<PublisherSink>` clone
@@ -130,6 +139,9 @@ impl CoreHandler {
             index: deps.index,
             clock: deps.clock,
             git: deps.git,
+            write_git: deps.write_git,
+            installs: Arc::new(crate::install::queue::InstallQueue::new()),
+            install_stages: Arc::new(crate::install::state::InstallStateStore::new()),
             mount: deps.mount,
             spawner: deps.spawner,
             sessions: Some(deps.sessions),
@@ -372,6 +384,141 @@ impl CoreHandler {
         crate::remote::dispatch_remote_command(&ctx, command, args)
     }
 
+    /// Every route answered **before** the one index guard is taken, and the reason each must be.
+    ///
+    /// `Ok` is the answer; `Err` hands `args` back unconsumed, meaning *not one of these, take
+    /// the guard*. That shape exists so this stays the only list of off-lock routes — `handle`
+    /// does not repeat it, and the guarded match below is kept honest by its `unreachable!()`.
+    /// **A task that adds an off-lock command adds its arm here**, not to `handle`, which sits
+    /// within a couple of lines of clippy's function-length limit.
+    fn off_lock_arm(
+        &mut self,
+        command: &str,
+        dest: Route,
+        args: Value,
+        now: i64,
+    ) -> Result<Result<Value, CommandFailure>, Value> {
+        match dest {
+            Route::Loop => Ok(Err(Self::loop_only(command))),
+            Route::NoOwner(plan) => Ok(Err(Self::unowned(command, plan))),
+            // R75: `ConnectPump::start` issues the Device Flow's first request synchronously, so
+            // taking the guard here would hold the process's one SQLite mutex across a forge
+            // round trip.
+            Route::AccountsNet => Ok(self.accounts_net_arm(command, args, now)),
+            // The same reason: up to 24 asset fetches of 5 s each, and the one SQLite mutex may
+            // not be held across them.
+            Route::ReadmeNet => Ok(self.readme_net_arm(args, now)),
+            // `ScanCtx` takes a `&dyn ScanStore`, not an `&Index`, and `SqliteScanStore` locks
+            // the same mutex internally; `std::sync::Mutex` is not reentrant, so holding it here
+            // would deadlock the core on `scan.status`.
+            Route::Scan => Ok(self
+                .scan_arm(command, args, now)
+                .unwrap_or_else(|| Err(Self::declined(command, dest)))),
+            Route::Install => Ok(match command_name(command) {
+                // Infallible in practice: `dest` above came from this same name. Matched rather
+                // than unwrapped so a future route change cannot turn it into a panic.
+                Ok(name) => self.install_arm(name, args, now),
+                Err(failure) => Err(failure),
+            }),
+            _ => Err(args),
+        }
+    }
+
+    /// §24.3d's destination preview — p2-24 Task 10.
+    ///
+    /// It has its own arm because it takes the one index guard itself: `handle_preview` opens a
+    /// read transaction, and `std::sync::Mutex` is not reentrant, so it may not be reached
+    /// through the common guarded arm below. The guard is taken **through the field** rather
+    /// than a `&self` helper, which would borrow the rest of the handler along with it.
+    fn install_arm(
+        &self,
+        name: crate::protocol::CommandName,
+        args: Value,
+        now: i64,
+    ) -> Result<Value, CommandFailure> {
+        if name == crate::protocol::CommandName::InstallStart {
+            return self.install_start_arm(args, now);
+        }
+        if name == crate::protocol::CommandName::InstallCancel {
+            // Takes no index guard at all: cancelling is firing a token, and the run thread does
+            // the cleanup that touches SQLite.
+            let cancelled = crate::install::handle_cancel(&self.installs, args)?;
+            return serde_json::to_value(cancelled)
+                .map_err(|error| CommandFailure::internal(error.to_string()));
+        }
+        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
+        let preview = crate::install::handle_preview(&ctx, args)?;
+        serde_json::to_value(preview).map_err(|error| CommandFailure::internal(error.to_string()))
+    }
+
+    /// §24.9's `install.start`, answered without holding the guard across the clone.
+    ///
+    /// `handle_start` takes and releases the index guard itself, then hands the run to a thread:
+    /// a clone takes minutes and the protocol loop may not wait for it. The thread carries its
+    /// own `Arc` clones of every seam, which is why they are `Arc<dyn …>` rather than borrows.
+    fn install_start_arm(&self, args: Value, now: i64) -> Result<Value, CommandFailure> {
+        let index = Arc::clone(&self.index);
+        let write_git = Arc::clone(&self.write_git);
+        let probe = Arc::clone(&self.git);
+        let mounts = Arc::clone(&self.mount);
+        let jobs = self.jobs.sink();
+        let queue = Arc::clone(&self.installs);
+        let stages = Arc::clone(&self.install_stages);
+        let events = Arc::clone(&self.events);
+        let begin = move |run,
+                          request: crate::install::queue::InstallRequest,
+                          root,
+                          paths,
+                          clone_url: String| {
+            stages.begin(run, request.project, request.destination.display.clone());
+            let index = Arc::clone(&index);
+            let write_git = Arc::clone(&write_git);
+            let probe = Arc::clone(&probe);
+            let mounts = Arc::clone(&mounts);
+            let jobs = Arc::clone(&jobs);
+            let queue = Arc::clone(&queue);
+            let stages = Arc::clone(&stages);
+            let events = Arc::clone(&events);
+            // Detached on purpose: `install.cancel` (Task 15) stops a run through its process
+            // group, never by joining this handle.
+            std::thread::spawn(move || {
+                let cancel = crate::cancel::CancelToken::new();
+                // Registered before the clone starts, so `install.cancel` can reach it for the
+                // whole life of the run rather than racing its first byte.
+                queue.register_cancel(run, cancel.clone());
+                let ctx = crate::install::run::InstallCtx {
+                    git: write_git.as_ref(),
+                    probe: probe.as_ref(),
+                    index: &index,
+                    jobs: jobs.as_ref(),
+                    mounts: mounts.as_ref(),
+                    stages: stages.as_ref(),
+                    events: events.as_ref(),
+                    cancel: &cancel,
+                    now,
+                };
+                let outcome = crate::install::run::run_install(
+                    &ctx, run, &request, &root, &paths, &clone_url,
+                );
+                if let Err(reason) = outcome {
+                    // Every failure arm cleans up its own staging directory, under the warrant.
+                    crate::install::run::finish_failed(&ctx, run, request.project, reason);
+                    stages.end(run);
+                }
+                queue.finish(run);
+            });
+        };
+        let ctx = crate::install::StartCtx {
+            index: &self.index,
+            queue: &self.installs,
+            now,
+            begin: &begin,
+        };
+        let started = crate::install::handle_start(&ctx, args)?;
+        serde_json::to_value(started).map_err(|error| CommandFailure::internal(error.to_string()))
+    }
+
     /// §25.5's asset read, answered off the index lock.
     ///
     /// It takes the `Arc<Mutex<Index>>` and locks it itself, which is R94's second side: nothing
@@ -445,7 +592,17 @@ impl CoreHandler {
             // this is `None` meaning *not computed*, and deliberately not `{"runs": []}` — an
             // empty list would say *nothing is installing*, which a core that records nothing
             // cannot know. Task 13 gives it an arm of its own.
-            Topic::Scan | Topic::Session | Topic::Accounts | Topic::Install => None,
+            Topic::Scan | Topic::Session | Topic::Accounts => None,
+            // [p2] §24.9's `install.snapshot` (R54). `None` while nothing is known means *not
+            // computed*; an empty `InstallState` would say *nothing is installing*, which a core
+            // that has recorded nothing cannot claim.
+            Topic::Install => {
+                if self.install_stages.is_empty() {
+                    None
+                } else {
+                    serde_json::to_value(self.install_stages.snapshot()).ok()
+                }
+            }
             // [p2] §21.13 declares one, and it is the command's own answer: a subscriber that
             // missed every delta renders exactly what `sync.status` would have told it.
             Topic::Sync => self.handle("sync.status", serde_json::json!({})).ok(),
@@ -516,26 +673,13 @@ impl CommandHandler for CoreHandler {
         let dest = route(name);
         let now = self.clock.now_unix();
 
-        match dest {
-            Route::Loop => return Err(Self::loop_only(command)),
-            Route::NoOwner(plan) => return Err(Self::unowned(command, plan)),
-            // R75: answered **without** the index lock. `ConnectPump::start` issues the Device
-            // Flow's first request synchronously, so taking the guard here would hold the
-            // process's one SQLite mutex across a forge round trip.
-            Route::AccountsNet => return self.accounts_net_arm(command, args, now),
-            // Answered **without** the index lock for the same reason: up to 24 asset fetches of
-            // 5 s each, and the one SQLite mutex may not be held across them.
-            Route::ReadmeNet => return self.readme_net_arm(args, now),
-            // Answered **without** the index lock. `ScanCtx` takes a `&dyn ScanStore`, not an
-            // `&Index`, and `SqliteScanStore` locks the same mutex internally; `std::sync::Mutex`
-            // is not reentrant, so holding it here would deadlock the core on `scan.status`.
-            Route::Scan => {
-                return self
-                    .scan_arm(command, args, now)
-                    .unwrap_or_else(|| Err(Self::declined(command, dest)));
-            }
-            _ => {}
-        }
+        // `Err` hands `args` back untouched, which is what lets the route list live in exactly
+        // one place: a second list here would be the one-value-stated-twice defect on the table
+        // that decides whether the SQLite mutex is held across a socket.
+        let args = match self.off_lock_arm(command, dest, args, now) {
+            Ok(answer) => return answer,
+            Err(handed_back) => handed_back,
+        };
 
         // One guard for the length of one command. Every context below is built from it, so the
         // borrow checker still enforces that no two are alive at once.
@@ -550,6 +694,7 @@ impl CommandHandler for CoreHandler {
             Route::Loop
             | Route::NoOwner(_)
             | Route::Scan
+            | Route::Install
             | Route::AccountsNet
             | Route::ReadmeNet => unreachable!(),
             Route::FirstRun => {

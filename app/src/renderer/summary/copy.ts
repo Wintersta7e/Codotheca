@@ -13,6 +13,10 @@ export const PROBLEM_GROUP_LABEL: Readonly<Record<ProblemKind, string>> = {
   non_utf8_path: 'NON-UTF-8 PATHS',
   offline_store: 'OFFLINE STORES',
   ambiguous_lineage: 'AMBIGUOUS LINEAGE',
+  // [p2] §24.3c: a staging directory an install left behind and the sweep could not warrant.
+  // The record is `Readonly<Record<ProblemKind, string>>`, so the ninth label is a type error
+  // until it is added — which is the point.
+  abandoned_install: 'ABANDONED INSTALLS',
 };
 
 export interface HeaderClause {

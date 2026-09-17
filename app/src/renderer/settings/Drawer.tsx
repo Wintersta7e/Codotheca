@@ -65,6 +65,7 @@ export function toSettingsPatch(patch: Partial<Settings>): SettingsPatch {
     residentShortcut: patch.residentShortcut ?? null,
     roastEnabled: patch.roastEnabled ?? null,
     logLevel: patch.logLevel ?? null,
+    installRootId: patch.installRootId ?? null,
   };
 }
 

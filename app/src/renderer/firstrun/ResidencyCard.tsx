@@ -39,6 +39,7 @@ export function residencySettingsArgs(answer: ResidencyAnswer): SettingsSetArgs 
       residentShortcut: null,
       roastEnabled: null,
       logLevel: null,
+      installRootId: null,
     },
   };
 }

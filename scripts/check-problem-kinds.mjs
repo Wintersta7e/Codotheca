@@ -21,10 +21,18 @@ import { EXIT_CANNOT_RUN, EXIT_VIOLATION, stripRustTestModules } from './check-f
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const GATE = 'check-problem-kinds';
 
-/** The two groups §11.1 sources from somewhere other than `scan_problem`. */
+/**
+ * The groups §11.1 sources from somewhere other than `scan_problem`.
+ *
+ * [p2] Three, not two. `abandoned_install` reads `install_run`, so the `scan_problem.kind` CHECK
+ * constraint and `problem_kind_from_storage` are both untouched by it — which is what keeps R26
+ * closed and means no migration is involved. A kind listed here is exempt from the
+ * storable-in-scan_problem rule and from nothing else.
+ */
 export const NON_SCAN_PROBLEM_KINDS = {
   deferred_slow: 'project_job_state',
   ambiguous_lineage: 'project.ambiguous_lineage',
+  abandoned_install: 'install_run',
 };
 
 function read(path, why) {
