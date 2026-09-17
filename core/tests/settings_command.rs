@@ -8,7 +8,7 @@
 //! §11.3's settings, read and patched through `app_meta`.
 
 use codotheca_core::index::Index;
-use codotheca_core::protocol::{EffectsTier, LogLevel, SettingsPatch};
+use codotheca_core::protocol::{EffectsTier, LogLevel, RootId, SettingsPatch};
 use codotheca_core::surfaces::settings;
 
 fn empty_patch() -> SettingsPatch {
@@ -19,6 +19,7 @@ fn empty_patch() -> SettingsPatch {
         resident_shortcut: None,
         roast_enabled: None,
         log_level: None,
+        install_root_id: None,
     }
 }
 
@@ -185,6 +186,7 @@ fn every_setting_round_trips_through_the_stored_form() {
             resident_shortcut: Some("Control+Alt+K".into()),
             roast_enabled: Some(false),
             log_level: Some(LogLevel::Debug),
+            install_root_id: Some(RootId(7)),
         },
         NOW,
     )
@@ -194,6 +196,10 @@ fn every_setting_round_trips_through_the_stored_form() {
     assert_eq!(written.log_level, LogLevel::Debug);
     assert!(written.reduced_motion_override);
     assert!(!written.roast_enabled);
+    // §24.3a's install root round-trips like every other key. It is set here rather than left
+    // `None` because this is the one test that writes every field: a field excluded from it is a
+    // field nothing round-trips.
+    assert_eq!(written.install_root_id, Some(RootId(7)));
 }
 
 // ---------------------------------------------------------------------------

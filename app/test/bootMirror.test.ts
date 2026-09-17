@@ -18,6 +18,7 @@ const settings: Settings = {
   residentShortcut: null,
   roastEnabled: true,
   logLevel: 'info',
+  installRootId: null,
 };
 
 const stored: BootFile = {

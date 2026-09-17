@@ -221,7 +221,8 @@
         "autostart": "bool",
         "residentShortcut": "String?",
         "roastEnabled": "bool",
-        "logLevel": "LogLevel"
+        "logLevel": "LogLevel",
+        "installRootId": "RootId?"
       }
     },
     "SettingsPatch": {
@@ -232,7 +233,8 @@
         "autostart": "bool?",
         "residentShortcut": "String?",
         "roastEnabled": "bool?",
-        "logLevel": "LogLevel?"
+        "logLevel": "LogLevel?",
+        "installRootId": "RootId?"
       }
     },
 

@@ -24,6 +24,7 @@ describe('the renderer call wrapper', () => {
       residentShortcut: null,
       roastEnabled: false,
       logLevel: null,
+      installRootId: null,
     };
     expect(await call('settings.set', { patch })).toEqual(settings);
     expect(request).toHaveBeenCalledWith('settings.set', { patch });
