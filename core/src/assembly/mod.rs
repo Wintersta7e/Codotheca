@@ -33,6 +33,9 @@ pub struct CoreDeps {
     pub index: Arc<Mutex<Index>>,
     pub clock: Arc<dyn crate::clock::Clock>,
     pub git: Arc<dyn crate::git::GitBackend>,
+    /// §24.1's write seam. Separate from `git` because the two have different argv prefixes and
+    /// different audits — one is proven read-only, the other is the only thing that may write.
+    pub write_git: Arc<dyn crate::gitw::backend::MutatingGit>,
     pub mount: Arc<dyn crate::mount::MountResolver>,
     pub spawner: Box<dyn crate::launch::spawn::Spawner>,
     pub sessions: SessionManager,
@@ -87,6 +90,10 @@ pub struct CoreHandler {
     index: Arc<Mutex<Index>>,
     clock: Arc<dyn crate::clock::Clock>,
     git: Arc<dyn crate::git::GitBackend>,
+    write_git: Arc<dyn crate::gitw::backend::MutatingGit>,
+    /// §24.3e's queue — one install in flight, FIFO. Held here rather than in `jobs` because
+    /// R52 keeps installs out of the scheduler entirely.
+    installs: Arc<crate::install::queue::InstallQueue>,
     mount: Arc<dyn crate::mount::MountResolver>,
     spawner: Box<dyn crate::launch::spawn::Spawner>,
     /// `Option` so `shutdown` can drop the manager, and with it the `Arc<PublisherSink>` clone
@@ -130,6 +137,8 @@ impl CoreHandler {
             index: deps.index,
             clock: deps.clock,
             git: deps.git,
+            write_git: deps.write_git,
+            installs: Arc::new(crate::install::queue::InstallQueue::new()),
             mount: deps.mount,
             spawner: deps.spawner,
             sessions: Some(deps.sessions),
@@ -402,7 +411,12 @@ impl CoreHandler {
             Route::Scan => Ok(self
                 .scan_arm(command, args, now)
                 .unwrap_or_else(|| Err(Self::declined(command, dest)))),
-            Route::Install => Ok(self.install_arm(args, now)),
+            Route::Install => Ok(match command_name(command) {
+                // Infallible in practice: `dest` above came from this same name. Matched rather
+                // than unwrapped so a future route change cannot turn it into a panic.
+                Ok(name) => self.install_arm(name, args, now),
+                Err(failure) => Err(failure),
+            }),
             _ => Err(args),
         }
     }
@@ -413,11 +427,67 @@ impl CoreHandler {
     /// read transaction, and `std::sync::Mutex` is not reentrant, so it may not be reached
     /// through the common guarded arm below. The guard is taken **through the field** rather
     /// than a `&self` helper, which would borrow the rest of the handler along with it.
-    fn install_arm(&self, args: Value, now: i64) -> Result<Value, CommandFailure> {
+    fn install_arm(
+        &self,
+        name: crate::protocol::CommandName,
+        args: Value,
+        now: i64,
+    ) -> Result<Value, CommandFailure> {
+        if name == crate::protocol::CommandName::InstallStart {
+            return self.install_start_arm(args, now);
+        }
         let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
         let preview = crate::install::handle_preview(&ctx, args)?;
         serde_json::to_value(preview).map_err(|error| CommandFailure::internal(error.to_string()))
+    }
+
+    /// §24.9's `install.start`, answered without holding the guard across the clone.
+    ///
+    /// `handle_start` takes and releases the index guard itself, then hands the run to a thread:
+    /// a clone takes minutes and the protocol loop may not wait for it. The thread carries its
+    /// own `Arc` clones of every seam, which is why they are `Arc<dyn …>` rather than borrows.
+    fn install_start_arm(&self, args: Value, now: i64) -> Result<Value, CommandFailure> {
+        let index = Arc::clone(&self.index);
+        let write_git = Arc::clone(&self.write_git);
+        let probe = Arc::clone(&self.git);
+        let mounts = Arc::clone(&self.mount);
+        let jobs = self.jobs.sink();
+        let queue = Arc::clone(&self.installs);
+        let begin = move |run, request, root, paths, clone_url: String| {
+            let index = Arc::clone(&index);
+            let write_git = Arc::clone(&write_git);
+            let probe = Arc::clone(&probe);
+            let mounts = Arc::clone(&mounts);
+            let jobs = Arc::clone(&jobs);
+            let queue = Arc::clone(&queue);
+            // Detached on purpose: `install.cancel` (Task 15) stops a run through its process
+            // group, never by joining this handle.
+            std::thread::spawn(move || {
+                let cancel = crate::cancel::CancelToken::new();
+                let ctx = crate::install::run::InstallCtx {
+                    git: write_git.as_ref(),
+                    probe: probe.as_ref(),
+                    index: &index,
+                    jobs: jobs.as_ref(),
+                    mounts: mounts.as_ref(),
+                    cancel: &cancel,
+                    now,
+                };
+                let _ = crate::install::run::run_install(
+                    &ctx, run, &request, &root, &paths, &clone_url,
+                );
+                queue.finish(run);
+            });
+        };
+        let ctx = crate::install::StartCtx {
+            index: &self.index,
+            queue: &self.installs,
+            now,
+            begin: &begin,
+        };
+        let started = crate::install::handle_start(&ctx, args)?;
+        serde_json::to_value(started).map_err(|error| CommandFailure::internal(error.to_string()))
     }
 
     /// §25.5's asset read, answered off the index lock.

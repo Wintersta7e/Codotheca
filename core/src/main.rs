@@ -361,6 +361,12 @@ fn main() -> ExitCode {
         client_id: codotheca_core::accounts::device::GITHUB_CLIENT_ID.to_owned(),
         clock: Arc::clone(&clock),
         git: Arc::clone(&git),
+        // §24.1's write seam, pointed at the same empty hooks directory every read invocation
+        // uses. A second `SystemMutatingGit` would be a second `core.hooksPath` to keep in step.
+        write_git: Arc::new(codotheca_core::gitw::backend::SystemMutatingGit::new(
+            std::path::PathBuf::from("git"),
+            args.data_dir.join("empty-hooks"),
+        )),
         mount: Arc::clone(&mount),
         spawner: Box::new(codotheca_core::launch::spawn::OsSpawner),
         sessions: SessionManager::new(

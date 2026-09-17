@@ -224,3 +224,27 @@ fn mark_done(ctx: &InstallCtx<'_>, run: InstallRunId) -> Result<(), InstallFailu
         .map_err(|_| InstallFailure::RenameFailed)?;
     Ok(())
 }
+
+/// Read one root's own facts back for a run.
+///
+/// # Errors
+/// Fails when `scan_root` cannot be read.
+pub fn root_facts(
+    tx: &rusqlite::Transaction<'_>,
+    root: crate::protocol::RootId,
+) -> rusqlite::Result<Option<RootFacts>> {
+    use rusqlite::OptionalExtension as _;
+    tx.query_row(
+        "SELECT kind, distro, path_bytes FROM scan_root WHERE id = ?1",
+        [root.0],
+        |row| {
+            Ok(RootFacts {
+                root_id: root.0,
+                kind: row.get::<_, String>(0)?,
+                distro: row.get::<_, String>(1)?,
+                path: crate::paths::path_from_bytes(&row.get::<_, Vec<u8>>(2)?),
+            })
+        },
+    )
+    .optional()
+}
