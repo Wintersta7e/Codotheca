@@ -274,7 +274,12 @@ jobs:
       - name: the committed disposition table is in sync
         run: npm run acceptance -- --dispositions && git diff --exit-code -- acceptance/DISPOSITIONS.md
       - name: static gates
-        run: npm run check:forbidden && npm run check:callsites && npm run check:problems
+        # `check:bundle` is a capture writer like the other three — it writes
+        # `acceptance/results/script-bundle.json`, which is the only source for AC-P2-25-21's
+        # `check-bundle:markup-lazy-chunk`. Leaving it out did not make that check fail; it made
+        # it *not run*, which acceptance reports as a problem and which no other step could
+        # supply. It reads the bundle built at `npm run build:app` above.
+        run: npm run check:forbidden && npm run check:callsites && npm run check:problems && npm run check:bundle
       - name: core suite
         # `pipefail` is not the default for a `run:` block, and without it `tee` returns zero for
         # a red suite: this repository has already shipped one gate that could not fail.
