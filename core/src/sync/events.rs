@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 
 use rusqlite::Connection;
-use serde_json::json;
 
 use crate::index::IndexError;
 use crate::proto::EventSink;
@@ -158,6 +157,13 @@ pub fn emit_snapshot(events: &dyn EventSink, status: &SyncStatus) {
 /// The one serialisation point, so a payload that cannot be serialised is dropped in one place
 /// rather than panicking a worker thread — the core supervises a window, and a panic closes it.
 fn emit<T: serde::Serialize>(events: &dyn EventSink, event: &str, payload: &T) {
-    let value = serde_json::to_value(payload).unwrap_or_else(|_| json!({}));
-    events.emit("sync", event, value);
+    match serde_json::to_value(payload) {
+        Ok(value) => events.emit("sync", event, value),
+        // **No frame rather than a false one.** An empty object is a well-formed payload that
+        // reads as *a listing of zero, no notice, no budget* — an unknown rendered as a fact,
+        // which is the one thing §21 may not do. Still never a panic: the core supervises a
+        // window and a panic closes it. Unreachable with today's types, which are all plain
+        // structs of numbers and strings.
+        Err(e) => eprintln!("sync: dropping a {event} event that will not serialise: {e}"),
+    }
 }

@@ -7,7 +7,7 @@
 use rusqlite::{Connection, Transaction};
 
 use crate::index::IndexError;
-use crate::protocol::{AccountId, SyncTaskKind, SyncTaskState};
+use crate::protocol::{AccountId, SyncTaskKind};
 use crate::sync::state::{state_slug, SyncResetCause, SyncTaskStateRow, SYNC_STATES};
 use crate::sync::task::kind_slug;
 
@@ -48,31 +48,47 @@ pub fn delete_account_tasks(tx: &Transaction<'_>, account: AccountId) -> Result<
 const COLUMNS: &str =
     "task, key, state, cursor, fail_count, throttle_count, reason, at, not_before";
 
-/// A stored row into its Rust shape.
+/// A stored row into its Rust shape, or **nothing** for a row this build cannot read.
 ///
 /// The two enums are resolved by **searching their own slug functions**, which is the same
-/// mapping the CHECK constraints were written from. A value a newer build wrote falls back rather
-/// than panicking the loop that read it — the core supervises a window and a panic closes it.
-fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SyncTaskStateRow> {
+/// mapping the CHECK constraints were written from. A slug neither list holds is a row a newer
+/// build wrote, and it is **skipped, with a line on stderr** — never resolved to a member of the
+/// enum. Guessing the state would turn a row a newer build wrote as `blocked` into a runnable
+/// `queued` one, which is the retry against an unauthorised token §21.4 exists to prevent;
+/// guessing the kind would run the wrong task against the key. Never a panic either: the core
+/// supervises a window and a panic closes it.
+///
+/// **Unreachable today, and that is the reason it matters.** The column's CHECK is written from
+/// these same slugs, so the only thing that can store an unknown one is a schema widening —
+/// exactly the case in which a guess is wrong. It is untested for the same reason: the DDL
+/// refuses to store the value a test would need to write.
+fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SyncTaskStateRow>> {
     let task: String = row.get(0)?;
-    let state: String = row.get(2)?;
-    Ok(SyncTaskStateRow {
-        kind: SyncTaskKind::ALL
+    let state_text: String = row.get(2)?;
+    let (Some(kind), Some(state)) = (
+        SyncTaskKind::ALL
             .into_iter()
-            .find(|k| kind_slug(*k) == task)
-            .unwrap_or(SyncTaskKind::AccountRepos),
+            .find(|k| kind_slug(*k) == task),
+        SYNC_STATES
+            .into_iter()
+            .find(|s| state_slug(*s) == state_text),
+    ) else {
+        eprintln!(
+            "sync: skipping a task row this build cannot read: task={task}, state={state_text}"
+        );
+        return Ok(None);
+    };
+    Ok(Some(SyncTaskStateRow {
+        kind,
         key: row.get(1)?,
-        state: SYNC_STATES
-            .into_iter()
-            .find(|s| state_slug(*s) == state)
-            .unwrap_or(SyncTaskState::Queued),
+        state,
         cursor: row.get(3)?,
         fail_count: row.get::<_, i64>(4)?.try_into().unwrap_or(0),
         throttle_count: row.get::<_, i64>(5)?.try_into().unwrap_or(0),
         reason: row.get(6)?,
         at: row.get(7)?,
         not_before: row.get(8)?,
-    })
+    }))
 }
 
 /// Write one row, replacing the existing one for that `(task, key)`.
@@ -150,14 +166,16 @@ pub fn load(
                 rusqlite::params![task, key],
                 read_row,
             )
-            .ok(),
+            .ok()
+            .flatten(),
         None => conn
             .query_row(
                 &format!("SELECT {COLUMNS} FROM sync_task_state WHERE task = ?1 AND key IS NULL"),
                 rusqlite::params![task],
                 read_row,
             )
-            .ok(),
+            .ok()
+            .flatten(),
     };
     Ok(found)
 }
@@ -172,7 +190,10 @@ pub fn load_all(conn: &Connection) -> Result<Vec<SyncTaskStateRow>, IndexError> 
     ))?;
     let rows = stmt
         .query_map([], read_row)?
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect();
     Ok(rows)
 }
 
