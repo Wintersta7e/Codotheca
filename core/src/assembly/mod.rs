@@ -4,6 +4,7 @@ pub mod handoff;
 pub mod jobs;
 pub mod route;
 pub mod startup;
+pub mod sync;
 
 use crate::art::ArtCtx;
 use crate::commands::launch as launch_cmd;

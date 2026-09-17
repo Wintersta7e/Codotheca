@@ -22,6 +22,7 @@ pub mod events;
 pub mod http;
 pub mod outcome;
 pub mod progress;
+pub mod runner;
 pub mod schedule;
 pub mod state;
 pub mod store;

@@ -6,49 +6,66 @@
 //! which is the truth — this process has observed nothing yet — rather than a value restored from
 //! a table that never held one.
 
+use std::collections::HashMap;
+
 use rusqlite::Connection;
 use serde_json::json;
 
 use crate::index::IndexError;
 use crate::proto::EventSink;
 use crate::protocol::{
-    AccountId, SyncBudget, SyncListingProgress, SyncNotice, SyncStatus, SyncTaskSettled,
-    SyncTaskStarted,
+    AccountId, SyncBudget, SyncListingProgress, SyncListingSummary, SyncNotice, SyncOutcomeKind,
+    SyncStatus, SyncTaskKind, SyncTaskSettled, SyncTaskStarted,
 };
 use crate::sync::state::SyncTaskStateRow;
 use crate::sync::store::load_all;
 
+/// What one task step settled into, **as this process saw it**.
+///
+/// `sync_task_state` stores a state and a reason and has no column for either of these — §21.13's
+/// DDL declares none — so they live here, with the run that observed them, and are empty after a
+/// restart. That emptiness is the truth rather than a shortfall: nothing in *this* process has
+/// observed an outcome yet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LastSettle {
+    pub outcome: SyncOutcomeKind,
+    pub summary: Option<SyncListingSummary>,
+}
+
 /// What only the running process knows.
 ///
 /// Empty is *nothing observed in this process*, which is exactly what a fresh start is. There is
-/// no column for either field and there must not be: a listing's progress is meaningless across a
+/// no column for any of it and there must not be: a listing's progress is meaningless across a
 /// restart, and a notice restored from a table would claim a failure nothing has re-observed.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SyncLive {
     pub listing: Option<SyncListingProgress>,
     pub notice: Option<SyncNotice>,
+    /// Keyed by `(kind, key)`, exactly as `sync_task_state` is.
+    pub last: HashMap<(SyncTaskKind, Option<i64>), LastSettle>,
 }
 
-/// One stored row as the wire's settled shape.
+/// One stored row as the wire's settled shape, plus whatever this process observed about it.
 ///
-/// **`outcome` is `None` here and that is not a shortfall.** `sync_task_state` stores the *state*
-/// a row settled into and the *reason* it carries; it has no outcome column, and §21.13's DDL
-/// declares none. An observed outcome travels on the `settled` event, at the moment it is
-/// observed. Deriving one back from `(state, reason)` would restate the classifier's decision
-/// without its inputs, which is the defect §21.13's own `state` field exists to avoid from the
-/// other direction.
+/// **`outcome` and `summary` come from `last`, never from the row.** `sync_task_state` stores the
+/// *state* a row settled into and the *reason* it carries; it has no column for either of the
+/// other two, and §21.13's DDL declares none. Deriving an outcome back from `(state, reason)`
+/// would restate the classifier's decision without its inputs, which is the defect §21.13's own
+/// `state` field exists to avoid from the other direction. `None` is therefore **not observed
+/// here** — a queued row has produced none, and a process that has just started has seen none —
+/// and a surface must not render it as *never settled*.
 ///
 /// `notBefore` is `None` for a row with nothing scheduled — a terminal row's stored `0` is the
 /// column default and not an instant, and rendering it as one would put 1970 on a screen.
 #[must_use]
-pub fn settled_of(row: &SyncTaskStateRow) -> SyncTaskSettled {
+pub fn settled_of(row: &SyncTaskStateRow, last: Option<&LastSettle>) -> SyncTaskSettled {
     SyncTaskSettled {
         kind: row.kind,
         key: row.key,
         state: row.state,
-        outcome: None,
+        outcome: last.map(|l| l.outcome),
         not_before: (row.not_before > 0).then_some(row.not_before),
-        summary: None,
+        summary: last.and_then(|l| l.summary.clone()),
     }
 }
 
@@ -82,7 +99,10 @@ pub fn budgets(conn: &Connection) -> Result<Vec<SyncBudget>, IndexError> {
 /// Fails when SQLite cannot be read.
 pub fn status_payload(conn: &Connection, live: &SyncLive) -> Result<SyncStatus, IndexError> {
     Ok(SyncStatus {
-        tasks: load_all(conn)?.iter().map(settled_of).collect(),
+        tasks: load_all(conn)?
+            .iter()
+            .map(|row| settled_of(row, live.last.get(&(row.kind, row.key))))
+            .collect(),
         budgets: budgets(conn)?,
         listing: live.listing.clone(),
         notice: live.notice,
