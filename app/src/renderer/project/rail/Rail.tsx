@@ -7,7 +7,13 @@
  */
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 
-import type { LocationDetail, ProjectDetail, TargetRow } from '../../../generated/protocol';
+import type {
+  InstallPreview,
+  LocationDetail,
+  ProjectDetail,
+  TargetRow,
+} from '../../../generated/protocol';
+import { InstallControl } from '../../install/InstallControl';
 import { formatPlaytime } from '../../format/playtime';
 import { useProjectPageDeps } from '../deps';
 import { editorTargets, OpensIn } from './OpensIn';
@@ -29,11 +35,25 @@ export function terminalTarget(targets: readonly TargetRow[]): TargetRow | null 
 
 export interface RailProps {
   detail: ProjectDetail;
+  /**
+   * [p2] §24.3d's preview, or `undefined` when this rail is not offering Install. The rail is the
+   * second of exactly two mount points in the renderer.
+   */
+  installPreview?: InstallPreview | null;
+  onInstall?: () => void;
+  onOpenUpgrade?: () => void;
   shown: LocationDetail | null;
   onChanged: () => void;
 }
 
-export function Rail({ detail, shown, onChanged }: RailProps): ReactElement {
+export function Rail({
+  detail,
+  shown,
+  onChanged,
+  installPreview,
+  onInstall,
+  onOpenUpgrade,
+}: RailProps): ReactElement {
   const deps = useProjectPageDeps();
   const [offset, setOffset] = useState(detail.rerollOffset);
   const [launching, setLaunching] = useState(false);
@@ -91,6 +111,16 @@ export function Rail({ detail, shown, onChanged }: RailProps): ReactElement {
 
   return (
     <div className="cp-rail" data-testid="cp-rail">
+      {/* [p2] §24.3d: Install occupies the slot Play occupies on a cloned project, so it stands
+          above the CTA rather than beside it. The second of exactly two mount points in the
+          renderer; `app/test/installSites.test.ts` fails on a third. */}
+      {installPreview === undefined ? null : (
+        <InstallControl
+          preview={installPreview}
+          onInstall={onInstall ?? (() => {})}
+          onOpenUpgrade={onOpenUpgrade ?? (() => {})}
+        />
+      )}
       {control.kind === 'statement' ? (
         <div className="cp-cta-statement" data-testid="cp-cta-statement">
           {control.text}
