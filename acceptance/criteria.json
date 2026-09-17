@@ -2651,8 +2651,8 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§23.4: no tail for a project with no working copy omits the tail field and renders the rest of the line",
-          "assert": "paletteSubLine omits the tail field when hasWorkingCopy is false, whatever the clock and whatever the session says, and subLineInputFor reads row.primaryLocation and never a second predicate."
+          "test": "§24.5: the tail of a project with no working copy is `not cloned` reads the one predicate §23.1 names and never a second one",
+          "assert": "subLineInputFor reads row.primaryLocation and never a second predicate. [p2] §24.5 supplied the fourth tail word, so the tail is `not cloned` rather than omitted; the null branch is gone rather than left as a shape nothing produces, and R92 forbids a second field expressing the same predicate."
         }
       ]
     },

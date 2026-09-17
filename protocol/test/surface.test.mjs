@@ -892,7 +892,26 @@ test('the install topic carries §24.9’s four events plus the snapshot', () =>
   assert.equal(schema.topics.install.finished, 'InstallFinished');
   assert.equal(schema.topics.install.failed, 'InstallFailed');
   assert.equal(schema.topics.install.snapshot, 'InstallState');
-  assert.equal(schema.types.InstallState.fields.runs, '[InstallStage]');
+});
+
+/**
+ * R54's snapshot exists so that a tile mounting **after** the events fired shows the stage its
+ * own run reached. `InstallStage` carries no `projectId` — its field set is pinned above so that
+ * no aggregate can be added to it — so `runs` alone cannot say which run belongs to which
+ * project, which is precisely the case the snapshot is for. The mapping rides on `started`, and
+ * the join is `runId`.
+ */
+test('the install snapshot maps a run to its project without widening InstallStage', () => {
+  assert.deepEqual(schema.types.InstallState.fields, {
+    runs: '[InstallStage]',
+    started: '[InstallStarted]',
+  });
+  assert.equal(schema.types.InstallStarted.fields.runId, 'InstallRunId');
+  assert.equal(schema.types.InstallStarted.fields.projectId, 'ProjectId');
+  assert.equal(schema.types.InstallStarted.fields.destinationDisplay, 'String');
+  // The mapping lives there and nowhere else: a `projectId` on the stage would be one value
+  // stated twice, and it would reopen the field set A10 closed.
+  assert.equal(schema.types.InstallStage.fields.projectId, undefined);
 });
 
 test('the accounts topic carries exactly three events and no snapshot', () => {
