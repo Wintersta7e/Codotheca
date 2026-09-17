@@ -315,16 +315,18 @@ impl SyncRunner {
     /// §21.6's *before issuing* rule, and §21.5's reserve.
     fn budget_verdict(&self, task: &SyncTask) -> BudgetVerdict {
         let now = self.deps.clock.now_unix();
+        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         let account = match task {
             SyncTask::AccountRepos { account_id } | SyncTask::RenameProbe { account_id } => {
                 Some(*account_id)
             }
-            // A per-project read spends whichever account's pool `read_target` picks, which is not
-            // known until the read runs. It is checked against the per-IP pool, which every
-            // account's responses also refresh.
-            SyncTask::ProjectRemote { .. } => None,
+            // **The pool the read would actually spend from**, resolved by the one function that
+            // decides which account reads a project. Checking the per-IP pool instead would guard
+            // an allowance the request never touches, which is a reserve that reserves nothing.
+            SyncTask::ProjectRemote { project_id } => {
+                remote::account_for_project(guard.conn(), *project_id)
+            }
         };
-        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         let row = read_budget(guard.conn(), account, DEFAULT_RESOURCE)
             .ok()
             .flatten();

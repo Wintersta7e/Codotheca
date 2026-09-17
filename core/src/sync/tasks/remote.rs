@@ -225,15 +225,7 @@ fn read_target(index: &Mutex<Index>, project: ProjectId) -> Option<Target> {
         return None;
     };
 
-    let Ok((account, token_ref)) = conn.query_row(
-        "SELECT id, token_ref FROM account
-          WHERE is_enabled = 1 AND provider = ?1 AND host = ?2
-          ORDER BY id LIMIT 1",
-        rusqlite::params![provider, host],
-        |r| Ok((AccountId(r.get::<_, i64>(0)?), r.get::<_, String>(1)?)),
-    ) else {
-        return None;
-    };
+    let (account, token_ref) = account_row_for(conn, &provider, host)?;
 
     let (etag, ci_etag) = conn
         .query_row(
@@ -262,6 +254,50 @@ fn read_target(index: &Mutex<Index>, project: ProjectId) -> Option<Target> {
         etag,
         ci_etag,
     })
+}
+
+/// Which account this runner would read a project's remote facts with, or `None` when none can.
+///
+/// **One owner.** The runner asks this before issuing, so the budget it checks is the pool the
+/// read would actually spend from; `read_target` asks it again for the token. A second expression
+/// of *which account reads this project* would let the reserve guard one pool while the request
+/// drains another.
+///
+/// # Errors
+/// Never: an unreadable row, an unbound project and an account that does not exist are all the
+/// same answer — **nothing to ask with** — and none of them is a fault.
+#[must_use]
+pub fn account_for_project(conn: &rusqlite::Connection, project: ProjectId) -> Option<AccountId> {
+    let (provider, remote_key) = conn
+        .query_row(
+            "SELECT provider, remote_key FROM project WHERE id = ?1 AND merged_into IS NULL",
+            [project.0],
+            |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )
+        .ok()?;
+    let host = remote_key.as_deref()?.split_once('/')?.0;
+    account_row_for(conn, provider.as_deref()?, host).map(|(account, _)| account)
+}
+
+/// The enabled account on this provider and this host, with its keychain entry name.
+fn account_row_for(
+    conn: &rusqlite::Connection,
+    provider: &str,
+    host: &str,
+) -> Option<(AccountId, String)> {
+    conn.query_row(
+        "SELECT id, token_ref FROM account
+          WHERE is_enabled = 1 AND provider = ?1 AND host = ?2
+          ORDER BY id LIMIT 1",
+        rusqlite::params![provider, host],
+        |r| Ok((AccountId(r.get::<_, i64>(0)?), r.get::<_, String>(1)?)),
+    )
+    .ok()
 }
 
 /// The stored basis, through the generated enum rather than a second spelling of it (R24).

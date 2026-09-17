@@ -17,6 +17,7 @@
 
 use std::sync::Arc;
 
+use codotheca_core::accounts::keychain::TokenStore;
 use codotheca_core::accounts::store::{insert_account, NewAccount};
 use codotheca_core::http::{HttpResponse, HttpTransport, TransportError};
 use codotheca_core::protocol::{AccountId, AuthKind, ScopeTier};
@@ -406,4 +407,270 @@ fn the_decorators_observation_is_what_reaches_the_row() {
     assert_eq!(row.remaining(), Some(0));
     assert_eq!(row.limit(), Some(30));
     assert_eq!(row.reset_at(), None, "the server named no reset");
+}
+
+// ---------------------------------------------------------------------------------------------
+// **AC-P2-21-14, end to end**: the reserve, through the runner.
+// ---------------------------------------------------------------------------------------------
+
+/// A fixture with one account, one bound project, and the runner over a scripted transport.
+struct Lane {
+    index: Arc<std::sync::Mutex<codotheca_core::index::Index>>,
+    scripted: Arc<codotheca_core::testing::FakeTransport>,
+    runner: Arc<codotheca_core::sync::runner::SyncRunner>,
+    account: AccountId,
+    project: codotheca_core::protocol::ProjectId,
+    _dir: tempfile::TempDir,
+}
+
+/// Events are dropped: this file asserts requests and rows, and `core/tests/sync_runner.rs` owns
+/// what the topic carries.
+#[derive(Debug)]
+struct Quiet;
+
+impl codotheca_core::proto::EventSink for Quiet {
+    fn emit(&self, _topic: &str, _event: &str, _payload: serde_json::Value) {}
+}
+
+fn lane() -> Lane {
+    use codotheca_core::accounts::keychain::token_ref;
+    const HOST: &str = "forge.example.invalid";
+    let temp = TempIndex::new();
+    let dir = tempfile::tempdir().expect("tmp");
+    let mut index = codotheca_core::index::Index::open_at(dir.path(), NOW).expect("index");
+    drop(temp);
+
+    let (account, project) = index
+        .with_tx(|tx| {
+            let account = insert_account(
+                tx,
+                &NewAccount {
+                    provider: "github".to_owned(),
+                    host: HOST.to_owned(),
+                    login: "owner".to_owned(),
+                    display_name: None,
+                    auth_kind: AuthKind::Device,
+                    scope_tier: ScopeTier::Private,
+                    granted_scopes: vec!["repo".to_owned()],
+                    token_ref: token_ref("github", HOST, "owner"),
+                },
+                NOW,
+            )
+            .expect("account");
+            tx.execute(
+                "INSERT INTO project (name, seed_basename, remote_key, provider,
+                                      provider_repo_id, remote_link_basis, created_at, updated_at)
+                 VALUES ('alpha', 'alpha', ?1, 'github', '7', 'provider_id', ?2, ?2)",
+                rusqlite::params![format!("{HOST}/owner/alpha"), NOW],
+            )?;
+            Ok((
+                account,
+                codotheca_core::protocol::ProjectId(tx.last_insert_rowid()),
+            ))
+        })
+        .expect("seed");
+
+    let scripted = Arc::new(codotheca_core::testing::FakeTransport::new());
+    let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
+    let observing = Arc::new(codotheca_core::sync::http::ObservingTransport::new(
+        Arc::clone(&scripted) as Arc<dyn HttpTransport>,
+        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+    ));
+    let tokens = Arc::new(codotheca_core::testing::FakeTokenStore::available());
+    tokens
+        .store(
+            &token_ref("github", HOST, "owner"),
+            &codotheca_core::accounts::keychain::SecretToken::new("t".to_owned()),
+        )
+        .expect("token");
+    let provider = Arc::new(codotheca_core::provider::GitHubProvider::new(
+        Arc::clone(&observing) as Arc<dyn HttpTransport>,
+        HOST.to_owned(),
+    ));
+    let index = Arc::new(std::sync::Mutex::new(index));
+    let runner = codotheca_core::sync::runner::SyncRunner::new(
+        Arc::clone(&index),
+        codotheca_core::sync::SyncDeps {
+            provider,
+            transport: observing,
+            tokens,
+            clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            cancel: codotheca_core::cancel::CancelToken::new(),
+        },
+        Arc::new(Quiet) as Arc<dyn codotheca_core::proto::EventSink>,
+    );
+
+    Lane {
+        index,
+        scripted,
+        runner,
+        account,
+        project,
+        _dir: dir,
+    }
+}
+
+/// Mirror one observation into the account's pool, so the runner has a budget to read.
+fn seed_budget(lane: &Lane, remaining: i64, reset: i64) {
+    let mut guard = lane.index.lock().expect("index");
+    guard
+        .with_tx(|tx| {
+            mirror(
+                tx,
+                Some(lane.account),
+                &snapshot(
+                    200,
+                    &[
+                        ("x-ratelimit-resource", "core"),
+                        ("x-ratelimit-remaining", &remaining.to_string()),
+                        ("x-ratelimit-limit", "5000"),
+                        ("x-ratelimit-reset", &reset.to_string()),
+                    ],
+                ),
+                NOW,
+            )?;
+            Ok(())
+        })
+        .expect("seeded");
+}
+
+fn drain_queue(lane: &Lane) {
+    lane.runner.start();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        let pending: i64 = {
+            let guard = lane.index.lock().expect("index");
+            guard
+                .conn()
+                .query_row(
+                    "SELECT count(*) FROM sync_task_state WHERE state IN ('queued', 'running')",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(1)
+        };
+        if pending == 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    lane.runner.request_stop();
+    lane.runner.join();
+}
+
+/// **AC-P2-21-14.** With `remaining = 150` mirrored and both a scheduled and an on-demand task
+/// queued, the transport records **exactly one** request and it is the on-demand one; the
+/// scheduled row is `parked` with **both counters unchanged** and `reason = "reserve"`.
+///
+/// A reserve park is neither a failure nor a throttle, and `reason` is what lets a status reader
+/// tell the three apart — three reserve parks counted as failures would strand a listing in
+/// `deferred` for a budget that recovers on its own.
+#[test]
+fn a_scarce_budget_yields_the_listing_and_spends_on_the_opened_page() {
+    let lane = lane();
+    let reset = NOW + 900;
+    seed_budget(&lane, 150, reset);
+    // One answer, for the one request that is allowed through. A second request would exhaust the
+    // script and show up as a transport error rather than passing unnoticed.
+    //
+    // **It carries the rate headers, and that is not decoration.** Every response re-mirrors the
+    // pool, so an answer with no `x-ratelimit-remaining` would leave the budget *unknown* — and
+    // unknown spends. The first version of this fixture omitted them and the listing went through
+    // for exactly that reason, which is the mirror working rather than the reserve failing.
+    let reset_text = reset.to_string();
+    lane.scripted.push(HttpResponse {
+        status: 404,
+        headers: codotheca_core::http::normalise_headers([
+            ("x-ratelimit-resource", "core"),
+            ("x-ratelimit-remaining", "149"),
+            ("x-ratelimit-limit", "5000"),
+            ("x-ratelimit-reset", reset_text.as_str()),
+        ]),
+        body: Vec::new(),
+    });
+
+    lane.runner
+        .enqueue(codotheca_core::sync::task::SyncTask::AccountRepos {
+            account_id: lane.account,
+        });
+    lane.runner
+        .enqueue(codotheca_core::sync::task::SyncTask::ProjectRemote {
+            project_id: lane.project,
+        });
+    drain_queue(&lane);
+
+    let requests = lane.scripted.request_count();
+    eprintln!("sync_budget: {requests} request(s) issued under a 150-remaining budget");
+    assert_eq!(requests, 1, "the scheduled listing must not have spent");
+    let sent = lane.scripted.requests();
+    assert!(
+        sent[0].url.contains("/repos/"),
+        "the one request was not the on-demand read: {}",
+        sent[0].url
+    );
+
+    let guard = lane.index.lock().expect("index");
+    let listing = codotheca_core::sync::store::load(
+        guard.conn(),
+        codotheca_core::protocol::SyncTaskKind::AccountRepos,
+        Some(lane.account.0),
+    )
+    .expect("read")
+    .expect("row");
+    assert_eq!(
+        listing.state,
+        codotheca_core::protocol::SyncTaskState::Parked
+    );
+    assert_eq!(
+        listing.not_before, reset,
+        "parked to the budget's own reset"
+    );
+    assert_eq!(listing.fail_count, 0, "it did not fail");
+    assert_eq!(
+        listing.throttle_count, 0,
+        "and the server did not throttle it"
+    );
+    assert_eq!(
+        listing.reason.as_deref(),
+        Some("reserve"),
+        "a status reader cannot tell a reserve park from a rate limit without this"
+    );
+}
+
+/// **Unknown is not below 200 — it is unknown, and it spends.** With no observation at all both
+/// tasks proceed, which is what stops an unobserved budget stalling sync forever.
+#[test]
+fn an_unknown_budget_lets_both_kinds_of_task_through() {
+    let lane = lane();
+    for _ in 0..4 {
+        lane.scripted.push(HttpResponse {
+            status: 404,
+            headers: codotheca_core::http::normalise_headers([("x-ratelimit-resource", "core")]),
+            body: Vec::new(),
+        });
+    }
+    lane.runner
+        .enqueue(codotheca_core::sync::task::SyncTask::AccountRepos {
+            account_id: lane.account,
+        });
+    lane.runner
+        .enqueue(codotheca_core::sync::task::SyncTask::ProjectRemote {
+            project_id: lane.project,
+        });
+    drain_queue(&lane);
+
+    let sent = lane.scripted.requests();
+    eprintln!(
+        "sync_budget: {} request(s) under an unknown budget",
+        sent.len()
+    );
+    assert!(
+        sent.len() >= 2,
+        "an unobserved budget stalled sync: {} request(s)",
+        sent.len()
+    );
+    assert!(
+        sent.iter().any(|r| r.url.contains("/user/repos")),
+        "the scheduled listing was held back by a budget nobody observed"
+    );
 }
