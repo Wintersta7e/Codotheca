@@ -78,6 +78,7 @@ impl Rig {
             mount: &self.mount,
             events: &self.sink,
             jobs: &self.jobs,
+            sync: &codotheca_core::sync::runner::NullSyncSink,
             now: NOW,
         }
     }

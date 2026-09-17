@@ -173,6 +173,7 @@ fn list(index: &Index, sink: &CollectingSink, args: serde_json::Value) -> serde_
         events: sink,
         jobs: &jobs,
         mounts: &mounts,
+        sync: &codotheca_core::sync::runner::NullSyncSink,
         now: NOW,
         tz_offset_min: 0,
     };

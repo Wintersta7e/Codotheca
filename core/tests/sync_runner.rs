@@ -503,21 +503,22 @@ fn listing_progress_never_retreats_and_never_invents_a_denominator() {
     // Page two reports **one** entry where page one reported two.
     f.scripted.push(ok_page(&format!("[{}]", repo(3, "c"))));
 
-    let pump = SyncPump::start(
+    // Queued through `enqueue`, which is the production path: writing the row with `put` behind
+    // the runner's back would assert against a door the product does not use.
+    let runner = SyncRunner::new(
         Arc::clone(&f.index),
         f.deps,
         Arc::clone(&f.events) as Arc<dyn EventSink>,
     );
-    {
-        let runner_index = Arc::clone(&f.index);
-        let mut guard = runner_index.lock().expect("index");
-        let row = SyncTaskStateRow::queued(SyncTaskKind::AccountRepos, Some(f.account.0), NOW);
-        guard.with_tx(|tx| put(tx, &row)).expect("queued");
-    }
+    runner.enqueue(SyncTask::AccountRepos {
+        account_id: f.account,
+    });
+    runner.start();
     until("two progress events", || {
         f.events.events("listing_progress").len() >= 2
     });
-    pump.stop();
+    runner.request_stop();
+    runner.join();
 
     let progress = f.events.events("listing_progress");
     let listed: Vec<i64> = progress

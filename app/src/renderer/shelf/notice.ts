@@ -13,6 +13,11 @@ export type NoticeKind =
   | 'identity'
   | 'residency'
   | 'newArrivals'
+  // [p2] §21.10's banner. **Exactly one**, whatever the number of failed sync tasks, and its
+  // dismissal is scoped to the SyncNotice variant: dismissing `throttled` must not also hide a
+  // later `unauthorized`, because the two ask for different actions and one is not the other's
+  // repeat.
+  | 'remoteSync'
   // [p2] §20.11's connect offer. **Exactly one**, dismissible, and it sorts LAST.
   | 'connect';
 
@@ -29,8 +34,12 @@ export type NoticeKind =
 export const NOTICE_PRIORITY: readonly NoticeKind[] = [
   'coreFailure',
   'scanResumed',
+  // [p2] §21.10's banner sorts BELOW `problems` and above `identity`. Letting an offline forge
+  // outrank a local unreadable repository would invert §19.3's *"GitHub is additive, never a
+  // gate"*; §20.14 requires it above the connect offer, which sorts last anyway.
   'problems',
   'targetUnresolved',
+  'remoteSync',
   'identity',
   'residency',
   'newArrivals',

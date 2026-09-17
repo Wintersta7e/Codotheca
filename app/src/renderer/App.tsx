@@ -21,6 +21,7 @@ import { useNotices } from './app/useNotices';
 import { useProblems } from './app/useProblems';
 import { useScanStatus } from './app/useScanStatus';
 import { useSessions } from './app/useSessions';
+import { useSync } from './app/useSync';
 import { useViewState } from './app/useViewState';
 import { useResolvedTier } from './motion/tier';
 import { IdentityCard } from './firstrun/IdentityCard';
@@ -52,6 +53,9 @@ export function App(props: AppProps = {}): ReactElement {
   // §1.4's set decides `authored_by_user` for every project, so confirming it changes the shelf
   // under the user: the library is re-read on the write rather than on the next launch.
   const identity = useIdentity(deps, library.reload);
+  // [p2] §21's lane. One subscription, held here beside the others so the banner and the progress
+  // line read the same payload rather than two.
+  const sync = useSync(deps);
 
   const [openProjectId, setOpenProjectId] = useState<ProjectId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -81,6 +85,8 @@ export function App(props: AppProps = {}): ReactElement {
     spawnFailure: null,
     problems: problems.problems,
     identityToConfirm: identityNeedsConfirming(identity.rows),
+    // [p2] §21.10's banner, from the `sync` topic. `null` is *no sync failure*.
+    sync: sync.notice,
     onOpenLog: openLog,
     onOpenScanSummary: openScanSummary,
   });

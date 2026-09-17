@@ -251,6 +251,12 @@ mod corehandler {
         let clock = Arc::clone(clock);
         let index = Arc::clone(index);
         let events = Arc::clone(events);
+        let sync_observing = Arc::new(codotheca_core::sync::http::ObservingTransport::new(
+            Arc::clone(&http),
+            Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        ));
+        let sync_http: Arc<dyn codotheca_core::http::HttpTransport> =
+            Arc::clone(&sync_observing) as Arc<dyn codotheca_core::http::HttpTransport>;
         CoreHandler::new(CoreDeps {
             index: Arc::clone(&index),
             // The seam and a fake of it. `FakeTransport` answers nothing here: every accounts
@@ -285,6 +291,23 @@ mod corehandler {
                 Arc::clone(&index),
                 Arc::new(codotheca_core::testing::FakeGitBackend::new()),
                 Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+                Arc::clone(&events) as Arc<dyn EventSink>,
+            ),
+            // [p2] §21.1's runner, real and started, for the same reason the job pump above is:
+            // `shutdown` stops it, and a handler built with one that never started would not
+            // exercise that.
+            sync: codotheca_core::assembly::sync::SyncPump::start(
+                Arc::clone(&index),
+                codotheca_core::sync::SyncDeps {
+                    provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
+                        Arc::clone(&sync_http),
+                        codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
+                    )),
+                    transport: Arc::clone(&sync_observing),
+                    tokens: Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
+                    clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+                    cancel: codotheca_core::cancel::CancelToken::new(),
+                },
                 Arc::clone(&events) as Arc<dyn EventSink>,
             ),
             events: Arc::clone(&events),

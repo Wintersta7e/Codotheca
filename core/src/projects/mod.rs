@@ -37,6 +37,10 @@ pub struct ProjectsCtx<'a> {
     /// The store class the queued job is scheduled against. Not a column (R27): it is a
     /// property of the mount right now.
     pub mounts: &'a dyn crate::mount::MountResolver,
+    /// §21.5: a Peek also asks for its **remote** facts. The other of exactly two sites, and
+    /// deliberately not `projects.list` — a shelf of a thousand rows must not queue a thousand
+    /// network tasks.
+    pub sync: &'a dyn crate::sync::runner::SyncSink,
     pub now: i64,
     pub tz_offset_min: i32,
 }
@@ -149,11 +153,13 @@ mod tests {
         let events = CollectingSink::default();
         let jobs = crate::jobs::NullJobSink;
         let mounts = crate::testing::FakeMountResolver::default();
+        let sync = crate::sync::runner::NullSyncSink;
         let ctx = ProjectsCtx {
             index: &index,
             events: &events,
             jobs: &jobs,
             mounts: &mounts,
+            sync: &sync,
             now: 1_700_000_000,
             tz_offset_min: 0,
         };

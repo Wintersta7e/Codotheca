@@ -40,12 +40,25 @@ use crate::sync::task::SyncTask;
 use crate::sync::tasks::{remote, rename, repos};
 use crate::sync::{is_on_demand, SyncDeps, SyncError};
 
-/// How long the loop sleeps when it has nothing runnable.
+/// How long the loop sleeps **while work is outstanding** and nothing is runnable yet.
 ///
 /// Short, because the wake that matters is a `parked` row's clock coming round and no event
-/// announces that (§21.4: *"a parked row returns to queued by the clock alone"*). Every other
-/// wake arrives on the condvar, so this is the floor rather than the usual case.
+/// announces that (§21.4: *"a parked row returns to queued by the clock alone"*).
 const IDLE_POLL: Duration = Duration::from_millis(50);
+
+/// How long the loop sleeps when the table holds **nothing** — no queued row, no park, no
+/// interrupted row.
+///
+/// **An idle runner must not touch the index at all.** There is one `rusqlite::Connection` behind
+/// one mutex, and a loop that re-read the table twenty times a second would contend with every
+/// command for it — for a table it already knows is empty. So the loop tracks whether anything is
+/// outstanding and, when nothing is, waits on the condvar without taking the guard; `enqueue` and
+/// `request_stop` are what wake it, and this ceiling is only the floor under a missed signal.
+///
+/// This was found by a p2-20 test, not by design: `a_network_account_command_holds_no_index_lock_
+/// while_it_is_in_flight` probes whether the mutex is free at the moment a request reaches the
+/// transport, and an idle sync runner made it free only between polls.
+const IDLE_WAIT: Duration = Duration::from_secs(1);
 
 /// The pool §21.6 keys a budget by when the response named no resource of its own.
 ///
@@ -89,6 +102,8 @@ pub struct SyncRunner {
     deps: SyncDeps,
     events: Arc<dyn EventSink>,
     stopping: AtomicBool,
+    /// Whether the table holds anything the loop could still act on. See [`IDLE_WAIT`].
+    outstanding: AtomicBool,
     waiters: Mutex<Waiters>,
     wake: Condvar,
     handle: Mutex<Option<std::thread::JoinHandle<()>>>,
@@ -119,6 +134,7 @@ impl SyncRunner {
             deps,
             events,
             stopping: AtomicBool::new(false),
+            outstanding: AtomicBool::new(false),
             waiters: Mutex::new(Waiters::default()),
             wake: Condvar::new(),
             handle: Mutex::new(None),
@@ -137,12 +153,18 @@ impl SyncRunner {
         let now = self.deps.clock.now_unix();
         {
             let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-            if let Ok(moved) = guard.with_tx(|tx| requeue_running(tx, now)) {
+            // The sweep and the first *is anything outstanding* read are one transaction, so a
+            // loop that starts against an empty table never takes the guard at all.
+            if let Ok((moved, outstanding)) = guard.with_tx(|tx| {
+                let moved = requeue_running(tx, now)?;
+                Ok((moved, any_outstanding(tx)?))
+            }) {
                 if moved > 0 {
                     // Diagnostic only, and on stderr: stdout carries protocol frames and nothing
                     // else.
                     eprintln!("sync: re-queued {moved} task(s) interrupted by a restart");
                 }
+                self.outstanding.store(outstanding, Ordering::SeqCst);
             }
         }
 
@@ -199,6 +221,7 @@ impl SyncRunner {
             let row = SyncTaskStateRow::queued(kind, key, now);
             let _ = guard.with_tx(|tx| put(tx, &row));
         }
+        self.outstanding.store(true, Ordering::SeqCst);
         self.signal();
     }
 
@@ -224,18 +247,25 @@ impl SyncRunner {
 
     fn run_loop(self: &Arc<Self>) {
         while !self.should_stop() {
+            // **No lock on an empty table.** `enqueue` and `request_stop` both signal, so a wake
+            // that matters still arrives at once; the ceiling is only the floor under a missed
+            // one.
+            if !self.outstanding.load(Ordering::SeqCst) {
+                self.idle(IDLE_WAIT);
+                continue;
+            }
             match self.take_next() {
                 Some(task) => self.run_one(task),
-                None => self.idle(),
+                None => self.idle(IDLE_POLL),
             }
         }
     }
 
-    fn idle(&self) {
+    fn idle(&self, ceiling: Duration) {
         let waiters = self.waiters.lock().unwrap_or_else(PoisonError::into_inner);
         let (mut waiters, _) = self
             .wake
-            .wait_timeout(waiters, IDLE_POLL)
+            .wait_timeout(waiters, ceiling)
             .unwrap_or_else(PoisonError::into_inner);
         waiters.signalled = false;
     }
@@ -271,17 +301,22 @@ impl SyncRunner {
                 // hold an allowance for work this loop then deprioritises. `sort_by_key` is
                 // stable, so equal keys keep `load_all`'s `(not_before, id)` order.
                 runnable.sort_by_key(|(task, row)| (u8::from(!is_on_demand(task)), row.not_before));
-                let Some((_, row)) = runnable.into_iter().next() else {
-                    return Ok(None);
+                let picked = runnable.into_iter().next();
+                let Some((_, row)) = picked else {
+                    // Nothing runnable now; a park whose clock has not come still counts as
+                    // outstanding, and a table with neither stops the polling entirely.
+                    return Ok((None, any_outstanding(tx)?));
                 };
                 let mut running = row.clone();
                 running.state = SyncTaskState::Running;
                 running.at = now;
                 put(tx, &running)?;
-                Ok(task_of(&row))
+                Ok((task_of(&row), true))
             })
-            .ok()
-            .flatten()
+            .map_or(None, |(task, outstanding)| {
+                self.outstanding.store(outstanding, Ordering::SeqCst);
+                task
+            })
     }
 
     fn run_one(self: &Arc<Self>, task: SyncTask) {
@@ -456,12 +491,29 @@ impl SyncRunner {
             emit_notice(self.events.as_ref(), notice);
         }
         emit_settled(self.events.as_ref(), &payload);
+        // A settle that parked or re-queued the row leaves work outstanding; one that ended it
+        // may have emptied the table, and the next `take_next` is what establishes which.
+        self.outstanding.store(true, Ordering::SeqCst);
     }
 
     fn read_budgets(&self) -> Result<Vec<crate::protocol::SyncBudget>, crate::index::IndexError> {
         let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         crate::sync::events::budgets(guard.conn())
     }
+}
+
+/// Whether any row is still the loop's to act on.
+///
+/// `running` counts: this process put it there and owes it a settle. `ok`, `deferred` and
+/// `blocked` do not — each is left by a trigger, a revival cause or an account change, every one
+/// of which goes through `enqueue` or `reset_for` and signals.
+fn any_outstanding(tx: &rusqlite::Transaction<'_>) -> Result<bool, crate::index::IndexError> {
+    let n: i64 = tx.query_row(
+        "SELECT count(*) FROM sync_task_state WHERE state IN ('queued', 'running', 'parked')",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(n > 0)
 }
 
 /// §21.10's four sentences, from the outcome that produced them.
