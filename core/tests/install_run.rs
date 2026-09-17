@@ -198,9 +198,18 @@ fn a_crash_between_the_clone_and_the_rename_leaves_no_location_row() {
             .expect("project");
     }
 
-    // The destination already exists as a FILE, so the rename cannot complete. This is the
-    // crash window: the clone has exited 0 and its bytes are in staging.
-    std::fs::write(root.join("alpha"), b"in the way").expect("blocker");
+    // The destination already exists as a NON-EMPTY DIRECTORY, so the rename cannot complete on
+    // either platform. This is the crash window: the clone has exited 0 and its bytes are in
+    // staging.
+    //
+    // **It was a file, and that made this test a Unix-only bar.** `std::fs::rename` replaces an
+    // existing file on Windows, so the rename succeeded there, the run walked on to
+    // `index_destination`, and the assertion below read `GitFailed` instead of `RenameFailed` —
+    // the run still failed and still wrote no row, but through a path this test does not claim to
+    // be testing. A non-empty directory is refused by `ENOTEMPTY` and by
+    // `ERROR_DIR_NOT_EMPTY` alike, so the window is forced on both.
+    std::fs::create_dir_all(root.join("alpha")).expect("blocker");
+    std::fs::write(root.join("alpha").join("occupied.txt"), b"in the way").expect("blocker");
 
     let paths = paths_for(&root, "alpha").expect("paths");
     let git = FakeMutatingGit::new(CloneBehaviour::Succeed);
