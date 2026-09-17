@@ -139,6 +139,52 @@ describe('App — the composition root', () => {
     });
   });
 
+  /**
+   * §11.3a forbids a control that promises something and does nothing, and this is the one the
+   * user pressed. Every unit below it is covered — `NoticeSlot` dismisses by the scoped key,
+   * `selectNotice` filters on that key, `useViewState` sets local state before it writes — but
+   * nothing had ever asserted the chain end to end with a *real* scan notice, because the App
+   * fixture answers `problems.list` with `runId: null`, which produces no banner at all.
+   */
+  it('dismisses a scan problems notice, and it stays dismissed', async () => {
+    // A run id on both sides: `useProblems` asks for nothing without one, and `problemsNotice`
+    // returns null without one, so the default fixture's `runId: null` raises no banner at all.
+    const withRun: ScanStatus = { ...scanned, runId: 7 as ScanStatus['runId'], problemCount: 2 };
+    const fake = fakeAppDeps(
+      {
+        ...repliesFor([row(1, 'alpha')], withRun),
+        'problems.list': () => ({
+          runId: withRun.runId,
+          header: {
+            walkedDirs: 12,
+            repositories: 3,
+            problemCount: 2,
+            ambiguousLineageCount: null,
+          },
+          groups: [],
+        }),
+      },
+      { effectsTier: 'off' },
+    );
+    fake.setNow(NOW);
+    render(<App deps={fake.deps} />);
+
+    const banner = await screen.findByText(/THE LAST SCAN LEFT 2 PROBLEMS/u);
+    expect(banner).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/THE LAST SCAN LEFT 2 PROBLEMS/u)).toBeNull();
+    });
+    // And it does not come back on the next paint: a banner that returns is the same dead control
+    // wearing a delay.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(/THE LAST SCAN LEFT 2 PROBLEMS/u)).toBeNull();
+  });
+
   it('runs first run for a library that has never been scanned', async () => {
     mount([], neverScanned);
     await waitFor(() => {

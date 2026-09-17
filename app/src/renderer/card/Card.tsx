@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import type { ConditionSignal } from '../../generated/protocol';
 import type { CardAppearance } from '../art/appearance';
+import type { CardGesture } from '../motion/transition';
 import { token } from '../theme/tokens';
 import { CardPlate } from './CardPlate';
 import { ConditionDotMark } from './ConditionDotMark';
@@ -58,6 +59,13 @@ export interface CardProps {
   readonly hovered: boolean;
   readonly focused: boolean;
   readonly selected: boolean;
+  /**
+   * §8.5.1's gesture for this tile. It lands on the frame rather than the card because
+   * `crtCollapse` and `cardUnfold` drive `filter: brightness`, and the card is clipped — the
+   * frame is the unclipped box every other whole-tile effect already uses.
+   */
+  readonly gesture?: CardGesture | null;
+  readonly gestureDelay?: string;
   readonly role?: string;
   readonly tabIndex?: 0 | -1;
   readonly onMouseEnter?: () => void;
@@ -79,10 +87,16 @@ export function Card(props: CardProps): ReactElement {
     '--cdt-bloom': bloomShadow(props.appearance),
     '--cdt-halo': props.halo.shadow ?? 'none',
     '--cdt-halo-opacity': String(props.halo.opacity),
+    ...(props.gestureDelay === undefined ? {} : { '--cdt-ripple-delay': props.gestureDelay }),
   } as CSSProperties;
 
   return (
-    <div className="cdt-card-frame" data-hovered={hovered} style={frameStyle}>
+    <div
+      className="cdt-card-frame"
+      data-hovered={hovered}
+      data-gesture={props.gesture ?? undefined}
+      style={frameStyle}
+    >
       <span className="cdt-card-halo" aria-hidden="true" />
       <span className="cdt-bloom" aria-hidden="true" />
       {bands.rank === null ? null : (

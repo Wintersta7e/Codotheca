@@ -6,7 +6,15 @@
  * has one assertion here: missing filtered resources, a non-executable Linux core, or an asar
  * whose packed manifest does not point at the built main process.
  */
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  statSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -210,6 +218,43 @@ function readPackedManifest(archivePath) {
   }
 }
 
+/**
+ * The newest mtime across everything the core is compiled from: its sources, its migrations, and
+ * the schema both sides are generated from — a migration is what makes a stale core actively
+ * dangerous rather than merely behind.
+ *
+ * A vanished file is skipped rather than counted, which is the discipline
+ * `scripts/lib/read-scanned.mjs` states for every gate that walks a tree.
+ */
+function newestCoreSourceMs() {
+  let newest = 0;
+  const touch = (path) => {
+    try {
+      newest = Math.max(newest, statSync(path).mtimeMs);
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') throw error;
+    }
+  };
+  const visit = (path) => {
+    let entries;
+    try {
+      entries = readdirSync(path, { withFileTypes: true });
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return;
+      throw error;
+    }
+    for (const entry of entries) {
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) visit(child);
+      else touch(child);
+    }
+  };
+  visit(join(root, 'core/src'));
+  visit(join(root, 'core/migrations'));
+  touch(join(root, 'protocol/schema/protocol.json'));
+  return newest;
+}
+
 const packs = [
   { dir: join(root, 'dist/win-unpacked'), core: 'codotheca-core.exe', windows: true },
   { dir: join(root, 'dist/linux-unpacked'), core: 'codotheca-core', windows: false },
@@ -228,6 +273,27 @@ for (const pack of packs) {
     packedFilesChecked += 1;
     if (!pack.windows && (statSync(core).mode & 0o111) === 0) {
       fail(`the staged core binary is not executable: ${core}`);
+    }
+    /**
+     * **A core older than the tree it ships with is worse than a missing one.** A missing one
+     * fails packaging; a stale one packages clean, launches, and the core exits `StdinEof` within
+     * milliseconds because the shell beside it speaks a protocol the core was built before — the
+     * window is simply black, with nothing on screen naming the cause.
+     *
+     * Measured: a Windows core built at 11:16 shipped beside a shell carrying a merge that landed
+     * at 15:03 with a new migration and four new commands. `npm run package:win` never rebuilds
+     * the core — it only copies whatever is staged — so nothing else in the pipeline notices.
+     */
+    const built = statSync(core).mtimeMs;
+    const newest = newestCoreSourceMs();
+    if (newest > built) {
+      fail(
+        `the staged core predates its own sources: ${core} was built ` +
+          `${new Date(built).toISOString()}, newest source ${new Date(newest).toISOString()}. ` +
+          'Rebuild the core for this target and repackage — packaging never rebuilds it.',
+      );
+    } else {
+      packedFilesChecked += 1;
     }
   }
 

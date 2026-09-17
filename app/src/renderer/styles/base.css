@@ -4,6 +4,38 @@
   box-sizing: border-box;
 }
 
+/*
+ * The scrollbar, on every scrollable surface rather than one.
+ *
+ * The handoff declares these with no selector prefix, so they reach everything that scrolls. The
+ * app declared the same three rules scoped to `.cdt-shelf-scroll` — so the shelf was styled and
+ * every other scroller, the project page and its panels among them, fell back to the host's
+ * default, which on Windows is a light chrome nothing else on screen shares. The values are the
+ * handoff's, reached through the tokens that already carry them — named here and never spelled,
+ * because `check-style-tokens.mjs` reads this file as text and a hex literal in a comment is a
+ * colour outside the token block as far as it can tell.
+ *
+ * `height` is for horizontal scrollers and the hover state was missing entirely; both are the
+ * handoff's and neither had been transcribed.
+ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-3);
+  border: 2px solid var(--surface-1);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--line-5);
+}
+
 html,
 body,
 #root {
@@ -48,6 +80,31 @@ body {
  * The three carry no duration and no curve: the consumer states both at its own `animation`
  * shorthand, from §11.6's tables.
  */
-@keyframes viewIn { from { opacity: 0 } to { opacity: 1 } }
-@keyframes panelIn { 0% { opacity: 0; transform: translateY(16px) scale(.985) } 100% { opacity: 1; transform: none } }
-@keyframes turnIn { 0% { opacity: 0; letter-spacing: .4em } 100% { opacity: 1; letter-spacing: .02em } }
+@keyframes viewIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes panelIn {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes turnIn {
+  0% {
+    opacity: 0;
+    letter-spacing: 0.4em;
+  }
+  100% {
+    opacity: 1;
+    letter-spacing: 0.02em;
+  }
+}

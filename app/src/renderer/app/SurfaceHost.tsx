@@ -29,6 +29,8 @@ export interface SurfaceHostProps {
   readonly summaryOpen: boolean;
   readonly onCloseSummary: () => void;
   readonly problems: Problems | null;
+  /** This run's banner was dismissed, so §11.1's panel drops the list it counted. */
+  readonly problemsDismissed?: boolean;
   readonly onProblemsChanged: () => void;
   readonly rows: readonly ProjectRow[];
   readonly liveSessionProjectIds: ReadonlySet<ProjectId>;
@@ -102,6 +104,7 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
       {props.summaryOpen && props.problems !== null && (
         <ScanSummary
           problems={props.problems}
+          problemsDismissed={props.problemsDismissed ?? false}
           request={request}
           onOpenProject={(id) => {
             props.onCloseSummary();

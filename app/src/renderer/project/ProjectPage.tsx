@@ -49,6 +49,13 @@ export interface ProjectPageProps {
    * §10.5a says nothing is new — so the hero draws no `NEW` rather than guessing one.
    */
   firstRunCompletedAt?: number | null;
+  /**
+   * §8.5.1: the page racks out before the shelf comes back. The gesture is owned above this
+   * component because the shelf has to be restored 300 ms into a 340 ms animation this page is
+   * still running — a page that unmounted itself at the end of its own animation would leave a
+   * 40 ms hole, and one that unmounted at the start would never play it.
+   */
+  racking?: boolean;
 }
 
 export function primaryLocation(detail: ProjectDetail): LocationDetail | null {
@@ -94,6 +101,7 @@ export function ProjectPageView({
   onBack,
   onOpenProject,
   firstRunCompletedAt = null,
+  racking = false,
 }: ProjectPageProps): ReactElement {
   const { state, heroHash, redirectedTo, reload } = useProjectDetail(projectId);
   const [tab, setTab] = useState<ProjectTab>('overview');
@@ -197,6 +205,7 @@ export function ProjectPageView({
       ref={rootRef}
       className={PROJECT_PAGE_ROOT_CLASS}
       data-testid="cp-page"
+      data-gesture={racking === true ? 'rackout' : undefined}
       tabIndex={-1}
       onKeyDown={onKeyDown}
     >

@@ -1,0 +1,325 @@
+/*
+ * §8.5.1's shelf⇄project gesture. Ten keyframes, transcribed from the design handoff's prototype
+ * (`Codotheca v7 Shelf.dc.html:32-43`) rather than from its prose, because inside the handoff the
+ * prototype is the authority.
+ *
+ * **`full` is the only tier that runs any of this, and there is no clamped version.** `shelfRecede`
+ * blurs, `crtCollapse` drives brightness to 4.5 and the beam is a travelling highlight — §11.6
+ * drops all three below `full`, so there is nothing to keep. Unlike `projectPage.css` these rules
+ * carry no `[data-effects-tier='auto']` fallback and must not gain one: that fallback exists to
+ * cover the frame before §11.6's resolver has run, and this gesture begins on a click, long after.
+ * The unresolved value reaching a click is the defect `useTierOnDocument` fixed, not a case to
+ * paper over here.
+ *
+ * The phase machine in `motion/transition.ts` already refuses to schedule the gesture below
+ * `full`. That is a different decision from this one — it stops the 620 ms wait, this stops the
+ * animation — and neither substitutes for the other.
+ */
+
+@keyframes crtCollapse {
+  0% {
+    transform: none;
+    filter: brightness(1);
+  }
+
+  26% {
+    transform: scale(1.05);
+    filter: brightness(1.8);
+  }
+
+  62% {
+    transform: scaleY(0.06) scaleX(1.03);
+    filter: brightness(3.2);
+  }
+
+  100% {
+    transform: scaleY(0.004) scaleX(0.98);
+    filter: brightness(4.5);
+    opacity: 0.85;
+  }
+}
+
+@keyframes shelfRecede {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+
+  100% {
+    opacity: 0.15;
+    transform: scale(0.985);
+    filter: blur(3px);
+  }
+}
+
+@keyframes shelfReturn {
+  0% {
+    opacity: 0.1;
+    transform: scale(0.984);
+    filter: blur(4px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+@keyframes beamStretch {
+  0% {
+    opacity: 0;
+    transform: scaleX(0) scaleY(0.4);
+  }
+
+  22% {
+    opacity: 1;
+    transform: scaleX(0.22) scaleY(1);
+  }
+
+  70% {
+    transform: scaleX(1) scaleY(1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scaleX(1) scaleY(2.2);
+  }
+}
+
+@keyframes beamFlare {
+  0% {
+    opacity: 0;
+  }
+
+  30% {
+    opacity: 0.55;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes beamContract {
+  0% {
+    opacity: 1;
+    transform: scaleX(1) scaleY(2);
+  }
+
+  26% {
+    opacity: 1;
+    transform: scaleX(0.75) scaleY(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scaleX(0.02) scaleY(0.4);
+  }
+}
+
+@keyframes rackOut {
+  0% {
+    opacity: 1;
+    transform: none;
+    filter: brightness(1);
+  }
+
+  30% {
+    transform: scale(0.985) translateY(-4px);
+    filter: brightness(1.3);
+  }
+
+  68% {
+    opacity: 1;
+    transform: scaleY(0.08) scale(0.97);
+    filter: brightness(2.8);
+  }
+
+  100% {
+    opacity: 0.7;
+    transform: scaleY(0.004) scaleX(0.94);
+    filter: brightness(4);
+  }
+}
+
+@keyframes cardUnfold {
+  0% {
+    opacity: 0.6;
+    transform: scaleY(0.004) scaleX(0.96);
+    filter: brightness(4);
+  }
+
+  22% {
+    opacity: 1;
+    transform: scaleY(0.05) scaleX(1);
+    filter: brightness(2.6);
+  }
+
+  54% {
+    transform: scaleY(1.06) scaleX(0.99);
+    filter: brightness(1.5);
+  }
+
+  76% {
+    transform: scaleY(0.98) scaleX(1);
+    filter: brightness(1.1);
+  }
+
+  100% {
+    transform: none;
+    filter: brightness(1);
+  }
+}
+
+@keyframes ripple {
+  0% {
+    transform: none;
+  }
+
+  38% {
+    transform: translateY(-7px) scale(1.014);
+  }
+
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes stripFlare {
+  0% {
+    opacity: 0;
+    background-position: -60% 0;
+  }
+
+  18% {
+    opacity: 1;
+  }
+
+  62% {
+    opacity: 0.85;
+  }
+
+  100% {
+    opacity: 0;
+    background-position: 160% 0;
+  }
+}
+
+/* --- leaving the shelf ------------------------------------------------------------------- */
+
+[data-effects-tier='full'] .cdt-card-frame[data-gesture='collapse'] {
+  animation: crtCollapse 420ms cubic-bezier(0.4, 0.1, 0.6, 1) both;
+}
+
+[data-effects-tier='full'] .cdt-shelf[data-gesture='recede'] {
+  animation: shelfRecede 500ms 100ms cubic-bezier(0.4, 0.1, 0.6, 1) both;
+}
+
+/* --- the beam, which belongs to neither view -------------------------------------------- */
+
+/*
+ * Rendered above both surfaces, because it spans the swap: it stretches while the shelf is still
+ * on screen and contracts while the page is. A beam owned by either view would be unmounted
+ * halfway through its own animation.
+ */
+.cdt-beam-stage {
+  /* Derived from the jewel rather than carried beside it: one colour owner for one light. */
+  --cdt-beam-soft: color-mix(in srgb, var(--cdt-beam-tint) 42%, transparent);
+
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.cdt-beam-flare {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, var(--cdt-beam-soft), transparent 62%);
+}
+
+.cdt-beam-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 3px;
+  transform-origin: center;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--cdt-beam-tint) 14%,
+    #ffffff 50%,
+    var(--cdt-beam-tint) 86%,
+    transparent
+  );
+  box-shadow:
+    0 0 34px 6px var(--cdt-beam-tint),
+    0 0 90px 14px var(--cdt-beam-soft);
+}
+
+[data-effects-tier='full'] .cdt-beam-stage[data-gesture='opening'] .cdt-beam-line {
+  animation: beamStretch 560ms 160ms cubic-bezier(0.3, 0.8, 0.2, 1) both;
+}
+
+[data-effects-tier='full'] .cdt-beam-stage[data-gesture='opening'] .cdt-beam-flare {
+  animation: beamFlare 580ms 180ms ease-out both;
+}
+
+[data-effects-tier='full'] .cdt-beam-stage[data-gesture='closing'] .cdt-beam-line {
+  animation: beamContract 440ms 180ms cubic-bezier(0.5, 0.05, 0.7, 1) both;
+}
+
+[data-effects-tier='full'] .cdt-beam-stage[data-gesture='closing'] .cdt-beam-flare {
+  animation: beamFlare 500ms ease-out both;
+}
+
+/* --- leaving the page ------------------------------------------------------------------- */
+
+[data-effects-tier='full'] .cp-page[data-gesture='rackout'] {
+  animation: rackOut 340ms cubic-bezier(0.5, 0.05, 0.7, 1) both;
+  transform-origin: center;
+}
+
+/* --- landing back on the shelf ----------------------------------------------------------- */
+
+[data-effects-tier='full'] .cdt-shelf[data-gesture='return'] {
+  animation: shelfReturn 340ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+
+[data-effects-tier='full'] .cdt-card-frame[data-gesture='unfold'] {
+  animation: cardUnfold 500ms 100ms cubic-bezier(0.25, 0.85, 0.25, 1) both;
+}
+
+/*
+ * The neighbour stagger is per card and inline, from `rippleDelay` — one owner for
+ * §8.5.1's `0.16 + min(dist, 9) * 0.045`, rather than nine rules spelling it out.
+ */
+[data-effects-tier='full'] .cdt-card-frame[data-gesture='ripple'] {
+  animation: ripple 500ms var(--cdt-ripple-delay) cubic-bezier(0.3, 0.8, 0.25, 1) both;
+}
+
+.cdt-era-flare {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  opacity: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0 8%,
+    var(--cdt-beam-tint) 26%,
+    #ffffff 44%,
+    var(--cdt-beam-tint) 62%,
+    transparent 92%
+  );
+  background-size: 190% 100%;
+}
+
+[data-effects-tier='full'] .cdt-era-flare[data-gesture='flare'] {
+  animation: stripFlare 1150ms 160ms cubic-bezier(0.32, 0.6, 0.3, 1) both;
+}

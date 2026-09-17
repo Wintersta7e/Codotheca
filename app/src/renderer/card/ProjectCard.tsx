@@ -5,6 +5,7 @@ import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance'
 import { renditionFor, useArtAddress, useCardBitmap } from '../art/useCardBitmap';
 import { glowShadow, glowStrength } from '../derive/condition';
 import { formatTrackedBytes } from '../format/size';
+import type { CardGesture } from '../motion/transition';
 import { Card } from './Card';
 import { statusChips } from './chips';
 import { frameToken, uncomputedRank } from './completion';
@@ -43,6 +44,10 @@ export interface ProjectCardProps {
   readonly firstRunCompletedAt: number | null;
   readonly session: SessionRef | null;
   readonly haloOpacity: number;
+  /** §8.5.1's gesture for this one tile, `null` when the shelf is at rest. */
+  readonly gesture?: CardGesture | null;
+  /** The ripple's own offset, already formatted (`motion/transition.ts` owns the arithmetic). */
+  readonly gestureDelay?: string;
   readonly onActivate: () => void;
   readonly onOpen: () => void;
   readonly onTogglePin: () => void;
@@ -107,6 +112,8 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
       hovered={hovered}
       focused={props.focused}
       selected={props.selected}
+      gesture={props.gesture ?? null}
+      {...(props.gestureDelay === undefined ? {} : { gestureDelay: props.gestureDelay })}
       role={CARD_ROLE}
       tabIndex={props.focused ? 0 : -1}
       onMouseEnter={() => {

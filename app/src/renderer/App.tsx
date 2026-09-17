@@ -24,9 +24,12 @@ import { useSessions } from './app/useSessions';
 import { useSync } from './app/useSync';
 import { useViewState } from './app/useViewState';
 import { useResolvedTier, useTierOnDocument } from './motion/tier';
+import { useProjectTransition } from './app/useProjectTransition';
+import { TransitionBeam } from './app/TransitionBeam';
 import { IdentityCard } from './firstrun/IdentityCard';
 import { ProjectPageDepsContext } from './project/deps';
 import { ProjectPageView } from './project/ProjectPage';
+import { noticeDismissed } from './shelf/notice';
 import { DEFAULT_DENSITY_PX } from './shelf/viewState';
 
 /**
@@ -57,7 +60,6 @@ export function App(props: AppProps = {}): ReactElement {
   // line read the same payload rather than two.
   const sync = useSync(deps);
 
-  const [openProjectId, setOpenProjectId] = useState<ProjectId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
@@ -67,6 +69,11 @@ export function App(props: AppProps = {}): ReactElement {
   const tier = useResolvedTier(deps.effectsTier, false, false);
   // And it has to reach the document element, or the CSS reads the unresolved boot value forever.
   useTierOnDocument(tier);
+  // §8.5.1: the gesture owns which view is on screen while it runs, so the route reads from it
+  // rather than from the click. Below `full` it resolves to a plain swap.
+  const transition = useProjectTransition(tier);
+  const openProjectId = transition.projectId;
+  const openProject = transition.openProject;
 
   const [paletteNonce, setPaletteNonce] = useState(0);
   const openPalette = useCallback(() => {
@@ -93,6 +100,13 @@ export function App(props: AppProps = {}): ReactElement {
     onOpenScanSummary: openScanSummary,
   });
 
+  // §11.1: dismissing the banner clears this run's problem list from the summary too. Scoped to
+  // the run, like the banner — a later scan raises both again.
+  const problemsRunId = problems.problems?.runId ?? null;
+  const problemsDismissed =
+    problemsRunId !== null &&
+    noticeDismissed(view.dismissedNotices, 'problems', String(problemsRunId));
+
   const rows = library.rows;
   const route = routeFor({
     lane: core.lane,
@@ -103,9 +117,6 @@ export function App(props: AppProps = {}): ReactElement {
     openProjectId,
   });
 
-  const openProject = useCallback((id: ProjectId) => {
-    setOpenProjectId(id);
-  }, []);
   const liveSessionProjectIds = useMemo(() => new Set(sessions.keys()), [sessions]);
 
   const showMe = useCallback(
@@ -120,11 +131,10 @@ export function App(props: AppProps = {}): ReactElement {
     route.kind === 'project' ? (
       <ProjectPageView
         projectId={route.id}
-        onBack={() => {
-          setOpenProjectId(null);
-        }}
+        onBack={transition.closeProject}
         onOpenProject={openProject}
         firstRunCompletedAt={core.firstRunCompletedAt}
+        racking={transition.phase.kind === 'closing'}
       />
     ) : (
       <ShelfScreen
@@ -140,6 +150,7 @@ export function App(props: AppProps = {}): ReactElement {
         sessions={sessions}
         firstRunCompletedAt={core.firstRunCompletedAt}
         tier={tier}
+        phase={transition.phase}
         onOpenProject={openProject}
         onOpenPalette={openPalette}
         onOpenSettings={() => {
@@ -176,6 +187,9 @@ export function App(props: AppProps = {}): ReactElement {
       {/* One object, two contexts. `AppDeps` extends `ProjectPageDeps`, so the page's door is
           the same door and not a second construction of one. */}
       <ProjectPageDepsContext.Provider value={deps}>
+        {/* §8.5.1's beam spans the swap, so it is mounted above both views rather than inside
+            either — the one that owns it would unmount it mid-animation. */}
+        <TransitionBeam phase={transition.phase} rows={rows ?? []} />
         {route.kind !== 'failure' && (
           <FirstRunHost
             deps={deps}
@@ -203,6 +217,7 @@ export function App(props: AppProps = {}): ReactElement {
             setSummaryOpen(false);
           }}
           problems={problems.problems}
+          problemsDismissed={problemsDismissed}
           onProblemsChanged={problems.reload}
           rows={rows ?? []}
           liveSessionProjectIds={liveSessionProjectIds}

@@ -79,6 +79,21 @@ export function noticeDismissKey(kind: NoticeKind, scope: string | null): string
   return scope === null ? `notice.dismissed.${kind}` : `notice.dismissed.${kind}:${scope}`;
 }
 
+/**
+ * Whether one notice has been dismissed — asked by surfaces other than the slot.
+ *
+ * §11.1's summary needs it because dismissing the banner clears that run's problem list too: a
+ * list that outlives its own dismissal reads as a control that did nothing. Exported from here so
+ * the question is asked with the key `noticeDismissKey` builds and never with a second spelling.
+ */
+export function noticeDismissed(
+  dismissed: readonly string[],
+  kind: NoticeKind,
+  scope: string | null,
+): boolean {
+  return dismissed.includes(noticeDismissKey(kind, scope));
+}
+
 export function selectNotice(
   candidates: readonly Notice[],
   dismissed: readonly string[],

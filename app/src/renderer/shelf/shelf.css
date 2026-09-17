@@ -31,18 +31,8 @@
   background: var(--surface-1);
 }
 
-.cdt-shelf-scroll::-webkit-scrollbar {
-  width: 10px;
-}
-
-.cdt-shelf-scroll::-webkit-scrollbar-track {
-  background: var(--surface-1);
-}
-
-.cdt-shelf-scroll::-webkit-scrollbar-thumb {
-  background: var(--line-3);
-  border: 2px solid var(--surface-1);
-}
+/* The scrollbar is `base.css`'s, for every scroller. Three rules scoped to this one element are
+   what left the rest of the app on the host's default chrome. */
 
 .cdt-shelf-wordmark {
   display: flex;
@@ -398,6 +388,10 @@
 }
 
 .cdt-era-header {
+  /* §8.5.1's `stripFlare` rides the header's full length on landing, so the strip positions
+     against this box. Declared here, with the element it belongs to, and not in transition.css. */
+  position: relative;
+
   display: flex;
   align-items: baseline;
   gap: 10px;

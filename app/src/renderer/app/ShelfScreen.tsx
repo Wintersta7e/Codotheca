@@ -26,6 +26,7 @@ import {
 } from '../keyboard/gridNavigation.js';
 import { flickerEligible, useFlicker } from '../motion/flicker.js';
 import { allowsScheduledFrames, type ResolvedTier } from '../motion/tier.js';
+import type { TransitionPhase } from '../motion/transition.js';
 import { AttentionRow } from '../shelf/AttentionRow.js';
 import { isCollapsed, toggled } from '../shelf/collapse.js';
 import { shelfCounts } from '../shelf/counts.js';
@@ -85,6 +86,12 @@ export interface ShelfScreenProps {
   readonly sessions: ReadonlyMap<ProjectId, SessionRef>;
   readonly firstRunCompletedAt: number | null;
   readonly tier: ResolvedTier;
+  /**
+   * §8.5.1's gesture. The shelf recedes while it is still the view on screen and returns holding
+   * a landing state, so it needs the phase rather than a boolean: `landing` also names the tile
+   * to unfold and the section whose header flares.
+   */
+  readonly phase?: TransitionPhase;
   readonly onOpenProject: (id: ProjectId) => void;
   readonly onOpenPalette: () => void;
   readonly onOpenSettings: () => void;
@@ -340,6 +347,11 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
   const resolvedPeek = peekAnswer?.projectId === view.selectedProjectId ? peekAnswer.peek : null;
   const peek = peekOpen ? <PeekPanel peek={resolvedPeek} now={now} tier={tier} /> : null;
 
+  // §8.5.1's landing state: the tile you left unfolds, its neighbours ripple outward from it, and
+  // the header of the section it sits in flares — so you can see which shelf you came back to.
+  // Scoped to that one section, exactly as the handoff prototype scopes it.
+  const landingId = props.phase?.kind === 'landing' ? props.phase.id : null;
+
   const grid = (
     <>
       <div style={{ minHeight: virtual.canvasHeight }}>
@@ -358,6 +370,7 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
             <section className="cdt-shelf-section" key={section.id}>
               <EraHeader
                 section={section}
+                flaring={landingId !== null && section.rows.some((row) => row.id === landingId)}
                 collapsed={collapsed}
                 onToggle={() => {
                   onViewChange({
@@ -376,6 +389,7 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
                 now={now}
                 firstRunCompletedAt={firstRunCompletedAt}
                 selectedId={view.selectedProjectId}
+                phase={props.phase}
                 sessions={sessions}
                 halo={halo}
                 peek={ownsPeek ? peek : null}
@@ -398,6 +412,7 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
       view={view}
       page={page}
       counts={counts}
+      phase={props.phase}
       notices={props.notices}
       scan={props.scan ?? UNKNOWN_SCAN}
       library={props.library}

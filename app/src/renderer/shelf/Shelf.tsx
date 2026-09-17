@@ -4,6 +4,7 @@ import type { Problems, ScanStatus } from '../../generated/protocol.js';
 import { hasReportableProblems } from '../notices/copy.js';
 import { parseQuery } from '../../shared/query/parse.js';
 import type { KeyAction, KeyEventLike } from '../keyboard/contexts.js';
+import type { TransitionPhase } from '../motion/transition.js';
 import type { ShelfCounts } from './counts.js';
 import { EmptyState, emptyStateModel, type LibraryPresence } from './EmptyState.js';
 import { shelfKeyIntent } from './keyboard.js';
@@ -26,6 +27,12 @@ export interface ShelfProps {
   /** The library's own figures. The shelf holds a page, not the projection, so it cannot count
    *  them itself — and a zero it invented would be a figure with no owner on screen. */
   readonly counts: ShelfCounts;
+  /**
+   * §8.5.1's gesture, for the whole-surface half of it: the shelf recedes as the tile collapses
+   * and returns blurred when you land back on it. The per-card half is the section's, because
+   * §8.5.1 scopes the unfold and the ripple to the landing tile's own section.
+   */
+  readonly phase?: TransitionPhase | undefined;
   readonly notices: readonly Notice[];
   readonly scan: Pick<ScanStatus, 'running' | 'foundRepos' | 'problemCount'>;
   /**
@@ -96,6 +103,16 @@ function asKeyEvent(event: KeyboardEvent): KeyEventLike {
  * Blocks 3 and 4 arrive as `children`. This component decides only between that body and the
  * empty state, and hands down the one tile value the grid lays out against.
  */
+/**
+ * §8.5.1's two whole-surface states. `closing` is absent on purpose: the page is the view on
+ * screen then, and the shelf is not mounted to recede.
+ */
+function shelfGesture(phase: TransitionPhase | undefined): 'recede' | 'return' | undefined {
+  if (phase?.kind === 'opening') return 'recede';
+  if (phase?.kind === 'landing') return 'return';
+  return undefined;
+}
+
 export function Shelf(props: ShelfProps): ReactElement {
   const hostRef = useRef<HTMLDivElement>(null);
   const [barWidth, setBarWidth] = useState<number>(UNMEASURED_BAR_WIDTH);
@@ -167,7 +184,7 @@ export function Shelf(props: ShelfProps): ReactElement {
   const scrollStyle = { '--cdt-tile': `${String(view.density)}px` } as CSSProperties;
 
   return (
-    <div className="cdt-shelf" ref={hostRef}>
+    <div className="cdt-shelf" ref={hostRef} data-gesture={shelfGesture(props.phase)}>
       <TopBar
         view={view}
         field={fieldModel(view.query, view.ast, [])}

@@ -33,15 +33,29 @@ function plural(n: number, one: string, many: string): string {
  * `null` when no scan has ever run. A run with `walkedDirs = 0` has not been measured, and a
  * zeroed header would be exactly the claim this screen exists to avoid making.
  */
-export function summaryHeaderClauses(problems: Problems): readonly HeaderClause[] | null {
+/**
+ * Dismissing the banner clears this run's problems from the summary too — ruled by the owner,
+ * because a list that survives its own dismissal reads as a control that did nothing.
+ *
+ * It is a heading of its own rather than the "nothing went wrong" one: the problems happened and
+ * saying otherwise would be inventing a clean scan. What changed is that they were acknowledged.
+ */
+export const PROBLEMS_DISMISSED_HEADING = 'THIS SCAN’S PROBLEMS WERE DISMISSED';
+
+export function summaryHeaderClauses(
+  problems: Problems,
+  /** When the run's banner was dismissed, the problem clause goes with the list it counted. */
+  problemsDismissed = false,
+): readonly HeaderClause[] | null {
   if (problems.runId === null) return null;
   const h = problems.header;
   const clauses: HeaderClause[] = [
     { figure: figure(h.walkedDirs), label: 'directories walked' },
     { figure: figure(h.repositories), label: plural(h.repositories, 'repository', 'repositories') },
   ];
-  // Omitted while the scan is in flight (`null`); rendered at a measured zero.
-  if (h.problemCount !== null) {
+  // Omitted while the scan is in flight (`null`); rendered at a measured zero. And omitted once
+  // dismissed — a count standing over an empty list is the same contradiction one line up.
+  if (h.problemCount !== null && !problemsDismissed) {
     clauses.push({
       figure: figure(h.problemCount),
       label: plural(h.problemCount, 'problem', 'problems'),
