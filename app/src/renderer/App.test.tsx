@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { App } from './App';
+import { EFFECTS_TIER_ATTRIBUTE } from './effectsTier';
 import { fakeAppDeps, type FakeAppDeps, type FakeReplies } from './app/testDeps';
 import type {
   IdentityId,
@@ -121,6 +122,21 @@ describe('App — the composition root', () => {
     });
     // The top bar and the one scroll container, from the real components rather than a stub.
     expect(document.querySelector('.cdt-shelf-scroll')).not.toBeNull();
+  });
+
+  // The resolver ran and its answer never reached the DOM. `main.tsx` writes the boot value once
+  // before mount, `auto` is the default (`shared/bootFile.ts:49`), and nothing resolved it
+  // afterwards — so every `[data-effects-tier='full'|'reduced'|'off']` rule in the repository
+  // selected nothing, the project page's entrance and cascade among them. Asserted at the
+  // composition root rather than on the hook, because the defect was a missing CALL: a hook-only
+  // test passes while nobody calls it, which is the shape this project keeps getting caught by.
+  it('resolves auto onto the document element, so no CSS tier rule is inert', async () => {
+    const fake = fakeAppDeps(repliesFor([row(1, 'alpha')], scanned), { effectsTier: 'auto' });
+    fake.setNow(NOW);
+    render(<App deps={fake.deps} />);
+    await waitFor(() => {
+      expect(document.documentElement.getAttribute(EFFECTS_TIER_ATTRIBUTE)).toBe('full');
+    });
   });
 
   it('runs first run for a library that has never been scanned', async () => {

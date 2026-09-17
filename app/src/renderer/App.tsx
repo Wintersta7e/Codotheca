@@ -22,7 +22,7 @@ import { useProblems } from './app/useProblems';
 import { useScanStatus } from './app/useScanStatus';
 import { useSessions } from './app/useSessions';
 import { useViewState } from './app/useViewState';
-import { useResolvedTier } from './motion/tier';
+import { useResolvedTier, useTierOnDocument } from './motion/tier';
 import { IdentityCard } from './firstrun/IdentityCard';
 import { ProjectPageDepsContext } from './project/deps';
 import { ProjectPageView } from './project/ProjectPage';
@@ -61,6 +61,8 @@ export function App(props: AppProps = {}): ReactElement {
   // compositing is the shell's finding and reaches the window as the tier it already resolved,
   // so there is nothing further for the renderer to detect.
   const tier = useResolvedTier(deps.effectsTier, false, false);
+  // And it has to reach the document element, or the CSS reads the unresolved boot value forever.
+  useTierOnDocument(tier);
 
   const [paletteNonce, setPaletteNonce] = useState(0);
   const openPalette = useCallback(() => {
