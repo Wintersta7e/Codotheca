@@ -372,11 +372,11 @@ test('phaseOf reads a criterion id or a check id', () => {
   assert.equal(phaseOf('AC-14'), 1);
 });
 
-test('the section table is §26.1 and adds up to 103', () => {
-  assert.deepEqual(PHASE2_SECTIONS, { 20: 13, 21: 16, 22: 13, 23: 12, 24: 23, 25: 26 });
+test('the section table is §26.1 and adds up to 104', () => {
+  assert.deepEqual(PHASE2_SECTIONS, { 20: 13, 21: 17, 22: 13, 23: 12, 24: 23, 25: 26 });
   assert.equal(
     Object.values(PHASE2_SECTIONS).reduce((a, b) => a + b, 0),
-    103,
+    104,
   );
   assert.deepEqual(DEFERRALS, ['plan', 'live-observation']);
   assert.deepEqual(LIVE_OBSERVATION_CHECKS, ['AC-P2-20-13', 'AC-P2-21-3-floor']);
@@ -600,8 +600,8 @@ test('registering a phase-2 section leaves phase 1 at 70 and 171', () => {
     phase1.reduce((n, c) => n + c.checks.length, 0),
     171,
   );
-  // §20 owns thirteen, §21 sixteen, §23 twelve and §25 twenty-six, which is what
+  // §20 owns thirteen, §21 seventeen, §23 twelve and §25 twenty-six, which is what
   // `PHASE2_SECTIONS` declares for each. Raised by this lane's own delta, read from the branch
   // base — never to a running total a later lane would have to guess at.
-  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 67);
+  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 68);
 });

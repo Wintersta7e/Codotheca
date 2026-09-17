@@ -3869,6 +3869,22 @@
           "assert": "A 429 that names neither retry-after nor x-ratelimit-reset parks the task and the forge is asked nothing further while it is parked; the park releases strictly after the instant it was made."
         }
       ]
+    },
+    {
+      "id": "P2-21-17",
+      "title": "A deferred sync task has a user-reachable way out",
+      "group": "functional",
+      "spec": "\u00a721.4",
+      "checks": [
+        {
+          "id": "AC-P2-21-17",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "repair_commands::try_again_revives_this_accounts_deferred_sync_and_no_others",
+          "assert": "TRY AGAIN on one project revives that project's deferred project_remote and its own account's deferred account_repos and rename_probe with reason user_requested and the fail count cleared, and leaves another account's rows, another project's row and every blocked row untouched."
+        }
+      ]
     }
   ]
 }

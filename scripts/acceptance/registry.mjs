@@ -42,7 +42,7 @@ const LETTERED = { 45: ['45a', '45b', '45c'], 48: ['48a', '48b'] };
  * §26.1's table. `2[0-5]` is an assertion rather than a convenience: §26 owns no criterion of
  * its own, so a `P2-26-*` id is refused by the id form itself instead of by a reviewer.
  */
-export const PHASE2_SECTIONS = { 20: 13, 21: 16, 22: 13, 23: 12, 24: 23, 25: 26 };
+export const PHASE2_SECTIONS = { 20: 13, 21: 17, 22: 13, 23: 12, 24: 23, 25: 26 };
 
 /**
  * A deferral says *what kind of thing has not happened yet*. `plan` is phase 1's meaning and

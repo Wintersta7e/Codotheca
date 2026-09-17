@@ -7,7 +7,7 @@
 use rusqlite::{Connection, Transaction};
 
 use crate::index::IndexError;
-use crate::protocol::{AccountId, SyncTaskKind};
+use crate::protocol::{AccountId, ProjectId, SyncTaskKind};
 use crate::sync::state::{state_slug, SyncResetCause, SyncTaskStateRow, SYNC_STATES};
 use crate::sync::task::kind_slug;
 
@@ -218,7 +218,24 @@ pub fn requeue_running(tx: &Transaction<'_>, now: i64) -> Result<usize, IndexErr
     Ok(moved)
 }
 
-/// Revive every `deferred` row, recording the cause.
+/// How much of the table one revival covers.
+///
+/// **A cause is not a scope**, and conflating them makes a button do more than it says. §21.4's
+/// `AppUpgraded` is a statement about the build and reaches everything; a user pressing TRY AGAIN
+/// on one project is a statement about that project and the account that reads it, and reviving
+/// every other account's deferred work on that press would be the same defect as a bare
+/// `WHERE key = ?1` — an action whose blast radius is wider than its name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncResetScope {
+    /// Every deferred row, whatever it is keyed by.
+    Everything,
+    /// The two **account-keyed** tasks for one account.
+    Account(AccountId),
+    /// The one **project-keyed** task for one project.
+    Project(ProjectId),
+}
+
+/// Revive the `deferred` rows in `scope`, recording the cause. Returns how many moved.
 ///
 /// **`blocked` is untouched, and that is the point.** It is left only through an account state
 /// change or an explicit user action, never by a clock — a revived `blocked` row is a retry loop
@@ -227,18 +244,42 @@ pub fn requeue_running(tx: &Transaction<'_>, now: i64) -> Result<usize, IndexErr
 /// The `fail_count` that deferred the row is cleared, because a revival cause is a statement that
 /// the conditions which produced those failures have changed.
 ///
+/// **The task filter on the two narrow scopes is not optional**, for the reason
+/// [`delete_account_tasks`] gives: `key` is polymorphic, so a bare `WHERE key = ?1` would revive
+/// whichever `project_remote` row happens to share an account's integer.
+///
 /// # Errors
 /// Fails when SQLite refuses the write.
 pub fn reset_for(
     tx: &Transaction<'_>,
+    scope: SyncResetScope,
     cause: SyncResetCause,
     now: i64,
 ) -> Result<usize, IndexError> {
-    let revived = tx.execute(
-        "UPDATE sync_task_state
-            SET state = 'queued', fail_count = 0, not_before = 0, reason = ?1, at = ?2
-          WHERE state = 'deferred'",
-        rusqlite::params![cause.slug(), now],
-    )?;
+    const SET: &str = "UPDATE sync_task_state SET state = 'queued', fail_count = 0, not_before = 0,
+                reason = ?1, at = ?2
+          WHERE state = 'deferred'";
+    let revived = match scope {
+        SyncResetScope::Everything => tx.execute(SET, rusqlite::params![cause.slug(), now])?,
+        SyncResetScope::Account(account) => tx.execute(
+            &format!("{SET} AND task IN (?3, ?4) AND key = ?5"),
+            rusqlite::params![
+                cause.slug(),
+                now,
+                kind_slug(SyncTaskKind::AccountRepos),
+                kind_slug(SyncTaskKind::RenameProbe),
+                account.0
+            ],
+        )?,
+        SyncResetScope::Project(project) => tx.execute(
+            &format!("{SET} AND task = ?3 AND key = ?4"),
+            rusqlite::params![
+                cause.slug(),
+                now,
+                kind_slug(SyncTaskKind::ProjectRemote),
+                project.0
+            ],
+        )?,
+    };
     Ok(revived)
 }

@@ -21,7 +21,7 @@ use codotheca_core::sync::state::{
     apply_outcome, secondary_park_secs, transient_backoff_secs, SyncResetCause, SyncTaskStateRow,
     SYNC_MAX_TRANSIENT_FAILS,
 };
-use codotheca_core::sync::store::{load, load_all, put, reset_for};
+use codotheca_core::sync::store::{load, load_all, put, reset_for, SyncResetScope};
 use codotheca_core::testing::TempIndex;
 
 const NOW: i64 = 1_800_000_000;
@@ -295,7 +295,12 @@ fn a_revival_cause_revives_deferred_and_never_blocked() {
         .with_tx(|tx| {
             put(tx, &deferred)?;
             put(tx, &blocked)?;
-            let revived = reset_for(tx, SyncResetCause::AccountReconnected, NOW + 10)?;
+            let revived = reset_for(
+                tx,
+                SyncResetScope::Everything,
+                SyncResetCause::AccountReconnected,
+                NOW + 10,
+            )?;
             assert_eq!(revived, 1, "exactly the deferred row");
             Ok(())
         })
