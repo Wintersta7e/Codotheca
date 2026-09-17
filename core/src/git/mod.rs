@@ -16,7 +16,7 @@ mod ignore;
 mod inventory;
 mod invocation;
 mod observe;
-mod refstate;
+pub(crate) mod refstate;
 mod repo;
 mod slots;
 mod status;
