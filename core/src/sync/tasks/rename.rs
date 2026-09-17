@@ -29,6 +29,19 @@ use crate::sync::budget::mirror;
 use crate::sync::outcome::SyncOutcome;
 use crate::sync::{settle_of, token_for, SyncDeps, SyncError};
 
+/// How many lookups one probe step may be worth.
+///
+/// **The budget is read once per task step, not once per request** (`SyncRunner::budget_verdict`),
+/// and p2-22's pass issues one lookup per unmatched key. Without a number here, a library whose
+/// first scan left five hundred keys unmatched would spend five hundred requests from one
+/// `Spend` — straight through a `429`, because §22.7 swallows a refusal as `unknown` and keeps
+/// going, correctly, since it has no budget concept of its own.
+///
+/// Two hundred is a pass that finishes the ordinary case in one step and still leaves most of an
+/// hour's allowance for the pages a user opens. What a step leaves over is asked by the next
+/// probe; nothing is lost, because a key that resolves never returns to the candidate set.
+const RENAME_PROBE_MAX_LOOKUPS: usize = 200;
+
 /// Repair every unmatched `remote_key` this account's forge can resolve, once.
 ///
 /// **R94's second side**: a worker-thread signature. It takes the `Arc` because
@@ -63,6 +76,7 @@ pub fn run_rename_probe(
         deps.provider.as_ref(),
         &token,
         &declared_host_aliases(),
+        RENAME_PROBE_MAX_LOOKUPS,
         now,
     )
     .map_err(|e| SyncError::Account(format!("{e:?}")))?;

@@ -18,7 +18,7 @@
 //! immediate, and the bound is a number `core/tests/http_transport.rs` already pins.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -59,6 +59,22 @@ const IDLE_POLL: Duration = Duration::from_millis(50);
 /// while_it_is_in_flight` probes whether the mutex is free at the moment a request reaches the
 /// transport, and an idle sync runner made it free only between polls.
 const IDLE_WAIT: Duration = Duration::from_secs(1);
+
+/// How often the loop asks whether an account has come due for a listing (§21.5).
+///
+/// **This is not the cadence.** The cadence is six hours and `due_listings` owns it. This is how
+/// long the *other* three triggers §21.5 names — on connect, on scope upgrade, on an org opt-in
+/// change — wait to be noticed, and it is a poll rather than a signal for a reason worth stating:
+/// each of those three completes on a p2-20 thread that has no handle on this runner. A connect
+/// finishes inside `crate::accounts::pump`'s worker, not in the command arm that started it, so
+/// there is no call site in this plan's reach that could signal instead. **Recorded as a
+/// deviation**: the honest shape is an account-lifecycle signal, and it needs a plan that owns
+/// that seam.
+///
+/// A minute is the delay a user sees between connecting an account and its listing starting, and
+/// it is one small `SELECT` per minute against the process's one index mutex — against the twenty
+/// per second [`IDLE_WAIT`] exists to prevent.
+const SCHEDULE_POLL_SECS: i64 = 60;
 
 /// The pool §21.6 keys a budget by when the response named no resource of its own.
 ///
@@ -104,6 +120,10 @@ pub struct SyncRunner {
     stopping: AtomicBool,
     /// Whether the table holds anything the loop could still act on. See [`IDLE_WAIT`].
     outstanding: AtomicBool,
+    /// The epoch second at which the loop next consults `due_listings`. See
+    /// [`SCHEDULE_POLL_SECS`]. Atomic rather than behind the `waiters` mutex so the common case —
+    /// *not yet* — costs one load and never a lock.
+    schedule_due_at: AtomicI64,
     waiters: Mutex<Waiters>,
     wake: Condvar,
     handle: Mutex<Option<std::thread::JoinHandle<()>>>,
@@ -148,6 +168,8 @@ impl SyncRunner {
             events,
             stopping: AtomicBool::new(false),
             outstanding: AtomicBool::new(false),
+            // `start` sweeps the schedule itself, so the loop's first poll is one interval later.
+            schedule_due_at: AtomicI64::new(i64::MIN),
             waiters: Mutex::new(Waiters::default()),
             wake: Condvar::new(),
             handle: Mutex::new(None),
@@ -163,14 +185,21 @@ impl SyncRunner {
     /// `running` row to `queued` with `not_before = 0`. Every sync task is a GET, so it is
     /// idempotent — unlike the operations §2.2 forbids replaying — and an interrupted one is
     /// re-runnable rather than a failure to report.
+    ///
+    /// **§21.5's start-up trigger is the same transaction.** *"At start-up when the last settled
+    /// run is older than the interval"* is a question about the table, and asking it here rather
+    /// than on the loop's first turn means a process that starts with nothing due still never
+    /// takes the guard twice.
     pub fn start(self: &Arc<Self>) {
         let now = self.deps.clock.now_unix();
         {
             let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-            // The sweep and the first *is anything outstanding* read are one transaction, so a
-            // loop that starts against an empty table never takes the guard at all.
+            // The sweep, the schedule and the first *is anything outstanding* read are one
+            // transaction, so a loop that starts against an empty table never takes the guard at
+            // all.
             if let Ok((moved, outstanding)) = guard.with_tx(|tx| {
                 let moved = requeue_running(tx, now)?;
+                sweep_schedule(tx, now)?;
                 Ok((moved, any_outstanding(tx)?))
             }) {
                 if moved > 0 {
@@ -185,6 +214,9 @@ impl SyncRunner {
                     .store(outstanding || !self.inbox_is_empty(), Ordering::SeqCst);
             }
         }
+
+        self.schedule_due_at
+            .store(now.saturating_add(SCHEDULE_POLL_SECS), Ordering::SeqCst);
 
         let me = Arc::clone(self);
         let handle = std::thread::Builder::new()
@@ -290,6 +322,10 @@ impl SyncRunner {
 
     fn run_loop(self: &Arc<Self>) {
         while !self.should_stop() {
+            let now = self.deps.clock.now_unix();
+            if now >= self.schedule_due_at.load(Ordering::SeqCst) {
+                self.poll_schedule(now);
+            }
             // **No lock on an empty table.** `enqueue` and `request_stop` both signal, so a wake
             // that matters still arrives at once; the ceiling is only the floor under a missed
             // one.
@@ -311,6 +347,34 @@ impl SyncRunner {
             .wait_timeout(waiters, ceiling)
             .unwrap_or_else(PoisonError::into_inner);
         waiters.signalled = false;
+    }
+
+    /// Ask the table which accounts are due a listing, and queue one row for each.
+    ///
+    /// **This is what makes §21.5's cadence real in the product.** Without it `due_listings` has
+    /// no production caller, no `account_repos` row is ever written, and the whole of §21 is
+    /// reachable only from a test — R90 on this plan's own primary deliverable.
+    ///
+    /// The horizon moves whether or not the read succeeded: a failing read must not turn this
+    /// into a per-turn query against the one index mutex.
+    fn poll_schedule(&self, now: i64) {
+        let swept = {
+            let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.with_tx(|tx| {
+                let queued = sweep_schedule(tx, now)?;
+                Ok((queued, any_outstanding(tx)?))
+            })
+        };
+        self.schedule_due_at
+            .store(now.saturating_add(SCHEDULE_POLL_SECS), Ordering::SeqCst);
+        if let Ok((queued, outstanding)) = swept {
+            if queued > 0 {
+                self.outstanding.store(true, Ordering::SeqCst);
+            } else {
+                self.outstanding
+                    .store(outstanding || !self.inbox_is_empty(), Ordering::SeqCst);
+            }
+        }
     }
 
     /// Promote the parks whose clock has come, then claim the one task to run.
@@ -514,6 +578,17 @@ impl SyncRunner {
             row
         };
 
+        // §22.7's trigger, and its only one: *"after a sync completes — on the terminal `Done`
+        // outcome only, never on a `NextPage` and never on a throttled park, because 'no listing
+        // matched' is not knowable until the listing ends"*
+        // (`core/src/identity/rename_repair.rs:9`). Queued rather than called, so the repair gets
+        // its own budget check, its own row and its own settle instead of riding on the listing's.
+        if let (SyncTask::AccountRepos { account_id }, SyncOutcome::Done) = (task, &outcome) {
+            self.enqueue(SyncTask::RenameProbe {
+                account_id: *account_id,
+            });
+        }
+
         // Every budget row this step touched, so a surface renders `—` for what was never
         // observed rather than a zero nobody measured.
         if let Ok(budgets) = self.read_budgets() {
@@ -547,6 +622,22 @@ impl SyncRunner {
         let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         crate::sync::events::budgets(guard.conn())
     }
+}
+
+/// Queue an `account_repos` row for every account `due_listings` names, and say how many.
+///
+/// A fresh `queued` row rather than a promotion: a scheduled run starts with both counters at
+/// zero, and `due_listings` already refuses to touch a row in any state but `ok` — so this cannot
+/// overwrite a park with a clock or revive something `blocked`.
+fn sweep_schedule(tx: &rusqlite::Transaction<'_>, now: i64) -> Result<usize, IndexError> {
+    let due = crate::sync::schedule::due_listings(tx, now)?;
+    for account in &due {
+        put(
+            tx,
+            &SyncTaskStateRow::queued(SyncTaskKind::AccountRepos, Some(account.0), now),
+        )?;
+    }
+    Ok(due.len())
 }
 
 /// Whether any row is still the loop's to act on.

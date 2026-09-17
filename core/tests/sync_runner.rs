@@ -743,6 +743,49 @@ fn a_reserve_with_no_observed_reset_parks_once_instead_of_cycling() {
     );
 }
 
+/// **R90 — the shipped binary queues a listing, with nothing here enqueueing one.**
+///
+/// The bar every other test in this file misses. Each of them calls `enqueue` itself, so every
+/// one of them passes against a build in which no production path ever asks for a listing — which
+/// is what this lane shipped until an independent review traced the call graph and found it
+/// terminating. `AC-P2-21-9-binary` could not see it either: it asserts the real binary answers
+/// `sync.status` with empty arrays and two nulls, which is exactly what a permanently inert
+/// runner answers.
+///
+/// The only thing driven here is `SyncPump::start`, which is what `core/src/main.rs` runs.
+#[test]
+fn a_connected_account_is_listed_with_nothing_enqueueing_it() {
+    let f = fixture(Duration::ZERO);
+    for _ in 0..4 {
+        f.scripted.push(ok_page("[]"));
+    }
+    let index = Arc::clone(&f.index);
+    let account = f.account.0;
+    let pump = SyncPump::start(
+        Arc::clone(&f.index),
+        f.deps,
+        Arc::clone(&f.events) as Arc<dyn EventSink>,
+    );
+    until("the listing nothing asked for to settle", || {
+        state_of(&index, SyncTaskKind::AccountRepos, account)
+            .is_some_and(|row| row.state == SyncTaskState::Ok)
+    });
+    // §22.7's trigger, and the second half of the same gap: the probe is queued by the listing's
+    // terminal `Done`, so `repair_renames` has a reachable caller rather than a written one.
+    until("the rename probe the completed listing queues", || {
+        state_of(&index, SyncTaskKind::RenameProbe, account).is_some()
+    });
+    pump.stop();
+
+    let sent = f.scripted.requests();
+    let urls: Vec<&str> = sent.iter().map(|r| r.url.as_str()).collect();
+    eprintln!("sync_runner: a start with nothing enqueued issued {urls:?}");
+    assert!(
+        urls.iter().any(|url| url.contains("/user/repos")),
+        "no listing was read, so the schedule reached no forge: {urls:?}"
+    );
+}
+
 /// **Cancelling alone stops the loop**, with no `request_stop` at all.
 ///
 /// This is what the cancel half of `stop()` actually contributes, and the plan's own mutation

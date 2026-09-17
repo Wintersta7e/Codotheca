@@ -22,6 +22,10 @@ use codotheca_core::provider::{
     CiRunsRead, Observed, Provider, ProviderError, ProviderResult, RepoFactsRead,
 };
 
+/// Every case below except the bound itself asks about the whole candidate set, so the limit is
+/// not what any of them is measuring.
+const NO_LIMIT: usize = usize::MAX;
+
 /// What a scripted lookup answers.
 #[derive(Debug, Clone)]
 enum Answer {
@@ -204,6 +208,44 @@ fn remote_key_of(index: &Arc<Mutex<Index>>, project_id: i64) -> String {
         .unwrap()
 }
 
+/// One pass spends **at most `limit` requests**, and the rest are asked by the next one.
+///
+/// §21's budget is read once per task step, so without this the caller's single `Spend` would
+/// buy however many unmatched keys the library happens to hold — three hundred of them straight
+/// through a `429`, because a refusal here is `unknown` and the pass keeps going. The candidates
+/// the limit leaves behind must still be reachable, or a bound would be a quiet data loss.
+#[test]
+fn a_pass_issues_no_more_lookups_than_its_limit_and_the_rest_wait_for_the_next() {
+    let keys = [
+        "forge.example/acme/one",
+        "forge.example/acme/two",
+        "forge.example/acme/three",
+        "forge.example/acme/four",
+    ];
+    let (_dir, index) = index_with(&keys);
+    let forge = RecordingForge::new(Answer::Found("909"));
+
+    let first = repair_renames(&index, &forge, &token(), &aliases(), 2, 500).unwrap();
+    eprintln!(
+        "rename repair: {} candidate(s), limit 2, {} lookup(s)",
+        keys.len(),
+        forge.request_count()
+    );
+    assert_eq!(first.attempted, 2, "the limit did not bound the pass");
+    assert_eq!(forge.request_count(), 2, "and it did not bound the forge");
+
+    // The two the limit left are still candidates: the bound defers work, it does not drop it.
+    let second = repair_renames(&index, &forge, &token(), &aliases(), 2, 600).unwrap();
+    assert_eq!(second.attempted, 2, "the remainder was never asked about");
+    assert_eq!(forge.request_count(), 4);
+
+    let third = repair_renames(&index, &forge, &token(), &aliases(), NO_LIMIT, 700).unwrap();
+    assert_eq!(
+        third.attempted, 0,
+        "every key resolved, so none returns to the candidate set"
+    );
+}
+
 /// **AC-P2-22-13.** N unmatched projects produce at most N lookups, and then zero.
 #[test]
 fn n_unmatched_projects_produce_at_most_n_lookups_and_then_zero() {
@@ -215,9 +257,9 @@ fn n_unmatched_projects_produce_at_most_n_lookups_and_then_zero() {
     let (_dir, index) = index_with(&keys);
     let forge = RecordingForge::new(Answer::Found("909"));
 
-    let first = repair_renames(&index, &forge, &token(), &aliases(), 500).unwrap();
+    let first = repair_renames(&index, &forge, &token(), &aliases(), NO_LIMIT, 500).unwrap();
     let after_first = forge.request_count();
-    let second = repair_renames(&index, &forge, &token(), &aliases(), 600).unwrap();
+    let second = repair_renames(&index, &forge, &token(), &aliases(), NO_LIMIT, 600).unwrap();
     let after_second = forge.request_count() - after_first;
 
     eprintln!(
@@ -247,7 +289,7 @@ fn a_403_a_429_and_an_offline_lookup_each_leave_the_fields_unknown() {
     for answer in [Answer::Forbidden, Answer::RateLimited, Answer::Offline] {
         let (_dir, index) = index_with(&["forge.example/acme/one"]);
         let forge = RecordingForge::new(answer.clone());
-        let report = repair_renames(&index, &forge, &token(), &aliases(), 500)
+        let report = repair_renames(&index, &forge, &token(), &aliases(), NO_LIMIT, 500)
             .unwrap_or_else(|e| panic!("{answer:?} must not be an error: {e:?}"));
 
         assert_eq!(
@@ -288,7 +330,7 @@ fn the_lookup_uses_the_stored_remote_key_not_the_display_name() {
             .unwrap();
     }
     let forge = RecordingForge::new(Answer::Found("909"));
-    repair_renames(&index, &forge, &token(), &aliases(), 500).unwrap();
+    repair_renames(&index, &forge, &token(), &aliases(), NO_LIMIT, 500).unwrap();
 
     assert_eq!(
         forge.calls(),
@@ -300,7 +342,7 @@ fn the_lookup_uses_the_stored_remote_key_not_the_display_name() {
 fn a_resolved_project_takes_the_provider_id_basis_and_keeps_its_remote_key() {
     let (_dir, index) = index_with(&["forge.example/acme/widget"]);
     let forge = RecordingForge::new(Answer::Found("909"));
-    repair_renames(&index, &forge, &token(), &aliases(), 500).unwrap();
+    repair_renames(&index, &forge, &token(), &aliases(), NO_LIMIT, 500).unwrap();
 
     assert_eq!(
         binding_of(&index, 1),
@@ -319,7 +361,7 @@ fn a_resolved_project_takes_the_provider_id_basis_and_keeps_its_remote_key() {
 fn a_project_on_an_undeclared_host_is_never_looked_up() {
     let (_dir, index) = index_with(&["other.example/acme/widget", "forge-work/acme/widget"]);
     let forge = RecordingForge::new(Answer::Found("909"));
-    let report = repair_renames(&index, &forge, &token(), &aliases(), 500).unwrap();
+    let report = repair_renames(&index, &forge, &token(), &aliases(), NO_LIMIT, 500).unwrap();
 
     assert_eq!(report, RepairReport::default());
     assert_eq!(forge.request_count(), 0);
@@ -330,7 +372,7 @@ fn a_project_on_an_undeclared_host_is_never_looked_up() {
 fn a_project_on_an_alias_host_is_looked_up() {
     let (_dir, index) = index_with(&["ssh.forge.example/acme/widget"]);
     let forge = RecordingForge::new(Answer::Found("909"));
-    repair_renames(&index, &forge, &token(), &aliases(), 500).unwrap();
+    repair_renames(&index, &forge, &token(), &aliases(), NO_LIMIT, 500).unwrap();
     assert_eq!(
         forge.calls(),
         vec![("acme".to_owned(), "widget".to_owned())]
@@ -352,7 +394,7 @@ fn a_project_that_already_carries_an_id_is_not_asked_about() {
             .unwrap();
     }
     let forge = RecordingForge::new(Answer::Found("909"));
-    let report = repair_renames(&index, &forge, &token(), &aliases(), 500).unwrap();
+    let report = repair_renames(&index, &forge, &token(), &aliases(), NO_LIMIT, 500).unwrap();
     assert_eq!(report, RepairReport::default());
     assert_eq!(forge.request_count(), 0);
 }
