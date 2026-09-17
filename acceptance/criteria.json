@@ -3845,6 +3845,30 @@
           "assert": "Two entries blocked by one project settle with suppressed equal to two and suppressedBy naming that project twice, and the list length equals the count in every case."
         }
       ]
+    },
+    {
+      "id": "P2-21-16",
+      "title": "The product schedules a listing, and a completed listing schedules the rename probe",
+      "group": "functional",
+      "spec": "\u00a721.5",
+      "checks": [
+        {
+          "id": "AC-P2-21-16",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_runner::a_connected_account_is_listed_with_nothing_enqueueing_it",
+          "assert": "Starting the pump over a connected account, with nothing enqueueing anything, issues the account listing and then queues the rename probe the completed listing queues; every other runner bar calls enqueue itself and so passes against a build in which no production path ever asks for a listing."
+        },
+        {
+          "id": "AC-P2-21-16-park",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_runner::a_throttle_naming_no_instant_parks_once_instead_of_retrying",
+          "assert": "A 429 that names neither retry-after nor x-ratelimit-reset parks the task and the forge is asked nothing further while it is parked; the park releases strictly after the instant it was made."
+        }
+      ]
     }
   ]
 }

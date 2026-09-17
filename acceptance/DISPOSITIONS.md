@@ -91,7 +91,7 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 62 | 129 |
+| automated | 63 | 131 |
 | deferred | 4 | 4 |
 | manual | 0 | 0 |
 | unmeasurable | 0 | 0 |
@@ -165,6 +165,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P2-21-13 | automated | A remote read is enqueued from exactly two visibility sites | `AC-P2-21-13` automated, runs now — `sync_enqueue_sites::project_remote_is_enqueued_from_exactly_the_two_visibility_sites`<br>`AC-P2-21-13-nolocation` automated, runs now — `sync_enqueue_sites::a_project_with_no_location_still_enqueues_from_both_commands`<br>`AC-P2-21-13-shelf` automated, runs now — `sync_enqueue_sites::the_two_commands_enqueue_once_each_and_the_shelf_enqueues_nothing` |
 | P2-21-14 | automated | A scarce allowance is held for on-demand work | `AC-P2-21-14` automated, runs now — `sync_budget::a_scarce_budget_yields_the_listing_and_spends_on_the_opened_page`<br>`AC-P2-21-14-unknown` automated, runs now — `sync_budget::an_unknown_budget_lets_both_kinds_of_task_through` |
 | P2-21-15 | automated | An entry with no permission object is counted, never dropped | `AC-P2-21-15` automated, runs now — `sync_listing::an_entry_with_no_permission_object_is_counted_and_admitted_nowhere`<br>`AC-P2-21-15-suppressed` automated, runs now — `sync_listing::a_suppression_names_the_project_that_blocked_it_once_per_entry` |
+| P2-21-16 | automated | The product schedules a listing, and a completed listing schedules the rename probe | `AC-P2-21-16` automated, runs now — `sync_runner::a_connected_account_is_listed_with_nothing_enqueueing_it`<br>`AC-P2-21-16-park` automated, runs now — `sync_runner::a_throttle_naming_no_instant_parks_once_instead_of_retrying` |
 
 ## Why a check is not automated, or is automated over less than it looks
 
