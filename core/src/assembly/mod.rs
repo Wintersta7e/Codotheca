@@ -325,6 +325,36 @@ impl CoreHandler {
         crate::accounts::dispatch_accounts_command(&mut ctx, command, args)
     }
 
+    /// §11's arm. Extracted for the same reason every other arm here is: `handle` sits on
+    /// clippy's `too_many_lines` ceiling, so a route added anywhere costs one of these.
+    fn surfaces_arm(
+        guard: &Index,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::surfaces::SurfaceCtx { index: guard, now };
+        crate::surfaces::dispatch_surface_command(&ctx, command, args)
+    }
+
+    /// §21.13's one read. Its own method for the same reason `accounts_arm` is one: `handle` is
+    /// at clippy's `too_many_lines` ceiling.
+    ///
+    /// It takes the guard and **nothing else**, which is R94's first side as a signature rather
+    /// than a convention: a handler path is already under the one index mutex and may not take it
+    /// again. The runner is what locks the index, on its own thread.
+    fn sync_arm(
+        guard: &Index,
+        command: crate::protocol::CommandName,
+        args: Value,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::sync::commands::SyncCtx {
+            index: guard,
+            live: crate::sync::events::SyncLive::default(),
+        };
+        crate::sync::commands::dispatch_sync_command(&ctx, command, args)
+    }
+
     /// §25.2's opener. Its own method for the same reason `accounts_arm` is one: `handle` is at
     /// clippy's `too_many_lines` ceiling, and a two-line arm there costs the whole function.
     fn remote_arm(
@@ -403,6 +433,9 @@ impl CoreHandler {
             // a command's result is not a topic's snapshot type. [p2] §20.8 declares three
             // events on `accounts` and no `snapshot`, so it joins them.
             Topic::Scan | Topic::Session | Topic::Accounts => None,
+            // [p2] §21.13 declares one, and it is the command's own answer: a subscriber that
+            // missed every delta renders exactly what `sync.status` would have told it.
+            Topic::Sync => self.handle("sync.status", serde_json::json!({})).ok(),
             Topic::Projects => {
                 let page = self.handle("projects.list", serde_json::json!({})).ok()?;
                 Some(serde_json::json!({
@@ -517,11 +550,9 @@ impl CommandHandler for CoreHandler {
                 };
                 crate::art::dispatch_art_command(&ctx, command, args)
             }
-            Route::Surfaces => {
-                let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
-                crate::surfaces::dispatch_surface_command(&ctx, command, args)
-            }
+            Route::Surfaces => Self::surfaces_arm(&guard, command, args, now),
             Route::Accounts => Self::accounts_arm(&guard, command, args),
+            Route::Sync => Self::sync_arm(&guard, name, args),
             Route::Targets => {
                 let mut ctx = targets_cmd::TargetsCtx {
                     index: &mut guard,

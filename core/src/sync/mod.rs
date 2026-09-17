@@ -17,6 +17,8 @@
 
 pub mod budget;
 pub mod classify;
+pub mod commands;
+pub mod events;
 pub mod http;
 pub mod outcome;
 pub mod state;

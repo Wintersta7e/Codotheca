@@ -715,8 +715,10 @@ mod corehandler {
         // same way — a file read under a location root and a consent column reach no network.
         // `projects.readmeAssets` is the 52nd and is answered **without** the guard (R75),
         // because it reaches arbitrary hosts.
+        // [p2] §21.13's `sync.status` is the 53rd, answered **under** the guard: it reads two
+        // tables and the runner's own process state, and the runner is what reaches the network.
         assert_eq!(
-            checked, 52,
+            checked, 53,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(
@@ -794,6 +796,27 @@ mod corehandler {
             snap.get("epoch").is_none() && snap.get("throughSeq").is_none(),
             "epoch and throughSeq are the publisher's and are stamped by supply_snapshot"
         );
+    }
+
+    /// [p2] §21.13: the `sync` snapshot **is** `sync.status`' answer, byte for byte. Two
+    /// producers for one payload would let a subscriber and a caller disagree about the same
+    /// moment, which is the whole reason `snapshot_of` delegates through `handle` rather than
+    /// reaching into a module.
+    #[test]
+    fn the_sync_snapshot_is_exactly_what_sync_status_returns() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        let answered = h
+            .handle("sync.status", serde_json::json!({}))
+            .expect("sync.status answers");
+        let snap = h.snapshot(Topic::Sync);
+        assert_eq!(snap, answered, "the snapshot must not be a second producer");
+        // And an empty runner is *measured, none*: empty arrays, and null for the two fields
+        // that have no observation rather than a zero nobody made.
+        assert_eq!(snap["tasks"], serde_json::json!([]));
+        assert_eq!(snap["budgets"], serde_json::json!([]));
+        assert_eq!(snap["listing"], serde_json::Value::Null);
+        assert_eq!(snap["notice"], serde_json::Value::Null);
     }
 
     /// Every `?` field is read, never synthesised. An unset `git_version` is a real null.

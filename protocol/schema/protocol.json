@@ -1040,6 +1040,66 @@
         "rejected",
         "transient_fail"
       ]
+    },
+    "SyncNotice": {
+      "kind": "enum",
+      "$comment": "§21.10's four sentences. Sync failure is state, not a command error: no ErrorCode is declared, because the closed enum describes a command failing while background sync failure lives on the sync rows and this topic",
+      "variants": ["throttled", "unauthorized", "forbidden", "offline"]
+    },
+    "SyncTaskStarted": {
+      "kind": "struct",
+      "fields": { "kind": "SyncTaskKind", "key": "i64?" }
+    },
+    "SyncListingSummary": {
+      "kind": "struct",
+      "$comment": "§21.10's settle-time count set. suppressedBy is R62's: §22.6 requires a suppression be reported with the project that blocked it named, and a count cannot name one. It is positionally aligned with the suppressions and NOT deduplicated, so suppressedBy.length == suppressed is an invariant; an empty list means nothing was suppressed and never not computed, which is why the count stays beside it",
+      "fields": {
+        "listed": "i64",
+        "admitted": "i64",
+        "skippedUnknownPermission": "i64",
+        "ambiguous": "i64",
+        "suppressed": "i64",
+        "suppressedBy": "[ProjectId]"
+      }
+    },
+    "SyncTaskSettled": {
+      "kind": "struct",
+      "$comment": "state is carried rather than re-derived: §21.8's outcome-to-state mapping is not total, because TransientFail becomes queued or deferred depending on a fail_count no event carries. outcome is nullable because it is NOT OBSERVED HERE in two different ways: a queued row has never produced one, and sync.status reports the stored row, which carries a state and not an outcome — sync_task_state has no column for one. The settled event is where an observed outcome travels. null is therefore *no outcome is being reported*, and a surface must not render it as *never settled*",
+      "fields": {
+        "kind": "SyncTaskKind",
+        "key": "i64?",
+        "state": "SyncTaskState",
+        "outcome": "SyncOutcomeKind?",
+        "notBefore": "Timestamp?",
+        "summary": "SyncListingSummary?"
+      }
+    },
+    "SyncBudget": {
+      "kind": "struct",
+      "$comment": "accountId is nullable because NULL is the unauthenticated per-IP pool, keyed by the absence of an account rather than by a sentinel one. Every number is nullable for the same reason it is nullable in the table: unobserved is unknown, never zero and never the limit",
+      "fields": {
+        "accountId": "AccountId?",
+        "resource": "String",
+        "remaining": "i64?",
+        "limit": "i64?",
+        "resetAt": "Timestamp?",
+        "observedAt": "Timestamp"
+      }
+    },
+    "SyncListingProgress": {
+      "kind": "struct",
+      "$comment": "§21.11: total is nullable because a denominator inferred from page numbers is a guess, and a guessed denominator is an unknown rendered as a fact. listed only ever increases",
+      "fields": { "accountId": "AccountId", "listed": "i64", "total": "i64?" }
+    },
+    "SyncStatus": {
+      "kind": "struct",
+      "$comment": "sync.status' answer and the sync topic's snapshot, byte for byte the same value",
+      "fields": {
+        "tasks": "[SyncTaskSettled]",
+        "budgets": "[SyncBudget]",
+        "listing": "SyncListingProgress?",
+        "notice": "SyncNotice?"
+      }
     }
   },
   "commands": [
@@ -1103,6 +1163,12 @@
       },
       "returns": "[ReadmeAsset]",
       "$comment": "§25.5: the bytes behind a README's images, as data: URIs the core produced. The two arrays are the renderer's split on ://; the core re-classifies, so the rule has one owner. Answered without the index guard (R75) because the remote branch reaches the network"
+    },
+    {
+      "name": "sync.status",
+      "args": {},
+      "returns": "SyncStatus",
+      "$comment": "\u00a721.13's one command. A read, and idempotent \u2014 every sync task is a GET. It is also the sync topic's snapshot, answered through the same handler so the two are one value"
     },
     {
       "name": "projects.setReadmeRemote",
@@ -1333,6 +1399,14 @@
       "connect_progress": "ConnectProgress",
       "connected": "Account",
       "disconnected": "AccountDisconnected"
+    },
+    "sync": {
+      "started": "SyncTaskStarted",
+      "settled": "SyncTaskSettled",
+      "listing_progress": "SyncListingProgress",
+      "budget": "SyncBudget",
+      "notice": "SyncNotice",
+      "snapshot": "SyncStatus"
     }
   }
 }

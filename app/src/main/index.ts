@@ -60,7 +60,7 @@ import {
 } from './security';
 import { runStartup } from './startup';
 
-const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts'];
+const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts', 'sync'];
 
 /**
  * The commands the core answers, and therefore the only names the bridge will accept.
@@ -119,6 +119,12 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'projects.readme',
   'projects.readmeAssets',
   'projects.setReadmeRemote',
+  // sync::commands::dispatch_sync_command — the one read §21.13 adds. The runner does the
+  // network; this name only asks what the runner has already observed.
+  // NOTE: no apostrophe may appear anywhere in this array body, comments included.
+  // app/test/knownCommands.test.ts reads the entries by matching single-quoted runs, so one
+  // stray apostrophe pairs with the next command name and the whole list parses wrong.
+  'sync.status',
   // view::dispatch_view_command
   'view.get',
   'view.set',

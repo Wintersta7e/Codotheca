@@ -84,6 +84,9 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   // [p2] §25.5. Reads bytes and issues requests; it writes nothing and spawns nothing, and a
   // replayed read costs at worst the same images again.
   'projects.readmeAssets': 'read',
+  // [p2] §21.13. A read of two tables and the runner's own process state. It queues nothing and
+  // spawns nothing, so replaying it costs a second answer to the same question.
+  'sync.status': 'read',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {
