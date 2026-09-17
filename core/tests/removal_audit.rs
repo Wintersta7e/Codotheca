@@ -320,11 +320,110 @@ fn recursive_removal_is_confined_to_four_files() {
 }
 
 #[test]
-fn the_warrant_variant_list_is_one_until_uninstall_lands() {
+fn the_warrant_variant_list_is_two_now_that_uninstall_has_landed() {
     assert_eq!(
         Warrant::ALL.len(),
-        1,
-        "p2-24b raises this to 2 with WarrantKind::Uninstall, and the audit floor with it"
+        2,
+        "[p2-24b] raised from 1 with WarrantKind::Uninstall — the tripwire working, not a mirror"
+    );
+}
+
+/// §24.7E, and the reason the two warrants are discriminated rather than merged.
+///
+/// A working copy whose root commit is not the one the verdict was computed over is **refused**.
+/// The root commit and not `head_oid`: a tip moves with every commit, so a guard over it would
+/// refuse a copy the user had merely committed to, and admit one rewound onto the same tip.
+#[test]
+fn an_uninstall_warrant_whose_identity_changed_is_refused() {
+    use codotheca_core::git::RootCommit;
+    use codotheca_core::protocol::{LocationId, UninstallBlocker, UninstallDisposition};
+    use codotheca_core::uninstall::VerdictSeal;
+
+    let dir = tempfile::tempdir().expect("tmp");
+    let copy = dir.path().join("widget");
+    std::fs::create_dir_all(copy.join("src")).expect("mkdir");
+
+    let expected = RootCommit {
+        oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+        committed_at: 0,
+        tz_offset_min: 0,
+    };
+    let warrant = Warrant::for_uninstall_in_test(
+        LocationId(1),
+        copy.clone(),
+        expected.clone(),
+        VerdictSeal::of(&[] as &[UninstallBlocker], UninstallDisposition::Safe),
+    );
+
+    // A different repository at the same path.
+    let elsewhere = RootCommit {
+        oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+        ..expected.clone()
+    };
+    assert_eq!(
+        remove_warranted(&warrant, &HardDelete, Some(&elsewhere)),
+        Err(RemovalRefusal::IdentityChanged)
+    );
+    assert!(copy.exists(), "a refused removal removes nothing");
+
+    // No identity at all is a refusal, never a match: a directory that could not be read is not
+    // a directory that was verified.
+    match remove_warranted(&warrant, &HardDelete, None) {
+        Err(RemovalRefusal::WarrantFailed(clause)) => {
+            assert!(clause.contains("re-derived"), "{clause}");
+        }
+        other => panic!("expected a warrant refusal, got {other:?}"),
+    }
+    assert!(copy.exists());
+
+    // And the matching identity removes it.
+    assert_eq!(
+        remove_warranted(&warrant, &HardDelete, Some(&expected)),
+        Ok(RemovalOutcome::HardDeleted)
+    );
+    assert!(!copy.exists());
+}
+
+/// An uninstall warrant is refused on a symlink, without following it — the same guard the
+/// staging warrant gets, because a link at a working copy's path aims somewhere else entirely.
+#[test]
+fn an_uninstall_warrant_on_a_symlink_is_refused_without_following_it() {
+    use codotheca_core::git::RootCommit;
+    use codotheca_core::protocol::{LocationId, UninstallBlocker, UninstallDisposition};
+    use codotheca_core::uninstall::VerdictSeal;
+
+    let dir = tempfile::tempdir().expect("tmp");
+    let real = dir.path().join("precious");
+    std::fs::create_dir_all(&real).expect("mkdir");
+    std::fs::write(real.join("keep"), b"x").expect("write");
+    let link = dir.path().join("widget");
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&real, &link).expect("symlink");
+    #[cfg(windows)]
+    if std::os::windows::fs::symlink_dir(&real, &link).is_err() {
+        eprintln!("removal audit: SKIPPED the uninstall symlink refusal — no symlink privilege");
+        return;
+    }
+
+    let identity = RootCommit {
+        oid: "cccccccccccccccccccccccccccccccccccccccc".to_owned(),
+        committed_at: 0,
+        tz_offset_min: 0,
+    };
+    let warrant = Warrant::for_uninstall_in_test(
+        LocationId(1),
+        link,
+        identity.clone(),
+        VerdictSeal::of(&[] as &[UninstallBlocker], UninstallDisposition::Safe),
+    );
+    assert_eq!(
+        remove_warranted(&warrant, &HardDelete, Some(&identity)),
+        Err(RemovalRefusal::SymlinkedPath)
+    );
+    assert!(
+        real.join("keep").exists(),
+        "following the link would have removed what it aims at"
     );
 }
 
@@ -374,7 +473,7 @@ fn a_path_outside_the_warranted_root_is_refused() {
         SessionNonce::current(),
     );
     assert_eq!(
-        remove_warranted(&forged, &HardDelete),
+        remove_warranted(&forged, &HardDelete, None),
         Err(RemovalRefusal::OutsideWarrantedRoot)
     );
     assert!(real.exists(), "the working copy must still be there");
@@ -391,7 +490,7 @@ fn a_root_that_is_not_a_staging_directory_is_refused() {
         "widget",
         SessionNonce::current(),
     );
-    match remove_warranted(&warrant, &HardDelete) {
+    match remove_warranted(&warrant, &HardDelete, None) {
         Err(RemovalRefusal::WarrantFailed(clause)) => {
             assert!(clause.contains("staging"), "{clause}");
         }
@@ -411,7 +510,7 @@ fn a_warrant_from_another_session_is_refused() {
         "widget",
         SessionNonce::mint_for_test(),
     );
-    match remove_warranted(&stale, &HardDelete) {
+    match remove_warranted(&stale, &HardDelete, None) {
         Err(RemovalRefusal::WarrantFailed(clause)) => {
             assert!(clause.contains("run of the core"), "{clause}");
         }
@@ -450,7 +549,7 @@ fn a_symlinked_target_is_refused_without_being_followed() {
         SessionNonce::current(),
     );
     assert_eq!(
-        remove_warranted(&warrant, &HardDelete),
+        remove_warranted(&warrant, &HardDelete, None),
         Err(RemovalRefusal::SymlinkedPath)
     );
     assert!(
@@ -467,7 +566,7 @@ fn a_warranted_staging_directory_is_hard_deleted() {
 
     let warrant = warrant_for(&staging_root, "widget");
     assert_eq!(
-        remove_warranted(&warrant, &HardDelete),
+        remove_warranted(&warrant, &HardDelete, None),
         Ok(RemovalOutcome::HardDeleted),
         "a partial clone is never reported as recoverable"
     );

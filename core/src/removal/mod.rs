@@ -19,6 +19,7 @@ use std::path::{Component, Path};
 pub use trash::{HardDelete, SystemTrash, Trash, TrashAvailability, TrashRefusal};
 pub use warrant::{SessionNonce, Warrant, WarrantKind, WarrantVariant};
 
+use crate::git::RootCommit;
 use crate::install::staging::STAGING_DIR_NAME;
 
 /// What happened to the bytes, said by whoever removed them.
@@ -44,6 +45,8 @@ pub enum RemovalRefusal {
     OutsideWarrantedRoot,
     /// The removal was attempted and the platform refused.
     Io(String),
+    /// [p2-24b] §24.7E: the directory is no longer the repository the verdict was computed over.
+    IdentityChanged,
 }
 
 /// Remove the one path this warrant authorises.
@@ -54,6 +57,7 @@ pub enum RemovalRefusal {
 pub fn remove_warranted(
     warrant: &Warrant,
     destination: &dyn Trash,
+    identity_now: Option<&RootCommit>,
 ) -> Result<RemovalOutcome, RemovalRefusal> {
     let path = warrant.path();
     match warrant.kind() {
@@ -82,6 +86,27 @@ pub fn remove_warranted(
                 return Err(RemovalRefusal::OutsideWarrantedRoot);
             }
         }
+        // [p2-24b] §24.7E: identity at the moment of removal, **re-derived, never remembered**.
+        //
+        // The root commit and not `head_oid`: a tip moves with every commit, so a guard over it
+        // would refuse a working copy the user had merely committed to, and admit one rewound
+        // onto the same tip. The root commit is what makes this repository *this* repository.
+        //
+        // The re-derivation is the caller's — it needs a git seam this module deliberately does
+        // not hold — so what is checked here is that the two agree. `identity_now` is `None` when
+        // the directory could not be read at all, which is a refusal rather than a match.
+        WarrantKind::Uninstall {
+            expected_root_commit,
+            ..
+        } => match identity_now {
+            Some(actual) if actual.oid == expected_root_commit.oid => {}
+            Some(_) => return Err(RemovalRefusal::IdentityChanged),
+            None => {
+                return Err(RemovalRefusal::WarrantFailed(
+                    "the directory's identity could not be re-derived at removal time",
+                ))
+            }
+        },
     }
 
     // `symlink_metadata` does not follow, which is the whole point: following one would remove

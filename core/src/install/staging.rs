@@ -136,7 +136,7 @@ pub fn sweep_staging(
             let path = entry.path();
             match warrant_for_path(index, &path) {
                 Some(warrant) => {
-                    if crate::removal::remove_warranted(&warrant, &crate::removal::HardDelete)
+                    if crate::removal::remove_warranted(&warrant, &crate::removal::HardDelete, None)
                         .is_ok()
                     {
                         report.removed = report.removed.saturating_add(1);

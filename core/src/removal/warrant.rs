@@ -12,7 +12,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::protocol::InstallRunId;
+use crate::git::RootCommit;
+use crate::protocol::{InstallRunId, LocationId};
+use crate::uninstall::VerdictSeal;
 
 /// A per-process random value, minted once at core start.
 ///
@@ -73,6 +75,8 @@ impl SessionNonce {
 pub enum WarrantVariant {
     /// A partial clone under `<root>/.codotheca-installing/`.
     Staging,
+    /// [p2-24b] A user's working copy, under §24.7E's re-derived identity.
+    Uninstall,
 }
 
 /// What a warrant authorises, and the evidence that earned it.
@@ -83,6 +87,21 @@ pub enum WarrantVariant {
 /// checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WarrantKind {
+    /// §24.7E: a working copy, identified at the **moment of removal** and never remembered.
+    ///
+    /// **The root commit, not `head_oid`.** A tip moves with every commit; the root commit is
+    /// what makes this repository *this* repository. A guard over the tip would refuse a working
+    /// copy the user had merely committed to, and admit one that had been rewound onto the same
+    /// tip — it is a position, not an identity.
+    Uninstall {
+        /// The row this warrant is for.
+        location_id: LocationId,
+        /// §24.7E's expected identity, re-derived from the directory at removal time.
+        expected_root_commit: RootCommit,
+        /// The verdict this removal was authorised by. **In-core only**: it never crossed a call
+        /// boundary to get here, which is what stops a renderer replaying one.
+        verdict: VerdictSeal,
+    },
     /// §24.3c: bytes this process wrote, in this session, into its own staging directory.
     Staging {
         /// The durable row written before the first byte.
@@ -100,6 +119,7 @@ impl WarrantKind {
     pub const fn variant(&self) -> WarrantVariant {
         match self {
             WarrantKind::Staging { .. } => WarrantVariant::Staging,
+            WarrantKind::Uninstall { .. } => WarrantVariant::Uninstall,
         }
     }
 }
@@ -117,7 +137,7 @@ impl Warrant {
     /// Its length is a deliberate tripwire on its own growth, in `Intent::ALL`'s shape
     /// (`core/src/gitw/intent.rs:164`). **p2-24b raises this to 2** in the change that adds
     /// `WarrantKind::Uninstall`, and raises the audit's floor with it.
-    pub const ALL: [WarrantVariant; 1] = [WarrantVariant::Staging];
+    pub const ALL: [WarrantVariant; 2] = [WarrantVariant::Staging, WarrantVariant::Uninstall];
 
     /// Build a staging warrant from evidence. **There is no constructor taking a bare path**
     /// (R63): the authorised path is composed here from the staging root and the one basename
@@ -139,6 +159,38 @@ impl Warrant {
             },
             path,
         }
+    }
+
+    /// Build an uninstall warrant. **There is no constructor taking a bare path** (R63): the
+    /// path comes from the `location` row this warrant is for, and the caller cannot substitute
+    /// another.
+    #[must_use]
+    pub(crate) fn for_uninstall(
+        location_id: LocationId,
+        path: PathBuf,
+        expected_root_commit: RootCommit,
+        verdict: VerdictSeal,
+    ) -> Self {
+        Self {
+            kind: WarrantKind::Uninstall {
+                location_id,
+                expected_root_commit,
+                verdict,
+            },
+            path,
+        }
+    }
+
+    /// `for_uninstall` for the audit, which lives outside this crate. Testkit-only.
+    #[cfg(feature = "testkit")]
+    #[must_use]
+    pub fn for_uninstall_in_test(
+        location_id: LocationId,
+        path: PathBuf,
+        expected_root_commit: RootCommit,
+        verdict: VerdictSeal,
+    ) -> Self {
+        Self::for_uninstall(location_id, path, expected_root_commit, verdict)
     }
 
     /// `for_staging` for the audit, which lives outside this crate.
@@ -186,13 +238,19 @@ mod tests {
     use super::{SessionNonce, Warrant, WarrantVariant};
 
     #[test]
-    fn the_variant_list_is_one_until_uninstall_lands() {
+    fn the_variant_list_is_two_and_the_two_are_discriminated() {
         assert_eq!(
             Warrant::ALL.len(),
-            1,
-            "p2-24b raises this to 2, not this plan"
+            2,
+            "[p2-24b] raised from 1 with WarrantKind::Uninstall — the tripwire working"
         );
         assert_eq!(Warrant::ALL[0], WarrantVariant::Staging);
+        assert_eq!(Warrant::ALL[1], WarrantVariant::Uninstall);
+        assert_ne!(
+            Warrant::ALL[0],
+            Warrant::ALL[1],
+            "their identity guards differ and neither is claimable for the other"
+        );
     }
 
     #[test]

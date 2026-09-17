@@ -269,7 +269,7 @@ fn the_audit_actually_reads_argv_literals() {
 fn mutating_module_files() -> Vec<(String, String)> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut out = Vec::new();
-    for (module, floor) in [("gitw", 4_usize), ("removal", 3)] {
+    for (module, floor) in [("gitw", 4_usize), ("removal", 3), ("uninstall", 2)] {
         let dir = root.join(module);
         let mut found = 0;
         for entry in std::fs::read_dir(&dir)
@@ -318,7 +318,7 @@ fn the_forbidden_token_appears_nowhere_in_the_module() {
         scanned += 1;
     }
     assert!(
-        scanned >= 17,
+        scanned >= 19,
         "the token scan read {scanned} file(s); a gate that scans nothing is a failing gate"
     );
     eprintln!("git_readonly: the forbidden token scan read {scanned} file(s)");
@@ -330,7 +330,7 @@ fn the_forbidden_token_appears_nowhere_in_the_module() {
 /// left behind for another gate to trip over mid-life.
 #[test]
 fn a_planted_token_in_either_mutating_module_would_be_caught() {
-    for module in ["gitw", "removal"] {
+    for module in ["gitw", "removal", "uninstall"] {
         let planted = format!("// a {module} file\npub const LABEL: &str = \"FORGET THIS\";\n");
         assert!(
             carries_forbidden_token(&planted),
