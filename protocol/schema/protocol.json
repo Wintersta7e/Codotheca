@@ -125,6 +125,7 @@
 
     "ProblemKind": {
       "kind": "enum",
+      "$comment": "§11.1's groups. `abandoned_install` is the ninth and, like `deferred_slow` and `ambiguous_lineage`, is NOT a `ScanProblemKind`: it reads `install_run`, never `scan_problem`, so that table's CHECK constraint and `problem_kind_from_storage` are both untouched and no migration is involved (R26).",
       "variants": [
         "permission_denied",
         "untrusted_repo",
@@ -133,7 +134,8 @@
         "clock_skew",
         "non_utf8_path",
         "offline_store",
-        "ambiguous_lineage"
+        "ambiguous_lineage",
+        "abandoned_install"
       ]
     },
     "ProblemItem": {

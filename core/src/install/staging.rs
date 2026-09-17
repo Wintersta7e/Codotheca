@@ -112,6 +112,67 @@ pub struct StagingSweepReport {
     pub unwarranted: Vec<PathBuf>,
 }
 
+/// §24.3c's start-up sweep: reconcile the staging directory against `install_run` rows.
+///
+/// **Anything it cannot warrant is left in place**, not removed and not hidden, and comes back in
+/// `unwarranted` for `problems.list` to surface as `abandoned_install` with its path and a manual
+/// removal. A sweep that deleted what it could not account for would be the one destructive
+/// operation this boundary exists to prevent.
+///
+/// The warrant does the deciding: a directory left by a *previous* run of this core carries a
+/// different `SessionNonce`, so `remove_warranted` refuses it and it is reported rather than
+/// removed. That is the behaviour, not a special case in this function.
+pub fn sweep_staging(
+    index: &std::sync::Mutex<crate::index::Index>,
+    roots: &[PathBuf],
+) -> StagingSweepReport {
+    let mut report = StagingSweepReport::default();
+    for root in roots {
+        let staging_root = root.join(STAGING_DIR_NAME);
+        let Ok(entries) = std::fs::read_dir(&staging_root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match warrant_for_path(index, &path) {
+                Some(warrant) => {
+                    if crate::removal::remove_warranted(&warrant, &crate::removal::HardDelete)
+                        .is_ok()
+                    {
+                        report.removed = report.removed.saturating_add(1);
+                    } else {
+                        report.unwarranted.push(path);
+                    }
+                }
+                None => report.unwarranted.push(path),
+            }
+        }
+    }
+    report
+}
+
+/// The warrant for a staging directory found on disk, looked up by its own path.
+///
+/// `None` when no `install_run` row records it — which is exactly the *cannot warrant* case: the
+/// bytes may be another run's, another machine's, or something a user put there.
+fn warrant_for_path(index: &std::sync::Mutex<crate::index::Index>, path: &Path) -> Option<Warrant> {
+    let _guard = crate::proto::txguard::TxGuard::enter();
+    let held = index
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let tx = held.conn().unchecked_transaction().ok()?;
+    let run: i64 = tx
+        .query_row(
+            "SELECT id FROM install_run WHERE staging_bytes = ?1 ORDER BY id DESC LIMIT 1",
+            [crate::paths::path_bytes(path)],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten()?;
+    staging_warrant_for(&tx, InstallRunId(run)).ok().flatten()
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(

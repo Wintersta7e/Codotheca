@@ -11,7 +11,12 @@ use crate::protocol::{
 use crate::surfaces::{display_map, SurfaceCtx};
 
 /// §11.1: *did not index* first, *indexed with a qualification* last.
-pub const GROUP_ORDER: [ProblemKind; 8] = [
+///
+/// **[p2] Nine, not eight.** `abandoned_install` is §24.3c's leftover staging directory. Like
+/// `deferred_slow` and `ambiguous_lineage` it is a group `scan_problem` never stores — it reads
+/// `install_run` — so R26 stays closed: no CHECK constraint moves, no migration is needed, and
+/// `problem_kind_from_storage` gains nothing.
+pub const GROUP_ORDER: [ProblemKind; 9] = [
     ProblemKind::PermissionDenied,
     ProblemKind::UntrustedRepo,
     ProblemKind::UnreadableRepo,
@@ -20,6 +25,7 @@ pub const GROUP_ORDER: [ProblemKind; 8] = [
     ProblemKind::NonUtf8Path,
     ProblemKind::OfflineStore,
     ProblemKind::AmbiguousLineage,
+    ProblemKind::AbandonedInstall,
 ];
 
 /// §11.1's detail line names two and counts the rest.
@@ -84,6 +90,11 @@ pub fn list(conn: &rusqlite::Connection, run: Option<ScanRunId>) -> Result<Probl
         let items = match kind {
             ProblemKind::DeferredSlow => deferred_slow(conn)?,
             ProblemKind::AmbiguousLineage => ambiguous(conn)?,
+            // **Its own arm, and the one thing here a compiler will not catch.** Falling through
+            // to `other` would query `scan_problem` for a kind that table never stores, so the
+            // ninth group would report zero rows forever and vanish — a bar written past its
+            // own defect.
+            ProblemKind::AbandonedInstall => abandoned_installs(conn)?,
             other => scan_problems(conn, run.id, other)?,
         };
         if items.is_empty() {
@@ -321,4 +332,47 @@ fn ambiguous(conn: &rusqlite::Connection) -> Result<Vec<ProblemItem>, IndexError
         });
     }
     Ok(out)
+}
+
+/// §24.3c: staging directories a start-up sweep could not warrant, left in place and named.
+///
+/// Reads `install_run`, never `scan_problem`. A run whose state is not `done` and whose staging
+/// directory is still on disk is an install this app made and cannot clean up — which is a
+/// problem in §11.1's ordinary sense, so it **counts** toward `problem_count` like
+/// `deferred_slow` and unlike `ambiguous_lineage`.
+///
+/// # Errors
+/// Fails when `install_run` cannot be read.
+pub fn abandoned_installs(conn: &rusqlite::Connection) -> Result<Vec<ProblemItem>, IndexError> {
+    let mut stmt = conn.prepare(
+        "SELECT staging_bytes FROM install_run
+          WHERE state IN ('running', 'failed', 'cancelled')
+          ORDER BY id",
+    )?;
+    let rows = stmt.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
+    let mut items = Vec::new();
+    for row in rows {
+        let staging = crate::paths::path_from_bytes(&row?);
+        // Only what is actually still there. A row whose directory is gone is a run that ended
+        // untidily, not a directory the user has to remove.
+        if !staging.exists() {
+            continue;
+        }
+        items.push(ProblemItem {
+            path_display: crate::paths::path_display(&staging),
+            detail: Some(
+                "an install left this behind and could not remove it; delete it by hand".to_owned(),
+            ),
+            count: 1,
+            // `scan_problem` has no `location_id` and this group has no location at all — the
+            // directory is not a location, which is the whole reason it is a problem. NULL is
+            // *not observed*, never zero.
+            project_id: None,
+            location_id: None,
+            last_seen_at: None,
+            candidate_project_ids: Vec::new(),
+            candidate_names: Vec::new(),
+        });
+    }
+    Ok(items)
 }
