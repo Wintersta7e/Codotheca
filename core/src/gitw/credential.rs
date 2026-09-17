@@ -403,20 +403,30 @@ mod platform {
     // Named rather than glob-imported. A wildcard here would re-export whatever the parent module
     // grows next into a module whose whole job is the platform-specific handling of a credential,
     // which is the one place a surprise import is least welcome.
+    // **Split by target, because the two branches need different names.** An earlier revision
+    // listed only what the Unix branch uses and compiled clean on Linux while failing to build on
+    // Windows — `AtomicBool` and `CREDENTIAL_DATA_DIR` reached the Windows arm through the glob
+    // this replaced. That is `CLAUDE.md`'s rule arriving inside an import list: **a check on one
+    // target is not a check on the other**, and this module is the one place in the lane where
+    // the two arms genuinely differ.
     use super::{
-        channel_id, helper_command, io, path_text, serve_client, thread, Arc, ChannelState,
-        CredentialStream, Duration, Mutex, OneShotCredential, Ordering, Path, PathBuf, Write as _,
-        ACCEPT_POLL, CLIENT_IO_TIMEOUT,
+        channel_id, helper_command, io, serve_client, thread, Arc, ChannelState, CredentialStream,
+        Duration, Mutex, OneShotCredential, Ordering, Path, PathBuf, Write as _, ACCEPT_POLL,
+        CLIENT_IO_TIMEOUT,
     };
+    use std::sync::atomic::AtomicBool;
 
+    #[cfg(unix)]
+    use super::path_text;
     #[cfg(unix)]
     use std::fs::{DirBuilder, OpenOptions};
     #[cfg(unix)]
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
     #[cfg(unix)]
     use std::os::unix::net::{UnixListener, UnixStream};
-    #[cfg(unix)]
-    use std::sync::atomic::AtomicBool;
+
+    #[cfg(windows)]
+    use super::CREDENTIAL_DATA_DIR;
 
     #[cfg(windows)]
     use std::fs::OpenOptions;

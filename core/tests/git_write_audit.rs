@@ -385,11 +385,22 @@ fn run_git(cwd: &Path, args: &[&str]) {
     );
 }
 
+/// A `file://` URL for a local fixture repository.
+///
+/// **`canonicalize` returns a VERBATIM path on Windows** — `\\?\C:\…` — and joining that naively
+/// produced `file:////?/C:/…`, which git rejected with *"does not appear to be a git repository"*
+/// against a repository that was plainly there. It failed **only** on Windows and **only** in the
+/// one test that drives a real clone; every WSL gate was green over it. The `\\?\` prefix is an
+/// API-level escape from the 260-character limit rather than part of the path's identity, so it
+/// is stripped before the URL is built.
 fn file_url(path: &Path) -> String {
-    let raw = path
-        .canonicalize()
-        .expect("canonical fixture path")
-        .to_string_lossy()
+    let canonical = path.canonicalize().expect("canonical fixture path");
+    let text = canonical.to_string_lossy();
+    // `\\?\UNC\server\share` is the other verbatim form. These fixtures are always local, so the
+    // drive form is the only one reachable here and a UNC path would need a different URL shape.
+    let raw = text
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&text)
         .replace('\\', "/");
     let mut encoded = String::with_capacity(raw.len());
     for byte in raw.bytes() {
