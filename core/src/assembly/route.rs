@@ -91,10 +91,16 @@ pub enum Route {
 /// exactly that for the length of this project. A schema command with no module goes here, with
 /// its plan, in the same change that adds its `NoOwner` arm.
 ///
-/// The eight `accounts.*` rows landed with the schema and left as their handlers did, so it is
-/// empty again. Empty is a state to assert, not a state to stop asserting: the test below reads
-/// the router rather than this list.
-pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
+/// The eight `accounts.*` rows landed with the schema and left as their handlers did. §24.9's
+/// three `install.*` rows arrive the same way and for the same reason: the schema delta and the
+/// install runtime are separate changes, so until the runtime lands each is named here rather
+/// than mis-routed. Empty is a state to assert, not a state to stop asserting: the test below
+/// reads the router rather than this list.
+pub const UNOWNED_COMMANDS: [(&str, &str); 3] = [
+    ("install.preview", "p2-24 Task 10"),
+    ("install.start", "p2-24 Task 12"),
+    ("install.cancel", "p2-24 Task 15"),
+];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -188,6 +194,13 @@ pub fn route(command: CommandName) -> Route {
         | CommandName::AccountsUpgradeScope
         | CommandName::AccountsSetOrgEnabled
         | CommandName::AccountsDisconnect => Route::AccountsNet,
+
+        // §24.9's three, declared here and answered by the install runtime. Each names the task
+        // that owes it, so the refusal says *who* rather than only *that* — and each leaves this
+        // list in the change that gives it a handler.
+        CommandName::InstallPreview => Route::NoOwner("p2-24 Task 10"),
+        CommandName::InstallStart => Route::NoOwner("p2-24 Task 12"),
+        CommandName::InstallCancel => Route::NoOwner("p2-24 Task 15"),
     }
 }
 
@@ -254,35 +267,39 @@ mod tests {
     }
 
     #[test]
-    fn every_schema_command_reaches_a_module() {
+    fn every_schema_command_reaches_a_module_or_names_the_task_that_owes_it() {
         // R37 closed Gap A and the list was empty; §20.8 reopened it with the eight commands
-        // whose handlers landed later in the same plan, and it is empty again. **An empty list
-        // is not a licence to stop asserting**: `UNOWNED_COMMANDS.iter().all(…)` over zero rows
-        // is true whatever the rule says, so what is checked here is the complement, read off
-        // the router — no schema command falls through to `NoOwner`.
+        // whose handlers landed later in the same plan, and §24.9 reopens it with three. **An
+        // empty list is not a licence to stop asserting**: `UNOWNED_COMMANDS.iter().all(…)` over
+        // zero rows is true whatever the rule says, so what is checked here is read off the
+        // router — no schema command falls through to a `NoOwner` that names nobody, and no row
+        // names a different task from the one the router hands the dispatcher. The sibling test
+        // above compares the two name sets; this one compares the payloads, which is where a
+        // rename would otherwise pass unnoticed.
         let commands = schema_commands();
         // R67 names three assertions that go red on a phase-2 schema change; this is a fourth,
         // and it is raised by each plan's own delta read from the branch base — never to a
         // running total a lane cannot know after the merges ahead of it.
         assert_eq!(
             commands.len(),
-            54,
+            57,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
-             remote.webUrl plus §25.8's three projects.readme* commands"
+             remote.webUrl plus §25.8's three projects.readme* commands plus §24.9's three \
+             install.* commands"
         );
-        let unowned: Vec<&str> = commands
+        let unnamed: Vec<&str> = commands
             .iter()
-            .filter(|name| {
-                matches!(
-                    route(command_name(name).expect("routable")),
-                    Route::NoOwner(_)
-                )
+            .filter(|name| match route(command_name(name).expect("routable")) {
+                Route::NoOwner(plan) => !UNOWNED_COMMANDS
+                    .iter()
+                    .any(|(c, p)| *c == name.as_str() && *p == plan && !p.is_empty()),
+                _ => false,
             })
             .map(String::as_str)
             .collect();
         assert!(
-            unowned.is_empty(),
-            "a schema command reaches no module: {unowned:?}"
+            unnamed.is_empty(),
+            "a schema command reaches no module and no row names its owner: {unnamed:?}"
         );
     }
 

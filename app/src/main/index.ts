@@ -60,7 +60,10 @@ import {
 } from './security';
 import { runStartup } from './startup';
 
-const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts'];
+// [p2] §24.9's `install` is subscribed in the same change that declares it. A topic the schema
+// carries and the shell does not subscribe to delivers nothing, and the surface built on it
+// would be discovered dark rather than red — the shape R88 was ruled on.
+const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts', 'install'];
 
 /**
  * The commands the core answers, and therefore the only names the bridge will accept.

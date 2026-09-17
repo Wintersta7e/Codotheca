@@ -402,7 +402,15 @@ impl CoreHandler {
             // only. There is no frame to build for these three, so `Null` is the whole answer —
             // a command's result is not a topic's snapshot type. [p2] §20.8 declares three
             // events on `accounts` and no `snapshot`, so it joins them.
-            Topic::Scan | Topic::Session | Topic::Accounts => None,
+            //
+            // **[p2] `install` shares the arm and not the reason, and must not be read as a
+            // fourth topic without a snapshot.** §24.9 *does* declare `install.snapshot` (R54):
+            // a renderer that opens mid-clone has to build a frame from something. The store
+            // that answers it is p2-24 Task 13's `InstallStateStore` and does not exist yet, so
+            // this is `None` meaning *not computed*, and deliberately not `{"runs": []}` — an
+            // empty list would say *nothing is installing*, which a core that records nothing
+            // cannot know. Task 13 gives it an arm of its own.
+            Topic::Scan | Topic::Session | Topic::Accounts | Topic::Install => None,
             Topic::Projects => {
                 let page = self.handle("projects.list", serde_json::json!({})).ok()?;
                 Some(serde_json::json!({

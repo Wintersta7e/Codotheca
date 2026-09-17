@@ -736,16 +736,26 @@ fn delete_account_refuses_when_the_cascade_would_not_fire() {
     drop(fixture.dir);
 }
 
-/// The list this plan added to `UNOWNED_COMMANDS` is empty again: every `accounts.*` command now
+/// The rows this plan added to `UNOWNED_COMMANDS` are gone: every `accounts.*` command now
 /// reaches a module.
+///
+/// **Narrowed, not loosened** (R99). It asserted the whole constant was empty, which was true
+/// when §20.8 wrote it and is wider than the claim its own name makes. §24.9's three `install.*`
+/// rows arrive in the state the eight `accounts.*` rows once had, and an accounts test that goes
+/// red on them is measuring another section's progress. The general property — every unowned row
+/// names the task that owes it, and the shell offers none of them to the renderer — is asserted
+/// by `assembly::route`'s own tests and by `app/test/knownCommands.test.ts`.
 #[test]
 fn no_accounts_command_is_unowned_any_more() {
-    let unowned: Vec<&str> = codotheca_core::assembly::route::UNOWNED_COMMANDS
+    let rows = codotheca_core::assembly::route::UNOWNED_COMMANDS;
+    let unowned: Vec<&str> = rows
         .iter()
         .map(|(c, _)| *c)
+        .filter(|c| c.starts_with("accounts."))
         .collect();
     assert!(
         unowned.is_empty(),
-        "an accounts command is still unowned: {unowned:?}"
+        "an accounts command is still unowned: {unowned:?}, of {} unowned rows",
+        rows.len()
     );
 }
