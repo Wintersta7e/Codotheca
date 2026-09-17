@@ -7,6 +7,7 @@ import type { KeyContext, KeyEventLike } from '../keyboard/contexts.js';
 import { resolveKey } from '../keyboard/contexts.js';
 import { QuickSwitch } from './QuickSwitch.js';
 import { PALETTE_CLOSED, paletteIntent, paletteReducer } from './reducer.js';
+import type { PaletteOpenFocus } from './rows.js';
 import { paletteRowAction, selectPaletteRows } from './rows.js';
 
 /**
@@ -51,7 +52,8 @@ export interface QuickSwitchHostProps {
   /** Epoch seconds. Injected so the sub-line's age is testable. */
   readonly now: () => number;
   readonly onLaunch: (projectId: ProjectId, locationId: LocationId) => void;
-  readonly onOpenPage: (projectId: ProjectId) => void;
+  /** §24.5: `↵` on a not-cloned row carries the Install focus request; `⇧↵` never does. */
+  readonly onOpenPage: (projectId: ProjectId, focus?: PaletteOpenFocus) => void;
   readonly subscribeShellOpen?: (cb: () => void) => () => void;
   /**
    * R42: the context to resolve in while the palette is closed — the caller's own. `Alt+Space`
@@ -124,6 +126,8 @@ export function QuickSwitchHost(props: QuickSwitchHostProps): ReactElement | nul
           const target = paletteRowAction(row);
           if (target.kind === 'launch') {
             props.onLaunch(row.id, target.locationId);
+          } else if (target.kind === 'install') {
+            props.onOpenPage(target.projectId, 'install');
           } else {
             props.onOpenPage(row.id);
           }

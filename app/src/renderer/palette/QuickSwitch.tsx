@@ -6,7 +6,9 @@ import type { EffectsTier } from '../../shared/effectsTier.js';
 import { conditionDotName } from '../a11y/names.js';
 import { DOT_SIZE_PX, conditionDot } from '../derive/condition.js';
 import { paletteRowDelayMs } from './motion.js';
+import type { PaletteOpenFocus } from './rows.js';
 import {
+  PALETTE_INSTALL_TEXT,
   PALETTE_UNAVAILABLE_TEXT,
   paletteCountText,
   paletteRowAction,
@@ -31,7 +33,11 @@ export interface QuickSwitchProps {
   readonly onQueryChange: (value: string) => void;
   readonly onPoint: (index: number) => void;
   readonly onLaunch: (projectId: ProjectId, locationId: LocationId) => void;
-  readonly onOpenPage: (projectId: ProjectId) => void;
+  /**
+   * §24.5: `↵` on a not-cloned row opens the page and asks it to focus Install. It starts no
+   * clone — the palette has no channel to the core and issues no command.
+   */
+  readonly onOpenPage: (projectId: ProjectId, focus?: PaletteOpenFocus) => void;
   readonly onClose: () => void;
   readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
 }
@@ -105,11 +111,16 @@ function Row({
           )}
         </span>
       </span>
+      {/* §24.5: the trailing slot is the per-row channel, which is why §8.6's footer below does
+          not mutate with the selection. INSTALL is an action and keeps `--sig`; the unavailable
+          line is a statement about the copies and takes `--text-3`. */}
       {selected ? (
-        action.kind === 'launch' ? (
-          <span className="qs-act">{PALETTE_FOOTER_HINTS[1]}</span>
-        ) : (
+        action.kind === 'unavailable' ? (
           <span className="qs-act qs-act--unavailable">{PALETTE_UNAVAILABLE_TEXT}</span>
+        ) : (
+          <span className="qs-act">
+            {action.kind === 'install' ? PALETTE_INSTALL_TEXT : PALETTE_FOOTER_HINTS[1]}
+          </span>
         )
       ) : null}
     </div>
@@ -125,6 +136,8 @@ export function QuickSwitch(props: QuickSwitchProps): ReactElement {
     const action = paletteRowAction(row);
     if (action.kind === 'launch') {
       props.onLaunch(row.id, action.locationId);
+    } else if (action.kind === 'install') {
+      props.onOpenPage(action.projectId, 'install');
     } else {
       props.onOpenPage(row.id);
     }
