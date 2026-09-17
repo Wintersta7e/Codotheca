@@ -237,8 +237,14 @@ describe('the motion tier clamp resolves against these class names', () => {
     expect(reduced.scanlineDisplay).toBe('none');
     expect(reduced.dotTransform).toBe('none');
     expect(reduced.stripTransform).toBe('none');
-    // The greebling goes with the travelling layers; the plate itself stays.
-    expect(reduced.plateBackgroundImage).not.toContain('--cdt-greebling');
+    // **The greebling does NOT go with the travelling layers**, and this assertion used to say it
+    // did — written beside the rule that dropped it, so the pair agreed with each other and with
+    // nothing else. §11.6 drops travelling highlights; greebling does not travel. It is §7.3a's
+    // static per-card texture, chosen by `panelFamily`, and the handoff requires every state to
+    // keep a static equivalent (`design_handoff_codotheca/README.md:740`). No spec or handoff line
+    // ties it to a tier. The sweep it was confused with lives on `.cdt-specular`, not the plate —
+    // clamped there now, and asserted on a real mounted card in `card/blueprint.test.tsx`.
+    expect(reduced.plateBackgroundImage).toContain('--cdt-greebling');
     expect(reduced.plateBackgroundImage).toContain('--cdt-plate');
     // The flicker rides the tier and gets no switch of its own (§11.3a).
     expect(reduced.haloOpacity).toBe('1');

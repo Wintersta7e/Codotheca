@@ -303,3 +303,46 @@ describe('§11.6: the blueprint tile produces no dip at any tier', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * R36's shape a second time. The clamp named `.cdt-plate`, which carries §7.3a's static greebling,
+ * while the 700 ms sweep actually lives on `.cdt-specular` (`card.css:176-190`) — so `reduced`
+ * stripped a per-card texture every tier keeps AND left the sweep running, and `off` stopped the
+ * sweep only through the blanket `.cdt-card *` rule. Nothing could observe either direction while
+ * the document element still read `auto`.
+ *
+ * Resolved on real elements at every tier, never matched in the stylesheet.
+ */
+describe('§7.8: the specular sweep goes below full and the greebling never does', () => {
+  const mountAt = (tier: 'full' | 'reduced' | 'off'): HTMLElement => {
+    expect(cardCss.length, 'card.css imported as an empty string').toBeGreaterThan(0);
+    expect(motionCss.length, 'motion.css imported as an empty string').toBeGreaterThan(0);
+    const style = document.createElement('style');
+    style.textContent = `${cardCss}\n${motionCss}`;
+    document.head.append(style);
+    document.documentElement.setAttribute('data-effects-tier', tier);
+    return draw();
+  };
+
+  const resolve = (container: HTMLElement, selector: string): CSSStyleDeclaration => {
+    const element = container.querySelector(selector);
+    if (element === null) throw new Error(`the card mounted no ${selector}`);
+    return getComputedStyle(element);
+  };
+
+  it('hides the sweep below full, on the element that really carries it', () => {
+    expect(resolve(mountAt('full'), '.cdt-specular').display).not.toBe('none');
+    cleanup();
+    expect(resolve(mountAt('reduced'), '.cdt-specular').display).toBe('none');
+    cleanup();
+    expect(resolve(mountAt('off'), '.cdt-specular').display).toBe('none');
+  });
+
+  it('keeps the plate greebling at every tier, because a texture is not a highlight', () => {
+    for (const tier of ['full', 'reduced', 'off'] as const) {
+      const background = resolve(mountAt(tier), '.cdt-plate').backgroundImage;
+      expect(background, `greebling dropped at ${tier}`).toContain('--cdt-greebling');
+      cleanup();
+    }
+  });
+});

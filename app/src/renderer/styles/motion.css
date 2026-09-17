@@ -13,11 +13,14 @@
   background-image: none;
 }
 
-[data-effects-tier='reduced'] .cdt-plate,
-[data-effects-tier='off'] .cdt-plate {
-  background-image: var(--cdt-plate);
-}
-
+/* The specular sweep is a 700ms `background-position` transition on `.cdt-specular`
+   (card.css:176-190), NOT a layer of the plate's background. Clamping `.cdt-plate` to
+   `var(--cdt-plate)` instead dropped §7.3a's static greebling — a per-card texture from the art
+   pipeline that every tier keeps — while leaving the sweep running at `reduced`; `off` stopped it
+   only by accident, through the blanket `.cdt-card *` rule further down. One rule, wrong in both
+   directions, and inert until the resolved tier reached the document so nothing ever saw it. */
+[data-effects-tier='reduced'] .cdt-specular,
+[data-effects-tier='off'] .cdt-specular,
 [data-effects-tier='reduced'] .cdt-bracket,
 [data-effects-tier='off'] .cdt-bracket,
 [data-effects-tier='reduced'] .cdt-scanline,
