@@ -18,7 +18,7 @@
 -- rather than by reading this text.
 --
 -- `key` is polymorphic and deliberately carries **no foreign key**: it is an account id for
--- `account_repos` and a *project* id for `project_remote` and `rename_probe`, so no single
+-- `account_repos` and for `rename_probe`, and a *project* id for `project_remote`, so no single
 -- REFERENCES clause is true of it. That is why it is the one account-referencing table that
 -- cannot cascade, and why `delete_account` calls `sync::store::delete_account_tasks` by name.
 --

@@ -7,4 +7,6 @@
 //! stranger's `x-ratelimit-resource` would put a wrong value in the row that decides whether the
 //! app burns an account's allowance.
 
+pub mod remote;
+pub mod rename;
 pub mod repos;

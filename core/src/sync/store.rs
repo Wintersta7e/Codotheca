@@ -14,14 +14,19 @@ use crate::sync::task::kind_slug;
 /// Clear the one account-referencing table that can carry no foreign key.
 ///
 /// **`sync_task_state` has no key into `account(id)` and cannot have one**: `key` is polymorphic
-/// (§21.3) — an account id for `account_repos`, a *project* id for `project_remote` and
-/// `rename_probe`. So `delete_account` cannot lean on a cascade here, and it calls this by name.
+/// (§21.3) — an account id for two of the three kinds, a *project* id for `project_remote`. So
+/// `delete_account` cannot lean on a cascade here, and it calls this by name.
 ///
 /// **The task filter is not optional.** A bare `DELETE FROM sync_task_state WHERE key = ?1`
-/// satisfies every enumeration over the census while deleting another task's rows for whichever
-/// project happens to share that integer — a bar written past its defect on the one command whose
-/// job is to delete. That is why `("sync_task_state", "key")` is not representable under
-/// `ACCOUNT_REFERENCING_TABLES`, and why the census is a census (R69).
+/// satisfies every enumeration over the census while deleting `project_remote`'s rows for
+/// whichever project happens to share that integer — a bar written past its defect on the one
+/// command whose job is to delete. That is why `("sync_task_state", "key")` is not representable
+/// under `ACCOUNT_REFERENCING_TABLES`, and why the census is a census (R69).
+///
+/// **Two of the three kinds are account-keyed**: `account_repos`, and `rename_probe`, which this
+/// plan keys by account because p2-22's repair is one bounded pass per account rather than one
+/// lookup per project (see `crate::sync::task::SyncTask::RenameProbe`). `project_remote` is the
+/// project-keyed one and is exactly what the filter protects.
 ///
 /// Returns the number of rows removed, so a caller or a test can see that it did something.
 ///
@@ -29,8 +34,12 @@ use crate::sync::task::kind_slug;
 /// Fails when SQLite refuses the delete.
 pub fn delete_account_tasks(tx: &Transaction<'_>, account: AccountId) -> Result<usize, IndexError> {
     let removed = tx.execute(
-        "DELETE FROM sync_task_state WHERE task = ?1 AND key = ?2",
-        rusqlite::params![kind_slug(SyncTaskKind::AccountRepos), account.0],
+        "DELETE FROM sync_task_state WHERE task IN (?1, ?2) AND key = ?3",
+        rusqlite::params![
+            kind_slug(SyncTaskKind::AccountRepos),
+            kind_slug(SyncTaskKind::RenameProbe),
+            account.0
+        ],
     )?;
     Ok(removed)
 }

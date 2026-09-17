@@ -193,9 +193,12 @@ fn two_per_ip_budget_rows_for_one_resource_cannot_both_exist() {
 ///
 /// The colliding integer is the point. `key` is polymorphic, so a bare
 /// `DELETE FROM sync_task_state WHERE key = <account id>` passes every enumeration over the
-/// census while deleting a *project*'s rows — and a test that used distinct ids would pass
-/// against exactly that delete. The per-IP budget row must survive too: it belongs to no
-/// account, so no account's disconnect may take it.
+/// census while deleting `project_remote`'s rows for a *project* that shares the integer — and a
+/// test that used distinct ids would pass against exactly that delete. The per-IP budget row must
+/// survive too: it belongs to no account, so no account's disconnect may take it.
+///
+/// Two of the three kinds are the account's (`account_repos` and `rename_probe`); the third is
+/// the project's.
 #[test]
 fn disconnecting_clears_only_that_accounts_sync_rows() {
     let mut fixture = TempIndex::new();
@@ -252,7 +255,7 @@ fn disconnecting_clears_only_that_accounts_sync_rows() {
         .collect();
     assert_eq!(
         surviving,
-        ["project_remote", "rename_probe"],
+        ["project_remote"],
         "a project-keyed row was deleted by an account's disconnect"
     );
 
@@ -293,11 +296,11 @@ fn the_task_delete_is_filtered_by_task_and_reports_its_count() {
             }
             let removed = delete_account_tasks(tx, account).expect("filtered delete");
             eprintln!("sync_schema: delete_account_tasks removed {removed} row(s)");
-            assert_eq!(removed, 1, "only the account_repos row is this account's");
+            assert_eq!(removed, 2, "the two account-keyed rows are this account's");
             let left: i64 = tx
                 .query_row("SELECT count(*) FROM sync_task_state", [], |r| r.get(0))
                 .expect("counted");
-            assert_eq!(left, 2, "the two project-keyed rows survive");
+            assert_eq!(left, 1, "the project-keyed row survives");
             Ok(())
         })
         .expect("transaction");

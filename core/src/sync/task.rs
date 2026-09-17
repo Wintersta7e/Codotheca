@@ -22,9 +22,21 @@ use crate::protocol::{AccountId, ProjectId, SyncTaskKind};
 /// migration when it arrives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncTask {
-    AccountRepos { account_id: AccountId },
-    ProjectRemote { project_id: ProjectId },
-    RenameProbe { project_id: ProjectId },
+    AccountRepos {
+        account_id: AccountId,
+    },
+    ProjectRemote {
+        project_id: ProjectId,
+    },
+    /// **Keyed by account, not by project, which deviates from §21.3's table.** p2-22 shipped the
+    /// repair as one bounded pass over every unmatched key
+    /// (`core/src/identity/rename_repair.rs:50-97`), whose own bound is *one request per unmatched
+    /// key, once*; re-keying it per project would mean a second copy of that selection and that
+    /// loop against the module p2-22 owns, which is R1's shape. `key` is polymorphic by design, so
+    /// an account id here is exactly as representable as a project id.
+    RenameProbe {
+        account_id: AccountId,
+    },
 }
 
 impl SyncTask {
@@ -39,18 +51,18 @@ impl SyncTask {
 
     /// The stored key.
     ///
-    /// **It is polymorphic and that is load-bearing**: an account id for `account_repos`, a
-    /// *project* id for the other two. Nothing may delete rows by key alone — see
+    /// **It is polymorphic and that is load-bearing**: an account id for `account_repos` and for
+    /// `rename_probe`, a *project* id for `project_remote`. Nothing may delete rows by key alone — see
     /// [`crate::sync::store::delete_account_tasks`], which filters by task as well and exists
     /// because a bare `key = <account id>` deletes another task's rows for whichever project
     /// happens to share that integer.
     #[must_use]
     pub fn key(self) -> i64 {
         match self {
-            SyncTask::AccountRepos { account_id } => account_id.0,
-            SyncTask::ProjectRemote { project_id } | SyncTask::RenameProbe { project_id } => {
-                project_id.0
+            SyncTask::AccountRepos { account_id } | SyncTask::RenameProbe { account_id } => {
+                account_id.0
             }
+            SyncTask::ProjectRemote { project_id } => project_id.0,
         }
     }
 }

@@ -123,3 +123,35 @@ pub fn observe_one<T>(deps: &SyncDeps, answer: &Result<T, ProviderError>) -> Htt
         at: deps.clock.now_unix(),
     }
 }
+
+/// The settle for a task step that made **several** requests.
+///
+/// The **worst** outcome governs: one 401 among twenty answers is still a token that does not
+/// authenticate, and settling `ok` on the strength of the other nineteen would leave the account
+/// looking healthy while every later request fails the same way. An empty slice is `Done` — a
+/// pass that asked nothing succeeded at asking nothing, which is not the same as observing a
+/// failure.
+#[must_use]
+pub fn settle_of(observed: &[HttpObservation]) -> SyncOutcome {
+    observed
+        .iter()
+        .max_by_key(|o| severity(&o.outcome))
+        .map_or(SyncOutcome::Done, |o| o.outcome.clone())
+}
+
+/// How much one outcome should govern a settle, worst last.
+///
+/// Terminal refusals outrank parks because waiting does not fix them; a park outranks a transient
+/// failure because the server named a time and a retry before it would spend the allowance to be
+/// refused again.
+fn severity(outcome: &SyncOutcome) -> u8 {
+    match outcome {
+        SyncOutcome::Done | SyncOutcome::NextPage { .. } => 0,
+        SyncOutcome::NotModified => 1,
+        SyncOutcome::NotFound => 2,
+        SyncOutcome::TransientFail { .. } => 3,
+        SyncOutcome::Throttled { .. } => 4,
+        SyncOutcome::Rejected { .. } => 5,
+        SyncOutcome::Unauthorized { .. } => 6,
+    }
+}

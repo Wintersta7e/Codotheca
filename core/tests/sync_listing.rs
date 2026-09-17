@@ -27,12 +27,18 @@ use codotheca_core::sync::outcome::SyncOutcome;
 use codotheca_core::sync::schedule::{due_listings, LISTING_INTERVAL_SECS};
 use codotheca_core::sync::state::{apply_outcome, SyncTaskStateRow};
 use codotheca_core::sync::store::put;
+use codotheca_core::sync::tasks::rename::run_rename_probe;
 use codotheca_core::sync::tasks::repos::run_account_repos;
 use codotheca_core::sync::SyncDeps;
 use codotheca_core::testing::{FakeClock, FakeTokenStore, FakeTransport, TempIndex};
 
 const NOW: i64 = 1_800_000_000;
 const HOST: &str = "forge.example.invalid";
+/// The **repair** reads `crate::provider::declared_host_aliases()`, and the one shipped adapter
+/// declares a single canonical host (`core/src/provider/listing.rs:4-9`). So a project the probe
+/// can repair carries that host in its `remote_key`, whatever host the transport is pointed at —
+/// the two are different questions and the fixtures keep them apart deliberately.
+const PROBE_HOST: &str = "github.com";
 
 struct Fixture {
     index: Arc<Mutex<Index>>,
@@ -462,5 +468,142 @@ fn the_renderers_staleness_threshold_still_cites_this_cadence() {
         source.matches(marker).count(),
         1,
         "one owner, and this plan is not a second"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// §21.3's third task: `rename_probe`.
+// ---------------------------------------------------------------------------------------------
+
+/// A renamed repository keeps its stable forge id and loses its path, so §22.1's second basis
+/// fails. The probe asks what the stored path resolves to **once** and writes the id, after which
+/// the match is basis **(a)** forever.
+#[test]
+fn a_rename_probe_writes_the_stable_id_and_settles_the_basis() {
+    let f = fixture();
+    {
+        let mut guard = f.index.lock().expect("index");
+        guard
+            .with_tx(|tx| {
+                tx.execute(
+                    "INSERT INTO project (name, seed_basename, remote_key, created_at, updated_at)
+                     VALUES ('renamed', 'renamed', ?1, ?2, ?2)",
+                    rusqlite::params![format!("{PROBE_HOST}/owner/old-name"), NOW],
+                )?;
+                Ok(())
+            })
+            .expect("unmatched project");
+    }
+    // The forge resolves the old path to the repository's current identity.
+    f.transport.push(HttpResponse {
+        status: 200,
+        headers: codotheca_core::http::normalise_headers([("x-ratelimit-resource", "core")]),
+        body: repo_json(4242, "owner", "new-name", Some(true)).into_bytes(),
+    });
+
+    let outcome = run_rename_probe(&f.deps, &f.index, f.account).expect("probed");
+    assert_eq!(outcome, SyncOutcome::Done);
+
+    let guard = f.index.lock().expect("index");
+    let (id, basis): (Option<String>, Option<String>) = guard
+        .conn()
+        .query_row(
+            "SELECT provider_repo_id, remote_link_basis FROM project WHERE name = 'renamed'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("row");
+    assert_eq!(id.as_deref(), Some("4242"), "the stable id, not the path");
+    assert_eq!(basis.as_deref(), Some("provider_id"), "basis (a), forever");
+}
+
+/// **A `404` here is `NotFound`, and `NotFound` is `ok`** — never `blocked`, never a deletion.
+/// The repository is *unseen*, never *gone*: absence is not evidence, and no row is deleted.
+#[test]
+fn a_probe_that_answers_not_found_deletes_nothing_and_does_not_block() {
+    let f = fixture();
+    {
+        let mut guard = f.index.lock().expect("index");
+        guard
+            .with_tx(|tx| {
+                tx.execute(
+                    "INSERT INTO project (name, seed_basename, remote_key, description,
+                                          created_at, updated_at)
+                     VALUES ('gone', 'gone', ?1, 'still here', ?2, ?2)",
+                    rusqlite::params![format!("{PROBE_HOST}/owner/gone"), NOW],
+                )?;
+                Ok(())
+            })
+            .expect("unmatched project");
+    }
+    f.transport.push(HttpResponse {
+        status: 404,
+        headers: codotheca_core::http::normalise_headers([("x-ratelimit-resource", "core")]),
+        body: Vec::new(),
+    });
+
+    let outcome = run_rename_probe(&f.deps, &f.index, f.account).expect("probed");
+    let (after, _) = apply_outcome(
+        &SyncTaskStateRow::queued(SyncTaskKind::RenameProbe, Some(f.account.0), NOW),
+        &outcome,
+        NOW,
+    );
+    assert_eq!(
+        after.state,
+        codotheca_core::protocol::SyncTaskState::Ok,
+        "a 404 settles ok: {outcome:?}"
+    );
+
+    let guard = f.index.lock().expect("index");
+    let (rows, description): (i64, Option<String>) = guard
+        .conn()
+        .query_row(
+            "SELECT count(*), max(description) FROM project WHERE name = 'gone'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("row");
+    assert_eq!(rows, 1, "no row is deleted by a probe");
+    assert_eq!(
+        description.as_deref(),
+        Some("still here"),
+        "and none is cleared"
+    );
+}
+
+/// **The probe is not re-queued on every listing.** Once a project carries `provider_repo_id`
+/// with basis (a) it is never a candidate again, which is what stops one unresolvable rename
+/// costing a request per listing forever.
+#[test]
+fn a_project_that_already_carries_its_id_is_never_probed_again() {
+    let f = fixture();
+    {
+        let mut guard = f.index.lock().expect("index");
+        guard
+            .with_tx(|tx| {
+                tx.execute(
+                    "INSERT INTO project (name, seed_basename, remote_key, created_at, updated_at)
+                     VALUES ('renamed', 'renamed', ?1, ?2, ?2)",
+                    rusqlite::params![format!("{PROBE_HOST}/owner/old-name"), NOW],
+                )?;
+                Ok(())
+            })
+            .expect("unmatched project");
+    }
+    f.transport.push(HttpResponse {
+        status: 200,
+        headers: codotheca_core::http::normalise_headers([("x-ratelimit-resource", "core")]),
+        body: repo_json(4242, "owner", "new-name", Some(true)).into_bytes(),
+    });
+    run_rename_probe(&f.deps, &f.index, f.account).expect("first probe");
+    let spent = f.transport.request_count();
+    assert_eq!(spent, 1, "exactly one lookup for one unmatched key");
+
+    // A second probe finds nothing to ask about and spends nothing.
+    run_rename_probe(&f.deps, &f.index, f.account).expect("second probe");
+    assert_eq!(
+        f.transport.request_count(),
+        spent,
+        "a resolved project must never cost a second request"
     );
 }
