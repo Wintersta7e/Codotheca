@@ -260,14 +260,86 @@ fn the_audit_actually_reads_argv_literals() {
     );
 }
 
+/// Every file in the two **mutating** modules, each with its own floor and its own count.
+///
+/// **A second collector, deliberately not a widening of `source_files`.** AC-P2-24-1 freezes
+/// `ALLOWED`, `FORBIDDEN` and `source_files` — widening that glob to `core/src/git*` would have
+/// changed what the read-only audit audits, which is the one thing that criterion exists to
+/// prevent. `core/src/git/` stays provably read-only by being scanned alone.
+fn mutating_module_files() -> Vec<(String, String)> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut out = Vec::new();
+    for (module, floor) in [("gitw", 4_usize), ("removal", 3)] {
+        let dir = root.join(module);
+        let mut found = 0;
+        for entry in std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("{module} must exist by now: {e}"))
+            .flatten()
+        {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "rs") {
+                let name = format!("{module}/{}", path.file_name().unwrap().to_string_lossy());
+                out.push((name, std::fs::read_to_string(&path).unwrap()));
+                found += 1;
+            }
+        }
+        // A collector reading an empty directory is a gate asserting over nothing. The floor is
+        // per directory so one module cannot cover for the other being absent.
+        assert!(
+            found >= floor,
+            "core/src/{module}/ yielded {found} file(s), below its floor of {floor}"
+        );
+        eprintln!("git_readonly: core/src/{module}/ — {found} file(s)");
+    }
+    out
+}
+
 // The token `FORGET` appears in no rendered string, accessible name or command anywhere in the
 // product; the git layer is the place it would most plausibly leak in as a subcommand name.
+//
+// **[p2] Read across all three modules.** `core/src/removal/` is the more likely of the two new
+// ones: `FORGET` was the name of a *removal* affordance, not a git one, so the module that
+// removes things is exactly where it would next appear (AC-P2-24-5).
+/// The predicate the scan applies, named so the discrimination test below can apply the **same**
+/// one rather than a restatement of it — a fixture checked against a second copy of the rule
+/// proves the copy, not the rule.
+fn carries_forbidden_token(source: &str) -> bool {
+    source.contains("FORGET")
+}
+
 #[test]
 fn the_forbidden_token_appears_nowhere_in_the_module() {
-    for (name, source) in source_files() {
+    let mut scanned = 0;
+    for (name, source) in source_files().into_iter().chain(mutating_module_files()) {
         assert!(
-            !source.contains("FORGET"),
+            !carries_forbidden_token(&source),
             "{name} contains the forbidden token"
+        );
+        scanned += 1;
+    }
+    assert!(
+        scanned >= 17,
+        "the token scan read {scanned} file(s); a gate that scans nothing is a failing gate"
+    );
+    eprintln!("git_readonly: the forbidden token scan read {scanned} file(s)");
+}
+
+/// The widened scan is **discriminating**: a planted token in either new module is caught.
+///
+/// Fixture-shaped, in `a_non_literal_os_str_fixture_is_rejected`'s style, so no probe file is
+/// left behind for another gate to trip over mid-life.
+#[test]
+fn a_planted_token_in_either_mutating_module_would_be_caught() {
+    for module in ["gitw", "removal"] {
+        let planted = format!("// a {module} file\npub const LABEL: &str = \"FORGET THIS\";\n");
+        assert!(
+            carries_forbidden_token(&planted),
+            "the scan must reject a {module} file carrying the token"
+        );
+        let clean = format!("// a {module} file\npub const LABEL: &str = \"RELOCATE\";\n");
+        assert!(
+            !carries_forbidden_token(&clean),
+            "and must accept one that does not — a scan that rejects everything proves nothing"
         );
     }
 }
