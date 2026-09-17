@@ -1015,6 +1015,17 @@
     "AccountDisconnected": {
       "kind": "struct",
       "fields": { "accountId": "AccountId" }
+    },
+
+    "SyncTaskKind": {
+      "kind": "enum",
+      "$comment": "§21.3's three tasks. R31: declared here and used generated on both sides. 0011_sync.sql's task CHECK is written from these slugs character for character, and a test inserts every one against a migrated database rather than restating the list",
+      "variants": ["account_repos", "project_remote", "rename_probe"]
+    },
+    "SyncTaskState": {
+      "kind": "enum",
+      "$comment": "§21.4's state table. deferred and blocked are both terminal to the clock and differ in what revives them: deferred takes a revival cause, blocked takes an account state change or an explicit user action and is never left on a backoff",
+      "variants": ["queued", "running", "parked", "ok", "deferred", "blocked"]
     }
   },
   "commands": [
