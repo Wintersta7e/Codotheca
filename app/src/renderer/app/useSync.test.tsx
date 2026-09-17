@@ -146,7 +146,7 @@ describe('useSync', () => {
       budgets: [],
       listing: null,
       notice: null,
-    } as unknown as SyncStatus;
+    };
     act(() => {
       emit({ topic: 'sync', event: 'snapshot', data: recovered });
     });
