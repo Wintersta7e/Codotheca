@@ -48,6 +48,7 @@ pub mod session;
 pub mod stats;
 pub mod surfaces;
 pub mod sync;
+pub mod uninstall;
 pub mod view;
 pub mod wsl;
 
