@@ -8,13 +8,12 @@
 //!
 //! # The ledger, as it stands
 //!
-//! **All 55 schema commands reach a module**, so `UNOWNED_COMMANDS` is empty and nothing routes
-//! to `NoOwner`. The constant stays because it is what *names* a command that arrives without a
-//! handler; a bare `PROTOCOL` refusal reads to the shell as "no such command", which is how
-//! nineteen commands stayed invisible for the length of this project. This file's tests pin the
-//! constant against `protocol.json` and against `route`'s own arms, so the two cannot be edited
-//! apart — and an empty list is asserted as *no command routes to `NoOwner`*, because two
-//! `all()` over an empty set assert nothing.
+//! Most schema commands reach a module. The two remaining `install.*` commands route to
+//! `NoOwner`, and `UNOWNED_COMMANDS` names the later task responsible for each. A bare `PROTOCOL`
+//! refusal reads to the shell as "no such command", which is how nineteen commands stayed
+//! invisible for the length of this project. This file's tests pin the constant against
+//! `protocol.json` and against `route`'s own arms, so the two cannot be edited apart — including
+//! when the list eventually becomes empty.
 //!
 //! **A command leaves the list in the same change that gives it a handler.** The bridge's own
 //! `KNOWN_COMMANDS` is checked against this list, so a name cannot be offered to the renderer
@@ -64,6 +63,9 @@ pub enum Route {
     /// `crate::remote::dispatch_remote_command` — p2-25. It reads one stored key and the account
     /// hosts and reaches no network, so it takes the index guard like every other read.
     Remote,
+    /// `crate::install::handle_preview` — p2-24 Task 10. It takes its own index guard before its
+    /// read transaction, so it is dispatched before the common guarded arm.
+    Install,
     /// `crate::readme::dispatch_readme_command` — p2-25b. A file read under a location root and
     /// a consent column; no network, so it takes the index guard.
     Readme,
@@ -96,12 +98,10 @@ pub enum Route {
 /// its plan, in the same change that adds its `NoOwner` arm.
 ///
 /// The eight `accounts.*` rows landed with the schema and left as their handlers did. §24.9's
-/// three `install.*` rows arrive the same way and for the same reason: the schema delta and the
-/// install runtime are separate changes, so until the runtime lands each is named here rather
-/// than mis-routed. Empty is a state to assert, not a state to stop asserting: the test below
-/// reads the router rather than this list.
-pub const UNOWNED_COMMANDS: [(&str, &str); 3] = [
-    ("install.preview", "p2-24 Task 10"),
+/// three `install.*` rows arrived the same way; preview has now left, while the two mutating
+/// commands remain named here until their runtime lands. Empty is a state to assert, not a state
+/// to stop asserting: the test below reads the router rather than this list.
+pub const UNOWNED_COMMANDS: [(&str, &str); 2] = [
     ("install.start", "p2-24 Task 12"),
     ("install.cancel", "p2-24 Task 15"),
 ];
@@ -202,10 +202,9 @@ pub fn route(command: CommandName) -> Route {
         | CommandName::AccountsSetOrgEnabled
         | CommandName::AccountsDisconnect => Route::AccountsNet,
 
-        // §24.9's three, declared here and answered by the install runtime. Each names the task
-        // that owes it, so the refusal says *who* rather than only *that* — and each leaves this
-        // list in the change that gives it a handler.
-        CommandName::InstallPreview => Route::NoOwner("p2-24 Task 10"),
+        // §24.9's read-only preview is answered by Install. The two mutating commands remain
+        // named refusals until their owning tasks land.
+        CommandName::InstallPreview => Route::Install,
         CommandName::InstallStart => Route::NoOwner("p2-24 Task 12"),
         CommandName::InstallCancel => Route::NoOwner("p2-24 Task 15"),
     }

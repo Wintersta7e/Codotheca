@@ -372,6 +372,54 @@ impl CoreHandler {
         crate::remote::dispatch_remote_command(&ctx, command, args)
     }
 
+    /// Every route answered **before** the one index guard is taken, and the reason each must be.
+    ///
+    /// `Ok` is the answer; `Err` hands `args` back unconsumed, meaning *not one of these, take
+    /// the guard*. That shape exists so this stays the only list of off-lock routes — `handle`
+    /// does not repeat it, and the guarded match below is kept honest by its `unreachable!()`.
+    /// **A task that adds an off-lock command adds its arm here**, not to `handle`, which sits
+    /// within a couple of lines of clippy's function-length limit.
+    fn off_lock_arm(
+        &mut self,
+        command: &str,
+        dest: Route,
+        args: Value,
+        now: i64,
+    ) -> Result<Result<Value, CommandFailure>, Value> {
+        match dest {
+            Route::Loop => Ok(Err(Self::loop_only(command))),
+            Route::NoOwner(plan) => Ok(Err(Self::unowned(command, plan))),
+            // R75: `ConnectPump::start` issues the Device Flow's first request synchronously, so
+            // taking the guard here would hold the process's one SQLite mutex across a forge
+            // round trip.
+            Route::AccountsNet => Ok(self.accounts_net_arm(command, args, now)),
+            // The same reason: up to 24 asset fetches of 5 s each, and the one SQLite mutex may
+            // not be held across them.
+            Route::ReadmeNet => Ok(self.readme_net_arm(args, now)),
+            // `ScanCtx` takes a `&dyn ScanStore`, not an `&Index`, and `SqliteScanStore` locks
+            // the same mutex internally; `std::sync::Mutex` is not reentrant, so holding it here
+            // would deadlock the core on `scan.status`.
+            Route::Scan => Ok(self
+                .scan_arm(command, args, now)
+                .unwrap_or_else(|| Err(Self::declined(command, dest)))),
+            Route::Install => Ok(self.install_arm(args, now)),
+            _ => Err(args),
+        }
+    }
+
+    /// §24.3d's destination preview — p2-24 Task 10.
+    ///
+    /// It has its own arm because it takes the one index guard itself: `handle_preview` opens a
+    /// read transaction, and `std::sync::Mutex` is not reentrant, so it may not be reached
+    /// through the common guarded arm below. The guard is taken **through the field** rather
+    /// than a `&self` helper, which would borrow the rest of the handler along with it.
+    fn install_arm(&self, args: Value, now: i64) -> Result<Value, CommandFailure> {
+        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
+        let preview = crate::install::handle_preview(&ctx, args)?;
+        serde_json::to_value(preview).map_err(|error| CommandFailure::internal(error.to_string()))
+    }
+
     /// §25.5's asset read, answered off the index lock.
     ///
     /// It takes the `Arc<Mutex<Index>>` and locks it itself, which is R94's second side: nothing
@@ -516,26 +564,13 @@ impl CommandHandler for CoreHandler {
         let dest = route(name);
         let now = self.clock.now_unix();
 
-        match dest {
-            Route::Loop => return Err(Self::loop_only(command)),
-            Route::NoOwner(plan) => return Err(Self::unowned(command, plan)),
-            // R75: answered **without** the index lock. `ConnectPump::start` issues the Device
-            // Flow's first request synchronously, so taking the guard here would hold the
-            // process's one SQLite mutex across a forge round trip.
-            Route::AccountsNet => return self.accounts_net_arm(command, args, now),
-            // Answered **without** the index lock for the same reason: up to 24 asset fetches of
-            // 5 s each, and the one SQLite mutex may not be held across them.
-            Route::ReadmeNet => return self.readme_net_arm(args, now),
-            // Answered **without** the index lock. `ScanCtx` takes a `&dyn ScanStore`, not an
-            // `&Index`, and `SqliteScanStore` locks the same mutex internally; `std::sync::Mutex`
-            // is not reentrant, so holding it here would deadlock the core on `scan.status`.
-            Route::Scan => {
-                return self
-                    .scan_arm(command, args, now)
-                    .unwrap_or_else(|| Err(Self::declined(command, dest)));
-            }
-            _ => {}
-        }
+        // `Err` hands `args` back untouched, which is what lets the route list live in exactly
+        // one place: a second list here would be the one-value-stated-twice defect on the table
+        // that decides whether the SQLite mutex is held across a socket.
+        let args = match self.off_lock_arm(command, dest, args, now) {
+            Ok(answer) => return answer,
+            Err(handed_back) => handed_back,
+        };
 
         // One guard for the length of one command. Every context below is built from it, so the
         // borrow checker still enforces that no two are alive at once.
@@ -550,6 +585,7 @@ impl CommandHandler for CoreHandler {
             Route::Loop
             | Route::NoOwner(_)
             | Route::Scan
+            | Route::Install
             | Route::AccountsNet
             | Route::ReadmeNet => unreachable!(),
             Route::FirstRun => {

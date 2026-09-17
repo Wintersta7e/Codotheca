@@ -767,8 +767,12 @@ mod corehandler {
         // because it reaches arbitrary hosts.
         // [p2] §21.13's `sync.status` is the 53rd, answered **under** the guard: it reads two
         // tables and the runner's own process state, and the runner is what reaches the network.
+        // [p2] §24.3d's `install.preview` is the 54th. It takes the guard itself rather than
+        // through the common arm, because `handle_preview` opens its own read transaction and
+        // `std::sync::Mutex` is not reentrant. The two mutating install commands stay unowned,
+        // so this number and `unowned.len()` move in opposite directions as those tasks land.
         assert_eq!(
-            checked, 53,
+            checked, 54,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(
