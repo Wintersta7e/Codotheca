@@ -29,6 +29,7 @@ const settings: Settings = {
   residentShortcut: null,
   roastEnabled: true,
   logLevel: 'info',
+  installRootId: null,
 };
 
 const answers = (name: CommandName): unknown => {
@@ -138,6 +139,7 @@ describe('the settings drawer', () => {
       residentShortcut: null,
       roastEnabled: false,
       logLevel: null,
+      installRootId: null,
     });
     expect(toSettingsPatch({ effectsTier: 'off' }).effectsTier).toBe('off');
   });

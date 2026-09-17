@@ -33,6 +33,7 @@ const settings: Settings = {
   residentShortcut: null,
   roastEnabled: true,
   logLevel: 'info',
+  installRootId: null,
 };
 
 /** Every slot supplied, so every row the registry declares is actually drawn. */
