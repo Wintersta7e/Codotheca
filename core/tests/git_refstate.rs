@@ -10,8 +10,7 @@ mod support;
 
 use codotheca_core::clock::SystemClock;
 use codotheca_core::git::{
-    observation_fingerprint, read_ref_state, ref_fingerprint, GitError, InterruptedOp,
-    RefFingerprint,
+    observation_fingerprint, read_ref_state, ref_fingerprint, InterruptedOp, RefFingerprint,
 };
 use support::TestRepo;
 
@@ -35,7 +34,11 @@ fn reads_branch_head_and_counts_without_spawning_git() {
         Some(repo.git(&["rev-parse", "HEAD"]).trim())
     );
     assert_eq!(st.tag_count, 2);
-    assert_eq!(st.stash_count, 0);
+    assert_eq!(
+        st.stash_count,
+        Some(0),
+        "no reflog is *no stash*, and that is a real observation"
+    );
     assert!(!st.is_shallow);
     assert!(!st.is_bare);
     assert_eq!(st.interrupted_op, None);
@@ -99,25 +102,44 @@ fn stashes_are_counted_from_the_stash_reflog() {
     repo.git(&["stash", "push", "-q", "-m", "two"]);
 
     let st = read_ref_state(&repo.handle(), &clock()).unwrap();
-    assert_eq!(st.stash_count, 2);
+    assert_eq!(st.stash_count, Some(2));
 }
 
 #[test]
-fn an_unreadable_stash_reflog_is_not_reported_as_zero() {
+fn an_unreadable_stash_reflog_costs_one_field_and_not_seven() {
     let repo = TestRepo::init();
     repo.write("a.txt", b"one\n");
     repo.commit("first");
+    repo.git(&["tag", "v1"]);
+
+    // The facts that must survive, read while the reflog is still fine.
+    let before = read_ref_state(&repo.handle(), &clock()).unwrap();
+    assert_eq!(before.stash_count, Some(0));
+
     let stash = repo
         .path()
         .join(".git")
         .join("logs")
         .join("refs")
         .join("stash");
-    std::fs::write(stash, [0xff]).unwrap();
+    std::fs::create_dir_all(stash.parent().unwrap()).unwrap();
+    // A directory where the reflog should be: unreadable as a file, on every platform, without
+    // depending on a permission bit this test's user may override.
+    std::fs::create_dir_all(&stash).unwrap();
 
-    let error = read_ref_state(&repo.handle(), &clock())
-        .expect_err("an unreadable stash reflog must not produce a numeric stash count");
-    assert!(matches!(error, GitError::Unreadable { .. }), "{error:?}");
+    let after = read_ref_state(&repo.handle(), &clock())
+        .expect("[p2-24b] R51: an unreadable stash reflog must not fail the whole read");
+    assert_eq!(
+        after.stash_count, None,
+        "unreadable is None, never 0 — a deletion gate reading 0 would clear a copy holding work"
+    );
+    // The six independent facts that used to be lost with it.
+    assert_eq!(after.head_oid, before.head_oid);
+    assert_eq!(after.branch, before.branch);
+    assert_eq!(after.tag_count, before.tag_count);
+    assert_eq!(after.is_shallow, before.is_shallow);
+    assert_eq!(after.interrupted_op, before.interrupted_op);
+    assert_eq!(after.fetch_head_at, before.fetch_head_at);
 }
 
 #[test]

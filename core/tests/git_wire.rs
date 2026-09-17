@@ -60,7 +60,7 @@ fn ref_state_survives_the_hop() {
         ahead: Some(2),
         behind: Some(0),
         tag_count: 3,
-        stash_count: 0,
+        stash_count: Some(0),
         is_shallow: true,
         is_bare: false,
         interrupted_op: Some(InterruptedOp::Rebase),
@@ -150,4 +150,51 @@ fn a_non_utf8_tracked_path_is_not_silently_lost() {
     let text = serde_json::to_string(&inventory).expect("serialises");
     let back: TrackedInventory = serde_json::from_str(&text).expect("parses");
     assert_eq!(back.paths, vec![raw]);
+}
+
+/// **[p2-24b] R51: all three stash states survive the hop to the WSL worker.**
+///
+/// `RefState` is serialised to the worker (`core/src/wsl/proto.rs` carries `state: Box<RefState>`),
+/// so **the worker binary moves with this struct**: one built before the field became nullable and
+/// a core built after disagree about its shape, and nothing on the wire says so. This is the gate
+/// that says so instead.
+#[test]
+fn every_stash_state_survives_the_hop_to_the_worker() {
+    let base = RefState {
+        head_oid: Some("0123456789abcdef0123456789abcdef01234567".to_owned()),
+        branch: Some("main".to_owned()),
+        upstream: None,
+        ahead: None,
+        behind: None,
+        tag_count: 0,
+        stash_count: Some(0),
+        is_shallow: false,
+        is_bare: false,
+        interrupted_op: None,
+        fetch_head_at: None,
+        reflog_tail_at: None,
+        basis: RefFingerprint::from_hex(DIGEST).expect("parses"),
+        observed_at: 1,
+    };
+
+    // `Some(0)` is *no stash* — a real observation — and must not arrive as `null`.
+    let none_present = round_trip(&RefState {
+        stash_count: Some(0),
+        ..base.clone()
+    });
+    assert!(none_present.contains("\"stash_count\":0"), "{none_present}");
+
+    let counted = round_trip(&RefState {
+        stash_count: Some(2),
+        ..base.clone()
+    });
+    assert!(counted.contains("\"stash_count\":2"), "{counted}");
+
+    // `None` is *unreadable* and must arrive as `null`, never as 0. A worker that collapsed the
+    // two would hand the core a false all-clear across the process boundary.
+    let unreadable = round_trip(&RefState {
+        stash_count: None,
+        ..base
+    });
+    assert!(unreadable.contains("\"stash_count\":null"), "{unreadable}");
 }

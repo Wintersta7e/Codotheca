@@ -139,7 +139,12 @@ pub struct RefState {
     /// Count of refs under `refs/tags`.
     pub tag_count: u32,
     /// `location.stash_count`, from the stash reflog.
-    pub stash_count: u32,
+    ///
+    /// **[p2-24b] R51: `None` is *unreadable*, not zero.** A stash reflog the app cannot read is
+    /// not an empty one, and a deletion gate that read `0` there would clear a copy holding work.
+    /// `Some(0)` is *no stash* and is a real observation: git creates the reflog on the first
+    /// stash, so its absence genuinely means none.
+    pub stash_count: Option<u32>,
     /// `project.is_shallow`.
     pub is_shallow: bool,
     /// `project.is_bare`.
@@ -298,19 +303,27 @@ fn interrupted(git_dir: &Path) -> Option<InterruptedOp> {
     None
 }
 
-fn read_stash_count(common_dir: &Path) -> GitResult<usize> {
+/// The stash reflog's entry count, or `None` when it could not be read.
+///
+/// **[p2-24b] R51: an unreadable stash reflog costs one field, not seven.** Before this, a
+/// permission error here returned `Err` from the whole of `read_ref_state`, so `head_oid`,
+/// `branch`, `tag_count`, `is_shallow`, `interrupted_op`, `fetch_head_at` and `reflog_tail_at`
+/// were all lost to one unreadable file. They are independent facts and are now reported.
+///
+/// `None` is never collapsed to `0` anywhere downstream: `persist` writes NULL, and §24.8's
+/// `stash_unreadable` blocker is what a deletion gate sees instead of a false all-clear.
+/// **It cannot fail.** The `Result` it used to return was the mechanism by which one unreadable
+/// file lost six other facts; removing it is what makes that impossible rather than merely
+/// unlikely.
+fn read_stash_count(common_dir: &Path) -> Option<usize> {
     let path = common_dir.join("logs").join("refs").join("stash");
     match std::fs::read_to_string(path) {
-        Ok(text) => Ok(text.lines().filter(|line| !line.trim().is_empty()).count()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
-        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-            Err(GitError::PermissionDenied {
-                detail: format!("stash reflog: {error}"),
-            })
-        }
-        Err(error) => Err(GitError::Unreadable {
-            detail: format!("stash reflog: {error}"),
-        }),
+        Ok(text) => Some(text.lines().filter(|line| !line.trim().is_empty()).count()),
+        // git creates the reflog on the first stash, so missing genuinely means none.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some(0),
+        // Unreadable, by permission or by anything else. Not an error for the whole read, and
+        // not a zero.
+        Err(_) => None,
     }
 }
 
@@ -398,7 +411,7 @@ pub fn read_ref_state(repo: &RepoHandle, clock: &dyn Clock) -> GitResult<RefStat
     tag_names.sort_unstable();
     tag_names.dedup();
 
-    let stash_count = read_stash_count(&repo.common_dir)?;
+    let stash_count = read_stash_count(&repo.common_dir);
 
     Ok(RefState {
         head_oid,
@@ -409,7 +422,7 @@ pub fn read_ref_state(repo: &RepoHandle, clock: &dyn Clock) -> GitResult<RefStat
         ahead: None,
         behind: None,
         tag_count: u32::try_from(tag_names.len()).unwrap_or(u32::MAX),
-        stash_count: u32::try_from(stash_count).unwrap_or(u32::MAX),
+        stash_count: stash_count.map(|n| u32::try_from(n).unwrap_or(u32::MAX)),
         is_shallow: repo.common_dir.join("shallow").exists(),
         is_bare: config_is_bare(&repo.common_dir),
         interrupted_op: interrupted(&repo.git_dir),

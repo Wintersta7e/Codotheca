@@ -40,6 +40,9 @@ pub fn apply_divergence(state: &mut RefState, counts: Option<Divergence>) {
 ///
 /// `ahead` and `behind` are written as they stand, `None` included: overwriting a NULL with a 0
 /// would turn "not computed" into "level with upstream", which is a claim (§8.5.2).
+///
+/// **[p2-24b] `stash_count` joins them (R51).** `None` is an unreadable stash reflog and is
+/// written as NULL, never 0 — a deletion gate reading 0 there would clear a copy holding work.
 pub fn persist(
     tx: &rusqlite::Transaction<'_>,
     location: crate::protocol::LocationId,
@@ -56,7 +59,7 @@ pub fn persist(
             s.head_oid,
             s.ahead.map(i64::from),
             s.behind.map(i64::from),
-            i64::from(s.stash_count),
+            s.stash_count.map(i64::from),
             s.interrupted_op.map(|op| op.as_str()),
             s.fetch_head_at,
             s.reflog_tail_at,
@@ -102,7 +105,7 @@ mod tests {
             ahead: None,
             behind: None,
             tag_count: 0,
-            stash_count: 0,
+            stash_count: Some(0),
             is_shallow: false,
             is_bare: false,
             interrupted_op: None,
