@@ -852,6 +852,78 @@ fn a_clean_settle_publishes_the_status_that_carries_the_cleared_banner() {
     );
 }
 
+/// **§21.6's *every response*, including one another thread made.**
+///
+/// The Device Flow pump shares this decorator — `core/src/main.rs` hands the same provider to
+/// both — so a poll's rate headers land in the same channel as a task's. Before the channel was
+/// tagged by thread, `observe_one` took the last observation and dropped the rest, so a poll that
+/// landed during a task step was either mistaken for that step's own response or thrown away
+/// unmirrored. It is mirrored now, and against the **per-IP** pool: an unauthenticated poll
+/// spends no account's allowance, and §21.6 keys that pool by the absence of an account.
+#[test]
+fn a_response_another_thread_observed_is_mirrored_against_the_per_ip_pool() {
+    let f = fixture(Duration::ZERO);
+    let observing = Arc::clone(&f.deps.transport);
+
+    // The poll's answer, observed on another thread before the listing runs.
+    f.scripted.push(HttpResponse {
+        status: 200,
+        headers: codotheca_core::http::normalise_headers([
+            ("x-ratelimit-resource", "core"),
+            ("x-ratelimit-remaining", "4321"),
+            ("x-ratelimit-limit", "5000"),
+        ]),
+        body: b"{}".to_vec(),
+    });
+    {
+        let other = Arc::clone(&observing);
+        std::thread::spawn(move || {
+            let _ = other.send(&HttpRequest {
+                method: "POST",
+                url: format!("https://{HOST}/login/oauth/access_token"),
+                headers: Vec::new(),
+                body: None,
+                limits: codotheca_core::http::ACCOUNT_LIMITS,
+            });
+        })
+        .join()
+        .expect("joined");
+    }
+    for _ in 0..4 {
+        f.scripted.push(ok_page("[]"));
+    }
+
+    let index = Arc::clone(&f.index);
+    let account = f.account.0;
+    let runner = SyncRunner::new(
+        Arc::clone(&f.index),
+        f.deps,
+        Arc::clone(&f.events) as Arc<dyn EventSink>,
+    );
+    runner.enqueue(SyncTask::AccountRepos {
+        account_id: f.account,
+    });
+    runner.start();
+    until("the listing to settle", || {
+        state_of(&index, SyncTaskKind::AccountRepos, account)
+            .is_some_and(|row| row.state == SyncTaskState::Ok)
+    });
+    runner.request_stop();
+    runner.join();
+
+    let guard = index.lock().expect("index");
+    let pool = codotheca_core::sync::budget::read_budget(guard.conn(), None, "core")
+        .expect("read")
+        .expect("the per-IP pool was never mirrored");
+    eprintln!(
+        "sync_runner: per-IP pool remaining {:?} of {:?}",
+        pool.remaining(),
+        pool.limit()
+    );
+    assert_eq!(pool.remaining(), Some(4321));
+    assert_eq!(pool.limit(), Some(5000));
+}
+
 /// **Cancelling alone stops the loop**, with no `request_stop` at all.
 ///
 /// This is what the cancel half of `stop()` actually contributes, and the plan's own mutation

@@ -100,9 +100,13 @@ pub fn token_for(deps: &SyncDeps, token_ref: &str) -> Result<SecretToken, SyncEr
 
 /// The one observation a provider call produced.
 ///
-/// §21's own invariant is **one HTTP request in flight in the process**, so a drain after one call
-/// yields exactly that call's response — which is why the channel can be a plain `Vec`, and why
-/// `core/tests/sync_runner.rs` asserts the invariant rather than assuming it.
+/// §21's own invariant is **one HTTP request in flight on the runner's thread**, so a drain after
+/// one call yields exactly that call's response. It is *not* an invariant of the process: the
+/// Device Flow pump issues requests through the same decorator from its own thread, on purpose,
+/// so that §21.6 sees those responses too. `ObservingTransport::drain` returning this thread's
+/// observations only is what makes the sentence above true of the assembled product rather than
+/// of the runner in isolation; `core/tests/sync_runner.rs` asserts the one-in-flight half rather
+/// than assuming it.
 ///
 /// **The empty case is real and is not a gap.** A provider call can fail before it reaches the
 /// transport — a body that will not decode is the live case — and there is then no response to

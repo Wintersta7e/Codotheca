@@ -235,6 +235,45 @@ fn a_transport_failure_is_recorded_and_re_raised() {
     assert_eq!(observing.drain().len(), 1);
 }
 
+/// **(f) A drain claims this thread's responses and nobody else's.**
+///
+/// `core/src/main.rs` hands one provider — and so one decorator — to the sync runner **and** to
+/// the accounts Device Flow pump, on purpose: §21.6 wants the poll's `x-ratelimit-*` in
+/// `sync_budget` too. So *one request in flight* is true of the runner's thread and not of the
+/// process, and an untagged channel let a poll landing mid-task be taken as that task's own
+/// observation while the task's real response was discarded unmirrored.
+#[test]
+fn a_drain_takes_this_threads_responses_and_leaves_another_threads() {
+    let inner = Arc::new(FakeTransport::new());
+    for _ in 0..3 {
+        inner.push(response(200, &[("x-ratelimit-resource", "core")], b"{}"));
+    }
+    let observing = Arc::new(ObservingTransport::new(
+        Arc::clone(&inner) as Arc<dyn HttpTransport>,
+        clock(),
+    ));
+
+    // Another thread's request, standing in for the Device Flow poll.
+    {
+        let other = Arc::clone(&observing);
+        std::thread::spawn(move || {
+            other.send(&request(Vec::new())).expect("sent");
+        })
+        .join()
+        .expect("joined");
+    }
+    observing.send(&request(Vec::new())).expect("sent");
+
+    let mine = observing.drain();
+    assert_eq!(mine.len(), 1, "a drain claimed another thread's response");
+    let foreign = observing.drain_foreign();
+    assert_eq!(foreign.len(), 1, "the other thread's response was lost");
+    assert!(
+        observing.drain_foreign().is_empty(),
+        "a foreign drain must empty what it took"
+    );
+}
+
 /// **(e) `drain` empties the channel**, so a second task step sees only its own responses. A
 /// channel that accumulated would make every later step read an earlier step's budget.
 #[test]

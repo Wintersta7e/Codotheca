@@ -58,15 +58,31 @@ pub struct HttpObservation {
     pub at: i64,
 }
 
+/// How many unclaimed observations the channel holds before the oldest is dropped.
+///
+/// **A hand-off, not a log.** Every task step drains, so in the ordinary case the channel holds
+/// one step's responses — one per listing page, at most `RENAME_PROBE_MAX_LOOKUPS` for a repair
+/// pass. What can accumulate is another thread's: the Device Flow polls through this same
+/// decorator every few seconds and never drains, so with no sync task running to flush it the
+/// channel would grow for the length of a flow. Dropping the oldest bounds that at a number no
+/// real step reaches.
+const CHANNEL_CAP: usize = 512;
+
 /// The decorator.
 #[derive(Debug)]
 pub struct ObservingTransport {
     inner: Arc<dyn HttpTransport>,
     clock: Arc<dyn Clock>,
-    /// Drained per task step. It is deterministic because §21's own invariant is **one HTTP
-    /// request in flight in the process**, which `core/tests/sync_runner.rs` asserts rather than
-    /// assumes.
-    seen: Mutex<Vec<HttpObservation>>,
+    /// Drained per task step, each entry tagged with the thread whose request produced it.
+    ///
+    /// **Tagged because this process has more than one requesting thread**, which an earlier
+    /// draft of this file got wrong. `core/src/main.rs` builds one `(provider, observing)` pair
+    /// and hands the *same* provider to the sync runner and to the accounts Device Flow pump —
+    /// deliberately, because §21.6 wants the poll's `x-ratelimit-*` in `sync_budget` too. So
+    /// *one HTTP request in flight* is true of the runner's thread and **not** of the process,
+    /// and an untagged channel let a poll landing mid-task be taken as that task's own
+    /// observation, deciding its outcome, while the task's real response was dropped unmirrored.
+    seen: Mutex<Vec<(std::thread::ThreadId, HttpObservation)>>,
 }
 
 impl ObservingTransport {
@@ -79,14 +95,40 @@ impl ObservingTransport {
         }
     }
 
-    /// Take everything observed since the last drain, leaving the channel empty.
+    /// Take everything **this thread's** requests observed, in order.
     ///
     /// Emptying is the point: a channel that accumulated would make every later task step read an
-    /// earlier step's budget and settle on an earlier step's outcome.
+    /// earlier step's budget and settle on an earlier step's outcome. Another thread's
+    /// observations are left where they are — they belong to no task here, and
+    /// [`ObservingTransport::drain_foreign`] is what keeps §21.6's *every response* true of them.
     #[must_use]
     pub fn drain(&self) -> Vec<HttpObservation> {
+        self.take(true)
+    }
+
+    /// Take everything **other** threads' requests observed.
+    ///
+    /// §21.6 binds these as much as any other response, so they are mirrored; what they are not
+    /// is evidence about the task that drained them. The runner calls this once per settle, which
+    /// is also what stops the channel growing.
+    #[must_use]
+    pub fn drain_foreign(&self) -> Vec<HttpObservation> {
+        self.take(false)
+    }
+
+    fn take(&self, own: bool) -> Vec<HttpObservation> {
+        let me = std::thread::current().id();
         let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut seen)
+        let mut taken = Vec::new();
+        seen.retain(|(thread, observation)| {
+            if (*thread == me) == own {
+                taken.push(observation.clone());
+                false
+            } else {
+                true
+            }
+        });
+        taken
     }
 }
 
@@ -95,10 +137,16 @@ impl HttpTransport for ObservingTransport {
         let at = self.clock.now_unix();
         let answer = self.inner.send(req);
         let (outcome, rate) = classify(&answer, at);
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(HttpObservation { outcome, rate, at });
+        {
+            let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+            if seen.len() >= CHANNEL_CAP {
+                seen.remove(0);
+            }
+            seen.push((
+                std::thread::current().id(),
+                HttpObservation { outcome, rate, at },
+            ));
+        }
         // Unchanged, header for header and byte for byte: the provider above must parse exactly
         // what it would have parsed undecorated.
         answer

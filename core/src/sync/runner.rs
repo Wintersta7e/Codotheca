@@ -589,6 +589,8 @@ impl SyncRunner {
             });
         }
 
+        self.mirror_foreign_observations();
+
         // Every budget row this step touched, so a surface renders `—` for what was never
         // observed rather than a zero nobody measured.
         if let Ok(budgets) = self.read_budgets() {
@@ -623,6 +625,29 @@ impl SyncRunner {
         // A settle that parked or re-queued the row leaves work outstanding; one that ended it
         // may have emptied the table, and the next `take_next` is what establishes which.
         self.outstanding.store(true, Ordering::SeqCst);
+    }
+
+    /// §21.6's *every response*, for the ones this process made on some **other** thread.
+    ///
+    /// The Device Flow pump shares this decorator, and its poll is unauthenticated — no token has
+    /// been issued yet — so what it spends is the **per-IP** pool, which §21.6 keys by the absence
+    /// of an account rather than by a sentinel one. Attributing it to whichever account this task
+    /// happens to belong to would put another pool's numbers under that account's name.
+    ///
+    /// It also flushes the channel, which is what stops a long connect flow accumulating
+    /// observations nobody claims.
+    fn mirror_foreign_observations(&self) {
+        let foreign = self.deps.transport.drain_foreign();
+        if foreign.is_empty() {
+            return;
+        }
+        let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let _ = guard.with_tx(|tx| {
+            for one in &foreign {
+                crate::sync::budget::mirror(tx, None, &one.rate, one.at)?;
+            }
+            Ok(())
+        });
     }
 
     /// Re-send the whole of `sync.status`, so a subscriber sees a banner that is gone.
