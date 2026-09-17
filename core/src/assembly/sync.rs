@@ -13,6 +13,37 @@ use crate::sync::events::SyncLive;
 use crate::sync::runner::{SyncRunner, SyncSink};
 use crate::sync::SyncDeps;
 
+/// The forge seam, assembled: the decorator over p2-20's transport, and the provider over the
+/// **decorated** one.
+///
+/// **This exists so the wiring can be asserted by running it rather than by reading it.** The
+/// risk §21 actually carries is not that a decorator is constructed but that the provider is
+/// handed the bare transport anyway — and a check that reads `main.rs` cannot tell those apart
+/// without parsing an argument list. `core/tests/sync_assembly.rs` calls this function over a
+/// fake and asserts a provider call **drains an observation**; `core/src/main.rs` calls the same
+/// function, so the thing asserted is the thing that ships (R88).
+///
+/// Every request the provider makes goes through the decorator, the Device Flow's poll included.
+/// Hand `GitHubProvider` the bare transport and those responses' `x-ratelimit-*` never reach
+/// `sync_budget` — the pool the runner then spends against, with an observation missing from it.
+#[must_use]
+pub fn build_forge(
+    http: Arc<dyn crate::http::HttpTransport>,
+    clock: Arc<dyn crate::clock::Clock>,
+    host: String,
+) -> (
+    Arc<dyn crate::provider::Provider>,
+    Arc<crate::sync::http::ObservingTransport>,
+) {
+    let observing = Arc::new(crate::sync::http::ObservingTransport::new(http, clock));
+    let provider: Arc<dyn crate::provider::Provider> =
+        Arc::new(crate::provider::GitHubProvider::new(
+            Arc::clone(&observing) as Arc<dyn crate::http::HttpTransport>,
+            host,
+        ));
+    (provider, observing)
+}
+
 /// The running pump: the runner, and the token that stops it taking further work.
 ///
 /// The two travel together because stopping is two acts in one order. `request_stop` only asks

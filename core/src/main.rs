@@ -234,23 +234,18 @@ fn main() -> ExitCode {
                 Arc::new(codotheca_core::http::RefusingTransport)
             }
         };
-    // §21's decorator over §20's transport, and **the provider is handed the decorated one** —
-    // replacing the bare transport in that call, never adding a second.
+    // §21's decorator over §20's transport, and **the provider is handed the decorated one**.
     //
-    // **This is the whole wiring risk of §21.** Every request the provider makes, the Device
-    // Flow's poll included, goes through here; hand `GitHubProvider` the bare transport and those
-    // responses' `x-ratelimit-*` never reach `sync_budget` — the pool the runner then spends
-    // against, with an observation missing from it. `core/tests/sync_assembly.rs` asserts the
-    // decorator is in the chain by draining an observation, not by reading this file.
-    let observing = Arc::new(codotheca_core::sync::http::ObservingTransport::new(
+    // Assembled by `assembly::sync::build_forge` rather than inline, so the wiring can be
+    // asserted by **running** it: `core/tests/sync_assembly.rs` calls the same function over a
+    // fake and proves a provider call drains an observation. A check that read this file could
+    // only see that a decorator was constructed, not what the provider was handed — which is
+    // exactly the difference that matters (R88).
+    let (provider, observing) = codotheca_core::assembly::sync::build_forge(
         Arc::clone(&http_transport),
         Arc::clone(&clock),
-    ));
-    let provider: Arc<dyn codotheca_core::provider::Provider> =
-        Arc::new(codotheca_core::provider::GitHubProvider::new(
-            Arc::clone(&observing) as Arc<dyn codotheca_core::http::HttpTransport>,
-            codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
-        ));
+        codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
+    );
     let tokens: Arc<dyn codotheca_core::accounts::keychain::TokenStore> =
         Arc::new(codotheca_core::accounts::keychain::KeyringTokenStore::new());
 
