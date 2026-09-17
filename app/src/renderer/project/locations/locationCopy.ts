@@ -12,13 +12,29 @@ import { formatAge } from '../../derive/observation';
 import { formatTrackedBytes } from '../../format/size';
 
 export type LocationStateWord =
-  'SAME COMMIT' | 'DIFFERENT COMMIT' | 'NOT COMPARED' | 'OFFLINE' | 'MISSING' | 'NOT SCANNED';
+  | 'SAME COMMIT'
+  | 'DIFFERENT COMMIT'
+  | 'NOT COMPARED'
+  | 'OFFLINE'
+  | 'MISSING'
+  | 'NOT SCANNED'
+  /** [p2] §24.6a. Checked **before** `presence`, which still reads `present` until a scan runs. */
+  | 'UNINSTALLED';
 
 export const OFFLINE_NOTE =
   'The drive is not mounted. This copy is frozen, not rotting — its condition stops here rather than decaying.';
 
 export const MISSING_NOTE =
   'The drive is mounted and the folder is not on it. It may have been moved or deleted; Codotheca removes nothing either way.';
+
+/**
+ * [p2] §24.6a's note, in the panel's voice.
+ *
+ * It says the tile is kept and the copy is re-clonable, and it carries none of `clean`, `delete`
+ * or `remove` — the three words §24.2c bans from a rendered string.
+ */
+export const UNINSTALLED_NOTE =
+  'You uninstalled this copy. The project stays on your shelf and its history stays on the remote; installing it again brings the same work back.';
 
 export const DIFFERENT_COMMIT_NOTE =
   'This copy is on a different commit. Opening it is not the same as opening the project.';
@@ -28,6 +44,10 @@ export const DIFFERENT_COMMIT_NOTE =
  * needs a merge-base across two object stores, which needs a fetch, which §17 forbids.
  */
 export function stateWord(location: LocationDetail): LocationStateWord {
+  // [p2] §24.6a: `removedAt` wins, and it is tested **first**. `presence` is a scan observation
+  // and the scan has not run since the removal, so it still reads `present` for a directory that
+  // is gone — testing it first would render `SAME COMMIT` about nothing.
+  if (location.removedAt !== null) return 'UNINSTALLED';
   switch (location.presence) {
     case 'offline':
       return 'OFFLINE';
@@ -112,9 +132,13 @@ export function locationFacts(args: {
   return out;
 }
 
-export type LocationActionId = 'open' | 'reveal' | 'relocate' | 'enableRoot';
+export type LocationActionId = 'open' | 'reveal' | 'relocate' | 'enableRoot' | 'install';
 
 export function locationActions(location: LocationDetail): LocationActionId[] {
+  // [p2] §24.6a: an uninstalled copy offers INSTALL and **never RELOCATE**. `missing` means the
+  // scan looked and did not find it, so relocating asks *where did it go?*; there is nowhere to
+  // relocate a copy the user deliberately removed.
+  if (location.removedAt !== null) return ['install'];
   switch (location.presence) {
     case 'present':
       return ['open', 'reveal'];
@@ -137,6 +161,8 @@ export function actionLabel(id: LocationActionId): string {
       return 'RELOCATE';
     case 'enableRoot':
       return 'ENABLE ROOT';
+    case 'install':
+      return 'INSTALL';
   }
 }
 
@@ -165,10 +191,18 @@ export function headerNote(locations: readonly LocationDetail[]): string {
   if (locations.length <= 1) return 'ONE COPY ON THIS MACHINE';
   const head = `${String(locations.length)} COPIES`;
   const named = EXCEPTIONS.flatMap(({ presence, word }) => {
-    const n = locations.filter((l) => l.presence === presence).length;
+    // [p2] An uninstalled copy is counted by its own clause below, never by its stale `presence`.
+    const n = locations.filter((l) => l.removedAt === null && l.presence === presence).length;
     return n === 0 ? [] : [`${n === 1 ? 'ONE' : String(n)} ${word}`];
   });
-  return named.length === 0 ? `${head} · ALL REACHABLE` : [head, ...named].join(' · ');
+  // [p2] §24.6a: `ALL REACHABLE` is a **claim**, and it must not be made while a copy is
+  // uninstalled. The note names it instead.
+  const uninstalled = locations.filter((l) => l.removedAt !== null).length;
+  const clauses =
+    uninstalled === 0
+      ? named
+      : [...named, `${uninstalled === 1 ? 'ONE' : String(uninstalled)} UNINSTALLED`];
+  return clauses.length === 0 ? `${head} · ALL REACHABLE` : [head, ...clauses].join(' · ');
 }
 
 /**
@@ -190,6 +224,8 @@ export function footerText(kind: AssociationKind | null, locationCount: number):
 }
 
 export function locationNote(location: LocationDetail): string | null {
+  // First, for the same reason `stateWord` tests it first.
+  if (location.removedAt !== null) return UNINSTALLED_NOTE;
   if (location.presence === 'offline') return OFFLINE_NOTE;
   if (location.presence === 'missing') return MISSING_NOTE;
   if (location.presence === 'present' && location.headComparison === 'different_commit') {

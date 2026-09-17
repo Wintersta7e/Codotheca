@@ -34,6 +34,9 @@ function toShown(location: LocationDetail, lastCommitAt: number | null): ShownLo
     stashCount: location.stashCount,
     headOid: location.headOid,
     lastCommitAt,
+    // [p2] §24.6a: carried through so the roast can be suppressed. Re-deriving *removed* from
+    // `presence` here would be a second owner for a fact `presence` cannot express.
+    removedAt: location.removedAt,
   };
 }
 

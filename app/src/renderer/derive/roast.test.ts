@@ -10,6 +10,7 @@ const shown = (over: Partial<ShownLocation> = {}): ShownLocation => ({
   presence: 'present',
   interruptedOp: null,
   isDirty: false,
+  removedAt: null,
   worktreeObservedAt: NOW - 60,
   ahead: 0,
   fetchHeadAt: null,
@@ -190,5 +191,27 @@ describe('what no line may ever do', () => {
       expect(line).not.toMatch(/\b(clean|none|all)\b/i);
       expect(line).not.toMatch(/\blines?\b/i);
     }
+  });
+});
+
+/**
+ * [p2] §24.6a. A copy uninstalled seconds ago still carries a `stashCount` and a `presence` of
+ * `present`, because neither is re-observed until a scan runs. Roasting it for a stash that is no
+ * longer on disk is a sentence about a directory that does not exist — and *roasting only inside
+ * an opened project card* does not make it correct.
+ */
+describe('an uninstalled copy', () => {
+  it('is never roasted, however loudly its stale numbers read', () => {
+    const noisy = shown({
+      presence: 'present',
+      stashCount: 4,
+      isDirty: true,
+      ahead: 12,
+      worktreeObservedAt: NOW - DAY,
+    });
+    // It roasts while it is installed…
+    expect(roastLine(input({ shown: noisy }))).not.toBeNull();
+    // …and says nothing once it is not.
+    expect(roastLine(input({ shown: { ...noisy, removedAt: NOW - 60 } }))).toBeNull();
   });
 });

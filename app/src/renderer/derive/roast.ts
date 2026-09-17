@@ -39,6 +39,12 @@ export interface ShownLocation {
   stashCount: number | null;
   headOid: string | null;
   lastCommitAt: number | null;
+  /**
+   * [p2] §24.6a. `null` = still installed. A copy uninstalled seconds ago still carries a
+   * `stashCount` and a `presence` of `present`, and roasting it for a stash that is no longer on
+   * disk is a sentence about a directory that does not exist.
+   */
+  removedAt: number | null;
 }
 
 export interface PrimaryRef {
@@ -67,6 +73,10 @@ export function roastLine(input: RoastInput): string | null {
     input.isReference ||
     input.isArchived ||
     input.neverSucceeded ||
+    // [p2] §24.6a: tested alongside presence and **before** any number is read, because every
+    // number below describes bytes that are gone. *Roasting only inside an opened project card*
+    // does not make a roast about a removed copy correct.
+    shown.removedAt !== null ||
     shown.presence !== 'present'
   ) {
     // §4.6: absent is not abandoned. A location that could not be read says nothing.

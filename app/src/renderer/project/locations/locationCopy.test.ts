@@ -14,6 +14,7 @@ import {
   type LocationFact,
   MISSING_NOTE,
   OFFLINE_NOTE,
+  UNINSTALLED_NOTE,
   rowTag,
   stateWord,
 } from './locationCopy';
@@ -210,5 +211,71 @@ describe('the three notes', () => {
       'This copy is on a different commit. Opening it is not the same as opening the project.',
     );
     expect(locationNote(locationFixture({ headComparison: 'not_compared' }))).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [p2] §24.6a — AC-P2-24-17's render half.
+// ---------------------------------------------------------------------------
+
+describe('an uninstalled copy', () => {
+  /**
+   * **`presence` still reads `present`**, because the scan has not run since the removal. That is
+   * the whole reason `removedAt` is tested first, and testing it after would render `SAME COMMIT`
+   * about a directory that is gone.
+   */
+  const uninstalled = (over: Partial<LocationDetail> = {}): LocationDetail =>
+    locationFixture({
+      presence: 'present',
+      headComparison: 'same_commit',
+      removedAt: 1_700_000_000,
+      ...over,
+    });
+
+  it('reads UNINSTALLED, and the stale presence does not win', () => {
+    expect(stateWord(uninstalled())).toBe('UNINSTALLED');
+  });
+
+  /**
+   * **The case that separates *first* from *anywhere*.** Once a scan runs over a removed copy its
+   * `presence` becomes `missing` — and `MISSING` says *the scan looked and did not find it*, which
+   * invites RELOCATE and asks the user where it went. They know where it went: they removed it.
+   * Only testing `removedAt` **before** the presence switch gets this right.
+   */
+  it('still reads UNINSTALLED once a scan has marked it missing', () => {
+    expect(stateWord(uninstalled({ presence: 'missing' }))).toBe('UNINSTALLED');
+    expect(stateWord(uninstalled({ presence: 'offline' }))).toBe('UNINSTALLED');
+    expect(stateWord(uninstalled({ presence: 'unscanned' }))).toBe('UNINSTALLED');
+    // And the action follows it: never RELOCATE, whatever presence says.
+    expect(locationActions(uninstalled({ presence: 'missing' }))).toEqual(['install']);
+  });
+
+  it('offers INSTALL and never RELOCATE', () => {
+    const actions = locationActions(uninstalled());
+    expect(actions).toEqual(['install']);
+    expect(actions).not.toContain('relocate');
+    expect(actions.map(actionLabel)).not.toContain('RELOCATE');
+  });
+
+  it('carries a note that keeps the tile and names no removal word', () => {
+    const note = locationNote(uninstalled());
+    expect(note).toBe(UNINSTALLED_NOTE);
+    for (const banned of ['clean', 'delete', 'remove', 'Clean', 'Delete', 'Remove']) {
+      expect(note ?? '').not.toContain(banned);
+    }
+  });
+
+  it('stops the header claiming ALL REACHABLE', () => {
+    const note = headerNote([uninstalled(), locationFixture({ presence: 'present' })]);
+    expect(note).not.toContain('ALL REACHABLE');
+    expect(note).toContain('UNINSTALLED');
+  });
+
+  it('still says ALL REACHABLE when nothing is uninstalled', () => {
+    const note = headerNote([
+      locationFixture({ presence: 'present' }),
+      locationFixture({ presence: 'present' }),
+    ]);
+    expect(note).toContain('ALL REACHABLE');
   });
 });
