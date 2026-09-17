@@ -1,8 +1,13 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SceneHash } from '../../generated/protocol';
-import { type CardBitmapInput, artUrl, useCardBitmap } from './useCardBitmap';
+import {
+  type CardBitmapInput,
+  artUrl,
+  useCardBitmap,
+  useInstalledRenditionFlip,
+} from './useCardBitmap';
 
 afterEach(() => {
   cleanup();
@@ -192,5 +197,94 @@ describe('the hero takes its address from art.url, because that request is the d
     );
     await settle();
     expect(shown()).toBe('codotheca://art/other/hero');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [p2] §24.4's rendition swap — AC-P2-24-11.
+// ---------------------------------------------------------------------------
+
+describe('the install-time rendition flip', () => {
+  /** A decodable image: `onload` fires on the next tick, as a cached raster would. */
+  class LoadingImage {
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    set src(_value: string) {
+      queueMicrotask(() => this.onload?.());
+    }
+  }
+
+  /** One that never decodes, so the blueprint must stay up. */
+  class NeverLoadingImage {
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    set src(_value: string) {
+      /* never resolves */
+    }
+  }
+
+  const realImage = globalThis.Image;
+  afterEach(() => {
+    globalThis.Image = realImage;
+  });
+
+  /** p2-23's pieces, asserted present before anything below is meaningful. */
+  it('rests on four rendition variants whose blueprint slugs address differently', () => {
+    expect(artUrl('abc' as SceneHash, 'card-blueprint')).not.toBe(
+      artUrl('abc' as SceneHash, 'hero-blueprint'),
+    );
+    expect(artUrl('abc' as SceneHash, 'card-blueprint')).toContain('/card-blueprint');
+    expect(artUrl('abc' as SceneHash, 'hero-blueprint')).toContain('/hero-blueprint');
+  });
+
+  it('flips the tile card-blueprint to card and the hero hero-blueprint to hero', async () => {
+    globalThis.Image = LoadingImage as unknown as typeof Image;
+
+    const tile = renderHook(
+      ({ done }: { done: boolean }) =>
+        useInstalledRenditionFlip('card', 'abc' as SceneHash, false, done),
+      { initialProps: { done: false } },
+    );
+    const hero = renderHook(
+      ({ done }: { done: boolean }) =>
+        useInstalledRenditionFlip('hero', 'abc' as SceneHash, false, done),
+      { initialProps: { done: false } },
+    );
+    expect(tile.result.current).toBe('card-blueprint');
+    expect(hero.result.current).toBe('hero-blueprint');
+
+    tile.rerender({ done: true });
+    hero.rerender({ done: true });
+    await act(async () => {});
+
+    expect(tile.result.current).toBe('card');
+    expect(hero.result.current).toBe('hero');
+    // R47's whole point: the two never cross. A card raster served for a hero is the failure a
+    // single `blueprint` variant would have made unavoidable.
+    expect(tile.result.current).not.toBe('hero');
+    expect(hero.result.current).not.toBe('card');
+  });
+
+  it('holds the decoded blueprint until the new rendition has decoded', async () => {
+    globalThis.Image = NeverLoadingImage as unknown as typeof Image;
+    const tile = renderHook(
+      ({ done }: { done: boolean }) =>
+        useInstalledRenditionFlip('card', 'abc' as SceneHash, false, done),
+      { initialProps: { done: false } },
+    );
+    tile.rerender({ done: true });
+    await act(async () => {});
+    expect(tile.result.current).toBe('card-blueprint');
+  });
+
+  it('holds the blueprint when there is no scene to address at all', async () => {
+    globalThis.Image = LoadingImage as unknown as typeof Image;
+    const tile = renderHook(
+      ({ done }: { done: boolean }) => useInstalledRenditionFlip('card', null, false, done),
+      { initialProps: { done: false } },
+    );
+    tile.rerender({ done: true });
+    await act(async () => {});
+    expect(tile.result.current).toBe('card-blueprint');
   });
 });
