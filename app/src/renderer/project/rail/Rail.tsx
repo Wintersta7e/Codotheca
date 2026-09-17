@@ -12,10 +12,12 @@ import type {
   LocationDetail,
   ProjectDetail,
   TargetRow,
+  UninstallVerdict,
 } from '../../../generated/protocol';
 import { InstallControl } from '../../install/InstallControl';
 import { formatPlaytime } from '../../format/playtime';
 import { useProjectPageDeps } from '../deps';
+import { UninstallControl } from '../uninstall/UninstallControl';
 import { editorTargets, OpensIn } from './OpensIn';
 import { RerollStepper } from './RerollStepper';
 import { ctaState, type CtaState } from './statFormat';
@@ -42,6 +44,13 @@ export interface RailProps {
   installPreview?: InstallPreview | null;
   onInstall?: () => void;
   onOpenUpgrade?: () => void;
+  /**
+   * [p2-24b] §24.6's verdict, or `undefined` when this rail is not offering Uninstall. `null` is
+   * *the pre-flight is in flight* — a distinct state the control renders as checking, never as an
+   * enabled button it later takes away.
+   */
+  uninstallVerdict?: UninstallVerdict | null;
+  onUninstall?: () => void;
   shown: LocationDetail | null;
   onChanged: () => void;
 }
@@ -53,6 +62,8 @@ export function Rail({
   installPreview,
   onInstall,
   onOpenUpgrade,
+  uninstallVerdict,
+  onUninstall,
 }: RailProps): ReactElement {
   const deps = useProjectPageDeps();
   const [offset, setOffset] = useState(detail.rerollOffset);
@@ -68,10 +79,11 @@ export function Rail({
 
   const editors = editorTargets(detail.targets);
   const terminal = terminalTarget(detail.targets);
+  const hasPresentLocation = detail.locations.some((l) => l.presence === 'present');
   const cta = ctaState({
     hasLiveSession: detail.liveSession !== null,
     isArchived: detail.row.isArchived,
-    hasPresentLocation: detail.locations.some((l) => l.presence === 'present'),
+    hasPresentLocation,
     hasResolvedTarget: detail.resolvedTarget !== null,
   });
 
@@ -179,6 +191,14 @@ export function Rail({
           </div>
         </div>
       </div>
+
+      {/* [p2-24b] §24.5: Uninstall's **one** mount point, and it stands below the stats rather
+          than beside Play — there is nothing to gain from putting a removal where the eye lands
+          first. A project with no present location has no working copy to remove, so the slot is
+          not merely disabled there; it is absent. */}
+      {uninstallVerdict === undefined || !hasPresentLocation ? null : (
+        <UninstallControl verdict={uninstallVerdict} onUninstall={onUninstall ?? (() => {})} />
+      )}
     </div>
   );
 }

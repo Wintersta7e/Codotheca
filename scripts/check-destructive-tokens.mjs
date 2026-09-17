@@ -62,6 +62,21 @@ export const UNINSTALL_SITES = [
     token: 'UNINSTALL',
     why: 'The import path of the handler above. A module has to be importable by its own name; renaming the file to dodge the gate would make the tree say less than it does.',
   },
+  {
+    path: 'app/src/renderer/project/uninstall/uninstallCopy.ts',
+    token: 'UNINSTALL',
+    why: "§24.6's rendered token and its confirmation copy, *Uninstall — the tile stays, re-clone any time.* This is the one file in the renderer that renders the word, and it renders every occurrence of it: the control below is arrangement and holds no copy.",
+  },
+  {
+    path: 'app/src/renderer/project/uninstall/UninstallControl.tsx',
+    token: 'UNINSTALL',
+    why: 'Its BEM class names, `cp-uninstall` and the elements under it. The control renders no copy of its own — every sentence comes from the module above — but a class has to say which block it belongs to, and `\\buninstall\\b` matches across the hyphen.',
+  },
+  {
+    path: 'app/src/renderer/project/rail/Rail.tsx',
+    token: 'UNINSTALL',
+    why: "The import path of the control, which lives in a directory named for what it does. §24.5 puts Uninstall in exactly one slot and `app/test/installSites.test.ts` fails on a second, so this path is the gate's own evidence rather than a hole in it.",
+  },
 ];
 
 /**

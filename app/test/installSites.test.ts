@@ -54,3 +54,28 @@ test('InstallControl is mounted in exactly two places and no third', () => {
     `Install is offered in exactly two places; found ${importers.length}`,
   ).toEqual(['card/ProjectCard.tsx', 'project/rail/Rail.tsx']);
 });
+
+/**
+ * [p2-24b] §24.5: Uninstall occupies **one** slot — the project page's left rail. It appears on no
+ * card, in no Peek, in no list, in no palette row and in no triage surface, and the way that claim
+ * dies is a second mount point nobody notices.
+ *
+ * `\bInstallControl\b` above does **not** match `UninstallControl` — `n` and `I` are both word
+ * characters, so there is no boundary between them. The two gates are independent, which is the
+ * R15 point: the names share four letters and nothing else.
+ */
+test('UninstallControl is mounted in exactly one place and no second', () => {
+  const sources = rendererSources();
+  expect(sources.length, 'the renderer scan read nothing').toBeGreaterThan(50);
+
+  const importers = sources
+    .filter(({ path }) => !path.includes(`${'uninstall'}${'/'}UninstallControl`))
+    .filter(({ path }) => !path.endsWith('.test.ts') && !path.endsWith('.test.tsx'))
+    .filter(({ text }) => /\bUninstallControl\b/u.test(text))
+    .map(({ path }) => path.slice(RENDERER.length + 1).replaceAll('\\', '/'));
+
+  expect(
+    importers.sort(),
+    `Uninstall is offered in exactly one place; found ${importers.length}`,
+  ).toEqual(['project/rail/Rail.tsx']);
+});
