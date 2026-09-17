@@ -239,9 +239,14 @@ export function remoteSyncNotice(kind: SyncNotice): NoticeCopy {
     case 'offline':
       return {
         title: 'THE FORGE COULD NOT BE REACHED',
+        // **It promises no retry.** §21.4 defers a task at three transient failures, and a
+        // deferred row is left only through a revival cause, none of which has a production
+        // caller. "This retries on its own" was true of the first two failures and false for ever
+        // after the third — *never claim currency you do not have*, pointed forwards: copy
+        // asserting a future behaviour instead of a past observation.
         body:
-          'Remote details are whatever was last read, with the time beside them. This retries ' +
-          'on its own; nothing here needs doing.',
+          'Remote details are whatever was last read, with the time beside them. Nothing local ' +
+          'has changed, and nothing here needs doing.',
         note: null,
         primary: null,
         secondary: null,
