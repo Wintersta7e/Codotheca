@@ -112,10 +112,15 @@ pub struct LoadedRow {
 /// R41 recorded `last_seen_at` here on the premise that `location` has no touched column;
 /// migration `0007_jobs_derived.sql` added `worktree_newest_mtime`, so the premise is stale and
 /// a presence clock is no longer the best answer available.
+/// **[p2-24b] §24.6a: an uninstalled row is demoted below every other one, whatever `presence`
+/// says.** `presence` is a scan observation and the scan has not run since the removal, so it
+/// still reads `present` for a directory that is gone — which is why the precedence is
+/// implemented here, once, rather than left to six call sites to remember.
 #[must_use]
 pub fn pick_primary(locations: &[LocationFacts]) -> Option<&LocationFacts> {
     locations.iter().max_by_key(|l| {
         (
+            i32::from(l.removed_at.is_none()),
             i32::from(l.presence == Presence::Present),
             l.worktree_newest_mtime.unwrap_or(i64::MIN),
             i32::from(l.kind.is_native()),
@@ -124,11 +129,20 @@ pub fn pick_primary(locations: &[LocationFacts]) -> Option<&LocationFacts> {
     })
 }
 
+/// Is this a copy that still exists to be reasoned about?
+///
+/// **[p2-24b] §24.6a.** `removed_at` takes precedence over `presence` everywhere the aggregates
+/// read, because the two disagree until the next scan and `removed_at` is the one this app wrote
+/// itself.
+fn is_live(location: &LocationFacts) -> bool {
+    location.removed_at.is_none() && location.presence == Presence::Present
+}
+
 /// §5.1's OR, three-valued. `None` means nobody has looked — **never `false`** (§6).
 #[must_use]
 pub fn any_present_dirty(locations: &[LocationFacts]) -> Option<bool> {
     let mut observed = false;
-    for loc in locations.iter().filter(|l| l.presence == Presence::Present) {
+    for loc in locations.iter().filter(|l| is_live(l)) {
         match loc.is_dirty {
             Some(true) => return Some(true),
             Some(false) => observed = true,
@@ -142,11 +156,7 @@ fn max_present<T: Ord + Copy>(
     locations: &[LocationFacts],
     f: impl Fn(&LocationFacts) -> Option<T>,
 ) -> Option<T> {
-    locations
-        .iter()
-        .filter(|l| l.presence == Presence::Present)
-        .filter_map(f)
-        .max()
+    locations.iter().filter(|l| is_live(l)).filter_map(f).max()
 }
 
 /// The generation §8.2's response carries. `0` before the first scan — a run counter, not a

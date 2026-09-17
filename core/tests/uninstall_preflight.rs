@@ -169,7 +169,17 @@ fn the_uninstall_module_never_reads_the_cached_stash_column() {
             if trimmed.starts_with("//") || trimmed.starts_with("///") {
                 continue;
             }
-            if line.contains("stash_count") {
+            if !line.contains("stash_count") {
+                continue;
+            }
+            // **Clearing the column is the opposite of trusting it.** §24.6b nulls `stash_count`
+            // on removal precisely because it describes a directory that no longer exists. What
+            // this gate bans is a **read**, so it matches the read shapes — a `SELECT` of the
+            // column, or a row accessor on it — rather than the name appearing at all. Loosening
+            // it to "not on a line mentioning NULL" would have let a real read through on any
+            // line that happened to say NULL too.
+            let reads_it = line.contains("SELECT") || line.contains(".get(");
+            if reads_it {
                 offenders.push(format!("{}:{}", path.display(), index + 1));
             }
         }
