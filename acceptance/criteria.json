@@ -2651,8 +2651,8 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-23",
-          "test": "§23.4: no tail for a project with no working copy omits the tail field and renders the rest of the line",
-          "assert": "paletteSubLine omits the tail field when hasWorkingCopy is false, whatever the clock and whatever the session says, and subLineInputFor reads row.primaryLocation and never a second predicate."
+          "test": "§24.5: the tail of a project with no working copy is `not cloned` never renders an age, whatever the clock and whatever the session says",
+          "assert": "paletteSubLine renders §24.5's `not cloned` tail when hasWorkingCopy is false — never an age and never in session, over a spread of lastTouchedAt values and with a session open — and subLineInputFor reads row.primaryLocation and never a second predicate."
         }
       ]
     },
