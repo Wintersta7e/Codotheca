@@ -144,6 +144,7 @@ fn run_git(
         ),
         WorkerGitOp::RemoteUrls => encode(git.remote_urls(&handle, &jc)),
         WorkerGitOp::RootCommits => encode(git.root_commits(&handle, &jc)),
+        WorkerGitOp::UnpushedRefs => encode(git.unpushed_refs(&handle, &jc)),
         WorkerGitOp::Authorship => encode(git.authorship(&handle, &jc)),
         WorkerGitOp::CommitSubjects { limit } => encode(git.commit_subjects(&handle, *limit, &jc)),
     }

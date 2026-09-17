@@ -27,8 +27,8 @@ pub use error::{classify, classify_spawn, BusyMarker, GitError, GitResult};
 pub use exec::{GitExec, GitOutput, RunLimits};
 pub use facts::{repo_facts, RepoFacts};
 pub use history::{
-    authorship, commit_subjects, local_day, parse_tz_offset_min, root_commits, Authorship,
-    CommitSubject, CommitterTally, RootCommit,
+    authorship, commit_subjects, local_day, parse_tz_offset_min, root_commits, unpushed_refs,
+    Authorship, CommitSubject, CommitterTally, RootCommit,
 };
 pub use ignore::{check_ignore, CHECK_IGNORE_BATCH};
 pub use inventory::{
@@ -38,8 +38,8 @@ pub use inventory::{
 pub use invocation::{base_args, ensure_empty_hooks_dir, neutralise_env, EMPTY_HOOKS_DIR_NAME};
 pub use observe::{busy_marker, defer_while_locked, observe_stable, Backoff, Observation};
 pub use refstate::{
-    divergence, observation_fingerprint, read_ref_state, ref_fingerprint, Divergence,
-    InterruptedOp, ObservationFingerprint, RefFingerprint, RefState, UpstreamRef,
+    divergence, local_ref_names, observation_fingerprint, read_ref_state, ref_fingerprint,
+    Divergence, InterruptedOp, ObservationFingerprint, RefFingerprint, RefState, UpstreamRef,
 };
 pub use repo::{RepoHandle, StoreKey};
 pub use slots::{GitSlots, JobClass, SlotGuard};

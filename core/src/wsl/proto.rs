@@ -85,6 +85,8 @@ pub enum WorkerGitOp {
     /// the distro by the worker's `SystemGit`.
     RemoteUrls,
     RootCommits,
+    /// [p2-24b] §24.7A's reachability walk, run inside the distro.
+    UnpushedRefs,
     Authorship,
     CommitSubjects {
         limit: u32,

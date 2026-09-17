@@ -210,3 +210,113 @@ fn the_stash_reader_spawns_no_git() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// §24.7A's uniqueness analyser.
+// ---------------------------------------------------------------------------
+
+/// **The case a pre-flight that checks only `HEAD` gets wrong, which is the shredder.**
+///
+/// A tag and a note that exist nowhere else must each block a removal, exactly as an unpushed
+/// branch does.
+#[test]
+fn every_local_ref_is_enumerated_and_not_only_the_checked_out_branch() {
+    use codotheca_core::git::local_ref_names;
+
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"one\n");
+    repo.commit("first");
+    repo.git(&["branch", "feature"]);
+    repo.git(&["tag", "v1"]);
+    repo.git(&["notes", "add", "-m", "a note"]);
+
+    let names = local_ref_names(&repo.path().join(".git"));
+    assert!(
+        names.iter().any(|n| n == "refs/heads/main"),
+        "the checked-out branch: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "refs/heads/feature"),
+        "a branch that is not HEAD: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "refs/tags/v1"),
+        "a tag — a release that exists nowhere else: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.starts_with("refs/notes/")),
+        "a note — the most easily lost of the three: {names:?}"
+    );
+    assert!(
+        !names.iter().any(|n| n.starts_with("refs/remotes/")),
+        "remotes are what local refs are checked AGAINST, never checked: {names:?}"
+    );
+}
+
+/// Packed refs count too: a repository after `git gc` has no loose refs at all, and a gate that
+/// read only the loose ones would call it empty.
+#[test]
+fn packed_refs_are_enumerated_as_well_as_loose_ones() {
+    use codotheca_core::git::local_ref_names;
+
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"one\n");
+    repo.commit("first");
+    repo.git(&["branch", "feature"]);
+    repo.git(&["tag", "v1"]);
+    repo.git(&["pack-refs", "--all"]);
+
+    let names = local_ref_names(&repo.path().join(".git"));
+    assert!(names.iter().any(|n| n == "refs/heads/feature"), "{names:?}");
+    assert!(names.iter().any(|n| n == "refs/tags/v1"), "{names:?}");
+}
+
+/// **The direction of the ignored rule, which is the one that loses work if inverted.**
+///
+/// An ignored path is precious **unless** it matches known junk. A `.env` matches nothing in the
+/// set and is therefore precious; `node_modules/` matches and is not.
+#[test]
+fn an_ignored_path_is_precious_unless_it_is_known_junk() {
+    use codotheca_core::uninstall::unique::is_junk;
+    use std::path::Path;
+
+    // Precious: nothing in the junk set matches these, and each is real work.
+    for precious in [
+        ".env",
+        "local.db",
+        "notes.md",
+        "secrets/key.pem",
+        "TODO.txt",
+    ] {
+        assert!(
+            !is_junk(Path::new(precious)),
+            "{precious} matches no junk pattern and must be treated as precious"
+        );
+    }
+
+    // Junk: each is a rebuildable cache or output directory.
+    for junk in [
+        "node_modules/react/index.js",
+        "target/debug/thing",
+        "dist/bundle.js",
+        "__pycache__/x.pyc",
+        ".venv/bin/python",
+    ] {
+        assert!(is_junk(Path::new(junk)), "{junk} is rebuildable");
+    }
+}
+
+/// The junk set has **one owner**, and the rule reads off it rather than restating it.
+#[test]
+fn the_junk_set_has_one_owner() {
+    use codotheca_core::uninstall::unique::{is_junk, JUNK_PATTERNS};
+    use std::path::Path;
+
+    assert!(!JUNK_PATTERNS.is_empty());
+    for pattern in JUNK_PATTERNS {
+        assert!(
+            is_junk(Path::new(pattern)),
+            "{pattern} is in the set and must be recognised by the predicate that reads it"
+        );
+    }
+}

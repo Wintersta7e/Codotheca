@@ -110,6 +110,13 @@ const NON_LITERAL_OS_STR_ALLOWLIST: &[NonLiteralOsStrAllowance] = &[
         call: "OsStr::new(untracked)",
         reason: "the closed status-mode enum produces one of two read-only untracked-file flags",
     },
+    NonLiteralOsStrAllowance {
+        file: "history.rs",
+        call: "OsStr::new(&name)",
+        reason: "[p2-24b] the value is a ref name this repository's own refs/ directory and \
+                 packed-refs yielded, never a caller's string, and it sits after `rev-list` as \
+                 a revision rather than as a subcommand",
+    },
 ];
 
 /// Collect `OsStr::new(...)` calls whose argument is not exactly one string literal.

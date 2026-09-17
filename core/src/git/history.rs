@@ -275,3 +275,57 @@ pub fn commit_subjects(
     }
     Ok(subjects)
 }
+
+/// §24.7A: every local ref carrying commits **no remote has**.
+///
+/// **Not just `HEAD`, and not just the default branch.** Every ref under `refs/heads`, `refs/tags`
+/// and `refs/notes` is enumerated and checked; a pre-flight that looked only at `HEAD` would let a
+/// deletion clear a feature branch, a release tag or a note that exists nowhere else. That is the
+/// shredder this analyser exists to prevent.
+///
+/// One `rev-list` invocation, already on the read-only allow list — **no new subcommand**
+/// (AC-P2-24-1). `--not --remotes` excludes everything reachable from any `refs/remotes/*` tip, so
+/// what comes back is exactly the local-only commits, and `--count` per ref names which ref.
+///
+/// # Errors
+/// Fails when the walk cannot be run. **A ref whose reachability cannot be computed is an error,
+/// never an empty answer**: the caller maps that to the `unknown` class rather than to *safe*.
+pub fn unpushed_refs(
+    exec: &GitExec,
+    repo: &RepoHandle,
+    limits: RunLimits,
+    cancel: &CancelToken,
+) -> GitResult<Vec<String>> {
+    // `for-each-ref` is not on the allow list; the refs come from the filesystem, which is where
+    // every other ref-state read gets them (§3.3).
+    let names = crate::git::refstate::local_ref_names(&repo.common_dir);
+    let mut unpushed = Vec::new();
+    for name in names {
+        let listed = match exec.run(
+            repo,
+            &[
+                OsStr::new("rev-list"),
+                OsStr::new("--count"),
+                OsStr::new(&name),
+                OsStr::new("--not"),
+                OsStr::new("--remotes"),
+            ],
+            limits,
+            cancel,
+        ) {
+            Ok(out) => out,
+            // A ref that names no commit this repository has is not an unpushed ref; it is a
+            // broken one, and saying *unpushed* about it would be a claim.
+            Err(e) if is_empty_history(&e) => continue,
+            Err(e) => return Err(e),
+        };
+        let count: u64 = String::from_utf8_lossy(&listed.stdout)
+            .trim()
+            .parse()
+            .unwrap_or(0);
+        if count > 0 {
+            unpushed.push(name);
+        }
+    }
+    Ok(unpushed)
+}

@@ -108,6 +108,12 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
     ) -> GitResult<Vec<(String, String)>>;
     /// J4: the root set, with dates.
     fn root_commits(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>>;
+    /// [p2-24b] §24.7A: every local ref carrying commits no remote has.
+    ///
+    /// **Not just `HEAD`.** `refs/heads`, `refs/tags` and `refs/notes` are all enumerated; a
+    /// pre-flight that looked only at the checked-out branch would let a deletion clear a feature
+    /// branch, a release tag or a note that exists nowhere else.
+    fn unpushed_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<String>>;
     /// J1.5: the full committer walk.
     fn authorship(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Authorship>;
     /// J4: recent subjects, newest first.
@@ -267,6 +273,12 @@ impl GitBackend for SystemGit {
     fn root_commits(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>> {
         self.with_slot(repo, ctx, || {
             root_commits(&self.exec, repo, ctx.limits(), ctx.cancel)
+        })
+    }
+
+    fn unpushed_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<String>> {
+        self.with_slot(repo, ctx, || {
+            crate::git::history::unpushed_refs(&self.exec, repo, ctx.limits(), ctx.cancel)
         })
     }
 

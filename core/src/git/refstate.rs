@@ -235,6 +235,26 @@ pub(crate) fn packed_refs(common_dir: &Path) -> BTreeMap<String, String> {
     out
 }
 
+/// Every local ref under `refs/heads`, `refs/tags` and `refs/notes`, loose **and** packed.
+///
+/// §24.7A checks all three: a deletion gate that read only `refs/heads` would clear a release tag
+/// or a note that exists nowhere else. `refs/remotes` is deliberately absent — those are the
+/// things a local ref is checked *against*.
+#[must_use]
+pub fn local_ref_names(common_dir: &Path) -> Vec<String> {
+    const WANTED: [&str; 3] = ["refs/heads/", "refs/tags/", "refs/notes/"];
+    let mut names: std::collections::BTreeSet<String> = loose_refs(common_dir)
+        .into_keys()
+        .filter(|name| WANTED.iter().any(|prefix| name.starts_with(prefix)))
+        .collect();
+    names.extend(
+        packed_refs(common_dir)
+            .into_keys()
+            .filter(|name| WANTED.iter().any(|prefix| name.starts_with(prefix))),
+    );
+    names.into_iter().collect()
+}
+
 fn resolve_ref(common_dir: &Path, packed: &BTreeMap<String, String>, name: &str) -> Option<String> {
     let mut rel = PathBuf::from(common_dir);
     for part in name.split('/') {

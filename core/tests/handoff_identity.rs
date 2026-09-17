@@ -396,6 +396,10 @@ impl GitBackend for LockWatch {
         self.observe();
         self.inner.root_commits(repo, ctx)
     }
+    fn unpushed_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<String>> {
+        self.observe();
+        self.inner.unpushed_refs(repo, ctx)
+    }
     fn authorship(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Authorship> {
         self.observe();
         self.inner.authorship(repo, ctx)

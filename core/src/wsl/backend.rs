@@ -197,6 +197,10 @@ impl GitBackend for WslGitBackend {
         self.op(repo, WorkerGitOp::RootCommits, ctx)
     }
 
+    fn unpushed_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<String>> {
+        self.op(repo, WorkerGitOp::UnpushedRefs, ctx)
+    }
+
     fn authorship(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Authorship> {
         self.op(repo, WorkerGitOp::Authorship, ctx)
     }

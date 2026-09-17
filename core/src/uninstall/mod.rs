@@ -2,6 +2,7 @@
 //! is p2-24's and this plan extends it with one warrant variant rather than a second module.
 
 pub mod stash;
+pub mod unique;
 pub mod verdict;
 
 pub use stash::{read_stash_truth, StashTruth};

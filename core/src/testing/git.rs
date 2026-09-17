@@ -104,6 +104,7 @@ pub struct FakeGitBackend {
     submodule_gitlinks: Op<BTreeMap<Vec<u8>, String>>,
     remote_urls: Op<Vec<(String, String)>>,
     root_commits: Op<Vec<RootCommit>>,
+    unpushed_refs: Op<Vec<String>>,
     authorship: Op<Authorship>,
     commit_subjects: Op<Vec<CommitSubject>>,
 }
@@ -206,6 +207,7 @@ setters! {
     submodule_gitlinks: BTreeMap<Vec<u8>, String>, on_submodule_gitlinks, always_submodule_gitlinks;
     remote_urls: Vec<(String, String)>, on_remote_urls, always_remote_urls;
     root_commits: Vec<RootCommit>, on_root_commits, always_root_commits;
+    unpushed_refs: Vec<String>, on_unpushed_refs, always_unpushed_refs;
     authorship: Authorship, on_authorship, always_authorship;
     commit_subjects: Vec<CommitSubject>, on_commit_subjects, always_commit_subjects;
 }
@@ -307,6 +309,17 @@ impl GitBackend for FakeGitBackend {
             &self.root_commits,
             Some(&repo.work_dir),
             || unconfigured("root_commits"),
+        )
+    }
+
+    fn unpushed_refs(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<Vec<String>> {
+        // Unconfigured fails loudly: a fake answering "nothing unpushed" by default would teach
+        // a deletion gate that every repository is safe.
+        self.answer(
+            "unpushed_refs",
+            &self.unpushed_refs,
+            Some(&repo.work_dir),
+            || unconfigured("unpushed_refs"),
         )
     }
 
@@ -432,6 +445,11 @@ impl<B: GitBackend> GitBackend for RecordingGitBackend<B> {
     fn root_commits(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>> {
         self.record("root_commits", Some(&repo.work_dir));
         self.inner.root_commits(repo, ctx)
+    }
+
+    fn unpushed_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<String>> {
+        self.record("unpushed_refs", Some(&repo.work_dir));
+        self.inner.unpushed_refs(repo, ctx)
     }
 
     fn authorship(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Authorship> {
