@@ -85,6 +85,29 @@ export interface InstallCancelCall {
 }
 
 /**
+ * §24.8's removal, on `IPC_RELOCATE`'s shape — **and it has no dialog, which is the difference
+ * worth stating.** `IPC_RELOCATE` exists because a path must be originated by the shell; this
+ * channel originates nothing. The renderer supplies a `locationId` and the core reads the path
+ * from the row it is about to re-verify.
+ *
+ * The channel's job here is the **refusal**: `locations.uninstall` is privileged, so
+ * `isRendererCallable` keeps it off the renderer-callable surface, which is what §24.8's
+ * reachability row asks for. `locations.uninstallPreflight` is unprivileged and rides
+ * `IPC_REQUEST` normally — it carries no `Bytes` and mutates nothing.
+ */
+export const IPC_UNINSTALL = 'codotheca:uninstall';
+
+export interface UninstallCall {
+  readonly locationId: number;
+}
+
+export type UninstallReply =
+  | { readonly kind: 'uninstalled'; readonly location: unknown }
+  /** The core recomputed the verdict and it was not `safe`. Not a failure — a reply. */
+  | { readonly kind: 'refused'; readonly verdict: unknown }
+  | { readonly kind: 'failed'; readonly error: BridgeError };
+
+/**
  * §25.2's external opener, and it is `IPC_RELOCATE`'s shape with a URL where the folder dialog
  * was. The renderer sends an opaque project id and a link kind; **no URL crosses this channel
  * inbound**, because `remote_key` is derived from repository content the user may not have

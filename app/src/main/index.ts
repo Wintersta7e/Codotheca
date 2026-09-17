@@ -41,6 +41,7 @@ import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
 import { registerExternalLink } from './dialogs/externalLink';
 import { registerRelocateDialog } from './dialogs/relocate';
+import { registerUninstall } from './dialogs/uninstall';
 import { registerRootPicker, registerSuggestionCommit, SuggestionCache } from './rootPicker';
 import { CoreClient } from './core/client';
 import { FORCE_OFFERED_AFTER_MS, LOCK_WAIT_POLL_MS, waitForCoreLock } from './core/instanceLock';
@@ -414,6 +415,17 @@ async function main(): Promise<void> {
         buttonLabel: 'Relocate',
       });
       return result.canceled || result.filePaths[0] === undefined ? null : result.filePaths[0];
+    },
+    request,
+  });
+
+  // [p2] §24.8's removal. The relocate shape with **no dialog**: the renderer supplies a
+  // locationId, the core reads the path from the row it re-verifies, and nothing originates a
+  // path in either direction. The channel exists for the refusal — `locations.uninstall` is
+  // privileged, so `isRendererCallable` keeps it off IPC_REQUEST and this is its only route.
+  registerUninstall({
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
     },
     request,
   });

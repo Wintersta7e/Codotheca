@@ -61,6 +61,21 @@ describe('renderer bridge', () => {
     expect(isRendererCallable('install.preview', known)).toBe(true);
   });
 
+  /**
+   * [p2] AC-P2-24-19's other half, and the same reasoning one command over.
+   *
+   * `locations.uninstall` is the only phase-2 command that removes a user's working copy, so its
+   * refusal is written by name rather than left to the generated loop. `uninstallPreflight` is the
+   * control: it is unprivileged on purpose — a door that refused everything matching `uninstall`
+   * would satisfy the refusal while leaving the page unable to ask *why* a removal is blocked,
+   * which is the whole of §24.8's verdict.
+   */
+  it('refuses the removal from the renderer, and admits the pre-flight', () => {
+    const known = [...KNOWN, 'locations.uninstall', 'locations.uninstallPreflight'];
+    expect(isRendererCallable('locations.uninstall', known)).toBe(false);
+    expect(isRendererCallable('locations.uninstallPreflight', known)).toBe(true);
+  });
+
   it('refuses a renderer call for a privileged command before the core is asked', async () => {
     const r = rig(async () => Promise.resolve({}));
     registerBridge(r.deps);

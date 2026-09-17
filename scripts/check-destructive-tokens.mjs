@@ -47,6 +47,21 @@ export const UNINSTALL_SITES = [
     token: 'UNINSTALL',
     why: '`COMMAND_EFFECT` is `Record<CommandName, …>`, so it must name every command the schema declares — including the two above. Omitting them is a type error, which is why this entry is unavoidable rather than a convenience.',
   },
+  {
+    path: 'app/src/shared/channels.ts',
+    token: 'UNINSTALL',
+    why: "§24.8: `IPC_UNINSTALL`'s VALUE has to say what the channel is. A channel named for something else would be worse than the word — the whole point of the constant is that a reader can tell what travels it.",
+  },
+  {
+    path: 'app/src/main/dialogs/uninstall.ts',
+    token: 'UNINSTALL',
+    why: 'The shell half has to name the command it calls. Its two diagnostic strings deliberately do NOT carry the word — `bad locationId` and `could not complete` — because no user reads them and the direct translations would have forced a site for nothing.',
+  },
+  {
+    path: 'app/src/main/index.ts',
+    token: 'UNINSTALL',
+    why: 'The import path of the handler above. A module has to be importable by its own name; renaming the file to dodge the gate would make the tree say less than it does.',
+  },
 ];
 
 /**
