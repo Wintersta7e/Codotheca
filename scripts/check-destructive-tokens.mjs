@@ -3,6 +3,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { withoutComments } from './lib/without-comments.mjs';
+
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 /**
@@ -156,17 +158,16 @@ export const ALLOWLIST = [];
 /**
  * String literals and JSX text only. Identifiers and comments are out of scope by design: the
  * ban is on what a user reads, and a comment naming the ban must not trip it.
+ *
+ * The comment stripping moved to `scripts/lib/without-comments.mjs` when a second gate needed it
+ * — one owner, and it carries a `.d.mts` so a TypeScript gate can use the same one.
  */
 export function extractStrings(source) {
-  const withoutComments = source
-    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\r\n]/g, ' '))
-    .replace(/(^|[^:])\/\/[^\r\n]*/g, (comment, lead) => {
-      return lead + ' '.repeat(comment.length - lead.length);
-    });
+  const code = withoutComments(source);
   const literal = /'([^'\\\n]|\\.)*'|"([^"\\\n]|\\.)*"|`([^`\\]|\\.)*`|>([^<>{}]+)</g;
   const found = [];
-  for (const match of withoutComments.matchAll(literal)) {
-    const line = withoutComments.slice(0, match.index).split('\n').length;
+  for (const match of code.matchAll(literal)) {
+    const line = code.slice(0, match.index).split('\n').length;
     found.push({ text: match[0], line });
   }
   return found;
