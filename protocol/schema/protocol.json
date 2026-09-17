@@ -1077,8 +1077,8 @@
     },
     "InstallState": {
       "kind": "struct",
-      "$comment": "R54: every running and recently-settled run, so a renderer that opens mid-clone builds a frame from a snapshot rather than from the next event to arrive.",
-      "fields": { "runs": "[InstallStage]" }
+      "$comment": "R54: every running and recently-settled run, so a renderer that opens mid-clone builds a frame from a snapshot rather than from the next event to arrive. `started` is why this is two lists and not one: InstallStage carries no projectId and its field set is pinned so no aggregate can be added, so `runs` alone cannot tell a tile which run is its own — which is the case the snapshot exists for. It brings the composed display form with it, which a tile mounting mid-clone needs anyway. One entry per run in each list, joined on runId.",
+      "fields": { "runs": "[InstallStage]", "started": "[InstallStarted]" }
     },
     "InstallStarted": {
       "kind": "struct",
