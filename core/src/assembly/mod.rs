@@ -439,6 +439,13 @@ impl CoreHandler {
         if name == crate::protocol::CommandName::InstallStart {
             return self.install_start_arm(args, now);
         }
+        if name == crate::protocol::CommandName::InstallCancel {
+            // Takes no index guard at all: cancelling is firing a token, and the run thread does
+            // the cleanup that touches SQLite.
+            let cancelled = crate::install::handle_cancel(&self.installs, args)?;
+            return serde_json::to_value(cancelled)
+                .map_err(|error| CommandFailure::internal(error.to_string()));
+        }
         let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
         let preview = crate::install::handle_preview(&ctx, args)?;
@@ -477,6 +484,9 @@ impl CoreHandler {
             // group, never by joining this handle.
             std::thread::spawn(move || {
                 let cancel = crate::cancel::CancelToken::new();
+                // Registered before the clone starts, so `install.cancel` can reach it for the
+                // whole life of the run rather than racing its first byte.
+                queue.register_cancel(run, cancel.clone());
                 let ctx = crate::install::run::InstallCtx {
                     git: write_git.as_ref(),
                     probe: probe.as_ref(),
@@ -491,7 +501,9 @@ impl CoreHandler {
                 let outcome = crate::install::run::run_install(
                     &ctx, run, &request, &root, &paths, &clone_url,
                 );
-                if outcome.is_err() {
+                if let Err(reason) = outcome {
+                    // Every failure arm cleans up its own staging directory, under the warrant.
+                    crate::install::run::finish_failed(&ctx, run, request.project, reason);
                     stages.end(run);
                 }
                 queue.finish(run);

@@ -776,9 +776,12 @@ mod corehandler {
         // [p2] §24.9's `install.start` is the 55th, answered the same way: it takes and releases
         // the guard, then hands the clone to a thread, because a command may not hold the
         // protocol loop for the length of a clone. `install.cancel` stays unowned, so this
-        // number and `unowned.len()` move in opposite directions as Task 15 lands.
+        // [p2] §24.3c's `install.cancel` is the 56th and the last of §24.9's three. It takes no
+        // index guard at all — cancelling is firing a token, and the run thread does the cleanup
+        // that touches SQLite. `UNOWNED_COMMANDS` is now empty, which the sibling assertion below
+        // proves by reading the router rather than the list.
         assert_eq!(
-            checked, 55,
+            checked, 56,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(

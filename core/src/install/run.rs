@@ -295,3 +295,92 @@ fn publish(
         ctx.events.emit("install", "stage", payload);
     }
 }
+
+/// §24.3c's cancel, end to end.
+///
+/// **Kills the group, not the child.** `WriteExec` spawns through `CommandGroup::group_spawn`
+/// (`core/src/gitw/exec.rs:240`) and kills through the group handle when this token fires; a
+/// Windows child killed without a Job Object leaves orphans holding file locks, and the staging
+/// removal then fails with *Access is denied*. Recorded in this repository and in §24.3c.
+///
+/// The order after the kill is fixed and is what `install_staging.rs` asserts: the group is gone,
+/// the staging directory is removed **under the staging warrant**, the `install_run` row reads
+/// `cancelled`, and no `location` row exists — the run never reached the rename.
+///
+/// # Errors
+/// Fails when the run is not one this core is currently running.
+pub fn cancel_install(
+    queue: &crate::install::queue::InstallQueue,
+    run: InstallRunId,
+) -> Result<(), crate::proto::dispatch::CommandFailure> {
+    if queue.cancel(run) {
+        return Ok(());
+    }
+    Err(crate::proto::dispatch::CommandFailure::internal(format!(
+        "install run {} is not running here",
+        run.0
+    )))
+}
+
+/// What a run does once it has ended badly: clean up its own staging directory and say so.
+///
+/// Called on **every** failure arm, not only cancellation, because every one of them can leave a
+/// partial clone in staging. Removal goes through the warrant, so a run that somehow no longer
+/// has a durable row removes nothing and the sweep reports it instead.
+pub fn finish_failed(
+    ctx: &InstallCtx<'_>,
+    run: InstallRunId,
+    project: crate::protocol::ProjectId,
+    reason: InstallFailure,
+) {
+    let removed = {
+        let _guard = crate::proto::txguard::TxGuard::enter();
+        let held = ctx
+            .index
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let warrant = held.conn().unchecked_transaction().ok().and_then(|tx| {
+            crate::install::staging::staging_warrant_for(&tx, run)
+                .ok()
+                .flatten()
+        });
+        warrant.is_some_and(|warrant| {
+            crate::removal::remove_warranted(&warrant, &crate::removal::HardDelete).is_ok()
+        })
+    };
+    let _ = removed;
+
+    let state = if reason == InstallFailure::Cancelled {
+        "cancelled"
+    } else {
+        "failed"
+    };
+    {
+        let _guard = crate::proto::txguard::TxGuard::enter();
+        let held = ctx
+            .index
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = held.conn().execute(
+            "UPDATE install_run SET state = ?2, reason = ?3, ended_at = ?4 WHERE id = ?1",
+            rusqlite::params![
+                run.0,
+                state,
+                serde_json::to_value(reason)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned)),
+                ctx.now
+            ],
+        );
+    }
+    if let Ok(payload) = serde_json::to_value(crate::protocol::InstallFailed {
+        run_id: run,
+        project_id: project,
+        reason,
+        // The enum is what a surface branches on; this sentence may sit beside it, never in
+        // place of it.
+        detail: String::new(),
+    }) {
+        ctx.events.emit("install", "failed", payload);
+    }
+}

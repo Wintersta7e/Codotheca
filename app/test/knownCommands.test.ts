@@ -146,5 +146,5 @@ test('every privileged command is known, or is unowned with its owner named', ()
   expect(
     deferred.sort(),
     'the privileged commands still waiting on a core handler, exhaustively',
-  ).toEqual(['install.cancel']);
+  ).toEqual([]);
 });

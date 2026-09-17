@@ -98,10 +98,13 @@ pub enum Route {
 /// its plan, in the same change that adds its `NoOwner` arm.
 ///
 /// The eight `accounts.*` rows landed with the schema and left as their handlers did. §24.9's
-/// three `install.*` rows arrived the same way; preview and start have now left, while cancel
-/// remains named here until its kill path lands. Empty is a state to assert, not a state
+/// three `install.*` rows arrived the same way and have all now left, the last of them with the
+/// process-group kill §24.3c needs. Empty is a state to assert, not a state
 /// to stop asserting: the test below reads the router rather than this list.
-pub const UNOWNED_COMMANDS: [(&str, &str); 1] = [("install.cancel", "p2-24 Task 15")];
+/// **Empty, and that is a state to assert rather than a state to stop asserting.** The test
+/// below reads the router rather than this list, so an empty constant still proves that no
+/// command routes to `NoOwner` — two `all()` calls over an empty set assert nothing.
+pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -199,10 +202,10 @@ pub fn route(command: CommandName) -> Route {
         | CommandName::AccountsSetOrgEnabled
         | CommandName::AccountsDisconnect => Route::AccountsNet,
 
-        // §24.9's preview and start are answered by Install. Cancel remains a named refusal
-        // until Task 15 lands the process-group kill it needs.
-        CommandName::InstallPreview | CommandName::InstallStart => Route::Install,
-        CommandName::InstallCancel => Route::NoOwner("p2-24 Task 15"),
+        // §24.9's three, all answered by Install.
+        CommandName::InstallPreview | CommandName::InstallStart | CommandName::InstallCancel => {
+            Route::Install
+        }
     }
 }
 

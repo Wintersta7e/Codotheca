@@ -201,3 +201,16 @@ impl std::fmt::Debug for StartCtx<'_> {
             .finish_non_exhaustive()
     }
 }
+
+/// §24.9's `install.cancel`.
+///
+/// # Errors
+/// Fails when the arguments do not parse, or when the run is not one this core is running.
+pub fn handle_cancel(
+    queue: &queue::InstallQueue,
+    args: serde_json::Value,
+) -> Result<crate::protocol::Empty, CommandFailure> {
+    let args: crate::protocol::InstallCancelArgs = parse_args(args)?;
+    run::cancel_install(queue, args.run_id)?;
+    Ok(crate::protocol::Empty {})
+}

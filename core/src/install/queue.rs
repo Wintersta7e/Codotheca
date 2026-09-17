@@ -10,11 +10,12 @@
 //! begins. That is what lets a queued request outlive the command that made it without holding a
 //! path the renderer could never have originated.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Mutex;
 
 use rusqlite::Transaction;
 
+use crate::cancel::CancelToken;
 use crate::protocol::{InstallDestination, InstallRunId, ProjectId, RootId};
 
 /// One accepted install, composed by Task 10 and never by the renderer.
@@ -33,6 +34,10 @@ pub struct InstallRequest {
 struct State {
     in_flight: Option<InstallRunId>,
     waiting: VecDeque<(InstallRunId, InstallRequest)>,
+    /// The token that stops each running clone. §24.3c cancels by **killing the process group**,
+    /// which `WriteExec` does when this fires — so cancelling is reaching the right token, not
+    /// finding the right pid.
+    tokens: BTreeMap<i64, CancelToken>,
 }
 
 /// A strictly serial, first-in-first-out queue of installs.
@@ -119,9 +124,38 @@ impl InstallQueue {
         if state.in_flight != Some(run) {
             return None;
         }
+        state.tokens.remove(&run.0);
         let next = state.waiting.pop_front();
         state.in_flight = next.as_ref().map(|(id, _)| *id);
         next
+    }
+
+    /// Record the token that stops this run, so `cancel` can reach it.
+    pub fn register_cancel(&self, run: InstallRunId, token: CancelToken) {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tokens
+            .insert(run.0, token);
+    }
+
+    /// Stop one run.
+    ///
+    /// Returns whether a live run was found. **A run this queue does not know is not an error to
+    /// invent a kill for**: a replay after a restart would otherwise fire at a group a later run
+    /// may by then own, which is exactly why `install.cancel` is non-idempotent.
+    pub fn cancel(&self, run: InstallRunId) -> bool {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match state.tokens.get(&run.0) {
+            Some(token) => {
+                token.cancel();
+                true
+            }
+            None => false,
+        }
     }
 
     /// How many runs are waiting behind the one in flight.

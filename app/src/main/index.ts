@@ -155,9 +155,10 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'remote.webUrl',
   // install::handle_preview — read-only destination composition.
   'install.preview',
-  // install::handle_start — privileged and filesystem-mutating; the shell knows it because the
-  // core now answers it. install.cancel stays deferred until its kill path lands.
+  // install::handle_start and install::handle_cancel — privileged and filesystem-mutating, and
+  // both answered by the core, so the shell knows both. Nothing is deferred any more.
   'install.start',
+  'install.cancel',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two

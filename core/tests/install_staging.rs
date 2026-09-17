@@ -14,6 +14,33 @@ use codotheca_core::install::staging::{sweep_staging, STAGING_DIR_NAME};
 use codotheca_core::protocol::ProblemKind;
 use codotheca_core::surfaces::problems::{abandoned_installs, list, GROUP_ORDER};
 
+/// Records what reached the wire.
+#[derive(Debug, Default)]
+struct RecordingEvents {
+    emitted: Mutex<Vec<(String, String, serde_json::Value)>>,
+}
+
+impl RecordingEvents {
+    fn failed_reasons(&self) -> Vec<String> {
+        self.emitted
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|(topic, event, _)| topic == "install" && event == "failed")
+            .map(|(_, _, payload)| payload["reason"].as_str().unwrap_or_default().to_owned())
+            .collect()
+    }
+}
+
+impl codotheca_core::proto::pubsub::EventSink for RecordingEvents {
+    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        self.emitted
+            .lock()
+            .expect("lock")
+            .push((topic.to_owned(), event.to_owned(), payload));
+    }
+}
+
 fn index_at(dir: &std::path::Path) -> Arc<Mutex<codotheca_core::index::Index>> {
     Arc::new(Mutex::new(
         codotheca_core::index::Index::open(&dir.join("index")).expect("index"),
@@ -243,5 +270,136 @@ fn the_ninth_group_reaches_problems_list_and_not_only_its_own_function() {
         problems.header.problem_count,
         Some(1),
         "an abandoned install counts toward the figure §11.1 shows"
+    );
+}
+
+/// One project, one root and one pushed run, so the cancel test itself stays about cancelling.
+fn seed_run(
+    index: &Arc<Mutex<codotheca_core::index::Index>>,
+    queue: &codotheca_core::install::queue::InstallQueue,
+    root: &std::path::Path,
+    paths: &codotheca_core::install::run::RunPaths,
+) -> codotheca_core::protocol::InstallRunId {
+    use codotheca_core::install::queue::InstallRequest;
+    use codotheca_core::protocol::{InstallDestination, ProjectId, RootId};
+
+    let _guard = codotheca_core::proto::txguard::TxGuard::enter();
+    let held = index.lock().expect("lock");
+    held.conn()
+        .execute(
+            "INSERT INTO project (id, name, seed_basename, created_at, updated_at)
+             VALUES (1, 'a', 'alpha', 0, 0)",
+            [],
+        )
+        .expect("project");
+    held.conn()
+        .execute(
+            "INSERT INTO scan_root (id, kind, distro, path_bytes, path_key, path_display,
+                                    added_by, added_at)
+             VALUES (1, 'linux', '', ?1, ?1, 'r', 'user', 0)",
+            [codotheca_core::paths::path_bytes(root)],
+        )
+        .expect("root");
+    let tx = held.conn().unchecked_transaction().expect("tx");
+    let run = queue
+        .push(
+            &tx,
+            InstallRequest {
+                project: ProjectId(1),
+                root: RootId(1),
+                destination: InstallDestination {
+                    root_id: RootId(1),
+                    seed_basename: "alpha".to_owned(),
+                    display: "r/alpha".to_owned(),
+                },
+            },
+            &codotheca_core::paths::path_bytes(&paths.staging),
+            &codotheca_core::paths::path_bytes(&paths.destination),
+            0,
+        )
+        .expect("push");
+    tx.commit().expect("commit");
+    run
+}
+
+/// **AC-P2-24-7's cancel half.** After a cancel, in order: the group is gone, the staging
+/// directory is removed under the staging warrant, the `install_run` row reads `cancelled`, and
+/// there is **no `location` row** — the run never reached the rename.
+#[test]
+fn a_cancelled_run_removes_its_staging_and_leaves_no_location() {
+    use codotheca_core::install::queue::InstallQueue;
+    use codotheca_core::install::run::{finish_failed, paths_for, InstallCtx};
+    use codotheca_core::install::state::InstallStateStore;
+    use codotheca_core::protocol::{InstallFailure, InstallRunId, ProjectId};
+
+    let dir = tempfile::tempdir().expect("tmp");
+    let root = dir.path().join("library");
+    std::fs::create_dir_all(&root).expect("root");
+    let paths = paths_for(&root, "alpha").expect("paths");
+    // The clone got as far as writing into staging before it was killed.
+    std::fs::create_dir_all(paths.staging.join("objects")).expect("partial clone");
+
+    let index = index_at(dir.path());
+    let queue = InstallQueue::new();
+    let run = seed_run(&index, &queue, &root, &paths);
+
+    // The token is what the group kill hangs off; firing it is the whole of `install.cancel`.
+    let token = codotheca_core::cancel::CancelToken::new();
+    queue.register_cancel(run, token.clone());
+    assert!(
+        codotheca_core::install::run::cancel_install(&queue, run).is_ok(),
+        "a live run is cancellable"
+    );
+    assert!(token.is_cancelled(), "the clone's own token fired");
+    assert!(
+        codotheca_core::install::run::cancel_install(&queue, InstallRunId(4242)).is_err(),
+        "a run this core is not running is refused rather than killed blind — a replay would \
+         otherwise fire at a group a later run may by then own"
+    );
+
+    let stages = InstallStateStore::new();
+    let events = RecordingEvents::default();
+    let git = codotheca_core::testing::FakeMutatingGit::new(
+        codotheca_core::testing::CloneBehaviour::Succeed,
+    );
+    let probe = codotheca_core::testing::FakeGitBackend::new();
+    let mounts = codotheca_core::testing::FakeMountResolver::new();
+    let jobs = codotheca_core::jobs::NullJobSink;
+    let ctx = InstallCtx {
+        git: &git,
+        probe: &probe,
+        index: &index,
+        jobs: &jobs,
+        mounts: &mounts,
+        stages: &stages,
+        events: &events,
+        cancel: &token,
+        now: 500,
+    };
+    finish_failed(&ctx, run, ProjectId(1), InstallFailure::Cancelled);
+
+    assert!(
+        !paths.staging.exists(),
+        "the staging directory is removed under the warrant"
+    );
+    let held = index.lock().expect("lock");
+    let (state, ended): (String, Option<i64>) = held
+        .conn()
+        .query_row(
+            "SELECT state, ended_at FROM install_run WHERE id = ?1",
+            [run.0],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("row");
+    assert_eq!(state, "cancelled", "not `failed`: the user asked for this");
+    assert_eq!(ended, Some(500));
+    let locations: i64 = held
+        .conn()
+        .query_row("SELECT COUNT(*) FROM location", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(locations, 0, "the run never reached the rename");
+    assert!(
+        events.failed_reasons().contains(&"cancelled".to_owned()),
+        "install.failed names the reason a surface branches on"
     );
 }
