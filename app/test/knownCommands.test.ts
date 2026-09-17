@@ -116,14 +116,35 @@ test('the list is exactly the schema minus loop-only and unowned commands', () =
   expect(new Set(known).size, 'KNOWN_COMMANDS must not contain duplicates').toBe(known.length);
 });
 
-test('privileged commands are known even though the renderer door refuses them', () => {
+/**
+ * A privileged command is refused at the renderer door and travels a shell-owned channel, so the
+ * shell has to know it — *unless the core has no handler for it yet*, where offering the name
+ * would hand the renderer a command the core answers with a named refusal. §24.9's two mutating
+ * install commands land in exactly that state: the schema delta and the install runtime are
+ * separate changes.
+ *
+ * The exception is **closed**, and that is the whole of why this relaxation is not an escape
+ * hatch: it is asserted as a set, so a privileged command cannot go quiet by being left unowned,
+ * and the rows leave this list in the same change that gives them a handler.
+ */
+test('every privileged command is known, or is unowned with its owner named', () => {
   const privileged = schemaCommands()
     .filter((command) => command.privileged === true)
     .map((command) => command.name);
   const known = new Set(knownCommands());
+  const unowned = new Set(unownedCommands());
 
   expect(privileged.length, 'the schema must identify privileged commands').toBeGreaterThan(0);
+  const deferred: string[] = [];
   for (const name of privileged) {
+    if (unowned.has(name)) {
+      deferred.push(name);
+      continue;
+    }
     expect(known.has(name), `${name} is privileged but still needs a core handler`).toBe(true);
   }
+  expect(
+    deferred.sort(),
+    'the privileged commands still waiting on a core handler, exhaustively',
+  ).toEqual(['install.cancel', 'install.start']);
 });

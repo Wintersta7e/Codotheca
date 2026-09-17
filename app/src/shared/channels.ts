@@ -59,6 +59,32 @@ export interface RelocateCall {
 }
 
 /**
+ * §24.8's reachability rule, on `IPC_RELOCATE`'s shape. `install.start` mutates the filesystem,
+ * so it is privileged and `isRendererCallable` refuses it on IPC_REQUEST; it travels here
+ * instead. The renderer supplies an opaque ProjectId and an opaque RootId and **no path in
+ * either direction** — §24.3a makes the destination a root the user already added, and a folder
+ * that is not yet one is reached through `IPC_PICK_ROOT`, which stays the only path-origination
+ * channel the product has.
+ */
+export const IPC_INSTALL_START = 'codotheca:install-start';
+
+export interface InstallStartCall {
+  readonly projectId: number;
+  readonly rootId: number;
+}
+
+/**
+ * §24.3c: cancel kills the clone's process group and removes the staging directory, so it is
+ * privileged for the same reason the start is and takes the same route. It names a run and
+ * nothing else — there is no path to send and none to accept back.
+ */
+export const IPC_INSTALL_CANCEL = 'codotheca:install-cancel';
+
+export interface InstallCancelCall {
+  readonly runId: number;
+}
+
+/**
  * §25.2's external opener, and it is `IPC_RELOCATE`'s shape with a URL where the folder dialog
  * was. The renderer sends an opaque project id and a link kind; **no URL crosses this channel
  * inbound**, because `remote_key` is derived from repository content the user may not have

@@ -1015,6 +1015,92 @@
     "AccountDisconnected": {
       "kind": "struct",
       "fields": { "accountId": "AccountId" }
+    },
+
+    "InstallRunId": { "kind": "id", "repr": "i64" },
+    "InstallStageKind": {
+      "kind": "enum",
+      "$comment": "§24.4's phases. `settled` is terminal and is reported like any other, so a readout never has to infer the end from silence.",
+      "variants": ["plans", "enumerating", "receiving", "assembling", "cladding", "settled"]
+    },
+    "InstallRefusal": {
+      "kind": "enum",
+      "$comment": "§24.3d. A refusal is a REPLY, not an error frame: every failing condition is named so a surface can state why, and a `-2` suffix is never generated to make one go away.",
+      "variants": [
+        "destination_exists",
+        "already_installed",
+        "unsafe_name",
+        "root_unavailable",
+        "no_clone_url",
+        "no_install_root_chosen",
+        "private_needs_upgrade"
+      ]
+    },
+    "InstallFailure": {
+      "kind": "enum",
+      "$comment": "§24: how a run that started ends badly. Distinct from InstallRefusal, which is why one never began — a refusal costs nothing and a failure may have left a staging directory behind.",
+      "variants": [
+        "network",
+        "auth",
+        "disk_full",
+        "cancelled",
+        "git_failed",
+        "rename_failed",
+        "filter_neutralisation_failed"
+      ]
+    },
+    "InstallDestination": {
+      "kind": "struct",
+      "$comment": "§24.3a: the renderer names a destination by RootId and the core composes the rest, so the renderer never builds a path. `display` is §1.10's lossy display form and is never used to open, launch or compare; `rootId` with `seedBasename` is the identity the core re-derives the real path from.",
+      "fields": { "rootId": "RootId", "seedBasename": "String", "display": "String" }
+    },
+    "InstallPreview": {
+      "kind": "struct",
+      "$comment": "§24.3d: the composed display form and the collision verdict together, on CollectionUpsert's shape. Folding the refusal into the display string is how a refusal stops being a reply.",
+      "fields": { "destination": "InstallDestination?", "refusedBecause": "InstallRefusal?" }
+    },
+    "InstallStart": {
+      "kind": "struct",
+      "$comment": "§24.8: the verdict is recomputed inside the mutating call and the start refuses if it changed, so this answers with a run id or with the reason there is none. A verdict rendered thirty seconds ago is a cache.",
+      "fields": { "runId": "InstallRunId?", "refusedBecause": "InstallRefusal?" }
+    },
+    "InstallStage": {
+      "kind": "struct",
+      "$comment": "A10: `done` and `total` are per-phase and both nullable, and there is NO aggregate field by construction — so no surface can render the retreating percentage §10.2 bans. Do not add one.",
+      "fields": {
+        "runId": "InstallRunId",
+        "stage": "InstallStageKind",
+        "done": "i64?",
+        "total": "i64?",
+        "bytes": "i64?"
+      }
+    },
+    "InstallState": {
+      "kind": "struct",
+      "$comment": "R54: every running and recently-settled run, so a renderer that opens mid-clone builds a frame from a snapshot rather than from the next event to arrive.",
+      "fields": { "runs": "[InstallStage]" }
+    },
+    "InstallStarted": {
+      "kind": "struct",
+      "fields": {
+        "runId": "InstallRunId",
+        "projectId": "ProjectId",
+        "destinationDisplay": "String"
+      }
+    },
+    "InstallFinished": {
+      "kind": "struct",
+      "fields": { "runId": "InstallRunId", "projectId": "ProjectId", "locationId": "LocationId" }
+    },
+    "InstallFailed": {
+      "kind": "struct",
+      "$comment": "§24: `detail` is the sentence a surface may show beside the named reason, never in place of it — the enum is what a surface branches on.",
+      "fields": {
+        "runId": "InstallRunId",
+        "projectId": "ProjectId",
+        "reason": "InstallFailure",
+        "detail": "String"
+      }
     }
   },
   "commands": [
@@ -1273,9 +1359,40 @@
       "args": { "projectId": "ProjectId", "kind": "RemoteLinkKind" },
       "returns": "String?",
       "$comment": "§25.2: NULL when remote_key is NULL, when it is not <host>/<owner>/<name>, or when its host is not allowlisted. Not privileged — it carries no Bytes — and the shell is its only caller: the answer is opened, and only the main process may open it."
+    },
+    {
+      "name": "install.preview",
+      "args": { "projectId": "ProjectId", "rootId": "RootId" },
+      "returns": "InstallPreview",
+      "$comment": "§24.3a: the renderer names the destination by RootId and the composed display form comes back here, so it never builds one itself. Read-only and unprivileged — it spawns no process and writes nothing, which is what lets the page ask before the user has committed to anything."
+    },
+    {
+      "name": "install.start",
+      "args": { "projectId": "ProjectId", "rootId": "RootId" },
+      "returns": "InstallStart",
+      "idempotent": false,
+      "privileged": true,
+      "mutatesFilesystem": true,
+      "$comment": "§24.8: privileged because it mutates the filesystem, NOT because it carries Bytes — it carries none (§24.3a), and the destination is a RootId plus the project's stored seed_basename. Non-idempotent: a replay after a core restart begins a second clone into a destination the first is still writing."
+    },
+    {
+      "name": "install.cancel",
+      "args": { "runId": "InstallRunId" },
+      "returns": "Empty",
+      "idempotent": false,
+      "privileged": true,
+      "mutatesFilesystem": true,
+      "$comment": "§24.3c: kills the clone's process group and removes the staging directory under §24.6's warrant, so it writes to disk as surely as the start did. Non-idempotent: a replay would kill a group a later run may by then own."
     }
   ],
   "topics": {
+    "install": {
+      "started": "InstallStarted",
+      "stage": "InstallStage",
+      "finished": "InstallFinished",
+      "failed": "InstallFailed",
+      "snapshot": "InstallState"
+    },
     "scan": {
       "run_started": "ScanRunStarted",
       "repo_found": "RepoFound",
