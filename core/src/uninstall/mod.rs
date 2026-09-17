@@ -1,6 +1,7 @@
 //! §24.6–§24.8: Uninstall. **This module declares no removal primitive** — `core/src/removal/`
 //! is p2-24's and this plan extends it with one warrant variant rather than a second module.
 
+pub mod gates;
 pub mod stash;
 pub mod unique;
 pub mod verdict;
