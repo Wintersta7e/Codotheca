@@ -1,8 +1,10 @@
 //! Install's durable run-state vocabulary, and where a clone lands.
 
 pub mod destination;
+pub mod staging;
 
 pub use destination::{compose_destination, is_safe_path_segment, refuse_unsafe_name};
+pub use staging::{staging_path_for, staging_warrant_for, StagingSweepReport, STAGING_DIR_NAME};
 
 use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::proto::txguard::TxGuard;

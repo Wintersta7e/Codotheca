@@ -3,11 +3,21 @@
   "rules": [
     {
       "id": "projects-merge",
-      "spec": "§16.2 amendment, §11.1",
-      "why": "projects.merge ships, has no phase-1 caller and is exercised by tests only: criterion 3 drives it directly against the command surface. Its inverse, the split, is deferred to phase 4, so a control wired to it is an irreversible join with no undo — the §17 breach §11.1 forbids by name. §22.4's hydration was considered and excluded: it is a third thing, not a merge — one project row existed for the repository throughout, so nothing is absorbed and nothing is tombstoned, and a build in which it called merge_projects would tombstone a row that never existed and let the earliest created_at win, so a blueprint synced on Monday would absorb a local project cloned on Tuesday.",
-      "roots": ["app/src", "core/src"],
-      "ext": [".ts", ".tsx", ".rs"],
-      "patterns": ["projects\\.merge", "\\bmerge_projects\\b"],
+      "spec": "\u00a716.2 amendment, \u00a711.1",
+      "why": "projects.merge ships, has no phase-1 caller and is exercised by tests only: criterion 3 drives it directly against the command surface. Its inverse, the split, is deferred to phase 4, so a control wired to it is an irreversible join with no undo \u2014 the \u00a717 breach \u00a711.1 forbids by name. \u00a722.4's hydration was considered and excluded: it is a third thing, not a merge \u2014 one project row existed for the repository throughout, so nothing is absorbed and nothing is tombstoned, and a build in which it called merge_projects would tombstone a row that never existed and let the earliest created_at win, so a blueprint synced on Monday would absorb a local project cloned on Tuesday.",
+      "roots": [
+        "app/src",
+        "core/src"
+      ],
+      "ext": [
+        ".ts",
+        ".tsx",
+        ".rs"
+      ],
+      "patterns": [
+        "projects\\.merge",
+        "\\bmerge_projects\\b"
+      ],
       "allow": [
         "app/src/generated/",
         "core/src/protocol.rs",
@@ -17,65 +27,113 @@
         "app/src/main/core/idempotence.ts"
       ],
       "allowLines": [],
-      "allowWhy": "The implementation and its dispatch arm are where the command has to be named. The shell's two entries are tables — the command allowlist the transport enforces and the write/read effect table — and a table is not a caller; the control this rule exists to catch would live in the renderer, which is scanned whole."
+      "allowWhy": "The implementation and its dispatch arm are where the command has to be named. The shell's two entries are tables \u2014 the command allowlist the transport enforces and the write/read effect table \u2014 and a table is not a caller; the control this rule exists to catch would live in the renderer, which is scanned whole."
     },
     {
       "id": "slow-repo",
-      "spec": "§16.63, §11.1",
+      "spec": "\u00a716.63, \u00a711.1",
       "why": "project.slow_repo is an operator opt-out distinct from deferred_slow, and no phase-1 surface writes it. v2.2 asked for a command to set it and drew no control to call one; the column stands and a later reader must not wire one on the strength of that paragraph.",
-      "roots": ["app/src", "core/src"],
-      "ext": [".ts", ".tsx", ".rs"],
+      "roots": [
+        "app/src",
+        "core/src"
+      ],
+      "ext": [
+        ".ts",
+        ".tsx",
+        ".rs"
+      ],
       "patterns": [
         "UPDATE\\s+project\\b[^\\n]*slow_repo",
         "slow_repo\\s*=",
         "\\bslowRepo\\b\\s*[:=]"
       ],
-      "allow": ["app/src/generated/", "core/src/protocol.rs"],
+      "allow": [
+        "app/src/generated/",
+        "core/src/protocol.rs"
+      ],
       "allowLines": []
     },
     {
       "id": "try-again-not-scan",
       "mode": "co-occurrence",
-      "spec": "§16.63, §2.4",
+      "spec": "\u00a716.63, \u00a72.4",
       "why": "TRY AGAIN on one tile means one repository. scan.start re-queues the library, and stretching it over the per-project control would rescan everything from a button that promises not to.",
-      "roots": ["app/src/renderer"],
-      "ext": [".ts", ".tsx"],
-      "patterns": ["TRY AGAIN", "scan.start"],
+      "roots": [
+        "app/src/renderer"
+      ],
+      "ext": [
+        ".ts",
+        ".tsx"
+      ],
+      "patterns": [
+        "TRY AGAIN",
+        "scan.start"
+      ],
       "allow": []
     },
     {
       "id": "no-git-config-write",
-      "spec": "§16.63, §3.2, §17",
-      "why": "Trust is stored in Codotheca's own database and passed per invocation as -c safe.directory=<exact-path>. Writing the user's git config is a write, and §17 permits none; this is the static complement to the byte-identical-config assertion. It reaches argv built outside core/src/git, which the read-only argv audit cannot see because it reads one directory and one literal form.",
-      "roots": ["core/src"],
-      "ext": [".rs"],
-      "patterns": ["\"--global\"", "\"--system\"", "\"--replace-all\"", "\"--unset\"", "\"--add\""],
-      "allow": ["core/src/corpus/", "core/src/testing/", "core/src/protocol.rs"],
+      "spec": "\u00a716.63, \u00a73.2, \u00a717",
+      "why": "Trust is stored in Codotheca's own database and passed per invocation as -c safe.directory=<exact-path>. Writing the user's git config is a write, and \u00a717 permits none; this is the static complement to the byte-identical-config assertion. It reaches argv built outside core/src/git, which the read-only argv audit cannot see because it reads one directory and one literal form.",
+      "roots": [
+        "core/src"
+      ],
+      "ext": [
+        ".rs"
+      ],
+      "patterns": [
+        "\"--global\"",
+        "\"--system\"",
+        "\"--replace-all\"",
+        "\"--unset\"",
+        "\"--add\""
+      ],
+      "allow": [
+        "core/src/corpus/",
+        "core/src/testing/",
+        "core/src/protocol.rs"
+      ],
       "allowLines": [],
       "allowWhy": "The corpus generator and the seam fakes build fixture repositories and are gated behind the testkit feature; constructing a repository is their whole job and is not a product git invocation."
     },
     {
       "id": "no-unaudited-git-spawn",
-      "spec": "§24.2b, §19.4",
-      "why": "This rule pins SPAWN SITES rather than subcommand vocabulary: no file outside the three named here constructs a process whose program is git. Auditing the seam instead of the words is what makes it survive phases 3 and 4 unchanged, and it is the complement of no-destructive-git, which matches quoted subcommand literals and therefore cannot see a program name held in a variable. The pattern is a substring, so it catches the fully-qualified std::process::Command::new spelling as well as the bare one — half the real sites in this core use the qualified form, and a matcher that saw only one spelling would let four spawns past while reporting green.",
-      "roots": ["core/src"],
-      "ext": [".rs"],
-      "patterns": ["Command::new"],
-      "allow": ["core/src/git/exec.rs", "core/src/gitw/exec.rs", "core/src/corpus/git_cmd.rs"],
+      "spec": "\u00a724.2b, \u00a719.4",
+      "why": "This rule pins SPAWN SITES rather than subcommand vocabulary: no file outside the three named here constructs a process whose program is git. Auditing the seam instead of the words is what makes it survive phases 3 and 4 unchanged, and it is the complement of no-destructive-git, which matches quoted subcommand literals and therefore cannot see a program name held in a variable. The pattern is a substring, so it catches the fully-qualified std::process::Command::new spelling as well as the bare one \u2014 half the real sites in this core use the qualified form, and a matcher that saw only one spelling would let four spawns past while reporting green.",
+      "roots": [
+        "core/src"
+      ],
+      "ext": [
+        ".rs"
+      ],
+      "patterns": [
+        "Command::new"
+      ],
+      "allow": [
+        "core/src/git/exec.rs",
+        "core/src/gitw/exec.rs",
+        "core/src/corpus/git_cmd.rs"
+      ],
       "allowLines": [
         "Command::new\\(&inv\\.program\\)",
         "Command::new\\(program\\)",
         "Command::new\\(WSL_EXE\\)"
       ],
-      "allowWhy": "The three allowed files are the git spawn sites: the read seam, the write seam, and the corpus generator behind the testkit feature. The three allowLines are the non-git spawns and are justified per line rather than per file, because allowing their files would make this rule read nothing in them at all — an editor chosen by the user, a launch probe, and wsl.exe. Two further occurrences sit inside #[cfg(test)] mod tests and are removed by stripRustTestModules before this rule sees them.",
-      "pendingRegistryEntry": { "criterion": "AC-P2-24-3" }
+      "allowWhy": "The three allowed files are the git spawn sites: the read seam, the write seam, and the corpus generator behind the testkit feature. The three allowLines are the non-git spawns and are justified per line rather than per file, because allowing their files would make this rule read nothing in them at all \u2014 an editor chosen by the user, a launch probe, and wsl.exe. Two further occurrences sit inside #[cfg(test)] mod tests and are removed by stripRustTestModules before this rule sees them.",
+      "pendingRegistryEntry": {
+        "criterion": "AC-P2-24-3"
+      }
     },
     {
       "id": "no-destructive-git",
-      "spec": "§16.44, §17",
-      "why": "Every git invocation in phase 1 is read-only and argv-only. These subcommands as quoted argv literals are the whole destructive surface, fetch included: a directional claim needs a merge-base across two object stores, which needs a fetch, which §17 forbids. Quoted rather than bare words on purpose — fetch_head_at and reset_at are legitimate column names and a bare-word pattern would fail every correct build.",
-      "roots": ["core/src"],
-      "ext": [".rs"],
+      "spec": "\u00a716.44, \u00a717",
+      "why": "Every git invocation in phase 1 is read-only and argv-only. These subcommands as quoted argv literals are the whole destructive surface, fetch included: a directional claim needs a merge-base across two object stores, which needs a fetch, which \u00a717 forbids. Quoted rather than bare words on purpose \u2014 fetch_head_at and reset_at are legitimate column names and a bare-word pattern would fail every correct build.",
+      "roots": [
+        "core/src"
+      ],
+      "ext": [
+        ".rs"
+      ],
       "patterns": [
         "\"push\"",
         "\"clean\"",
@@ -95,7 +153,73 @@
         "core/src/protocol.rs"
       ],
       "allowLines": [],
-      "allowWhy": "core/src/git is excluded because core/tests/git_readonly.rs already audits it properly — an allow list plus a deny list over its argv literals, with its own scanned-nothing guard — and a second, weaker grep over the same directory would be the copy that drifts. core/src/gitw is excluded for the same reason and not a weaker one: core/tests/git_write_audit.rs audits it by ENUMERATING Intent::ALL and rendering every variant, which is strictly stronger than this grep — it also asserts the eight-entry flag denylist that no text search over quoted literals can express, because this rule matches subcommand vocabulary and the difference between an additive fetch and a destructive one is a flag. This rule covers what neither audit reaches: argv assembled elsewhere in the core. The corpus generator and the seam fakes build fixture repositories behind the testkit feature."
+      "allowWhy": "core/src/git is excluded because core/tests/git_readonly.rs already audits it properly \u2014 an allow list plus a deny list over its argv literals, with its own scanned-nothing guard \u2014 and a second, weaker grep over the same directory would be the copy that drifts. core/src/gitw is excluded for the same reason and not a weaker one: core/tests/git_write_audit.rs audits it by ENUMERATING Intent::ALL and rendering every variant, which is strictly stronger than this grep \u2014 it also asserts the eight-entry flag denylist that no text search over quoted literals can express, because this rule matches subcommand vocabulary and the difference between an additive fetch and a destructive one is a flag. This rule covers what neither audit reaches: argv assembled elsewhere in the core. The corpus generator and the seam fakes build fixture repositories behind the testkit feature."
+    },
+    {
+      "id": "no-unwarranted-removal",
+      "spec": "\u00a724.6, \u00a724.3c",
+      "why": "A BASELINE LOCK over every filesystem removal in the core. The single warranted primitive lives in core/src/removal/; every other removal that exists today removes app-owned bytes and is pinned per line, never by a directory wildcard. allow: [\"core/src/art/\"] would admit an eighteenth call site in an already-listed file silently, which is the whole failure this rule exists to prevent. Its complement is core/tests/removal_audit.rs, which pins the same sites by file AND line number and asserts the total, so even a new call whose text matches an existing allowLine is caught there.",
+      "roots": [
+        "core/src"
+      ],
+      "ext": [
+        ".rs"
+      ],
+      "patterns": [
+        "remove_dir_all",
+        "remove_file",
+        "remove_dir\\("
+      ],
+      "allow": [
+        "core/src/removal/"
+      ],
+      "allowLines": [
+        "remove_file\\(&self\\.owner\\)",
+        "remove_dir_all\\(&dir\\)",
+        "remove_file\\(&path\\)\\.expect",
+        "remove_dir_all\\(&root\\)\\.expect",
+        "remove_file\\(&temp\\)",
+        "match std::fs::remove_file\\(&path\\)",
+        "remove_file\\(entry\\.path\\(\\)\\)",
+        "remove_dir_all\\(root\\)\\.map_err",
+        "remove_file\\(&lock\\)",
+        "remove_file\\(lock\\)",
+        "remove_dir_all\\(&root\\);",
+        "remove_file\\(&self\\.socket_path\\)",
+        "remove_file\\(&self\\.nonce_path\\)",
+        "remove_dir\\(&self\\.private_dir\\)",
+        "remove_file\\(dest\\)\\?",
+        "remove_file\\(sibling\\)\\?",
+        "remove_file\\(data_dir\\.join\\(STARTUP_FAILURE_FILE\\)\\)"
+      ],
+      "allowWhy": "17 regexes covering the 21 phase-1 and Task-4 sites measured on this tree (four pairs share their text). Every one removes APP-OWNED bytes: a single-instance lock file, a crashed run's own state directory, a temporary or superseded raster, the raster cache, the testkit fixture corpus and its lock, a database backup and its WAL sibling, the credential helper's one-shot socket, nonce and private directory, and the startup-failure breadcrumb. None can reach a user's working copy. BOTH p2-24 Task 11 and p2-24b Task 1 state this baseline as 17: they were written before p2-24's own Task 4 landed the credential helper, whose teardown is the other four. p2-24b must assert 21, not 17.",
+      "pendingRegistryEntry": {
+        "criterion": "AC-P2-24-18"
+      }
+    },
+    {
+      "id": "no-unwarranted-recursive-removal",
+      "spec": "\u00a724.6",
+      "why": "THE STRONG FORM, WHERE IT BITES. remove_dir_all is the only shape that can take a working copy, so it is allowed in four files and no others \u2014 the warranted primitive plus the three that recursively remove app-owned trees today. Unlike the baseline lock above this rule has NO allowLines: a new recursive removal outside these four files has no entry available to it and must be routed through remove_warranted.",
+      "roots": [
+        "core/src"
+      ],
+      "ext": [
+        ".rs"
+      ],
+      "patterns": [
+        "remove_dir_all"
+      ],
+      "allow": [
+        "core/src/removal/",
+        "core/src/lifecycle.rs",
+        "core/src/art/job.rs",
+        "core/src/corpus/mod.rs"
+      ],
+      "allowWhy": "core/src/removal/ is the single warranted primitive. lifecycle.rs removes a crashed run's own state directory, art/job.rs clears the derived raster cache, and corpus/mod.rs builds and rebuilds the testkit fixture corpus under a temporary root. Six sites across the three.",
+      "pendingRegistryEntry": {
+        "criterion": "AC-P2-24-18"
+      }
     }
   ]
 }

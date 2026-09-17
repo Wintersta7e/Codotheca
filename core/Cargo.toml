@@ -119,6 +119,19 @@ tempfile = { version = "3", optional = true }
 thiserror = "1"
 # §7's rasterizer. CPU-only 2D, no GPU context and no system library.
 tiny-skia = "0.12"
+# §24.7F's Recycle Bin / XDG trash, behind `removal::SystemTrash`. This crate forbids `unsafe`,
+# and a real Recycle Bin send is `IFileOperation` — so on the primary target there is no
+# hand-written honest implementation, only a dependency or a permanent refusal. §24.7F requires
+# the failure cases be "detected and stated plainly rather than silently falling back", which a
+# stub cannot do.
+#
+# PINNED EXACTLY, and not a caret: `5.2.9` raises its `rust-version` to 1.85 against this
+# package's 1.80, so `^5.2.3` silently locks a version this crate does not claim to support.
+# Lifting the pin is a workspace MSRV decision, not a removal decision — the same rule that
+# kept `keyring` at 3.x. New crates for the two shipped targets are `scopeguard` and
+# `urlencoding` only; `chrono`, `libc`, `log` and `once_cell` were already in the graph, and
+# the `objc2*` entries this adds to Cargo.lock are macOS-only and are never built for either.
+trash = "=5.2.3"
 
 # §4.3's cycle and duplicate detection needs a directory's stable file identity. On Windows that
 # is `(volume serial, file index)` from an open handle; `std::os::windows::fs::MetadataExt`
