@@ -8,7 +8,14 @@
  */
 import { STATUSES, phaseOf, rollUp } from './registry.mjs';
 
-const PHASE_TITLE = { 1: 'Phase 1 — §16', 2: 'Phase 2 — §20–§25' };
+/**
+ * The phase list, stated once. It was written out in five places and every one of them was a
+ * place a third phase could be forgotten — two of them silently: the empty-section sentence named
+ * phase 2 whatever phase it was rendering, and `byPhase` was seeded with the phases it knew, so a
+ * check from any other incremented `undefined` and the report printed `NaN checks`.
+ */
+const PHASE_TITLE = { 1: 'Phase 1 — §16', 2: 'Phase 2 — §20–§25', 3: 'Phase 3 — §28–§35' };
+const PHASES = Object.keys(PHASE_TITLE).map(Number);
 
 export function countByStatus(registry) {
   const counts = Object.fromEntries(STATUSES.map((s) => [s, 0]));
@@ -21,7 +28,7 @@ const inPhase = (registry, phase) => registry.criteria.filter((c) => phaseOf(c.i
 
 export function countByPhase(registry) {
   const counts = {};
-  for (const phase of [1, 2]) {
+  for (const phase of PHASES) {
     const criteria = inPhase(registry, phase);
     counts[phase] = {
       criteria: criteria.length,
@@ -39,13 +46,12 @@ export function countByPhase(registry) {
  */
 export function renderRegistryLine(registry) {
   const p = countByPhase(registry);
-  const criteria = p[1].criteria + p[2].criteria;
-  const checks = p[1].checks + p[2].checks;
-  return (
-    `${String(criteria)} criteria / ${String(checks)} checks validated — ` +
-    `phase 1 ${String(p[1].criteria)}/${String(p[1].checks)}, ` +
-    `phase 2 ${String(p[2].criteria)}/${String(p[2].checks)}`
+  const criteria = PHASES.reduce((n, phase) => n + p[phase].criteria, 0);
+  const checks = PHASES.reduce((n, phase) => n + p[phase].checks, 0);
+  const perPhase = PHASES.map(
+    (phase) => `phase ${String(phase)} ${String(p[phase].criteria)}/${String(p[phase].checks)}`,
   );
+  return `${String(criteria)} criteria / ${String(checks)} checks validated — ${perPhase.join(', ')}`;
 }
 
 function rolledUpCounts(criteria) {
@@ -79,7 +85,7 @@ function phaseSection(lines, registry, phase) {
   if (criteria.length === 0) {
     // Not an empty table: a reader must be able to tell "none registered yet" from "the
     // renderer stopped reading", and an empty table says neither.
-    lines.push('No phase-2 criteria are registered yet.');
+    lines.push(`No phase-${String(phase)} criteria are registered yet.`);
     lines.push('');
     return;
   }
@@ -102,8 +108,7 @@ export function renderDispositions(registry) {
   lines.push('');
   lines.push('One row per criterion; the disposition is the weakest of its checks.');
   lines.push('');
-  phaseSection(lines, registry, 1);
-  phaseSection(lines, registry, 2);
+  for (const phase of PHASES) phaseSection(lines, registry, phase);
   lines.push('## Why a check is not automated, or is automated over less than it looks');
   lines.push('');
   // Every reason, not only the three statuses that require one. A deferral whose argument is in
@@ -127,10 +132,19 @@ export function renderRunReport(registry, join, diff, perf, absent = []) {
   const byResult = { passed: 0, failed: 0, 'not-run': 0, skipped: 0 };
   for (const check of join.checks) byResult[check.result] = (byResult[check.result] ?? 0) + 1;
   lines.push(`Checks: ${String(join.checks.length)} — ${JSON.stringify(byResult)}`);
-  const byPhase = { 1: 0, 2: 0 };
-  for (const check of join.checks) byPhase[phaseOf(check.criterion)] += 1;
+  const byPhase = Object.fromEntries(PHASES.map((phase) => [phase, 0]));
+  // `?? 0` rather than `+= 1` on a key that may not be there: an unexpected phase would otherwise
+  // print as `NaN checks`, which reads as a count.
+  for (const check of join.checks) {
+    const phase = phaseOf(check.criterion);
+    byPhase[phase] = (byPhase[phase] ?? 0) + 1;
+  }
   lines.push('');
-  lines.push(`Phase 1: ${String(byPhase[1])} checks. Phase 2: ${String(byPhase[2])} checks.`);
+  lines.push(
+    `${Object.keys(byPhase)
+      .map((phase) => `Phase ${phase}: ${String(byPhase[phase])} checks`)
+      .join('. ')}.`,
+  );
   lines.push('');
   if (absent.length > 0) {
     lines.push(

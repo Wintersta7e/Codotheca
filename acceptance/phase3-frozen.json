@@ -1,0 +1,477 @@
+{
+  "version": 1,
+  "why": "The fourteen entries §36.3 governs, copied out of criteria.json before wave 1 could touch them. You cannot verify that something moved correctly without a record of what it was, and by the time p3-36 runs, eight plans will have merged and five of them will have edited these entries. phase1-frozen.json is not extended: it is a record of a different set at a different tree.",
+  "frozenFrom": "acceptance/criteria.json",
+  "criteria": [
+    {
+      "id": "21",
+      "title": "Idle on Reference A",
+      "group": "performance",
+      "spec": "§16.21",
+      "checks": [
+        {
+          "id": "AC-21-frames",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "12c",
+          "test": "perf::idle_scheduled_frames",
+          "assert": "Amendment 21: zero scheduled frames while unfocused or hidden, and at most one flicker element while focused, sampled over at least 60 s in the defined idle state.",
+          "measurement": {
+            "kind": "rate",
+            "run": "at least 60 s with the shelf visible and focused, no project page open, no session open, no job running, and no pointer or keyboard input for at least 5 s",
+            "thermal": "warm",
+            "machines": ["A"]
+          },
+          "budget": [
+            {
+              "metric": "max",
+              "op": "<=",
+              "value": 1,
+              "unit": "flicker elements",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-21-flicker",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-21 the scheduled flicker obeys its eligibility and its parameters",
+          "assert": "At most one card in the viewport — mounted is not enough; 1 to 2 sub-dips of 15 to 25% of steady glow, each 80 to 140 ms, a deterministic Poisson process at about 9 s mean seeded per session, suspended while unfocused and resuming with no backlog. Eligibility is condition_signal in {neglected, abandoned}, location present, is_reference = 0. The design's 50% depth, fixed 130 ms hold and fixed 9,000 ms period are cut and must not be asserted."
+        },
+        {
+          "id": "AC-21-cpu",
+          "status": "unmeasurable",
+          "runner": "none",
+          "reason": "Amendment 21 marks the CPU figure provisional: the 0.014 to 0.017% in the probe results was taken before any scheduled frame existed, so it describes a different build. It is re-measured before the public beta rather than gated on now.",
+          "assert": "No idle CPU or GPU budget is gated in phase 1."
+        },
+        {
+          "id": "AC-21-audio",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "IDLE-AUDIO",
+          "reason": "Asserting the app is absent from the OS audio mixer requires an OS audio mixer; no hosted CI runner exposes one, and a stubbed audio device would assert the stub.",
+          "assert": "The app does not appear in the OS audio mixer while idle."
+        }
+      ]
+    },
+    {
+      "id": "22",
+      "title": "Storage against the 1,000-project fixture",
+      "group": "performance",
+      "spec": "§16.22",
+      "checks": [
+        {
+          "id": "AC-22-database",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_storage::ac_22_database_and_wal_under_100mb",
+          "assert": "Main database plus WAL under 100 MB against the fixture of 1,000 projects, 200,000 commit subjects and 100,000 events.",
+          "reason": "The file exists and holds the art half only. The other half was deliberately not stubbed, because a stub reports passed for a budget nothing measured, and the 1,000-project fixture belongs to the jobs plan and to no other. The file is shared; the owner is per-function.",
+          "measurement": {
+            "kind": "size",
+            "thermal": "n/a",
+            "machines": ["A"],
+            "state": "1,000 projects, 200,000 commit subjects, 100,000 events"
+          },
+          "budget": [
+            {
+              "metric": "bytes",
+              "op": "<",
+              "value": 104857600,
+              "unit": "bytes",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-22-art-cache",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_storage::ac_22_art_cache_under_50mb",
+          "assert": "Art cache under 50 MB against the re-derived total, with the card rendition asserted at 600x900 and the hero cache bounded, least-recently-opened evicted first. The GPU texture clause is phase 3 and is not tested. The 1,000-project total is projected from the worst of a 24-scene sample rather than rasterized in full, which the test states; the eviction order is observed over more opens than the cap.",
+          "measurement": {
+            "kind": "size",
+            "thermal": "n/a",
+            "machines": ["A"],
+            "state": "the worst of a 24-scene sample projected to 1,000 projects, with more hero opens than the cap"
+          },
+          "budget": [
+            {
+              "metric": "bytes",
+              "op": "<",
+              "value": 52428800,
+              "unit": "bytes",
+              "machine": "A"
+            },
+            {
+              "metric": "files",
+              "op": "<=",
+              "value": 200,
+              "unit": "hero files",
+              "machine": "A"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "45a",
+      "title": "The grid card and the hero state the absence",
+      "group": "surfaces",
+      "spec": "§16.45a",
+      "checks": [
+        {
+          "id": "AC-45a-uncomputed",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-45a the uncomputed band draws its frame, gap, glyph and label",
+          "assert": "Frame in the unknown token with the top-edge gap at the stated geometry, an em-dash rank glyph in the unknown ink, and the label in text-3. Never a ladder colour, never a lit tick row, never a zero over ten."
+        }
+      ]
+    },
+    {
+      "id": "45b",
+      "title": "Every other completion readout renders no element at all",
+      "group": "surfaces",
+      "spec": "§16.45b",
+      "checks": [
+        {
+          "id": "AC-45b-empty",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-45b the rank and score columns, the palette slot, the hero band and Peek contain no node",
+          "assert": "Assert the emptiness of the node, not the absence of a digit — a dash placed there passes a digits-only check."
+        }
+      ]
+    },
+    {
+      "id": "45c",
+      "title": "The layout survives the emptiness",
+      "group": "surfaces",
+      "spec": "§16.45c",
+      "checks": [
+        {
+          "id": "AC-45c-layout",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-45c the empty list columns keep their widths and the header labels only the middle four",
+          "assert": "Columns 2 and 7 still occupy their stated widths with the rows aligned; the header labels columns 3 to 6 only; column 6's em dash is a different value and stays."
+        }
+      ]
+    },
+    {
+      "id": "46",
+      "title": "Every colour and every motion value resolves to a declared one",
+      "group": "surfaces",
+      "spec": "§16.46",
+      "checks": [
+        {
+          "id": "AC-46-colour",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c46-colour-literals",
+          "assert": "The built stylesheet contains none of the four snapped grounds, none of the additional off-token ground, none of the off-token greys other than the condition-dot fills, and not the dropped blue. The language palette and everything the rasterizer computes are exempt by name and never reach a stylesheet."
+        },
+        {
+          "id": "AC-46-motion",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c46-motion-values",
+          "assert": "The built stylesheet declares no duration literal and no timing function that the motion tables or a named single-effect row does not carry."
+        }
+      ]
+    },
+    {
+      "id": "50",
+      "title": "Effects tier off",
+      "group": "surfaces",
+      "spec": "§16.50",
+      "checks": [
+        {
+          "id": "AC-50-zero-animation",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12",
+          "test": "AC-50 tier off runs zero animations and schedules zero frames",
+          "assert": "At reduced and off the scheduled flicker is absent — steady glow, no dip. Hazard tape renders identically and the pin mark is a static silhouette no tier deletes. Verified by resolving a style on a real element under each tier, never by matching the stylesheet's text: the clamp selects ten class names exactly and an eleventh name makes it select nothing. [p2] The number was nine and is ten: `.cdt-specular` joined the set when the sweep's clamp was corrected off `.cdt-plate`, and this assert was not raised with it — one value in two places, drifting, with the check `deferred` so nothing ever compared them. Measured against `motion.css`: cdt-bloom, cdt-bracket, cdt-card, cdt-card-halo, cdt-dot, cdt-pin-silhouette, cdt-plate, cdt-scanline, cdt-specular, cdt-strip."
+        },
+        {
+          "id": "AC-50-readability",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "EFFECTS-OFF-READABILITY",
+          "reason": "The criterion is marked half in the spec: whether condition, tier, rank and safety remain readable from static form alone is a human reading, and absence of a condition dot is a correct static reading rather than a failure.",
+          "assert": "Condition, tier, rank and safety are readable at tier off."
+        }
+      ]
+    },
+    {
+      "id": "58",
+      "title": "The condition dot",
+      "group": "subsystems",
+      "spec": "§16.58",
+      "checks": [
+        {
+          "id": "AC-58-surfaces",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12b",
+          "test": "AC-58 the dot renders on all five surfaces from one table and emits no value outside it",
+          "assert": "A NULL condition_signal draws no dot at all on every surface; the not-indexed badge carries the state. Contrast is asserted per row, with the offline disc explicitly exempt. The project page's identity line draws exactly one dot and the page's hero draws band 1's, which is a different surface."
+        },
+        {
+          "id": "AC-58-edges",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_derive::ac_58_condition_day_edges",
+          "assert": "The mapping's day edges are exactly the stated ones and the design's colder boundary, the one edge this document does not carry, appears in none of them."
+        },
+        {
+          "id": "AC-58-vocabulary",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c58-design-band-names",
+          "assert": "The two design band names warm and cooling appear in no CSS class, query field, protocol message, log line or accessible name, over all three of criterion 58's target sets. blueprint is asserted absent as a condition_signal VALUE instead — by the DDL CHECK and the generated ConditionSignal union type, both structural (A4) — and is permitted as a rendition name and a tier token. The two enum words that look like band names are required verbatim and are not banned."
+        }
+      ]
+    },
+    {
+      "id": "62",
+      "title": "fade, the art address and the two caches",
+      "group": "subsystems",
+      "spec": "§16.62",
+      "checks": [
+        {
+          "id": "AC-62-fade",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_62_fade_is_reference_or_archived_only",
+          "assert": "fade takes exactly one of two values regardless of last_commit_at, and no other value appears in phase 1."
+        },
+        {
+          "id": "AC-62-clock",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_62_scene_hash_is_not_a_function_of_wall_clock",
+          "assert": "With the clock advanced by any amount, or over fixtures whose last_commit_at spans years, the scene hash for an otherwise unchanged project is byte-identical and no re-render is enqueued."
+        },
+        {
+          "id": "AC-62-address",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "art AC-62 the art scheme takes two segments and the card rendition is the stated size",
+          "assert": "A fetch of the hash alone fails and the card rendition is the stated size."
+        },
+        {
+          "id": "AC-62-art-state",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "10b",
+          "test": "acceptance_art::ac_62_art_state_tracks_the_card_rendition_only",
+          "assert": "art_state and fail_count track the card rendition only, so a project whose page has never been opened is ready rather than pending or failed.",
+          "reason": "Split out of the address check, which is a renderer assertion and cannot observe a database column. The two clauses were registered as one and only the renderer half exists."
+        },
+        {
+          "id": "AC-62-not-tested",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_art::ac_62_seed_inputs_are_basename_and_offset",
+          "assert": "The first-commit sha is not an art-seed input and its empty-repository case is not tested; a first commit on a previously-empty repository changes era detail only. Decay rendering is not in phase 1 and is not tested."
+        }
+      ]
+    },
+    {
+      "id": "64",
+      "title": "Era sections, header aggregates and the watch set",
+      "group": "subsystems",
+      "spec": "§16.64",
+      "checks": [
+        {
+          "id": "AC-64-sections",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "13",
+          "test": "acceptance_shelf::ac_64_era_section_ids_and_orders",
+          "assert": "The section id table and nothing else, with the tail carrying no year, the not-cloned section never emitted in phase 1, and Reference rendering in its own chrome below the grid rather than as an era section."
+        },
+        {
+          "id": "AC-64-aggregates",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-64 the header renders the indexed and unchecked counts, including all-zero with unchecked above zero",
+          "assert": "The flag line still renders in that case, because an absent flag line may only ever mean observed and nothing to report. The label is absent from the response; order, year and the calendar year grouped against are present."
+        },
+        {
+          "id": "AC-64-watch-set",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_64_watch_set_invalidates_and_never_scans",
+          "assert": "The bounded worktree watch set invalidates the worktree observation time and never starts a scan or discovers a repository."
+        },
+        {
+          "id": "AC-64-copy",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c64-watch-set-copy",
+          "assert": "The sentence claiming nothing is watched inside a repository is false and appears nowhere."
+        }
+      ]
+    },
+    {
+      "id": "65",
+      "title": "The notice slot, the chips and the completion term",
+      "group": "subsystems",
+      "spec": "§16.65",
+      "checks": [
+        {
+          "id": "AC-65-slot",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-65 every notice renders in one slot at its priority, at most one at a time",
+          "assert": "Only the left border varies; no section draws a second surface with geometry of its own; when nothing qualifies the wrapper is not rendered at all rather than rendered at zero height."
+        },
+        {
+          "id": "AC-65-chips",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-65 chip chrome is asserted once against its owning section for all six chips",
+          "assert": "The stated padding, gap, ground and inset shadows, with the hover and active rule that the sub-line takes text-2 on the hover fill.",
+          "reason": "The attention chip as built diverges from its owning section in seven values — padding, two gaps, border versus inset, three type sizes and a missing row border. Only the two declarations another section depends on were reconciled; the rest is untouched and unowned, so this check would fail today against the section it cites rather than against the component."
+        },
+        {
+          "id": "AC-65-completion-term",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-65 a completion comparison parses, soft-errors and does not filter the shelf to zero",
+          "assert": "It renders its pill in the soft-error state with the stated reason, is dropped from the effective query and named in the ignored clause. Assert explicitly that NULL is never compared as zero."
+        },
+        {
+          "id": "AC-65-identity-notice",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "16c",
+          "test": "AC-65 the identity notice's plural line uses the previewed delta",
+          "assert": "The literal example number is not tested."
+        }
+      ]
+    },
+    {
+      "id": "66",
+      "title": "The top bar and density",
+      "group": "subsystems",
+      "spec": "§16.66",
+      "checks": [
+        {
+          "id": "AC-66-density",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 density cycles exactly three steps and each moves the column count by one",
+          "assert": "Each step carries its stated card composition; the chosen step persists and survives a restart; in list view the control is not rendered at all."
+        },
+        {
+          "id": "AC-66-hash-stable",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 the scene hash is byte-identical across every density press",
+          "assert": "Density is a render parameter, never a seed input, and the 2x track clears the largest step."
+        },
+        {
+          "id": "AC-66-sort",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 sort cycles exactly three keys with completion absent",
+          "assert": "Nothing computes completion, so it is not offered."
+        },
+        {
+          "id": "AC-66-shed",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 at the minimum window width nothing overlaps and the bar sheds in the stated order",
+          "assert": "The floor itself is measured, not asserted; every label a user must read to work a control sits at text-3 or lighter. The written 924px minimum is superseded by measurement: the unshed bar fits from 861px and the fully shed one from the measured floor."
+        }
+      ]
+    },
+    {
+      "id": "67",
+      "title": "DOM composition and the mid-scan flip",
+      "group": "subsystems",
+      "spec": "§16.67",
+      "checks": [
+        {
+          "id": "AC-67-no-canvas",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c67-canvas-and-webgl",
+          "assert": "The built renderer creates no WebGL context and no canvas element — statically checkable over the renderer bundle. Nothing asserted this before, which is how a negative rule comes back by accident."
+        },
+        {
+          "id": "AC-67-plate-roles",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-67 the CSS plate has two roles and no third",
+          "assert": "The state every card is born in, and the fallback where the art failed or the file is gone — never drawn over a decoded bitmap."
+        },
+        {
+          "id": "AC-67-flip",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-67 during a live scan a mounted card changes appearance exactly once per scene hash",
+          "assert": "The plate is held until the bitmap for that exact hash exists and has decoded, then swapped with no transition, no cross-fade, no re-layout, no intermediate plate flash, at identical geometry."
+        }
+      ]
+    },
+    {
+      "id": "P2-25-5",
+      "title": "BEHIND is the local figure, from the module §8.5.2 already uses",
+      "group": "surfaces",
+      "spec": "§25.1",
+      "checks": [
+        {
+          "id": "AC-P2-25-5",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 BEHIND is the local figure, through the producer §8.5.2 uses AC-P2-25-5 renders a measured zero with its meaning and the fetch age",
+          "assert": "BEHIND renders location.behind for the shown copy: a measured zero renders 0 with no known divergence, and the block carries fetch_head_at's age or no fetch recorded."
+        },
+        {
+          "id": "AC-P2-25-5-import",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "§25.1 BEHIND comes from the producer §8.5.2 already uses AC-P2-25-5-import imports the fetch clause rather than re-writing it",
+          "assert": "Asserted by import and not by matching text: behindBlock.ts imports fetchClause from locationCopy.ts and holds neither half of the clause as a literal. A copy would render the same strings and pass a text assertion."
+        },
+        {
+          "id": "AC-P2-25-5-census",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-25",
+          "test": "remote_facts_read::ac_p2_25_5_census_no_request_asks_the_forge_for_divergence",
+          "assert": "A request census over this section's only two forge reads prints the count it examined and fails at zero examined; no request carries a compare path segment, a basehead parameter or a base...head range.",
+          "scanning": true
+        }
+      ]
+    }
+  ],
+  "takenOn": "c6601443d5e55ae141e9d02ee80cb7717e6d0ef0"
+}

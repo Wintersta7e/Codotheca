@@ -5,13 +5,16 @@ import { fileURLToPath } from 'node:url';
 
 import {
   DEFERRALS,
+  LETTERED_P3,
   LIVE_OBSERVATION_CHECKS,
   PHASE2_SECTIONS,
+  PHASE3_SECTIONS,
   criterionOf,
   loadRegistry,
   phaseOf,
   rollUp,
   validatePhase2Complete,
+  validatePhase3Complete,
   validateRegistry,
 } from './registry.mjs';
 import { tagsIn } from './tags.mjs';
@@ -263,7 +266,34 @@ test('every deferred check names a plan that exists in the plan set', () => {
     'p2-25',
     'p2-25b',
     'p2-26',
+    // The phase-3 lanes, wave 0 through wave 6.
+    'p3-28',
+    'p3-29',
+    'p3-30',
+    'p3-31',
+    'p3-32',
+    'p3-33',
+    'p3-34',
+    'p3-35',
+    'p3-36',
+    'p3-36a',
   ]);
+  // The phase-3 lanes, in the set before the first `AC-P3-*` id is written anywhere. Same rule
+  // again: a literal, because the plans live under a gitignored directory.
+  for (const id of [
+    'p3-28',
+    'p3-29',
+    'p3-30',
+    'p3-31',
+    'p3-32',
+    'p3-33',
+    'p3-34',
+    'p3-35',
+    'p3-36',
+    'p3-36a',
+  ]) {
+    assert.ok(plans.has(id), `the plan set does not know ${id}`);
+  }
   for (const entry of registry.criteria) {
     for (const check of entry.checks) {
       if (check.status !== 'deferred') continue;
@@ -382,7 +412,16 @@ test('the section table is §26.1 and adds up to 104', () => {
     104,
   );
   assert.deepEqual(DEFERRALS, ['plan', 'live-observation']);
-  assert.deepEqual(LIVE_OBSERVATION_CHECKS, ['AC-P2-20-13', 'AC-P2-21-3-floor']);
+  // R56's two and §36.6's three. One id per subject §36.6 names, each a second check on a
+  // criterion whose first check is automated, so nothing is registered as observed and nothing
+  // loses its fixture test.
+  assert.deepEqual(LIVE_OBSERVATION_CHECKS, [
+    'AC-P2-20-13',
+    'AC-P2-21-3-floor',
+    'AC-P3-32-3-header',
+    'AC-P3-32-3-resource',
+    'AC-P3-32-16-caps',
+  ]);
 });
 
 test('a live-observation deferral refuses a test id', () => {
@@ -677,18 +716,23 @@ test('P2-25-11 carries two checks, two owners, and no deferral to a plan that ha
   }
 });
 
-// Task 1 added the escape so a lane could land a static rule before this plan wrote its check.
-// A survivor is a rule with two answers: an escape saying nothing claims it, and a check that
-// does. Every phase-2 rule is claimed now, so none may still carry one.
-test('no static rule still carries the escape its registered check discharges', () => {
+// p2-26 Task 1 added the escape so a lane could land a static rule before this plan wrote its
+// check. A survivor is a rule with two answers: an escape saying nothing claims it, and a check
+// that does — so the rule is discharged by its named criterion being **in the register**, not by
+// the rule carrying the field. [p3] Resolved against `criteria.json` rather than asserted as an
+// empty list: from wave 1 every phase-3 lane carries an escape for five waves, against a register
+// it is not allowed to edit.
+test('no static rule carries an escape its criterion has already discharged', () => {
   const read = (name) =>
     JSON.parse(readFileSync(fileURLToPath(new URL(`../../acceptance/${name}`, import.meta.url))));
-  for (const name of ['callsites.json', 'forbidden.json']) {
-    const rules = read(name).rules ?? [];
-    assert.ok(rules.length > 0, `${name} lists no rules — the scan read nothing`);
-    const survivors = rules.filter((r) => r.pendingRegistryEntry !== undefined).map((r) => r.id);
-    assert.deepEqual(survivors, [], `${name} still carries a pending registry entry`);
+  const files = { callsites: read('callsites.json'), forbidden: read('forbidden.json') };
+  for (const [name, file] of Object.entries(files)) {
+    assert.ok((file.rules ?? []).length > 0, `${name} lists no rules — the scan read nothing`);
   }
+  assert.deepEqual(
+    validatePhase2Complete(loadRegistry(registryPath), files).filter((p) => p.includes('escape')),
+    [],
+  );
 });
 
 // [p2-26 Task 12] R46, mechanically. Each rule below is a way a phase-2 criterion could ship as
@@ -713,18 +757,56 @@ test('a phase-2 deferral to a plan is a deferral to nobody', () => {
 });
 
 test('a static rule may not keep an escape a registered check discharges', () => {
-  const rules = {
-    callsites: { rules: [{ id: 'x', pendingRegistryEntry: { criterion: 'AC-P2-24-3' } }] },
+  // The named check **is** in this register, which is what discharges the escape. A rule naming
+  // a check id resolves, and so does one naming a criterion id: both forms are live in the tree.
+  const named = (criterion) => ({
+    callsites: { rules: [{ id: 'x', pendingRegistryEntry: { criterion } }] },
     forbidden: { rules: [{ id: 'y' }] },
-  };
-  const problems = p2Complete([p2Entry()], rules);
-  assert.ok(problems.some((p) => p.includes('callsites:x') && p.includes('escape')));
-  assert.ok(!problems.some((p) => p.includes('forbidden:y')));
+  });
+  for (const criterion of ['AC-P2-20-1', 'P2-20-1']) {
+    const problems = p2Complete([p2Entry()], named(criterion));
+    assert.ok(
+      problems.some((p) => p.includes('callsites:x') && p.includes('escape')),
+      criterion,
+    );
+    assert.ok(!problems.some((p) => p.includes('forbidden:y')));
+  }
   // A rule file that lists nothing is the escape scan reading nothing, not a clean tree.
   assert.ok(
     p2Complete([p2Entry()], { callsites: { rules: [] }, forbidden: { rules: [{ id: 'y' }] } }).some(
       (p) => p.includes('the escape scan read nothing'),
     ),
+  );
+});
+
+// The ordering defect wave 0 exists to close, beside the id validator. p3-36 owns
+// `acceptance/criteria.json` and runs last, so every phase-3 lane that lands a static rule before
+// its criterion exists would otherwise redden `npm run acceptance` on a gate working correctly
+// against a register it may not edit.
+test('a rule may wait for a criterion that is not written yet, and not one that is', () => {
+  const waiting = {
+    callsites: { rules: [{ id: 'name-ban', pendingRegistryEntry: { criterion: 'P3-32-13' } }] },
+    forbidden: { rules: [{ id: 'y' }] },
+  };
+  assert.deepEqual(
+    p2Complete([p2Entry()], waiting).filter((p) => p.includes('escape')),
+    [],
+    'no phase-3 entry exists yet, so nothing has discharged it',
+  );
+
+  const registered = [
+    p2Entry(),
+    p3Entry({
+      id: 'P3-32-13',
+      spec: '§32.13',
+      checks: [p3Check({ id: 'AC-P3-32-13', test: 'acceptance_p3::ac_p3_32_13' })],
+    }),
+  ];
+  assert.ok(
+    p2Complete(registered, waiting).some(
+      (p) => p.includes('callsites:name-ban') && p.includes('escape'),
+    ),
+    'once the criterion is registered the rule has two answers to one question',
   );
 });
 
@@ -753,6 +835,319 @@ test('a phase-2 register with no scanning check and no mirror has stopped readin
   assert.ok(problems.some((p) => p.includes('no mirror at all')));
   // And a criterion with no check at all, which is an id and an intention.
   assert.ok(p2Complete([p2Entry({ checks: [] })]).some((p) => p.includes('carries no check')));
+});
+
+// ---------------------------------------------------------------------------------------------
+// The third phase. Same rule as the second: the phase-1 and phase-2 forms above are untouched,
+// and a third id form is added beside them rather than replacing either.
+// ---------------------------------------------------------------------------------------------
+
+test('criterionOf reads a phase-3 criterion out of a phase-3 check id', () => {
+  assert.equal(criterionOf('AC-P3-28-1'), 'P3-28-1');
+  // Both suffixed ids, never one: a test asserting only `30-11a` passes while `28-18a` is
+  // rejected, which is exactly how this widening has failed twice before.
+  assert.equal(criterionOf('AC-P3-28-18a'), 'P3-28-18a');
+  assert.equal(criterionOf('AC-P3-30-11a'), 'P3-30-11a');
+  assert.equal(criterionOf('AC-P3-32-16-caps'), 'P3-32-16');
+  // §36 is the registry contract and owns no criterion of its own, and §27 is the scope section.
+  assert.equal(criterionOf('AC-P3-36-1'), null);
+  assert.equal(criterionOf('AC-P3-27-1'), null);
+  // The earlier phases are unchanged.
+  assert.equal(criterionOf('AC-14'), '14');
+  assert.equal(criterionOf('AC-P2-24-3'), 'P2-24-3');
+});
+
+test('PHASE3_SECTIONS is the contiguous range and the two suffixes make up 146', () => {
+  // R139 as amended. The constant is the range the contiguity loop walks, never the section
+  // total: `PHASE3_SECTIONS[28] = 19` would demand a `P3-28-19` that does not exist, and the
+  // register could never validate. §36.1's per-section totals are 19 · 29 · 19 · 18 · 23 · 12 ·
+  // 17 · 9 = 146, and `LETTERED_P3`'s two ids are the difference.
+  assert.deepEqual(PHASE3_SECTIONS, {
+    28: 18,
+    29: 29,
+    30: 18,
+    31: 18,
+    32: 23,
+    33: 12,
+    34: 17,
+    35: 9,
+  });
+  assert.equal(
+    Object.values(PHASE3_SECTIONS).reduce((a, b) => a + b, 0),
+    144,
+  );
+  assert.deepEqual(LETTERED_P3, ['P3-28-18a', 'P3-30-11a']);
+  assert.equal(Object.values(PHASE3_SECTIONS).reduce((a, b) => a + b, 0) + LETTERED_P3.length, 146);
+});
+
+const p3Check = (over = {}) => ({
+  id: 'AC-P3-28-1',
+  status: 'automated',
+  runner: 'cargo',
+  owner: 'p3-28',
+  test: 'acceptance_p3_debt::ac_p3_28_1',
+  assert: 'a'.repeat(12),
+  ...over,
+});
+
+const p3Entry = (over = {}) => ({
+  id: 'P3-28-1',
+  title: 'A phase-3 criterion',
+  group: 'subsystems',
+  spec: '§28.1',
+  checks: [p3Check()],
+  ...over,
+});
+
+test('phaseOf reads the phase out of the id, and phase 1 is no longer the fallback', () => {
+  assert.equal(phaseOf('P3-28-1'), 3);
+  assert.equal(phaseOf('AC-P3-30-11a'), 3);
+  assert.equal(phaseOf('P2-20-1'), 2);
+  assert.equal(phaseOf('AC-P2-24-3'), 2);
+  assert.equal(phaseOf('45b'), 1);
+  assert.equal(phaseOf('AC-14'), 1);
+});
+
+test('an id naming a phase the register does not hold says so, and says nothing else', () => {
+  // `P4-28-1` was reported as `criterion id outside 1..67` **and** `spec must cite §16.` — two
+  // problems that name the wrong defect and read as malformed phase-1 data. A validator that
+  // reports the wrong defect is how the last two widenings were mistaken for bad input.
+  const problems = validateRegistry({
+    version: 1,
+    criteria: [p3Entry({ id: 'P4-28-1', checks: [] })],
+  });
+  assert.ok(
+    problems.some((p) => p.includes('names phase 4')),
+    problems.join('\n'),
+  );
+  assert.ok(!problems.some((p) => p.includes('1..67')), 'it is not a malformed phase-1 criterion');
+  assert.ok(!problems.some((p) => p.includes('§16.')), 'it cites no section this register knows');
+});
+
+test('a phase-3 criterion cites its own section, never §16', () => {
+  const criteria = [p3Entry({ id: 'P3-30-11a', spec: '§16.1', checks: [] })];
+  assert.ok(validateRegistry({ version: 1, criteria }).some((p) => p.includes('§30.')));
+});
+
+test('a phase-3 letter is one of the two ruled ones and nothing else', () => {
+  const stray = [p3Entry({ id: 'P3-31-4b', checks: [] })];
+  assert.ok(
+    validateRegistry({ version: 1, criteria: stray }).some(
+      (p) => p.includes('P3-31-4b') && p.includes('letter'),
+    ),
+  );
+  // The id form accepts both ruled ids. A lettered id registered without its bare twin is a
+  // different problem, and `validatePhase3Complete` owns it.
+  for (const id of ['P3-28-18a', 'P3-30-11a']) {
+    const criteria = [p3Entry({ id, checks: [] })];
+    assert.ok(
+      !validateRegistry({ version: 1, criteria }).some((p) => p.includes('carry a letter')),
+      `${id} is a ruled lettered id`,
+    );
+  }
+});
+
+test('a deferred check may name a phase-3 plan, and a phase nobody has is refused', () => {
+  const owned = (owner) => [
+    p3Entry({ checks: [p3Check({ status: 'deferred', owner, test: 'a::b' })] }),
+  ];
+  // The earlier forms stay valid: a plan number, a second half, a phase-2 id.
+  for (const owner of ['13', '13c', 'p2-20', 'p3-31', 'p3-36a']) {
+    assert.ok(
+      !validateRegistry({ version: 1, criteria: owned(owner) }).some((p) => p.includes('owner')),
+      `${owner} is a plan id`,
+    );
+  }
+  assert.ok(
+    validateRegistry({ version: 1, criteria: owned('p4-31') }).some((p) => p.includes('owner')),
+  );
+});
+
+const p3Live = (over = {}) => [
+  p3Entry({
+    id: 'P3-32-3',
+    spec: '§32.4',
+    checks: [
+      {
+        id: 'AC-P3-32-3-header',
+        status: 'deferred',
+        deferral: 'live-observation',
+        runner: 'none',
+        owner: 'p3-32',
+        reason: 'r'.repeat(30),
+        verification: { recordedAt: null, evidence: null },
+        assert: 'a'.repeat(12),
+        ...over,
+      },
+    ],
+  }),
+];
+
+test('§36.6 names three more live observations, and a fourth still needs a ruling', () => {
+  assert.ok(
+    !validateRegistry({ version: 1, criteria: p3Live() }).some((p) =>
+      p.includes('live-observation'),
+    ),
+    'AC-P3-32-3-header is ruled',
+  );
+  const unruled = p3Live({ id: 'AC-P3-32-4' });
+  assert.ok(
+    validateRegistry({ version: 1, criteria: unruled }).some((p) =>
+      p.includes('a third one needs a ruling, not a field'),
+    ),
+  );
+  // The allowlist's design intent is unchanged: it is not relaxed to a pattern, and the rest of
+  // the live-observation shape still binds.
+  assert.ok(
+    validateRegistry({ version: 1, criteria: p3Live({ test: 'x::y' }) }).some(
+      (p) => p.includes('AC-P3-32-3-header') && p.includes('test'),
+    ),
+    'a test standing in for an observation is the assertion this status refuses',
+  );
+  assert.ok(
+    validateRegistry({
+      version: 1,
+      criteria: p3Live({ verification: { recordedAt: '2026-09-18', evidence: 'too short' } }),
+    }).some((p) => p.includes('evidence')),
+    'a date is not a record',
+  );
+});
+
+/** A whole phase-3 section `1..n`, so a completeness assertion has a section to read. */
+function p3Section(section, n) {
+  const criteria = [];
+  for (let i = 1; i <= n; i += 1) {
+    criteria.push(
+      p3Entry({
+        id: `P3-${section}-${String(i)}`,
+        spec: `§${section}.1`,
+        checks: [
+          p3Check({
+            id: `AC-P3-${section}-${String(i)}`,
+            test: `acceptance_p3::ac_p3_${section}_${String(i)}`,
+          }),
+        ],
+      }),
+    );
+  }
+  return criteria;
+}
+
+const p3Complete = (criteria) => validatePhase3Complete({ version: 1, criteria });
+
+test('a §28 holding seventeen of its eighteen names the one that is missing', () => {
+  const problems = p3Complete(p3Section(28, 17)).filter((p) => p.includes('P3-28-18'));
+  assert.equal(problems.length, 1, problems.join('\n'));
+  assert.ok(problems[0].includes('holds 17 of its 18'), problems[0]);
+});
+
+test('a duplicate inside a phase-3 section is a problem, not a silent overwrite', () => {
+  const criteria = p3Section(29, 29);
+  criteria[4] = { ...criteria[4], id: 'P3-29-4' };
+  assert.ok(p3Complete(criteria).some((p) => p.includes('P3-29-4 appears 2 times')));
+});
+
+test('a lettered id never reaches the contiguity list, so its bare twin is not a duplicate', () => {
+  // Measured, not assumed: this is why a lettered id folded into `ns` makes its bare twin report
+  // a duplicate that exists in no register — on the one section that now holds two of them.
+  assert.equal(Number.parseInt('18a', 10), 18);
+  const criteria = [
+    ...p3Section(28, 18),
+    p3Entry({
+      id: 'P3-28-18a',
+      spec: '§28.2',
+      checks: [p3Check({ id: 'AC-P3-28-18a', test: 'acceptance_p3::ac_p3_28_18a' })],
+    }),
+  ];
+  assert.deepEqual(
+    p3Complete(criteria).filter((p) => p.includes('appears')),
+    [],
+  );
+});
+
+test('a phase-3 criterion outside its section range says which range', () => {
+  const criteria = [
+    p3Entry({
+      id: 'P3-33-13',
+      spec: '§33.1',
+      checks: [p3Check({ id: 'AC-P3-33-13', test: 'acceptance_p3::ac_p3_33_13' })],
+    }),
+  ];
+  assert.ok(p3Complete(criteria).some((p) => p.includes("P3-33-13 is outside §33's 1..12")));
+});
+
+test('a lettered id is an additional id beside the bare one, never instead of it', () => {
+  const lettered = [
+    p3Entry({
+      id: 'P3-30-11a',
+      spec: '§30.6',
+      checks: [p3Check({ id: 'AC-P3-30-11a', test: 'acceptance_p3::ac_p3_30_11a' })],
+    }),
+  ];
+  assert.ok(p3Complete(lettered).some((p) => p.includes('P3-30-11a') && p.includes('P3-30-11')));
+  // And the other direction: §30 registered without its suffixed id is half a ruling.
+  assert.ok(p3Complete(p3Section(30, 18)).some((p) => p.includes('P3-30-11a')));
+});
+
+test('a phase-3 check carries no performance figure and is never external', () => {
+  for (const over of [
+    { runner: 'perf' },
+    { measurement: { kind: 'size', machines: ['A'], thermal: 'n/a' } },
+    { budget: [{ metric: 'bytes', op: '<', value: 1 }] },
+  ]) {
+    assert.ok(
+      p3Complete([p3Entry({ checks: [p3Check(over)] })]).some((p) =>
+        p.includes('phase 3 adds none'),
+      ),
+      `phase 3 records no ${JSON.stringify(over)}`,
+    );
+  }
+  const external = [p3Entry({ checks: [p3Check({ status: 'external', runner: 'none' })] })];
+  assert.ok(p3Complete(external).some((p) => p.includes('not reachable from phase 3')));
+});
+
+test('a phase-3 deferral to a plan is a deferral to nobody, and a bare register has stopped reading', () => {
+  const deferred = [
+    p3Entry({ checks: [p3Check({ status: 'deferred', deferral: 'plan', test: 'a::b' })] }),
+  ];
+  assert.ok(
+    p3Complete(deferred).some((p) => p.includes('deferral to one is a deferral to nobody')),
+  );
+  const bare = p3Complete([p3Entry()]);
+  assert.ok(bare.some((p) => p.includes('no scanning check at all')));
+  assert.ok(bare.some((p) => p.includes('no mirror at all')));
+  assert.ok(p3Complete([p3Entry({ checks: [] })]).some((p) => p.includes('carries no check')));
+  // An empty phase-3 register is silent, which is what lets this land in wave 0.
+  assert.deepEqual(validatePhase3Complete(loadRegistry(registryPath)), []);
+});
+
+// [p3] The record of what §36.3 moves, taken before wave 1 can touch it. `phase1-frozen.json` is
+// **not** extended: it is p2-26's record of a different set at a different tree, and editing it
+// destroys the phase-2 audit's own baseline.
+//
+// `AC-50-zero-animation` is the row that proves the freeze is needed: its assert names ten class
+// names today, it named nine before that against a real ten, and R112 requires the literal be
+// deleted rather than incremented. Without a frozen copy p3-36's audit cannot tell *deleted per
+// the ruling* from *never touched*.
+test('the freeze holds the fourteen entries the phase-3 sections govern', () => {
+  const frozen = JSON.parse(
+    readFileSync(fileURLToPath(new URL('../../acceptance/phase3-frozen.json', import.meta.url))),
+  );
+  assert.equal(frozen.version, 1);
+  assert.deepEqual(
+    frozen.criteria.map((c) => c.id),
+    ['21', '22', '45a', '45b', '45c', '46', '50', '58', '62', '64', '65', '66', '67', 'P2-25-5'],
+  );
+  assert.equal(frozen.criteria.length, 14);
+
+  // Deep-equal to the live entry, which is true now and is what p3-36's audit will assert has
+  // stopped being true for exactly the rows that were meant to move.
+  const live = new Map(loadRegistry(registryPath).criteria.map((c) => [String(c.id), c]));
+  for (const entry of frozen.criteria) {
+    assert.ok(live.has(entry.id), `${entry.id} is not in criteria.json`);
+    assert.deepEqual(entry, live.get(entry.id), `${entry.id} has already moved`);
+    assert.ok(entry.checks.length > 0, `${entry.id} was frozen without its checks`);
+  }
 });
 
 test('the shipped register and the shipped rule files complete without a problem', () => {

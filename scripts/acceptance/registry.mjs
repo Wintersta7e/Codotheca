@@ -31,9 +31,22 @@ const CHECK_ID_P1 = /^AC-(\d{1,2}[a-c]?)(-[a-z0-9]+)*$/u;
 // ambiguous with a criterion `P2-25-1` carrying a slug `0-ddl`.
 const CHECK_ID_P2 = /^AC-(P2-2[0-5]-\d{1,2})(-[a-z][a-z0-9]*)*$/u;
 const P2_ID = /^P2-(2[0-5])-(\d{1,2})$/u;
+// §36.1's `AC-P3-<section>-<n>`. `2[89]|3[0-5]` is an assertion rather than a convenience: §36
+// owns no criterion of its own, so a `P3-36-*` id is refused by the id form itself instead of by
+// a reviewer — the same reason §26 is excluded from `2[0-5]`. The numeric segment carries the
+// optional letter, because §30 holds `P3-30-11` **and** `P3-30-11a` and both are criteria; the
+// slug segment keeps phase 2's begins-with-a-letter rule, or `AC-P3-32-16-caps` is ambiguous with
+// a criterion `P3-32-1` carrying a slug `6-caps`.
+const CHECK_ID_P3 = /^AC-(P3-(?:2[89]|3[0-5])-\d{1,2}[a-c]?)(-[a-z][a-z0-9]*)*$/u;
+const P3_ID = /^P3-(2[89]|3[0-5])-(\d{1,2}[a-c]?)$/u;
 // R44: a plan number, optionally with the letter suffix of a second half — `13`, `13b`, `13c`
-// — and now a phase-2 plan id, `p2-20`.
-const OWNER = /^(?:p2-)?\d{2}[a-c]?$/u;
+// — and a phase-2 or phase-3 plan id, `p2-20`, `p3-36a`.
+//
+// §36.1 says the owning plan is *"deliberately absent"* and this requires one on every `deferred`
+// check. Both are right: an `owner` field is absent from §36.1's **register table**, and a
+// `deferred` check still names the plan that will discharge it. The table is the ownership map
+// for criteria; the owner field is the discharge record for a check that has not landed.
+const OWNER = /^(?:p[23]-)?\d{2}[a-c]?$/u;
 const GATE = /^[A-Z][A-Z0-9-]+$/u;
 const WEAKEST = ['automated', 'deferred', 'manual', 'unmeasurable', 'external'];
 const LETTERED = { 45: ['45a', '45b', '45c'], 48: ['48a', '48b'] };
@@ -45,6 +58,31 @@ const LETTERED = { 45: ['45a', '45b', '45c'], 48: ['48a', '48b'] };
 export const PHASE2_SECTIONS = { 20: 13, 21: 17, 22: 13, 23: 12, 24: 23, 25: 26 };
 
 /**
+ * §36.1's table, and it is the **contiguous range** a section holds, never the section's total.
+ * The completeness loop walks `1..PHASE3_SECTIONS[section]` and reports every `n` with no hit, so
+ * `28: 19` would demand a `P3-28-19` that R139 says does not exist and the register could never
+ * validate. §36.1's per-section totals are 19 · 29 · 19 · 18 · 23 · 12 · 17 · 9 = 146; this is
+ * 18 · 29 · 18 · 18 · 23 · 12 · 17 · 9 = 144, and `LETTERED_P3`'s two ids are the difference.
+ *
+ * Duplicated from §36.1 rather than derived from it: `.dev/spec/` is gitignored and does not
+ * exist in a fresh clone or on CI, so a validator that read the section would scan nothing and
+ * pass on nothing. Deriving the counts from the register instead is worse — the table would then
+ * agree with the register by construction. The copy is made safe by the two rules around it: a
+ * registered section holds all of its criteria contiguous, and the sum is asserted against 146.
+ */
+export const PHASE3_SECTIONS = { 28: 18, 29: 29, 30: 18, 31: 18, 32: 23, 33: 12, 34: 17, 35: 9 };
+
+/**
+ * Every phase-3 id carrying a letter. Phase 1's lettered rule does not transfer: criterion 45
+ * appears *only* in lettered form and has no bare id, while §28 holds `P3-28-18` **and**
+ * `P3-28-18a` and §30 holds `P3-30-11` **and** `P3-30-11a`. The letter is an additional id beside
+ * the bare one and neither stands in for the other, so the rule is written over this list rather
+ * than over one id — it has two subjects today and the next ruling adds a third without touching
+ * the validator.
+ */
+export const LETTERED_P3 = ['P3-28-18a', 'P3-30-11a'];
+
+/**
  * A deferral says *what kind of thing has not happened yet*. `plan` is phase 1's meaning and
  * the default, so all 121 phase-1 deferrals are unchanged. `live-observation` is documentation
  * knowledge until it is checked against a live response, and it **refuses a test id** — a test
@@ -53,11 +91,21 @@ export const PHASE2_SECTIONS = { 20: 13, 21: 17, 22: 13, 23: 12, 24: 23, 25: 26 
 export const DEFERRALS = ['plan', 'live-observation'];
 
 /**
- * The two ids ruled live-observation, and nothing else. A third cannot be added without a
- * ruling, which is the point: the status exists to be honest about two known gaps, not to
- * become a place to put anything inconvenient.
+ * The ids ruled live-observation, and nothing else. Another cannot be added without a ruling,
+ * which is the point: the status exists to be honest about known gaps, not to become a place to
+ * put anything inconvenient. R56 ruled the first two; §36.6 rules the three phase-3 ones, one per
+ * subject it names — whether the advisories endpoint returns a rate-limit header at all, what
+ * that header says the resource is, and §32's 16 MB / 32-lockfile caps. Each is a **second**
+ * check on a criterion whose first check is automated, so nothing is registered as observed and
+ * nothing loses its fixture test; only the values are unobserved.
  */
-export const LIVE_OBSERVATION_CHECKS = ['AC-P2-20-13', 'AC-P2-21-3-floor'];
+export const LIVE_OBSERVATION_CHECKS = [
+  'AC-P2-20-13',
+  'AC-P2-21-3-floor',
+  'AC-P3-32-3-header',
+  'AC-P3-32-3-resource',
+  'AC-P3-32-16-caps',
+];
 
 // A number's source is one of three shapes, so "is this a source or a restatement of the
 // figure?" is decidable. A heuristic over the assert text would fire on every id and every
@@ -70,17 +118,28 @@ export function criterionOf(checkId) {
   const p1 = CHECK_ID_P1.exec(id);
   if (p1 !== null) return p1[1];
   const p2 = CHECK_ID_P2.exec(id);
-  return p2 === null ? null : p2[1];
+  if (p2 !== null) return p2[1];
+  const p3 = CHECK_ID_P3.exec(id);
+  return p3 === null ? null : p3[1];
 }
 
-/** Accepts a criterion id or a check id, because the phase is in the id either way. */
+/**
+ * Accepts a criterion id or a check id, because the phase is in the id either way. §36.5 asks for
+ * *"a phase field"*; there is none and there must not be one — the id is the ownership map and
+ * the phase is read back out of it rather than stored beside it.
+ */
+const PHASE_PREFIX = /^(?:AC-)?P(\d+)-/u;
 export function phaseOf(id) {
-  return /^(?:AC-)?P2-/u.test(String(id)) ? 2 : 1;
+  const m = PHASE_PREFIX.exec(String(id));
+  return m === null ? 1 : Number.parseInt(m[1], 10);
 }
 
 function sectionOf(criterionId) {
-  const m = P2_ID.exec(String(criterionId));
-  return m === null ? null : m[1];
+  const id = String(criterionId);
+  const p2 = P2_ID.exec(id);
+  if (p2 !== null) return p2[1];
+  const p3 = P3_ID.exec(id);
+  return p3 === null ? null : p3[1];
 }
 
 export function rollUp(entry) {
@@ -380,6 +439,17 @@ function phase2CompletenessProblems(registry, rules) {
     problems.push('the phase-2 register holds no mirror at all');
   }
 
+  // The escape is discharged by the criterion it names being **in the register**, not by the rule
+  // carrying the field — which is what the message below already says. An unconditional refusal
+  // is correct at the end of a phase and wrong from the start of the next: p3-36 owns
+  // `criteria.json` and runs last, so every phase-3 lane that lands a static rule before its
+  // criterion exists must carry the escape for five waves, and each of them would otherwise
+  // redden the gate over a register it is not allowed to edit.
+  const registered = new Set();
+  for (const entry of registry.criteria ?? []) {
+    registered.add(String(entry.id));
+    for (const check of entry.checks ?? []) registered.add(String(check.id));
+  }
   for (const [name, file] of Object.entries(rules ?? {})) {
     const list = file?.rules ?? [];
     if (list.length === 0) {
@@ -387,7 +457,11 @@ function phase2CompletenessProblems(registry, rules) {
       continue;
     }
     for (const rule of list) {
-      if (rule.pendingRegistryEntry !== undefined) {
+      if (rule.pendingRegistryEntry === undefined) continue;
+      // A rule names either a criterion id (`63`, `P2-24-5`) or a check id (`AC-P2-24-3`); both
+      // forms are live in the tree, so both resolve.
+      const named = String(rule.pendingRegistryEntry?.criterion);
+      if (registered.has(named) || registered.has(criterionOf(named) ?? named)) {
         problems.push(
           `${name}:${String(rule.id)}: still carries the escape a registered check discharges`,
         );
@@ -434,6 +508,112 @@ export function validatePhase2Complete(registry, rules = null) {
 }
 
 /**
+ * Phase 3's own completeness rules. A third function rather than a parameterised one, for the
+ * reason the second exists: each phase's rules are its own ruling set, and folding them makes a
+ * phase-2 rule silently govern phase 3.
+ *
+ * It takes no rule files. The surviving-escape scan is phase-agnostic and belongs to
+ * `phase2CompletenessProblems`, which already runs on every real gate; reading the rule files
+ * from here too would report every survivor twice.
+ */
+export function validatePhase3Complete(registry) {
+  const problems = [];
+  const phase3 = (registry.criteria ?? []).filter((c) => phaseOf(c.id) === 3);
+  const ids = new Set(phase3.map((c) => String(c.id)));
+  let scanning = 0;
+  let mirrors = 0;
+
+  for (const entry of phase3) {
+    const id = String(entry.id);
+    if ((entry.checks ?? []).length === 0) problems.push(`${id}: carries no check`);
+    for (const check of entry.checks ?? []) {
+      const where = `${id}/${String(check.id)}`;
+      if (check.scanning === true) scanning += 1;
+      if (check.mirror !== undefined) mirrors += 1;
+      // p3-36 registers the criteria and runs last, so every phase-3 plan has merged by the time
+      // an entry exists at all.
+      if (check.status === 'deferred' && (check.deferral ?? 'plan') === 'plan') {
+        problems.push(
+          `${where}: every phase-3 plan has merged, so a deferral to one is a deferral to nobody`,
+        );
+      }
+      // The one performance question phase 3 raises is D9's gate, and it is asked of criteria 22
+      // and 30 — phase-1 ids that already carry the instrument's definition. A phase-3 criterion
+      // that needs a budget has been written in the wrong place.
+      if (
+        check.runner === 'perf' ||
+        check.measurement !== undefined ||
+        check.budget !== undefined
+      ) {
+        problems.push(
+          `${where}: no performance sample exists and phase 3 adds none — a phase-3 check` +
+            ' carries no perf runner, no measurement and no budget',
+        );
+      }
+      // Restated rather than left to run through an id comparison a reader would have to find.
+      if (check.status === 'external') {
+        problems.push(`${where}: external is criterion 29 and is not reachable from phase 3`);
+      }
+    }
+  }
+
+  // Zero of either is the field never having been written, not a phase with no gate that scans
+  // and no value stated on both sides. Same scans-nothing rule, turned on the register itself.
+  if (phase3.length > 0 && scanning === 0) {
+    problems.push('the phase-3 register holds no scanning check at all');
+  }
+  if (phase3.length > 0 && mirrors === 0) {
+    problems.push('the phase-3 register holds no mirror at all');
+  }
+
+  const bySection = new Map();
+  for (const entry of phase3) {
+    const m = P3_ID.exec(String(entry.id));
+    if (m === null) continue; // the id form already reported it
+    // A lettered id must not reach `ns`: `Number.parseInt('18a', 10)` is **18**, so folding one
+    // in makes its bare twin report a duplicate that exists in no register. The suffixed ids are
+    // validated against `LETTERED_P3` below instead.
+    if (/[a-c]$/u.test(m[2])) continue;
+    bySection.set(m[1], [...(bySection.get(m[1]) ?? []), Number.parseInt(m[2], 10)]);
+  }
+  for (const section of [...bySection.keys()].sort()) {
+    const ns = bySection.get(section);
+    const expected = PHASE3_SECTIONS[section];
+    // Without this the loop below runs `n <= undefined` — never once — and a section missing from
+    // the table would validate as **complete and silent**.
+    if (expected === undefined) {
+      problems.push(`P3-${section}: §${section} is not in PHASE3_SECTIONS and owns no criterion`);
+      continue;
+    }
+    const held = `§${section} holds ${String(ns.length)} of its ${String(expected)} criteria`;
+    for (let n = 1; n <= expected; n += 1) {
+      const hits = ns.filter((x) => x === n).length;
+      if (hits === 0) problems.push(`P3-${section}-${String(n)} is missing: ${held}`);
+      else if (hits > 1) problems.push(`P3-${section}-${String(n)} appears ${String(hits)} times`);
+    }
+    for (const n of ns) {
+      if (n < 1 || n > expected) {
+        problems.push(`P3-${section}-${String(n)} is outside §${section}'s 1..${String(expected)}`);
+      }
+    }
+  }
+
+  // Both directions, and written over the list rather than over one id. §28 holds `-18` **and**
+  // `-18a`, §30 holds `-11` **and** `-11a`, and neither stands in for the other — unlike phase
+  // 1's 45, which has no bare form at all.
+  for (const lettered of LETTERED_P3) {
+    const bare = lettered.slice(0, -1);
+    if (ids.has(lettered) && !ids.has(bare)) {
+      problems.push(`${lettered} is registered and ${bare} is not — the letter is an extra id`);
+    }
+    if (ids.has(bare) && !ids.has(lettered)) {
+      problems.push(`${bare} is registered and ${lettered} is not — §36.1 holds both`);
+    }
+  }
+  return problems;
+}
+
+/**
  * `root` is optional so a unit test can validate a registry object in isolation. Pass it from
  * any real run: without it a `mirror` is checked for shape and not for the file it names.
  */
@@ -451,10 +631,13 @@ export function validateRegistry(registry, root = null) {
     const id = String(entry.id);
     if (seenIds.has(id)) problems.push(`${id}: duplicate criterion id`);
     seenIds.add(id);
-    const section = phaseOf(id) === 2 ? sectionOf(id) : '16';
-    if (phaseOf(id) === 2) {
-      if (section === null) problems.push(`${id}: a phase-2 criterion id is P2-<20..25>-<n>`);
-    } else {
+    // The phase-1 arm is a branch of its own and no longer the `else`. A `P3-` id fell through to
+    // it, was read by `Number.parseInt` as NaN, and came back as `criterion id outside 1..67`
+    // **and** `spec must cite §16.` — two problems naming the wrong defect, which is how the last
+    // two widenings were mistaken for malformed data.
+    const phase = phaseOf(id);
+    const section = phase === 1 ? '16' : sectionOf(id);
+    if (phase === 1) {
       const n = Number.parseInt(id, 10);
       if (!Number.isInteger(n) || n < 1 || n > 67) {
         problems.push(`${id}: criterion id outside 1..67`);
@@ -466,13 +649,24 @@ export function validateRegistry(registry, root = null) {
       if (letter === '' && LETTERED[n] !== undefined) {
         problems.push(`${id}: criterion ${String(n)} appears only in lettered form`);
       }
+    } else if (phase === 2) {
+      if (section === null) problems.push(`${id}: a phase-2 criterion id is P2-<20..25>-<n>`);
+    } else if (phase === 3) {
+      if (section === null) problems.push(`${id}: a phase-3 criterion id is P3-<28..35>-<n>`);
+      else if (/[a-c]$/u.test(id) && !LETTERED_P3.includes(id)) {
+        problems.push(`${id}: only ${LETTERED_P3.join(' and ')} carry a letter`);
+      }
+    } else {
+      problems.push(`${id}: names phase ${String(phase)}, and the register holds 1, 2 and 3`);
     }
     if (!GROUPS.includes(entry.group)) {
       problems.push(`${id}: group is not one of ${GROUPS.join(', ')}`);
     }
     if (typeof entry.title !== 'string' || entry.title.length === 0) problems.push(`${id}: title`);
-    const cites = `§${section ?? '16'}.`;
-    if (typeof entry.spec !== 'string' || !entry.spec.startsWith(cites)) {
+    // An id whose phase the register does not hold has no section to cite, and `§16.` would be
+    // the same wrong defect twice.
+    const cites = section === null ? null : `§${section}.`;
+    if (cites !== null && (typeof entry.spec !== 'string' || !entry.spec.startsWith(cites))) {
       problems.push(`${id}: spec must cite ${cites}<n>`);
     }
     if (!Array.isArray(entry.checks) || entry.checks.length === 0) {
@@ -497,5 +691,6 @@ export function validateRegistry(registry, root = null) {
       if (!seenIds.has(id)) problems.push(`criterion ${n} is missing its part ${id}`);
   }
   problems.push(...validatePhase2Complete(registry));
+  problems.push(...validatePhase3Complete(registry));
   return problems;
 }

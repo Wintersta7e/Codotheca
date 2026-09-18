@@ -204,6 +204,18 @@ One row per criterion; the disposition is the weakest of its checks.
 | P2-24-22 | automated | One credential helper, no prompt, and a refusal rather than a hang | `AC-P2-24-22` automated, runs now — `git_write_audit::every_variant_renders_exactly_one_credential_option`<br>`AC-P2-24-22-child` automated, runs now — `git_write_audit::the_child_receives_exactly_one_credential_helper_and_no_askpass`<br>`AC-P2-24-22-returns` automated, runs now — `git_write_audit::an_unusable_remote_returns_rather_than_blocking_on_a_prompt` |
 | P2-24-23 | automated | A private remote on the public tier offers the upgrade and spawns nothing | `AC-P2-24-23` automated, runs now — `install_destination::install_destination_private_remote_on_public_tier_refuses_without_git`<br>`AC-P2-24-23-unknown` automated, runs now — `install_destination::install_destination_unknown_visibility_is_not_public_or_private`<br>`AC-P2-24-23-render` automated, runs now — `a private remote offers the upgrade and never says gone or missing` |
 
+## Phase 3 — §28–§35
+
+| Disposition | Criteria | Checks |
+|---|---|---|
+| automated | 0 | 0 |
+| deferred | 0 | 0 |
+| manual | 0 | 0 |
+| unmeasurable | 0 | 0 |
+| external | 0 | 0 |
+
+No phase-3 criteria are registered yet.
+
 ## Why a check is not automated, or is automated over less than it looks
 
 | Check | Status | Reason |

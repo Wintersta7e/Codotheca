@@ -101,6 +101,18 @@ test('a baseline entry must carry an owner and a reason and name a real criterio
   assert.ok(problems.some((p) => p.includes('99')));
 });
 
+// The second copy of `OWNER`. One value stated twice, in two files, in one language — R24 — and
+// `join.mjs`'s is the one a reader misses, so it is read from this side too.
+test('a baseline row may be owned by a phase-3 plan id', () => {
+  const row = (owner) => ({
+    knownRed: [{ test: 'r::ac_14_a', criterion: '14', owner, reason: 'x'.repeat(25) }],
+  });
+  for (const owner of ['17', '13c', 'p2-20', 'p3-33', 'p3-36a']) {
+    assert.deepEqual(validateBaseline(row(owner), registry), [], owner);
+  }
+  assert.ok(validateBaseline(row('p4-33'), registry).some((p) => p.includes('owner')));
+});
+
 test('a tagged test no check claims fails the gate', () => {
   const orphan = {
     id: 'AC-99 nobody claims this',

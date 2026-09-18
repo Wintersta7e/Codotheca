@@ -20,7 +20,7 @@ and optional elsewhere — a `deferred` check whose deferral needs an argument s
 the disposition table prints every reason it finds. A deferral with no argument is just an owner
 and a date that has not arrived; a deferral that had a reason and lost it reads the same way.
 
-## Two phases, one register
+## Three phases, one register
 
 A phase-1 criterion is a §16 number — `14`, `45b`. A phase-2 criterion is `P2-<section>-<n>`
 over sections 20 to 25, and its checks are `AC-P2-<section>-<n>[-slug]` where a slug segment
@@ -28,10 +28,26 @@ begins with a letter (`AC-P2-25-10-ddl`). **The id is the ownership map**: the p
 from it and the owning section is read out of it, so neither can drift from a field beside it.
 A `P2-26-*` id is refused by the id form — §26 is this contract and owns no criterion.
 
+**There is no phase field.** `phaseOf` reads the phase out of the id's `P<n>-` prefix, and an id
+naming a phase the register does not hold says exactly that rather than being graded as a
+malformed phase-1 criterion.
+
 A phase-2 criterion cites its own section (`P2-25-10` cites `§25.`), carries no `perf` runner,
 no `measurement` and no `budget`, and is never `external`. Once a section holds **one** entry it
 must hold **all** of them, contiguous, with no gaps: a section holding none is not yet registered
 and is silent.
+
+A phase-3 criterion is `P3-<section>-<n>` over sections 28 to 35, and its checks are
+`AC-P3-<section>-<n>[-slug]` under the same slug rule. A `P3-36-*` id is refused by the id form —
+§36 is this contract and owns no criterion. The same rules bind as for phase 2: it cites its own
+section, states no performance figure, is never `external`, and its section is complete or silent.
+
+**Two phase-3 ids carry a letter suffix: `P3-28-18a` and `P3-30-11a`.** Unlike phase 1's `45a`,
+`45b`, `45c`, which have no bare form, each of these is an **additional** id beside a bare twin
+that also exists — `P3-28-18` and `P3-30-11` are criteria of their own, and neither stands in for
+the other. Both are present or neither is. They are held apart from the contiguity range for a
+measured reason: `Number.parseInt('18a', 10)` is `18`, so a lettered id folded into that list
+makes its bare twin report a duplicate that exists in no register.
 
 Three optional markings, declared by the author and never inferred:
 
@@ -61,16 +77,25 @@ means exactly what it did.
 `live-observation` **refuses a test id**, because a test standing in for an observation is a
 plausible assertion passing for a measured one — the thing the register exists to refuse.
 `recordedAt` stays `null` until the observation happens; evidence without a date, or a date
-without a record, is refused both ways. It is the two ids named in `LIVE_OBSERVATION_CHECKS` and
-nothing else: a third needs a ruling, not a field.
+without a record, is refused both ways. It is the ids named in `LIVE_OBSERVATION_CHECKS` and
+nothing else: another needs a ruling, not a field.
 
 **A `live-observation` deferral is discharged by setting `recordedAt` and `evidence` together,
 and by nothing else.** Not by writing a test — a test here would be the assertion standing in for
-the observation. Not by promoting the check to `automated`. The two open today are
-`AC-P2-20-13`, which needs `X-OAuth-Scopes` read off a real token, and `AC-P2-21-3-floor`, which
-needs a real secondary-limit `Retry-After` from a forge. Record what the response said, with
+the observation. Not by promoting the check to `automated`. Record what the response said, with
 enough of it to be a record rather than a claim, and the check becomes `automated` in the same
 change as the test that reads it.
+
+| Check | What would discharge it |
+|---|---|
+| `AC-P2-20-13` | `X-OAuth-Scopes` read off a real token |
+| `AC-P2-21-3-floor` | A real secondary-limit `Retry-After` from a forge |
+| `AC-P3-32-3-header` | Whether a real advisories response carries a rate-limit header **at all** — with none, nothing is mirrored and the sweep runs with no brake |
+| `AC-P3-32-3-resource` | What that header says the resource is, against a process-wide default that is a guess |
+| `AC-P3-32-16-caps` | The 16 MB and 32-lockfile caps, which have exactly one datum behind them |
+
+Each phase-3 one is a **second** check on a criterion whose first check is automated, so nothing
+is registered as observed and nothing loses its fixture test — only the values are unobserved.
 
 **A `plan` deferral is a promise to a plan that has not merged.** Once every plan of a phase has
 merged, a deferral to one is a deferral to nobody, and `validatePhase2Complete` says so — that
