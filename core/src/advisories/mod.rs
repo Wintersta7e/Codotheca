@@ -10,9 +10,35 @@
 //! rather than one item keyed `deps`. The health arithmetic an `unknown` verdict is excluded from
 //! is §30's; what this module owns is the input state.
 
+pub mod lockfiles;
 pub mod store;
 
 use crate::protocol::{DependencyReadState, Ecosystem};
+
+/// How many `(name, version)` pairs one request's `affects` list may carry.
+///
+/// **Measured, not documented.** `stack.md` recorded *"up to 1000 packages per request"* from the
+/// endpoint's own parameter documentation; against the live endpoint on **2026-09-19** a request
+/// is refused with **HTTP 414** long before that, because the binding limit is the **URL length**
+/// and not the pair count. See [`ADVISORY_AFFECTS_BYTE_CAP`], which is the bound that actually
+/// fires; this one is the second bound, so a sweep over very short package names still issues a
+/// bounded number of pairs per request rather than an unbounded one.
+///
+/// 256 sits well under the **440 seven-character names that were accepted** in the same
+/// measurement.
+pub const ADVISORY_BATCH_CAP: usize = 256;
+
+/// How many **percent-encoded bytes** of `affects` one request may carry.
+///
+/// **The measurement, with the date and the tree it was taken on** (2026-09-19, this lane's base):
+/// 7,917 encoded bytes were accepted with HTTP 200; 8,277 were refused with **HTTP 414 `We
+/// received a Request-URL that is too long from your client`**. The ceiling is the classic 8 KiB
+/// request line, and it is a **byte** ceiling — so a cap expressed only as a pair count would be
+/// right for `pkg0001` and wrong the first time a library resolves a scoped package name.
+///
+/// 6,144 leaves roughly 22% headroom under the lower measured pass, and room for the rest of the
+/// query string beside `affects`.
+pub const ADVISORY_AFFECTS_BYTE_CAP: usize = 6 * 1024;
 
 /// An inherent const on a generated enum: legal because both are in this crate.
 ///
