@@ -37,7 +37,12 @@ export const REFUSAL_COPY: Readonly<Record<InstallRefusal, string>> = {
 export interface InstallControlProps {
   readonly preview: InstallPreview | null;
   readonly onInstall: () => void;
-  readonly onOpenUpgrade: () => void;
+  /**
+   * Absent where the mounting surface has nowhere to send the user — §11.3a's dead-switch rule
+   * applied by omission, which is how every other slot in this product handles the same case: a
+   * button that cannot act is worse than the refusal sentence on its own.
+   */
+  readonly onOpenUpgrade?: (() => void) | undefined;
 }
 
 export function InstallControl({
@@ -54,7 +59,7 @@ export function InstallControl({
     return (
       <div className="cdt-install-control" data-refused={refusal} role="group">
         <p className="cdt-install-control__reason">{REFUSAL_COPY[refusal]}</p>
-        {refusal === 'private_needs_upgrade' ? (
+        {refusal === 'private_needs_upgrade' && onOpenUpgrade !== undefined ? (
           <button type="button" onClick={onOpenUpgrade}>
             {UPGRADE_LABEL}
           </button>

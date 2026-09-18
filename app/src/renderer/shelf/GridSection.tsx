@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactElement, type ReactNode, useEffect, useRef } from 'react';
-import type { ProjectId, SessionRef } from '../../generated/protocol.js';
+import type { InstallPreview, ProjectId, SessionRef } from '../../generated/protocol.js';
 import { GRID_ROLE, GRID_ROW_ROLE } from '../a11y/names.js';
 import { ProjectCard } from '../card/ProjectCard.js';
 import type { GridFocus, GridState, MountWindow } from '../keyboard/gridNavigation.js';
@@ -69,6 +69,14 @@ export interface GridSectionProps {
   readonly onOpen: (id: ProjectId) => void;
   readonly onTogglePin: (id: ProjectId) => void;
   readonly onStopSession: (id: ProjectId) => void;
+  /**
+   * [p2] §24.3d's offer. `sessions`'s shape — a map the shelf owns and the section reads per row
+   * — because a preview belongs to a project and not to a position in the grid.
+   */
+  readonly installPreviews?: ReadonlyMap<ProjectId, InstallPreview> | undefined;
+  readonly onNeedInstallPreview?: ((id: ProjectId) => void) | undefined;
+  readonly onInstall?: ((id: ProjectId) => void) | undefined;
+  readonly onOpenUpgrade?: (() => void) | undefined;
 }
 
 export function GridSection(props: GridSectionProps): ReactElement {
@@ -91,6 +99,10 @@ export function GridSection(props: GridSectionProps): ReactElement {
     onOpen,
     onTogglePin,
     onStopSession,
+    installPreviews,
+    onNeedInstallPreview,
+    onInstall,
+    onOpenUpgrade,
   } = props;
 
   // §8.5.1's per-card gesture, resolved once per section rather than per card.
@@ -191,6 +203,16 @@ export function GridSection(props: GridSectionProps): ReactElement {
               onStopSession={() => {
                 onStopSession(id);
               }}
+              installPreview={installPreviews?.get(id)}
+              onNeedInstallPreview={onNeedInstallPreview}
+              onInstall={
+                onInstall === undefined
+                  ? undefined
+                  : () => {
+                      onInstall(id);
+                    }
+              }
+              onOpenUpgrade={onOpenUpgrade}
             />
           );
         })}

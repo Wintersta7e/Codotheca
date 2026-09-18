@@ -13,15 +13,20 @@ import type {
   CommandName,
   CommandResult,
   ErrorCode,
+  InstallRunId,
   LocationId,
   Outcome,
   ProjectId,
   RemoteLinkKind,
+  RootId,
 } from '../../generated/protocol';
 import type {
   BridgeError,
   BridgeReply,
+  InstallCancelReply,
+  InstallStartReply,
   OpenRemoteLinkReply,
+  PickRootReply,
   RelocateReply,
   RendererEvent,
   UninstallReply,
@@ -56,6 +61,20 @@ export interface ProjectPageDeps {
    * inside the call. `locations.uninstallPreflight` is unprivileged and rides `request`.
    */
   uninstall: (locationId: LocationId) => Promise<UninstallReply>;
+  /**
+   * [p2] §24.3a's clone, on the same shape and with no dialog: a project and a root the user has
+   * already added, both opaque ids. The destination is composed in the core, so nothing here
+   * originates a path. `install.preview` is unprivileged and rides `request`.
+   */
+  installStart: (projectId: ProjectId, rootId: RootId) => Promise<InstallStartReply>;
+  /** [p2] §24.3c: names a run and nothing else. */
+  installCancel: (runId: InstallRunId) => Promise<InstallCancelReply>;
+  /**
+   * §2.4: the shell owns the folder dialog. A flag goes out; no path comes back in. §24.3a makes
+   * this the only path-origination channel the product has, and `ADD A FOLDER…` in the root
+   * chooser is one of its two callers.
+   */
+  pickRoot: (confirmLarge: boolean) => Promise<PickRootReply>;
   /**
    * §25.2: an id and a link kind, never a URL. The shell asks the core for the string, checks it
    * again, confirms it with the user by name, and opens it.
@@ -134,6 +153,9 @@ export function createDefaultDeps(): ProjectPageDeps {
     },
     relocate: (locationId) => bridge.relocate(locationId),
     uninstall: (locationId) => bridge.uninstall(locationId),
+    installStart: (projectId, rootId) => bridge.installStart(projectId, rootId),
+    installCancel: (runId) => bridge.installCancel(runId),
+    pickRoot: (confirmLarge) => bridge.pickRoot(confirmLarge),
     openRemoteLink: (projectId, kind) => bridge.openRemoteLink(projectId, kind),
     subscribe,
     now: () => Math.floor(Date.now() / 1000),

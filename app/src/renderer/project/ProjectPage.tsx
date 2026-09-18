@@ -21,6 +21,7 @@ import type {
   ProjectDetail,
   ProjectId,
 } from '../../generated/protocol';
+import { useInstallOffer } from '../install/useInstallOffer';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
 import { ActivityTab } from './activity/ActivityTab';
 import { BackupStateBlock } from './BackupState';
@@ -57,6 +58,13 @@ export interface ProjectPageProps {
    * 40 ms hole, and one that unmounted at the start would never play it.
    */
   racking?: boolean;
+  /**
+   * [p2] §24.3d: on `private_needs_upgrade` the Install control states the consequence and offers
+   * §20.3's upgrade, which lives in the settings drawer. The drawer is an overlay owned above
+   * this page, so the gesture arrives from whoever mounts it — and without one the control
+   * offers no upgrade rather than a switch that does nothing (§11.3a).
+   */
+  onOpenSettings?: () => void;
 }
 
 export function primaryLocation(detail: ProjectDetail): LocationDetail | null {
@@ -103,6 +111,7 @@ export function ProjectPageView({
   onOpenProject,
   firstRunCompletedAt = null,
   racking = false,
+  onOpenSettings,
 }: ProjectPageProps): ReactElement {
   const { state, heroHash, redirectedTo, reload } = useProjectDetail(projectId);
   const [tab, setTab] = useState<ProjectTab>('overview');
@@ -203,6 +212,10 @@ export function ProjectPageView({
   // §5.6: the page's own sentence is phrased from the copy it is showing, and so is the removal
   // — PLAY launches that copy and this is the one it offers to take away.
   const removal = useUninstallOffer(shown?.location.id ?? null, reload);
+  // §24.3d offers Install where Play stands on a cloned project, so it is offered exactly where
+  // there is no working copy to play — §23's not-cloned era and nowhere else.
+  const hasWorkingCopy = detail !== null && detail.locations.some((l) => l.presence === 'present');
+  const install = useInstallOffer(detail === null || hasWorkingCopy ? null : detail.row.id);
 
   return (
     <div
@@ -282,6 +295,12 @@ export function ProjectPageView({
               uninstallVerdict={removal.verdict}
               onOpenUninstall={removal.open}
               onUninstall={removal.remove}
+              installPreview={install.preview}
+              installRoots={install.roots}
+              onChooseRoot={install.choose}
+              onAddFolder={install.addFolder}
+              onInstall={install.start}
+              onOpenUpgrade={onOpenSettings}
             />
           </div>
           <div className="cp-col-right">

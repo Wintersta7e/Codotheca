@@ -1,9 +1,10 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
-import type { ProjectRow, Rendition, SceneHash } from '../../generated/protocol';
+import type { InstallPreview, ProjectRow, Rendition, SceneHash } from '../../generated/protocol';
 import { ProjectPageDepsContext, type ProjectPageDeps } from '../project/deps';
 import { renditionFor } from '../art/useCardBitmap';
+import { INSTALL_LABEL } from '../install/InstallControl';
 import cardCss from '../styles/card.css?raw';
 import motionCss from '../styles/motion.css?raw';
 import { notClonedRow } from '../testing/projectRow';
@@ -63,6 +64,10 @@ function artServer(): {
     request,
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
     uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
+    installStart: () =>
+      Promise.resolve({ kind: 'started' as const, start: { runId: 1, refusedBecause: null } }),
+    installCancel: () => Promise.resolve({ kind: 'cancelled' as const }),
+    pickRoot: () => Promise.resolve({ kind: 'cancelled' as const }),
     openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: () => () => undefined,
     now: () => 1_800_000_000,
@@ -222,6 +227,10 @@ describe('§23.5: the tile asks for the pass it needs, at its own address', () =
       request,
       relocate: () => Promise.resolve({ kind: 'cancelled' }),
       uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
+      installStart: () =>
+        Promise.resolve({ kind: 'started' as const, start: { runId: 1, refusedBecause: null } }),
+      installCancel: () => Promise.resolve({ kind: 'cancelled' as const }),
+      pickRoot: () => Promise.resolve({ kind: 'cancelled' as const }),
       openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
       subscribe: () => () => undefined,
       now: () => 1_800_000_000,
@@ -346,5 +355,46 @@ describe('§7.8: the specular sweep goes below full and the greebling never does
       expect(background, `greebling dropped at ${tier}`).toContain('--cdt-greebling');
       cleanup();
     }
+  });
+});
+
+/**
+ * [p2] §24.3d's card slot. **The request is the demand** (§7.6), which on a virtualized grid is
+ * what keeps a library of hundreds of not-cloned projects from previewing all of them at once:
+ * a tile is mounted only while it is near the viewport, so it is the tile that asks.
+ */
+describe('§24.3d: the blueprint tile demands its own install preview', () => {
+  it('asks once, naming itself, when it has no working copy', () => {
+    const onNeed = vi.fn();
+    draw({ onNeedInstallPreview: onNeed });
+    expect(onNeed).toHaveBeenCalledTimes(1);
+    expect(onNeed).toHaveBeenCalledWith(row().id);
+  });
+
+  it('asks for nothing on a tile that already has a copy to play', () => {
+    const onNeed = vi.fn();
+    draw({
+      row: { ...row(), primaryLocation: { id: 4, pathDisplay: '~/work/aurora' } } as ProjectRow,
+      onNeedInstallPreview: onNeed,
+    });
+    expect(onNeed).not.toHaveBeenCalled();
+  });
+
+  it('offers nothing while no preview has arrived, rather than an empty control', () => {
+    const container = draw({ onNeedInstallPreview: vi.fn() });
+    expect(container.querySelector('.cdt-card-install')).toBeNull();
+  });
+
+  it('mounts the control once the core answers', () => {
+    const container = draw({
+      onNeedInstallPreview: vi.fn(),
+      installPreview: {
+        destination: { display: '~/work/aurora' },
+        refusedBecause: null,
+      } as unknown as InstallPreview,
+    });
+    const slot = container.querySelector('.cdt-card-install');
+    expect(slot, 'the blueprint tile offered no install').not.toBeNull();
+    expect(slot?.textContent).toContain(INSTALL_LABEL);
   });
 });

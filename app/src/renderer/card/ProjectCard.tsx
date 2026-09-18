@@ -1,5 +1,5 @@
-import { type ReactElement, useState } from 'react';
-import type { InstallPreview, ProjectRow, SessionRef } from '../../generated/protocol';
+import { type ReactElement, useEffect, useState } from 'react';
+import type { InstallPreview, ProjectId, ProjectRow, SessionRef } from '../../generated/protocol';
 import { CARD_ROLE } from '../a11y/names';
 import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
 import { renditionFor, useArtAddress, useCardBitmap } from '../art/useCardBitmap';
@@ -58,9 +58,16 @@ export interface ProjectCardProps {
    * Install here at all. **`undefined` is not the same as `null`**: `null` is *not computed yet*
    * and renders nothing, while absent means this surface never asks.
    */
-  readonly installPreview?: InstallPreview | null;
-  readonly onInstall?: () => void;
-  readonly onOpenUpgrade?: () => void;
+  readonly installPreview?: InstallPreview | null | undefined;
+  readonly onInstall?: (() => void) | undefined;
+  readonly onOpenUpgrade?: (() => void) | undefined;
+  /**
+   * [p2] **The request is the demand** (§7.6), one surface down from the art address above. A
+   * tile is mounted only while it is near the viewport, so asking here is what keeps the shelf
+   * from previewing every not-cloned project in the library on first paint. The shelf owns the
+   * answers; this only says which one is wanted.
+   */
+  readonly onNeedInstallPreview?: ((id: ProjectId) => void) | undefined;
 }
 
 export function ProjectCard(props: ProjectCardProps): ReactElement {
@@ -72,6 +79,11 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
   // predicate is §23.1's one and only — `primaryLocation !== null`.
   const hasWorkingCopy = row.primaryLocation !== null;
   const rendition = renditionFor(props.rendition, hasWorkingCopy);
+  const { onNeedInstallPreview } = props;
+  useEffect(() => {
+    if (hasWorkingCopy) return;
+    onNeedInstallPreview?.(row.id);
+  }, [hasWorkingCopy, onNeedInstallPreview, row.id]);
   // **The request is the demand** (§7.6), and the blueprint needs it. J5 writes the `card`
   // rendition and nothing else, so a located tile composes its address and the file is already
   // on disk — that path is untouched, and `null` here issues no command. A `card-blueprint` has
@@ -205,7 +217,7 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
           <InstallControl
             preview={props.installPreview}
             onInstall={props.onInstall ?? (() => {})}
-            onOpenUpgrade={props.onOpenUpgrade ?? (() => {})}
+            onOpenUpgrade={props.onOpenUpgrade}
           />
         </div>
       )}

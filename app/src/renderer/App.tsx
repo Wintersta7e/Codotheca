@@ -135,6 +135,9 @@ export function App(props: AppProps = {}): ReactElement {
         onOpenProject={openProject}
         firstRunCompletedAt={core.firstRunCompletedAt}
         racking={transition.phase.kind === 'closing'}
+        onOpenSettings={() => {
+          setSettingsOpen(true);
+        }}
       />
     ) : (
       <ShelfScreen

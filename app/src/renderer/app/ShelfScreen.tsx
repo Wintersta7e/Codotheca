@@ -34,6 +34,7 @@ import type { QueryContext } from '../shelf/evaluate.js';
 import type { LibraryPresence } from '../shelf/EmptyState.js';
 import { EraHeader } from '../shelf/EraHeader.js';
 import { GridSection } from '../shelf/GridSection.js';
+import { useShelfInstall } from '../shelf/useShelfInstall.js';
 import { ListView } from '../shelf/ListView.js';
 import type { Notice } from '../shelf/notice.js';
 import { buildShelfPage } from '../shelf/page.js';
@@ -149,6 +150,9 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
   const [flickerSeed] = useState(() => Math.trunc(deps.nowMs()));
   const readNow = deps.now;
   const request = deps.request;
+  // [p2] §24.3d's other mount point. The map is owned here, beside `sessions`, and each tile
+  // asks for its own preview as it mounts.
+  const install = useShelfInstall(deps);
 
   useEffect(() => {
     const advance = (): void => {
@@ -398,6 +402,10 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
                 onOpen={onOpenProject}
                 onTogglePin={togglePin}
                 onStopSession={stopSession}
+                installPreviews={install.previews}
+                onNeedInstallPreview={install.need}
+                onInstall={install.start}
+                onOpenUpgrade={props.onOpenSettings}
               />
             </section>
           );

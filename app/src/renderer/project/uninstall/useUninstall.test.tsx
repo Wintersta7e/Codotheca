@@ -46,6 +46,10 @@ function draw(
     request: request as unknown as ProjectPageDeps['request'],
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
     uninstall: uninstall as unknown as ProjectPageDeps['uninstall'],
+    installStart: () =>
+      Promise.resolve({ kind: 'started' as const, start: { runId: 1, refusedBecause: null } }),
+    installCancel: () => Promise.resolve({ kind: 'cancelled' as const }),
+    pickRoot: () => Promise.resolve({ kind: 'cancelled' as const }),
     openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: () => () => undefined,
     now: () => NOW,

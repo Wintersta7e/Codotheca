@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 
 import { readScannedFile } from '../../scripts/lib/read-scanned.mjs';
+import { withoutComments } from '../../scripts/lib/without-comments.mjs';
 
 const RENDERER = fileURLToPath(new URL('../src/renderer', import.meta.url));
 
@@ -27,7 +28,11 @@ function rendererSources(dir = RENDERER): { path: string; text: string }[] {
     if (!/\.tsx?$/u.test(entry.name)) continue;
     const text: string | null = readScannedFile(path);
     if (text === null) continue;
-    out.push({ path, text });
+    // **Comments blanked.** A mount point is a file that renders the control, and prose *about*
+    // the control is not one — `useInstallOffer.ts` explains in a docblock what `InstallControl`
+    // does with a `null` preview, and an unstripped scan counted that as a third slot. Grepping
+    // a name also matches writing about it; the two gates below compare shapes instead.
+    out.push({ path, text: withoutComments(text) });
   }
   return out;
 }

@@ -11,10 +11,13 @@ import type {
   InstallPreview,
   LocationDetail,
   ProjectDetail,
+  Root,
+  RootId,
   TargetRow,
   UninstallVerdict,
 } from '../../../generated/protocol';
 import { InstallControl } from '../../install/InstallControl';
+import { RootChooser } from '../../install/RootChooser';
 import { formatPlaytime } from '../../format/playtime';
 import { useProjectPageDeps } from '../deps';
 import { UninstallControl } from '../uninstall/UninstallControl';
@@ -42,9 +45,18 @@ export interface RailProps {
    * [p2] §24.3d's preview, or `undefined` when this rail is not offering Install. The rail is the
    * second of exactly two mount points in the renderer.
    */
-  installPreview?: InstallPreview | null;
+  installPreview?: InstallPreview | null | undefined;
   onInstall?: () => void;
-  onOpenUpgrade?: () => void;
+  onOpenUpgrade?: (() => void) | undefined;
+  /**
+   * [p2] §24.3a: non-null exactly when no destination is stored yet, in which case the slot holds
+   * the chooser instead of the control — `install.preview` cannot be asked without a root, so
+   * there is nothing to preview until one is picked.
+   */
+  installRoots?: readonly Root[] | null | undefined;
+  onChooseRoot?: (rootId: RootId) => void;
+  /** Invokes the shell's folder dialog. The renderer originates no path. */
+  onAddFolder?: () => void;
   /**
    * [p2-24b] §24.6's verdict, or `undefined` when this rail is not offering Uninstall. `null` is
    * *the pre-flight is in flight* — a distinct state the control renders as checking, never as an
@@ -70,6 +82,9 @@ export function Rail({
   installPreview,
   onInstall,
   onOpenUpgrade,
+  installRoots,
+  onChooseRoot,
+  onAddFolder,
   uninstallVerdict,
   onUninstall,
   onOpenUninstall,
@@ -135,11 +150,20 @@ export function Rail({
       {/* [p2] §24.3d: Install occupies the slot Play occupies on a cloned project, so it stands
           above the CTA rather than beside it. The second of exactly two mount points in the
           renderer; `app/test/installSites.test.ts` fails on a third. */}
-      {installPreview === undefined ? null : (
+      {installPreview === undefined ? null : installRoots === null || installRoots === undefined ? (
         <InstallControl
           preview={installPreview}
           onInstall={onInstall ?? (() => {})}
-          onOpenUpgrade={onOpenUpgrade ?? (() => {})}
+          onOpenUpgrade={onOpenUpgrade}
+        />
+      ) : (
+        /* [p2] §24.3a: the destination is chosen once, from the roots that exist. Until one is,
+           there is no `RootId` to preview against and the slot holds the chooser. */
+        <RootChooser
+          roots={installRoots}
+          selected={null}
+          onSelect={onChooseRoot ?? (() => {})}
+          onAddFolder={onAddFolder ?? (() => {})}
         />
       )}
       {control.kind === 'statement' ? (
