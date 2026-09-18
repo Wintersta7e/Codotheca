@@ -74,10 +74,6 @@ fn item_at(
         scoring: DebtScoring::Scored,
         last_seen_location_id: location,
         basis,
-        path_display: None,
-        line: None,
-        column: None,
-        salient_text: None,
         first_seen_at: 1,
         last_seen_at: 1,
     }

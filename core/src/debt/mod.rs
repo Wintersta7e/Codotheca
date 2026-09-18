@@ -10,6 +10,7 @@
 //! **§28 adds no command, no event and no topic**, so this module has no dispatcher.
 
 pub mod identity;
+pub mod markers;
 pub mod store;
 pub mod sweep;
 pub mod xp;

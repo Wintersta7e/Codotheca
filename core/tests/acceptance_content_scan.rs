@@ -672,6 +672,8 @@ impl Rig {
                 location: self.location,
                 cursor,
                 now: 1_700_000_000,
+                // UTC, so a test's local date never depends on the machine running it.
+                tz_offset_min: 0,
             },
         )
         .unwrap()

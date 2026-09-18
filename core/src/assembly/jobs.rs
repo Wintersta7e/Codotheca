@@ -70,6 +70,7 @@ impl JobPump {
         git: Arc<dyn GitBackend>,
         clock: Arc<dyn Clock>,
         events: Arc<dyn EventSink>,
+        tz_offset_min: i32,
     ) -> JobPump {
         let cancel = CancelToken::new();
         let runner = build_job_runner(
@@ -78,6 +79,7 @@ impl JobPump {
                 git,
                 clock,
                 cancel: cancel.clone(),
+                tz_offset_min,
             },
             events,
         );

@@ -374,6 +374,10 @@ pub struct JobDeps {
     pub clock: std::sync::Arc<dyn crate::clock::Clock>,
     /// The scan run's token. Cancellation propagates to the whole git process tree.
     pub cancel: crate::cancel::CancelToken,
+    /// **A property of the machine, read ONCE by the composition root and passed down as data**
+    /// — `ProjectsCtx.tz_offset_min`'s twin (`core/src/clock.rs:65-67`). §28.4's `debt_day` key
+    /// is a **local** date, so nothing below the root may reach for a zone of its own.
+    pub tz_offset_min: i32,
 }
 
 impl std::fmt::Debug for JobDeps {
@@ -565,6 +569,7 @@ pub fn run_one(
                     location: job.location_id,
                     cursor: cursor.as_deref(),
                     now,
+                    tz_offset_min: deps.tz_offset_min,
                 },
             )
         }

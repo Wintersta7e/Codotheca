@@ -295,6 +295,8 @@ mod corehandler {
                 Arc::new(codotheca_core::testing::FakeGitBackend::new()),
                 Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
                 Arc::clone(&events) as Arc<dyn EventSink>,
+                // UTC, so a test's local date never depends on the machine running it.
+                0,
             ),
             // [p2] §21.1's runner, real and started, for the same reason the job pump above is:
             // `shutdown` stops it, and a handler built with one that never started would not

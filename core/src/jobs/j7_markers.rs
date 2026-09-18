@@ -275,6 +275,9 @@ pub struct ScanRun<'a> {
     pub cursor: Option<&'a str>,
     /// The caller's clock, like every other writer in this tree.
     pub now: i64,
+    /// The machine's offset, from `JobDeps`. §28.4's `debt_day` key is a **local** date and the
+    /// item build runs from here, so the run carries it rather than reading a zone.
+    pub tz_offset_min: i32,
 }
 
 /// Run one chunk of J7 against one project.
@@ -293,6 +296,7 @@ pub fn run_j7(
         location,
         cursor,
         now,
+        tz_offset_min,
     } = run;
     let gates = super::read(index, |conn| gates_for(conn, project))?;
     // Predicate 1 stays in the job as defence-in-depth: `next_jobs_after` skips Reference, and
@@ -352,21 +356,13 @@ pub fn run_j7(
     let window: Vec<&TreeEntry> = filtered.iter().skip(from).take(J7_CHUNK_BLOBS).collect();
     if window.is_empty() {
         let pending = super::write(index, |tx| {
-            commit_chunk(tx, project, &head_oid, &[], 0, now)
+            let pending = commit_chunk(tx, project, &head_oid, &[], 0, now)?;
+            build_debt_items(tx, project, location, gates, &filtered, now, tz_offset_min)?;
+            Ok(pending)
         })?;
         return Ok(finish(pending, from, total));
     }
-    let cached_before: BTreeSet<String> = {
-        let wanted: Vec<String> = window.iter().map(|e| e.oid.clone()).collect();
-        let missing = super::read(index, |conn| {
-            missing_blobs(conn, &wanted, J7_SCANNER_VERSION)
-        })?;
-        let missing: BTreeSet<String> = missing.into_iter().collect();
-        wanted
-            .into_iter()
-            .filter(|oid| !missing.contains(oid))
-            .collect()
-    };
+    let cached_before = cached_blobs(index, &window)?;
     let mut wanted: Vec<String> = Vec::new();
     for entry in &window {
         if !cached_before.contains(&entry.oid) && !wanted.contains(&entry.oid) {
@@ -392,16 +388,87 @@ pub fn run_j7(
         }
     }
     let pending = super::write(index, |tx| {
-        commit_chunk(
+        let pending = commit_chunk(
             tx,
             project,
             &head_oid,
             &batch.reads,
             i64::try_from(consumed).unwrap_or(i64::MAX),
             now,
-        )
+        )?;
+        build_debt_items(tx, project, location, gates, &filtered, now, tz_offset_min)?;
+        Ok(pending)
     })?;
     Ok(finish(pending, from + consumed, total))
+}
+
+/// §28's item build, in the **same transaction** as the chunk that produced the evidence.
+///
+/// **It runs here and not from `JobRunner::settle`, and that is forced by the tree.**
+/// [`occurrences_for_project`] takes the HEAD enumeration because nothing stores it — §29.6
+/// re-runs `ls-tree` per chunk deliberately — and `settle` holds no enumeration and no repository
+/// handle. This is the one place the entries exist beside a transaction.
+///
+/// It returns the `pending` it was given, so the caller's cursor arithmetic is untouched by it.
+fn build_debt_items(
+    tx: &rusqlite::Transaction<'_>,
+    project: ProjectId,
+    location: LocationId,
+    gates: ContentGates,
+    filtered: &[TreeEntry],
+    now: i64,
+    tz_offset_min: i32,
+) -> Result<(), crate::index::IndexError> {
+    let occurrences = occurrences_for_project(tx, filtered)?;
+    let store = crate::debt::store::SqliteDebtStore;
+    let effect = crate::debt::markers::build_items(
+        tx,
+        project,
+        Some(location),
+        gates,
+        &occurrences,
+        now,
+        &store,
+    )
+    .map_err(debt_to_index)?;
+
+    // The ledger row and the item deletions commit together: a tree with the items gone and no
+    // payout, or a payout with the items still open, is the state the ordering prevents.
+    let subject = crate::index::subject::subject_for_project(tx, project)?
+        .map(|s| s.to_key())
+        .unwrap_or_default();
+    crate::debt::xp::pay_debt_day(tx, project, &subject, &effect, now, tz_offset_min)
+        .map_err(debt_to_index)?;
+    Ok(())
+}
+
+fn debt_to_index(error: crate::debt::DebtError) -> crate::index::IndexError {
+    match error {
+        crate::debt::DebtError::Index(inner) => inner,
+        // A stored value this build's schema does not declare. `InvalidQuery` is the closest
+        // `rusqlite` shape that carries no column of its own; the detail is what a reader needs.
+        crate::debt::DebtError::Codec(detail) => {
+            crate::index::IndexError::Sqlite(rusqlite::Error::InvalidParameterName(detail))
+        }
+    }
+}
+
+/// Which of the window's blobs already carry a cache row at this scanner version.
+///
+/// Extracted so `run_j7` reads as its five numbered steps; it is the read half of step 3.
+fn cached_blobs(
+    index: &std::sync::Mutex<crate::index::Index>,
+    window: &[&TreeEntry],
+) -> Result<BTreeSet<String>, JobError> {
+    let wanted: Vec<String> = window.iter().map(|e| e.oid.clone()).collect();
+    let missing = super::read(index, |conn| {
+        missing_blobs(conn, &wanted, J7_SCANNER_VERSION)
+    })?;
+    let missing: BTreeSet<String> = missing.into_iter().collect();
+    Ok(wanted
+        .into_iter()
+        .filter(|oid| !missing.contains(oid))
+        .collect())
 }
 
 /// `Done` once nothing is pending, `Partial` otherwise. **`total` is never a zero** — it is the

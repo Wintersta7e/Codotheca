@@ -297,6 +297,7 @@ fn main() -> ExitCode {
         Arc::clone(&git),
         Arc::clone(&clock),
         Arc::clone(&events) as Arc<dyn EventSink>,
+        local_utc_offset_min(),
     );
 
     // The same `Arc<Mutex<Index>>` reached a different way, never a second connection. The

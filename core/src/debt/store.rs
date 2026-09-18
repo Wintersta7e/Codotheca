@@ -30,13 +30,15 @@ pub struct StoredItem {
     /// sweep's location before any closure (§28.3 rule 1).
     pub last_seen_location_id: Option<LocationId>,
     pub basis: Option<ObservationBasis>,
-    pub path_display: Option<String>,
-    pub line: Option<u32>,
-    pub column: Option<u32>,
-    pub salient_text: Option<String>,
     pub first_seen_at: i64,
     pub last_seen_at: i64,
 }
+
+// **`path_display`, `line`, `column` and `salient_text` are deliberately absent.** No closure
+// rule reads any of them — they are the attributes a refresh overwrites — and §1.10 makes
+// `path_display` write-once: `core/src/index/path::display_paths_for_ui` is the only function in
+// the core permitted to read one back, and `core/tests/index_paths.rs` scans the source to keep
+// that true. The wire's `DebtItem.pathDisplay` goes through that reader.
 
 /// What a producer saw, ready to be opened or refreshed.
 ///
@@ -223,7 +225,7 @@ fn stored_items(
     let source_text = enum_text(&source)?;
     let mut st = tx.prepare(
         "SELECT id, subject_key, fingerprint, state, scoring, last_seen_location_id, basis,
-                path_display, line, column, salient_text, first_seen_at, last_seen_at
+                first_seen_at, last_seen_at
            FROM debt_item WHERE project_id = ?1 AND source = ?2
           ORDER BY id",
     )?;
@@ -236,12 +238,8 @@ fn stored_items(
             r.get::<_, String>(4)?,
             r.get::<_, Option<i64>>(5)?,
             r.get::<_, Option<String>>(6)?,
-            r.get::<_, Option<String>>(7)?,
-            r.get::<_, Option<u32>>(8)?,
-            r.get::<_, Option<u32>>(9)?,
-            r.get::<_, Option<String>>(10)?,
-            r.get::<_, i64>(11)?,
-            r.get::<_, i64>(12)?,
+            r.get::<_, i64>(7)?,
+            r.get::<_, i64>(8)?,
         ))
     })?;
 
@@ -268,12 +266,8 @@ fn stored_items(
                     })?)
                 }
             },
-            path_display: row.7,
-            line: row.8,
-            column: row.9,
-            salient_text: row.10,
-            first_seen_at: row.11,
-            last_seen_at: row.12,
+            first_seen_at: row.7,
+            last_seen_at: row.8,
         });
     }
     Ok(out)
