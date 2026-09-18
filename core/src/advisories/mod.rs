@@ -14,6 +14,7 @@ pub mod lockfiles;
 pub mod parse;
 pub mod store;
 pub mod sweep;
+pub mod verdict;
 
 use crate::protocol::{DependencyReadState, Ecosystem};
 

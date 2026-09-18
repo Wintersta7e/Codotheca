@@ -54,6 +54,33 @@ pub const LOCKFILE_NAMES: [(&str, Ecosystem); 6] = [
     ("uv.lock", Ecosystem::Pip),
 ];
 
+/// Manifest names, and the ecosystem each declares. **Presence only: no manifest is opened.**
+///
+/// A manifest with no lockfile means *this project declares dependencies whose versions are not
+/// resolved*, and version matching is server-side and needs a version — so the verdict is
+/// `unknown`. Without this list it would be **`clean`**, which is the false clean §32 exists to
+/// prevent, and nothing else in this tree records that a project declares dependencies: J6 reads
+/// three of these files but stores only a *description*, which a manifest without one never
+/// produces.
+///
+/// `None` is an ecosystem this build ships no parser for. Such a project can never resolve to
+/// triples, so its verdict is `unknown` whatever else the walk found — §32.8's unshipped-ecosystem
+/// row, which would otherwise read `clean` for every Go, Ruby, PHP, Java and .NET project in the
+/// library.
+pub const MANIFEST_NAMES: [(&str, Option<Ecosystem>); 11] = [
+    ("package.json", Some(Ecosystem::Npm)),
+    ("Cargo.toml", Some(Ecosystem::Rust)),
+    ("pyproject.toml", Some(Ecosystem::Pip)),
+    ("requirements.txt", Some(Ecosystem::Pip)),
+    ("Pipfile", Some(Ecosystem::Pip)),
+    ("go.mod", None),
+    ("Gemfile", None),
+    ("composer.json", None),
+    ("pom.xml", None),
+    ("build.gradle", None),
+    ("build.gradle.kts", None),
+];
+
 /// Directories the walk never enters.
 ///
 /// `.git` is not a source tree. **`node_modules` holds installed dependencies' own lockfiles**,
@@ -77,6 +104,13 @@ pub struct LockfileWalk {
     pub files: Vec<LockfileHit>,
     pub dirs_entered: usize,
     pub complete: bool,
+    /// How many manifests were seen whose ecosystem produced **no** lockfile — including every
+    /// manifest of an ecosystem this build ships no parser for.
+    ///
+    /// **Non-zero means `unknown`**, never `clean`: the project declares dependencies this read
+    /// cannot resolve to versions, and a verdict over a set that was never assembled is the false
+    /// clean this section exists to prevent.
+    pub unresolved_manifests: usize,
 }
 
 /// Walk `root` to [`LOCKFILE_MAX_DEPTH`], matching only [`LOCKFILE_NAMES`].
@@ -86,6 +120,7 @@ pub struct LockfileWalk {
 #[must_use]
 pub fn walk_lockfiles(root: &Path) -> LockfileWalk {
     let mut files = Vec::new();
+    let mut manifests: Vec<Option<Ecosystem>> = Vec::new();
     let mut dirs_entered = 0usize;
     let mut complete = true;
     let mut queue: Vec<(std::path::PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
@@ -119,6 +154,9 @@ pub fn walk_lockfiles(root: &Path) -> LockfileWalk {
             if !kind.is_file() {
                 continue;
             }
+            if let Some((_, declared)) = MANIFEST_NAMES.iter().find(|(n, _)| *n == name) {
+                manifests.push(*declared);
+            }
             let Some((_, ecosystem)) = LOCKFILE_NAMES.iter().find(|(n, _)| *n == name) else {
                 continue;
             };
@@ -141,10 +179,20 @@ pub fn walk_lockfiles(root: &Path) -> LockfileWalk {
     // The walk order is a stack's, which is not stable across filesystems; the stored rows are
     // keyed by path, so a deterministic order is what makes two runs comparable.
     files.sort_by(|a, b| a.source_path.cmp(&b.source_path));
+    // A manifest is *resolved* only when a lockfile of its own ecosystem was matched. An
+    // unshipped ecosystem has none by construction, so every one of those counts.
+    let unresolved_manifests = manifests
+        .iter()
+        .filter(|declared| match declared {
+            None => true,
+            Some(eco) => !files.iter().any(|f| f.ecosystem == *eco),
+        })
+        .count();
     LockfileWalk {
         files,
         dirs_entered,
         complete,
+        unresolved_manifests,
     }
 }
 

@@ -141,12 +141,20 @@ CREATE INDEX idx_advisory_match_advisory ON advisory_match(advisory_id);
 -- *The walk ran* — the record that makes three read outcomes storable when the enum has two.
 -- Its absence is *the scan has not run*, and collapsing that into *found nothing* makes every
 -- unscanned project claim to have no dependencies. `dirs_entered` is diagnostic.
+--
+-- `unresolved_manifests` is how *a manifest with no lockfile* stays **unknown** rather than
+-- reading as clean. §32.8 rules both that row and the unshipped-ecosystem row `unknown`, and
+-- nothing else in this tree records that a project declares dependencies at all: J6 reads three
+-- manifests but stores only a **description**, which a manifest without one does not produce. The
+-- walk that finds lockfiles sees the manifests beside them for no extra read, so it counts the
+-- ones whose ecosystem produced no parsed lockfile. **Presence only — no manifest is opened.**
 CREATE TABLE project_dependency_scan (
-  project_id    INTEGER PRIMARY KEY REFERENCES project(id) ON DELETE CASCADE,
-  observed_at   INTEGER NOT NULL,
-  files_matched INTEGER NOT NULL CHECK (files_matched >= 0),
-  dirs_entered  INTEGER NOT NULL CHECK (dirs_entered >= 0),
-  complete      INTEGER NOT NULL CHECK (complete IN (0, 1))
+  project_id           INTEGER PRIMARY KEY REFERENCES project(id) ON DELETE CASCADE,
+  observed_at          INTEGER NOT NULL,
+  files_matched        INTEGER NOT NULL CHECK (files_matched >= 0),
+  dirs_entered         INTEGER NOT NULL CHECK (dirs_entered >= 0),
+  unresolved_manifests INTEGER NOT NULL CHECK (unresolved_manifests >= 0),
+  complete             INTEGER NOT NULL CHECK (complete IN (0, 1))
 ) STRICT;
 
 -- One row per lockfile found. **`read_state` is a property of the FILE**, which is why it lives

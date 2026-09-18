@@ -76,16 +76,19 @@ pub fn write_scan_row(
 ) -> Result<(), IndexError> {
     tx.execute(
         "INSERT INTO project_dependency_scan
-           (project_id, observed_at, files_matched, dirs_entered, complete)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+           (project_id, observed_at, files_matched, dirs_entered, unresolved_manifests, complete)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(project_id) DO UPDATE SET
            observed_at = excluded.observed_at, files_matched = excluded.files_matched,
-           dirs_entered = excluded.dirs_entered, complete = excluded.complete",
+           dirs_entered = excluded.dirs_entered,
+           unresolved_manifests = excluded.unresolved_manifests,
+           complete = excluded.complete",
         rusqlite::params![
             project.0,
             now,
             i64::try_from(walk.files.len()).unwrap_or(i64::MAX),
             i64::try_from(walk.dirs_entered).unwrap_or(i64::MAX),
+            i64::try_from(walk.unresolved_manifests).unwrap_or(i64::MAX),
             i64::from(walk.complete)
         ],
     )?;

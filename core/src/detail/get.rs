@@ -429,6 +429,11 @@ pub fn handle_project_get(
             )
         });
 
+    // Computed before the struct so the read is one call and not two, and so a reader sees that
+    // both fields come from the same recompute at the same instant.
+    let dependency =
+        crate::advisories::verdict::verdict_for(conn, ProjectId(id), ctx.now).map_err(internal)?;
+
     Ok(ProjectDetail {
         resolved_target: resolved_target(
             conn,
@@ -469,10 +474,12 @@ pub fn handle_project_get(
         // sweeps that make an empty list readable as *no debt* rather than *nobody looked*.
         debt: crate::debt::read::load_debt(conn, ProjectId(id)).map_err(internal)?,
         debt_sweeps: crate::debt::read::load_debt_sweeps(conn, ProjectId(id)).map_err(internal)?,
-        // [p3] §32.8's verdict is derived at read time and stored nowhere; its producer lands
-        // with the join it derives from. Absent until then, and absent is `unknown`, never clean.
-        dependency_verdict: None,
-        dependency_observed_at: None,
+        // [p3] §32.8's verdict is **derived at read time and stored nowhere**: every input
+        // already has an owner, so a fourth column would be a second one. One call, two fields —
+        // the age renders beside the verdict because §32.9 rules the OLDER of two clocks, and an
+        // age that renders needs a field of its own.
+        dependency_verdict: Some(dependency.verdict),
+        dependency_observed_at: dependency.observed_at,
         locations,
         row,
     })
