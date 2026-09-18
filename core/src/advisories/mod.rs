@@ -10,6 +10,7 @@
 //! rather than one item keyed `deps`. The health arithmetic an `unknown` verdict is excluded from
 //! is §30's; what this module owns is the input state.
 
+pub mod items;
 pub mod lockfiles;
 pub mod parse;
 pub mod store;
@@ -34,6 +35,10 @@ pub enum AdvisoryError {
     /// A file could not be read from disk at all.
     #[error("advisory read: {0}")]
     Parse(String),
+    /// §28's item writer refused. Wrapped rather than restated: this module produces items
+    /// **through** that writer and declares no second one, so its errors are that writer's.
+    #[error("debt: {0}")]
+    Debt(#[from] crate::debt::DebtError),
 }
 
 /// The stored form of [`Ecosystem`], written into three columns and constrained by their CHECKs.
