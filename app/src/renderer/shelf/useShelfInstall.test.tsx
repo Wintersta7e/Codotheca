@@ -92,6 +92,13 @@ describe('the shelf-wide install offer', () => {
     await waitFor(() => {
       expect(r.request).toHaveBeenCalledWith('settings.get', {});
     });
+    // The settings read having *resolved*, not merely been issued. An absence asserted before
+    // the read lands passes whether the rule holds or not — the same gap that made the sibling
+    // test above flake, arriving here as a bar that proves nothing rather than as a failure.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     act(() => {
       r.view.result.current.need(A);
@@ -138,8 +145,16 @@ describe('the shelf-wide install offer', () => {
   it('runs one start per project however fast it is pressed twice', async () => {
     const installStart = vi.fn(() => new Promise<never>(() => undefined));
     const r = draw(ROOT, installStart);
+
+    // **Waits for the preview, not for the `settings.get` call.** The call having been *made* is
+    // not the destination having *landed*, and a start before it lands is dropped — correctly,
+    // because the button that fires it only renders once a preview exists. Waiting on the call
+    // made this pass alone and fail under the parallel gate, which is the flake shape exactly.
+    act(() => {
+      r.view.result.current.need(A);
+    });
     await waitFor(() => {
-      expect(r.request).toHaveBeenCalledWith('settings.get', {});
+      expect(r.view.result.current.previews.get(A)).toBeDefined();
     });
 
     act(() => {
