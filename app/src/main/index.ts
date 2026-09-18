@@ -122,6 +122,12 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   'projects.get',
   'projects.setNote',
   'locations.relocate',
+  // [p2-24b] uninstall::handle. The pre-flight is unprivileged and the removal is not, and
+  // **both belong here**: `isRendererCallable` is `known && !privileged`, so the privileged one
+  // is refused on IPC_REQUEST by its own flag, while omitting it from this list would refuse it
+  // for the wrong reason — as a command the core does not answer. It answers both.
+  'locations.uninstallPreflight',
+  'locations.uninstall',
   // readme::dispatch_readme_command — the document the project page renders as markup. It is a
   // different value from ProjectDetail.readme, which carries the stored first paragraph.
   'projects.readme',
