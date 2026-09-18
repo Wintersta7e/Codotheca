@@ -275,7 +275,7 @@ impl SyncRunner {
         };
         for task in pending {
             let kind = task.kind();
-            let key = Some(task.key());
+            let key = task.key();
             let existing = load(tx, kind, key)?;
             if matches!(
                 existing.as_ref().map(|row| row.state),
@@ -433,13 +433,7 @@ impl SyncRunner {
     fn run_one(self: &Arc<Self>, task: SyncTask) {
         let kind = task.kind();
         let key = task.key();
-        emit_started(
-            self.events.as_ref(),
-            &SyncTaskStarted {
-                kind,
-                key: Some(key),
-            },
-        );
+        emit_started(self.events.as_ref(), &SyncTaskStarted { kind, key });
 
         let verdict = self.budget_verdict(&task);
         let outcome = match verdict {
@@ -472,6 +466,10 @@ impl SyncRunner {
             SyncTask::ProjectRemote { project_id } => {
                 remote::account_for_project(guard.conn(), *project_id)
             }
+            // [p3] §32.1: the sweep is unauthenticated by ruling and its provider method has
+            // nowhere to put a token, so the pool it spends from is the **NULL-account per-IP**
+            // one, always — never whichever account happens to be connected.
+            SyncTask::Advisories => None,
         };
         let row = read_budget(guard.conn(), account, DEFAULT_RESOURCE)
             .ok()
@@ -504,6 +502,9 @@ impl SyncRunner {
             SyncTask::RenameProbe { account_id } => {
                 rename::run_rename_probe(&self.deps, &self.index, *account_id)
             }
+            // [p3] §32.2's sweep body lands with the provider method it calls; this arm exists so
+            // the row can be claimed and settled before then, which is the defect's other half.
+            SyncTask::Advisories => Ok(SyncOutcome::Done),
         }
     }
 
@@ -563,10 +564,10 @@ impl SyncRunner {
 
         let settled_row = {
             let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-            let before = load(guard.conn(), kind, Some(key))
+            let before = load(guard.conn(), kind, key)
                 .ok()
                 .flatten()
-                .unwrap_or_else(|| SyncTaskStateRow::queued(kind, Some(key), now));
+                .unwrap_or_else(|| SyncTaskStateRow::queued(kind, key, now));
             let (mut next, _) = apply_outcome(&before, &outcome, now);
             if reserved {
                 // §21.5: it did not fail and it was not throttled by the server — it yielded to
@@ -628,7 +629,7 @@ impl SyncRunner {
         let payload = settled_of(&settled_row, Some(&observed));
         let cleared = {
             let mut live = self.live.lock().unwrap_or_else(PoisonError::into_inner);
-            live.last.insert((kind, Some(key)), observed);
+            live.last.insert((kind, key), observed);
             // **One banner, whatever the number of failed tasks**: a single value, so three
             // failures at once cannot produce three candidates. A success clears it.
             let had = live.notice.is_some();
@@ -711,13 +712,26 @@ fn sweep_schedule(tx: &rusqlite::Transaction<'_>, now: i64) -> Result<usize, Ind
 /// `running` counts: this process put it there and owes it a settle. `ok`, `deferred` and
 /// `blocked` do not — each is left by a trigger, a revival cause or an account change, every one
 /// of which goes through `enqueue` or `reset_for` and signals.
-fn any_outstanding(tx: &rusqlite::Transaction<'_>) -> Result<bool, crate::index::IndexError> {
-    let n: i64 = tx.query_row(
-        "SELECT count(*) FROM sync_task_state WHERE state IN ('queued', 'running', 'parked')",
-        [],
-        |row| row.get(0),
-    )?;
-    Ok(n > 0)
+///
+/// **[p3] It counts what the pick can claim, and is derived from the same read.** Counting by
+/// `state` alone made a row the pick cannot resolve keep `outstanding` true for ever, so the loop
+/// polled a task it could never take — a busy runner with no work, and no error to say so.
+/// [`load_all`] already drops the rows [`crate::sync::store::read_row`] skipped, and [`task_of`]
+/// drops the shapes it refuses to guess at. **The pick and the wakefulness predicate disagreeing
+/// is the defect; one input is the fix.**
+///
+/// It is `pub` so a test can assert that agreement directly rather than by inferring it from how
+/// long a loop stays awake.
+///
+/// # Errors
+/// Fails when SQLite cannot be read.
+pub fn any_outstanding(tx: &rusqlite::Transaction<'_>) -> Result<bool, crate::index::IndexError> {
+    Ok(load_all(tx)?.iter().any(|row| {
+        matches!(
+            row.state,
+            SyncTaskState::Queued | SyncTaskState::Running | SyncTaskState::Parked
+        ) && task_of(row).is_some()
+    }))
 }
 
 /// §21.10's four sentences, from the outcome that produced them.
@@ -753,22 +767,35 @@ fn notice_for(outcome: &SyncOutcome) -> Option<SyncNotice> {
 }
 
 /// A stored row back into the work item it describes.
+///
+/// **[p3] It matches on the `(kind, key)` pair, not on the kind alone.** The shipped version
+/// opened `let key = row.key?;`, which is reached only through the pick's `filter_map` — so a
+/// `key IS NULL` row was filtered out **before it could be picked**: never claimed, never run,
+/// never settled, and raising no error anywhere. The three keyed kinds require `Some`;
+/// `Advisories` requires `None`.
+///
+/// **A mismatched pair yields `None` rather than a guess**, exactly as
+/// [`crate::sync::store::read_row`] refuses a slug it cannot resolve. Guessing which id an
+/// `advisories` row's stray key was would run the wrong task against it, and inventing one for a
+/// keyed kind would run a task against account or project zero.
 fn task_of(row: &SyncTaskStateRow) -> Option<SyncTask> {
-    let key = row.key?;
-    Some(match row.kind {
-        SyncTaskKind::AccountRepos => SyncTask::AccountRepos {
+    match (row.kind, row.key) {
+        (SyncTaskKind::AccountRepos, Some(key)) => Some(SyncTask::AccountRepos {
             account_id: AccountId(key),
-        },
-        SyncTaskKind::ProjectRemote => SyncTask::ProjectRemote {
+        }),
+        (SyncTaskKind::ProjectRemote, Some(key)) => Some(SyncTask::ProjectRemote {
             project_id: ProjectId(key),
-        },
-        SyncTaskKind::RenameProbe => SyncTask::RenameProbe {
+        }),
+        (SyncTaskKind::RenameProbe, Some(key)) => Some(SyncTask::RenameProbe {
             account_id: AccountId(key),
-        },
-        // [p3] §32 declares the kind on the wire before the work item exists to carry it.
-        // Unresolvable is `None`, never a guessed key.
-        SyncTaskKind::Advisories => return None,
-    })
+        }),
+        (SyncTaskKind::Advisories, None) => Some(SyncTask::Advisories),
+        (
+            SyncTaskKind::AccountRepos | SyncTaskKind::ProjectRemote | SyncTaskKind::RenameProbe,
+            None,
+        )
+        | (SyncTaskKind::Advisories, Some(_)) => None,
+    }
 }
 
 impl SyncSink for SyncRunner {
