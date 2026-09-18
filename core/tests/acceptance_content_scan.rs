@@ -1535,3 +1535,106 @@ fn ac_p3_29_23_a_merge_deletes_the_per_project_scan_and_keeps_the_cache() {
         "the library-wide cache was discarded for an event that cannot have invalidated it"
     );
 }
+
+/// **AC-P3-29-11.** The two ordinals are not one number.
+///
+/// In a project whose **second** marker-bearing file opens with an occurrence, that occurrence
+/// has `ordinal_in_blob = 0` and a **non-zero position in the handed-over ordering** — which is
+/// the input §28 derives the project ordinal from. **Asserted over the handover**, because the
+/// project ordinal itself is assigned at item-build time and is §28's; this is the half only J7
+/// can guarantee, since only J7 holds the enumeration the ordering is over.
+#[test]
+fn ac_p3_29_11_the_two_ordinals_are_not_one_number() {
+    let rig = Rig::new("head-one");
+    // `a.rs` carries two markers; `b.rs` opens with one on its first line.
+    let first = rig.source(b"// TODO: one\nfn a() {}\n// FIXME: two\n");
+    let second = rig.source(b"// HACK: opens the file\nfn b() {}\n");
+    let entries = vec![
+        blob_entry("src/a.rs", &first),
+        blob_entry("src/b.rs", &second),
+    ];
+    rig.set_tree(entries.clone());
+    assert_eq!(rig.run(None), JobOutcome::Done);
+
+    let guard = rig.index.lock().unwrap();
+    let handed = j7_markers::occurrences_for_project(guard.conn(), &entries).unwrap();
+    let in_blob = findings_for_blob(guard.conn(), &second, J7_SCANNER_VERSION).unwrap();
+    drop(guard);
+
+    let shown: Vec<(String, u32, u32)> = handed
+        .iter()
+        .map(|o| {
+            (
+                String::from_utf8_lossy(&o.path_bytes).into_owned(),
+                o.line,
+                o.column,
+            )
+        })
+        .collect();
+    eprintln!("handed over in order: {shown:?}");
+    assert_eq!(handed.len(), 3, "the fixture lost an occurrence");
+
+    // Inside its own blob it is the first: 0.
+    assert_eq!(in_blob.len(), 1);
+    assert_eq!(in_blob[0].ordinal_in_blob, 0);
+    // In the project's ordering it is not: `src/b.rs` sorts after both of `src/a.rs`'s.
+    let at = handed
+        .iter()
+        .position(|o| o.path_bytes == b"src/b.rs".to_vec())
+        .expect("the second file is in the handover");
+    eprintln!("ordinal_in_blob 0 sits at position {at} in the handover");
+    assert_ne!(at, 0, "the two ordinals were conflated");
+    assert_eq!(at, 2);
+    // The ordering is `(path_bytes, line, column)` over the whole enumeration.
+    let mut sorted = shown.clone();
+    sorted.sort();
+    assert_eq!(shown, sorted);
+}
+
+/// **AC-P3-29-24.** A partial sweep's evidence is incomplete, not empty.
+///
+/// A project mid-scan yields a `ContentSweepState` marked `partial` carrying `basis = "head"`,
+/// with `blobs_read > 0` **and** `blobs_pending > 0`. That is what stops §28's closure path being
+/// offered an empty evidence set. §28's closure path itself is §28's and is asserted there.
+#[test]
+fn ac_p3_29_24_a_partial_sweeps_evidence_is_incomplete_not_empty() {
+    let rig = Rig::new("head-one");
+    let mut entries = Vec::new();
+    for i in 0..(J7_CHUNK_BLOBS + 4) {
+        let oid = rig.source(format!("// TODO: {i}\n").as_bytes());
+        entries.push(blob_entry(&format!("src/f{i:05}.rs"), &oid));
+    }
+    rig.set_tree(entries.clone());
+    assert!(matches!(rig.run(None), JobOutcome::Partial { .. }));
+
+    let guard = rig.index.lock().unwrap();
+    let sweep = j7_markers::content_sweep_state(guard.conn(), rig.project)
+        .unwrap()
+        .expect("a scanned project hands over a sweep");
+    let evidence = j7_markers::occurrences_for_project(guard.conn(), &entries).unwrap();
+    drop(guard);
+
+    eprintln!(
+        "mid-scan sweep {sweep:?}, evidence {} occurrence(s)",
+        evidence.len()
+    );
+    assert_eq!(sweep.outcome, j7_markers::ContentSweepOutcome::Partial);
+    assert_eq!(sweep.basis, "head");
+    assert_eq!(sweep.head_oid, "head-one");
+    assert!(sweep.blobs_read > 0, "the sweep read nothing");
+    assert!(
+        sweep.blobs_pending.unwrap_or(0) > 0,
+        "the sweep is not partial"
+    );
+    assert!(
+        !evidence.is_empty(),
+        "a partial sweep was offered an empty evidence set"
+    );
+
+    // A project J7 has never observed hands over **nothing**, which is not an outcome.
+    let unseen = Rig::new("head-one");
+    let guard = unseen.index.lock().unwrap();
+    let none = j7_markers::content_sweep_state(guard.conn(), unseen.project).unwrap();
+    drop(guard);
+    assert_eq!(none, None, "never observed was reported as an outcome");
+}

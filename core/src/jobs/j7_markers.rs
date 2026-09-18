@@ -16,7 +16,9 @@ use rusqlite::{Connection, Transaction};
 
 use super::classify::language_of_path;
 use super::content_scan::{missing_blobs, record_read};
-use super::markers::{J7_BLOB_BYTE_CAP, J7_CHUNK_BLOBS, J7_CHUNK_BYTES, J7_SCANNER_VERSION};
+use super::markers::{
+    Marker, J7_BLOB_BYTE_CAP, J7_CHUNK_BLOBS, J7_CHUNK_BYTES, J7_SCANNER_VERSION,
+};
 use super::presence::{presence_for, PresenceAnswers, PresenceState, PREDICATE_VERSION};
 use super::{JobError, JobOutcome};
 use crate::git::{GitBackend, JobContext, RepoHandle, TreeEntry};
@@ -452,4 +454,138 @@ pub fn presence_for_project(
             ci: PresenceState::from_slug(&ci).unwrap_or(PresenceState::NotRead),
         })
     })
+}
+
+/// §29.9's outcome, as J7 determines it.
+///
+/// **Two variants, and deliberately not §28's generated `DebtSweepOutcome`** (R31): that one
+/// carries more — `skipped_suppressed` among them — is declared by §28, and is what §28 maps this
+/// onto. Two variants rather than a `bool`, because a `bool` needs a convention a reader has to
+/// be told about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentSweepOutcome {
+    /// Every filtered blob at `head_oid` has a cache row.
+    Complete,
+    /// A chunk boundary, a closed gate or a moved head. **The evidence set behind it is
+    /// incomplete, never empty**, which is what stops §28's closure path being offered an empty
+    /// one.
+    Partial,
+}
+
+/// What §28 needs to write a `debt_sweep` row, without J7 storing one.
+///
+/// **`basis` is the literal `"head"`, stated and not stored** (§29.1, R129/F3): J7's basis is
+/// `head` for every row without exception, so a column would be a per-row copy of a value the
+/// table already determines. §28 maps this string onto the generated `ObservationBasis` it owns.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContentSweepState {
+    /// Derived from `complete_head_oid == head_oid`, never from a stored flag.
+    pub outcome: ContentSweepOutcome,
+    /// Always `"head"`.
+    pub basis: &'static str,
+    /// The head this reading is of.
+    pub head_oid: String,
+    /// Filtered entries at `head_oid`. `None` is *not enumerated*, never 0.
+    pub blobs_total: Option<i64>,
+    /// How many of them this scan has covered.
+    pub blobs_read: i64,
+    /// How many are left. `None` is *not enumerated*, never 0.
+    pub blobs_pending: Option<i64>,
+}
+
+/// One occurrence, as §28 consumes it.
+///
+/// **`ordinal_in_blob` is per blob and §28.1's `ordinal` is per project, and the two must never
+/// be conflated**: a blob's ordinal is stable in every project that holds that blob, a project's
+/// is not, and an identity built from the wrong one moves when an unrelated file is added.
+/// **The per-project ordinal is assigned by §28 at item-build time and not here.**
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContentOccurrence {
+    /// The content address the finding is cached under.
+    pub blob_oid: String,
+    /// Raw path bytes, from the enumeration. A blob reachable at two paths contributes twice.
+    pub path_bytes: Vec<u8>,
+    /// 1-based.
+    pub line: u32,
+    /// 1-based, in bytes.
+    pub column: u32,
+    /// One of `TODO`, `FIXME`, `HACK`.
+    pub marker: Marker,
+    /// §28.1's hash of the capped text.
+    pub salient_sha256: String,
+    /// §28.1's normalised, capped text.
+    pub salient_text_capped: String,
+}
+
+/// §29.9's sweep hand-over, or `None` when J7 has never observed the project.
+///
+/// **`None` is not an outcome.** It is *never observed*, which §31 renders as `unknown` and §28
+/// must not read as *everything closed*.
+///
+/// # Errors
+/// Fails when SQLite refuses the read.
+pub fn content_sweep_state(
+    conn: &Connection,
+    project: ProjectId,
+) -> Result<Option<ContentSweepState>, IndexError> {
+    let Some(row) = content_scan_row(conn, project)? else {
+        return Ok(None);
+    };
+    let outcome = if row.complete_head_oid.as_deref() == Some(row.head_oid.as_str()) {
+        ContentSweepOutcome::Complete
+    } else {
+        ContentSweepOutcome::Partial
+    };
+    let blobs_read = match (row.blobs_total, row.blobs_pending) {
+        (Some(total), Some(pending)) => total.saturating_sub(pending).max(0),
+        _ => 0,
+    };
+    Ok(Some(ContentSweepState {
+        outcome,
+        basis: "head",
+        head_oid: row.head_oid,
+        blobs_total: row.blobs_total,
+        blobs_read,
+        blobs_pending: row.blobs_pending,
+    }))
+}
+
+/// §29.9's occurrence hand-over: every cached finding for `entries`, ordered on
+/// `(path_bytes, line, column)` over the whole enumeration.
+///
+/// **The caller supplies the enumeration, because nothing stores it.** §29.6 re-runs `ls-tree` at
+/// the start of every chunk deliberately — it is deterministic under a pinned head and costs no
+/// table and no cursor codec — so a second, stored copy of the tree is exactly what §29.5 avoided.
+/// `entries` is what [`filtered_entries`] returned for this project's `head_oid`.
+///
+/// **This is the half only J7 can supply**, because only J7 holds the enumeration the ordering is
+/// over; §28 derives the per-project ordinal from it and declares no second shape for the tuple.
+///
+/// # Errors
+/// Fails when SQLite refuses a read.
+pub fn occurrences_for_project(
+    conn: &Connection,
+    entries: &[TreeEntry],
+) -> Result<Vec<ContentOccurrence>, IndexError> {
+    let mut out = Vec::new();
+    for entry in entries {
+        for found in super::content_scan::findings_for_blob(conn, &entry.oid, J7_SCANNER_VERSION)? {
+            out.push(ContentOccurrence {
+                blob_oid: entry.oid.clone(),
+                path_bytes: entry.path.clone(),
+                line: found.line,
+                column: found.column,
+                marker: found.marker,
+                salient_sha256: found.salient_sha256,
+                salient_text_capped: found.salient_text_capped,
+            });
+        }
+    }
+    out.sort_by(|a, b| {
+        a.path_bytes
+            .cmp(&b.path_bytes)
+            .then(a.line.cmp(&b.line))
+            .then(a.column.cmp(&b.column))
+    });
+    Ok(out)
 }
