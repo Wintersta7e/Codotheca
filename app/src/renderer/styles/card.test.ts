@@ -404,3 +404,33 @@ describe('§24.3d: the install control and its chooser are styled', () => {
     expect(at('.cdt-card-install').marginTop).toBe('auto');
   });
 });
+
+/**
+ * The chooser's two kinds of row read differently, **resolved on real elements**.
+ *
+ * This shipped wrong once and no test saw it: `.cdt-root-chooser__add` is specificity (0,1,0) and
+ * `.cdt-root-chooser button` is (0,1,1), so the class alone lost the cascade and both rows
+ * rendered `--text-2`. The source said one thing and the pixels said another, which a text match
+ * over the stylesheet cannot tell apart.
+ */
+describe('§24.3a: a root and the door out of the chooser do not read alike', () => {
+  it('resolves a different colour on the add row than on a root row', () => {
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.append(style);
+    document.body.innerHTML = `
+      <div class="cdt-root-chooser">
+        <button id="root" aria-pressed="false"></button>
+        <button id="add" class="cdt-root-chooser__add"></button>
+      </div>`;
+    const at = (selector: string): CSSStyleDeclaration => {
+      const node = document.querySelector(selector);
+      if (node === null) throw new Error(`fixture has no ${selector}`);
+      return getComputedStyle(node);
+    };
+    const root = at('#root').color;
+    const add = at('#add').color;
+    expect(root, 'the root row resolved no colour at all').not.toBe('');
+    expect(add, 'the add row reads exactly like a root row — the cascade lost').not.toBe(root);
+  });
+});

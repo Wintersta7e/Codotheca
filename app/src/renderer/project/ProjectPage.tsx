@@ -213,8 +213,14 @@ export function ProjectPageView({
   // — PLAY launches that copy and this is the one it offers to take away.
   const removal = useUninstallOffer(shown?.location.id ?? null, reload);
   // §24.3d offers Install where Play stands on a cloned project, so it is offered exactly where
-  // there is no working copy to play — §23's not-cloned era and nowhere else.
-  const hasWorkingCopy = detail !== null && detail.locations.some((l) => l.presence === 'present');
+  // there is no working copy to play.
+  //
+  // **§23.1's predicate, which is `primaryLocation !== null` and not a presence comparison.** The
+  // card already reads it that way (`card/ProjectCard.tsx`), and the two disagree on a project
+  // whose folder was moved: `projects.list` answers `presence: "missing"` with a non-null
+  // `primaryLocation`, so a presence test here offered Install on the page while the tile offered
+  // nothing for the same project at the same moment. One predicate, one owner.
+  const hasWorkingCopy = detail !== null && detail.row.primaryLocation !== null;
   const install = useInstallOffer(detail === null || hasWorkingCopy ? null : detail.row.id);
 
   return (

@@ -563,12 +563,15 @@
 
 /* The composed display form, built by the core. Truncated rather than wrapped: a destination
    that grows the slot moves the button under the pointer. */
+/* 9px, the size the root rows beside it use. This is the only statement of *where the clone is
+   about to land*, and at 8px it was the smallest type in the product — smaller than the list the
+   user just chose the root from. */
 .cdt-install-control__destination {
   margin: 0;
   overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.14em;
+  font-size: 9px;
+  letter-spacing: 0.12em;
   color: var(--text-3);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -647,7 +650,11 @@
   border-color: var(--sig-edge);
   color: var(--text-1);
 }
-.cdt-root-chooser__add {
+/* `.cdt-root-chooser button` above is (0,1,1) and a bare `.cdt-root-chooser__add` is (0,1,0), so
+   the class alone lost and both rows resolved to `--text-2`. The distinction is the point: the
+   roots are choices, this is a door out to a dialog. Measured on the real elements, not read off
+   the source. */
+.cdt-root-chooser button.cdt-root-chooser__add {
   color: var(--text-3);
 }
 
