@@ -138,6 +138,20 @@ pub fn write_base_args(intent: &Intent, env: &WriteEnv) -> Vec<OsString> {
     cfg(&mut argv, OsString::from("protocol.ext.allow=never"));
     cfg(&mut argv, OsString::from("diff.external="));
     cfg(&mut argv, OsString::from("core.askPass="));
+    // [p2-24b] §24.1: *"An invocation may create bytes and may never remove or overwrite one."*
+    //
+    // **`git fetch` spawns `git maintenance run --auto`, and that prunes.** Measured, not
+    // reasoned about: `GIT_TRACE=1 git -c gc.auto=1 fetch` shows
+    // `run_command: git maintenance run --auto --no-quiet` as a child, and the same fetch with
+    // these three renders no such line. The threshold is `gc.auto`'s 6,700 loose objects, so
+    // without them the invariant holds by luck about a repository's shape rather than by
+    // construction — and §24.7C's pre-flight now runs a real fetch against a user's working copy.
+    //
+    // The corpus generator has set all three since it was written (`core/src/corpus/git_cmd.rs`),
+    // for determinism. The write path needs them for a stronger reason.
+    cfg(&mut argv, OsString::from("gc.auto=0"));
+    cfg(&mut argv, OsString::from("gc.autoDetach=false"));
+    cfg(&mut argv, OsString::from("maintenance.auto=false"));
     argv.extend(env.credential.helper_args());
     // §3.2's parenthesis — *"clean/smudge filters are not disabled … but phase 1 never checks
     // out"* — becomes load-bearing here, because a clone checks out.

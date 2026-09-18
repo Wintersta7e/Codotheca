@@ -793,3 +793,61 @@ fn an_unusable_remote_returns_rather_than_blocking_on_a_prompt() {
     );
     eprintln!("git-write-audit: an unusable remote returned in {elapsed:?}");
 }
+
+/// [p2-24b] §24.1: *"An invocation may create bytes and may never remove or overwrite one."*
+///
+/// **`git fetch` spawns `git maintenance run --auto`, and that prunes.** Measured rather than
+/// reasoned about: `GIT_TRACE=1 git -c gc.auto=1 fetch origin` shows
+/// `run_command: git maintenance run --auto --no-quiet` as a child, and the same fetch carrying
+/// the three options below renders no such line. `gc.auto`'s default threshold is 6,700 loose
+/// objects, so without them §24.1's invariant holds by luck about a repository's shape rather
+/// than by construction — and §24.7C's pre-flight runs a real fetch against a user's working copy.
+///
+/// Asserted on the **child's own argv**, not on `Intent::argv()`: these are base arguments, and a
+/// test reading the intent's rendering would not see them at all.
+#[test]
+fn the_child_disables_the_maintenance_that_would_prune() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let (recorded, _dest) = drive_a_clone(temp.path());
+
+    for option in ["gc.auto=0", "gc.autoDetach=false", "maintenance.auto=false"] {
+        assert!(
+            recorded.argv.iter().any(|a| a == option),
+            "{option} must be in the child's argv, or a fetch may spawn a pruning child: {:?}",
+            recorded.argv
+        );
+    }
+}
+
+/// The same three, rendered for **every** variant rather than for the one that happens to spawn.
+///
+/// A clone is the variant the recorder can drive; a fetch is the one that actually triggers
+/// maintenance. Asserting only the driveable one would leave the variant that matters uncovered,
+/// which is the shape of a bar written past its own subject.
+#[test]
+fn every_variant_renders_the_maintenance_options() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let intents = rendered();
+    let env = authenticated_env(temp.path(), "forge.example", None);
+    let mut checked = 0;
+    for intent in &intents {
+        let argv: Vec<String> = write_base_args(intent, &env)
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        for option in ["gc.auto=0", "gc.autoDetach=false", "maintenance.auto=false"] {
+            assert!(
+                argv.iter().any(|a| a == option),
+                "{:?} renders no {option}: {argv:?}",
+                intent.kind()
+            );
+        }
+        checked += 1;
+    }
+    assert_eq!(
+        checked,
+        Intent::ALL.len(),
+        "the maintenance check looked at {checked} of {} variants",
+        Intent::ALL.len()
+    );
+}
