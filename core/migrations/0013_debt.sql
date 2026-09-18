@@ -93,3 +93,80 @@ UPDATE xp_events SET subject_key =
  WHERE kind = 'commit_day' AND subject_key NOT LIKE 'lineage:%'
    AND project_id IS NOT NULL
    AND (SELECT lineage_key FROM project WHERE id = xp_events.project_id) IS NOT NULL;
+
+-- §28.8.3. One per-project list of concrete, derived, **closable** items, keyed on
+-- `(subject_key, source, fingerprint)`.
+--
+-- `subject_key` is `ProjectSubject::to_key()` and **never `project_id`**: §1.7 records that v1
+-- keyed the ledger on `project_id` and it broke on merges, and `subject_key` is *total* where
+-- `lineage_key` is not. `project_id` is an attribute, repointed by the merge recompute, never key
+-- material.
+--
+-- The cascade-child enumeration is NOT restated here — `0016_health_delta.sql` carries the one
+-- copy, by ruling (R129/F7). A number in a comment needs one writer and no readers.
+CREATE TABLE debt_item (
+  id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id             INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+  subject_key            TEXT NOT NULL,
+  source                 TEXT NOT NULL
+                           CHECK (source IN ('todo_marker', 'missing_readme', 'missing_license',
+                                             'missing_tests', 'no_release', 'unpushed_commits',
+                                             'ci_red', 'dependency_advisory',
+                                             'abandoned_with_debt')),
+  -- NOT NULL and '' for a singleton, never NULL: SQLite treats NULLs as distinct inside a
+  -- UNIQUE index, so a nullable fingerprint would silently permit duplicate singletons — the
+  -- defect 0002_locations_and_roots.sql:7-9 records against location.distro.
+  fingerprint            TEXT NOT NULL DEFAULT '',
+  state                  TEXT NOT NULL CHECK (state IN ('open', 'unverified')),
+  scoring                TEXT NOT NULL CHECK (scoring IN ('scored', 'shown_only')),
+  -- The anchor. READ, not diagnostic: sweep.rs compares it with IS against the sweep's
+  -- location_id before any closure (§28.3 rule 1).
+  last_seen_location_id  INTEGER REFERENCES location(id),
+  basis                  TEXT CHECK (basis IS NULL OR
+                            basis IN ('head', 'index', 'worktree', 'refs', 'remote')),
+  -- Linux paths are arbitrary bytes and cannot round-trip through TEXT; `path_display` is lossy
+  -- and for the UI only. Both are ATTRIBUTES: a rename closes nothing.
+  path_bytes             BLOB,
+  path_display           TEXT,
+  line                   INTEGER,
+  column                 INTEGER,
+  salient_text           TEXT,
+  first_seen_at          INTEGER NOT NULL,
+  last_seen_at           INTEGER NOT NULL,
+  UNIQUE (subject_key, source, fingerprint)
+) STRICT;
+
+CREATE INDEX idx_debt_item_project_state ON debt_item(project_id, state);
+
+-- §28.5. **The non-obvious half of this section, and not optional.** Without it,
+-- `SELECT count(*) FROM debt_item WHERE project_id = ?` returns 0 for a project with no debt AND
+-- for a project nobody ever looked at — *render unknown as zero* on the first day the product is
+-- capable of it.
+--
+-- Where it diverges from `peek_cache`'s precedent, deliberately: the outcome is an explicit
+-- stored value, never row-presence. `peek_cache` encodes its distinction as *row present with a
+-- NULL column*, invisible to a consumer that does not know the convention; this has six outcomes
+-- and four of them are reasons the sweep could not finish, while presence carries one bit.
+CREATE TABLE debt_sweep (
+  project_id    INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+  source        TEXT NOT NULL
+                  CHECK (source IN ('todo_marker', 'missing_readme', 'missing_license',
+                                    'missing_tests', 'no_release', 'unpushed_commits',
+                                    'ci_red', 'dependency_advisory', 'abandoned_with_debt')),
+  outcome       TEXT NOT NULL CHECK (outcome IN ('complete', 'partial', 'failed',
+                                                 'unobservable', 'skipped_reference',
+                                                 'skipped_suppressed')),
+  location_id   INTEGER REFERENCES location(id),
+  -- Diagnostic: location.scan_generation as it stood at observation. READ BY NO SURFACE and by
+  -- no closure rule. location.scan_generation is a live phase-1 mechanism (0002:25), so a later
+  -- reader will assume this column means what that one means — it does not. (R129/F9)
+  generation    INTEGER,
+  basis         TEXT CHECK (basis IS NULL OR
+                  basis IN ('head', 'index', 'worktree', 'refs', 'remote')),
+  item_count    INTEGER,
+  observed_at   INTEGER NOT NULL,
+  PRIMARY KEY (project_id, source),
+  -- Zero and unknown are different facts and the DDL says so, as scan_problem.count refuses a
+  -- zero row (0005:61-62) and uninstall NULLs rather than zeroes (uninstall/command.rs:17-19).
+  CHECK ((outcome IN ('complete', 'partial')) = (item_count IS NOT NULL))
+) STRICT;

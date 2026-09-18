@@ -15,10 +15,34 @@
 use std::collections::BTreeSet;
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
+
 use codotheca_core::index::subject::ProjectSubject;
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::jobs::j4_history::{commit_days, local_date, HistoryFacts};
 use codotheca_core::protocol::ProjectId;
+
+/// The committed contract, compiled in rather than re-found at runtime.
+const SCHEMA: &str = include_str!("../../protocol/schema/protocol.json");
+
+/// Every variant the schema declares for `name`, in declaration order.
+///
+/// Panics rather than returning an empty vector for an absent type: a missing enum must fail the
+/// test, not silently reduce it to a loop over nothing.
+fn schema_variants(name: &str) -> Vec<String> {
+    let doc: serde_json::Value = serde_json::from_str(SCHEMA).expect("protocol.json parses");
+    let decl = doc["types"]
+        .get(name)
+        .unwrap_or_else(|| panic!("{name} is not declared in protocol.json"));
+    assert_eq!(decl["kind"], "enum", "{name} is not an enum");
+    let variants: Vec<String> = decl["variants"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{name} declares no variants"))
+        .iter()
+        .map(|v| v.as_str().expect("a variant is a string").to_owned())
+        .collect();
+    assert!(!variants.is_empty(), "{name} declares no variants");
+    variants
+}
 
 /// A database at exactly `version` files applied, through the shipped set.
 fn migrated_to(version: usize) -> (tempfile::TempDir, rusqlite::Connection) {
@@ -342,4 +366,275 @@ fn both_writers_agree_when_there_is_no_remote() {
     };
     assert_eq!(key.as_bytes(), want.to_key().as_bytes());
     assert_eq!(ProjectSubject::parse(&key), Some(want));
+}
+
+// ---------------------------------------------------------------------------------------------
+// §28.8's two tables — `AC-P3-28-10`
+// ---------------------------------------------------------------------------------------------
+
+fn insert_location(conn: &rusqlite::Connection, project: i64) -> i64 {
+    conn.execute(
+        "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display, store_key,
+                               presence, repo_kind)
+         VALUES (?1, 'linux', x'2f61', x'2f61', '/a', 'store', 'present', 'worktree')",
+        [project],
+    )
+    .unwrap();
+    conn.last_insert_rowid()
+}
+
+fn insert_item(
+    conn: &rusqlite::Connection,
+    project: i64,
+    source: &str,
+    fingerprint: &str,
+) -> rusqlite::Result<usize> {
+    conn.execute(
+        "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state, scoring,
+                                first_seen_at, last_seen_at)
+         VALUES (?1, 'lineage:k|remote:', ?2, ?3, 'open', 'scored', 1, 1)",
+        rusqlite::params![project, source, fingerprint],
+    )
+}
+
+/// **`AC-P3-28-10`.** The four mirrored CHECK literals are one value stated twice with a
+/// generated enum (R26). Each loop **enumerates the schema** — never a literal beside the
+/// column — inserts one row per variant against a real migrated database, prints the count, and
+/// fails at zero. `core/src/jobs/mod.rs:200-206` is the shape, and its own doc comment records
+/// R26 firing in production: the DDL rejected a value the column's own producer emits.
+#[test]
+fn ac_p3_28_10_every_declared_variant_is_accepted_by_its_column() {
+    let (_d, conn) = fresh();
+    let project = insert_project(&conn, "thing");
+    let location = insert_location(&conn, project);
+
+    let sources = schema_variants("DebtSource");
+    let mut n_source = 0_usize;
+    for (i, source) in sources.iter().enumerate() {
+        insert_item(&conn, project, source, &format!("f{i}"))
+            .unwrap_or_else(|e| panic!("debt_item.source refused {source:?}: {e}"));
+        n_source += 1;
+    }
+    eprintln!("debt_item.source accepted {n_source} of DebtSource's declared variants");
+    assert!(
+        n_source > 0,
+        "inserted nothing, so the column proved nothing"
+    );
+    assert_eq!(n_source, sources.len());
+
+    let states = schema_variants("DebtItemState");
+    let mut n_state = 0_usize;
+    for (i, state) in states.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state, scoring,
+                                    first_seen_at, last_seen_at)
+             VALUES (?1, 'lineage:state', 'todo_marker', ?2, ?3, 'scored', 1, 1)",
+            rusqlite::params![project, format!("s{i}"), state],
+        )
+        .unwrap_or_else(|e| panic!("debt_item.state refused {state:?}: {e}"));
+        n_state += 1;
+    }
+    eprintln!("debt_item.state accepted {n_state} of DebtItemState's declared variants");
+    assert!(
+        n_state > 0,
+        "inserted nothing, so the column proved nothing"
+    );
+
+    let scorings = schema_variants("DebtScoring");
+    let mut n_scoring = 0_usize;
+    for (i, scoring) in scorings.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state, scoring,
+                                    first_seen_at, last_seen_at)
+             VALUES (?1, 'lineage:scoring', 'todo_marker', ?2, 'open', ?3, 1, 1)",
+            rusqlite::params![project, format!("c{i}"), scoring],
+        )
+        .unwrap_or_else(|e| panic!("debt_item.scoring refused {scoring:?}: {e}"));
+        n_scoring += 1;
+    }
+    eprintln!("debt_item.scoring accepted {n_scoring} of DebtScoring's declared variants");
+    assert!(
+        n_scoring > 0,
+        "inserted nothing, so the column proved nothing"
+    );
+
+    // `debt_sweep` is one row per `(project_id, source)`, so each outcome needs its own source.
+    // More outcomes than sources is possible, so a fresh project per outcome keeps the loop
+    // total over the enum rather than over whichever is shorter.
+    let outcomes = schema_variants("DebtSweepOutcome");
+    let mut n_outcome = 0_usize;
+    for (i, outcome) in outcomes.iter().enumerate() {
+        let p = insert_project(&conn, &format!("sweep-{i}"));
+        // The honesty CHECK: `complete` and `partial` carry a count and nothing else may.
+        let count: Option<i64> = if outcome == "complete" || outcome == "partial" {
+            Some(0)
+        } else {
+            None
+        };
+        conn.execute(
+            "INSERT INTO debt_sweep (project_id, source, outcome, location_id, generation, basis,
+                                     item_count, observed_at)
+             VALUES (?1, 'todo_marker', ?2, ?3, 0, 'head', ?4, 1)",
+            rusqlite::params![p, outcome, location, count],
+        )
+        .unwrap_or_else(|e| panic!("debt_sweep.outcome refused {outcome:?}: {e}"));
+        n_outcome += 1;
+    }
+    eprintln!("debt_sweep.outcome accepted {n_outcome} of DebtSweepOutcome's declared variants");
+    assert!(
+        n_outcome > 0,
+        "inserted nothing, so the column proved nothing"
+    );
+
+    // `ObservationBasis` rides two columns, and both are asserted: a CHECK copied to one and
+    // mistyped in the other is exactly the drift R26 names.
+    let bases = schema_variants("ObservationBasis");
+    let mut n_basis = 0_usize;
+    for (i, basis) in bases.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state, scoring,
+                                    basis, first_seen_at, last_seen_at)
+             VALUES (?1, 'lineage:basis', 'todo_marker', ?2, 'open', 'scored', ?3, 1, 1)",
+            rusqlite::params![project, format!("b{i}"), basis],
+        )
+        .unwrap_or_else(|e| panic!("debt_item.basis refused {basis:?}: {e}"));
+        let p = insert_project(&conn, &format!("basis-{i}"));
+        conn.execute(
+            "INSERT INTO debt_sweep (project_id, source, outcome, basis, item_count, observed_at)
+             VALUES (?1, 'todo_marker', 'complete', ?2, 0, 1)",
+            rusqlite::params![p, basis],
+        )
+        .unwrap_or_else(|e| panic!("debt_sweep.basis refused {basis:?}: {e}"));
+        n_basis += 2;
+    }
+    eprintln!("the two basis columns accepted {n_basis} rows over ObservationBasis");
+    assert!(
+        n_basis > 0,
+        "inserted nothing, so the columns proved nothing"
+    );
+}
+
+/// SQLite treats NULLs as distinct inside a UNIQUE index, so a nullable `fingerprint` would
+/// silently permit duplicate singletons — the defect `0002_locations_and_roots.sql:7-9` records
+/// against `location.distro`. `''` is the singleton's fingerprint and the column is NOT NULL.
+#[test]
+fn two_singletons_of_one_source_collide_on_the_unique_index() {
+    let (_d, conn) = fresh();
+    let project = insert_project(&conn, "thing");
+
+    insert_item(&conn, project, "missing_readme", "").unwrap();
+    let second = insert_item(&conn, project, "missing_readme", "");
+    assert!(
+        second.is_err(),
+        "a second singleton of one source must collide, not duplicate"
+    );
+
+    // A NULL fingerprint is refused outright, so the NULL-distinctness hole cannot be reached.
+    let nulled = conn.execute(
+        "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state, scoring,
+                                first_seen_at, last_seen_at)
+         VALUES (?1, 'lineage:k|remote:', 'missing_license', NULL, 'open', 'scored', 1, 1)",
+        [project],
+    );
+    assert!(nulled.is_err(), "fingerprint must be NOT NULL");
+}
+
+/// Zero and unknown are different facts and the DDL says so, as `scan_problem.count` refuses a
+/// zero row and uninstall NULLs rather than zeroes.
+#[test]
+fn a_sweep_may_carry_a_count_only_when_it_observed() {
+    let (_d, conn) = fresh();
+    let p1 = insert_project(&conn, "a");
+    let p2 = insert_project(&conn, "b");
+    let p3 = insert_project(&conn, "c");
+
+    let complete_without = conn.execute(
+        "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+         VALUES (?1, 'todo_marker', 'complete', NULL, 1)",
+        [p1],
+    );
+    assert!(
+        complete_without.is_err(),
+        "a complete sweep with no count says it observed and refuses to say what"
+    );
+
+    let unobservable_with_zero = conn.execute(
+        "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+         VALUES (?1, 'todo_marker', 'unobservable', 0, 1)",
+        [p2],
+    );
+    assert!(
+        unobservable_with_zero.is_err(),
+        "zero items is a reading; unobservable is the absence of one"
+    );
+
+    conn.execute(
+        "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+         VALUES (?1, 'todo_marker', 'complete', 0, 1)",
+        [p3],
+    )
+    .unwrap();
+}
+
+/// One row per `(project_id, source)`, upserted. The pair a closure needs is the stored row and
+/// the sweep in hand — never a history of sweeps, which nothing reads.
+#[test]
+fn a_sweep_is_one_row_per_project_and_source() {
+    let (_d, conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    conn.execute(
+        "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+         VALUES (?1, 'todo_marker', 'complete', 0, 1)",
+        [p],
+    )
+    .unwrap();
+    let repeat = conn.execute(
+        "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+         VALUES (?1, 'todo_marker', 'partial', 1, 2)",
+        [p],
+    );
+    assert!(repeat.is_err(), "a second sweep row for one source");
+
+    // A different source on the same project is a different row and is admitted.
+    conn.execute(
+        "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+         VALUES (?1, 'missing_readme', 'complete', 0, 2)",
+        [p],
+    )
+    .unwrap();
+}
+
+/// Both tables are `ON DELETE CASCADE` children of `project`. The index exists by name, because
+/// `idx_debt_item_project_state` is what makes the per-project open-item read not a table scan.
+#[test]
+fn both_tables_cascade_from_project_and_the_index_exists() {
+    let (_d, conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_item(&conn, p, "todo_marker", "f0").unwrap();
+    conn.execute(
+        "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+         VALUES (?1, 'todo_marker', 'complete', 1, 1)",
+        [p],
+    )
+    .unwrap();
+
+    conn.execute("DELETE FROM project WHERE id = ?1", [p])
+        .unwrap();
+
+    for table in ["debt_item", "debt_sweep"] {
+        let left: i64 = conn
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 0, "{table} did not cascade");
+    }
+
+    let idx: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master
+              WHERE type='index' AND name='idx_debt_item_project_state'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(idx, 1);
 }
