@@ -41,6 +41,7 @@ export function residencySettingsArgs(answer: ResidencyAnswer): SettingsSetArgs 
       logLevel: null,
       installRootId: null,
       contentScanEnabled: null,
+      healthChecks: null,
     },
   };
 }

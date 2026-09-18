@@ -54,6 +54,10 @@ pub const DEFAULTS: Settings = Settings {
     // §29.8: **off until the user turns it on.** The whole gate depends on this default, and it
     // is the only setting whose default decides whether a file is opened at all.
     content_scan_enabled: false,
+    // §30.9's per-check switches. Empty here and **not** a default value: the list is one entry
+    // per `DebtSource` variant, always in full, and it is built by reading the enum rather than
+    // by writing a table down. `read` fills it; this const carries the scalar defaults only.
+    health_checks: Vec::new(),
 };
 
 /// # Errors
@@ -124,6 +128,9 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings, IndexError> {
             .and_then(|v| v.parse::<i64>().ok())
             .map(RootId),
         content_scan_enabled: content_scan_enabled(conn)?,
+        // §30.9. Task 6 replaces this with `health::switches::read_switches`, which emits one
+        // entry per `DebtSource` variant with an absent key read as **on**.
+        health_checks: Vec::new(),
     })
 }
 

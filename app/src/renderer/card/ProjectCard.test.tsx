@@ -78,6 +78,15 @@ const row = (over: Partial<ProjectRow> = {}): ProjectRow => ({
   errorKind: null,
   errorAt: null,
   eraSectionId: 'era-2021',
+  // [p3] §30.1: `absent` is the reading nothing has computed, and every quantity is null.
+  healthSummary: {
+    state: 'absent',
+    scoredOpen: null,
+    unverified: null,
+    unknownChecks: null,
+    observedAt: null,
+  },
+  lifecycle: 'active',
   ...over,
 });
 

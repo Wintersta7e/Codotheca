@@ -422,6 +422,25 @@ fn map_loaded_row(
         // Stamped by `projects::list`, which owns the band rules. Empty here so a caller
         // that forgets to section cannot pass an id off as one this loader computed.
         era_section_id: String::new(),
+        // §30.1's reading is derived at read time, on `project_presence`'s precedent, and
+        // **nothing has computed one at this point in the load** — `absent` with every quantity
+        // NULL is what that is, not a placeholder for a number. `load_project_rows` and
+        // `load_project_row` overwrite it with the batched projection.
+        health_summary: crate::protocol::HealthSummary {
+            state: crate::protocol::HealthState::Absent,
+            scored_open: None,
+            unverified: None,
+            unknown_checks: None,
+            observed_at: None,
+        },
+        // §30.8: `archived` is declared and never derived; `done` requires a **`live`** reading
+        // with every eligible check `ok`, which an `absent` reading can never satisfy, so
+        // `active` — the residual, carrying no claim — is the only other value available here.
+        lifecycle: if r.get::<_, i64>(13)? != 0 {
+            crate::protocol::ProjectLifecycle::Archived
+        } else {
+            crate::protocol::ProjectLifecycle::Active
+        },
     };
 
     let facts = RowFacts {

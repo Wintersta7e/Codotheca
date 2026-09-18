@@ -469,6 +469,15 @@ pub fn handle_project_get(
         // sweeps that make an empty list readable as *no debt* rather than *nobody looked*.
         debt: crate::debt::read::load_debt(conn, ProjectId(id)).map_err(internal)?,
         debt_sweeps: crate::debt::read::load_debt_sweeps(conn, ProjectId(id)).map_err(internal)?,
+        // [p3] §30.1's reading. Nothing computes one yet — `absent` with `scoredOpen` and
+        // `basis` NULL, and an **empty** `checks`, which is the state saying nothing was
+        // computed and never a count of zero checks. Task 8's `read_for_project` replaces it.
+        health: crate::protocol::HealthReading {
+            state: crate::protocol::HealthState::Absent,
+            scored_open: None,
+            basis: None,
+            checks: Vec::new(),
+        },
         locations,
         row,
     })

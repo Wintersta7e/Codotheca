@@ -14,6 +14,7 @@ const settings: Settings = {
   logLevel: 'info',
   installRootId: null,
   contentScanEnabled: false,
+  healthChecks: [],
 };
 
 const props = {

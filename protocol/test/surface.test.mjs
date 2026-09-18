@@ -1101,7 +1101,13 @@ test('the four totals agree with the phase-2 delta table', () => {
    * nullable field that carries it. `ProjectDetail.debt` and `.debtSweeps` are fields and move
    * no total.
    */
-  assert.equal(types, 168, `types: 160 + §28's 8, against the table's +8; found ${types}`);
+  /**
+   * [p3] §30 moves the **type row alone** — no command, no topic, no event (`AC-P3-30-15`) — by
+   * **+9**: `HealthState`, `CheckOutcome`, `ProjectLifecycle`, `UnknownReason`, `HealthBasis`,
+   * `HealthCheck`, `HealthReading`, `HealthSummary`, `HealthCheckSwitch`. The five field
+   * additions move no total.
+   */
+  assert.equal(types, 177, `types: 160 + §28's 8 + §30's 9; found ${types}`);
 });
 
 /**
@@ -1187,4 +1193,118 @@ test('§28.9: DebtItem and DebtSweepState carry Timestamp, not i64', () => {
 test('§28.9: ProjectDetail carries one flat debt list and its sweeps', () => {
   assert.equal(schema.types.ProjectDetail.fields.debt, '[DebtItem]');
   assert.equal(schema.types.ProjectDetail.fields.debtSweeps, '[DebtSweepState]');
+});
+
+/**
+ * [p3] §30.11's nine types. **R116 corrects A14.3's shape, which §30 transcribed verbatim**:
+ * `HealthSummary` is nullable exactly where `HealthReading` is, field for field, and
+ * `ProjectRow.healthSummary` is **not** wrapped in a null — `state` is then the single
+ * discriminator on both surfaces and `suppressed` stops being indistinguishable from `absent` on
+ * the shelf.
+ *
+ * `observedAt` is `Timestamp` and never `i64` (R128/F9): every `At` field in this schema is a
+ * `Timestamp`, and `i64` carries sequences and durations only.
+ */
+test('§30.11: HealthSummary matches HealthReading field for field', () => {
+  const reading = schema.types.HealthReading.fields;
+  const summary = schema.types.HealthSummary.fields;
+
+  // Non-nullable on both: the state is what says *there is no reading*, once.
+  assert.equal(reading.state, 'HealthState');
+  assert.equal(summary.state, 'HealthState');
+
+  // NULL with no default, per §30.1's writer rule: a `u32` that must represent *unknown* has no
+  // value to offer but `0`, which is the invariant's own counterexample.
+  assert.equal(reading.scoredOpen, 'u32?');
+  assert.equal(summary.scoredOpen, 'u32?');
+  assert.equal(summary.unverified, 'u32?');
+  assert.equal(summary.unknownChecks, 'u32?');
+  assert.equal(summary.observedAt, 'Timestamp?');
+
+  // R116.2 — non-nullable on the row, so §35.3's two-part test is deleted rather than codified.
+  assert.equal(schema.types.ProjectRow.fields.healthSummary, 'HealthSummary');
+  assert.equal(schema.types.ProjectRow.fields.lifecycle, 'ProjectLifecycle');
+  assert.equal(schema.types.ProjectDetail.fields.health, 'HealthReading');
+});
+
+/**
+ * [p3] **A12b.** `scoredOpen` counts items and `unknownChecks` counts checks. Each field carries
+ * its unit in its name and neither is derived from the other; a struct holding one *value* over
+ * two units is what A12b forbids, and a basis carrying an item count is how that arrives.
+ */
+test('§30.11: HealthBasis counts checks only, and carries no item count', () => {
+  const basis = schema.types.HealthBasis.fields;
+  assert.deepEqual(Object.keys(basis), [
+    'ran',
+    'eligible',
+    'unknown',
+    'off',
+    'notApplicable',
+    'observedAt',
+  ]);
+  for (const name of Object.keys(basis)) {
+    const lower = name.toLowerCase();
+    for (const banned of ['open', 'item', 'unverified']) {
+      assert.ok(
+        !lower.includes(banned),
+        `HealthBasis.${name} names ${banned}: a basis counts checks, never items`,
+      );
+    }
+  }
+  assert.equal(basis.observedAt, 'Timestamp');
+});
+
+/**
+ * [p3] §30.1's precedence, §30.3's five outcomes, §30.8's tri-state and §30.3's six reasons.
+ * **The order of `HealthState` is the precedence** — `absent` > `suppressed` > `frozen` > `live` —
+ * so a reordering is a behaviour change a set assertion would pass straight through.
+ */
+test('§30: the four health vocabularies are declared, in their ruling order', () => {
+  assert.deepEqual(schema.types.HealthState.variants, ['absent', 'suppressed', 'frozen', 'live']);
+  assert.deepEqual(schema.types.CheckOutcome.variants, [
+    'ok',
+    'failed',
+    'unknown',
+    'off',
+    'notApplicable',
+  ]);
+  assert.deepEqual(schema.types.ProjectLifecycle.variants, ['active', 'done', 'archived']);
+  // R131/F7 strikes *"An account exists and"* from `notSynced`; the variant set is unchanged.
+  assert.deepEqual(schema.types.UnknownReason.variants, [
+    'needsAccount',
+    'notSynced',
+    'notRead',
+    'notObserved',
+    'notRunYet',
+    'unreachable',
+  ]);
+
+  // A check is a debt source (A17), never one of §31's ten completion checks.
+  assert.equal(schema.types.HealthCheck.fields.id, 'DebtSource');
+  assert.equal(schema.types.HealthCheck.fields.outcome, 'CheckOutcome');
+  assert.equal(schema.types.HealthCheck.fields.unknownReason, 'UnknownReason?');
+
+  assert.equal(schema.types.HealthReading.fields.basis, 'HealthBasis?');
+  assert.equal(schema.types.HealthReading.fields.checks, '[HealthCheck]');
+
+  // §30.9's switches, global and one per source.
+  assert.equal(schema.types.HealthCheckSwitch.fields.check, 'DebtSource');
+  assert.equal(schema.types.HealthCheckSwitch.fields.enabled, 'bool');
+  assert.equal(schema.types.Settings.fields.healthChecks, '[HealthCheckSwitch]');
+  assert.equal(schema.types.SettingsPatch.fields.healthChecks, '[HealthCheckSwitch]?');
+});
+
+/**
+ * [p3] §30 adds **no command, no event and no topic** (`AC-P3-30-15`). Adding one would move four
+ * totals in three places — `protocol/test/surface.test.mjs`, `core/src/assembly/route.rs` and the
+ * lock — and §30 adds none.
+ */
+test('§30: the health reading moves the type row alone', () => {
+  assert.equal(schema.commands.length, 60);
+  assert.equal(Object.keys(schema.topics).length, 7);
+  assert.equal(
+    Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0),
+    34,
+  );
+  assert.equal(schema.errors.length, 14);
 });

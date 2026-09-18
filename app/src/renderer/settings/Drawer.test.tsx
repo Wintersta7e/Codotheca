@@ -31,6 +31,7 @@ const settings: Settings = {
   logLevel: 'info',
   installRootId: null,
   contentScanEnabled: false,
+  healthChecks: [],
 };
 
 const answers = (name: CommandName): unknown => {
@@ -142,6 +143,7 @@ describe('the settings drawer', () => {
       logLevel: null,
       installRootId: null,
       contentScanEnabled: null,
+      healthChecks: null,
     });
     expect(toSettingsPatch({ effectsTier: 'off' }).effectsTier).toBe('off');
   });

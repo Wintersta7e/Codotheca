@@ -67,6 +67,7 @@ export function toSettingsPatch(patch: Partial<Settings>): SettingsPatch {
     logLevel: patch.logLevel ?? null,
     installRootId: patch.installRootId ?? null,
     contentScanEnabled: patch.contentScanEnabled ?? null,
+    healthChecks: patch.healthChecks ?? null,
   };
 }
 
