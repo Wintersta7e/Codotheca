@@ -413,6 +413,24 @@ impl GitBackend for LockWatch {
         self.observe();
         self.inner.commit_subjects(repo, limit, ctx)
     }
+    fn head_tree(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<codotheca_core::git::TreeEntry>> {
+        self.observe();
+        self.inner.head_tree(repo, ctx)
+    }
+    fn read_blobs(
+        &self,
+        repo: &RepoHandle,
+        oids: &[String],
+        byte_cap: u64,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<codotheca_core::git::BlobRead>> {
+        self.observe();
+        self.inner.read_blobs(repo, oids, byte_cap, ctx)
+    }
 }
 
 #[test]

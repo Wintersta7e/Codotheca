@@ -8,15 +8,19 @@
 
 use std::collections::BTreeSet;
 
-/// Every non-flag argv literal this module is permitted to emit: eight read-only subcommands
+/// Every non-flag argv literal this module is permitted to emit: nine read-only subcommands
 /// plus the one revision name that is spelled out. §17 forbids the rest for the whole of
 /// phase 1, and this list may not grow without a spec change.
+///
+/// **`ls-tree` is the ninth, and §29.1 is the spec change this list requires.** It reads the
+/// committed tree, which `ls-files -s` cannot: that one reads the index. Both stay.
 const ALLOWED: &[&str] = &[
     "--version",
     "cat-file",
     "check-ignore",
     "log",
     "ls-files",
+    "ls-tree",
     "rev-list",
     "rev-parse",
     "show",

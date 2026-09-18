@@ -11,11 +11,16 @@
     clippy::indexing_slicing
 )]
 
+mod support;
+
+use codotheca_core::cancel::CancelToken;
+use codotheca_core::git::{head_tree, read_blobs, RunLimits};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::jobs::JobKind;
 use codotheca_core::protocol::{Job, SyncTaskKind};
 use codotheca_core::sync::task::kind_slug;
+use support::TestRepo;
 
 fn migrated() -> (tempfile::TempDir, rusqlite::Connection) {
     let dir = tempfile::tempdir().unwrap();
@@ -84,4 +89,60 @@ fn ac_p3_29_21_the_job_vocabularies_stay_disjoint_and_complete() {
     for sync in &syncs {
         assert!(!slugs.contains(sync), "{sync} names a job and a sync task");
     }
+}
+
+/// **AC-P3-29-2.** The enumeration reads HEAD, not the index.
+///
+/// The index is really dirtied — a second file holding a `TODO` is staged and never committed —
+/// and no mock stands in for it. `ls-files -s` reads the staged entry, so a J7 built on it would
+/// yield findings from uncommitted edits: debt flickering as the user types, and a blob id HEAD
+/// never contained landing in a permanent, library-wide cache.
+#[test]
+fn ac_p3_29_2_the_enumeration_reads_head_not_the_index() {
+    let repo = TestRepo::init();
+    repo.write("committed.rs", b"fn a() {}\n// TODO: the committed one\n");
+    repo.commit("first");
+    repo.write("staged.rs", b"fn b() {}\n// TODO: the staged one\n");
+    repo.git(&["add", "staged.rs"]);
+
+    let entries = head_tree(
+        &repo.exec(),
+        &repo.handle(),
+        RunLimits::none(),
+        &CancelToken::new(),
+    )
+    .unwrap();
+    let oids: Vec<String> = entries.iter().map(|e| e.oid.clone()).collect();
+    let reads = read_blobs(
+        &repo.exec(),
+        &repo.handle(),
+        &oids,
+        512 * 1024,
+        RunLimits::none(),
+        &CancelToken::new(),
+    )
+    .unwrap();
+
+    // The salient text of every marker the read covers. Task 5 replaces this crude scan with
+    // `scan_blob`; what the criterion turns on either way is *which blob was read*.
+    let mut findings: Vec<String> = Vec::new();
+    for read in &reads {
+        let Some(bytes) = read.bytes.as_deref() else {
+            continue;
+        };
+        for line in bytes.split(|b| *b == b'\n') {
+            if let Some(at) = line.windows(4).position(|w| w == b"TODO") {
+                findings.push(String::from_utf8_lossy(&line[at..]).into_owned());
+            }
+        }
+    }
+    findings.sort();
+    eprintln!(
+        "enumerated {} paths, read {} blobs, found {} markers: {findings:?}",
+        entries.len(),
+        reads.len(),
+        findings.len()
+    );
+    assert!(!findings.is_empty(), "the scan found nothing to compare");
+    assert_eq!(findings, vec!["TODO: the committed one".to_owned()]);
 }

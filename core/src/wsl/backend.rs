@@ -6,9 +6,9 @@
 //! not be reached — and they map to different codes on purpose.
 
 use crate::git::{
-    Authorship, CommitSubject, Divergence, GitBackend, GitError, GitResult, GitVersion, JobContext,
-    RefState, RepoFacts, RepoHandle, RootCommit, StatusOptions, StoreKey, TrackedInventory,
-    UntrackedMode, WorktreeStatus,
+    Authorship, BlobRead, CommitSubject, Divergence, GitBackend, GitError, GitResult, GitVersion,
+    JobContext, RefState, RepoFacts, RepoHandle, RootCommit, StatusOptions, StoreKey,
+    TrackedInventory, TreeEntry, UntrackedMode, WorktreeStatus,
 };
 use crate::mount::StoreClass;
 use crate::wsl::conn::{WslError, WslWorker};
@@ -212,6 +212,27 @@ impl GitBackend for WslGitBackend {
         ctx: &JobContext<'_>,
     ) -> GitResult<Vec<CommitSubject>> {
         self.op(repo, WorkerGitOp::CommitSubjects { limit }, ctx)
+    }
+
+    fn head_tree(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TreeEntry>> {
+        self.op(repo, WorkerGitOp::HeadTree, ctx)
+    }
+
+    fn read_blobs(
+        &self,
+        repo: &RepoHandle,
+        oids: &[String],
+        byte_cap: u64,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<BlobRead>> {
+        self.op(
+            repo,
+            WorkerGitOp::ReadBlobs {
+                oids: oids.to_vec(),
+                byte_cap,
+            },
+            ctx,
+        )
     }
 }
 

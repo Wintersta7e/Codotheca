@@ -20,6 +20,7 @@ pub(crate) mod refstate;
 mod repo;
 mod slots;
 mod status;
+mod tree;
 pub mod version;
 
 pub use backend::{require_floor, GitBackend, JobContext, SystemGit};
@@ -46,4 +47,5 @@ pub use slots::{GitSlots, JobClass, SlotGuard};
 pub use status::{
     parse_status_v2, worktree_status, StatusCounts, StatusOptions, UntrackedMode, WorktreeStatus,
 };
+pub use tree::{head_tree, parse_ls_tree_z, read_blobs, BlobRead, TreeEntry};
 pub use version::{meets_floor, parse_version, GitVersion, GIT_FLOOR};

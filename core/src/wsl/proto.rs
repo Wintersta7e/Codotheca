@@ -91,6 +91,15 @@ pub enum WorkerGitOp {
     CommitSubjects {
         limit: u32,
     },
+    /// §29.1's HEAD enumeration, run inside the distro.
+    HeadTree,
+    /// §29.6's blob read. `byte_cap` crosses because it is the **caller's** cap: a blob over it
+    /// is recorded at its size with its body discarded, and doing that inside the distro is what
+    /// keeps the body off this wire.
+    ReadBlobs {
+        oids: Vec<String>,
+        byte_cap: u64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

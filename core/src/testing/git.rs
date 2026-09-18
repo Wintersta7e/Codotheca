@@ -17,8 +17,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::git::{
-    Authorship, CommitSubject, Divergence, GitBackend, GitError, GitResult, GitVersion, JobContext,
-    RefState, RepoFacts, RepoHandle, RootCommit, StatusOptions, TrackedInventory, WorktreeStatus,
+    Authorship, BlobRead, CommitSubject, Divergence, GitBackend, GitError, GitResult, GitVersion,
+    JobContext, RefState, RepoFacts, RepoHandle, RootCommit, StatusOptions, TrackedInventory,
+    TreeEntry, WorktreeStatus,
 };
 use crate::testing::FakeClock;
 
@@ -107,6 +108,13 @@ pub struct FakeGitBackend {
     unpushed_refs: Op<Vec<String>>,
     authorship: Op<Authorship>,
     commit_subjects: Op<Vec<CommitSubject>>,
+    head_tree: Op<Vec<TreeEntry>>,
+    /// §29.3's scripted blob bodies, keyed by object id — content-addressed here for the same
+    /// reason the cache is: two projects holding identical bytes hold one object.
+    blobs: Mutex<BTreeMap<String, Vec<u8>>>,
+    /// Every oid `read_blobs` was asked for, in order. **This is what lets a test assert that a
+    /// cached blob was not re-read** — `calls()` would say only that the method was entered.
+    blob_requests: Mutex<Vec<String>>,
 }
 
 impl FakeGitBackend {
@@ -134,6 +142,25 @@ impl FakeGitBackend {
         if let Ok(mut c) = self.calls.lock() {
             c.clear();
         }
+        if let Ok(mut r) = self.blob_requests.lock() {
+            r.clear();
+        }
+    }
+
+    /// Give the fake one blob's bytes, keyed by object id.
+    pub fn script_blob(&self, oid: &str, bytes: &[u8]) -> &Self {
+        if let Ok(mut b) = self.blobs.lock() {
+            b.insert(oid.to_owned(), bytes.to_vec());
+        }
+        self
+    }
+
+    /// Every oid `read_blobs` was asked for, in order. An empty list is *no bytes were read*.
+    #[must_use]
+    pub fn blob_requests(&self) -> Vec<String> {
+        self.blob_requests
+            .lock()
+            .map_or_else(|_| Vec::new(), |r| r.clone())
     }
 
     fn record(&self, op: &'static str, repo: Option<&Path>) {
@@ -210,6 +237,7 @@ setters! {
     unpushed_refs: Vec<String>, on_unpushed_refs, always_unpushed_refs;
     authorship: Authorship, on_authorship, always_authorship;
     commit_subjects: Vec<CommitSubject>, on_commit_subjects, always_commit_subjects;
+    head_tree: Vec<TreeEntry>, on_head_tree, always_head_tree;
 }
 
 /// An unconfigured operation fails loudly rather than inventing a value: a fake that answers
@@ -342,6 +370,45 @@ impl GitBackend for FakeGitBackend {
             || unconfigured("commit_subjects"),
         )
     }
+
+    fn head_tree(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<Vec<TreeEntry>> {
+        self.answer("head_tree", &self.head_tree, Some(&repo.work_dir), || {
+            unconfigured("head_tree")
+        })
+    }
+
+    /// Answers from the scripted blob map and records every oid asked for. An oid with no
+    /// scripted bytes is **missing**, which is what real `cat-file --batch` answers and what a
+    /// test needs to express a pruned object.
+    fn read_blobs(
+        &self,
+        repo: &RepoHandle,
+        oids: &[String],
+        byte_cap: u64,
+        _ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<BlobRead>> {
+        self.record("read_blobs", Some(&repo.work_dir));
+        if let Ok(mut asked) = self.blob_requests.lock() {
+            asked.extend(oids.iter().cloned());
+        }
+        let scripted = self
+            .blobs
+            .lock()
+            .map_or_else(|_| BTreeMap::new(), |b| b.clone());
+        let mut out = Vec::new();
+        for oid in oids {
+            let Some(bytes) = scripted.get(oid) else {
+                continue; // missing: no body, no row
+            };
+            let size = bytes.len() as u64;
+            out.push(BlobRead {
+                oid: oid.clone(),
+                size_bytes: size,
+                bytes: (size <= byte_cap).then(|| bytes.clone()),
+            });
+        }
+        Ok(out)
+    }
 }
 
 /// Wraps any backend and records which operations were asked for, in order.
@@ -465,5 +532,21 @@ impl<B: GitBackend> GitBackend for RecordingGitBackend<B> {
     ) -> GitResult<Vec<CommitSubject>> {
         self.record("commit_subjects", Some(&repo.work_dir));
         self.inner.commit_subjects(repo, limit, ctx)
+    }
+
+    fn head_tree(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TreeEntry>> {
+        self.record("head_tree", Some(&repo.work_dir));
+        self.inner.head_tree(repo, ctx)
+    }
+
+    fn read_blobs(
+        &self,
+        repo: &RepoHandle,
+        oids: &[String],
+        byte_cap: u64,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<BlobRead>> {
+        self.record("read_blobs", Some(&repo.work_dir));
+        self.inner.read_blobs(repo, oids, byte_cap, ctx)
     }
 }
