@@ -8,7 +8,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use crate::cancel::CancelToken;
-use crate::git::{GitError, GitResult};
+use crate::git::GitResult;
 use crate::gitw::credential::CredentialChannel;
 use crate::gitw::exec::{WriteEnv, WriteExec};
 use crate::gitw::intent::Intent;
@@ -53,26 +53,13 @@ impl MutatingGit for SystemMutatingGit {
         cancel: &CancelToken,
         on_stderr: &mut dyn FnMut(&str),
     ) -> GitResult<()> {
-        match intent {
-            Intent::Clone { .. } => {}
-            // **A gap, named rather than papered over.** §24.1a's `Intent::Fetch` carries only a
-            // remote name, and a fetch needs the repository it runs in — `-C <work_dir>` — which
-            // no field of this variant supplies. Running without it would fetch in whatever the
-            // process's working directory happens to be, which is a write into a repository
-            // nobody named.
-            //
-            // `Intent::Fetch` has **no production caller in this plan**; the in-session fetch is
-            // p2-24b's §24.7C, and widening the variant to carry its repository is that plan's to
-            // do. Until then this refuses rather than guesses. The argv audit still renders and
-            // checks `Fetch` in full — what is missing is a destination, not a rendering.
-            Intent::Fetch { .. } => {
-                return Err(GitError::Internal {
-                    detail: "Intent::Fetch names no repository to run in; the in-session fetch \
-                             and the field that carries it are p2-24b's"
-                        .to_owned(),
-                })
-            }
-        }
+        // [p2-24b] **The gap p2-24 named is closed by the type, and that is why no arm is left
+        // here.** `Intent::Fetch` carried only a remote name, so a fetch would have run in
+        // whatever the process's working directory happened to be — a write into a repository
+        // nobody named — and this function refused it rather than guess. The variant now carries
+        // its `work_dir` and `write_base_args` renders it as `-C`, so the state the refusal
+        // guarded against cannot be built. A `match` that now has nothing to refuse would be a
+        // guard asserting its own defaults.
 
         // The precondition read, and the reason it is a `?` rather than a default: a clone whose
         // filters cannot be enumerated is **refused, never run unfiltered** (§24.1b). A checkout
@@ -81,7 +68,10 @@ impl MutatingGit for SystemMutatingGit {
         let filters = self.exec.filter_drivers()?;
 
         let env = WriteEnv {
-            // A clone's destination does not exist yet, so there is no `-C` to render.
+            // **Left `None` on purpose, now that the intent answers for itself.** A clone's
+            // destination does not exist yet, so there is no `-C` to render; a fetch carries its
+            // own `work_dir` and `write_base_args` prefers it. Supplying a second one here would
+            // be two places that decide which repository is written to.
             work_dir: None,
             hooks_dir: self.hooks_dir.clone(),
             // §24.1c: the default tier's clone surface is anonymous HTTPS in full, so the

@@ -119,9 +119,16 @@ fn parse_filter_drivers(stdout: &[u8]) -> Vec<String> {
 #[must_use]
 pub fn write_base_args(intent: &Intent, env: &WriteEnv) -> Vec<OsString> {
     let mut argv: Vec<OsString> = Vec::with_capacity(24);
-    if let Some(dir) = env.work_dir.as_ref() {
+    // [p2-24b] The **intent's** repository wins, because it is the one the type guarantees. The
+    // env's stays as the fallback for a caller that has one and an intent that does not; a fetch
+    // now carries its own, so the two cannot disagree about which repository is written to.
+    if let Some(dir) = intent
+        .work_dir()
+        .map(std::path::Path::to_path_buf)
+        .or_else(|| env.work_dir.clone())
+    {
         argv.push(OsString::from("-C"));
-        argv.push(dir.clone().into_os_string());
+        argv.push(dir.into_os_string());
     }
     argv.push(OsString::from("--no-optional-locks"));
     cfg(&mut argv, OsString::from("core.fsmonitor=false"));

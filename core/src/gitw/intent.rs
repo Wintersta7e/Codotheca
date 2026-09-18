@@ -153,6 +153,15 @@ pub enum Intent {
     },
     /// Fetch from an already-configured remote.
     Fetch {
+        /// The repository the fetch runs in, rendered as `-C <work_dir>` by the write path.
+        ///
+        /// **[p2-24b] A field rather than an argument, and that is the whole point.** p2-24 left
+        /// this variant carrying only a remote name and made `SystemMutatingGit::run` refuse it,
+        /// because a fetch without a repository *"would fetch in whatever the process's working
+        /// directory happens to be, which is a write into a repository nobody named"*. Supplying
+        /// it through `WriteEnv` instead would leave that state constructible — an `Intent::Fetch`
+        /// beside an env with no `work_dir` compiles and runs. Here it cannot be built at all.
+        work_dir: PathBuf,
         /// The remote's name, never a URL and never a path.
         remote: RemoteName,
     },
@@ -181,11 +190,27 @@ impl Intent {
                 argv.push(dest.clone().into_os_string());
                 argv
             }
-            Intent::Fetch { remote } => vec![
+            // `-C` is **not** rendered here. It is a base argument, prepended by
+            // `write_base_args` before the subcommand, and `git_write_audit.rs` reads `argv[0]`
+            // as the subcommand — a `-C` in front of `fetch` would make the audit read a path
+            // where it looks for a write-allowed verb.
+            Intent::Fetch { remote, .. } => vec![
                 OsString::from("fetch"),
                 OsString::from("--progress"),
                 OsString::from(remote.as_str()),
             ],
+        }
+    }
+
+    /// The repository this intent runs in, when it has one.
+    ///
+    /// `None` for a clone: its destination **does not exist yet**, which is §24.1's precondition,
+    /// and rendering `-C` for it would name a directory git is about to create.
+    #[must_use]
+    pub fn work_dir(&self) -> Option<&std::path::Path> {
+        match self {
+            Intent::Clone { .. } => None,
+            Intent::Fetch { work_dir, .. } => Some(work_dir.as_path()),
         }
     }
 
@@ -217,6 +242,7 @@ impl Intent {
                     depth: Some(1),
                 },
                 IntentKind::Fetch => Intent::Fetch {
+                    work_dir: fixture.dest().to_path_buf(),
                     remote: fixture.remote().clone(),
                 },
             })
@@ -289,6 +315,8 @@ mod tests {
         clippy::panic,
         clippy::indexing_slicing
     )]
+
+    use std::path::{Path, PathBuf};
 
     use super::{Intent, IntentRefusal, RemoteName, RemoteUrl};
 
@@ -372,6 +400,7 @@ mod tests {
     #[test]
     fn a_fetch_renders_its_remote_and_no_flag_beyond_progress() {
         let intent = Intent::Fetch {
+            work_dir: PathBuf::from("/srv/work/thing"),
             remote: RemoteName::parse("origin").unwrap(),
         };
         let argv: Vec<String> = intent
@@ -379,6 +408,30 @@ mod tests {
             .iter()
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
+        // The repository is **not** in here: `-C` is a base argument and the audit reads
+        // `argv[0]` as the subcommand, so a path in front of `fetch` would be read as a verb.
         assert_eq!(argv, vec!["fetch", "--progress", "origin"]);
+    }
+
+    /// [p2-24b] §24.7C's fetch names the repository it runs in, by type.
+    ///
+    /// The variant that could not say where it ran is the one p2-24 refused to execute, and the
+    /// refusal is gone now because the state it guarded against is unconstructible.
+    #[test]
+    fn a_fetch_names_the_repository_it_runs_in_and_a_clone_does_not() {
+        let fetch = Intent::Fetch {
+            work_dir: PathBuf::from("/srv/work/thing"),
+            remote: RemoteName::parse("origin").unwrap(),
+        };
+        assert_eq!(fetch.work_dir(), Some(Path::new("/srv/work/thing")));
+
+        let clone = Intent::Clone {
+            url: RemoteUrl::parse("https://forge.example/acme/widget.git").unwrap(),
+            dest: PathBuf::from("/srv/work/new"),
+            depth: None,
+        };
+        // A clone's destination does not exist yet, so `-C` would name a directory git is about
+        // to create.
+        assert_eq!(clone.work_dir(), None);
     }
 }
