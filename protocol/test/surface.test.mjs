@@ -1031,3 +1031,48 @@ test('§24.8: the verdict carries every blocker and no token', () => {
 test('§24.6a: a location can say when it was removed, and NULL is not removed', () => {
   assert.equal(schema.types.LocationDetail.fields.removedAt, 'Timestamp?');
 });
+
+/**
+ * [p2-26 Task 13] The schema's totals, read against `p2-00-index.md`'s delta table.
+ *
+ * R58 makes the command literal a merge hazard on purpose: six plans each raise it by their own
+ * delta from their own branch base, so a textual conflict on that line is the assertion working.
+ * This is the closing statement — one test, reading the schema rather than a comment, so a wrong
+ * merge resolution fails rather than persists.
+ *
+ * **The event total is where R54 bites.** §24 adds FIVE install events, the fifth being
+ * `snapshot` → `InstallState`, *because a stream of four cannot deliver stage state to a tile
+ * that was unmounted while they fired*. Four would read 33 here, and that is a finding against
+ * §24 rather than a number to adjust.
+ */
+test('the four totals agree with the phase-2 delta table', () => {
+  const commands = schema.commands.length;
+  const topics = Object.keys(schema.topics).length;
+  const events = Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0);
+  const types = Object.keys(schema.types).length;
+
+  assert.equal(commands, 60, `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 = 60, found ${commands}`);
+  assert.equal(topics, 7, `topics: 4 + accounts + sync + install = 7, found ${topics}`);
+  assert.equal(events, 34, `events: 19 + 3 + 6 + 0 + 0 + 5 + 1 = 34, found ${events}`);
+  assert.equal(
+    schema.errors.length,
+    14,
+    `errors: 12 + §20's two = 14, found ${schema.errors.length}`,
+  );
+
+  // The derivation beside the literal, which is what makes a wrong merge resolution fail: a
+  // hand-edited total that does not match the entries it counts cannot survive both.
+  assert.equal(new Set(schema.commands.map((c) => c.name)).size, commands);
+
+  /**
+   * **Types is the one row that came in over, and it is recorded rather than adjusted away.**
+   * The table predicts 46 new types for 158; the tree holds **48 for 160**, and nothing was
+   * removed — measured against the phase-1 schema tip `cc13f49`. §20 landed its 11 and §21 its
+   * 10 exactly; §24 landed 15 against a predicted 14, and §22 and §25 together landed 12 against
+   * a predicted 11. A sum of six independent estimates ran two short, which is a prediction
+   * being wrong and not a subsystem being missing — every predicted type is present.
+   *
+   * The literal stays exact so a type *removed* still fails here.
+   */
+  assert.equal(types, 160, `types: 112 + 48 landed, against the table's 112 + 46; found ${types}`);
+});

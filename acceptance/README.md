@@ -40,6 +40,13 @@ Three optional markings, declared by the author and never inferred:
 | `scanning` | `true` | The check walks a tree, greps a bundle or enumerates a schema. Its `assert` must say it **prints a count** and **fails at zero** — a passing run that scanned nothing is a failing gate |
 | `mirror` | `{ "other": "<path>" }` | A cross-language constant, asserted from both sides. The path is the other language's file the test reads, and it must exist |
 | `source` | `"§N.N"`, `"probe:<name>"` or `"schema"` | Where a figure in the `assert` comes from. A restatement of the number is not its source |
+| `shares` | `"<the other check's id>"` | This check joins to a test another check already names. Exactly one check per test id may omit it — that one owns the key — and every other must name a check in the same group |
+
+`shares` exists because two checks legitimately join to one run: a static rule narrowed in place
+is claimed by the phase-1 criterion and the phase-2 one that narrowed it, and a criterion split
+across two owners takes a check each. Both are deliberate and both look exactly like a
+copy-pasted join key, which makes two criteria read as covered by one test. Declaring the share
+is what tells them apart, and an undeclared duplicate fails.
 
 ## Two shapes of deferral
 
@@ -56,6 +63,20 @@ plausible assertion passing for a measured one — the thing the register exists
 `recordedAt` stays `null` until the observation happens; evidence without a date, or a date
 without a record, is refused both ways. It is the two ids named in `LIVE_OBSERVATION_CHECKS` and
 nothing else: a third needs a ruling, not a field.
+
+**A `live-observation` deferral is discharged by setting `recordedAt` and `evidence` together,
+and by nothing else.** Not by writing a test — a test here would be the assertion standing in for
+the observation. Not by promoting the check to `automated`. The two open today are
+`AC-P2-20-13`, which needs `X-OAuth-Scopes` read off a real token, and `AC-P2-21-3-floor`, which
+needs a real secondary-limit `Retry-After` from a forge. Record what the response said, with
+enough of it to be a record rather than a claim, and the check becomes `automated` in the same
+change as the test that reads it.
+
+**A `plan` deferral is a promise to a plan that has not merged.** Once every plan of a phase has
+merged, a deferral to one is a deferral to nobody, and `validatePhase2Complete` says so — that
+is R46's *41 checks with an owner and no implementing task*, turned into a gate. The same audit
+refuses a static rule still carrying the `pendingRegistryEntry` escape a registered check now
+discharges.
 
 ## The test id is the join key
 
