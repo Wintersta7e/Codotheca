@@ -3678,7 +3678,7 @@
           "runner": "cargo",
           "owner": "p2-21",
           "test": "sync_phase1_untouched::job_outcome_partial_is_mentioned_by_one_production_file_once",
-          "assert": "Prints the count of files scanned and fails at zero; exactly one production file mentions JobOutcome::Partial, it is the state machine that must match on it, and it mentions it once.",
+          "assert": "Prints the count of files scanned and fails at zero; the production files mentioning JobOutcome::Partial are exactly the state machine that must match on it and \u00a729.6\u0027s J7, each once.",
           "scanning": true
         }
       ]

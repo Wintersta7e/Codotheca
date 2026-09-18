@@ -28,8 +28,13 @@ use codotheca_core::jobs::markers::{J7_BLOB_BYTE_CAP, J7_CHUNK_BLOBS, J7_SCANNER
 use codotheca_core::jobs::presence::{presence_for, PresenceAnswers, PresenceState};
 use codotheca_core::jobs::state::{apply_outcome, JobStateRow};
 use codotheca_core::jobs::{JobKind, JobOutcome, JobState};
+use codotheca_core::projects::rows::{LoadedRow, RowFacts};
 use codotheca_core::proto::txguard::TxGuard;
-use codotheca_core::protocol::{Job, LocationId, ProjectId, SettingsPatch, SyncTaskKind};
+use codotheca_core::protocol::{
+    Job, LocationId, ProjectId, ProjectRow, SettingsPatch, SyncTaskKind,
+};
+use codotheca_core::query::execute::{evaluate_query, term_truth, ExecContext, TermTruth};
+use codotheca_core::query::parse_query;
 use codotheca_core::surfaces::settings;
 use codotheca_core::sync::task::kind_slug;
 use codotheca_core::testing::{FakeGitBackend, GitReply};
@@ -1156,4 +1161,128 @@ fn ac_p3_29_18_turning_the_grant_off_deletes_what_it_wrote() {
     assert_eq!(presence.readme, PresenceState::Absent);
     assert!(predicate_version > 0);
     assert!(observed_at > 0);
+}
+
+/// A row carrying one set of §29.4 answers, for the query side.
+fn row_with(presence: Option<PresenceAnswers>) -> LoadedRow {
+    LoadedRow {
+        row: ProjectRow::for_test(1),
+        facts: RowFacts {
+            content_presence: presence,
+            ..RowFacts::default()
+        },
+    }
+}
+
+fn exec_ctx(names: &std::collections::BTreeMap<String, i64>) -> ExecContext<'_> {
+    ExecContext {
+        now: 1_781_000_000,
+        tz_offset_min: 0,
+        first_run_completed_at: None,
+        collection_ids_by_name: names,
+        paths_are_case_sensitive: false,
+        commit_subject_hits: None,
+    }
+}
+
+/// **AC-P3-29-16.** The three `has:` terms gain their producer in the same change.
+///
+/// `answerable()` accepts `has:license`, `has:tests` and `has:ci`; an unscanned project answers
+/// `Unknown`, a `not_read` answers `Unknown`, an `absent` answers a known false. **The three are
+/// asserted separately**, because one of them passing says nothing about the other two.
+#[test]
+fn ac_p3_29_16_the_three_has_terms_gain_their_producer_in_the_same_change() {
+    let names = std::collections::BTreeMap::new();
+    let ctx = exec_ctx(&names);
+    let all = |state: PresenceState| PresenceAnswers {
+        readme: state,
+        license: state,
+        tests: state,
+        ci: state,
+    };
+
+    let mut checked = 0;
+    for query in ["has:license", "has:tests", "has:ci"] {
+        let term = &parse_query(query).terms[0];
+        // Never observed: unknown, and matched by neither polarity.
+        assert_eq!(
+            term_truth(&row_with(None), term, &ctx),
+            TermTruth::Unknown,
+            "{query} answered a project J7 has never observed"
+        );
+        // Read and failed: still unknown. A timeout looks exactly like a missing file.
+        assert_eq!(
+            term_truth(&row_with(Some(all(PresenceState::NotRead))), term, &ctx),
+            TermTruth::Unknown,
+            "{query} read not_read as a false"
+        );
+        // Read and absent: a **known false**, which is the only case that answers one.
+        assert_eq!(
+            term_truth(&row_with(Some(all(PresenceState::Absent))), term, &ctx),
+            TermTruth::False,
+            "{query} could not answer an absent file"
+        );
+        assert_eq!(
+            term_truth(&row_with(Some(all(PresenceState::Present))), term, &ctx),
+            TermTruth::True
+        );
+        // Answerable now: the term reaches the executor rather than being dropped.
+        let present = vec![row_with(Some(all(PresenceState::Present)))];
+        let out = evaluate_query(&present, &parse_query(query), &ctx);
+        assert!(out.ignored.is_empty(), "{query} is still unanswerable");
+        assert_eq!(out.rows.len(), 1, "{query} matched nothing it should");
+        checked += 1;
+    }
+    eprintln!("has: terms checked separately: {checked}");
+    assert!(checked > 0, "no term was checked");
+}
+
+/// **AC-P3-29-27.** The README readers keep their two bases.
+///
+/// **Both directions are asserted**, because one alone passes if the two readers were silently
+/// unified on either basis. §8.4's panel renders the file on disk; `has:readme` answers from the
+/// commit, because an uncommitted README is not shipped and an item's identity must not move when
+/// an editor saves.
+#[test]
+fn ac_p3_29_27_the_readme_readers_keep_their_two_bases() {
+    let names = std::collections::BTreeMap::new();
+    let ctx = exec_ctx(&names);
+    let term = &parse_query("has:readme").terms[0];
+    let head = |state: PresenceState| PresenceAnswers {
+        readme: state,
+        license: PresenceState::Absent,
+        tests: PresenceState::Absent,
+        ci: PresenceState::Absent,
+    };
+
+    // In the worktree, not committed: the panel renders it, and HEAD says absent.
+    let uncommitted = LoadedRow {
+        row: ProjectRow::for_test(1),
+        facts: RowFacts {
+            has_readme: Some(true),
+            content_presence: Some(head(PresenceState::Absent)),
+            ..RowFacts::default()
+        },
+    };
+    // Committed, then deleted from the worktree: the panel says so, and HEAD says present.
+    let deleted = LoadedRow {
+        row: ProjectRow::for_test(2),
+        facts: RowFacts {
+            has_readme: Some(false),
+            content_presence: Some(head(PresenceState::Present)),
+            ..RowFacts::default()
+        },
+    };
+
+    eprintln!(
+        "uncommitted: panel {:?}, query {:?}; deleted: panel {:?}, query {:?}",
+        uncommitted.facts.has_readme,
+        term_truth(&uncommitted, term, &ctx),
+        deleted.facts.has_readme,
+        term_truth(&deleted, term, &ctx)
+    );
+    assert_eq!(uncommitted.facts.has_readme, Some(true));
+    assert_eq!(term_truth(&uncommitted, term, &ctx), TermTruth::False);
+    assert_eq!(deleted.facts.has_readme, Some(false));
+    assert_eq!(term_truth(&deleted, term, &ctx), TermTruth::True);
 }

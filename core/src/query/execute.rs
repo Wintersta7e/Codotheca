@@ -23,6 +23,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::art::compose::local_year;
+use crate::jobs::presence::{PresenceAnswers, PresenceState};
 use crate::projects::rows::LoadedRow;
 use crate::protocol::{CollectionId, ConditionSignal, LocationKind, ProjectRow};
 use crate::query::ast::{
@@ -241,14 +242,35 @@ fn is_outside_the_working_copy_domain(term: &QueryTerm) -> bool {
     }
 }
 
+/// §29.4's tri-state, read as a query truth: `Present` is a known true, `Absent` a known false,
+/// and **`not_read` is `Unknown`** — a timeout looks exactly like a missing file. A **row absent**
+/// is `Unknown` too, and is the different fact *J7 has never observed this project*.
+fn presence_truth(row: &LoadedRow, pick: fn(&PresenceAnswers) -> PresenceState) -> TermTruth {
+    match row.facts.content_presence.as_ref().map(pick) {
+        None | Some(PresenceState::NotRead) => TermTruth::Unknown,
+        Some(PresenceState::Present) => TermTruth::known(true),
+        Some(PresenceState::Absent) => TermTruth::known(false),
+    }
+}
+
+/// All four `has:` file terms read J7's HEAD-basis answers (§29.4, R131/F13).
+///
+/// **`has:readme` moved with the other three, and basis is not what differs.** It answered off
+/// `peek_cache` before, where a README that exists and **could not be read** produced a known
+/// false — so `-has:readme` would have returned a repository that has one, on a shelf where
+/// `-has:license` correctly answered `Unknown` for the identical failure.
+///
+/// **The R15 split survives**: §8.4's Peek panel and §25.5's header keep the worktree basis,
+/// because they render the file.
 fn has_truth(row: &LoadedRow, attribute: HasAttribute) -> TermTruth {
     match attribute {
         HasAttribute::Stash => TermTruth::from_count(row.row.stash_count),
         HasAttribute::Remote => TermTruth::known(row.facts.has_remote),
         HasAttribute::Submodules => TermTruth::known(row.facts.has_submodules),
-        HasAttribute::Readme => TermTruth::from_bool(row.facts.has_readme),
-        // No column in phase 1 — `partition_answerable` removes these before we get here.
-        HasAttribute::License | HasAttribute::Tests | HasAttribute::Ci => TermTruth::Unknown,
+        HasAttribute::Readme => presence_truth(row, |a| a.readme),
+        HasAttribute::License => presence_truth(row, |a| a.license),
+        HasAttribute::Tests => presence_truth(row, |a| a.tests),
+        HasAttribute::Ci => presence_truth(row, |a| a.ci),
     }
 }
 
@@ -298,15 +320,14 @@ pub fn term_truth(row: &LoadedRow, term: &QueryTerm, ctx: &ExecContext<'_>) -> T
     }
 }
 
-/// True when the term can be answered for *any* row, given what the index holds in phase 1.
-fn answerable(term: &QueryTerm) -> bool {
-    !matches!(
-        term,
-        QueryTerm::Has {
-            attribute: HasAttribute::License | HasAttribute::Tests | HasAttribute::Ci,
-            ..
-        }
-    )
+/// True when the term can be answered for *any* row, given what the index holds.
+///
+/// **`has:license`, `has:tests` and `has:ci` were removed here while nothing wrote them, and
+/// §29.4 lands their producer — so the removal goes in the same change** (§23.6, R1/R35a/R40/R46).
+/// A project J7 has not scanned still answers `Unknown`, which is what `TermTruth` is for; what
+/// this function decides is whether the term can *ever* be answered, and now it can.
+fn answerable(_term: &QueryTerm) -> bool {
+    true
 }
 
 fn render_term(term: &QueryTerm) -> String {

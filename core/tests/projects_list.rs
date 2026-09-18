@@ -328,6 +328,7 @@ fn unchecked_counts_only_rows_that_have_a_working_copy() {
                 has_remote: false,
                 has_submodules: false,
                 has_readme: None,
+                content_presence: None,
             },
         }
     }

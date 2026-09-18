@@ -208,11 +208,15 @@ fn a_full_sync_run_writes_no_job_row() {
     assert_eq!(after, before, "a sync run wrote a job row");
 }
 
-/// **`JobOutcome::Partial` still has no production construction site** (A2).
+/// **`JobOutcome::Partial` is reached by the state machine and by J7, and by nothing else.**
 ///
 /// Its arm returns `(next, Some(now))` — a yield is *immediately* runnable, which is right for a
-/// CPU chunk and exactly wrong for a page that must not be fetched until `reset_at`. Phase 2 does
-/// not touch it, and the only construction in the tree is a unit test.
+/// CPU chunk and exactly wrong for a page that must not be fetched until `reset_at`. That is why
+/// `core::sync` may not reach it (A2), and phase 2 did not.
+///
+/// **[p3] §29.6 makes J7 the first production writer**, so the set grew by exactly one named
+/// file. It is a **set**, not a count: a new construction anywhere else still fails, and so does
+/// a second one in either of these.
 ///
 /// **This counts mentions per file rather than parsing Rust**, and says so rather than implying
 /// more. A first attempt tried to tell a construction from a match arm by looking for `=>` on the
@@ -266,8 +270,11 @@ fn job_outcome_partial_is_mentioned_by_one_production_file_once() {
     assert!(scanned > 0, "a gate that scanned nothing is a failing gate");
     assert_eq!(
         mentions,
-        vec![("jobs/state.rs".to_owned(), 1)],
-        "JobOutcome::Partial reached a production path phase 2 must not have given it"
+        vec![
+            ("jobs/j7_markers.rs".to_owned(), 1),
+            ("jobs/state.rs".to_owned(), 1)
+        ],
+        "JobOutcome::Partial reached a production path no section has given it"
     );
 }
 

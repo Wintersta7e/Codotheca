@@ -55,17 +55,29 @@ fn an_unobserved_worktree_is_unknown_and_is_not_matched_by_either_polarity() {
         .is_empty());
 }
 
+/// **[p3] §29.4 landed the producer, so the term stopped being ignored** — `answerable()` was
+/// amended in the same change, which is §23.6's own rule. What an unscanned project answers is
+/// `Unknown`, not a false: it is excluded from `has:ci` and from `-has:ci` alike.
 #[test]
-fn a_field_with_no_column_in_phase_one_is_an_ignored_term_not_a_false() {
+fn a_term_whose_producer_has_not_run_is_unknown_rather_than_ignored() {
     let names = BTreeMap::new();
     let ctx = ctx(&names);
     let rows = vec![blank(1)];
-    let out = evaluate_query(&rows, &parse_query("has:ci"), &ctx);
-    // The rest of the query still runs (§8.3's soft error), and the term is reported, not lied about.
-    assert_eq!(out.rows.len(), 1);
-    assert_eq!(out.ignored.len(), 1);
-    assert_eq!(out.ignored[0].text, "has:ci");
-    // `has:remote` and `has:submodules` DO have columns, so they are answered, not ignored.
+    for query in [
+        "has:ci",
+        "-has:ci",
+        "has:license",
+        "has:tests",
+        "has:readme",
+    ] {
+        let out = evaluate_query(&rows, &parse_query(query), &ctx);
+        assert!(out.ignored.is_empty(), "{query} is still an ignored term");
+        assert!(
+            out.rows.is_empty(),
+            "{query} answered a project J7 has never observed"
+        );
+    }
+    // `has:remote` and `has:submodules` read different columns and are unaffected.
     let answered = evaluate_query(&rows, &parse_query("has:remote"), &ctx);
     assert!(answered.ignored.is_empty());
     assert!(answered.rows.is_empty());

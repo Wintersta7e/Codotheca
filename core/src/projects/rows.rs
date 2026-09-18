@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::art::compose::local_year;
 use crate::index::path::{display_paths_for_ui, DisplayPathTable};
+use crate::jobs::presence::{PresenceAnswers, PresenceState};
 use crate::projects::{ProjectsCtx, ProjectsError};
 use crate::protocol::{
     ArtState, CollectionId, ConditionSignal, ErrorCode, InterruptedOp, LocationId, LocationKind,
@@ -92,7 +93,18 @@ pub struct RowFacts {
     pub has_remote: bool,
     pub has_submodules: bool,
     /// `Some` only once J6 has run for the project; `peek_cache.computed_at` is what says so.
+    ///
+    /// **Worktree basis.** §8.4's Peek panel and §25.5's `projects.readme` header read this,
+    /// because they **render the file** and the file they render is the one on disk. It is not
+    /// what `has:readme` answers from — see [`RowFacts::content_presence`] and R15.
     pub has_readme: Option<bool>,
+    /// §29.4's four HEAD-basis tri-states, `None` when J7 has never observed the project.
+    ///
+    /// **A different basis from [`RowFacts::has_readme`], deliberately (R15).** An uncommitted
+    /// README is not shipped, and an item's identity must not move when an editor saves — so
+    /// §31's checks and §8.3's four `has:` terms read the commit, and the panel reads the disk.
+    /// `not_read` is `Unknown` here, and only `absent` is a known false.
+    pub content_presence: Option<PresenceAnswers>,
 }
 
 #[derive(Debug, Clone)]
@@ -304,9 +316,11 @@ const PROJECT_COLUMNS: &str =
             p.authored_by_user, p.remote_key,
             EXISTS(SELECT 1 FROM submodule_edge se WHERE se.parent_project_id = p.id),
             pc.computed_at, pc.readme_excerpt,
-            p.seed_basename, p.reroll_offset
+            p.seed_basename, p.reroll_offset,
+            cs.has_readme, cs.has_license, cs.has_tests, cs.has_ci
        FROM project p
-       LEFT JOIN peek_cache pc ON pc.project_id = p.id";
+       LEFT JOIN peek_cache pc ON pc.project_id = p.id
+       LEFT JOIN project_content_scan cs ON cs.project_id = p.id";
 
 /// The shelf's fixed shape, which `idx_project_shelf_order` exists for.
 const PROJECT_SHELF_FILTER: &str = " WHERE p.merged_into IS NULL
@@ -417,8 +431,28 @@ fn map_loaded_row(
         has_remote: r.get::<_, Option<String>>(34)?.is_some(),
         has_submodules: r.get::<_, i64>(35)? != 0,
         has_readme: readme_computed_at.map(|_| readme_excerpt.is_some()),
+        content_presence: content_presence(r)?,
     };
     Ok(LoadedRow { row, facts })
+}
+
+/// §29.4's four answers off the `project_content_scan` join, or `None` when the row is absent —
+/// *J7 has never observed this project*, which every reader renders as unknown.
+///
+/// A spelling this build cannot name was written by a newer one, and `NotRead` is the honest
+/// reading of it: unknown, and never a false.
+fn content_presence(r: &rusqlite::Row<'_>) -> rusqlite::Result<Option<PresenceAnswers>> {
+    let readme: Option<String> = r.get(40)?;
+    let Some(readme) = readme else {
+        return Ok(None);
+    };
+    let state = |raw: String| PresenceState::from_slug(&raw).unwrap_or(PresenceState::NotRead);
+    Ok(Some(PresenceAnswers {
+        readme: state(readme),
+        license: state(r.get(41)?),
+        tests: state(r.get(42)?),
+        ci: state(r.get(43)?),
+    }))
 }
 
 /// Statement three, and the fold. Three statements over the whole library, never N+1: the
