@@ -32,6 +32,16 @@ export function useShelfInstall(deps: AppDeps): ShelfInstall {
   // request and its answer asks again, and a scroll would ask once per frame.
   const asked = useRef(new Set<ProjectId>());
   const starting = useRef(new Set<ProjectId>());
+  /**
+   * Every tile that has demanded a preview, whether or not one could be asked for yet.
+   *
+   * **The first paint is the case this exists for.** `settings.get` is a round trip, and every
+   * tile on screen mounts before it answers — a demand dropped because the destination was not
+   * known yet would never be repeated, because the tile's effect does not run again. The result
+   * was a shelf on which no card was ever offered an install until the user scrolled one out of
+   * view and back.
+   */
+  const wanted = useRef(new Set<ProjectId>());
 
   useEffect(() => {
     let live = true;
@@ -48,6 +58,7 @@ export function useShelfInstall(deps: AppDeps): ShelfInstall {
 
   const need = useCallback(
     (projectId: ProjectId) => {
+      wanted.current.add(projectId);
       if (rootId === null || asked.current.has(projectId)) return;
       asked.current.add(projectId);
       deps
@@ -63,6 +74,13 @@ export function useShelfInstall(deps: AppDeps): ShelfInstall {
     },
     [deps, rootId],
   );
+
+  // The destination arriving is the other half of `need`: every tile that asked before it was
+  // known is served now, once, and a shelf that mounted before the read resolved is not empty.
+  useEffect(() => {
+    if (rootId === null) return;
+    for (const projectId of wanted.current) need(projectId);
+  }, [need, rootId]);
 
   const start = useCallback(
     (projectId: ProjectId) => {

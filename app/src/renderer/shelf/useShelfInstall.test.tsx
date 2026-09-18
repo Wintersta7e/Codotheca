@@ -101,11 +101,22 @@ describe('the shelf-wide install offer', () => {
     expect(r.installStart).not.toHaveBeenCalled();
   });
 
+  it('serves a tile that demanded before the destination was known', async () => {
+    // The first paint: every tile on screen mounts before `settings.get` answers. A demand
+    // dropped there is never repeated — the tile's effect does not run again — so a shelf would
+    // offer no install at all until a card was scrolled out of view and back.
+    const r = draw(ROOT);
+    act(() => {
+      r.view.result.current.need(A);
+    });
+    await waitFor(() => {
+      expect(r.view.result.current.previews.get(A)).toBeDefined();
+    });
+    expect(previewCalls(r.request)).toBe(1);
+  });
+
   it('starts with two opaque ids and re-reads that project afterwards', async () => {
     const r = draw(ROOT);
-    await waitFor(() => {
-      expect(r.request).toHaveBeenCalledWith('settings.get', {});
-    });
     act(() => {
       r.view.result.current.need(A);
     });
