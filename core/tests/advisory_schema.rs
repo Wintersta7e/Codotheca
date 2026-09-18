@@ -125,6 +125,19 @@ fn every_ecosystem_and_read_state_slug_is_accepted_by_its_column() {
     assert_eq!(ecosystems, schema_variants("Ecosystem"));
     assert_eq!(read_states, schema_variants("DependencyReadState"));
 
+    // **The store's own slug functions are the ones the columns are written from**, so they are
+    // read back against serde here rather than trusted: a total `match` that drifted from the
+    // generated spelling would write a value its own CHECK refuses, on a user's machine.
+    for eco in Ecosystem::ALL {
+        assert_eq!(codotheca_core::advisories::eco_slug(eco), slug(&eco));
+    }
+    for state in DependencyReadState::ALL {
+        assert_eq!(
+            codotheca_core::advisories::read_state_slug(state),
+            slug(&state)
+        );
+    }
+
     let mut inserted = 0usize;
     for (i, eco) in ecosystems.iter().enumerate() {
         conn.execute(

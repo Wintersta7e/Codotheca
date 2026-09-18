@@ -501,9 +501,25 @@ impl SyncRunner {
             SyncTask::RenameProbe { account_id } => {
                 rename::run_rename_probe(&self.deps, &self.index, *account_id)
             }
-            // [p3] §32.2's sweep body lands with the provider method it calls; this arm exists so
-            // the row can be claimed and settled before then, which is the defect's other half.
-            SyncTask::Advisories => Ok(SyncOutcome::Done),
+            // [p3] §32.2's sweep. The cursor is this task's own: a page link while an answer is
+            // still paginating, and a sentinel when the next batch is due. Each batch settles
+            // `NextPage`, so the **next** pick re-reads the budget before issuing again — which is
+            // what lets a library too large for one hour's allowance sweep across reset windows
+            // instead of spending it all at once.
+            SyncTask::Advisories => {
+                let cursor = {
+                    let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+                    load(guard.conn(), SyncTaskKind::Advisories, None)
+                        .ok()
+                        .flatten()
+                        .and_then(|row| row.cursor)
+                };
+                crate::advisories::sweep::run_advisory_sweep(
+                    &self.deps,
+                    self.index.as_ref(),
+                    cursor.as_deref(),
+                )
+            }
         }
     }
 
@@ -703,7 +719,30 @@ fn sweep_schedule(tx: &rusqlite::Transaction<'_>, now: i64) -> Result<usize, Ind
             &SyncTaskStateRow::queued(SyncTaskKind::AccountRepos, Some(account.0), now),
         )?;
     }
-    Ok(due.len())
+    // [p3] §32.2's cadence, queued beside the listings and on the same terms: a fresh `queued`
+    // row, and only when nothing is already in flight for it. Re-queueing a parked row would
+    // discard the instant the server named.
+    let mut queued = due.len();
+    if crate::sync::schedule::advisory_due(tx, now)? {
+        let existing = load(tx, SyncTaskKind::Advisories, None)?;
+        let in_flight = matches!(
+            existing.as_ref().map(|row| row.state),
+            Some(
+                SyncTaskState::Queued
+                    | SyncTaskState::Running
+                    | SyncTaskState::Parked
+                    | SyncTaskState::Blocked
+            )
+        );
+        if !in_flight {
+            put(
+                tx,
+                &SyncTaskStateRow::queued(SyncTaskKind::Advisories, None, now),
+            )?;
+            queued += 1;
+        }
+    }
+    Ok(queued)
 }
 
 /// Whether any row is still the loop's to act on.

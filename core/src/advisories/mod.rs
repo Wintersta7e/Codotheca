@@ -13,6 +13,7 @@
 pub mod lockfiles;
 pub mod parse;
 pub mod store;
+pub mod sweep;
 
 use crate::protocol::{DependencyReadState, Ecosystem};
 
@@ -34,18 +35,27 @@ pub enum AdvisoryError {
     Parse(String),
 }
 
-/// Render a **generated** enum as the TEXT its column stores, through serde.
+/// The stored form of [`Ecosystem`], written into three columns and constrained by their CHECKs.
 ///
-/// There is deliberately no second vocabulary here: R31's failure mode is a hand-written table
-/// beside the schema's, and R26's is a stored slug that has drifted from the emitted one. Going
-/// through serde means the only vocabulary in this module is `protocol/schema/protocol.json`'s,
-/// and `0014_advisories.sql`'s CHECKs mirror it character for character.
-pub(crate) fn enum_text<T: serde::Serialize>(value: &T) -> Result<String, AdvisoryError> {
-    match serde_json::to_value(value) {
-        Ok(serde_json::Value::String(raw)) => Ok(raw),
-        other => Err(AdvisoryError::Parse(format!(
-            "a generated enum did not serialise as a string: {other:?}"
-        ))),
+/// A total function rather than a serde round-trip, so a write cannot fail on a value the type
+/// system says exists — `kind_slug`'s precedent. **Its agreement with the generated spelling is
+/// asserted by reading the other side** through serde rather than by restating it (R24), in
+/// `core/tests/advisory_schema.rs`.
+#[must_use]
+pub fn eco_slug(eco: Ecosystem) -> &'static str {
+    match eco {
+        Ecosystem::Npm => "npm",
+        Ecosystem::Rust => "rust",
+        Ecosystem::Pip => "pip",
+    }
+}
+
+/// The stored form of [`DependencyReadState`], on the same terms.
+#[must_use]
+pub fn read_state_slug(state: DependencyReadState) -> &'static str {
+    match state {
+        DependencyReadState::Parsed => "parsed",
+        DependencyReadState::NotRead => "notRead",
     }
 }
 
