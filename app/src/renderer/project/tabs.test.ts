@@ -19,8 +19,18 @@ const FACTS = {
   ci: { state: 'not_observed', runs: [], observedAt: null },
 } as unknown as RemoteFacts;
 
-function detail(remote: RemoteFacts | null): ProjectDetail {
-  return { remote } as unknown as ProjectDetail;
+import type { HealthState } from '../../generated/protocol';
+
+/**
+ * [p3] §30.7's predicate reads `detail.health.state`, so the fixture carries one. `absent` is the
+ * default because that is what a project with no reading has — a fixture defaulting to `live`
+ * would mount the tab for every test that never asked about health.
+ */
+function detail(remote: RemoteFacts | null, state: HealthState = 'absent'): ProjectDetail {
+  return {
+    remote,
+    health: { state, scoredOpen: null, basis: null, checks: [] },
+  } as unknown as ProjectDetail;
 }
 
 describe('§25.1 the tab list is per project, not per phase', () => {
@@ -31,12 +41,47 @@ describe('§25.1 the tab list is per project, not per phase', () => {
     expect(tabsFor(detail(FACTS))).toHaveLength(3);
   });
 
-  it('names HEALTH in neither, because nothing in phase 2 writes completion_lit', () => {
-    for (const list of [tabsFor(detail(null)), tabsFor(detail(FACTS))]) {
-      expect(list.map((t) => t.label).join(' ')).not.toMatch(/HEALTH|COMPLETION|CONDITION/u);
+  /**
+   * [p3] §30.7 replaces §25.1's HEALTH-is-absent assertion with a **state-driven** one: the tab is
+   * mounted on `frozen` and `live` and is **absent — never disabled, never greyed — otherwise**.
+   * A greyed tab is the dead control §11.3a's rule exists to stop.
+   */
+  it('AC-P3-30-17 mounts HEALTH on frozen and live and never on absent or suppressed', () => {
+    for (const state of ['absent', 'suppressed'] as const) {
+      for (const remote of [null, FACTS]) {
+        const labels = tabsFor(detail(remote, state)).map((t) => t.label);
+        expect(labels).not.toContain('HEALTH');
+      }
+    }
+    for (const state of ['frozen', 'live'] as const) {
+      expect(tabsFor(detail(null, state)).map((t) => t.label)).toEqual([
+        'OVERVIEW',
+        'ACTIVITY',
+        'HEALTH',
+      ]);
+      // **Four at most, never five**, which is what §8.5's "three at most" becomes.
+      const four = tabsFor(detail(FACTS, state));
+      expect(four.map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY', 'REMOTE', 'HEALTH']);
+      expect(four).toHaveLength(4);
     }
     expect(tabsFor(detail(null)).map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY']);
     expect(tabsFor(detail(FACTS)).map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY', 'REMOTE']);
+  });
+
+  it('cycles the four-tab ring forwards and backwards', () => {
+    const tabs = tabsFor(detail(FACTS, 'live'));
+    expect(nextTab(tabs, 'overview', 1)).toBe('activity');
+    expect(nextTab(tabs, 'activity', 1)).toBe('remote');
+    expect(nextTab(tabs, 'remote', 1)).toBe('health');
+    expect(nextTab(tabs, 'health', 1)).toBe('overview');
+    expect(nextTab(tabs, 'overview', -1)).toBe('health');
+    expect(nextTab(tabs, 'health', -1)).toBe('remote');
+  });
+
+  it('falls back to overview when a held HEALTH tab stops being mounted', () => {
+    // The store came back and the reading went from `frozen` to `absent` while the page was open.
+    expect(fallbackTab(tabsFor(detail(FACTS, 'absent')), 'health')).toBe('overview');
+    expect(fallbackTab(tabsFor(detail(FACTS, 'live')), 'health')).toBe('health');
   });
 
   it('AC-P2-25-1-cycle3 cycles the three-tab ring forwards and backwards', () => {
