@@ -9,7 +9,9 @@
 )]
 
 use codotheca_core::debt::identity::DebtKey;
-use codotheca_core::debt::store::StoredItem;
+use codotheca_core::debt::store::{
+    DebtCloseReason, DebtStore, ObservedItem, SqliteDebtStore, StoredItem,
+};
 use codotheca_core::debt::sweep::{
     comparable, latest_sweep, may_close, outcome_at_root, root_is_observable, upsert_sweep,
     SweepObservation,
@@ -40,12 +42,18 @@ fn insert_project(conn: &rusqlite::Connection, name: &str) -> i64 {
     conn.last_insert_rowid()
 }
 
+/// A copy of one project. `path_key` is UNIQUE per `(kind, distro, path_key)`, so a second copy
+/// of one project needs a path of its own — which is exactly the re-clone the reap exists for.
 fn insert_location(conn: &rusqlite::Connection, project: i64, presence: &str) -> i64 {
+    let n: i64 = conn
+        .query_row("SELECT count(*) FROM location", [], |r| r.get(0))
+        .unwrap();
+    let path = format!("/copy-{n}");
     conn.execute(
         "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display, store_key,
                                presence, repo_kind)
-         VALUES (?1, 'linux', x'2f61', x'2f61', '/a', 'store', ?2, 'worktree')",
-        rusqlite::params![project, presence],
+         VALUES (?1, 'linux', ?3, ?3, ?4, 'store', ?2, 'worktree')",
+        rusqlite::params![project, presence, path.as_bytes(), path],
     )
     .unwrap();
     conn.last_insert_rowid()
@@ -318,4 +326,330 @@ fn the_sweep_row_is_upserted_and_absence_is_not_an_outcome() {
         latest_sweep(&tx, ProjectId(p), DebtSource::TodoMarker).unwrap(),
         Some(second),
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// §28.3 — the store: open, refresh, close, reap
+// ---------------------------------------------------------------------------------------------
+
+fn seen(key: DebtKey, location: Option<LocationId>, path: &str, line: u32) -> ObservedItem {
+    ObservedItem {
+        key,
+        scoring: DebtScoring::Scored,
+        location,
+        basis: Some(ObservationBasis::Head),
+        path_bytes: Some(path.as_bytes().to_vec()),
+        path_display: Some(path.to_owned()),
+        line: Some(line),
+        column: Some(1),
+        salient_text: Some("TODO: a thing".to_owned()),
+    }
+}
+
+fn open_keys(conn: &rusqlite::Connection, project: i64) -> Vec<(String, String, String)> {
+    let mut st = conn
+        .prepare(
+            "SELECT source, fingerprint, state FROM debt_item
+              WHERE project_id = ?1 ORDER BY source, fingerprint",
+        )
+        .unwrap();
+    st.query_map([project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+/// A marker deleted from a **present, readable** root closes, and the closure is `Fixed` — a
+/// transition the user performed.
+#[test]
+fn a_marker_gone_from_a_readable_root_closes_fixed() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let loc = LocationId(insert_location(&conn, p, "present"));
+    let store = SqliteDebtStore;
+    let key = DebtKey::content(SUBJECT, "aaaa", 0);
+
+    let tx = conn.transaction().unwrap();
+    let obs = sweep_at(
+        p,
+        DebtSource::TodoMarker,
+        DebtSweepOutcome::Complete,
+        Some(loc),
+        Some(ObservationBasis::Head),
+    );
+    let first = store
+        .observe(&tx, &obs, &[seen(key.clone(), Some(loc), "a.rs", 4)])
+        .unwrap();
+    assert_eq!(first.opened, vec![key.clone()]);
+    assert!(first.closed.is_empty());
+
+    // The same sweep, with the marker gone.
+    let second = store.observe(&tx, &obs, &[]).unwrap();
+    assert_eq!(second.closed, vec![(key, DebtCloseReason::Fixed)]);
+    assert!(second.opened.is_empty());
+    tx.commit().unwrap();
+
+    assert!(open_keys(&conn, p).is_empty(), "closed is a deletion");
+}
+
+/// **`AC-P3-28-3`.** `refresh` updates the attributes and **never the fingerprint**, which is
+/// what makes a rename and a line move close nothing.
+#[test]
+fn ac_p3_28_3_a_rename_refreshes_and_closes_nothing() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let loc = LocationId(insert_location(&conn, p, "present"));
+    let store = SqliteDebtStore;
+    let key = DebtKey::content(SUBJECT, "aaaa", 0);
+    let obs = sweep_at(
+        p,
+        DebtSource::TodoMarker,
+        DebtSweepOutcome::Complete,
+        Some(loc),
+        Some(ObservationBasis::Head),
+    );
+
+    let tx = conn.transaction().unwrap();
+    store
+        .observe(&tx, &obs, &[seen(key.clone(), Some(loc), "old/a.rs", 4)])
+        .unwrap();
+    let effect = store
+        .observe(&tx, &obs, &[seen(key.clone(), Some(loc), "new/b.rs", 91)])
+        .unwrap();
+    tx.commit().unwrap();
+
+    assert!(effect.opened.is_empty(), "a rename opened a second item");
+    assert!(effect.closed.is_empty(), "a rename closed an item");
+    assert_eq!(effect.refreshed, 1);
+
+    let (fingerprint, path, line): (String, String, i64) = conn
+        .query_row(
+            "SELECT fingerprint, path_display, line FROM debt_item WHERE project_id = ?1",
+            [p],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(fingerprint, key.fingerprint, "the fingerprint moved");
+    assert_eq!(path, "new/b.rs");
+    assert_eq!(line, 91);
+}
+
+/// **`AC-P3-28-1`.** A sweep whose anchor is offline marks the item `unverified` and closes
+/// nothing — **asserted by item identity before and after, never by count alone**, because a
+/// close-and-reopen of the same source keeps the count and loses the item.
+#[test]
+fn ac_p3_28_1_an_offline_anchor_marks_unverified_and_closes_nothing() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let loc = LocationId(insert_location(&conn, p, "present"));
+    let store = SqliteDebtStore;
+    let key = DebtKey::content(SUBJECT, "aaaa", 0);
+
+    let tx = conn.transaction().unwrap();
+    let live = sweep_at(
+        p,
+        DebtSource::TodoMarker,
+        DebtSweepOutcome::Complete,
+        Some(loc),
+        Some(ObservationBasis::Head),
+    );
+    store
+        .observe(&tx, &live, &[seen(key.clone(), Some(loc), "a.rs", 4)])
+        .unwrap();
+    tx.commit().unwrap();
+    let before = open_keys(&conn, p);
+    assert_eq!(
+        before,
+        vec![("todo_marker".into(), key.fingerprint.clone(), "open".into())]
+    );
+
+    conn.execute(
+        "UPDATE location SET presence = 'offline' WHERE id = ?1",
+        [loc.0],
+    )
+    .unwrap();
+
+    let tx = conn.transaction().unwrap();
+    let frozen = SweepObservation {
+        outcome: outcome_at_root(&tx, Some(loc), DebtSweepOutcome::Complete).unwrap(),
+        item_count: None,
+        ..live
+    };
+    assert_eq!(frozen.outcome, DebtSweepOutcome::Unobservable);
+    let effect = store.observe(&tx, &frozen, &[]).unwrap();
+    tx.commit().unwrap();
+
+    assert!(
+        effect.closed.is_empty(),
+        "an unobservable sweep closed an item"
+    );
+    assert_eq!(effect.unverified, 1);
+
+    let after = open_keys(&conn, p);
+    assert_eq!(
+        after,
+        vec![("todo_marker".into(), key.fingerprint, "unverified".into())],
+        "the item's identity moved, so this was a close-and-reopen"
+    );
+}
+
+/// A `Reference` project's sweep writes `skipped_reference` and marks the items `unverified`: a
+/// gate that declined to look is not a look that found nothing.
+#[test]
+fn a_skipped_reference_sweep_marks_unverified() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let loc = LocationId(insert_location(&conn, p, "present"));
+    let store = SqliteDebtStore;
+    let key = DebtKey::content(SUBJECT, "aaaa", 0);
+
+    let tx = conn.transaction().unwrap();
+    let live = sweep_at(
+        p,
+        DebtSource::TodoMarker,
+        DebtSweepOutcome::Complete,
+        Some(loc),
+        Some(ObservationBasis::Head),
+    );
+    store
+        .observe(&tx, &live, &[seen(key, Some(loc), "a.rs", 4)])
+        .unwrap();
+
+    let skipped = SweepObservation {
+        outcome: DebtSweepOutcome::SkippedReference,
+        item_count: None,
+        ..live
+    };
+    let effect = store.observe(&tx, &skipped, &[]).unwrap();
+    tx.commit().unwrap();
+
+    assert!(effect.closed.is_empty());
+    assert_eq!(effect.unverified, 1);
+
+    let stored: (String, String) = conn
+        .query_row(
+            "SELECT i.state, s.outcome FROM debt_item i
+               JOIN debt_sweep s ON s.project_id = i.project_id AND s.source = i.source
+              WHERE i.project_id = ?1",
+            [p],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        stored,
+        ("unverified".to_owned(), "skipped_reference".to_owned())
+    );
+}
+
+/// **`AC-P3-28-17`. A reap is not a closure.** An `unverified` item whose anchor is gone is
+/// deleted with **no closure event, no XP and no layer movement**. It is safe precisely because
+/// `unverified` items are counted in nothing — and without it, a project re-cloned to a new
+/// `location_id` strands its old items for ever.
+#[test]
+fn ac_p3_28_17_a_reap_writes_no_closure_and_no_xp() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let old = LocationId(insert_location(&conn, p, "present"));
+    let store = SqliteDebtStore;
+    let key = DebtKey::content(SUBJECT, "aaaa", 0);
+
+    let tx = conn.transaction().unwrap();
+    let at_old = sweep_at(
+        p,
+        DebtSource::TodoMarker,
+        DebtSweepOutcome::Complete,
+        Some(old),
+        Some(ObservationBasis::Head),
+    );
+    store
+        .observe(&tx, &at_old, &[seen(key, Some(old), "a.rs", 4)])
+        .unwrap();
+    store.mark_unverified(&tx, ProjectId(p)).unwrap();
+    tx.commit().unwrap();
+
+    // The old copy is uninstalled and a fresh clone lands beside it, which is the case the reap
+    // exists for: `location_id` moved and nothing else will ever re-observe the old anchor.
+    conn.execute("UPDATE location SET removed_at = 99 WHERE id = ?1", [old.0])
+        .unwrap();
+    let new = LocationId(insert_location(&conn, p, "present"));
+
+    let tx = conn.transaction().unwrap();
+    let at_new = sweep_at(
+        p,
+        DebtSource::TodoMarker,
+        DebtSweepOutcome::Complete,
+        Some(new),
+        Some(ObservationBasis::Head),
+    );
+
+    // The sweep runs first and must report **no closure**: the stranded item is not comparable
+    // with it, and an `observe` that folded the strand into `closed` would pay for it. This is
+    // the half that bites — the `xp_events` half below cannot, because §28's XP writer pays from
+    // `SweepEffect::closed` and a reap never reaches it.
+    let effect = store.observe(&tx, &at_new, &[]).unwrap();
+    assert!(
+        effect.closed.is_empty(),
+        "a stranded item was closed rather than reaped: {:?}",
+        effect.closed
+    );
+
+    let reaped = store.reap(&tx, ProjectId(p), &at_new).unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(reaped, 1, "the stranded item was not reaped");
+    assert!(open_keys(&conn, p).is_empty());
+
+    let xp: i64 = conn
+        .query_row("SELECT count(*) FROM xp_events", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(xp, 0, "a reap paid XP, so it was treated as a closure");
+}
+
+/// A reap needs a `complete` sweep **at the project's current primary location**. Anything less
+/// and the item is not stranded, it is merely unobserved.
+#[test]
+fn a_reap_refuses_a_sweep_that_is_not_complete_at_the_primary() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let old = LocationId(insert_location(&conn, p, "present"));
+    let store = SqliteDebtStore;
+    let key = DebtKey::content(SUBJECT, "aaaa", 0);
+
+    let tx = conn.transaction().unwrap();
+    let at_old = sweep_at(
+        p,
+        DebtSource::TodoMarker,
+        DebtSweepOutcome::Complete,
+        Some(old),
+        Some(ObservationBasis::Head),
+    );
+    store
+        .observe(&tx, &at_old, &[seen(key, Some(old), "a.rs", 4)])
+        .unwrap();
+    store.mark_unverified(&tx, ProjectId(p)).unwrap();
+    tx.commit().unwrap();
+
+    conn.execute("UPDATE location SET removed_at = 99 WHERE id = ?1", [old.0])
+        .unwrap();
+    let new = LocationId(insert_location(&conn, p, "present"));
+
+    let tx = conn.transaction().unwrap();
+    let partial = sweep_at(
+        p,
+        DebtSource::TodoMarker,
+        DebtSweepOutcome::Partial,
+        Some(new),
+        Some(ObservationBasis::Head),
+    );
+    assert_eq!(store.reap(&tx, ProjectId(p), &partial).unwrap(), 0);
+
+    // …and a complete sweep somewhere that is not the primary proves nothing either.
+    let elsewhere = sweep_at(
+        p,
+        DebtSource::TodoMarker,
+        DebtSweepOutcome::Complete,
+        Some(old),
+        Some(ObservationBasis::Head),
+    );
+    assert_eq!(store.reap(&tx, ProjectId(p), &elsewhere).unwrap(), 0);
 }
