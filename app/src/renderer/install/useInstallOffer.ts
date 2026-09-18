@@ -18,14 +18,9 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type {
-  InstallPreview,
-  ProjectId,
-  Root,
-  RootId,
-  SettingsPatch,
-} from '../../generated/protocol';
+import type { InstallPreview, ProjectId, Root, RootId } from '../../generated/protocol';
 import { useProjectPageDeps } from '../project/deps';
+import { toSettingsPatch } from '../settings/Drawer';
 
 export interface InstallOffer {
   /**
@@ -44,19 +39,6 @@ export interface InstallOffer {
   /** Invokes the shell's folder dialog and nothing else. */
   readonly addFolder: () => void;
   readonly start: () => void;
-}
-
-/** Every field, because the generated patch is total and an omitted key is not "leave it". */
-function onlyInstallRoot(rootId: RootId): SettingsPatch {
-  return {
-    effectsTier: null,
-    reducedMotionOverride: null,
-    autostart: null,
-    residentShortcut: null,
-    roastEnabled: null,
-    logLevel: null,
-    installRootId: rootId,
-  };
 }
 
 /**
@@ -112,7 +94,9 @@ export function useInstallOffer(projectId: ProjectId | null): InstallOffer {
   const choose = useCallback(
     (rootId: RootId) => {
       void deps
-        .request('settings.set', { patch: onlyInstallRoot(rootId) })
+        // `toSettingsPatch` is the one builder of this shape: the generated patch is total, so an
+        // omitted key is not "leave it", and a second builder here is the drifting-copy defect.
+        .request('settings.set', { patch: toSettingsPatch({ installRootId: rootId }) })
         .then(() => {
           setNonce((n) => n + 1);
         })
