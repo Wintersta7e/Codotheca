@@ -51,8 +51,11 @@ pub fn project_ordinals(occurrences: &[ContentOccurrence]) -> Vec<i64> {
 /// [`ObservationBasis`] and [`DebtSweepOutcome`] §28 owns.
 ///
 /// **`item_count` is `Some` only for `complete` and `partial`**, which is also what the DDL's
-/// honesty CHECK enforces. §29's two gates produce `skipped_reference` and — once p3-30 replaces
-/// `ContentGates.compute_suppressed` — `skipped_suppressed`.
+/// honesty CHECK enforces. §29's two gates produce `skipped_reference` and, now that p3-30 has
+/// replaced `ContentGates.compute_suppressed` with the real predicate, `skipped_suppressed`.
+///
+/// **This read of the gate records the skip; it does not gate anything** (A11.2). The gate itself
+/// is `ContentGates::reads_blobs`, and it stops the blob read alone.
 #[must_use]
 pub fn sweep_from_content(
     state: &ContentSweepState,

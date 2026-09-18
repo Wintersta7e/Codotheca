@@ -81,8 +81,10 @@ pub fn health_state(inputs: &StateInputs) -> HealthState {
     {
         return HealthState::Absent;
     }
-    // 5. §30.5's suppression: the user has not acknowledged the project, or has archived it.
-    if !inputs.enrolled || inputs.is_archived {
+    // 5. §30.5's suppression, through the **surface** gate — the one that gates rendering,
+    //    ranking and notification. Its twin gates §29's blob read and is consulted there;
+    //    neither is spelled out a second time here.
+    if super::enrolment::surface_suppressed(inputs.enrolled, inputs.is_archived) {
         return HealthState::Suppressed;
     }
     // 6. **Freezing is not clearing**: a frozen reading keeps its value *and* its age. Freezing

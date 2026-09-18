@@ -584,10 +584,16 @@ impl Rig {
             // Authorship computed and not Reference, so §29.7's first predicate lets J7 run;
             // the grant on, so the third lets it read. Each test that is about a gate sets its
             // own.
+            //
+            // [p3] `acknowledged_at` is set because §29.7's **second** predicate is no longer a
+            // literal: p3-30 wired `compute_suppressed` to enrolment, so an unacknowledged
+            // project now reads no blob at all — which is the point of that change and would
+            // otherwise silently empty every scan below.
             conn.execute(
                 "INSERT INTO project
-                   (name, seed_basename, created_at, updated_at, authored_by_user, is_reference)
-                 VALUES ('p', 'p', 0, 0, 1, 0)",
+                   (name, seed_basename, created_at, updated_at, authored_by_user, is_reference,
+                    acknowledged_at)
+                 VALUES ('p', 'p', 0, 0, 1, 0, 1)",
                 [],
             )
             .unwrap();
