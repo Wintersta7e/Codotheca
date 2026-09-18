@@ -11,8 +11,11 @@
  */
 import { createContext, useContext } from 'react';
 
+import type { InstallRunId, ProjectId, RootId } from '../../generated/protocol';
 import type {
   CommitSuggestionReply,
+  InstallCancelReply,
+  InstallStartReply,
   PickRootReply,
   RevealTarget,
   ShortcutState,
@@ -70,6 +73,13 @@ export interface AppDeps extends ProjectPageDeps {
   readonly nowMs: () => number;
   /** §2.4: the shell owns the folder dialog. A flag goes out; no path comes back in. */
   readonly pickRoot: (confirmLarge: boolean) => Promise<PickRootReply>;
+  /**
+   * [p2] §24.3a's clone, on `relocate`'s shape and with no dialog: a project and a root the user
+   * has already added, both opaque ids. The destination is composed in the core.
+   */
+  readonly installStart: (projectId: ProjectId, rootId: RootId) => Promise<InstallStartReply>;
+  /** [p2] §24.3c: names a run and nothing else. */
+  readonly installCancel: (runId: InstallRunId) => Promise<InstallCancelReply>;
   /** GAP-16b-1: commit a *suggested* root, which carries a display string and never a path. */
   readonly commitSuggestion: (pathDisplay: string) => Promise<CommitSuggestionReply>;
   readonly pickExecutable: (scope: unknown) => Promise<unknown>;
@@ -106,6 +116,9 @@ export function createDefaultAppDeps(): AppDeps {
     // `callWith` over the same bridge is a second place for §2.2's retry decision to be made.
     request: call,
     relocate: (locationId) => bridge.relocate(locationId),
+    uninstall: (locationId) => bridge.uninstall(locationId),
+    installStart: (projectId, rootId) => bridge.installStart(projectId, rootId),
+    installCancel: (runId) => bridge.installCancel(runId),
     openRemoteLink: (projectId, kind) => bridge.openRemoteLink(projectId, kind),
     subscribe: createEventFanout((cb) => {
       bridge.onCoreEvents(cb);

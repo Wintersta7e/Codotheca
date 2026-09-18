@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail, TargetId } from '../../../generated/protocol';
 import { ProjectPageDepsContext, type ProjectPageDeps } from '../deps';
 import { detailFixture, locationFixture, NOW, rowFixture, targetFixture } from '../testFixtures';
-import { NO_APP_STATEMENT, Rail, terminalTarget } from './Rail';
+import { CHECKING_NOTE, UNINSTALL_LABEL, UNINSTALL_OPEN_LABEL } from '../uninstall/uninstallCopy';
+import { NO_APP_STATEMENT, Rail, terminalTarget, type RailProps } from './Rail';
 
 afterEach(cleanup);
 
@@ -14,6 +15,7 @@ function draw(
   const deps: ProjectPageDeps = {
     request: request as unknown as ProjectPageDeps['request'],
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
     openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: () => () => undefined,
     now: () => NOW,
@@ -126,5 +128,91 @@ describe('the stat blocks', () => {
     draw(detailFixture({ playtimeSeconds: 3600 }));
     const rail = screen.getByTestId('cp-rail');
     expect(rail.textContent).not.toMatch(/TOTAL|COMBINED|OVERALL/i);
+  });
+});
+
+/**
+ * [p2] §24.8's affordance. The pre-flight fetches from the remote, so what the rail may do
+ * before a press is the criterion — not what it looks like afterwards.
+ */
+describe("the rail's removal slot", () => {
+  function drawWith(over: Partial<RailProps>): { onOpen: ReturnType<typeof vi.fn> } {
+    const detail = detailFixture();
+    const onOpen = vi.fn();
+    const deps: ProjectPageDeps = {
+      request: (() => Promise.resolve(1)) as unknown as ProjectPageDeps['request'],
+      relocate: () => Promise.resolve({ kind: 'cancelled' }),
+      uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
+      openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
+      subscribe: () => () => undefined,
+      now: () => NOW,
+    };
+    render(
+      <ProjectPageDepsContext.Provider value={deps}>
+        <Rail
+          detail={detail}
+          shown={detail.locations[0] ?? null}
+          onChanged={vi.fn()}
+          onOpenUninstall={onOpen}
+          {...over}
+        />
+      </ProjectPageDepsContext.Provider>,
+    );
+    return { onOpen };
+  }
+
+  it('offers nothing at all when the page does not hand it an opener', () => {
+    draw(detailFixture());
+    expect(screen.queryByTestId('cp-uninstall-open')).toBeNull();
+    expect(screen.queryByTestId('cp-uninstall')).toBeNull();
+  });
+
+  it('draws the opener, and no verdict, before anything has been pressed', () => {
+    const { onOpen } = drawWith({});
+    const opener = screen.getByTestId('cp-uninstall-open');
+    expect(opener.textContent).toBe(UNINSTALL_OPEN_LABEL);
+    // Rendering alone must start nothing: the pre-flight is a network fetch.
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: UNINSTALL_LABEL })).toBeNull();
+  });
+
+  it('asks for the verdict only on the press', () => {
+    const { onOpen } = drawWith({});
+    const opener = screen.getByTestId('cp-uninstall-open');
+    fireEvent.mouseOver(opener);
+    fireEvent.focus(opener);
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.click(opener);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows checking in place of the opener while the pre-flight is in flight', () => {
+    drawWith({ uninstallVerdict: null });
+    expect(screen.queryByTestId('cp-uninstall-open')).toBeNull();
+    expect(screen.getByTestId('cp-rail').textContent).toContain(CHECKING_NOTE);
+  });
+
+  it('has no slot on a project whose only copy is gone', () => {
+    const absent = detailFixture({ locations: [locationFixture({ presence: 'missing' })] });
+    const onOpen = vi.fn();
+    const deps: ProjectPageDeps = {
+      request: (() => Promise.resolve(1)) as unknown as ProjectPageDeps['request'],
+      relocate: () => Promise.resolve({ kind: 'cancelled' }),
+      uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
+      openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
+      subscribe: () => () => undefined,
+      now: () => NOW,
+    };
+    render(
+      <ProjectPageDepsContext.Provider value={deps}>
+        <Rail
+          detail={absent}
+          shown={absent.locations[0] ?? null}
+          onChanged={vi.fn()}
+          onOpenUninstall={onOpen}
+        />
+      </ProjectPageDepsContext.Provider>,
+    );
+    expect(screen.queryByTestId('cp-uninstall-open')).toBeNull();
   });
 });

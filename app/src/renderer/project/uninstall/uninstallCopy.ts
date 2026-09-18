@@ -9,6 +9,17 @@ import type { UninstallBlocker, UninstallDisposition } from '../../../generated/
 
 export const UNINSTALL_LABEL = 'UNINSTALL';
 
+/**
+ * The affordance that **opens** the check, which is a different control from the one that
+ * removes. §24.7C's pre-flight fetches from the remote, so `protocol.json` says outright it is
+ * not callable on hover — nothing may run it but a press. The ellipsis is `INSTALL…`'s, and says
+ * the same thing: this opens something, it does not do something.
+ */
+export const UNINSTALL_OPEN_LABEL = 'UNINSTALL…';
+
+/** Said beside the affordance, so the press is not a leap. */
+export const UNINSTALL_OPEN_NOTE = 'Check whether this copy is safe to remove.';
+
 /** §24.8's confirmation, exactly. */
 export const UNINSTALL_CONFIRMATION = 'Uninstall — the tile stays, re-clone any time.';
 

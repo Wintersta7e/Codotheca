@@ -24,6 +24,7 @@ import type {
   OpenRemoteLinkReply,
   RelocateReply,
   RendererEvent,
+  UninstallReply,
 } from '../../shared/channels';
 
 /**
@@ -49,6 +50,12 @@ export interface ProjectPageDeps {
   request: <K extends CommandName>(name: K, args: CommandArgs[K]) => Promise<CommandResult[K]>;
   /** Privileged (§2.4): the shell owns the folder dialog, the renderer originates no path. */
   relocate: (locationId: LocationId) => Promise<RelocateReply>;
+  /**
+   * [p2] §24.8: privileged because it mutates the filesystem, so it travels a shell-owned
+   * channel. An id and nothing else — no verdict token crosses, and the core recomputes its own
+   * inside the call. `locations.uninstallPreflight` is unprivileged and rides `request`.
+   */
+  uninstall: (locationId: LocationId) => Promise<UninstallReply>;
   /**
    * §25.2: an id and a link kind, never a URL. The shell asks the core for the string, checks it
    * again, confirms it with the user by name, and opens it.
@@ -126,6 +133,7 @@ export function createDefaultDeps(): ProjectPageDeps {
       return reply.value as CommandResult[K];
     },
     relocate: (locationId) => bridge.relocate(locationId),
+    uninstall: (locationId) => bridge.uninstall(locationId),
     openRemoteLink: (projectId, kind) => bridge.openRemoteLink(projectId, kind),
     subscribe,
     now: () => Math.floor(Date.now() / 1000),

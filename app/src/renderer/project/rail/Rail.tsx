@@ -18,6 +18,7 @@ import { InstallControl } from '../../install/InstallControl';
 import { formatPlaytime } from '../../format/playtime';
 import { useProjectPageDeps } from '../deps';
 import { UninstallControl } from '../uninstall/UninstallControl';
+import { UNINSTALL_OPEN_LABEL, UNINSTALL_OPEN_NOTE } from '../uninstall/uninstallCopy';
 import { editorTargets, OpensIn } from './OpensIn';
 import { RerollStepper } from './RerollStepper';
 import { ctaState, type CtaState } from './statFormat';
@@ -49,8 +50,15 @@ export interface RailProps {
    * *the pre-flight is in flight* — a distinct state the control renders as checking, never as an
    * enabled button it later takes away.
    */
-  uninstallVerdict?: UninstallVerdict | null;
+  uninstallVerdict?: UninstallVerdict | null | undefined;
   onUninstall?: () => void;
+  /**
+   * [p2] §24.8: the affordance that opens the check. Its absence is what means *this rail is not
+   * offering Uninstall at all* — `uninstallVerdict` alone could not say that and be closed, since
+   * `undefined` there is also the state before the first press. The pre-flight fetches from the
+   * remote, so nothing but this press may start one.
+   */
+  onOpenUninstall?: () => void;
   shown: LocationDetail | null;
   onChanged: () => void;
 }
@@ -64,6 +72,7 @@ export function Rail({
   onOpenUpgrade,
   uninstallVerdict,
   onUninstall,
+  onOpenUninstall,
 }: RailProps): ReactElement {
   const deps = useProjectPageDeps();
   const [offset, setOffset] = useState(detail.rerollOffset);
@@ -195,8 +204,26 @@ export function Rail({
       {/* [p2-24b] §24.5: Uninstall's **one** mount point, and it stands below the stats rather
           than beside Play — there is nothing to gain from putting a removal where the eye lands
           first. A project with no present location has no working copy to remove, so the slot is
-          not merely disabled there; it is absent. */}
-      {uninstallVerdict === undefined || !hasPresentLocation ? null : (
+          not merely disabled there; it is absent.
+
+          [p2] §24.8: before the first press there is no verdict and there must be no fetch, so
+          the slot holds the affordance that opens the check. The control replaces it from the
+          press onwards — `null` is checking, and it never renders enabled then takes itself
+          away. */}
+      {onOpenUninstall === undefined || !hasPresentLocation ? null : uninstallVerdict ===
+        undefined ? (
+        <div className="cp-uninstall" data-state="closed">
+          <p className="cp-uninstall__note">{UNINSTALL_OPEN_NOTE}</p>
+          <button
+            type="button"
+            className="cp-uninstall__open"
+            data-testid="cp-uninstall-open"
+            onClick={onOpenUninstall}
+          >
+            {UNINSTALL_OPEN_LABEL}
+          </button>
+        </div>
+      ) : (
         <UninstallControl verdict={uninstallVerdict} onUninstall={onUninstall ?? (() => {})} />
       )}
     </div>

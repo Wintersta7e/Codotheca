@@ -49,6 +49,7 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
       }
     },
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
     openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: (handler) => {
       subscribers.add(handler);
@@ -60,6 +61,9 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
     nowMs: () => nowSeconds * 1000,
     pickRoot: () => Promise.resolve({ kind: 'cancelled' }),
     commitSuggestion: () => Promise.resolve({ kind: 'unknown' as const }),
+    installStart: () =>
+      Promise.resolve({ kind: 'started' as const, start: { runId: 1, refusedBecause: null } }),
+    installCancel: () => Promise.resolve({ kind: 'cancelled' as const }),
     // The shell's own channels answer a `BridgeReply` envelope, not a bare value — the same
     // shape `registerShellServices` returns. A fake answering `null` would let a caller that
     // forgot to unwrap pass here and throw in the product.

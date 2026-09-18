@@ -15,6 +15,7 @@ const deps: ProjectPageDeps = {
   request: (() =>
     Promise.resolve('codotheca://art/aa/hero')) as unknown as ProjectPageDeps['request'],
   relocate: () => Promise.resolve({ kind: 'cancelled' }),
+  uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
   openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
   subscribe: () => () => undefined,
   now: () => NOW,

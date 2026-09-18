@@ -25,6 +25,7 @@ function withDeps(children: ReactNode, request?: ProjectPageDeps['request']): Re
   const deps: ProjectPageDeps = {
     request: request ?? (() => Promise.reject(new Error('no bridge in this test'))),
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
     openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: () => () => undefined,
     now: () => NOW,

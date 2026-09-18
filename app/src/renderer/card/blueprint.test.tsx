@@ -62,6 +62,7 @@ function artServer(): {
   const deps = {
     request,
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
     openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: () => () => undefined,
     now: () => 1_800_000_000,
@@ -220,6 +221,7 @@ describe('§23.5: the tile asks for the pass it needs, at its own address', () =
     const deps = {
       request,
       relocate: () => Promise.resolve({ kind: 'cancelled' }),
+      uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
       openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
       subscribe: () => () => undefined,
       now: () => 1_800_000_000,

@@ -35,6 +35,7 @@ import { ReadmePanel } from './readme/ReadmePanel';
 import { RemoteTab } from './remote/RemoteTab';
 import { RoastNote } from './RoastNote';
 import { BASE_PROJECT_TABS, fallbackTab, nextTab, tabsFor, type ProjectTab } from './tabs';
+import { useUninstallOffer } from './uninstall/useUninstall';
 import { useProjectDetail } from './useProjectDetail';
 
 export const PROJECT_PAGE_ROOT_CLASS = 'cp-page';
@@ -199,6 +200,9 @@ export function ProjectPageView({
   const shown = detail === null ? null : shownLocation(detail, shownId);
   const primary = detail === null ? null : primaryLocation(detail);
   const pathDisplay = shown?.location.pathDisplay ?? '';
+  // §5.6: the page's own sentence is phrased from the copy it is showing, and so is the removal
+  // — PLAY launches that copy and this is the one it offers to take away.
+  const removal = useUninstallOffer(shown?.location.id ?? null, reload);
 
   return (
     <div
@@ -268,7 +272,17 @@ export function ProjectPageView({
               isPinned={pinnedOverride ?? detail.row.isPinned}
               onTogglePin={onTogglePin}
             />
-            <Rail detail={detail} shown={shown} onChanged={reload} />
+            {/* [p2] §24.8's removal, mounted. The verdict is fetched when the affordance opens
+                and at no other time; the page holds it because the rail is arrangement and the
+                pre-flight belongs to the surface that knows which copy is shown. */}
+            <Rail
+              detail={detail}
+              shown={shown}
+              onChanged={reload}
+              uninstallVerdict={removal.verdict}
+              onOpenUninstall={removal.open}
+              onUninstall={removal.remove}
+            />
           </div>
           <div className="cp-col-right">
             <div className="cp-rise" style={{ animationDelay: cascadeDelay(0) }}>

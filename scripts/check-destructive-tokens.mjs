@@ -85,6 +85,16 @@ export const UNINSTALL_SITES = [
     why: 'Its BEM class names, `cp-uninstall` and the elements under it. The control renders no copy of its own — every sentence comes from the module above — but a class has to say which block it belongs to, and `\\buninstall\\b` matches across the hyphen.',
   },
   {
+    path: 'app/src/renderer/project/uninstall/useUninstall.ts',
+    token: 'UNINSTALL',
+    why: "The page's half of §24.8: it names `locations.uninstallPreflight`, which is unprivileged and renderer-callable by design, and it is the only thing in the renderer that starts a pre-flight. The privileged `locations.uninstall` is NOT named here — it travels the shell's channel, and `app/test/uninstallAcceptance.test.ts` fails on a renderer file that names it.",
+  },
+  {
+    path: 'app/src/renderer/project/ProjectPage.tsx',
+    token: 'UNINSTALL',
+    why: 'The import path of the hook above. §24.5 gives the removal one slot and the page is the surface that owns it — the rail is arrangement, and the copy being offered is the one the page is showing.',
+  },
+  {
     path: 'app/src/renderer/project/rail/Rail.tsx',
     token: 'UNINSTALL',
     why: "The import path of the control, which lives in a directory named for what it does. §24.5 puts Uninstall in exactly one slot and `app/test/installSites.test.ts` fails on a second, so this path is the gate's own evidence rather than a hole in it.",

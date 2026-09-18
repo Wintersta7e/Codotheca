@@ -1,9 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectDetail, ProjectId } from '../../generated/protocol';
+import type { ProjectDetail, ProjectId, UninstallVerdict } from '../../generated/protocol';
 import { ProjectPageDepsContext, type ProjectPageDeps } from './deps';
 import { primaryLocation, ProjectPageView, shownLocation } from './ProjectPage';
 import { detailFixture, locationFixture, NOW, rowFixture } from './testFixtures';
+import { blockerSentence, UNINSTALL_LABEL } from './uninstall/uninstallCopy';
 
 afterEach(cleanup);
 
@@ -15,6 +16,7 @@ function depsFor(detail: ProjectDetail): ProjectPageDeps {
       return Promise.resolve({});
     }) as unknown as ProjectPageDeps['request'],
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
+    uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
     openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     subscribe: () => () => undefined,
     now: () => NOW,
@@ -119,6 +121,7 @@ describe('the shell', () => {
     const failing: ProjectPageDeps = {
       request: () => Promise.reject(new Error('nope')),
       relocate: () => Promise.resolve({ kind: 'cancelled' }),
+      uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
       openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
       subscribe: () => () => undefined,
       now: () => NOW,
@@ -147,6 +150,7 @@ describe('pinning from the hero', () => {
     const deps: ProjectPageDeps = {
       request: request as unknown as ProjectPageDeps['request'],
       relocate: () => Promise.resolve({ kind: 'cancelled' }),
+      uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
       openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
       subscribe: () => () => undefined,
       now: () => NOW,
@@ -295,5 +299,92 @@ describe('the shown location', () => {
       locations: [locationFixture({ isPrimary: false }), locationFixture({ isPrimary: false })],
     });
     expect(primaryLocation(detail)).toBe(detail.locations[0]);
+  });
+});
+
+/**
+ * [p2] §24.8's removal, mounted. The unit tests prove the hook's timing and the control's DOM;
+ * this proves the page joins them — the defect that shipped once was two complete, tested
+ * features that no surface mounted.
+ */
+describe('the removal the page offers', () => {
+  function mountWith(
+    verdict: UninstallVerdict,
+    uninstall: ReturnType<typeof vi.fn>,
+  ): { request: ReturnType<typeof vi.fn> } {
+    const detail = detailFixture();
+    const request = vi.fn((name: string) => {
+      if (name === 'projects.get') return Promise.resolve(detail);
+      if (name === 'art.url') return Promise.resolve('codotheca://art/aa/hero');
+      if (name === 'locations.uninstallPreflight') return Promise.resolve(verdict);
+      return Promise.resolve({});
+    });
+    const deps: ProjectPageDeps = {
+      ...depsFor(detail),
+      request: request as unknown as ProjectPageDeps['request'],
+      uninstall: uninstall as unknown as ProjectPageDeps['uninstall'],
+    };
+    render(
+      <ProjectPageDepsContext.Provider value={deps}>
+        <ProjectPageView
+          projectId={7 as unknown as ProjectId}
+          onBack={vi.fn()}
+          onOpenProject={vi.fn()}
+        />
+      </ProjectPageDepsContext.Provider>,
+    );
+    return { request };
+  }
+
+  const safe = (): UninstallVerdict =>
+    ({
+      disposition: 'safe',
+      blockers: [],
+      remoteVerifiedAt: null,
+      trashAvailable: true,
+      computedAt: NOW,
+    }) as unknown as UninstallVerdict;
+
+  const blocked = (): UninstallVerdict =>
+    ({
+      disposition: 'blocked',
+      blockers: ['unpushed_commits'],
+      remoteVerifiedAt: null,
+      trashAvailable: true,
+      computedAt: NOW,
+    }) as unknown as UninstallVerdict;
+
+  it('mounts the affordance and runs no pre-flight until it is pressed', async () => {
+    const { request } = mountWith(safe(), vi.fn());
+    await screen.findByTestId('cp-uninstall-open');
+    const asked = request.mock.calls.map((call) => String((call as unknown[])[0]));
+    expect(asked).not.toContain('locations.uninstallPreflight');
+  });
+
+  it('reaches the enabled removal only through a verdict the core gave it', async () => {
+    const uninstall = vi.fn(() => Promise.resolve({ kind: 'uninstalled', location: {} }));
+    mountWith(safe(), uninstall);
+
+    fireEvent.click(await screen.findByTestId('cp-uninstall-open'));
+    const go = await screen.findByTestId('cp-rail').then(() => screen.findByText(UNINSTALL_LABEL));
+    fireEvent.click(go);
+
+    await waitFor(() => {
+      expect(uninstall).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('names the blockers and offers nothing that reaches the removal', async () => {
+    const uninstall = vi.fn(() => Promise.resolve({ kind: 'uninstalled', location: {} }));
+    mountWith(blocked(), uninstall);
+
+    fireEvent.click(await screen.findByTestId('cp-uninstall-open'));
+    await screen.findByText(blockerSentence('unpushed_commits'));
+
+    // The enabled control is absent, not merely disabled: an element a stray keyboard path
+    // could still activate is a path past a non-safe disposition.
+    expect(screen.queryByText(UNINSTALL_LABEL)).toBeNull();
+    for (const button of screen.getAllByRole('button')) fireEvent.click(button);
+    expect(uninstall).not.toHaveBeenCalled();
   });
 });
