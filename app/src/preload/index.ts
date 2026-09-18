@@ -13,6 +13,8 @@ import {
   IPC_CORE_STATUS,
   IPC_EVENTS,
   IPC_INDEX_LOCATION,
+  IPC_INSTALL_CANCEL,
+  IPC_INSTALL_START,
   IPC_OPEN_PALETTE,
   IPC_OPEN_REMOTE_LINK,
   IPC_PICK_EXECUTABLE,
@@ -21,13 +23,17 @@ import {
   IPC_REQUEST,
   IPC_REVEAL,
   IPC_SHORTCUT_STATE,
+  IPC_UNINSTALL,
   type CommitSuggestionReply,
   IPC_COMMIT_SUGGESTION,
+  type InstallCancelReply,
+  type InstallStartReply,
   type OpenRemoteLinkReply,
   type PickRootReply,
   type RelocateReply,
   type RevealTarget,
   type ShortcutState,
+  type UninstallReply,
 } from '../shared/channels';
 import {
   effectsTierFromArgv,
@@ -61,6 +67,15 @@ const bridge: CodothecaBridge = {
   // returned and adds the folder the core itself proposed — the renderer never holds a path.
   commitSuggestion: (pathDisplay: string): Promise<CommitSuggestionReply> =>
     ipcRenderer.invoke(IPC_COMMIT_SUGGESTION, { pathDisplay }) as Promise<CommitSuggestionReply>,
+  // [p2] §24.8: an id and nothing else, and no path in either direction. The core reads the path
+  // from the row it re-verifies, and the verdict it acts on is the one it computes itself.
+  uninstall: (locationId: number): Promise<UninstallReply> =>
+    ipcRenderer.invoke(IPC_UNINSTALL, { locationId }) as Promise<UninstallReply>,
+  // [p2] §24.3a: a project and a root, both opaque ids. The destination is composed in the core.
+  installStart: (projectId: number, rootId: number): Promise<InstallStartReply> =>
+    ipcRenderer.invoke(IPC_INSTALL_START, { projectId, rootId }) as Promise<InstallStartReply>,
+  installCancel: (runId: number): Promise<InstallCancelReply> =>
+    ipcRenderer.invoke(IPC_INSTALL_CANCEL, { runId }) as Promise<InstallCancelReply>,
   onCoreStatus: (cb: (status: unknown) => void): void => {
     ipcRenderer.on(IPC_CORE_STATUS, (_event, status: unknown) => {
       cb(status);

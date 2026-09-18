@@ -1,11 +1,14 @@
 import type { RemoteLinkKind } from '../generated/protocol';
 import type {
   CommitSuggestionReply,
+  InstallCancelReply,
+  InstallStartReply,
   OpenRemoteLinkReply,
   PickRootReply,
   RelocateReply,
   RevealTarget,
   ShortcutState,
+  UninstallReply,
 } from './channels';
 import type { EffectsTier, EffectsTierSource } from './effectsTier';
 
@@ -80,6 +83,21 @@ export interface CodothecaBridge {
    * names no suggestion, or two, is refused rather than guessed.
    */
   commitSuggestion(pathDisplay: string): Promise<CommitSuggestionReply>;
+  /**
+   * [p2] §24.8's removal. It sends an opaque `LocationId` and nothing else: the core reads the
+   * path from the row it is about to re-verify, and **no verdict token crosses** — a verdict
+   * rendered a moment ago is a cache, so the core recomputes its own inside the call and refuses
+   * if it moved. `locations.uninstall` is privileged, so this is its only route.
+   */
+  uninstall(locationId: number): Promise<UninstallReply>;
+  /**
+   * [p2] §24.3a's clone. Two opaque ids — a project and a root the user has already added — and
+   * **no path in either direction**. `install.start` carries no `Bytes`; it is privileged
+   * because it mutates the filesystem, which is what §24.8 extends the word to mean.
+   */
+  installStart(projectId: number, rootId: number): Promise<InstallStartReply>;
+  /** [p2] §24.3c: names a run and nothing else. Privileged for the reason the start is. */
+  installCancel(runId: number): Promise<InstallCancelReply>;
   onCoreStatus(cb: (status: unknown) => void): void;
   /** One batch per frame, never one message per event. */
   onCoreEvents(cb: (batch: unknown) => void): void;

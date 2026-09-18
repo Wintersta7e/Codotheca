@@ -55,6 +55,16 @@ export const UNINSTALL_SITES = [
     why: "§24.8: `IPC_UNINSTALL`'s VALUE has to say what the channel is. A channel named for something else would be worse than the word — the whole point of the constant is that a reader can tell what travels it.",
   },
   {
+    path: 'app/src/shared/bridge.ts',
+    token: 'UNINSTALL',
+    why: "The bridge method the renderer calls, and the `UninstallReply` it resolves to. The occurrence `extractStrings` finds is not a rendered string at all — its `>text<` arm matches across a TypeScript generic — but narrowing the pattern to let a generic through would admit every other occurrence with it, which is the repair this file's DELETE_SITES comment already refused once.",
+  },
+  {
+    path: 'app/src/preload/index.ts',
+    token: 'UNINSTALL',
+    why: 'The only route `locations.uninstall` has: the command is privileged, so `isRendererCallable` keeps it off IPC_REQUEST and the renderer reaches it through this wrapper or not at all. Same generic-in-a-return-type occurrence as the entry above.',
+  },
+  {
     path: 'app/src/main/dialogs/uninstall.ts',
     token: 'UNINSTALL',
     why: 'The shell half has to name the command it calls. Its two diagnostic strings deliberately do NOT carry the word — `bad locationId` and `could not complete` — because no user reads them and the direct translations would have forced a site for nothing.',

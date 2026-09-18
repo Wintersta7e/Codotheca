@@ -41,6 +41,7 @@ import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
 import { registerExternalLink } from './dialogs/externalLink';
 import { registerRelocateDialog } from './dialogs/relocate';
+import { registerInstall } from './dialogs/install';
 import { registerUninstall } from './dialogs/uninstall';
 import { registerRootPicker, registerSuggestionCommit, SuggestionCache } from './rootPicker';
 import { CoreClient } from './core/client';
@@ -424,6 +425,17 @@ async function main(): Promise<void> {
   // path in either direction. The channel exists for the refusal — `locations.uninstall` is
   // privileged, so `isRendererCallable` keeps it off IPC_REQUEST and this is its only route.
   registerUninstall({
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
+    },
+    request,
+  });
+
+  // [p2] §24.3: the other half of the same rule. `install.start` and `install.cancel` mutate the
+  // filesystem, so §24.8's extended `privileged` keeps both off IPC_REQUEST and this is the only
+  // route they have. No dialog: the destination is a root the user already added, composed in
+  // the core, so nothing here originates a path.
+  registerInstall({
     handle: (channel, fn) => {
       ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
     },

@@ -26,6 +26,9 @@ function stubBridge(): StubBridge {
     openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),
     pickRoot: () => Promise.resolve({ kind: 'cancelled' }),
     commitSuggestion: () => Promise.resolve({ kind: 'unknown' as const }),
+    uninstall: () => Promise.resolve({ kind: 'refused' as const, verdict: null }),
+    installStart: () => Promise.resolve({ kind: 'started' as const, start: null }),
+    installCancel: () => Promise.resolve({ kind: 'cancelled' as const }),
     onCoreStatus: () => undefined,
     onCoreEvents: (cb) => {
       registrations.push(cb);

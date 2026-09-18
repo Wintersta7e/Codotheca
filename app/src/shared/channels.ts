@@ -74,6 +74,15 @@ export interface InstallStartCall {
 }
 
 /**
+ * `install.start` answers with an `InstallStart`, which carries either a run id **or** a refusal
+ * — §24.3d's *"a refusal is a reply, not a failure"*. So there is no `refused` member here: the
+ * refusal rides inside `start` and only a transport or core error becomes `failed`.
+ */
+export type InstallStartReply =
+  | { readonly kind: 'started'; readonly start: unknown }
+  | { readonly kind: 'failed'; readonly error: BridgeError };
+
+/**
  * §24.3c: cancel kills the clone's process group and removes the staging directory, so it is
  * privileged for the same reason the start is and takes the same route. It names a run and
  * nothing else — there is no path to send and none to accept back.
@@ -83,6 +92,10 @@ export const IPC_INSTALL_CANCEL = 'codotheca:install-cancel';
 export interface InstallCancelCall {
   readonly runId: number;
 }
+
+/** `install.cancel` returns `Empty`, so the only thing to carry back is whether it threw. */
+export type InstallCancelReply =
+  { readonly kind: 'cancelled' } | { readonly kind: 'failed'; readonly error: BridgeError };
 
 /**
  * §24.8's removal, on `IPC_RELOCATE`'s shape — **and it has no dialog, which is the difference
