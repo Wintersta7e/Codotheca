@@ -791,3 +791,188 @@ fn collect_files(dir: &std::path::Path, ext: &str, out: &mut Vec<std::path::Path
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// §30.1 — the reading assembled, and the freeze applied once, upstream (Task 8).
+// ---------------------------------------------------------------------------------------------
+
+use codotheca_core::health::read_for_project;
+use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
+use codotheca_core::index::{open_connection, Index};
+use codotheca_core::protocol::ProjectId;
+
+const READ_NOW: i64 = 1_781_179_200;
+
+fn store() -> (tempfile::TempDir, rusqlite::Connection) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut conn = open_connection(&Index::db_path(dir.path())).unwrap();
+    apply_all(&mut conn, MIGRATIONS).unwrap();
+    (dir, conn)
+}
+
+/// A project that reaches `live`: authorship computed, not Reference, enrolled, one present copy.
+fn seed_live(conn: &rusqlite::Connection) -> i64 {
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, lineage_key, created_at, updated_at,
+                              authored_by_user, is_reference, acknowledged_at)
+         VALUES ('p', 'p', 'abc123', 1, 1, 1, 0, ?1)",
+        [READ_NOW],
+    )
+    .unwrap();
+    let project = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display, store_key,
+                               presence, repo_kind, refstate_observed_at)
+         VALUES (?1, 'linux', x'2f70', x'2f70', '/p', 'store-a', 'present', 'worktree', ?2)",
+        rusqlite::params![project, READ_NOW],
+    )
+    .unwrap();
+    project
+}
+
+fn sweep(conn: &rusqlite::Connection, project: i64, source: &str, outcome: &str, at: i64) {
+    let item_count = if outcome == "complete" || outcome == "partial" {
+        Some(0_i64)
+    } else {
+        None
+    };
+    conn.execute(
+        "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![project, source, outcome, item_count, at],
+    )
+    .unwrap();
+}
+
+fn item(conn: &rusqlite::Connection, project: i64, source: &str, fingerprint: &str, state: &str) {
+    conn.execute(
+        "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state, scoring,
+                                first_seen_at, last_seen_at)
+         VALUES (?1, 'lineage:abc123|remote:', ?2, ?3, ?4, 'scored', ?5, ?5)",
+        rusqlite::params![project, source, fingerprint, state, READ_NOW],
+    )
+    .unwrap();
+}
+
+/// **The invariant's own counterexample.** A reading that says nothing was computed carries no
+/// number at all — `scoredOpen` and `basis` are NULL with no default, core-side, on the writer.
+#[test]
+fn the_writer_never_writes_zero_for_unknown() {
+    let (_dir, conn) = store();
+
+    // `absent`: authorship uncomputed, which is the ordinary state of a project mid-scan.
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, created_at, updated_at, is_reference)
+         VALUES ('a', 'a', 1, 1, 0)",
+        [],
+    )
+    .unwrap();
+    let absent = conn.last_insert_rowid();
+    let (reading, items) = read_for_project(&conn, ProjectId(absent), READ_NOW).unwrap();
+    assert_eq!(reading.state, HealthState::Absent);
+    assert_eq!(reading.scored_open, None, "a zero was written for unknown");
+    assert!(reading.basis.is_none(), "a zeroed basis was written");
+    assert!(
+        reading.checks.is_empty(),
+        "an empty checks array is the state saying nothing was computed"
+    );
+    assert!(items.is_empty());
+
+    // `suppressed`: enrolled, but archived.
+    let suppressed = seed_live(&conn);
+    conn.execute(
+        "UPDATE project SET is_archived = 1 WHERE id = ?1",
+        [suppressed],
+    )
+    .unwrap();
+    let (reading, items) = read_for_project(&conn, ProjectId(suppressed), READ_NOW).unwrap();
+    assert_eq!(reading.state, HealthState::Suppressed);
+    assert_eq!(reading.scored_open, None);
+    assert!(reading.basis.is_none());
+    assert!(reading.checks.is_empty());
+    assert!(items.is_empty());
+}
+
+/// §30.2's closing rule — **the freeze is applied once, upstream.** A `frozen` project is handed
+/// its last computed item set, not the current unobservable one, and §33 and §35 re-derive
+/// nothing.
+#[test]
+fn ac_p3_30_11a_a_frozen_projects_item_set_is_the_last_computed_one() {
+    let (_dir, conn) = store();
+    let project = seed_live(&conn);
+    sweep(&conn, project, "missing_readme", "complete", READ_NOW - 600);
+    item(&conn, project, "missing_readme", "", "open");
+
+    let (live, before) = read_for_project(&conn, ProjectId(project), READ_NOW).unwrap();
+    assert_eq!(live.state, HealthState::Live);
+    assert_eq!(before.len(), 1, "seeded nothing to freeze");
+
+    // The store goes away. Nothing recomputes a set it cannot observe, which is what makes the
+    // frozen set the last computed one rather than a fresh empty one.
+    conn.execute(
+        "UPDATE location SET presence = 'offline' WHERE project_id = ?1",
+        [project],
+    )
+    .unwrap();
+    let (frozen, after) = read_for_project(&conn, ProjectId(project), READ_NOW).unwrap();
+    assert_eq!(frozen.state, HealthState::Frozen);
+    eprintln!(
+        "item set before the store went offline: {}, after: {}",
+        before.len(),
+        after.len()
+    );
+    assert_eq!(
+        after.iter().map(|i| &i.fingerprint).collect::<Vec<_>>(),
+        before.iter().map(|i| &i.fingerprint).collect::<Vec<_>>(),
+        "the frozen set is not the last computed one"
+    );
+
+    // **A frozen reading keeps its value AND its age.** Freezing is not clearing.
+    let basis = frozen.basis.expect("a frozen reading carries its basis");
+    assert_eq!(basis.observed_at, READ_NOW - 600, "the age was dropped");
+    assert_eq!(frozen.scored_open, Some(1));
+}
+
+/// The reading over a project with one `ok` check and one `unknown` one — the shape Task 10's
+/// shelf summary has to agree with.
+#[test]
+fn ac_p3_30_11a_a_live_reading_names_every_check_and_counts_only_what_ran() {
+    let (_dir, conn) = store();
+    let project = seed_live(&conn);
+    sweep(&conn, project, "missing_readme", "complete", READ_NOW - 90);
+    sweep(&conn, project, "missing_license", "partial", READ_NOW - 30);
+    item(&conn, project, "missing_license", "", "open");
+
+    let (reading, _items) = read_for_project(&conn, ProjectId(project), READ_NOW).unwrap();
+    assert_eq!(reading.state, HealthState::Live);
+    let basis = reading.basis.expect("a live reading with observations");
+    eprintln!(
+        "ran={} eligible={} unknown={} off={} notApplicable={} observedAt={}",
+        basis.ran,
+        basis.eligible,
+        basis.unknown,
+        basis.off,
+        basis.not_applicable,
+        basis.observed_at
+    );
+    assert_eq!(basis.ran, 2, "one ok and one failed");
+    assert_eq!(reading.scored_open, Some(1));
+
+    // Every check the registry declares is named, and every `unknown` carries a reason.
+    assert_eq!(reading.checks.len(), DebtSource::ALL.len());
+    for check in &reading.checks {
+        assert_eq!(
+            check.unknown_reason.is_some(),
+            check.outcome == CheckOutcome::Unknown,
+            "{check:?}"
+        );
+    }
+    // The never-swept sources are `unknown` and owed *this has not run yet* — except
+    // `todo_marker`, whose grant is off by default, which makes it `off` (R128/F8).
+    let todo = reading
+        .checks
+        .iter()
+        .find(|c| c.id == DebtSource::TodoMarker)
+        .expect("todo_marker is a declared source");
+    assert_eq!(todo.outcome, CheckOutcome::Off);
+}
