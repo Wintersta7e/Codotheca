@@ -11,6 +11,7 @@
 
 pub mod identity;
 pub mod markers;
+pub mod singletons;
 pub mod store;
 pub mod sweep;
 pub mod xp;

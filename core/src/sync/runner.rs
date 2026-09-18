@@ -591,6 +591,28 @@ impl SyncRunner {
 
         self.mirror_foreign_observations();
 
+        // §28.2's singleton evaluator — **R145's second call site, and both are §28's.**
+        // **`ci_red`'s input arrives on a sync, not on a job**, so an evaluator hooked to
+        // job-settle alone holds §28's previous answer until some unrelated job settles that
+        // project. `ProjectRemote` is the task that writes the run record, so it is the one
+        // settle that can have changed the reading.
+        //
+        // It runs **before** §31's completion evaluator here too; do not reorder them.
+        if let SyncTask::ProjectRemote { project_id } = task {
+            let tz_offset_min = self.deps.tz_offset_min;
+            let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+            let _ = guard.with_tx(|tx| {
+                let _ = crate::debt::singletons::settle_singletons(
+                    tx,
+                    *project_id,
+                    now,
+                    tz_offset_min,
+                    &crate::debt::store::SqliteDebtStore,
+                );
+                Ok(())
+            });
+        }
+
         // Every budget row this step touched, so a surface renders `—` for what was never
         // observed rather than a zero nobody measured.
         if let Ok(budgets) = self.read_budgets() {

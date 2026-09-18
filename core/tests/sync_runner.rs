@@ -197,6 +197,8 @@ fn fixture_over(dwell: Duration, forge: Option<Arc<dyn HttpTransport>>) -> Fixtu
             tokens,
             clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
             cancel: codotheca_core::cancel::CancelToken::new(),
+            // UTC in a test, so a local date never depends on the machine running it.
+            tz_offset_min: 0,
         },
         account,
         project,
@@ -1077,4 +1079,66 @@ fn cancelling_the_deps_token_stops_the_loop_without_a_request_stop() {
         done.load(Ordering::SeqCst)
     });
     let _ = joiner.join();
+}
+
+/// **R145's second call site, proved live.** `ci_red`'s input arrives on a **sync**, not on a
+/// job: an evaluator hooked to `JobRunner::settle` alone holds §28's previous answer until some
+/// unrelated job settles that project — the one-settle lag R145 was raised about.
+///
+/// Nothing here runs a job. A `ProjectRemote` sync settles, and the item exists afterwards.
+#[test]
+fn a_project_remote_sync_settle_opens_ci_red_with_no_job_involved() {
+    let f = fixture(Duration::from_millis(0));
+    // The listing and the repo read both answer emptily; what matters is that the task settles.
+    for _ in 0..8 {
+        f.scripted.push(ok_page("{}"));
+    }
+
+    {
+        let mut guard = f.index.lock().expect("index");
+        guard
+            .with_tx(|tx| {
+                // A primary copy on `main`, which is the branch R145's fallback reads.
+                tx.execute(
+                    "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                           store_key, presence, repo_kind, branch)
+                     VALUES (?1, 'linux', x'2f61', x'2f61', '/a', 'store', 'present', 'worktree',
+                             'main')",
+                    [f.project.0],
+                )?;
+                // The latest concluded run on that branch failed.
+                tx.execute(
+                    "INSERT INTO remote_ci_run
+                        (provider, provider_repo_id, run_id, workflow_name, conclusion, branch,
+                         run_number, started_at)
+                     VALUES ('github', '7', 1, 'build', 'failure', 'main', 1, 100)",
+                    [],
+                )?;
+                Ok(())
+            })
+            .expect("seed");
+    }
+
+    let runner = SyncRunner::new(
+        Arc::clone(&f.index),
+        f.deps,
+        Arc::clone(&f.events) as Arc<dyn EventSink>,
+    );
+    runner.enqueue(SyncTask::ProjectRemote {
+        project_id: f.project,
+    });
+    runner.start();
+
+    until("the sync settle to open ci_red", || {
+        let guard = f.index.lock().expect("index");
+        let n: i64 = guard
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM debt_item WHERE project_id = ?1 AND source = 'ci_red'",
+                [f.project.0],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        n == 1
+    });
 }

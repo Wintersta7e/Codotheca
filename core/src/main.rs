@@ -349,6 +349,7 @@ fn main() -> ExitCode {
             tokens: Arc::clone(&tokens),
             clock: Arc::clone(&clock),
             cancel: codotheca_core::cancel::CancelToken::new(),
+            tz_offset_min: local_utc_offset_min(),
         },
         Arc::clone(&events) as Arc<dyn EventSink>,
     );

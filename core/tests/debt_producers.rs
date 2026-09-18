@@ -8,12 +8,14 @@
 )]
 
 use codotheca_core::debt::markers::{build_items, project_ordinals};
+use codotheca_core::debt::singletons::evaluate_singletons;
 use codotheca_core::debt::store::{SqliteDebtStore, SweepEffect};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::jobs::j7_markers::{ContentGates, ContentOccurrence};
 use codotheca_core::jobs::markers::Marker;
 use codotheca_core::protocol::{LocationId, ProjectId};
+use rusqlite::OptionalExtension as _;
 
 const HEAD: &str = "head0000";
 
@@ -362,4 +364,396 @@ fn a_reference_project_writes_skipped_reference_with_no_count() {
         .unwrap();
     assert_eq!(outcome, "skipped_reference");
     assert_eq!(count, None, "a skipped sweep carried a count");
+}
+
+// ---------------------------------------------------------------------------------------------
+// §28.2's singleton evaluator — R124's six sources with no producer until now
+// ---------------------------------------------------------------------------------------------
+
+fn presence(conn: &rusqlite::Connection, project: i64, readme: &str, license: &str, tests: &str) {
+    conn.execute(
+        "INSERT INTO project_content_scan
+            (project_id, head_oid, complete_head_oid, blobs_total, blobs_pending,
+             predicate_version, has_readme, has_license, has_tests, has_ci,
+             presence_observed_at, enumerated_at, completed_at)
+         VALUES (?1, ?2, ?2, 4, 0, 1, ?3, ?4, ?5, 'present', 1, 1, 1)
+         ON CONFLICT(project_id) DO UPDATE SET
+            has_readme = excluded.has_readme,
+            has_license = excluded.has_license,
+            has_tests = excluded.has_tests",
+        rusqlite::params![project, HEAD, readme, license, tests],
+    )
+    .unwrap();
+}
+
+fn sweep_of(
+    conn: &rusqlite::Connection,
+    project: i64,
+    source: &str,
+) -> Option<(String, Option<i64>)> {
+    conn.query_row(
+        "SELECT outcome, item_count FROM debt_sweep WHERE project_id = ?1 AND source = ?2",
+        rusqlite::params![project, source],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .optional()
+    .unwrap()
+}
+
+fn items_of(conn: &rusqlite::Connection, project: i64, source: &str) -> i64 {
+    conn.query_row(
+        "SELECT count(*) FROM debt_item WHERE project_id = ?1 AND source = ?2",
+        rusqlite::params![project, source],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// **§28.2a, and the live instance it was written from.** J6 assigns
+/// `readme_excerpt = read_capped(…)`, which returns `None` on **any** open or read failure, and
+/// the `peek_cache` row is then written with a NULL excerpt whose convention is *"no README in
+/// this repository"*. **A debt producer reading that would open `missing_readme` on a repository
+/// that has one.** The evaluator reads J7's HEAD-basis path predicate, where presence is decided
+/// by the path existing and no file is opened at all.
+#[test]
+fn an_unreadable_readme_opens_no_item() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    // Present at HEAD…
+    presence(&conn, p, "present", "present", "present");
+    // …and unreadable on disk, which is exactly what J6 records as a NULL excerpt.
+    conn.execute(
+        "INSERT INTO peek_cache (project_id, readme_excerpt, computed_at) VALUES (?1, NULL, 1)",
+        [p],
+    )
+    .unwrap();
+
+    let tx = conn.transaction().unwrap();
+    let effect = evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+
+    assert!(
+        effect.opened.is_empty(),
+        "opened {:?} against a repository that has a README",
+        effect.opened
+    );
+    assert_eq!(items_of(&conn, p, "missing_readme"), 0);
+    assert_eq!(
+        sweep_of(&conn, p, "missing_readme"),
+        Some(("complete".into(), Some(0)))
+    );
+}
+
+/// A `not_read` answer is unknown and **never a false**: it writes `unobservable` and opens
+/// nothing. An input that was never observed opens nothing **and marks nothing**.
+#[test]
+fn a_not_read_presence_writes_unobservable_and_opens_nothing() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    presence(&conn, p, "not_read", "not_read", "not_read");
+
+    let tx = conn.transaction().unwrap();
+    let effect = evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+
+    assert!(effect.opened.is_empty());
+    for source in ["missing_readme", "missing_license", "missing_tests"] {
+        assert_eq!(
+            items_of(&conn, p, source),
+            0,
+            "{source} opened on an unknown"
+        );
+        assert_eq!(
+            sweep_of(&conn, p, source),
+            Some(("unobservable".into(), None)),
+            "{source}"
+        );
+    }
+}
+
+/// `presence_for_project` returning `None` is **row-absent**, which is neither `absent` nor
+/// `not_read`. The two reach the same outcome and are **different rows**, which is correct and is
+/// asserted so nobody collapses them.
+#[test]
+fn a_row_absent_presence_is_unobservable_and_is_not_not_read() {
+    let (_d, mut conn) = fresh();
+    let absent_row = insert_project(&conn, "no-row");
+    insert_location(&conn, absent_row);
+    let not_read = insert_project(&conn, "not-read");
+    insert_location(&conn, not_read);
+    presence(&conn, not_read, "not_read", "not_read", "not_read");
+
+    let tx = conn.transaction().unwrap();
+    for p in [absent_row, not_read] {
+        evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    }
+    tx.commit().unwrap();
+
+    for p in [absent_row, not_read] {
+        assert_eq!(
+            sweep_of(&conn, p, "missing_readme"),
+            Some(("unobservable".into(), None))
+        );
+        assert_eq!(items_of(&conn, p, "missing_readme"), 0);
+    }
+    // Two rows, not one: the projects are distinct and each carries its own sweep.
+    let rows: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM debt_sweep WHERE source = 'missing_readme'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(rows, 2);
+}
+
+/// An absent README **is** a positive observation that the predicate is false, so it opens.
+#[test]
+fn an_absent_readme_opens_one_item() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    presence(&conn, p, "absent", "present", "absent");
+
+    let tx = conn.transaction().unwrap();
+    let effect = evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(effect.opened.len(), 2, "opened {:?}", effect.opened);
+    assert_eq!(items_of(&conn, p, "missing_readme"), 1);
+    assert_eq!(items_of(&conn, p, "missing_tests"), 1);
+    assert_eq!(items_of(&conn, p, "missing_license"), 0);
+    assert_eq!(
+        sweep_of(&conn, p, "missing_readme"),
+        Some(("complete".into(), Some(1)))
+    );
+}
+
+#[test]
+fn ahead_opens_unpushed_commits_and_null_opens_nothing() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let loc = insert_location(&conn, p);
+
+    // NULL: never observed. `0` would be a claim nobody measured.
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "unpushed_commits"), 0);
+    assert_eq!(
+        sweep_of(&conn, p, "unpushed_commits"),
+        Some(("unobservable".into(), None))
+    );
+
+    conn.execute("UPDATE location SET ahead = 3 WHERE id = ?1", [loc.0])
+        .unwrap();
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "unpushed_commits"), 1);
+
+    // Pushed: the predicate holds, the item closes, and the sweep says it looked.
+    conn.execute("UPDATE location SET ahead = 0 WHERE id = ?1", [loc.0])
+        .unwrap();
+    let tx = conn.transaction().unwrap();
+    let effect = evaluate_singletons(&tx, ProjectId(p), 30, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(effect.closed.len(), 1);
+    assert_eq!(items_of(&conn, p, "unpushed_commits"), 0);
+    assert_eq!(
+        sweep_of(&conn, p, "unpushed_commits"),
+        Some(("complete".into(), Some(0)))
+    );
+}
+
+/// **R145's recorded fallback**, because there is no `default_branch` column to read: the latest
+/// **concluded** run (`started_at` descending, `conclusion IS NOT NULL`) on the primary location's
+/// `location.branch`, and `Unobservable` otherwise. A run still in flight opens nothing.
+#[test]
+fn the_latest_concluded_run_on_the_primary_branch_decides_ci_red() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let loc = insert_location(&conn, p);
+    conn.execute("UPDATE location SET branch = 'main' WHERE id = ?1", [loc.0])
+        .unwrap();
+    conn.execute(
+        "UPDATE project SET provider = 'github', provider_repo_id = 'r1' WHERE id = ?1",
+        [p],
+    )
+    .unwrap();
+
+    // No run at all: never observed.
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(
+        sweep_of(&conn, p, "ci_red"),
+        Some(("unobservable".into(), None))
+    );
+
+    // A run still in flight is not a reading.
+    conn.execute(
+        "INSERT INTO remote_ci_run
+            (provider, provider_repo_id, run_id, workflow_name, conclusion, branch, run_number,
+             started_at)
+         VALUES ('github', 'r1', 9, 'build', NULL, 'main', 9, 900)",
+        [],
+    )
+    .unwrap();
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(
+        items_of(&conn, p, "ci_red"),
+        0,
+        "an unfinished run opened an item"
+    );
+    assert_eq!(
+        sweep_of(&conn, p, "ci_red"),
+        Some(("unobservable".into(), None))
+    );
+
+    // An older success and a newer failure: the newer one decides.
+    conn.execute(
+        "INSERT INTO remote_ci_run
+            (provider, provider_repo_id, run_id, workflow_name, conclusion, branch, run_number,
+             started_at)
+         VALUES ('github', 'r1', 1, 'build', 'success', 'main', 1, 100),
+                ('github', 'r1', 2, 'build', 'failure', 'main', 2, 200)",
+        [],
+    )
+    .unwrap();
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 30, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "ci_red"), 1);
+
+    // A run on another branch is not this project's answer.
+    conn.execute(
+        "INSERT INTO remote_ci_run
+            (provider, provider_repo_id, run_id, workflow_name, conclusion, branch, run_number,
+             started_at)
+         VALUES ('github', 'r1', 3, 'build', 'success', 'topic', 3, 300)",
+        [],
+    )
+    .unwrap();
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 40, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(
+        items_of(&conn, p, "ci_red"),
+        1,
+        "another branch closed the item"
+    );
+}
+
+/// **Deviation 1, PROVISIONAL.** `location.tag_count` is added by `0015_completion.sql`, which is
+/// p3-31's in wave 4, and no plan may take another's migration number. The arm is declared and
+/// inert: it writes `unobservable` and opens nothing in **every** case.
+///
+/// **`unobservable` here is the absence of the column, not a reading of it**, and this assertion
+/// is expected to be replaced by p3-31 in the same change that lands `tag_count`.
+#[test]
+fn no_release_is_declared_and_inert_until_the_column_exists() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    presence(&conn, p, "present", "present", "present");
+
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(items_of(&conn, p, "no_release"), 0);
+    assert_eq!(
+        sweep_of(&conn, p, "no_release"),
+        Some(("unobservable".into(), None))
+    );
+
+    // The column really is absent, so the arm could not read it even if it tried.
+    let has_column: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM pragma_table_info('location') WHERE name = 'tag_count'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        has_column, 0,
+        "tag_count exists — p3-31 landed; fill the arm"
+    );
+}
+
+/// A second settle with no input change opens nothing, closes nothing and adds no row.
+#[test]
+fn a_second_settle_with_no_change_writes_no_row() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    presence(&conn, p, "absent", "present", "present");
+
+    let tx = conn.transaction().unwrap();
+    let first = evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(first.opened.len(), 1);
+    let rows: i64 = conn
+        .query_row("SELECT count(*) FROM debt_item", [], |r| r.get(0))
+        .unwrap();
+
+    let tx = conn.transaction().unwrap();
+    let second = evaluate_singletons(&tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+
+    assert!(
+        second.opened.is_empty(),
+        "a second settle opened a duplicate"
+    );
+    assert!(second.closed.is_empty());
+    let after: i64 = conn
+        .query_row("SELECT count(*) FROM debt_item", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(after, rows);
+}
+
+/// **Step 7's gate.** The evaluator reads `peek_cache` **nowhere**: J6's NULL excerpt means *any*
+/// open or read failure and its own convention reads it as *no README*, so a producer reading it
+/// would open `missing_readme` on a repository that has one.
+///
+/// It prints the file count scanned and **fails at zero** — a gate whose passing run scans nothing
+/// is a failing gate.
+#[test]
+fn the_debt_module_reads_peek_cache_nowhere() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/debt");
+    let mut scanned = 0_usize;
+    let mut offenders = Vec::new();
+    for entry in std::fs::read_dir(&root).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "rs") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        scanned += 1;
+        // The doc comments that *explain* the ban name the table, so only a SQL-shaped use
+        // counts: the string literals are where a read would live.
+        for line in text.lines() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            if line.contains("peek_cache") {
+                offenders.push(format!("{}: {}", path.display(), line.trim()));
+            }
+        }
+    }
+    eprintln!("peek_cache gate: scanned {scanned} file(s) under core/src/debt/");
+    assert!(
+        scanned > 0,
+        "scanned zero files, so this gate proved nothing"
+    );
+    assert!(
+        offenders.is_empty(),
+        "the debt module reads peek_cache: {offenders:?}"
+    );
 }

@@ -249,8 +249,21 @@ impl JobRunner {
         // The job row and the recompute land in one transaction: a settled job whose derived
         // values were not rewritten is a project the shelf sections into the wrong era.
         let (row, requeue_at) = apply_outcome(&previous, outcome, now);
+        let tz_offset_min = self.deps.tz_offset_min;
         let recomputed = self.write_index(|tx| {
             put(tx, job.project_id, &row)?;
+            // §28.2's singleton evaluator — **R145's first of two call sites, both §28's.** Every
+            // job-fed arm answers here: the three `missing_*` and `unpushed_commits`. It runs
+            // **before** §31's completion evaluator, or every Group-A check answers from the
+            // previous settle; do not reorder them.
+            crate::debt::singletons::settle_singletons(
+                tx,
+                job.project_id,
+                now,
+                tz_offset_min,
+                &crate::debt::store::SqliteDebtStore,
+            )
+            .map_err(debt_to_index)?;
             crate::derive::persist::recompute(tx, job.project_id, now)
         });
         if let Ok(r) = &recomputed {
@@ -483,6 +496,16 @@ impl JobSink for JobRunner {
                 priority: Priority::Standard,
                 not_before: 0,
             });
+        }
+    }
+}
+
+/// §28's error, in the vocabulary `write_index` takes.
+fn debt_to_index(error: crate::debt::DebtError) -> crate::index::IndexError {
+    match error {
+        crate::debt::DebtError::Index(inner) => inner,
+        crate::debt::DebtError::Codec(detail) => {
+            crate::index::IndexError::Sqlite(rusqlite::Error::InvalidParameterName(detail))
         }
     }
 }

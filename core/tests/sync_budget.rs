@@ -496,6 +496,8 @@ fn lane() -> Lane {
             tokens,
             clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
             cancel: codotheca_core::cancel::CancelToken::new(),
+            // UTC in a test, so a local date never depends on the machine running it.
+            tz_offset_min: 0,
         },
         Arc::new(Quiet) as Arc<dyn codotheca_core::proto::EventSink>,
     );
