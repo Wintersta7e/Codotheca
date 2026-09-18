@@ -7,6 +7,7 @@ pub mod scopes;
 
 use crate::accounts::keychain::SecretToken;
 use crate::http::TransportError;
+use crate::protocol::Ecosystem;
 use crate::provider::listing::{OrgListing, Page, RepoListing, Viewer};
 
 pub use github::GitHubProvider;
@@ -22,6 +23,10 @@ pub use github::GitHubProvider;
 /// `repo_facts` and `ci_runs`, and an array's length would make each of those a second edit to
 /// this same line. **Six by the end of phase 2, three of them this plan's** — R79 collapsed
 /// `verify_token` into `viewer`, so two entries became one and only the arithmetic changed.
+///
+/// [p3] §32.4 appends a **seventh**, `advisories` — the first entry whose method takes no token.
+/// The census is about *which methods issue a request*, and an unauthenticated one issues exactly
+/// as many as an authenticated one.
 pub const PROVIDER_REQUEST_METHODS: &[&str] = &[
     "viewer",
     "list_orgs",
@@ -29,6 +34,7 @@ pub const PROVIDER_REQUEST_METHODS: &[&str] = &[
     "lookup_repo",
     "repo_facts",
     "ci_runs",
+    "advisories",
 ];
 
 /// §22.2's host-alias set for a caller that has **no account and no transport in hand**.
@@ -142,8 +148,81 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
         etag: Option<&str>,
     ) -> ProviderResult<Observed<CiRunsRead>>;
 
+    /// [p3] §32.1's advisory read — **the first unauthenticated forge read in the product.**
+    ///
+    /// **It takes no token parameter at all**, and not `Option<&SecretToken>`: the refusal is
+    /// structural rather than conditional, so a later author has nowhere to put one. The endpoint
+    /// is a global, public advisory database; sending a credential would attribute a
+    /// library-wide sweep to whichever account happened to be connected and would spend that
+    /// account's allowance on work that is nobody's in particular.
+    ///
+    /// It returns `ProviderResult<Observed<_>>` like the rest, and that is part of the seam's
+    /// contract (R76): `AC-P2-25-5`'s census classifies a request method by exactly that return
+    /// shape, so a request method returning anything else would pass the census unseen.
+    /// [`Observed::granted_scopes`] is `None` here for ever, which already means *unknown* and
+    /// not *an empty grant*.
+    ///
+    /// **The request key is exactly the `(ecosystem, name, version)` triple and version matching
+    /// is server-side.** This product implements no per-ecosystem semver comparison.
+    ///
+    /// **A package name may appear at most once in `affects`.** The endpoint answers with the
+    /// advisories matching *any* of the asked pairs and names the affected **package** rather than
+    /// the pair that matched, so two versions of one package in one request would be
+    /// indistinguishable in the answer. The batcher is what keeps that true; this method does not
+    /// re-check it, because a caller that got it wrong would get a wrong answer and not an error.
+    fn advisories(
+        &self,
+        ecosystem: Ecosystem,
+        affects: &[PackageVersion],
+        cur: Option<&str>,
+    ) -> ProviderResult<Observed<Page<AdvisoryPayload>>>;
+
     fn canonical_host(&self) -> &str;
     fn host_aliases(&self) -> &[&str];
+}
+
+/// One half of the advisory request key: a package and the version this library resolves it at.
+///
+/// The **ecosystem is the call's own parameter** rather than a third field, because the endpoint
+/// keys on it: one request asks about one ecosystem's packages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageVersion {
+    pub name: String,
+    pub version: String,
+}
+
+/// One advisory, as parsed.
+///
+/// `severity` is a nullable `String` and **not** an enum: the vocabulary belongs to the forge, and
+/// a closed mirror of a third party's vocabulary is R26 by construction — the same ruling
+/// [`CiRunPayload::conclusion`] already carries. `cve_ids` is a **list** because one advisory
+/// carries several CVE ids or **none**; unreviewed and malware advisories have none, and the
+/// notifiable unit is the advisory rather than the CVE.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdvisoryPayload {
+    pub advisory_id: String,
+    pub severity: Option<String>,
+    pub cve_ids: Vec<String>,
+    pub withdrawn_at: Option<i64>,
+    pub summary: String,
+    pub url: String,
+    pub affects: Vec<AffectedPackage>,
+}
+
+/// One package an advisory affects, **with that package's own fix**.
+///
+/// **Fix availability varies per package within one advisory** — the source reports a first
+/// patched version per affected package — and a debt item's `scoring` follows it per
+/// `(ecosystem, package_name, advisory_id)`. Carried on the advisory instead, an advisory fixed in
+/// one package and not another would flip both items together and one of them would be wrong.
+///
+/// There is **no version here**: the response names the affected package and the vulnerable
+/// *range*, and the version that matched is the one the request asked about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AffectedPackage {
+    pub name: String,
+    pub fix_available: bool,
+    pub fixed_version: Option<String>,
 }
 
 /// One conditional repo-facts read: what the server said, and what it said it with.

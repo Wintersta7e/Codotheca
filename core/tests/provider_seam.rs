@@ -37,6 +37,9 @@ const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[2], "list_repos"));
 const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[3], "lookup_repo"));
 const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[4], "repo_facts"));
 const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[5], "ci_runs"));
+// [p3] §32.4's seventh. **Positional, so a missing or misplaced entry is a compile-time failure**
+// rather than a census that quietly counts six.
+const _: () = assert!(same_str(PROVIDER_REQUEST_METHODS[6], "advisories"));
 
 fn token() -> SecretToken {
     SecretToken::new("provider-seam-token".to_owned())
@@ -206,7 +209,8 @@ where
 fn request_method_tripwire_is_enumerated_and_callable() {
     // R79 collapsed `verify_token` into `viewer`, leaving three; §22.7's `lookup_repo` is the
     // fourth. The count moves in the same commit as the method, or the tripwire fails — which is
-    // the tripwire working. **Six by the end of phase 2**, the last two §25's, and they are here.
+    // the tripwire working. **Six by the end of phase 2**, the last two §25's.
+    // [p3] §32.4's `advisories` is the seventh, and the first that takes no token.
     assert_eq!(
         PROVIDER_REQUEST_METHODS,
         [
@@ -215,7 +219,8 @@ fn request_method_tripwire_is_enumerated_and_callable() {
             "list_repos",
             "lookup_repo",
             "repo_facts",
-            "ci_runs"
+            "ci_runs",
+            "advisories"
         ]
     );
 
@@ -226,6 +231,7 @@ fn request_method_tripwire_is_enumerated_and_callable() {
     transport.push(ok(repo_body()));
     transport.push(ok(repo_body()));
     transport.push(ok(runs_body()));
+    transport.push(ok(b"[]"));
     let secret = token();
 
     provider.viewer(&secret).unwrap();
@@ -236,6 +242,18 @@ fn request_method_tripwire_is_enumerated_and_callable() {
         .repo_facts(&secret, "acme", "widget", None)
         .unwrap();
     provider.ci_runs(&secret, "acme", "widget", None).unwrap();
+    // [p3] No token: the one request method that takes none still issues exactly one request, so
+    // the census counts it the same way it counts the other six.
+    provider
+        .advisories(
+            codotheca_core::protocol::Ecosystem::Npm,
+            &[codotheca_core::provider::PackageVersion {
+                name: "widget".to_owned(),
+                version: "1.0.0".to_owned(),
+            }],
+            None,
+        )
+        .unwrap();
     let declared = provider_trait_request_method_names();
     assert_eq!(
         transport.request_count(),

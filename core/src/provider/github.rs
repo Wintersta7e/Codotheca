@@ -5,12 +5,13 @@ use serde::Deserialize;
 
 use crate::accounts::keychain::SecretToken;
 use crate::http::{HttpRequest, HttpResponse, HttpTransport, ACCOUNT_LIMITS};
+use crate::protocol::Ecosystem;
 use crate::provider::listing::{
     OrgListing, Page, RepoListing, Viewer, GITHUB_CANONICAL_HOST, GITHUB_HOST_ALIASES,
 };
 use crate::provider::{
-    CiRunPayload, CiRunsRead, Observed, Provider, ProviderError, ProviderResult, RepoFactsPayload,
-    RepoFactsRead,
+    AdvisoryPayload, AffectedPackage, CiRunPayload, CiRunsRead, Observed, PackageVersion, Provider,
+    ProviderError, ProviderResult, RepoFactsPayload, RepoFactsRead,
 };
 
 const GITHUB_PROVIDER_ID: &str = "github";
@@ -288,6 +289,59 @@ impl Provider for GitHubProvider {
         })
     }
 
+    /// [p3] §32.1's advisory read, **unauthenticated**: no `authorization` header is built, and
+    /// there is no token in scope to build one from.
+    ///
+    /// `affects` travels as the endpoint's own comma-separated `name@version` list and the
+    /// ecosystem as its own parameter, because that is what the endpoint keys on. Version matching
+    /// is **server-side**; this build implements no per-ecosystem semver comparison.
+    fn advisories(
+        &self,
+        ecosystem: Ecosystem,
+        affects: &[PackageVersion],
+        cur: Option<&str>,
+    ) -> ProviderResult<Observed<Page<AdvisoryPayload>>> {
+        let url = cur.map_or_else(
+            || {
+                let pairs: Vec<String> = affects
+                    .iter()
+                    .map(|p| format!("{}@{}", p.name, p.version))
+                    .collect();
+                format!(
+                    "{}/advisories?per_page=100&ecosystem={}&affects={}",
+                    self.api_base(),
+                    encode_query(ecosystem_slug(ecosystem)),
+                    encode_query(&pairs.join(","))
+                )
+            },
+            str::to_owned,
+        );
+        let request = HttpRequest {
+            method: "GET",
+            url: url.clone(),
+            headers: unauthenticated_headers(),
+            body: None,
+            limits: ACCOUNT_LIMITS,
+        };
+        let response = self
+            .transport
+            .send(&request)
+            .map_err(ProviderError::Transport)?;
+        // `None` for ever on this method: nothing was granted, so there is no grant to observe,
+        // and `None` already means *unknown* rather than *an empty grant*.
+        let granted_scopes = observed_scopes(&response);
+        let response = success(response)?;
+        let next_cursor = next_link_cursor_for(response.header("link"), &url);
+        let advisories: Vec<GitHubAdvisory> = decode(&response)?;
+        Ok(Observed {
+            value: Page {
+                items: advisories.into_iter().map(AdvisoryPayload::from).collect(),
+                next_cursor,
+            },
+            granted_scopes,
+        })
+    }
+
     fn canonical_host(&self) -> &str {
         &self.host
     }
@@ -328,6 +382,64 @@ fn repo_facts_of(repo: GitHubRepo) -> RepoFactsPayload {
         open_prs: None,
         open_prs_from_user: None,
         topics: repo.topics.unwrap_or_default(),
+    }
+}
+
+/// [p3] The same headers **minus the credential**. Written as its own function rather than as
+/// `request_headers(None)`: a token parameter that may be absent is a place to put one back.
+fn unauthenticated_headers() -> Vec<(String, String)> {
+    vec![
+        (
+            "accept".to_owned(),
+            "application/vnd.github+json".to_owned(),
+        ),
+        ("x-github-api-version".to_owned(), API_VERSION.to_owned()),
+        ("user-agent".to_owned(), "codotheca".to_owned()),
+    ]
+}
+
+/// Percent-encode one query-parameter **value**.
+///
+/// Hand-rolled because the core carries no URL crate and three characters matter here: `@` and
+/// `,` are the separators the `affects` list is built from and must survive as data, and a space
+/// must not split the query. Everything outside the unreserved set is encoded, which is the safe
+/// direction — over-encoding a value a server then decodes is harmless, under-encoding is not.
+fn encode_query(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for byte in raw.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(char::from(byte));
+            }
+            _ => {
+                out.push('%');
+                out.push(hex_digit(byte >> 4));
+                out.push(hex_digit(byte & 0x0f));
+            }
+        }
+    }
+    out
+}
+
+/// One nibble as an upper-case hex digit. A `match` rather than an index so the total function is
+/// total by construction and needs no bounds check to be provably safe.
+fn hex_digit(nibble: u8) -> char {
+    match nibble {
+        0..=9 => char::from(b'0' + nibble),
+        _ => char::from(b'A' + (nibble - 10)),
+    }
+}
+
+/// The slug the endpoint's own `ecosystem` parameter takes.
+///
+/// Character-identical to [`Ecosystem`]'s wire spelling, and read back through serde rather than
+/// restated (R24): the set is a property of this app's parser coverage, and it is *sent* as the
+/// endpoint's parameter, so the two cannot be allowed to drift.
+fn ecosystem_slug(ecosystem: Ecosystem) -> &'static str {
+    match ecosystem {
+        Ecosystem::Npm => "npm",
+        Ecosystem::Rust => "rust",
+        Ecosystem::Pip => "pip",
     }
 }
 
@@ -500,6 +612,77 @@ impl From<GitHubRun> for CiRunPayload {
             branch: run.head_branch.unwrap_or_default(),
             run_number: run.run_number.unwrap_or_default(),
             started_at: run.run_started_at.as_deref().and_then(parse_rfc3339_secs),
+        }
+    }
+}
+
+/// [p3] One advisory as the endpoint sends it. Measured against a live response, not invented.
+#[derive(Debug, Deserialize)]
+struct GitHubAdvisory {
+    ghsa_id: String,
+    summary: Option<String>,
+    html_url: Option<String>,
+    severity: Option<String>,
+    withdrawn_at: Option<String>,
+    #[serde(default)]
+    identifiers: Vec<GitHubAdvisoryIdentifier>,
+    #[serde(default)]
+    vulnerabilities: Vec<GitHubVulnerability>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubAdvisoryIdentifier {
+    value: String,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubVulnerability {
+    package: Option<GitHubVulnerablePackage>,
+    first_patched_version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubVulnerablePackage {
+    name: String,
+}
+
+impl From<GitHubAdvisory> for AdvisoryPayload {
+    fn from(advisory: GitHubAdvisory) -> Self {
+        Self {
+            advisory_id: advisory.ghsa_id,
+            severity: advisory.severity,
+            // **Every** CVE id, from the identifier list rather than the singular `cve_id` field:
+            // one advisory carries several or none, and a singular field cannot hold the list.
+            cve_ids: advisory
+                .identifiers
+                .into_iter()
+                .filter(|id| id.kind.eq_ignore_ascii_case("CVE"))
+                .map(|id| id.value)
+                .collect(),
+            withdrawn_at: advisory
+                .withdrawn_at
+                .as_deref()
+                .and_then(parse_rfc3339_secs),
+            // The columns are NOT NULL and an advisory with neither is not one to guess about;
+            // the id is the honest stand-in for text nobody sent.
+            summary: advisory.summary.unwrap_or_default(),
+            url: advisory.html_url.unwrap_or_default(),
+            affects: advisory
+                .vulnerabilities
+                .into_iter()
+                .filter_map(|v| {
+                    let name = v.package?.name;
+                    Some(AffectedPackage {
+                        // **A fix exists iff the source named a first patched version.** It is
+                        // derived rather than stored twice, so the two cannot disagree.
+                        fix_available: v.first_patched_version.is_some(),
+                        fixed_version: v.first_patched_version,
+                        name,
+                    })
+                })
+                .collect(),
         }
     }
 }
