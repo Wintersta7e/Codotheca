@@ -13,6 +13,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod accounts;
+pub mod advisories;
 pub mod art;
 pub mod assembly;
 pub mod cancel;

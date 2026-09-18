@@ -111,13 +111,22 @@ pub const MIGRATIONS: &[Migration] = &[
         // CHECK for 'debt_day' and the track equivalence with it is a create-copy-drop-rename.
         rebuilds_a_table: true,
     },
+    Migration {
+        version: 14,
+        name: "advisories",
+        sql: include_str!("../../migrations/0014_advisories.sql"),
+        // §32.15: `sync_task_state` is STRICT, so widening `task`'s CHECK for 'advisories' — the
+        // first process-wide task, whose row carries `key IS NULL` — is a create-copy-drop-rename.
+        // It carries live scheduling state and both partial indexes across.
+        rebuilds_a_table: true,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 13;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 14;
 
 pub fn schema_version(conn: &Connection) -> Result<u32, IndexError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
