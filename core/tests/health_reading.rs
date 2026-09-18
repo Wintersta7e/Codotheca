@@ -820,11 +820,13 @@ fn seed_live(conn: &rusqlite::Connection) -> i64 {
     )
     .unwrap();
     let project = conn.last_insert_rowid();
+    // `(kind, distro, path_key)` is UNIQUE, so each seeded copy needs a path of its own.
+    let path = format!("/p-{project}");
     conn.execute(
         "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display, store_key,
                                presence, repo_kind, refstate_observed_at)
-         VALUES (?1, 'linux', x'2f70', x'2f70', '/p', 'store-a', 'present', 'worktree', ?2)",
-        rusqlite::params![project, READ_NOW],
+         VALUES (?1, 'linux', ?3, ?3, ?4, 'store-a', 'present', 'worktree', ?2)",
+        rusqlite::params![project, READ_NOW, path.as_bytes(), path],
     )
     .unwrap();
     project
@@ -845,11 +847,20 @@ fn sweep(conn: &rusqlite::Connection, project: i64, source: &str, outcome: &str,
 }
 
 fn item(conn: &rusqlite::Connection, project: i64, source: &str, fingerprint: &str, state: &str) {
+    // Identity is `(subject_key, source, fingerprint)` and `subject_key` is the project's, so a
+    // fixture with several projects needs a subject per project rather than one shared literal.
     conn.execute(
         "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state, scoring,
                                 first_seen_at, last_seen_at)
-         VALUES (?1, 'lineage:abc123|remote:', ?2, ?3, ?4, 'scored', ?5, ?5)",
-        rusqlite::params![project, source, fingerprint, state, READ_NOW],
+         VALUES (?1, ?6, ?2, ?3, ?4, 'scored', ?5, ?5)",
+        rusqlite::params![
+            project,
+            source,
+            fingerprint,
+            state,
+            READ_NOW,
+            format!("lineage:abc{project}|remote:")
+        ],
     )
     .unwrap();
 }
@@ -868,7 +879,7 @@ fn the_writer_never_writes_zero_for_unknown() {
     )
     .unwrap();
     let absent = conn.last_insert_rowid();
-    let (reading, items) = read_for_project(&conn, ProjectId(absent), READ_NOW).unwrap();
+    let (reading, items) = read_for_project(&conn, ProjectId(absent)).unwrap();
     assert_eq!(reading.state, HealthState::Absent);
     assert_eq!(reading.scored_open, None, "a zero was written for unknown");
     assert!(reading.basis.is_none(), "a zeroed basis was written");
@@ -885,7 +896,7 @@ fn the_writer_never_writes_zero_for_unknown() {
         [suppressed],
     )
     .unwrap();
-    let (reading, items) = read_for_project(&conn, ProjectId(suppressed), READ_NOW).unwrap();
+    let (reading, items) = read_for_project(&conn, ProjectId(suppressed)).unwrap();
     assert_eq!(reading.state, HealthState::Suppressed);
     assert_eq!(reading.scored_open, None);
     assert!(reading.basis.is_none());
@@ -903,7 +914,7 @@ fn ac_p3_30_11a_a_frozen_projects_item_set_is_the_last_computed_one() {
     sweep(&conn, project, "missing_readme", "complete", READ_NOW - 600);
     item(&conn, project, "missing_readme", "", "open");
 
-    let (live, before) = read_for_project(&conn, ProjectId(project), READ_NOW).unwrap();
+    let (live, before) = read_for_project(&conn, ProjectId(project)).unwrap();
     assert_eq!(live.state, HealthState::Live);
     assert_eq!(before.len(), 1, "seeded nothing to freeze");
 
@@ -914,7 +925,7 @@ fn ac_p3_30_11a_a_frozen_projects_item_set_is_the_last_computed_one() {
         [project],
     )
     .unwrap();
-    let (frozen, after) = read_for_project(&conn, ProjectId(project), READ_NOW).unwrap();
+    let (frozen, after) = read_for_project(&conn, ProjectId(project)).unwrap();
     assert_eq!(frozen.state, HealthState::Frozen);
     eprintln!(
         "item set before the store went offline: {}, after: {}",
@@ -943,7 +954,7 @@ fn ac_p3_30_11a_a_live_reading_names_every_check_and_counts_only_what_ran() {
     sweep(&conn, project, "missing_license", "partial", READ_NOW - 30);
     item(&conn, project, "missing_license", "", "open");
 
-    let (reading, _items) = read_for_project(&conn, ProjectId(project), READ_NOW).unwrap();
+    let (reading, _items) = read_for_project(&conn, ProjectId(project)).unwrap();
     assert_eq!(reading.state, HealthState::Live);
     let basis = reading.basis.expect("a live reading with observations");
     eprintln!(
@@ -975,4 +986,84 @@ fn ac_p3_30_11a_a_live_reading_names_every_check_and_counts_only_what_ran() {
         .find(|c| c.id == DebtSource::TodoMarker)
         .expect("todo_marker is a declared source");
     assert_eq!(todo.outcome, CheckOutcome::Off);
+}
+
+// ---------------------------------------------------------------------------------------------
+// §30.11 — the wire projection: one producer, both surfaces, batched (Task 10).
+// ---------------------------------------------------------------------------------------------
+
+use codotheca_core::health::summary::{summaries_for_all, summary_for};
+use codotheca_core::protocol::ProjectLifecycle;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// The statement counter `rusqlite`'s trace hook feeds. A plain `fn(&str)` cannot capture, so the
+/// count is a static; the one test that reads it resets it first.
+static STATEMENTS: AtomicUsize = AtomicUsize::new(0);
+
+fn count_statement(_sql: &str) {
+    STATEMENTS.fetch_add(1, Ordering::Relaxed);
+}
+
+/// **Two producers would drift.** `projects.list`'s row and `projects.get`'s reading report the
+/// same state, the same `scoredOpen` and the same `observedAt` because there is one.
+#[test]
+fn the_shelf_summary_and_the_page_reading_agree_on_one_project() {
+    let (_dir, conn) = store();
+    let project = seed_live(&conn);
+    sweep(&conn, project, "missing_readme", "complete", READ_NOW - 120);
+    sweep(&conn, project, "missing_license", "partial", READ_NOW - 40);
+    item(&conn, project, "missing_license", "", "open");
+    item(&conn, project, "missing_tests", "", "unverified");
+
+    let (reading, _items) = read_for_project(&conn, ProjectId(project)).unwrap();
+    let (summary, lifecycle) = summary_for(&conn, ProjectId(project)).unwrap();
+    let basis = reading.basis.as_ref().expect("a live reading");
+
+    eprintln!("reading {reading:?}\nsummary {summary:?} lifecycle {lifecycle:?}");
+    assert_eq!(summary.state, reading.state);
+    assert_eq!(summary.scored_open, reading.scored_open);
+    assert_eq!(summary.unknown_checks, Some(basis.unknown));
+    assert_eq!(summary.observed_at, Some(basis.observed_at));
+    // `unverified` is the one quantity the reading does not carry, and the shelf has no items —
+    // which is why R117 puts the count here and nowhere else.
+    assert_eq!(summary.unverified, Some(1));
+    assert_eq!(lifecycle, ProjectLifecycle::Active);
+
+    // And the batched path agrees with the single one, or the shelf and the page can disagree.
+    let all = summaries_for_all(&conn).unwrap();
+    assert_eq!(all.get(&project), Some(&(summary, lifecycle)));
+}
+
+/// **The projection is batched or it is a per-row query storm.** A per-row query is the shape
+/// this catches: the statement count must not scale with the project count.
+#[test]
+fn the_projection_issues_a_bounded_number_of_statements_for_n_projects() {
+    let measure = |projects: usize| -> usize {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = open_connection(&Index::db_path(dir.path())).unwrap();
+        apply_all(&mut conn, MIGRATIONS).unwrap();
+        for _ in 0..projects {
+            let id = seed_live(&conn);
+            sweep(&conn, id, "missing_readme", "complete", READ_NOW - 60);
+            item(&conn, id, "missing_readme", "", "open");
+        }
+        STATEMENTS.store(0, Ordering::Relaxed);
+        conn.trace(Some(count_statement));
+        let all = summaries_for_all(&conn).unwrap();
+        conn.trace(None);
+        assert_eq!(all.len(), projects, "the projection skipped a project");
+        STATEMENTS.load(Ordering::Relaxed)
+    };
+
+    let few = measure(2);
+    let many = measure(12);
+    eprintln!("statements for 2 projects: {few}; for 12: {many}");
+    assert!(
+        few > 0,
+        "the trace hook counted nothing, so this proves nothing"
+    );
+    assert_eq!(
+        few, many,
+        "the statement count scales with the project count: this is the query storm"
+    );
 }

@@ -26,6 +26,7 @@ pub mod lifecycle;
 pub mod outcome;
 pub mod reason;
 pub mod state;
+pub mod summary;
 pub mod switches;
 
 use std::collections::BTreeMap;
@@ -43,7 +44,7 @@ use state::{health_state, StateInputs};
 
 /// What one project's row and copies say, before any check is looked at.
 #[derive(Debug, Clone)]
-struct ProjectFacts {
+pub(crate) struct ProjectFacts {
     is_reference: Option<bool>,
     authored_by_user: Option<bool>,
     error_kind: Option<String>,
@@ -67,62 +68,102 @@ struct ProjectFacts {
 pub fn read_for_project(
     conn: &Connection,
     project: ProjectId,
-    _now: i64,
 ) -> Result<(HealthReading, Vec<DebtItem>), ProjectsError> {
-    let facts = project_facts(conn, project)?;
-    let locations = location_presences(conn, project)?;
-    let sweeps = sweeps_for(conn, project)?;
-    let counts = item_counts_for(conn, project)?;
+    let shared = SharedInputs::load(conn)?;
+    let per_project = PerProject {
+        facts: project_facts(conn, project)?,
+        locations: location_presences(conn, project)?,
+        sweeps: sweeps_for(conn, project)?,
+        counts: item_counts_for(conn, project)?,
+        refstate_observed: any_refstate_observed(conn, project)?,
+        condition_signal: condition_signal_of(conn, project)?,
+    };
+    let reading = reading_from(&shared, &per_project)?;
+    Ok((
+        reading,
+        // The item set, from the same call. A `frozen` project is handed the last computed set —
+        // which is the stored one, because nothing recomputes a set it cannot observe.
+        crate::debt::read::load_debt(conn, project).map_err(debt_error)?,
+    ))
+}
 
+/// Everything a reading needs that is **the same for every project**: read once, whether the
+/// caller wants one row or a thousand.
+#[derive(Debug, Clone)]
+pub(crate) struct SharedInputs {
+    switches: Vec<crate::protocol::HealthCheckSwitch>,
+    granted: bool,
+    has_account: bool,
+}
+
+impl SharedInputs {
+    pub(crate) fn load(conn: &Connection) -> Result<Self, ProjectsError> {
+        Ok(Self {
+            switches: switches::read_switches(conn).map_err(ProjectsError::Index)?,
+            granted: crate::surfaces::settings::content_scan_enabled(conn)
+                .map_err(ProjectsError::Index)?,
+            has_account: account_count(conn)? > 0,
+        })
+    }
+}
+
+/// Everything a reading needs that is **this project's**, in whatever way the caller gathered it
+/// — one row at a time or out of a grouped map.
+#[derive(Debug, Clone)]
+pub(crate) struct PerProject {
+    facts: ProjectFacts,
+    locations: Vec<Presence>,
+    sweeps: BTreeMap<String, (DebtSweepOutcome, i64)>,
+    counts: BTreeMap<String, (u32, u32)>,
+    refstate_observed: bool,
+    condition_signal: Option<crate::protocol::ConditionSignal>,
+}
+
+/// **The one producer.** `projects.get`'s reading and `projects.list`'s summary are two
+/// projections of this function's output and never two computations — two producers would drift,
+/// and the shelf and the opened page must not be able to disagree about one repository.
+fn reading_from(
+    shared: &SharedInputs,
+    project: &PerProject,
+) -> Result<HealthReading, ProjectsError> {
     // A reading existed iff something was ever swept: §30 stores none, so the sweep record is the
     // only honest witness that one was computed. It is also gate 3's *ever observed*, widened by
     // the ref-state clock, because a project can have been read without any source being swept.
-    let ever_swept = !sweeps.is_empty();
-    let ever_observed = ever_swept || any_refstate_observed(conn, project)?;
+    let ever_swept = !project.sweeps.is_empty();
 
-    let inputs = StateInputs {
-        is_reference: facts.is_reference,
-        authored_by_user: facts.authored_by_user,
-        error_kind: facts.error_kind.clone(),
-        ever_observed,
-        locations: locations.clone(),
-        enrolled: enrolment::is_enrolled(facts.acknowledged_at),
-        is_archived: facts.is_archived,
+    let state = health_state(&StateInputs {
+        is_reference: project.facts.is_reference,
+        authored_by_user: project.facts.authored_by_user,
+        error_kind: project.facts.error_kind.clone(),
+        ever_observed: ever_swept || project.refstate_observed,
+        locations: project.locations.clone(),
+        enrolled: enrolment::is_enrolled(project.facts.acknowledged_at),
+        is_archived: project.facts.is_archived,
         prior_reading: ever_swept,
-    };
-    let state = health_state(&inputs);
+    });
 
     // §30.1: the states that say *no reading* carry no checks, no count and no basis — and that
     // is the whole of what they carry. A zero here is the invariant's own counterexample.
     if state == HealthState::Absent || state == HealthState::Suppressed {
-        return Ok((
-            HealthReading {
-                state,
-                scored_open: None,
-                basis: None,
-                checks: Vec::new(),
-            },
-            Vec::new(),
-        ));
+        return Ok(HealthReading {
+            state,
+            scored_open: None,
+            basis: None,
+            checks: Vec::new(),
+        });
     }
 
-    let switches = switches::read_switches(conn).map_err(ProjectsError::Index)?;
-    let granted =
-        crate::surfaces::settings::content_scan_enabled(conn).map_err(ProjectsError::Index)?;
-    let has_account = account_count(conn)? > 0;
-    let anchor = crate::scan::presence::project_presence(&locations);
-
-    let mut entries = Vec::with_capacity(switches.len());
+    let anchor = crate::scan::presence::project_presence(&project.locations);
+    let mut entries = Vec::with_capacity(shared.switches.len());
     let mut scored_open = 0u32;
-    for switch in &switches {
-        let (sweep_outcome, observed_at) = sweeps
-            .get(&slug_of(switch.check)?)
+    for switch in &shared.switches {
+        let slug = slug_of(switch.check)?;
+        let (sweep_outcome, observed_at) = project
+            .sweeps
+            .get(&slug)
             .copied()
             .map_or((None, None), |(o, at)| (Some(o), Some(at)));
-        let (open, unverified) = counts
-            .get(&slug_of(switch.check)?)
-            .copied()
-            .unwrap_or((0, 0));
+        let (open, unverified) = project.counts.get(&slug).copied().unwrap_or((0, 0));
         let facts = SweepFacts {
             outcome: sweep_outcome,
             scored_open: open,
@@ -134,7 +175,7 @@ pub fn read_for_project(
             // R128/F8: `todo_marker` is the one source whose evidence needs §29's grant, and an
             // ungranted scan makes it `off` rather than a check waiting for a sweep that never
             // comes.
-            grant_missing: switch.check == DebtSource::TodoMarker && !granted,
+            grant_missing: switch.check == DebtSource::TodoMarker && !shared.granted,
             // §31's archetype-proposed mechanism lands with p3-31 (wave 4) and owns this input.
             // `false` here is *nothing has proposed it*, which is true of every project today.
             not_applicable: false,
@@ -142,7 +183,7 @@ pub fn read_for_project(
         let grant = GrantState {
             // §20's forge account. `ci_red`'s evidence is a forge CI status and there is no way
             // to read one without an account.
-            account_missing: switch.check == DebtSource::CiRed && !has_account,
+            account_missing: switch.check == DebtSource::CiRed && !shared.has_account,
             // §32 owns when an advisory value is awaiting readback and lands in wave 4 beside
             // this one; until its sync surface exists nothing here can honestly claim a value is
             // in flight, and claiming it would be the invented reason §30.3 forbids.
@@ -154,20 +195,41 @@ pub fn read_for_project(
     }
 
     let basis = basis_over(&entries);
-    Ok((
-        HealthReading {
-            state,
-            // **`scoredOpen` is `Some` only when `basis` is.** Without `unknown` beside it a `0`
-            // cannot be read as *nothing open* (R117's gate) and is the bare zero §30.1 exists to
-            // prevent, so the pair is null together or present together.
-            scored_open: basis.as_ref().map(|_| scored_open),
-            basis,
-            checks: entries.into_iter().map(|e| e.check).collect(),
-        },
-        // The item set, from the same call. A `frozen` project is handed the last computed set —
-        // which is the stored one, because nothing recomputes a set it cannot observe.
-        crate::debt::read::load_debt(conn, project).map_err(debt_error)?,
-    ))
+    Ok(HealthReading {
+        state,
+        // **`scoredOpen` is `Some` only when `basis` is.** Without `unknown` beside it a `0`
+        // cannot be read as *nothing open* (R117's gate) and is the bare zero §30.1 exists to
+        // prevent, so the pair is null together or present together.
+        scored_open: basis.as_ref().map(|_| scored_open),
+        basis,
+        checks: entries.into_iter().map(|e| e.check).collect(),
+    })
+}
+
+fn condition_signal_of(
+    conn: &Connection,
+    project: ProjectId,
+) -> Result<Option<crate::protocol::ConditionSignal>, ProjectsError> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT condition_signal FROM project WHERE id = ?1",
+            [project.0],
+            |r| r.get(0),
+        )
+        .map_err(ProjectsError::Sqlite)?;
+    parse_condition(raw)
+}
+
+fn parse_condition(
+    raw: Option<String>,
+) -> Result<Option<crate::protocol::ConditionSignal>, ProjectsError> {
+    let Some(raw) = raw else { return Ok(None) };
+    serde_json::from_value(serde_json::Value::String(raw.clone()))
+        .map(Some)
+        .map_err(|_| ProjectsError::BadColumn {
+            column: "project.condition_signal",
+            value: raw,
+        })
 }
 
 fn debt_error(error: crate::debt::DebtError) -> ProjectsError {

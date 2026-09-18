@@ -490,7 +490,7 @@ pub fn handle_project_get(
         debt_sweeps: crate::debt::read::load_debt_sweeps(conn, ProjectId(id)).map_err(internal)?,
         // [p3] §30.1's reading, computed **after** the stamp above committed — so the first
         // open serves the enrolled answer rather than `suppressed`.
-        health: crate::health::read_for_project(conn, ProjectId(id), ctx.now)
+        health: crate::health::read_for_project(conn, ProjectId(id))
             .map_err(internal)?
             .0,
         locations,
