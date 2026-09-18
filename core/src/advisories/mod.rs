@@ -11,9 +11,43 @@
 //! is §30's; what this module owns is the input state.
 
 pub mod lockfiles;
+pub mod parse;
 pub mod store;
 
 use crate::protocol::{DependencyReadState, Ecosystem};
+
+/// Why an advisory operation could not complete.
+///
+/// It wraps [`IndexError`] rather than restating it: every write in this module goes through a
+/// caller's transaction, and the database is the only thing that can refuse one. `Parse` carries
+/// the reader's own words for a file it could not make sense of — which is a **`not_read` row**,
+/// not an error, in every path but the one where the row itself cannot be written.
+///
+/// [`IndexError`]: crate::index::IndexError
+#[derive(Debug, thiserror::Error)]
+pub enum AdvisoryError {
+    /// The database refused.
+    #[error("index: {0}")]
+    Index(#[from] crate::index::IndexError),
+    /// A file could not be read from disk at all.
+    #[error("advisory read: {0}")]
+    Parse(String),
+}
+
+/// Render a **generated** enum as the TEXT its column stores, through serde.
+///
+/// There is deliberately no second vocabulary here: R31's failure mode is a hand-written table
+/// beside the schema's, and R26's is a stored slug that has drifted from the emitted one. Going
+/// through serde means the only vocabulary in this module is `protocol/schema/protocol.json`'s,
+/// and `0014_advisories.sql`'s CHECKs mirror it character for character.
+pub(crate) fn enum_text<T: serde::Serialize>(value: &T) -> Result<String, AdvisoryError> {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(raw)) => Ok(raw),
+        other => Err(AdvisoryError::Parse(format!(
+            "a generated enum did not serialise as a string: {other:?}"
+        ))),
+    }
+}
 
 /// How many `(name, version)` pairs one request's `affects` list may carry.
 ///
