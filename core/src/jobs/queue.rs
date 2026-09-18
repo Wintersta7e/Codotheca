@@ -204,6 +204,9 @@ mod tests {
             store_kind: StoreClass::Local,
             priority,
             not_before: 0,
+            // The queue's ordering does not read the origin; this fixture names the walk because
+            // that is what queues most jobs.
+            origin: crate::jobs::JobOrigin::Walk,
         }
     }
 

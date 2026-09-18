@@ -23,7 +23,7 @@ use std::thread::JoinHandle;
 
 use super::queue::{global_cap, store_cap_for, JobQueue, SlotState};
 use super::state::{apply_outcome, put, JobStateRow};
-use super::{run_one, Job, JobDeps, JobKind, JobOutcome, JobSink, JobState, Priority};
+use super::{run_one, Job, JobDeps, JobKind, JobOrigin, JobOutcome, JobSink, JobState, Priority};
 use crate::index::Index;
 use crate::mount::StoreClass;
 use crate::proto::EventSink;
@@ -246,6 +246,18 @@ impl JobRunner {
             .find(|r| r.job == job.kind)
             .unwrap_or_else(|| JobStateRow::fresh(job.kind, JobState::Running, now));
 
+        // [p3] R121's first conjunct: the projected row **as it stood before** the write
+        // transaction. Whole-row equality, never a hand-maintained list of *"fields a settle can
+        // move"* — a list like that is a count a human maintains and goes stale on the first plan
+        // that adds a field. It is only read on an interactive chain, so a walk pays nothing.
+        let before = (job.origin == JobOrigin::Interactive)
+            .then(|| {
+                self.with_index(|conn| Ok(crate::detail::upserted_payload(conn, job.project_id)))
+                    .ok()
+                    .flatten()
+            })
+            .flatten();
+
         // The job row and the recompute land in one transaction: a settled job whose derived
         // values were not rewritten is a project the shelf sections into the wrong era.
         let (row, requeue_at) = apply_outcome(&previous, outcome, now);
@@ -281,6 +293,8 @@ impl JobRunner {
             }
         }
 
+        self.publish_row_change(job, before);
+
         self.events.emit(
             "scan",
             "job_done",
@@ -293,6 +307,7 @@ impl JobRunner {
         );
 
         if let Some(when) = requeue_at {
+            // [p3] R121: `clone` carries `origin`, so a backoff requeue keeps the chain's owner.
             let mut again = job.clone();
             again.not_before = when;
             self.enqueue(again);
@@ -333,7 +348,33 @@ impl JobRunner {
                 store_kind: job.store_kind,
                 priority,
                 not_before: 0,
+                // [p3] R121: copied, never re-derived. A chain a user started stays the user's
+                // to its last job, which is what makes the payoff path publish.
+                origin: job.origin,
             });
+        }
+    }
+
+    /// [p3] R121, **both conjuncts**: the row actually changed, *and* the chain came from a user
+    /// looking at something. Either alone is wrong — an ungated emit is the firehose phase 1
+    /// refused, and a change gate alone re-creates it on a first scan, where the row genuinely
+    /// changes on almost every settle.
+    ///
+    /// `before` is `None` on a walk chain, which is the second conjunct: the walk pays nothing
+    /// for a comparison it would never publish.
+    ///
+    /// This is the path §29.7 put there — `projects.get` → `on_visible` → J7 at `Standard` → this
+    /// settle. Closing a TODO, reopening the page and watching the card change is that path end
+    /// to end.
+    fn publish_row_change(&self, job: &Job, before: Option<serde_json::Value>) {
+        let Some(before) = before else { return };
+        let after = self
+            .with_index(|conn| Ok(crate::detail::upserted_payload(conn, job.project_id)))
+            .ok()
+            .flatten();
+        let Some(after) = after else { return };
+        if after != before {
+            self.events.emit("projects", "upserted", after);
         }
     }
 
@@ -438,6 +479,8 @@ impl JobSink for JobRunner {
             store_kind,
             priority: Priority::RefState,
             not_before: 0,
+            // [p3] R121: the walk publishes nothing. `scan/finished` covers the bulk case.
+            origin: JobOrigin::Walk,
         });
     }
 
@@ -461,6 +504,7 @@ impl JobSink for JobRunner {
             store_kind,
             priority: Priority::Interactive,
             not_before: 0,
+            origin: JobOrigin::Interactive,
         });
 
         // §7.5: a stale, failed, missing or absent card is redrawn when its tile comes into
@@ -479,6 +523,7 @@ impl JobSink for JobRunner {
                 store_kind,
                 priority: Priority::Interactive,
                 not_before: 0,
+                origin: JobOrigin::Interactive,
             });
         }
 
@@ -495,6 +540,7 @@ impl JobSink for JobRunner {
                 store_kind,
                 priority: Priority::Standard,
                 not_before: 0,
+                origin: JobOrigin::Interactive,
             });
         }
     }

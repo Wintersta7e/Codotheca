@@ -54,13 +54,26 @@ fn encode<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, CommandFa
 /// generated type could not deserialise. A row that cannot be re-read publishes nothing: the
 /// write already succeeded, and inventing an event for it would be worse than a missed refresh.
 fn emit_upserted(ctx: &DetailCtx<'_>, project: crate::protocol::ProjectId) {
-    let Ok(loaded) = crate::projects::rows::load_project_row(ctx.index.conn(), project) else {
-        return;
-    };
-    let payload = crate::protocol::ProjectUpserted { row: loaded.row };
-    if let Ok(value) = serde_json::to_value(&payload) {
+    if let Some(value) = upserted_payload(ctx.index.conn(), project) {
         ctx.events.emit("projects", "upserted", value);
     }
+}
+
+/// The `projects/upserted` payload, built **once** for every emitter.
+///
+/// [p3] `JobRunner::settle` emits this event too (R121), and a second hand-built payload there
+/// would be the same whole `ProjectRow` assembled by two producers — R12's rule applied to an
+/// event rather than a formatter. `None` is *the row could not be re-read*, which publishes
+/// nothing: the write already succeeded, and inventing an event for it would be worse than a
+/// missed refresh.
+#[must_use]
+pub fn upserted_payload(
+    conn: &rusqlite::Connection,
+    project: crate::protocol::ProjectId,
+) -> Option<serde_json::Value> {
+    let loaded = crate::projects::rows::load_project_row(conn, project).ok()?;
+    let payload = crate::protocol::ProjectUpserted { row: loaded.row };
+    serde_json::to_value(&payload).ok()
 }
 
 /// The commands this module owns, in the order the dispatcher matches them. Exposed so the
