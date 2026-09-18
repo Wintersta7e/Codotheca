@@ -1523,7 +1523,7 @@
           "runner": "vitest",
           "owner": "12",
           "test": "AC-50 tier off runs zero animations and schedules zero frames",
-          "assert": "At reduced and off the scheduled flicker is absent \u2014 steady glow, no dip. Hazard tape renders identically and the pin mark is a static silhouette no tier deletes. Verified by resolving a style on a real element under each tier, never by matching the stylesheet's text: the clamp selects nine class names exactly and a tenth name makes it select nothing."
+          "assert": "At reduced and off the scheduled flicker is absent \u2014 steady glow, no dip. Hazard tape renders identically and the pin mark is a static silhouette no tier deletes. Verified by resolving a style on a real element under each tier, never by matching the stylesheet's text: the clamp selects ten class names exactly and an eleventh name makes it select nothing. [p2] The number was nine and is ten: `.cdt-specular` joined the set when the sweep's clamp was corrected off `.cdt-plate`, and this assert was not raised with it — one value in two places, drifting, with the check `deferred` so nothing ever compared them. Measured against `motion.css`: cdt-bloom, cdt-bracket, cdt-card, cdt-card-halo, cdt-dot, cdt-pin-silhouette, cdt-plate, cdt-scanline, cdt-specular, cdt-strip."
         },
         {
           "id": "AC-50-readability",
