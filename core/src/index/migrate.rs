@@ -95,13 +95,21 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0011_sync.sql"),
         rebuilds_a_table: false,
     },
+    Migration {
+        version: 12,
+        name: "content_scan",
+        sql: include_str!("../../migrations/0012_content_scan.sql"),
+        // §29.10: `project_job_state` is STRICT and SQLite has no ALTER CONSTRAINT, so widening
+        // `job`'s CHECK for 'j7' is a create-copy-drop-rename.
+        rebuilds_a_table: true,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 11;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 12;
 
 pub fn schema_version(conn: &Connection) -> Result<u32, IndexError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;

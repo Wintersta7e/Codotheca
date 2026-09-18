@@ -575,17 +575,20 @@ fn every_foreign_key_into_project_survives_the_rebuild() {
     // The chain runs **through the rebuild and stops there**. A later migration that legitimately
     // adds a foreign key into `project` — `0010`'s `install_run` does — is not a rebuild defect,
     // and letting it into this comparison would fail the assertion for the one reason it is not
-    // about. Derived from `rebuilds_a_table` rather than sliced at a position, so inserting or
-    // renumbering a migration cannot silently move what this test runs.
-    assert_eq!(
-        MIGRATIONS.iter().filter(|m| m.rebuilds_a_table).count(),
-        1,
-        "R80's subject is the one rebuild; with two, the search below silently picks the first"
-    );
+    // about.
+    //
+    // R80's subject is **this** rebuild, so it is found by name rather than by the
+    // `rebuilds_a_table` flag: phase 3 adds more rebuilds — `0012` rebuilds `project_job_state` —
+    // and a `position(|m| m.rebuilds_a_table)` would keep pointing at `0009` only by luck of
+    // ordering. The flag is still asserted, so a rename that loses the rebuild is red.
     let rebuild_at = MIGRATIONS
         .iter()
-        .position(|m| m.rebuilds_a_table)
-        .expect("phase 2 performs exactly one table rebuild");
+        .position(|m| m.name == "remote_identity_and_facts")
+        .expect("0009 is the project rebuild R80 is about");
+    assert!(
+        MIGRATIONS[rebuild_at].rebuilds_a_table,
+        "0009 stopped declaring itself a rebuild, so the runner no longer disables foreign keys"
+    );
     apply_all(&mut conn, &MIGRATIONS[..=rebuild_at]).unwrap();
 
     assert_eq!(
@@ -1094,10 +1097,16 @@ fn every_remote_link_basis_variant_is_accepted_by_the_column() {
 
 /// The chain ends where the constant says it does, and the constant is the count the guard
 /// checked. Three statements of one value, so a migration registered without its bump is red.
+///
+/// The number is **derived from the chain**, not written here: the test's old name carried it and
+/// stopped being true the moment `0012` landed, which is the shape R132/F16 rules against.
 #[test]
-fn the_supported_version_is_eleven_and_the_chain_reaches_it() {
-    assert_eq!(SUPPORTED_SCHEMA_VERSION, 11);
-    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), 11);
+fn the_chain_the_constant_and_the_stamped_version_are_one_value() {
+    let registered = u32::try_from(MIGRATIONS.len()).unwrap();
+    eprintln!("registered migrations: {registered}");
+    assert!(registered > 0, "the migration chain is empty");
+    assert_eq!(SUPPORTED_SCHEMA_VERSION, registered);
+    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), registered);
     let (_dir, conn) = migrated_to(MIGRATIONS.len());
-    assert_eq!(schema_version(&conn).unwrap(), 11);
+    assert_eq!(schema_version(&conn).unwrap(), registered);
 }
