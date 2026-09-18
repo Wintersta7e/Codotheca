@@ -512,3 +512,39 @@ fn the_session_records_the_location_and_target_it_was_launched_from() {
     assert_eq!(reference.location_id, LocationId(h.location));
     assert_eq!(reference.target_id, TargetId(h.target));
 }
+
+/// [p3] §30.5 — **launching a project acknowledges it**, and the stamp rides the transaction
+/// `handle_launch` already opens for the redirect resolve rather than one of its own.
+///
+/// It lives here because the launch fixture does — a second copy of it in
+/// `core/tests/health_acknowledge.rs` would be one hundred and fifty lines of rig stated twice.
+/// `AC-P3-30-8`'s other half, the `projects.get` writer and the write-once replay, is asserted
+/// there.
+#[test]
+fn ac_p3_30_8_launching_a_project_stamps_acknowledged_at_once() {
+    let mut h = fixture();
+    let project = h.project;
+    let read = |h: &Fixture| -> Option<i64> {
+        h.index
+            .conn()
+            .query_row(
+                "SELECT acknowledged_at FROM project WHERE id = ?1",
+                [project],
+                |r| r.get(0),
+            )
+            .expect("read acknowledged_at")
+    };
+    assert_eq!(read(&h), None, "seeded unenrolled");
+
+    let args = h.launch_args();
+    handle_launch(&mut h.ctx(), args).unwrap();
+    let first = read(&h).expect("the launch stamps");
+    assert_eq!(first, T0);
+
+    // Write-once: a second launch at a later clock cannot move the time the user first
+    // acknowledged the project.
+    h.clock.set_unix(T0 + 10_000);
+    let args = h.launch_args();
+    handle_launch(&mut h.ctx(), args).unwrap();
+    assert_eq!(read(&h), Some(first), "a second launch moves nothing");
+}

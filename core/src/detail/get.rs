@@ -52,13 +52,30 @@ fn identity_failure(e: &crate::identity::IdentityError) -> CommandFailure {
 
 /// The page can be opened from a stale link while a scan merges two tiles underneath it, so a
 /// request that crossed in flight lands on the survivor rather than refusing. Plan 08's
-/// redirect takes a `Transaction`; this one is read-only and is never committed.
-fn resolved_id(conn: &rusqlite::Connection, requested: ProjectId) -> Result<i64, CommandFailure> {
+/// redirect takes a `Transaction`.
+///
+/// **[p3] §30.5: resolve → stamp → read enrolment → commit, in that order, in one transaction.**
+/// This transaction used to be read-only and dropped uncommitted. It now carries the *only*
+/// write `projects.get` performs — the write-once `acknowledged_at` stamp — and the ordering is
+/// the part a reader gets wrong by accident: an enrolment read before the stamp makes the first
+/// open serve a reading computed while the project was still unenrolled, which the user sees as
+/// `suppressed` and has to open the page twice to clear.
+///
+/// The stamp is write-once, so a replay changes nothing and `projects.get` keeps the `read`
+/// classification `app/src/main/core/idempotence.ts:41` gives it.
+fn resolve_and_enrol(
+    conn: &rusqlite::Connection,
+    requested: ProjectId,
+    now: i64,
+) -> Result<(i64, bool), CommandFailure> {
+    let _guard = crate::proto::txguard::TxGuard::enter();
     let tx = conn.unchecked_transaction().map_err(internal)?;
     let id = crate::identity::redirect::resolve_project_id(&tx, requested.0)
         .map_err(|e| identity_failure(&e))?;
-    drop(tx);
-    Ok(id)
+    let enrolled = crate::health::acknowledge::stamp_and_read_enrolment(&tx, ProjectId(id), now)
+        .map_err(internal)?;
+    tx.commit().map_err(internal)?;
+    Ok((id, enrolled))
 }
 
 /// The scalar columns §8.5's identity block and hero read, in one statement.
@@ -373,7 +390,9 @@ pub fn handle_project_get(
 ) -> Result<ProjectDetail, CommandFailure> {
     let a: ProjectsGetArgs = parse_args(args)?;
     let conn = ctx.index.conn();
-    let id = resolved_id(conn, a.id)?;
+    // [p3] §30.5. The stamp commits here, before anything below reads the project — so the
+    // reading this call goes on to compute is the enrolled one on the very first open.
+    let (id, _enrolled) = resolve_and_enrol(conn, a.id, ctx.now)?;
 
     let loaded = load_project_row(conn, ProjectId(id)).map_err(|e| match e.code() {
         crate::protocol::ErrorCode::Protocol => CommandFailure::protocol(e.to_string()),

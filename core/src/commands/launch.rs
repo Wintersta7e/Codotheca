@@ -176,6 +176,12 @@ pub fn handle_launch(ctx: &mut LaunchCtx<'_>, args: Value) -> Result<SessionId, 
             .map_err(|e| CommandFailure::internal(e.to_string()))?;
         let id = crate::identity::redirect::resolve_project_id(&tx, args.project_id.0)
             .map_err(|e| identity_failure(&e))?;
+        // [p3] §30.5, beside the redirect resolve rather than in a transaction of its own:
+        // launching a project acknowledges it, exactly as `acknowledges()` classifies it
+        // (`app/src/renderer/firstrun/newArrivals.ts:45-47`). Write-once, so a second launch
+        // cannot move the time the user first acknowledged it.
+        crate::health::acknowledge::stamp_acknowledged(&tx, ProjectId(id), ctx.now)
+            .map_err(|e| CommandFailure::internal(e.to_string()))?;
         tx.commit()
             .map_err(|e| CommandFailure::internal(e.to_string()))?;
         ProjectId(id)
