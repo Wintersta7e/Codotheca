@@ -266,6 +266,25 @@
       "script": "scripts/check-shell-accelerators.mjs"
     },
     {
+      "id": "p3-28-debt-source-names",
+      "kind": "regex",
+      "spec": "\u00a728.2, \u00a730.6",
+      "why": "Decay driven purely by staleness is the largest single recorded phase-3 error, and no criterion asserted it: AC-P3-28-10 reads the DebtSource enum and the DDL CHECK against each other, so a tenth source named `staleness` added to both keeps it green with a printed count of 10. This is a NAME ban, not a count. \u00a730.6 names all four with their reasons and this rule cites rather than restates them: `staleness` closes only by activity and collides with the first settled row; `behind upstream` is closable by no act the product offers, since `pull` is refused permanently, and it decays on someone else's commits; `uncommitted work` is the one class \u00a76 declares uncacheable, so it would flicker as the user types \u2014 it is `is_dirty`, a chip, not an item; and a missing or dead remote produces no item under A8. The migration root is load-bearing and is the half a reviewer forgets: \u00a728.8's `debt_item.source` CHECK spells DebtSource character for character, so a tenth variant reaches the DDL BEFORE it reaches any rendered string. The patterns match the VALUE shape a source name takes and not the bare English word, which is `p2-20-scope-strings`' recorded limitation arrived at again: `uncommitted` is `EraAggregate.uncommitted` and a live shelf chip, and `staleness` appears in \u00a725's own prose about forge-derived values. A bare-word ban would fail a correct build, which is a gate that has to be argued with rather than obeyed.",
+      "targets": ["schema", "core", "app-src"],
+      "patterns": [
+        "['\"]staleness['\"]",
+        "\\bbehind_upstream\\b",
+        "\\bbehindUpstream\\b",
+        "\\buncommitted_work\\b",
+        "\\buncommittedWork\\b",
+        "\\bdead_remote\\b",
+        "\\bdeadRemote\\b"
+      ],
+      "flags": "iu",
+      "exempt": [],
+      "pendingRegistryEntry": { "criterion": "P3-28-18a" }
+    },
+    {
       "id": "p2-20-scope-strings",
       "kind": "regex",
       "spec": "§20.3, §20.10, §20.12",

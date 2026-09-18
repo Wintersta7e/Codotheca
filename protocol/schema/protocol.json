@@ -602,7 +602,7 @@
 
     "DebtSource": {
       "kind": "enum",
-      "$comment": "[p3] §28.2's nine sources, closed (A4). The `debt_item.source` CHECK in `0013_debt.sql` mirrors this list character for character (R26). Five further sources are declared in §28's prose and are deliberately in neither place — `forge_issues`, `lint_warnings`, `compiler_warnings`, `failing_tests`, `stale_merged_branches`; a tenth costs one migration plus one regenerate. No variant is `staleness`, `behind_upstream`, `uncommitted` or `dead_remote` (§30.6, AC-P3-28-18a).",
+      "$comment": "[p3] §28.2's nine sources, closed (A4). The `debt_item.source` CHECK in `0013_debt.sql` mirrors this list character for character (R26). Five further sources are declared in §28's prose and are deliberately in neither place — `forge_issues`, `lint_warnings`, `compiler_warnings`, `failing_tests`, `stale_merged_branches`; a tenth costs one migration plus one regenerate. No variant may take one of the four names §30.6 rules out; the ban is enforced by check-forbidden:p3-28-debt-source-names (AC-P3-28-18a) rather than restated here.",
       "variants": [
         "todo_marker",
         "missing_readme",
