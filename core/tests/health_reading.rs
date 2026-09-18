@@ -207,3 +207,228 @@ fn ac_p3_30_6_an_error_after_an_observation_does_not_hide_the_reading() {
     failed_before_reading.ever_observed = false;
     assert_eq!(health_state(&failed_before_reading), HealthState::Absent);
 }
+
+// ---------------------------------------------------------------------------------------------
+// §30.3 — the five check outcomes, the basis over them, and the oldest input (Task 4).
+// ---------------------------------------------------------------------------------------------
+
+use codotheca_core::health::outcome::{
+    basis_over, outcome_for, CheckObservation, SweepFacts, SwitchState,
+};
+use codotheca_core::protocol::{
+    CheckOutcome, DebtSource, DebtSweepOutcome, HealthCheck, UnknownReason,
+};
+
+const ON: SwitchState = SwitchState {
+    enabled: true,
+    grant_missing: false,
+    not_applicable: false,
+};
+
+fn swept(outcome: DebtSweepOutcome, scored_open: u32, unverified: u32) -> SweepFacts {
+    SweepFacts {
+        outcome: Some(outcome),
+        scored_open,
+        unverified,
+        observed_at: Some(1_000),
+    }
+}
+
+fn check(outcome: CheckOutcome, observed_at: Option<i64>) -> CheckObservation {
+    CheckObservation {
+        check: HealthCheck {
+            id: DebtSource::MissingReadme,
+            outcome,
+            unknown_reason: match outcome {
+                CheckOutcome::Unknown => Some(UnknownReason::NotRunYet),
+                _ => None,
+            },
+        },
+        observed_at,
+    }
+}
+
+/// **`ran` is the only denominator this system has.** `off` and `notApplicable` appear in neither
+/// `ran` nor `eligible`, and no arithmetic path moves a value into `ran` — which is what makes it
+/// impossible to report a suppressed, switched-off or failed check as a passing one.
+#[test]
+fn ac_p3_30_4_no_arithmetic_path_moves_a_value_into_ran() {
+    let all = [
+        CheckOutcome::Ok,
+        CheckOutcome::Failed,
+        CheckOutcome::Unknown,
+        CheckOutcome::Off,
+        CheckOutcome::NotApplicable,
+    ];
+
+    // Every multiset of the five outcomes up to three checks long, which is enough to reach every
+    // combination of the four counters without enumerating a library.
+    let mut cases = 0usize;
+    for a in all {
+        for b in all {
+            for c in all {
+                let entries = [check(a, Some(10)), check(b, Some(20)), check(c, Some(30))];
+                let expect = |want: CheckOutcome| {
+                    u32::try_from([a, b, c].iter().filter(|o| **o == want).count()).unwrap()
+                };
+                let Some(basis) = basis_over(&entries) else {
+                    // Every check `off` or `notApplicable`: nothing eligible was observed, so
+                    // there is no coverage figure and none is invented. `AC-P3-30-1`'s
+                    // every-check-off case is exactly this, and it must not be a zeroed basis.
+                    assert_eq!(
+                        expect(CheckOutcome::Off) + expect(CheckOutcome::NotApplicable),
+                        3,
+                        "{a:?}/{b:?}/{c:?} produced no basis while something was eligible"
+                    );
+                    cases += 1;
+                    continue;
+                };
+                let ok = expect(CheckOutcome::Ok);
+                let failed = expect(CheckOutcome::Failed);
+                assert_eq!(basis.ran, ok + failed, "{a:?}/{b:?}/{c:?}");
+                assert_eq!(basis.unknown, expect(CheckOutcome::Unknown));
+                assert_eq!(basis.off, expect(CheckOutcome::Off));
+                assert_eq!(basis.not_applicable, expect(CheckOutcome::NotApplicable));
+                assert_eq!(basis.eligible, basis.ran + basis.unknown);
+                // The claim stated as a claim: neither disjoint field is inside either total.
+                assert_eq!(
+                    basis.ran + basis.unknown + basis.off + basis.not_applicable,
+                    3
+                );
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("outcome combinations exercised: {cases}");
+    assert!(cases > 0, "a basis test over no cases proves nothing");
+}
+
+/// §30.3's two hardest rows, and the `shown_only` property beside them (A7).
+#[test]
+fn ac_p3_30_5_a_partial_sweep_with_no_items_is_unknown_never_ok() {
+    // An item a partial sweep did not reach looks exactly like an item that is gone.
+    assert_eq!(
+        outcome_for(&swept(DebtSweepOutcome::Partial, 0, 0), &ON),
+        CheckOutcome::Unknown
+    );
+    // An item observed is an item: the under-claim risk is zero, so this is `failed`.
+    assert_eq!(
+        outcome_for(&swept(DebtSweepOutcome::Partial, 1, 0), &ON),
+        CheckOutcome::Failed
+    );
+    assert_eq!(
+        outcome_for(&swept(DebtSweepOutcome::Complete, 0, 0), &ON),
+        CheckOutcome::Ok
+    );
+    // The R128/F11 conjunct: `unverified` items make a complete sweep `unknown`, not `ok`.
+    assert_eq!(
+        outcome_for(&swept(DebtSweepOutcome::Complete, 0, 3), &ON),
+        CheckOutcome::Unknown
+    );
+    // No row at all, and the four outcomes that are reasons the sweep could not finish.
+    let never = SweepFacts {
+        outcome: None,
+        scored_open: 0,
+        unverified: 0,
+        observed_at: None,
+    };
+    assert_eq!(outcome_for(&never, &ON), CheckOutcome::Unknown);
+    for outcome in [
+        DebtSweepOutcome::Failed,
+        DebtSweepOutcome::Unobservable,
+        DebtSweepOutcome::SkippedReference,
+        DebtSweepOutcome::SkippedSuppressed,
+    ] {
+        assert_eq!(
+            outcome_for(&swept(outcome, 0, 0), &ON),
+            CheckOutcome::Unknown,
+            "{outcome:?}"
+        );
+    }
+
+    // A `shown_only` item moves neither `scoredOpen` nor the outcome — `SweepFacts.scored_open`
+    // counts items that are both `open` and `scored`, so a project whose only item is
+    // `shown_only` presents as a complete sweep with zero scored open items.
+    assert_eq!(
+        outcome_for(&swept(DebtSweepOutcome::Complete, 0, 0), &ON),
+        CheckOutcome::Ok,
+        "a shown_only item does not make a check failed"
+    );
+
+    // The two outcomes outside `eligible`, and the switch winning over not-applicable.
+    let off = SwitchState {
+        enabled: false,
+        ..ON
+    };
+    let na = SwitchState {
+        not_applicable: true,
+        ..ON
+    };
+    let both = SwitchState {
+        enabled: false,
+        not_applicable: true,
+        ..ON
+    };
+    assert_eq!(
+        outcome_for(&swept(DebtSweepOutcome::Complete, 5, 0), &off),
+        CheckOutcome::Off,
+        "off is decided before anything is counted"
+    );
+    assert_eq!(
+        outcome_for(&swept(DebtSweepOutcome::Complete, 5, 0), &na),
+        CheckOutcome::NotApplicable
+    );
+    assert_eq!(
+        outcome_for(&swept(DebtSweepOutcome::Complete, 0, 0), &both),
+        CheckOutcome::Off,
+        "a user's own switch is a different sentence from a repo that never needed the check"
+    );
+}
+
+/// §30.3 — **the oldest input, not the newest.** A reading is only as current as its stalest
+/// input; dating it by the freshest read is the staleness marker lying.
+#[test]
+fn ac_p3_30_14_observed_at_is_the_oldest_input() {
+    let old = 1_700_000_000;
+    let new = 1_700_090_000;
+    let entries = [
+        check(CheckOutcome::Ok, Some(new)),
+        check(CheckOutcome::Failed, Some(old)),
+    ];
+    let basis = basis_over(&entries).expect("two ran checks carry a basis");
+    eprintln!(
+        "inputs observed at {old} and {new}; basis dated {}",
+        basis.observed_at
+    );
+    assert_eq!(basis.observed_at, old);
+    assert_eq!(basis.ran, 2);
+
+    // An `unknown` check's own observation does not date a reading that has verdicts: its
+    // unknownness is current, and its stale read produced no verdict to be stale about.
+    let with_stale_unknown = [
+        check(CheckOutcome::Ok, Some(new)),
+        check(CheckOutcome::Unknown, Some(1)),
+    ];
+    assert_eq!(
+        basis_over(&with_stale_unknown).expect("basis").observed_at,
+        new
+    );
+
+    // §30.4's ordinary case: nothing ran, something was read. The basis exists and says when.
+    let nothing_ran = [check(CheckOutcome::Unknown, Some(old))];
+    let basis = basis_over(&nothing_ran).expect("an observed unknown still carries a basis");
+    assert_eq!(basis.ran, 0);
+    assert_eq!(basis.eligible, 1);
+    assert_eq!(basis.observed_at, old);
+
+    // Nothing has ever been observed: there is no coverage figure to state, and none is invented.
+    let never = [
+        check(CheckOutcome::Unknown, None),
+        check(CheckOutcome::Off, None),
+    ];
+    assert!(
+        basis_over(&never).is_none(),
+        "a basis over nothing observed would have to invent a date"
+    );
+    assert!(basis_over(&[]).is_none());
+}
