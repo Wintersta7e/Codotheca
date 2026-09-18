@@ -221,9 +221,36 @@ fn a_successful_removal_keeps_the_row_and_nulls_the_ten_columns() {
 
 /// R34 is undisturbed: a removal is not a job, because a job is a retry surface and a removal must
 /// never be auto-replayed.
+///
+/// **The property is a set property and is stated as one.** It asserted `ALL.len() == 7`, which
+/// goes red for any eighth job whether or not that job is a removal — §29's `j7` is not — and
+/// which would have read as a removal defect. What must stay true is that no `JobKind` names a
+/// removal (R132/F16).
 #[test]
 fn removal_added_no_job_kind() {
-    assert_eq!(codotheca_core::jobs::JobKind::ALL.len(), 7);
+    let slugs: Vec<&'static str> = codotheca_core::jobs::JobKind::ALL
+        .iter()
+        .map(|k| k.slug())
+        .collect();
+    eprintln!("job slugs checked for a removal: {slugs:?}");
+    assert!(!slugs.is_empty(), "the job vocabulary is empty");
+    for slug in &slugs {
+        for banned in ["remove", "removal", "uninstall", "delete"] {
+            assert!(
+                !slug.contains(banned),
+                "{slug} names a removal, and a removal must never be a retry surface"
+            );
+        }
+    }
+    for kind in codotheca_core::jobs::JobKind::ALL {
+        let named = format!("{kind:?}").to_lowercase();
+        for banned in ["remove", "removal", "uninstall", "delete"] {
+            assert!(
+                !named.contains(banned),
+                "{named} names a removal, and a removal must never be a retry surface"
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

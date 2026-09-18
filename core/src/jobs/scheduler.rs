@@ -52,7 +52,13 @@ pub fn next_jobs_after(done: JobKind, is_reference: Option<bool>) -> Vec<(JobKin
             (JobKind::J6Content, Priority::Deferred),
             (JobKind::J5Art, Priority::Deferred),
         ],
-        JobKind::J2Status | JobKind::J4History | JobKind::J5Art | JobKind::J6Content => Vec::new(),
+        // J7 is a leaf: nothing chains off a content scan. Where it is *enqueued* is §29.7's
+        // three sites and none of them is here — see the `J15Authorship` arm above.
+        JobKind::J2Status
+        | JobKind::J4History
+        | JobKind::J5Art
+        | JobKind::J6Content
+        | JobKind::J7Markers => Vec::new(),
     }
 }
 

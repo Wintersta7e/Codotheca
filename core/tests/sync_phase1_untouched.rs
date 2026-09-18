@@ -18,11 +18,11 @@ use codotheca_core::accounts::store::{insert_account, NewAccount};
 use codotheca_core::http::{HttpResponse, HttpTransport};
 use codotheca_core::index::Index;
 use codotheca_core::jobs::JobKind;
-use codotheca_core::protocol::{AuthKind, ProjectId, ScopeTier};
+use codotheca_core::protocol::{AuthKind, ProjectId, ScopeTier, SyncTaskKind};
 use codotheca_core::provider::GitHubProvider;
 use codotheca_core::sync::http::ObservingTransport;
 use codotheca_core::sync::runner::SyncRunner;
-use codotheca_core::sync::task::SyncTask;
+use codotheca_core::sync::task::{kind_slug, SyncTask};
 use codotheca_core::sync::SyncDeps;
 use codotheca_core::testing::{FakeClock, FakeTokenStore, FakeTransport, TempIndex};
 
@@ -36,15 +36,26 @@ impl codotheca_core::proto::EventSink for Quiet {
     fn emit(&self, _topic: &str, _event: &str, _payload: serde_json::Value) {}
 }
 
-/// §4.1's vocabulary is **seven**, and it stays seven.
+/// §4.1's vocabulary holds no sync task, whatever its size.
 ///
-/// This is what stops a later *"add a `j7` for symmetry"*: sync is its own runner because a sync
-/// task has no `location_id` and the queue coalesces on one, and a sentinel id would collide every
-/// project's task onto one queue entry and silently drop all but one.
+/// This is what stops a later *"add a sync task for symmetry"*: sync is its own runner because a
+/// sync task has no `location_id` and the queue coalesces on one, and a sentinel id would collide
+/// every project's task onto one queue entry and silently drop all but one.
+///
+/// **The count is gone and the name went with it.** It asserted `len() == 7` under the name
+/// `the_job_vocabulary_is_still_seven`, which stopped being true when §29 added `j7` — a real
+/// eighth *job*, not a sync task, so the thing this test is about did not change at all. The
+/// property is a **set** property and is now stated as one (R132/F16).
 #[test]
-fn the_job_vocabulary_is_still_seven() {
-    eprintln!("sync_phase1_untouched: {} job kinds", JobKind::ALL.len());
-    assert_eq!(JobKind::ALL.len(), 7);
+fn the_job_vocabulary_holds_no_sync_task() {
+    let jobs: Vec<&'static str> = JobKind::ALL.iter().map(|k| k.slug()).collect();
+    let syncs: Vec<&'static str> = SyncTaskKind::ALL.iter().map(|k| kind_slug(*k)).collect();
+    eprintln!("sync_phase1_untouched: jobs {jobs:?}, sync tasks {syncs:?}");
+    assert!(!jobs.is_empty(), "the job vocabulary is empty");
+    assert!(!syncs.is_empty(), "the sync vocabulary is empty");
+    for sync in &syncs {
+        assert!(!jobs.contains(sync), "{sync} names a job and a sync task");
+    }
 }
 
 /// **A full sync run writes no `project_job_state` row.**

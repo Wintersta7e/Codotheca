@@ -121,6 +121,11 @@ fn a_second_write_for_the_same_job_replaces_the_row() {
 /// it protects this build against a row a *later* migration's vocabulary wrote — so the row is
 /// now inserted with check constraints suspended, which is exactly the state a newer build
 /// that widened the CHECK would leave behind.
+///
+/// **It changed again when §29 added `J7Markers`** — the fixture *was* `j7`, and the assertion
+/// `from_slug("j7") == None` inverted the moment `j7` became a real job. It is `j9` now, which
+/// `core/tests/index_schema.rs:731-737` already uses for exactly this. The slug this test needs
+/// is one no migration will ever claim, and every `jN` for a small `N` eventually is one.
 #[test]
 fn an_unknown_job_slug_is_skipped_rather_than_guessed() {
     let (_dir, conn) = fresh();
@@ -128,23 +133,30 @@ fn an_unknown_job_slug_is_skipped_rather_than_guessed() {
     conn.execute_batch("PRAGMA ignore_check_constraints = ON")
         .unwrap();
     conn.execute(
-        "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, 'j7', 'queued', 0)",
+        "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, 'j9', 'queued', 0)",
         [project.0],
     )
     .unwrap();
     conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
         .unwrap();
-    assert_eq!(JobKind::from_slug("j7"), None);
+    assert_eq!(JobKind::from_slug("j9"), None);
     assert!(load(&conn, project).unwrap().is_empty());
 }
 
 /// The other half, and the one plan 10 makes newly true: every slug the column permits is a
 /// slug this build can name. R34's mirror, read from the column side.
+///
+/// **The list is derived, not written.** It held seven slugs by hand, so when §29 added `j7` it
+/// would have stayed green while no longer covering the column it is named for — R129/F5, and
+/// the same break this file already records for `J5Art` above.
 #[test]
 fn every_slug_the_column_permits_is_a_job_kind_this_build_knows() {
     let (_dir, conn) = fresh();
     let project = insert_project(&conn, "p");
-    for slug in ["j1", "j1_5", "j2", "j3", "j4", "j5", "j6"] {
+    let slugs: Vec<&'static str> = JobKind::ALL.iter().map(|k| k.slug()).collect();
+    eprintln!("slugs derived from JobKind::ALL: {slugs:?}");
+    assert!(!slugs.is_empty(), "the job vocabulary is empty");
+    for slug in &slugs {
         conn.execute(
             "INSERT INTO project_job_state (project_id, job, state, at)
              VALUES (?1, ?2, 'queued', 0)",
@@ -156,7 +168,7 @@ fn every_slug_the_column_permits_is_a_job_kind_this_build_knows() {
             "{slug} is stored by the column and named by no JobKind"
         );
     }
-    assert_eq!(load(&conn, project).unwrap().len(), 7);
+    assert_eq!(load(&conn, project).unwrap().len(), JobKind::ALL.len());
 }
 
 /// `reset_for` is plan 08 Task 17's dependency: a merge and its requeue must commit together,

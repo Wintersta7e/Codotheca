@@ -1,4 +1,7 @@
-//! The six observation jobs, their budgets and their scheduling vocabulary (§4.1, §4.1a).
+//! The eight observation jobs, their budgets and their scheduling vocabulary (§4.1, §4.1a).
+//!
+//! The count in this comment said *six* while the enum held seven, which is why §29.1 corrects it
+//! by number rather than by adding a variant beside it.
 
 pub mod classify;
 pub mod j15_authorship;
@@ -19,7 +22,7 @@ use std::time::Duration;
 // which never produced them; a hand-written pair here would be the R31 shape exactly.
 use crate::protocol::{LocationId, ProjectId};
 
-/// Which of §4.1's six jobs a work item is.
+/// Which of §4.1's eight jobs a work item is.
 ///
 /// A deliberate subset of the schema's `Job` (**R34**): `j0` is plan 07's walk, reported on the
 /// wire when it finishes but never queued by this scheduler, and `j5` is plan 10's art. Every
@@ -40,6 +43,12 @@ pub enum JobKind {
     J5Art,
     /// Manifest and README content.
     J6Content,
+    /// Committed debt markers and the four presence answers, read from the HEAD tree (§29.1).
+    ///
+    /// Named against [`JobKind::J6Content`] so the two content readers cannot be confused in a
+    /// match arm: J6 reads a named set of files from the **worktree** under a grant the user gave
+    /// at first run; J7 reads the whole source tree at **HEAD** under a grant of its own.
+    J7Markers,
 }
 
 /// How many locations a job runs against.
@@ -53,7 +62,7 @@ pub enum JobScope {
 
 impl JobKind {
     /// Every kind, so a test can walk the vocabulary without restating it.
-    pub const ALL: [JobKind; 7] = [
+    pub const ALL: [JobKind; 8] = [
         JobKind::J1Refstate,
         JobKind::J15Authorship,
         JobKind::J2Status,
@@ -61,6 +70,7 @@ impl JobKind {
         JobKind::J4History,
         JobKind::J5Art,
         JobKind::J6Content,
+        JobKind::J7Markers,
     ];
 
     /// The stored form. **R34**: this value is written into `project_job_state.job`, carried by
@@ -76,6 +86,7 @@ impl JobKind {
             JobKind::J4History => "j4",
             JobKind::J5Art => "j5",
             JobKind::J6Content => "j6",
+            JobKind::J7Markers => "j7",
         }
     }
 
@@ -96,10 +107,12 @@ impl JobKind {
             JobKind::J3Inventory => Some(Duration::from_millis(300)),
             // J1.5 is the gate everything waits on and J6 is byte-capped, not time-capped.
             // §4.1: a CPU job with no deadline table entry. It yields no slices: one scene,
-            // one raster, one file.
-            JobKind::J15Authorship | JobKind::J4History | JobKind::J5Art | JobKind::J6Content => {
-                None
-            }
+            // one raster, one file. §29.1: J7's budget is a chunk, not a deadline.
+            JobKind::J15Authorship
+            | JobKind::J4History
+            | JobKind::J5Art
+            | JobKind::J6Content
+            | JobKind::J7Markers => None,
         }
     }
 
@@ -118,7 +131,8 @@ impl JobKind {
             | JobKind::J3Inventory
             | JobKind::J4History
             | JobKind::J5Art
-            | JobKind::J6Content => JobScope::PrimaryOnly,
+            | JobKind::J6Content
+            | JobKind::J7Markers => JobScope::PrimaryOnly,
         }
     }
 
@@ -147,14 +161,14 @@ pub enum Priority {
 }
 
 /// One queued unit of work. **Not** the schema's `Job` — `protocol/schema/protocol.json`
-/// declares `Job` as the job *identifier* enum (`j0 … j6`), which is what `JobDone.job` carries
+/// declares `Job` as the job *identifier* enum (`j0 … j7`), which is what `JobDone.job` carries
 /// and which `JobKind::slug` produces above. This is a scheduler work item: a kind plus the
 /// place, the store, the priority and the backoff gate. R31 does not apply to it — the two are
 /// different shapes in different modules, and neither can be substituted for the other by
 /// accident. **Do not delete this on a name match.**
 #[derive(Debug, Clone)]
 pub struct Job {
-    /// Which of the six.
+    /// Which of the eight.
     pub kind: JobKind,
     /// The project the result is filed against.
     pub project_id: ProjectId,
@@ -520,6 +534,10 @@ pub fn run_one(
             })?;
             Ok(JobOutcome::Done)
         }
+        // The variant exists so the vocabulary, the schema and the column agree; **nothing
+        // enqueues it in this commit** — `next_jobs_after` treats it as a leaf and no visibility
+        // site names it — so this arm is unreachable until `run_j7` and its enqueue sites land.
+        JobKind::J7Markers => Ok(JobOutcome::Done),
     }
 }
 

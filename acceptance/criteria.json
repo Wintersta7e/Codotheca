@@ -3669,8 +3669,8 @@
           "status": "automated",
           "runner": "cargo",
           "owner": "p2-21",
-          "test": "sync_phase1_untouched::the_job_vocabulary_is_still_seven",
-          "assert": "JobKind::ALL still holds seven members, so no j7 was added for symmetry."
+          "test": "sync_phase1_untouched::the_job_vocabulary_holds_no_sync_task",
+          "assert": "Derives both vocabularies, prints each and fails at zero on either, and asserts no sync task slug is a JobKind slug — so sync cannot become a job by halves."
         },
         {
           "id": "AC-P2-21-10-partial",

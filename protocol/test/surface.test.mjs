@@ -489,8 +489,20 @@ test('a condition change can carry the uncomputed state', () => {
 });
 
 // §4.1: the job vocabulary, including J1.5, which §4.1a schedules before J2 and J3.
-test('job_done names one of the eight jobs', () => {
-  assert.deepEqual(schema.types.Job.variants, ['j0', 'j1', 'j1_5', 'j2', 'j3', 'j4', 'j5', 'j6']);
+// [p3] §29.1 adds `j7`, the content scan. The assertion is the verbatim list rather than its
+// length: this is the wire contract, and a count cannot say which slug moved.
+test('job_done names one of the nine jobs', () => {
+  assert.deepEqual(schema.types.Job.variants, [
+    'j0',
+    'j1',
+    'j1_5',
+    'j2',
+    'j3',
+    'j4',
+    'j5',
+    'j6',
+    'j7',
+  ]);
 });
 
 // §2.4: paths and executables enter only from a native file dialog owned by the shell, and each

@@ -59,8 +59,11 @@ fn the_sync_and_job_vocabularies_are_disjoint() {
         jobs.len(),
         syncs.len()
     );
-    assert_eq!(jobs.len(), 7, "the job vocabulary");
-    assert_eq!(syncs.len(), 3, "the sync task vocabulary");
+    // Floors, not totals: a zero on either side means the walk found nothing and proved nothing,
+    // which is what this criterion is about. The *sizes* are not — §29 adds a real eighth job and
+    // §32 adds a fourth sync task, and neither touches the disjointness below (R132/F16).
+    assert!(!jobs.is_empty(), "the job vocabulary");
+    assert!(!syncs.is_empty(), "the sync task vocabulary");
     for sync in &syncs {
         assert!(
             !jobs.contains(sync),

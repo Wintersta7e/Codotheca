@@ -56,13 +56,22 @@ impl EventSink for RecordingEvents {
 
 /// R52, asserted mechanically rather than remembered: the install queue is `core::install`'s own,
 /// so no `JobKind` variant was added for it and R34's three-place slug agreement is undisturbed.
+///
+/// **The property is a set property and is stated as one.** It asserted `ALL.len() == 7`, which
+/// goes red for any eighth job whether or not that job is an install — §29's `j7` is not — and
+/// which would have read as an install defect (R132/F16).
 #[test]
 fn the_install_queue_added_no_job_kind() {
-    assert_eq!(
-        JobKind::ALL.len(),
-        7,
-        "an install is not a job: §24.3e's queue is core::install's, not the scheduler's"
-    );
+    let slugs: Vec<&'static str> = JobKind::ALL.iter().map(|k| k.slug()).collect();
+    eprintln!("job slugs checked for an install: {slugs:?}");
+    assert!(!slugs.is_empty(), "the job vocabulary is empty");
+    for kind in JobKind::ALL {
+        let named = format!("{kind:?}").to_lowercase();
+        assert!(
+            !named.contains("install") && !kind.slug().contains("install"),
+            "{named} names an install: §24.3e's queue is core::install's, not the scheduler's"
+        );
+    }
 }
 
 fn request(project: i64, root: i64, seed: &str) -> InstallRequest {

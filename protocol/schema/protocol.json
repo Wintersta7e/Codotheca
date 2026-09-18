@@ -787,7 +787,7 @@
       "fields": { "collection": "Collection?", "refusedBecause": "CollectionRefusal?" }
     },
 
-    "Job": { "kind": "enum", "variants": ["j0", "j1", "j1_5", "j2", "j3", "j4", "j5", "j6"] },
+    "Job": { "kind": "enum", "variants": ["j0", "j1", "j1_5", "j2", "j3", "j4", "j5", "j6", "j7"] },
     "DegradedReason": {
       "kind": "enum",
       "variants": [
