@@ -341,3 +341,66 @@ describe('the card carries no hex and no roast', () => {
     for (const banned of ['roast', 'Roast', 'ROAST']) expect(css).not.toContain(banned);
   });
 });
+
+/**
+ * [p2] §24.3d's control, resolved on real elements. It is the same object in the rail and on a
+ * blueprint tile, so what is asserted here is that it has a shape at all and that the chooser
+ * that stands in its place does too — a class with no rule renders as unstyled text.
+ */
+describe('§24.3d: the install control and its chooser are styled', () => {
+  function mount(markup: string): (selector: string) => CSSStyleDeclaration {
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.append(style);
+    document.body.innerHTML = markup;
+    return (selector: string): CSSStyleDeclaration => {
+      const node = document.querySelector(selector);
+      // Without this every assertion below reads a default and passes against nothing.
+      if (node === null) throw new Error(`fixture has no ${selector}`);
+      return getComputedStyle(node);
+    };
+  }
+
+  it('gives the control a column and its button a height', () => {
+    const at = mount(`
+      <div class="cdt-install-control">
+        <p class="cdt-install-control__destination"></p>
+        <button></button>
+      </div>`);
+    expect(at('.cdt-install-control').display).toBe('flex');
+    expect(at('.cdt-install-control').flexDirection).toBe('column');
+    expect(at('.cdt-install-control button').height).toBe('30px');
+  });
+
+  /**
+   * A refusal's upgrade offer does not take the primary fill: it stands beside a sentence saying
+   * why the install cannot start, and a filled button there reads as the install itself.
+   */
+  it('drops the primary fill on a refusal', () => {
+    const at = mount(`
+      <div class="cdt-install-control" data-refused="private_needs_upgrade">
+        <p class="cdt-install-control__reason"></p>
+        <button></button>
+      </div>
+      <div class="cdt-install-control"><button id="plain"></button></div>`);
+    expect(at('[data-refused] button').background).not.toBe(at('#plain').background);
+    expect(at('[data-refused] button').borderTopWidth).toBe('1px');
+  });
+
+  it('styles the chooser that stands where the control would', () => {
+    const at = mount(`
+      <div class="cdt-root-chooser">
+        <button aria-pressed="false"></button>
+        <button class="cdt-root-chooser__add"></button>
+      </div>`);
+    expect(at('.cdt-root-chooser').flexDirection).toBe('column');
+    expect(at('.cdt-root-chooser button').height).toBe('26px');
+    expect(at('.cdt-root-chooser button').borderTopStyle).toBe('solid');
+  });
+
+  it("keeps the tile's slot below the card body rather than over the art", () => {
+    const at = mount('<div class="cdt-card-install"><div></div></div>');
+    expect(at('.cdt-card-install').display).toBe('flex');
+    expect(at('.cdt-card-install').marginTop).toBe('auto');
+  });
+});

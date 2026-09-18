@@ -171,3 +171,84 @@ describe('what the page may not paint', () => {
     expect(getComputedStyle(lane).alignSelf).toBe('flex-end');
   });
 });
+
+/**
+ * [p2] §24.8's block, resolved on real elements rather than matched as text. A rule that selects
+ * nothing resolves to the default and every assertion about it passes against nothing, which is
+ * why each `at()` below throws when the fixture does not carry the node.
+ */
+describe('the removal block is styled, and states its disposition without colour', () => {
+  const REMOVAL_FIXTURE = `
+    <div class="cp-rail">
+      <div class="cp-uninstall" data-state="blocked">
+        <p class="cp-uninstall__heading"></p>
+        <ul class="cp-uninstall__reasons"><li></li></ul>
+        <p class="cp-uninstall__fate"></p>
+        <button class="cp-uninstall__go"></button>
+      </div>
+      <div class="cp-uninstall" data-state="closed">
+        <p class="cp-uninstall__note"></p>
+        <button class="cp-uninstall__open"></button>
+      </div>
+    </div>`;
+
+  function mount(): (selector: string) => CSSStyleDeclaration {
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.append(style);
+    document.body.innerHTML = REMOVAL_FIXTURE;
+    return (selector: string): CSSStyleDeclaration => {
+      const node = document.querySelector(selector);
+      if (node === null) throw new Error(`fixture has no ${selector}`);
+      return getComputedStyle(node);
+    };
+  }
+
+  it('gives the block a surface, a padded box and an edge of its own', () => {
+    const at = mount();
+    const block = at('.cp-uninstall[data-state="blocked"]');
+    expect(block.display).toBe('flex');
+    expect(block.padding).toBe('9px 11px 10px');
+    // Longhands resolve here where the `border` shorthand would not: this DOM drops a shorthand
+    // carrying `var()` whole, and an assertion on the dropped form reads the initial value and
+    // passes against a rule that is not there.
+    expect(block.borderTopWidth).toBe('1px');
+    expect(block.borderTopStyle).toBe('solid');
+  });
+
+  it('renders the opener and the removal as one shape, so the second is not a new control', () => {
+    const at = mount();
+    const open = at('.cp-uninstall__open');
+    const go = at('.cp-uninstall__go');
+    expect(open.height).toBe('28px');
+    expect(open.height).toBe(go.height);
+    expect(open.background).toBe(go.background);
+    expect(open.borderTopWidth).toBe(go.borderTopWidth);
+    // §24.5 puts the removal where the eye does not land first, so it does not take the fill
+    // the page's primary control takes. Compared against that control, never against a literal.
+    document.body.innerHTML += '<button class="cp-cta"></button>';
+    const cta = getComputedStyle(document.querySelector('.cp-cta') as Element);
+    expect(go.background).not.toBe(cta.background);
+  });
+
+  /**
+   * §24.8: `unknown` renders distinctly from `blocked`, and neither is an error state. Compared
+   * as resolved values, never as stylesheet text — a rule whose selector stopped matching would
+   * still read correct in the source.
+   */
+  it('distinguishes unknown from blocked, and paints neither red', () => {
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.append(style);
+    document.body.innerHTML = `
+      <div class="cp-uninstall" id="u" data-state="unknown"></div>
+      <div class="cp-uninstall" id="b" data-state="blocked"></div>`;
+    const unknown = getComputedStyle(document.querySelector('#u') as Element);
+    const blocked = getComputedStyle(document.querySelector('#b') as Element);
+    expect(unknown.borderLeftWidth).not.toBe(blocked.borderLeftWidth);
+    for (const resolved of [unknown, blocked]) {
+      expect(resolved.borderLeftColor).not.toMatch(/\bred\b/i);
+      expect(resolved.color).not.toMatch(/\bred\b/i);
+    }
+  });
+});

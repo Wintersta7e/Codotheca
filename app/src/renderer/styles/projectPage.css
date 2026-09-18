@@ -1133,3 +1133,99 @@
   font-size: 12px;
   color: var(--text-2);
 }
+
+/* --- [p2] §24.8 Uninstall --------------------------------------------------------------- *
+ *
+ * One slot, below the stats. A removal is not the loudest thing on the rail: no signal fill, no
+ * warning colour, no icon. The block states what was found and then either offers the removal or
+ * does not exist as an affordance at all.
+ */
+/* Longhands, not the `border` shorthand: a shorthand carrying `var()` is dropped whole by the
+   test DOM, so every assertion about it would read a default and pass against nothing. The
+   width and style resolve; the colour is still a token. */
+.cp-uninstall {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 11px 10px;
+  background: var(--surface-2);
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--line-2);
+}
+
+.cp-uninstall__note {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+/* The disposition, in the block's voice. `--text-2` because it is the sentence the decision
+   rests on, and §24.8's three dispositions are three sentences rather than three colours. */
+.cp-uninstall__heading {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+/* Every blocker found, never the first one. A list, because "and" between five reasons reads as
+   one reason with qualifications. */
+.cp-uninstall__reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 11px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+
+/* Said before the click (§24.7F). */
+.cp-uninstall__fate {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+
+/* The opener and the removal share a shape, because the second is the consequence of the first
+   and a removal dressed differently from what led to it reads as a different control. */
+.cp-uninstall__open,
+.cp-uninstall__go {
+  height: 28px;
+  background: transparent;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--line-5);
+  color: var(--text-1);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: background-color 140ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+.cp-uninstall__open:hover,
+.cp-uninstall__open:focus-visible,
+.cp-uninstall__go:hover,
+.cp-uninstall__go:focus-visible {
+  background: var(--surface-5);
+}
+
+/* `unknown` is a distinct disposition from `blocked` and renders distinctly: the edge states
+   that the block was not answered, where `blocked` was. Neither is red — nothing here failed. */
+.cp-uninstall[data-state='unknown'] {
+  border-color: var(--line-4);
+}
+.cp-uninstall[data-state='blocked'] {
+  border-left-width: 2px;
+  border-left-style: solid;
+  border-left-color: var(--line-5);
+}

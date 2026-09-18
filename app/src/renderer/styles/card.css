@@ -547,3 +547,114 @@
   letter-spacing: 0.14em;
   color: var(--sig);
 }
+
+/* --- [p2] §24.3d Install -------------------------------------------------------------- *
+ *
+ * Offered in exactly two slots and styled once: the blueprint tile's action slot and the
+ * project page's left rail. The control is the same object in both, so it sizes to its slot
+ * rather than carrying a width of its own.
+ */
+.cdt-install-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+/* The composed display form, built by the core. Truncated rather than wrapped: a destination
+   that grows the slot moves the button under the pointer. */
+.cdt-install-control__destination {
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A refusal is a reply, so it reads as a sentence and not as an error: body type, no rule, no
+   icon. `--text-2` because it decides whether the user acts. */
+.cdt-install-control__reason {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.cdt-install-control button {
+  height: 30px;
+  border: 1px solid transparent;
+  background: var(--sig);
+  color: var(--sig-ink);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: background-color 140ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+.cdt-install-control button:hover {
+  background: var(--sig-hover);
+}
+
+/* The upgrade is an offer beside a refusal, never the refusal's own affordance, so it does not
+   take the primary fill. */
+.cdt-install-control[data-refused] button {
+  background: transparent;
+  border-color: var(--line-5);
+  color: var(--text-1);
+}
+.cdt-install-control[data-refused] button:hover {
+  background: var(--surface-5);
+}
+
+/* §24.3a's chooser. It stands where the control would, because until a destination exists there
+   is nothing to preview and the choice is the offer. */
+.cdt-root-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+/* Longhands, not the `border` shorthand: a shorthand carrying `var()` is dropped whole by the
+   test DOM, so an assertion about it would read the initial value and pass against nothing. */
+.cdt-root-chooser button {
+  height: 26px;
+  padding: 0 9px;
+  overflow: hidden;
+  background: transparent;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--line-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 140ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+.cdt-root-chooser button:hover {
+  background: var(--surface-4);
+}
+.cdt-root-chooser button[aria-pressed='true'] {
+  border-color: var(--sig-edge);
+  color: var(--text-1);
+}
+.cdt-root-chooser__add {
+  color: var(--text-3);
+}
+
+/* The tile's slot. The card body is Play; on a blueprint there is nothing to play, so the slot
+   sits at the foot of the body rather than over the art. */
+.cdt-card-install {
+  display: flex;
+  margin-top: auto;
+  padding-top: 8px;
+}
