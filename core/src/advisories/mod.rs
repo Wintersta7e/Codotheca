@@ -10,6 +10,8 @@
 //! rather than one item keyed `deps`. The health arithmetic an `unknown` verdict is excluded from
 //! is §30's; what this module owns is the input state.
 
+pub mod store;
+
 use crate::protocol::{DependencyReadState, Ecosystem};
 
 /// An inherent const on a generated enum: legal because both are in this crate.

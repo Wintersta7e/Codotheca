@@ -471,9 +471,8 @@ impl SyncRunner {
             // one, always — never whichever account happens to be connected.
             SyncTask::Advisories => None,
         };
-        let row = read_budget(guard.conn(), account, DEFAULT_RESOURCE)
-            .ok()
-            .flatten();
+        let resource = resource_for(guard.conn(), task);
+        let row = read_budget(guard.conn(), account, &resource).ok().flatten();
         may_spend(row.as_ref(), is_on_demand(task), now)
     }
 
@@ -763,6 +762,28 @@ fn notice_for(outcome: &SyncOutcome) -> Option<SyncNotice> {
             eprintln!("sync: the forge rejected a request this build formed: {status}");
             None
         }
+    }
+}
+
+/// The pool to read **before issuing**, for one task.
+///
+/// [p3] §32.3's second defect. [`DEFAULT_RESOURCE`]'s own doc comment concedes the guess only
+/// because *"an unobserved pool answers `Unknown`, which spends, so a wrong guess here costs one
+/// request and corrects itself"* — true for an **on-demand** task. For a scheduled sweep,
+/// Unknown-spends is **no brake at all** until the source refuses, which is the direction that
+/// rate-limits the IP for every other unauthenticated call the app makes.
+///
+/// So the advisory sweep is keyed by the resource **its own last mirrored response named**, and
+/// `DEFAULT_RESOURCE` is the fallback only until one has. Every other task keeps the constant:
+/// each of phase 2's six reads is an authenticated REST call and `core` is what they all answer
+/// from.
+fn resource_for(conn: &rusqlite::Connection, task: &SyncTask) -> String {
+    match task {
+        SyncTask::Advisories => crate::advisories::store::last_settled_resource(conn)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| DEFAULT_RESOURCE.to_owned()),
+        _ => DEFAULT_RESOURCE.to_owned(),
     }
 }
 

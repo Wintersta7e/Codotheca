@@ -301,6 +301,119 @@ fn disconnecting_an_account_leaves_the_process_wide_task_alone() {
     );
 }
 
+/// Seed a settled sweep that named `resource`, and an exhausted pool under that name.
+fn seed_sweep_and_pool(fixture: &Fixture, resource: Option<&str>, remaining: i64, reset: i64) {
+    let mut guard = fixture.index.lock().expect("index");
+    guard
+        .with_tx(|tx| {
+            tx.execute(
+                "INSERT INTO advisory_sweep (started_at, settled_at, outcome, resource, complete)
+                 VALUES (?1, ?1, 'done', ?2, 1)",
+                rusqlite::params![NOW, resource],
+            )?;
+            if let Some(resource) = resource {
+                tx.execute(
+                    "INSERT INTO sync_budget
+                       (account_id, resource, remaining, limit_, reset_at, observed_at)
+                     VALUES (NULL, ?1, ?2, 60, ?3, ?4)",
+                    rusqlite::params![resource, remaining, reset, NOW],
+                )?;
+            }
+            Ok(())
+        })
+        .expect("seed the sweep and its pool");
+}
+
+fn queue_sweep(fixture: &Fixture) {
+    let mut guard = fixture.index.lock().expect("index");
+    guard
+        .with_tx(|tx| {
+            put(
+                tx,
+                &SyncTaskStateRow::queued(SyncTaskKind::Advisories, None, NOW),
+            )
+        })
+        .expect("queue the sweep");
+}
+
+fn run_until_settled(fixture: &mut Fixture) -> SyncTaskState {
+    let runner = SyncRunner::new(
+        Arc::clone(&fixture.index),
+        fixture.take_deps(),
+        Arc::new(Quiet),
+    );
+    runner.start();
+    until("the sweep to leave queued", || {
+        !matches!(
+            state_of(&fixture.index, SyncTaskKind::Advisories, None),
+            Some(SyncTaskState::Queued | SyncTaskState::Running) | None
+        )
+    });
+    runner.request_stop();
+    runner.join();
+    state_of(&fixture.index, SyncTaskKind::Advisories, None).expect("a settled row")
+}
+
+/// **AC-P3-32-3.** The pre-issue budget read is keyed by the resource **the sweep's own last
+/// response named**, not by a process-wide constant.
+///
+/// With the endpoint answering from a pool this build did not guess, a constant key looks up a
+/// pool the sweep never writes: `may_spend` answers `Unknown` for ever, `Unknown` spends, and
+/// every request issues **with no brake at all** until the source refuses.
+#[test]
+fn the_sweep_reads_the_pool_its_own_response_named() {
+    let mut fixture = fixture();
+    seed_sweep_and_pool(&fixture, Some("graphql"), 0, NOW + 900);
+    queue_sweep(&fixture);
+    assert_eq!(run_until_settled(&mut fixture), SyncTaskState::Parked);
+}
+
+/// Until one response has named a resource, the fallback is `core`, `may_spend` answers `Unknown`
+/// and the task proceeds. **One request, self-correcting** — which is the whole of what a
+/// constant may be relied on for.
+#[test]
+fn an_unnamed_pool_spends_once_rather_than_parking_for_ever() {
+    let mut fixture = fixture();
+    // A sweep that settled but named no resource: nothing was mirrored, so there is no pool and
+    // no brake, and a synthetic key would invent one.
+    seed_sweep_and_pool(&fixture, None, 0, NOW + 900);
+    assert_eq!(
+        {
+            let guard = fixture.index.lock().expect("index");
+            codotheca_core::advisories::store::last_settled_resource(guard.conn()).expect("read")
+        },
+        None,
+        "a sweep that named no resource leaves the column NULL"
+    );
+    queue_sweep(&fixture);
+    assert_eq!(run_until_settled(&mut fixture), SyncTaskState::Ok);
+}
+
+/// The sweep draws on the **NULL-account per-IP** pool, always. A per-account row at zero for the
+/// same resource must not brake it: that is somebody else's allowance.
+#[test]
+fn the_sweep_reads_the_per_ip_pool_and_never_an_accounts() {
+    let mut fixture = fixture();
+    let account = fixture.account;
+    seed_sweep_and_pool(&fixture, Some("graphql"), 5000, NOW + 900);
+    {
+        let mut guard = fixture.index.lock().expect("index");
+        guard
+            .with_tx(|tx| {
+                tx.execute(
+                    "INSERT INTO sync_budget
+                       (account_id, resource, remaining, limit_, reset_at, observed_at)
+                     VALUES (?1, 'graphql', 0, 5000, ?2, ?3)",
+                    rusqlite::params![account.0, NOW + 900, NOW],
+                )?;
+                Ok(())
+            })
+            .expect("seed the account pool");
+    }
+    queue_sweep(&fixture);
+    assert_eq!(run_until_settled(&mut fixture), SyncTaskState::Ok);
+}
+
 /// The sweep is **scheduled**, not on-demand: §21.5's allowance belongs to what the user is
 /// looking at. `is_on_demand` compiles unchanged for the new variant, which is exactly why it
 /// needs an assertion rather than an assumption.
