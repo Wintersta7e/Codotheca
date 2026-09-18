@@ -103,13 +103,21 @@ pub const MIGRATIONS: &[Migration] = &[
         // `job`'s CHECK for 'j7' is a create-copy-drop-rename.
         rebuilds_a_table: true,
     },
+    Migration {
+        version: 13,
+        name: "debt",
+        sql: include_str!("../../migrations/0013_debt.sql"),
+        // §28.8: `xp_events` is STRICT and SQLite has no ALTER CONSTRAINT, so widening `kind`'s
+        // CHECK for 'debt_day' and the track equivalence with it is a create-copy-drop-rename.
+        rebuilds_a_table: true,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 12;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 13;
 
 pub fn schema_version(conn: &Connection) -> Result<u32, IndexError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;

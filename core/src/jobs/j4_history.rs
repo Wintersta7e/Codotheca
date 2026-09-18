@@ -169,7 +169,17 @@ pub fn commit_days(
         // No lineage yet means no stable key; the rows are written when the roots resolve.
         return Ok(0);
     };
-    let subject = format!("{lineage}:{}", remote_key.unwrap_or(""));
+    // §28.4a: **one subject key, not two.** This rendered `{lineage}:{remote}` while
+    // `ProjectSubject::to_key()` — the sidecar's writer, and `debt_day`'s — rendered
+    // `lineage:{k}|remote:{r}` for the same logical subject, so two ledgers keyed one project two
+    // ways. It does **not** switch to `subject_for_project`: that returns a `Path` subject for a
+    // project with no lineage, and the early return above is what makes §1.7's `commit_day` key
+    // safe. `dedupe_key` is a different string and is deliberately unchanged.
+    let subject = crate::index::subject::ProjectSubject::Lineage {
+        lineage_key: lineage.to_owned(),
+        remote_key: remote_key.map(str::to_owned),
+    }
+    .to_key();
     let mut stmt = tx.prepare(
         "INSERT INTO xp_events
             (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key, track, meta)
