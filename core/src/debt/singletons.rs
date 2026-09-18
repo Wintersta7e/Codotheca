@@ -263,13 +263,16 @@ const TESTS_ARM: PresenceArm = PresenceArm {
 };
 
 /// The exhaustive list; `.len()` is a tripwire on its own growth.
-pub const SINGLETON_ARMS: [&dyn SingletonArm; 6] = [
+pub const SINGLETON_ARMS: [&dyn SingletonArm; 7] = [
     &README_ARM,
     &LICENSE_ARM,
     &TESTS_ARM,
     &NoReleaseArm,
     &UnpushedArm,
     &CiRedArm,
+    // Last, and the order is load-bearing: its conjunct counts the other sources' **stored** open
+    // items, so it must read a set this same transaction has already settled.
+    &super::abandoned::AbandonedArm,
 ];
 
 /// Run every arm for one project, in the caller's transaction.

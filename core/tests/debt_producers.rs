@@ -7,6 +7,7 @@
     clippy::indexing_slicing
 )]
 
+use codotheca_core::debt::abandoned::abandoned_conjunct;
 use codotheca_core::debt::markers::{build_items, project_ordinals};
 use codotheca_core::debt::singletons::evaluate_singletons;
 use codotheca_core::debt::store::{SqliteDebtStore, SweepEffect};
@@ -755,5 +756,209 @@ fn the_debt_module_reads_peek_cache_nowhere() {
     assert!(
         offenders.is_empty(),
         "the debt module reads peek_cache: {offenders:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// `abandoned_with_debt` — the conjunct that must not satisfy itself
+// ---------------------------------------------------------------------------------------------
+
+fn set_abandoned(conn: &rusqlite::Connection, project: i64, abandoned: bool) {
+    conn.execute(
+        "UPDATE project SET condition_signal = ?2 WHERE id = ?1",
+        rusqlite::params![project, if abandoned { "abandoned" } else { "idle" }],
+    )
+    .unwrap();
+}
+
+/// Open one item of `source` with the given scoring, outside the evaluator, so the conjunct is
+/// tested against a stored set rather than against whatever the arms happened to write.
+fn plant_item(conn: &rusqlite::Connection, project: i64, source: &str, scoring: &str) {
+    conn.execute(
+        "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state, scoring,
+                                first_seen_at, last_seen_at)
+         VALUES (?1, 'lineage:abc123|remote:', ?2, 'planted', 'open', ?3, 1, 1)",
+        rusqlite::params![project, source, scoring],
+    )
+    .unwrap();
+}
+
+/// **`AC-P3-28-13`.** `abandoned_with_debt` does not satisfy its own predicate. A project whose
+/// **only** open item is `abandoned_with_debt` has that item closed by the next sweep, and its
+/// open-item set becomes **empty** — asserted over the item set and not over the layer.
+///
+/// A predicate that counted its own item would be self-satisfying: the item could never close,
+/// and **no abandoned project could ever reach Done** — exactly the proof A2 was made to
+/// preserve, re-broken one level down.
+#[test]
+fn ac_p3_28_13_the_conjunct_does_not_satisfy_itself() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    set_abandoned(&conn, p, true);
+    plant_item(&conn, p, "todo_marker", "scored");
+
+    // One scored item of another source, so the conjunct lights and the item opens.
+    let tx = conn.transaction().unwrap();
+    assert!(abandoned_conjunct(&tx, ProjectId(p)).unwrap());
+    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 1);
+
+    // The other item is fixed. Now the only open item is `abandoned_with_debt` itself.
+    conn.execute(
+        "DELETE FROM debt_item WHERE project_id = ?1 AND source = 'todo_marker'",
+        [p],
+    )
+    .unwrap();
+
+    let tx = conn.transaction().unwrap();
+    assert!(
+        !abandoned_conjunct(&tx, ProjectId(p)).unwrap(),
+        "the conjunct counted its own item"
+    );
+    evaluate_singletons(&tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+
+    let open: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM debt_item WHERE project_id = ?1 AND state = 'open'",
+            [p],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        open, 0,
+        "an abandoned project could never reach an empty set"
+    );
+}
+
+/// **R122.** The conjunct counts **`scored` items only**. An unfixable advisory is not
+/// outstanding work, and saying so is a false accusation of the kind A7 forbids.
+#[test]
+fn a_shown_only_item_does_not_light_the_conjunct() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    set_abandoned(&conn, p, true);
+    plant_item(&conn, p, "dependency_advisory", "shown_only");
+
+    let tx = conn.transaction().unwrap();
+    assert!(
+        !abandoned_conjunct(&tx, ProjectId(p)).unwrap(),
+        "a shown_only item was counted as outstanding work"
+    );
+    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 0);
+
+    // The same project with one scored item **does** light it.
+    plant_item(&conn, p, "todo_marker", "scored");
+    let tx = conn.transaction().unwrap();
+    assert!(abandoned_conjunct(&tx, ProjectId(p)).unwrap());
+    evaluate_singletons(&tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 1);
+}
+
+/// **Closability is carried by the other conjunct.** The item closes when `condition_signal`
+/// leaves `abandoned`, which is an act — and that is what makes this source pass §28.3's
+/// no-elapsed-time test, because of its second conjunct rather than in spite of it.
+#[test]
+fn leaving_the_abandoned_band_closes_the_item() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    set_abandoned(&conn, p, true);
+    plant_item(&conn, p, "todo_marker", "scored");
+
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 1);
+
+    set_abandoned(&conn, p, false);
+    let tx = conn.transaction().unwrap();
+    assert!(!abandoned_conjunct(&tx, ProjectId(p)).unwrap());
+    evaluate_singletons(&tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 0);
+}
+
+/// Its item is `shown_only` by registry default, its `basis` is NULL and its `location_id` is
+/// NULL: it is derived from other stored observations and observes nothing itself, so paying XP
+/// for its closure would be paying for **activity**.
+#[test]
+fn the_abandoned_item_is_shown_only_and_anchored_nowhere() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    set_abandoned(&conn, p, true);
+    plant_item(&conn, p, "todo_marker", "scored");
+
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+
+    let (scoring, basis, anchor): (String, Option<String>, Option<i64>) = conn
+        .query_row(
+            "SELECT scoring, basis, last_seen_location_id FROM debt_item
+              WHERE project_id = ?1 AND source = 'abandoned_with_debt'",
+            [p],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(scoring, "shown_only");
+    assert_eq!(
+        basis, None,
+        "a source that observes nothing invented a basis"
+    );
+    assert_eq!(anchor, None);
+
+    let sweep_basis: Option<String> = conn
+        .query_row(
+            "SELECT basis FROM debt_sweep WHERE project_id = ?1 AND source = 'abandoned_with_debt'",
+            [p],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(sweep_basis, None);
+}
+
+/// **The two halves of the conjunct are two rulings, and only one of them is observable through
+/// the default item set.** `abandoned_with_debt` is `shown_only` by registry default, so R122's
+/// `scoring = 'scored'` narrowing *already* filters this source's own item and the
+/// `source <> 'abandoned_with_debt'` exclusion looks redundant against it.
+///
+/// **It is not redundant, and this is the case that shows it.** `scoring` is overridable per item
+/// by a producer (§32 does exactly that), so an `abandoned_with_debt` item stored `scored` is a
+/// representable state — and under it a conjunct without the exclusion is self-satisfying: the
+/// item could never close, and **no abandoned project could ever reach Done**.
+#[test]
+fn the_self_exclusion_holds_even_for_a_scored_abandoned_item() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    set_abandoned(&conn, p, true);
+    plant_item(&conn, p, "abandoned_with_debt", "scored");
+
+    let tx = conn.transaction().unwrap();
+    assert!(
+        !abandoned_conjunct(&tx, ProjectId(p)).unwrap(),
+        "the conjunct counted its own item, so it can never close"
+    );
+    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+
+    let open: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM debt_item WHERE project_id = ?1 AND state = 'open'",
+            [p],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        open, 0,
+        "an abandoned project could never reach an empty set"
     );
 }
