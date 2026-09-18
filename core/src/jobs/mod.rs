@@ -11,6 +11,7 @@ pub mod j2_status;
 pub mod j3_inventory;
 pub mod j4_history;
 pub mod j6_content;
+pub mod j7_markers;
 pub mod markers;
 pub mod presence;
 pub mod queue;
@@ -537,15 +538,33 @@ pub fn run_one(
             })?;
             Ok(JobOutcome::Done)
         }
-        // The variant exists so the vocabulary, the schema and the column agree; **nothing
-        // enqueues it in this commit** — `next_jobs_after` treats it as a leaf and no visibility
-        // site names it — so this arm is unreachable until `run_j7` and its enqueue sites land.
-        JobKind::J7Markers => Ok(JobOutcome::Done),
+        // §29.6: the cursor is durable, so it is read here rather than carried on the work item —
+        // a chunked job resumes after a restart, and the queue is not durable.
+        JobKind::J7Markers => {
+            let cursor = read(index, |conn| {
+                Ok(state::load(conn, job.project_id)?
+                    .into_iter()
+                    .find(|row| row.job == JobKind::J7Markers)
+                    .and_then(|row| row.cursor))
+            })?;
+            j7_markers::run_j7(
+                index,
+                git,
+                &repo,
+                &ctx,
+                j7_markers::ScanRun {
+                    project: job.project_id,
+                    location: job.location_id,
+                    cursor: cursor.as_deref(),
+                    now,
+                },
+            )
+        }
     }
 }
 
 /// Take the lock, read, release. Never called with a git invocation inside `f`.
-fn read<T>(
+pub(crate) fn read<T>(
     index: &std::sync::Mutex<crate::index::Index>,
     f: impl FnOnce(&rusqlite::Connection) -> Result<T, crate::index::IndexError>,
 ) -> Result<T, JobError> {
@@ -577,7 +596,7 @@ fn identity_set(
 }
 
 /// Take the lock, write in one transaction, release.
-fn write<T>(
+pub(crate) fn write<T>(
     index: &std::sync::Mutex<crate::index::Index>,
     f: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, crate::index::IndexError>,
 ) -> Result<T, JobError> {

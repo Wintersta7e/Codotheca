@@ -105,21 +105,43 @@ pub fn head_tree(
     Ok(parse_ls_tree_z(&out.stdout))
 }
 
-/// Read `oids` through one `cat-file --batch`, keeping each body up to `byte_cap`.
+/// One `cat-file --batch` invocation's result.
+///
+/// `covered` is what makes the batch resumable: the caller cannot tell a body the budget refused
+/// from one git answered `missing` for, and it must not stall its cursor on either.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BlobBatch {
+    /// One entry per **blob** the batch kept a verdict for, in request order.
+    pub reads: Vec<BlobRead>,
+    /// How many leading entries of the request list were answered before `budget_bytes` stopped
+    /// it. Equal to the request length when the budget was never reached.
+    pub covered: usize,
+}
+
+/// Read `oids` through one `cat-file --batch`, keeping each body up to `byte_cap` and stopping at
+/// `budget_bytes` of kept body across the whole batch.
 ///
 /// An oid git answers `missing` for contributes nothing, exactly as `tracked_inventory` already
 /// handles it — but its header line must still be consumed, or the reader falls out of step with
 /// the stream and every later body is attributed to the wrong object.
+///
+/// **Past the budget the stream is drained and discarded rather than abandoned.** Returning early
+/// would leave git writing into a pipe nobody reads, which is the deadlock this module exists to
+/// avoid — the cost is one batch of transfer, and the memory ceiling is what the budget is for.
 pub fn read_blobs(
     exec: &GitExec,
     repo: &RepoHandle,
     oids: &[String],
     byte_cap: u64,
+    budget_bytes: u64,
     limits: RunLimits,
     cancel: &CancelToken,
-) -> GitResult<Vec<BlobRead>> {
+) -> GitResult<BlobBatch> {
     if oids.is_empty() {
-        return Ok(Vec::new());
+        return Ok(BlobBatch {
+            reads: Vec::new(),
+            covered: 0,
+        });
     }
     let queries: Vec<String> = oids.to_vec();
 
@@ -136,8 +158,11 @@ pub fn read_blobs(
             stdin.flush()
         },
         move |stdout: &mut dyn BufRead| {
-            let mut out = Vec::new();
+            let mut reads = Vec::new();
             let mut header = String::new();
+            let mut kept_bytes = 0_u64;
+            let mut covered = 0_usize;
+            let mut spent = false;
             loop {
                 header.clear();
                 if stdout.read_line(&mut header)? == 0 {
@@ -147,24 +172,39 @@ pub fn read_blobs(
                 let (Some(oid), Some(kind), Some(size)) =
                     (parts.next(), parts.next(), parts.next())
                 else {
-                    continue; // "<oid> missing" has two fields and carries no body
+                    // "<oid> missing" has two fields and carries no body. It is still one of the
+                    // requested oids answered, so the cursor may pass it.
+                    if !spent {
+                        covered += 1;
+                    }
+                    continue;
                 };
                 let Ok(size) = size.parse::<u64>() else {
                     continue;
                 };
                 // The body follows, then one LF, whatever the type is. Both are consumed here
                 // even for a type this caller keeps nothing of.
-                let keep = kind == "blob" && size <= byte_cap;
+                let keep = !spent && kind == "blob" && size <= byte_cap;
                 let body = read_body(stdout, size, keep)?;
+                if spent {
+                    continue;
+                }
+                covered += 1;
                 if kind == "blob" {
-                    out.push(BlobRead {
+                    reads.push(BlobRead {
                         oid: oid.to_owned(),
                         size_bytes: size,
                         bytes: body,
                     });
+                    if keep {
+                        kept_bytes = kept_bytes.saturating_add(size);
+                    }
+                }
+                if kept_bytes >= budget_bytes {
+                    spent = true;
                 }
             }
-            Ok(out)
+            Ok(BlobBatch { reads, covered })
         },
     )
 }

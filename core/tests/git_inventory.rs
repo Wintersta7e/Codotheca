@@ -365,6 +365,7 @@ fn read_blobs_drains_a_batch_far_larger_than_a_pipe_buffer() {
             &handle,
             &oids,
             1024 * 1024,
+            u64::MAX,
             RunLimits::none(),
             &CancelToken::new(),
         );
@@ -373,7 +374,8 @@ fn read_blobs_drains_a_batch_far_larger_than_a_pipe_buffer() {
     let reads = rx
         .recv_timeout(Duration::from_secs(60))
         .expect("cat-file --batch deadlocked")
-        .unwrap();
+        .unwrap()
+        .reads;
     eprintln!("read {} blobs", reads.len());
     // One answer per request line. De-duplicating the oid list is the caller's, because only the
     // caller knows which of two paths sharing an object it still has to attribute a finding to.
@@ -401,15 +403,17 @@ fn a_blob_over_the_cap_keeps_its_size_and_loses_its_body() {
     .unwrap();
     let oids: Vec<String> = entries.iter().map(|e| e.oid.clone()).collect();
 
-    let reads = read_blobs(
+    let batch = read_blobs(
         &repo.exec(),
         &repo.handle(),
         &oids,
         2048,
+        u64::MAX,
         RunLimits::none(),
         &CancelToken::new(),
     )
     .unwrap();
+    let reads = batch.reads;
     eprintln!("read {} blobs at a 2048-byte cap", reads.len());
     assert_eq!(reads.len(), 2);
     let big = reads.iter().find(|r| r.size_bytes == 4096).unwrap();
@@ -435,16 +439,24 @@ fn a_missing_oid_contributes_nothing_and_does_not_desynchronise_the_reader() {
     let real = entries[0].oid.clone();
     let oids = vec!["0".repeat(40), real.clone(), "1".repeat(40)];
 
-    let reads = read_blobs(
+    let batch = read_blobs(
         &repo.exec(),
         &repo.handle(),
         &oids,
         1024 * 1024,
+        u64::MAX,
         RunLimits::none(),
         &CancelToken::new(),
     )
     .unwrap();
-    eprintln!("asked for {} oids, read {}", oids.len(), reads.len());
+    let reads = batch.reads;
+    eprintln!(
+        "asked for {} oids, answered {}, read {}",
+        oids.len(),
+        batch.covered,
+        reads.len()
+    );
+    assert_eq!(batch.covered, oids.len(), "a missing oid stalled the batch");
     assert_eq!(reads.len(), 1);
     assert_eq!(reads[0].oid, real);
     assert_eq!(reads[0].bytes.as_deref(), Some(b"fn a() {}\n".as_slice()));

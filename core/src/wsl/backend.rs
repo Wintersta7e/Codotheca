@@ -6,7 +6,7 @@
 //! not be reached — and they map to different codes on purpose.
 
 use crate::git::{
-    Authorship, BlobRead, CommitSubject, Divergence, GitBackend, GitError, GitResult, GitVersion,
+    Authorship, BlobBatch, CommitSubject, Divergence, GitBackend, GitError, GitResult, GitVersion,
     JobContext, RefState, RepoFacts, RepoHandle, RootCommit, StatusOptions, StoreKey,
     TrackedInventory, TreeEntry, UntrackedMode, WorktreeStatus,
 };
@@ -223,13 +223,15 @@ impl GitBackend for WslGitBackend {
         repo: &RepoHandle,
         oids: &[String],
         byte_cap: u64,
+        budget_bytes: u64,
         ctx: &JobContext<'_>,
-    ) -> GitResult<Vec<BlobRead>> {
+    ) -> GitResult<BlobBatch> {
         self.op(
             repo,
             WorkerGitOp::ReadBlobs {
                 oids: oids.to_vec(),
                 byte_cap,
+                budget_bytes,
             },
             ctx,
         )

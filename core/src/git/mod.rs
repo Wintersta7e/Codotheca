@@ -47,5 +47,5 @@ pub use slots::{GitSlots, JobClass, SlotGuard};
 pub use status::{
     parse_status_v2, worktree_status, StatusCounts, StatusOptions, UntrackedMode, WorktreeStatus,
 };
-pub use tree::{head_tree, parse_ls_tree_z, read_blobs, BlobRead, TreeEntry};
+pub use tree::{head_tree, parse_ls_tree_z, read_blobs, BlobBatch, BlobRead, TreeEntry};
 pub use version::{meets_floor, parse_version, GitVersion, GIT_FLOOR};

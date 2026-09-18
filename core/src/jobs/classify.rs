@@ -96,6 +96,26 @@ pub fn language_of_path(path: &str) -> Option<Lang> {
     BY_EXT.iter().find(|(e, _)| *e == ext).map(|(_, l)| *l)
 }
 
+/// Every distinct **programming** language name `BY_EXT` declares, sorted.
+///
+/// §29.2's rule 3 gives `BY_EXT` a second reader, and it was written for the language byte
+/// census: someone adding an extension there to make a language appear in the language bar would
+/// silently widen what this product reads off the user's disk. The consent surface renders this
+/// list, which makes that a visible change to a rendered policy rather than a table edit.
+///
+/// **No count is written anywhere** — every checker derives both sides.
+#[must_use]
+pub fn programming_languages() -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = BY_EXT
+        .iter()
+        .filter(|(_, lang)| lang.programming)
+        .map(|(_, lang)| lang.name)
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
 /// The largest **programming** language by HEAD blob bytes.
 ///
 /// `None` is *not computed* / *nothing recognised* and must never resolve a language row or be

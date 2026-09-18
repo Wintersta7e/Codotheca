@@ -99,6 +99,7 @@ pub enum WorkerGitOp {
     ReadBlobs {
         oids: Vec<String>,
         byte_cap: u64,
+        budget_bytes: u64,
     },
 }
 

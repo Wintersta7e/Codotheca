@@ -426,10 +426,12 @@ impl GitBackend for LockWatch {
         repo: &RepoHandle,
         oids: &[String],
         byte_cap: u64,
+        budget_bytes: u64,
         ctx: &JobContext<'_>,
-    ) -> GitResult<Vec<codotheca_core::git::BlobRead>> {
+    ) -> GitResult<codotheca_core::git::BlobBatch> {
         self.observe();
-        self.inner.read_blobs(repo, oids, byte_cap, ctx)
+        self.inner
+            .read_blobs(repo, oids, byte_cap, budget_bytes, ctx)
     }
 }
 

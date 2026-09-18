@@ -148,9 +148,11 @@ fn run_git(
         WorkerGitOp::Authorship => encode(git.authorship(&handle, &jc)),
         WorkerGitOp::CommitSubjects { limit } => encode(git.commit_subjects(&handle, *limit, &jc)),
         WorkerGitOp::HeadTree => encode(git.head_tree(&handle, &jc)),
-        WorkerGitOp::ReadBlobs { oids, byte_cap } => {
-            encode(git.read_blobs(&handle, oids, *byte_cap, &jc))
-        }
+        WorkerGitOp::ReadBlobs {
+            oids,
+            byte_cap,
+            budget_bytes,
+        } => encode(git.read_blobs(&handle, oids, *byte_cap, *budget_bytes, &jc)),
     }
 }
 

@@ -15,7 +15,7 @@ mod support;
 
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::git::{
-    head_tree, read_blobs, GitBackend, JobClass, JobContext, RepoHandle, RunLimits,
+    head_tree, read_blobs, GitBackend, JobClass, JobContext, RepoHandle, RunLimits, TreeEntry,
 };
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
@@ -23,13 +23,15 @@ use codotheca_core::jobs::content_scan::{
     cached_scan, findings_for_blob, missing_blobs, record_read, BlobOutcome, CachedScan,
 };
 use codotheca_core::jobs::j3_inventory::ARCHETYPE_SAMPLE;
-use codotheca_core::jobs::markers::{J7_BLOB_BYTE_CAP, J7_SCANNER_VERSION};
+use codotheca_core::jobs::j7_markers::{self, ContentScanRow};
+use codotheca_core::jobs::markers::{J7_BLOB_BYTE_CAP, J7_CHUNK_BLOBS, J7_SCANNER_VERSION};
 use codotheca_core::jobs::presence::{presence_for, PresenceAnswers, PresenceState};
-use codotheca_core::jobs::JobKind;
+use codotheca_core::jobs::state::{apply_outcome, JobStateRow};
+use codotheca_core::jobs::{JobKind, JobOutcome, JobState};
 use codotheca_core::proto::txguard::TxGuard;
-use codotheca_core::protocol::{Job, SyncTaskKind};
+use codotheca_core::protocol::{Job, LocationId, ProjectId, SyncTaskKind};
 use codotheca_core::sync::task::kind_slug;
-use codotheca_core::testing::FakeGitBackend;
+use codotheca_core::testing::{FakeGitBackend, GitReply};
 use support::TestRepo;
 
 fn migrated() -> (tempfile::TempDir, rusqlite::Connection) {
@@ -128,10 +130,12 @@ fn ac_p3_29_2_the_enumeration_reads_head_not_the_index() {
         &repo.handle(),
         &oids,
         512 * 1024,
+        u64::MAX,
         RunLimits::none(),
         &CancelToken::new(),
     )
-    .unwrap();
+    .unwrap()
+    .reads;
 
     // The salient text of every marker the read covers. Task 5 replaces this crude scan with
     // `scan_blob`; what the criterion turns on either way is *which blob was read*.
@@ -362,8 +366,9 @@ fn scan_through_cache(
     let cancel = CancelToken::new();
     let ctx = JobContext::new(JobClass::Background, &cancel, None);
     let reads = git
-        .read_blobs(repo, &missing, J7_BLOB_BYTE_CAP, &ctx)
-        .unwrap();
+        .read_blobs(repo, &missing, J7_BLOB_BYTE_CAP, u64::MAX, &ctx)
+        .unwrap()
+        .reads;
     let tx = conn.transaction().unwrap();
     let _guard = TxGuard::enter();
     for read in &reads {
@@ -552,4 +557,234 @@ fn ac_p3_29_9_a_scanner_version_bump_is_a_miss_not_a_hit() {
             .is_some(),
         "the older row was deleted eagerly, so a rollback finds no cache"
     );
+}
+
+/// A project, its location and a fake git carrying a scripted tree, ready for `run_j7`.
+struct Rig {
+    _dir: tempfile::TempDir,
+    index: std::sync::Mutex<Index>,
+    git: std::sync::Arc<FakeGitBackend>,
+    project: ProjectId,
+    location: LocationId,
+    repo: RepoHandle,
+}
+
+impl Rig {
+    fn new(head_oid: &str) -> Rig {
+        let dir = tempfile::tempdir().unwrap();
+        let index = Index::open(&dir.path().join("index")).unwrap();
+        let (project, location) = {
+            let conn = index.conn();
+            conn.execute(
+                "INSERT INTO project (name, seed_basename, created_at, updated_at)
+                 VALUES ('p', 'p', 0, 0)",
+                [],
+            )
+            .unwrap();
+            let project = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO location
+                   (project_id, kind, path_bytes, path_key, path_display, store_key, presence,
+                    repo_kind, head_oid)
+                 VALUES (?1, 'linux', x'2f70', x'2f70', '/p', 'store-a', 'present',
+                         'worktree', ?2)",
+                rusqlite::params![project, head_oid],
+            )
+            .unwrap();
+            (ProjectId(project), LocationId(conn.last_insert_rowid()))
+        };
+        Rig {
+            _dir: dir,
+            index: std::sync::Mutex::new(index),
+            git: std::sync::Arc::new(FakeGitBackend::new()),
+            project,
+            location,
+            repo: fake_repo(),
+        }
+    }
+
+    /// Script one blob's bytes under a content address the tree entry will name.
+    fn source(&self, bytes: &[u8]) -> String {
+        let oid = format!("{:040x}", md5ish(bytes));
+        self.git.script_blob(&oid, bytes);
+        oid
+    }
+
+    fn set_tree(&self, entries: Vec<TreeEntry>) {
+        self.git.always_head_tree(GitReply::Ok(entries));
+    }
+
+    fn run(&self, cursor: Option<&str>) -> JobOutcome {
+        let cancel = CancelToken::new();
+        let ctx = JobContext::new(JobClass::Background, &cancel, None);
+        j7_markers::run_j7(
+            &self.index,
+            self.git.as_ref(),
+            &self.repo,
+            &ctx,
+            j7_markers::ScanRun {
+                project: self.project,
+                location: self.location,
+                cursor,
+                now: 1_700_000_000,
+            },
+        )
+        .unwrap()
+    }
+
+    fn scan_row(&self) -> Option<ContentScanRow> {
+        let guard = self.index.lock().unwrap();
+        let row = j7_markers::content_scan_row(guard.conn(), self.project).unwrap();
+        drop(guard);
+        row
+    }
+
+    /// Every finding in the cache, as the tuple a consumer compares by identity.
+    fn findings(&self) -> Vec<(String, u32, String)> {
+        let guard = self.index.lock().unwrap();
+        let mut statement = guard
+            .conn()
+            .prepare(
+                "SELECT blob_oid, ordinal_in_blob, salient_text_capped FROM blob_finding
+                  ORDER BY blob_oid, ordinal_in_blob",
+            )
+            .unwrap();
+        let rows: Vec<(String, u32, String)> = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        drop(statement);
+        drop(guard);
+        rows
+    }
+}
+
+/// A short, stable content address for a fixture blob. Not a git oid and never compared to one —
+/// the fake's blob map is keyed by whatever the tree says.
+fn md5ish(bytes: &[u8]) -> u128 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100_0000_01b3);
+    }
+    u128::from(hash)
+}
+
+fn blob_entry(path: &str, oid: &str) -> TreeEntry {
+    TreeEntry {
+        mode: "100644".to_owned(),
+        kind: "blob".to_owned(),
+        oid: oid.to_owned(),
+        path: path.as_bytes().to_vec(),
+    }
+}
+
+/// **AC-P3-29-4.** An incomplete scan publishes no count.
+///
+/// With `blobs_pending > 0` the marker aggregate is **absent — not zero, not partial** — and
+/// `complete_head_oid` is NULL. There is no flag to remember to set: the absence of a completed
+/// head *is* the absence of the number.
+#[test]
+fn ac_p3_29_4_an_incomplete_scan_publishes_no_count() {
+    let rig = Rig::new("head-one");
+    let mut entries = Vec::new();
+    for i in 0..(J7_CHUNK_BLOBS + 3) {
+        let body = format!("// TODO: item {i}\n");
+        let oid = rig.source(body.as_bytes());
+        entries.push(blob_entry(&format!("src/f{i:05}.rs"), &oid));
+    }
+    rig.set_tree(entries);
+
+    let outcome = rig.run(None);
+    let row = rig.scan_row().unwrap();
+    eprintln!("after one chunk: {outcome:?}, row {row:?}");
+    assert!(matches!(outcome, JobOutcome::Partial { .. }));
+    assert!(row.blobs_pending.unwrap_or(0) > 0);
+    assert_eq!(
+        row.complete_head_oid, None,
+        "an incomplete scan published a head"
+    );
+    assert_eq!(
+        row.blobs_total,
+        Some(i64::try_from(J7_CHUNK_BLOBS + 3).unwrap())
+    );
+}
+
+/// **AC-P3-29-5.** A cut-off is `Partial` and requeues without a failure.
+///
+/// Over several chunks it produces **the same finding set, by identity**, as one unbounded run —
+/// never the same count.
+#[test]
+fn ac_p3_29_5_a_cut_off_is_partial_and_requeues_without_a_failure() {
+    let build = |rig: &Rig| {
+        let mut entries = Vec::new();
+        for i in 0..(J7_CHUNK_BLOBS + 5) {
+            let body = format!("// FIXME: number {i}\n// HACK: and again {i}\n");
+            let oid = rig.source(body.as_bytes());
+            entries.push(blob_entry(&format!("src/f{i:05}.rs"), &oid));
+        }
+        rig.set_tree(entries);
+    };
+
+    let chunked = Rig::new("head-one");
+    build(&chunked);
+    let mut cursor: Option<String> = None;
+    let mut chunks = 0;
+    let mut rows = Vec::new();
+    loop {
+        let outcome = chunked.run(cursor.as_deref());
+        chunks += 1;
+        match outcome {
+            JobOutcome::Partial {
+                cursor: next,
+                done,
+                total,
+            } => {
+                rows.push((done, total));
+                assert!(
+                    done > 0 && total.unwrap_or(0) > 0,
+                    "a chunk boundary published a zero"
+                );
+                cursor = Some(next);
+            }
+            JobOutcome::Done => break,
+            other => panic!("a chunk boundary is never {other:?}"),
+        }
+        assert!(chunks < 20, "the cursor did not advance");
+    }
+    eprintln!("{chunks} chunks, boundaries {rows:?}");
+    assert!(chunks > 1, "the fixture never crossed a chunk boundary");
+
+    // `apply_outcome` never counts a chunk boundary as a failure.
+    let row = JobStateRow::fresh(JobKind::J7Markers, JobState::Running, 0);
+    let (next, when) = apply_outcome(
+        &row,
+        &JobOutcome::Partial {
+            cursor: "1".to_owned(),
+            done: 1,
+            total: Some(2),
+        },
+        1_700_000_000,
+    );
+    assert_eq!(next.fail_count, 0);
+    assert_eq!(next.state, JobState::Queued);
+    assert_eq!(when, Some(1_700_000_000));
+
+    // The same tree, read without a chunk boundary, yields the same finding set by identity.
+    let whole = Rig::new("head-one");
+    build(&whole);
+    let mut cursor: Option<String> = None;
+    while let JobOutcome::Partial { cursor: next, .. } = whole.run(cursor.as_deref()) {
+        cursor = Some(next);
+    }
+    let a = chunked.findings();
+    let b = whole.findings();
+    eprintln!(
+        "chunked found {} occurrences, whole found {}",
+        a.len(),
+        b.len()
+    );
+    assert!(!a.is_empty(), "the comparison is over an empty set");
+    assert_eq!(a, b, "the two runs disagree by identity");
 }

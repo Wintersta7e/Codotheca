@@ -17,9 +17,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::git::{
-    Authorship, BlobRead, CommitSubject, Divergence, GitBackend, GitError, GitResult, GitVersion,
-    JobContext, RefState, RepoFacts, RepoHandle, RootCommit, StatusOptions, TrackedInventory,
-    TreeEntry, WorktreeStatus,
+    Authorship, BlobBatch, BlobRead, CommitSubject, Divergence, GitBackend, GitError, GitResult,
+    GitVersion, JobContext, RefState, RepoFacts, RepoHandle, RootCommit, StatusOptions,
+    TrackedInventory, TreeEntry, WorktreeStatus,
 };
 use crate::testing::FakeClock;
 
@@ -385,8 +385,9 @@ impl GitBackend for FakeGitBackend {
         repo: &RepoHandle,
         oids: &[String],
         byte_cap: u64,
+        budget_bytes: u64,
         _ctx: &JobContext<'_>,
-    ) -> GitResult<Vec<BlobRead>> {
+    ) -> GitResult<BlobBatch> {
         self.record("read_blobs", Some(&repo.work_dir));
         if let Ok(mut asked) = self.blob_requests.lock() {
             asked.extend(oids.iter().cloned());
@@ -395,19 +396,29 @@ impl GitBackend for FakeGitBackend {
             .blobs
             .lock()
             .map_or_else(|_| BTreeMap::new(), |b| b.clone());
-        let mut out = Vec::new();
+        let mut reads = Vec::new();
+        let mut kept_bytes = 0_u64;
+        let mut covered = 0_usize;
         for oid in oids {
+            if kept_bytes >= budget_bytes {
+                break;
+            }
+            covered += 1;
             let Some(bytes) = scripted.get(oid) else {
-                continue; // missing: no body, no row
+                continue; // missing: no body, no row — and the cursor may still pass it
             };
             let size = bytes.len() as u64;
-            out.push(BlobRead {
+            let keep = size <= byte_cap;
+            if keep {
+                kept_bytes = kept_bytes.saturating_add(size);
+            }
+            reads.push(BlobRead {
                 oid: oid.clone(),
                 size_bytes: size,
-                bytes: (size <= byte_cap).then(|| bytes.clone()),
+                bytes: keep.then(|| bytes.clone()),
             });
         }
-        Ok(out)
+        Ok(BlobBatch { reads, covered })
     }
 }
 
@@ -544,9 +555,11 @@ impl<B: GitBackend> GitBackend for RecordingGitBackend<B> {
         repo: &RepoHandle,
         oids: &[String],
         byte_cap: u64,
+        budget_bytes: u64,
         ctx: &JobContext<'_>,
-    ) -> GitResult<Vec<BlobRead>> {
+    ) -> GitResult<BlobBatch> {
         self.record("read_blobs", Some(&repo.work_dir));
-        self.inner.read_blobs(repo, oids, byte_cap, ctx)
+        self.inner
+            .read_blobs(repo, oids, byte_cap, budget_bytes, ctx)
     }
 }

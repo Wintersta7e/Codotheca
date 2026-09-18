@@ -18,7 +18,7 @@ use super::refstate::{divergence, read_ref_state, Divergence, RefState};
 use super::repo::{RepoHandle, StoreKey};
 use super::slots::{GitSlots, JobClass};
 use super::status::{worktree_status, StatusOptions, WorktreeStatus};
-use super::tree::{head_tree, read_blobs, BlobRead, TreeEntry};
+use super::tree::{head_tree, read_blobs, BlobBatch, TreeEntry};
 use super::version::{meets_floor, parse_version, GitVersion};
 
 /// What one call is: its class, its cancellation token and its budget.
@@ -129,18 +129,20 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
     /// **Not `tracked_inventory`'s basis.** That one reads the index and is J3's; this one reads
     /// the commit. Both stay, because the two questions are different ones.
     fn head_tree(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TreeEntry>>;
-    /// J7 (§29.6): the bodies of `oids`, each kept up to `byte_cap`.
+    /// J7 (§29.6): the bodies of `oids`, each kept up to `byte_cap`, stopping at `budget_bytes`
+    /// across the batch.
     ///
-    /// `byte_cap` is the caller's, not this seam's: §29.2 rule 4's `J7_BLOB_BYTE_CAP` belongs to
-    /// the scanner, and a blob over it is **recorded at its size with its body discarded** rather
-    /// than buffered here and thrown away by the caller.
+    /// Both ceilings are the caller's, not this seam's: §29.2 rule 4's `J7_BLOB_BYTE_CAP` and
+    /// §29.6's chunk budget belong to the scanner. A blob over the per-blob cap is **recorded at
+    /// its size with its body discarded** rather than buffered here and thrown away above.
     fn read_blobs(
         &self,
         repo: &RepoHandle,
         oids: &[String],
         byte_cap: u64,
+        budget_bytes: u64,
         ctx: &JobContext<'_>,
-    ) -> GitResult<Vec<BlobRead>>;
+    ) -> GitResult<BlobBatch>;
 }
 
 /// Native git, under the slot caps.
@@ -328,10 +330,19 @@ impl GitBackend for SystemGit {
         repo: &RepoHandle,
         oids: &[String],
         byte_cap: u64,
+        budget_bytes: u64,
         ctx: &JobContext<'_>,
-    ) -> GitResult<Vec<BlobRead>> {
+    ) -> GitResult<BlobBatch> {
         self.with_slot(repo, ctx, || {
-            read_blobs(&self.exec, repo, oids, byte_cap, ctx.limits(), ctx.cancel)
+            read_blobs(
+                &self.exec,
+                repo,
+                oids,
+                byte_cap,
+                budget_bytes,
+                ctx.limits(),
+                ctx.cancel,
+            )
         })
     }
 }
