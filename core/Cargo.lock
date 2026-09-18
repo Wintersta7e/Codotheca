@@ -358,6 +358,7 @@ dependencies = [
 name = "codotheca-core"
 version = "1.0.0"
 dependencies = [
+ "aho-corasick",
  "base64",
  "chrono",
  "command-group",

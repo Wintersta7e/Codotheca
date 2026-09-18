@@ -55,6 +55,10 @@ keychain = ["dep:keyring"]
 testkit = ["dep:tempfile", "rusqlite/trace"]
 
 [dependencies]
+# §29.3's three-marker pass over raw blob bytes. **Promoted, not added**: `ignore` → `globset`
+# already pins this exact version transitively, so a direct entry brings zero new crates to
+# either target — verified by comparing `cargo metadata` package counts either side of the edit.
+aho-corasick = "1.1.5"
 base64 = "0.22"
 # The machine's local UTC offset, and nothing else. §8.1's era bands cut on the local calendar
 # year, so the offset is a correctness input: a wrong one mis-sorts the shelf silently instead

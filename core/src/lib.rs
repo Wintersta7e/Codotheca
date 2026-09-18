@@ -20,6 +20,7 @@ pub mod clock;
 pub mod commands;
 #[cfg(feature = "testkit")]
 pub mod corpus;
+pub mod debt;
 pub mod derive;
 pub mod detail;
 pub mod firstrun;
