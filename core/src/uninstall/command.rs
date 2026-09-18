@@ -86,6 +86,24 @@ pub fn uninstall_location(
     )
     .map_err(|error| CommandFailure::internal(error.to_string()))?;
 
+    // 7. **[p3] §28.3's second uninstall guard, in this same transaction.** Removing the bytes
+    //    keeps the row, so `presence` still reads `present` and a naive sweep afterwards finds a
+    //    readable-looking absence, reports `complete` with zero items, **closes every item and
+    //    pays for it**. §28.5's rule 4 is the first guard; this is the second, and both are
+    //    needed.
+    //
+    //    **The mark is `state = 'unverified'` and nothing else.** No closure, no XP, no
+    //    `health_delta`, and `last_seen_location_id` is **kept**: it is what the reap later
+    //    compares against, and clearing it would turn a reapable item into a permanently
+    //    stranded one.
+    tx.execute(
+        "UPDATE debt_item SET state = 'unverified'
+          WHERE state = 'open'
+            AND project_id = (SELECT project_id FROM location WHERE id = ?1)",
+        rusqlite::params![inputs.snapshot.id.0],
+    )
+    .map_err(|error| CommandFailure::internal(error.to_string()))?;
+
     Ok(Removed {
         location: inputs.snapshot.id,
         outcome,

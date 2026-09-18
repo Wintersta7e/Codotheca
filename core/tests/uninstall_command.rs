@@ -349,3 +349,152 @@ fn an_uninstalled_project_is_not_a_not_cloned_project() {
         "an uninstalled project still HAS a location, so it is never is:notcloned"
     );
 }
+
+/// Seed one project, one copy and one open debt item anchored at it.
+fn debt_fixture() -> (
+    tempfile::TempDir,
+    PathBuf,
+    PathBuf,
+    codotheca_core::testing::TempIndex,
+    codotheca_core::protocol::ProjectId,
+    LocationId,
+) {
+    let (dir, root, copy) = fixture();
+    let index = codotheca_core::testing::TempIndex::new();
+    let project = index.insert_project();
+    let location = index.insert_location(project, "/r/widget");
+    {
+        let binding = index.index();
+        binding
+            .conn()
+            .execute(
+                "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state,
+                                        scoring, last_seen_location_id, basis, first_seen_at,
+                                        last_seen_at)
+                 VALUES (?1, 'lineage:l|remote:', 'todo_marker', 'f', 'open', 'scored', ?2,
+                         'head', 1, 1)",
+                rusqlite::params![project.0, location.0],
+            )
+            .expect("seed item");
+    }
+    (dir, root, copy, index, project, location)
+}
+
+fn debt_warrant(location: LocationId, copy: PathBuf) -> Warrant {
+    Warrant::for_uninstall_in_test(
+        location,
+        copy,
+        identity(),
+        VerdictSeal::of(&[] as &[UninstallBlocker], UninstallDisposition::Safe),
+    )
+}
+
+/// **[p3] `AC-P3-28-8`, the *one transaction* half.**
+///
+/// A rolled-back removal leaves **neither** change behind. A second transaction after the commit
+/// would leave `removed_at` set with the items still `open`, which is the window the whole
+/// ordering exists to close.
+///
+/// It is two tests rather than one because the removal is **not replayable**: it trashes the
+/// directory, so a second call against the same copy is refused `RefusedPath`.
+#[test]
+fn a_rolled_back_removal_marks_no_debt_item() {
+    let (_dir, root, copy, index, project, location) = debt_fixture();
+    let _guard = codotheca_core::proto::txguard::TxGuard::enter();
+    let binding = index.index();
+    let conn = binding.conn();
+
+    let mut inputs = clean_inputs(&root, &copy);
+    inputs.snapshot.id = location;
+
+    let tx = conn.unchecked_transaction().expect("tx");
+    uninstall_location(
+        &tx,
+        &inputs,
+        &debt_warrant(location, copy),
+        Some(&identity()),
+    )
+    .expect("removed");
+    tx.rollback().expect("rollback");
+
+    let (state, removed_at): (String, Option<i64>) = conn
+        .query_row(
+            "SELECT i.state, l.removed_at FROM debt_item i
+               JOIN location l ON l.id = i.last_seen_location_id
+              WHERE i.project_id = ?1",
+            [project.0],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("read back");
+    assert_eq!(
+        (state.as_str(), removed_at),
+        ("open", None),
+        "a rolled-back removal left one of the two changes behind"
+    );
+}
+
+/// **[p3] `AC-P3-28-8`. The uninstall hole, and the second of two guards against it.**
+///
+/// `locations.uninstall` removes the bytes and **keeps the row**, so `presence` still reads
+/// `present` and only `removed_at` says otherwise. A naive sweep afterwards finds a
+/// readable-looking absence, reports `complete` with zero items, **closes every item and pays for
+/// it**. The mark is `state = 'unverified'` and nothing else, and `last_seen_location_id` is
+/// **kept**: it is what the reap later compares against.
+#[test]
+fn a_removal_marks_the_projects_debt_items_unverified() {
+    let (_dir, root, copy, index, project, location) = debt_fixture();
+    let _guard = codotheca_core::proto::txguard::TxGuard::enter();
+    let binding = index.index();
+    let conn = binding.conn();
+
+    let mut inputs = clean_inputs(&root, &copy);
+    inputs.snapshot.id = location;
+
+    let tx = conn.unchecked_transaction().expect("tx");
+    uninstall_location(
+        &tx,
+        &inputs,
+        &debt_warrant(location, copy),
+        Some(&identity()),
+    )
+    .expect("removed");
+    tx.commit().expect("commit");
+
+    let (state, anchor): (String, Option<i64>) = conn
+        .query_row(
+            "SELECT state, last_seen_location_id FROM debt_item WHERE project_id = ?1",
+            [project.0],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("read back");
+    assert_eq!(state, "unverified");
+    assert_eq!(
+        anchor,
+        Some(location.0),
+        "the anchor was cleared, which strands the item for ever instead of reaping it"
+    );
+
+    // A sweep run immediately afterwards reports `unobservable` and closes nothing: the root is
+    // gone, however `presence` still reads.
+    let presence: String = conn
+        .query_row(
+            "SELECT presence FROM location WHERE id = ?1",
+            [location.0],
+            |r| r.get(0),
+        )
+        .expect("presence");
+    assert_eq!(presence, "present", "the fixture is not the hole it claims");
+
+    let tx = conn.unchecked_transaction().expect("tx");
+    let outcome = codotheca_core::debt::sweep::outcome_at_root(
+        &tx,
+        Some(location),
+        codotheca_core::protocol::DebtSweepOutcome::Complete,
+    )
+    .expect("outcome");
+    assert_eq!(
+        outcome,
+        codotheca_core::protocol::DebtSweepOutcome::Unobservable,
+        "a sweep after an uninstall reported complete and would close every item"
+    );
+}
