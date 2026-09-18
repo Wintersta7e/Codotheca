@@ -291,11 +291,22 @@ pub fn recompute_derived(
     // address**, and deleting a library-wide cache because two project rows merged discards work
     // for an event that cannot have invalidated it — a blob's content is not a property of any
     // project. `project_content_scan` is here because it is per project and entirely derived.
+    // **[p3] §28.7:  and  are DERIVED.** Both are recomputed from the
+    // survivor by the producers §28 owns, so deleting both sides is required rather than tidy —
+    // a stale item for the survivor would survive the merge and be read as current, and a stale
+    //  sweep would let the next observation close items it never compared against.
+    //
+    // **A merge is not a closure.** Deleting both sides leaves no → pair
+    // across the merge, so the recompute opens the survivor's items fresh, no closure event
+    // fires and no XP is paid. That falls out of this class assignment rather than needing a
+    // guard of its own.
     for table in [
         "fts_commits",
         "peek_cache",
         "project_committer",
         "project_content_scan",
+        "debt_item",
+        "debt_sweep",
     ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE project_id IN (?1, ?2)"),
