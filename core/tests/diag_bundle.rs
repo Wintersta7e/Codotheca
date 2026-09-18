@@ -88,7 +88,17 @@ fn the_default_bundle_carries_no_real_path_anywhere_in_its_json() {
         !text.contains("/one/two/three"),
         "no directory structure survives"
     );
-    assert!(!text.contains("one"), "no interior segment survives at all");
+    // [p3] The segment as a **token**, not as a bare substring. `!text.contains("one")` held by
+    // luck until §30.9's switch list put `abandoned_with_debt` in the settings block — a
+    // `DebtSource` slug that happens to spell the segment inside a longer word. The three forms
+    // below are the only ways an interior path segment can actually survive: inside a posix path,
+    // inside a windows path, or alone as a JSON string.
+    for leaked in ["/one", "one/", "\\one", "\"one\""] {
+        assert!(
+            !text.contains(leaked),
+            "no interior segment survives at all: found {leaked}"
+        );
+    }
     assert!(text.contains("alpha"), "basenames are the product and stay");
     assert!(text.contains("vol-1"));
     assert_eq!(doc["anonymised"], serde_json::json!(true));

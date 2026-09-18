@@ -90,6 +90,7 @@ test('the call names autostart under the key the command takes, and disturbs not
       logLevel: null,
       installRootId: null,
       contentScanEnabled: null,
+      healthChecks: null,
     },
   });
 });

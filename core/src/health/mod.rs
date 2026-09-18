@@ -14,3 +14,4 @@ pub mod enrolment;
 pub mod outcome;
 pub mod reason;
 pub mod state;
+pub mod switches;
