@@ -10,6 +10,14 @@
 //! from the marker's first byte to the end of its line. What is then done to them is here.
 //!
 //! **p3-28 adds to this file in wave 2 and creates no second.**
+//!
+//! **Anyone editing [`SALIENT_CAP_BYTES`] or [`normalise_salient`] is changing every item's
+//! identity**, closing items that were never fixed and opening items that never changed. A change
+//! to either invalidates every stored `salient_sha256`, so it bumps §29's `J7_SCANNER_VERSION`
+//! in the same edit. `core/tests/debt_identity.rs` holds a gate asserting exactly one
+//! implementation of each, over the whole of `core/src/`.
+
+use crate::protocol::DebtSource;
 
 /// §28.1's cap, applied **before the hash and not after**, at the largest UTF-8 character
 /// boundary at or below it — a byte index that splits a code point panics in Rust.
@@ -43,4 +51,66 @@ pub fn normalise_salient(raw: &[u8]) -> String {
     }
     collapsed.truncate(cut);
     collapsed
+}
+
+/// An item's identity: `(subject_key, source, fingerprint)` and nothing else.
+///
+/// **`subject_key` is [`ProjectSubject::to_key`] and never `project_id`.** §1.7 records that v1
+/// keyed the ledger on `project_id` and it broke on merges; `subject_key` is *total* where
+/// `lineage_key` is not. `project_id` is an attribute, repointed by the merge recompute, and is
+/// never key material.
+///
+/// **The path, the line and the column are attributes too.** A rename closes nothing, a line move
+/// closes nothing, and two identical marker texts are two items.
+///
+/// [`ProjectSubject::to_key`]: crate::index::subject::ProjectSubject::to_key
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DebtKey {
+    /// The logical subject, shared with the §1.12 sidecar and with `xp_events.subject_key`.
+    pub subject_key: String,
+    pub source: DebtSource,
+    /// `''` for a singleton — never NULL, because SQLite treats NULLs as distinct inside a UNIQUE
+    /// index and a nullable fingerprint would silently permit duplicate singletons.
+    pub fingerprint: String,
+}
+
+impl DebtKey {
+    /// §28.1's singleton shape: one item per source per subject, fingerprint `''`.
+    #[must_use]
+    pub fn singleton(subject_key: &str, source: DebtSource) -> Self {
+        Self {
+            subject_key: subject_key.to_owned(),
+            source,
+            fingerprint: String::new(),
+        }
+    }
+
+    /// §28.1's content shape: `<salient_sha256>:<ordinal>`.
+    ///
+    /// `ordinal` is the **per-project** ordinal (A10), 0-based among the project's occurrences
+    /// sharing a `salient_sha256` — never `blob_finding.ordinal_in_blob`, which is a position
+    /// inside a content-addressed blob shared library-wide. One blob reachable at two paths
+    /// contributes its occurrences twice, and conflating the two collapses them onto one item.
+    #[must_use]
+    pub fn content(subject_key: &str, salient_sha256: &str, ordinal: i64) -> Self {
+        Self {
+            subject_key: subject_key.to_owned(),
+            source: DebtSource::TodoMarker,
+            fingerprint: format!("{salient_sha256}:{ordinal}"),
+        }
+    }
+
+    /// §28.1's external shape: `<ecosystem>:<package>:<advisory_id>` (**A5**).
+    ///
+    /// **The version is excluded and the advisory id is the GHSA id, never the CVE id.** A bump
+    /// from one vulnerable version to another must not close the item and open a new one — the
+    /// user has not finished, and paying them twice for one advisory is rewarding volume.
+    #[must_use]
+    pub fn external(subject_key: &str, ecosystem: &str, package: &str, advisory_id: &str) -> Self {
+        Self {
+            subject_key: subject_key.to_owned(),
+            source: DebtSource::DependencyAdvisory,
+            fingerprint: format!("{ecosystem}:{package}:{advisory_id}"),
+        }
+    }
 }
