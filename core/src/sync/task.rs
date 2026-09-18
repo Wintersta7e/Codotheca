@@ -67,15 +67,9 @@ impl SyncTask {
     }
 }
 
-/// An inherent const on the generated enum: legal because both are in this crate, and it is the
-/// vocabulary AC-P2-21-1 walks against `JobKind::ALL`.
-impl SyncTaskKind {
-    pub const ALL: [SyncTaskKind; 3] = [
-        SyncTaskKind::AccountRepos,
-        SyncTaskKind::ProjectRemote,
-        SyncTaskKind::RenameProbe,
-    ];
-}
+// [p3] `SyncTaskKind::ALL` — the vocabulary `AC-P2-21-1` walks against `JobKind::ALL` — is
+// **generated** now, from the schema's own variant list, so the inherent const that stood here is
+// gone and its count with it. Every call site is unchanged.
 
 /// The stored form, written into `sync_task_state.task` and constrained by that column's CHECK.
 #[must_use]

@@ -68,6 +68,36 @@ fn rust_sources(root: &Path) -> Vec<(String, String)> {
     out
 }
 
+/// [p3] The generated `pub const ALL` list names **every variant of every enum**, by
+/// construction, from the schema's own variant list — so `protocol.rs` now writes
+/// `BackupState::OnlyCopy` without producing a verdict about any project.
+///
+/// Stripping those arrays rather than exempting the whole file keeps this audit at full force: a
+/// hand-written second producer *inside* `protocol.rs` would still be caught, and the list this
+/// test compares against stays one file long.
+fn without_generated_all_lists(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("    pub const ALL: [") {
+        out.push_str(&rest[..start]);
+        let tail = &rest[start..];
+        // The `;` inside the type annotation `[BackupState; 3]` comes first, so skip past the
+        // `=` before looking for the one that ends the item. One-line and multi-line forms both
+        // end there, which is why this does not look for a closing bracket.
+        let Some(eq) = tail.find('=') else {
+            rest = "";
+            break;
+        };
+        let Some(end) = tail[eq..].find(';') else {
+            rest = "";
+            break;
+        };
+        rest = &tail[eq + end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
 #[test]
 fn the_backup_verdict_is_constructed_in_exactly_one_place() {
     let sources = rust_sources(&core_src());
@@ -82,7 +112,10 @@ fn the_backup_verdict_is_constructed_in_exactly_one_place() {
 
     let mut constructing: Vec<&str> = sources
         .iter()
-        .filter(|(_, text)| CONSTRUCTIONS.iter().any(|needle| text.contains(needle)))
+        .filter(|(_, text)| {
+            let text = without_generated_all_lists(text);
+            CONSTRUCTIONS.iter().any(|needle| text.contains(needle))
+        })
         .map(|(name, _)| name.as_str())
         .collect();
     constructing.sort_unstable();

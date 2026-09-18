@@ -21,8 +21,9 @@ pub mod persist;
 pub use crate::protocol::LocationKind;
 
 impl LocationKind {
-    /// Every kind, so a test can walk the vocabulary without restating it.
-    pub const ALL: [Self; 3] = [Self::Win, Self::Linux, Self::Wsl];
+    // [p3] `LocationKind::ALL` is **generated** now, from the schema's own variant list. The
+    // hand-written copy that stood here carried a count a human maintained for a type the schema
+    // already declares; every call site is unchanged.
 
     #[must_use]
     pub const fn as_str(self) -> &'static str {
