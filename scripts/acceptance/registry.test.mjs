@@ -298,9 +298,12 @@ test('a budget anywhere in the registry names the measurement it is a budget for
 // behaviour phase 1 shipped with.
 // ---------------------------------------------------------------------------------------------
 
+// `automated` by default, because from Task 12 onwards a phase-2 deferral to a plan is itself a
+// problem: every phase-2 plan has merged, so the fixture's default status has to be the one a
+// correct entry carries or every assertion below reads that problem instead of its own.
 const p2Check = (over = {}) => ({
   id: 'AC-P2-20-1',
-  status: 'deferred',
+  status: 'automated',
   runner: 'cargo',
   owner: 'p2-20',
   test: 'acceptance_p2_accounts::ac_p2_20_1',
@@ -686,4 +689,81 @@ test('no static rule still carries the escape its registered check discharges', 
     const survivors = rules.filter((r) => r.pendingRegistryEntry !== undefined).map((r) => r.id);
     assert.deepEqual(survivors, [], `${name} still carries a pending registry entry`);
   }
+});
+
+// [p2-26 Task 12] R46, mechanically. Each rule below is a way a phase-2 criterion could ship as
+// an intention while the gate reported a clean run over it — and each is proved to bite on a
+// synthetic case, because an audit nobody proved is an audit that asserts its own defaults.
+const p2Complete = (criteria, rules = null) =>
+  validatePhase2Complete({ version: 1, criteria }, rules);
+
+test('a phase-2 deferral to a plan is a deferral to nobody', () => {
+  const deferred = [
+    p2Entry({
+      checks: [{ ...p2Check(), status: 'deferred', deferral: 'plan', test: 'a::b' }],
+    }),
+  ];
+  assert.ok(
+    p2Complete(deferred).some((p) => p.includes('deferral to one is a deferral to nobody')),
+  );
+  assert.deepEqual(
+    p2Complete([p2Entry()]).filter((p) => p.includes('deferral')),
+    [],
+  );
+});
+
+test('a static rule may not keep an escape a registered check discharges', () => {
+  const rules = {
+    callsites: { rules: [{ id: 'x', pendingRegistryEntry: { criterion: 'AC-P2-24-3' } }] },
+    forbidden: { rules: [{ id: 'y' }] },
+  };
+  const problems = p2Complete([p2Entry()], rules);
+  assert.ok(problems.some((p) => p.includes('callsites:x') && p.includes('escape')));
+  assert.ok(!problems.some((p) => p.includes('forbidden:y')));
+  // A rule file that lists nothing is the escape scan reading nothing, not a clean tree.
+  assert.ok(
+    p2Complete([p2Entry()], { callsites: { rules: [] }, forbidden: { rules: [{ id: 'y' }] } }).some(
+      (p) => p.includes('the escape scan read nothing'),
+    ),
+  );
+});
+
+test('two checks may share a join key only when exactly one of them owns it', () => {
+  const shared = (over = {}) => [
+    p2Entry({ id: 'P2-20-1', checks: [p2Check({ id: 'AC-P2-20-1', test: 'a::b' })] }),
+    p2Entry({ id: 'P2-20-2', checks: [p2Check({ id: 'AC-P2-20-2', test: 'a::b', ...over })] }),
+  ];
+  // Undeclared: a copy-pasted key makes two criteria read as covered by one run.
+  assert.ok(p2Complete(shared()).some((p) => p.includes('2 declarers')));
+  // Declared, naming a check in its own group: correct, and the shape a two-owner split takes.
+  assert.deepEqual(
+    p2Complete(shared({ shares: 'AC-P2-20-1' })).filter((p) => p.includes('share')),
+    [],
+  );
+  // Declared at something outside the group, which claims a relationship that is not there.
+  assert.ok(
+    p2Complete(shared({ shares: 'AC-99-nowhere' })).some((p) => p.includes('not in its group')),
+  );
+});
+
+test('a phase-2 register with no scanning check and no mirror has stopped reading', () => {
+  const bare = [p2Entry({ checks: [p2Check()] })];
+  const problems = p2Complete(bare);
+  assert.ok(problems.some((p) => p.includes('no scanning check at all')));
+  assert.ok(problems.some((p) => p.includes('no mirror at all')));
+  // And a criterion with no check at all, which is an id and an intention.
+  assert.ok(p2Complete([p2Entry({ checks: [] })]).some((p) => p.includes('carries no check')));
+});
+
+test('the shipped register and the shipped rule files complete without a problem', () => {
+  const registry = loadRegistry(registryPath);
+  const read = (name) =>
+    JSON.parse(readFileSync(fileURLToPath(new URL(`../../acceptance/${name}`, import.meta.url))));
+  assert.deepEqual(
+    validatePhase2Complete(registry, {
+      callsites: read('callsites.json'),
+      forbidden: read('forbidden.json'),
+    }),
+    [],
+  );
 });

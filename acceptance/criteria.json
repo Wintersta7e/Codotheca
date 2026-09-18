@@ -2523,13 +2523,12 @@
         },
         {
           "id": "AC-P2-23-3-remote-surface",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p2-25",
-          "deferral": "plan",
-          "reason": "The positive half \u2014 with the facts row deleted the remote surface renders not observed \u2014 has no \u00a723 surface to bite on: ProjectRow carries no remote field, and remote_repo.observed_at reaches the screen through the REMOTE tab and OVERVIEW, which are \u00a725's. Split, not dropped: the core half and the local half are automated above.",
-          "test": "p2-25's REMOTE tab and OVERVIEW render not observed",
-          "assert": "With \u00a725's facts row deleted, the remote surface renders not observed \u2014 no age, no stale marker, and no substitute clock."
+          "test": "\u00a725.1 an unobserved value renders the glyph and never a zero AC-P2-25-3 renders \u2014 and NOT YET FETCHED for every forge slot, and 0 for none",
+          "shares": "AC-P2-25-3",
+          "assert": "The positive half, which has no \u00a723 surface to bite on: ProjectRow carries no remote field, and remote_repo.observed_at reaches the screen through \u00a725's REMOTE tab. With no facts row every forge slot renders the glyph and NOT YET FETCHED \u2014 no age, no stale marker and no substitute clock, and never a zero. p2-25 landed that surface and its test, so the deferral to it is discharged by naming it rather than by waiting for it."
         }
       ]
     },
@@ -2771,6 +2770,7 @@
         },
         {
           "id": "AC-P2-23-10-grep",
+          "shares": "AC-58-vocabulary",
           "status": "automated",
           "runner": "script",
           "owner": "p2-23",
@@ -3228,6 +3228,7 @@
       "checks": [
         {
           "id": "AC-P2-25-17",
+          "shares": "AC-42-page",
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
@@ -3973,6 +3974,7 @@
         },
         {
           "id": "AC-P2-22-7-wire",
+          "shares": "AC-P2-21-15-suppressed",
           "status": "automated",
           "runner": "cargo",
           "owner": "p2-22",
@@ -4123,6 +4125,7 @@
         },
         {
           "id": "AC-P2-24-1-destructive",
+          "shares": "AC-44-readonly-argv",
           "status": "automated",
           "runner": "cargo",
           "owner": "p2-24",
@@ -4261,6 +4264,7 @@
       "checks": [
         {
           "id": "AC-P2-24-5",
+          "shares": "AC-44-token",
           "status": "automated",
           "runner": "script",
           "owner": "p2-24",

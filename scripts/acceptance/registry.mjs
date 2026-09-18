@@ -308,8 +308,97 @@ function performanceProblems(entry, check, problems) {
  * not yet registered and is silent — which is what lets the harness widening land before the
  * first phase-2 criterion exists, and lets it bite from the first one onwards.
  */
-export function validatePhase2Complete(registry) {
+/**
+ * R46, mechanically, and the reason this function takes the rule files.
+ *
+ * R46 found *41 checks with an owner and no implementing task* — "the structure that makes
+ * something checkable gets built, and the thing itself is assumed to be somebody's next step".
+ * Every phase-2 plan is merged by the time this runs, so each rule below is a way a criterion
+ * could still ship as an intention.
+ *
+ * `rules` is `{ forbidden, callsites }`, each the parsed rule file. It is optional so a unit
+ * test can validate a registry object alone; a real run passes both, and without them the
+ * surviving-escape rule is not checked rather than being checked against nothing.
+ */
+function phase2CompletenessProblems(registry, rules) {
   const problems = [];
+  const phase2 = (registry.criteria ?? []).filter((c) => phaseOf(c.id) === 2);
+  let scanning = 0;
+  let mirrors = 0;
+
+  // A `test` is a join key, so two checks naming one test are two criteria reading as covered by
+  // one run. Some of those are correct — a static rule narrowed in place is claimed by both
+  // phases, and a criterion split across two owners takes two checks — so the share is
+  // **declared**: exactly one check per test id may omit `shares`, and every other names a check
+  // in the same group. A copy-pasted key declares nothing and fails here.
+  const byTest = new Map();
+  for (const entry of registry.criteria ?? []) {
+    for (const check of entry.checks ?? []) {
+      if (typeof check.test !== 'string') continue;
+      byTest.set(check.test, [...(byTest.get(check.test) ?? []), check]);
+    }
+  }
+  for (const [test, group] of byTest) {
+    if (group.length === 1) continue;
+    const ids = group.map((c) => String(c.id));
+    const declarers = group.filter((c) => c.shares === undefined);
+    if (declarers.length !== 1) {
+      problems.push(
+        `${ids.join(' and ')} share the test ${test} with ${String(declarers.length)} declarers` +
+          ' — exactly one check per test id is the one that owns it',
+      );
+    }
+    for (const check of group) {
+      if (check.shares !== undefined && !ids.includes(String(check.shares))) {
+        problems.push(
+          `${String(check.id)}: shares names ${String(check.shares)}, not in its group`,
+        );
+      }
+    }
+  }
+
+  for (const entry of phase2) {
+    if ((entry.checks ?? []).length === 0) problems.push(`${String(entry.id)}: carries no check`);
+    for (const check of entry.checks ?? []) {
+      const where = `${String(entry.id)}/${String(check.id)}`;
+      if (check.scanning === true) scanning += 1;
+      if (check.mirror !== undefined) mirrors += 1;
+      if (check.status === 'deferred' && (check.deferral ?? 'plan') === 'plan') {
+        problems.push(
+          `${where}: every phase-2 plan has merged, so a deferral to one is a deferral to nobody`,
+        );
+      }
+    }
+  }
+
+  // Zero of either is the field never having been written, not a phase with no gate that scans
+  // and no value stated on both sides. Same scans-nothing rule, turned on the register itself.
+  if (phase2.length > 0 && scanning === 0) {
+    problems.push('the phase-2 register holds no scanning check at all');
+  }
+  if (phase2.length > 0 && mirrors === 0) {
+    problems.push('the phase-2 register holds no mirror at all');
+  }
+
+  for (const [name, file] of Object.entries(rules ?? {})) {
+    const list = file?.rules ?? [];
+    if (list.length === 0) {
+      problems.push(`${name}: lists no rule — the escape scan read nothing`);
+      continue;
+    }
+    for (const rule of list) {
+      if (rule.pendingRegistryEntry !== undefined) {
+        problems.push(
+          `${name}:${String(rule.id)}: still carries the escape a registered check discharges`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+export function validatePhase2Complete(registry, rules = null) {
+  const problems = phase2CompletenessProblems(registry, rules);
   const bySection = new Map();
   for (const entry of registry.criteria ?? []) {
     if (phaseOf(entry.id) !== 2) continue;

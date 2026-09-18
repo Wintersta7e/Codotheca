@@ -25,7 +25,7 @@ import {
   joinResults,
   validateBaseline,
 } from './acceptance/join.mjs';
-import { loadRegistry, validateRegistry } from './acceptance/registry.mjs';
+import { loadRegistry, validatePhase2Complete, validateRegistry } from './acceptance/registry.mjs';
 import {
   parseLibtest,
   parsePlaywright,
@@ -57,9 +57,29 @@ export function collectResults(dir) {
   return out;
 }
 
+/**
+ * The rule files, for the surviving-escape half of the completeness audit.
+ *
+ * Read here rather than inside the validator so a unit test can validate a registry object with
+ * no I/O, and so a missing rule file is a *problem* the audit reports rather than an exception
+ * that reads as a crash.
+ */
+function staticRules() {
+  const read = (name) => {
+    const path = join(root, `acceptance/${name}`);
+    return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { rules: [] };
+  };
+  return { callsites: read('callsites.json'), forbidden: read('forbidden.json') };
+}
+
 function main(argv) {
   const registry = loadRegistry(registryPath);
   const problems = validateRegistry(registry, root);
+  // R46, mechanically: a phase-2 criterion deferred to a plan that has merged, a static rule
+  // still carrying the escape a registered check discharges, or a join key two checks claim
+  // without declaring it. Each is a way a criterion ships as an intention and the gate reports
+  // a clean run over it.
+  problems.push(...validatePhase2Complete(registry, staticRules()));
   if (problems.length > 0) {
     for (const p of problems) console.error(`acceptance: registry: ${p}`);
     return EXIT_CANNOT_RUN;
