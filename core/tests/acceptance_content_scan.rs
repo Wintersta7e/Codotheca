@@ -1466,3 +1466,72 @@ fn the_rescan_surface_already_covers_j7_and_there_is_no_second_one() {
     assert!(requeued > 0, "the requeue moved nothing");
     assert_eq!(j7, "queued");
 }
+
+/// **AC-P3-29-23.** A merge deletes the per-project scan and keeps the cache.
+///
+/// **Both counts are printed and the test fails if either side starts at zero** — a merge test
+/// over an empty cache proves nothing.
+#[test]
+fn ac_p3_29_23_a_merge_deletes_the_per_project_scan_and_keeps_the_cache() {
+    let (_dir, mut conn) = migrated();
+    let survivor = insert_project(&conn, "survivor");
+    let absorbed = insert_project(&conn, "absorbed");
+    for project in [survivor, absorbed] {
+        conn.execute(
+            "INSERT INTO project_content_scan
+               (project_id, head_oid, predicate_version, has_readme, has_license, has_tests,
+                has_ci, presence_observed_at, enumerated_at)
+             VALUES (?1, 'deadbeef', 1, 'present', 'absent', 'absent', 'absent', 0, 0)",
+            [project],
+        )
+        .unwrap();
+    }
+    for (n, oid) in ["a", "b"].iter().enumerate() {
+        let oid = oid.repeat(40);
+        conn.execute(
+            "INSERT INTO blob_scan (blob_oid, scanner_version, outcome, size_bytes, scanned_at)
+             VALUES (?1, 1, 'scanned', 10, 0)",
+            [&oid],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO blob_finding
+               (blob_oid, scanner_version, ordinal_in_blob, marker, salient_sha256,
+                salient_text_capped, line, \"column\")
+             VALUES (?1, 1, ?2, 'TODO', 'sha', 'TODO x', 1, 1)",
+            rusqlite::params![oid, n],
+        )
+        .unwrap();
+    }
+
+    let before = (
+        count(&conn, "project_content_scan"),
+        count(&conn, "blob_scan"),
+        count(&conn, "blob_finding"),
+    );
+    assert!(
+        before.0 > 0 && before.1 > 0 && before.2 > 0,
+        "a merge over an empty cache proves nothing: {before:?}"
+    );
+
+    let tx = conn.transaction().unwrap();
+    let _guard = TxGuard::enter();
+    codotheca_core::identity::merge::recompute_derived(&tx, survivor, absorbed).unwrap();
+    tx.commit().unwrap();
+
+    let after = (
+        count(&conn, "project_content_scan"),
+        count(&conn, "blob_scan"),
+        count(&conn, "blob_finding"),
+    );
+    eprintln!("before {before:?}, after {after:?}");
+    assert_eq!(
+        after.0, 0,
+        "a stale per-project scan row survived the merge"
+    );
+    assert_eq!(
+        (after.1, after.2),
+        (before.1, before.2),
+        "the library-wide cache was discarded for an event that cannot have invalidated it"
+    );
+}

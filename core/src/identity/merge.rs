@@ -285,7 +285,18 @@ pub fn recompute_derived(
     // Recomputed from the survivor by the history and content jobs. Deleting both sides is
     // required, not tidy: a stale row for the survivor would survive the merge and be read as
     // current.
-    for table in ["fts_commits", "peek_cache", "project_committer"] {
+    //
+    // **[p3] §29.10: `blob_scan` and `blob_finding` are deliberately NOT here, and that is a
+    // guard rather than an omission.** They carry no project id, their key is a **content
+    // address**, and deleting a library-wide cache because two project rows merged discards work
+    // for an event that cannot have invalidated it — a blob's content is not a property of any
+    // project. `project_content_scan` is here because it is per project and entirely derived.
+    for table in [
+        "fts_commits",
+        "peek_cache",
+        "project_committer",
+        "project_content_scan",
+    ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE project_id IN (?1, ?2)"),
             params![survivor, absorbed],
