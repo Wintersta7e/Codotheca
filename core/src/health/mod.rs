@@ -22,6 +22,7 @@
 
 pub mod acknowledge;
 pub mod enrolment;
+pub mod lifecycle;
 pub mod outcome;
 pub mod reason;
 pub mod state;
