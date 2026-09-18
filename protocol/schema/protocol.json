@@ -600,6 +600,84 @@
       "fields": { "weeks": "[ActivityWeek]", "commitDays": "LaneState", "sessions": "LaneState" }
     },
 
+    "DebtSource": {
+      "kind": "enum",
+      "$comment": "[p3] §28.2's nine sources, closed (A4). The `debt_item.source` CHECK in `0013_debt.sql` mirrors this list character for character (R26). Five further sources are declared in §28's prose and are deliberately in neither place — `forge_issues`, `lint_warnings`, `compiler_warnings`, `failing_tests`, `stale_merged_branches`; a tenth costs one migration plus one regenerate. No variant is `staleness`, `behind_upstream`, `uncommitted` or `dead_remote` (§30.6, AC-P3-28-18a).",
+      "variants": [
+        "todo_marker",
+        "missing_readme",
+        "missing_license",
+        "missing_tests",
+        "no_release",
+        "unpushed_commits",
+        "ci_red",
+        "dependency_advisory",
+        "abandoned_with_debt"
+      ]
+    },
+    "DebtItemState": {
+      "kind": "enum",
+      "$comment": "[p3] §28.3's two stored states. *Closed* is an EVENT and never a state: the row is deleted and the `xp_events` ledger is the permanent record. There is no third stored state and no user-facing dismissal.",
+      "variants": ["open", "unverified"]
+    },
+    "DebtScoring": {
+      "kind": "enum",
+      "$comment": "[p3] §28's A7 property, orthogonal to the item's state. A `shown_only` item renders and lights its layer (§33) and is excluded from the health count (§30), from §35's sort and from any XP payout. The two states are about OBSERVATION; this is about CONSEQUENCE — folding them puts six meanings in one column.",
+      "variants": ["scored", "shown_only"]
+    },
+    "DebtSweepOutcome": {
+      "kind": "enum",
+      "$comment": "[p3] §28.5's six outcomes. Four of them are reasons the sweep could not finish, which is why the outcome is an explicit stored value and never row-presence: presence carries one bit. `skipped_suppressed` is unreachable until p3-30 replaces §29's `compute_suppressed`.",
+      "variants": [
+        "complete",
+        "partial",
+        "failed",
+        "unobservable",
+        "skipped_reference",
+        "skipped_suppressed"
+      ]
+    },
+    "ObservationBasis": {
+      "kind": "enum",
+      "$comment": "[p3] §28.5's five bases. A worktree-basis observation and a HEAD-basis observation are not comparable and may not be diffed for a closure (A9). `index` is declared although no phase-3 source produces it — §29's content scan reads the index and §28 must be able to say so.",
+      "variants": ["head", "index", "worktree", "refs", "remote"]
+    },
+    "DecayLayer": {
+      "kind": "enum",
+      "$comment": "[p3] Declared by §28 because `DebtItem.layer` is the first field that needs it and §28 lands a wave earlier; **§33 owns every rule over it** and declares it nowhere (R113, A14.1, R31). The ORDER is the total order A3's tie-break needs and is not alphabetical.",
+      "variants": ["dust", "cobwebs", "rust", "cracks", "overgrowth"]
+    },
+
+    "DebtItem": {
+      "kind": "struct",
+      "$comment": "[p3] §28.9's item. Identity is `(subject_key, source, fingerprint)` and is not on the wire; `pathDisplay`, `line`, `column` and `salientText` are ATTRIBUTES, so a rename closes nothing and a line move closes nothing. `state` crosses the wire so the list can say *this item is not being counted right now*; `unverified` is never a count on a ranked or aggregated surface (R128/F10).",
+      "fields": {
+        "source": "DebtSource",
+        "fingerprint": "String",
+        "state": "DebtItemState",
+        "scoring": "DebtScoring",
+        "layer": "DecayLayer",
+        "pathDisplay": "String?",
+        "line": "u32?",
+        "column": "u32?",
+        "salientText": "String?",
+        "firstSeenAt": "Timestamp",
+        "lastSeenAt": "Timestamp",
+        "basis": "ObservationBasis?"
+      }
+    },
+    "DebtSweepState": {
+      "kind": "struct",
+      "$comment": "[p3] §28.5's sweep, on the wire. Without it, zero items means both *no debt* and *nobody looked*. `itemCount` is nullable for the same reason its column is: `AC-P3-28-11` requires *not computed* and *zero* to differ on the wire and not only in the store. A source with no row was never observed.",
+      "fields": {
+        "source": "DebtSource",
+        "outcome": "DebtSweepOutcome",
+        "observedAt": "Timestamp",
+        "itemCount": "u32?",
+        "basis": "ObservationBasis?"
+      }
+    },
+
     "ProjectDetail": {
       "kind": "struct",
       "fields": {
@@ -623,7 +701,9 @@
         "sizeWorktreeBytes": "i64?",
         "remoteLinkBasis": "RemoteLinkBasis?",
         "remote": "RemoteFacts?",
-        "backup": "BackupState?"
+        "backup": "BackupState?",
+        "debt": "[DebtItem]",
+        "debtSweeps": "[DebtSweepState]"
       }
     },
 

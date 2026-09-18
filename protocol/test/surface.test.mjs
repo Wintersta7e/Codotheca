@@ -225,15 +225,22 @@ test('activity lanes carry a state so an uncomputed lane cannot render as zero',
 // are lists of commits the UI shows, which reward nothing. So a `commits` field is admissible
 // only when it is a list — a scalar one could only be a tally. Checking the type rather than the
 // name also catches a count this test's name list would miss, such as `commitTotal: u32`.
+//
+// [p3] **A source POSITION is not a tally, and the regex cannot tell them apart.** §28.9's
+// `DebtItem.line` is the 1-based line an occurrence sits on — one marker, one line, and nothing
+// sums it. The carve-out is spelled `Type.field` rather than by bare name so that a `line` on any
+// other type still has to be a list, and it is exhaustive: a `DebtItem.lineCount` would still be
+// refused here. Widening the regex instead would retire the gate on the word it exists to watch.
 test('no field counts commits or lines', () => {
   const banned = new Set(['commitCount', 'commitCounts', 'linesOfCode', 'lineCount', 'loc']);
   const counting = /^(commit|line)s?(total|tally|sum|num|count)?$/i;
+  const positions = new Set(['DebtItem.line']);
   for (const [name, decl] of Object.entries(schema.types)) {
     if (decl.kind !== 'struct') continue;
     for (const [f, expr] of Object.entries(decl.fields)) {
       assert.ok(!banned.has(f), `${name}.${f}`);
       // §1.4's identity weight is the one admissible commit count; it does not exist yet.
-      if (counting.test(f) && name !== 'IdentityRow') {
+      if (counting.test(f) && name !== 'IdentityRow' && !positions.has(`${name}.${f}`)) {
         assert.ok(parseTypeExpr(expr).array, `${name}.${f} is a scalar count of commits or lines`);
       }
     }
@@ -1086,5 +1093,98 @@ test('the four totals agree with the phase-2 delta table', () => {
    *
    * The literal stays exact so a type *removed* still fails here.
    */
-  assert.equal(types, 160, `types: 112 + 48 landed, against the table's 112 + 46; found ${types}`);
+  /**
+   * [p3] §28 is the first phase-3 section to move this row: **+8**, and not +9.
+   * `DebtSource`, `DebtItemState`, `DebtScoring`, `DebtSweepOutcome`, `ObservationBasis`,
+   * `DecayLayer`, `DebtItem`, `DebtSweepState`. `DebtCounts` is **deleted** (R117) — `unverified`
+   * rides §30's `HealthSummary`, and `AdvisoryDetail` is §32's (R118), so §28 declares only the
+   * nullable field that carries it. `ProjectDetail.debt` and `.debtSweeps` are fields and move
+   * no total.
+   */
+  assert.equal(types, 168, `types: 160 + §28's 8, against the table's +8; found ${types}`);
+});
+
+/**
+ * [p3] §28.9's six vocabularies, declared once in the schema and generated into both languages
+ * (R31). **`DecayLayer` is declared here although §33 owns every rule over it** — R113: a type
+ * cannot be referenced by an earlier wave than the one that declares it, and `DebtItem.layer` is
+ * the first field that needs it.
+ *
+ * **The order is asserted, not the set.** `dust · cobwebs · rust · cracks · overgrowth` is the
+ * total order A3's tie-break needs, so a reordering is a behaviour change that a set assertion
+ * would pass straight through.
+ */
+test('§28.9: the debt vocabularies are declared, and DecayLayer carries A3s total order', () => {
+  assert.deepEqual(schema.types.DecayLayer.variants, [
+    'dust',
+    'cobwebs',
+    'rust',
+    'cracks',
+    'overgrowth',
+  ]);
+
+  // Nine sources, closed (A4). The DDL CHECK in `0013_debt.sql` mirrors this list character for
+  // character, and `AC-P3-28-10` reads it rather than a literal.
+  assert.deepEqual(schema.types.DebtSource.variants, [
+    'todo_marker',
+    'missing_readme',
+    'missing_license',
+    'missing_tests',
+    'no_release',
+    'unpushed_commits',
+    'ci_red',
+    'dependency_advisory',
+    'abandoned_with_debt',
+  ]);
+
+  // *Closed* is an event, never a state.
+  assert.deepEqual(schema.types.DebtItemState.variants, ['open', 'unverified']);
+  assert.deepEqual(schema.types.DebtScoring.variants, ['scored', 'shown_only']);
+  assert.deepEqual(schema.types.DebtSweepOutcome.variants, [
+    'complete',
+    'partial',
+    'failed',
+    'unobservable',
+    'skipped_reference',
+    'skipped_suppressed',
+  ]);
+  // Five, and `index` is declared although no phase-3 source produces it (§28.5).
+  assert.deepEqual(schema.types.ObservationBasis.variants, [
+    'head',
+    'index',
+    'worktree',
+    'refs',
+    'remote',
+  ]);
+});
+
+/**
+ * [p3] §28.9's two structs, and R128/F9's spelling: `Timestamp` is a scalar
+ * (`protocol/lib/schema.mjs:13`), so spelling these three `Timestamp` rather than `i64` costs no
+ * type and says what the value is.
+ */
+test('§28.9: DebtItem and DebtSweepState carry Timestamp, not i64', () => {
+  const item = schema.types.DebtItem.fields;
+  assert.equal(item.firstSeenAt, 'Timestamp');
+  assert.equal(item.lastSeenAt, 'Timestamp');
+  assert.equal(item.layer, 'DecayLayer');
+  assert.equal(item.state, 'DebtItemState');
+  assert.equal(item.scoring, 'DebtScoring');
+  assert.equal(item.basis, 'ObservationBasis?');
+
+  const sweep = schema.types.DebtSweepState.fields;
+  assert.equal(sweep.observedAt, 'Timestamp');
+  // Nullable for the same reason its column is: `AC-P3-28-11` requires *not computed* and *zero*
+  // to differ **on the wire**, not only in the store.
+  assert.equal(sweep.itemCount, 'u32?');
+});
+
+/**
+ * [p3] R120 — **one flat list, never five arrays.** Five arrays are five places for a layer to be
+ * absent-versus-empty, the distinction §33.8 already rules on for `WeatherLayer`. The grouping is
+ * a pure function of a field every item already carries, and it lives in the renderer.
+ */
+test('§28.9: ProjectDetail carries one flat debt list and its sweeps', () => {
+  assert.equal(schema.types.ProjectDetail.fields.debt, '[DebtItem]');
+  assert.equal(schema.types.ProjectDetail.fields.debtSweeps, '[DebtSweepState]');
 });

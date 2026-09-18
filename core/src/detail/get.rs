@@ -465,6 +465,13 @@ pub fn handle_project_get(
             .first_commit_tz_offset_min
             .and_then(|v| i32::try_from(v).ok()),
         size_worktree_bytes: scalars.size_worktree_bytes,
+        // [p3] §28.9's two fields land with the type so the tree compiles; **`debt_item` and
+        // `debt_sweep` do not exist yet** — `0013_debt.sql` is the next task — so empty is the
+        // literal truth of this tree rather than a placeholder. p3-28's own Task 14 replaces
+        // both with `crate::debt::read::load_debt` and `load_debt_sweeps`, and the sweep list
+        // is what makes an empty item list readable as *no debt* rather than *nobody looked*.
+        debt: Vec::new(),
+        debt_sweeps: Vec::new(),
         locations,
         row,
     })

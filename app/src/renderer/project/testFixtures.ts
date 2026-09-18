@@ -214,6 +214,11 @@ export function detailFixture(over: Partial<ProjectDetail> = {}): ProjectDetail 
     // only copy on earth, whatever its working tree says. A fixture answering anything else
     // here would be a shape the producer cannot make.
     backup: 'only_copy',
+    // [p3] §28.9: one flat list, grouped by layer in the renderer (R120). Empty is *this project
+    // has no items*, which is a different fact from `debtSweeps` being empty — that one is
+    // *nothing has been swept*, and a test about either overrides both.
+    debt: [],
+    debtSweeps: [],
     ...over,
   };
 }
