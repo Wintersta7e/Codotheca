@@ -3885,6 +3885,254 @@
           "assert": "TRY AGAIN on one project revives that project's deferred project_remote and its own account's deferred account_repos and rename_probe with reason user_requested and the fail count cleared, and leaves another account's rows, another project's row and every blocked row untouched."
         }
       ]
+    },
+    {
+      "id": "P2-22-1",
+      "title": "One library, both ingest orders, the same rows",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-1",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "acceptance_identity::both_ingest_orders_reach_the_same_library",
+          "assert": "Runs the fixture library sync-then-scan and scan-then-sync, prints the count of listings, local clones and project rows, fails at zero fixtures scanned, and asserts identical rows, identical remote_link_basis values and an identical project count on both orders.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-22-2",
+      "title": "Hydration does not re-roll the art",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-2",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_hydrate::the_art_does_not_re_roll",
+          "assert": "A listing creates a not-cloned project, the repository is cloned into a differently-named directory and rescanned, and seed_basename, name, the art seed and the row id are all unchanged \u2014 the id clause being what separates hydration from create-plus-merge."
+        }
+      ]
+    },
+    {
+      "id": "P2-22-3",
+      "title": "Hydration is not a merge",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-3",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_boundaries::no_module_of_this_plan_reaches_the_merge_machinery",
+          "assert": "Walks the section s modules for a reach into the merge machinery, prints the count of files scanned and fails at zero, so no merge_record, project_redirect, merged_into or projects.merged path is opened by hydration.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-22-4",
+      "title": "Hydration writes four columns and no more",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-4",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_hydrate::hydration_writes_four_columns_and_no_more",
+          "assert": "Snapshots the whole project row before and after and diffs the column set, which is exactly lineage_key, is_shallow, is_fork and updated_at \u2014 a per-column equality passes while a fifth column moves."
+        }
+      ]
+    },
+    {
+      "id": "P2-22-5",
+      "title": "The xp guard fires and rolls the transaction back",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-5",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_hydrate::the_xp_guard_fires_and_rolls_the_transaction_back",
+          "assert": "A not-cloned project carrying a git-derived xp_events row fails the hydration transaction and is left unhydrated. A guard with no failing case is not a guard."
+        }
+      ]
+    },
+    {
+      "id": "P2-22-6",
+      "title": "Ambiguity attaches to nothing",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-6",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_ingest::two_exact_matches_attach_to_nothing_and_create_nothing",
+          "assert": "Two live projects on one folded remote_key with different lineages, plus a listing equal to both: no attach, no new row, and both projects present in the ambiguous group."
+        }
+      ]
+    },
+    {
+      "id": "P2-22-7",
+      "title": "A suppression names the project that blocked it",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-7",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_ingest::a_suppressed_listing_names_the_project_that_blocked_it",
+          "assert": "A listing whose path component equals a local project s on a different host creates no row and is reported with the blocking project named. A suppression that produces no report fails the criterion."
+        },
+        {
+          "id": "AC-P2-22-7-wire",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "sync_listing::a_suppression_names_the_project_that_blocked_it_once_per_entry",
+          "assert": "The same suppression reaches the sync outcome once per entry, positionally aligned with the entry it blocked, so the report the renderer reads carries the name and not only the count."
+        }
+      ]
+    },
+    {
+      "id": "P2-22-8",
+      "title": "Nothing but the two bases attaches",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-8",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_match_listing::nothing_but_the_two_bases",
+          "assert": "A listing sharing a local project s name, description, default branch and every timestamp, with a different remote_key and no provider_repo_id, reaches Create and never Attach. This is the check that fails if softer evidence is ever added."
+        }
+      ]
+    },
+    {
+      "id": "P2-22-9",
+      "title": "The matcher and hydration reach neither git nor the network",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-9",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "acceptance_identity::the_matcher_and_hydration_reach_neither_git_nor_the_network",
+          "assert": "Both run to completion with the network denied and the git binary replaced by a failing stub, and every outcome is unchanged."
+        }
+      ]
+    },
+    {
+      "id": "P2-22-10",
+      "title": "One canonicaliser produces every remote_key",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-10",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_boundaries::only_one_module_parses_a_url_and_none_assembles_a_key",
+          "assert": "Scans the matcher s modules for a second URL parser or a hand-assembled host/owner/name string, prints the file count it scanned and fails at zero, so every remote_key reaching the matcher comes from canonical_remote_key.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-22-11",
+      "title": "The host-alias fold is two-sided and declared",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-11",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_alias_fold::a_clone_on_a_declared_alias_host_folds_equal_to_the_canonical_listing",
+          "assert": "A clone taken over a provider-declared alias host compares equal to a listing published on the canonical host, run in both directions so folding one side only is caught."
+        },
+        {
+          "id": "AC-P2-22-11-undeclared",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_alias_fold::an_undeclared_host_folds_to_itself_and_compares_unequal",
+          "assert": "A clone on an undeclared host folds to itself and matches nothing, so it is suppressed rather than duplicated."
+        }
+      ]
+    },
+    {
+      "id": "P2-22-12",
+      "title": "decide is untouched and neither union gains a variant",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-12",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_boundaries::identity_decision_still_has_exactly_six_outcomes",
+          "assert": "IdentityDecision gains no variant, asserted against the count core/src/identity/decide.rs declares, so a seventh outcome fails here rather than in review.",
+          "source": "\u00a722.13"
+        },
+        {
+          "id": "AC-P2-22-12-kind",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_boundaries::association_kind_gains_no_variant_and_both_columns_accept_all_four",
+          "assert": "AssociationKind gains no fifth variant, and both DDL CHECKs over the migrated schema accept all four \u2014 the generated union and its two CHECKs read against each other rather than one side asserting its own spelling.",
+          "mirror": {
+            "other": "core/src/identity/decide.rs"
+          }
+        }
+      ]
+    },
+    {
+      "id": "P2-22-13",
+      "title": "The rename repair is bounded and additive",
+      "group": "functional",
+      "spec": "\u00a722.13",
+      "checks": [
+        {
+          "id": "AC-P2-22-13",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_rename_repair::n_unmatched_projects_produce_at_most_n_lookups_and_then_zero",
+          "assert": "N unmatched projects produce at most N lookups in one sync and zero in the next once ids are stored, with the request count printed and a zero-lookup run failing.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-22-13-unknown",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-22",
+          "test": "identity_rename_repair::a_403_a_429_and_an_offline_lookup_each_leave_the_fields_unknown",
+          "assert": "A 403, a 429 and an offline lookup each leave the fields unknown and never failed, and none retries within the same sync."
+        }
+      ]
     }
   ]
 }

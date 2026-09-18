@@ -91,7 +91,7 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 64 | 132 |
+| automated | 77 | 149 |
 | deferred | 4 | 4 |
 | manual | 0 | 0 |
 | unmeasurable | 0 | 0 |
@@ -167,6 +167,19 @@ One row per criterion; the disposition is the weakest of its checks.
 | P2-21-15 | automated | An entry with no permission object is counted, never dropped | `AC-P2-21-15` automated, runs now — `sync_listing::an_entry_with_no_permission_object_is_counted_and_admitted_nowhere`<br>`AC-P2-21-15-suppressed` automated, runs now — `sync_listing::a_suppression_names_the_project_that_blocked_it_once_per_entry` |
 | P2-21-16 | automated | The product schedules a listing, and a completed listing schedules the rename probe | `AC-P2-21-16` automated, runs now — `sync_runner::a_connected_account_is_listed_with_nothing_enqueueing_it`<br>`AC-P2-21-16-park` automated, runs now — `sync_runner::a_throttle_naming_no_instant_parks_once_instead_of_retrying` |
 | P2-21-17 | automated | A deferred sync task has a user-reachable way out | `AC-P2-21-17` automated, runs now — `repair_commands::try_again_revives_this_accounts_deferred_sync_and_no_others` |
+| P2-22-1 | automated | One library, both ingest orders, the same rows | `AC-P2-22-1` automated, runs now — `acceptance_identity::both_ingest_orders_reach_the_same_library` |
+| P2-22-2 | automated | Hydration does not re-roll the art | `AC-P2-22-2` automated, runs now — `identity_hydrate::the_art_does_not_re_roll` |
+| P2-22-3 | automated | Hydration is not a merge | `AC-P2-22-3` automated, runs now — `identity_boundaries::no_module_of_this_plan_reaches_the_merge_machinery` |
+| P2-22-4 | automated | Hydration writes four columns and no more | `AC-P2-22-4` automated, runs now — `identity_hydrate::hydration_writes_four_columns_and_no_more` |
+| P2-22-5 | automated | The xp guard fires and rolls the transaction back | `AC-P2-22-5` automated, runs now — `identity_hydrate::the_xp_guard_fires_and_rolls_the_transaction_back` |
+| P2-22-6 | automated | Ambiguity attaches to nothing | `AC-P2-22-6` automated, runs now — `identity_ingest::two_exact_matches_attach_to_nothing_and_create_nothing` |
+| P2-22-7 | automated | A suppression names the project that blocked it | `AC-P2-22-7` automated, runs now — `identity_ingest::a_suppressed_listing_names_the_project_that_blocked_it`<br>`AC-P2-22-7-wire` automated, runs now — `sync_listing::a_suppression_names_the_project_that_blocked_it_once_per_entry` |
+| P2-22-8 | automated | Nothing but the two bases attaches | `AC-P2-22-8` automated, runs now — `identity_match_listing::nothing_but_the_two_bases` |
+| P2-22-9 | automated | The matcher and hydration reach neither git nor the network | `AC-P2-22-9` automated, runs now — `acceptance_identity::the_matcher_and_hydration_reach_neither_git_nor_the_network` |
+| P2-22-10 | automated | One canonicaliser produces every remote_key | `AC-P2-22-10` automated, runs now — `identity_boundaries::only_one_module_parses_a_url_and_none_assembles_a_key` |
+| P2-22-11 | automated | The host-alias fold is two-sided and declared | `AC-P2-22-11` automated, runs now — `identity_alias_fold::a_clone_on_a_declared_alias_host_folds_equal_to_the_canonical_listing`<br>`AC-P2-22-11-undeclared` automated, runs now — `identity_alias_fold::an_undeclared_host_folds_to_itself_and_compares_unequal` |
+| P2-22-12 | automated | decide is untouched and neither union gains a variant | `AC-P2-22-12` automated, runs now — `identity_boundaries::identity_decision_still_has_exactly_six_outcomes`<br>`AC-P2-22-12-kind` automated, runs now — `identity_boundaries::association_kind_gains_no_variant_and_both_columns_accept_all_four` |
+| P2-22-13 | automated | The rename repair is bounded and additive | `AC-P2-22-13` automated, runs now — `identity_rename_repair::n_unmatched_projects_produce_at_most_n_lookups_and_then_zero`<br>`AC-P2-22-13-unknown` automated, runs now — `identity_rename_repair::a_403_a_429_and_an_offline_lookup_each_leave_the_fields_unknown` |
 
 ## Why a check is not automated, or is automated over less than it looks
 

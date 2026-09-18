@@ -600,8 +600,43 @@ test('registering a phase-2 section leaves phase 1 at 70 and 171', () => {
     phase1.reduce((n, c) => n + c.checks.length, 0),
     171,
   );
-  // §20 owns thirteen, §21 seventeen, §23 twelve and §25 twenty-six, which is what
+  // §20 owns thirteen, §21 seventeen, §22 thirteen, §23 twelve and §25 twenty-six, which is what
   // `PHASE2_SECTIONS` declares for each. Raised by this lane's own delta, read from the branch
   // base — never to a running total a later lane would have to guess at.
-  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 68);
+  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 81);
+});
+
+// [p2-26 Task 4] §22's thirteen. The section is complete or it is silent, and this is what
+// turns the silence off.
+test('§22 holds exactly thirteen contiguous criteria', () => {
+  const registry = loadRegistry(registryPath);
+  const ids = registry.criteria
+    .filter((c) => /^P2-22-/u.test(c.id))
+    .map((c) => Number.parseInt(c.id.slice('P2-22-'.length), 10))
+    .sort((a, b) => a - b);
+  assert.deepEqual(ids, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.deepEqual(validatePhase2Complete(registry), []);
+});
+
+// Every §22 check names a test that exists in the tree. The `test` field is the join key and
+// there is no name table: an id one character off reads as *not run*, and `gateProblems` says so
+// against a capture rather than here — which is too late to be a review.
+test('every §22 check names a cargo test that the tree really declares', () => {
+  const registry = loadRegistry(registryPath);
+  const core = fileURLToPath(new URL('../../core/tests/', import.meta.url));
+  const checks = registry.criteria
+    .filter((c) => /^P2-22-/u.test(c.id))
+    .flatMap((c) => c.checks.map((k) => ({ criterion: c.id, ...k })));
+  assert.ok(checks.length >= 13, 'the §22 scan found no checks');
+
+  for (const check of checks) {
+    assert.equal(check.owner, 'p2-22', `${check.id} is p2-22's`);
+    assert.equal(check.status, 'automated', `${check.id} names a test that ran`);
+    const [binary, fn] = String(check.test).split('::');
+    const source = readFileSync(`${core}${binary}.rs`, 'utf8');
+    assert.ok(
+      new RegExp(`^(async )?fn ${fn}\\(`, 'mu').test(source),
+      `${check.id}: core/tests/${binary}.rs declares no fn ${fn}`,
+    );
+  }
 });
