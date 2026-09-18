@@ -12,6 +12,7 @@
 pub mod identity;
 pub mod store;
 pub mod sweep;
+pub mod xp;
 
 /// Render a **generated** enum as the TEXT its column stores, through serde.
 ///
