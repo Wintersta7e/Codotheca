@@ -209,6 +209,59 @@ pub fn cursor_ordinal(cursor: Option<&str>) -> usize {
     cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0)
 }
 
+/// §29.7's three predicates, checked in order.
+///
+/// Gate 1 decides whether J7 runs at all. Gates 2 and 3 gate **only the blob read**: the
+/// enumeration still runs, because it reads names, which §10.1's shipped paragraph already
+/// licenses — so a suppressed or ungranted project still answers all four presence predicates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContentGates {
+    /// §4.1a's classification. **`None` is *not computed* and is not Reference**, so the gate is
+    /// `Some(false)` rather than a falsy check. This is what removes the measured worst case — a
+    /// one-commit clone of someone else's 14,000-file project — from the workload.
+    pub is_reference: Option<bool>,
+    /// §29.8's grant. Off → no blob is read and no `blob_scan` or `blob_finding` row is written.
+    pub granted: bool,
+    /// §30.5's predicate: not enrolled, or `is_archived = 1`.
+    ///
+    /// **Owned by §30.5 and A11.1, and a literal `false` until p3-30 lands.** Wiring it to
+    /// `acknowledged_at` now would suppress the blob read for every project, for ever, because
+    /// nothing writes that column — health would ship off for every project with every test
+    /// around it green. **p3-30 replaces the one expression in `gates_for` in the same change
+    /// that lands the writer.** No trait is declared for it: a trait with a fake and no
+    /// production impl is the defect this project keeps finding.
+    ///
+    /// `surface_suppressed` gates rendering, ranking and notification and gates nothing here.
+    pub compute_suppressed: bool,
+}
+
+impl ContentGates {
+    /// Whether J7 runs at all. Predicate 1 alone; the other two gate the blob read.
+    #[must_use]
+    pub fn runs(self) -> bool {
+        self.is_reference == Some(false)
+    }
+
+    /// Whether the blob read runs. All three, in §29.7's order.
+    #[must_use]
+    pub fn reads_blobs(self) -> bool {
+        self.runs() && self.granted && !self.compute_suppressed
+    }
+}
+
+/// Read §29.7's three predicates for one project.
+///
+/// # Errors
+/// Fails when SQLite refuses a read.
+pub fn gates_for(conn: &Connection, project: ProjectId) -> Result<ContentGates, IndexError> {
+    Ok(ContentGates {
+        is_reference: super::scheduler::is_reference(conn, project)?,
+        granted: crate::surfaces::settings::content_scan_enabled(conn)?,
+        // The one expression p3-30 replaces. See the field's doc comment.
+        compute_suppressed: false,
+    })
+}
+
 /// What one J7 run is about: the project, the copy on disk it reads, and where it resumes.
 #[derive(Debug, Clone, Copy)]
 pub struct ScanRun<'a> {
@@ -239,6 +292,12 @@ pub fn run_j7(
         cursor,
         now,
     } = run;
+    let gates = super::read(index, |conn| gates_for(conn, project))?;
+    // Predicate 1 stays in the job as defence-in-depth: `next_jobs_after` skips Reference, and
+    // `projects.get` and `projects.requeue` are two entry points that do not go through it.
+    if !gates.runs() {
+        return Ok(JobOutcome::Done);
+    }
     // 1. The head comparison, before any git invocation. An unborn HEAD writes no row at all —
     //    the row's absence is *J7 has never observed this project*, and no fourth tri-state value
     //    is invented for it.
@@ -311,6 +370,11 @@ pub fn run_j7(
         if !cached_before.contains(&entry.oid) && !wanted.contains(&entry.oid) {
             wanted.push(entry.oid.clone());
         }
+    }
+    // Gates 2 and 3. The enumeration above has already run and its answers are already stored;
+    // what stops here is the blob read and nothing else.
+    if !gates.reads_blobs() {
+        return Ok(JobOutcome::Done);
     }
     let batch = git.read_blobs(repo, &wanted, J7_BLOB_BYTE_CAP, J7_CHUNK_BYTES, ctx)?;
 

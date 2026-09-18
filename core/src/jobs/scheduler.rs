@@ -340,21 +340,40 @@ impl JobRunner {
         out
     }
 
-    /// `None` when authorship has not been computed. The `authored_by_user IS NOT NULL` clause
-    /// is what makes the query answer "not computed" rather than the column's `DEFAULT 0`.
+    /// `None` when authorship has not been computed.
     fn read_is_reference(&self, project: ProjectId) -> Option<bool> {
-        self.with_index(|conn| {
-            conn.query_row(
-                "SELECT is_reference FROM project
-                  WHERE id = ?1 AND authored_by_user IS NOT NULL",
-                [project.0],
-                |r| r.get::<_, i64>(0),
-            )
-            .map(|v| v != 0)
-            .map_err(crate::index::IndexError::Sqlite)
-        })
-        .ok()
+        self.with_index(|conn| is_reference(conn, project))
+            .ok()
+            .flatten()
     }
+}
+
+/// Whether authorship resolved this project to Reference, or `None` when it has not been
+/// computed.
+///
+/// **`None` is *not computed* and is not Reference.** The `authored_by_user IS NOT NULL` clause is
+/// what makes the query answer that rather than the column's `DEFAULT 0` — and it is why §29.7's
+/// first predicate is `Some(false)` rather than a falsy check.
+///
+/// One owner, because §29.7's gate and the scheduler's band both ask it (R12).
+///
+/// # Errors
+/// Fails when SQLite refuses the read.
+pub fn is_reference(
+    conn: &rusqlite::Connection,
+    project: ProjectId,
+) -> Result<Option<bool>, crate::index::IndexError> {
+    conn.query_row(
+        "SELECT is_reference FROM project
+          WHERE id = ?1 AND authored_by_user IS NOT NULL",
+        [project.0],
+        |r| r.get::<_, i64>(0),
+    )
+    .map(|v| Some(v != 0))
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        other => Err(crate::index::IndexError::Sqlite(other)),
+    })
 }
 
 fn git_error_kind(e: &crate::git::GitError) -> &'static str {

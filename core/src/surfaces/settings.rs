@@ -15,6 +15,22 @@ pub const KEY_RESIDENT_SHORTCUT: &str = "resident_shortcut";
 pub const KEY_ROAST_ENABLED: &str = "roast_enabled";
 pub const KEY_LOG_LEVEL: &str = "log_level";
 
+/// §29.8's grant: whole-tree source-file reading, and **J7's alone** (A11.3).
+///
+/// Lockfiles and the four presence predicates ride J6's existing named-file grant — *"we read
+/// your source code"* and *"we read your `package-lock.json`"* are different sentences to a user
+/// and the second is already true. Off until the user turns it on.
+pub const KEY_CONTENT_SCAN_ENABLED: &str = "content_scan_enabled";
+
+/// Whether §29's blob read has been granted. **Absent is off**, which is the default the whole
+/// gate depends on.
+///
+/// # Errors
+/// Fails when the index cannot be read.
+pub fn content_scan_enabled(conn: &rusqlite::Connection) -> Result<bool, IndexError> {
+    Ok(get(conn, KEY_CONTENT_SCAN_ENABLED)?.as_deref() == Some("1"))
+}
+
 /// §24.3a's install root, chosen once from the roots that already exist.
 ///
 /// `app_meta` is key/value, so this costs **no migration**. It stores a `RootId` rather than a

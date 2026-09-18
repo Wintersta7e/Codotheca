@@ -23,7 +23,7 @@ use codotheca_core::jobs::content_scan::{
     cached_scan, findings_for_blob, missing_blobs, record_read, BlobOutcome, CachedScan,
 };
 use codotheca_core::jobs::j3_inventory::ARCHETYPE_SAMPLE;
-use codotheca_core::jobs::j7_markers::{self, ContentScanRow};
+use codotheca_core::jobs::j7_markers::{self, ContentGates, ContentScanRow};
 use codotheca_core::jobs::markers::{J7_BLOB_BYTE_CAP, J7_CHUNK_BLOBS, J7_SCANNER_VERSION};
 use codotheca_core::jobs::presence::{presence_for, PresenceAnswers, PresenceState};
 use codotheca_core::jobs::state::{apply_outcome, JobStateRow};
@@ -575,13 +575,23 @@ impl Rig {
         let index = Index::open(&dir.path().join("index")).unwrap();
         let (project, location) = {
             let conn = index.conn();
+            // Authorship computed and not Reference, so §29.7's first predicate lets J7 run;
+            // the grant on, so the third lets it read. Each test that is about a gate sets its
+            // own.
             conn.execute(
-                "INSERT INTO project (name, seed_basename, created_at, updated_at)
-                 VALUES ('p', 'p', 0, 0)",
+                "INSERT INTO project
+                   (name, seed_basename, created_at, updated_at, authored_by_user, is_reference)
+                 VALUES ('p', 'p', 0, 0, 1, 0)",
                 [],
             )
             .unwrap();
             let project = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO app_meta (k, v) VALUES ('content_scan_enabled', '1')
+                 ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+                [],
+            )
+            .unwrap();
             conn.execute(
                 "INSERT INTO location
                    (project_id, kind, path_bytes, path_key, path_display, store_key, presence,
@@ -612,6 +622,35 @@ impl Rig {
 
     fn set_tree(&self, entries: Vec<TreeEntry>) {
         self.git.always_head_tree(GitReply::Ok(entries));
+    }
+
+    fn set_head(&self, head_oid: &str) {
+        let guard = self.index.lock().unwrap();
+        guard
+            .conn()
+            .execute(
+                "UPDATE location SET head_oid = ?2 WHERE id = ?1",
+                rusqlite::params![self.location.0, head_oid],
+            )
+            .unwrap();
+        drop(guard);
+    }
+
+    /// Write one fact a gate reads, against this rig's own project.
+    fn set(&self, sql: &str) {
+        let guard = self.index.lock().unwrap();
+        guard
+            .conn()
+            .execute(sql, rusqlite::params![self.project.0])
+            .unwrap();
+        drop(guard);
+    }
+
+    fn gates(&self) -> ContentGates {
+        let guard = self.index.lock().unwrap();
+        let gates = j7_markers::gates_for(guard.conn(), self.project).unwrap();
+        drop(guard);
+        gates
     }
 
     fn run(&self, cursor: Option<&str>) -> JobOutcome {
@@ -787,4 +826,205 @@ fn ac_p3_29_5_a_cut_off_is_partial_and_requeues_without_a_failure() {
     );
     assert!(!a.is_empty(), "the comparison is over an empty set");
     assert_eq!(a, b, "the two runs disagree by identity");
+}
+
+/// **AC-P3-29-7.** An unchanged head invokes git zero times.
+///
+/// The trigger is a head comparison — not a timer, not a watcher. A `fetch` moves
+/// `refstate_basis` without moving `head_oid`, so J7 short-circuits and §6's bounded watch set
+/// gains nothing.
+#[test]
+fn ac_p3_29_7_an_unchanged_head_invokes_git_zero_times() {
+    let rig = Rig::new("head-one");
+    let oid = rig.source(b"// TODO: one\n");
+    rig.set_tree(vec![blob_entry("src/a.rs", &oid)]);
+    assert_eq!(rig.run(None), JobOutcome::Done);
+    assert_eq!(
+        rig.scan_row().unwrap().complete_head_oid.as_deref(),
+        Some("head-one")
+    );
+
+    rig.git.clear();
+    let outcome = rig.run(None);
+    eprintln!(
+        "second run: {outcome:?}, git recorded {:?}",
+        rig.git.calls()
+    );
+    assert_eq!(outcome, JobOutcome::Done);
+    assert!(
+        rig.git.calls().is_empty(),
+        "the git seam was invoked against an unchanged head"
+    );
+}
+
+/// **AC-P3-29-6.** A moved head restarts the scan at ordinal 0 against the new head.
+///
+/// A scan straddling two heads is a reading of neither.
+#[test]
+fn ac_p3_29_6_a_moved_head_restarts_the_scan() {
+    let rig = Rig::new("head-one");
+    let mut entries = Vec::new();
+    for i in 0..(J7_CHUNK_BLOBS + 2) {
+        let oid = rig.source(format!("// TODO: {i}\n").as_bytes());
+        entries.push(blob_entry(&format!("src/f{i:05}.rs"), &oid));
+    }
+    rig.set_tree(entries);
+    let JobOutcome::Partial { cursor, .. } = rig.run(None) else {
+        panic!("the fixture never crossed a chunk boundary");
+    };
+    assert_ne!(cursor, "0");
+    let before = rig.scan_row().unwrap();
+    assert!(before.blobs_pending.unwrap_or(0) > 0);
+
+    rig.set_head("head-two");
+    let outcome = rig.run(Some(&cursor));
+    let after = rig.scan_row().unwrap();
+    eprintln!("cursor was {cursor}; after the head moved: {outcome:?}, row {after:?}");
+    assert_eq!(after.head_oid, "head-two");
+    assert_eq!(after.complete_head_oid, None);
+    // Restarting at ordinal 0 means the whole enumeration is pending again, not the tail the old
+    // cursor named.
+    assert_eq!(
+        after.blobs_pending,
+        before
+            .blobs_total
+            .map(|t| t - i64::try_from(J7_CHUNK_BLOBS).unwrap())
+    );
+    assert_eq!(after.blobs_total, before.blobs_total);
+}
+
+/// **AC-P3-29-28.** A bare repository with commits is scanned.
+///
+/// **Bare is not the discriminator** (§29.1): `--full-tree` needs no working tree, so a bare
+/// repository with commits enumerates exactly like any other. Written because the shape it guards
+/// is a gate on `repo_kind` that no other criterion would catch. The count of bare repositories
+/// exercised is printed and the criterion fails at zero.
+#[test]
+fn ac_p3_29_28_a_bare_repository_with_commits_is_scanned() {
+    let source = TestRepo::init();
+    source.write("src/a.rs", b"// TODO: in a bare clone\n");
+    source.write("README.md", b"# a project\n");
+    source.write("LICENSE", b"MIT\n");
+    source.write(".github/workflows/ci.yml", b"on: push\n");
+    source.write("tests/it.rs", b"fn t() {}\n");
+    source.commit("first");
+    let bare = TestRepo::init_bare();
+    let path = bare.path().join("copy.git");
+    source.git(&["clone", "-q", "--bare", ".", &path.to_string_lossy()]);
+    let handle = RepoHandle::bare(
+        &path,
+        codotheca_core::git::StoreKey::new("test-store"),
+        codotheca_core::mount::StoreClass::Local,
+    );
+
+    // The corpus, so the count is derived from what was built rather than written down.
+    let corpus: Vec<RepoHandle> = vec![handle];
+    let mut exercised = 0;
+    for bare_repo in &corpus {
+        let entries = head_tree(
+            &source.exec(),
+            bare_repo,
+            RunLimits::none(),
+            &CancelToken::new(),
+        )
+        .unwrap();
+        let answers = presence_for(&entries);
+        eprintln!(
+            "a bare repository enumerated {} paths: {answers:?}",
+            entries.len()
+        );
+        assert!(!entries.is_empty());
+        assert_eq!(answers.readme, PresenceState::Present);
+        assert_eq!(answers.license, PresenceState::Present);
+        assert_eq!(answers.tests, PresenceState::Present);
+        assert_eq!(answers.ci, PresenceState::Present);
+        exercised += 1;
+    }
+    eprintln!("bare repositories exercised: {exercised}");
+    assert!(exercised > 0, "no bare repository was exercised");
+}
+
+/// **AC-P3-29-29.** An unborn HEAD writes no row.
+///
+/// Asserted as **row absence**, not as a value: the row's absence is *J7 has never observed this
+/// project*, and no fourth tri-state value is invented for it. `head_oid` is `NOT NULL`, which is
+/// that rule made structural.
+#[test]
+fn ac_p3_29_29_an_unborn_head_writes_no_row() {
+    let rig = Rig::new("head-one");
+    rig.set("UPDATE location SET head_oid = NULL WHERE project_id = ?1");
+    let oid = rig.source(b"// TODO: never read\n");
+    rig.set_tree(vec![blob_entry("src/a.rs", &oid)]);
+
+    let outcome = rig.run(None);
+    eprintln!(
+        "an unborn head yields {outcome:?} and row {:?}",
+        rig.scan_row()
+    );
+    assert_eq!(outcome, JobOutcome::Done);
+    assert_eq!(rig.scan_row(), None, "a row was written with no basis");
+    assert!(rig.git.calls().is_empty(), "git ran with no head to read");
+}
+
+/// §29.7 predicate 3: suppression gates the **blob read** and not the enumeration.
+///
+/// Constructed directly, so both branches are exercised and the wiring is proven — only the
+/// predicate's input is p3-30's (Deviation 3).
+#[test]
+fn suppression_gates_the_blob_read_and_not_the_enumeration() {
+    let open = ContentGates {
+        is_reference: Some(false),
+        granted: true,
+        compute_suppressed: false,
+    };
+    let suppressed = ContentGates {
+        compute_suppressed: true,
+        ..open
+    };
+    eprintln!("open {open:?} reads blobs: {}", open.reads_blobs());
+    eprintln!(
+        "suppressed {suppressed:?} reads blobs: {}",
+        suppressed.reads_blobs()
+    );
+    assert!(open.reads_blobs());
+    assert!(suppressed.runs(), "suppression stopped the enumeration too");
+    assert!(!suppressed.reads_blobs());
+    // `None` is *not computed* and is not Reference, so it is not `Some(false)`.
+    assert!(!ContentGates {
+        is_reference: None,
+        ..open
+    }
+    .runs());
+    assert!(!ContentGates {
+        is_reference: Some(true),
+        ..open
+    }
+    .runs());
+
+    // And against a real run: the enumeration lands its four answers, and no blob is read.
+    let rig = Rig::new("head-one");
+    let oid = rig.source(b"// TODO: suppressed\n");
+    rig.set_tree(vec![blob_entry("src/a.rs", &oid)]);
+    rig.set(
+        "UPDATE app_meta SET v = '0'
+          WHERE k = 'content_scan_enabled' AND ?1 = (SELECT id FROM project LIMIT 1)",
+    );
+    assert!(!rig.gates().reads_blobs());
+
+    assert_eq!(rig.run(None), JobOutcome::Done);
+    let row = rig.scan_row().unwrap();
+    eprintln!("ungranted run stored {row:?}");
+    let guard = rig.index.lock().unwrap();
+    let scans: i64 = guard
+        .conn()
+        .query_row("SELECT count(*) FROM blob_scan", [], |r| r.get(0))
+        .unwrap();
+    let presence = j7_markers::presence_for_project(guard.conn(), rig.project)
+        .unwrap()
+        .unwrap();
+    drop(guard);
+    eprintln!("blob_scan rows: {scans}, presence {presence:?}");
+    assert_eq!(scans, 0, "the blob read ran behind a closed gate");
+    assert_eq!(presence.readme, PresenceState::Absent);
+    assert!(rig.git.blob_requests().is_empty());
 }
