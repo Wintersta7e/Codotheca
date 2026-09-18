@@ -15,9 +15,30 @@ use crate::index::IndexError;
 use crate::protocol::AccountId;
 use crate::sync::classify::RateSnapshot;
 
-/// §21.5's floor. While `remaining` is **known** and below this, scheduled tasks yield and only
-/// on-demand tasks spend.
-pub const ON_DEMAND_RESERVE: i64 = 200;
+/// §21.5's floor, as a **fraction of the pool it is spent from**.
+///
+/// **[p3] It replaces `ON_DEMAND_RESERVE: i64 = 200`, which is deleted rather than joined.**
+/// Keeping both the absolute and the divisor would be one value stated twice, created on purpose;
+/// the 200 survives as what this formula yields for the pool it was written for.
+///
+/// The constant was not wrong — it was an **absolute where the quantity is relative**. 200 against
+/// §21.5's authenticated 5,000/hr is 4%. Against the unauthenticated 60/hr pool §32's sweep draws
+/// on, `remaining` can never reach 200, so the sweep issued exactly one request in the lifetime of
+/// the process and every later pick answered `Reserved` — and because `Reserved` issues nothing,
+/// `remaining` was never re-observed and never rose. `sync.status` reported it as
+/// `parked · reserve`, **which reads as correct throttling**.
+pub const ON_DEMAND_RESERVE_DIVISOR: i64 = 25;
+
+/// The reserve for a pool of this size, or **`None` where the limit is unobserved**.
+///
+/// `None` means *no reserve applies*, never *a reserve of zero* — the same answer [`may_spend`]
+/// already gives for an unobserved `remaining`, so this adds no new unknown case and no new
+/// branch. Exactly **200 at `limit = 5000`**, so the authenticated case does not move by one unit,
+/// and **2 at `limit = 60`**.
+#[must_use]
+pub fn reserve_for(limit: Option<i64>) -> Option<i64> {
+    limit.map(|limit| limit / ON_DEMAND_RESERVE_DIVISOR)
+}
 
 /// One pool's last observation.
 ///
@@ -90,7 +111,8 @@ pub enum BudgetVerdict {
     Spend,
     /// `remaining` is known to be 0 and the reset has not passed.
     ParkUntil(i64),
-    /// `remaining` is known and below [`ON_DEMAND_RESERVE`], and this is a scheduled task.
+    /// `remaining` is known and below [`reserve_for`] this pool's limit, and this is a scheduled
+    /// task.
     Reserved(i64),
     /// Nothing has been observed. **A task whose budget is unknown proceeds** — the first request
     /// is what discovers the number.
@@ -219,7 +241,8 @@ pub fn may_spend(row: Option<&BudgetRow>, on_demand: bool, now: i64) -> BudgetVe
             _ => BudgetVerdict::Spend,
         };
     }
-    if !on_demand && remaining < ON_DEMAND_RESERVE {
+    // **The reserve is a fraction of this pool, and an unobserved limit reserves nothing.**
+    if !on_demand && reserve_for(row.and_then(BudgetRow::limit)).is_some_and(|r| remaining < r) {
         return BudgetVerdict::Reserved(reset_at.unwrap_or(now));
     }
     BudgetVerdict::Spend
