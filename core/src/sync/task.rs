@@ -17,9 +17,9 @@ use crate::protocol::{AccountId, ProjectId, SyncTaskKind};
 
 /// One unit of forge work, with the id it is about.
 ///
-/// `key` is nullable in `sync_task_state` so a process-wide task is representable. **Phase 2
-/// declares none** — phase 3's dependency-advisory task is the one §21.6 names, and it needs no
-/// migration when it arrives.
+/// `key` is nullable in `sync_task_state` so a process-wide task is representable. **[p3] §32's
+/// advisory sweep is the one that takes that seam** — the task §21.6 names, now arrived, and it
+/// needed no migration for the column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncTask {
     AccountRepos {
@@ -70,10 +70,11 @@ impl SyncTask {
 /// An inherent const on the generated enum: legal because both are in this crate, and it is the
 /// vocabulary AC-P2-21-1 walks against `JobKind::ALL`.
 impl SyncTaskKind {
-    pub const ALL: [SyncTaskKind; 3] = [
+    pub const ALL: [SyncTaskKind; 4] = [
         SyncTaskKind::AccountRepos,
         SyncTaskKind::ProjectRemote,
         SyncTaskKind::RenameProbe,
+        SyncTaskKind::Advisories,
     ];
 }
 
@@ -84,5 +85,6 @@ pub fn kind_slug(kind: SyncTaskKind) -> &'static str {
         SyncTaskKind::AccountRepos => "account_repos",
         SyncTaskKind::ProjectRemote => "project_remote",
         SyncTaskKind::RenameProbe => "rename_probe",
+        SyncTaskKind::Advisories => "advisories",
     }
 }

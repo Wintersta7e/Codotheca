@@ -765,6 +765,9 @@ fn task_of(row: &SyncTaskStateRow) -> Option<SyncTask> {
         SyncTaskKind::RenameProbe => SyncTask::RenameProbe {
             account_id: AccountId(key),
         },
+        // [p3] §32 declares the kind on the wire before the work item exists to carry it.
+        // Unresolvable is `None`, never a guessed key.
+        SyncTaskKind::Advisories => return None,
     })
 }
 

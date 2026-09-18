@@ -648,6 +648,47 @@
       "variants": ["dust", "cobwebs", "rust", "cracks", "overgrowth"]
     },
 
+    "Ecosystem": {
+      "kind": "enum",
+      "$comment": "[p3] §32.5. The set is a property of THIS APP'S PARSER COVERAGE, not of the source's vocabulary: an ecosystem is listed once a lockfile of its shape can be read. Every slug is character-identical to the endpoint's own `ecosystem` parameter because it is sent as one. 0014_advisories.sql's ecosystem CHECKs are written from these slugs character for character (R26).",
+      "variants": ["npm", "rust", "pip"]
+    },
+    "DependencyReadState": {
+      "kind": "enum",
+      "$comment": "[p3] §32.6's two READ outcomes, and deliberately not three: *the scan has not run* is the ABSENCE of a `project_dependency_scan` row, not a third variant, because a file that was not read produces no (package, version) key to carry one. A cap exceedance is `notRead`, never a partial parse — a short triple set produces a false clean. `project_lockfile.read_state`'s CHECK is written from these slugs.",
+      "variants": ["parsed", "notRead"]
+    },
+    "DependencyVerdict": {
+      "kind": "enum",
+      "$comment": "[p3] §32.8, derived at read time from two clocks and stored nowhere. **These are not §30's four pipeline states** and are never folded into them: a project can be live and `unknown` at once, and one vocabulary makes that state unsayable. `unknown` is never rendered as zero and never as a dark tick — it leaves the reading's numerator AND denominator. R130/F9: §30.4's ban on the word `clean` is scoped to RENDERINGS, and this wire value is never rendered as that word.",
+      "variants": ["clean", "vulnerable", "unknown"]
+    },
+    "AdvisoryDetail": {
+      "kind": "struct",
+      "$comment": "[p3] R118: **one nullable struct on DebtItem, not six nullable fields NULL for eight of the nine sources.** `severity` is the source's own vocabulary stored verbatim and carries no CHECK and no enum — a closed mirror of a third party's vocabulary is R26 by construction, already ruled for `CiRunPayload.conclusion` (core/src/provider/mod.rs:192-194). `cveIds` is a LIST because one GHSA carries several CVE ids or none: unreviewed and malware advisories have none.",
+      "fields": {
+        "ecosystem": "Ecosystem",
+        "packageName": "String",
+        "advisoryId": "String",
+        "cveIds": "[String]",
+        "severity": "String?",
+        "fixedVersion": "String?"
+      }
+    },
+    "AdvisoryAlert": {
+      "kind": "struct",
+      "$comment": "[p3] §32.12's payload, one settle away from the one OS notification phase 3 may fire. **The five nullable fields are Some only when exactly one project and one advisory fired.** No field may express an absence: no excluded count, no suppressed count, no reason — §11.3a's footer states that no notification mentions absence, and a field naming one breaches the ceiling by addition rather than by wording. `cveId` is nullable because the notifiable unit is the ADVISORY: a critical advisory with no CVE id is still notifiable, and the copy says *advisory* when there is no id to name.",
+      "fields": {
+        "projectId": "ProjectId?",
+        "projectCount": "i64",
+        "advisoryId": "String?",
+        "cveId": "String?",
+        "packageName": "String?",
+        "ecosystem": "Ecosystem?",
+        "advisoryCount": "i64"
+      }
+    },
+
     "DebtItem": {
       "kind": "struct",
       "$comment": "[p3] §28.9's item. Identity is `(subject_key, source, fingerprint)` and is not on the wire; `pathDisplay`, `line`, `column` and `salientText` are ATTRIBUTES, so a rename closes nothing and a line move closes nothing. `state` crosses the wire so the list can say *this item is not being counted right now*; `unverified` is never a count on a ranked or aggregated surface (R128/F10).",
@@ -663,7 +704,8 @@
         "salientText": "String?",
         "firstSeenAt": "Timestamp",
         "lastSeenAt": "Timestamp",
-        "basis": "ObservationBasis?"
+        "basis": "ObservationBasis?",
+        "advisory": "AdvisoryDetail?"
       }
     },
     "DebtSweepState": {
@@ -703,7 +745,9 @@
         "remote": "RemoteFacts?",
         "backup": "BackupState?",
         "debt": "[DebtItem]",
-        "debtSweeps": "[DebtSweepState]"
+        "debtSweeps": "[DebtSweepState]",
+        "dependencyVerdict": "DependencyVerdict?",
+        "dependencyObservedAt": "Timestamp?"
       }
     },
 
@@ -1230,8 +1274,8 @@
     },
     "SyncTaskKind": {
       "kind": "enum",
-      "$comment": "§21.3's three tasks. R31: declared here and used generated on both sides. 0011_sync.sql's task CHECK is written from these slugs character for character, and a test inserts every one against a migrated database rather than restating the list",
-      "variants": ["account_repos", "project_remote", "rename_probe"]
+      "$comment": "§21.3's task vocabulary. R31: declared here and used generated on both sides. [p3] 0014_advisories.sql's task CHECK is written from these slugs character for character, and a test inserts every one against a migrated database rather than restating the list. **The tally this comment used to carry is removed rather than incremented** — §36.2 rule 9, a count a human maintains is a defect with a delay; the variants below are the count. [p3] `advisories` is the first process-wide task and the first that runs unauthenticated: its row carries key IS NULL and occupies the sync_task_global slot",
+      "variants": ["account_repos", "project_remote", "rename_probe", "advisories"]
     },
     "SyncTaskState": {
       "kind": "enum",
@@ -1663,7 +1707,8 @@
       "listing_progress": "SyncListingProgress",
       "budget": "SyncBudget",
       "notice": "SyncNotice",
-      "snapshot": "SyncStatus"
+      "snapshot": "SyncStatus",
+      "advisory_alert": "AdvisoryAlert"
     }
   }
 }
