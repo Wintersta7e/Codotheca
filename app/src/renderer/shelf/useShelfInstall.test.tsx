@@ -22,6 +22,7 @@ const settings = (installRootId: RootId | null): Settings => ({
   autostart: false,
   residentShortcut: null,
   roastEnabled: true,
+  contentScanEnabled: false,
   logLevel: 'info',
   installRootId,
 });

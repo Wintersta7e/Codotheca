@@ -13,6 +13,7 @@ const settings: Settings = {
   roastEnabled: true,
   logLevel: 'info',
   installRootId: null,
+  contentScanEnabled: false,
 };
 
 const props = {

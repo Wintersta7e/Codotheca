@@ -231,6 +231,30 @@ pub fn missing_blobs(
     Ok(missing)
 }
 
+/// §29.8's revocation: delete everything the grant produced.
+///
+/// **The row itself survives**, with `head_oid`, the four presence tri-states,
+/// `presence_observed_at` and `predicate_version` intact — those were never under this grant, and
+/// `head_oid` is `NOT NULL`, so clearing it would mean deleting the row and losing four answers
+/// the user never revoked.
+///
+/// `blob_finding` goes with `blob_scan` through the foreign key, and is deleted explicitly
+/// anyway: a row orphaned by a `PRAGMA foreign_keys = OFF` connection would survive a promise.
+///
+/// # Errors
+/// Fails when SQLite refuses a write.
+pub fn revoke_content_scan(tx: &Transaction<'_>) -> Result<(), IndexError> {
+    tx.execute("DELETE FROM blob_finding", [])?;
+    tx.execute("DELETE FROM blob_scan", [])?;
+    tx.execute(
+        "UPDATE project_content_scan
+            SET complete_head_oid = NULL, blobs_total = NULL, blobs_pending = NULL,
+                completed_at = NULL",
+        [],
+    )?;
+    Ok(())
+}
+
 /// Every occurrence cached for one blob, ascending on `ordinal_in_blob`.
 ///
 /// # Errors

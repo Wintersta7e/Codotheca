@@ -25,6 +25,7 @@ describe('the renderer call wrapper', () => {
       roastEnabled: false,
       logLevel: null,
       installRootId: null,
+      contentScanEnabled: null,
     };
     expect(await call('settings.set', { patch })).toEqual(settings);
     expect(request).toHaveBeenCalledWith('settings.set', { patch });

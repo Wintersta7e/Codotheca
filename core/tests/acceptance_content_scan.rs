@@ -29,7 +29,8 @@ use codotheca_core::jobs::presence::{presence_for, PresenceAnswers, PresenceStat
 use codotheca_core::jobs::state::{apply_outcome, JobStateRow};
 use codotheca_core::jobs::{JobKind, JobOutcome, JobState};
 use codotheca_core::proto::txguard::TxGuard;
-use codotheca_core::protocol::{Job, LocationId, ProjectId, SyncTaskKind};
+use codotheca_core::protocol::{Job, LocationId, ProjectId, SettingsPatch, SyncTaskKind};
+use codotheca_core::surfaces::settings;
 use codotheca_core::sync::task::kind_slug;
 use codotheca_core::testing::{FakeGitBackend, GitReply};
 use support::TestRepo;
@@ -1027,4 +1028,132 @@ fn suppression_gates_the_blob_read_and_not_the_enumeration() {
     assert_eq!(scans, 0, "the blob read ran behind a closed gate");
     assert_eq!(presence.readme, PresenceState::Absent);
     assert!(rig.git.blob_requests().is_empty());
+}
+
+/// **AC-P3-29-1.** Nothing is read while the grant is off.
+///
+/// The count of file-content reads **outside J6's named set** is zero, over a corpus run with
+/// `contentScanEnabled = false`. **The count of repositories covered is printed and the criterion
+/// fails at zero covered.**
+#[test]
+fn ac_p3_29_1_nothing_is_read_while_the_grant_is_off() {
+    let corpus = ["alpha", "beta", "gamma"];
+    let mut covered = 0;
+    let mut reads = Vec::new();
+    for name in corpus {
+        let rig = Rig::new("head-one");
+        rig.set(
+            "UPDATE app_meta SET v = '0'
+              WHERE k = 'content_scan_enabled' AND ?1 = (SELECT id FROM project LIMIT 1)",
+        );
+        let oid = rig.source(format!("// TODO: in {name}\n").as_bytes());
+        rig.set_tree(vec![blob_entry(&format!("src/{name}.rs"), &oid)]);
+        assert_eq!(rig.run(None), JobOutcome::Done);
+        // The row exists and answers all four: the **enumeration** reads names, which §10.1's
+        // shipped paragraph already licenses. What the grant gates is the bytes.
+        assert!(rig.scan_row().is_some(), "{name} answered nothing at all");
+        reads.extend(rig.git.blob_requests());
+        let guard = rig.index.lock().unwrap();
+        let scans: i64 = guard
+            .conn()
+            .query_row("SELECT count(*) FROM blob_scan", [], |r| r.get(0))
+            .unwrap();
+        drop(guard);
+        assert_eq!(scans, 0, "{name} cached a blob read behind a closed grant");
+        covered += 1;
+    }
+    eprintln!(
+        "repositories covered: {covered}, content reads outside J6's named set: {}",
+        reads.len()
+    );
+    assert!(
+        covered > 0,
+        "the run covered no repository, so it proved nothing"
+    );
+    assert!(reads.is_empty(), "the grant was off and bytes were read");
+}
+
+/// **AC-P3-29-18.** Turning the grant off deletes what it wrote.
+///
+/// **A promise that leaves the data behind is not the promise that was made.** The row itself
+/// survives, because `head_oid` is `NOT NULL` and the four presence answers were never under this
+/// grant — clearing it would mean deleting four answers the user never revoked. Both before and
+/// after counts are printed.
+#[test]
+fn ac_p3_29_18_turning_the_grant_off_deletes_what_it_wrote() {
+    let rig = Rig::new("head-one");
+    let oid = rig.source(b"// TODO: read under the grant\n");
+    rig.set_tree(vec![blob_entry("src/a.rs", &oid)]);
+    assert_eq!(rig.run(None), JobOutcome::Done);
+
+    let before = {
+        let guard = rig.index.lock().unwrap();
+        let scans: i64 = guard
+            .conn()
+            .query_row("SELECT count(*) FROM blob_scan", [], |r| r.get(0))
+            .unwrap();
+        let findings: i64 = guard
+            .conn()
+            .query_row("SELECT count(*) FROM blob_finding", [], |r| r.get(0))
+            .unwrap();
+        drop(guard);
+        (scans, findings)
+    };
+    let row_before = rig.scan_row().unwrap();
+    assert!(
+        before.0 > 0 && before.1 > 0,
+        "nothing was written to revoke"
+    );
+    assert_eq!(row_before.complete_head_oid.as_deref(), Some("head-one"));
+
+    // Through the real write path, so the revocation rides the same transaction as the setting.
+    let patch = SettingsPatch {
+        effects_tier: None,
+        reduced_motion_override: None,
+        autostart: None,
+        resident_shortcut: None,
+        roast_enabled: None,
+        log_level: None,
+        install_root_id: None,
+        content_scan_enabled: Some(false),
+    };
+    let guard = rig.index.lock().unwrap();
+    let settings = settings::write(guard.conn(), &patch, 1_700_000_100).unwrap();
+    let scans: i64 = guard
+        .conn()
+        .query_row("SELECT count(*) FROM blob_scan", [], |r| r.get(0))
+        .unwrap();
+    let findings: i64 = guard
+        .conn()
+        .query_row("SELECT count(*) FROM blob_finding", [], |r| r.get(0))
+        .unwrap();
+    let (predicate_version, observed_at): (i64, i64) = guard
+        .conn()
+        .query_row(
+            "SELECT predicate_version, presence_observed_at FROM project_content_scan",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    let presence = j7_markers::presence_for_project(guard.conn(), rig.project)
+        .unwrap()
+        .unwrap();
+    drop(guard);
+
+    eprintln!(
+        "before: {} blob_scan, {} blob_finding; after: {scans} and {findings}",
+        before.0, before.1
+    );
+    assert!(!settings.content_scan_enabled);
+    assert_eq!((scans, findings), (0, 0));
+
+    let after = rig.scan_row().unwrap();
+    assert_eq!(after.complete_head_oid, None);
+    assert_eq!(after.blobs_total, None);
+    assert_eq!(after.blobs_pending, None);
+    // The half that is not under the grant, and is not touched.
+    assert_eq!(after.head_oid, row_before.head_oid);
+    assert_eq!(presence.readme, PresenceState::Absent);
+    assert!(predicate_version > 0);
+    assert!(observed_at > 0);
 }

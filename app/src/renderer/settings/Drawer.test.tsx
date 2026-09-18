@@ -30,6 +30,7 @@ const settings: Settings = {
   roastEnabled: true,
   logLevel: 'info',
   installRootId: null,
+  contentScanEnabled: false,
 };
 
 const answers = (name: CommandName): unknown => {
@@ -140,6 +141,7 @@ describe('the settings drawer', () => {
       roastEnabled: false,
       logLevel: null,
       installRootId: null,
+      contentScanEnabled: null,
     });
     expect(toSettingsPatch({ effectsTier: 'off' }).effectsTier).toBe('off');
   });

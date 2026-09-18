@@ -10,8 +10,9 @@
 export const CONSENT_PARAGRAPH =
   "Codotheca reads your repositories' git metadata, the names and timestamps of files in your " +
   'working trees, and a small named set of files at the repository root — README, LICENSE, and ' +
-  'package manifests — up to 256 KB each. It does not read the contents of your source files. ' +
-  'Nothing is uploaded. There is no account.';
+  'package manifests — up to 256 KB each. It does not read the text of your source files unless ' +
+  'you turn that on in settings, and it is off until you do. Nothing is uploaded. There is no ' +
+  'account.';
 
 export const ROOTS_EYEBROW = 'CODOTHECA';
 export const ROOTS_HEADLINE = "LET'S SEE WHAT YOU HAVE WRITTEN";
@@ -49,9 +50,11 @@ export const CONSENT_ROWS: readonly ConsentRow[] = [
     note: 'READ FROM .git AND FOUR ROOT FILES · NEEDED NOW',
   },
   {
+    // §29.8: it stays a **statement** here. The ask is in context, so a checkbox on this screen
+    // would still store a preference nothing on this screen reads.
     kind: 'statement',
-    body: 'Read file contents later, to count TODOs and find debt items.',
-    note: 'NOT BUILT YET · IT WILL BE ITS OWN ASK, IN CONTEXT',
+    body: 'Read the text of committed source files, to count TODOs and find debt items.',
+    note: 'OFF UNTIL YOU TURN IT ON · SETTINGS · SCANNING',
   },
   {
     kind: 'statement',

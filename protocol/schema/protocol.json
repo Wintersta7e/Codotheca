@@ -224,7 +224,8 @@
         "residentShortcut": "String?",
         "roastEnabled": "bool",
         "logLevel": "LogLevel",
-        "installRootId": "RootId?"
+        "installRootId": "RootId?",
+        "contentScanEnabled": "bool"
       }
     },
     "SettingsPatch": {
@@ -236,7 +237,8 @@
         "residentShortcut": "String?",
         "roastEnabled": "bool?",
         "logLevel": "LogLevel?",
-        "installRootId": "RootId?"
+        "installRootId": "RootId?",
+        "contentScanEnabled": "bool?"
       }
     },
 

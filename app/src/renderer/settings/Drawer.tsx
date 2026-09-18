@@ -66,6 +66,7 @@ export function toSettingsPatch(patch: Partial<Settings>): SettingsPatch {
     roastEnabled: patch.roastEnabled ?? null,
     logLevel: patch.logLevel ?? null,
     installRootId: patch.installRootId ?? null,
+    contentScanEnabled: patch.contentScanEnabled ?? null,
   };
 }
 
@@ -213,6 +214,10 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null 
                 () => undefined,
                 () => undefined,
               );
+            }}
+            contentScanEnabled={settings === null ? null : settings.contentScanEnabled}
+            onSetContentScan={(contentScanEnabled) => {
+              patch({ contentScanEnabled });
             }}
             slots={props.slots}
           />

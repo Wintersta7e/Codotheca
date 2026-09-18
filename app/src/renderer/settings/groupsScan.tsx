@@ -9,6 +9,13 @@
 import type { ReactElement } from 'react';
 import type { Root, RootId, RootState, TargetList, TargetRow } from '../../generated/protocol.js';
 import { IPC_PICK_ROOT } from '../../shared/channels.js';
+import {
+  CONTENT_SCAN_CONSEQUENCE,
+  CONTENT_SCAN_LABEL,
+  CONTENT_SCAN_LANGUAGES,
+  CONTENT_SCAN_LANGUAGES_CAPTION,
+  CONTENT_SCAN_NOTE,
+} from '../../shared/contentScan.js';
 import { EXCLUSION_LIST } from '../../shared/skipList.js';
 import { verifyNote } from '../project/rail/OpensIn.js';
 import {
@@ -37,7 +44,13 @@ export const EXCLUSION_PRIVACY_CAPTION =
 /** A language with no configured target. Absence, stated — never a target that reads as set. */
 export const TARGET_UNSET = 'NOT SET';
 
-/** §11.3a's four corrected statements, each matching the section that owns it word for word. */
+/**
+ * §11.3a's statements, each matching the section that owns it word for word.
+ *
+ * **The *"Source files are never read"* row is gone, and its replacement is a control rather than
+ * a statement** (§29.8). It could not stay: J7 reads them once the user says so, and a statement
+ * that is false for the user who said yes is the one kind of copy this file exists to prevent.
+ */
 export const SCANNING_STATEMENTS = [
   {
     label: 'The walk stops at every .git it finds',
@@ -48,8 +61,8 @@ export const SCANNING_STATEMENTS = [
     note: 'ABSENT IS NOT ABANDONED · A TILE IS NEVER DELETED BY A SCAN',
   },
   {
-    label: 'Source files are never read',
-    note: 'NAMES AND TIMESTAMPS ONLY · PLUS README, LICENSE AND MANIFESTS AT THE ROOT, 256 KB EACH',
+    label: 'Names and timestamps, plus README, LICENSE and manifests at the root',
+    note: 'FOUR NAMED FILES, 256 KB EACH · THE SCAN NEEDS THIS AND YOU GRANTED IT AT FIRST RUN',
   },
   {
     label: 'Your scan roots, and the projects you opened most recently',
@@ -115,6 +128,14 @@ export const SCAN_GROUP_ROWS: readonly SettingsRowSpec[] = [
     note: statement.note,
     backing: { kind: 'statement' as const },
   })),
+  // §29.8's third promise site. A real control, so it carries a command rather than a statement.
+  {
+    id: 'content-scan',
+    group: 'scanning' as const,
+    label: CONTENT_SCAN_LABEL,
+    note: CONTENT_SCAN_NOTE,
+    backing: { kind: 'command' as const, command: 'settings.set' as const },
+  },
 ];
 
 const spec = (id: string): SettingsRowSpec => {
@@ -130,6 +151,9 @@ export interface ScanGroupsProps {
   readonly onSetDescend: (id: RootId, descend: boolean) => void;
   readonly onAddFolder: () => void;
   readonly onRescan: () => void;
+  /** `null` is *settings have not been read*, never *off* — the switch draws nothing until then. */
+  readonly contentScanEnabled: boolean | null;
+  readonly onSetContentScan: (enabled: boolean) => void;
   readonly slots: SettingsSlots;
 }
 
@@ -240,6 +264,24 @@ export function ScanGroups(props: ScanGroupsProps): ReactElement {
         {SCANNING_STATEMENTS.map((statement, index) => (
           <SwitchRow key={statement.label} spec={spec(`scanning-${String(index)}`)} on />
         ))}
+        {props.contentScanEnabled !== null && (
+          <>
+            <SwitchRow
+              spec={spec('content-scan')}
+              checked={props.contentScanEnabled}
+              onChange={props.onSetContentScan}
+            />
+            <p style={SD.rowNote}>{CONTENT_SCAN_CONSEQUENCE}</p>
+            <p style={SD.rowNote}>{CONTENT_SCAN_LANGUAGES_CAPTION}</p>
+            <div style={{ ...SD.row, flexWrap: 'wrap', gap: '5px' }}>
+              {CONTENT_SCAN_LANGUAGES.map((language) => (
+                <span key={language} style={SD.chip}>
+                  {language}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
       </SettingsGroup>
     </>
   );

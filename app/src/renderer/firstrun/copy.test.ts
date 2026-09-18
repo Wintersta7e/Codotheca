@@ -16,7 +16,10 @@ test('the consent paragraph is what phase 1 actually reads', () => {
   expect(copy.CONSENT_PARAGRAPH).toContain('names and timestamps');
   expect(copy.CONSENT_PARAGRAPH).toContain('README, LICENSE, and package manifests');
   expect(copy.CONSENT_PARAGRAPH).toContain('256 KB each');
-  expect(copy.CONSENT_PARAGRAPH).toContain('does not read the contents of your source files');
+  // [p3] §29.8: the claim is now qualified, because J7 reads the text once the user grants it.
+  // An unqualified *never* would be false for exactly the user who said yes.
+  expect(copy.CONSENT_PARAGRAPH).toContain('does not read the text of your source files unless');
+  expect(copy.CONSENT_PARAGRAPH).toContain('off until you do');
   expect(copy.CONSENT_PARAGRAPH).toContain('Nothing is uploaded');
   expect(copy.CONSENT_PARAGRAPH).toContain('no account');
 });

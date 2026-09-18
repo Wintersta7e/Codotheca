@@ -34,6 +34,7 @@ const settings: Settings = {
   roastEnabled: true,
   logLevel: 'info',
   installRootId: null,
+  contentScanEnabled: false,
 };
 
 /** Every slot supplied, so every row the registry declares is actually drawn. */

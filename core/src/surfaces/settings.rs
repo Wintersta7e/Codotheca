@@ -51,6 +51,9 @@ pub const DEFAULTS: Settings = Settings {
     roast_enabled: true,
     log_level: LogLevel::Info,
     install_root_id: None,
+    // §29.8: **off until the user turns it on.** The whole gate depends on this default, and it
+    // is the only setting whose default decides whether a file is opened at all.
+    content_scan_enabled: false,
 };
 
 /// # Errors
@@ -120,6 +123,7 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings, IndexError> {
         install_root_id: get(conn, KEY_INSTALL_ROOT_ID)?
             .and_then(|v| v.parse::<i64>().ok())
             .map(RootId),
+        content_scan_enabled: content_scan_enabled(conn)?,
     })
 }
 
@@ -171,6 +175,14 @@ pub fn write(
         }
         if let Some(v) = patch.install_root_id {
             put(&tx, KEY_INSTALL_ROOT_ID, &v.0.to_string())?;
+        }
+        if let Some(v) = patch.content_scan_enabled {
+            put(&tx, KEY_CONTENT_SCAN_ENABLED, bit(v))?;
+            // §29.8: turning it off **deletes what it wrote**, in this same transaction. A
+            // promise that leaves the data behind is not the promise that was made.
+            if !v {
+                crate::jobs::content_scan::revoke_content_scan(&tx)?;
+            }
         }
         tx.commit()?;
     }

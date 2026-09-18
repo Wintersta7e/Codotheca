@@ -1,6 +1,11 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Root, RootId, TargetId, TargetList } from '../../generated/protocol.js';
+import {
+  CONTENT_SCAN_CONSEQUENCE,
+  CONTENT_SCAN_LABEL,
+  CONTENT_SCAN_LANGUAGES,
+} from '../../shared/contentScan.js';
 import { EXCLUSION_CAPTION, EXCLUSION_LIST } from '../../shared/skipList.js';
 import {
   EXCLUSION_PRIVACY_CAPTION,
@@ -53,6 +58,8 @@ const props = {
   onSetDescend: vi.fn(),
   onAddFolder: vi.fn(),
   onRescan: vi.fn(),
+  contentScanEnabled: false,
+  onSetContentScan: vi.fn(),
   slots: {},
 };
 
@@ -128,8 +135,14 @@ describe('group 1, SCAN ROOTS', () => {
 
 describe('group 2, LAUNCH TARGETS', () => {
   it('shows a row per language and the footnote verbatim', () => {
-    render(<ScanGroups {...props} />);
-    for (const tag of LAUNCH_TARGET_LANGUAGES) expect(screen.getByText(tag)).toBeTruthy();
+    // Scoped to this group: §29.8's grant renders its own language list in group 4, and two
+    // groups naming `C++` is not two rows in this one.
+    const { container } = render(<ScanGroups {...props} />);
+    const group = container.querySelector('[data-group="targets"]');
+    expect(group).toBeTruthy();
+    for (const tag of LAUNCH_TARGET_LANGUAGES) {
+      expect(within(group as HTMLElement).getByText(tag)).toBeTruthy();
+    }
     expect(
       screen.getByText(
         'A project can override its own target on its page. Whichever you pick, the launch is recorded — that is what playtime counts.',
@@ -194,9 +207,14 @@ describe('group 3, EXCLUDED FROM EVERY SCAN', () => {
 });
 
 describe('group 4, SCANNING · HOW IT WORKS', () => {
-  it('carries the four corrected statements and none of the superseded ones', () => {
+  it('carries the corrected statements and none of the superseded ones', () => {
     render(<ScanGroups {...props} />);
-    expect(screen.getByText('Source files are never read')).toBeTruthy();
+    // §29.8 retired *"Source files are never read"*: J7 reads them once the user says so, and a
+    // statement that is false for the user who said yes is what this file exists to prevent.
+    expect(screen.queryByText('Source files are never read')).toBeNull();
+    expect(
+      screen.getByText('Names and timestamps, plus README, LICENSE and manifests at the root'),
+    ).toBeTruthy();
     expect(
       screen.getByText('Your scan roots, and the projects you opened most recently'),
     ).toBeTruthy();
@@ -206,14 +224,44 @@ describe('group 4, SCANNING · HOW IT WORKS', () => {
     expect(screen.queryByText(/Only the thirty most recent projects are watched/)).toBeNull();
   });
 
-  it('draws all four as statements, so nothing here announces as a control', () => {
+  it('draws every statement as a statement, so only the grant announces as a control', () => {
     const { container } = render(<ScanGroups {...props} />);
-    const scanning = SCAN_GROUP_ROWS.filter((r) => r.group === 'scanning');
-    expect(scanning).toHaveLength(4);
-    expect(scanning.every((r) => r.backing.kind === 'statement')).toBe(true);
-    for (const spec of scanning) {
+    const statements = SCAN_GROUP_ROWS.filter(
+      (r) => r.group === 'scanning' && r.backing.kind === 'statement',
+    );
+    expect(statements.length).toBeGreaterThan(0);
+    for (const spec of statements) {
       const row = container.querySelector(`[data-row="${spec.id}"]`);
       expect(row?.querySelector('button, [role="switch"], [tabindex]')).toBeNull();
+    }
+    // §29.8's grant is the one row in this group that does something.
+    const grant = SCAN_GROUP_ROWS.filter((r) => r.id === 'content-scan');
+    expect(grant).toHaveLength(1);
+    expect(grant[0]?.backing).toEqual({ kind: 'command', command: 'settings.set' });
+  });
+
+  it('the grant is a real switch, and it reads nothing until settings have been read', () => {
+    const onSetContentScan = vi.fn();
+    const { container } = render(
+      <ScanGroups {...props} contentScanEnabled={null} onSetContentScan={onSetContentScan} />,
+    );
+    // `null` is *not read*, never *off*: an unread setting drawn as off invites a click that
+    // would set a value the user never saw the current state of.
+    expect(container.querySelector('[data-row="content-scan"]')).toBeNull();
+
+    cleanup();
+    render(
+      <ScanGroups {...props} contentScanEnabled={false} onSetContentScan={onSetContentScan} />,
+    );
+    const grant = screen.getByRole('switch', { name: CONTENT_SCAN_LABEL });
+    expect(grant.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(grant);
+    expect(onSetContentScan).toHaveBeenCalledWith(true);
+    expect(screen.getByText(CONTENT_SCAN_CONSEQUENCE)).toBeTruthy();
+    const scanning = document.querySelector('[data-group="scanning"]');
+    expect(scanning).toBeTruthy();
+    for (const language of CONTENT_SCAN_LANGUAGES) {
+      expect(within(scanning as HTMLElement).getByText(language)).toBeTruthy();
     }
   });
 });

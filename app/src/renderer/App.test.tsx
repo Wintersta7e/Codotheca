@@ -70,6 +70,7 @@ const settings: Settings = {
   roastEnabled: true,
   logLevel: 'info',
   installRootId: null,
+  contentScanEnabled: false,
 };
 
 function page(rows: readonly ProjectRow[]): ProjectPage {

@@ -20,6 +20,7 @@ fn empty_patch() -> SettingsPatch {
         roast_enabled: None,
         log_level: None,
         install_root_id: None,
+        content_scan_enabled: None,
     }
 }
 
@@ -187,6 +188,7 @@ fn every_setting_round_trips_through_the_stored_form() {
             roast_enabled: Some(false),
             log_level: Some(LogLevel::Debug),
             install_root_id: Some(RootId(7)),
+            content_scan_enabled: Some(true),
         },
         NOW,
     )

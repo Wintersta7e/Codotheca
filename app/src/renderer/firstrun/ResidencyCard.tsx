@@ -40,6 +40,7 @@ export function residencySettingsArgs(answer: ResidencyAnswer): SettingsSetArgs 
       roastEnabled: null,
       logLevel: null,
       installRootId: null,
+      contentScanEnabled: null,
     },
   };
 }
