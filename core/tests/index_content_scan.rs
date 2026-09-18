@@ -16,8 +16,8 @@
 )]
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
-use codotheca_core::jobs::presence::{PresenceState, PREDICATE_VERSION};
 use codotheca_core::index::{open_connection, Index};
+use codotheca_core::jobs::presence::{PresenceState, PREDICATE_VERSION};
 
 /// The migration's own text, for the one assertion that is about the file rather than the store.
 const MIGRATION_SQL: &str = include_str!("../migrations/0012_content_scan.sql");
@@ -226,7 +226,10 @@ fn every_presence_slug_is_accepted_by_the_column() {
     let (_dir, mut conn) = scratch();
     apply_all(&mut conn, MIGRATIONS).unwrap();
     let slugs: Vec<&'static str> = PresenceState::ALL.iter().map(|s| s.slug()).collect();
-    eprintln!("PresenceState::ALL derives {} slugs: {slugs:?}", slugs.len());
+    eprintln!(
+        "PresenceState::ALL derives {} slugs: {slugs:?}",
+        slugs.len()
+    );
 
     let mut inserted = 0;
     for (n, slug) in slugs.iter().enumerate() {
@@ -243,5 +246,8 @@ fn every_presence_slug_is_accepted_by_the_column() {
         assert_eq!(PresenceState::from_slug(slug), Some(PresenceState::ALL[n]));
     }
     eprintln!("presence slugs accepted by project_content_scan: {inserted}");
-    assert!(inserted > 0, "inserted nothing, so the column proved nothing");
+    assert!(
+        inserted > 0,
+        "inserted nothing, so the column proved nothing"
+    );
 }
