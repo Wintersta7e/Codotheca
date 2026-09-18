@@ -253,15 +253,32 @@ describe('AC-P2-24-14: no path past a non-safe disposition exists in the sources
     expect(hits, 'phase 2 ships no override of any kind').toEqual([]);
   });
 
+  /**
+   * **The quoted command name, not the prefix.** A first form of this test used
+   * `code.includes('locations.uninstall')`, which also matches
+   * `'locations.uninstallPreflight'` — a command that is *deliberately* renderer-callable and
+   * is asserted so thirty lines above. That matcher passed only while no renderer file called
+   * the pre-flight at all, and would have failed the first correct implementation of §24.8's
+   * *"rendered and confirmed in the renderer"*. A bar broader than its subject proves the wrong
+   * thing; the subject here is the privileged command, so the pattern names it exactly.
+   */
   it('routes the removal through the shell, never through a renderer-held command name', () => {
-    const callers = appCode()
+    const sources = appCode();
+    expect(sources.length, 'the app scan read nothing').toBeGreaterThan(100);
+
+    const privileged = /['"]locations\.uninstall['"]/u;
+    const callers = sources
       .filter(({ path }) => path.startsWith('renderer/'))
-      .filter(({ code }) => code.includes('locations.uninstall'))
+      .filter(({ code }) => privileged.test(code))
       .map(({ path }) => path);
 
     expect(
       callers,
       'the renderer names a channel, never the privileged command the shell calls',
     ).toEqual([]);
+
+    // The pre-flight is the other half of the same rule and must stay reachable: a matcher that
+    // banned it would make this criterion refuse the verdict §24.8 requires the renderer to show.
+    expect(privileged.test(`request('locations.uninstallPreflight', {})`)).toBe(false);
   });
 });
