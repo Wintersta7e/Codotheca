@@ -191,7 +191,17 @@ pub fn handle(
     // row whose Peek is made entirely of remote facts.
     ctx.sync.on_project_visible(peek.id);
     if let Some(location) = peek.location.as_ref() {
-        crate::jobs::visible::notify_visible(ctx.index, ctx.mounts, ctx.jobs, peek.id, location.id);
+        // §29.7: **never from Peek.** It is the triage surface over the unsorted backlog, where
+        // health is suppressed until a verdict — doing the read here performs precisely the work
+        // whose output is suppressed.
+        crate::jobs::visible::notify_visible(
+            ctx.index,
+            ctx.mounts,
+            ctx.jobs,
+            peek.id,
+            location.id,
+            false,
+        );
     }
     serde_json::to_value(peek).map_err(|e| CommandFailure::internal(e.to_string()))
 }

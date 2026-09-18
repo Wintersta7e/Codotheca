@@ -113,7 +113,15 @@ impl codotheca_core::jobs::JobSink for RecordingJobs {
         ));
     }
 
-    fn on_visible(&self, project: ProjectId, _: LocationId, _: &str, _: StoreClass, _: bool) {
+    fn on_visible(
+        &self,
+        project: ProjectId,
+        _: LocationId,
+        _: &str,
+        _: StoreClass,
+        _: bool,
+        _: bool,
+    ) {
         self.visible.lock().unwrap().push(project.0);
     }
 }

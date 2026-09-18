@@ -16,6 +16,8 @@ pub const NOW: i64 = 1_781_179_200;
 pub struct RecordingJobs {
     pub indexed: std::sync::Mutex<Vec<(i64, i64)>>,
     pub visible: std::sync::Mutex<Vec<(i64, i64)>>,
+    /// §29.7: which command asked, and whether it asked for the content scan.
+    pub content_asks: std::sync::Mutex<Vec<(i64, bool)>>,
 }
 
 impl codotheca_core::jobs::JobSink for RecordingJobs {
@@ -39,7 +41,11 @@ impl codotheca_core::jobs::JobSink for RecordingJobs {
         _store_key: &str,
         _store_kind: StoreClass,
         _needs_art: bool,
+        wants_content: bool,
     ) {
+        if let Ok(mut asks) = self.content_asks.lock() {
+            asks.push((project.0, wants_content));
+        }
         self.visible
             .lock()
             .expect("lock")

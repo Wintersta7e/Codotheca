@@ -43,11 +43,25 @@ pub fn next_jobs_after(done: JobKind, is_reference: Option<bool>) -> Vec<(JobKin
     };
     match done {
         JobKind::J1Refstate => vec![(JobKind::J15Authorship, Priority::Authorship)],
-        JobKind::J15Authorship => vec![
-            (JobKind::J2Status, band),
-            (JobKind::J3Inventory, band),
-            (JobKind::J4History, Priority::Deferred),
-        ],
+        JobKind::J15Authorship => {
+            let mut next = vec![
+                (JobKind::J2Status, band),
+                (JobKind::J3Inventory, band),
+                (JobKind::J4History, Priority::Deferred),
+            ];
+            // §29.7 predicate 1, and **the skip goes here** (R131/F14): this arm is the first
+            // point at which `is_reference` is known, and this function otherwise only lowers
+            // the band — so a J7 pushed unconditionally would be enqueued for a Reference
+            // project, run, self-gate, and still leave a `project_job_state` row behind through
+            // `settle`. **`None` is *not computed* and is not Reference.**
+            //
+            // This is what removes the measured worst case — a one-commit clone of someone
+            // else's 14,000-file project — from the workload rather than budgeting for it.
+            if is_reference == Some(false) {
+                next.push((JobKind::J7Markers, Priority::Deferred));
+            }
+            next
+        }
         JobKind::J3Inventory => vec![
             (JobKind::J6Content, Priority::Deferred),
             (JobKind::J5Art, Priority::Deferred),
@@ -421,6 +435,7 @@ impl JobSink for JobRunner {
         store_key: &str,
         store_kind: StoreClass,
         needs_art: bool,
+        wants_content: bool,
     ) {
         // §6: visible tiles re-observe on scroll-idle and on window focus, and an opened page
         // re-observes the location it is showing. Worktree state is never cacheable, so this
@@ -450,6 +465,22 @@ impl JobSink for JobRunner {
                 store_key: crate::art::art_store_key(store_key),
                 store_kind,
                 priority: Priority::Interactive,
+                not_before: 0,
+            });
+        }
+
+        // §29.7's second site. `Standard`, not `Interactive`: no surface waits on it, and the
+        // opened page is the only visibility site that asks — Peek is the triage surface over the
+        // unsorted backlog, where health is suppressed until a verdict, so doing the read there
+        // performs precisely the work whose output is suppressed.
+        if wants_content {
+            self.enqueue(Job {
+                kind: JobKind::J7Markers,
+                project_id: project,
+                location_id: location,
+                store_key: store_key.to_owned(),
+                store_kind,
+                priority: Priority::Standard,
                 not_before: 0,
             });
         }

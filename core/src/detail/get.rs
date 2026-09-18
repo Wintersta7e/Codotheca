@@ -402,12 +402,14 @@ pub fn handle_project_get(
     // the one surface that never fetches any.
     ctx.sync.on_project_visible(ProjectId(id));
     if let Some(location) = primary_location {
+        // §29.7: an opened page is the one visibility site that asks for the content scan.
         crate::jobs::visible::notify_visible(
             ctx.index,
             ctx.mount,
             ctx.jobs,
             ProjectId(id),
             crate::protocol::LocationId(location),
+            true,
         );
     }
 

@@ -1286,3 +1286,183 @@ fn ac_p3_29_27_the_readme_readers_keep_their_two_bases() {
     assert_eq!(deleted.facts.has_readme, Some(false));
     assert_eq!(term_truth(&deleted, term, &ctx), TermTruth::True);
 }
+
+/// Records which project was reported visible, and whether that caller asked for the scan.
+#[derive(Debug, Default)]
+struct VisibilityRecorder {
+    asks: std::sync::Mutex<Vec<(i64, bool)>>,
+}
+
+impl codotheca_core::jobs::JobSink for VisibilityRecorder {
+    fn on_location_indexed(
+        &self,
+        _: ProjectId,
+        _: LocationId,
+        _: &str,
+        _: codotheca_core::mount::StoreClass,
+    ) {
+    }
+
+    fn on_visible(
+        &self,
+        project: ProjectId,
+        _: LocationId,
+        _: &str,
+        _: codotheca_core::mount::StoreClass,
+        _: bool,
+        wants_content: bool,
+    ) {
+        if let Ok(mut asks) = self.asks.lock() {
+            asks.push((project.0, wants_content));
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Silent;
+
+impl codotheca_core::proto::EventSink for Silent {
+    fn emit(&self, _topic: &str, _event: &str, _payload: serde_json::Value) {}
+}
+
+#[derive(Debug, Default)]
+struct NoSync;
+
+impl codotheca_core::sync::runner::SyncSink for NoSync {
+    fn on_project_visible(&self, _: ProjectId) {}
+}
+
+/// **AC-P3-29-3.** A Reference project is never enumerated.
+///
+/// **The assertion is over `project_job_state` rows, not over a mock.** `next_jobs_after` only
+/// lowers the band for Reference and skips nothing, so a J7 pushed unconditionally would be
+/// enqueued, run, self-gate, and **still leave a row** through `settle` → `put`. It prints the
+/// count of projects classified.
+#[test]
+fn ac_p3_29_3_a_reference_project_is_never_enumerated() {
+    let corpus: [(&str, Option<bool>); 3] = [
+        ("reference", Some(true)),
+        ("authored", Some(false)),
+        ("uncomputed", None),
+    ];
+    let mut classified = 0;
+    let mut chained: Vec<(&str, bool)> = Vec::new();
+    for (name, is_reference) in corpus {
+        let next =
+            codotheca_core::jobs::scheduler::next_jobs_after(JobKind::J15Authorship, is_reference);
+        let queues_j7 = next.iter().any(|(kind, _)| *kind == JobKind::J7Markers);
+        chained.push((name, queues_j7));
+        classified += 1;
+    }
+    eprintln!("projects classified: {classified}; chained: {chained:?}");
+    assert!(classified > 0, "nothing was classified");
+    assert_eq!(
+        chained,
+        vec![
+            ("reference", false),
+            ("authored", true),
+            ("uncomputed", false)
+        ],
+        "None is not computed and is not Reference; only Some(false) queues the scan"
+    );
+
+    // J7 is a leaf: nothing chains off a content scan.
+    assert!(
+        codotheca_core::jobs::scheduler::next_jobs_after(JobKind::J7Markers, Some(false))
+            .is_empty()
+    );
+}
+
+/// §29.7's three sites, and no fourth: `projects.get` asks, `projects.peek` does not, and
+/// `projects.list` reports no visibility at all.
+///
+/// The shape is `sync_enqueue_sites`'s, which already proves exactly this for the sync side.
+#[test]
+fn j7_is_enqueued_from_get_and_from_no_other_visibility_site() {
+    let fixture = codotheca_core::testing::TempIndex::new();
+    let project = fixture.insert_project();
+    let _location = fixture.insert_location(project, "/somewhere/p");
+    let jobs = VisibilityRecorder::default();
+    let git = FakeGitBackend::new();
+    let mounts = codotheca_core::testing::FakeMountResolver::default();
+    let events = Silent;
+    let sync = NoSync;
+
+    let detail = codotheca_core::detail::DetailCtx {
+        index: fixture.index(),
+        git: &git,
+        mount: &mounts,
+        events: &events,
+        jobs: &jobs,
+        sync: &sync,
+        now: 1_800_000_000,
+    };
+    let _ = codotheca_core::detail::dispatch_detail_command(
+        &detail,
+        "projects.get",
+        serde_json::json!({ "id": project.0 }),
+    );
+    let after_get = jobs.asks.lock().unwrap().clone();
+
+    let projects = codotheca_core::projects::ProjectsCtx {
+        index: fixture.index(),
+        events: &events,
+        jobs: &jobs,
+        mounts: &mounts,
+        sync: &sync,
+        now: 1_800_000_000,
+        tz_offset_min: 0,
+    };
+    let _ = codotheca_core::projects::dispatch_projects_command(
+        &projects,
+        "projects.peek",
+        serde_json::json!({ "id": project.0 }),
+    );
+    let _ = codotheca_core::projects::dispatch_projects_command(
+        &projects,
+        "projects.list",
+        serde_json::json!({}),
+    );
+    let all = jobs.asks.lock().unwrap().clone();
+
+    eprintln!("after projects.get: {after_get:?}; after peek and list: {all:?}");
+    assert_eq!(after_get, vec![(project.0, true)], "projects.get");
+    assert_eq!(
+        all,
+        vec![(project.0, true), (project.0, false)],
+        "peek asked for the scan, or list reported a visibility at all"
+    );
+}
+
+/// `projects.requeue` needs **no change**: it re-queues every `failed`/`deferred_slow` row for the
+/// project in one transaction, and a `j7` row is one of them. Asserted rather than coded.
+#[test]
+fn the_rescan_surface_already_covers_j7_and_there_is_no_second_one() {
+    let (_dir, conn) = migrated();
+    let project = insert_project(&conn, "p");
+    for (job, state) in [("j3", "failed"), ("j7", "deferred_slow"), ("j6", "ok")] {
+        conn.execute(
+            "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, ?2, ?3, 0)",
+            rusqlite::params![project, job, state],
+        )
+        .unwrap();
+    }
+    let requeued = conn
+        .execute(
+            "UPDATE project_job_state
+                SET state = 'queued', fail_count = 0, reason = 'user_requested', at = 1
+              WHERE project_id = ?1 AND state IN ('deferred_slow', 'failed')",
+            [project],
+        )
+        .unwrap();
+    let j7: String = conn
+        .query_row(
+            "SELECT state FROM project_job_state WHERE project_id = ?1 AND job = 'j7'",
+            [project],
+            |r| r.get(0),
+        )
+        .unwrap();
+    eprintln!("rows requeued: {requeued}, j7 is now {j7}");
+    assert!(requeued > 0, "the requeue moved nothing");
+    assert_eq!(j7, "queued");
+}

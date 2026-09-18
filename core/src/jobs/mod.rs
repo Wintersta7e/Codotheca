@@ -319,6 +319,12 @@ pub trait JobSink: Send + Sync + std::fmt::Debug {
     /// takes that mutex again self-deadlocks — `std::sync::Mutex` is not reentrant — and the guard
     /// is then never released, wedging every later command behind it. The caller already has the
     /// connection; it answers the art question there and hands the answer over.
+    ///
+    /// **`wants_content` is the caller's too, and for a different reason** (§29.7, R131/F15). It
+    /// is not about which lock is held — it is about **which command is asking**: `projects.get`
+    /// is an opened page and wants the scan, `projects.peek` is triage over the unsorted backlog
+    /// and must not. `notify_visible` has one body and two callers, so its body cannot tell them
+    /// apart; each passes a literal, and a reader sees the policy where the command is.
     fn on_visible(
         &self,
         project: ProjectId,
@@ -326,6 +332,7 @@ pub trait JobSink: Send + Sync + std::fmt::Debug {
         store_key: &str,
         store_kind: crate::mount::StoreClass,
         needs_art: bool,
+        wants_content: bool,
     );
 }
 
@@ -348,6 +355,7 @@ impl JobSink for NullJobSink {
         _: LocationId,
         _: &str,
         _: crate::mount::StoreClass,
+        _: bool,
         _: bool,
     ) {
     }

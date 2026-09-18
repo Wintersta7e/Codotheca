@@ -21,12 +21,17 @@ use super::JobSink;
 ///
 /// A location that cannot be read is not an error the user should see. §6 is a request for
 /// freshness, so failing to make one leaves the stored answer exactly as honest as it was.
+/// `wants_content` is **the caller's** (§29.7, R131/F15): this body has two callers and no way
+/// to tell them apart, and the reason `projects.get` asks and `projects.peek` does not is which
+/// command it is, not which lock is held. The *"where the index is already open"* justification
+/// belongs to `needs_art` below and does not transfer.
 pub fn notify_visible(
     index: &crate::index::Index,
     mounts: &dyn MountResolver,
     jobs: &dyn JobSink,
     project: ProjectId,
     location: LocationId,
+    wants_content: bool,
 ) {
     let conn = index.conn();
     let Ok((store_key, path_bytes)) = conn.query_row(
@@ -53,5 +58,12 @@ pub fn notify_visible(
     // not need it costs one job; skipping one that did leaves §7.5's plate on the tile.
     let needs_art =
         crate::art::job::needs_art_at(conn, index.data_dir(), project.0).unwrap_or(true);
-    jobs.on_visible(project, location, &store_key, class, needs_art);
+    jobs.on_visible(
+        project,
+        location,
+        &store_key,
+        class,
+        needs_art,
+        wants_content,
+    );
 }

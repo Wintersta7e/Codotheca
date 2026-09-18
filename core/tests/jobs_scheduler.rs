@@ -239,8 +239,14 @@ fn a_visible_tile_queues_status_at_interactive_priority() {
     let rig = rig(&repo);
     rig.runner
         .enqueue(job(&rig, JobKind::J2Status, Priority::Deferred));
-    rig.runner
-        .on_visible(rig.project, rig.location, "store", StoreClass::Local, true);
+    rig.runner.on_visible(
+        rig.project,
+        rig.location,
+        "store",
+        StoreClass::Local,
+        true,
+        false,
+    );
     // Re-pushing at anything worse is refused, which is how the queued entry's priority is
     // observable from outside: `Standard` is better than the `Deferred` first push and would
     // have been accepted had `on_visible` not already raised it to `Interactive`.
@@ -430,7 +436,7 @@ fn the_visible_sink_answers_while_the_index_guard_is_held() {
         // Exactly what `Assembly::handle` does before it builds a `ProjectsCtx` or a `DetailCtx`.
         let guard = index_for_call.lock().unwrap();
         pump.sink()
-            .on_visible(project, location, "store", StoreClass::Local, true);
+            .on_visible(project, location, "store", StoreClass::Local, true, false);
         drop(guard);
         let _ = done_tx.send(());
     });
