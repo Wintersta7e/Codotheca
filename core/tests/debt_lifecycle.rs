@@ -10,17 +10,19 @@
 
 use codotheca_core::debt::identity::DebtKey;
 use codotheca_core::debt::store::{
-    DebtCloseReason, DebtStore, ObservedItem, SqliteDebtStore, StoredItem,
+    DebtCloseReason, DebtStore, ObservedItem, SqliteDebtStore, StoredItem, SweepEffect,
 };
 use codotheca_core::debt::sweep::{
     comparable, latest_sweep, may_close, outcome_at_root, root_is_observable, upsert_sweep,
     SweepObservation,
 };
+use codotheca_core::debt::xp::pay_debt_day;
+use codotheca_core::debt::{registry_for, IdentityShape, SOURCE_REGISTRY};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::protocol::{
-    DebtItemState, DebtScoring, DebtSource, DebtSweepOutcome, LocationId, ObservationBasis,
-    ProjectId,
+    DebtItemState, DebtScoring, DebtSource, DebtSweepOutcome, DecayLayer, LocationId,
+    ObservationBasis, ProjectId,
 };
 
 const SUBJECT: &str = "lineage:abc123|remote:";
@@ -652,4 +654,266 @@ fn a_reap_refuses_a_sweep_that_is_not_complete_at_the_primary() {
         Some(ObservationBasis::Head),
     );
     assert_eq!(store.reap(&tx, ProjectId(p), &elsewhere).unwrap(), 0);
+}
+
+// ---------------------------------------------------------------------------------------------
+// §28.2's registry — one table, one row per source
+// ---------------------------------------------------------------------------------------------
+
+/// The committed contract, compiled in rather than re-found at runtime.
+const SCHEMA: &str = include_str!("../../protocol/schema/protocol.json");
+
+/// Every variant the schema declares for `name`, in declaration order.
+fn schema_variants(name: &str) -> Vec<String> {
+    let doc: serde_json::Value = serde_json::from_str(SCHEMA).expect("protocol.json parses");
+    let decl = doc["types"]
+        .get(name)
+        .unwrap_or_else(|| panic!("{name} is not declared in protocol.json"));
+    let variants: Vec<String> = decl["variants"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{name} declares no variants"))
+        .iter()
+        .map(|v| v.as_str().expect("a variant is a string").to_owned())
+        .collect();
+    assert!(!variants.is_empty(), "{name} declares no variants");
+    variants
+}
+
+fn wire(value: &impl serde::Serialize) -> String {
+    match serde_json::to_value(value).unwrap() {
+        serde_json::Value::String(raw) => raw,
+        other => panic!("a generated enum serialised as {other}"),
+    }
+}
+
+/// The registry is **one table with one row per source**, so the layer, the default scoring, the
+/// identity shape and the basis are read from one place and cannot drift apart.
+///
+/// **The variant list is derived from the generated enum**, never from a literal beside it — a
+/// literal would agree with itself while the schema moved. The count is printed and the run fails
+/// at zero.
+#[test]
+fn the_registry_covers_every_declared_source_exactly_once() {
+    let declared = schema_variants("DebtSource");
+    assert_eq!(
+        SOURCE_REGISTRY.len(),
+        declared.len(),
+        "the registry and the schema disagree about how many sources exist"
+    );
+
+    let mut covered = 0_usize;
+    for name in &declared {
+        let source: DebtSource = serde_json::from_value(serde_json::json!(name)).unwrap();
+        let row = registry_for(source);
+        assert_eq!(
+            row.source, source,
+            "registry_for({name}) returned another row"
+        );
+        assert_eq!(
+            SOURCE_REGISTRY
+                .iter()
+                .filter(|r| r.source == source)
+                .count(),
+            1,
+            "{name} has more than one registry row"
+        );
+        covered += 1;
+    }
+    eprintln!("SOURCE_REGISTRY covers {covered} of DebtSource's declared variants");
+    assert!(covered > 0, "covered nothing, so this proved nothing");
+}
+
+/// The four columns §28.2 fixes, asserted against the section's own table so a silent re-tuning
+/// of a layer is a failing test rather than a different picture.
+#[test]
+fn the_registry_carries_the_layer_shape_and_basis_the_section_states() {
+    let expected: &[(
+        &str,
+        IdentityShape,
+        DecayLayer,
+        DebtScoring,
+        Option<ObservationBasis>,
+    )] = &[
+        (
+            "todo_marker",
+            IdentityShape::Content,
+            DecayLayer::Overgrowth,
+            DebtScoring::Scored,
+            Some(ObservationBasis::Head),
+        ),
+        (
+            "missing_readme",
+            IdentityShape::Singleton,
+            DecayLayer::Dust,
+            DebtScoring::Scored,
+            Some(ObservationBasis::Head),
+        ),
+        (
+            "missing_license",
+            IdentityShape::Singleton,
+            DecayLayer::Dust,
+            DebtScoring::Scored,
+            Some(ObservationBasis::Head),
+        ),
+        (
+            "missing_tests",
+            IdentityShape::Singleton,
+            DecayLayer::Overgrowth,
+            DebtScoring::Scored,
+            Some(ObservationBasis::Head),
+        ),
+        (
+            "no_release",
+            IdentityShape::Singleton,
+            DecayLayer::Dust,
+            DebtScoring::Scored,
+            Some(ObservationBasis::Refs),
+        ),
+        (
+            "unpushed_commits",
+            IdentityShape::Singleton,
+            DecayLayer::Overgrowth,
+            DebtScoring::Scored,
+            Some(ObservationBasis::Refs),
+        ),
+        (
+            "ci_red",
+            IdentityShape::Singleton,
+            DecayLayer::Cracks,
+            DebtScoring::Scored,
+            Some(ObservationBasis::Remote),
+        ),
+        (
+            "dependency_advisory",
+            IdentityShape::External,
+            DecayLayer::Rust,
+            DebtScoring::Scored,
+            Some(ObservationBasis::Worktree),
+        ),
+        // **`NULL` basis has exactly one meaning and exactly one source.**
+        // `abandoned_with_debt` is derived from other stored observations and observes nothing
+        // itself, so it has no basis to carry and inventing one would be a lie.
+        (
+            "abandoned_with_debt",
+            IdentityShape::Singleton,
+            DecayLayer::Cobwebs,
+            DebtScoring::ShownOnly,
+            None,
+        ),
+    ];
+
+    for (name, shape, layer, scoring, basis) in expected {
+        let source: DebtSource = serde_json::from_value(serde_json::json!(name)).unwrap();
+        let row = registry_for(source);
+        assert_eq!(row.shape, *shape, "{name} shape");
+        assert_eq!(row.layer, *layer, "{name} layer");
+        assert_eq!(row.default_scoring, *scoring, "{name} default scoring");
+        assert_eq!(row.basis, *basis, "{name} basis");
+    }
+    eprintln!(
+        "the registry's four columns hold for {} sources",
+        expected.len()
+    );
+}
+
+/// **`AC-P3-28-14`, this plan's half.** A `shown_only` item is written, readable, and contributes
+/// to **no** `xp_events` row. `scoring` is about CONSEQUENCE and `state` is about OBSERVATION;
+/// folding them puts six meanings in one column and the first reader collapses two of them.
+#[test]
+fn ac_p3_28_14_a_shown_only_item_renders_and_pays_nothing() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let loc = LocationId(insert_location(&conn, p, "present"));
+    let store = SqliteDebtStore;
+    let key = DebtKey::singleton(SUBJECT, DebtSource::AbandonedWithDebt);
+
+    let tx = conn.transaction().unwrap();
+    let obs = sweep_at(
+        p,
+        DebtSource::AbandonedWithDebt,
+        DebtSweepOutcome::Complete,
+        None,
+        None,
+    );
+    let mut observed = seen(key.clone(), None, "", 0);
+    observed.scoring = DebtScoring::ShownOnly;
+    observed.basis = None;
+    observed.path_bytes = None;
+    observed.path_display = None;
+    observed.line = None;
+    observed.column = None;
+    observed.salient_text = None;
+    let opened = store
+        .observe(&tx, &obs, std::slice::from_ref(&observed))
+        .unwrap();
+    assert_eq!(opened.opened, vec![key.clone()]);
+
+    // It closes, and the closure pays nothing because the item was never scored.
+    let closed = store.observe(&tx, &obs, &[]).unwrap();
+    assert_eq!(closed.closed.len(), 1);
+    let payout = pay_debt_day(
+        &tx,
+        ProjectId(p),
+        SUBJECT,
+        &SweepEffect {
+            closed: closed
+                .closed
+                .iter()
+                .filter(|(k, _)| registry_for(k.source).default_scoring == DebtScoring::Scored)
+                .cloned()
+                .collect(),
+            ..SweepEffect::default()
+        },
+        1_789_646_400,
+        0,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+
+    assert!(!payout.wrote_row, "a shown_only closure paid XP");
+    let xp: i64 = conn
+        .query_row("SELECT count(*) FROM xp_events", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(xp, 0);
+    // The anchor is untouched: `loc` exists and the item never referenced it.
+    assert!(loc.0 > 0);
+}
+
+/// **Five further sources are declared in §28's prose and are in neither the DDL CHECK nor the
+/// generated enum.** The registry does not hold them either, so all three stay identical
+/// character for character. The cost of a tenth source is one migration plus one regenerate,
+/// stated so it is budgeted rather than discovered.
+#[test]
+fn the_five_not_enabled_sources_are_in_no_vocabulary() {
+    let declared = schema_variants("DebtSource");
+    let ddl = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/0013_debt.sql"),
+    )
+    .unwrap();
+    assert!(
+        !ddl.is_empty(),
+        "read an empty migration, so this proved nothing"
+    );
+
+    for name in [
+        "forge_issues",
+        "lint_warnings",
+        "compiler_warnings",
+        "failing_tests",
+        "stale_merged_branches",
+    ] {
+        assert!(
+            !declared.iter().any(|v| v == name),
+            "DebtSource declares {name}"
+        );
+        assert!(
+            !ddl.contains(&format!("'{name}'")),
+            "0013_debt.sql spells {name} into a CHECK"
+        );
+        assert!(
+            !SOURCE_REGISTRY.iter().any(|r| wire(&r.source) == name),
+            "the registry holds {name}"
+        );
+    }
+    eprintln!("checked 5 not-enabled names against 3 vocabularies");
 }
