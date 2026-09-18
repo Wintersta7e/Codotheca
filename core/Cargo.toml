@@ -176,3 +176,18 @@ missing_errors_doc = "allow"        # revisit once the public surface stabilises
 opt-level = 2
 lto = "thin"
 strip = true
+
+# Slim debug info, and it is load-bearing rather than a tuning knob.
+#
+# Full debug info made each test binary ~173 MB; a target directory reached 83 GB across 4,462
+# files in `debug/deps` and a single suite run added tens of GB. `line-tables-only` keeps
+# `debug_assertions` and overflow checks on — `--release` does not, so it is no substitute — and
+# keeps every panic backtrace's file and line, which is all these suites read.
+#
+# On Windows it is the difference between a build and a quarantine: a resident scanner's
+# heuristic emulator deleted a freshly linked test binary that shipped a 120,877,056-byte `.pdb`,
+# and cargo reported `os error 2`, then `5`, then `32` on a binary it had just written. The
+# answer is to stop emitting what tripped it, never an antivirus exclusion — the scanner is right
+# to watch the tree.
+[profile.test]
+debug = "line-tables-only"
