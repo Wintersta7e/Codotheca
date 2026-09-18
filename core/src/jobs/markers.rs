@@ -28,13 +28,16 @@ pub const J7_BLOB_BYTE_CAP: u64 = 512 * 1024;
 /// §29.2 rule 5. A NUL byte inside this prefix makes the blob `binary`.
 pub const J7_BINARY_SNIFF_BYTES: usize = 8 * 1024;
 
-/// §29.6's chunk ceiling in blobs. **Chosen, not measured** — §29.6 is the one owner of the
-/// numeral, and §29.11's Probe D is what replaces it with a measurement and the tree it was
-/// measured on.
+/// §29.6's chunk ceiling in blobs. **§29.6 is the one owner of the numeral.**
+///
+/// Chosen, then **measured and kept**: Probe D, a 20-repository sample, 2026-09-18, mean filtered
+/// blob **7,800 bytes**. 512 of them is ~3.8 MB — under [`J7_CHUNK_BYTES`] — so **this ceiling
+/// binds first on an ordinary tree** and the byte one binds only on a blob-heavy one, which is
+/// what it was written for. At the measured 2.6 MB/s a full chunk is ~1.5 s.
 pub const J7_CHUNK_BLOBS: usize = 512;
 
-/// §29.6's chunk ceiling in blob bytes, whichever comes first. **Chosen, not measured**, on the
-/// same terms as [`J7_CHUNK_BLOBS`].
+/// §29.6's chunk ceiling in blob bytes, whichever comes first. Measured and kept on the same
+/// terms as [`J7_CHUNK_BLOBS`]: it caps a chunk at ~3.1 s on the tree Probe D measured.
 pub const J7_CHUNK_BYTES: u64 = 8 * 1024 * 1024;
 
 /// One of [`MARKERS`], named.
