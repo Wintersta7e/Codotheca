@@ -131,6 +131,15 @@ pub fn emit_budget(events: &dyn EventSink, budget: &SyncBudget) {
     emit(events, "budget", budget);
 }
 
+/// [p3] §32.12's alert — **the only event on this topic that is not a status delta.**
+///
+/// It carries no snapshot and is not replayed: a subscriber that missed it has missed the
+/// notification, which is why the shell subscribes before the core is asked for anything. The
+/// ledger it was decided from is what stops a second one, not a re-send.
+pub fn emit_advisory_alert(events: &dyn EventSink, alert: &crate::protocol::AdvisoryAlert) {
+    emit(events, "advisory_alert", alert);
+}
+
 /// §21.10's **one** non-modal banner. One candidate whatever the number of failed tasks.
 pub fn emit_notice(events: &dyn EventSink, notice: SyncNotice) {
     emit(events, "notice", &notice);

@@ -219,6 +219,10 @@ export function detailFixture(over: Partial<ProjectDetail> = {}): ProjectDetail 
     // *nothing has been swept*, and a test about either overrides both.
     debt: [],
     debtSweeps: [],
+    // [p3] §32.8. `null` is *not computed*, which is what a fixture with no dependency read
+    // honestly has — and it is never rendered as `clean`.
+    dependencyVerdict: null,
+    dependencyObservedAt: null,
     ...over,
   };
 }

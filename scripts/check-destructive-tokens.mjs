@@ -25,6 +25,30 @@ export const SCAN_ROOTS = [
 const EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.mjs', '.css', '.json', '.html']);
 
 /**
+ * [p3] Where the word `clean` is permitted, and why that is not a weakening.
+ *
+ * **R130/F9: §30.4's ban is scoped to RENDERINGS.** The occurrences granted below are
+ * `DependencyVerdict`'s wire slug — one of §32.8's three values, sent and stored and **never
+ * rendered as that word** — and the `$comment`s that explain it, which are comments in the JSON
+ * Schema sense and are read by no user. This gate has no way to tell a schema `$comment` from a
+ * rendered string, so the grant is made per path and per token rather than by teaching the
+ * stripper about JSON.
+ *
+ * The ban stays live everywhere it means what it says: any `clean` in a rendered string in any
+ * other file still fails here, and `AC-P3-30-2`'s source audit is what enforces it over the
+ * rendered set.
+ *
+ * @type {ReadonlyArray<{path: string, token: string, why: string}>}
+ */
+export const CLEAN_SITES = [
+  {
+    path: 'protocol/schema/protocol.json',
+    token: 'clean',
+    why: "§32.8 declares `DependencyVerdict { clean, vulnerable, unknown }`. The value crosses the wire and is stored; the renderer draws a tick row and a layer from it and never prints the word. A slug renamed to satisfy a rendering ban would make the store and the wire disagree with the ruling that permits it (R130/F9).",
+  },
+];
+
+/**
  * Where `uninstall` is permitted, and nowhere else.
  *
  * **Empty in this change, and `uninstall` therefore stays banned outright** — this plan renders no
@@ -138,6 +162,7 @@ export const DESTRUCTIVE_TOKENS = [
     token: 'clean',
     pattern: /\bclean\b/i,
     why: 'absence of dirty is "no changes as of T", never "clean"',
+    sites: CLEAN_SITES,
   },
   { token: 'git push', pattern: /\bgit\s+push\b/i, why: 'every git invocation is read-only' },
   {

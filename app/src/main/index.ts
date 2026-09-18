@@ -14,6 +14,7 @@ import {
   protocol,
   session,
   shell,
+  Notification,
 } from 'electron';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import * as path from 'node:path';
@@ -61,6 +62,7 @@ import {
   isNavigationAllowed,
 } from './security';
 import { runStartup } from './startup';
+import { startAdvisoryNotices } from './advisoryNotice';
 
 // [p2] §24.9's `install` and §21's `sync` are each subscribed in the change that declares them.
 // A topic the schema carries and the shell does not subscribe to delivers nothing, and the surface
@@ -375,6 +377,18 @@ async function main(): Promise<void> {
   // The drawer rebinds by writing `settings.set`, which otherwise reaches the core and nothing
   // else — the chord would be stored and never registered.
   const request = withShortcutRebind(coreRequest, shortcut.apply);
+
+  // [p3] §32.12: **the shell posts the one notification phase 3 may fire**, and it subscribes
+  // here — before the renderer asks for anything — because the alert is not a status delta and is
+  // never replayed. A subscriber that was not listening has missed it.
+  startAdvisoryNotices({
+    subscribe: (topic, onEvent) =>
+      client.subscribe(topic, { onEvent, onSnapshot: () => undefined }),
+    notify: (title, body) => {
+      if (!Notification.isSupported()) return;
+      new Notification({ title, body }).show();
+    },
+  });
 
   registerBridge({
     request,

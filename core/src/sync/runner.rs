@@ -629,6 +629,19 @@ impl SyncRunner {
             });
         }
 
+        // [p3] §32.12's **one** notification, decided at the settle that could have changed it.
+        //
+        // The core observes the transition and emits; `app/src/main` posts. The renderer's
+        // `notifications` permission stays denied and nothing in `app/src/renderer` may originate
+        // an OS notification — the same invariant as *the renderer may never originate a
+        // filesystem path or an executable*, applied to the one interruption the product has.
+        //
+        // **At most one per settle**, and the ledger it consumes is written in the same
+        // transaction, so a crash between deciding and recording cannot re-fire it.
+        if matches!(task, SyncTask::Advisories) {
+            self.maybe_alert(now);
+        }
+
         // Every budget row this step touched, so a surface renders `—` for what was never
         // observed rather than a zero nobody measured.
         if let Ok(budgets) = self.read_budgets() {
@@ -663,6 +676,42 @@ impl SyncRunner {
         // A settle that parked or re-queued the row leaves work outstanding; one that ended it
         // may have emptied the table, and the next `take_next` is what establishes which.
         self.outstanding.store(true, Ordering::SeqCst);
+    }
+
+    /// [p3] §32.12's decision and, if it fires, its one event.
+    ///
+    /// Its own function because `settle` is at clippy's line ceiling and because this is a
+    /// separable step: the alert is decided from stored facts, not from the outcome that just
+    /// settled, so nothing above it is in scope here.
+    fn maybe_alert(&self, now: i64) {
+        let alert = {
+            let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+            guard
+                .with_tx(|tx| {
+                    crate::advisories::notify::notifiable(
+                        tx,
+                        now,
+                        &crate::advisories::notify::nothing_suppressed(),
+                    )
+                    .map_err(|e| match e {
+                        crate::advisories::AdvisoryError::Index(index) => index,
+                        other => {
+                            // A decision this build could not make is not one to guess at: no
+                            // event, a line on stderr for the log the shell keeps, and the ledger
+                            // untouched so the next settle can decide it again.
+                            eprintln!("sync: the advisory alert could not be decided: {other}");
+                            IndexError::Corrupt {
+                                detail: other.to_string(),
+                            }
+                        }
+                    })
+                })
+                .ok()
+                .flatten()
+        };
+        if let Some(alert) = alert {
+            crate::sync::events::emit_advisory_alert(self.events.as_ref(), &alert);
+        }
     }
 
     /// §21.6's *every response*, for the ones this process made on some **other** thread.

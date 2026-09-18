@@ -12,6 +12,7 @@
 
 pub mod items;
 pub mod lockfiles;
+pub mod notify;
 pub mod parse;
 pub mod store;
 pub mod sweep;
