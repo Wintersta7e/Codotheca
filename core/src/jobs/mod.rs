@@ -4,6 +4,7 @@
 //! by number rather than by adding a variant beside it.
 
 pub mod classify;
+pub mod content_scan;
 pub mod j15_authorship;
 pub mod j1_refstate;
 pub mod j2_status;

@@ -14,14 +14,22 @@
 mod support;
 
 use codotheca_core::cancel::CancelToken;
-use codotheca_core::git::{head_tree, read_blobs, RunLimits};
+use codotheca_core::git::{
+    head_tree, read_blobs, GitBackend, JobClass, JobContext, RepoHandle, RunLimits,
+};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
+use codotheca_core::jobs::content_scan::{
+    cached_scan, findings_for_blob, missing_blobs, record_read, BlobOutcome, CachedScan,
+};
 use codotheca_core::jobs::j3_inventory::ARCHETYPE_SAMPLE;
+use codotheca_core::jobs::markers::{J7_BLOB_BYTE_CAP, J7_SCANNER_VERSION};
 use codotheca_core::jobs::presence::{presence_for, PresenceAnswers, PresenceState};
 use codotheca_core::jobs::JobKind;
+use codotheca_core::proto::txguard::TxGuard;
 use codotheca_core::protocol::{Job, SyncTaskKind};
 use codotheca_core::sync::task::kind_slug;
+use codotheca_core::testing::FakeGitBackend;
 use support::TestRepo;
 
 fn migrated() -> (tempfile::TempDir, rusqlite::Connection) {
@@ -339,4 +347,209 @@ fn ac_p3_29_26_an_unreadable_readme_is_not_a_missing_one() {
     assert_eq!(held, PresenceState::Present);
     assert_eq!(none, PresenceState::Absent);
     assert_ne!(held, none);
+}
+
+/// One chunk of §29.2's blob pass, at the cache layer: ask the cache what is missing, read only
+/// those, and file both tables. Task 7's `run_j7` is the same shape with the enumeration, the
+/// cursor and the gates around it; what these criteria turn on is which oids were asked for.
+fn scan_through_cache(
+    conn: &mut rusqlite::Connection,
+    git: &FakeGitBackend,
+    repo: &RepoHandle,
+    oids: &[String],
+) -> Vec<String> {
+    let missing = missing_blobs(conn, oids, J7_SCANNER_VERSION).unwrap();
+    let cancel = CancelToken::new();
+    let ctx = JobContext::new(JobClass::Background, &cancel, None);
+    let reads = git
+        .read_blobs(repo, &missing, J7_BLOB_BYTE_CAP, &ctx)
+        .unwrap();
+    let tx = conn.transaction().unwrap();
+    let _guard = TxGuard::enter();
+    for read in &reads {
+        record_read(&tx, read, J7_SCANNER_VERSION, 1_700_000_000).unwrap();
+    }
+    tx.commit().unwrap();
+    missing
+}
+
+fn fake_repo() -> RepoHandle {
+    RepoHandle::bare(
+        std::path::Path::new("/does/not/matter"),
+        codotheca_core::git::StoreKey::new("test-store"),
+        codotheca_core::mount::StoreClass::Local,
+    )
+}
+
+fn count(conn: &rusqlite::Connection, table: &str) -> i64 {
+    conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+        row.get(0)
+    })
+    .unwrap()
+}
+
+/// **AC-P3-29-10.** A clean blob is not re-read.
+///
+/// **This is the criterion that catches A10's missing outcome**: without the `blob_scan` row the
+/// finding set is identical either way and the defect is invisible — every clean blob re-read for
+/// ever, and *read and clean* indistinguishable from *never read*.
+#[test]
+fn ac_p3_29_10_a_clean_blob_is_not_re_read() {
+    let (_dir, mut conn) = migrated();
+    let git = FakeGitBackend::new();
+    let repo = fake_repo();
+    let oid = "c".repeat(40);
+    git.script_blob(&oid, b"fn a() {}\n");
+    let oids = vec![oid.clone()];
+
+    let first = scan_through_cache(&mut conn, &git, &repo, &oids);
+    eprintln!("first pass asked for {} oids: {first:?}", first.len());
+    assert_eq!(first, oids, "the first pass read nothing");
+    assert_eq!(
+        count(&conn, "blob_scan"),
+        1,
+        "no row saying it was looked at"
+    );
+    assert_eq!(count(&conn, "blob_finding"), 0);
+    assert_eq!(
+        cached_scan(&conn, &oid, J7_SCANNER_VERSION).unwrap(),
+        Some(CachedScan {
+            outcome: BlobOutcome::Scanned,
+            size_bytes: 10
+        })
+    );
+
+    git.clear();
+    let second = scan_through_cache(&mut conn, &git, &repo, &oids);
+    eprintln!(
+        "second pass asked for {} oids; the seam recorded {:?}",
+        second.len(),
+        git.blob_requests()
+    );
+    assert!(second.is_empty(), "a clean blob was read a second time");
+    assert!(git.blob_requests().is_empty(), "bytes were read again");
+}
+
+/// **AC-P3-29-25.** `too_large` and `binary` are recorded, not dropped — and neither is re-read.
+#[test]
+fn ac_p3_29_25_too_large_and_binary_are_recorded_not_dropped() {
+    let (_dir, mut conn) = migrated();
+    let git = FakeGitBackend::new();
+    let repo = fake_repo();
+    let big = "a".repeat(40);
+    let binary = "b".repeat(40);
+    // One byte past the cap, and a NUL inside the sniff window. Both carry a `TODO` that must
+    // never become a finding.
+    let mut oversized = b"// TODO in a huge file\n".to_vec();
+    oversized.resize(usize::try_from(J7_BLOB_BYTE_CAP).unwrap() + 1, b'x');
+    let mut binary_bytes = b"// TODO\0 in an object file\n".to_vec();
+    binary_bytes.resize(64, b'\0');
+    git.script_blob(&big, &oversized);
+    git.script_blob(&binary, &binary_bytes);
+    let oids = vec![big.clone(), binary.clone()];
+
+    let first = scan_through_cache(&mut conn, &git, &repo, &oids);
+    assert_eq!(first.len(), 2);
+    let outcomes: Vec<BlobOutcome> = oids
+        .iter()
+        .map(|oid| {
+            cached_scan(&conn, oid, J7_SCANNER_VERSION)
+                .unwrap()
+                .unwrap()
+                .outcome
+        })
+        .collect();
+    eprintln!(
+        "outcomes: {outcomes:?}, findings: {}",
+        count(&conn, "blob_finding")
+    );
+    assert_eq!(outcomes, vec![BlobOutcome::TooLarge, BlobOutcome::Binary]);
+    assert_eq!(
+        count(&conn, "blob_finding"),
+        0,
+        "a non-outcome produced findings"
+    );
+
+    git.clear();
+    let second = scan_through_cache(&mut conn, &git, &repo, &oids);
+    assert!(second.is_empty(), "a recorded non-outcome was read again");
+    assert!(git.blob_requests().is_empty());
+}
+
+/// **AC-P3-29-8.** The cache is content-addressed and library-wide.
+///
+/// Two projects holding a byte-identical blob yield **one** `blob_scan` row and one finding set,
+/// and the second project's scan reads no bytes. Neither cache table carries a `project_id`, so
+/// there is nothing for a second project to miss on.
+#[test]
+fn ac_p3_29_8_the_cache_is_content_addressed_and_library_wide() {
+    let (_dir, mut conn) = migrated();
+    let git = FakeGitBackend::new();
+    let first_repo = fake_repo();
+    let oid = "d".repeat(40);
+    git.script_blob(&oid, b"// TODO: vendored in both\n");
+    let oids = vec![oid.clone()];
+
+    scan_through_cache(&mut conn, &git, &first_repo, &oids);
+    let after_first = findings_for_blob(&conn, &oid, J7_SCANNER_VERSION).unwrap();
+    assert_eq!(after_first.len(), 1);
+
+    // A second project, a different repository handle, the same bytes.
+    git.clear();
+    let second_repo = RepoHandle::bare(
+        std::path::Path::new("/another/project"),
+        codotheca_core::git::StoreKey::new("other-store"),
+        codotheca_core::mount::StoreClass::Local,
+    );
+    let missed = scan_through_cache(&mut conn, &git, &second_repo, &oids);
+    eprintln!(
+        "second project missed {} oids and the seam recorded {:?}",
+        missed.len(),
+        git.blob_requests()
+    );
+    assert!(missed.is_empty());
+    assert!(
+        git.blob_requests().is_empty(),
+        "the second project read bytes"
+    );
+    assert_eq!(count(&conn, "blob_scan"), 1, "the cache grew a second row");
+    assert_eq!(
+        findings_for_blob(&conn, &oid, J7_SCANNER_VERSION).unwrap(),
+        after_first,
+        "one finding set, by identity"
+    );
+}
+
+/// **AC-P3-29-9.** A `scanner_version` bump is a miss, not a hit.
+///
+/// Older rows are **not deleted eagerly**, so a rollback to the previous build finds its cache
+/// intact. The count invalidated is printed and the criterion fails at zero.
+#[test]
+fn ac_p3_29_9_a_scanner_version_bump_is_a_miss_not_a_hit() {
+    let (_dir, mut conn) = migrated();
+    let git = FakeGitBackend::new();
+    let repo = fake_repo();
+    let oid = "e".repeat(40);
+    git.script_blob(&oid, b"// FIXME: at the old version\n");
+    let oids = vec![oid.clone()];
+    scan_through_cache(&mut conn, &git, &repo, &oids);
+
+    let bumped = J7_SCANNER_VERSION + 1;
+    let invalidated = missing_blobs(&conn, &oids, bumped).unwrap();
+    eprintln!(
+        "{} of {} rows are a miss at version {bumped}",
+        invalidated.len(),
+        oids.len()
+    );
+    assert!(
+        !invalidated.is_empty(),
+        "nothing was invalidated by the bump"
+    );
+    assert!(cached_scan(&conn, &oid, bumped).unwrap().is_none());
+    assert!(
+        cached_scan(&conn, &oid, J7_SCANNER_VERSION)
+            .unwrap()
+            .is_some(),
+        "the older row was deleted eagerly, so a rollback finds no cache"
+    );
 }

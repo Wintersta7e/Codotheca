@@ -17,6 +17,8 @@
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
 use codotheca_core::index::{open_connection, Index};
+use codotheca_core::jobs::content_scan::BlobOutcome;
+use codotheca_core::jobs::markers::Marker;
 use codotheca_core::jobs::presence::{PresenceState, PREDICATE_VERSION};
 
 /// The migration's own text, for the one assertion that is about the file rather than the store.
@@ -250,4 +252,85 @@ fn every_presence_slug_is_accepted_by_the_column() {
         inserted > 0,
         "inserted nothing, so the column proved nothing"
     );
+}
+
+/// R26 again, one level down: `blob_scan.outcome`'s CHECK against every slug `BlobOutcome`
+/// emits, and `blob_finding.marker`'s against every slug `Marker` emits. **Both print the number
+/// inserted and fail at zero** — a loop over an empty vocabulary would pass while looking at
+/// nothing.
+#[test]
+fn every_blob_outcome_slug_is_accepted_by_the_column() {
+    let (_dir, mut conn) = scratch();
+    apply_all(&mut conn, MIGRATIONS).unwrap();
+
+    let outcomes: Vec<&'static str> = BlobOutcome::ALL.iter().map(|o| o.slug()).collect();
+    eprintln!(
+        "BlobOutcome::ALL derives {} slugs: {outcomes:?}",
+        outcomes.len()
+    );
+    let mut inserted = 0;
+    for (n, slug) in outcomes.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO blob_scan (blob_oid, scanner_version, outcome, size_bytes, scanned_at)
+             VALUES (?1, 1, ?2, 0, 0)",
+            rusqlite::params![format!("{n:040}"), slug],
+        )
+        .unwrap_or_else(|e| panic!("blob_scan.outcome refused {slug}: {e}"));
+        inserted += 1;
+        assert_eq!(BlobOutcome::from_slug(slug), Some(BlobOutcome::ALL[n]));
+    }
+    eprintln!("outcome slugs accepted by blob_scan: {inserted}");
+    assert!(
+        inserted > 0,
+        "inserted nothing, so the column proved nothing"
+    );
+
+    let markers: Vec<&'static str> = Marker::ALL.iter().map(|m| m.slug()).collect();
+    eprintln!("Marker::ALL derives {} slugs: {markers:?}", markers.len());
+    let mut filed = 0;
+    for (n, slug) in markers.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO blob_finding
+               (blob_oid, scanner_version, ordinal_in_blob, marker, salient_sha256,
+                salient_text_capped, line, \"column\")
+             VALUES (?1, 1, ?2, ?3, 'sha', 'text', 1, 1)",
+            rusqlite::params![format!("{:040}", 0), n, slug],
+        )
+        .unwrap_or_else(|e| panic!("blob_finding.marker refused {slug}: {e}"));
+        filed += 1;
+        assert_eq!(Marker::from_slug(slug), Some(Marker::ALL[n]));
+    }
+    eprintln!("marker slugs accepted by blob_finding: {filed}");
+    assert!(filed > 0, "inserted nothing, so the column proved nothing");
+}
+
+/// The findings are children of the read that produced them: deleting the `blob_scan` row takes
+/// its occurrences with it, so an occurrence set can never outlive the record of its read.
+#[test]
+fn a_finding_cannot_outlive_the_scan_row_it_hangs_off() {
+    let (_dir, mut conn) = scratch();
+    apply_all(&mut conn, MIGRATIONS).unwrap();
+    conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+    let oid = "f".repeat(40);
+    conn.execute(
+        "INSERT INTO blob_scan (blob_oid, scanner_version, outcome, size_bytes, scanned_at)
+         VALUES (?1, 1, 'scanned', 10, 0)",
+        [&oid],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO blob_finding
+           (blob_oid, scanner_version, ordinal_in_blob, marker, salient_sha256,
+            salient_text_capped, line, \"column\")
+         VALUES (?1, 1, 0, 'TODO', 'sha', 'TODO x', 1, 1)",
+        [&oid],
+    )
+    .unwrap();
+    conn.execute("DELETE FROM blob_scan WHERE blob_oid = ?1", [&oid])
+        .unwrap();
+    let left: i64 = conn
+        .query_row("SELECT count(*) FROM blob_finding", [], |row| row.get(0))
+        .unwrap();
+    eprintln!("findings left after the parent went: {left}");
+    assert_eq!(left, 0);
 }
