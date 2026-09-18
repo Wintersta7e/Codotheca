@@ -432,3 +432,362 @@ fn ac_p3_30_14_observed_at_is_the_oldest_input() {
     );
     assert!(basis_over(&[]).is_none());
 }
+
+// ---------------------------------------------------------------------------------------------
+// §30.3 — `UnknownReason`: one vocabulary, never omitted (Task 5).
+// ---------------------------------------------------------------------------------------------
+
+use codotheca_core::health::reason::{check_for, reason_for, GrantState};
+
+const GRANTED: GrantState = GrantState {
+    account_missing: false,
+    awaiting_sync: false,
+};
+
+/// A reason rides `unknown` and **no other outcome**: one is the app saying it could not tell,
+/// and a reason on a verdict that already speaks would be a second vocabulary for it.
+#[test]
+fn ac_p3_30_16_every_unknown_check_carries_a_reason_and_no_other_outcome_does() {
+    let mut seen = 0usize;
+    for sweep in [
+        None,
+        Some(DebtSweepOutcome::Complete),
+        Some(DebtSweepOutcome::Partial),
+        Some(DebtSweepOutcome::Failed),
+        Some(DebtSweepOutcome::Unobservable),
+        Some(DebtSweepOutcome::SkippedReference),
+        Some(DebtSweepOutcome::SkippedSuppressed),
+    ] {
+        for scored_open in [0u32, 2] {
+            for unverified in [0u32, 1] {
+                for switch in [
+                    ON,
+                    SwitchState {
+                        enabled: false,
+                        ..ON
+                    },
+                    SwitchState {
+                        grant_missing: true,
+                        ..ON
+                    },
+                    SwitchState {
+                        not_applicable: true,
+                        ..ON
+                    },
+                ] {
+                    let facts = SweepFacts {
+                        outcome: sweep,
+                        scored_open,
+                        unverified,
+                        observed_at: sweep.map(|_| 1_000),
+                    };
+                    let check = check_for(
+                        DebtSource::MissingTests,
+                        &facts,
+                        &switch,
+                        Presence::Present,
+                        &GRANTED,
+                    );
+                    assert_eq!(
+                        check.unknown_reason.is_some(),
+                        check.outcome == CheckOutcome::Unknown,
+                        "{:?} carried {:?}",
+                        check.outcome,
+                        check.unknown_reason
+                    );
+                    seen += 1;
+                }
+            }
+        }
+    }
+    eprintln!("outcome/reason pairings exercised: {seen}");
+    assert!(seen > 0, "a reason test over no checks proves nothing");
+}
+
+/// **A timeout looks exactly like a missing file**, and telling them apart is the whole of this
+/// row. A budget exceedance is `notRead` — never `absent`, never `failed`, and never
+/// `notObserved`, which would claim there was nothing there.
+#[test]
+fn ac_p3_30_16_a_budget_exceedance_is_not_read_never_absent_and_never_fail() {
+    for outcome in [DebtSweepOutcome::Partial, DebtSweepOutcome::Failed] {
+        let facts = swept(outcome, 0, 0);
+        assert_eq!(outcome_for(&facts, &ON), CheckOutcome::Unknown);
+        assert_eq!(
+            reason_for(&facts, Presence::Present, &GRANTED),
+            UnknownReason::NotRead,
+            "{outcome:?}"
+        );
+        assert_ne!(
+            reason_for(&facts, Presence::Present, &GRANTED),
+            UnknownReason::NotObserved
+        );
+    }
+}
+
+/// §30.9 — a check switched back on is `unknown` until it next runs, **not `ok` and not `0`**,
+/// and the sentence it is owed is *this has not run yet*, never *there is nothing to observe*.
+///
+/// The mechanism is that a switch turned off takes the source's sweep row with it (Task 6): while
+/// a check is off the app makes no observation claim for it, so turning it back on leaves no row
+/// — which is exactly the state this reason describes.
+#[test]
+fn ac_p3_30_16_a_check_switched_off_and_back_on_is_not_run_yet_never_not_observed() {
+    let no_row = SweepFacts {
+        outcome: None,
+        scored_open: 0,
+        unverified: 0,
+        observed_at: None,
+    };
+    assert_eq!(outcome_for(&no_row, &ON), CheckOutcome::Unknown);
+    let reason = reason_for(&no_row, Presence::Present, &GRANTED);
+    assert_eq!(reason, UnknownReason::NotRunYet);
+    assert_ne!(reason, UnknownReason::NotObserved);
+
+    // And its self-resolving neighbour is not the same sentence: a bare repository has nothing to
+    // observe and does not resolve on its own.
+    assert_eq!(
+        reason_for(
+            &swept(DebtSweepOutcome::Unobservable, 0, 0),
+            Presence::Present,
+            &GRANTED
+        ),
+        UnknownReason::NotObserved
+    );
+}
+
+/// §30.3 — the evidence exists and the **local store cannot be reached**, including a check with
+/// no value inside a `frozen` reading. It outranks every reason a read could have produced,
+/// because nothing could be read.
+#[test]
+fn ac_p3_30_16_an_offline_anchor_location_is_unreachable() {
+    for anchor in [Presence::Offline, Presence::Missing] {
+        for sweep in [
+            None,
+            Some(DebtSweepOutcome::Partial),
+            Some(DebtSweepOutcome::Unobservable),
+        ] {
+            let facts = SweepFacts {
+                outcome: sweep,
+                scored_open: 0,
+                unverified: 0,
+                observed_at: sweep.map(|_| 1_000),
+            };
+            assert_eq!(
+                reason_for(&facts, anchor, &GRANTED),
+                UnknownReason::Unreachable,
+                "{anchor:?}/{sweep:?}"
+            );
+        }
+    }
+
+    // The two grant reasons, in their own order, against a reachable anchor.
+    let facts = swept(DebtSweepOutcome::Partial, 0, 0);
+    assert_eq!(
+        reason_for(
+            &facts,
+            Presence::Present,
+            &GrantState {
+                account_missing: true,
+                awaiting_sync: true,
+            }
+        ),
+        UnknownReason::NeedsAccount,
+        "syncing cannot begin without an account"
+    );
+    assert_eq!(
+        reason_for(
+            &facts,
+            Presence::Present,
+            &GrantState {
+                account_missing: false,
+                awaiting_sync: true,
+            }
+        ),
+        UnknownReason::NotSynced
+    );
+}
+
+/// **R128/F8.** `Settings.contentScanEnabled` defaults **false** while `todo_marker`'s switch
+/// defaults **on**, so on a default install the two disagree about one source. Resolving it as
+/// `unknown` with reason `notRunYet` tells every such user to wait for a sweep that never comes
+/// and inflates `eligible` with a check that cannot be evaluated.
+///
+/// `off` already means *the user chose not to have this* and is already outside `eligible`.
+/// **No seventh variant, no note row, no widening of the six-variant CHECK.**
+#[test]
+fn ac_p3_30_16_an_ungranted_content_scan_makes_todo_marker_off_not_unknown() {
+    let never_swept = SweepFacts {
+        outcome: None,
+        scored_open: 0,
+        unverified: 0,
+        observed_at: None,
+    };
+    let ungranted = SwitchState {
+        enabled: true,
+        grant_missing: true,
+        not_applicable: false,
+    };
+    let todo = check_for(
+        DebtSource::TodoMarker,
+        &never_swept,
+        &ungranted,
+        Presence::Present,
+        &GRANTED,
+    );
+    assert_eq!(todo.outcome, CheckOutcome::Off);
+    assert_eq!(todo.unknown_reason, None);
+
+    // And the figure it would otherwise have inflated: `eligible` counts it in one case and not
+    // the other, which is the whole consequence.
+    let ungranted_basis = basis_over(&[CheckObservation {
+        check: todo,
+        observed_at: None,
+    }]);
+    assert!(
+        ungranted_basis.is_none(),
+        "an off check is the only check: nothing eligible was observed"
+    );
+    let as_unknown = basis_over(&[check(CheckOutcome::Unknown, Some(1_000))])
+        .expect("an observed unknown carries a basis");
+    assert_eq!(as_unknown.eligible, 1, "this is the figure `off` keeps out");
+}
+
+/// **R132/F11** — the criterion is about the *value*, not the count, so **no literal appears in
+/// the assertion**: it enumerates the variants the generated enum declares, covers each, and
+/// prints the count. A floor of *"at least six"* would leave the run green while a seventh
+/// variant went untested.
+///
+/// R31: the schema declares this vocabulary once and both languages are generated from it. A
+/// hand-written copy on either side is the defect that has been caught twice.
+#[test]
+fn ac_p3_30_16_unknown_reason_exists_once() {
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root");
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo.join("protocol/schema/protocol.json")).unwrap(),
+    )
+    .unwrap();
+    let variants: Vec<String> = schema["types"]["UnknownReason"]["variants"]
+        .as_array()
+        .expect("UnknownReason is a declared enum")
+        .iter()
+        .map(|v| v.as_str().expect("a variant is a string").to_owned())
+        .collect();
+    eprintln!(
+        "UnknownReason variants declared by the schema: {}",
+        variants.len()
+    );
+    assert!(
+        !variants.is_empty(),
+        "a vocabulary test over no variants proves nothing"
+    );
+
+    // Every declared variant is reachable from the one chooser, and the set it produces is
+    // exactly the set the schema declares — neither short of it nor past it.
+    let mut produced: Vec<String> = Vec::new();
+    let cases: [(Presence, GrantState, Option<DebtSweepOutcome>); 6] = [
+        (Presence::Offline, GRANTED, None),
+        (
+            Presence::Present,
+            GrantState {
+                account_missing: true,
+                awaiting_sync: false,
+            },
+            None,
+        ),
+        (
+            Presence::Present,
+            GrantState {
+                account_missing: false,
+                awaiting_sync: true,
+            },
+            None,
+        ),
+        (Presence::Present, GRANTED, Some(DebtSweepOutcome::Partial)),
+        (
+            Presence::Present,
+            GRANTED,
+            Some(DebtSweepOutcome::Unobservable),
+        ),
+        (Presence::Present, GRANTED, None),
+    ];
+    for (anchor, grant, sweep) in cases {
+        let facts = SweepFacts {
+            outcome: sweep,
+            scored_open: 0,
+            unverified: 0,
+            observed_at: sweep.map(|_| 1_000),
+        };
+        let reason = reason_for(&facts, anchor, &grant);
+        let slug = serde_json::to_value(reason).unwrap();
+        let slug = slug.as_str().expect("a reason serialises as a string");
+        if !produced.iter().any(|s| s == slug) {
+            produced.push(slug.to_owned());
+        }
+    }
+    produced.sort();
+    let mut declared = variants.clone();
+    declared.sort();
+    assert_eq!(
+        produced, declared,
+        "the chooser reaches every declared variant and invents none"
+    );
+}
+
+/// **R31** — the schema declares this vocabulary once and both languages are generated from it.
+/// A hand-written copy on either side is the defect that has already been caught twice, and it is
+/// a different claim from the one above: that one is about the *value*, this one about where the
+/// value may be written down.
+#[test]
+fn ac_p3_30_16_unknown_reason_is_declared_once_and_generated_into_both_languages() {
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root");
+    let mut rust_declarations = Vec::new();
+    let mut sources = Vec::new();
+    collect_files(&repo.join("core/src"), "rs", &mut sources);
+    collect_files(&repo.join("app/src"), "ts", &mut sources);
+    collect_files(&repo.join("app/src"), "tsx", &mut sources);
+    assert!(
+        !sources.is_empty(),
+        "scanned no sources: an R31 audit over nothing is a failing audit"
+    );
+    for path in &sources {
+        let text = std::fs::read_to_string(path).unwrap();
+        if text.contains("enum UnknownReason") || text.contains("type UnknownReason") {
+            rust_declarations.push(path.clone());
+        }
+    }
+    eprintln!(
+        "UnknownReason declarations found over {} sources: {:?}",
+        sources.len(),
+        rust_declarations
+    );
+    assert_eq!(
+        rust_declarations.len(),
+        2,
+        "exactly two declarations, both generated: core/src/protocol.rs and app/src/generated"
+    );
+    for path in &rust_declarations {
+        let name = path.to_string_lossy().replace('\\', "/");
+        assert!(
+            name.ends_with("core/src/protocol.rs") || name.contains("/generated/"),
+            "{name} declares UnknownReason by hand"
+        );
+    }
+}
+
+fn collect_files(dir: &std::path::Path, ext: &str, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, ext, out);
+        } else if path.extension().is_some_and(|e| e == ext) && !out.contains(&path) {
+            out.push(path);
+        }
+    }
+}

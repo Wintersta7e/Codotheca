@@ -12,4 +12,5 @@
 pub mod acknowledge;
 pub mod enrolment;
 pub mod outcome;
+pub mod reason;
 pub mod state;
