@@ -16,6 +16,7 @@
 )]
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
+use codotheca_core::jobs::presence::{PresenceState, PREDICATE_VERSION};
 use codotheca_core::index::{open_connection, Index};
 
 /// The migration's own text, for the one assertion that is about the file rather than the store.
@@ -215,4 +216,32 @@ fn a_content_scan_row_cannot_exist_without_a_head() {
         [project],
     );
     assert!(refused.is_err(), "a NULL head_oid was accepted");
+}
+
+/// R26's shape, read from the column side: a DDL CHECK rejecting the values its own core emits.
+/// Every `PresenceState` slug is inserted against a real migrated database, into all four
+/// columns, and **the number inserted is printed — a run that inserts zero is a failing run.**
+#[test]
+fn every_presence_slug_is_accepted_by_the_column() {
+    let (_dir, mut conn) = scratch();
+    apply_all(&mut conn, MIGRATIONS).unwrap();
+    let slugs: Vec<&'static str> = PresenceState::ALL.iter().map(|s| s.slug()).collect();
+    eprintln!("PresenceState::ALL derives {} slugs: {slugs:?}", slugs.len());
+
+    let mut inserted = 0;
+    for (n, slug) in slugs.iter().enumerate() {
+        let project = insert_project(&conn, &format!("p{n}"));
+        conn.execute(
+            "INSERT INTO project_content_scan
+               (project_id, head_oid, predicate_version, has_readme, has_license, has_tests,
+                has_ci, presence_observed_at, enumerated_at)
+             VALUES (?1, 'deadbeef', ?2, ?3, ?3, ?3, ?3, 0, 0)",
+            rusqlite::params![project, PREDICATE_VERSION, slug],
+        )
+        .unwrap_or_else(|e| panic!("the column refused {slug}: {e}"));
+        inserted += 1;
+        assert_eq!(PresenceState::from_slug(slug), Some(PresenceState::ALL[n]));
+    }
+    eprintln!("presence slugs accepted by project_content_scan: {inserted}");
+    assert!(inserted > 0, "inserted nothing, so the column proved nothing");
 }

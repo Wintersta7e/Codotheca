@@ -10,6 +10,7 @@ pub mod j2_status;
 pub mod j3_inventory;
 pub mod j4_history;
 pub mod j6_content;
+pub mod presence;
 pub mod queue;
 pub mod scheduler;
 pub mod state;
