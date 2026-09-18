@@ -112,7 +112,7 @@ const SCREENS: readonly { readonly name: string; readonly draw: () => void }[] =
   },
 ];
 
-it('no first-run screen offers the content-scan grant as a control', () => {
+it('AC-P3-29-20 no first-run screen offers the content-scan grant as a control', () => {
   // `console.warn` rather than stderr: this file is in the web project and has no node types.
   console.warn(`contentScanAsk: first-run screens rendered ${String(SCREENS.length)}`);
   expect(SCREENS.length).toBeGreaterThan(0);
@@ -140,7 +140,7 @@ it('no first-run screen offers the content-scan grant as a control', () => {
   }
 });
 
-it('the consent row that names the grant is a statement and takes no input', () => {
+it('AC-P3-29-20 the consent row that names the grant takes no input', () => {
   const row = CONSENT_ROWS[1];
   expect(row?.kind).toBe('statement');
   cleanup();

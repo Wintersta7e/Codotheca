@@ -29,7 +29,7 @@ function coreProgrammingLanguages(): string[] {
 // language byte census: someone adding an extension there to make a language appear in the
 // language bar would otherwise silently widen what this product reads off the user's disk.
 // Rendering the list makes that a visible change to a stated policy rather than a table edit.
-test('the rendered language list is the core programming-language set', () => {
+test('AC-P3-29-17 the rendered language list is the core programming-language set', () => {
   const fromCore = coreProgrammingLanguages();
   const rendered = [...CONTENT_SCAN_LANGUAGES];
   // Both counts are derived and printed, and the gate fails at zero on either side.
@@ -44,7 +44,7 @@ test('the rendered language list is the core programming-language set', () => {
 
 // The markup entries are what rule 3 excludes: a checklist in a README is not debt, and a
 // lockfile is read by name elsewhere. None of them may appear on this surface.
-test('no markup language is rendered as one this scan reads', () => {
+test('AC-P3-29-17 no markup language is rendered as one this scan reads', () => {
   const source = readFileSync(join(REPO_ROOT, 'core/src/jobs/classify.rs'), 'utf8');
   const markup = [...source.matchAll(/markup\("((?:[^"\\]|\\.)*)"\)/g)].map((m) => m[1]!);
   process.stderr.write(

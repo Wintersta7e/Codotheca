@@ -37,7 +37,7 @@ const props: ScanGroupsProps = {
 const NEVER_READ =
   /source files are never read|never reads? (the contents|the text) of your source|does not read the (contents|text) of your source files(?![^.]*\bunless\b)/i;
 
-it('every promise site is a real, non-empty rendered string', () => {
+it('AC-P3-29-19 every promise site is a real, non-empty rendered string', () => {
   const { container } = render(<ScanGroups {...props} />);
   const groupFour = container.querySelector('[data-group="scanning"]')?.textContent ?? '';
   const scanned: readonly { readonly site: string; readonly text: string }[] = [
@@ -56,7 +56,7 @@ it('every promise site is a real, non-empty rendered string', () => {
   }
 });
 
-it('the first-run row names the setting it has become, and is still a statement', () => {
+it('AC-P3-29-19 the first-run row names the setting it has become, still a statement', () => {
   const row = CONSENT_ROWS[1];
   expect(row).toBeTruthy();
   expect(row?.body ?? '').not.toBe('');
@@ -67,7 +67,7 @@ it('the first-run row names the setting it has become, and is still a statement'
   expect(row?.note ?? '').not.toMatch(/NOT BUILT YET/);
 });
 
-it('the group-4 row is the control that carries the grant, with its consequence line', () => {
+it('AC-P3-29-19 the group-4 row carries the grant, with its consequence line', () => {
   render(<ScanGroups {...props} />);
   expect(CONTENT_SCAN_LABEL).not.toBe('');
   expect(CONTENT_SCAN_NOTE).not.toBe('');
@@ -78,7 +78,7 @@ it('the group-4 row is the control that carries the grant, with its consequence 
   expect(screen.getByText(CONTENT_SCAN_CONSEQUENCE)).toBeTruthy();
 });
 
-it('the paragraph says the grant exists and says it is off', () => {
+it('AC-P3-29-19 the paragraph says the grant exists and says it is off', () => {
   expect(CONSENT_PARAGRAPH).not.toBe('');
   expect(CONSENT_PARAGRAPH).toMatch(/off until you do/);
   expect(CONSENT_PARAGRAPH).toMatch(/Nothing is uploaded/);
