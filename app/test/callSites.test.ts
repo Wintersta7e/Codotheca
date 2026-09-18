@@ -25,6 +25,12 @@ const NON_GIT_SPAWNS = [
   { path: 'core/src/wsl/distros.rs', line: 111, program: 'wsl.exe' },
 ] as const;
 
+/** Only the two fields this file joins on; the register's own validator owns the rest. */
+interface RegisteredCheck {
+  readonly id: string;
+  readonly test?: string;
+}
+
 interface CallSiteRule {
   readonly id: string;
   readonly patterns: readonly string[];
@@ -108,12 +114,19 @@ describe('the call-site gate', () => {
   });
 
   /**
-   * `validateCallSites` returns EXIT_CANNOT_RUN for a rule no criterion claims, so this rule ships
-   * naming the criterion it belongs to until p2-26 registers the real check. Without it the gate
-   * refuses to run at all, and the failure reads as a JSON syntax error rather than as a missing
-   * registry entry.
+   * `validateCallSites` returns EXIT_CANNOT_RUN for a rule no criterion claims, so this rule
+   * shipped naming the criterion it belonged to until the register held the real check. Now that
+   * `AC-P2-24-3` is registered the escape is discharged, and a rule carrying **both** an escape
+   * and a claiming check is a rule with two answers.
    */
-  it('names the criterion that will claim it', () => {
-    expect(rule().pendingRegistryEntry?.criterion).toBe('AC-P2-24-3');
+  it('carries no escape, now that a registered check claims it', () => {
+    expect(rule().pendingRegistryEntry).toBeUndefined();
+    const registry = JSON.parse(readFileSync(join(REPO, 'acceptance/criteria.json'), 'utf8')) as {
+      readonly criteria: readonly { readonly checks: readonly RegisteredCheck[] }[];
+    };
+    const claims = registry.criteria
+      .flatMap((entry) => entry.checks)
+      .filter((check) => check.test === `check-call-sites:${RULE_ID}`);
+    expect(claims.map((check) => check.id)).toEqual(['AC-P2-24-3']);
   });
 });

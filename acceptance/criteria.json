@@ -429,10 +429,7 @@
             "from": "main process start",
             "to": "first tile pixel composited",
             "thermal": "cold",
-            "machines": [
-              "A",
-              "B"
-            ],
+            "machines": ["A", "B"],
             "state": "warm database, cold page cache"
           },
           "budget": [
@@ -479,9 +476,7 @@
             "from": "shell global-shortcut callback entry",
             "to": "a composited frame of the window",
             "thermal": "warm",
-            "machines": [
-              "A"
-            ],
+            "machines": ["A"],
             "state": "window alive, chord bound by the harness"
           },
           "budget": [
@@ -506,9 +501,7 @@
             "from": "shell global-shortcut callback entry",
             "to": "a composited frame of the recreated window",
             "thermal": "cold",
-            "machines": [
-              "A"
-            ],
+            "machines": ["A"],
             "state": "window destroyed under the 30-minute hybrid"
           },
           "budget": [
@@ -541,9 +534,7 @@
             "from": "renderer keydown",
             "to": "the refiltered grid presented",
             "thermal": "warm",
-            "machines": [
-              "A"
-            ],
+            "machines": ["A"],
             "state": "1,000 projects, client-side projection"
           },
           "budget": [
@@ -576,9 +567,7 @@
             "from": "the scan.start response",
             "to": "the scan/finished event",
             "thermal": "warm",
-            "machines": [
-              "A"
-            ],
+            "machines": ["A"],
             "state": "1,000 repositories, all fingerprints unchanged, no J2 re-run"
           },
           "budget": [
@@ -611,9 +600,7 @@
             "from": "the scan.start response",
             "to": "the scan/finished event",
             "thermal": "warm",
-            "machines": [
-              "A"
-            ],
+            "machines": ["A"],
             "state": "1,000 repositories on local SSD, freshness reset, fully backgrounded"
           },
           "budget": [
@@ -637,9 +624,7 @@
             "kind": "rate",
             "run": "wheel-driven scrolling through the shelf for at least 450 frames while the forced refresh runs",
             "thermal": "warm",
-            "machines": [
-              "A"
-            ]
+            "machines": ["A"]
           },
           "budget": [
             {
@@ -709,9 +694,7 @@
             "kind": "rate",
             "run": "at least 60 s with the shelf visible and focused, no project page open, no session open, no job running, and no pointer or keyboard input for at least 5 s",
             "thermal": "warm",
-            "machines": [
-              "A"
-            ]
+            "machines": ["A"]
           },
           "budget": [
             {
@@ -765,9 +748,7 @@
           "measurement": {
             "kind": "size",
             "thermal": "n/a",
-            "machines": [
-              "A"
-            ],
+            "machines": ["A"],
             "state": "1,000 projects, 200,000 commit subjects, 100,000 events"
           },
           "budget": [
@@ -789,9 +770,7 @@
           "measurement": {
             "kind": "size",
             "thermal": "n/a",
-            "machines": [
-              "A"
-            ],
+            "machines": ["A"],
             "state": "the worst of a 24-scene sample projected to 1,000 projects, with more hero opens than the cap"
           },
           "budget": [
@@ -1045,9 +1024,7 @@
             "kind": "rate",
             "run": "1,000 logical cards with 140 mounted, virtualized, driven by injected wheel events through the real compositor path and never by assigning scrollTop, over at least 450 frames, with the window alive, the shelf already painted and the virtualizer settled",
             "thermal": "warm",
-            "machines": [
-              "A"
-            ]
+            "machines": ["A"]
           },
           "budget": [
             {
@@ -1079,9 +1056,7 @@
             "from": "renderer keydown",
             "to": "the palette painted with its first page of rows and the field focused",
             "thermal": "warm",
-            "machines": [
-              "A"
-            ],
+            "machines": ["A"],
             "state": "window alive"
           },
           "budget": [
@@ -1106,9 +1081,7 @@
             "from": "shell global-shortcut callback entry",
             "to": "the palette painted with its first page of rows and the field focused",
             "thermal": "cold",
-            "machines": [
-              "A"
-            ],
+            "machines": ["A"],
             "state": "window destroyed, chord bound by the harness"
           },
           "budget": [
@@ -3141,11 +3114,11 @@
         },
         {
           "id": "AC-P2-25-11-unknown",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p2-24b",
-          "test": "acceptance_uninstall::ac_p2_25_11_unknown_an_unreadable_stash_falls_through_to_no_block",
-          "assert": "Row 4's unreadable-stash limb: with RefState.stash_count an Option<u32>, a location whose stash reflog cannot be read falls through to no block rather than to verified. Not representable until p2-24b lands the nullable field (R51)."
+          "test": "uninstall_acceptance::ac_p2_25_11_unknown_an_unknown_stash_count_produces_no_block",
+          "assert": "Row 4's unreadable-stash limb: with RefState.stash_count an Option<u32>, a location whose stash count is unknown falls through to no block rather than to verified. Registered against the suite and the name p2-24b landed, not the ones this entry was written against before it did (R51)."
         }
       ]
     },
@@ -4131,6 +4104,773 @@
           "owner": "p2-22",
           "test": "identity_rename_repair::a_403_a_429_and_an_offline_lookup_each_leave_the_fields_unknown",
           "assert": "A 403, a 429 and an offline lookup each leave the fields unknown and never failed, and none retries within the same sync."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-1",
+      "title": "core/src/git/ is provably read-only, and its lists did not move",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-1",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::every_subcommand_literal_is_on_the_read_only_allow_list",
+          "assert": "Every subcommand literal in core/src/git/ is on the phase-1 ALLOWED list, so a write subcommand added to the read-only module fails here and not in review."
+        },
+        {
+          "id": "AC-P2-24-1-destructive",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::no_source_file_names_a_destructive_subcommand",
+          "assert": "No source file of the read-only module names a destructive subcommand at all, which is the half a literal allow-list cannot state."
+        },
+        {
+          "id": "AC-P2-24-1-justified",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::every_non_literal_os_str_call_is_explicitly_justified",
+          "assert": "Every argv built from something other than a literal carries a written justification, so the allow-list cannot be evaded by construction."
+        },
+        {
+          "id": "AC-P2-24-1-fixture",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::a_non_literal_os_str_fixture_is_rejected",
+          "assert": "A planted non-literal call is rejected, which is what proves the audit above is not passing vacuously."
+        },
+        {
+          "id": "AC-P2-24-1-reads",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::the_audit_actually_reads_argv_literals",
+          "assert": "The audit reads real argv literals out of the module rather than an empty set \u2014 the scans-nothing failure, stated as its own case."
+        },
+        {
+          "id": "AC-P2-24-1-remote-url",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::the_remote_url_argv_is_a_read",
+          "assert": "The remote-URL argv this section added is a read like every other, so the module's guarantee is unchanged by it."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-2",
+      "title": "Every write intent renders an audited argv",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-2",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::every_rendered_subcommand_is_write_allowed",
+          "assert": "Every Intent::ALL variant renders a subcommand in clone or fetch and nothing else \u2014 git is additive-only in phase 2."
+        },
+        {
+          "id": "AC-P2-24-2-flags",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::no_rendered_argv_contains_a_forbidden_flag",
+          "assert": "No rendered argv carries any token from the eight-entry FLAG_FORBIDDEN set."
+        },
+        {
+          "id": "AC-P2-24-2-floor",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::the_exhaustive_intent_list_has_two_renderable_variants",
+          "assert": "Intent::ALL's length equals its hard-coded floor, so adding a variant without raising the floor fails.",
+          "source": "\u00a724.11"
+        },
+        {
+          "id": "AC-P2-24-2-sentinel",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::the_sentinel_reaches_no_child_argv_config_url_or_environment",
+          "assert": "A sentinel credential appears in no rendered argv, no -c value, no URL and no environment entry."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-3",
+      "title": "Every git spawn goes through the audited renderer",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-3",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p2-24",
+          "test": "check-call-sites:no-unaudited-git-spawn",
+          "assert": "The rule names exactly three files and the gate prints a rule count, a violation count and a file-read count on the passing run; a run that walked zero files or read zero files fails.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-24-4",
+      "title": "A fetch prunes nothing and a clone lands where nothing was",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-4",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::rendering_an_intent_repeatedly_is_byte_identical_and_never_grows_a_flag",
+          "assert": "Re-rendering an intent under every scheduler retry path is byte-identical and never grows a flag, which is where a --prune would appear if one ever did."
+        },
+        {
+          "id": "AC-P2-24-4-filters",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::a_configured_filter_driver_is_neutralised_in_the_child_argv",
+          "assert": "A clone's child argv neutralises every configured filter driver, so a machine-local clean filter cannot rewrite what lands on disk."
+        },
+        {
+          "id": "AC-P2-24-4-enumeration",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::a_failed_filter_enumeration_refuses_the_clone",
+          "assert": "A filter enumeration that fails refuses the clone rather than proceeding with an unknown filter set."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-5",
+      "title": "FORGET appears nowhere, including the modules that now remove",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-5",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p2-24",
+          "test": "check-forbidden:c44-forget-token",
+          "assert": "The forbidden-token rule, widened to cover core/src/gitw/, finds FORGET in no rendered string, accessible name or command. Criterion 44's own check names this same rule and is kept verbatim."
+        },
+        {
+          "id": "AC-P2-24-5-module",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::the_forbidden_token_appears_nowhere_in_the_module",
+          "assert": "The token appears in no source file of either mutating module."
+        },
+        {
+          "id": "AC-P2-24-5-planted",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::a_planted_token_in_either_mutating_module_would_be_caught",
+          "assert": "A planted token in either module is caught, which is what stops the absence above passing vacuously."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-6",
+      "title": "The destructive-token gate permits uninstall only where it is rendered",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-6",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "the destructive-token gate permits UNINSTALL only at its enumerated sites",
+          "assert": "The word is permitted at the enumerated sites and an occurrence outside them fails, so the site list is a claim about where the word is rendered rather than a hole."
+        },
+        {
+          "id": "AC-P2-24-6-words",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "the destructive-token gate bans the three removal words uppercase-exact, and permits the command names",
+          "assert": "DELETE, REMOVE and RECLAIM SPACE are banned uppercase-exact, while the shipped command names that contain remove still pass."
+        },
+        {
+          "id": "AC-P2-24-6-allowlist",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "the destructive-token gate keeps the escape hatch shut",
+          "assert": "ALLOWLIST is empty, so no path carries a general exemption for a banned word."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-7",
+      "title": "A killed clone leaves nothing a scan can see",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-7",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_staging::a_cancelled_run_removes_its_staging_and_leaves_no_location",
+          "assert": "After a cancel the process group is gone, the staging directory is removed under its warrant, and no location row exists."
+        },
+        {
+          "id": "AC-P2-24-7-sweep",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_staging::the_sweep_removes_what_it_can_warrant_and_reports_what_it_cannot",
+          "assert": "The start-up sweep removes what it can warrant and reports the rest as abandoned_install rather than removing it anyway."
+        },
+        {
+          "id": "AC-P2-24-7-reported",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_staging::a_row_whose_directory_is_still_there_is_reported_with_its_path",
+          "assert": "A staging directory the sweep cannot warrant is left in place and surfaced with its path, so nothing is removed silently and nothing is hidden."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-8",
+      "title": "A collision refuses and never auto-suffixes",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-8",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_destination::install_destination_unindexed_collision_is_destination_exists_and_changes_no_seed",
+          "assert": "An occupied destination returns destination_exists, creates no numerically suffixed directory, and leaves seed_basename unchanged."
+        },
+        {
+          "id": "AC-P2-24-8-installed",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_destination::install_destination_persisted_non_removed_location_is_already_installed",
+          "assert": "A destination that is already this project returns already_installed rather than a collision."
+        },
+        {
+          "id": "AC-P2-24-8-seed",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_destination::install_destination_every_success_keeps_stored_identity_at_a_collision",
+          "assert": "Every success keeps the stored identity, so no refusal path transforms the basename the art was seeded on."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-9",
+      "title": "The location row exists only after the rename",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-9",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_run::a_crash_between_the_clone_and_the_rename_leaves_no_location_row",
+          "assert": "A crash between the clone exiting and the rename completing leaves no location row, so a project is not cloned until that row commits."
+        },
+        {
+          "id": "AC-P2-24-9-nojob",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_run::the_install_queue_added_no_job_kind",
+          "assert": "Install owns no bespoke indexer: JobKind gained no variant and the ordinary pipeline is what runs after a clone."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-10",
+      "title": "The readout carries per-phase counts and no aggregate",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-10",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24",
+          "test": "no % and no aggregate figure appears anywhere across a whole install",
+          "assert": "Over a full install the DOM contains no aggregate percentage at any millisecond a frame could land on."
+        },
+        {
+          "id": "AC-P2-24-10-denominator",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24",
+          "test": "a phase with a denominator renders it, and one without renders a bare count",
+          "assert": "Each rendered figure is a per-phase count, with its denominator where one exists and a bare count where total is null."
+        },
+        {
+          "id": "AC-P2-24-10-monotone",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24",
+          "test": "no rendered number decreases across the whole sequence",
+          "assert": "No rendered number decreases across the sequence, and no stage is skipped."
+        },
+        {
+          "id": "AC-P2-24-10-wire",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_run::an_install_stage_carries_no_aggregate_field",
+          "assert": "The field set on the wire carries no aggregate at all, so the renderer could not compute a percentage even by accident."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-11",
+      "title": "The blueprint swaps to the card at identical geometry",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-11",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24",
+          "test": "the install-time rendition flip flips the tile card-blueprint to card and the hero hero-blueprint to hero",
+          "assert": "Both surfaces flip rendition on install with the same scene_hash, so no art re-render is enqueued."
+        },
+        {
+          "id": "AC-P2-24-11-hold",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24",
+          "test": "the install-time rendition flip holds the decoded blueprint until the new rendition has decoded",
+          "assert": "The swap happens at identical geometry with no transition and no intermediate plate, because the old bitmap is held until the new one has decoded."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-12",
+      "title": "The palette opens a not-cloned row on Install and clones nothing",
+      "group": "surfaces",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-12",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24",
+          "test": "QuickSwitch opens the page with Install asked for, and starts no clone",
+          "assert": "Enter on a not-cloned row opens the project page with Install focused and starts no clone."
+        },
+        {
+          "id": "AC-P2-24-12-host",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24",
+          "test": "QuickSwitchHost Enter on a not-cloned row opens the page with Install asked for, and clones nothing",
+          "assert": "The same through the keyboard path the product actually uses, which is where a null event target would have hidden a dead palette."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-13",
+      "title": "The removal recomputes its own verdict and refuses if it moved",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-13",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_13_no_verdict_token_crosses_the_wire",
+          "assert": "A LocationId is the only argument and no verdict token crosses the boundary, so there is nothing for a caller to forge or replay."
+        },
+        {
+          "id": "AC-P2-24-13-recompute",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_command::a_copy_that_changed_after_the_preflight_is_refused_and_survives",
+          "assert": "Mutating the working copy between the pre-flight and the call makes the recomputed verdict differ, and the removal is refused with the copy intact."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-14",
+      "title": "No path past a non-safe disposition exists anywhere",
+      "group": "surfaces",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-14",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "the uninstall control renders unknown distinctly from blocked",
+          "assert": "unknown renders distinctly from blocked \u2014 not the same disabled state with different words, which is the type-level collapse \u00a724.8 exists to prevent."
+        },
+        {
+          "id": "AC-P2-24-14-blockers",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "the uninstall control names every one of the fourteen blockers when it is blocked",
+          "assert": "The control is disabled with its reasons named, for every one of the fourteen blockers rather than the first."
+        },
+        {
+          "id": "AC-P2-24-14-sources",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-14: no path past a non-safe disposition exists in the sources finds no override, confirmation-through or bulk wording anywhere in the app",
+          "assert": "Scans every app source, prints the count scanned and the count of hits, and fails at zero files: no override, confirmation-through or bulk selection reaches removal from any surface.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-24-14-channel",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-14: no path past a non-safe disposition exists in the sources routes the removal through the shell, never through a renderer-held command name",
+          "assert": "No renderer file names the privileged command; the removal travels a shell-owned channel and the renderer names only that channel."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-15",
+      "title": "An unreadable stash is unknown and never safe",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-15",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_15_an_unreadable_stash_reflog_is_unknown_and_never_safe",
+          "assert": "With logs/refs/stash unreadable the pre-flight yields stash_unreadable and disposition unknown, never safe."
+        },
+        {
+          "id": "AC-P2-24-15-packed",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_15_a_packed_only_stash_is_a_stash",
+          "assert": "A stash reachable only through a packed refs/stash yields stash_present, so a repository with reflogs off does not read as empty."
+        },
+        {
+          "id": "AC-P2-24-15-column",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_preflight::the_uninstall_module_never_reads_the_cached_stash_column",
+          "assert": "No pre-flight code path reads location.stash_count, which cannot distinguish unreadable from zero."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-16",
+      "title": "Nothing the remote or the history failed to establish is safe",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-16",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_16_no_remote_or_history_failure_ever_yields_safe",
+          "assert": "A 401, a 403, a 404 and an offline machine each yield unknown, and none of the four ever yields safe."
+        },
+        {
+          "id": "AC-P2-24-16-fold",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_16_every_blocker_alone_keeps_the_answer_away_from_safe",
+          "assert": "Every blocker on its own folds the answer away from safe, which is the property the criterion is really about."
+        },
+        {
+          "id": "AC-P2-24-16-mirror",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_gates::a_local_mirror_is_blocked_and_not_treated_as_a_backup",
+          "assert": "A remote URL resolving to a local path yields remote_is_local_mirror and is never counted as a second copy."
+        },
+        {
+          "id": "AC-P2-24-16-shallow",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_gates::a_shallow_clone_never_clears",
+          "assert": "A shallow clone yields shallow_clone, because every local ref being present upstream cannot be proved over a truncated graph."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-17",
+      "title": "An uninstalled row survives, NULL and not zero",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-17",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_command::a_successful_removal_keeps_the_row_and_nulls_the_ten_columns",
+          "assert": "Every location row survives, the ten observation columns read NULL and not 0, and head_oid is retained."
+        },
+        {
+          "id": "AC-P2-24-17-word",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "an uninstalled copy reads UNINSTALLED, and the stale presence does not win",
+          "assert": "The row renders UNINSTALLED, read before presence so a stale presence value cannot override it."
+        },
+        {
+          "id": "AC-P2-24-17-relocate",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "an uninstalled copy offers INSTALL and never RELOCATE",
+          "assert": "The row offers Install and offers RELOCATE on no surface."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-18",
+      "title": "Every filesystem removal goes through one warranted primitive",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-18",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_18_the_warrant_set_grew_and_the_audit_covers_all_of_it",
+          "assert": "The warrant set grew with the uninstall variant and the audit covers every variant of it, so a second warrant kind cannot ship uncovered."
+        },
+        {
+          "id": "AC-P2-24-18-audit",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "removal_audit::every_removal_is_warranted_or_a_reasoned_baseline_entry",
+          "assert": "Walks every source file that can delete from the filesystem, prints the file count and the call-site count, and fails below a floor \u2014 a run scanning zero files fails.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-24-18-sites",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p2-24b",
+          "test": "check-call-sites:no-unwarranted-removal",
+          "assert": "The call-site gate finds no removal outside the warranted primitive and prints a rule count, a violation count and a file-read count; a run that read zero files fails.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-24-18-recursive",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p2-24b",
+          "test": "check-call-sites:no-unwarranted-recursive-removal",
+          "assert": "The recursive half of the same rule, printing its own file-read count and failing the same way at zero files read.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-24-19",
+      "title": "Every disk-mutating command is off the renderer-callable surface",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-19",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface finds the three the schema declares, and derives them rather than naming them",
+          "assert": "The set is derived from the schema rather than typed out, so a fourth mutating command joins it by existing and no plan can claim every while asserting one third of it."
+        },
+        {
+          "id": "AC-P2-24-19-privileged",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface marks each one privileged",
+          "assert": "Every command that mutates the filesystem is privileged: true."
+        },
+        {
+          "id": "AC-P2-24-19-refused",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface refuses each one by name on IPC_REQUEST",
+          "assert": "isRendererCallable refuses each one by name, and still admits the unprivileged pre-flight \u2014 so the guard is refusing these for being privileged and not refusing everything."
+        },
+        {
+          "id": "AC-P2-24-19-channel",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface gives each one a shell-owned channel of its own",
+          "assert": "Each reaches the core over a shell-owned channel of its own, never one shared door and never the request channel."
+        },
+        {
+          "id": "AC-P2-24-19-preflight",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface leaves the pre-flight unprivileged, because it writes nothing",
+          "assert": "The pre-flight is neither privileged nor filesystem-mutating, which is what keeps the verdict renderable at all."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-20",
+      "title": "RELOCATE is byte-identical and gains no call site",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-20",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-20: locations.relocate is byte-identical to phase 1 and gains no call site declares exactly what phase 1 declared",
+          "assert": "The command's args, return, privileged flag and $comment are byte-identical to the phase-1 schema tip, and it claims no filesystem mutation."
+        },
+        {
+          "id": "AC-P2-24-20-sites",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-20: locations.relocate is byte-identical to phase 1 and gains no call site gains no new call site",
+          "assert": "Scans every app source, prints the file count and the call-site count, fails at zero files scanned, and asserts the same eight files phase 1 had.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-24-20-channel",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-20: locations.relocate is byte-identical to phase 1 and gains no call site is not the channel the removal travels",
+          "assert": "The removal travels its own channel, so RELOCATE is not widened to carry it."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-21",
+      "title": "A credential reaches no argv, no config and no produced clone",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-21",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::a_real_clone_persists_no_sentinel_and_an_origin_without_userinfo",
+          "assert": "A sentinel driven through a real authenticated clone appears in no produced .git/config, and the clone's origin URL carries an empty userinfo field."
+        },
+        {
+          "id": "AC-P2-24-21-fetch",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::the_sentinel_reaches_no_rendered_fetch_argv_although_fetch_never_spawns",
+          "assert": "The same holds for the fetch intent, asserted although fetch never spawns, so the guarantee does not rest on which variants happen to run."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-22",
+      "title": "One credential helper, no prompt, and a refusal rather than a hang",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-22",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::every_variant_renders_exactly_one_credential_option",
+          "assert": "Every Intent variant renders -c credential.helper= exactly once."
+        },
+        {
+          "id": "AC-P2-24-22-child",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::the_child_receives_exactly_one_credential_helper_and_no_askpass",
+          "assert": "The spawned child receives exactly one credential helper, no askpass, and GIT_TERMINAL_PROMPT=0."
+        },
+        {
+          "id": "AC-P2-24-22-returns",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::an_unusable_remote_returns_rather_than_blocking_on_a_prompt",
+          "assert": "An invalid credential makes the clone return rather than block on a prompt."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-23",
+      "title": "A private remote on the public tier offers the upgrade and spawns nothing",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-23",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_destination::install_destination_private_remote_on_public_tier_refuses_without_git",
+          "assert": "On the public tier a private remote returns private_needs_upgrade and spawns no git process \u2014 the fake records every backend call and has none configured."
+        },
+        {
+          "id": "AC-P2-24-23-unknown",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "install_destination::install_destination_unknown_visibility_is_not_public_or_private",
+          "assert": "Unknown visibility is neither public nor private, so an unread visibility cannot be silently treated as permission."
+        },
+        {
+          "id": "AC-P2-24-23-render",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24",
+          "test": "a private remote offers the upgrade and never says gone or missing",
+          "assert": "The refusal renders the upgrade offer and no surface renders the repository as gone or missing; there is no anonymous retry."
         }
       ]
     }

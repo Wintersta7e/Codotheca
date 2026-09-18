@@ -283,12 +283,7 @@
         "workflow:",
         "repo:read"
       ],
-      "exempt": [],
-      "pendingRegistryEntry": {
-        "criterion": "AC-P2-20-3",
-        "owner": "p2-20",
-        "why": "This plan's Task 15 registers AC-P2-20-3 and removes this escape; the rule lands with the deletion it is the gate for, several tasks earlier."
-      }
+      "exempt": []
     }
   ]
 }

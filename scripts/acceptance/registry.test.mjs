@@ -600,10 +600,11 @@ test('registering a phase-2 section leaves phase 1 at 70 and 171', () => {
     phase1.reduce((n, c) => n + c.checks.length, 0),
     171,
   );
-  // §20 owns thirteen, §21 seventeen, §22 thirteen, §23 twelve and §25 twenty-six, which is what
+  // §20 owns thirteen, §21 seventeen, §22 thirteen, §23 twelve, §24 twenty-three and §25
+  // twenty-six, which is what
   // `PHASE2_SECTIONS` declares for each. Raised by this lane's own delta, read from the branch
   // base — never to a running total a later lane would have to guess at.
-  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 81);
+  assert.equal(registry.criteria.filter((c) => phaseOf(c.id) === 2).length, 104);
 });
 
 // [p2-26 Task 4] §22's thirteen. The section is complete or it is silent, and this is what
@@ -638,5 +639,51 @@ test('every §22 check names a cargo test that the tree really declares', () => 
       new RegExp(`^(async )?fn ${fn}\\(`, 'mu').test(source),
       `${check.id}: core/tests/${binary}.rs declares no fn ${fn}`,
     );
+  }
+});
+
+// [p2-26 Tasks 6 and 7] §24 closes at twenty-three, across two owning plans. Half a section
+// registered is the state the completeness rule exists to refuse, so this is the assertion that
+// turns §24's silence off only once both halves are in.
+test('§24 holds exactly twenty-three contiguous criteria, from both its owners', () => {
+  const registry = loadRegistry(registryPath);
+  const section = registry.criteria.filter((c) => /^P2-24-/u.test(c.id));
+  assert.deepEqual(
+    section.map((c) => Number.parseInt(c.id.slice('P2-24-'.length), 10)).sort((a, b) => a - b),
+    Array.from({ length: 23 }, (_, i) => i + 1),
+  );
+  const owners = new Set(section.flatMap((c) => c.checks.map((k) => k.owner)));
+  assert.deepEqual([...owners].sort(), ['p2-24', 'p2-24b']);
+  assert.deepEqual(validatePhase2Complete(registry), []);
+});
+
+// R51's fall-through. The criterion has two subjects and two owners, and the second could not be
+// written until `RefState.stash_count` became an Option — so this entry was registered against a
+// suite and a name that did not exist yet. The merged plan wins: it names what p2-24b landed.
+test('P2-25-11 carries two checks, two owners, and no deferral to a plan that has merged', () => {
+  const registry = loadRegistry(registryPath);
+  const entry = registry.criteria.find((c) => c.id === 'P2-25-11');
+  assert.ok(entry, 'P2-25-11 is registered');
+  assert.deepEqual(
+    entry.checks.map((c) => c.owner),
+    ['p2-25', 'p2-24b'],
+  );
+  for (const check of entry.checks) {
+    assert.equal(check.status, 'automated', `${check.id} names a test that ran`);
+    assert.equal(check.deferral, undefined, `${check.id} defers to nobody`);
+  }
+});
+
+// Task 1 added the escape so a lane could land a static rule before this plan wrote its check.
+// A survivor is a rule with two answers: an escape saying nothing claims it, and a check that
+// does. Every phase-2 rule is claimed now, so none may still carry one.
+test('no static rule still carries the escape its registered check discharges', () => {
+  const read = (name) =>
+    JSON.parse(readFileSync(fileURLToPath(new URL(`../../acceptance/${name}`, import.meta.url))));
+  for (const name of ['callsites.json', 'forbidden.json']) {
+    const rules = read(name).rules ?? [];
+    assert.ok(rules.length > 0, `${name} lists no rules — the scan read nothing`);
+    const survivors = rules.filter((r) => r.pendingRegistryEntry !== undefined).map((r) => r.id);
+    assert.deepEqual(survivors, [], `${name} still carries a pending registry entry`);
   }
 });

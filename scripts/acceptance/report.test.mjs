@@ -82,8 +82,8 @@ test('countByPhase splits the register without a second file', () => {
   assert.equal(counts[1].checks, 171);
   // [p2] §20's thirteen plus §21's fifteen plus §23's twelve plus §25's twenty-six. Phase 1's
   // figures are the ones that must not move.
-  assert.equal(counts[2].criteria, 81);
-  assert.equal(counts[2].checks, 153);
+  assert.equal(counts[2].criteria, 104);
+  assert.equal(counts[2].checks, 225);
   assert.equal(
     Object.values(counts[1].byStatus).reduce((a, b) => a + b, 0),
     counts[1].checks,
@@ -99,7 +99,7 @@ test('the line a successful run prints states what it validated, per phase', () 
   // about the register, and a run that validated nothing must not read like a clean one.
   assert.equal(
     renderRegistryLine(loadRegistry(registryPath)),
-    '151 criteria / 324 checks validated — phase 1 70/171, phase 2 81/153',
+    '174 criteria / 396 checks validated — phase 1 70/171, phase 2 104/225',
   );
   assert.equal(
     renderRegistryLine({ criteria: [] }),
@@ -123,5 +123,5 @@ test('the run report splits its check count by phase', () => {
   const join = joinResults(registry, []);
   const rendered = renderRunReport(registry, join, { newFailures: [], stale: [], missing: [] }, []);
   assert.match(rendered, /Phase 1: 171 checks/u);
-  assert.match(rendered, /Phase 2: 153 checks/u);
+  assert.match(rendered, /Phase 2: 225 checks/u);
 });

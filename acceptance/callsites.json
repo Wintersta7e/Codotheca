@@ -119,10 +119,7 @@
         "Command::new\\(program\\)",
         "Command::new\\(WSL_EXE\\)"
       ],
-      "allowWhy": "The three allowed files are the git spawn sites: the read seam, the write seam, and the corpus generator behind the testkit feature. The three allowLines are the non-git spawns and are justified per line rather than per file, because allowing their files would make this rule read nothing in them at all \u2014 an editor chosen by the user, a launch probe, and wsl.exe. Two further occurrences sit inside #[cfg(test)] mod tests and are removed by stripRustTestModules before this rule sees them.",
-      "pendingRegistryEntry": {
-        "criterion": "AC-P2-24-3"
-      }
+      "allowWhy": "The three allowed files are the git spawn sites: the read seam, the write seam, and the corpus generator behind the testkit feature. The three allowLines are the non-git spawns and are justified per line rather than per file, because allowing their files would make this rule read nothing in them at all \u2014 an editor chosen by the user, a launch probe, and wsl.exe. Two further occurrences sit inside #[cfg(test)] mod tests and are removed by stripRustTestModules before this rule sees them."
     },
     {
       "id": "no-destructive-git",
@@ -192,10 +189,7 @@
         "remove_file\\(sibling\\)\\?",
         "remove_file\\(data_dir\\.join\\(STARTUP_FAILURE_FILE\\)\\)"
       ],
-      "allowWhy": "17 regexes covering the 21 phase-1 and Task-4 sites measured on this tree (four pairs share their text). Every one removes APP-OWNED bytes: a single-instance lock file, a crashed run's own state directory, a temporary or superseded raster, the raster cache, the testkit fixture corpus and its lock, a database backup and its WAL sibling, the credential helper's one-shot socket, nonce and private directory, and the startup-failure breadcrumb. None can reach a user's working copy. BOTH p2-24 Task 11 and p2-24b Task 1 state this baseline as 17: they were written before p2-24's own Task 4 landed the credential helper, whose teardown is the other four. p2-24b must assert 21, not 17.",
-      "pendingRegistryEntry": {
-        "criterion": "AC-P2-24-18"
-      }
+      "allowWhy": "17 regexes covering the 21 phase-1 and Task-4 sites measured on this tree (four pairs share their text). Every one removes APP-OWNED bytes: a single-instance lock file, a crashed run's own state directory, a temporary or superseded raster, the raster cache, the testkit fixture corpus and its lock, a database backup and its WAL sibling, the credential helper's one-shot socket, nonce and private directory, and the startup-failure breadcrumb. None can reach a user's working copy. BOTH p2-24 Task 11 and p2-24b Task 1 state this baseline as 17: they were written before p2-24's own Task 4 landed the credential helper, whose teardown is the other four. p2-24b must assert 21, not 17."
     },
     {
       "id": "no-unwarranted-recursive-removal",
@@ -216,10 +210,7 @@
         "core/src/art/job.rs",
         "core/src/corpus/mod.rs"
       ],
-      "allowWhy": "core/src/removal/ is the single warranted primitive. lifecycle.rs removes a crashed run's own state directory, art/job.rs clears the derived raster cache, and corpus/mod.rs builds and rebuilds the testkit fixture corpus under a temporary root. Six sites across the three.",
-      "pendingRegistryEntry": {
-        "criterion": "AC-P2-24-18"
-      }
+      "allowWhy": "core/src/removal/ is the single warranted primitive. lifecycle.rs removes a crashed run's own state directory, art/job.rs clears the derived raster cache, and corpus/mod.rs builds and rebuilds the testkit fixture corpus under a temporary root. Six sites across the three."
     }
   ]
 }
