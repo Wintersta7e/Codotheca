@@ -115,6 +115,10 @@ pub enum DisplayPathTable {
     Location,
     ScanRoot,
     ScanProblem,
+    /// [p3] §28.9's `DebtItem.pathDisplay`. The item's own `path_bytes` is what anything would
+    /// open or compare with; this is the lossy string the list draws, and it goes through the one
+    /// permitted reader like every other.
+    DebtItem,
 }
 
 impl DisplayPathTable {
@@ -123,6 +127,7 @@ impl DisplayPathTable {
             Self::Location => "location",
             Self::ScanRoot => "scan_root",
             Self::ScanProblem => "scan_problem",
+            Self::DebtItem => "debt_item",
         }
     }
 }

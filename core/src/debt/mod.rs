@@ -12,6 +12,7 @@
 pub mod abandoned;
 pub mod identity;
 pub mod markers;
+pub mod read;
 pub mod singletons;
 pub mod store;
 pub mod sweep;
