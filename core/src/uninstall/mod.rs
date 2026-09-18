@@ -3,12 +3,14 @@
 
 pub mod command;
 pub mod gates;
+pub mod handle;
 pub mod preflight;
 pub mod stash;
 pub mod unique;
 pub mod verdict;
 
 pub use command::uninstall_location;
+pub use handle::{handle_preflight_off_lock, handle_uninstall_off_lock};
 pub use preflight::{compute_verdict, LocationSnapshot, VerdictInputs};
 pub use stash::{read_stash_truth, StashTruth};
 pub use verdict::{fold_disposition, is_unknown_blocker, VerdictSeal, ALL_BLOCKERS};

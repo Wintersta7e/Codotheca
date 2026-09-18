@@ -420,6 +420,13 @@ impl CoreHandler {
                 Ok(name) => self.install_arm(name, args, now),
                 Err(failure) => Err(failure),
             }),
+            // [p2-24b] §24.7C's fetch is why this is here and not in the guarded arm below: the
+            // pre-flight goes to the remote immediately before the verdict, and the one SQLite
+            // mutex may not be held across it.
+            Route::Uninstall => Ok(match command_name(command) {
+                Ok(name) => self.uninstall_arm(name, args, now),
+                Err(failure) => Err(failure),
+            }),
             _ => Err(args),
         }
     }
@@ -450,6 +457,35 @@ impl CoreHandler {
         let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
         let preview = crate::install::handle_preview(&ctx, args)?;
         serde_json::to_value(preview).map_err(|error| CommandFailure::internal(error.to_string()))
+    }
+
+    /// [p2-24b] §24.7's pre-flight and §24.8's removal.
+    ///
+    /// Both take and release the index guard themselves, around §24.7C's fetch and the uniqueness
+    /// analysis — neither may be held across a git invocation, and `SqliteScanStore` takes the
+    /// same non-reentrant mutex.
+    fn uninstall_arm(
+        &self,
+        name: crate::protocol::CommandName,
+        args: Value,
+        now: i64,
+    ) -> Result<Value, CommandFailure> {
+        if name == crate::protocol::CommandName::LocationsUninstall {
+            return crate::uninstall::handle_uninstall_off_lock(
+                &self.index,
+                self.git.as_ref(),
+                self.write_git.as_ref(),
+                args,
+                now,
+            );
+        }
+        crate::uninstall::handle_preflight_off_lock(
+            &self.index,
+            self.git.as_ref(),
+            self.write_git.as_ref(),
+            args,
+            now,
+        )
     }
 
     /// §24.9's `install.start`, answered without holding the guard across the clone.
@@ -695,6 +731,7 @@ impl CommandHandler for CoreHandler {
             | Route::NoOwner(_)
             | Route::Scan
             | Route::Install
+            | Route::Uninstall
             | Route::AccountsNet
             | Route::ReadmeNet => unreachable!(),
             Route::FirstRun => {

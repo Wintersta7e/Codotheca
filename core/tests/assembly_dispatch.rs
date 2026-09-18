@@ -778,10 +778,14 @@ mod corehandler {
         // protocol loop for the length of a clone. `install.cancel` stays unowned, so this
         // [p2] §24.3c's `install.cancel` is the 56th and the last of §24.9's three. It takes no
         // index guard at all — cancelling is firing a token, and the run thread does the cleanup
-        // that touches SQLite. `UNOWNED_COMMANDS` is now empty, which the sibling assertion below
-        // proves by reading the router rather than the list.
+        // that touches SQLite.
+        // [p2-24b] §24.7's `locations.uninstallPreflight` is the 57th and `locations.uninstall`
+        // the 58th, answered **without** the guard: §24.7C requires a fetch immediately before
+        // the verdict, and the one SQLite mutex may not be held across it. They were the last
+        // two rows of `UNOWNED_COMMANDS`, which is **now empty** — and this count rising by two
+        // is the same fact from the other side, which is why both assertions stay.
         assert_eq!(
-            checked, 56,
+            checked, 58,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(
@@ -1136,5 +1140,114 @@ mod corehandler {
         assert!(answer.is_ok(), "scan.status: {answer:?}");
         // And the lock really is free afterwards, from this thread.
         assert!(h.index().try_lock().is_ok(), "the index lock was left held");
+    }
+
+    /// [p2-24b] §24.7's pre-flight **answers**, through the real router.
+    ///
+    /// Both uninstall commands routed to `NoOwner` for the length of p2-24b: the algorithms
+    /// landed and the layer that assembles their inputs did not, so the core refused the feature
+    /// at its own dispatcher while every test around it passed. `every_routed_command_reaches_its_module`
+    /// proves they reach a module; this proves what the module answers, which is the half a
+    /// routing census cannot see.
+    #[test]
+    fn the_preflight_answers_a_verdict_and_never_safe_for_an_unobserved_copy() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let index = Arc::new(std::sync::Mutex::new(
+            codotheca_core::index::Index::open_at(dir.path(), NOW).expect("index opens"),
+        ));
+        let copy = dir.path().join("alpha");
+        std::fs::create_dir_all(&copy).expect("a directory to reason about");
+
+        let location = {
+            let mut guard = index.lock().expect("index");
+            guard
+                .with_tx(|tx| {
+                    tx.execute(
+                        "INSERT INTO project (name, seed_basename, created_at, updated_at)
+                         VALUES ('alpha', 'alpha', ?1, ?1)",
+                        [NOW],
+                    )?;
+                    let project = tx.last_insert_rowid();
+                    // **Every observation clock NULL**, which is §24.7G's first-day lock: you
+                    // cannot uninstall what the app has never successfully looked at.
+                    tx.execute(
+                        "INSERT INTO location
+                           (project_id, kind, distro, path_bytes, path_key, path_display,
+                            store_key, presence, repo_kind)
+                         VALUES (?1, 'linux', '', ?2, ?2, ?3, 'store', 'present', 'worktree')",
+                        rusqlite::params![
+                            project,
+                            copy.to_string_lossy().as_bytes(),
+                            copy.to_string_lossy()
+                        ],
+                    )?;
+                    Ok(tx.last_insert_rowid())
+                })
+                .expect("seeded")
+        };
+
+        let events = Arc::new(PublisherSink::new(Publisher::detached()));
+        let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
+        let mut h = handler_over(
+            dir.path(),
+            &index,
+            &events,
+            &clock,
+            Arc::new(codotheca_core::testing::FakeTransport::new()),
+            Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
+        );
+
+        let answer = h
+            .handle(
+                "locations.uninstallPreflight",
+                serde_json::json!({ "locationId": location }),
+            )
+            .expect("the pre-flight answers rather than refusing as unhandled");
+
+        // A verdict, not an empty object: the shape the renderer renders.
+        let disposition = answer["disposition"]
+            .as_str()
+            .expect("a verdict carries a disposition");
+        assert!(
+            answer["blockers"].is_array(),
+            "a verdict names every blocker it found: {answer}"
+        );
+        assert!(
+            answer["computedAt"].is_number(),
+            "a verdict carries when it was computed: {answer}"
+        );
+
+        // §24.7G, and §24.7C for good measure — nothing observed this copy and no remote was
+        // reached, and neither of those may read as permission.
+        assert_ne!(
+            disposition, "safe",
+            "a copy the app has never observed, with no remote verified, must never be safe: \
+             {answer}"
+        );
+        assert!(
+            answer["blockers"]
+                .as_array()
+                .expect("array")
+                .iter()
+                .any(|b| b == "never_observed"),
+            "§24.7G's first-day lock must be among the blockers: {answer}"
+        );
+
+        // And the removal refuses that verdict rather than performing it.
+        let refused = h
+            .handle(
+                "locations.uninstall",
+                serde_json::json!({ "locationId": location }),
+            )
+            .expect_err("a non-safe disposition must end the call");
+        assert!(
+            !refused.message.contains("no handler in the core"),
+            "the removal reached no module: {}",
+            refused.message
+        );
+        assert!(
+            copy.is_dir(),
+            "the working copy was removed on a verdict that was not safe"
+        );
     }
 }

@@ -8,12 +8,12 @@
 //!
 //! # The ledger, as it stands
 //!
-//! Most schema commands reach a module. The two remaining `install.*` commands route to
-//! `NoOwner`, and `UNOWNED_COMMANDS` names the later task responsible for each. A bare `PROTOCOL`
-//! refusal reads to the shell as "no such command", which is how nineteen commands stayed
-//! invisible for the length of this project. This file's tests pin the constant against
-//! `protocol.json` and against `route`'s own arms, so the two cannot be edited apart — including
-//! when the list eventually becomes empty.
+//! **Every schema command now reaches a module, and `UNOWNED_COMMANDS` is empty.** While it was
+//! not, `NoOwner` named the later task responsible for each: a bare `PROTOCOL` refusal reads to
+//! the shell as "no such command", which is how nineteen commands stayed invisible for the length
+//! of this project. This file's tests pin the constant against `protocol.json` and against
+//! `route`'s own arms, so the two cannot be edited apart — and they keep asserting now the list
+//! is empty, because they read the router rather than the list.
 //!
 //! **A command leaves the list in the same change that gives it a handler.** The bridge's own
 //! `KNOWN_COMMANDS` is checked against this list, so a name cannot be offered to the renderer
@@ -66,6 +66,11 @@ pub enum Route {
     /// `crate::install::handle_preview` — p2-24 Task 10. It takes its own index guard before its
     /// read transaction, so it is dispatched before the common guarded arm.
     Install,
+    /// [p2-24b] `crate::uninstall::handle` — §24.7's pre-flight and §24.8's removal, answered
+    /// **without** the index guard held across the network. Same carve-out as [`Route::Scan`],
+    /// [`Route::AccountsNet`] and [`Route::ReadmeNet`], for the same reason: §24.7C requires a
+    /// fetch immediately before the verdict, and the one SQLite mutex may not be held across it.
+    Uninstall,
     /// `crate::readme::dispatch_readme_command` — p2-25b. A file read under a location root and
     /// a consent column; no network, so it takes the index guard.
     Readme,
@@ -99,15 +104,19 @@ pub enum Route {
 ///
 /// The eight `accounts.*` rows landed with the schema and left as their handlers did. §24.9's
 /// three `install.*` rows arrived the same way and have all now left, the last of them with the
-/// process-group kill §24.3c needs. Empty is a state to assert, not a state
-/// to stop asserting: the test below reads the router rather than this list.
-/// **Empty, and that is a state to assert rather than a state to stop asserting.** The test
-/// below reads the router rather than this list, so an empty constant still proves that no
-/// command routes to `NoOwner` — two `all()` calls over an empty set assert nothing.
-pub const UNOWNED_COMMANDS: [(&str, &str); 2] = [
-    ("locations.uninstallPreflight", "p2-24b Task 10"),
-    ("locations.uninstall", "p2-24b Task 11"),
-];
+/// process-group kill §24.3c needs.
+///
+/// **§24.7's two left last, and they stayed too long.** *"A command leaves the list in the same
+/// change that gives it a handler"* is this file's own rule, and p2-24b broke it: it landed
+/// `compute_verdict`, `uninstall_location`, the six gates, the IPC channel and the shell handler,
+/// and left both rows here — so the core refused the feature at its own dispatcher while every
+/// test around it passed. The list was self-consistent and wrong, which is why the two
+/// assertions below read the **router** and not this constant.
+///
+/// **Empty, and that is a state to assert rather than a state to stop asserting.** The tests
+/// below read the router, so an empty constant still proves that no command routes to `NoOwner`
+/// — two `all()` calls over an empty set assert nothing.
+pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -210,10 +219,12 @@ pub fn route(command: CommandName) -> Route {
             Route::Install
         }
 
-        // [p2] §24.7's two, declared with the schema and answered by the uninstall runtime. Each
-        // names the task that owes it, so the refusal says *who* rather than only *that*.
-        CommandName::LocationsUninstallPreflight => Route::NoOwner("p2-24b Task 10"),
-        CommandName::LocationsUninstall => Route::NoOwner("p2-24b Task 11"),
+        // [p2-24b] §24.7's two, answered by the uninstall runtime. They were `NoOwner` for the
+        // length of p2-24b: the algorithms landed and the layer that assembles their inputs did
+        // not, so the whole feature was refused here while every test around it passed.
+        CommandName::LocationsUninstallPreflight | CommandName::LocationsUninstall => {
+            Route::Uninstall
+        }
     }
 }
 
