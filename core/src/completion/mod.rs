@@ -19,4 +19,5 @@
 //! the end of it: a tick reading `pass` beside an open item saying otherwise, each green in its
 //! own tests.
 
+pub mod evaluate;
 pub mod proposal;
