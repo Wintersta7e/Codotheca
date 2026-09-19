@@ -123,12 +123,18 @@ describe('§30.13 audit 2 — no second freeze gate', () => {
     console.log(`AC-P3-30-11a scanned ${rendererFiles.length} renderer file(s)`);
     expect(rendererFiles.length).toBeGreaterThan(0);
 
-    // Two surfaces are permitted to read the state, and neither re-derives what it means:
-    // §30.7's `tabsFor` makes a **mount** decision from it, and §30's own tab renders the reading
-    // it was handed. Everything else is a consumer, and a consumer branching on `HealthState` is
-    // the second freeze gate this audit exists to keep out — §33 renders what it is handed and
-    // §35 ranks what it is handed.
-    const allowed = new Set(['app/src/renderer/project/tabs.ts']);
+    // Three surfaces are permitted to read the state, and none re-derives what it means:
+    // §30.7's `tabsFor` makes a **mount** decision from it, §30's own tab renders the reading it
+    // was handed, and [p3] §35's `rankOf` answers *does this row carry a reading* — the one
+    // question `HealthState` exists on the shelf to answer, which is why **R131/F12 refused to
+    // drop `state`** (*"both render at shelf scope (§30.7, §35)"*) and **R116 made it the single
+    // discriminator**. It derives nothing: it does not compute `suppressed` from
+    // `acknowledged_at`, does not compute `frozen` from a staleness threshold, and never reads
+    // `isReference`, `isArchived` or `lifecycle`. Answering it off `scoredOpen`'s nullness
+    // instead would pass this audit by writing §35.3's membership rule a second, weaker way.
+    // Everything else is a consumer, and a consumer branching on `HealthState` is the second
+    // freeze gate this audit exists to keep out — §33 renders what it is handed.
+    const allowed = new Set(['app/src/renderer/project/tabs.ts', 'app/src/renderer/shelf/row.ts']);
     const offenders: string[] = [];
     for (const [path, text] of rendererFiles) {
       const name = rel(path);
