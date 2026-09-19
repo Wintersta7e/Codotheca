@@ -37,6 +37,7 @@ import { Rail } from './rail/Rail';
 import { ReadmePanel } from './readme/ReadmePanel';
 import { RemoteTab } from './remote/RemoteTab';
 import { RoastNote } from './RoastNote';
+import { CompletionChecklist } from './completion/CompletionChecklist';
 import { HealthTab } from './health/HealthTab';
 import { BASE_PROJECT_TABS, fallbackTab, nextTab, tabsFor, type ProjectTab } from './tabs';
 import { useUninstallOffer } from './uninstall/useUninstall';
@@ -298,6 +299,9 @@ export function ProjectPageView({
               heroHash={heroHash}
               firstRunCompletedAt={firstRunCompletedAt}
               isPinned={pinnedOverride ?? detail.row.isPinned}
+              // [p3] §31.7: the `· <n> UNKNOWN` clause renders only on surfaces served by
+              // `projects.get`, so the count comes from the detail and the hero invents none.
+              unknownChecks={detail.completion?.unknown ?? null}
               onTogglePin={onTogglePin}
             />
             {/* [p2] §24.8's removal, mounted. The verdict is fetched when the affordance opens
@@ -390,6 +394,11 @@ export function ProjectPageView({
                       .catch(() => undefined);
                   }}
                 />
+              ) : null}
+              {/* [p3] §31.7: the ten ticks live here. §30.7 alone decides whether the tab
+                  mounts; this renders nothing when the detail is NULL and takes no view on it. */}
+              {shownTab === 'health' ? (
+                <CompletionChecklist completion={detail.completion} />
               ) : null}
               {shownTab === 'remote' && detail.remote !== null ? (
                 <RemoteTab

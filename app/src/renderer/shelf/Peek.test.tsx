@@ -60,14 +60,37 @@ describe('PeekPanel', () => {
     expect(screen.getByText('No README indexed yet.')).toBeTruthy();
   });
 
-  it('renders exactly five facts and no completion fact', () => {
+  // [p3] §31.7: six. §8.4.1 dropped `COMPLETION` because it would have read unknown on 100% of
+  // rows; that reason expires with §31, and the fact renders `—` rather than a zero when the
+  // projection is NULL.
+  it('renders exactly six facts, the sixth being COMPLETION', () => {
     const { container } = render(<PeekPanel peek={peek()} now={NOW} tier="full" />);
     const keys = [...container.querySelectorAll('.cdt-peek-fact-key')].map(
       (element) => element.textContent,
     );
 
-    expect(keys).toEqual(['BIRTH', 'LANGUAGE', 'TRACKED', 'LAST COMMIT', 'PLAYTIME']);
-    expect(container.textContent).not.toContain('COMPLETION');
+    expect(keys).toEqual(['BIRTH', 'LANGUAGE', 'TRACKED', 'LAST COMMIT', 'PLAYTIME', 'COMPLETION']);
+  });
+
+  it('renders the completion fraction from the shelf row, and a dash without one', () => {
+    const uncomputed = render(<PeekPanel peek={peek()} now={NOW} tier="full" />);
+    expect(uncomputed.container.textContent).toContain('—');
+    cleanup();
+
+    const { container } = render(
+      <PeekPanel
+        peek={peek()}
+        now={NOW}
+        tier="full"
+        completion={{ completionLit: 8, completionApplicable: 8 }}
+      />,
+    );
+    const values = [...container.querySelectorAll('.cdt-peek-fact-value')].map(
+      (element) => element.textContent,
+    );
+    expect(values).toContain('8/8');
+    // Never a percentage, and never `0/10` for a row nobody measured.
+    expect(container.textContent).not.toContain('%');
   });
 
   it('reports no changes as of the observation and never says clean', () => {
@@ -168,7 +191,7 @@ describe('PeekPanel', () => {
       (element) => element.textContent,
     );
 
-    expect(values).toEqual(peekFacts(thePeek, NOW).map((fact) => fact.value));
+    expect(values).toEqual(peekFacts(thePeek, NOW, null).map((fact) => fact.value));
   });
 
   it('renders at most the first three commits', () => {
