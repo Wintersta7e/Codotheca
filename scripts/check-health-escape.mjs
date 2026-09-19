@@ -20,7 +20,17 @@ import { fileURLToPath } from 'node:url';
 import { readScannedFile } from './lib/read-scanned.mjs';
 import { withoutComments } from './lib/without-comments.mjs';
 
-const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
+/**
+ * Resolved on call, never at module scope.
+ *
+ * `healthIdentifiers` is imported by a **renderer** test (`counts.test.ts`), and in that vitest
+ * project modules are served rather than loaded off disk — so `import.meta.url` is an `http:` URL
+ * and a module-scope `fileURLToPath` throws *The URL must be of scheme file* before a single
+ * export is reachable.
+ */
+function repoRoot() {
+  return fileURLToPath(new URL('..', import.meta.url));
+}
 
 /** The shell and the renderer both. An escape API lives in `main`; the figure comes from either. */
 export const SCAN_ROOTS = ['app/src/main', 'app/src/preload', 'app/src/renderer', 'app/src/shared'];
@@ -164,7 +174,7 @@ export function scanFiles(files, repoRoot, identifiers) {
   return { scanned, escapeSites, violations };
 }
 
-export function main(argv, repoRoot = REPO_ROOT) {
+export function main(argv, base = repoRoot()) {
   const json = argv.includes('--json');
   // `--root <dir>` scans one absolute directory instead of `SCAN_ROOTS`. **The probes that prove
   // this gate bites go there, not into `app/src/renderer`**: vitest runs the node project's files
@@ -178,7 +188,7 @@ export function main(argv, repoRoot = REPO_ROOT) {
     process.stderr.write('--root requires a path\n');
     return 1;
   }
-  const schemaText = readScannedFile(join(REPO_ROOT, 'protocol/schema/protocol.json'));
+  const schemaText = readScannedFile(join(base, 'protocol/schema/protocol.json'));
   if (schemaText === null) {
     process.stderr.write('health-escape gate: protocol/schema/protocol.json is not readable\n');
     return 1;
@@ -192,11 +202,11 @@ export function main(argv, repoRoot = REPO_ROOT) {
     return 1;
   }
 
-  const base = selectedRoot === null ? repoRoot : selectedRoot;
+  const scanBase = selectedRoot === null ? base : selectedRoot;
   const roots = selectedRoot === null ? SCAN_ROOTS : ['.'];
   const { scanned, escapeSites, violations } = scanFiles(
-    collectFiles(roots, base),
-    base,
+    collectFiles(roots, scanBase),
+    scanBase,
     identifiers,
   );
   if (scanned === 0) {
@@ -228,5 +238,11 @@ export function main(argv, repoRoot = REPO_ROOT) {
   return 0;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1])
+// `import.meta.url` is not a `file:` URL when a bundler serves this module, and `fileURLToPath`
+// throws on anything else — so the scheme is checked before the path is taken.
+if (
+  process.argv[1] &&
+  import.meta.url.startsWith('file:') &&
+  fileURLToPath(import.meta.url) === process.argv[1]
+)
   process.exit(main(process.argv.slice(2)));
