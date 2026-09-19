@@ -154,7 +154,7 @@ fn row_count(index: &Mutex<Index>) -> i64 {
 /// Against the shipped `task_of` this fails with the row still `queued`: no error, no panic and
 /// no log line, which is the whole of the defect.
 #[test]
-fn a_key_less_task_row_is_picked_run_and_settled() {
+fn ac_p3_32_2_a_key_less_task_row_is_picked_run_and_settled() {
     let mut fixture = fixture();
     {
         let mut guard = fixture.index.lock().expect("index");
@@ -361,7 +361,7 @@ fn run_until_settled(fixture: &mut Fixture) -> SyncTaskState {
 /// pool the sweep never writes: `may_spend` answers `Unknown` for ever, `Unknown` spends, and
 /// every request issues **with no brake at all** until the source refuses.
 #[test]
-fn the_sweep_reads_the_pool_its_own_response_named() {
+fn ac_p3_32_3_the_sweep_reads_the_pool_its_response_named() {
     let mut fixture = fixture();
     seed_sweep_and_pool(&fixture, Some("graphql"), 0, NOW + 900);
     queue_sweep(&fixture);

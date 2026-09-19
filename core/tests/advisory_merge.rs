@@ -120,7 +120,7 @@ fn pairs(conn: &rusqlite::Connection) -> Vec<(i64, String)> {
 /// **reparented**; and a pair held by **both** sides does not collide, leaving the survivor not
 /// re-notified.
 #[test]
-fn the_read_is_recomputed_and_the_notice_ledger_is_carried_across() {
+fn ac_p3_32_21_the_notice_ledger_is_carried_across_a_merge() {
     let (_d, mut conn) = fresh();
     let survivor = project(&conn, "survivor");
     let absorbed = project(&conn, "absorbed");

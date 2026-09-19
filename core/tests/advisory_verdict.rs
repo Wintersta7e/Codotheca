@@ -102,7 +102,7 @@ fn verdict(conn: &rusqlite::Connection, project: ProjectId, now: i64) -> Depende
 /// Expiring `vulnerable` would silently unopen real debt: both halves of what it asserts are
 /// recorded facts and neither is refuted by time passing.
 #[test]
-fn clean_expires_at_thirty_days_and_vulnerable_never_does() {
+fn ac_p3_32_8_the_clean_verdict_expires_and_vulnerable_never_does() {
     let (_d, mut conn) = fresh();
     let clean = insert_project(&conn, "clean");
     let vulnerable = insert_project(&conn, "vulnerable");
@@ -144,7 +144,7 @@ fn clean_expires_at_thirty_days_and_vulnerable_never_does() {
 /// produces a fresh-looking answer about a lockfile nobody has looked at since — which is the
 /// currency claim the invariant forbids.
 #[test]
-fn the_rendered_clock_is_the_older_of_the_two() {
+fn ac_p3_32_9_the_rendered_clock_is_the_older_of_the_two() {
     let (_d, mut conn) = fresh();
     let stale_read = insert_project(&conn, "stale-read");
     let stale_sweep = insert_project(&conn, "stale-sweep");
@@ -177,7 +177,7 @@ fn the_rendered_clock_is_the_older_of_the_two() {
 /// **three different answers** — all asserted in one test, because the whole point is that they
 /// are distinguishable.
 #[test]
-fn unparsed_no_lockfile_and_never_scanned_are_three_states() {
+fn ac_p3_32_15_unparsed_no_lockfile_and_never_scanned_differ() {
     let (_d, mut conn) = fresh();
     let unshipped = insert_project(&conn, "unshipped");
     let empty = insert_project(&conn, "empty");
@@ -214,7 +214,7 @@ fn unparsed_no_lockfile_and_never_scanned_are_three_states() {
 /// The root is pointed at a path that does not exist; the call still answers, because the join is
 /// a pure recompute over stored facts.
 #[test]
-fn an_uninstalled_project_still_gets_a_verdict_without_touching_its_disk() {
+fn ac_p3_32_20_an_uninstalled_project_still_gets_a_verdict() {
     let (_d, mut conn) = fresh();
     let project = insert_project(&conn, "gone");
     let dir = tempfile::tempdir().unwrap();

@@ -246,7 +246,7 @@ fn the_reserve_yields_scheduled_work_and_admits_on_demand_work() {
 /// re-observed and never rose. `sync.status` reported `parked · reserve`, **which reads as correct
 /// throttling**.
 #[test]
-fn the_reserve_is_a_fraction_of_its_own_pool_and_the_large_one_does_not_move() {
+fn ac_p3_32_1_the_reserve_is_a_fraction_of_its_own_pool() {
     let reset = NOW + 900;
 
     // (a) The 60/hr pool, all but one request still available. A scheduled task **spends**.

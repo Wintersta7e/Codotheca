@@ -88,7 +88,7 @@ fn pkg(name: &str, version: &str) -> PackageVersion {
 ///
 /// **A scan over zero methods is a failing scan**, asserted explicitly.
 #[test]
-fn every_request_method_is_on_the_trait_and_the_advisory_read_takes_no_token() {
+fn ac_p3_32_4_the_advisory_read_takes_no_token() {
     let mut found = 0usize;
     for method in PROVIDER_REQUEST_METHODS {
         assert!(
@@ -129,7 +129,7 @@ fn every_request_method_is_on_the_trait_and_the_advisory_read_takes_no_token() {
 /// defect with five instances; each compiled, each passed against the fake, and each failed at
 /// assembly. A fake provider produces no request and fails here.
 #[test]
-fn the_production_implementation_issues_the_request_and_parses_the_answer() {
+fn ac_p3_32_5_the_production_implementation_issues_the_request() {
     let (transport, provider) = provider();
     transport.push(body(ONE_ADVISORY));
 
@@ -194,7 +194,7 @@ fn the_production_implementation_issues_the_request_and_parses_the_answer() {
 /// wired in place of the real implementation compiles, passes every unit test, and answers nothing
 /// at runtime. A fake here produces zero requests and fails on the printed count.
 #[test]
-fn assembly_hands_out_the_production_provider() {
+fn ac_p3_32_5_assembly_hands_out_the_production_provider() {
     let transport = Arc::new(FakeTransport::new());
     let clock: Arc<dyn codotheca_core::clock::Clock> =
         Arc::new(codotheca_core::testing::FakeClock::new(1_800_000_000));

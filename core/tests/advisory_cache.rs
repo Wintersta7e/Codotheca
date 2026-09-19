@@ -138,7 +138,7 @@ fn six_advisories() -> String {
 /// **AC-P3-32-10.** One triple, **six** advisories: six `advisory_match` rows and **one**
 /// `advisory_triple` row, with every severity stored as the source's own string byte for byte.
 #[test]
-fn one_triple_holds_six_matches_and_stores_severity_verbatim() {
+fn ac_p3_32_10_one_triple_holds_six_matches() {
     let rig = rig();
     let project = seed_project(&rig, "alpha");
     seed_dependency(&rig, project, "npm", "left", "1.0.0");
@@ -183,7 +183,7 @@ fn one_triple_holds_six_matches_and_stores_severity_verbatim() {
 /// **AC-P3-32-11.** A triple answered with **zero** matches is distinguishable from a triple never
 /// asked about. Both have zero `advisory_match` rows; only the first has an `advisory_triple` row.
 #[test]
-fn answered_with_nothing_and_never_asked_are_two_different_states() {
+fn ac_p3_32_11_answered_with_nothing_differs_from_never_asked() {
     let rig = rig();
     let project = seed_project(&rig, "alpha");
     seed_dependency(&rig, project, "npm", "asked", "1.0.0");
@@ -216,7 +216,7 @@ fn answered_with_nothing_and_never_asked_are_two_different_states() {
 ///
 /// §21.9 rule 1 is the one a sweep is most likely to break quietly.
 #[test]
-fn an_unanswered_sweep_dates_nothing() {
+fn ac_p3_32_7_an_unanswered_sweep_dates_nothing() {
     let rig = rig();
     let project = seed_project(&rig, "alpha");
     seed_dependency(&rig, project, "npm", "left", "1.0.0");

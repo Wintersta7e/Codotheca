@@ -13,13 +13,13 @@ import { describe, expect, it } from 'vitest';
 import { scanNotificationOrigins } from '../../scripts/check-notification-origin.mjs';
 
 describe('no renderer file originates an OS notification', () => {
-  it('scans the real tree, reports a non-zero count and finds nothing', () => {
+  it('AC-P3-32-22 scans the real tree, reports a non-zero count and finds nothing', () => {
     const report = scanNotificationOrigins();
     expect(report.filesScanned).toBeGreaterThan(0);
     expect(report.violations).toEqual([]);
   });
 
-  it('reports a violation for every spelling the platform offers', () => {
+  it('AC-P3-32-22 reports a violation for every spelling the platform offers', () => {
     // A directory of its own rather than a probe inside `app/src/renderer`: vitest runs the node
     // project's files in parallel, and a probe planted in a tree other gates are walking is read
     // by one of them mid-life.

@@ -180,7 +180,7 @@ fn ledger(conn: &rusqlite::Connection) -> BTreeSet<String> {
 /// Asserted on the item's `rowid` and `first_seen_at` being unchanged, which is what proves no
 /// close-and-reopen happened — and therefore no second payout.
 #[test]
-fn a_no_fix_advisory_is_shown_only_and_gaining_a_fix_moves_no_item() {
+fn ac_p3_32_14_a_no_fix_advisory_is_shown_only() {
     let (_d, mut conn) = fresh();
     let project = insert_project(&conn, "alpha");
     let dir = tempfile::tempdir().unwrap();
@@ -228,7 +228,7 @@ fn a_no_fix_advisory_is_shown_only_and_gaining_a_fix_moves_no_item() {
 ///
 /// The ledger is compared **by identity**, not by count.
 #[test]
-fn a_withdrawal_closes_invalidated_and_pays_nothing() {
+fn ac_p3_32_19_a_withdrawal_closes_invalidated_and_pays_nothing() {
     let (_d, mut conn) = fresh();
     let project = insert_project(&conn, "alpha");
     let dir = tempfile::tempdir().unwrap();
@@ -349,7 +349,7 @@ fn an_unreadable_project_marks_unverified_and_pays_nothing() {
 /// **AC-P3-32-18, second half.** **No closure is computed by diffing a worktree observation
 /// against a HEAD observation.** A HEAD-basis sweep row for the same project closes nothing here.
 #[test]
-fn a_head_basis_sweep_closes_nothing_in_this_source() {
+fn ac_p3_32_18_a_head_basis_sweep_closes_nothing() {
     let (_d, mut conn) = fresh();
     let project = insert_project(&conn, "alpha");
     let dir = tempfile::tempdir().unwrap();

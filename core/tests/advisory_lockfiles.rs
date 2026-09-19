@@ -92,7 +92,7 @@ fn read_state(conn: &rusqlite::Connection, project: ProjectId, path: &str) -> Op
 /// **Depth 1 would miss a monorepo's per-package lockfiles**, and the read would then produce a
 /// partial triple set for a project that looks fully scanned.
 #[test]
-fn the_walk_reaches_depth_three_and_no_further() {
+fn ac_p3_32_17_the_walk_reaches_depth_three_and_no_further() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     write(root, "Cargo.lock", "");
@@ -127,7 +127,7 @@ fn the_walk_reaches_depth_three_and_no_further() {
 ///
 /// The cap is read from the constant and never written out as a literal.
 #[test]
-fn a_file_over_the_cap_is_not_read_and_contributes_no_triples() {
+fn ac_p3_32_16_a_file_over_the_cap_is_not_read() {
     let (_d, conn) = fresh();
     let project = insert_project(&conn, "big");
     let dir = tempfile::tempdir().unwrap();
@@ -311,7 +311,7 @@ fn a_walk_that_found_nothing_differs_from_a_walk_that_never_ran() {
 /// **AC-P3-32-18, first half.** Every row this read writes is a **worktree** observation, and the
 /// rows written are enumerated and counted rather than assumed.
 #[test]
-fn the_read_writes_worktree_rows_and_counts_them() {
+fn ac_p3_32_18_the_read_writes_worktree_rows_and_counts_them() {
     let (_d, conn) = fresh();
     let project = insert_project(&conn, "mono");
     let dir = tempfile::tempdir().unwrap();

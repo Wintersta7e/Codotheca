@@ -138,7 +138,7 @@ fn critical(id: &str) -> Advisory<'_> {
 /// **AC-P3-32-12.** It fires **once and only once** per `(project, advisory)`, and **zero** times
 /// on a project's first computation.
 #[test]
-fn it_fires_once_ever_and_never_on_a_first_computation() {
+fn ac_p3_32_12_it_fires_once_ever_and_never_on_a_first_computation() {
     let (_d, mut conn) = fresh();
     let alpha = project(&conn, "alpha", "present", false);
     vulnerable(&conn, alpha, "left", &critical("GHSA-a"));
@@ -170,7 +170,7 @@ fn it_fires_once_ever_and_never_on_a_first_computation() {
 /// **AC-P3-32-13.** **No** notification fires for a project in any of the four non-installed
 /// states, and the payload carries **no token naming an absence**.
 #[test]
-fn the_four_non_installed_states_fire_nothing_and_no_field_names_an_absence() {
+fn ac_p3_32_13_the_four_non_installed_states_fire_nothing() {
     let (_d, mut conn) = fresh();
     let offline = project(&conn, "offline", "offline", false);
     let missing = project(&conn, "missing", "missing", false);

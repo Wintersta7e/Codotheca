@@ -116,7 +116,7 @@ fn insert_project(conn: &rusqlite::Connection, name: &str) -> i64 {
 /// arrays in the same test: a const that fell behind the schema would otherwise make this loop
 /// smaller and still green.
 #[test]
-fn every_ecosystem_and_read_state_slug_is_accepted_by_its_column() {
+fn ac_p3_32_6_every_slug_is_accepted_by_its_column() {
     let (_dir, conn) = fresh();
     let project = insert_project(&conn, "p");
 
@@ -229,7 +229,7 @@ fn a_slug_no_enum_declares_is_refused_by_every_column() {
 /// the failure this guards is a user's in-flight listing cursor discarded on upgrade, which no
 /// error reports and no later run can reconstruct.
 #[test]
-fn the_rebuild_widens_the_vocabulary_and_keeps_its_indexes_and_its_rows() {
+fn ac_p3_32_23_the_rebuild_keeps_its_indexes_and_its_rows() {
     let before = MIGRATIONS.len() - 1;
     let dir = tempfile::tempdir().unwrap();
     let path = Index::db_path(dir.path());
