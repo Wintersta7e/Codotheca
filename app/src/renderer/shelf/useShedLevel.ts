@@ -24,8 +24,12 @@ export const SHED_ORDER = ['switch', 'keys', 'wordmarkLettering'] as const;
  * renders this bar at the widest sort label, in a real layout engine, with the real faces, and
  * fails when a value here is wrong in either direction. Do not adjust one by hand — re-run the
  * measurement.
+ *
+ * [p3] ~~`[860, 714, 627]`~~ re-measured in the same run that moved `TOP_BAR_FLOOR_PX`: the
+ * harness now **derives** its widest label by measuring every `SortKey` variant, and §35.2's
+ * `NEEDS ATTENTION` is wider than the `LAST TOUCHED` the harness used to name.
  */
-export const SHED_WIDTHS: readonly [number, number, number] = [860, 714, 627];
+export const SHED_WIDTHS: readonly [number, number, number] = [878, 733, 646];
 
 export const SHED_CLASSES = [
   'cdt-topbar--shed-1',

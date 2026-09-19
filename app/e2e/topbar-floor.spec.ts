@@ -8,6 +8,7 @@ import { build } from 'esbuild';
 
 import { TOP_BAR_FLOOR_PX, TOP_BAR_HEIGHT_PX } from '../src/renderer/shelf/TopBar.js';
 import { SHED_WIDTHS } from '../src/renderer/shelf/useShedLevel.js';
+import { SORT_LABELS } from '../src/renderer/shelf/viewState.js';
 
 // Playwright transpiles specs to CommonJS, so `__dirname` is correct here and `import.meta` is
 // not — the opposite of every vitest file in this repo.
@@ -27,9 +28,24 @@ const nodeModules = path.resolve(appDir, '..', 'node_modules');
  * component whose width is the thing being measured.
  */
 
-/** The widest value the sort control can render, so the floor is measured against the worst
- *  case. `Last touched` is the widest of the three, and it is the default. */
-const WIDEST_SORT = 'last_touched';
+/**
+ * Every value the sort control can render, off the tracked §2.4 contract.
+ *
+ * ~~`const WIDEST_SORT = 'last_touched'`~~ **[p3]** The widest label is **derived by measuring
+ * every variant**, never named. `Last touched` was the widest of three; `Needs attention` is
+ * wider, and at shed level 2 the bar drops the `SORT` key and renders the value alone
+ * (`TopBar.tsx:90-91`), so the value's width **is** the floor. A harness that keeps naming one
+ * variant measures a floor the product does not have and reports it green (§35.6, §26.2).
+ *
+ * Read from the schema rather than from `SORT_KEYS`, so this and `viewState.test.ts`'s
+ * `AC-P3-35-4` derive the same list from the same place.
+ */
+function sortVariants(): readonly string[] {
+  const schema = JSON.parse(
+    readFileSync(path.resolve(appDir, '..', 'protocol/schema/protocol.json'), 'utf8'),
+  ) as { types: { SortKey: { variants: string[] } } };
+  return schema.types.SortKey.variants;
+}
 
 /** The three faces the bar draws in. Fallback metrics are not the product's metrics, so the
  *  real faces are loaded from the files the renderer bundles. */
@@ -67,14 +83,19 @@ function fontFaces(): string {
 }
 
 /**
- * The bar's markup at each of the four shed levels, rendered by the component itself.
+ * The bar's markup at each shed level **× each sort variant**, rendered by the component itself.
  *
  * It cannot be rendered in this process: Playwright compiles every TypeScript file it loads with
  * its own JSX transform, which emits component-testing descriptors rather than React elements,
  * so `renderToStaticMarkup` on the imported component throws. The component is bundled from the
  * same sources the app builds and rendered in a child Node process instead.
+ *
+ * [p3] The child takes the variant list as an **argument** rather than a constant of its own, so
+ * one list — the schema's — reaches both this file's derivation and the markup it measures.
  */
-async function barMarkupPerLevel(): Promise<readonly string[]> {
+async function barMarkupPerLevel(
+  variants: readonly string[],
+): Promise<readonly (readonly string[])[]> {
   const dir = mkdtempSync(path.join(tmpdir(), 'cdt-bar-render-'));
   const entry = path.join(dir, 'render.ts');
   const bundle = path.join(dir, 'render.cjs');
@@ -88,19 +109,22 @@ async function barMarkupPerLevel(): Promise<readonly string[]> {
      import { SHED_WIDTHS } from ${JSON.stringify(path.join(rendererDir, 'shelf/useShedLevel.js'))};
      import { DEFAULT_SHELF_VIEW } from ${JSON.stringify(path.join(rendererDir, 'shelf/viewState.js'))};
      const noop = () => undefined;
+     const variants = ${JSON.stringify(variants)};
      // One width per level: 2000 sheds nothing, and each threshold is the widest width at which
-     // its own step engages.
+     // its own step engages. Each level carries one markup per sort variant.
      const perLevel = [2000, ...SHED_WIDTHS].map((barWidth) =>
-       renderToStaticMarkup(
-         createElement(TopBar, {
-           view: { ...DEFAULT_SHELF_VIEW, sort: ${JSON.stringify(WIDEST_SORT)} },
-           field: fieldModel('', parseQuery(''), []),
-           scan: { running: false, foundRepos: 0 },
-           barWidth,
-           onQueryChange: noop, onSortChange: noop, onDensityChange: noop,
-           onViewModeChange: noop, onScan: noop, onOpenScanSummary: noop,
-           onOpenPalette: noop, onOpenSettings: noop,
-         }),
+       variants.map((sort) =>
+         renderToStaticMarkup(
+           createElement(TopBar, {
+             view: { ...DEFAULT_SHELF_VIEW, sort },
+             field: fieldModel('', parseQuery(''), []),
+             scan: { running: false, foundRepos: 0 },
+             barWidth,
+             onQueryChange: noop, onSortChange: noop, onDensityChange: noop,
+             onViewModeChange: noop, onScan: noop, onOpenScanSummary: noop,
+             onOpenPalette: noop, onOpenSettings: noop,
+           }),
+         ),
        ),
      );
      process.stdout.write(JSON.stringify(perLevel));`,
@@ -144,10 +168,17 @@ async function barMarkupPerLevel(): Promise<readonly string[]> {
   const rendered: unknown = JSON.parse(
     execFileSync(process.execPath, [bundle], { cwd: appDir, encoding: 'utf8' }),
   );
-  if (!Array.isArray(rendered) || rendered.length !== 4) {
-    throw new Error('the bar renderer did not return one markup per shed level');
+  const levels = 1 + SHED_WIDTHS.length;
+  if (
+    !Array.isArray(rendered) ||
+    rendered.length !== levels ||
+    rendered.some((row) => !Array.isArray(row) || row.length !== variants.length)
+  ) {
+    throw new Error(
+      `the bar renderer did not return ${String(levels)} x ${String(variants.length)} markups`,
+    );
   }
-  return rendered as readonly string[];
+  return rendered as readonly (readonly string[])[];
 }
 
 function harnessHtml(markup: string): string {
@@ -163,11 +194,16 @@ html,body{margin:0;padding:0;overflow:hidden}
 </style>${markup}`;
 }
 
-test('the top bar has a measured floor, and nothing overlaps at it', async () => {
-  const perLevel = await barMarkupPerLevel();
+test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothing overlaps at it', async () => {
+  const variants = sortVariants();
+  expect(variants.length, 'a run that measured no sort variant proves nothing').toBeGreaterThan(0);
+  // eslint-disable-next-line no-console -- the derivation is part of the measurement
+  console.log(`measuring ${String(variants.length)} sort variant(s): ${variants.join(', ')}`);
+
+  const perLevel = await barMarkupPerLevel(variants);
   // The markup really is the component's, and really does differ by level.
-  expect(perLevel[0]).toContain('CODOTHECA');
-  expect(perLevel[3]).not.toContain('CODOTHECA');
+  expect(perLevel[0]?.[0]).toContain('CODOTHECA');
+  expect(perLevel[3]?.[0]).not.toContain('CODOTHECA');
 
   const dir = mkdtempSync(path.join(tmpdir(), 'cdt-topbar-'));
   writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'h', main: 'main.cjs' }));
@@ -224,11 +260,11 @@ test('the top bar has a measured floor, and nothing overlaps at it', async () =>
     return measured.slice(1).some((box, i) => box.left < (measured[i]?.right ?? 0) - 0.5);
   };
 
-  /** Puts one shed level on screen, with its faces really loaded. Every measurement goes
-   *  through this: a re-`setContent` re-parses the sheet, and measuring before the faces are
-   *  ready measures a fallback bar. */
-  const showLevel = async (level: number): Promise<void> => {
-    await page.setContent(harnessHtml(perLevel[level] ?? ''));
+  /** Puts one shed level on screen at one sort variant, with its faces really loaded. Every
+   *  measurement goes through this: a re-`setContent` re-parses the sheet, and measuring before
+   *  the faces are ready measures a fallback bar. */
+  const showLevel = async (level: number, variant = 0): Promise<void> => {
+    await page.setContent(harnessHtml(perLevel[level]?.[variant] ?? ''));
     await page.evaluate(async () => {
       await document.fonts.ready;
     });
@@ -250,9 +286,41 @@ test('the top bar has a measured floor, and nothing overlaps at it', async () =>
     });
   };
 
-  /** The narrowest width at which this shed level still fits. Bisection, 1px resolution. */
+  /**
+   * [p3] §35.6: the widest label is **measured**, not named and not counted in glyphs.
+   *
+   * Shed level 3 is where it matters — the `SORT` key is already gone and the value stands alone,
+   * so the value's own box is the floor. Each variant is rendered in the real layout engine with
+   * the real faces and the widest measured box wins.
+   */
+  const widestVariant = async (): Promise<{ index: number; width: number }> => {
+    let best = { index: 0, width: -1 };
+    for (let index = 0; index < variants.length; index += 1) {
+      await showLevel(3, index);
+      const width = await page.$eval(
+        '[data-slot="sort"] .cdt-shelf-control-value',
+        (node) => node.getBoundingClientRect().width,
+      );
+      const key = String(variants[index]);
+      const label = SORT_LABELS[key as keyof typeof SORT_LABELS] ?? key;
+      // eslint-disable-next-line no-console -- the measurement is the deliverable
+      console.log(`sort value width: ${key} (${label}) = ${width.toFixed(2)}px`);
+      if (width > best.width) best = { index, width };
+    }
+    return best;
+  };
+
+  const widest = await widestVariant();
+  const widestKey = String(variants[widest.index]);
+  // eslint-disable-next-line no-console -- the measurement is the deliverable
+  console.log(
+    `widest sort label: ${widestKey} (${SORT_LABELS[widestKey as keyof typeof SORT_LABELS] ?? widestKey}) at ${widest.width.toFixed(2)}px`,
+  );
+
+  /** The narrowest width at which this shed level still fits, at the widest label. Bisection,
+   *  1px resolution. */
   const fitsFrom = async (level: number): Promise<number> => {
-    await showLevel(level);
+    await showLevel(level, widest.index);
     let bad = 400;
     let good = 1600;
     expect(await failsAt(good), `level ${String(level)} does not fit even at 1600px`).toBe(false);
@@ -280,7 +348,7 @@ test('the top bar has a measured floor, and nothing overlaps at it', async () =>
 
   // The floor is tight: one pixel narrower and the bar fails. Without this the bisection could
   // report any width at which the bar happens to fit and the constant would mean nothing.
-  await showLevel(3);
+  await showLevel(3, widest.index);
   expect(await failsAt(measuredFloor - 1)).toBe(true);
   expect(await failsAt(measuredFloor)).toBe(false);
 
@@ -295,7 +363,7 @@ test('the top bar has a measured floor, and nothing overlaps at it', async () =>
   expect((await boxes()).every((box) => box.right > box.left)).toBe(true);
 
   // At the floor the bar has fully shed, in the stated order.
-  await showLevel(3);
+  await showLevel(3, widest.index);
   await setWidth(TOP_BAR_FLOOR_PX);
   expect((await boxes()).map((b) => b.slot)).not.toContain('switch');
   expect(await page.textContent('.cdt-shelf-bar')).not.toContain('CODOTHECA');

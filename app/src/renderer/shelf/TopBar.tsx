@@ -17,8 +17,13 @@ export const TOP_BAR_HEIGHT_PX = 40 as const;
 
 /** Measured by `app/e2e/topbar-floor.spec.ts`, not asserted here: the narrowest width at which
  *  the fully shed bar still fits at the widest sort label, with the query field at its own 80px
- *  floor. One pixel below it the row runs past the bar and the right-hand control is clipped. */
-export const TOP_BAR_FLOOR_PX = 508;
+ *  floor. One pixel below it the row runs past the bar and the right-hand control is clipped.
+ *
+ *  [p3] ~~`508`~~ re-measured at `NEEDS ATTENTION`, which §35.2 made the widest value the control
+ *  can render — `103.16px` against `LAST TOUCHED`'s `84.64px`, and shed level 2 renders the value
+ *  alone. The harness derives the widest variant by measuring every one of them, so this moves
+ *  again on its own the next time a label does. */
+export const TOP_BAR_FLOOR_PX = 526;
 
 export const WORDMARK = 'CODOTHECA' as const;
 
