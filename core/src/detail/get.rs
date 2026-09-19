@@ -20,9 +20,9 @@ use crate::projects::rows::{
 };
 use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::protocol::{
-    Activity, ActivityWeek, AssociationKind, HeadComparison, LaneState, LocationDetail, LocationId,
-    LocationRef, ProjectDetail, ProjectId, ProjectsGetArgs, RemoteLinkBasis, ResolvedTarget,
-    SessionRef, TargetRow,
+    Activity, ActivityWeek, AssociationKind, CheckState, CompletionCheckRow, CompletionDetail,
+    HeadComparison, LaneState, LocationDetail, LocationId, LocationRef, ProjectDetail, ProjectId,
+    ProjectsGetArgs, RemoteLinkBasis, ResolvedTarget, SessionRef, TargetRow,
 };
 
 /// §8.5.5's chart: 26 weekly slots, the axis running `26 WEEKS AGO` → `THIS WEEK`.
@@ -504,10 +504,59 @@ pub fn handle_project_get(
         health: crate::health::read_for_project(conn, ProjectId(id))
             .map_err(internal)?
             .0,
-        // [p3] §31.6. Declared here with the schema and filled by `completion_detail` below,
-        // which lands with the store it reads. The field is never left without a producer (R1).
-        completion: None,
+        // [p3] §31.6. **Non-NULL iff ten rows exist**, so a Reference project, a not-cloned one
+        // and one the evaluator has not reached all carry NULL — and the `evaluable == 0` case
+        // carries a PRESENT detail with ten rows and zero scalars, which is the only surface
+        // that says why nothing could be scored.
+        completion: completion_detail(conn, ProjectId(id))?,
         locations,
         row,
     })
+}
+
+/// §31.6's detail, built from the ten stored rows.
+///
+/// **Non-NULL iff ten rows exist.** Fewer than ten is a corrupt state `AC-P3-31-2` asserts
+/// against, and answering `Some` for it would render a figure over a denominator nobody wrote.
+///
+/// **The three scalars are recountable from `checks`**, which is one value stated twice on the
+/// wire (R12's shape). §31.6 declares that shape and this does not re-rule it; instead the
+/// recount is **tested**, inside `AC-P3-31-1`. A wire triple that disagrees with its own array is
+/// the defect that criterion exists to catch, one level up from the store's own projection.
+///
+/// **No rendered figure is decided from these scalars.** The frame, the list score and the hero
+/// band all read `ProjectRow.completionLit` / `completionApplicable`, which is the NULL; the
+/// checklist reads `checks`.
+fn completion_detail(
+    conn: &rusqlite::Connection,
+    project: ProjectId,
+) -> Result<Option<CompletionDetail>, CommandFailure> {
+    let rows = crate::completion::store::load_rows(conn, project).map_err(internal)?;
+    if rows.len() != 10 {
+        return Ok(None);
+    }
+    let (lit, evaluable) = crate::completion::store::recount(&rows);
+    let unknown = u32::try_from(
+        rows.iter()
+            .filter(|r| r.state == CheckState::Unknown)
+            .count(),
+    )
+    .unwrap_or(u32::MAX);
+    Ok(Some(CompletionDetail {
+        lit,
+        evaluable,
+        unknown,
+        // Declaration order, which `load_rows` already imposes: one order for every consumer,
+        // so a checklist never has to re-sort to be stable.
+        checks: rows
+            .into_iter()
+            .map(|r| CompletionCheckRow {
+                key: r.key,
+                state: r.state,
+                user_na: r.user_na,
+                unknown_reason: r.unknown_reason,
+                observed_at: r.observed_at,
+            })
+            .collect(),
+    }))
 }
