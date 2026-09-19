@@ -1,7 +1,9 @@
 import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import type { ProjectId } from '../../generated/protocol.js';
 import { conditionDotName } from '../a11y/names.js';
+import { rungFor, scoreText } from '../card/completion.js';
 import { conditionDot } from '../derive/condition.js';
+import { token } from '../theme/tokens.js';
 import { formatTrackedBytes } from '../format/size.js';
 import { LIST_CHIP_COLUMN_PX, listChipsLabel, listRowChips } from './chips.js';
 import type { ShelfRow } from './row.js';
@@ -9,19 +11,23 @@ import type { ShelfRow } from './row.js';
 export interface ListColumn {
   readonly index: number;
   readonly key: string;
-  /** null for the two reserved columns: an unlabelled column carrying a value is a value with no name. */
+  /**
+   * [p3] §31.7 fills the two reserved columns, and **both gain a header cell**: an unlabelled
+   * column carrying a value is a value with no name. The reserved widths are unchanged, which is
+   * what makes this a fill rather than a re-cut.
+   */
   readonly header: string | null;
   readonly widthPx: number | null;
 }
 
 export const LIST_COLUMNS: readonly ListColumn[] = [
   { index: 1, key: 'condition', header: null, widthPx: null },
-  { index: 2, key: 'rank', header: null, widthPx: 16 },
+  { index: 2, key: 'rank', header: 'RANK', widthPx: 16 },
   { index: 3, key: 'name', header: 'NAME', widthPx: null },
   { index: 4, key: 'language', header: 'LANG', widthPx: 38 },
   { index: 5, key: 'branch', header: 'BRANCH', widthPx: 58 },
   { index: 6, key: 'size', header: 'SIZE', widthPx: 52 },
-  { index: 7, key: 'score', header: null, widthPx: 44 },
+  { index: 7, key: 'score', header: 'SCORE', widthPx: 44 },
   { index: 8, key: 'chips', header: null, widthPx: LIST_CHIP_COLUMN_PX },
 ];
 
@@ -55,6 +61,14 @@ export function ListView(props: ListViewProps): ReactElement {
         });
         const dotName = conditionDotName(row.conditionSignal);
         const chips = listRowChips(row, now, firstRunCompletedAt);
+        const rung = rungFor({
+          completionLit: row.completionLit,
+          completionApplicable: row.completionApplicable,
+          isReference: row.isReference,
+          hasWorkingCopy: row.primaryLocation !== null,
+          isArchived: row.isArchived,
+        });
+        const score = scoreText(row.completionLit, row.completionApplicable);
         const node = (
           <div
             key={`row-${String(id)}`}
@@ -80,14 +94,32 @@ export function ListView(props: ListViewProps): ReactElement {
                 />
               )}
             </span>
-            <span className="cdt-list-c2" />
+            {/* [p3] §31.7's rank mark. `null` renders no node, which is the same rule the
+                grid card's rank slot already carries: a dash in a column that could have been
+                empty is a claim with no measurement behind it. */}
+            <span className="cdt-list-c2">
+              {rung === null ? null : (
+                <span
+                  className="cdt-list-rank"
+                  aria-hidden="true"
+                  style={{ color: token(rung.inkToken) }}
+                />
+              )}
+            </span>
             <span className="cdt-list-c3">{row.name}</span>
             <span className="cdt-list-c4">{row.primaryLanguage ?? ''}</span>
             <span className="cdt-list-c5">{row.branch ?? ''}</span>
             <span className="cdt-list-c6">
               {row.sizeTrackedBytes === null ? '—' : formatTrackedBytes(row.sizeTrackedBytes)}
             </span>
-            <span className="cdt-list-c7" />
+            {/* [p3] §31.7: `<lit>/<evaluable>` in tier ink, **never a percentage and never a
+                bare numerator**. `null` is uncomputed and renders nothing. */}
+            <span
+              className="cdt-list-c7"
+              style={rung === null ? undefined : { color: token(rung.inkToken) }}
+            >
+              {score}
+            </span>
             <span className="cdt-list-c8">
               {chips.map((chip) => (
                 <span className="cdt-chip" data-chip={chip.id} key={chip.id}>

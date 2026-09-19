@@ -8,6 +8,7 @@
 //! no file is moved, deleted, created or opened for writing, no git command mutates anything,
 //! and no row is removed.
 
+pub mod checkna;
 pub mod get;
 pub mod note;
 pub mod relocate;
@@ -79,8 +80,15 @@ pub fn upserted_payload(
 /// The commands this module owns, in the order the dispatcher matches them. Exposed so the
 /// table can be asserted without constructing an `Index`.
 #[must_use]
-pub fn dispatch_detail_command_names() -> [&'static str; 3] {
-    ["projects.get", "projects.setNote", "locations.relocate"]
+pub fn dispatch_detail_command_names() -> [&'static str; 4] {
+    [
+        "projects.get",
+        "projects.setNote",
+        // [p3] §31.6's writer. It writes one `project_check.user_na`, re-runs §31's evaluator in
+        // the same transaction and re-emits the row — all three of which this module owns.
+        "projects.setCheckNa",
+        "locations.relocate",
+    ]
 }
 
 /// `None` means "this module does not own that command" — plan 21's router chains on it. A
@@ -96,6 +104,9 @@ pub fn dispatch_detail_command(
         "projects.get" => Some(get::handle_project_get(ctx, args).and_then(|v| encode(&v))),
         "projects.setNote" => {
             Some(note::handle_project_set_note(ctx, args).and_then(|v| encode(&v)))
+        }
+        "projects.setCheckNa" => {
+            Some(checkna::handle_projects_set_check_na(ctx, args).and_then(|v| encode(&v)))
         }
         "locations.relocate" => {
             Some(relocate::handle_location_relocate(ctx, args).and_then(|v| encode(&v)))
@@ -119,7 +130,12 @@ mod tests {
         let names = dispatch_detail_command_names();
         assert_eq!(
             names,
-            ["projects.get", "projects.setNote", "locations.relocate"]
+            [
+                "projects.get",
+                "projects.setNote",
+                "projects.setCheckNa",
+                "locations.relocate"
+            ]
         );
         // Plan 13's set. A dispatcher that answered one of these would take a command from a
         // module that implements it properly, and plan 21's router would never reach it.

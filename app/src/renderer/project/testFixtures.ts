@@ -239,6 +239,11 @@ export function detailFixture(over: Partial<ProjectDetail> = {}): ProjectDetail 
     // history has not been read honestly carries — and §33.7 draws no inner needle and no
     // divergence line for it, never a needle at zero.
     conditionMaterial: null,
+    // [p3] §31.8. `null` is *the evaluator has not reached this project* — no `project_check`
+    // rows exist, which is every project's first-scan state. It is a different fact from ten
+    // rows with `evaluable === 0`, where the detail is PRESENT and is the only surface that
+    // says why nothing could be scored; a test about either overrides this.
+    completion: null,
     ...over,
   };
 }

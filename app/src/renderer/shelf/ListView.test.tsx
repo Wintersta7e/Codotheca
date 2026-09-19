@@ -27,6 +27,11 @@ const row = (over: Record<string, unknown> = {}): ShelfRow =>
     fetchHeadAt: null,
     createdAt: 0,
     acknowledgedAt: 0,
+    // [p3] §31.7: the two columns the score and the rank mark read. Both NULL together, which is
+    // the uncomputed state every project starts in — the wire pairs them and §1.10's CHECK does.
+    completionLit: null,
+    completionApplicable: null,
+    primaryLocation: { id: 10, pathDisplay: '/w/atlas' },
     ...over,
   }) as unknown as ShelfRow;
 
@@ -45,13 +50,18 @@ const draw = (over: Partial<ListViewProps> = {}): ReturnType<typeof render> =>
   );
 
 describe('ListView', () => {
-  it('holds columns 2 and 7 at their widths and renders no node in either', () => {
+  // [p3] §31.7 fills both reserved columns. **The widths are unchanged**, which is what makes
+  // this a fill and not a re-cut — and an uncomputed row still renders no node in either, which
+  // is the half that survives from phase 1.
+  it('holds columns 2 and 7 at their reserved widths and renders no node while uncomputed', () => {
     const { container } = draw();
     for (const [cls, width] of [
       ['.cdt-list-c2', 16],
       ['.cdt-list-c7', 44],
     ] as const) {
-      const cell = container.querySelector<HTMLElement>(cls);
+      // Scoped to the row: the header now carries the same class, because both columns gained a
+      // label in the same change that gave them a value.
+      const cell = container.querySelector<HTMLElement>(`.cdt-list-row > ${cls}`);
       if (cell === null) throw new Error(`missing ${cls}`);
       expect(cell.childNodes).toHaveLength(0);
       expect(cell.textContent).toBe('');
@@ -61,23 +71,38 @@ describe('ListView', () => {
     }
   });
 
-  it('labels columns 3 to 6 only', () => {
+  it('fills both columns once a measurement exists', () => {
+    const { container } = draw({
+      rows: [row({ completionLit: 8, completionApplicable: 8 })],
+    });
+    expect(container.querySelector('.cdt-list-row > .cdt-list-c7')?.textContent).toBe('8/8');
+    expect(container.querySelector('.cdt-list-row .cdt-list-rank')).not.toBeNull();
+    // Never a percentage, and never a numerator without its denominator.
+    expect(container.querySelector('.cdt-list-row > .cdt-list-c7')?.textContent).not.toContain('%');
+  });
+
+  // [p3] §31.7: both reserved columns gain a header cell — an unlabelled column carrying a
+  // value is a value with no name.
+  it('labels columns 2 to 7', () => {
     const { container } = draw();
     const headers = [...container.querySelectorAll('.cdt-list-header > *')]
       .map((element) => element.textContent)
       .filter(Boolean);
-    expect(headers).toEqual(['NAME', 'LANG', 'BRANCH', 'SIZE']);
+    expect(headers).toEqual(['RANK', 'NAME', 'LANG', 'BRANCH', 'SIZE', 'SCORE']);
   });
 
   it('dashes the size column where inventory has not run, and only there', () => {
     const { container } = draw();
     expect(container.querySelector('.cdt-list-row .cdt-list-c6')?.textContent).toBe('—');
-    expect(container.querySelector('.cdt-list-c2')?.textContent).toBe('');
+    // §31.7: an uncomputed score renders NOTHING, never a dash — a dash in a column that could
+    // have been empty is a claim with no measurement behind it.
+    expect(container.querySelector('.cdt-list-row > .cdt-list-c2')?.textContent).toBe('');
+    expect(container.querySelector('.cdt-list-row > .cdt-list-c7')?.textContent).toBe('');
   });
 
   it('draws no condition dot when condition_signal is NULL', () => {
     const { container } = draw();
-    expect(container.querySelector('.cdt-list-c1')?.childNodes).toHaveLength(0);
+    expect(container.querySelector('.cdt-list-row > .cdt-list-c1')?.childNodes).toHaveLength(0);
   });
 
   it('draws the dot from §5.4a alone when there is a signal', () => {
@@ -87,8 +112,13 @@ describe('ListView', () => {
     );
   });
 
-  it('never draws a roast or a completion readout on the list', () => {
-    const { container } = draw();
+  // §8.6: roasting stays inside an opened project card, and the list draws none.
+  // [p3] §31.7 fills the score column, and it is a bare fraction: the `EVALUABLE` and `UNKNOWN`
+  // words are band 5's, on a surface served by `projects.get`, and the list is not one.
+  it('never draws a roast, and never band 5 words, on the list', () => {
+    const { container } = draw({
+      rows: [row({ completionLit: 8, completionApplicable: 8 })],
+    });
     expect(container.querySelector('.cdt-roast')).toBeNull();
     expect(container.textContent).not.toMatch(/EVALUABLE|UNKNOWN/);
   });
@@ -140,8 +170,12 @@ describe('ListView', () => {
     expect(header.childElementCount).toBe(
       LIST_COLUMNS.filter((column) => column.header !== null).length,
     );
-    expect(header.querySelector('.cdt-list-c2')).toBeNull();
-    expect(header.querySelector('.cdt-list-c7')).toBeNull();
+    // [p3] §31.7: columns 2 and 7 now have labels, so they now have header cells. Columns 1 and
+    // 8 still do not — the condition dot and the chip strip name themselves.
+    expect(header.querySelector('.cdt-list-c2')).not.toBeNull();
+    expect(header.querySelector('.cdt-list-c7')).not.toBeNull();
+    expect(header.querySelector('.cdt-list-c1')).toBeNull();
+    expect(header.querySelector('.cdt-list-c8')).toBeNull();
   });
 
   it("renders exactly listRowChips' set in the chip column", () => {

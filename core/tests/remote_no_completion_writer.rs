@@ -10,6 +10,12 @@
 //! feed — while the design names *latest CI runs*, a record with a workflow, a conclusion, a
 //! branch and a run number. Two objects sharing a word (R15's shape). Phase 2 has the record.
 //!
+//! **[p3] Phase 3 judges it, and this gate does not relax.** R124 gives the aggregate — *did the
+//! latest concluded run on this branch succeed* — to §28's `ci_red` arm, and §31 reads that
+//! arm's answer. Both of those files may name a remote table **because neither names an
+//! aggregate spelling below**; the ban is on the words, and it is what keeps the judgement in one
+//! place instead of two.
+//!
 //! In the shape of `core/tests/git_readonly.rs`, and with the same guard: **a gate whose passing
 //! run scans zero files is a failing gate**, so the walk prints its count and fails at zero.
 
@@ -25,8 +31,13 @@ const REMOTE_MARKERS: &[&str] = &[
     "codotheca_core::remote",
 ];
 
-/// The two columns §1.10 gives to completion, which nothing in phase 2 writes. Phase 3's health
-/// surface is what earns them.
+/// The two columns §1.10 gives to completion.
+///
+/// **[p3] §31 has earned them, and the boundary is unchanged.** They are now a projection
+/// recomputed from `project_check` by `crate::completion` — which is why this gate still holds:
+/// the module that writes them takes its remote inputs as **already-shaped values** and names no
+/// remote table, so no file is ever on both sides of this line. Only the phase claim moved; no
+/// assertion, no marker and no banned string was edited.
 const COMPLETION_COLUMNS: &[&str] = &["completion_lit", "completion_applicable"];
 
 /// Where a banned identifier is permitted, per path **and per token**, with the reason.

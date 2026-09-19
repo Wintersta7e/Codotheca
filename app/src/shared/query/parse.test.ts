@@ -52,14 +52,28 @@ describe('parseQuery', () => {
     expect(ast.ignored).toEqual([{ text: 'nosuch:value', reason: 'unknownField' }]);
   });
 
-  it('drops completion from the effective query and never evaluates it', () => {
-    // §8.3a: matching nothing kills the term for every phase-1 user; coercing NULL to 0 renders
-    // unknown as zero inside the filter engine.
+  // [p3] §31.1: the term filters. **The NULL half survives and hardens**, and it lives in the
+  // evaluator rather than the parser — a NULL row matches neither comparison.
+  it('parses completion as a term, with no unit', () => {
     const ast = parseQuery('completion:>5 lang:rust');
     expect(ast.terms).toEqual([
+      { kind: 'completion', negated: false, op: 'gt', value: 5 },
       { kind: 'text', negated: false, field: 'lang', value: 'rust', quoted: false },
     ]);
-    expect(ast.ignored).toEqual([{ text: 'completion:>5', reason: 'notComputed' }]);
+    expect(ast.ignored).toEqual([]);
+    expect(parseQuery('-completion:<3').terms).toEqual([
+      { kind: 'completion', negated: true, op: 'lt', value: 3 },
+    ]);
+  });
+
+  it('soft-errors a completion value that is not a comparison', () => {
+    expect(parseQuery('completion:abc').ignored).toEqual([
+      { text: 'completion:abc', reason: 'malformedValue' },
+    ]);
+    // A unit is not admitted: the quantity is a count of checks, not a size.
+    expect(parseQuery('completion:>5kb').ignored).toEqual([
+      { text: 'completion:>5kb', reason: 'malformedValue' },
+    ]);
   });
 
   it("soft-errors a value that is not in the field's enum", () => {
@@ -126,8 +140,8 @@ describe('queryTermCount', () => {
   it('does not count ignored terms, so it agrees with effectiveQueryText', () => {
     // §8.3a: `terms` is what ran, `ignored` is text that never became a term. A query whose
     // every term was dropped counts zero — which is what makes plan 15 call it broken.
-    expect(queryTermCount(parseQuery('completion:>5'))).toBe(0);
-    expect(queryTermCount(parseQuery('completion:>5 nosuch:x lang:rust'))).toBe(1);
+    expect(queryTermCount(parseQuery('nosuch:x'))).toBe(0);
+    expect(queryTermCount(parseQuery('completion:>5 nosuch:x lang:rust'))).toBe(2);
   });
 });
 
@@ -158,9 +172,9 @@ describe('queryHasField', () => {
     expect(queryHasField(parseQuery('C:\\work'), 'collection')).toBe(false);
   });
 
-  it('is false for completion, which never becomes a term in phase 1', () => {
-    // The parser emits an `ignored` entry with reason `notComputed`, never a term. A dropped
-    // term constrains nothing, so the honest answer is false.
-    expect(queryHasField(parseQuery('completion:>5'), 'completion')).toBe(false);
+  // [p3] §31.1: the term exists now, so the field it constrains is reported.
+  it('is true for completion, which is a term again', () => {
+    expect(queryHasField(parseQuery('completion:>5'), 'completion')).toBe(true);
+    expect(queryHasField(parseQuery('completion:abc'), 'completion')).toBe(false);
   });
 });

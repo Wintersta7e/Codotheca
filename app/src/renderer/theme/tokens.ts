@@ -54,6 +54,13 @@ export const TOKENS = {
   // tile: whenever a tier is named in type the readable variant is used, never the frame colour.
   'tier-blue-ink': '#9fc2d6',
   'tier-ref': '#232a31',
+  // [p3] §31.1c. Phase 3 is the first phase that PAINTS a rung, and three of the six had no
+  // token: the silver rung would have resolved to `--silver`, which §33 reads for cobwebs — one
+  // value two unrelated subsystems then share (R130/F14) — and archived gold had neither a frame
+  // nor an ink. `#e6dab4`'s sole provenance is the design prototype; it occurs nowhere else.
+  'tier-silver': '#b9c4cc',
+  'tier-gold-archived': '#d9c98f',
+  'tier-gold-archived-ink': '#e6dab4',
   'tier-gold-ink': '#f0d493',
   'tier-brass-ink': '#dca972',
   'tier-steel-ink': '#a3c4cd',
@@ -86,18 +93,29 @@ export function tokenValue(name: TokenName): string {
 }
 
 /**
+ * The six rung tokens, in ladder order. One owner for the set, read by `LADDER_RUNGS` below and
+ * by `rungFor` in `../card/completion`.
+ */
+export const RUNG_TOKENS = [
+  'tier-gold',
+  'tier-gold-archived',
+  'tier-silver',
+  'tier-brass',
+  'tier-steel',
+  'tier-plain',
+] as const satisfies readonly TokenName[];
+
+/**
  * The completion ladder in full — gold, archived gold, silver, brass, steel and plain.
  * Plain is a rung, not a neutral: painting it asserts "measured, and under half" (§7.7a).
- * Nothing in phase 1 may paint any of these.
+ *
+ * **[p3] Derived from `TOKENS`, never six bare hexes.** The guard and the stylesheet had two
+ * owners for one set, and archived gold and silver were in the guard as literals with no token
+ * at all — so a rung could be painted from a value the stylesheet did not declare. `rungFor`
+ * names a token and the guard resolves the same map, which is what makes the two agree by
+ * construction rather than by review.
  */
-export const LADDER_RUNGS: readonly string[] = [
-  '#e8c268',
-  '#d9c98f',
-  '#b9c4cc',
-  '#a8763f',
-  '#5c7c85',
-  '#333c45',
-];
+export const LADDER_RUNGS: readonly string[] = RUNG_TOKENS.map((name) => TOKENS[name]);
 
 /** The four prototype grounds §8.7 snapped onto existing tokens, plus §8.0b's precedent. */
 export const SNAPPED_GROUNDS: readonly string[] = [

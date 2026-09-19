@@ -17,6 +17,8 @@ const row = (over: Partial<HeroRow> = {}): HeroRow => ({
   isArchived: false,
   conditionSignal: 'dormant',
   completionLit: null,
+  // [p3] Both NULL together: the pair is a projection and §1.10's CHECK pairs them.
+  completionApplicable: null,
   artSceneHash: 'aa' as SceneHash,
   artState: 'ready',
   // A located project. §23.5's blueprint hero is the zero-location case and asks for it by name.

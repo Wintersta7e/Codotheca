@@ -1142,3 +1142,106 @@ fn a_project_remote_sync_settle_opens_ci_red_with_no_job_involved() {
         n == 1
     });
 }
+
+/// **[p3] §31.5's hook site 2, proved live — the half no job-shaped trigger could ever satisfy.**
+///
+/// `description` reads the forge's own row, and two more of §31's ten checks come from sync or
+/// from a scheduled sweep. An evaluator hooked to `JobRunner::settle` alone would leave a forge
+/// description unread until some unrelated job settled that project.
+///
+/// **Nothing here runs a job.** No `project_check` row exists before the sync, ten exist after,
+/// and the one this test is about reads `pass`.
+#[test]
+fn a_project_remote_sync_settle_writes_the_ten_completion_rows_with_no_job_involved() {
+    let f = fixture(Duration::from_millis(0));
+    for _ in 0..8 {
+        f.scripted.push(ok_page("{}"));
+    }
+
+    {
+        let mut guard = f.index.lock().expect("index");
+        guard
+            .with_tx(|tx| {
+                // Past §31.8's gates: authored, not a reference, one present copy that has been
+                // looked at.
+                tx.execute(
+                    "UPDATE project SET authored_by_user = 1 WHERE id = ?1",
+                    [f.project.0],
+                )?;
+                tx.execute(
+                    "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                           store_key, presence, repo_kind, branch,
+                                           refstate_observed_at)
+                     VALUES (?1, 'linux', x'2f61', x'2f61', '/a', 'store', 'present', 'worktree',
+                             'main', 100)",
+                    [f.project.0],
+                )?;
+                // The forge row a sync writes, with a description and one topic.
+                tx.execute(
+                    "INSERT INTO remote_repo (provider, provider_repo_id, description, observed_at)
+                     VALUES ('github', '7', 'a shaped description', 100)",
+                    [],
+                )?;
+                tx.execute(
+                    "INSERT INTO remote_topic (provider, provider_repo_id, topic)
+                     VALUES ('github', '7', 'alpha')",
+                    [],
+                )?;
+                Ok(())
+            })
+            .expect("seed");
+    }
+
+    let before: i64 = {
+        let guard = f.index.lock().expect("index");
+        guard
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM project_check WHERE project_id = ?1",
+                [f.project.0],
+                |r| r.get(0),
+            )
+            .unwrap_or(-1)
+    };
+    assert_eq!(
+        before, 0,
+        "the evaluator has not run, so there is nothing to read"
+    );
+
+    let runner = SyncRunner::new(
+        Arc::clone(&f.index),
+        f.deps,
+        Arc::clone(&f.events) as Arc<dyn EventSink>,
+    );
+    runner.enqueue(SyncTask::ProjectRemote {
+        project_id: f.project,
+    });
+    runner.start();
+
+    until("the sync settle to write the ten completion rows", || {
+        let guard = f.index.lock().expect("index");
+        let n: i64 = guard
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM project_check WHERE project_id = ?1",
+                [f.project.0],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        n == 10
+    });
+
+    let guard = f.index.lock().expect("index");
+    let state: String = guard
+        .conn()
+        .query_row(
+            "SELECT state FROM project_check WHERE project_id = ?1 AND check_key = 'description'",
+            [f.project.0],
+            |r| r.get(0),
+        )
+        .expect("the description row");
+    assert_eq!(
+        state, "pass",
+        "a forge description and a topic, read at the settle that could have changed them"
+    );
+}

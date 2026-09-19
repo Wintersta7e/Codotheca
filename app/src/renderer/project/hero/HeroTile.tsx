@@ -18,9 +18,10 @@
  * a phase-1 trigger, and shipping one layer of five would read as a bug in the decay model
  * rather than as its absence.~~
  *
- * Band 5 keeps the identity line and drops the `<lit>/<applicable> EVALUABLE` score outright —
- * not an em dash either, because band 3 already reads `RANK NOT COMPUTED` and one surface states
- * an absence once.
+ * **[p3] §31.7: band 5 renders the score when the figure exists**, and keeps the sentence above
+ * when it does not. Phase 1 dropped it outright because nothing computed one — not an em dash
+ * either, because band 3 already reads `RANK NOT COMPUTED` and one surface states an absence
+ * once. That reason expires with §31; the absence rule does not.
  */
 import type { ReactElement } from 'react';
 
@@ -28,6 +29,7 @@ import type { DebtItem, ProjectId, ProjectRow, SceneHash } from '../../../genera
 import { DecayStack } from '../../decay/DecayStack';
 import { useWeathering } from '../../decay/useWeathering';
 import { statusChips } from '../../card/chips';
+import { scoreText } from '../../card/completion';
 import { HeroFrame } from '../../card/HeroFrame';
 import { glowShadow, glowStrength } from '../../derive/condition';
 import { useProjectPageDeps } from '../deps';
@@ -51,6 +53,12 @@ export interface HeroTileProps {
    * disagreeing with the mark in the meantime.
    */
   isPinned: boolean;
+  /**
+   * [p3] §31.7's `· <n> UNKNOWN` clause. It renders only on surfaces served by `projects.get`,
+   * so the page hands the count down rather than the hero inventing one. `null` is *the detail
+   * has not arrived*, which renders the score without the clause rather than with a zero.
+   */
+  unknownChecks?: number | null;
   onTogglePin: () => void;
   /**
    * [p3] §28's flat debt list, straight off `ProjectDetail`. §33.2 counts the open items per
@@ -88,11 +96,31 @@ export function heroIdentityLine(row: ProjectRow): string | null {
   return parts.length === 0 ? null : parts.join(' · ');
 }
 
+/**
+ * [p3] §31.7's band-5 readout: `<lit>/<evaluable> EVALUABLE · <n> UNKNOWN`.
+ *
+ * **The second clause drops only at `n === 0`.** Dropping it unconditionally hides a real
+ * quantity; rendering it unconditionally prints `· 0 UNKNOWN` on a fully observed project, which
+ * is furniture. `null` is the uncomputed case, where band 3 already states the absence.
+ *
+ * **Never a percentage and never a bare numerator** — the denominator is the whole safeguard.
+ */
+export function heroScoreLine(
+  lit: number | null,
+  evaluable: number | null,
+  unknown: number,
+): string | null {
+  const score = scoreText(lit, evaluable);
+  if (score === null) return null;
+  return unknown === 0 ? `${score} EVALUABLE` : `${score} EVALUABLE · ${String(unknown)} UNKNOWN`;
+}
+
 export function HeroTile({
   row,
   heroHash,
   firstRunCompletedAt,
   isPinned,
+  unknownChecks,
   onTogglePin,
   debt = [],
 }: HeroTileProps): ReactElement {
@@ -107,6 +135,9 @@ export function HeroTile({
   // re-derived from `primaryLocation` a second time.
   const isBlueprint = rendition === 'hero-blueprint';
   const identity = heroIdentityLine(row);
+  // §31.7: the figure comes from the row, which is what decides *is there a figure at all*. The
+  // `UNKNOWN` clause needs a count only `projects.get` carries, so it is the caller's.
+  const score = heroScoreLine(row.completionLit, row.completionApplicable, unknownChecks ?? 0);
 
   // §5.4a's steady glow. There is no session on this surface to raise it and no flicker to dip
   // it: the scheduled flicker is a grid effect, so the halo stands at 1.
@@ -148,6 +179,11 @@ export function HeroTile({
       {identity === null ? null : (
         <div className="cp-hero-identity" data-testid="cp-hero-identity">
           {identity}
+        </div>
+      )}
+      {score === null ? null : (
+        <div className="cp-hero-score" data-testid="cp-hero-score">
+          {score}
         </div>
       )}
     </HeroFrame>

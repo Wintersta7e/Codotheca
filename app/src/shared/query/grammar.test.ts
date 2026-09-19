@@ -42,9 +42,11 @@ describe('the TypeScript tables transcribe protocol/query/grammar.json', () => {
   it('agrees on which fields parse but never evaluate', () => {
     expect(at('neverEvaluated')).toEqual([...NEVER_EVALUATED]);
   });
-  it('keeps completion in the field list even though it never evaluates', () => {
-    // §8.3a: removing a field would break every stored query that used it.
+  it('keeps completion in the field list, which now evaluates', () => {
+    // §8.3a: removing a field would break every stored query that used it — and [p3] §31.1 makes
+    // the term filter, so the list entry is now a term and not a soft error.
     expect(QUERY_FIELDS).toContain('completion');
+    expect(NEVER_EVALUATED).toHaveLength(0);
   });
   it('offers no is:mine and no is:remote', () => {
     // §8.3a rejects both: is:mine duplicates -is:reference, is:remote is phase 2.

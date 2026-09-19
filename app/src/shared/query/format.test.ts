@@ -42,11 +42,18 @@ describe('renderTerm', () => {
 
 describe('effectiveQueryText', () => {
   it('prints the terms that ran and not the ones that were dropped', () => {
-    const ast = parseQuery('completion:>5 nosuch:x lang:rust');
+    const ast = parseQuery('nosuch:x lang:rust');
     expect(effectiveQueryText(ast)).toBe('lang:rust');
   });
   it('is empty for a query whose every term was dropped', () => {
-    expect(effectiveQueryText(parseQuery('completion:>5'))).toBe('');
+    expect(effectiveQueryText(parseQuery('nosuch:x'))).toBe('');
+  });
+  // [p3] §31.1: `completion:` filters, so it prints as a term rather than vanishing.
+  it('prints a completion term, with no unit to scale', () => {
+    expect(effectiveQueryText(parseQuery('completion:>5 lang:rust'))).toBe(
+      'completion:>5 lang:rust',
+    );
+    expect(effectiveQueryText(parseQuery('-completion:<3'))).toBe('-completion:<3');
   });
 });
 
@@ -62,8 +69,14 @@ describe('pillsOf', () => {
     ]);
   });
   it('gives a soft-errored term the error state and its reason', () => {
+    // [p3] `completion:` no longer soft-errors; a malformed value still does.
+    expect(pillsOf(parseQuery('is:sideways'), [])).toEqual([
+      { key: 'i0', label: 'is:sideways', state: 'error', reason: 'NOT A VALUE FOR THIS FIELD' },
+    ]);
+  });
+  it('gives an accepted completion term an accepted pill', () => {
     expect(pillsOf(parseQuery('completion:>5'), [])).toEqual([
-      { key: 'i0', label: 'completion:>5', state: 'error', reason: 'NOT COMPUTED IN THIS RELEASE' },
+      { key: 't0', label: 'completion:>5', state: 'accepted', reason: null },
     ]);
   });
   it('does not pill free text — the input holds it, and the pill text is never rendered twice', () => {

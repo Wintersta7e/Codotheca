@@ -356,7 +356,24 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
       ? flicker
       : null;
   const resolvedPeek = peekAnswer?.projectId === view.selectedProjectId ? peekAnswer.peek : null;
-  const peek = peekOpen ? <PeekPanel peek={resolvedPeek} now={now} tier={tier} /> : null;
+  // [p3] §31.7's sixth fact rides the shelf row rather than a widened `Peek`: `projects.list`
+  // already serves this surface, and a second producer for one fact is a second source of truth.
+  const peekRow = rows.find((row) => row.id === view.selectedProjectId) ?? null;
+  const peek = peekOpen ? (
+    <PeekPanel
+      peek={resolvedPeek}
+      now={now}
+      tier={tier}
+      completion={
+        peekRow === null
+          ? null
+          : {
+              completionLit: peekRow.completionLit,
+              completionApplicable: peekRow.completionApplicable,
+            }
+      }
+    />
+  ) : null;
 
   // §8.5.1's landing state: the tile you left unfolds, its neighbours ripple outward from it, and
   // the header of the section it sits in flares — so you can see which shelf you came back to.

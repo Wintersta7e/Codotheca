@@ -11,4 +11,4 @@ pub use ast::{
 pub use parse::parse_query;
 
 /// Mirrors `queryGrammarVersion` in `protocol/query/grammar.json`; the tests assert the equality.
-pub const QUERY_GRAMMAR_VERSION: u32 = 2;
+pub const QUERY_GRAMMAR_VERSION: u32 = 3;

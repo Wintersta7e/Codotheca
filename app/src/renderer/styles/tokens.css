@@ -71,6 +71,13 @@
   --tier-blue-ink: #9fc2d6;
   --tier-ref: #232a31;
 
+  /* [p3] §31.1c: the three rung values phase 3 is the first to paint. `--tier-silver` is
+     declared separately from `--silver` on purpose — §33 reads that one for cobwebs, and one
+     value two unrelated subsystems share is one value that drifts. */
+  --tier-silver: #b9c4cc;
+  --tier-gold-archived: #d9c98f;
+  --tier-gold-archived-ink: #e6dab4;
+
   /* tier ink — used whenever a tier is named in type, never the frame colour */
   --tier-gold-ink: #f0d493;
   --tier-brass-ink: #dca972;

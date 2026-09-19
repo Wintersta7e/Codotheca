@@ -788,10 +788,13 @@ mod corehandler {
         // the verdict, and the one SQLite mutex may not be held across it. They were the last
         // two rows of `UNOWNED_COMMANDS`, which is **now empty** — and this count rising by two
         // is the same fact from the other side, which is why both assertions stay.
-        // [p3] §33.8's `health.weathering` is the 59th, answered **under** the guard: one
-        // `SELECT` against `art_scene` and a pure derivation over the document it returns, so it
-        // reaches no network and holds the mutex no longer than any other read. Raised by this
-        // lane's own +1 off its branch base, never to a running total.
+        // [p3] Two commands arrived here in one wave, from lanes that could not see each other,
+        // and **each called itself "the 59th"** — which is why this comment names neither by
+        // ordinal now. Both are answered **under** the guard and both reach no network:
+        // §33.8's `health.weathering` is one `SELECT` against `art_scene` plus a pure derivation
+        // over the document it returns, and §31.6's `projects.setCheckNa` writes one column and
+        // recomputes ten rows. Each lane stated its own +1 off the base it read, which is the
+        // right form; the ordinal was the part that could not survive the merge.
         assert_eq!(
             checked, 59,
             "the schema's answerable set, minus the loop's pair and the unowned set"

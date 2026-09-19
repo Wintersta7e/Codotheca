@@ -128,6 +128,17 @@
   pointer-events: none;
 }
 
+/* [p3] §31.1c's gold notch. It sits on the same unclipped `.cdt-card-frame` as the gap above,
+   and the two are never drawn together: the gap says there is no measurement and the notch
+   qualifies one. They stay distinguishable by width, position and frame colour because they mean
+   opposite things — the gap is 22% wide at 39% from the left, this is 9px wide at 11px from the
+   right. */
+.cdt-frame-notch {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
 /* The plate: everything inside the 1px frame, clipped to the same shape. */
 .cdt-plate {
   position: relative;

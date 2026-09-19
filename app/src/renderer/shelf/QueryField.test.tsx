@@ -135,12 +135,20 @@ describe('QueryFieldView', () => {
     expect(container.querySelector('[data-state="error"]')?.className).toContain('is-struck');
   });
 
-  it('gives `completion:` the soft-error state and its stated reason', () => {
-    // Criterion 65: it parses, it never filters, and NULL is never compared as 0.
+  // [p3] §31.1: criterion 65's soft-error clause expires — the term filters. **The NULL half
+  // hardens and moves to the evaluator**, where a row with no measurement matches neither
+  // comparison; what the pill shows is an accepted term.
+  it('gives `completion:` an accepted pill, because the term filters now', () => {
     view('completion:>5 ');
     const pill = screen.getByText('completion:>5').closest('.cdt-shelf-pill');
+    expect(pill?.getAttribute('data-state')).toBe('accepted');
+    expect(pill?.getAttribute('title')).toBeNull();
+  });
+
+  it('still soft-errors a completion value that is not a comparison', () => {
+    view('completion:abc ');
+    const pill = screen.getByText('completion:abc').closest('.cdt-shelf-pill');
     expect(pill?.getAttribute('data-state')).toBe('error');
-    expect(pill?.getAttribute('title')).toBe('NOT COMPUTED IN THIS RELEASE');
   });
 
   it('drops a term when its pill is clicked — the whole pill is the target', () => {

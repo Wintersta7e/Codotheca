@@ -41,7 +41,7 @@ export function parseQuery(input: string): QueryAst {
       continue;
     }
 
-    if ((NEVER_EVALUATED as readonly string[]).includes(field)) {
+    if (NEVER_EVALUATED.includes(field)) {
       ignored.push({ text: token.text, reason: 'notComputed' });
       continue;
     }
@@ -84,6 +84,17 @@ function parseFieldTerm(
     const scale = (SIZE_UNIT_BYTES as Record<string, number | undefined>)[unit ?? ''];
     if (scale === undefined || sign === undefined || digits === undefined) return null;
     return { kind: 'size', negated, op: sign === '>' ? 'gt' : 'lt', bytes: Number(digits) * scale };
+  }
+
+  // [p3] §31.1: a bare integer bound with no unit, because the quantity is a COUNT OF CHECKS —
+  // `completion:>5kb` is not a thing to admit, so this parses its own two characters rather
+  // than borrowing `COMPARISON`, which requires a unit.
+  if (field === 'completion') {
+    const m = /^([<>])(\d+)$/u.exec(raw.toLowerCase());
+    const sign = m?.[1];
+    const digits = m?.[2];
+    if (sign === undefined || digits === undefined) return null;
+    return { kind: 'completion', negated, op: sign === '>' ? 'gt' : 'lt', value: Number(digits) };
   }
 
   if (field === 'touched') {

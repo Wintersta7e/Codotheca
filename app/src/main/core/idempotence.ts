@@ -42,6 +42,9 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'projects.peek': 'read',
   'projects.setFlags': 'write',
   'projects.setNote': 'write',
+  // [p3] §31.6: it writes `project_check.user_na` and re-runs the completion evaluator in the
+  // same transaction, so a replay re-applies a decision the user may have since cleared.
+  'projects.setCheckNa': 'write',
   'projects.merge': 'write',
   'projects.unmergeHint': 'read',
   'projects.requeue': 'write',

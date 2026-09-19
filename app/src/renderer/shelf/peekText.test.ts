@@ -124,12 +124,23 @@ describe('peekFacts', () => {
     interruptedOp: null,
   } as unknown as Peek;
   const valueOf = (peek: Peek, key: string): string | undefined =>
-    peekFacts(peek, NOW).find((f) => f.key === key)?.value;
+    peekFacts(peek, NOW, null).find((f) => f.key === key)?.value;
 
-  it('renders exactly five facts for a cloned row, and COMPLETION is not among them', () => {
-    expect(peekFacts(base, NOW).map((f) => f.key)).toEqual([...PEEK_FACT_KEYS]);
-    expect(PEEK_FACT_KEYS).toHaveLength(5);
-    expect(PEEK_FACT_KEYS.join(' ')).not.toContain('COMPLETION');
+  // [p3] §31.7: six, and `COMPLETION` is the sixth. The stated reason for dropping it — *it
+  // would read unknown on 100% of rows* — expires with §31.
+  it('renders exactly six facts for a cloned row, ending with COMPLETION', () => {
+    expect(peekFacts(base, NOW, null).map((f) => f.key)).toEqual([...PEEK_FACT_KEYS]);
+    expect(PEEK_FACT_KEYS).toHaveLength(6);
+    expect(PEEK_FACT_KEYS[5]).toBe('COMPLETION');
+  });
+
+  it('renders COMPLETION as a fraction, or as the uncomputed glyph — never a zero', () => {
+    expect(valueOf(base, 'COMPLETION')).toBe(UNCOMPUTED_FACT);
+    const scored = peekFacts(base, NOW, { completionLit: 8, completionApplicable: 8 });
+    expect(scored.find((f) => f.key === 'COMPLETION')?.value).toBe('8/8');
+    // A denominator of zero is NotComputed wearing a number, and renders as the glyph.
+    const unscorable = peekFacts(base, NOW, { completionLit: 0, completionApplicable: 0 });
+    expect(unscorable.find((f) => f.key === 'COMPLETION')?.value).toBe(UNCOMPUTED_FACT);
   });
   it('renders an em dash for a job that has not run, never a zero', () => {
     for (const key of ['BIRTH', 'LANGUAGE', 'TRACKED', 'LAST COMMIT'] as const) {
@@ -181,27 +192,29 @@ describe('§25.3a the not-cloned fact set', () => {
   } as unknown as Peek;
 
   it('AC-P2-25-23-facts drops PLAYTIME entirely, asserted as an absence and not as a dash', () => {
-    const keys = peekFacts(notCloned, NOW).map((f) => f.key);
+    const keys = peekFacts(notCloned, NOW, null).map((f) => f.key);
     expect(keys).not.toContain('PLAYTIME');
-    expect(keys).toEqual(['BIRTH', 'LANGUAGE', 'TRACKED', 'LAST COMMIT']);
+    // [p3] `COMPLETION` stays for a not-cloned row and renders `—`: §31.8 keeps it NULL there,
+    // which is a fact about the project rather than a key that does not apply.
+    expect(keys).toEqual(['BIRTH', 'LANGUAGE', 'TRACKED', 'LAST COMMIT', 'COMPLETION']);
     expect(
-      peekFacts(notCloned, NOW)
+      peekFacts(notCloned, NOW, null)
         .map((f) => f.value)
         .join(' '),
     ).not.toContain('0h');
   });
 
   it('renders the glyph for the three history-derived facts', () => {
-    const byKey = new Map(peekFacts(notCloned, NOW).map((f) => [f.key, f.value]));
+    const byKey = new Map(peekFacts(notCloned, NOW, null).map((f) => [f.key, f.value]));
     for (const key of ['BIRTH', 'TRACKED', 'LAST COMMIT'] as const) {
       expect(byKey.get(key)).toBe(UNCOMPUTED_FACT);
     }
   });
 
   it('renders the forge language when observed and the glyph otherwise', () => {
-    const byKey = new Map(peekFacts(notCloned, NOW).map((f) => [f.key, f.value]));
+    const byKey = new Map(peekFacts(notCloned, NOW, null).map((f) => [f.key, f.value]));
     expect(byKey.get('LANGUAGE')).toBe(UNCOMPUTED_FACT);
     const observed = { ...notCloned, primaryLanguage: 'Rust' } as Peek;
-    expect(peekFacts(observed, NOW).find((f) => f.key === 'LANGUAGE')?.value).toBe('Rust');
+    expect(peekFacts(observed, NOW, null).find((f) => f.key === 'LANGUAGE')?.value).toBe('Rust');
   });
 });

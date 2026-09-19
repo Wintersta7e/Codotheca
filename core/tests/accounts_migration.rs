@@ -83,12 +83,13 @@ fn insert_account(
 /// by writing a running total. `0008` put it at 8; `0009`'s `project` rebuild raised it to 9;
 /// `0010`'s install tables raised it to 10; `0011`'s sync tables raised it to 11; `0012`'s
 /// `project_job_state` rebuild raised it to 12; `0013`'s `xp_events` rebuild raised it to 13;
-/// `0014`'s `sync_task_state` rebuild raises it to 14.
+/// `0014`'s `sync_task_state` rebuild raises it to 14; `0015`'s `project_check` and
+/// `location.tag_count` raise it to 15.
 /// The name deliberately does not carry the number, so raising it is one line.
 #[test]
 fn a_fresh_index_migrates_to_the_version_this_build_supports() {
     let (_dir, conn) = fresh();
-    assert_eq!(schema_version(&conn).unwrap(), 14);
+    assert_eq!(schema_version(&conn).unwrap(), 15);
     assert_eq!(
         MIGRATIONS.last().map(|m| m.version),
         Some(codotheca_core::index::migrate::SUPPORTED_SCHEMA_VERSION),

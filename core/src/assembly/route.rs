@@ -120,8 +120,11 @@ pub enum Route {
 /// **Empty, and that is a state to assert rather than a state to stop asserting.** The tests
 /// below read the router, so an empty constant still proves that no command routes to `NoOwner`
 /// — two `all()` calls over an empty set assert nothing.
+///
 /// [p3] §33.8's `health.weathering` arrived here with the schema and left two commits later,
-/// with the module that answers it — which is this constant's own rule.
+/// with the module that answers it — which is this constant's own rule. **§31.6's
+/// `projects.setCheckNa` passed through it the same way**, in a parallel lane, and left in the
+/// change that gave it a handler. Two commands, one rule, neither an exception to it.
 pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
 
 /// The wire name of a command into the generated enum.
@@ -179,8 +182,12 @@ pub fn route(command: CommandName) -> Route {
             Route::Projects
         }
 
+        // [p3] §31.6's writer joins the three: it writes one `project_check.user_na`, re-runs
+        // §31's evaluator in the same transaction and re-emits the row, all of which this module
+        // already owns.
         CommandName::ProjectsGet
         | CommandName::ProjectsSetNote
+        | CommandName::ProjectsSetCheckNa
         | CommandName::LocationsRelocate => Route::Detail,
 
         CommandName::ViewGet
@@ -316,11 +323,11 @@ mod tests {
         // running total a lane cannot know after the merges ahead of it.
         assert_eq!(
             commands.len(),
-            61,
+            62,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
              remote.webUrl plus §25.8's three projects.readme* commands plus §24.9's three \
              install.* commands plus §21.13's sync.status plus §24.7's two locations.uninstall* \
-             commands plus §33.8's health.weathering"
+             commands plus §33.8's health.weathering plus §31.6's projects.setCheckNa"
         );
         let unnamed: Vec<&str> = commands
             .iter()

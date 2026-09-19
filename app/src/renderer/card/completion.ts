@@ -1,4 +1,4 @@
-import { LADDER_RUNGS } from '../theme/tokens';
+import { LADDER_RUNGS, type TokenName } from '../theme/tokens';
 import { densityStep } from './geometry';
 
 /**
@@ -134,4 +134,111 @@ export function uncomputedRank(
     labelInkToken: 'text-3',
     accessibleName: 'Completion not computed',
   };
+}
+
+/**
+ * [p3] §31.1c's six rungs. `goldArchived` is a rung of its own and not gold with a modifier —
+ * the two differ in frame **and** ink.
+ */
+export type Rung = 'gold' | 'goldArchived' | 'silver' | 'brass' | 'steel' | 'plain';
+
+export interface RungPaint {
+  readonly rung: Rung;
+  readonly frameToken: TokenName;
+  readonly inkToken: TokenName;
+  /**
+   * §31.1c: the notch fires on `evaluable < 10`, **whether the denominator shrank because a
+   * check is `na` or because a check is `unknown`**. Plain gold keeps meaning *ten of ten*;
+   * notched gold means *100% of what could be scored*, which an offline and unauthenticated user
+   * can still reach.
+   *
+   * It is only ever true on a gold rung, and it is **never drawn beside §7.7a's gap** — the gap
+   * says there is no measurement and the notch qualifies one, so they mean opposite things and a
+   * card showing both would be saying both.
+   */
+  readonly notched: boolean;
+}
+
+const RUNG_PAINT: Readonly<Record<Rung, { frameToken: TokenName; inkToken: TokenName }>> = {
+  gold: { frameToken: 'tier-gold', inkToken: 'tier-gold-ink' },
+  goldArchived: { frameToken: 'tier-gold-archived', inkToken: 'tier-gold-archived-ink' },
+  silver: { frameToken: 'tier-silver', inkToken: 'tier-silver-ink' },
+  brass: { frameToken: 'tier-brass', inkToken: 'tier-brass-ink' },
+  steel: { frameToken: 'tier-steel', inkToken: 'tier-steel-ink' },
+  plain: { frameToken: 'tier-plain', inkToken: 'tier-plain-ink' },
+};
+
+export interface RungInput {
+  readonly completionLit: number | null;
+  readonly completionApplicable: number | null;
+  readonly isReference: boolean;
+  readonly hasWorkingCopy: boolean;
+  readonly isArchived: boolean;
+}
+
+/**
+ * [p3] §31.1c's table, **tested in this order**, because each row makes the next meaningless if
+ * it is answered the other way.
+ *
+ * | Condition | Frame |
+ * |---|---|
+ * | `is_reference` | `--tier-ref`, **above** the ladder |
+ * | no working copy | `--tier-blue`, **above** the ladder |
+ * | `completion_lit IS NULL` | §7.7a's unknown frame, in full |
+ * | `pct >= 1` | gold, and **archived gold when `is_archived`** |
+ * | `is_archived` | silver |
+ * | `pct >= 0.8` | brass |
+ * | `pct >= 0.5` | steel |
+ * | otherwise | plain |
+ *
+ * **The frame reads `pct = lit / evaluable` and nothing else** — material means exactly one
+ * thing. `null` on either column is *uncomputed*, which is §7.7a's treatment in full and is what
+ * `uncomputedRank` returns; this function answers `null` there so the caller keeps one path to
+ * that treatment instead of two.
+ *
+ * **Silent demotion.** Connecting an account may lower the tier — notched gold `7/7` to brass
+ * `8/9` — and the demotion carries no animation, no `health_delta` row, no XP reversal and no
+ * notification. *A measurement is not an earned thing*: `concept.md`'s *nothing earned ever
+ * removed* governs the XP ledger and badges, which are latched. The frame is a live measurement,
+ * and a measurement that refuses to change when new information arrives is the thing this
+ * product bans everywhere else.
+ */
+export function rungFor(input: RungInput): RungPaint | null {
+  const { completionLit: lit, completionApplicable: evaluable } = input;
+  if (input.isReference || !input.hasWorkingCopy) return null;
+  if (lit === null || evaluable === null || evaluable <= 0) return null;
+
+  const pct = lit / evaluable;
+  const notched = evaluable < 10;
+  let rung: Rung;
+  if (pct >= 1) {
+    rung = input.isArchived ? 'goldArchived' : 'gold';
+  } else if (input.isArchived) {
+    rung = 'silver';
+  } else if (pct >= 0.8) {
+    rung = 'brass';
+  } else if (pct >= 0.5) {
+    rung = 'steel';
+  } else {
+    rung = 'plain';
+  }
+  return {
+    rung,
+    ...RUNG_PAINT[rung],
+    // The notch qualifies a 100% measurement. On any lower rung the fraction already carries
+    // its own denominator, so there is nothing for it to qualify.
+    notched: notched && (rung === 'gold' || rung === 'goldArchived'),
+  };
+}
+
+/**
+ * [p3] §31.7's readout: `<lit>/<evaluable>`, and `null` when either is NULL.
+ *
+ * **Never a percentage and never a bare numerator.** The denominator is the whole safeguard: a
+ * fraction whose denominator is the truth makes no claim of ten, and a percentage erases it.
+ * `null` means *render no node*, which is `uncomputedRank`'s rule one column over.
+ */
+export function scoreText(lit: number | null, evaluable: number | null): string | null {
+  if (lit === null || evaluable === null || evaluable <= 0) return null;
+  return `${lit}/${evaluable}`;
 }

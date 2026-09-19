@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { LADDER_RUNGS } from '../theme/tokens';
+import { LADDER_RUNGS, RUNG_TOKENS, tokenValue } from '../theme/tokens';
 import { densityStep } from './geometry';
 import {
   ARCHIVED_GLASS,
   EM_DASH,
   GOLD_NOTCH,
+  type RungInput,
   frameToken,
   paintsLadderRung,
+  rungFor,
+  scoreText,
   uncomputedRank,
 } from './completion';
 
@@ -131,5 +134,133 @@ describe('archived contributes the glass overlay and nothing else', () => {
     expect(ARCHIVED_GLASS).toContain('linear-gradient(122deg');
     for (const rung of LADDER_RUNGS) expect(ARCHIVED_GLASS).not.toContain(rung);
     expect(uncomputedRank('gridCard', uncomputed)?.frameToken).toBe('unknown');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// [p3] §31.1c — the ladder
+// ---------------------------------------------------------------------------------------------
+
+const scored = (lit: number, evaluable: number, over: Partial<RungInput> = {}): RungInput => ({
+  completionLit: lit,
+  completionApplicable: evaluable,
+  isReference: false,
+  hasWorkingCopy: true,
+  isArchived: false,
+  ...over,
+});
+
+describe('the ladder reads lit over evaluable and nothing else', () => {
+  it('walks the table in the order it is written', () => {
+    expect(rungFor(scored(10, 10))?.rung).toBe('gold');
+    expect(rungFor(scored(9, 10))?.rung).toBe('brass');
+    expect(rungFor(scored(8, 10))?.rung).toBe('brass');
+    expect(rungFor(scored(7, 10))?.rung).toBe('steel');
+    expect(rungFor(scored(5, 10))?.rung).toBe('steel');
+    expect(rungFor(scored(4, 10))?.rung).toBe('plain');
+    expect(rungFor(scored(0, 10))?.rung).toBe('plain');
+  });
+
+  it('gives an archived project its own gold and silver everywhere else', () => {
+    expect(rungFor(scored(10, 10, { isArchived: true }))?.rung).toBe('goldArchived');
+    // Silver sits BELOW `pct >= 1`, so an archived project at 9/10 is silver and not brass.
+    expect(rungFor(scored(9, 10, { isArchived: true }))?.rung).toBe('silver');
+    expect(rungFor(scored(0, 10, { isArchived: true }))?.rung).toBe('silver');
+  });
+
+  it('answers null above the ladder, where §7.7a owns the frame', () => {
+    expect(rungFor(scored(10, 10, { isReference: true }))).toBeNull();
+    expect(rungFor(scored(10, 10, { hasWorkingCopy: false }))).toBeNull();
+    expect(rungFor({ ...scored(10, 10), completionLit: null })).toBeNull();
+    expect(rungFor({ ...scored(10, 10), completionApplicable: null })).toBeNull();
+    // Zero evaluable is NotComputed wearing a number, not a measured zero.
+    expect(rungFor(scored(0, 0))).toBeNull();
+  });
+
+  it('names a token for every rung and never a hex', () => {
+    for (const input of [
+      scored(10, 10),
+      scored(10, 10, { isArchived: true }),
+      scored(9, 10, { isArchived: true }),
+      scored(9, 10),
+      scored(6, 10),
+      scored(1, 10),
+    ]) {
+      const paint = rungFor(input);
+      expect(paint).not.toBeNull();
+      expect(paint?.frameToken).not.toMatch(/^#/u);
+      expect(paint?.inkToken).not.toMatch(/^#/u);
+      // Every rung frame resolves to a member of the guard's own set.
+      expect(paintsLadderRung(tokenValue(paint?.frameToken ?? 'tier-plain'))).toBe(true);
+    }
+  });
+});
+
+describe('the notch fires on evaluable, never on the N/A count', () => {
+  it('notches gold at 8/8 with two unknown and leaves 10/10 plain', () => {
+    // The design's own live fixture row: eight pass, zero fail, zero na, two unknown.
+    const eightOfEight = rungFor(scored(8, 8));
+    expect(eightOfEight?.rung).toBe('gold');
+    expect(eightOfEight?.notched).toBe(true);
+    expect(rungFor(scored(10, 10))?.notched).toBe(false);
+  });
+
+  it('notches a shrunk denominator whatever shrank it', () => {
+    // Six N/A and four evaluable reaches the same notch as two unknown, which is the whole of
+    // §31.1c's rule: the notch is about the DENOMINATOR, not about why it moved.
+    expect(rungFor(scored(4, 4))?.notched).toBe(true);
+    expect(rungFor(scored(7, 7, { isArchived: true }))?.notched).toBe(true);
+  });
+
+  it('never notches a rung below gold, which already carries its denominator', () => {
+    expect(rungFor(scored(7, 8))?.notched).toBe(false);
+    expect(rungFor(scored(4, 9))?.notched).toBe(false);
+  });
+});
+
+describe('the score is a fraction, never a percentage and never a bare numerator', () => {
+  it('renders lit over evaluable', () => {
+    expect(scoreText(8, 8)).toBe('8/8');
+    expect(scoreText(0, 10)).toBe('0/10');
+  });
+
+  it('renders nothing rather than a zero when either half is uncomputed', () => {
+    expect(scoreText(null, 10)).toBeNull();
+    expect(scoreText(8, null)).toBeNull();
+    expect(scoreText(null, null)).toBeNull();
+    // Zero evaluable is NotComputed, and a `0/0` would be a fraction over a denominator nobody
+    // measured.
+    expect(scoreText(0, 0)).toBeNull();
+  });
+
+  it('carries no percent sign at any value', () => {
+    for (let lit = 0; lit <= 10; lit += 1) {
+      expect(scoreText(lit, 10)).not.toContain('%');
+    }
+  });
+});
+
+describe('the notch and the gap mean opposite things', () => {
+  it('keeps them distinguishable by width and position', () => {
+    const gap = uncomputedRank('gridCard', uncomputed)?.gap;
+    expect(GOLD_NOTCH.right).toBe('11px');
+    expect(GOLD_NOTCH.width).toBe('9px');
+    expect(gap?.left).toBe('39%');
+    expect(gap?.width).toBe('22%');
+    // A computed project draws no gap at all, which is what makes "never both" structural.
+    expect(uncomputedRank('gridCard', { ...uncomputed, completionLit: 8 })).toBeNull();
+  });
+});
+
+describe('the ladder set has one owner', () => {
+  it('derives LADDER_RUNGS from the token map rather than from six literals', () => {
+    expect(LADDER_RUNGS).toHaveLength(6);
+    expect(LADDER_RUNGS).toEqual(RUNG_TOKENS.map((name) => tokenValue(name)));
+    // Archived gold and silver are in the ladder and are NOT `--silver`, which §33 reads for
+    // cobwebs — the collision R130/F14 names.
+    expect(LADDER_RUNGS).toContain(tokenValue('tier-gold-archived'));
+    expect(LADDER_RUNGS).toContain(tokenValue('tier-silver'));
+    expect(tokenValue('tier-silver')).toBe(tokenValue('silver'));
+    expect(RUNG_TOKENS).not.toContain('silver');
   });
 });

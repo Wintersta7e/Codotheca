@@ -10,17 +10,22 @@ import {
   noChangesLine,
   WORKTREE_STALE_AFTER_SECS,
 } from '../derive/observation.js';
+import { scoreText } from '../card/completion.js';
 import { formatPlaytime } from '../format/playtime.js';
 import { formatTrackedBytes } from '../format/size.js';
 
 /** §8.4.1: a fact whose job has not run renders `—`, never `0`. */
 export const UNCOMPUTED_FACT = '—';
 
-export type PeekFactKey = 'BIRTH' | 'LANGUAGE' | 'TRACKED' | 'LAST COMMIT' | 'PLAYTIME';
+export type PeekFactKey =
+  'BIRTH' | 'LANGUAGE' | 'TRACKED' | 'LAST COMMIT' | 'PLAYTIME' | 'COMPLETION';
 
 /**
- * Five, and `COMPLETION` is not one of them: nothing in phase 1 writes `completion_lit` (§1.2),
- * so the fact would read `unknown` on 100% of rows — furniture, not honesty (§8.4.1).
+ * [p3] **Six.** §8.4.1 dropped `COMPLETION` because nothing in phase 1 wrote `completion_lit`, so
+ * the fact would have read `unknown` on 100% of rows — furniture, not honesty. **That reason
+ * expires with §31**: the figure is computed for every eligible project from the first scan.
+ *
+ * It renders `—` when the projection is NULL, **never `0` and never `0/10`**.
  */
 export const PEEK_FACT_KEYS: readonly PeekFactKey[] = [
   'BIRTH',
@@ -28,7 +33,20 @@ export const PEEK_FACT_KEYS: readonly PeekFactKey[] = [
   'TRACKED',
   'LAST COMMIT',
   'PLAYTIME',
+  'COMPLETION',
 ];
+
+/**
+ * [p3] The two columns the fact reads, taken from the **shelf row** this Peek was opened beside.
+ *
+ * §31.6 adds no field to `Peek` and no read command: `projects.list` already serves this surface,
+ * and a second producer for one fact is a second source of truth. `null` is a row the caller
+ * could not name, which renders as uncomputed.
+ */
+export interface PeekCompletion {
+  readonly completionLit: number | null;
+  readonly completionApplicable: number | null;
+}
 
 /**
  * [p2] §25.3a: the keys a row of **this shape** carries.
@@ -112,7 +130,11 @@ export function commitDate(commit: CommitRef): string {
   return `${String(local.getUTCFullYear())}-${month}-${day}`;
 }
 
-export function peekFacts(peek: Peek, now: number): readonly PeekFact[] {
+export function peekFacts(
+  peek: Peek,
+  now: number,
+  completion: PeekCompletion | null,
+): readonly PeekFact[] {
   const values: Record<PeekFactKey, string> = {
     BIRTH: peek.birthYear === null ? UNCOMPUTED_FACT : String(peek.birthYear),
     LANGUAGE: peek.primaryLanguage ?? UNCOMPUTED_FACT,
@@ -123,6 +145,11 @@ export function peekFacts(peek: Peek, now: number): readonly PeekFact[] {
     // The one exception §8.4.1 states: this ledger starts at install, so 0 is true — and
     // `peekFactKeys` drops the key entirely for a project that was never installed.
     PLAYTIME: formatPlaytime(peek.playtimeSeconds),
+    // [p3] §31.7: the fraction or nothing. `scoreText` answers `null` when either half is NULL,
+    // and the dash is §8.4.1's own uncomputed mark — never a `0` and never a `0/10`.
+    COMPLETION:
+      scoreText(completion?.completionLit ?? null, completion?.completionApplicable ?? null) ??
+      UNCOMPUTED_FACT,
   };
   return peekFactKeys(peek).map((key) => ({ key, value: values[key] }));
 }

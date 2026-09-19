@@ -343,12 +343,30 @@ pub fn recompute_derived(
         "project_dependency",
         "project_lockfile",
         "project_dependency_scan",
+        // **[p3] §31.5, A14.4: `project_check` is DERIVED.** Every row is a function of the
+        // survivor's locations, tree and remote facts, so a stale row for the survivor would
+        // survive the merge and be read as current. `ON DELETE CASCADE` covers a deletion; **it
+        // does not cover a merge, which deletes no `project` row.**
+        "project_check",
     ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE project_id IN (?1, ?2)"),
             params![survivor, absorbed],
         )?;
     }
+    // **[p3] R131/F9: the projection was in no merge class at all.** Nothing in this function
+    // wrote `completion_lit` or `completion_applicable`; the only writer is
+    // `crate::index::completion` and the only readers are the shelf's row projection. After a
+    // merge the survivor therefore carried **a projection with zero rows behind it**, on the
+    // column the tier frame reads.
+    //
+    // Two lines, and they make the class assignment true of the VALUE rather than only of the
+    // rows. The next settle recomputes both.
+    tx.execute(
+        "UPDATE project SET completion_lit = NULL, completion_applicable = NULL
+          WHERE id IN (?1, ?2)",
+        params![survivor, absorbed],
+    )?;
     // The absorbed row is no longer a scheduling subject; the survivor's state is the caller's
     // to requeue.
     tx.execute(

@@ -794,9 +794,10 @@
         "dependencyVerdict": "DependencyVerdict?",
         "dependencyObservedAt": "Timestamp?",
         "health": "HealthReading",
-        "conditionMaterial": "ConditionSignal?"
+        "conditionMaterial": "ConditionSignal?",
+        "completion": "CompletionDetail?"
       },
-      "$comment": "[p3] `conditionMaterial` is §33.7's inner needle — the COMMIT clock, beside `row.conditionSignal`'s interaction clock. R138: phase 1 computes and stores it (`core/src/derive/persist.rs:26,142,158`) and it reached no wire type at all, which made `AC-P3-33-11` unpassable. It reuses the generated `ConditionSignal` and declares no second enum (R31), so it is a FIELD addition and moves no total. **NULL means *never computed*** and draws no inner needle and no divergence line — never a needle at zero. It lands on `ProjectDetail` rather than `ProjectRow` because the panel is page-only, the same shape as §30.7's *no grid surface renders a health count*."
+      "$comment": "[p3] `conditionMaterial` is §33.7's inner needle — the COMMIT clock, beside `row.conditionSignal`'s interaction clock. R138: phase 1 computes and stores it (`core/src/derive/persist.rs:26,142,158`) and it reached no wire type at all, which made `AC-P3-33-11` unpassable. It reuses the generated `ConditionSignal` and declares no second enum (R31), so it is a FIELD addition and moves no total. **NULL means *never computed*** and draws no inner needle and no divergence line — never a needle at zero. It lands on `ProjectDetail` rather than `ProjectRow` because the panel is page-only, the same shape as §30.7's *no grid surface renders a health count*. `completion` is §31.6's, NULL until ten rows exist."
     },
 
     "HealthState": {
@@ -873,6 +874,49 @@
       "kind": "struct",
       "$comment": "[p3] §30.9's switch, GLOBAL — one row per check in §11.3a's drawer. Per-project *not-applicable* is a different statement and reuses §31's archetype-proposed mechanism. Off HIDES; it never closes an item and never pays: a switch that closed items would make turning a check off an XP source. The core emits one entry per `DebtSource` variant, always in full.",
       "fields": { "check": "DebtSource", "enabled": "bool" }
+    },
+
+    "CompletionCheck": {
+      "kind": "enum",
+      "$comment": "[p3] §31.1a's ten keys, verbatim. Declared once here and hand-written on neither side (R31); `project_check.check_key`'s CHECK in `0015_completion.sql` is written from these slugs character for character. The spelling is in BIJECTION with `DebtSource`, never identity — `readme` stands behind `missing_readme` — and §31.9 forbids conflating the two.",
+      "variants": [
+        "remote",
+        "readme",
+        "license",
+        "description",
+        "tests",
+        "ci",
+        "ciGreen",
+        "pushed",
+        "deps",
+        "release"
+      ]
+    },
+    "CheckState": {
+      "kind": "enum",
+      "$comment": "[p3] §31.1's four states. **The spellings differ from `CheckOutcome`'s on purpose; a shared spelling invites the join A17 forbids** — health's set is A4's nine-source registry and completion's is these ten keys, and the two are never summed, joined or rendered as one list. `unknown` is never `fail`, never `0` and never absent (R128/F14).",
+      "variants": ["pass", "fail", "unknown", "na"]
+    },
+    "CompletionCheckRow": {
+      "kind": "struct",
+      "$comment": "[p3] §31.5's stored row, on the wire. `unknownReason` is present exactly when `state` is `unknown`, and its variants are §30's — referenced, never declared here (R31). **No `basis` field**: the basis is a property of the check KEY, constant per key, and is stated in §31.1a's table rather than stored per row (A9). `observedAt` is when the state was last ESTABLISHED, not when it was last attempted.",
+      "fields": {
+        "key": "CompletionCheck",
+        "state": "CheckState",
+        "userNa": "bool?",
+        "unknownReason": "UnknownReason?",
+        "observedAt": "Timestamp"
+      }
+    },
+    "CompletionDetail": {
+      "kind": "struct",
+      "$comment": "[p3] §31.6's detail. Non-NULL **iff ten rows exist**, so the `evaluable == 0` case carries `lit: 0, evaluable: 0` and all ten rows with their reasons — the only surface that says why nothing could be scored. **No rendered figure is ever decided from these scalars**: the frame, the list score and the hero band read `ProjectRow.completionLit` / `completionApplicable`, which is the NULL. The three counts are recountable from `checks` and `AC-P3-31-1` recounts them.",
+      "fields": {
+        "lit": "u32",
+        "evaluable": "u32",
+        "unknown": "u32",
+        "checks": "[CompletionCheckRow]"
+      }
     },
 
     "Peek": {
@@ -1572,6 +1616,13 @@
       "name": "projects.setNote",
       "args": { "id": "ProjectId", "note": "String?" },
       "returns": "Empty"
+    },
+    {
+      "name": "projects.setCheckNa",
+      "args": { "id": "ProjectId", "check": "CompletionCheck", "na": "bool?" },
+      "returns": "Empty",
+      "idempotent": false,
+      "$comment": "[p3] §31.6. `na = null` clears the override back to the archetype's proposal; `na = false` is the user OVERRIDING a proposal, so the check is evaluated. N/A is two stored facts and this writes only one of them — a J3 re-run re-proposes and never erases a decision the user made. §2.2: a flag change is never auto-replayed. No new READ command: projects.get and projects.list already serve both surfaces, and a second command for the same fact is a second source of truth."
     },
     {
       "name": "projects.merge",

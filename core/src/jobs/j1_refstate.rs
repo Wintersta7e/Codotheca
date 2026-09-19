@@ -43,6 +43,14 @@ pub fn apply_divergence(state: &mut RefState, counts: Option<Divergence>) {
 ///
 /// **[p2-24b] `stash_count` joins them (R51).** `None` is an unreadable stash reflog and is
 /// written as NULL, never 0 — a deletion gate reading 0 there would clear a copy holding work.
+///
+/// **[p3] §31.2: `tag_count` is the eleventh column, and it has been computed and discarded since
+/// phase 1** — `crate::git::refstate` declares the field and counts it, and no migration held it
+/// until `0015_completion.sql`. It is `u32`, not `Option<u32>`, so every persist writes a number
+/// and the column is NULL only before the first one: NULL means *J1 has not persisted a refstate
+/// for this copy*, never *no tags*. A stored `0` on a depth-1 clone says *not fetched*, which is
+/// why §28's `no_release` arm reads `project.is_shallow` beside it rather than treating a zero
+/// as a failure.
 pub fn persist(
     tx: &rusqlite::Transaction<'_>,
     location: crate::protocol::LocationId,
@@ -51,7 +59,7 @@ pub fn persist(
     tx.execute(
         "UPDATE location SET branch = ?2, head_oid = ?3, ahead = ?4, behind = ?5,
              stash_count = ?6, interrupted_op = ?7, fetch_head_at = ?8, reflog_tail_at = ?9,
-             refstate_basis = ?10, refstate_observed_at = ?11
+             refstate_basis = ?10, refstate_observed_at = ?11, tag_count = ?12
          WHERE id = ?1",
         rusqlite::params![
             location.0,
@@ -65,6 +73,7 @@ pub fn persist(
             s.reflog_tail_at,
             s.basis.as_str(),
             s.observed_at,
+            i64::from(s.tag_count),
         ],
     )?;
     Ok(())

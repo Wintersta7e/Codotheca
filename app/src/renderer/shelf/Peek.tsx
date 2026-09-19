@@ -9,6 +9,7 @@ import {
   readmeFallback,
   shortSha,
   worktreeLine,
+  type PeekCompletion,
 } from './peekText.js';
 
 export const PEEK_ENTER_CLASS = 'cdt-peek--enter';
@@ -18,9 +19,14 @@ export interface PeekPanelProps {
   readonly peek: Peek | null;
   readonly now: number;
   readonly tier: ResolvedTier;
+  /**
+   * [p3] §31.7's sixth fact, from the shelf row this Peek was opened beside. `null` renders the
+   * uncomputed mark, which is the honest reading of a row the caller could not name.
+   */
+  readonly completion?: PeekCompletion | null;
 }
 
-export function PeekPanel({ peek, now, tier }: PeekPanelProps): ReactElement {
+export function PeekPanel({ peek, now, tier, completion }: PeekPanelProps): ReactElement {
   const className = `cdt-peek${allowsTransforms(tier) ? ` ${PEEK_ENTER_CLASS}` : ''}`;
   // [p2] §25.3a: **absent**, and not filled with the remote key. A path slot holding a URL
   // invites the one gesture the row cannot serve.
@@ -77,7 +83,7 @@ export function PeekPanel({ peek, now, tier }: PeekPanelProps): ReactElement {
         <p className="cdt-peek-observation">{observation}</p>
       ) : null}
       <dl className="cdt-peek-facts">
-        {peekFacts(peek, now).map((fact) => (
+        {peekFacts(peek, now, completion ?? null).map((fact) => (
           <div key={fact.key}>
             <dt className="cdt-peek-fact-key">{fact.key}</dt>
             <dd className="cdt-peek-fact-value">{fact.value}</dd>

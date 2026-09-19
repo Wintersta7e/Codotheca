@@ -650,30 +650,21 @@ fn the_latest_concluded_run_on_the_primary_branch_decides_ci_red() {
     );
 }
 
-/// **Deviation 1, PROVISIONAL.** `location.tag_count` is added by `0015_completion.sql`, which is
-/// p3-31's in wave 4, and no plan may take another's migration number. The arm is declared and
-/// inert: it writes `unobservable` and opens nothing in **every** case.
+/// **Deviation 1, discharged.** The arm was declared inert because `location.tag_count` did not
+/// exist; `0015_completion.sql` lands it and the body now reads it.
 ///
-/// **`unobservable` here is the absence of the column, not a reading of it**, and this assertion
-/// is expected to be replaced by p3-31 in the same change that lands `tag_count`.
+/// `unobservable` here is a **reading** and no longer the absence of a column: a copy whose
+/// refstate J1 has never persisted carries NULL, and NULL is *never observed*. The predicate's
+/// three branches are `AC-P3-31-11`'s, in `core/tests/acceptance_completion.rs`; what this
+/// asserts is the part that belongs to §28 — that the arm's answer reaches the sweep row.
 #[test]
-fn no_release_is_declared_and_inert_until_the_column_exists() {
+fn no_release_reads_the_column_and_an_unpersisted_copy_is_unobservable() {
     let (_d, mut conn) = fresh();
     let p = insert_project(&conn, "thing");
-    insert_location(&conn, p);
+    let loc = insert_location(&conn, p);
     presence(&conn, p, "present", "present", "present");
 
-    let tx = conn.transaction().unwrap();
-    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
-    tx.commit().unwrap();
-
-    assert_eq!(items_of(&conn, p, "no_release"), 0);
-    assert_eq!(
-        sweep_of(&conn, p, "no_release"),
-        Some(("unobservable".into(), None))
-    );
-
-    // The column really is absent, so the arm could not read it even if it tried.
+    // The column exists and holds NULL, which is what J1 not having run looks like.
     let has_column: i64 = conn
         .query_row(
             "SELECT count(*) FROM pragma_table_info('location') WHERE name = 'tag_count'",
@@ -681,9 +672,28 @@ fn no_release_is_declared_and_inert_until_the_column_exists() {
             |r| r.get(0),
         )
         .unwrap();
+    assert_eq!(has_column, 1, "0015_completion.sql declares tag_count");
+
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "no_release"), 0);
     assert_eq!(
-        has_column, 0,
-        "tag_count exists — p3-31 landed; fill the arm"
+        sweep_of(&conn, p, "no_release"),
+        Some(("unobservable".into(), None))
+    );
+
+    // A persisted zero on a copy that is not shallow is the opposite answer, and it reaches the
+    // sweep row rather than stopping at the arm.
+    conn.execute("UPDATE location SET tag_count = 0 WHERE id = ?1", [loc.0])
+        .unwrap();
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "no_release"), 1);
+    assert_eq!(
+        sweep_of(&conn, p, "no_release"),
+        Some(("complete".into(), Some(1)))
     );
 }
 

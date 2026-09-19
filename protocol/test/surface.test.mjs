@@ -326,6 +326,8 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 // know after the merges ahead of it. A textual conflict here at the wave merge is the assertion
 // working, and the resolution is the sum of the deltas rather than either branch's figure.
 test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8, §25.8, §24.9, §21.13 and nothing extra', () => {
+  // [p3] Two commands landed in one wave: §33.8's `health.weathering` and §31.6's
+  // `projects.setCheckNa`. Each lane called its own "the 61st"; after the merge neither is.
   assert.equal(names.length, 61, `expected 61 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
@@ -593,6 +595,10 @@ test('the non-idempotent set is closed', () => {
     'install.start',
     'locations.uninstall',
     'projects.launch',
+    // [p3] §31.6 adds the thirteenth: a replayed `projects.setCheckNa` after a core restart
+    // would re-apply an N/A decision the user has since cleared, and `na = null` is a distinct
+    // third value rather than the absence of a write.
+    'projects.setCheckNa',
     'projects.setFlags',
     'projects.setReadmeRemote',
     'session.stop',
@@ -1096,12 +1102,14 @@ test('the four totals agree with the phase-2 delta table', () => {
   const events = Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0);
   const types = Object.keys(schema.types).length;
 
-  // [p3] §33.8 raises this by exactly one from the branch base: `health.weathering`. Stated as a
-  // delta, resolved at the merge as a sum — never as one lane's absolute (R126).
+  // [p3] Wave 4 raised this by TWO, from two lanes that could not see each other: §33.8's
+  // `health.weathering` and §31.6's `projects.setCheckNa`, the writer `user_na` would otherwise
+  // not have had. Each lane correctly stated its own +1 off the base it read; the merge sums
+  // them, and the sum is counted off the merged schema rather than taken from either side.
   assert.equal(
     commands,
-    61,
-    `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 + §33's 1 = 61, found ${commands}`,
+    62,
+    `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 + §33's 1 + §31's 1 = 62, found ${commands}`,
   );
   assert.equal(topics, 7, `topics: 4 + accounts + sync + install = 7, found ${topics}`);
   // [p3] §32.12 raises this by exactly one from the branch base: `sync/advisory_alert`. p3-34
@@ -1164,10 +1172,83 @@ test('the four totals agree with the phase-2 delta table', () => {
    * than the +3 it wrote. `DecayLayer` is p3-28's (R113) and `ProjectDetail.conditionMaterial`
    * is a field (R138) — neither moves this row.
    *
-   * **Stated as this lane's own delta off its branch base.** The wave-3 merge is the reason:
-   * §30 asserted 177 and §32 asserted 173 against a real 182, each right about its own tree.
+   * §31 moves it by **+4**: `CompletionCheck`, `CheckState`,
+   * `CompletionCheckRow` and `CompletionDetail`. `ProjectDetail.completion` is a field and moves
+   * no total, and `ProjectRow` gains nothing — the frame, the notch and the list score all read
+   * `completionLit` / `completionApplicable`, which phase 1 already put there.
+   * `UnknownReason` is §30's and `ObservationBasis` is §28's; §31 references both and declares
+   * neither (R31).
+   *
+   * **Wave 4 merged two lanes that each stated a correct +N off its own base — §33's 187 and
+   * §31's 186 — and the merged total is neither.** Both were right; only the sum is. Counted off
+   * the merged schema, never added up from a branch: 160 + 8 + 9 + 5 + 5 + 4 = **191**.
    */
-  assert.equal(types, 187, `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5; found ${types}`);
+  assert.equal(
+    types,
+    191,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4; found ${types}`,
+  );
+});
+
+/**
+ * [p3] §31.6's four types and the one command, asserted by SHAPE rather than by the totals above.
+ * A total moves for any reason; these fail only when this plan's own delta is wrong.
+ */
+test('§31 declares the ten completion checks, their four states and one writer', () => {
+  assert.deepEqual(schema.types.CompletionCheck.variants, [
+    'remote',
+    'readme',
+    'license',
+    'description',
+    'tests',
+    'ci',
+    'ciGreen',
+    'pushed',
+    'deps',
+    'release',
+  ]);
+  assert.deepEqual(schema.types.CheckState.variants, ['pass', 'fail', 'unknown', 'na']);
+
+  // §31.1a: the basis is a property of the KEY and is stated in the spec's table, so no row
+  // carries one (A9). A `basis` field here would be a stored constant — one value in two places.
+  assert.ok(!('basis' in schema.types.CompletionCheckRow.fields));
+  assert.deepEqual(schema.types.CompletionCheckRow.fields, {
+    key: 'CompletionCheck',
+    state: 'CheckState',
+    userNa: 'bool?',
+    unknownReason: 'UnknownReason?',
+    // R128/F9: every epoch-time field in this schema spells `Timestamp`. The wire bytes are
+    // identical to an `i64` and the type name is not.
+    observedAt: 'Timestamp',
+  });
+  assert.deepEqual(schema.types.CompletionDetail.fields, {
+    lit: 'u32',
+    evaluable: 'u32',
+    unknown: 'u32',
+    checks: '[CompletionCheckRow]',
+  });
+
+  // §31.6: nullable, because `NotComputed` is a real state and a zero would be the invariant's
+  // own counterexample.
+  assert.equal(schema.types.ProjectDetail.fields.completion, 'CompletionDetail?');
+  // `ProjectRow` gains no field: the two phase-1 columns already carry what every shelf surface
+  // reads, and a third would be the same fact in two places.
+  assert.ok(!('completion' in schema.types.ProjectRow.fields));
+
+  const cmd = schema.commands.find((c) => c.name === 'projects.setCheckNa');
+  assert.ok(cmd, 'projects.setCheckNa is declared');
+  assert.deepEqual(cmd.args, { id: 'ProjectId', check: 'CompletionCheck', na: 'bool?' });
+  assert.equal(cmd.returns, 'Empty');
+  // §2.2: a flag change is never auto-replayed.
+  assert.equal(cmd.idempotent, false);
+  assert.notEqual(cmd.privileged, true);
+
+  // §31.1/A17: health's set is A4's nine-source registry and completion's is these ten keys.
+  // The two vocabularies are never joined, so their state spellings stay distinct on purpose.
+  const shared = schema.types.CheckState.variants.filter((v) =>
+    schema.types.CheckOutcome.variants.includes(v),
+  );
+  assert.deepEqual(shared, ['unknown'], 'only `unknown` is spelled the same, and it is not a join');
 });
 
 /**
@@ -1456,9 +1537,11 @@ test('§30: the four health vocabularies are declared, in their ruling order', (
  * subject *is* the totals; everywhere else, state a delta.
  */
 test('§30: the health reading moves the type row alone', () => {
-  // [p3] §33's `health.weathering` is the +1 here and it is §33's, not §30's — this test's
-  // subject is the totals, so the figure is absolute; §30 still adds none of it.
-  assert.equal(schema.commands.length, 61);
+  // [p3] Wave 4 raised the command row by TWO — §33's `health.weathering` and §31's
+  // `projects.setCheckNa` — and neither is §30's. This assertion is §30's claim that IT moved
+  // none, so it is raised to the merged figure rather than relaxed. The figure is absolute only
+  // because this test's subject IS the totals.
+  assert.equal(schema.commands.length, 62);
   assert.equal(Object.keys(schema.topics).length, 7);
   assert.equal(
     Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0),
