@@ -122,3 +122,251 @@ fn ac_p3_33_12_no_producer_of_fade_names_a_commit_clock() {
     );
     eprintln!("AC-P3-33-12: {scanned} fade producers scanned");
 }
+
+// ---------------------------------------------------------------------------------------------
+// AC-P3-33-9 — Boundary 2 (§27.4, §33.6). **The audit is a byte-identity criterion, not a code
+// review**, plus a static half that compares shapes rather than strings.
+// ---------------------------------------------------------------------------------------------
+
+/// Every `DebtSource`, so the fixture carries an open item on all five layers at once.
+const ALL_SOURCES: [&str; 8] = [
+    "todo_marker",
+    "missing_readme",
+    "missing_license",
+    "missing_tests",
+    "no_release",
+    "unpushed_commits",
+    "ci_red",
+    "dependency_advisory",
+];
+
+/// **`AC-P3-33-9`, the byte-identity half.**
+///
+/// Over a fixture where **every open debt item is closed**, `art_scene.scene_hash` and the bytes
+/// of **both** rendition files are identical before and after, and no re-render is enqueued.
+/// That is criterion 62's existing shape pointed at a different input, and it is the one check
+/// that stops a later author *"simplifying"* the layers into the scene document.
+#[test]
+fn ac_p3_33_9_the_bitmap_is_byte_identical_lit_or_clean() {
+    use codotheca_core::art::job::needs_art_at;
+    use codotheca_core::art::store::{put_scene, write_rendition};
+    use codotheca_core::art::{rendition_path, scene::scene_hash as hash_of};
+    use codotheca_core::index::Index;
+    use codotheca_core::protocol::{ArtState, Rendition};
+
+    let dir = tempfile::tempdir().unwrap();
+    let index = Index::open(dir.path()).unwrap();
+    index
+        .conn()
+        .execute(
+            "INSERT INTO project (id, name, seed_basename, created_at, updated_at)
+             VALUES (7, 'weathered', 'weathered', 0, 0)",
+            [],
+        )
+        .unwrap();
+
+    let scene = generate(&inputs(Some(1_500_000_000), false, false));
+    let hash = hash_of(&scene).unwrap();
+    put_scene(index.conn(), 7, &hash, &scene, ArtState::Ready, Some(0)).unwrap();
+    write_rendition(index.data_dir(), &hash, Rendition::Card, &scene).unwrap();
+    write_rendition(index.data_dir(), &hash, Rendition::Hero, &scene).unwrap();
+
+    // Open debt on every source, which is every layer.
+    for (n, source) in ALL_SOURCES.iter().enumerate() {
+        index
+            .conn()
+            .execute(
+                "INSERT INTO debt_item
+                   (project_id, subject_key, source, fingerprint, state, scoring,
+                    first_seen_at, last_seen_at)
+                 VALUES (7, ?1, ?2, ?1, 'open', 'scored', 1, 2)",
+                rusqlite::params![format!("subject-{n}"), source],
+            )
+            .unwrap();
+    }
+
+    let read = |r: Rendition| -> Vec<u8> {
+        let path = rendition_path(index.data_dir(), &hash, r).expect("a path for a real hash");
+        // Bytes, never a size: do not pipe `stat` through anything — an 860 KB file has read as
+        // "86 bytes" in this repository before.
+        std::fs::read(&path).unwrap_or_else(|e| panic!("{} is readable: {e}", path.display()))
+    };
+    let stored_hash = |conn: &rusqlite::Connection| -> String {
+        conn.query_row(
+            "SELECT scene_hash FROM art_scene WHERE project_id = 7",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+
+    let lit_open: i64 = index
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM debt_item WHERE state = 'open'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(lit_open, 8, "the fixture must actually carry open debt");
+
+    let before_hash = stored_hash(index.conn());
+    let before_card = read(Rendition::Card);
+    let before_hero = read(Rendition::Hero);
+    assert!(!before_card.is_empty() && !before_hero.is_empty());
+    assert!(!needs_art_at(index.conn(), index.data_dir(), 7).unwrap());
+
+    // Close every open item. *Closed* is an event, never a state: the row is deleted.
+    index
+        .conn()
+        .execute("DELETE FROM debt_item WHERE project_id = 7", [])
+        .unwrap();
+    let after_open: i64 = index
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM debt_item WHERE state = 'open'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(after_open, 0, "the fixture must actually have been cleaned");
+
+    assert_eq!(
+        stored_hash(index.conn()),
+        before_hash,
+        "scene_hash moved when the debt list did: decay reached the bitmap"
+    );
+    assert_eq!(
+        read(Rendition::Card),
+        before_card,
+        "the card rendition moved"
+    );
+    assert_eq!(
+        read(Rendition::Hero),
+        before_hero,
+        "the hero rendition moved"
+    );
+    assert!(
+        !needs_art_at(index.conn(), index.data_dir(), 7).unwrap(),
+        "closing debt enqueued a re-render"
+    );
+    eprintln!("AC-P3-33-9: 2 rendition files compared byte for byte across 8 closed items");
+}
+
+/// **`AC-P3-33-9`, the static half.** `core/src/art/` contains no reference to `DecayLayer`, to
+/// `debt`, or to any weathering symbol.
+///
+/// **Comments and doc comments are stripped before the scan, and this matters here
+/// specifically.** `core/src/art/scene.rs` names dust, rust and cracks in prose **on purpose** —
+/// it documents the three geometry joins — and calls `ground` *the weathering tint's ground*. A
+/// text grep fails a correct tree, which is the recorded *grepping a declaration matches prose
+/// about it* trap that has already produced two wrong rulings. What is asserted is the absence of
+/// an **identifier**.
+#[test]
+fn ac_p3_33_9_the_art_module_knows_nothing_about_decay() {
+    let art = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/art");
+    let (scanned, offenders) = scan_for_decay_identifiers(&art);
+    eprintln!("AC-P3-33-9: {scanned} files scanned under core/src/art/");
+    // The same floor `core/tests/git_readonly.rs` uses, for the same reason: a scan that reads
+    // almost nothing is a gate reporting on a tree it did not see.
+    assert!(
+        scanned >= 10,
+        "the art module scan read {scanned} files, which is not the module"
+    );
+    assert!(
+        offenders.is_empty(),
+        "core/src/art/ names a decay symbol, so Boundary 2 has been crossed: {offenders:?}"
+    );
+}
+
+/// Returns the number of `.rs` files read and every `(file, identifier)` that breaches
+/// Boundary 2. Separate from the test so the floor can be exercised against an empty directory.
+fn scan_for_decay_identifiers(root: &std::path::Path) -> (usize, Vec<String>) {
+    let mut scanned = 0_usize;
+    let mut offenders = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let Ok(text) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                scanned += 1;
+                for ident in identifiers(&strip_rust_comments(&text)) {
+                    let lower = ident.to_lowercase();
+                    if lower.contains("debt")
+                        || lower.contains("decaylayer")
+                        || lower.contains("weathering")
+                        || lower.contains("weatherlayer")
+                        || ident == "resolve_anchors"
+                    {
+                        offenders.push(format!("{}: {ident}", path.display()));
+                    }
+                }
+            }
+        }
+    }
+    (scanned, offenders)
+}
+
+/// Line and block comments, removed. Doc comments are line comments and go with them.
+fn strip_rust_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let bytes: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == '/' && i + 1 < bytes.len() && bytes[i + 1] == '/' {
+            while i < bytes.len() && bytes[i] != '\n' {
+                i += 1;
+            }
+        } else if bytes[i] == '/' && i + 1 < bytes.len() && bytes[i + 1] == '*' {
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == '*' && bytes[i + 1] == '/') {
+                i += 1;
+            }
+            i = (i + 2).min(bytes.len());
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+fn identifiers(code: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    for ch in code.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            current.push(ch);
+        } else if !current.is_empty() {
+            out.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
+}
+
+/// The floor is not decoration: a scan that reads nothing reports `0 offenders` and looks clean.
+#[test]
+fn ac_p3_33_9_the_scan_floor_refuses_an_empty_directory() {
+    let empty = tempfile::tempdir().unwrap();
+    let (scanned, offenders) = scan_for_decay_identifiers(empty.path());
+    assert_eq!(scanned, 0);
+    assert!(
+        offenders.is_empty(),
+        "an empty scan finds nothing, which is the problem"
+    );
+    assert!(
+        scanned < 10,
+        "the floor the sibling test asserts would have passed here"
+    );
+}
