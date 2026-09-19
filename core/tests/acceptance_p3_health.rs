@@ -168,8 +168,18 @@ fn ac_p3_30_15_the_health_reading_adds_no_command_event_or_topic() {
     assert!(commands > 0 && topics > 0 && events > 0);
 
     // No health-shaped name among them, which is what *"adds none"* means in practice.
+    //
+    // **`health.weathering` is the one exemption and it is §33.8's, not §30's.** §30.11 rules
+    // that §30 owns the `health.*` prefix and occupies none of it, and §33 spends the first name
+    // under it — `p3-00-index.md`'s delta table records that +1 against Δ33. The substring is a
+    // *proxy* for the claim; the claim is *§30 declared no command*, and it is still asserted for
+    // every other name. Exempting the one ruled declaration keeps the criterion; treating the
+    // proxy as the claim would fail a tree that is correct.
     for command in schema["commands"].as_array().expect("commands") {
         let name = command["name"].as_str().unwrap_or_default().to_lowercase();
+        if name == "health.weathering" {
+            continue;
+        }
         assert!(!name.contains("health"), "§30 declared a command: {name}");
     }
     for (topic, entries) in schema["topics"].as_object().expect("topics") {

@@ -788,8 +788,12 @@ mod corehandler {
         // the verdict, and the one SQLite mutex may not be held across it. They were the last
         // two rows of `UNOWNED_COMMANDS`, which is **now empty** — and this count rising by two
         // is the same fact from the other side, which is why both assertions stay.
+        // [p3] §33.8's `health.weathering` is the 59th, answered **under** the guard: one
+        // `SELECT` against `art_scene` and a pure derivation over the document it returns, so it
+        // reaches no network and holds the mutex no longer than any other read. Raised by this
+        // lane's own +1 off its branch base, never to a running total.
         assert_eq!(
-            checked, 58,
+            checked, 59,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(

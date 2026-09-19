@@ -74,6 +74,10 @@ pub enum Route {
     /// `crate::readme::dispatch_readme_command` — p2-25b. A file read under a location root and
     /// a consent column; no network, so it takes the index guard.
     Readme,
+    /// [p3] `crate::weathering::dispatch_weathering_command` — §33.8. One `SELECT` against
+    /// `art_scene` and a pure derivation over the document it returns; no network, no clock, so
+    /// it takes the index guard.
+    Weathering,
     /// `projects.readmeAssets`, answered **without** the index guard (R75). Same carve-out as
     /// [`Route::Scan`] and [`Route::AccountsNet`], for the same reason: it fetches up to 24
     /// remote assets of 5 s each, and the one SQLite mutex may not be held across them.
@@ -116,11 +120,9 @@ pub enum Route {
 /// **Empty, and that is a state to assert rather than a state to stop asserting.** The tests
 /// below read the router, so an empty constant still proves that no command routes to `NoOwner`
 /// — two `all()` calls over an empty set assert nothing.
-/// [p3] §33.8's `health.weathering` arrives here with the schema and leaves in the same change
-/// that gives it a handler — p3-33 Task 3, two commits later. Named and refused for those two
-/// commits rather than mis-routed: a bare `PROTOCOL` refusal reads to the shell as "no such
-/// command".
-pub const UNOWNED_COMMANDS: [(&str, &str); 1] = [("health.weathering", "p3-33")];
+/// [p3] §33.8's `health.weathering` arrived here with the schema and left two commits later,
+/// with the module that answers it — which is this constant's own rule.
+pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -230,9 +232,9 @@ pub fn route(command: CommandName) -> Route {
             Route::Uninstall
         }
 
-        // [p3] §33.8's anchor resolver. p3-33 Task 3 gives it a module and deletes both this arm
-        // and its `UNOWNED_COMMANDS` row in the same change.
-        CommandName::HealthWeathering => Route::NoOwner("p3-33"),
+        // [p3] §33.8's anchor resolver. A read of one stored document that reaches no network,
+        // so it takes the index guard like every other read.
+        CommandName::HealthWeathering => Route::Weathering,
     }
 }
 
