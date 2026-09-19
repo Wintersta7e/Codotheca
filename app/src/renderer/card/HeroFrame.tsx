@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from 'react';
-import type { ProjectRow } from '../../generated/protocol';
+import type { ProjectRow, SceneHash } from '../../generated/protocol';
 import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
 import { renditionFor, useCardBitmap } from '../art/useCardBitmap';
 import { Card, type CardHalo } from './Card';
@@ -51,6 +51,16 @@ export interface HeroFrameProps {
   readonly chips: readonly StatusChip[];
   /** §7.8a's band-1 mark, at the hero's own values. `null` draws none. */
   readonly pin: PinControlProps | null;
+  /**
+   * [p3] §33.4's layer stack — **a function of the hash actually on screen**, not a node.
+   *
+   * §33.4 rules the layers mount only when the decoded hero's `scene_hash` equals
+   * `Weathering.sceneHash`, and the decoded hash lives in this component's own `useCardBitmap`
+   * call. Handing the caller a plain `ReactNode` would make it call that hook a second time to
+   * learn the same fact, which is a second decode of the same raster on the one surface the
+   * whole feature mounts on.
+   */
+  readonly decay?: (decodedSceneHash: SceneHash | null) => ReactNode;
   readonly children: ReactNode;
 }
 
@@ -84,6 +94,7 @@ export function HeroFrame(props: HeroFrameProps): ReactElement {
       hovered={false}
       focused={false}
       selected={false}
+      decay={props.decay?.(bitmap.decodedSceneHash)}
       art={
         bitmap.src === null ? null : (
           <img

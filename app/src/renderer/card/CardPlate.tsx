@@ -22,6 +22,18 @@ export interface CardPlateProps {
   readonly art: ReactNode;
   /** §7.8's watermark. No phase-1 producer emits one; the rule is built and nothing mounts it. */
   readonly sigil?: ReactNode;
+  /**
+   * [p3] §33.4's five material layers. Mounted **after `.cdt-scanline` and before `.cdt-glass`**
+   * — above the bitmap and above every plate-spanning light effect, below all five bands, so no
+   * chip, stripe, glyph or string is ever dimmed by decay. `.cdt-glass` mounts only when
+   * archived, so the position is a slot here rather than an insertion relative to an element
+   * that may not exist.
+   *
+   * Only the opened hero hands one over. A surface that passes none renders none, which is the
+   * correct default: decay is never on the grid, in Peek, in the list, in the palette or in
+   * triage — the same scope roasting has.
+   */
+  readonly decay?: ReactNode;
   /** The five bands. */
   readonly children: ReactNode;
 }
@@ -40,6 +52,7 @@ export function CardPlate(props: CardPlateProps): ReactElement {
       />
       <span className="cdt-specular" aria-hidden="true" />
       <span className="cdt-scanline" aria-hidden="true" />
+      {props.decay}
       {props.isArchived ? (
         // §7.7a's sealed marker. The value is `completion.ts`'s, so the fallback rule in
         // `card.css` cannot become a second, differently-spelled gradient.

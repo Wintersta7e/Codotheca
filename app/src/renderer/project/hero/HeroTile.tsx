@@ -7,11 +7,16 @@
  * address. Everything else (frame, gap, hairline, rank, vent, jewel stripe, scrim) is the shared
  * card shell, which is also what keeps the hero inside §11.6's tier clamp.
  *
- * **All five material layers are out** — dust, cobwebs, rust, cracks, overgrowth. Only cobwebs
- * has a phase-1 trigger, and shipping one layer of five would read as a bug in the decay model
- * rather than as its absence. The ambient key-light drift is out of phase 1 entire and §7.8's
- * hover effects are grid effects, so this tile emits **zero animation frames** once the page's
- * entry has played.
+ * **[p3] All five material layers are IN — §33.4 supersedes the sentence below.** They mount
+ * through `HeroFrame`'s `decay` slot, **on this surface and nowhere else**, lit by the open debt
+ * list rather than by a clock: every layer has a trigger now, so the argument for shipping none
+ * of them expires with it. The ambient key-light drift is still out of phase 1 entire and §7.8's
+ * hover effects are still grid effects, so this tile emits **zero animation frames** once the
+ * page's entry has played — the layers transition on opacity and animate nothing.
+ *
+ * ~~All five material layers are out — dust, cobwebs, rust, cracks, overgrowth. Only cobwebs has
+ * a phase-1 trigger, and shipping one layer of five would read as a bug in the decay model
+ * rather than as its absence.~~
  *
  * Band 5 keeps the identity line and drops the `<lit>/<applicable> EVALUABLE` score outright —
  * not an em dash either, because band 3 already reads `RANK NOT COMPUTED` and one surface states
