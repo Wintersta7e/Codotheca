@@ -789,8 +789,10 @@
         "debtSweeps": "[DebtSweepState]",
         "dependencyVerdict": "DependencyVerdict?",
         "dependencyObservedAt": "Timestamp?",
-        "health": "HealthReading"
-      }
+        "health": "HealthReading",
+        "conditionMaterial": "ConditionSignal?"
+      },
+      "$comment": "[p3] `conditionMaterial` is §33.7's inner needle — the COMMIT clock, beside `row.conditionSignal`'s interaction clock. R138: phase 1 computes and stores it (`core/src/derive/persist.rs:26,142,158`) and it reached no wire type at all, which made `AC-P3-33-11` unpassable. It reuses the generated `ConditionSignal` and declares no second enum (R31), so it is a FIELD addition and moves no total. **NULL means *never computed*** and draws no inner needle and no divergence line — never a needle at zero. It lands on `ProjectDetail` rather than `ProjectRow` because the panel is page-only, the same shape as §30.7's *no grid surface renders a health count*."
     },
 
     "HealthState": {

@@ -416,3 +416,77 @@ fn a_project_with_no_remote_key_carries_no_remote_facts() {
         "a project with no remote is the only copy, and the handler must say so"
     );
 }
+
+/// **[p3] `condition_material` reaches the wire (§33.7, R138).**
+///
+/// It is computed from `last_commit_at` and persisted (`core/src/derive/persist.rs:26,142,158`)
+/// and reached **no wire type at all** — `protocol/schema/protocol.json` contained the string
+/// `material` zero times. §33.7 requires the inner needle of the two-clock dial to render it, so
+/// `AC-P3-33-11` was unpassable until the field landed: *a criterion a correct implementation
+/// cannot pass is a defect wearing the opposite sign* (§26.2).
+///
+/// It reuses the generated `ConditionSignal` — declaring a second enum the schema already
+/// carries is R31, caught twice in phase 1 — so this is a **field addition** and moves no total.
+#[test]
+fn the_material_clock_reaches_project_detail() {
+    let rig = rig_with_nothing_computed();
+    rig.conn()
+        .execute(
+            "UPDATE project SET condition_material = 'neglected' WHERE id = 1",
+            [],
+        )
+        .unwrap();
+    let detail = handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("detail");
+    let payload = serde_json::to_value(&detail).expect("encode");
+    assert_eq!(payload["conditionMaterial"], json!("neglected"));
+}
+
+/// **NULL means *never computed*, and it is not a default.** §33.7: `condition_material IS NULL`
+/// draws **no inner needle and no divergence line**, never a needle at zero — the unknown-as-zero
+/// invariant at the one site phase 3 makes expressible.
+///
+/// A serialiser that emitted `"live"` or `""` would pass a presence check, so the value is
+/// compared against JSON `null` rather than asserted present.
+#[test]
+fn an_uncomputed_material_clock_crosses_as_null_and_never_a_variant() {
+    let rig = rig_with_nothing_computed();
+    let stored: Option<String> = rig
+        .conn()
+        .query_row(
+            "SELECT condition_material FROM project WHERE id = 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, None, "the fixture must carry an uncomputed column");
+
+    let detail = handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("detail");
+    let payload = serde_json::to_value(&detail).expect("encode");
+    assert!(
+        payload
+            .as_object()
+            .is_some_and(|o| o.contains_key("conditionMaterial")),
+        "the field must be present and null, not absent"
+    );
+    assert_eq!(payload["conditionMaterial"], Value::Null);
+    assert_ne!(payload["conditionMaterial"], json!("live"));
+    assert_ne!(payload["conditionMaterial"], json!(""));
+}
+
+/// The two clocks are different values with different jobs, and §33.7 renders both. A payload
+/// that carried one for the other would draw a dial whose needles always agree.
+#[test]
+fn the_two_condition_clocks_are_separate_fields() {
+    let rig = rig_with_nothing_computed();
+    rig.conn()
+        .execute(
+            "UPDATE project SET condition_signal = 'live', condition_material = 'dormant'
+               WHERE id = 1",
+            [],
+        )
+        .unwrap();
+    let detail = handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("detail");
+    let payload = serde_json::to_value(&detail).expect("encode");
+    assert_eq!(payload["row"]["conditionSignal"], json!("live"));
+    assert_eq!(payload["conditionMaterial"], json!("dormant"));
+}

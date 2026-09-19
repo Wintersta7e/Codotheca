@@ -235,6 +235,10 @@ export function detailFixture(over: Partial<ProjectDetail> = {}): ProjectDetail 
     // [p3] §30.1. `absent` with an **empty** `checks`, which is the state saying nothing was
     // computed and never a count of zero checks. A test about the reading overrides it.
     health: { state: 'absent', scoredOpen: null, basis: null, checks: [] },
+    // [p3] §33.7's commit clock. `null` is **never computed**, which is what a project whose
+    // history has not been read honestly carries — and §33.7 draws no inner needle and no
+    // divergence line for it, never a needle at zero.
+    conditionMaterial: null,
     ...over,
   };
 }

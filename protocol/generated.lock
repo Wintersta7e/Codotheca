@@ -1,12 +1,12 @@
 {
   "protocolVersion": 2,
-  "schema": "sha256-d864f0ae39ded9d38b493b0ff54eafcec729000bb11166655e42996db24ad05b",
+  "schema": "sha256-d65a72d326ab7c4f10106f8524cb306a8f945e56e58f911998add6fa53882d11",
   "commands": 61,
   "topics": 7,
   "events": 35,
   "types": 187,
   "files": {
-    "app/src/generated/protocol.ts": "sha256-5c55f0722a1ba2aecaa5f7d95a09c4b796f05a48e5f72ceda33bc3f055273af9",
-    "core/src/protocol.rs": "sha256-b24b44f9ed0b9adf9b7ca79b2bdc044d56ba6b52a338708d121ea3e3aaed14fc"
+    "app/src/generated/protocol.ts": "sha256-fa0f6698c65f68c73f5dd4e0cf78267325be354987bdfeb31689259444f8f5a8",
+    "core/src/protocol.rs": "sha256-859748bc60546cc21fbb7c4bb7f75ad0cb2c30722eec9a628e798add21af33c3"
   }
 }
