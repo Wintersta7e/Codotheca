@@ -101,14 +101,29 @@ fn xp_insert(
 // The rebuild itself
 // ---------------------------------------------------------------------------------------------
 
+/// **The prefix is the subject here, not the tip.** Read against `fresh()` this asserted whichever
+/// migration happened to be last, so every later file had to edit it — and a test named for
+/// `0013` that tracks the tip stops meaning what it says. `migrated_to(13)` is the database this
+/// file actually produces; the tip constant is asserted where the tip is owned, in the last
+/// migration's own test.
 #[test]
 fn the_chain_reaches_thirteen_and_stamps_it() {
-    let (_d, conn) = fresh();
+    let (_d, conn) = migrated_to(13);
     let stamped: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
     assert_eq!(stamped, 13, "0013 must stamp its own version");
-    assert_eq!(SUPPORTED_SCHEMA_VERSION, 13);
+    let shipped = MIGRATIONS.iter().find(|m| m.version == 13);
+    assert_eq!(
+        shipped.map(|m| m.name),
+        Some("debt"),
+        "0013 is still the debt migration in the shipped chain"
+    );
+    assert_eq!(
+        shipped.map(|m| m.version),
+        Some(u32::min(13, SUPPORTED_SCHEMA_VERSION)),
+        "the chain still reaches 0013"
+    );
 }
 
 /// `AC-P3-28-16`. The two CHECKs widen **together**: `debt_day` joins `kind`'s list and joins

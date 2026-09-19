@@ -40,6 +40,11 @@ describe('denyPermissionRequest', () => {
     // grants for a whole session, and the opener is a channel the shell owns rather than a
     // capability the renderer holds. The count is printed because a loop over nothing denies
     // nothing and reads exactly like a loop that denied everything.
+    //
+    // [p3] §32.12: **`notifications` stays denied after the advisory alert ships.** The shell
+    // posts it from the main process; the renderer originates none, which
+    // `scripts/check-notification-origin.mjs` scans for. Granting it here would make the denial
+    // and the scanner two answers to one question.
     const permissions = ['media', 'geolocation', 'notifications', 'openExternal'];
     process.stderr.write(
       `security: permission loop covered ${String(permissions.length)} name(s)\n`,

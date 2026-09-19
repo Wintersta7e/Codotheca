@@ -22,6 +22,7 @@ import {
   type SettingsSlots,
 } from './rows.js';
 import { SD } from './styles.js';
+import { NOTIFICATION_LINES } from '../../shared/notificationCopy';
 
 export const EXPORT_NOTE = 'One JSON file · every project, session and note';
 export const HIDE_NOTE = 'Keeps it off the shelf and out of every count. Nothing is removed.';
@@ -33,15 +34,14 @@ export const GITHUB_CONSEQUENCE =
 
 export const NOT_IN_THIS_BUILD = 'NOT IN THIS BUILD';
 
-/** §11.3a states three that do not exist yet, and none of them can fire in phase 1. */
-export const NOTIFICATIONS = [
-  { label: 'A one-line summary on Sunday', note: 'SILENT ON AN EMPTY WEEK' },
-  {
-    label: 'A critical advisory in a project you have installed',
-    note: 'NEEDS DEPENDENCY ADVISORIES',
-  },
-  { label: 'Your wrap is ready', note: 'NEEDS A WRAP' },
-] as const;
+/**
+ * §11.3a's three.
+ *
+ * [p3] **The list moved to `app/src/shared/notificationCopy.ts` and is re-exported here.** The
+ * shell posts §32.12's line and cannot import a `.tsx` file, and a second copy of a sentence the
+ * product prints is a sentence that drifts.
+ */
+export const NOTIFICATIONS = NOTIFICATION_LINES;
 
 export const FOOTER_LINES = [
   'CODOTHECA · GPL-3.0 · NO ACCOUNT · NO TELEMETRY',

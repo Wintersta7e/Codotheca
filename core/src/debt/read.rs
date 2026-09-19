@@ -112,6 +112,10 @@ pub fn load_debt(conn: &Connection, project: ProjectId) -> Result<Vec<DebtItem>,
             first_seen_at: row.8,
             last_seen_at: row.9,
             basis,
+            // [p3] R118's struct is §32's, and so is the only producer that has an advisory to
+            // name. Every other source leaves it absent — one nullable struct rather than six
+            // nullable fields NULL for eight of the nine sources.
+            advisory: None,
         });
     }
 

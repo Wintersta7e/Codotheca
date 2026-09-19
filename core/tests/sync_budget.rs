@@ -22,7 +22,7 @@ use codotheca_core::accounts::store::{insert_account, NewAccount};
 use codotheca_core::http::{HttpResponse, HttpTransport, TransportError};
 use codotheca_core::protocol::{AccountId, AuthKind, ScopeTier};
 use codotheca_core::sync::budget::{
-    may_spend, mirror, read_budget, BudgetRow, BudgetVerdict, ON_DEMAND_RESERVE,
+    may_spend, mirror, read_budget, reserve_for, BudgetRow, BudgetVerdict,
 };
 use codotheca_core::sync::classify::{classify, RateSnapshot};
 use codotheca_core::testing::TempIndex;
@@ -204,7 +204,9 @@ fn a_known_zero_budget_parks_to_the_reset_rather_than_issuing() {
 #[test]
 fn the_reserve_yields_scheduled_work_and_admits_on_demand_work() {
     let reset = NOW + 900;
-    assert_eq!(ON_DEMAND_RESERVE, 200);
+    // [p3] The 200 survives as **what the formula yields for the pool it was written for**, and
+    // that is the only place the number is asserted now.
+    assert_eq!(reserve_for(Some(5000)), Some(200));
     let scarce = BudgetRow::observed(Some(150), Some(5000), Some(reset), NOW);
 
     assert_eq!(
@@ -218,14 +220,14 @@ fn the_reserve_yields_scheduled_work_and_admits_on_demand_work() {
         "the reserve exists so this one can spend"
     );
 
-    // At the boundary the reserve is not yet in force: "below 200", not "at or below".
-    let at_reserve = BudgetRow::observed(Some(ON_DEMAND_RESERVE), Some(5000), Some(reset), NOW);
+    // At the boundary the reserve is not yet in force: "below the reserve", not "at or below".
+    let at_reserve = BudgetRow::observed(reserve_for(Some(5000)), Some(5000), Some(reset), NOW);
     assert_eq!(
         may_spend(Some(&at_reserve), false, NOW),
         BudgetVerdict::Spend
     );
 
-    // **Unknown is not below 200 — it is unknown, and it spends.**
+    // **Unknown is not below the reserve — it is unknown, and it spends.**
     let unknown = BudgetRow::observed(None, None, None, NOW);
     for on_demand in [true, false] {
         assert_eq!(
@@ -233,6 +235,52 @@ fn the_reserve_yields_scheduled_work_and_admits_on_demand_work() {
             BudgetVerdict::Unknown
         );
     }
+}
+
+/// **AC-P3-32-1.** The reserve is a **fraction of the pool it is spent from**, not an absolute.
+///
+/// `ON_DEMAND_RESERVE = 200` was written for §21.5's authenticated arithmetic, where 200 against
+/// 5,000 is 4%. Against the **unauthenticated 60/hr pool** §32's sweep draws on, `remaining` can
+/// never reach 200 — so the sweep issued exactly one request in the lifetime of the process, every
+/// later pick answered `Reserved`, and because `Reserved` issues nothing `remaining` was never
+/// re-observed and never rose. `sync.status` reported `parked · reserve`, **which reads as correct
+/// throttling**.
+#[test]
+fn ac_p3_32_1_the_reserve_is_a_fraction_of_its_own_pool() {
+    let reset = NOW + 900;
+
+    // (a) The 60/hr pool, all but one request still available. A scheduled task **spends**.
+    let small = BudgetRow::observed(Some(59), Some(60), Some(reset), NOW);
+    assert_eq!(
+        may_spend(Some(&small), false, NOW),
+        BudgetVerdict::Spend,
+        "a 200-request reserve against a 60-request pool parks the sweep for ever"
+    );
+
+    // (b) A reserve that never fires is not a reserve: the fraction still brakes.
+    let drained = BudgetRow::observed(Some(1), Some(60), Some(reset), NOW);
+    assert_eq!(
+        may_spend(Some(&drained), false, NOW),
+        BudgetVerdict::Reserved(reset)
+    );
+    assert_eq!(reserve_for(Some(60)), Some(2));
+
+    // (c) **The authenticated case is proven unmoved rather than assumed** — the boundary sits
+    // where it always sat, at 200 against 5,000.
+    let just_under = BudgetRow::observed(Some(199), Some(5000), Some(reset), NOW);
+    let at_edge = BudgetRow::observed(Some(200), Some(5000), Some(reset), NOW);
+    assert_eq!(
+        may_spend(Some(&just_under), false, NOW),
+        BudgetVerdict::Reserved(reset)
+    );
+    assert_eq!(may_spend(Some(&at_edge), false, NOW), BudgetVerdict::Spend);
+
+    // (d) **Unobserved is unknown, and unknown spends.** `None` means *no reserve applies*, never
+    // *a reserve of zero* — the same answer `may_spend` already gives for an unobserved
+    // `remaining`, so there is no new unknown case and no new branch.
+    assert_eq!(reserve_for(None), None);
+    let no_limit = BudgetRow::observed(Some(1), None, Some(reset), NOW);
+    assert_eq!(may_spend(Some(&no_limit), false, NOW), BudgetVerdict::Spend);
 }
 
 /// A reserve yield and an exhausted budget are **two verdicts**, because they settle the row with

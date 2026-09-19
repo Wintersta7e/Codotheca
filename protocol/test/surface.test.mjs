@@ -432,7 +432,17 @@ const TOPICS = {
   accounts: ['connect_progress', 'connected', 'disconnected'],
   // [p2] §21.13 adds `sync`, with a `snapshot` because §8.0's notice slot and the progress line
   // both have to render correctly for a window that opened after the events fired.
-  sync: ['started', 'settled', 'listing_progress', 'budget', 'notice', 'snapshot'],
+  // [p3] §32.12 adds `advisory_alert` to the **existing** topic: the payload the shell turns into
+  // the one OS notification phase 3 may fire. No new topic, and no new command.
+  sync: [
+    'started',
+    'settled',
+    'listing_progress',
+    'budget',
+    'notice',
+    'snapshot',
+    'advisory_alert',
+  ],
 };
 
 test('every topic and event of §2.4 is declared, with a payload type', () => {
@@ -446,8 +456,11 @@ test('every topic and event of §2.4 is declared, with a payload type', () => {
 // [p2] §21.13: the six events are the whole of what §21 puts on the wire, and `snapshot` carries
 // exactly what `sync.status` returns, so a subscriber that missed every delta still renders the
 // truth.
-test('the sync topic declares exactly six events and its snapshot is sync.status answer', () => {
-  assert.equal(Object.keys(schema.topics.sync).length, 6);
+// [p3] §32.12 adds the seventh, `advisory_alert`. It is **not** a delta a snapshot could carry:
+// `sync.status` reports task rows, and an alert is a transition observed once. A subscriber that
+// missed it has missed the notification, which is why the shell subscribes before the core runs.
+test('the sync topic declares exactly seven events and its snapshot is sync.status answer', () => {
+  assert.equal(Object.keys(schema.topics.sync).length, 7);
   assert.equal(schema.topics.sync.snapshot, 'SyncStatus');
   const status = schema.commands.find((c) => c.name === 'sync.status');
   assert.equal(status.returns, 'SyncStatus');
@@ -1072,7 +1085,10 @@ test('the four totals agree with the phase-2 delta table', () => {
 
   assert.equal(commands, 60, `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 = 60, found ${commands}`);
   assert.equal(topics, 7, `topics: 4 + accounts + sync + install = 7, found ${topics}`);
-  assert.equal(events, 34, `events: 19 + 3 + 6 + 0 + 0 + 5 + 1 = 34, found ${events}`);
+  // [p3] §32.12 raises this by exactly one from the branch base: `sync/advisory_alert`. p3-34
+  // raises it by its own delta from its own base, so a textual conflict at the wave merge is the
+  // assertion working and the resolution is the sum.
+  assert.equal(events, 35, `events: 19 + 3 + 6 + 0 + 0 + 5 + 1 + §32's 1 = 35, found ${events}`);
   assert.equal(
     schema.errors.length,
     14,
@@ -1101,7 +1117,102 @@ test('the four totals agree with the phase-2 delta table', () => {
    * nullable field that carries it. `ProjectDetail.debt` and `.debtSweeps` are fields and move
    * no total.
    */
-  assert.equal(types, 168, `types: 160 + §28's 8, against the table's +8; found ${types}`);
+  /**
+   * [p3] §32 is the second phase-3 section to move this row: **+5**. `Ecosystem`,
+   * `DependencyReadState`, `DependencyVerdict`, `AdvisoryDetail` (R118) and `AdvisoryAlert`.
+   * `DebtItem.advisory`, `ProjectDetail.dependencyVerdict` and `.dependencyObservedAt` are
+   * fields and move no total; `DependencyReading` is a Rust shape and never crosses the wire.
+   */
+  assert.equal(types, 173, `types: 168 + §32's 5, against the table's +5; found ${types}`);
+});
+
+/**
+ * [p3] §32.12's payload, and the rule that makes it safe to fire.
+ *
+ * **No field may express an absence.** The five nullable fields are `Some` only when exactly one
+ * project and one advisory fired; every reason a project was excluded is an absence, and §11.3a's
+ * footer states that no notification mentions one. A sixth field naming a count of the excluded
+ * would breach the ceiling by addition rather than by wording, which is why the field list is
+ * asserted exactly rather than as a superset.
+ */
+test("§32.12: the alert's seven fields, five of them nullable and none an absence", () => {
+  const alert = schema.types.AdvisoryAlert;
+  assert.equal(alert.kind, 'struct');
+  assert.deepEqual(Object.keys(alert.fields), [
+    'projectId',
+    'projectCount',
+    'advisoryId',
+    'cveId',
+    'packageName',
+    'ecosystem',
+    'advisoryCount',
+  ]);
+  for (const f of ['projectId', 'advisoryId', 'cveId', 'packageName', 'ecosystem']) {
+    assert.ok(alert.fields[f].endsWith('?'), `${f} must be nullable: ${alert.fields[f]}`);
+  }
+  assert.equal(alert.fields.projectCount, 'i64');
+  assert.equal(alert.fields.advisoryCount, 'i64');
+  assert.equal(schema.topics.sync.advisory_alert, 'AdvisoryAlert');
+});
+
+/**
+ * [p3] §32.4's fourth task kind, and the count that stops being maintained by hand.
+ *
+ * R128/F13 and §36.2 rule 9: *a count a human maintains is a defect with a delay*. The
+ * `$comment`'s rule half is what a reader needs; its tally is what goes stale the next time a
+ * task arrives. The tally is **removed, not incremented** — and this assertion is what stops the
+ * next author reinstating one, which is R22 repeating inside a comment.
+ */
+test('§32.4: SyncTaskKind has four variants and its comment counts nothing', () => {
+  const kind = schema.types.SyncTaskKind;
+  assert.deepEqual(kind.variants, [
+    'account_repos',
+    'project_remote',
+    'rename_probe',
+    'advisories',
+  ]);
+  assert.equal(kind.variants.length, 4);
+  assert.ok(
+    !/\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+tasks?\b/i.test(kind.$comment),
+    `SyncTaskKind's $comment states a count: ${kind.$comment}`,
+  );
+});
+
+/**
+ * [p3] R118: **one nullable struct, not six nullable fields NULL for eight of the nine sources.**
+ * `severity` carries no CHECK and no enum — it is a third party's vocabulary stored verbatim, and
+ * a closed mirror of one is R26 by construction (`core/src/provider/mod.rs:192-194` ruled the
+ * same for `CiRunPayload.conclusion`). `cveIds` is a **list**: one GHSA carries several CVE ids
+ * or none, so a singular nullable column could not hold it.
+ */
+test('§32: the advisory detail rides DebtItem as one nullable struct, and severity is free text', () => {
+  assert.equal(schema.types.DebtItem.fields.advisory, 'AdvisoryDetail?');
+  const detail = schema.types.AdvisoryDetail;
+  assert.equal(detail.kind, 'struct');
+  assert.deepEqual(Object.keys(detail.fields), [
+    'ecosystem',
+    'packageName',
+    'advisoryId',
+    'cveIds',
+    'severity',
+    'fixedVersion',
+  ]);
+  assert.equal(detail.fields.cveIds, '[String]');
+  assert.equal(detail.fields.severity, 'String?');
+  assert.ok(!schema.types.Severity, 'severity is the source vocabulary and declares no enum');
+  assert.deepEqual(schema.types.Ecosystem.variants, ['npm', 'rust', 'pip']);
+  assert.deepEqual(schema.types.DependencyReadState.variants, ['parsed', 'notRead']);
+  assert.deepEqual(schema.types.DependencyVerdict.variants, ['clean', 'vulnerable', 'unknown']);
+});
+
+/**
+ * [p3] R119, plus deviation 1: **an age that renders needs a field.** §32.9 rules the verdict
+ * renders the older of its two clocks, and `AC-P3-32-9` and `AC-P3-32-20` both assert that age
+ * renders. The verdict alone cannot carry it.
+ */
+test('§32.8: the project detail carries the verdict and the clock it was computed at', () => {
+  assert.equal(schema.types.ProjectDetail.fields.dependencyVerdict, 'DependencyVerdict?');
+  assert.equal(schema.types.ProjectDetail.fields.dependencyObservedAt, 'Timestamp?');
 });
 
 /**

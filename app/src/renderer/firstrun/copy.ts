@@ -6,13 +6,33 @@
  * makes the claim diffable in a single read.
  */
 
-/** §10.1 verbatim. Any change here is a change to what the code is allowed to read. */
+/**
+ * §10.1 verbatim. Any change here is a change to what the code is allowed to read.
+ *
+ * **[p3] The lock files and their depth are named, and the paragraph moves in the same change
+ * that lands the read.** A11.3's *"rides the existing grant"* is true only **after** this
+ * sentence moves: the shipped text promised a named set *at the repository root*, and a lock file
+ * is neither a manifest nor root-only — §32.6's set sits at depth ≤ 3, so the grant as *written*
+ * did not cover it and a section citing A11.3 without moving the copy would ship a read the
+ * consent screen denies.
+ *
+ * **The per-file cap differs and the copy must not claim one number for both.** J6's 256 KB is
+ * unchanged for J6's own named-file reads; the lock file read carries its own 16 MB, because
+ * 256 KB is refuted by a measurement on this very repository — its own `package-lock.json` is
+ * 287,417 bytes.
+ *
+ * **The *"does not read the text of your source files"* sentence is unchanged, because it is
+ * still true**: a lock file is machine-generated dependency bookkeeping, not source text, and it
+ * is read by name rather than by walking a tree.
+ */
 export const CONSENT_PARAGRAPH =
   "Codotheca reads your repositories' git metadata, the names and timestamps of files in your " +
-  'working trees, and a small named set of files at the repository root — README, LICENSE, and ' +
-  'package manifests — up to 256 KB each. It does not read the text of your source files unless ' +
-  'you turn that on in settings, and it is off until you do. Nothing is uploaded. There is no ' +
-  'account.';
+  'working trees, and a small named set of files — README, LICENSE, and package manifests at the ' +
+  'repository root, up to 256 KB each. It also reads your lock files — package-lock.json, ' +
+  'yarn.lock, pnpm-lock.yaml, Cargo.lock, poetry.lock and uv.lock — up to three directories deep ' +
+  'and up to 16 MB each, to check your dependencies against published advisories. It does not ' +
+  'read the text of your source files unless you turn that on in settings, and it is off until ' +
+  'you do. Nothing is uploaded. There is no account.';
 
 export const ROOTS_EYEBROW = 'CODOTHECA';
 export const ROOTS_HEADLINE = "LET'S SEE WHAT YOU HAVE WRITTEN";

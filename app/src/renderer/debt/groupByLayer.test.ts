@@ -18,6 +18,8 @@ function item(
     line: 1,
     column: 1,
     salientText: 'TODO: a thing',
+    // [p3] R118's struct is §32's, and only §32's producer has an advisory to name.
+    advisory: null,
     firstSeenAt: 1,
     lastSeenAt: 1,
     basis: 'head',

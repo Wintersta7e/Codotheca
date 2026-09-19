@@ -150,6 +150,18 @@ impl Provider for RecordingForge {
     ) -> ProviderResult<Observed<CiRunsRead>> {
         unreachable!("this fixture forge issues no §25 request")
     }
+    fn advisories(
+        &self,
+        _ecosystem: codotheca_core::protocol::Ecosystem,
+        _affects: &[codotheca_core::provider::PackageVersion],
+        _cur: Option<&str>,
+    ) -> ProviderResult<
+        Observed<
+            codotheca_core::provider::listing::Page<codotheca_core::provider::AdvisoryPayload>,
+        >,
+    > {
+        unreachable!("a fixture forge issues no request")
+    }
     fn canonical_host(&self) -> &'static str {
         "forge.example"
     }

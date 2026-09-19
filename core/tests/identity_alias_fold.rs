@@ -78,6 +78,18 @@ impl Provider for DeclaringForge {
     ) -> ProviderResult<Observed<CiRunsRead>> {
         unreachable!("the alias fold issues no request")
     }
+    fn advisories(
+        &self,
+        _ecosystem: codotheca_core::protocol::Ecosystem,
+        _affects: &[codotheca_core::provider::PackageVersion],
+        _cur: Option<&str>,
+    ) -> ProviderResult<
+        Observed<
+            codotheca_core::provider::listing::Page<codotheca_core::provider::AdvisoryPayload>,
+        >,
+    > {
+        unreachable!("a fixture forge issues no request")
+    }
     fn canonical_host(&self) -> &str {
         self.canonical
     }

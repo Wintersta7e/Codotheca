@@ -275,7 +275,7 @@ impl SyncRunner {
         };
         for task in pending {
             let kind = task.kind();
-            let key = Some(task.key());
+            let key = task.key();
             let existing = load(tx, kind, key)?;
             if matches!(
                 existing.as_ref().map(|row| row.state),
@@ -433,13 +433,7 @@ impl SyncRunner {
     fn run_one(self: &Arc<Self>, task: SyncTask) {
         let kind = task.kind();
         let key = task.key();
-        emit_started(
-            self.events.as_ref(),
-            &SyncTaskStarted {
-                kind,
-                key: Some(key),
-            },
-        );
+        emit_started(self.events.as_ref(), &SyncTaskStarted { kind, key });
 
         let verdict = self.budget_verdict(&task);
         let outcome = match verdict {
@@ -472,10 +466,13 @@ impl SyncRunner {
             SyncTask::ProjectRemote { project_id } => {
                 remote::account_for_project(guard.conn(), *project_id)
             }
+            // [p3] §32.1: the sweep is unauthenticated by ruling and its provider method has
+            // nowhere to put a token, so the pool it spends from is the **NULL-account per-IP**
+            // one, always — never whichever account happens to be connected.
+            SyncTask::Advisories => None,
         };
-        let row = read_budget(guard.conn(), account, DEFAULT_RESOURCE)
-            .ok()
-            .flatten();
+        let resource = resource_for(guard.conn(), task);
+        let row = read_budget(guard.conn(), account, &resource).ok().flatten();
         may_spend(row.as_ref(), is_on_demand(task), now)
     }
 
@@ -503,6 +500,25 @@ impl SyncRunner {
             }
             SyncTask::RenameProbe { account_id } => {
                 rename::run_rename_probe(&self.deps, &self.index, *account_id)
+            }
+            // [p3] §32.2's sweep. The cursor is this task's own: a page link while an answer is
+            // still paginating, and a sentinel when the next batch is due. Each batch settles
+            // `NextPage`, so the **next** pick re-reads the budget before issuing again — which is
+            // what lets a library too large for one hour's allowance sweep across reset windows
+            // instead of spending it all at once.
+            SyncTask::Advisories => {
+                let cursor = {
+                    let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+                    load(guard.conn(), SyncTaskKind::Advisories, None)
+                        .ok()
+                        .flatten()
+                        .and_then(|row| row.cursor)
+                };
+                crate::advisories::sweep::run_advisory_sweep(
+                    &self.deps,
+                    self.index.as_ref(),
+                    cursor.as_deref(),
+                )
             }
         }
     }
@@ -563,10 +579,10 @@ impl SyncRunner {
 
         let settled_row = {
             let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-            let before = load(guard.conn(), kind, Some(key))
+            let before = load(guard.conn(), kind, key)
                 .ok()
                 .flatten()
-                .unwrap_or_else(|| SyncTaskStateRow::queued(kind, Some(key), now));
+                .unwrap_or_else(|| SyncTaskStateRow::queued(kind, key, now));
             let (mut next, _) = apply_outcome(&before, &outcome, now);
             if reserved {
                 // §21.5: it did not fail and it was not throttled by the server — it yielded to
@@ -613,6 +629,19 @@ impl SyncRunner {
             });
         }
 
+        // [p3] §32.12's **one** notification, decided at the settle that could have changed it.
+        //
+        // The core observes the transition and emits; `app/src/main` posts. The renderer's
+        // `notifications` permission stays denied and nothing in `app/src/renderer` may originate
+        // an OS notification — the same invariant as *the renderer may never originate a
+        // filesystem path or an executable*, applied to the one interruption the product has.
+        //
+        // **At most one per settle**, and the ledger it consumes is written in the same
+        // transaction, so a crash between deciding and recording cannot re-fire it.
+        if matches!(task, SyncTask::Advisories) {
+            self.maybe_alert(now);
+        }
+
         // Every budget row this step touched, so a surface renders `—` for what was never
         // observed rather than a zero nobody measured.
         if let Ok(budgets) = self.read_budgets() {
@@ -628,7 +657,7 @@ impl SyncRunner {
         let payload = settled_of(&settled_row, Some(&observed));
         let cleared = {
             let mut live = self.live.lock().unwrap_or_else(PoisonError::into_inner);
-            live.last.insert((kind, Some(key)), observed);
+            live.last.insert((kind, key), observed);
             // **One banner, whatever the number of failed tasks**: a single value, so three
             // failures at once cannot produce three candidates. A success clears it.
             let had = live.notice.is_some();
@@ -647,6 +676,42 @@ impl SyncRunner {
         // A settle that parked or re-queued the row leaves work outstanding; one that ended it
         // may have emptied the table, and the next `take_next` is what establishes which.
         self.outstanding.store(true, Ordering::SeqCst);
+    }
+
+    /// [p3] §32.12's decision and, if it fires, its one event.
+    ///
+    /// Its own function because `settle` is at clippy's line ceiling and because this is a
+    /// separable step: the alert is decided from stored facts, not from the outcome that just
+    /// settled, so nothing above it is in scope here.
+    fn maybe_alert(&self, now: i64) {
+        let alert = {
+            let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+            guard
+                .with_tx(|tx| {
+                    crate::advisories::notify::notifiable(
+                        tx,
+                        now,
+                        &crate::advisories::notify::nothing_suppressed(),
+                    )
+                    .map_err(|e| match e {
+                        crate::advisories::AdvisoryError::Index(index) => index,
+                        other => {
+                            // A decision this build could not make is not one to guess at: no
+                            // event, a line on stderr for the log the shell keeps, and the ledger
+                            // untouched so the next settle can decide it again.
+                            eprintln!("sync: the advisory alert could not be decided: {other}");
+                            IndexError::Corrupt {
+                                detail: other.to_string(),
+                            }
+                        }
+                    })
+                })
+                .ok()
+                .flatten()
+        };
+        if let Some(alert) = alert {
+            crate::sync::events::emit_advisory_alert(self.events.as_ref(), &alert);
+        }
     }
 
     /// §21.6's *every response*, for the ones this process made on some **other** thread.
@@ -703,7 +768,30 @@ fn sweep_schedule(tx: &rusqlite::Transaction<'_>, now: i64) -> Result<usize, Ind
             &SyncTaskStateRow::queued(SyncTaskKind::AccountRepos, Some(account.0), now),
         )?;
     }
-    Ok(due.len())
+    // [p3] §32.2's cadence, queued beside the listings and on the same terms: a fresh `queued`
+    // row, and only when nothing is already in flight for it. Re-queueing a parked row would
+    // discard the instant the server named.
+    let mut queued = due.len();
+    if crate::sync::schedule::advisory_due(tx, now)? {
+        let existing = load(tx, SyncTaskKind::Advisories, None)?;
+        let in_flight = matches!(
+            existing.as_ref().map(|row| row.state),
+            Some(
+                SyncTaskState::Queued
+                    | SyncTaskState::Running
+                    | SyncTaskState::Parked
+                    | SyncTaskState::Blocked
+            )
+        );
+        if !in_flight {
+            put(
+                tx,
+                &SyncTaskStateRow::queued(SyncTaskKind::Advisories, None, now),
+            )?;
+            queued += 1;
+        }
+    }
+    Ok(queued)
 }
 
 /// Whether any row is still the loop's to act on.
@@ -711,13 +799,26 @@ fn sweep_schedule(tx: &rusqlite::Transaction<'_>, now: i64) -> Result<usize, Ind
 /// `running` counts: this process put it there and owes it a settle. `ok`, `deferred` and
 /// `blocked` do not — each is left by a trigger, a revival cause or an account change, every one
 /// of which goes through `enqueue` or `reset_for` and signals.
-fn any_outstanding(tx: &rusqlite::Transaction<'_>) -> Result<bool, crate::index::IndexError> {
-    let n: i64 = tx.query_row(
-        "SELECT count(*) FROM sync_task_state WHERE state IN ('queued', 'running', 'parked')",
-        [],
-        |row| row.get(0),
-    )?;
-    Ok(n > 0)
+///
+/// **[p3] It counts what the pick can claim, and is derived from the same read.** Counting by
+/// `state` alone made a row the pick cannot resolve keep `outstanding` true for ever, so the loop
+/// polled a task it could never take — a busy runner with no work, and no error to say so.
+/// [`load_all`] already drops the rows [`crate::sync::store::read_row`] skipped, and [`task_of`]
+/// drops the shapes it refuses to guess at. **The pick and the wakefulness predicate disagreeing
+/// is the defect; one input is the fix.**
+///
+/// It is `pub` so a test can assert that agreement directly rather than by inferring it from how
+/// long a loop stays awake.
+///
+/// # Errors
+/// Fails when SQLite cannot be read.
+pub fn any_outstanding(tx: &rusqlite::Transaction<'_>) -> Result<bool, crate::index::IndexError> {
+    Ok(load_all(tx)?.iter().any(|row| {
+        matches!(
+            row.state,
+            SyncTaskState::Queued | SyncTaskState::Running | SyncTaskState::Parked
+        ) && task_of(row).is_some()
+    }))
 }
 
 /// §21.10's four sentences, from the outcome that produced them.
@@ -752,20 +853,58 @@ fn notice_for(outcome: &SyncOutcome) -> Option<SyncNotice> {
     }
 }
 
+/// The pool to read **before issuing**, for one task.
+///
+/// [p3] §32.3's second defect. [`DEFAULT_RESOURCE`]'s own doc comment concedes the guess only
+/// because *"an unobserved pool answers `Unknown`, which spends, so a wrong guess here costs one
+/// request and corrects itself"* — true for an **on-demand** task. For a scheduled sweep,
+/// Unknown-spends is **no brake at all** until the source refuses, which is the direction that
+/// rate-limits the IP for every other unauthenticated call the app makes.
+///
+/// So the advisory sweep is keyed by the resource **its own last mirrored response named**, and
+/// `DEFAULT_RESOURCE` is the fallback only until one has. Every other task keeps the constant:
+/// each of phase 2's six reads is an authenticated REST call and `core` is what they all answer
+/// from.
+fn resource_for(conn: &rusqlite::Connection, task: &SyncTask) -> String {
+    match task {
+        SyncTask::Advisories => crate::advisories::store::last_settled_resource(conn)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| DEFAULT_RESOURCE.to_owned()),
+        _ => DEFAULT_RESOURCE.to_owned(),
+    }
+}
+
 /// A stored row back into the work item it describes.
+///
+/// **[p3] It matches on the `(kind, key)` pair, not on the kind alone.** The shipped version
+/// opened `let key = row.key?;`, which is reached only through the pick's `filter_map` — so a
+/// `key IS NULL` row was filtered out **before it could be picked**: never claimed, never run,
+/// never settled, and raising no error anywhere. The three keyed kinds require `Some`;
+/// `Advisories` requires `None`.
+///
+/// **A mismatched pair yields `None` rather than a guess**, exactly as
+/// [`crate::sync::store::read_row`] refuses a slug it cannot resolve. Guessing which id an
+/// `advisories` row's stray key was would run the wrong task against it, and inventing one for a
+/// keyed kind would run a task against account or project zero.
 fn task_of(row: &SyncTaskStateRow) -> Option<SyncTask> {
-    let key = row.key?;
-    Some(match row.kind {
-        SyncTaskKind::AccountRepos => SyncTask::AccountRepos {
+    match (row.kind, row.key) {
+        (SyncTaskKind::AccountRepos, Some(key)) => Some(SyncTask::AccountRepos {
             account_id: AccountId(key),
-        },
-        SyncTaskKind::ProjectRemote => SyncTask::ProjectRemote {
+        }),
+        (SyncTaskKind::ProjectRemote, Some(key)) => Some(SyncTask::ProjectRemote {
             project_id: ProjectId(key),
-        },
-        SyncTaskKind::RenameProbe => SyncTask::RenameProbe {
+        }),
+        (SyncTaskKind::RenameProbe, Some(key)) => Some(SyncTask::RenameProbe {
             account_id: AccountId(key),
-        },
-    })
+        }),
+        (SyncTaskKind::Advisories, None) => Some(SyncTask::Advisories),
+        (
+            SyncTaskKind::AccountRepos | SyncTaskKind::ProjectRemote | SyncTaskKind::RenameProbe,
+            None,
+        )
+        | (SyncTaskKind::Advisories, Some(_)) => None,
+    }
 }
 
 impl SyncSink for SyncRunner {

@@ -75,6 +75,15 @@ impl Provider for DeclaringForge {
     ) -> ProviderResult<Observed<CiRunsRead>> {
         unreachable!("a fixture forge issues no request")
     }
+    fn advisories(
+        &self,
+        _ecosystem: crate::protocol::Ecosystem,
+        _affects: &[crate::provider::PackageVersion],
+        _cur: Option<&str>,
+    ) -> ProviderResult<Observed<crate::provider::listing::Page<crate::provider::AdvisoryPayload>>>
+    {
+        unreachable!("a fixture forge issues no request")
+    }
     fn canonical_host(&self) -> &'static str {
         "forge.example"
     }

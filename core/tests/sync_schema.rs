@@ -109,7 +109,11 @@ fn every_sync_slug_is_accepted_by_its_column() {
         })
         .expect("transaction");
     eprintln!("sync_schema: {inserted} (task, state) pairs accepted by their CHECKs");
-    assert_eq!(inserted, 18, "3 kinds x 6 states");
+    // **Derived, never written down.** A literal here is a third copy of two enum lengths that
+    // every section adding a task or a state then has to remember to move; the zero guard is what
+    // the literal was really carrying, and it is kept explicitly.
+    assert_eq!(inserted, SyncTaskKind::ALL.len() * SYNC_STATES.len());
+    assert!(inserted > 0, "a run that inserted nothing proved nothing");
 }
 
 /// **R24's mirror.** The Rust spelling and the wire spelling are one value with one owner,

@@ -129,6 +129,9 @@ pub struct ReparentCounts {
     pub launch_target_disabled: usize,
     pub health_delta: usize,
     pub submodule_edge: usize,
+    /// [p3] §32.16's latched ledger. Counted rather than inferred, so a test can print how many
+    /// moved instead of asserting that something did.
+    pub advisory_notified: usize,
 }
 
 /// §1.5's reparenting rows. Nothing here is recomputed, because none of it is derivable from
@@ -152,6 +155,27 @@ pub fn reparent_rows(
     )?;
     let health_delta = tx.execute(
         "UPDATE health_delta SET project_id = ?1 WHERE project_id = ?2",
+        params![survivor, absorbed],
+    )?;
+
+    // **[p3] §32.16: `advisory_notified` is REPARENTED, not derived.** It is a latched once-ever
+    // ledger, and deleting it re-notifies the user for advisories they were already told about —
+    // on the one surface they cannot dismiss before reading.
+    //
+    // **The collision is not hypothetical**: both sides may hold the same `(project_id,
+    // advisory_id)` pair, and a bare `UPDATE` violates the primary key. The absorbed row is
+    // dropped where the survivor already holds the pair, then the rest are reparented — the
+    // `WHERE EXISTS`/`WHERE NOT EXISTS` shape collection membership above already uses, and for
+    // the same reason.
+    tx.execute(
+        "DELETE FROM advisory_notified AS a
+          WHERE a.project_id = ?2
+            AND EXISTS (SELECT 1 FROM advisory_notified s
+                         WHERE s.project_id = ?1 AND s.advisory_id = a.advisory_id)",
+        params![survivor, absorbed],
+    )?;
+    let advisory_notified_reparented = tx.execute(
+        "UPDATE advisory_notified SET project_id = ?1 WHERE project_id = ?2",
         params![survivor, absorbed],
     )?;
 
@@ -226,6 +250,7 @@ pub fn reparent_rows(
         launch_target_disabled,
         health_delta,
         submodule_edge,
+        advisory_notified: advisory_notified_reparented,
     })
 }
 
@@ -307,6 +332,17 @@ pub fn recompute_derived(
         "project_content_scan",
         "debt_item",
         "debt_sweep",
+        // **[p3] §32.16: the three lockfile-read tables are DERIVED.** A worktree read is
+        // recomputable from the survivor, and a stale row for it would survive the merge and be
+        // read as current — a dependency at a version this project no longer resolves, dated as
+        // if it did. `advisory_notified` is NOT here: see the reparent below.
+        //
+        // The five library-wide advisory tables are in **neither** class and are touched by no
+        // merge at all: they carry no `project_id`, and two project rows merging cannot have
+        // invalidated what a third party published.
+        "project_dependency",
+        "project_lockfile",
+        "project_dependency_scan",
     ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE project_id IN (?1, ?2)"),

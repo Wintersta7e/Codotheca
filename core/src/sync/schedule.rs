@@ -73,3 +73,44 @@ pub fn due_listings(conn: &Connection, now: i64) -> Result<Vec<AccountId>, Index
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }
+
+/// [p3] §32.2's cadence: **daily, because the source's own cadence is daily.**
+///
+/// §32.9's 30-day clean-result expiry is derived from it: a clean verdict that aged out means
+/// ~30 consecutive attempts failed to reach the source, not that one request failed.
+pub const ADVISORY_SWEEP_INTERVAL_SECS: i64 = 24 * 60 * 60;
+
+/// [p3] Whether the advisory sweep is due.
+///
+/// True when **no sweep has settled**, or the newest `settled_at` is older than the interval. A
+/// sweep that **started** but never settled does not satisfy it — a start is not an observation,
+/// and a crashed sweep must not push the next one a whole day away.
+///
+/// **A library with no dependency triples is never due**, on `due_listings`' own terms: that
+/// function returns only *enabled* accounts rather than queuing work to discover there is none.
+/// A sweep with nothing to ask about would settle a row claiming an observation of nothing, and
+/// would take the process's one index mutex on every cadence turn to learn that.
+///
+/// # Errors
+/// Fails when SQLite cannot be read.
+pub fn advisory_due(conn: &Connection, now: i64) -> Result<bool, IndexError> {
+    let asks: i64 = conn.query_row(
+        "SELECT count(*) FROM (SELECT 1 FROM project_dependency LIMIT 1)",
+        [],
+        |row| row.get(0),
+    )?;
+    if asks == 0 {
+        return Ok(false);
+    }
+    let newest: Option<i64> = conn
+        .query_row(
+            "SELECT max(settled_at) FROM advisory_sweep WHERE settled_at IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(None);
+    Ok(match newest {
+        None => true,
+        Some(at) => at.saturating_add(ADVISORY_SWEEP_INTERVAL_SECS) <= now,
+    })
+}
