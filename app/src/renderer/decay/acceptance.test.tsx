@@ -216,32 +216,15 @@ describe('ac p3 33 4 — a lit layer with no anchor draws nothing', () => {
 /**
  * **`AC-P3-33-5`** — the opened hero **and nowhere else**.
  *
- * The mechanism is a prop: `CardPlate` renders whatever `decay` it is handed, and only the
- * opened hero hands it one. This asserts the *negative* over every other card surface's source,
- * because a test that only exercised the hero would pass against a grid that had grown one.
+ * The scope audit is a source scan and lives in `app/test/decayScope.test.ts`, in the **node**
+ * project: written here as an `import.meta.glob` it raw-loads the whole renderer tree and times
+ * out under the full parallel run. This is the runtime half — the stack renders nothing at all
+ * unless a surface hands it one, which is what makes the default correct.
  */
-describe('ac p3 33 5 — the layers mount on the opened hero and on no other surface', () => {
-  it('ac_p3_33_5 finds no decay prop on any surface but the hero, over a printed count', async () => {
-    const sources = import.meta.glob('../**/*.tsx', { query: '?raw', import: 'default' });
-    let scanned = 0;
-    const offenders: string[] = [];
-    for (const [path, load] of Object.entries(sources)) {
-      if (/\.test\.tsx$/u.test(path)) continue;
-      // Vite normalises a sibling of this file to `./X.tsx`, so the decay module itself is both
-      // spellings. It declares the stack; it is not a surface that mounts one.
-      if (path.includes('/decay/') || path.startsWith('./')) continue;
-      const text = (await load()) as string;
-      expect(text.length, `${path} read as empty`).toBeGreaterThan(0);
-      scanned += 1;
-      // `HeroFrame` declares the slot and `HeroTile` supplies it. Any other component naming
-      // `DecayStack` or passing `decay=` is a second surface.
-      if (path.endsWith('/card/HeroFrame.tsx') || path.endsWith('/hero/HeroTile.tsx')) continue;
-      if (path.endsWith('/card/Card.tsx') || path.endsWith('/card/CardPlate.tsx')) continue;
-      if (/\bDecayStack\b/u.test(text) || /\bdecay=\{/u.test(text)) offenders.push(path);
-    }
-    console.error(`AC-P3-33-5: ${String(scanned)} surfaces scanned`);
-    expect(scanned, 'the surface scan read nothing').toBeGreaterThan(20);
-    expect(offenders, 'a surface other than the opened hero mounts the decay stack').toEqual([]);
+describe('ac p3 33 5 — a surface that hands no stack renders none', () => {
+  it('ac_p3_33_5 renders nothing when no surface supplies a weathering reply', () => {
+    render(<DecayStack weathering={null} debt={ALL_OPEN} />);
+    expect(layers()).toEqual([]);
   });
 });
 
