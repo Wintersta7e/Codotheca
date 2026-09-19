@@ -133,12 +133,20 @@ test('the REMOTE tab mounts and renders for a project with a remote', async () =
     // count the two the bar draws while loading, which is a race and not an assertion.
     await window.waitForSelector('[data-testid="cp-tabpanel"]', { timeout: 60_000 });
 
-    // **The assertion this file exists for.** Three tabs, not two: the tab is mounted because
-    // the core answered `ProjectDetail.remote` non-null for a project whose `remote_key` it
-    // derived from that repository's own `origin`. A unit test cannot see that chain.
-    await expect(window.getByRole('tab')).toHaveCount(3);
+    // **The assertion this file exists for.** More than the two every project mounts: REMOTE is
+    // mounted because the core answered `ProjectDetail.remote` non-null for a project whose
+    // `remote_key` it derived from that repository's own `origin`. A unit test cannot see that
+    // chain.
+    //
+    // **[p3] Four, not three**, and the fourth is evidence rather than noise: §30.7 mounts HEALTH
+    // on a `frozen` or `live` reading, and this project reaches `live` through the real app —
+    // the `acknowledged_at` stamp `projects.get` writes, the enrolment the reading is computed
+    // from, and the projection that carries it. Nothing below this line is about HEALTH; it is
+    // counted here because the count is the thing that would otherwise go quietly wrong.
+    await expect(window.getByRole('tab')).toHaveCount(4);
     const remoteTab = window.getByRole('tab', { name: 'REMOTE', exact: true });
     await expect(remoteTab).toHaveCount(1);
+    await expect(window.getByRole('tab', { name: 'HEALTH', exact: true })).toHaveCount(1);
     await remoteTab.click();
 
     // …and it renders. The key verbatim, the links row, and one statement in place of the
