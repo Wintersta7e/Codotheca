@@ -116,7 +116,11 @@ pub enum Route {
 /// **Empty, and that is a state to assert rather than a state to stop asserting.** The tests
 /// below read the router, so an empty constant still proves that no command routes to `NoOwner`
 /// — two `all()` calls over an empty set assert nothing.
-pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
+/// [p3] §33.8's `health.weathering` arrives here with the schema and leaves in the same change
+/// that gives it a handler — p3-33 Task 3, two commits later. Named and refused for those two
+/// commits rather than mis-routed: a bare `PROTOCOL` refusal reads to the shell as "no such
+/// command".
+pub const UNOWNED_COMMANDS: [(&str, &str); 1] = [("health.weathering", "p3-33")];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -225,6 +229,10 @@ pub fn route(command: CommandName) -> Route {
         CommandName::LocationsUninstallPreflight | CommandName::LocationsUninstall => {
             Route::Uninstall
         }
+
+        // [p3] §33.8's anchor resolver. p3-33 Task 3 gives it a module and deletes both this arm
+        // and its `UNOWNED_COMMANDS` row in the same change.
+        CommandName::HealthWeathering => Route::NoOwner("p3-33"),
     }
 }
 
@@ -306,11 +314,11 @@ mod tests {
         // running total a lane cannot know after the merges ahead of it.
         assert_eq!(
             commands.len(),
-            60,
+            61,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
              remote.webUrl plus §25.8's three projects.readme* commands plus §24.9's three \
              install.* commands plus §21.13's sync.status plus §24.7's two locations.uninstall* \
-             commands"
+             commands plus §33.8's health.weathering"
         );
         let unnamed: Vec<&str> = commands
             .iter()

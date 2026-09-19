@@ -312,8 +312,12 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 // **58**. Two lanes each added to this number from the same base, so neither branch's figure is
 // the merged one — 57 and 55 are both right about their own tree and wrong about this one.
 // `locations.uninstall*` is p2-24b's and is not here.
+// [p3] §33.8's `health.weathering` is the first name spent from the `health.*` prefix, and it is
+// **this lane's own +1 read off its branch base** — never a running total, which a lane cannot
+// know after the merges ahead of it. A textual conflict here at the wave merge is the assertion
+// working, and the resolution is the sum of the deltas rather than either branch's figure.
 test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8, §25.8, §24.9, §21.13 and nothing extra', () => {
-  assert.equal(names.length, 60, `expected 60 commands, found ${names.length}`);
+  assert.equal(names.length, 61, `expected 61 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -1083,7 +1087,13 @@ test('the four totals agree with the phase-2 delta table', () => {
   const events = Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0);
   const types = Object.keys(schema.types).length;
 
-  assert.equal(commands, 60, `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 = 60, found ${commands}`);
+  // [p3] §33.8 raises this by exactly one from the branch base: `health.weathering`. Stated as a
+  // delta, resolved at the merge as a sum — never as one lane's absolute (R126).
+  assert.equal(
+    commands,
+    61,
+    `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 + §33's 1 = 61, found ${commands}`,
+  );
   assert.equal(topics, 7, `topics: 4 + accounts + sync + install = 7, found ${topics}`);
   // [p3] §32.12 raises this by exactly one from the branch base: `sync/advisory_alert`. p3-34
   // raises it by its own delta from its own base, so a textual conflict at the wave merge is the
@@ -1138,7 +1148,17 @@ test('the four totals agree with the phase-2 delta table', () => {
    * total is **160 + 8 + 9 + 5 = 182**, counted off the merged schema rather than added up from
    * either branch.
    */
-  assert.equal(types, 182, `types: 160 + §28's 8 + §30's 9 + §32's 5; found ${types}`);
+  /**
+   * [p3] §33 moves it by **+5** under R115: `Rect`, `Point`, `Polyline`, `WeatherLayer` and
+   * `Weathering`. §33.8 declared the geometry as `[[i32]]`/`[[[i32]]]`, which the grammar cannot
+   * express, so the three named structs are the ruled form and the section's delta is +5 rather
+   * than the +3 it wrote. `DecayLayer` is p3-28's (R113) and `ProjectDetail.conditionMaterial`
+   * is a field (R138) — neither moves this row.
+   *
+   * **Stated as this lane's own delta off its branch base.** The wave-3 merge is the reason:
+   * §30 asserted 177 and §32 asserted 173 against a real 182, each right about its own tree.
+   */
+  assert.equal(types, 187, `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5; found ${types}`);
 });
 
 /**
@@ -1427,11 +1447,93 @@ test('§30: the four health vocabularies are declared, in their ruling order', (
  * subject *is* the totals; everywhere else, state a delta.
  */
 test('§30: the health reading moves the type row alone', () => {
-  assert.equal(schema.commands.length, 60);
+  // [p3] §33's `health.weathering` is the +1 here and it is §33's, not §30's — this test's
+  // subject is the totals, so the figure is absolute; §30 still adds none of it.
+  assert.equal(schema.commands.length, 61);
   assert.equal(Object.keys(schema.topics).length, 7);
   assert.equal(
     Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0),
     35,
   );
   assert.equal(schema.errors.length, 14);
+});
+
+/**
+ * [p3] §33.8's wire, under **R115**.
+ *
+ * The section declared `rects: [[i32]]` and `paths: [[[i32]]]`. `parseTypeExpr` accepts only
+ * `Name` · `Name?` · `[Name]` · `[Name]?`, and `validateSchema` runs on load — so the nested
+ * form throws `"[[i32]]" is not a type expression` **before `npm run gen` emits anything**, and
+ * the whole lane is red on the first regeneration rather than at `tsc`. The three named structs
+ * are what the grammar's own docstring prescribes.
+ *
+ * **Every field expression is pushed through the real parser**, not matched against a pattern
+ * written here: a second copy of the grammar would agree with itself and with nothing else.
+ */
+test('§33.8: the five weathering types parse under the real grammar', () => {
+  const declared = ['Rect', 'Point', 'Polyline', 'WeatherLayer', 'Weathering'];
+  let fields = 0;
+  for (const name of declared) {
+    const decl = schema.types[name];
+    assert.ok(decl, `${name} is not declared`);
+    assert.equal(decl.kind, 'struct');
+    for (const [field, expr] of Object.entries(decl.fields)) {
+      // Throws on anything the grammar cannot express, which is the whole of R115.
+      parseTypeExpr(expr);
+      fields += 1;
+    }
+  }
+  assert.ok(fields > 0, 'scanned no field at all');
+  console.error(
+    `§33.8: ${String(fields)} field expressions parsed across ${String(declared.length)} types`,
+  );
+
+  assert.deepEqual(schema.types.Rect.fields, { x: 'i32', y: 'i32', w: 'i32', h: 'i32' });
+  assert.deepEqual(schema.types.Point.fields, { x: 'i32', y: 'i32' });
+  assert.deepEqual(schema.types.Polyline.fields, { points: '[Point]' });
+  assert.deepEqual(schema.types.WeatherLayer.fields, {
+    layer: 'DecayLayer',
+    rects: '[Rect]',
+    points: '[Point]',
+    paths: '[Polyline]',
+  });
+  assert.deepEqual(schema.types.Weathering.fields, {
+    projectId: 'ProjectId',
+    sceneHash: 'SceneHash?',
+    spaceW: 'u32',
+    spaceH: 'u32',
+    layers: '[WeatherLayer]',
+  });
+
+  // R113: `DecayLayer` is p3-28's declaration, referenced here and re-declared nowhere.
+  assert.deepEqual(schema.types.DecayLayer.variants, [
+    'dust',
+    'cobwebs',
+    'rust',
+    'cracks',
+    'overgrowth',
+  ]);
+});
+
+/**
+ * [p3] §33.8's one command, and the first name spent from the `health.*` prefix §30 opened and
+ * occupied none of (§30.11).
+ *
+ * Read-only and idempotent: it derives geometry from a stored document and writes nothing. Not
+ * `$privileged` — it carries no `Bytes` and mutates no filesystem, so the renderer may call it
+ * directly, which is the whole point of putting the anchor resolution in the core.
+ */
+test('§33.8: health.weathering is read-only, idempotent and unprivileged', () => {
+  const cmd = schema.commands.find((c) => c.name === 'health.weathering');
+  assert.ok(cmd, 'health.weathering is not declared');
+  assert.deepEqual(cmd.args, { projectId: 'ProjectId' });
+  assert.equal(cmd.returns, 'Weathering');
+  assert.notEqual(cmd.privileged, true);
+  assert.notEqual(cmd.mutatesFilesystem, true);
+  assert.notEqual(cmd.idempotent, false);
+  assert.equal(
+    names.filter((n) => n.startsWith('health.')).length,
+    1,
+    'health.* holds exactly the one name §33 spends',
+  );
 });
