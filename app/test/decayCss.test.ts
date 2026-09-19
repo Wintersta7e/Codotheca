@@ -67,7 +67,7 @@ function decayRules(): { rules: DecayRule[]; filesScanned: number } {
 }
 
 describe('the decay stylesheet', () => {
-  it('scans the renderer tree and finds .cdt-decay rules, failing at zero', () => {
+  it('ac_p3_33_10 scans the renderer tree for .cdt-decay rules, failing at zero', () => {
     const { rules, filesScanned } = decayRules();
     console.error(
       `AC-P3-33-10: ${String(rules.length)} .cdt-decay rule(s) over ${String(filesScanned)} css file(s)`,
@@ -78,7 +78,7 @@ describe('the decay stylesheet', () => {
     );
   });
 
-  it('keeps the paint in decay.css and the clamp in motion.css, and nowhere else', () => {
+  it('ac_p3_33_10 keeps the paint in decay.css and the clamp in motion.css', () => {
     // Two files by design, not one. `decay.css` is the only stylesheet that PAINTS a layer;
     // `motion.css` carries the tier-clamp selector rows, which R112 makes p3-33's for phase 3.
     // A third file growing a `.cdt-decay` rule is what this catches.
@@ -91,7 +91,7 @@ describe('the decay stylesheet', () => {
     }
   });
 
-  it('resolves every colour to one of the five §33.9 tokens', () => {
+  it('ac_p3_33_10 resolves every colour to one of the five §33.9 tokens', () => {
     const { rules } = decayRules();
     for (const rule of rules) {
       for (const found of rule.body.matchAll(/var\((--[a-z0-9-]+)/gu)) {
@@ -112,7 +112,7 @@ describe('the decay stylesheet', () => {
     }
   });
 
-  it('keeps every alpha under the ceiling, compared as a number', () => {
+  it('ac_p3_33_10 keeps every alpha under the ceiling, compared as a number', () => {
     const { rules } = decayRules();
     let alphas = 0;
     for (const rule of rules) {

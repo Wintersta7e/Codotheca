@@ -81,7 +81,7 @@ function sets(): ClampSets {
 }
 
 describe('the tier clamp, derived from motion.css', () => {
-  it('reads a non-empty class set and prints it', () => {
+  it('ac_p3_33_8 reads a non-empty class set and prints it', () => {
     const { all, displayNone, noTransform, clamped } = sets();
     console.error(
       `AC-P3-33-8 clamp set (${String(all.size)}): ${[...all].sort().join(' ')}\n` +
@@ -93,7 +93,7 @@ describe('the tier clamp, derived from motion.css', () => {
     expect(all.size, 'the clamp parser derived no class name at all').toBeGreaterThan(0);
   });
 
-  it('fails at zero rather than reporting an empty set as clean', () => {
+  it('ac_p3_33_8 fails at zero rather than reporting an empty set as absent', () => {
     const empty = clampClassNames('');
     expect(empty.all.size).toBe(0);
     expect(empty.displayNone.size).toBe(0);
@@ -105,7 +105,7 @@ describe('the tier clamp, derived from motion.css', () => {
    * **`AC-P3-33-8`.** §33.5 rules the layers **render** at `reduced` — identical set, identical
    * positions, opacity only, no transform, so no motes, no crack-weld travel, no debris.
    */
-  it('puts .cdt-decay in the transform:none rule and in the clamped-transition rule', () => {
+  it('ac_p3_33_8 puts .cdt-decay in the transform:none rule and in the clamped rule', () => {
     const { displayNone, noTransform, clamped } = sets();
     expect(noTransform.has('cdt-decay'), '.cdt-decay must render with no transform').toBe(true);
     expect(clamped.has('cdt-decay'), '.cdt-decay must carry a clamped opacity transition').toBe(
@@ -123,7 +123,7 @@ describe('the tier clamp, derived from motion.css', () => {
    * selects. This lane's claim is set membership, which is all it can decide — the resolved-style
    * verification is `AC-P3-34-13`, p3-34's, because p3-34 mounts the element.
    */
-  it('puts .cdt-surge in the display:none rule and in neither of the other two', () => {
+  it('ac_p3_33_8 puts .cdt-surge in the display:none rule and in neither other', () => {
     const { displayNone, noTransform, clamped } = sets();
     expect(displayNone.has('cdt-surge'), 'the surge is absent below full').toBe(true);
     expect(noTransform.has('cdt-surge'), 'an unclamped surge is the accessibility failure').toBe(

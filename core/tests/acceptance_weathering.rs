@@ -370,3 +370,83 @@ fn ac_p3_33_9_the_scan_floor_refuses_an_empty_directory() {
         "the floor the sibling test asserts would have passed here"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// AC-P3-33-3 — the sidecar's anchors, resolved by the core. `core/tests/weathering_anchors.rs`
+// holds §33.3's full table; this is the criterion's own statement of the well-formedness rule.
+// ---------------------------------------------------------------------------------------------
+
+/// **`AC-P3-33-3`.** **At most one** of `rects`, `points` and `paths` is non-empty per layer, and
+/// the non-empty one is the kind §33.3's table gives that layer (R127.1).
+///
+/// *Exactly one* is false on the majority shape — a `Plain` scene with no vents, where `dust` and
+/// `overgrowth` resolve to zero anchors — and **the fix that presents itself, building the
+/// fixture out of `Screen` modules, retires the majority case from the bar.** So both shapes are
+/// here, and the `Plain` one is asserted to be all-empty on those two layers rather than skipped.
+#[test]
+fn ac_p3_33_3_at_most_one_anchor_array_is_populated_per_layer() {
+    use codotheca_core::art::compose::{layout, FastenerKind, LayoutInputs, ModuleKind};
+    use codotheca_core::protocol::DecayLayer;
+    use codotheca_core::weathering::anchors::resolve_anchors;
+
+    let build = |kind: ModuleKind, modules: usize, vents: usize| {
+        let mut scene = generate(&inputs(Some(1_500_000_000), false, false));
+        let laid = layout(&LayoutInputs {
+            h: scene.seed.h,
+            livery_family: scene.livery_family,
+            panel_family: scene.panel_family,
+            module_kind: kind,
+            module_count: modules,
+            vent_count: vents,
+            fastener: FastenerKind::Hex,
+        });
+        scene.modules = laid.modules;
+        scene.vents = laid.vents;
+        scene.seams = laid.seams;
+        scene.fasteners = laid.fasteners;
+        scene
+    };
+
+    let fixtures = [
+        ("screen with vents", build(ModuleKind::Screen, 2, 2)),
+        ("plain with no vents", build(ModuleKind::Plain, 2, 0)),
+        ("nothing laid out", build(ModuleKind::Plain, 0, 0)),
+    ];
+    let mut scanned = 0_usize;
+    for (name, scene) in &fixtures {
+        let layers = resolve_anchors(scene);
+        assert_eq!(layers.len(), 5, "{name}: every variant gets an entry");
+        for entry in &layers {
+            let populated = usize::from(!entry.rects.is_empty())
+                + usize::from(!entry.points.is_empty())
+                + usize::from(!entry.paths.is_empty());
+            assert!(
+                populated <= 1,
+                "{name}/{:?}: at most one array is non-empty",
+                entry.layer
+            );
+            match entry.layer {
+                DecayLayer::Rust => assert!(entry.rects.is_empty() && entry.paths.is_empty()),
+                DecayLayer::Cracks => assert!(entry.rects.is_empty() && entry.points.is_empty()),
+                _ => assert!(entry.points.is_empty() && entry.paths.is_empty()),
+            }
+        }
+        scanned += 1;
+    }
+
+    // The majority shape, asserted rather than avoided.
+    let plain = resolve_anchors(&build(ModuleKind::Plain, 2, 0));
+    for want in [DecayLayer::Dust, DecayLayer::Overgrowth] {
+        let entry = plain
+            .iter()
+            .find(|l| l.layer == want)
+            .unwrap_or_else(|| panic!("{want:?} has no entry"));
+        assert!(
+            entry.rects.is_empty() && entry.points.is_empty() && entry.paths.is_empty(),
+            "{want:?} must be all-empty on a Plain scene with no vents"
+        );
+    }
+
+    assert!(scanned > 0, "scanned no scene at all");
+    eprintln!("AC-P3-33-3: {scanned} scenes scanned for anchor well-formedness");
+}

@@ -54,7 +54,7 @@ function walk(dir: string, keep: (name: string) => boolean): string[] {
 }
 
 describe('the renderer parses no scene document', () => {
-  it('finds no scene_json anywhere in the renderer source, over a non-zero file count', () => {
+  it('ac_p3_33_3 finds no scene document in the renderer source, over a printed count', () => {
     const files = walk(rendererSrc, (n) => /\.(?:tsx?|css)$/u.test(n));
     let scanned = 0;
     const offenders: string[] = [];
@@ -73,7 +73,7 @@ describe('the renderer parses no scene document', () => {
     );
   });
 
-  it('finds no scene_json in the built renderer bundle, over a non-zero byte count', () => {
+  it('ac_p3_33_3 finds none in the built renderer bundle, over a printed byte count', () => {
     if (!existsSync(bundleDir)) {
       // `npm run build:app` has not run in this tree. The source half above still gates, and
       // `npm run check:bundle` is what makes the built half reachable in the full gate.

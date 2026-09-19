@@ -1781,7 +1781,7 @@
           "runner": "vitest",
           "owner": "12b",
           "test": "AC-58 the dot renders on all five surfaces from one table and emits no value outside it",
-          "assert": "A NULL condition_signal draws no dot at all on every surface; the not-indexed badge carries the state. Contrast is asserted per row, with the offline disc explicitly exempt. The project page's identity line draws exactly one dot and the page's hero draws band 1's, which is a different surface."
+          "assert": "A NULL condition_signal draws no dot at all on every surface; the not-indexed badge carries the state. Contrast is asserted per row, with the offline disc explicitly exempt. [p3] \u00a733.7: the project page draws TWO dots of its own \u2014 the identity line's 9px and the CONDITION panel's 6px, whose \u00a75.4a deferral expires \u2014 and the page's hero draws band 1's, which is a different surface. A DOM audit of an open page finds THREE. The day edges, fills, rings and the warm/cooling ban are unchanged."
         },
         {
           "id": "AC-58-edges",
