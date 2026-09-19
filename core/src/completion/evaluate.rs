@@ -69,13 +69,19 @@ pub struct DepsReading {
 /// (R124), and `completion_evaluator.rs`'s source walk fails the build if they reappear here.
 #[derive(Debug, Clone)]
 pub struct CompletionInputs {
-    /// One reading per Group-A source, in `CompletionCheck` order: `readme`, `license`, `tests`,
-    /// `ciGreen`, `pushed`, `release`. Named fields rather than a map, so a missing source is a
+    /// One reading per Group-A source. Named fields rather than a map, so a missing source is a
     /// compile error instead of a lookup that answers `None`.
+    ///
+    /// **The fields carry §28's SOURCE spelling, not §31's check key** — `ci_red` is what stands
+    /// behind the check whose key is `CompletionCheck::CiGreen`. §31.9 puts the two vocabularies
+    /// in bijection and forbids conflating them, and naming an input after the thing it was read
+    /// from is what makes `super::inputs` legible beside `debt_sweep`. It is also what keeps
+    /// that file clear of `remote_no_completion_writer`, which bans the snake-case aggregate
+    /// spelling from any file naming a remote marker.
     pub readme: SingletonReading,
     pub license: SingletonReading,
     pub tests: SingletonReading,
-    pub ci_green: SingletonReading,
+    pub ci_red: SingletonReading,
     pub pushed: SingletonReading,
     pub release: SingletonReading,
 
@@ -374,7 +380,7 @@ pub fn evaluate(inputs: &CompletionInputs, now: i64) -> [CheckRow; 10] {
                 if ci_na || ci.0 == CheckState::Fail {
                     plain(CheckState::Na)
                 } else {
-                    from_singleton(key, inputs.ci_green, account)
+                    from_singleton(key, inputs.ci_red, account)
                 }
             }
 

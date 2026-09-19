@@ -242,3 +242,88 @@ fn visibility_of(stored: &str) -> Option<RemoteVisibility> {
         _ => None,
     }
 }
+
+/// §31's four already-shaped remote values, and **no aggregate and no verdict**.
+///
+/// **Four fields, not six.** An earlier draft carried the CI runs so §31's evaluator could
+/// compute *did the latest concluded run on this branch succeed*; R124 moved that aggregate into
+/// §28's `ci_red` arm, so this struct serves the `description` check alone. `connected` and
+/// `facts_state` are what separate *needs an account* from *not synced*, for `description` and
+/// for the mapped reason of the check §28's arm stands behind.
+///
+/// The seam is `remote_no_completion_writer`'s, made structural rather than remembered: this
+/// module reads the forge's tables and hands out values; nothing here judges one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteCompletionInput {
+    pub connected: bool,
+    pub facts_state: RemoteFactsState,
+    /// The **forge's own** description, never `project.description_source`: a user note that
+    /// wins the description chain does not delete the forge's description.
+    pub forge_description: Option<String>,
+    pub topic_count: u32,
+}
+
+/// The four values above for one project, or `None` when it has no remote at all.
+///
+/// `None` **iff** `project.remote_key` is NULL — the same presence predicate `remote_facts`
+/// carries, so the two cannot disagree about whether a project has a remote.
+///
+/// # Errors
+/// Fails when the index cannot be read.
+pub fn remote_completion_input(
+    conn: &Connection,
+    project: ProjectId,
+) -> Result<Option<RemoteCompletionInput>, IndexError> {
+    let Some(binding) = project_remote(conn, project)? else {
+        return Ok(None);
+    };
+    let connected = any_account(conn)?;
+
+    let (description, permitted, observed_at, topic_count) = match (
+        binding.provider.as_deref(),
+        binding.provider_repo_id.as_deref(),
+    ) {
+        (Some(provider), Some(repo_id)) => {
+            let row = conn
+                .query_row(
+                    "SELECT description, permitted, observed_at
+                       FROM remote_repo WHERE provider = ?1 AND provider_repo_id = ?2",
+                    rusqlite::params![provider, repo_id],
+                    |r| {
+                        Ok((
+                            r.get::<_, Option<String>>(0)?,
+                            r.get::<_, i64>(1)?,
+                            r.get::<_, Option<i64>>(2)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            let topics: i64 = conn.query_row(
+                "SELECT count(*) FROM remote_topic
+                  WHERE provider = ?1 AND provider_repo_id = ?2",
+                rusqlite::params![provider, repo_id],
+                |r| r.get(0),
+            )?;
+            // A binding whose forge row nobody has written yet: no description, no clock, and
+            // `permitted` defaulting to the DDL's own 1 rather than to a refusal.
+            let (description, permitted, observed_at) = row.unwrap_or((None, 1, None));
+            (
+                description,
+                permitted,
+                observed_at,
+                u32::try_from(topics).unwrap_or(u32::MAX),
+            )
+        }
+        // A binding with no provider pair has no row to find, and a row nobody wrote has no
+        // clock: *not observed*, which is the same answer `remote_facts` gives for the same
+        // reason.
+        _ => (None, 1, None, 0),
+    };
+
+    Ok(Some(RemoteCompletionInput {
+        connected,
+        facts_state: state_of(connected, permitted != 0, observed_at),
+        forge_description: description,
+        topic_count,
+    }))
+}

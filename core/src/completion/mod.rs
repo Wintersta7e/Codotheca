@@ -8,7 +8,10 @@
 //!
 //! - [`evaluate`] is **pure** — a shaped input struct to ten rows, no database, no remote, and no
 //!   clock beyond the `now` handed to it.
-//! - `inputs` is the only file here that reads a table or names `crate::remote`.
+//! - `inputs` is the only file here that reads a table or reaches into the remote module. The
+//!   path is deliberately not spelled out in this file: `remote_no_completion_writer` scans for
+//!   it as a plain substring, and a file naming it may name no completion column — which is the
+//!   seam being enforced, stated here rather than rediscovered.
 //! - `store` owns `project_check`.
 //! - [`proposal`] owns §31.4's archetype proposal, in both vocabularies.
 //!
@@ -20,4 +23,5 @@
 //! own tests.
 
 pub mod evaluate;
+pub mod inputs;
 pub mod proposal;

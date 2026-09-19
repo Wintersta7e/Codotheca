@@ -35,7 +35,7 @@ fn baseline() -> CompletionInputs {
         readme: complete(DebtSource::MissingReadme),
         license: complete(DebtSource::MissingLicense),
         tests: complete(DebtSource::MissingTests),
-        ci_green: complete(DebtSource::CiRed),
+        ci_red: complete(DebtSource::CiRed),
         pushed: complete(DebtSource::UnpushedCommits),
         release: complete(DebtSource::NoRelease),
         has_ci: Some(PresenceState::Present),
@@ -174,7 +174,7 @@ fn put(inputs: &mut CompletionInputs, key: CompletionCheck, reading: SingletonRe
         CompletionCheck::License => inputs.license = reading,
         CompletionCheck::Tests => inputs.tests = reading,
         CompletionCheck::Pushed => inputs.pushed = reading,
-        CompletionCheck::CiGreen => inputs.ci_green = reading,
+        CompletionCheck::CiGreen => inputs.ci_red = reading,
         CompletionCheck::Release => inputs.release = reading,
         other => panic!("{other:?} is not a Group-A key"),
     }
@@ -220,7 +220,7 @@ fn an_unobservable_group_a_source_gets_its_own_reason() {
     ] {
         let mut inputs = baseline();
         inputs.account_connected = connected;
-        inputs.ci_green = SingletonReading {
+        inputs.ci_red = SingletonReading {
             source: DebtSource::CiRed,
             outcome: Some(DebtSweepOutcome::Unobservable),
             open_items: 0,
