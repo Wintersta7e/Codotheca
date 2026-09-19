@@ -6,6 +6,7 @@ import { evaluateQuery } from './evaluate.js';
 import type { SectionAggregate } from './eras.js';
 import { aggregateSection, eraSectionIdFor, eraSectionLabel, eraSectionOrder } from './eras.js';
 import type { ShelfRow } from './row.js';
+import { rankOf } from './row.js';
 
 export interface ShelfSection {
   readonly id: string;
@@ -28,29 +29,6 @@ export interface ShelfPage {
   readonly orderKey: string;
   readonly generation: number;
   readonly ast: QueryAst;
-}
-
-/**
- * [p3] §35.3's membership rule and §35.2's ordering scalar, as one total function — the mirror of
- * `rank_of` in `core/src/projects/list.rs`, which `protocol/shelf/order-corpus.json` holds both
- * halves to.
- *
- * A number is *this row carries a reading, and its count is that number*; `null` is *tail*. The
- * case §30.1 forbids the writer to produce — a `live` reading with a null `scoredOpen` — resolves
- * to the tail rather than to a zero, because **a zero is a ranked value and never a tail value**.
- *
- * It re-applies none of §35.4's exclusions: §30's pipeline decides what the reading is, and this
- * reads it. `isReference`, `isArchived` and `lifecycle` are never consulted.
- */
-export function rankOf(row: ShelfRow): number | null {
-  switch (row.healthSummary.state) {
-    case 'live':
-    case 'frozen':
-      return row.healthSummary.scoredOpen;
-    case 'absent':
-    case 'suppressed':
-      return null;
-  }
 }
 
 /** §8.0a's default order, shared by `last_touched` and `needs_attention` so one value has one

@@ -9,7 +9,7 @@ import { QueryFieldView } from './QueryField.js';
 // that module, so exporting its table back out of the component is a cycle around a constant.
 import { shedClassName, shedLevelFor } from './useShedLevel.js';
 import type { ShelfView } from './viewState.js';
-import { SORT_LABELS, nextSort } from './viewState.js';
+import { SORT_KEYS, SORT_LABELS, nextSort, resolveSort } from './viewState.js';
 
 /** 40px, not the design prose's 42: the prototype renders 40 plus a 1px rule, and the handoff's
  *  own Fidelity clause makes the prototype authoritative where the two differ. */
@@ -36,6 +36,15 @@ export interface TopBarProps {
   readonly field: QueryFieldModel;
   readonly scan: Pick<ScanStatus, 'running' | 'foundRepos'>;
   readonly barWidth: number;
+  /**
+   * [p3] §35.5's offered set, from `offeredSorts(projectionCapabilities(rows))`. The bar renders
+   * the **resolved** key and cycles within this list, and `view.sort` is never rewritten — a
+   * stored preference is not deleted because today's library cannot honour it.
+   *
+   * The default is the whole cycle, which is what a caller with no projection means: this
+   * component's own test and `app/e2e/topbar-floor.spec.ts` render the bar with no rows behind it.
+   */
+  readonly offeredSorts?: readonly SortKey[];
   readonly onQueryChange: (text: string) => void;
   readonly onSortChange: (sort: SortKey) => void;
   readonly onDensityChange: (density: number) => void;
@@ -58,7 +67,9 @@ export interface TopBarProps {
 export function TopBar(props: TopBarProps): ReactElement {
   const shed = shedLevelFor(props.barWidth);
   const { view, scan } = props;
-  const sortLabel = SORT_LABELS[view.sort];
+  const offered = props.offeredSorts ?? SORT_KEYS;
+  const sort = resolveSort(view.sort, offered);
+  const sortLabel = SORT_LABELS[sort];
 
   return (
     <div className={['cdt-shelf-bar', shedClassName(shed)].filter(Boolean).join(' ')}>
@@ -84,7 +95,7 @@ export function TopBar(props: TopBarProps): ReactElement {
         className="cdt-shelf-control cdt-shelf-control-cycles"
         aria-label={`Sort: ${sortLabel.toLowerCase()}`}
         onClick={() => {
-          props.onSortChange(nextSort(view.sort));
+          props.onSortChange(nextSort(sort, offered));
         }}
       >
         {shed < 2 ? <span className="cdt-shelf-control-key">{SORT_KEY_LABEL}</span> : null}

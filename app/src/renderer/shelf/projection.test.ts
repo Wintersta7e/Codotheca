@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { LocationRef, ProjectId, ProjectRow } from '../../generated/protocol.js';
+import type {
+  HealthState,
+  HealthSummary,
+  LocationRef,
+  ProjectId,
+  ProjectRow,
+} from '../../generated/protocol.js';
 import { ProjectionStore } from './projection.js';
 import { projectionCapabilities, toShelfRow } from './row.js';
 
@@ -58,8 +64,24 @@ function row(id: number, over: Partial<ProjectRow> = {}): ProjectRow {
     errorKind: null,
     errorAt: null,
     eraSectionId: '',
+    // [p3] `healthSummary` is non-nullable (R116), and §30.1's most boring reading is the one
+    // that says nothing was computed. A fixture defaulting to `live` with a zero count would
+    // answer the health capability for every test that never asked about health.
+    healthSummary: {
+      state: 'absent',
+      scoredOpen: null,
+      unverified: null,
+      unknownChecks: null,
+      observedAt: null,
+    },
+    lifecycle: 'active',
     ...over,
   } as unknown as ProjectRow;
+}
+
+/** A reading, for the rows a health test is about. */
+function reading(state: HealthState, scoredOpen: number | null = null): HealthSummary {
+  return { state, scoredOpen, unverified: null, unknownChecks: null, observedAt: null };
 }
 
 describe('toShelfRow', () => {
@@ -85,6 +107,24 @@ describe('projectionCapabilities', () => {
       toShelfRow({ ...row(2), authoredByUser: false } as unknown as ProjectRow),
     ];
     expect(projectionCapabilities(rows).authoredByUser).toBe(true);
+  });
+
+  // [p3] §35.5's ninth capability, on the same rule as the eight above it.
+  it('AC-P3-35-6 answers health only when a row carries a reading', () => {
+    const caps = (over: Partial<ProjectRow>): boolean =>
+      projectionCapabilities([toShelfRow(row(1, over))]).health;
+
+    // An empty projection answers nothing.
+    expect(projectionCapabilities([]).health).toBe(false);
+    // `absent` and `suppressed` are the two states that carry no reading.
+    expect(caps({})).toBe(false);
+    expect(caps({ healthSummary: reading('suppressed') })).toBe(false);
+    // A computed zero **answers it**: the project carries a reading and its count is zero.
+    expect(caps({ healthSummary: reading('live', 0) })).toBe(true);
+    expect(caps({ healthSummary: reading('frozen', 4) })).toBe(true);
+    // One row is enough, exactly as for the eight above.
+    const mixed = [toShelfRow(row(1)), toShelfRow(row(2, { healthSummary: reading('live', 2) }))];
+    expect(projectionCapabilities(mixed).health).toBe(true);
   });
 });
 

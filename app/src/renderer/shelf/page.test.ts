@@ -7,9 +7,9 @@ import type {
   SortKey,
 } from '../../generated/protocol.js';
 import type { ShelfRow } from './row.js';
-import { toShelfRow } from './row.js';
+import { rankOf, toShelfRow } from './row.js';
 import type { QueryContext } from './evaluate.js';
-import { buildShelfPage, compareRows, orderKeyOf, rankOf } from './page.js';
+import { buildShelfPage, compareRows, orderKeyOf } from './page.js';
 
 const DAY = 86_400;
 const NOW = Math.floor(Date.UTC(2026, 5, 15, 12) / 1000);
@@ -100,6 +100,7 @@ const ctx: QueryContext = {
     hasCi: false,
     hasRemote: false,
     hasSubmodules: false,
+    health: false,
   },
 };
 const build = (

@@ -48,6 +48,33 @@ export function toShelfRow(row: ProjectRow): ShelfRow {
   };
 }
 
+/**
+ * [p3] §35.3's membership rule and §35.2's ordering scalar, as one total function — the mirror of
+ * `rank_of` in `core/src/projects/list.rs`, which `protocol/shelf/order-corpus.json` holds both
+ * halves to.
+ *
+ * A number is *this row carries a reading, and its count is that number*; `null` is *tail*. The
+ * case §30.1 forbids the writer to produce — a `live` reading with a null `scoredOpen` — resolves
+ * to the tail rather than to a zero, because **a zero is a ranked value and never a tail value**.
+ *
+ * It re-applies none of §35.4's exclusions: §30's pipeline decides what the reading is, and this
+ * reads it. `isReference`, `isArchived` and `lifecycle` are never consulted.
+ *
+ * **Here rather than in `page.ts` beside the comparator**: `projectionCapabilities` below needs
+ * the same expression of *does this row carry a reading*, and a row module importing the page
+ * module for it would point the dependency the wrong way down. One owner, read from both.
+ */
+export function rankOf(row: ShelfRow): number | null {
+  switch (row.healthSummary.state) {
+    case 'live':
+    case 'frozen':
+      return row.healthSummary.scoredOpen;
+    case 'absent':
+    case 'suppressed':
+      return null;
+  }
+}
+
 export interface ProjectionCapabilities {
   readonly authoredByUser: boolean;
   readonly location: boolean;
@@ -57,6 +84,12 @@ export interface ProjectionCapabilities {
   readonly hasCi: boolean;
   readonly hasRemote: boolean;
   readonly hasSubmodules: boolean;
+  /**
+   * [p3] §35.5. **Read by the sort control and by no `has:` term** — it adds no grammar term and
+   * `evaluate.ts`'s `answerable` switch is untouched. A row whose reading says `scoredOpen = 0`
+   * answers it: it carries a reading. A row at `absent` or `suppressed` does not.
+   */
+  readonly health: boolean;
 }
 
 /** A capability is present when at least one row answers it. An empty projection answers nothing. */
@@ -69,6 +102,8 @@ export function projectionCapabilities(rows: readonly ShelfRow[]): ProjectionCap
     // `hasRemote` is a wire field rather than an extra, so it is answered by any row at all —
     // and the same rule applies: an empty projection answers nothing.
     answered.add('hasRemote');
+    // One expression of *does this row carry a reading*, shared with the comparator.
+    if (rankOf(row) !== null) answered.add('health');
   }
   return {
     authoredByUser: answered.has('authoredByUser'),
@@ -79,6 +114,7 @@ export function projectionCapabilities(rows: readonly ShelfRow[]): ProjectionCap
     hasCi: answered.has('hasCi'),
     hasRemote: answered.has('hasRemote'),
     hasSubmodules: answered.has('hasSubmodules'),
+    health: answered.has('health'),
   };
 }
 

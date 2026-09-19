@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import schemaRaw from '../../../../protocol/schema/protocol.json?raw';
 import type { ProjectId, SortKey, ViewState } from '../../generated/protocol.js';
 import { densityStep } from '../card/geometry.js';
+import type { ProjectionCapabilities } from './row.js';
 import {
   DEFAULT_DENSITY_PX,
   DEFAULT_SHELF_VIEW,
@@ -11,7 +12,9 @@ import {
   clampDensity,
   nextDensity,
   nextSort,
+  offeredSorts,
   patchFor,
+  resolveSort,
   viewFromState,
 } from './viewState.js';
 
@@ -117,6 +120,40 @@ describe('the sort ladder', () => {
   it('labels every key it cycles, so the control can never render undefined', () => {
     for (const key of SORT_KEYS) expect(SORT_LABELS[key].length).toBeGreaterThan(0);
     expect(Object.keys(SORT_LABELS)).toHaveLength(SORT_KEYS.length);
+  });
+
+  // [p3] §35.5. The `view.set` half is in `useViewState.test.tsx`, asserted on the command stream.
+  it('AC-P3-35-6 the key is not offered when nothing carries a reading, and nothing is written back', () => {
+    const caps = (health: boolean): ProjectionCapabilities => ({
+      authoredByUser: false,
+      location: false,
+      hasReadme: false,
+      hasLicense: false,
+      hasTests: false,
+      hasCi: false,
+      hasRemote: false,
+      hasSubmodules: false,
+      health,
+    });
+    const without = offeredSorts(caps(false));
+    const withReading = offeredSorts(caps(true));
+
+    expect(without).not.toContain('needs_attention');
+    expect(without).toEqual(SORT_KEYS.filter((key) => key !== 'needs_attention'));
+    expect(withReading).toEqual([...SORT_KEYS]);
+
+    // A stored preference is not deleted because today's library cannot honour it: it resolves
+    // to the default at display time and returns the moment a reading exists.
+    expect(resolveSort('needs_attention', without)).toBe(SORT_KEYS[0]);
+    expect(resolveSort('needs_attention', withReading)).toBe('needs_attention');
+    expect(resolveSort('name', without)).toBe('name');
+
+    // A control that does not show a key cannot cycle onto it.
+    let key = resolveSort('needs_attention', without);
+    for (let step = 0; step < SORT_KEYS.length + 1; step += 1) {
+      expect(without).toContain(key);
+      key = nextSort(key, without);
+    }
   });
 });
 

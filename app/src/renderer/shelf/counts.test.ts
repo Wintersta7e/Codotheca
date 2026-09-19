@@ -79,6 +79,7 @@ const ctx: QueryContext = {
     hasCi: false,
     hasRemote: false,
     hasSubmodules: false,
+    health: false,
   },
 };
 

@@ -9,6 +9,7 @@ import type { QueryAst } from '../../shared/query/ast.js';
 import { parseQuery } from '../../shared/query/parse.js';
 import type { CollapseState } from './collapse.js';
 import { parseCollapseState, serializeCollapseState } from './collapse.js';
+import type { ProjectionCapabilities } from './row.js';
 
 /** The shelf's own reading of `view_state`: the query parsed once, the collapse strings turned
  *  into state, and the density snapped onto the ladder. */
@@ -67,9 +68,36 @@ export const SORT_LABELS: Readonly<Record<SortKey, string>> = {
   needs_attention: 'Needs attention',
 };
 
-export function nextSort(sort: SortKey): SortKey {
-  const index = SORT_KEYS.indexOf(sort);
-  return SORT_KEYS[(index + 1) % SORT_KEYS.length] ?? 'last_touched';
+/**
+ * [p3] §35.5. The keys the control offers, given what the projection can answer.
+ *
+ * *A control that cannot order anything is the same object as a chip that counts nothing*, and
+ * §23.4's rule applies at control granularity: a section that exists only to advertise a feature
+ * is an ad. The capability is `projectionCapabilities`' own — *a capability is present when at
+ * least one row answers it; an empty projection answers nothing* — and this states no second rule.
+ */
+export function offeredSorts(caps: ProjectionCapabilities): readonly SortKey[] {
+  return SORT_KEYS.filter((key) => key !== 'needs_attention' || caps.health);
+}
+
+/**
+ * [p3] §35.5. A stored key the projection cannot honour renders as the default.
+ *
+ * **Nothing is written back.** The resolution happens where the comparator is chosen, so a stored
+ * preference is not deleted because today's library cannot honour it, and the key returns the
+ * moment a reading exists. `patchFor` issues a `view.set` only when `prev.sort !== next.sort`, so
+ * leaving `ShelfView.sort` alone is both the rule and its implementation.
+ */
+export function resolveSort(stored: SortKey, offered: readonly SortKey[]): SortKey {
+  return offered.includes(stored) ? stored : SORT_KEYS[0];
+}
+
+/** Cycles over the **offered** set, so a control that does not show a key cannot cycle onto it.
+ *  The default is the whole cycle, which is what a caller with no projection means. */
+export function nextSort(sort: SortKey, offered: readonly SortKey[] = SORT_KEYS): SortKey {
+  const keys = offered.length === 0 ? SORT_KEYS : offered;
+  const index = keys.indexOf(sort);
+  return keys[(index + 1) % keys.length] ?? SORT_KEYS[0];
 }
 
 export function viewFromState(state: ViewState): ShelfView {
