@@ -49,7 +49,10 @@ fn loaded(row: &Value) -> LoadedRow {
         );
     }
     let mut wire = ProjectRow::for_test(row["id"].as_i64().expect("id"));
-    wire.name = row["name"].as_str().expect("name").to_owned();
+    row["name"]
+        .as_str()
+        .expect("name")
+        .clone_into(&mut wire.name);
     wire.last_touched_at = row["lastTouchedAt"].as_i64().expect("lastTouchedAt");
     wire.size_tracked_bytes = row["sizeTrackedBytes"].as_i64();
     wire.health_summary = HealthSummary {
@@ -77,7 +80,7 @@ fn loaded(row: &Value) -> LoadedRow {
 }
 
 #[test]
-fn rust_comparator_matches_every_order_corpus_case() {
+fn ac_p3_35_3_rust_comparator_matches_every_order_corpus_case() {
     let doc = read("protocol/shelf/order-corpus.json");
     let cases = doc["cases"].as_array().expect("cases is an array");
     eprintln!("sort_corpus: compared {} case(s)", cases.len());
@@ -136,7 +139,7 @@ fn rust_comparator_matches_every_order_corpus_case() {
 /// The coverage claim is **derived from the contract**, never from a literal: a count a human
 /// maintains is a defect with a delay (§36.2 rule 9).
 #[test]
-fn the_corpus_covers_every_sort_key_the_schema_declares() {
+fn ac_p3_35_3_the_corpus_covers_every_sort_key_the_schema_declares() {
     let schema = read("protocol/schema/protocol.json");
     let variants: BTreeSet<String> = schema["types"]["SortKey"]["variants"]
         .as_array()
@@ -173,7 +176,7 @@ fn the_corpus_covers_every_sort_key_the_schema_declares() {
 }
 
 #[test]
-fn the_loader_names_a_row_key_it_does_not_know() {
+fn ac_p3_35_3_the_loader_names_a_row_key_it_does_not_know() {
     let row = serde_json::json!({
         "id": 1, "name": "a", "lastTouchedAt": 0, "sizeTrackedBytes": null,
         "healthState": "absent", "scoredOpen": null, "weighting": 3
