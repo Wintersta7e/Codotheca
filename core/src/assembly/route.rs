@@ -117,10 +117,9 @@ pub enum Route {
 /// below read the router, so an empty constant still proves that no command routes to `NoOwner`
 /// — two `all()` calls over an empty set assert nothing.
 ///
-/// **[p3] §31.6's `projects.setCheckNa` re-opens it with one row.** It is declared with the
-/// schema and its handler lands in the same plan; it leaves in that change, which is the rule
-/// above and not an exception to it.
-pub const UNOWNED_COMMANDS: [(&str, &str); 1] = [("projects.setCheckNa", "p3-31 completion")];
+/// **[p3] §31.6's `projects.setCheckNa` passed through it and left in the change that gave it a
+/// handler**, which is the rule above holding rather than an exception to it.
+pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -177,14 +176,13 @@ pub fn route(command: CommandName) -> Route {
             Route::Projects
         }
 
+        // [p3] §31.6's writer joins the three: it writes one `project_check.user_na`, re-runs
+        // §31's evaluator in the same transaction and re-emits the row, all of which this module
+        // already owns.
         CommandName::ProjectsGet
         | CommandName::ProjectsSetNote
+        | CommandName::ProjectsSetCheckNa
         | CommandName::LocationsRelocate => Route::Detail,
-
-        // [p3] §31.6's writer. It is declared with the schema and answered by
-        // `crate::detail::checkna`, which lands with the store it writes — so until then it is
-        // NAMED and refused rather than mis-routed, which is this file's own rule.
-        CommandName::ProjectsSetCheckNa => Route::NoOwner("p3-31 completion"),
 
         CommandName::ViewGet
         | CommandName::ViewSet

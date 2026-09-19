@@ -15,7 +15,7 @@ mod support;
 
 use codotheca_core::clock::SystemClock;
 use codotheca_core::completion::proposal::{proposes_na, suppressed_source};
-use codotheca_core::completion::{evaluate_and_write, Written};
+use codotheca_core::completion::{evaluate_and_write, set_check_na, Written};
 use codotheca_core::debt::singletons::{evaluate_singletons, ArmReading, SINGLETON_ARMS};
 use codotheca_core::debt::store::SqliteDebtStore;
 use codotheca_core::git::read_ref_state;
@@ -712,4 +712,93 @@ fn a_no_change_recompute_leaves_observed_at_where_it_was() {
         Written::Rewritten { .. }
     ));
     assert!(stamps(&conn).contains(&9_999));
+}
+
+// ---------------------------------------------------------------------------------------------
+// AC-P3-31-17 — N/A is two stored facts, through the command that writes one of them
+// ---------------------------------------------------------------------------------------------
+
+/// `na = true` survives a J3 re-run that changes the archetype; `na = null` returns the key to
+/// the proposal; `na = false` forces evaluation of a key the archetype proposes N/A for.
+///
+/// **The J3 re-run is modelled as what J3 writes** — the `archetype` column — because that is the
+/// whole of what a re-classification changes, and the rule being tested is that `user_na` is a
+/// *different* stored fact from it.
+#[test]
+fn ac_p3_31_17_a_user_ruling_survives_a_reclassification() {
+    let (_dir, mut conn) = fresh();
+    let p = scorable(&conn, "reclassified");
+    content_scan(&conn, p, "present");
+    // `tests` is a Group-A check, so its answer is §28's stored sweep and not a predicate §31
+    // re-derives (R124).
+    sweep(&conn, p, "missing_tests", "complete", Some(0));
+    conn.execute(
+        "UPDATE project SET archetype = 'library' WHERE id = ?1",
+        [p],
+    )
+    .unwrap();
+    recompute(&mut conn, p, 1_000);
+
+    let row = |conn: &rusqlite::Connection, key: &str| -> (String, Option<i64>) {
+        conn.query_row(
+            "SELECT state, user_na FROM project_check WHERE project_id = ?1 AND check_key = ?2",
+            rusqlite::params![p, key],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    };
+    assert_eq!(row(&conn, "tests").0, "pass", "a library evaluates `tests`");
+
+    // The user rules `tests` not applicable.
+    let set = |conn: &mut rusqlite::Connection, key: CompletionCheck, na: Option<bool>| {
+        let tx = conn.transaction().unwrap();
+        set_check_na(&tx, ProjectId(p), key, na, 2_000).unwrap();
+        tx.commit().unwrap();
+    };
+    set(&mut conn, CompletionCheck::Tests, Some(true));
+    assert_eq!(row(&conn, "tests"), ("na".to_owned(), Some(1)));
+
+    // J3 re-runs and reclassifies the project as documentation, which **proposes** `tests` N/A.
+    // The stored ruling is untouched: a proposal and a decision are two facts.
+    conn.execute("UPDATE project SET archetype = 'docs' WHERE id = ?1", [p])
+        .unwrap();
+    recompute(&mut conn, p, 3_000);
+    assert_eq!(
+        row(&conn, "tests"),
+        ("na".to_owned(), Some(1)),
+        "a re-classification erased a decision the user made"
+    );
+
+    // Clearing the override returns the key to the proposal — still `na`, but now because the
+    // archetype says so, which the stored NULL is what distinguishes.
+    set(&mut conn, CompletionCheck::Tests, None);
+    assert_eq!(row(&conn, "tests"), ("na".to_owned(), None));
+
+    // And `na = false` forces evaluation of a key the archetype proposes N/A for.
+    set(&mut conn, CompletionCheck::Tests, Some(false));
+    assert_eq!(
+        row(&conn, "tests"),
+        ("pass".to_owned(), Some(0)),
+        "user_na = 0 is an override, not the absence of a ruling"
+    );
+
+    // The row set stays ten across every transition.
+    let n: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM project_check WHERE project_id = ?1",
+            [p],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 10);
+
+    // And the projection is recounted in the same transaction, not left behind.
+    let lit: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM project_check WHERE project_id = ?1 AND state = 'pass'",
+            [p],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(projection(&conn, p).0, Some(lit));
 }

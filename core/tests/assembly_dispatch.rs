@@ -788,8 +788,12 @@ mod corehandler {
         // the verdict, and the one SQLite mutex may not be held across it. They were the last
         // two rows of `UNOWNED_COMMANDS`, which is **now empty** — and this count rising by two
         // is the same fact from the other side, which is why both assertions stay.
+        // [p3] §31.6's `projects.setCheckNa` is the 59th, answered under the index guard: it
+        // writes one column and recomputes ten rows, and reaches no network. Stated as this
+        // lane's own delta off the base it read — the count rising by one and `UNOWNED_COMMANDS`
+        // returning to empty are the same fact from two sides.
         assert_eq!(
-            checked, 58,
+            checked, 59,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(

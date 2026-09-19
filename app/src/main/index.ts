@@ -123,6 +123,9 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   // detail::dispatch_detail_command
   'projects.get',
   'projects.setNote',
+  // [p3] §31.6: the not-applicable ruling a user makes on one check. It is offered here in the
+  // same change that gave the core a handler for it, which is the rule the core states.
+  'projects.setCheckNa',
   'locations.relocate',
   // [p2-24b] uninstall::handle. The pre-flight is unprivileged and the removal is not, and
   // **both belong here**: `isRendererCallable` is `known && !privileged`, so the privileged one
