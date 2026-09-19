@@ -58,6 +58,30 @@ fn with_health(id: i64, state: HealthState, scored_open: Option<u32>) -> Project
     row
 }
 
+/// Moves a fixture row back by whole days, so one fixture can span four era sections.
+fn touched(mut row: ProjectRow, days_ago: i64) -> ProjectRow {
+    row.last_touched_at = NOW - days_ago * DAY;
+    row
+}
+
+/// `SortKey`'s variants off the **tracked** §2.4 contract, the same source
+/// `app/src/renderer/shelf/viewState.test.ts` derives from. A count a human maintains is a defect
+/// with a delay.
+fn schema_sort_variants() -> Vec<String> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../protocol/schema/protocol.json"
+    );
+    let text = std::fs::read_to_string(path).expect("protocol.json is readable");
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("protocol.json is JSON");
+    doc["types"]["SortKey"]["variants"]
+        .as_array()
+        .expect("SortKey declares variants")
+        .iter()
+        .map(|v| v.as_str().expect("a variant").to_owned())
+        .collect()
+}
+
 fn sorted_ids(rows: &[LoadedRow], sort: SortKey) -> Vec<i64> {
     let mut refs: Vec<&LoadedRow> = rows.iter().collect();
     sort_rows(&mut refs, sort);
@@ -278,6 +302,126 @@ fn the_order_key_is_the_same_cursor_the_renderer_computes() {
     assert_eq!(order_key_of(&[1, 2, 3]), "794671b5");
     assert_ne!(order_key_of(&[1, 2, 3]), order_key_of(&[3, 2, 1]));
     assert_ne!(order_key_of(&[1, 2]), order_key_of(&[1, 2, 3]));
+}
+
+/// `AC-P3-35-9` — §35.1. Rows are **ordered first and bucketed second**, and the bucket is a
+/// function of the row and the clock only (§8.1). A needs-attention sort therefore reorders rows
+/// *inside* sections whose top is `Live` and whose worst repositories sit in the tail.
+///
+/// **A later author may not section by health.** A global worst-first list of a hundred and sixty
+/// forgotten repositories is the firehose the settled suppression row exists to prevent, and one
+/// commit that sections on the new key rebuilds it. Without this criterion that commit is
+/// reasonable.
+#[test]
+fn ac_p3_35_9_the_sort_does_not_re_cut_the_shelf() {
+    let (_dir, index) = seeded();
+    let sink = CollectingSink::default();
+    let jobs = codotheca_core::jobs::NullJobSink;
+    let mounts = codotheca_core::testing::FakeMountResolver::new();
+    let ctx = ProjectsCtx {
+        index: &index,
+        events: &sink,
+        jobs: &jobs,
+        mounts: &mounts,
+        sync: &codotheca_core::sync::runner::NullSyncSink,
+        now: NOW,
+        tz_offset_min: 0,
+    };
+
+    let mut archived = with_health(4, HealthState::Live, Some(3));
+    archived.is_archived = true;
+    let rows: Vec<LoadedRow> = vec![
+        loaded(with_health(1, HealthState::Live, Some(9))),
+        loaded(touched(with_health(2, HealthState::Live, Some(1)), 400)),
+        loaded(touched(with_health(3, HealthState::Live, Some(7)), 4400)),
+        loaded(archived),
+        loaded(touched(with_health(5, HealthState::Absent, None), 60)),
+    ];
+    // The §8.1 answer, written out rather than recomputed from the function under test — a
+    // bucketing that read the reading would agree with itself across every sort key.
+    let expected: Vec<(i64, &str)> = vec![
+        (1, "era:live"),
+        (2, "era:2025"),
+        (3, "era:tail"),
+        (4, "era:archived"),
+        (5, "era:q"),
+    ];
+
+    let variants = schema_sort_variants();
+    eprintln!(
+        "projects_list: {} rows over {} SortKey variant(s)",
+        rows.len(),
+        variants.len()
+    );
+    assert!(!rows.is_empty(), "a run over no row proves nothing");
+    assert!(!variants.is_empty(), "a run over no variant proves nothing");
+
+    let ast = codotheca_core::query::parse_query("");
+    let names = std::collections::BTreeMap::new();
+    let exec = codotheca_core::query::execute::ExecContext {
+        now: NOW,
+        tz_offset_min: 0,
+        first_run_completed_at: None,
+        collection_ids_by_name: &names,
+        paths_are_case_sensitive: cfg!(not(windows)),
+        commit_subject_hits: None,
+    };
+    let page_for = |sort: SortKey| {
+        codotheca_core::projects::list::build_project_page(&ctx, &rows, &ast, sort, None, 1, &exec)
+    };
+
+    let baseline = page_for(SortKey::LastTouched);
+    let sections_of = |page: &codotheca_core::protocol::ProjectPage| {
+        page.sections
+            .iter()
+            .map(|s| s.id.clone())
+            .collect::<Vec<_>>()
+    };
+    let buckets_of = |page: &codotheca_core::protocol::ProjectPage| {
+        let mut pairs = page
+            .rows
+            .iter()
+            .map(|r| (r.id.0, r.era_section_id.clone()))
+            .collect::<Vec<_>>();
+        pairs.sort_unstable();
+        pairs
+    };
+    assert_eq!(
+        buckets_of(&baseline),
+        expected
+            .iter()
+            .map(|(id, era)| (*id, (*era).to_owned()))
+            .collect::<Vec<_>>()
+    );
+
+    for variant in &variants {
+        let sort: SortKey = serde_json::from_value(serde_json::Value::String(variant.clone()))
+            .expect("a SortKey variant");
+        let page = page_for(sort);
+        assert_eq!(
+            buckets_of(&page),
+            buckets_of(&baseline),
+            "{variant} re-cut the shelf"
+        );
+        // A sort that reordered the sections without re-bucketing the rows would pass the
+        // assertion above on its own.
+        assert_eq!(
+            sections_of(&page),
+            sections_of(&baseline),
+            "{variant} reordered the sections"
+        );
+    }
+
+    // And the key really does reorder rows across section boundaries, or the assertions above
+    // hold over a fixture that was never going to move.
+    let ids = |page: &codotheca_core::protocol::ProjectPage| {
+        page.rows.iter().map(|r| r.id.0).collect::<Vec<_>>()
+    };
+    assert_ne!(
+        ids(&page_for(SortKey::NeedsAttention)),
+        ids(&baseline),
+        "the fixture does not reorder under the new key, so it proves nothing"
+    );
 }
 
 /// Two **located** projects. The location rows are not decoration: §23.4 classifies on
