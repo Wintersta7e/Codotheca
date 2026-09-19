@@ -235,6 +235,11 @@ export function detailFixture(over: Partial<ProjectDetail> = {}): ProjectDetail 
     // [p3] §30.1. `absent` with an **empty** `checks`, which is the state saying nothing was
     // computed and never a count of zero checks. A test about the reading overrides it.
     health: { state: 'absent', scoredOpen: null, basis: null, checks: [] },
+    // [p3] §31.8. `null` is *the evaluator has not reached this project* — no `project_check`
+    // rows exist, which is every project's first-scan state. It is a different fact from ten
+    // rows with `evaluable === 0`, where the detail is PRESENT and is the only surface that
+    // says why nothing could be scored; a test about either overrides this.
+    completion: null,
     ...over,
   };
 }

@@ -116,7 +116,11 @@ pub enum Route {
 /// **Empty, and that is a state to assert rather than a state to stop asserting.** The tests
 /// below read the router, so an empty constant still proves that no command routes to `NoOwner`
 /// — two `all()` calls over an empty set assert nothing.
-pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
+///
+/// **[p3] §31.6's `projects.setCheckNa` re-opens it with one row.** It is declared with the
+/// schema and its handler lands in the same plan; it leaves in that change, which is the rule
+/// above and not an exception to it.
+pub const UNOWNED_COMMANDS: [(&str, &str); 1] = [("projects.setCheckNa", "p3-31 completion")];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -176,6 +180,11 @@ pub fn route(command: CommandName) -> Route {
         CommandName::ProjectsGet
         | CommandName::ProjectsSetNote
         | CommandName::LocationsRelocate => Route::Detail,
+
+        // [p3] §31.6's writer. It is declared with the schema and answered by
+        // `crate::detail::checkna`, which lands with the store it writes — so until then it is
+        // NAMED and refused rather than mis-routed, which is this file's own rule.
+        CommandName::ProjectsSetCheckNa => Route::NoOwner("p3-31 completion"),
 
         CommandName::ViewGet
         | CommandName::ViewSet
@@ -306,11 +315,11 @@ mod tests {
         // running total a lane cannot know after the merges ahead of it.
         assert_eq!(
             commands.len(),
-            60,
+            61,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
              remote.webUrl plus §25.8's three projects.readme* commands plus §24.9's three \
              install.* commands plus §21.13's sync.status plus §24.7's two locations.uninstall* \
-             commands"
+             commands plus §31.6's projects.setCheckNa"
         );
         let unnamed: Vec<&str> = commands
             .iter()

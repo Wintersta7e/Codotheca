@@ -504,6 +504,9 @@ pub fn handle_project_get(
         health: crate::health::read_for_project(conn, ProjectId(id))
             .map_err(internal)?
             .0,
+        // [p3] §31.6. Declared here with the schema and filled by `completion_detail` below,
+        // which lands with the store it reads. The field is never left without a producer (R1).
+        completion: None,
         locations,
         row,
     })
