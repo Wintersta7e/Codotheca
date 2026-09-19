@@ -7,11 +7,14 @@ import {
   CONTENT_SCAN_LANGUAGES,
 } from '../../shared/contentScan.js';
 import { EXCLUSION_CAPTION, EXCLUSION_LIST } from '../../shared/skipList.js';
+import { LOCKFILE_NAMES } from '../../shared/lockfileNames.js';
+import { CONSENT_PARAGRAPH } from '../firstrun/copy.js';
 import {
   EXCLUSION_PRIVACY_CAPTION,
   LAUNCH_TARGET_LANGUAGES,
   SCAN_GROUP_ROWS,
   ScanGroups,
+  SCANNING_STATEMENTS,
   TARGET_FOOTNOTE,
   rootsCaption,
 } from './groupsScan.js';
@@ -263,5 +266,32 @@ describe('group 4, SCANNING · HOW IT WORKS', () => {
     for (const language of CONTENT_SCAN_LANGUAGES) {
       expect(within(scanning as HTMLElement).getByText(language)).toBeTruthy();
     }
+  });
+});
+
+describe('[p3] §32.6: the drawer names the lock files the read opens', () => {
+  it('says the same thing as the first-run paragraph, from the same list', () => {
+    const row = SCANNING_STATEMENTS.find((s) => s.label.includes('lock files'));
+    expect(row, 'the scan group states no lock file row').toBeDefined();
+    const said = `${row?.label ?? ''} ${row?.note ?? ''}`.toLowerCase();
+    for (const name of LOCKFILE_NAMES) {
+      expect(said, name).toContain(name.toLowerCase());
+    }
+    expect(LOCKFILE_NAMES.length, 'a loop over no names proves nothing').toBe(6);
+    expect(said).toContain('three directories deep');
+    expect(said).toContain('16 mb each');
+
+    // **The two surfaces cannot disagree**: §11.3 group 4 has three sites for this claim, and a
+    // change that moved one would leave the product contradicting itself in its own drawer.
+    for (const name of LOCKFILE_NAMES) {
+      expect(CONSENT_PARAGRAPH, name).toContain(name);
+    }
+    expect(CONSENT_PARAGRAPH).toContain('three directories deep');
+    expect(CONSENT_PARAGRAPH).toContain('16 MB each');
+  });
+
+  it("leaves J6's own 256 KB cap alone", () => {
+    const named = SCANNING_STATEMENTS.find((s) => s.note.includes('256 KB EACH'));
+    expect(named, "J6's named-file row lost its own cap").toBeDefined();
   });
 });

@@ -64,6 +64,17 @@ export const SCANNING_STATEMENTS = [
     label: 'Names and timestamps, plus README, LICENSE and manifests at the root',
     note: 'FOUR NAMED FILES, 256 KB EACH · THE SCAN NEEDS THIS AND YOU GRANTED IT AT FIRST RUN',
   },
+  // [p3] §32.6. **This row moves in the same change that lands the read**, and it moves *with*
+  // the first-run paragraph: §11.3 group 4 has three sites for this claim, and a change that
+  // moved two of them would leave the product contradicting itself in its own settings drawer.
+  //
+  // The cap is the lock file read's own 16 MB and not J6's 256 KB above — 256 KB is refuted by a
+  // measurement, this repository's own lock file being 287,417 bytes — so the two rows carry two
+  // numbers rather than one that is wrong for one of them.
+  {
+    label: 'Your lock files, up to three directories deep',
+    note: 'PACKAGE-LOCK.JSON · YARN.LOCK · PNPM-LOCK.YAML · CARGO.LOCK · POETRY.LOCK · UV.LOCK · 16 MB EACH · CHECKED AGAINST PUBLISHED ADVISORIES',
+  },
   {
     label: 'Your scan roots, and the projects you opened most recently',
     note: 'DEPTH 1–2 OF EACH ROOT, PLUS THE ~30 MOST RECENT WORKTREES · NAMES AND TIMESTAMPS ONLY · EVERYTHING ELSE REFRESHES ON FOCUS OR ON DEMAND',
