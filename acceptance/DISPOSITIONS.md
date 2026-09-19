@@ -8,8 +8,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 1 | 40 |
-| deferred | 60 | 120 |
+| automated | 1 | 41 |
+| deferred | 60 | 119 |
 | manual | 6 | 7 |
 | unmeasurable | 2 | 3 |
 | external | 1 | 1 |
@@ -84,7 +84,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | 63 | deferred | Existence: a surface may render only what is stored or commandable | `AC-63-behind-chip` deferred, plan 14 — `AC-63 a NULL fetch head omits the behind chip entirely`<br>`AC-63-trust` deferred, plan 09 — `acceptance_jobs::ac_63_set_trusted_writes_only_our_database`<br>`AC-63-trust-static` automated, runs now — `check-call-sites:no-git-config-write`<br>`AC-63-requeue` deferred, plan 09 — `acceptance_jobs::ac_63_requeue_touches_one_project`<br>`AC-63-try-again` automated, runs now — `check-call-sites:try-again-not-scan`<br>`AC-63-slow-repo` automated, runs now — `check-call-sites:slow-repo`<br>`AC-63-no-volume-name` deferred, plan 14b — `AC-63 an offline location row renders no drive or volume name` |
 | 64 | deferred | Era sections, header aggregates and the watch set | `AC-64-sections` deferred, plan 13 — `acceptance_shelf::ac_64_era_section_ids_and_orders`<br>`AC-64-aggregates` deferred, plan 13c — `AC-64 the header renders the indexed and unchecked counts, including all-zero with unchecked above zero`<br>`AC-64-watch-set` deferred, plan 09 — `acceptance_jobs::ac_64_watch_set_invalidates_and_never_scans`<br>`AC-64-copy` automated, runs now — `check-forbidden:c64-watch-set-copy` |
 | 65 | deferred | The notice slot, the chips and the completion term | `AC-65-slot` deferred, plan 13b — `AC-65 every notice renders in one slot at its priority, at most one at a time`<br>`AC-65-chips` deferred, plan 13c — `AC-65 chip chrome is asserted once against its owning section for all six chips`<br>`AC-65-completion-term` deferred, plan 13 — `AC-65 a completion comparison parses, soft-errors and does not filter the shelf to zero`<br>`AC-65-identity-notice` deferred, plan 16c — `AC-65 the identity notice's plural line uses the previewed delta` |
-| 66 | deferred | The top bar and density | `AC-66-density` deferred, plan 13b — `AC-66 density cycles exactly three steps and each moves the column count by one`<br>`AC-66-hash-stable` deferred, plan 13b — `AC-66 the scene hash is byte-identical across every density press`<br>`AC-66-sort` deferred, plan 13b — `AC-66 sort cycles exactly three keys with completion absent`<br>`AC-66-shed` deferred, plan 13b — `AC-66 at the minimum window width nothing overlaps and the bar sheds in the stated order` |
+| 66 | deferred | The top bar and density | `AC-66-density` deferred, plan 13b — `AC-66 density cycles exactly three steps and each moves the column count by one`<br>`AC-66-hash-stable` deferred, plan 13b — `AC-66 the scene hash is byte-identical across every density press`<br>`AC-66-sort` automated, runs now — `the sort ladder AC-P3-35-4 the control offers every variant the schema declares`<br>`AC-66-shed` deferred, plan 13b — `AC-66 at the minimum window width nothing overlaps and the bar sheds in the stated order` |
 | 67 | deferred | DOM composition and the mid-scan flip | `AC-67-no-canvas` automated, runs now — `check-forbidden:c67-canvas-and-webgl`<br>`AC-67-plate-roles` deferred, plan 12c — `AC-67 the CSS plate has two roles and no third`<br>`AC-67-flip` deferred, plan 12c — `AC-67 during a live scan a mounted card changes appearance exactly once per scene hash` |
 
 ## Phase 2 — §20–§25

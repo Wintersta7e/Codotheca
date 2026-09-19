@@ -9,7 +9,7 @@ import { QueryFieldView } from './QueryField.js';
 // that module, so exporting its table back out of the component is a cycle around a constant.
 import { shedClassName, shedLevelFor } from './useShedLevel.js';
 import type { ShelfView } from './viewState.js';
-import { SORT_LABELS, nextSort } from './viewState.js';
+import { SORT_KEYS, SORT_LABELS, nextSort, resolveSort } from './viewState.js';
 
 /** 40px, not the design prose's 42: the prototype renders 40 plus a 1px rule, and the handoff's
  *  own Fidelity clause makes the prototype authoritative where the two differ. */
@@ -17,8 +17,13 @@ export const TOP_BAR_HEIGHT_PX = 40 as const;
 
 /** Measured by `app/e2e/topbar-floor.spec.ts`, not asserted here: the narrowest width at which
  *  the fully shed bar still fits at the widest sort label, with the query field at its own 80px
- *  floor. One pixel below it the row runs past the bar and the right-hand control is clipped. */
-export const TOP_BAR_FLOOR_PX = 508;
+ *  floor. One pixel below it the row runs past the bar and the right-hand control is clipped.
+ *
+ *  [p3] ~~`508`~~ re-measured at `NEEDS ATTENTION`, which §35.2 made the widest value the control
+ *  can render — `103.16px` against `LAST TOUCHED`'s `84.64px`, and shed level 2 renders the value
+ *  alone. The harness derives the widest variant by measuring every one of them, so this moves
+ *  again on its own the next time a label does. */
+export const TOP_BAR_FLOOR_PX = 526;
 
 export const WORDMARK = 'CODOTHECA' as const;
 
@@ -36,6 +41,15 @@ export interface TopBarProps {
   readonly field: QueryFieldModel;
   readonly scan: Pick<ScanStatus, 'running' | 'foundRepos'>;
   readonly barWidth: number;
+  /**
+   * [p3] §35.5's offered set, from `offeredSorts(projectionCapabilities(rows))`. The bar renders
+   * the **resolved** key and cycles within this list, and `view.sort` is never rewritten — a
+   * stored preference is not deleted because today's library cannot honour it.
+   *
+   * The default is the whole cycle, which is what a caller with no projection means: this
+   * component's own test and `app/e2e/topbar-floor.spec.ts` render the bar with no rows behind it.
+   */
+  readonly offeredSorts?: readonly SortKey[];
   readonly onQueryChange: (text: string) => void;
   readonly onSortChange: (sort: SortKey) => void;
   readonly onDensityChange: (density: number) => void;
@@ -58,7 +72,9 @@ export interface TopBarProps {
 export function TopBar(props: TopBarProps): ReactElement {
   const shed = shedLevelFor(props.barWidth);
   const { view, scan } = props;
-  const sortLabel = SORT_LABELS[view.sort];
+  const offered = props.offeredSorts ?? SORT_KEYS;
+  const sort = resolveSort(view.sort, offered);
+  const sortLabel = SORT_LABELS[sort];
 
   return (
     <div className={['cdt-shelf-bar', shedClassName(shed)].filter(Boolean).join(' ')}>
@@ -84,7 +100,7 @@ export function TopBar(props: TopBarProps): ReactElement {
         className="cdt-shelf-control cdt-shelf-control-cycles"
         aria-label={`Sort: ${sortLabel.toLowerCase()}`}
         onClick={() => {
-          props.onSortChange(nextSort(view.sort));
+          props.onSortChange(nextSort(sort, offered));
         }}
       >
         {shed < 2 ? <span className="cdt-shelf-control-key">{SORT_KEY_LABEL}</span> : null}

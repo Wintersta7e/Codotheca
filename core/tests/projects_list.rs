@@ -11,10 +11,11 @@
 use codotheca_core::art::testsupport::CollectingSink;
 use codotheca_core::index::Index;
 use codotheca_core::projects::list::{
-    era_section_id_for, era_section_order, order_key_of, ERA_NAMED_YEARS,
+    era_section_id_for, era_section_order, order_key_of, rank_of, sort_rows, ERA_NAMED_YEARS,
 };
+use codotheca_core::projects::rows::{LoadedRow, RowFacts};
 use codotheca_core::projects::{dispatch_projects_command, ProjectsCtx};
-use codotheca_core::protocol::ProjectRow;
+use codotheca_core::protocol::{HealthState, HealthSummary, ProjectLifecycle, ProjectRow, SortKey};
 
 /// 2026-06-11T12:00:00Z, so the cut year is 2026 and the ten named years run 2025 down to 2016.
 const NOW: i64 = 1_781_179_200;
@@ -24,6 +25,67 @@ fn at(secs: i64) -> ProjectRow {
     let mut row = ProjectRow::for_test(1);
     row.last_touched_at = secs;
     row
+}
+
+fn loaded(row: ProjectRow) -> LoadedRow {
+    LoadedRow {
+        row,
+        facts: RowFacts {
+            authored_by_user: None,
+            location_kind: None,
+            distro: None,
+            has_remote: false,
+            has_submodules: false,
+            has_readme: None,
+            content_presence: None,
+        },
+    }
+}
+
+/// A row in **one** era section — every fixture below sits a day back, so `era:live` holds all of
+/// them and *after every ranked row within its own section* is the whole list. The bucketing is
+/// `AC-P3-35-9`'s claim and is not restated here.
+fn with_health(id: i64, state: HealthState, scored_open: Option<u32>) -> ProjectRow {
+    let mut row = ProjectRow::for_test(id);
+    row.last_touched_at = NOW - DAY;
+    row.health_summary = HealthSummary {
+        state,
+        scored_open,
+        unverified: None,
+        unknown_checks: None,
+        observed_at: None,
+    };
+    row
+}
+
+/// Moves a fixture row back by whole days, so one fixture can span four era sections.
+fn touched(mut row: ProjectRow, days_ago: i64) -> ProjectRow {
+    row.last_touched_at = NOW - days_ago * DAY;
+    row
+}
+
+/// `SortKey`'s variants off the **tracked** §2.4 contract, the same source
+/// `app/src/renderer/shelf/viewState.test.ts` derives from. A count a human maintains is a defect
+/// with a delay.
+fn schema_sort_variants() -> Vec<String> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../protocol/schema/protocol.json"
+    );
+    let text = std::fs::read_to_string(path).expect("protocol.json is readable");
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("protocol.json is JSON");
+    doc["types"]["SortKey"]["variants"]
+        .as_array()
+        .expect("SortKey declares variants")
+        .iter()
+        .map(|v| v.as_str().expect("a variant").to_owned())
+        .collect()
+}
+
+fn sorted_ids(rows: &[LoadedRow], sort: SortKey) -> Vec<i64> {
+    let mut refs: Vec<&LoadedRow> = rows.iter().collect();
+    sort_rows(&mut refs, sort);
+    refs.iter().map(|r| r.row.id.0).collect()
 }
 
 #[test]
@@ -126,12 +188,240 @@ fn a_not_cloned_project_is_classified_before_archived_and_before_submodules() {
     assert_eq!(era_section_id_for(&both, NOW, 0), "era:notcloned");
 }
 
+/// `AC-P3-35-1` — §35.4 as corrected by **R131/F6** and **R128/F10**.
+///
+/// Nine cases, one mechanism: §30's pipeline decides what the reading is and `rank_of` reads it.
+/// The comparator holds no second gate, so this test needs **no production change** — and the
+/// discriminating half is the flip below, which a comparator carrying its own exclusion fails.
+#[test]
+fn ac_p3_35_1_the_exclusion_set_is_applied_once_upstream() {
+    // 1 · 2 ranked · 3 frozen, ranking on its frozen value · 4 Done, which **ranks** at
+    // `scored_open = 0` (R131/F6) · 5 not cloned, which ranks if it has a reading (§23.4) ·
+    // 6 Reference, excluded from health entirely (§30 gate 1) · 7 archived, which **tails** on
+    // the `surface_suppressed` gate that produces it (§30 gate 5) · 8 `surface_suppressed`.
+    let mut reference = with_health(6, HealthState::Absent, None);
+    reference.is_reference = true;
+    let mut archived = with_health(7, HealthState::Suppressed, None);
+    archived.is_archived = true;
+    let mut done = with_health(4, HealthState::Live, Some(0));
+    done.lifecycle = ProjectLifecycle::Done;
+    let mut not_cloned = ProjectRow::for_test_not_cloned(5);
+    not_cloned.last_touched_at = NOW - DAY;
+    not_cloned.health_summary = with_health(5, HealthState::Live, Some(2)).health_summary;
+
+    let rows: Vec<LoadedRow> = vec![
+        loaded(with_health(1, HealthState::Live, Some(9))),
+        loaded(with_health(2, HealthState::Live, Some(4))),
+        loaded(with_health(3, HealthState::Frozen, Some(5))),
+        loaded(done),
+        loaded(not_cloned),
+        loaded(reference),
+        loaded(archived),
+        loaded(with_health(8, HealthState::Suppressed, None)),
+    ];
+    eprintln!("projects_list: {} fixture rows", rows.len());
+    assert!(
+        rows.len() >= 8,
+        "the fixture must hold all eight cases; it holds {}",
+        rows.len()
+    );
+
+    let expected = vec![1, 3, 2, 5, 4, 6, 7, 8];
+    assert_eq!(sorted_ids(&rows, SortKey::NeedsAttention), expected);
+
+    // The discriminating half. The readings are held and the *flags* move: a comparator that
+    // re-applied §35.4's exclusions moves the row, and one that applies none does not.
+    let mut flipped = rows.clone();
+    flipped[1].row.is_reference = true;
+    flipped[1].row.is_archived = true;
+    assert_eq!(
+        sorted_ids(&flipped, SortKey::NeedsAttention),
+        expected,
+        "the comparator read a flag §35.4 forbids it to read"
+    );
+
+    // A rank may not drift as a reading ages: *presence freezes decay*, and the frozen row ranks
+    // on the value it was computed with however old that reading is.
+    let mut aged = rows.clone();
+    aged[2].row.health_summary.observed_at = Some(NOW - 10_000 * DAY);
+    assert_eq!(sorted_ids(&aged, SortKey::NeedsAttention), expected);
+
+    // A12b: `scored_open` counts ITEMS and `unknown_checks` counts CHECKS. Neither `unverified`
+    // (R128/F10) nor `unknown_checks` is an addend, a weight or a tiebreak, and a comparator that
+    // quietly used either is caught here and nowhere else.
+    let mut noisy = rows.clone();
+    for (index, row) in noisy.iter_mut().enumerate() {
+        let n = u32::try_from(index).unwrap_or(0);
+        row.row.health_summary.unverified = Some(n * 7);
+        row.row.health_summary.unknown_checks = Some((9 - n) * 3);
+    }
+    assert_eq!(sorted_ids(&noisy, SortKey::NeedsAttention), expected);
+}
+
+/// `AC-P3-35-2` — §35.3. A project with no reading is not a project with zero debt: the tail sits
+/// contiguously after every ranked row, and a **computed** zero is ranked at the bottom of the
+/// ranked run rather than thrown in with the rows nobody has looked at.
+#[test]
+fn ac_p3_35_2_the_tail_never_interleaves_and_is_never_ordered_as_zero() {
+    let rows: Vec<LoadedRow> = vec![
+        loaded(with_health(1, HealthState::Live, Some(3))),
+        loaded(with_health(2, HealthState::Live, Some(7))),
+        loaded(with_health(3, HealthState::Live, Some(0))),
+        loaded(with_health(4, HealthState::Absent, None)),
+        loaded(with_health(5, HealthState::Suppressed, None)),
+    ];
+
+    let ranked = rows.iter().filter(|r| rank_of(&r.row).is_some()).count();
+    let tail = rows.len() - ranked;
+    eprintln!("projects_list: {ranked} ranked and {tail} tail rows in the fixture");
+    assert!(ranked > 0, "a run with no ranked row proves nothing");
+    assert!(tail > 0, "a run with no tail row proves nothing");
+
+    let ids = sorted_ids(&rows, SortKey::NeedsAttention);
+    // 7 then 3 then the computed zero; then the tail in the default order, which on equal
+    // `last_touched_at` is id ascending.
+    assert_eq!(ids, vec![2, 1, 3, 4, 5]);
+
+    let position = |id: i64| ids.iter().position(|&x| x == id).expect("id is ordered");
+    for tail_id in [4, 5] {
+        for ranked_id in [1, 2, 3] {
+            assert!(
+                position(ranked_id) < position(tail_id),
+                "row {tail_id} carries no reading and must sort after every row that does"
+            );
+        }
+    }
+    // The whole of §35.3's *a computed zero is not the tail*: above the tail, below every
+    // non-zero ranked row.
+    assert!(position(1) < position(3) && position(2) < position(3));
+}
+
 #[test]
 fn the_order_key_is_the_same_cursor_the_renderer_computes() {
     // FNV-1a over the ordered ids, little-endian, eight hex digits.
     assert_eq!(order_key_of(&[1, 2, 3]), "794671b5");
     assert_ne!(order_key_of(&[1, 2, 3]), order_key_of(&[3, 2, 1]));
     assert_ne!(order_key_of(&[1, 2]), order_key_of(&[1, 2, 3]));
+}
+
+/// `AC-P3-35-9` — §35.1. Rows are **ordered first and bucketed second**, and the bucket is a
+/// function of the row and the clock only (§8.1). A needs-attention sort therefore reorders rows
+/// *inside* sections whose top is `Live` and whose worst repositories sit in the tail.
+///
+/// **A later author may not section by health.** A global worst-first list of a hundred and sixty
+/// forgotten repositories is the firehose the settled suppression row exists to prevent, and one
+/// commit that sections on the new key rebuilds it. Without this criterion that commit is
+/// reasonable.
+#[test]
+fn ac_p3_35_9_the_sort_does_not_re_cut_the_shelf() {
+    let (_dir, index) = seeded();
+    let sink = CollectingSink::default();
+    let jobs = codotheca_core::jobs::NullJobSink;
+    let mounts = codotheca_core::testing::FakeMountResolver::new();
+    let ctx = ProjectsCtx {
+        index: &index,
+        events: &sink,
+        jobs: &jobs,
+        mounts: &mounts,
+        sync: &codotheca_core::sync::runner::NullSyncSink,
+        now: NOW,
+        tz_offset_min: 0,
+    };
+
+    let mut archived = with_health(4, HealthState::Live, Some(3));
+    archived.is_archived = true;
+    let rows: Vec<LoadedRow> = vec![
+        loaded(with_health(1, HealthState::Live, Some(9))),
+        loaded(touched(with_health(2, HealthState::Live, Some(1)), 400)),
+        loaded(touched(with_health(3, HealthState::Live, Some(7)), 4400)),
+        loaded(archived),
+        loaded(touched(with_health(5, HealthState::Absent, None), 60)),
+    ];
+    // The §8.1 answer, written out rather than recomputed from the function under test — a
+    // bucketing that read the reading would agree with itself across every sort key.
+    let expected: Vec<(i64, &str)> = vec![
+        (1, "era:live"),
+        (2, "era:2025"),
+        (3, "era:tail"),
+        (4, "era:archived"),
+        (5, "era:q"),
+    ];
+
+    let variants = schema_sort_variants();
+    eprintln!(
+        "projects_list: {} rows over {} SortKey variant(s)",
+        rows.len(),
+        variants.len()
+    );
+    assert!(!rows.is_empty(), "a run over no row proves nothing");
+    assert!(!variants.is_empty(), "a run over no variant proves nothing");
+
+    let ast = codotheca_core::query::parse_query("");
+    let names = std::collections::BTreeMap::new();
+    let exec = codotheca_core::query::execute::ExecContext {
+        now: NOW,
+        tz_offset_min: 0,
+        first_run_completed_at: None,
+        collection_ids_by_name: &names,
+        paths_are_case_sensitive: cfg!(not(windows)),
+        commit_subject_hits: None,
+    };
+    let page_for = |sort: SortKey| {
+        codotheca_core::projects::list::build_project_page(&ctx, &rows, &ast, sort, None, 1, &exec)
+    };
+
+    let baseline = page_for(SortKey::LastTouched);
+    let sections_of = |page: &codotheca_core::protocol::ProjectPage| {
+        page.sections
+            .iter()
+            .map(|s| s.id.clone())
+            .collect::<Vec<_>>()
+    };
+    let buckets_of = |page: &codotheca_core::protocol::ProjectPage| {
+        let mut pairs = page
+            .rows
+            .iter()
+            .map(|r| (r.id.0, r.era_section_id.clone()))
+            .collect::<Vec<_>>();
+        pairs.sort_unstable();
+        pairs
+    };
+    assert_eq!(
+        buckets_of(&baseline),
+        expected
+            .iter()
+            .map(|(id, era)| (*id, (*era).to_owned()))
+            .collect::<Vec<_>>()
+    );
+
+    for variant in &variants {
+        let sort: SortKey = serde_json::from_value(serde_json::Value::String(variant.clone()))
+            .expect("a SortKey variant");
+        let page = page_for(sort);
+        assert_eq!(
+            buckets_of(&page),
+            buckets_of(&baseline),
+            "{variant} re-cut the shelf"
+        );
+        // A sort that reordered the sections without re-bucketing the rows would pass the
+        // assertion above on its own.
+        assert_eq!(
+            sections_of(&page),
+            sections_of(&baseline),
+            "{variant} reordered the sections"
+        );
+    }
+
+    // And the key really does reorder rows across section boundaries, or the assertions above
+    // hold over a fixture that was never going to move.
+    let ids = |page: &codotheca_core::protocol::ProjectPage| {
+        page.rows.iter().map(|r| r.id.0).collect::<Vec<_>>()
+    };
+    assert_ne!(
+        ids(&page_for(SortKey::NeedsAttention)),
+        ids(&baseline),
+        "the fixture does not reorder under the new key, so it proves nothing"
+    );
 }
 
 /// Two **located** projects. The location rows are not decoration: §23.4 classifies on
@@ -316,22 +606,6 @@ fn sort_by_name_reorders_the_rows_and_the_order_key_with_them() {
 #[test]
 fn unchecked_counts_only_rows_that_have_a_working_copy() {
     use codotheca_core::projects::list::aggregate_era;
-    use codotheca_core::projects::rows::{LoadedRow, RowFacts};
-
-    fn loaded(row: ProjectRow) -> LoadedRow {
-        LoadedRow {
-            row,
-            facts: RowFacts {
-                authored_by_user: None,
-                location_kind: None,
-                distro: None,
-                has_remote: false,
-                has_submodules: false,
-                has_readme: None,
-                content_presence: None,
-            },
-        }
-    }
 
     let bare: Vec<LoadedRow> = (1..=3)
         .map(|id| loaded(ProjectRow::for_test_not_cloned(id)))

@@ -104,8 +104,17 @@ test('a root suggestion may have no hit count at all', () => {
 
 // §8.0a / §11.3a: Completion is dropped from the sort control — a key over an uncomputed column
 // orders by unknown.
+// [p3] The body was `deepEqual(variants, ['last_touched', 'name', 'size'])` — a **fourth**
+// hand-kept copy of the cycle, under a name that claims something narrower. §35.2 adds
+// `needs_attention` and the literal would have had to be edited for a claim it was not making;
+// the next key would edit it again. **The membership claim belongs to `AC-P3-35-4`**, which
+// derives it from this same file, and what is left here is the sentence the test is named for.
 test('the sort key set excludes completion', () => {
-  assert.deepEqual(schema.types.SortKey.variants, ['last_touched', 'name', 'size']);
+  const variants = schema.types.SortKey.variants;
+  assert.ok(variants.length > 0, 'a run over no variant proves nothing');
+  assert.ok(!variants.includes('completion'), 'nothing computes completion, so it is not offered');
+  // Every variant is `snake_case`, so a new key joins the set rather than inventing a spelling.
+  for (const variant of variants) assert.match(variant, /^[a-z][a-z0-9_]*$/u, variant);
 });
 
 // [p2] §24.7 lands Uninstall, so `uninstall` is no longer banned outright — it is **narrowed to

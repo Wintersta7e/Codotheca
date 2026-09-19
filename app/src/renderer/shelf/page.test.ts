@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { LocationRef, ProjectRow } from '../../generated/protocol.js';
+import type {
+  HealthState,
+  HealthSummary,
+  LocationRef,
+  ProjectRow,
+  SortKey,
+} from '../../generated/protocol.js';
+import schemaRaw from '../../../../protocol/schema/protocol.json?raw';
+import { isCollapsed } from './collapse.js';
 import type { ShelfRow } from './row.js';
-import { toShelfRow } from './row.js';
+import { rankOf, toShelfRow } from './row.js';
 import type { QueryContext } from './evaluate.js';
 import { buildShelfPage, compareRows, orderKeyOf } from './page.js';
 
@@ -59,8 +67,25 @@ function r(id: number, over: Record<string, unknown> = {}): ShelfRow {
     errorKind: null,
     errorAt: null,
     eraSectionId: '',
+    // [p3] §30.1's most boring reading is the one that says nothing was computed: `absent`, every
+    // quantity null. `healthSummary` is non-nullable (R116), so a fixture without it is a shape
+    // the wire cannot produce — and a fixture defaulting to `live` with a zero count would rank
+    // every row that never asked about health.
+    healthSummary: {
+      state: 'absent',
+      scoredOpen: null,
+      unverified: null,
+      unknownChecks: null,
+      observedAt: null,
+    },
+    lifecycle: 'active',
     ...over,
   } as unknown as ProjectRow);
+}
+
+/** A reading, for the rows a health test is about. */
+function reading(state: HealthState, scoredOpen: number | null): HealthSummary {
+  return { state, scoredOpen, unverified: null, unknownChecks: null, observedAt: null };
 }
 const ctx: QueryContext = {
   now: NOW,
@@ -77,12 +102,13 @@ const ctx: QueryContext = {
     hasCi: false,
     hasRemote: false,
     hasSubmodules: false,
+    health: false,
   },
 };
 const build = (
   rows: ShelfRow[],
   query = '',
-  sort: 'last_touched' | 'name' | 'size' = 'last_touched',
+  sort: SortKey = 'last_touched',
 ): ReturnType<typeof buildShelfPage> =>
   buildShelfPage({ rows, query, sort, now: NOW, generation: 3, ctx });
 
@@ -173,10 +199,92 @@ describe('buildShelfPage', () => {
   });
 });
 
+// [p3] `AC-P3-35-9`, §35.1. Rows are ordered first and bucketed second, and the bucket is a
+// function of the row and the clock only (§8.1). **A later author may not section by health**: a
+// global worst-first list of every forgotten repository is the firehose the settled suppression
+// row exists to prevent, and one commit that sections on the new key rebuilds it. Without this
+// criterion that commit is reasonable.
+describe('AC-P3-35-9 the sort does not re-cut the shelf', () => {
+  const variants = (JSON.parse(schemaRaw) as { types: { SortKey: { variants: SortKey[] } } }).types
+    .SortKey.variants;
+
+  const rows = [
+    r(1, { healthSummary: reading('live', 9), lastTouchedAt: NOW - 3600 }),
+    r(2, { healthSummary: reading('live', 1), lastTouchedAt: NOW - 400 * DAY }),
+    r(3, { healthSummary: reading('live', 7), lastTouchedAt: NOW - 4400 * DAY }),
+    r(4, { healthSummary: reading('live', 3), isArchived: true }),
+    r(5, { healthSummary: reading('absent', null), lastTouchedAt: NOW - 60 * DAY }),
+    // A second row in `era:live`, so the reorder happens **inside** a section rather than only
+    // between them — with one row per section the flattened order cannot move at all.
+    r(6, { healthSummary: reading('live', 2), lastTouchedAt: NOW }),
+  ];
+  // The §8.1 answer, written out rather than recomputed from the function under test — a
+  // bucketing that read the reading would agree with itself under every sort key.
+  const expected = [
+    [1, 'era:live'],
+    [2, 'era:2025'],
+    [3, 'era:tail'],
+    [4, 'era:archived'],
+    [5, 'era:q'],
+    [6, 'era:live'],
+  ];
+  const buckets = (page: ReturnType<typeof buildShelfPage>): unknown[][] =>
+    page.sections
+      .flatMap((section) => section.rows.map((row) => [row.id as number, section.id]))
+      .sort((a, b) => (a[0] as number) - (b[0] as number));
+  const flat = (page: ReturnType<typeof buildShelfPage>): number[] =>
+    page.sections.flatMap((section) => section.rows.map((row) => row.id as number));
+
+  it('buckets every row where §8.1 says, under every sort key the schema declares', () => {
+    expect(rows.length, `${String(rows.length)} rows`).toBeGreaterThan(0);
+    expect(variants.length, `${String(variants.length)} variants`).toBeGreaterThan(0);
+
+    const baseline = build(rows, '', 'last_touched');
+    expect(buckets(baseline)).toEqual(expected);
+    for (const variant of variants) {
+      const page = build(rows, '', variant);
+      expect(buckets(page), `${variant} re-cut the shelf`).toEqual(buckets(baseline));
+      // A sort that reordered the sections without re-bucketing the rows would pass the
+      // assertion above on its own.
+      expect(
+        page.sections.map((section) => section.id),
+        `${variant} reordered the sections`,
+      ).toEqual(baseline.sections.map((section) => section.id));
+    }
+
+    // And the key really does reorder rows across section boundaries, or every assertion above
+    // holds over a fixture that was never going to move.
+    expect(flat(build(rows, '', 'needs_attention'))).not.toEqual(flat(baseline));
+  });
+
+  it('leaves a collapsed decade collapsed, because the sort key reaches neither argument', () => {
+    // `isCollapsed` reads the query and the section order, never the sort key
+    // (`collapse.ts:25-36`) — the same claim seen from the other side.
+    const collapsed = new Map<string, boolean>([['era:tail', true]]);
+    const baseline = build(rows, '', 'last_touched');
+    for (const variant of variants) {
+      const page = build(rows, '', variant);
+      for (const [index, section] of page.sections.entries()) {
+        const other = baseline.sections[index];
+        expect(
+          isCollapsed(collapsed, section.id, section.order, page.renderedTotal, true),
+          `${variant} changed the collapse answer for ${section.id}`,
+        ).toBe(isCollapsed(collapsed, other!.id, other!.order, baseline.renderedTotal, true));
+      }
+    }
+  });
+});
+
 describe('orderKeyOf', () => {
   it('is stable for the same ordered ids and changes when the order changes', () => {
     expect(orderKeyOf([1, 2, 3])).toBe(orderKeyOf([1, 2, 3]));
     expect(orderKeyOf([1, 2, 3])).not.toBe(orderKeyOf([3, 2, 1]));
+    // The other side is `core/tests/projects_list.rs:278`, in the test named
+    // `the_order_key_is_the_same_cursor_the_renderer_computes`. **The literal is the shared
+    // value, not a golden of this implementation** — and it sits after the two assertions above
+    // on purpose: change the FNV offset basis and they still pass while this one fails, which is
+    // the whole of §27.7's finding in one run.
+    expect(orderKeyOf([1, 2, 3])).toBe('794671b5');
   });
   it('changes when a row is inserted, which is the signal to re-cut the window', () => {
     expect(orderKeyOf([1, 2])).not.toBe(orderKeyOf([1, 2, 3]));
@@ -199,5 +307,96 @@ describe('compareRows', () => {
   it('puts an unmeasured project behind a measured zero, which is a real zero', () => {
     const rows = [r(1), r(2, { sizeTrackedBytes: 0 })];
     expect([...rows].sort(compareRows('size')).map((x) => x.id)).toEqual([2, 1]);
+  });
+
+  // §35.3. `compareRows` ends in an unconditional return, so before the branch below landed
+  // `needs_attention` sorted as `last_touched` and `tsc` stayed green — which is why this case
+  // was written first.
+  it('AC-P3-35-2 the tail never interleaves and is never ordered as zero', () => {
+    const rows = [
+      r(1, { healthSummary: reading('live', 3) }),
+      r(2, { healthSummary: reading('live', 7) }),
+      r(3, { healthSummary: reading('live', 0) }),
+      r(4, { healthSummary: reading('absent', null) }),
+      r(5, { healthSummary: reading('suppressed', null) }),
+    ];
+    const ranked = rows.filter((row) => rankOf(row) !== null).length;
+    const tail = rows.length - ranked;
+    expect(ranked, `${String(ranked)} ranked rows`).toBeGreaterThan(0);
+    expect(tail, `${String(tail)} tail rows`).toBeGreaterThan(0);
+
+    const ids = [...rows].sort(compareRows('needs_attention')).map((x) => x.id as number);
+    expect(ids).toEqual([2, 1, 3, 4, 5]);
+    const at = (id: number): number => ids.indexOf(id);
+    for (const tailId of [4, 5]) {
+      for (const rankedId of [1, 2, 3]) {
+        expect(at(rankedId), `row ${String(tailId)} carries no reading`).toBeLessThan(at(tailId));
+      }
+    }
+    // A computed zero is ranked, at the bottom of the ranked run — never in the tail.
+    expect(at(1)).toBeLessThan(at(3));
+    expect(at(2)).toBeLessThan(at(3));
+  });
+
+  // §35.4 as corrected by R131/F6 (Done ranks, archived tails) and R128/F10 (`unverified` is
+  // counted nowhere). Nine cases, one mechanism — so this needed no production change.
+  it('AC-P3-35-1 the exclusion set is applied once, upstream', () => {
+    const rows = [
+      r(1, { healthSummary: reading('live', 9) }),
+      r(2, { healthSummary: reading('live', 4) }),
+      r(3, { healthSummary: reading('frozen', 5) }),
+      // Done ranks, at the bottom of the ranked run: §30 gives it a `live` reading by construction.
+      r(4, { healthSummary: reading('live', 0), lifecycle: 'done' }),
+      // §23.4 keeps a not-cloned row in the base set, so it ranks if it has a reading.
+      r(5, { healthSummary: reading('live', 2), primaryLocation: null, presence: null }),
+      r(6, { healthSummary: reading('absent', null), isReference: true }),
+      // Archived tails on the `surface_suppressed` gate that produces it, not on the flag.
+      r(7, { healthSummary: reading('suppressed', null), isArchived: true, lifecycle: 'archived' }),
+      r(8, { healthSummary: reading('suppressed', null) }),
+    ];
+    expect(rows.length, `${String(rows.length)} fixture rows`).toBeGreaterThanOrEqual(8);
+
+    const order = (from: readonly ShelfRow[]): number[] =>
+      [...from].sort(compareRows('needs_attention')).map((x) => x.id as number);
+    const expected = [1, 3, 2, 5, 4, 6, 7, 8];
+    expect(order(rows)).toEqual(expected);
+
+    // The discriminating half: the readings are held and the flags move. A comparator carrying a
+    // second gate moves the row; one carrying none does not.
+    const flipped = rows.map((row, index) =>
+      index === 1 ? { ...row, isReference: true, isArchived: true } : row,
+    );
+    expect(order(flipped), 'the comparator read a flag §35.4 forbids it to read').toEqual(expected);
+
+    // A rank may not drift as a reading ages — *presence freezes decay*.
+    const aged = rows.map((row, index) =>
+      index === 2
+        ? { ...row, healthSummary: { ...row.healthSummary, observedAt: NOW - 4000 * DAY } }
+        : row,
+    );
+    expect(order(aged)).toEqual(expected);
+
+    // A12b: two units never enter one expression. Neither `unverified` nor `unknownChecks` is an
+    // addend, a weight or a tiebreak.
+    const noisy = rows.map((row, index) => ({
+      ...row,
+      healthSummary: {
+        ...row.healthSummary,
+        unverified: index * 7,
+        unknownChecks: (9 - index) * 3,
+      },
+    }));
+    expect(order(noisy)).toEqual(expected);
+
+    // §8.1's Reference block is sorted by the same comparator, so with no reference row carrying
+    // a reading the block renders in the default order.
+    const references = [
+      r(20, { isReference: true, lastTouchedAt: NOW - 3 * DAY }),
+      r(21, { isReference: true, lastTouchedAt: NOW - DAY }),
+      r(22, { isReference: true, lastTouchedAt: NOW - 2 * DAY }),
+    ];
+    expect(build(references, '', 'needs_attention').reference.map((row) => row.id)).toEqual([
+      21, 22, 20,
+    ]);
   });
 });

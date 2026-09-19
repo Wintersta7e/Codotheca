@@ -84,6 +84,7 @@ const ctx: QueryContext = {
     hasCi: false,
     hasRemote: false,
     hasSubmodules: false,
+    health: false,
   },
   commitSubjectHits: null,
 };
@@ -245,6 +246,7 @@ describe('§23.6: the domain rule, and is:notcloned', () => {
       hasCi: true,
       hasRemote: true,
       hasSubmodules: true,
+      health: true,
     },
   };
 

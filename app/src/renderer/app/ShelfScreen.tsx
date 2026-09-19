@@ -43,7 +43,7 @@ import { ReferenceTail } from '../shelf/ReferenceTail.js';
 import type { ShelfRow } from '../shelf/row.js';
 import { Shelf } from '../shelf/Shelf.js';
 import { useVirtualizer } from '../shelf/useVirtualizer.js';
-import { SORT_LABELS, type ShelfView } from '../shelf/viewState.js';
+import { SORT_LABELS, offeredSorts, resolveSort, type ShelfView } from '../shelf/viewState.js';
 import type { AppDeps } from './deps.js';
 import { buildQueryContext } from './queryContext.js';
 
@@ -169,17 +169,24 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
     () => buildQueryContext({ rows, now, firstRunCompletedAt }),
     [rows, now, firstRunCompletedAt],
   );
+  // [p3] §35.5. The key is offered only when a row in the projection carries a reading, and a
+  // stored key that cannot be honoured resolves **here**, where the comparator is chosen.
+  // `view.sort` is not rewritten: `patchFor` issues a `view.set` only when `prev.sort !==
+  // next.sort`, so leaving the stored value alone is the implementation of *nothing is written
+  // back*, and the key returns the moment a reading exists.
+  const offered = useMemo(() => offeredSorts(queryContext.capabilities), [queryContext]);
+  const sort = resolveSort(view.sort, offered);
   const page = useMemo(
     () =>
       buildShelfPage({
         rows,
         query: view.query,
-        sort: view.sort,
+        sort,
         now,
         generation,
         ctx: queryContext,
       }),
-    [generation, now, queryContext, rows, view.query, view.sort],
+    [generation, now, queryContext, rows, sort, view.query],
   );
   const counts = useMemo(() => shelfCounts(rows, page.matched), [page.matched, rows]);
   const flatEntries = useMemo<readonly FlatEntry[]>(
@@ -424,6 +431,7 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
       notices={props.notices}
       scan={props.scan ?? UNKNOWN_SCAN}
       library={props.library}
+      offeredSorts={offered}
       problems={props.problems}
       {...(props.renderNotice === undefined ? {} : { renderNotice: props.renderNotice })}
       now={now}
@@ -446,7 +454,7 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
         rows={rows}
         ctx={queryContext}
         counts={counts}
-        sortLabel={SORT_LABELS[view.sort].toUpperCase()}
+        sortLabel={SORT_LABELS[sort].toUpperCase()}
         query={view.query}
         onQuery={(query) => {
           onViewChange({ ...view, query, ast: parseQuery(query) });

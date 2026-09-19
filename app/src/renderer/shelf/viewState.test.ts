@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { ProjectId, ViewState } from '../../generated/protocol.js';
+import schemaRaw from '../../../../protocol/schema/protocol.json?raw';
+import type { ProjectId, SortKey, ViewState } from '../../generated/protocol.js';
 import { densityStep } from '../card/geometry.js';
+import type { ProjectionCapabilities } from './row.js';
 import {
   DEFAULT_DENSITY_PX,
   DEFAULT_SHELF_VIEW,
@@ -10,9 +12,23 @@ import {
   clampDensity,
   nextDensity,
   nextSort,
+  offeredSorts,
   patchFor,
+  resolveSort,
   viewFromState,
 } from './viewState.js';
+
+/**
+ * `SortKey`'s variants, off the **tracked** §2.4 contract rather than the gitignored generated
+ * file — a check that reads an ignored path is a check that can never fail.
+ *
+ * Through the bundler's `?raw` and not `node:fs`: this file belongs to the **dom** project, where
+ * `tsconfig.web.json` withholds `@types/node` on purpose.
+ */
+function schemaSortVariants(): SortKey[] {
+  const schema = JSON.parse(schemaRaw) as { types: { SortKey: { variants: SortKey[] } } };
+  return schema.types.SortKey.variants;
+}
 
 const state = (over: Partial<ViewState> = {}): ViewState => ({
   query: '',
@@ -66,11 +82,31 @@ describe('the density ladder', () => {
 });
 
 describe('the sort ladder', () => {
-  it('cycles exactly three keys', () => {
-    expect(SORT_KEYS).toEqual(['last_touched', 'name', 'size']);
-    expect(nextSort('last_touched')).toBe('name');
-    expect(nextSort('name')).toBe('size');
-    expect(nextSort('size')).toBe('last_touched');
+  // [p3] §35.6 / `AC-P3-35-4`, replacing *cycles exactly three keys*. `SORT_LABELS` is
+  // `Record<SortKey, string>` and is exhaustive by construction; `SORT_KEYS` is a runtime array
+  // restating the enum, and the case this replaces pinned it at three — **a test that keeps
+  // passing while a fourth key is unreachable**. The generated TypeScript emits an enum as a bare
+  // type union with no runtime value (`protocol/lib/emit-ts.mjs:57`; only `ERROR_CODES` gets a
+  // constant), so the array is unavoidable. What is avoidable is a hand-written assertion about
+  // it: the membership comes off the tracked §2.4 contract.
+  it('AC-P3-35-4 the control offers every variant the schema declares', () => {
+    const variants = schemaSortVariants();
+    expect(variants.length, `derived ${String(variants.length)} variant(s)`).toBeGreaterThan(0);
+    expect(SORT_KEYS).toEqual(variants);
+    for (const variant of variants) {
+      expect(SORT_LABELS[variant].length, `${variant} has no label`).toBeGreaterThan(0);
+    }
+
+    // Deep equality alone does not catch a broken `nextSort`, and a variant in the array the
+    // cycle cannot reach is exactly what the criterion says it fails on.
+    const visited: SortKey[] = [];
+    let key: SortKey = variants[0]!;
+    for (let step = 0; step < variants.length; step += 1) {
+      visited.push(key);
+      key = nextSort(key);
+    }
+    expect(visited).toEqual(variants);
+    expect(key, 'the cycle returns to its start').toBe(variants[0]);
   });
   it('drops Completion — a key over an uncomputed column orders by unknown', () => {
     expect(Object.keys(SORT_LABELS)).not.toContain('completion');
@@ -84,6 +120,40 @@ describe('the sort ladder', () => {
   it('labels every key it cycles, so the control can never render undefined', () => {
     for (const key of SORT_KEYS) expect(SORT_LABELS[key].length).toBeGreaterThan(0);
     expect(Object.keys(SORT_LABELS)).toHaveLength(SORT_KEYS.length);
+  });
+
+  // [p3] §35.5. The `view.set` half is in `useViewState.test.tsx`, asserted on the command stream.
+  it('AC-P3-35-6 the key is not offered when nothing carries a reading, and nothing is written back', () => {
+    const caps = (health: boolean): ProjectionCapabilities => ({
+      authoredByUser: false,
+      location: false,
+      hasReadme: false,
+      hasLicense: false,
+      hasTests: false,
+      hasCi: false,
+      hasRemote: false,
+      hasSubmodules: false,
+      health,
+    });
+    const without = offeredSorts(caps(false));
+    const withReading = offeredSorts(caps(true));
+
+    expect(without).not.toContain('needs_attention');
+    expect(without).toEqual(SORT_KEYS.filter((key) => key !== 'needs_attention'));
+    expect(withReading).toEqual([...SORT_KEYS]);
+
+    // A stored preference is not deleted because today's library cannot honour it: it resolves
+    // to the default at display time and returns the moment a reading exists.
+    expect(resolveSort('needs_attention', without)).toBe(SORT_KEYS[0]);
+    expect(resolveSort('needs_attention', withReading)).toBe('needs_attention');
+    expect(resolveSort('name', without)).toBe('name');
+
+    // A control that does not show a key cannot cycle onto it.
+    let key = resolveSort('needs_attention', without);
+    for (let step = 0; step < SORT_KEYS.length + 1; step += 1) {
+      expect(without).toContain(key);
+      key = nextSort(key, without);
+    }
   });
 });
 

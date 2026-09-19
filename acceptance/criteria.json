@@ -2088,11 +2088,11 @@
         },
         {
           "id": "AC-66-sort",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "13b",
-          "test": "AC-66 sort cycles exactly three keys with completion absent",
-          "assert": "Nothing computes completion, so it is not offered."
+          "test": "the sort ladder AC-P3-35-4 the control offers every variant the schema declares",
+          "assert": "[p3] The cycle's membership is derived from protocol/schema/protocol.json rather than counted by hand, every variant carries a non-empty label, and nextSort reaches each one exactly once. Completion stays absent and is 31's to move."
         },
         {
           "id": "AC-66-shed",

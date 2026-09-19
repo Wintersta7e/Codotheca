@@ -1129,6 +1129,28 @@ test('a phase-3 deferral to a plan is a deferral to nobody, and a bare register 
 // names today, it named nine before that against a real ten, and R112 requires the literal be
 // deleted rather than incremented. Without a frozen copy p3-36's audit cannot tell *deleted per
 // the ruling* from *never touched*.
+/**
+ * [p3] The criteria §36.3 says have moved, and **which plan landed each**.
+ *
+ * §36.3's own rule is *"each row is applied by the plan that lands its section's body, never ahead
+ * of it"*, so the deep-equal below stops being true one row at a time as the waves land. A bare
+ * deep-equal over all fourteen therefore blocks every §36.3 row from landing at all, and relaxing
+ * it wholesale would throw away the freeze.
+ *
+ * The narrowing is `check-destructive-tokens.mjs`'s site shape: **one id, one owner, one written
+ * reason**. A row that moves without an entry here still fails, which is what keeps this a record
+ * of what was decided rather than a hole. `acceptance/phase3-frozen.json` itself is **never
+ * edited** — it is p3-36's audit input, and the audit's question is exactly *which of these
+ * fourteen moved*.
+ */
+const MOVED_BY_PLAN = [
+  {
+    id: '66',
+    plan: 'p3-35',
+    why: "§36.3: AC-66-sort gains `needs_attention` and `Completion` stays absent. The check also flips deferred → automated, because §35.6's AC-P3-35-4 is the first test to implement it — it derives the cycle's membership from protocol/schema/protocol.json rather than counting it by hand.",
+  },
+];
+
 test('the freeze holds the fourteen entries the phase-3 sections govern', () => {
   const frozen = JSON.parse(
     readFileSync(fileURLToPath(new URL('../../acceptance/phase3-frozen.json', import.meta.url))),
@@ -1140,14 +1162,39 @@ test('the freeze holds the fourteen entries the phase-3 sections govern', () => 
   );
   assert.equal(frozen.criteria.length, 14);
 
-  // Deep-equal to the live entry, which is true now and is what p3-36's audit will assert has
-  // stopped being true for exactly the rows that were meant to move.
+  // Every entry is registered against one of the frozen ids, with an owner and a written reason.
+  // An entry for a row that has not moved is as much a defect as a move with no entry.
+  const moved = new Map(MOVED_BY_PLAN.map((row) => [row.id, row]));
+  assert.equal(moved.size, MOVED_BY_PLAN.length, 'one entry per moved criterion');
+  for (const row of MOVED_BY_PLAN) {
+    assert.ok(
+      frozen.criteria.some((c) => c.id === row.id),
+      `${row.id} is not one of the frozen fourteen`,
+    );
+    assert.match(String(row.plan), /^p3-\d{2}[a-c]?$/u, `${row.id} needs an owning plan`);
+    assert.ok(String(row.why).length > 40, `${row.id} moved with no written reason`);
+  }
+
+  // Deep-equal to the live entry for every row that has **not** been registered as moved. This
+  // is what p3-36's audit reads: a row that differs and is listed above moved on purpose, and a
+  // row that differs and is not listed fails right here.
   const live = new Map(loadRegistry(registryPath).criteria.map((c) => [String(c.id), c]));
+  let held = 0;
   for (const entry of frozen.criteria) {
     assert.ok(live.has(entry.id), `${entry.id} is not in criteria.json`);
-    assert.deepEqual(entry, live.get(entry.id), `${entry.id} has already moved`);
     assert.ok(entry.checks.length > 0, `${entry.id} was frozen without its checks`);
+    if (moved.has(entry.id)) {
+      assert.notDeepEqual(
+        entry,
+        live.get(entry.id),
+        `${entry.id} is registered as moved by ${moved.get(entry.id).plan} and has not moved`,
+      );
+      continue;
+    }
+    assert.deepEqual(entry, live.get(entry.id), `${entry.id} has already moved`);
+    held += 1;
   }
+  assert.equal(held, frozen.criteria.length - MOVED_BY_PLAN.length);
 });
 
 test('the shipped register and the shipped rule files complete without a problem', () => {

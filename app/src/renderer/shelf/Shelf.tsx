@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactElement, ReactNode, RefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import type { Problems, ScanStatus } from '../../generated/protocol.js';
+import type { Problems, ScanStatus, SortKey } from '../../generated/protocol.js';
 import { hasReportableProblems } from '../notices/copy.js';
 import { parseQuery } from '../../shared/query/parse.js';
 import type { KeyAction, KeyEventLike } from '../keyboard/contexts.js';
@@ -49,6 +49,9 @@ export interface ShelfProps {
   /** Three states, not two: see `LibraryPresence`. A shelf that has not read may not say the
    *  library is empty, and a boolean here is where that distinction used to die. */
   readonly library: LibraryPresence;
+  /** [p3] §35.5's offered set, forwarded to the bar. This component holds a page rather than the
+   *  projection, so it cannot derive the set itself — the owner of the rows does. */
+  readonly offeredSorts?: readonly SortKey[];
   /** Unix seconds, advanced by the owner. A frozen clock freezes every `as of` string below. */
   readonly now: number;
   /** True while a Peek is open. Owned by whoever mounts it; without it `Esc` declines, which is
@@ -190,6 +193,7 @@ export function Shelf(props: ShelfProps): ReactElement {
         field={fieldModel(view.query, view.ast, [])}
         scan={props.scan}
         barWidth={barWidth}
+        {...(props.offeredSorts === undefined ? {} : { offeredSorts: props.offeredSorts })}
         onQueryChange={(query) => {
           change({ query });
         }}

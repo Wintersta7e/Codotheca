@@ -3,6 +3,11 @@ import type { LocationRef, ProjectRow } from '../../generated/protocol.js';
 import type { ShelfRow } from './row.js';
 import { toShelfRow } from './row.js';
 import type { QueryContext } from './evaluate.js';
+import countsRaw from './counts.ts?raw';
+import schemaRaw from '../../../../protocol/schema/protocol.json?raw';
+import { healthIdentifiers } from '../../../../scripts/check-health-escape.mjs';
+import { parseQuery } from '../../shared/query/parse.js';
+import { evaluateQuery } from './evaluate.js';
 import { ATTENTION_CHIPS, attentionCounts, headlineText, shelfCounts } from './counts.js';
 
 const NOW = 1_800_000_000;
@@ -79,6 +84,7 @@ const ctx: QueryContext = {
     hasCi: false,
     hasRemote: false,
     hasSubmodules: false,
+    health: false,
   },
 };
 
@@ -151,6 +157,78 @@ describe('attentionCounts', () => {
   it('agrees with the headline denominator on ALL', () => {
     const rows = [base(1), base(2, { isReference: true })];
     expect(attentionCounts(rows, ctx)['all']).toBe(shelfCounts(rows, 1).total);
+  });
+});
+
+// [p3] `AC-P3-35-8`, §35.8.1–2. Every chip's rendered number is the row count of its **own**
+// query through the same evaluator the shelf filters with — never a second, separately written
+// predicate — and never an aggregate, a score or a band.
+//
+// **This lane adds no chip**, and that is recorded rather than defaulted: §35.1's row b is
+// conditioned on §32, and §32 answered under R131/F8 — *"§32 RULES NO CHIP IN"*, on three
+// grounds, the first being that the count would have to come off a `ShelfRow` while R119 puts
+// `dependencyVerdict` on `ProjectDetail`. The test below is table-driven, so it holds over four
+// rows or five without an edit here.
+describe('AC-P3-35-8 every chip is one predicate and its own query row count', () => {
+  const ENTRY_KEYS = ['id', 'label', 'sub', 'query', 'accent'];
+  // A fixture where the four predicates give four **different** answers. One where every chip
+  // counts the same number proves nothing.
+  const rows = [
+    base(1, { ahead: 2 }),
+    base(2, { isDirty: true }),
+    base(3, { isDirty: true }),
+    base(4, { lastTouchedAt: NOW - 400 * DAY }),
+    base(5, { lastTouchedAt: NOW - 500 * DAY }),
+    base(6, { lastTouchedAt: NOW - 600 * DAY }),
+  ];
+
+  it('counts each chip through the evaluator, and nothing else does the counting', () => {
+    expect(ATTENTION_CHIPS.length, `${String(ATTENTION_CHIPS.length)} chips`).toBeGreaterThan(0);
+    const counts = attentionCounts(rows, ctx);
+    const seen = new Set<number>();
+    for (const chip of ATTENTION_CHIPS) {
+      expect(typeof chip.query, `${chip.id} has no query`).toBe('string');
+      const ast = parseQuery(chip.query);
+      expect(ast.ignored, `${chip.id} carries a term the grammar drops`).toEqual([]);
+      expect(counts[chip.id], `${chip.id} is not its own query row count`).toBe(
+        evaluateQuery(rows, ast, ctx).rows.length,
+      );
+      seen.add(counts[chip.id] ?? -1);
+      // No entry carries a number of its own: no literal, no precomputed total, no second
+      // predicate field. The rendered number has one producer.
+      expect(Object.keys(chip).sort()).toEqual([...ENTRY_KEYS].sort());
+      for (const value of Object.values(chip)) expect(typeof value).toBe('string');
+    }
+    expect(seen.size, 'a fixture where every chip counts the same proves nothing').toBe(
+      ATTENTION_CHIPS.length,
+    );
+  });
+
+  it('renders no aggregate, no score and no band', () => {
+    // §25.4 drew the line already — *the aggregate is the check, and the check is phase 3* — and
+    // phase 3 inherits the distinction, not permission to erase it. The aggregate may be rendered
+    // on the project page, where the ticks and the debt list show what it is made of.
+    for (const chip of ATTENTION_CHIPS) {
+      for (const copy of [chip.label, chip.sub]) {
+        expect(copy, `${chip.id} renders an aggregate`).not.toMatch(
+          /\b(score|band|grade|health|rank|points?)\b/iu,
+        );
+        expect(copy, `${chip.id} renders a number`).not.toMatch(/\d/u);
+      }
+    }
+  });
+
+  it('names no health identifier in the module that produces the counts', () => {
+    // The derived set is the health-escape gate's own, so the two cannot drift.
+    const identifiers = healthIdentifiers(JSON.parse(schemaRaw));
+    expect(identifiers.length, 'a run with no derived identifier proves nothing').toBeGreaterThan(
+      0,
+    );
+    for (const identifier of identifiers) {
+      expect(countsRaw, `counts.ts names ${identifier}`).not.toMatch(
+        new RegExp(`\\b${identifier}\\b`, 'u'),
+      );
+    }
   });
 });
 
