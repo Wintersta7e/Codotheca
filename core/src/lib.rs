@@ -53,6 +53,7 @@ pub mod surfaces;
 pub mod sync;
 pub mod uninstall;
 pub mod view;
+pub mod weathering;
 pub mod wsl;
 
 #[cfg(feature = "testkit")]
