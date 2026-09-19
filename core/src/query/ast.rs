@@ -111,10 +111,20 @@ pub enum QueryTerm {
         negated: bool,
         year: u32,
     },
+    /// [p3] §31.1: `completion:>5` and `completion:<5`, over `project.completion_lit`.
+    ///
+    /// **The NULL half is the invariant**: a row whose projection is NULL matches **neither**
+    /// comparison and is never coerced to `0`. That was the one half of the phase-1 soft-error
+    /// behaviour worth keeping, and it hardens here rather than expiring with it.
+    Completion {
+        negated: bool,
+        op: Cmp,
+        value: u32,
+    },
 }
 
 impl QueryTerm {
-    /// Whether the term is negated, without matching seven variants at every call site.
+    /// Whether the term is negated, without matching every variant at every call site.
     #[must_use]
     pub const fn negated(&self) -> bool {
         match self {
@@ -124,7 +134,8 @@ impl QueryTerm {
             | Self::Has { negated, .. }
             | Self::Size { negated, .. }
             | Self::TouchedAge { negated, .. }
-            | Self::TouchedYear { negated, .. } => *negated,
+            | Self::TouchedYear { negated, .. }
+            | Self::Completion { negated, .. } => *negated,
         }
     }
 }

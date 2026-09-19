@@ -238,7 +238,13 @@ fn is_outside_the_working_copy_domain(term: &QueryTerm) -> bool {
             true
         }
         QueryTerm::Flag { flag, .. } => is_about_a_working_copy(*flag),
-        QueryTerm::Bare { .. } | QueryTerm::Text { .. } | QueryTerm::Size { .. } => false,
+        // [p3] `completion:` is NOT outside the working-copy domain: §31.8 keeps a not-cloned
+        // project's projection NULL, so the term already answers `Unknown` there for a reason
+        // about the measurement rather than about the domain.
+        QueryTerm::Bare { .. }
+        | QueryTerm::Text { .. }
+        | QueryTerm::Size { .. }
+        | QueryTerm::Completion { .. } => false,
     }
 }
 
@@ -317,6 +323,17 @@ pub fn term_truth(row: &LoadedRow, term: &QueryTerm, ctx: &ExecContext<'_>) -> T
             i32::try_from(*year)
                 .is_ok_and(|y| local_year(r.last_touched_at, ctx.tz_offset_min) == y),
         ),
+        // [p3] §31.1. **`None` is `Unknown`, which is matched by NO polarity** — a NULL row
+        // matches neither `completion:>5` nor `completion:<5`, and is never coerced to `0`
+        // anywhere in this path. That is the half of the phase-1 behaviour that survives, and
+        // it is an invariant rather than a default.
+        QueryTerm::Completion { op, value, .. } => match r.completion_lit {
+            None => TermTruth::Unknown,
+            Some(lit) => TermTruth::known(match op {
+                Cmp::Gt => lit > *value,
+                Cmp::Lt => lit < *value,
+            }),
+        },
     }
 }
 

@@ -195,6 +195,13 @@ export function termTruth(row: ShelfRow, term: QueryTerm, ctx: QueryContext): Tr
     }
     case 'touchedYear':
       return localYear(row.lastTouchedAt) === term.year;
+    // [p3] §31.1. **`null` is Unknown, which is matched by NO polarity** — a NULL row matches
+    // neither `completion:>5` nor `completion:<5`, and is never coerced to `0` here. That is the
+    // one half of the phase-1 behaviour that survives, and it is an invariant, not a default.
+    case 'completion': {
+      if (row.completionLit === null) return null;
+      return term.op === 'gt' ? row.completionLit > term.value : row.completionLit < term.value;
+    }
   }
 }
 

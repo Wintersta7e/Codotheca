@@ -1,5 +1,5 @@
 /** §8.3's `query_grammar_version`. Adding an enum value bumps it; removing a field is forbidden. */
-export const QUERY_GRAMMAR_VERSION = 2;
+export const QUERY_GRAMMAR_VERSION = 3;
 
 export const QUERY_FIELDS = [
   'lang',
@@ -57,9 +57,18 @@ export type SizeUnit = keyof typeof SIZE_UNIT_BYTES;
 export const TOUCHED_UNIT_DAYS = { d: 1, w: 7, mo: 30, y: 365 } as const;
 export type TouchedUnit = keyof typeof TOUCHED_UNIT_DAYS;
 
-/** §8.3a: `completion:` parses and is then dropped from the effective query. Nothing computes
- *  `completion_lit`, and both readings of a comparison against NULL are wrong. */
-export const NEVER_EVALUATED = ['completion'] as const;
+/**
+ * §8.3a's list of fields that parse and are then dropped from the effective query.
+ *
+ * **[p3] Empty.** `completion:` was its only member, on the stated ground that nothing computed
+ * `completion_lit`. §31 computes it, so the term filters — and the half that survives is the
+ * NULL half, which hardens rather than expiring: **a NULL row matches neither comparison** and
+ * is never coerced to `0`.
+ *
+ * Empty is a state to assert rather than a state to stop asserting: the parser still consults
+ * it, so a field added here is dropped again without any other change.
+ */
+export const NEVER_EVALUATED: readonly string[] = [];
 
 export function isQueryField(value: string): value is QueryField {
   return (QUERY_FIELDS as readonly string[]).includes(value);

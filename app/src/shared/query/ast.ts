@@ -30,7 +30,17 @@ export type QueryTerm =
       readonly op: Cmp;
       readonly days: number;
     }
-  | { readonly kind: 'touchedYear'; readonly negated: boolean; readonly year: number };
+  | { readonly kind: 'touchedYear'; readonly negated: boolean; readonly year: number }
+  /**
+   * [p3] §31.1: `completion:>5` over `project.completion_lit`. **A NULL row matches neither
+   * comparison** and is never coerced to `0`.
+   */
+  | {
+      readonly kind: 'completion';
+      readonly negated: boolean;
+      readonly op: Cmp;
+      readonly value: number;
+    };
 
 export interface QueryAst {
   readonly grammarVersion: number;
@@ -41,8 +51,10 @@ export interface QueryAst {
 export const EMPTY_AST: QueryAst = { grammarVersion: 1, terms: [], ignored: [] };
 
 /**
- * The field a term constrains, or `null` for bare free text, which constrains none. `completion`
- * is never returned: §8.3a drops it into `ignored`, so no `completion` term exists in phase 1.
+ * The field a term constrains, or `null` for bare free text, which constrains none.
+ *
+ * **[p3] `completion` is now among them**: §8.3a dropped it into `ignored` while nothing computed
+ * the column, and §31 computes it.
  */
 function fieldOf(term: QueryTerm): QueryField | null {
   switch (term.kind) {
@@ -59,6 +71,8 @@ function fieldOf(term: QueryTerm): QueryField | null {
     case 'touchedAge':
     case 'touchedYear':
       return 'touched';
+    case 'completion':
+      return 'completion';
   }
 }
 

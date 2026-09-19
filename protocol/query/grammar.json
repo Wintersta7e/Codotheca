@@ -1,5 +1,5 @@
 {
-  "queryGrammarVersion": 2,
+  "queryGrammarVersion": 3,
   "fields": ["lang", "owner", "in", "is", "has", "touched", "size", "completion", "collection"],
   "is": [
     "dirty",
@@ -25,7 +25,7 @@
   "comparisons": {
     "size": [">", "<"],
     "touched": [">", "<"],
-    "completion": [">=", "<=", "=", ">", "<"]
+    "completion": [">", "<"]
   },
-  "neverEvaluated": ["completion"]
+  "neverEvaluated": []
 }

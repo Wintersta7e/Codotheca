@@ -32,6 +32,9 @@ export function renderTerm(term: QueryTerm): string {
       return `${dash}touched:${term.op === 'gt' ? '>' : '<'}${scaleDown(term.days, TOUCHED_UNIT_DAYS)}`;
     case 'touchedYear':
       return `${dash}touched:${term.year}`;
+    // [p3] §31.1: a bare count, with no unit to scale down — the quantity is a number of checks.
+    case 'completion':
+      return `${dash}completion:${term.op === 'gt' ? '>' : '<'}${String(term.value)}`;
   }
 }
 

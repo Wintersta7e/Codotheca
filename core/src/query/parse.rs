@@ -152,6 +152,27 @@ fn parse_field_term(field: &str, raw: &str, quoted: bool, negated: bool) -> Opti
                 bytes: n.checked_mul(scale)?,
             })
         }
+        // [p3] §31.1: the term filters. A bare integer bound with no unit, because the quantity
+        // is a COUNT OF CHECKS and `completion:>5kb` is not a thing to admit — `split_comparison`
+        // requires a unit, so this parses its own two characters rather than borrowing that one.
+        "completion" => {
+            let lowered = raw.to_lowercase();
+            let mut chars = lowered.chars();
+            let op = match chars.next()? {
+                '>' => Cmp::Gt,
+                '<' => Cmp::Lt,
+                _ => return None,
+            };
+            let digits: String = chars.collect();
+            if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            Some(QueryTerm::Completion {
+                negated,
+                op,
+                value: digits.parse().ok()?,
+            })
+        }
         "touched" => {
             let lowered = raw.to_lowercase();
             if lowered.chars().count() == 4 && lowered.chars().all(|c| c.is_ascii_digit()) {
@@ -231,14 +252,6 @@ pub fn parse_query(input: &str) -> QueryAst {
                     text: value.to_lowercase(),
                 });
             }
-            continue;
-        }
-
-        if field == "completion" {
-            ignored.push(IgnoredTerm {
-                text: token,
-                reason: IgnoredReason::NotComputed,
-            });
             continue;
         }
 

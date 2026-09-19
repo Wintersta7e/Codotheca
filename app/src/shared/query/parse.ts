@@ -86,6 +86,17 @@ function parseFieldTerm(
     return { kind: 'size', negated, op: sign === '>' ? 'gt' : 'lt', bytes: Number(digits) * scale };
   }
 
+  // [p3] §31.1: a bare integer bound with no unit, because the quantity is a COUNT OF CHECKS —
+  // `completion:>5kb` is not a thing to admit, so this parses its own two characters rather
+  // than borrowing `COMPARISON`, which requires a unit.
+  if (field === 'completion') {
+    const m = /^([<>])(\d+)$/u.exec(raw.toLowerCase());
+    const sign = m?.[1];
+    const digits = m?.[2];
+    if (sign === undefined || digits === undefined) return null;
+    return { kind: 'completion', negated, op: sign === '>' ? 'gt' : 'lt', value: Number(digits) };
+  }
+
   if (field === 'touched') {
     const lowered = raw.toLowerCase();
     if (YEAR.test(lowered)) return { kind: 'touchedYear', negated, year: Number(lowered) };
