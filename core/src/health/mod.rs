@@ -21,6 +21,7 @@
 //! 47 items for two years."* §34's `health_delta` is the only history.
 
 pub mod acknowledge;
+pub mod delta_gate;
 pub mod enrolment;
 pub mod lifecycle;
 pub mod outcome;
