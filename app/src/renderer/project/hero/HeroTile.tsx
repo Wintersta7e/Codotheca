@@ -24,7 +24,9 @@
  */
 import type { ReactElement } from 'react';
 
-import type { ProjectRow, SceneHash } from '../../../generated/protocol';
+import type { DebtItem, ProjectId, ProjectRow, SceneHash } from '../../../generated/protocol';
+import { DecayStack } from '../../decay/DecayStack';
+import { useWeathering } from '../../decay/useWeathering';
 import { statusChips } from '../../card/chips';
 import { HeroFrame } from '../../card/HeroFrame';
 import { glowShadow, glowStrength } from '../../derive/condition';
@@ -50,6 +52,11 @@ export interface HeroTileProps {
    */
   isPinned: boolean;
   onTogglePin: () => void;
+  /**
+   * [p3] §28's flat debt list, straight off `ProjectDetail`. §33.2 counts the open items per
+   * layer; the anchors arrive separately, from the core, keyed by scene.
+   */
+  debt?: readonly DebtItem[];
 }
 
 /**
@@ -57,6 +64,21 @@ export interface HeroTileProps {
  * only when it is not the user — which the projection expresses by leaving `owner` NULL when it
  * is. Whichever half is NULL is omitted; both NULL renders nothing at all.
  */
+/**
+ * [p3] §33.4's stack, mounted against the hash **actually on screen**.
+ *
+ * A component rather than an expression because `useWeathering` is a hook: `HeroFrame` hands the
+ * decoded hash to a render prop, and a hook cannot be called inside a callback.
+ */
+function HeroDecay(props: {
+  projectId: ProjectId;
+  decodedSceneHash: SceneHash | null;
+  debt: readonly DebtItem[];
+}): ReactElement | null {
+  const weathering = useWeathering(props.projectId, props.decodedSceneHash);
+  return <DecayStack weathering={weathering} debt={props.debt} />;
+}
+
 export function heroIdentityLine(row: ProjectRow): string | null {
   const parts = [
     row.owner === null ? null : row.owner.toUpperCase(),
@@ -72,15 +94,18 @@ export function HeroTile({
   firstRunCompletedAt,
   isPinned,
   onTogglePin,
+  debt = [],
 }: HeroTileProps): ReactElement {
   const deps = useProjectPageDeps();
   // §23.5: the hero asks the core for the pass it needs, and that request **is** the demand that
   // renders it. `renditionFor` names the pass; §23.1's one predicate decides which.
-  const heroSrc = useHeroArt(
-    heroHash,
-    row.artState,
-    renditionFor('hero', row.primaryLocation !== null),
-  );
+  const rendition = renditionFor('hero', row.primaryLocation !== null);
+  const heroSrc = useHeroArt(heroHash, row.artState, rendition);
+  // [p3] §33.4: **never on a blueprint pass.** `hero-blueprint` (§23.5) is line art with no
+  // machined parts to weather, and a zero-location project has no working copy for §29's or
+  // §32's readers to observe. The pass `renditionFor` already chose is read here, never
+  // re-derived from `primaryLocation` a second time.
+  const isBlueprint = rendition === 'hero-blueprint';
   const identity = heroIdentityLine(row);
 
   // §5.4a's steady glow. There is no session on this surface to raise it and no flicker to dip
@@ -99,6 +124,11 @@ export function HeroTile({
       row={{ ...row, artSceneHash: heroHash }}
       heroSrc={heroSrc}
       halo={{ shadow: glow, opacity: 1 }}
+      decay={(decodedSceneHash) =>
+        isBlueprint ? null : (
+          <HeroDecay projectId={row.id} decodedSceneHash={decodedSceneHash} debt={debt} />
+        )
+      }
       chips={statusChips(row, deps.now(), firstRunCompletedAt)}
       pin={{
         projectName: row.name,

@@ -299,6 +299,10 @@ export function ProjectPageView({
               firstRunCompletedAt={firstRunCompletedAt}
               isPinned={pinnedOverride ?? detail.row.isPinned}
               onTogglePin={onTogglePin}
+              // [p3] §33.2's input: §28's flat list, grouped by layer in the renderer (R120).
+              // The opened hero is the one surface that receives it — never the grid, Peek, the
+              // list, the quick-switch palette or triage.
+              debt={detail.debt}
             />
             {/* [p2] §24.8's removal, mounted. The verdict is fetched when the affordance opens
                 and at no other time; the page holds it because the rail is arrangement and the
