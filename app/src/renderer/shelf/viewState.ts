@@ -45,14 +45,26 @@ export function nextDensity(px: number): number {
   return DENSITY_TILE_PX[(index + 1) % DENSITY_TILE_PX.length] ?? DEFAULT_DENSITY_PX;
 }
 
-/** §8.0a drops `Completion`: nothing computes it in phase 1 and a sort key over an uncomputed
- *  column orders by unknown. §8.3a made the same ruling for the query field. */
-export const SORT_KEYS = ['last_touched', 'name', 'size'] as const;
+/**
+ * The cycle, in the schema's own variant order.
+ *
+ * `Completion` is still dropped: nothing computes it and a sort key over an uncomputed column
+ * orders by unknown (§8.0a, §8.3a). [p3] §35.2 **generalises that reason rather than overturning
+ * it** — `needs_attention` reads a column that is computed for some rows and not others, so the
+ * uncomputed rows tail (§35.3) and the key is not offered at all when nothing is computed (§35.5).
+ *
+ * **This array is a runtime restatement of the enum and cannot be derived**: the generator emits
+ * an enum as a bare type union with no runtime value (`protocol/lib/emit-ts.mjs:57`), and only
+ * `ERROR_CODES` gets a constant. `viewState.test.ts`'s `AC-P3-35-4` asserts it against
+ * `protocol/schema/protocol.json` so the hand-written half is the array and not the claim.
+ */
+export const SORT_KEYS = ['last_touched', 'name', 'size', 'needs_attention'] as const;
 
 export const SORT_LABELS: Readonly<Record<SortKey, string>> = {
   last_touched: 'Last touched',
   name: 'Name',
   size: 'Size',
+  needs_attention: 'Needs attention',
 };
 
 export function nextSort(sort: SortKey): SortKey {

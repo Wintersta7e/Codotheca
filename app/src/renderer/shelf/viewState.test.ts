@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ProjectId, ViewState } from '../../generated/protocol.js';
+import schemaRaw from '../../../../protocol/schema/protocol.json?raw';
+import type { ProjectId, SortKey, ViewState } from '../../generated/protocol.js';
 import { densityStep } from '../card/geometry.js';
 import {
   DEFAULT_DENSITY_PX,
@@ -13,6 +14,18 @@ import {
   patchFor,
   viewFromState,
 } from './viewState.js';
+
+/**
+ * `SortKey`'s variants, off the **tracked** §2.4 contract rather than the gitignored generated
+ * file — a check that reads an ignored path is a check that can never fail.
+ *
+ * Through the bundler's `?raw` and not `node:fs`: this file belongs to the **dom** project, where
+ * `tsconfig.web.json` withholds `@types/node` on purpose.
+ */
+function schemaSortVariants(): SortKey[] {
+  const schema = JSON.parse(schemaRaw) as { types: { SortKey: { variants: SortKey[] } } };
+  return schema.types.SortKey.variants;
+}
 
 const state = (over: Partial<ViewState> = {}): ViewState => ({
   query: '',
@@ -66,11 +79,31 @@ describe('the density ladder', () => {
 });
 
 describe('the sort ladder', () => {
-  it('cycles exactly three keys', () => {
-    expect(SORT_KEYS).toEqual(['last_touched', 'name', 'size']);
-    expect(nextSort('last_touched')).toBe('name');
-    expect(nextSort('name')).toBe('size');
-    expect(nextSort('size')).toBe('last_touched');
+  // [p3] §35.6 / `AC-P3-35-4`, replacing *cycles exactly three keys*. `SORT_LABELS` is
+  // `Record<SortKey, string>` and is exhaustive by construction; `SORT_KEYS` is a runtime array
+  // restating the enum, and the case this replaces pinned it at three — **a test that keeps
+  // passing while a fourth key is unreachable**. The generated TypeScript emits an enum as a bare
+  // type union with no runtime value (`protocol/lib/emit-ts.mjs:57`; only `ERROR_CODES` gets a
+  // constant), so the array is unavoidable. What is avoidable is a hand-written assertion about
+  // it: the membership comes off the tracked §2.4 contract.
+  it('AC-P3-35-4 the control offers every variant the schema declares', () => {
+    const variants = schemaSortVariants();
+    expect(variants.length, `derived ${String(variants.length)} variant(s)`).toBeGreaterThan(0);
+    expect(SORT_KEYS).toEqual(variants);
+    for (const variant of variants) {
+      expect(SORT_LABELS[variant].length, `${variant} has no label`).toBeGreaterThan(0);
+    }
+
+    // Deep equality alone does not catch a broken `nextSort`, and a variant in the array the
+    // cycle cannot reach is exactly what the criterion says it fails on.
+    const visited: SortKey[] = [];
+    let key: SortKey = variants[0]!;
+    for (let step = 0; step < variants.length; step += 1) {
+      visited.push(key);
+      key = nextSort(key);
+    }
+    expect(visited).toEqual(variants);
+    expect(key, 'the cycle returns to its start').toBe(variants[0]);
   });
   it('drops Completion — a key over an uncomputed column orders by unknown', () => {
     expect(Object.keys(SORT_LABELS)).not.toContain('completion');
