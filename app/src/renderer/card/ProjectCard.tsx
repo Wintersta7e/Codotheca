@@ -9,7 +9,7 @@ import { formatTrackedBytes } from '../format/size';
 import type { CardGesture } from '../motion/transition';
 import { Card } from './Card';
 import { statusChips } from './chips';
-import { frameToken, uncomputedRank } from './completion';
+import { frameToken, rungFor, uncomputedRank } from './completion';
 import { densityStep } from './geometry';
 import { BENCH_LABEL, useBenchElapsed } from './useBenchElapsed';
 
@@ -78,6 +78,15 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
   // §23.5: a project with no working copy asks for the second pass, at its own address. The
   // predicate is §23.1's one and only — `primaryLocation !== null`.
   const hasWorkingCopy = row.primaryLocation !== null;
+  // [p3] §31.1c: `pct = lit / evaluable` and nothing else. `null` is one of the three cases
+  // decided above the ladder, and `uncomputedRank` below draws that one.
+  const rung = rungFor({
+    completionLit: row.completionLit,
+    completionApplicable: row.completionApplicable,
+    isReference: row.isReference,
+    hasWorkingCopy,
+    isArchived: row.isArchived,
+  });
   const rendition = renditionFor(props.rendition, hasWorkingCopy);
   const { onNeedInstallPreview } = props;
   useEffect(() => {
@@ -125,7 +134,11 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
     <Card
       surface="card"
       appearance={appearance}
-      frameToken={frameToken({ isReference: row.isReference, hasWorkingCopy })}
+      // [p3] §31.1c. `rungFor` answers `null` for the three cases decided ABOVE the ladder —
+      // Reference, no working copy, and an uncomputed measurement — which is exactly where
+      // §7.7a's own frame applies, so the two never both answer.
+      frameToken={rung?.frameToken ?? frameToken({ isReference: row.isReference, hasWorkingCopy })}
+      notched={rung?.notched ?? false}
       density={props.density}
       isArchived={row.isArchived}
       isReference={row.isReference}

@@ -2,12 +2,12 @@ import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import type { ConditionSignal } from '../../generated/protocol';
 import type { CardAppearance } from '../art/appearance';
 import type { CardGesture } from '../motion/transition';
-import { token } from '../theme/tokens';
+import { type TokenName, token } from '../theme/tokens';
 import { CardPlate } from './CardPlate';
 import { ConditionDotMark } from './ConditionDotMark';
 import { PinControl, type PinControlProps } from './PinControl';
 import type { StatusChip } from './chips';
-import type { FrameToken, UncomputedRank } from './completion';
+import { GOLD_NOTCH, type UncomputedRank } from './completion';
 import { HAZARD_TAPE_HEIGHT_PX, type CardSurface, bandsFor, densityStep } from './geometry';
 import { bloomShadow, cardCustomProperties } from './interaction';
 
@@ -49,7 +49,18 @@ export interface CardBands {
 export interface CardProps {
   readonly surface: CardSurface;
   readonly appearance: CardAppearance;
-  readonly frameToken: FrameToken;
+  /**
+   * [p3] §31.1c widened this from §7.7a's three above-the-ladder frames to **any** tier token,
+   * because phase 3 is the first phase that paints a rung. `rungFor` names the token; nothing
+   * here chooses one.
+   */
+  readonly frameToken: TokenName;
+  /**
+   * [p3] §31.1c's gold notch. It qualifies a 100% measurement taken over fewer than ten checks,
+   * and it is **never drawn beside `bands.rank`'s gap** — the gap says there is no measurement
+   * at all, so a card showing both would be saying both.
+   */
+  readonly notched?: boolean;
   readonly density: number;
   readonly isArchived: boolean;
   readonly isReference: boolean;
@@ -99,6 +110,22 @@ export function Card(props: CardProps): ReactElement {
     >
       <span className="cdt-card-halo" aria-hidden="true" />
       <span className="cdt-bloom" aria-hidden="true" />
+      {props.notched !== true || bands.rank !== null ? null : (
+        <span
+          className="cdt-frame-notch"
+          aria-hidden="true"
+          style={
+            {
+              right: GOLD_NOTCH.right,
+              top: GOLD_NOTCH.top,
+              width: GOLD_NOTCH.width,
+              height: GOLD_NOTCH.height,
+              // The same `setProperty` route the gap below takes, and for the same reason.
+              'background-color': token('surface-1'),
+            } as CSSProperties
+          }
+        />
+      )}
       {bands.rank === null ? null : (
         <span
           className="cdt-frame-gap"

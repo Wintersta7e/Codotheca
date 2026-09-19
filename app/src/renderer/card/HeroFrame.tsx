@@ -4,7 +4,7 @@ import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance'
 import { renditionFor, useCardBitmap } from '../art/useCardBitmap';
 import { Card, type CardHalo } from './Card';
 import type { StatusChip } from './chips';
-import { frameToken, uncomputedRank } from './completion';
+import { frameToken, rungFor, uncomputedRank } from './completion';
 import type { PinControlProps } from './PinControl';
 
 /**
@@ -31,6 +31,9 @@ export type HeroRow = Pick<
   | 'isArchived'
   | 'conditionSignal'
   | 'completionLit'
+  // [p3] §31.1c: the frame reads `pct = lit / evaluable`, so the denominator has to reach the
+  // hero as well as the tile. `ProjectRow` already carried both.
+  | 'completionApplicable'
   | 'artSceneHash'
   | 'artState'
   // §23.5: the hero asks for `hero-blueprint` and takes the blueprint frame when the project has
@@ -65,6 +68,15 @@ export function HeroFrame(props: HeroFrameProps): ReactElement {
   const { row } = props;
   const appearance = appearanceFor(seedOf(row), fadeFor(row), row.primaryLanguage);
   const hasWorkingCopy = row.primaryLocation !== null;
+  // [p3] §31.1c: `pct = lit / evaluable` and nothing else. `null` is one of the three cases
+  // decided above the ladder, and `uncomputedRank` below draws that one.
+  const rung = rungFor({
+    completionLit: row.completionLit,
+    completionApplicable: row.completionApplicable,
+    isReference: row.isReference,
+    hasWorkingCopy,
+    isArchived: row.isArchived,
+  });
   const bitmap = useCardBitmap({
     sceneHash: row.artSceneHash,
     rendition: renditionFor('hero', hasWorkingCopy),
@@ -76,7 +88,11 @@ export function HeroFrame(props: HeroFrameProps): ReactElement {
     <Card
       surface="hero"
       appearance={appearance}
-      frameToken={frameToken({ isReference: row.isReference, hasWorkingCopy })}
+      // [p3] §31.1c. `rungFor` answers `null` for the three cases decided ABOVE the ladder —
+      // Reference, no working copy, and an uncomputed measurement — which is exactly where
+      // §7.7a's own frame applies, so the two never both answer.
+      frameToken={rung?.frameToken ?? frameToken({ isReference: row.isReference, hasWorkingCopy })}
+      notched={rung?.notched ?? false}
       density={HERO_DENSITY}
       isArchived={row.isArchived}
       isReference={row.isReference}
