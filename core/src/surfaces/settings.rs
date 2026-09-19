@@ -54,6 +54,10 @@ pub const DEFAULTS: Settings = Settings {
     // §29.8: **off until the user turns it on.** The whole gate depends on this default, and it
     // is the only setting whose default decides whether a file is opened at all.
     content_scan_enabled: false,
+    // §30.9's per-check switches. Empty here and **not** a default value: the list is one entry
+    // per `DebtSource` variant, always in full, and it is built by reading the enum rather than
+    // by writing a table down. `read` fills it; this const carries the scalar defaults only.
+    health_checks: Vec::new(),
 };
 
 /// # Errors
@@ -124,6 +128,9 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings, IndexError> {
             .and_then(|v| v.parse::<i64>().ok())
             .map(RootId),
         content_scan_enabled: content_scan_enabled(conn)?,
+        // §30.9: one entry per `DebtSource` variant, always in full, with an absent key read
+        // as **on** — `roast_enabled`'s precedent, applied per check.
+        health_checks: crate::health::switches::read_switches(conn)?,
     })
 }
 
@@ -175,6 +182,11 @@ pub fn write(
         }
         if let Some(v) = patch.install_root_id {
             put(&tx, KEY_INSTALL_ROOT_ID, &v.0.to_string())?;
+        }
+        if let Some(v) = patch.health_checks.as_deref() {
+            // §30.9. Applies only the entries it names, and an entry turned off takes the
+            // source's sweep row with it — never a `debt_item` row.
+            crate::health::switches::write_switches(&tx, v)?;
         }
         if let Some(v) = patch.content_scan_enabled {
             put(&tx, KEY_CONTENT_SCAN_ENABLED, bit(v))?;

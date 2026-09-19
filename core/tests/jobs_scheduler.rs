@@ -25,7 +25,7 @@ use codotheca_core::clock::SystemClock;
 use codotheca_core::git::{GitSlots, SystemGit};
 use codotheca_core::index::Index;
 use codotheca_core::jobs::scheduler::JobRunner;
-use codotheca_core::jobs::{Job, JobDeps, JobKind, JobSink, JobState, Priority};
+use codotheca_core::jobs::{Job, JobDeps, JobKind, JobOrigin, JobSink, JobState, Priority};
 use codotheca_core::mount::StoreClass;
 use codotheca_core::proto::EventSink;
 use codotheca_core::protocol::{LocationId, ProjectId};
@@ -125,6 +125,9 @@ fn job(rig: &Rig, kind: JobKind, priority: Priority) -> Job {
         store_kind: StoreClass::Local,
         priority,
         not_before: 0,
+        // [p3] R121. These tests drive the scheduler directly rather than through a sink, so the
+        // origin is the fixture's to state; `Walk` is what the scanner queues.
+        origin: JobOrigin::Walk,
     }
 }
 

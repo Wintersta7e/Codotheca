@@ -132,6 +132,15 @@ export function rowFixture(over: Partial<ProjectRow> = {}): ProjectRow {
     errorKind: null,
     errorAt: null,
     eraSectionId: 'era-2019',
+    // [p3] §30.1: `absent` is the reading nothing has computed, and every quantity is null.
+    healthSummary: {
+      state: 'absent',
+      scoredOpen: null,
+      unverified: null,
+      unknownChecks: null,
+      observedAt: null,
+    },
+    lifecycle: 'active',
     ...over,
   };
 }
@@ -223,6 +232,9 @@ export function detailFixture(over: Partial<ProjectDetail> = {}): ProjectDetail 
     // honestly has — and it is never rendered as `clean`.
     dependencyVerdict: null,
     dependencyObservedAt: null,
+    // [p3] §30.1. `absent` with an **empty** `checks`, which is the state saying nothing was
+    // computed and never a count of zero checks. A test about the reading overrides it.
+    health: { state: 'absent', scoredOpen: null, basis: null, checks: [] },
     ...over,
   };
 }

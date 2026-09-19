@@ -119,6 +119,25 @@ fn exactly_one_reqwest_client_is_constructed_in_the_core() {
 /// `reqwest`'s blocking client starts a background tokio runtime, so tokio is in the tree. What
 /// is not in the tree is any async code of **ours**, which is the only part of "the core is
 /// blocking threads" that is enforceable.
+/// [p3] `.await` as a **token**, not as a bare substring.
+///
+/// `code.contains(".await")` matched `grant.awaiting_sync` in `core/src/health/reason.rs`, which
+/// is a field read and not an await. A postfix `.await` is always followed by something that
+/// cannot continue an identifier — `;`, `?`, `.`, `)` or the end of the line — so that is what is
+/// tested.
+fn has_await(code: &str) -> bool {
+    let mut rest = code;
+    while let Some(at) = rest.find(".await") {
+        let after = &rest[at + ".await".len()..];
+        match after.chars().next() {
+            None => return true,
+            Some(c) if !c.is_alphanumeric() && c != '_' => return true,
+            Some(_) => rest = after,
+        }
+    }
+    false
+}
+
 #[test]
 fn the_core_contains_no_async_fn_and_no_await() {
     let sources = rust_sources();
@@ -129,7 +148,7 @@ fn the_core_contains_no_async_fn_and_no_await() {
             if code.starts_with("//") || code.starts_with("//!") {
                 continue;
             }
-            if code.contains("async fn ") || code.contains(".await") {
+            if code.contains("async fn ") || has_await(code) {
                 offenders.push(format!("{}:{}", relative(path), line_no + 1));
             }
         }

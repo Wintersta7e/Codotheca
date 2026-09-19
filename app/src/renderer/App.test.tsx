@@ -71,6 +71,7 @@ const settings: Settings = {
   logLevel: 'info',
   installRootId: null,
   contentScanEnabled: false,
+  healthChecks: [],
 };
 
 function page(rows: readonly ProjectRow[]): ProjectPage {

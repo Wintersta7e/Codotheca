@@ -21,6 +21,7 @@ fn empty_patch() -> SettingsPatch {
         log_level: None,
         install_root_id: None,
         content_scan_enabled: None,
+        health_checks: None,
     }
 }
 
@@ -189,6 +190,7 @@ fn every_setting_round_trips_through_the_stored_form() {
             log_level: Some(LogLevel::Debug),
             install_root_id: Some(RootId(7)),
             content_scan_enabled: Some(true),
+            health_checks: None,
         },
         NOW,
     )

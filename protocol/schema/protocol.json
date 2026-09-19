@@ -225,7 +225,8 @@
         "roastEnabled": "bool",
         "logLevel": "LogLevel",
         "installRootId": "RootId?",
-        "contentScanEnabled": "bool"
+        "contentScanEnabled": "bool",
+        "healthChecks": "[HealthCheckSwitch]"
       }
     },
     "SettingsPatch": {
@@ -238,7 +239,8 @@
         "roastEnabled": "bool?",
         "logLevel": "LogLevel?",
         "installRootId": "RootId?",
-        "contentScanEnabled": "bool?"
+        "contentScanEnabled": "bool?",
+        "healthChecks": "[HealthCheckSwitch]?"
       }
     },
 
@@ -482,7 +484,9 @@
         "worktreeObservedAt": "Timestamp?",
         "errorKind": "ErrorCode?",
         "errorAt": "Timestamp?",
-        "eraSectionId": "String"
+        "eraSectionId": "String",
+        "healthSummary": "HealthSummary",
+        "lifecycle": "ProjectLifecycle"
       }
     },
 
@@ -747,8 +751,85 @@
         "debt": "[DebtItem]",
         "debtSweeps": "[DebtSweepState]",
         "dependencyVerdict": "DependencyVerdict?",
-        "dependencyObservedAt": "Timestamp?"
+        "dependencyObservedAt": "Timestamp?",
+        "health": "HealthReading"
       }
+    },
+
+    "HealthState": {
+      "kind": "enum",
+      "$comment": "[p3] §30.1's four states, IN PRECEDENCE ORDER — `absent` > `suppressed` > `frozen` > `live`. Each gate answers a question that makes the next meaningless if answered the other way, so a reordering is a behaviour change. It says which reading a surface is looking at; it is NOT a flag a consumer branches on, and §33 and §35 re-derive none of it.",
+      "variants": ["absent", "suppressed", "frozen", "live"]
+    },
+    "CheckOutcome": {
+      "kind": "enum",
+      "$comment": "[p3] §30.3's five outcomes. `ran = ok + failed` is the only denominator this system has, and a check enters it only by producing one of those two — which is what makes it impossible to report a suppressed, switched-off or failed check as a passing one. `off` and `notApplicable` are disjoint fields and no arithmetic path moves a value into `ran`.",
+      "variants": ["ok", "failed", "unknown", "off", "notApplicable"]
+    },
+    "ProjectLifecycle": {
+      "kind": "enum",
+      "$comment": "[p3] §30.8's tri-state, computed once beside the debt list and expressed nowhere else. **NOT a variant added to `ConditionSignal`**: that column is `Option<ConditionSignal>` over seven ACTIVITY bands, and `done` is a lifecycle verdict — putting it there adds a meaningless variant to `condition_signal`, which shares the enum.",
+      "variants": ["active", "done", "archived"]
+    },
+    "UnknownReason": {
+      "kind": "enum",
+      "$comment": "[p3] §30.3's six reasons. An `unknown` check is counted AND named: the reason is never omitted, defaulted or collapsed to one string. `notRunYet` and `unreachable` are `notObserved`'s two self-resolving neighbours and are separate from it deliberately — a user owed a different act is owed a different sentence. `notSynced` is *the value has not been read back from its source*; §32.4's provider method takes no token, so it never asserts an account (R131/F7). An ungranted content scan is `off`, never a seventh variant here (R128/F8).",
+      "variants": [
+        "needsAccount",
+        "notSynced",
+        "notRead",
+        "notObserved",
+        "notRunYet",
+        "unreachable"
+      ]
+    },
+
+    "HealthBasis": {
+      "kind": "struct",
+      "$comment": "[p3] §30.3's per-check basis. **Checks only — it holds no item count** (A12b): a struct carrying one VALUE over two units is the violation, and a basis carrying items is how that arrives. `observedAt` is the OLDEST input, not the newest: a reading is only as current as its stalest input, and dating it by the freshest read is the staleness marker lying.",
+      "fields": {
+        "ran": "u32",
+        "eligible": "u32",
+        "unknown": "u32",
+        "off": "u32",
+        "notApplicable": "u32",
+        "observedAt": "Timestamp"
+      }
+    },
+    "HealthCheck": {
+      "kind": "struct",
+      "$comment": "[p3] §30.3's per-check row. **A health check is a debt source (A17)**, never one of §31's ten completion checks — §30 mirrors neither the registry's membership nor its size, and no number for it appears in any type here. `unknownReason` is present exactly when `outcome` is `unknown`.",
+      "fields": {
+        "id": "DebtSource",
+        "outcome": "CheckOutcome",
+        "unknownReason": "UnknownReason?"
+      }
+    },
+    "HealthReading": {
+      "kind": "struct",
+      "$comment": "[p3] §30.1's reading, on the project page. `scoredOpen` and `basis` are NULL with **no default** and the writer is forbidden to write `0` for unknown — `completion_lit`'s enforcement shape (§1.10), core-side and unit-tested. `checks` is empty for `absent` and `suppressed`, and an empty array is the state saying nothing was computed, never a count of zero checks.",
+      "fields": {
+        "state": "HealthState",
+        "scoredOpen": "u32?",
+        "basis": "HealthBasis?",
+        "checks": "[HealthCheck]"
+      }
+    },
+    "HealthSummary": {
+      "kind": "struct",
+      "$comment": "[p3] §30.11's shelf flattening of the reading, nullable **exactly where `HealthReading` is, field for field** (R116, correcting A14.3's shape). `unverified` is the one quantity the reading does not carry — the page reads it off `ProjectDetail.debt`, and the shelf has no items, which is why R117 puts the count here and deletes `DebtCounts`. `scoredOpen` counts ITEMS and `unknownChecks` counts CHECKS: two units, named, never combined.",
+      "fields": {
+        "state": "HealthState",
+        "scoredOpen": "u32?",
+        "unverified": "u32?",
+        "unknownChecks": "u32?",
+        "observedAt": "Timestamp?"
+      }
+    },
+    "HealthCheckSwitch": {
+      "kind": "struct",
+      "$comment": "[p3] §30.9's switch, GLOBAL — one row per check in §11.3a's drawer. Per-project *not-applicable* is a different statement and reuses §31's archetype-proposed mechanism. Off HIDES; it never closes an item and never pays: a switch that closed items would make turning a check off an XP source. The core emits one entry per `DebtSource` variant, always in full.",
+      "fields": { "check": "DebtSource", "enabled": "bool" }
     },
 
     "Peek": {

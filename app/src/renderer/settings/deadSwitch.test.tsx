@@ -35,6 +35,7 @@ const settings: Settings = {
   logLevel: 'info',
   installRootId: null,
   contentScanEnabled: false,
+  healthChecks: [],
 };
 
 /** Every slot supplied, so every row the registry declares is actually drawn. */

@@ -15,16 +15,10 @@ pub const DAY: i64 = 86_400;
 pub use crate::protocol::ConditionSignal;
 
 impl ConditionSignal {
-    /// Every band, so a test can walk the vocabulary without restating it.
-    pub const ALL: [ConditionSignal; 7] = [
-        ConditionSignal::Live,
-        ConditionSignal::Idle,
-        ConditionSignal::Dormant,
-        ConditionSignal::Neglected,
-        ConditionSignal::Abandoned,
-        ConditionSignal::Offline,
-        ConditionSignal::Empty,
-    ];
+    // [p3] `ConditionSignal::ALL` is **generated** now, from the schema's own variant list, and
+    // the hand-written copy that stood here was the last count a human maintained for a type the
+    // schema already declares. Every call site is unchanged: the generated list carries the same
+    // seven, in the same declaration order.
 
     /// The stored form, matching `condition_signal`'s CHECK character for character.
     #[must_use]

@@ -163,6 +163,26 @@ impl<'de> serde::Deserialize<'de> for Bytes {
         .map((v) => `    #[serde(rename = "${v}")]\n    ${pascal(v)},`)
         .join('\n');
       L.push(`${DERIVE_UNIT}\npub enum ${name} {\n${variants}\n}\n`);
+      // [p3] The runtime variant list, **derived by construction**. The project's convention for
+      // "every kind, so a test can walk the vocabulary without restating it" was a hand-written
+      // `ALL` on core-side enums only, and a generated enum had none — so a consumer that needed
+      // one at run time had to write the count down, which is the hand-maintained count R132/F11
+      // rules against. Emitting it for every enum removes that for all of them at once.
+      const paths = decl.variants.map((v) => `${name}::${pascal(v)}`);
+      const head = `    pub const ALL: [${name}; ${decl.variants.length}] = `;
+      // rustfmt collapses a short array onto one line and explodes a long one, and `gen:check`
+      // compares the emitted text with what `cargo fmt` leaves behind — so the emitter has to
+      // pick the same form rather than leave the file one `cargo fmt` away from out of date.
+      const oneLine = `${head}[${paths.join(', ')}];`;
+      const body =
+        oneLine.length <= 100
+          ? oneLine
+          : `${head}[\n${paths.map((p) => `        ${p},`).join('\n')}\n    ];`;
+      L.push(
+        `impl ${name} {\n` +
+          `    /// Every variant the schema declares, in declaration order.\n` +
+          `${body}\n}\n`,
+      );
     } else {
       L.push(structOf(name, decl.fields));
     }

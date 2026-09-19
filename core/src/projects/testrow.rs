@@ -76,6 +76,18 @@ impl ProjectRow {
             error_kind: None,
             error_at: None,
             era_section_id: String::new(),
+            // [p3] §30.1's most boring reading is the one that says nothing was computed:
+            // `absent`, every quantity NULL. A fixture defaulting to `live` with a zero count
+            // would satisfy the *nothing outstanding* predicate for every test that never asked
+            // about health — the same defect as a gate whose passing run scans zero files.
+            health_summary: crate::protocol::HealthSummary {
+                state: crate::protocol::HealthState::Absent,
+                scored_open: None,
+                unverified: None,
+                unknown_checks: None,
+                observed_at: None,
+            },
+            lifecycle: crate::protocol::ProjectLifecycle::Active,
         }
     }
 

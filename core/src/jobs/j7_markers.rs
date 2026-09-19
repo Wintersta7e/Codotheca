@@ -226,12 +226,9 @@ pub struct ContentGates {
     pub granted: bool,
     /// §30.5's predicate: not enrolled, or `is_archived = 1`.
     ///
-    /// **Owned by §30.5 and A11.1, and a literal `false` until p3-30 lands.** Wiring it to
-    /// `acknowledged_at` now would suppress the blob read for every project, for ever, because
-    /// nothing writes that column — health would ship off for every project with every test
-    /// around it green. **p3-30 replaces the one expression in `gates_for` in the same change
-    /// that lands the writer.** No trait is declared for it: a trait with a fake and no
-    /// production impl is the defect this project keeps finding.
+    /// **This is the compute gate and it gates the blob read alone.** It does not gate the
+    /// enumeration — J3 already enumerates every non-Reference project unsuppressed, so
+    /// suppressing J7's would suppress work that already runs — and it gates nothing bounded.
     ///
     /// `surface_suppressed` gates rendering, ranking and notification and gates nothing here.
     pub compute_suppressed: bool,
@@ -259,8 +256,23 @@ pub fn gates_for(conn: &Connection, project: ProjectId) -> Result<ContentGates, 
     Ok(ContentGates {
         is_reference: super::scheduler::is_reference(conn, project)?,
         granted: crate::surfaces::settings::content_scan_enabled(conn)?,
-        // The one expression p3-30 replaces. See the field's doc comment.
-        compute_suppressed: false,
+        compute_suppressed: {
+            // Both columns come off the row `gates_for` is already reading for.
+            let (acknowledged_at, is_archived) = conn
+                .query_row(
+                    "SELECT acknowledged_at, is_archived FROM project WHERE id = ?1",
+                    [project.0],
+                    |r| Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, i64>(1)? != 0)),
+                )
+                .or_else(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => Ok((None, false)),
+                    other => Err(IndexError::from(other)),
+                })?;
+            crate::health::enrolment::compute_suppressed(
+                crate::health::enrolment::is_enrolled(acknowledged_at),
+                is_archived,
+            )
+        },
     })
 }
 

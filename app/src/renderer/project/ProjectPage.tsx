@@ -20,8 +20,10 @@ import type {
   LocationId,
   ProjectDetail,
   ProjectId,
+  Settings,
 } from '../../generated/protocol';
 import { useInstallOffer } from '../install/useInstallOffer';
+import { toSettingsPatch } from '../settings/Drawer';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
 import { ActivityTab } from './activity/ActivityTab';
 import { BackupStateBlock } from './BackupState';
@@ -35,6 +37,7 @@ import { Rail } from './rail/Rail';
 import { ReadmePanel } from './readme/ReadmePanel';
 import { RemoteTab } from './remote/RemoteTab';
 import { RoastNote } from './RoastNote';
+import { HealthTab } from './health/HealthTab';
 import { BASE_PROJECT_TABS, fallbackTab, nextTab, tabsFor, type ProjectTab } from './tabs';
 import { useUninstallOffer } from './uninstall/useUninstall';
 import { useProjectDetail } from './useProjectDetail';
@@ -117,6 +120,10 @@ export function ProjectPageView({
   const [tab, setTab] = useState<ProjectTab>('overview');
   const [shownId, setShownId] = useState<LocationId | null>(null);
   const [roastsEnabled, setRoastsEnabled] = useState(true);
+  // [p3] §30.7 and R142: the `HEALTH` tab tells the two causes of `off` apart from two settings
+  // fields, so it needs the whole `Settings` rather than one flag. `null` is *the read has not
+  // landed*, under which no `off` check offers either control — never a guessed one.
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [pinnedOverride, setPinnedOverride] = useState<boolean | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const deps = useProjectPageDeps();
@@ -142,8 +149,10 @@ export function ProjectPageView({
     let live = true;
     deps
       .request('settings.get', {})
-      .then((settings) => {
-        if (live) setRoastsEnabled(settings.roastEnabled);
+      .then((loaded) => {
+        if (!live) return;
+        setRoastsEnabled(loaded.roastEnabled);
+        setSettings(loaded);
       })
       .catch(() => undefined);
     return () => {
@@ -363,6 +372,25 @@ export function ProjectPageView({
                 </>
               ) : null}
               {shownTab === 'activity' ? <ActivityTab detail={detail} /> : null}
+              {shownTab === 'health' && settings !== null ? (
+                <HealthTab
+                  reading={detail.health}
+                  settings={settings}
+                  now={deps.now()}
+                  onGrantSourceReading={() => {
+                    // §29.8's grant, through the existing `settings.set`. §30 adds no command.
+                    void deps
+                      .request('settings.set', {
+                        // `SettingsPatch` carries every field and `null` means *leave it alone*,
+                        // so a partial is widened by the one helper that owns that rule — a
+                        // forgotten field written here would silently read as a change.
+                        patch: toSettingsPatch({ contentScanEnabled: true }),
+                      })
+                      .then(setSettings)
+                      .catch(() => undefined);
+                  }}
+                />
+              ) : null}
               {shownTab === 'remote' && detail.remote !== null ? (
                 <RemoteTab
                   projectId={detail.row.id}

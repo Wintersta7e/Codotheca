@@ -64,6 +64,17 @@ export function makeProjectRow(overrides: Partial<ProjectRow> = {}): ProjectRow 
     errorKind: null,
     errorAt: null,
     eraSectionId: 'era:live',
+    // [p3] §30.1's most boring reading is the one that says nothing was computed: `absent`, with
+    // every quantity null. A fixture defaulting to `live` with a zero count would satisfy the
+    // *nothing outstanding* predicate for every test that did not ask about health.
+    healthSummary: {
+      state: 'absent',
+      scoredOpen: null,
+      unverified: null,
+      unknownChecks: null,
+      observedAt: null,
+    },
+    lifecycle: 'active',
   };
   return { ...base, ...overrides } satisfies ProjectRow;
 }

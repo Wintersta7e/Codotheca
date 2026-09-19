@@ -187,6 +187,34 @@ pub struct Job {
     pub priority: Priority,
     /// Backoff gate, epoch seconds. `0` means runnable now.
     pub not_before: i64,
+    /// [p3] §30's R121: **what started the chain this job belongs to.**
+    ///
+    /// Set at `JobSink`'s two entry points and **copied onto every follow-up job** in `settle`'s
+    /// chain enqueue and its backoff requeue, so a chain a user started stays the user's to its
+    /// last job. It is the second conjunct of the `projects.upserted` gate and nothing else reads
+    /// it.
+    pub origin: JobOrigin,
+}
+
+/// [p3] What started a chain of jobs — the distinction [`JobSink`] already draws, given a name.
+///
+/// **A change gate alone is not safe.** On a first scan the projected `ProjectRow` genuinely
+/// changes on almost every settle — J1 writes ref state, J1.5 writes `authored_by_user` and
+/// `is_reference`, J2 writes `is_dirty`, J3 writes the inventory, J4 writes the commit clocks, J7
+/// writes the debt set — so a change-gated emit is still six or seven whole-row events per
+/// project across a first run. That is the firehose phase 1 refused, arriving through the gate
+/// meant to prevent it; the bulk first-scan case stays covered by the existing `scan/finished`
+/// refresh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobOrigin {
+    /// Queued by the walk, through [`JobSink::on_location_indexed`]. Publishes nothing.
+    Walk,
+    /// Queued because a user looked at something, through [`JobSink::on_visible`].
+    ///
+    /// **Not gated on `Priority`.** §29.7 routes `projects.get` → `on_visible` → J7 at
+    /// `Standard`, not `Interactive`, so a priority gate would miss the one path the whole
+    /// ruling exists for — closing a TODO, reopening the page, and watching the card change.
+    Interactive,
 }
 
 /// `project_job_state.state`.

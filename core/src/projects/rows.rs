@@ -422,6 +422,19 @@ fn map_loaded_row(
         // Stamped by `projects::list`, which owns the band rules. Empty here so a caller
         // that forgets to section cannot pass an id off as one this loader computed.
         era_section_id: String::new(),
+        // §30.11's summary and §30.8's verdict, **stamped by the caller** from the batched
+        // projection — one grouped read for the whole library rather than one query per row.
+        // `absent` here is what a row carries until that stamp lands, and it is what a row
+        // genuinely is when no health projection was asked for: `state` is the single
+        // discriminator, so there is nothing else to mean *no reading*.
+        health_summary: crate::protocol::HealthSummary {
+            state: crate::protocol::HealthState::Absent,
+            scored_open: None,
+            unverified: None,
+            unknown_checks: None,
+            observed_at: None,
+        },
+        lifecycle: crate::protocol::ProjectLifecycle::Active,
     };
 
     let facts = RowFacts {
@@ -462,6 +475,10 @@ pub fn load_project_rows(ctx: &ProjectsCtx<'_>) -> Result<Vec<LoadedRow>, Projec
     let mut by_project = locations_by_project(conn)?;
     let mut collections = collections_by_project(conn)?;
 
+    // [p3] Statement four: §30.11's summary for the whole library, in four grouped reads. A
+    // per-row call here would be the query storm the other two maps exist to avoid.
+    let health = crate::health::summary::summaries_for_all(conn)?;
+
     let mut stmt = conn.prepare(&format!("{PROJECT_COLUMNS}{PROJECT_SHELF_FILTER}"))?;
     let mut out: Vec<LoadedRow> = Vec::new();
     let mut rows = stmt.query([])?;
@@ -469,7 +486,12 @@ pub fn load_project_rows(ctx: &ProjectsCtx<'_>) -> Result<Vec<LoadedRow>, Projec
         let id: i64 = r.get(0)?;
         let locations = by_project.remove(&id).unwrap_or_default();
         let collection_ids = collections.remove(&id).unwrap_or_default();
-        out.push(map_loaded_row(r, &locations, collection_ids)?);
+        let mut loaded = map_loaded_row(r, &locations, collection_ids)?;
+        if let Some((summary, lifecycle)) = health.get(&id) {
+            loaded.row.health_summary = summary.clone();
+            loaded.row.lifecycle = *lifecycle;
+        }
+        out.push(loaded);
     }
     Ok(out)
 }
@@ -506,5 +528,15 @@ pub fn load_project_row(
     let Some(r) = rows.next()? else {
         return Err(ProjectsError::UnknownProject(project.0));
     };
-    map_loaded_row(r, &locations, collection_ids)
+    let mut loaded = map_loaded_row(r, &locations, collection_ids)?;
+    // [p3] §30.11, through **the same producer** `projects.list` uses. Two producers would drift,
+    // and the opened page and the tile must not be able to disagree about one repository.
+    //
+    // **The reading takes no clock.** §30.11 stores nothing and every timestamp it carries is
+    // an `observed_at` the store already holds, so a `now` here would be a parameter no
+    // expression reads — and a caller would eventually pass a plausible wrong one.
+    let (summary, lifecycle) = crate::health::summary::summary_for(conn, project)?;
+    loaded.row.health_summary = summary;
+    loaded.row.lifecycle = lifecycle;
+    Ok(loaded)
 }
