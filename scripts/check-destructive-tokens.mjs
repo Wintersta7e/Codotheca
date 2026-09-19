@@ -44,7 +44,7 @@ export const CLEAN_SITES = [
   {
     path: 'protocol/schema/protocol.json',
     token: 'clean',
-    why: "§32.8 declares `DependencyVerdict { clean, vulnerable, unknown }`. The value crosses the wire and is stored; the renderer draws a tick row and a layer from it and never prints the word. A slug renamed to satisfy a rendering ban would make the store and the wire disagree with the ruling that permits it (R130/F9).",
+    why: '§32.8 declares `DependencyVerdict { clean, vulnerable, unknown }`. The value crosses the wire and is stored; the renderer draws a tick row and a layer from it and never prints the word. A slug renamed to satisfy a rendering ban would make the store and the wire disagree with the ruling that permits it (R130/F9).',
   },
 ];
 
