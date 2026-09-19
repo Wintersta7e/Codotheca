@@ -15,7 +15,7 @@ use codotheca_core::projects::list::{
 };
 use codotheca_core::projects::rows::{LoadedRow, RowFacts};
 use codotheca_core::projects::{dispatch_projects_command, ProjectsCtx};
-use codotheca_core::protocol::{HealthState, HealthSummary, ProjectRow, SortKey};
+use codotheca_core::protocol::{HealthState, HealthSummary, ProjectLifecycle, ProjectRow, SortKey};
 
 /// 2026-06-11T12:00:00Z, so the cut year is 2026 and the ten named years run 2025 down to 2016.
 const NOW: i64 = 1_781_179_200;
@@ -162,6 +162,76 @@ fn a_not_cloned_project_is_classified_before_archived_and_before_submodules() {
     both.is_archived = true;
     both.is_submodule = true;
     assert_eq!(era_section_id_for(&both, NOW, 0), "era:notcloned");
+}
+
+/// `AC-P3-35-1` — §35.4 as corrected by **R131/F6** and **R128/F10**.
+///
+/// Nine cases, one mechanism: §30's pipeline decides what the reading is and `rank_of` reads it.
+/// The comparator holds no second gate, so this test needs **no production change** — and the
+/// discriminating half is the flip below, which a comparator carrying its own exclusion fails.
+#[test]
+fn ac_p3_35_1_the_exclusion_set_is_applied_once_upstream() {
+    // 1 · 2 ranked · 3 frozen, ranking on its frozen value · 4 Done, which **ranks** at
+    // `scored_open = 0` (R131/F6) · 5 not cloned, which ranks if it has a reading (§23.4) ·
+    // 6 Reference, excluded from health entirely (§30 gate 1) · 7 archived, which **tails** on
+    // the `surface_suppressed` gate that produces it (§30 gate 5) · 8 `surface_suppressed`.
+    let mut reference = with_health(6, HealthState::Absent, None);
+    reference.is_reference = true;
+    let mut archived = with_health(7, HealthState::Suppressed, None);
+    archived.is_archived = true;
+    let mut done = with_health(4, HealthState::Live, Some(0));
+    done.lifecycle = ProjectLifecycle::Done;
+    let mut not_cloned = ProjectRow::for_test_not_cloned(5);
+    not_cloned.last_touched_at = NOW - DAY;
+    not_cloned.health_summary = with_health(5, HealthState::Live, Some(2)).health_summary;
+
+    let rows: Vec<LoadedRow> = vec![
+        loaded(with_health(1, HealthState::Live, Some(9))),
+        loaded(with_health(2, HealthState::Live, Some(4))),
+        loaded(with_health(3, HealthState::Frozen, Some(5))),
+        loaded(done),
+        loaded(not_cloned),
+        loaded(reference),
+        loaded(archived),
+        loaded(with_health(8, HealthState::Suppressed, None)),
+    ];
+    eprintln!("projects_list: {} fixture rows", rows.len());
+    assert!(
+        rows.len() >= 8,
+        "the fixture must hold all eight cases; it holds {}",
+        rows.len()
+    );
+
+    let expected = vec![1, 3, 2, 5, 4, 6, 7, 8];
+    assert_eq!(sorted_ids(&rows, SortKey::NeedsAttention), expected);
+
+    // The discriminating half. The readings are held and the *flags* move: a comparator that
+    // re-applied §35.4's exclusions moves the row, and one that applies none does not.
+    let mut flipped = rows.clone();
+    flipped[1].row.is_reference = true;
+    flipped[1].row.is_archived = true;
+    assert_eq!(
+        sorted_ids(&flipped, SortKey::NeedsAttention),
+        expected,
+        "the comparator read a flag §35.4 forbids it to read"
+    );
+
+    // A rank may not drift as a reading ages: *presence freezes decay*, and the frozen row ranks
+    // on the value it was computed with however old that reading is.
+    let mut aged = rows.clone();
+    aged[2].row.health_summary.observed_at = Some(NOW - 10_000 * DAY);
+    assert_eq!(sorted_ids(&aged, SortKey::NeedsAttention), expected);
+
+    // A12b: `scored_open` counts ITEMS and `unknown_checks` counts CHECKS. Neither `unverified`
+    // (R128/F10) nor `unknown_checks` is an addend, a weight or a tiebreak, and a comparator that
+    // quietly used either is caught here and nowhere else.
+    let mut noisy = rows.clone();
+    for (index, row) in noisy.iter_mut().enumerate() {
+        let n = u32::try_from(index).unwrap_or(0);
+        row.row.health_summary.unverified = Some(n * 7);
+        row.row.health_summary.unknown_checks = Some((9 - n) * 3);
+    }
+    assert_eq!(sorted_ids(&noisy, SortKey::NeedsAttention), expected);
 }
 
 /// `AC-P3-35-2` — §35.3. A project with no reading is not a project with zero debt: the tail sits

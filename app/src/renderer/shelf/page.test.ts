@@ -4,6 +4,7 @@ import type {
   HealthSummary,
   LocationRef,
   ProjectRow,
+  SortKey,
 } from '../../generated/protocol.js';
 import type { ShelfRow } from './row.js';
 import { toShelfRow } from './row.js';
@@ -104,7 +105,7 @@ const ctx: QueryContext = {
 const build = (
   rows: ShelfRow[],
   query = '',
-  sort: 'last_touched' | 'name' | 'size' = 'last_touched',
+  sort: SortKey = 'last_touched',
 ): ReturnType<typeof buildShelfPage> =>
   buildShelfPage({ rows, query, sort, now: NOW, generation: 3, ctx });
 
@@ -250,5 +251,67 @@ describe('compareRows', () => {
     // A computed zero is ranked, at the bottom of the ranked run — never in the tail.
     expect(at(1)).toBeLessThan(at(3));
     expect(at(2)).toBeLessThan(at(3));
+  });
+
+  // §35.4 as corrected by R131/F6 (Done ranks, archived tails) and R128/F10 (`unverified` is
+  // counted nowhere). Nine cases, one mechanism — so this needed no production change.
+  it('AC-P3-35-1 the exclusion set is applied once, upstream', () => {
+    const rows = [
+      r(1, { healthSummary: reading('live', 9) }),
+      r(2, { healthSummary: reading('live', 4) }),
+      r(3, { healthSummary: reading('frozen', 5) }),
+      // Done ranks, at the bottom of the ranked run: §30 gives it a `live` reading by construction.
+      r(4, { healthSummary: reading('live', 0), lifecycle: 'done' }),
+      // §23.4 keeps a not-cloned row in the base set, so it ranks if it has a reading.
+      r(5, { healthSummary: reading('live', 2), primaryLocation: null, presence: null }),
+      r(6, { healthSummary: reading('absent', null), isReference: true }),
+      // Archived tails on the `surface_suppressed` gate that produces it, not on the flag.
+      r(7, { healthSummary: reading('suppressed', null), isArchived: true, lifecycle: 'archived' }),
+      r(8, { healthSummary: reading('suppressed', null) }),
+    ];
+    expect(rows.length, `${String(rows.length)} fixture rows`).toBeGreaterThanOrEqual(8);
+
+    const order = (from: readonly ShelfRow[]): number[] =>
+      [...from].sort(compareRows('needs_attention')).map((x) => x.id as number);
+    const expected = [1, 3, 2, 5, 4, 6, 7, 8];
+    expect(order(rows)).toEqual(expected);
+
+    // The discriminating half: the readings are held and the flags move. A comparator carrying a
+    // second gate moves the row; one carrying none does not.
+    const flipped = rows.map((row, index) =>
+      index === 1 ? { ...row, isReference: true, isArchived: true } : row,
+    );
+    expect(order(flipped), 'the comparator read a flag §35.4 forbids it to read').toEqual(expected);
+
+    // A rank may not drift as a reading ages — *presence freezes decay*.
+    const aged = rows.map((row, index) =>
+      index === 2
+        ? { ...row, healthSummary: { ...row.healthSummary, observedAt: NOW - 4000 * DAY } }
+        : row,
+    );
+    expect(order(aged)).toEqual(expected);
+
+    // A12b: two units never enter one expression. Neither `unverified` nor `unknownChecks` is an
+    // addend, a weight or a tiebreak.
+    const noisy = rows.map((row, index) => ({
+      ...row,
+      healthSummary: {
+        ...row.healthSummary,
+        unverified: index * 7,
+        unknownChecks: (9 - index) * 3,
+      },
+    }));
+    expect(order(noisy)).toEqual(expected);
+
+    // §8.1's Reference block is sorted by the same comparator, so with no reference row carrying
+    // a reading the block renders in the default order.
+    const references = [
+      r(20, { isReference: true, lastTouchedAt: NOW - 3 * DAY }),
+      r(21, { isReference: true, lastTouchedAt: NOW - DAY }),
+      r(22, { isReference: true, lastTouchedAt: NOW - 2 * DAY }),
+    ];
+    expect(build(references, '', 'needs_attention').reference.map((row) => row.id)).toEqual([
+      21, 22, 20,
+    ]);
   });
 });
