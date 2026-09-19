@@ -11,10 +11,11 @@
 use codotheca_core::art::testsupport::CollectingSink;
 use codotheca_core::index::Index;
 use codotheca_core::projects::list::{
-    era_section_id_for, era_section_order, order_key_of, ERA_NAMED_YEARS,
+    era_section_id_for, era_section_order, order_key_of, rank_of, sort_rows, ERA_NAMED_YEARS,
 };
+use codotheca_core::projects::rows::{LoadedRow, RowFacts};
 use codotheca_core::projects::{dispatch_projects_command, ProjectsCtx};
-use codotheca_core::protocol::ProjectRow;
+use codotheca_core::protocol::{HealthState, HealthSummary, ProjectRow, SortKey};
 
 /// 2026-06-11T12:00:00Z, so the cut year is 2026 and the ten named years run 2025 down to 2016.
 const NOW: i64 = 1_781_179_200;
@@ -24,6 +25,43 @@ fn at(secs: i64) -> ProjectRow {
     let mut row = ProjectRow::for_test(1);
     row.last_touched_at = secs;
     row
+}
+
+fn loaded(row: ProjectRow) -> LoadedRow {
+    LoadedRow {
+        row,
+        facts: RowFacts {
+            authored_by_user: None,
+            location_kind: None,
+            distro: None,
+            has_remote: false,
+            has_submodules: false,
+            has_readme: None,
+            content_presence: None,
+        },
+    }
+}
+
+/// A row in **one** era section — every fixture below sits a day back, so `era:live` holds all of
+/// them and *after every ranked row within its own section* is the whole list. The bucketing is
+/// `AC-P3-35-9`'s claim and is not restated here.
+fn with_health(id: i64, state: HealthState, scored_open: Option<u32>) -> ProjectRow {
+    let mut row = ProjectRow::for_test(id);
+    row.last_touched_at = NOW - DAY;
+    row.health_summary = HealthSummary {
+        state,
+        scored_open,
+        unverified: None,
+        unknown_checks: None,
+        observed_at: None,
+    };
+    row
+}
+
+fn sorted_ids(rows: &[LoadedRow], sort: SortKey) -> Vec<i64> {
+    let mut refs: Vec<&LoadedRow> = rows.iter().collect();
+    sort_rows(&mut refs, sort);
+    refs.iter().map(|r| r.row.id.0).collect()
 }
 
 #[test]
@@ -124,6 +162,44 @@ fn a_not_cloned_project_is_classified_before_archived_and_before_submodules() {
     both.is_archived = true;
     both.is_submodule = true;
     assert_eq!(era_section_id_for(&both, NOW, 0), "era:notcloned");
+}
+
+/// `AC-P3-35-2` — §35.3. A project with no reading is not a project with zero debt: the tail sits
+/// contiguously after every ranked row, and a **computed** zero is ranked at the bottom of the
+/// ranked run rather than thrown in with the rows nobody has looked at.
+#[test]
+fn ac_p3_35_2_the_tail_never_interleaves_and_is_never_ordered_as_zero() {
+    let rows: Vec<LoadedRow> = vec![
+        loaded(with_health(1, HealthState::Live, Some(3))),
+        loaded(with_health(2, HealthState::Live, Some(7))),
+        loaded(with_health(3, HealthState::Live, Some(0))),
+        loaded(with_health(4, HealthState::Absent, None)),
+        loaded(with_health(5, HealthState::Suppressed, None)),
+    ];
+
+    let ranked = rows.iter().filter(|r| rank_of(&r.row).is_some()).count();
+    let tail = rows.len() - ranked;
+    eprintln!("projects_list: {ranked} ranked and {tail} tail rows in the fixture");
+    assert!(ranked > 0, "a run with no ranked row proves nothing");
+    assert!(tail > 0, "a run with no tail row proves nothing");
+
+    let ids = sorted_ids(&rows, SortKey::NeedsAttention);
+    // 7 then 3 then the computed zero; then the tail in the default order, which on equal
+    // `last_touched_at` is id ascending.
+    assert_eq!(ids, vec![2, 1, 3, 4, 5]);
+
+    let position = |id: i64| ids.iter().position(|&x| x == id).expect("id is ordered");
+    for tail_id in [4, 5] {
+        for ranked_id in [1, 2, 3] {
+            assert!(
+                position(ranked_id) < position(tail_id),
+                "row {tail_id} carries no reading and must sort after every row that does"
+            );
+        }
+    }
+    // The whole of §35.3's *a computed zero is not the tail*: above the tail, below every
+    // non-zero ranked row.
+    assert!(position(1) < position(3) && position(2) < position(3));
 }
 
 #[test]
@@ -316,22 +392,6 @@ fn sort_by_name_reorders_the_rows_and_the_order_key_with_them() {
 #[test]
 fn unchecked_counts_only_rows_that_have_a_working_copy() {
     use codotheca_core::projects::list::aggregate_era;
-    use codotheca_core::projects::rows::{LoadedRow, RowFacts};
-
-    fn loaded(row: ProjectRow) -> LoadedRow {
-        LoadedRow {
-            row,
-            facts: RowFacts {
-                authored_by_user: None,
-                location_kind: None,
-                distro: None,
-                has_remote: false,
-                has_submodules: false,
-                has_readme: None,
-                content_presence: None,
-            },
-        }
-    }
 
     let bare: Vec<LoadedRow> = (1..=3)
         .map(|id| loaded(ProjectRow::for_test_not_cloned(id)))

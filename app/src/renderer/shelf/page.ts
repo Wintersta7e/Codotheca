@@ -30,6 +30,35 @@ export interface ShelfPage {
   readonly ast: QueryAst;
 }
 
+/**
+ * [p3] §35.3's membership rule and §35.2's ordering scalar, as one total function — the mirror of
+ * `rank_of` in `core/src/projects/list.rs`, which `protocol/shelf/order-corpus.json` holds both
+ * halves to.
+ *
+ * A number is *this row carries a reading, and its count is that number*; `null` is *tail*. The
+ * case §30.1 forbids the writer to produce — a `live` reading with a null `scoredOpen` — resolves
+ * to the tail rather than to a zero, because **a zero is a ranked value and never a tail value**.
+ *
+ * It re-applies none of §35.4's exclusions: §30's pipeline decides what the reading is, and this
+ * reads it. `isReference`, `isArchived` and `lifecycle` are never consulted.
+ */
+export function rankOf(row: ShelfRow): number | null {
+  switch (row.healthSummary.state) {
+    case 'live':
+    case 'frozen':
+      return row.healthSummary.scoredOpen;
+    case 'absent':
+    case 'suppressed':
+      return null;
+  }
+}
+
+/** §8.0a's default order, shared by `last_touched` and `needs_attention` so one value has one
+ *  owner. `name` and `size` keep their own tiebreaks, which are different values. */
+function byDefault(a: ShelfRow, b: ShelfRow): number {
+  return b.lastTouchedAt - a.lastTouchedAt || a.id - b.id;
+}
+
 export function compareRows(sort: SortKey): (a: ShelfRow, b: ShelfRow) => number {
   if (sort === 'name') {
     return (a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id - b.id;
@@ -45,7 +74,20 @@ export function compareRows(sort: SortKey): (a: ShelfRow, b: ShelfRow) => number
       return bv - av || a.id - b.id;
     };
   }
-  return (a, b) => b.lastTouchedAt - a.lastTouchedAt || a.id - b.id;
+  // [p3] §35.3, in `size`'s shape. **This branch has to be explicit**: the function ends in an
+  // unconditional return, so a fourth key with no branch of its own silently sorts as
+  // `last_touched` while `tsc` stays green — which is why `AC-P3-35-2` was written before it.
+  if (sort === 'needs_attention') {
+    return (a, b) => {
+      const av = rankOf(a);
+      const bv = rankOf(b);
+      if (av === null && bv === null) return byDefault(a, b);
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return bv - av || byDefault(a, b);
+    };
+  }
+  return byDefault;
 }
 
 /** FNV-1a over the ordered ids. A cursor, not a checksum: equality is all it has to support. */

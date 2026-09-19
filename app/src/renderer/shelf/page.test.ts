@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { LocationRef, ProjectRow } from '../../generated/protocol.js';
+import type {
+  HealthState,
+  HealthSummary,
+  LocationRef,
+  ProjectRow,
+} from '../../generated/protocol.js';
 import type { ShelfRow } from './row.js';
 import { toShelfRow } from './row.js';
 import type { QueryContext } from './evaluate.js';
-import { buildShelfPage, compareRows, orderKeyOf } from './page.js';
+import { buildShelfPage, compareRows, orderKeyOf, rankOf } from './page.js';
 
 const DAY = 86_400;
 const NOW = Math.floor(Date.UTC(2026, 5, 15, 12) / 1000);
@@ -59,8 +64,25 @@ function r(id: number, over: Record<string, unknown> = {}): ShelfRow {
     errorKind: null,
     errorAt: null,
     eraSectionId: '',
+    // [p3] §30.1's most boring reading is the one that says nothing was computed: `absent`, every
+    // quantity null. `healthSummary` is non-nullable (R116), so a fixture without it is a shape
+    // the wire cannot produce — and a fixture defaulting to `live` with a zero count would rank
+    // every row that never asked about health.
+    healthSummary: {
+      state: 'absent',
+      scoredOpen: null,
+      unverified: null,
+      unknownChecks: null,
+      observedAt: null,
+    },
+    lifecycle: 'active',
     ...over,
   } as unknown as ProjectRow);
+}
+
+/** A reading, for the rows a health test is about. */
+function reading(state: HealthState, scoredOpen: number | null): HealthSummary {
+  return { state, scoredOpen, unverified: null, unknownChecks: null, observedAt: null };
 }
 const ctx: QueryContext = {
   now: NOW,
@@ -199,5 +221,34 @@ describe('compareRows', () => {
   it('puts an unmeasured project behind a measured zero, which is a real zero', () => {
     const rows = [r(1), r(2, { sizeTrackedBytes: 0 })];
     expect([...rows].sort(compareRows('size')).map((x) => x.id)).toEqual([2, 1]);
+  });
+
+  // §35.3. `compareRows` ends in an unconditional return, so before the branch below landed
+  // `needs_attention` sorted as `last_touched` and `tsc` stayed green — which is why this case
+  // was written first.
+  it('AC-P3-35-2 the tail never interleaves and is never ordered as zero', () => {
+    const rows = [
+      r(1, { healthSummary: reading('live', 3) }),
+      r(2, { healthSummary: reading('live', 7) }),
+      r(3, { healthSummary: reading('live', 0) }),
+      r(4, { healthSummary: reading('absent', null) }),
+      r(5, { healthSummary: reading('suppressed', null) }),
+    ];
+    const ranked = rows.filter((row) => rankOf(row) !== null).length;
+    const tail = rows.length - ranked;
+    expect(ranked, `${String(ranked)} ranked rows`).toBeGreaterThan(0);
+    expect(tail, `${String(tail)} tail rows`).toBeGreaterThan(0);
+
+    const ids = [...rows].sort(compareRows('needs_attention')).map((x) => x.id as number);
+    expect(ids).toEqual([2, 1, 3, 4, 5]);
+    const at = (id: number): number => ids.indexOf(id);
+    for (const tailId of [4, 5]) {
+      for (const rankedId of [1, 2, 3]) {
+        expect(at(rankedId), `row ${String(tailId)} carries no reading`).toBeLessThan(at(tailId));
+      }
+    }
+    // A computed zero is ranked, at the bottom of the ranked run — never in the tail.
+    expect(at(1)).toBeLessThan(at(3));
+    expect(at(2)).toBeLessThan(at(3));
   });
 });

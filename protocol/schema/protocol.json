@@ -169,7 +169,11 @@
       "fields": { "runId": "ScanRunId?", "header": "ProblemHeader", "groups": "[ProblemGroup]" }
     },
 
-    "SortKey": { "kind": "enum", "variants": ["last_touched", "name", "size"] },
+    "SortKey": {
+      "kind": "enum",
+      "$comment": "[p3] §35.2's fourth key. **The array's order is the control's cycle order**, so a new key joins last, after the three that shipped. `needs_attention` orders on `HealthSummary.scoredOpen` descending and tails every row carrying no reading; it is an item count and never a score, and it is offered only when a row in the projection carries one (§35.5). `completion` is still absent and is §31's to move.",
+      "variants": ["last_touched", "name", "size", "needs_attention"]
+    },
     "ViewMode": { "kind": "enum", "variants": ["grid", "list"] },
     "WindowGeometry": {
       "kind": "struct",

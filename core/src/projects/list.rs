@@ -10,7 +10,8 @@ use crate::projects::rows::{load_project_rows, scan_generation, LoadedRow};
 use crate::projects::{ProjectsCtx, ProjectsError};
 use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::protocol::{
-    EraAggregate, EraSection, ProjectPage, ProjectRow, ProjectsListArgs, SortKey, Window,
+    EraAggregate, EraSection, HealthState, ProjectPage, ProjectRow, ProjectsListArgs, SortKey,
+    Window,
 };
 use crate::query::ast::QueryTerm;
 use crate::query::execute::{evaluate_query, ExecContext};
@@ -136,6 +137,41 @@ pub fn aggregate_era(rows: &[&LoadedRow]) -> EraAggregate {
     agg
 }
 
+/// [p3] §35.3's membership rule and §35.2's ordering scalar, as **one** total function.
+///
+/// `Some(n)` is *this row carries a reading, and its count is n*; `None` is *tail*. Written once
+/// it cannot drift into two rules, and the case §30.1 forbids the writer to produce — a `live`
+/// reading with a NULL `scored_open` — resolves to the tail rather than to a panic or to a zero.
+/// **A zero is a ranked value and never a tail value** (§35.3).
+///
+/// The match is exhaustive with **no wildcard**: a fifth `HealthState` cannot be added without
+/// this function being revisited, which is the whole point of reading the state here.
+///
+/// It re-applies **no** exclusion of its own (§35.4). Reference, archived, Done, `frozen`,
+/// `surface_suppressed`, `absent`, `shown_only`, `unverified` and not-cloned are nine cases and
+/// one mechanism: §30's pipeline decides what the reading is, and this reads it. `is_reference`,
+/// `is_archived`, `lifecycle` and the item list are never consulted.
+#[must_use]
+pub fn rank_of(row: &ProjectRow) -> Option<u32> {
+    match row.health_summary.state {
+        HealthState::Live | HealthState::Frozen => row.health_summary.scored_open,
+        HealthState::Absent | HealthState::Suppressed => None,
+    }
+}
+
+/// §8.0a's default order: most recently touched first, ties on the lowest id.
+///
+/// Extracted rather than restated: `last_touched` and `needs_attention` both end here, and a
+/// fourth copy of one value is the R12 shape. `name` and `size` are **not** routed through it —
+/// their tiebreaks are `id` alone and `id`-after-bytes, which are different values that happen to
+/// share a term.
+fn default_order(a: &LoadedRow, b: &LoadedRow) -> std::cmp::Ordering {
+    b.row
+        .last_touched_at
+        .cmp(&a.row.last_touched_at)
+        .then(a.row.id.0.cmp(&b.row.id.0))
+}
+
 pub fn sort_rows(rows: &mut [&LoadedRow], sort: SortKey) {
     match sort {
         SortKey::Name => rows.sort_by(|a, b| {
@@ -156,12 +192,17 @@ pub fn sort_rows(rows: &mut [&LoadedRow], sort: SortKey) {
                 },
             );
         }
-        SortKey::LastTouched => rows.sort_by(|a, b| {
-            b.row
-                .last_touched_at
-                .cmp(&a.row.last_touched_at)
-                .then(a.row.id.0.cmp(&b.row.id.0))
-        }),
+        SortKey::LastTouched => rows.sort_by(|a, b| default_order(a, b)),
+        // [p3] §35.3, in `Size`'s shape: a row with no reading sorts last. It is not a project
+        // with nothing outstanding; it is one nobody has looked at.
+        SortKey::NeedsAttention => {
+            rows.sort_by(|a, b| match (rank_of(&a.row), rank_of(&b.row)) {
+                (None, None) => default_order(a, b),
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (Some(x), Some(y)) => y.cmp(&x).then_with(|| default_order(a, b)),
+            });
+        }
     }
 }
 
