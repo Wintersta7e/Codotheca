@@ -1419,13 +1419,19 @@ test('§30: the four health vocabularies are declared, in their ruling order', (
  * [p3] §30 adds **no command, no event and no topic** (`AC-P3-30-15`). Adding one would move four
  * totals in three places — `protocol/test/surface.test.mjs`, `core/src/assembly/route.rs` and the
  * lock — and §30 adds none.
+ *
+ * **The event figure was 34 and is 35, and the correction is the point.** §30 asserted the
+ * absolute that was true of its own branch; §32 landed `sync/advisory_alert` in the same wave, so
+ * the merge made it false — the third time in one merge that a lane's absolute was right for its
+ * tree and wrong for the union. The assertion stays absolute here **only** because this test's
+ * subject *is* the totals; everywhere else, state a delta.
  */
 test('§30: the health reading moves the type row alone', () => {
   assert.equal(schema.commands.length, 60);
   assert.equal(Object.keys(schema.topics).length, 7);
   assert.equal(
     Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0),
-    34,
+    35,
   );
   assert.equal(schema.errors.length, 14);
 });

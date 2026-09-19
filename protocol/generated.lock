@@ -7,6 +7,6 @@
   "types": 182,
   "files": {
     "app/src/generated/protocol.ts": "sha256-8f210a6c7891f382faac69678313322d03c95a58b651e10550938f8b9cd69368",
-    "core/src/protocol.rs": "sha256-649d048ee7ea03b1165ad0c314fb72707169ed11726fedd74138539944433866"
+    "core/src/protocol.rs": "sha256-67e556e5ca7e63e6ecce42b4d22cbaf20083e928d29cbba9431da71c61baa580"
   }
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Generates the core<->shell contract for BOTH languages from one schema, and records a digest
 // of what it produced. Hand-writing either side is how the two drift at the same version.
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -18,9 +19,39 @@ const check = process.argv.includes('--check');
 const schema = loadSchema(schemaPath);
 const sha = (text) => `sha256-${createHash('sha256').update(text, 'utf8').digest('hex')}`;
 
+// The emitted Rust goes through `rustfmt` before anything else sees it — before the file is
+// written, before `--check` compares it, and before the lock's digest is taken — so all three
+// agree on one text.
+//
+// **This exists because guessing rustfmt's line breaking does not work.** An emitter that picked
+// between a one-line and an exploded array was clean in the lane that wrote it and failed
+// `cargo fmt --check` at the merge, because a sibling lane added an enum whose name pushed it
+// into a third form. Fixing that guess produced a fourth counter-example on the next run. The
+// only stable answer is to let rustfmt decide and hash what it returns.
+//
+// A missing `rustfmt` is a hard failure, never a silent pass-through: emitting unformatted Rust
+// would leave the tree one `cargo fmt` away from "codegen is out of date", which reads as a
+// schema problem and is not one.
+const rustfmt = (text) => {
+  try {
+    return execFileSync('rustfmt', ['--edition', '2021', '--emit', 'stdout'], {
+      input: text,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch (error) {
+    console.error(
+      `protocol codegen could not run rustfmt, which it needs to emit stable Rust:\n  ${
+        error.message
+      }\nInstall the Rust toolchain, or run \`rustup component add rustfmt\`.`,
+    );
+    process.exit(1);
+  }
+};
+
 const outputs = {
   'app/src/generated/protocol.ts': emitTypeScript(schema),
-  'core/src/protocol.rs': emitRust(schema),
+  'core/src/protocol.rs': rustfmt(emitRust(schema)),
 };
 
 const lock = {

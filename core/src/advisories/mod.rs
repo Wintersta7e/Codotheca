@@ -91,19 +91,19 @@ pub const ADVISORY_BATCH_CAP: usize = 256;
 /// query string beside `affects`.
 pub const ADVISORY_AFFECTS_BYTE_CAP: usize = 6 * 1024;
 
-/// An inherent const on a generated enum: legal because both are in this crate.
-///
-/// **The set is a property of this app's parser coverage**, not of the source's vocabulary — an
-/// ecosystem is listed once a lockfile of its shape can be read. Every slug is character-identical
-/// to the endpoint's own `ecosystem` parameter because it is sent as one.
-impl Ecosystem {
-    pub const ALL: [Ecosystem; 3] = [Ecosystem::Npm, Ecosystem::Rust, Ecosystem::Pip];
-}
-
-/// Two variants and deliberately not three: *the scan has not run* is the **absence** of a
-/// `project_dependency_scan` row, because a file that was not read produces no `(package,
-/// version)` key for a third variant to sit on.
-impl DependencyReadState {
-    pub const ALL: [DependencyReadState; 2] =
-        [DependencyReadState::Parsed, DependencyReadState::NotRead];
-}
+// [p3] `Ecosystem::ALL` and `DependencyReadState::ALL` were hand-written here and are now
+// **generated** from the schema's own variant lists (`protocol/lib/emit-rust.mjs`). Both call
+// sites are unchanged; only the declaration moved.
+//
+// Two lanes met here and neither was wrong about its own tree: one made `ALL` generated for every
+// schema enum and deleted the three hand-written copies it could see, while this one was
+// concurrently writing two more it could not. The merge produced `E0592 duplicate definitions
+// with name ALL` — R31 exactly, and the reason the full gate runs after every cross-lane merge.
+//
+// **The reasons those consts carried are kept, because they are not restated by the generator:**
+// `Ecosystem`'s set is a property of **this app's parser coverage**, not of the source's
+// vocabulary — an ecosystem is listed once a lockfile of its shape can be read, and every slug is
+// character-identical to the endpoint's own `ecosystem` parameter because it is sent as one.
+// `DependencyReadState` has two variants and deliberately not three: *the scan has not run* is
+// the **absence** of a `project_dependency_scan` row, because a file that was not read produces
+// no `(package, version)` key for a third variant to sit on.

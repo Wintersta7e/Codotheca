@@ -170,14 +170,15 @@ impl<'de> serde::Deserialize<'de> for Bytes {
       // rules against. Emitting it for every enum removes that for all of them at once.
       const paths = decl.variants.map((v) => `${name}::${pascal(v)}`);
       const head = `    pub const ALL: [${name}; ${decl.variants.length}] = `;
-      // rustfmt collapses a short array onto one line and explodes a long one, and `gen:check`
-      // compares the emitted text with what `cargo fmt` leaves behind — so the emitter has to
-      // pick the same form rather than leave the file one `cargo fmt` away from out of date.
-      const oneLine = `${head}[${paths.join(', ')}];`;
-      const body =
-        oneLine.length <= 100
-          ? oneLine
-          : `${head}[\n${paths.map((p) => `        ${p},`).join('\n')}\n    ];`;
+      // **This emitter does not try to match rustfmt's line breaking, and must not start.**
+      // `generate.mjs` pipes everything here through `rustfmt` before it is written, compared or
+      // hashed, so one line is the right thing to emit however long it is.
+      //
+      // An earlier version guessed between a one-line and an exploded array. It was clean in the
+      // lane that wrote it and failed `cargo fmt --check` at the merge, because a sibling lane
+      // added an enum whose name pushed the line into a third form rustfmt prefers; adding that
+      // third form produced a fourth counter-example on the very next run.
+      const body = `${head}[${paths.join(', ')}];`;
       L.push(
         `impl ${name} {\n` +
           `    /// Every variant the schema declares, in declaration order.\n` +
