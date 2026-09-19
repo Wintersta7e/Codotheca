@@ -911,3 +911,119 @@ fn ac_p3_31_15_project_check_is_derived_and_is_not_reparented() {
         "project_check is reparented as well as deleted, which is two classes at once"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// AC-P3-31-16 — `deps` reads the set and owns no item
+// ---------------------------------------------------------------------------------------------
+
+/// §32's lockfile scan, complete or not. **The verdict already folds the completeness**, which is
+/// what `deps` reads rather than re-deriving.
+fn dependency_scan(conn: &rusqlite::Connection, project: i64, complete: bool, matched: i64) {
+    conn.execute(
+        "INSERT INTO project_dependency_scan
+            (project_id, observed_at, files_matched, dirs_entered, unresolved_manifests, complete)
+         VALUES (?1, 50, ?2, 1, 0, ?3)
+         ON CONFLICT(project_id) DO UPDATE SET complete = excluded.complete,
+             files_matched = excluded.files_matched",
+        rusqlite::params![project, matched, i64::from(complete)],
+    )
+    .unwrap();
+}
+
+fn advisory_item(conn: &rusqlite::Connection, project: i64, fingerprint: &str) {
+    conn.execute(
+        "INSERT INTO debt_item
+            (project_id, subject_key, source, fingerprint, state, scoring,
+             first_seen_at, last_seen_at)
+         VALUES (?1, 'abc123', 'dependency_advisory', ?2, 'open', 'scored', 10, 10)",
+        rusqlite::params![project, fingerprint],
+    )
+    .unwrap();
+}
+
+fn check_state(conn: &rusqlite::Connection, project: i64, key: &str) -> (String, Option<String>) {
+    conn.query_row(
+        "SELECT state, unknown_reason FROM project_check WHERE project_id = ?1 AND check_key = ?2",
+        rusqlite::params![project, key],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap()
+}
+
+/// **`AC-P3-31-16`.** With two `scored` open advisories `deps` is `fail` and **`debt_item` holds
+/// two rows, not one**; closing one leaves it `fail`; closing both makes it `pass` **only when
+/// §32 reports the sweep complete**, and `unknown` otherwise.
+///
+/// **No `debt_item` row exists for the check key** — `deps` reads a set and owns no item (A8).
+#[test]
+fn ac_p3_31_16_deps_reads_the_advisory_set_and_owns_no_item() {
+    let (_dir, mut conn) = fresh();
+    let p = scorable(&conn, "deps");
+    content_scan(&conn, p, "present");
+    dependency_scan(&conn, p, true, 1);
+    advisory_item(&conn, p, "GHSA-one");
+    advisory_item(&conn, p, "GHSA-two");
+
+    recompute(&mut conn, p, 1_000);
+    assert_eq!(check_state(&conn, p, "deps").0, "fail");
+    let items: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM debt_item
+              WHERE project_id = ?1 AND source = 'dependency_advisory'",
+            [p],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(items, 2, "two advisories are two items, not one");
+
+    // Closing one leaves it failing: the predicate is *this set is empty*, not *this set shrank*.
+    conn.execute(
+        "DELETE FROM debt_item WHERE project_id = ?1 AND fingerprint = 'GHSA-one'",
+        [p],
+    )
+    .unwrap();
+    recompute(&mut conn, p, 2_000);
+    assert_eq!(check_state(&conn, p, "deps").0, "fail");
+
+    // Closing both makes it pass — **only because the sweep is complete**.
+    conn.execute(
+        "DELETE FROM debt_item WHERE project_id = ?1 AND source = 'dependency_advisory'",
+        [p],
+    )
+    .unwrap();
+    recompute(&mut conn, p, 3_000);
+    assert_eq!(check_state(&conn, p, "deps").0, "pass");
+
+    // The `unknown` branch runs too: zero advisories on an INCOMPLETE sweep is `unknown`, and a
+    // pass without the completeness conjunct is the defect this half exists to catch.
+    dependency_scan(&conn, p, false, 1);
+    recompute(&mut conn, p, 4_000);
+    let (state, reason) = check_state(&conn, p, "deps");
+    assert_eq!(state, "unknown");
+    assert_eq!(reason.as_deref(), Some("notSynced"));
+
+    // **R131/F7**: a lockfile the read could not take is `notRead`, never `notSynced`.
+    conn.execute(
+        "INSERT INTO project_lockfile
+            (project_id, source_path, ecosystem, read_state, observed_at)
+         VALUES (?1, 'package-lock.json', 'npm', 'notRead', 50)",
+        [p],
+    )
+    .unwrap();
+    recompute(&mut conn, p, 5_000);
+    assert_eq!(
+        check_state(&conn, p, "deps"),
+        ("unknown".to_owned(), Some("notRead".to_owned())),
+        "a 17 MB lockfile is not a network problem, and the note must not say it is"
+    );
+
+    // **No item is ever keyed on the check.** `deps` is the only check owning none.
+    let mis_keyed: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM debt_item WHERE project_id = ?1 AND source = 'deps'",
+            [p],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(mis_keyed, 0);
+}
