@@ -400,3 +400,42 @@ describe('the removal the page offers', () => {
     expect(uninstall).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * **[p3] Criterion 58's dot count, moved from two to three (§33.7).**
+ *
+ * The page's dots number three: the hero's band-1 dot, the identity line's, and the condition
+ * line's. §5.4a's deferral of the 6px condition-line dot expires here. **Its day edges, fills,
+ * rings and the `warm`/`cooling` ban are unchanged** — and this file states none of them, because
+ * a second copy of §5.4a's table is the defect criterion 58 exists to catch.
+ */
+describe('[p3] the open page draws three condition dots', () => {
+  it('counts the heros band-1 dot, the identity lines and the condition lines', async () => {
+    mount(
+      detailFixture({
+        row: rowFixture({ conditionSignal: 'idle' }),
+        conditionMaterial: 'dormant',
+      }),
+    );
+    await screen.findByTestId('cp-condition');
+
+    const hero = document.querySelectorAll('.cdt-dot');
+    const identity = document.querySelectorAll('.cp-dot');
+    const condition = document.querySelectorAll('.cp-condition-dot');
+    const total = hero.length + identity.length + condition.length;
+    expect(
+      total,
+      `hero ${String(hero.length)} + identity ${String(identity.length)} + condition ${String(condition.length)}`,
+    ).toBe(3);
+    // Each is a different surface of §5.4a's size table, and the sizes differ.
+    expect((condition[0] as HTMLElement | undefined)?.style.width).toBe('6px');
+  });
+
+  it('draws the condition panel in OVERVIEW and not behind the HEALTH predicate', async () => {
+    // §30.7 mounts HEALTH only when the reading is `frozen` or `live`; the two clocks are
+    // phase-1 derived facts every project has. The default fixture's reading is `absent`.
+    mount(detailFixture({ row: rowFixture({ conditionSignal: 'idle' }) }));
+    const panel = await screen.findByTestId('cp-condition');
+    expect(panel.closest('[data-tab]')?.getAttribute('data-tab')).toBe('overview');
+  });
+});

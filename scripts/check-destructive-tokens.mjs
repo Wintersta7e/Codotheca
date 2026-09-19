@@ -46,6 +46,11 @@ export const CLEAN_SITES = [
     token: 'clean',
     why: '§32.8 declares `DependencyVerdict { clean, vulnerable, unknown }`. The value crosses the wire and is stored; the renderer draws a tick row and a layer from it and never prints the word. A slug renamed to satisfy a rendering ban would make the store and the wire disagree with the ruling that permits it (R130/F9).',
   },
+  {
+    path: 'app/src/renderer/project/condition/dial.ts',
+    token: 'clean',
+    why: '[p3] §33.7 declares the divergence readout `CLEAN BUT DARK`, one of three beside `IN STEP` and `LIT BUT DUSTY`. **This one IS rendered**, unlike the grant above, and it is granted because it does not make the banned claim: the invariant is that *absence of dirty is "no changes as of T", never "clean"*, and this string says nothing about a worktree. It reports that the COMMIT clock is warmer than the INTERACTION clock — committed to but not opened — in §33\'s material register, where §33.1\'s own phrase for an undecayed card is *clean metal*. The ban stays live over every rendering of worktree state, which is where it means what it says.',
+  },
 ];
 
 /**

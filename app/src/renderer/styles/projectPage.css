@@ -1229,3 +1229,65 @@
   border-left-style: solid;
   border-left-color: var(--line-5);
 }
+
+/*
+ * [p3] §33.7's CONDITION panel. Two needles over a full circle, a 6px condition-line dot and the
+ * divergence readout. The fills arrive as custom properties from `conditionDot` — §5.4a's one
+ * owner in code — so no colour is restated here.
+ */
+.cp-condition {
+  margin: 20px 0 0;
+  padding: 0;
+}
+
+.cp-condition-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+
+.cp-condition-rose {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  border: 1px solid var(--line-3);
+  border-radius: 50%;
+}
+
+.cp-needle {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  width: 2px;
+  height: 40px;
+  margin-left: -1px;
+  transform-origin: bottom center;
+  background-color: var(--cdt-needle-fill);
+  border: var(--cdt-needle-ring);
+}
+
+.cp-needle[data-needle='material'] {
+  top: 24px;
+  height: 24px;
+}
+
+.cp-condition-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.cp-condition-dot {
+  display: inline-block;
+  border-radius: 50%;
+  background-color: var(--cdt-dot-fill);
+  border: var(--cdt-dot-ring);
+}
+
+.cp-condition-divergence {
+  letter-spacing: 0.08em;
+}

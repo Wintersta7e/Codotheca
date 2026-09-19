@@ -26,7 +26,15 @@ export interface ConditionDot {
   glow: string | null;
 }
 
-export type DotSurface = 'gridTile' | 'heroTile' | 'listRow' | 'quickSwitch' | 'projectPage';
+export type DotSurface =
+  | 'gridTile'
+  | 'heroTile'
+  | 'listRow'
+  | 'quickSwitch'
+  | 'projectPage'
+  // [p3] §5.4a's sixth row, deferred in phase 1 and landed by §33.7: the condition line inside
+  // the CONDITION panel. A different surface from `projectPage`, which is the identity line's.
+  | 'conditionLine';
 
 export const DOT_SIZE_PX: Readonly<Record<DotSurface, number>> = Object.freeze({
   gridTile: 8,
@@ -34,6 +42,9 @@ export const DOT_SIZE_PX: Readonly<Record<DotSurface, number>> = Object.freeze({
   listRow: 7,
   quickSwitch: 7,
   projectPage: 9,
+  // [p3] §5.4a's deferred row, landed. The deferral read *it belongs to the design's CONDITION
+  // panel, which renders `condition_material` and arrives with it in phase 3* — and it has.
+  conditionLine: 6,
 });
 
 const BANDS: Readonly<Record<ConditionSignal, ConditionDot>> = Object.freeze({
