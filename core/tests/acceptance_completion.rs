@@ -1,0 +1,286 @@
+//! §31.11's core criteria — `AC-P3-31-*`.
+//!
+//! Every test carries its criterion id in its own name so §36's `tagsIn` finds it, and every
+//! scanning check prints the number of things it looked at: **a gate whose passing run scans zero
+//! is a failing gate.**
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+
+mod support;
+
+use codotheca_core::clock::SystemClock;
+use codotheca_core::debt::singletons::{evaluate_singletons, ArmReading, SINGLETON_ARMS};
+use codotheca_core::debt::store::SqliteDebtStore;
+use codotheca_core::git::read_ref_state;
+use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
+use codotheca_core::index::{open_connection, Index};
+use codotheca_core::jobs::j1_refstate::persist;
+use codotheca_core::protocol::{DebtSource, LocationId, ProjectId};
+use support::TestRepo;
+
+fn fresh() -> (tempfile::TempDir, rusqlite::Connection) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut conn = open_connection(&Index::db_path(dir.path())).unwrap();
+    apply_all(&mut conn, MIGRATIONS).unwrap();
+    (dir, conn)
+}
+
+fn insert_project(conn: &rusqlite::Connection, name: &str) -> i64 {
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, lineage_key, created_at, updated_at)
+         VALUES (?1, ?1, 'abc123', 1, 1)",
+        [name],
+    )
+    .unwrap();
+    conn.last_insert_rowid()
+}
+
+/// One copy. `worktree_newest_mtime` is §5.1's primary key, so a caller that needs a particular
+/// copy to be the primary one says so rather than relying on insertion order.
+fn insert_location(conn: &rusqlite::Connection, project: i64, touched: Option<i64>) -> LocationId {
+    let n: i64 = conn
+        .query_row("SELECT count(*) FROM location", [], |r| r.get(0))
+        .unwrap();
+    let path = format!("/copy-{n}");
+    conn.execute(
+        "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display, store_key,
+                               presence, repo_kind, worktree_newest_mtime)
+         VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree', ?4)",
+        rusqlite::params![project, path.as_bytes(), path, touched],
+    )
+    .unwrap();
+    LocationId(conn.last_insert_rowid())
+}
+
+fn set_tag_count(conn: &rusqlite::Connection, location: LocationId, tags: Option<i64>) {
+    conn.execute(
+        "UPDATE location SET tag_count = ?2 WHERE id = ?1",
+        rusqlite::params![location.0, tags],
+    )
+    .unwrap();
+}
+
+fn set_shallow(conn: &rusqlite::Connection, project: i64, shallow: bool) {
+    conn.execute(
+        "UPDATE project SET is_shallow = ?2 WHERE id = ?1",
+        rusqlite::params![project, i64::from(shallow)],
+    )
+    .unwrap();
+}
+
+/// The `no_release` arm's own reading, before the store turns it into a row.
+fn no_release_reading(conn: &mut rusqlite::Connection, project: i64) -> ArmReading {
+    let arm = SINGLETON_ARMS
+        .iter()
+        .find(|a| a.source() == DebtSource::NoRelease)
+        .expect("the registry declares no_release");
+    let tx = conn.transaction().unwrap();
+    let reading = arm.observe(&tx, ProjectId(project)).unwrap();
+    tx.rollback().unwrap();
+    reading
+}
+
+/// The same predicate as the store sees it: the sweep outcome and the open item count.
+fn no_release_sweep(conn: &mut rusqlite::Connection, project: i64) -> (String, i64) {
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(project), 100, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    let outcome: String = conn
+        .query_row(
+            "SELECT outcome FROM debt_sweep WHERE project_id = ?1 AND source = 'no_release'",
+            [project],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let items: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM debt_item WHERE project_id = ?1 AND source = 'no_release'",
+            [project],
+            |r| r.get(0),
+        )
+        .unwrap();
+    (outcome, items)
+}
+
+// ---------------------------------------------------------------------------------------------
+// AC-P3-31-11 — `release` never reads a shallow zero as a failure, and J1 writes the column
+// ---------------------------------------------------------------------------------------------
+
+/// The fourth clause: **J1 writes `tag_count`**, and it equals the repository's tag count.
+///
+/// The count is asserted `> 0` as well as equal, so a fixture that silently created no tag
+/// cannot pass by agreeing with a column that is also zero.
+#[test]
+fn ac_p3_31_11_j1_persists_the_tag_count() {
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"one\n");
+    repo.commit("first");
+    repo.git(&["tag", "v1"]);
+    repo.git(&["tag", "v2"]);
+    repo.git(&["tag", "v3"]);
+
+    let expected: i64 = repo.git(&["tag", "--list"]).lines().count() as i64;
+    println!("fixture tags: {expected}");
+    assert!(
+        expected > 0,
+        "a fixture that created no tag proves nothing about the column"
+    );
+
+    let (_dir, mut conn) = fresh();
+    let project = insert_project(&conn, "tagged");
+    let location = insert_location(&conn, project, Some(10));
+
+    // Before J1 the column is NULL, which is *no refstate persisted* and never *no tags*.
+    let before: Option<i64> = conn
+        .query_row(
+            "SELECT tag_count FROM location WHERE id = ?1",
+            [location.0],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(before, None);
+
+    let state = read_ref_state(&repo.handle(), &SystemClock::new()).unwrap();
+    assert_eq!(i64::from(state.tag_count), expected, "the reader counted");
+    let tx = conn.transaction().unwrap();
+    persist(&tx, location, &state).unwrap();
+    tx.commit().unwrap();
+
+    let stored: Option<i64> = conn
+        .query_row(
+            "SELECT tag_count FROM location WHERE id = ?1",
+            [location.0],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        stored,
+        Some(expected),
+        "persist names eleven columns after §31.2, and tag_count is the eleventh"
+    );
+}
+
+/// The first three clauses, asserted on the **arm** and again on the **check's own store row**.
+///
+/// A test that covered only the shallow case would have read green against p3-28's provisional
+/// stub, which answered `Unobservable` unconditionally.
+#[test]
+fn ac_p3_31_11_a_shallow_zero_is_unknown_and_a_real_zero_is_a_failure() {
+    let (_dir, mut conn) = fresh();
+
+    // tag_count = 0, is_shallow = 1 -> Unobservable. A depth-1 clone fetches no tags.
+    let shallow = insert_project(&conn, "shallow");
+    let shallow_loc = insert_location(&conn, shallow, Some(10));
+    set_tag_count(&conn, shallow_loc, Some(0));
+    set_shallow(&conn, shallow, true);
+    assert_eq!(
+        no_release_reading(&mut conn, shallow),
+        ArmReading::Unobservable
+    );
+    assert_eq!(
+        no_release_sweep(&mut conn, shallow),
+        ("unobservable".to_owned(), 0),
+        "a shallow zero opens no item"
+    );
+
+    // tag_count = 0, is_shallow = 0 -> PredicateFalse, and exactly one item.
+    let full = insert_project(&conn, "full");
+    let full_loc = insert_location(&conn, full, Some(10));
+    set_tag_count(&conn, full_loc, Some(0));
+    set_shallow(&conn, full, false);
+    assert!(matches!(
+        no_release_reading(&mut conn, full),
+        ArmReading::PredicateFalse(_)
+    ));
+    assert_eq!(
+        no_release_sweep(&mut conn, full),
+        ("complete".to_owned(), 1)
+    );
+
+    // tag_count IS NULL -> Unobservable whatever is_shallow says. Both halves run, because one
+    // alone cannot tell a NULL from a shallow zero.
+    for (name, shallow_flag) in [("null-shallow", true), ("null-full", false)] {
+        let p = insert_project(&conn, name);
+        let loc = insert_location(&conn, p, Some(10));
+        set_tag_count(&conn, loc, None);
+        set_shallow(&conn, p, shallow_flag);
+        assert_eq!(
+            no_release_reading(&mut conn, p),
+            ArmReading::Unobservable,
+            "{name}: NULL is never observed"
+        );
+        assert_eq!(
+            no_release_sweep(&mut conn, p),
+            ("unobservable".to_owned(), 0),
+            "{name}"
+        );
+    }
+
+    // tag_count >= 1 -> PredicateTrue, whatever the shallowness.
+    let tagged = insert_project(&conn, "tagged");
+    let tagged_loc = insert_location(&conn, tagged, Some(10));
+    set_tag_count(&conn, tagged_loc, Some(2));
+    set_shallow(&conn, tagged, true);
+    assert_eq!(
+        no_release_reading(&mut conn, tagged),
+        ArmReading::PredicateTrue
+    );
+    assert_eq!(
+        no_release_sweep(&mut conn, tagged),
+        ("complete".to_owned(), 0)
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// AC-P3-31-12 — multi-location aggregation is the primary copy's
+// ---------------------------------------------------------------------------------------------
+
+/// §5.1's primary copy decides, and `unknown` when **that** copy has no count — not when some
+/// other copy does.
+#[test]
+fn ac_p3_31_12_release_reads_the_primary_locations_tag_count() {
+    let (_dir, mut conn) = fresh();
+
+    // The more recently touched copy holds no tags; the other one does. The primary decides.
+    let p = insert_project(&conn, "two-copies");
+    let older = insert_location(&conn, p, Some(10));
+    let newer = insert_location(&conn, p, Some(99));
+    set_tag_count(&conn, older, Some(4));
+    set_tag_count(&conn, newer, Some(0));
+    set_shallow(&conn, p, false);
+    assert!(
+        matches!(
+            no_release_reading(&mut conn, p),
+            ArmReading::PredicateFalse(_)
+        ),
+        "the primary copy has no tags, so the project has no release — the other copy's 4 is \
+         not the project's answer"
+    );
+
+    // And the converse ordering, so the test cannot pass by always reading the same row.
+    let q = insert_project(&conn, "two-copies-swapped");
+    let q_older = insert_location(&conn, q, Some(10));
+    let q_newer = insert_location(&conn, q, Some(99));
+    set_tag_count(&conn, q_older, Some(0));
+    set_tag_count(&conn, q_newer, Some(4));
+    set_shallow(&conn, q, false);
+    assert_eq!(no_release_reading(&mut conn, q), ArmReading::PredicateTrue);
+
+    // `unknown` when the primary copy has none, even though a sibling copy does.
+    let r = insert_project(&conn, "primary-unobserved");
+    let r_older = insert_location(&conn, r, Some(10));
+    let r_newer = insert_location(&conn, r, Some(99));
+    set_tag_count(&conn, r_older, Some(4));
+    set_tag_count(&conn, r_newer, None);
+    set_shallow(&conn, r, false);
+    assert_eq!(
+        no_release_reading(&mut conn, r),
+        ArmReading::Unobservable,
+        "a sibling copy's count is not the primary copy's observation"
+    );
+}

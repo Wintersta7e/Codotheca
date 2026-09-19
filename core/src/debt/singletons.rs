@@ -222,20 +222,30 @@ impl SingletonArm for CiRedArm {
 }
 
 // ---------------------------------------------------------------------------------------------
-// `no_release` — declared and PROVISIONAL
+// `no_release` — J1's tag count on the primary copy, against the project's shallowness
 // ---------------------------------------------------------------------------------------------
 
-/// **PROVISIONAL, and `unobservable` is NOT this source's answer.**
+/// §31.2's rule, **implemented once and implemented here** (R124). §31's evaluator reads the
+/// result and re-derives nothing.
 ///
-/// §28.2 names this source's producer as *phase-1 J1, once `tag_count` persists* (A13.2).
-/// **`location.tag_count` does not exist**: it is added by `0015_completion.sql`, which
-/// `p3-00-index.md` assigns to **p3-31, wave 4**, and no plan may take another's migration
-/// number. A `SELECT tag_count` fails at prepare time, so the arm cannot be written against it.
+/// ```text
+/// Unobservable    the primary copy is absent, or tag_count IS NULL,
+///                 or (tag_count = 0 AND project.is_shallow = 1)
+/// PredicateTrue   tag_count >= 1                     -> §31's `release` = pass
+/// PredicateFalse  tag_count = 0 AND is_shallow = 0   -> §31's `release` = fail, one item
+/// ```
 ///
-/// What this writes is the absence of the column, not a reading of it. **p3-31 fills this body
-/// with the `tag_count` read in the same change that lands the column**, after which the arm
-/// answers `PredicateFalse` when the count is `0` and `Unobservable` only when the column is
-/// NULL — which on a shallow clone with no tags is *unknown* and not an item.
+/// **It is a two-table read** (A13.2): `tag_count` is a `location` column added by
+/// `0015_completion.sql` and `is_shallow` is a `project` one
+/// (`core/migrations/0001_meta_and_projects.sql:57`). A depth-1 clone fetches no tags, so a
+/// stored `0` there says *not fetched* and not *no release* — reading it as a failure opens a
+/// `no_release` item on a repository whose tags nobody downloaded.
+///
+/// **The primary copy's value alone**, per §5.1. A modelling defect sits underneath and is not
+/// phase-3 scope: shallowness is a property of a particular working copy and the flag is per
+/// project, so a project with one shallow and one full copy carries a single flag that can only
+/// be right about one of them. The outcome is pinned toward `Unobservable` — *not observed* is
+/// the only direction §31.2 permits.
 #[derive(Debug)]
 struct NoReleaseArm;
 
@@ -244,8 +254,29 @@ impl SingletonArm for NoReleaseArm {
         DebtSource::NoRelease
     }
 
-    fn observe(&self, _tx: &Transaction<'_>, _project: ProjectId) -> Result<ArmReading, DebtError> {
-        Ok(ArmReading::Unobservable)
+    fn observe(&self, tx: &Transaction<'_>, project: ProjectId) -> Result<ArmReading, DebtError> {
+        let Some(primary) = primary_of(tx, project)? else {
+            return Ok(ArmReading::Unobservable);
+        };
+        let (tag_count, is_shallow): (Option<i64>, i64) = tx.query_row(
+            "SELECT l.tag_count, p.is_shallow
+               FROM location l JOIN project p ON p.id = l.project_id
+              WHERE l.id = ?1",
+            [primary.0],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        // **NULL is never observed** — J1 has not persisted a refstate for this copy — and it
+        // stays `Unobservable` whatever `is_shallow` says.
+        let Some(tag_count) = tag_count else {
+            return Ok(ArmReading::Unobservable);
+        };
+        Ok(if tag_count >= 1 {
+            ArmReading::PredicateTrue
+        } else if is_shallow != 0 {
+            ArmReading::Unobservable
+        } else {
+            ArmReading::PredicateFalse(item_for("", *registry_for(DebtSource::NoRelease)))
+        })
     }
 }
 
