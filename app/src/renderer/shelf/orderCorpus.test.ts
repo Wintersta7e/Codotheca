@@ -7,9 +7,9 @@
  * well as `expectedIds`, because two comparators can agree on ids and disagree on the cursor §8.2
  * windows on.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import corpusRaw from '../../../../protocol/shelf/order-corpus.json?raw';
+import schemaRaw from '../../../../protocol/schema/protocol.json?raw';
 import type { HealthState, LocationRef, ProjectRow, SortKey } from '../../generated/protocol.js';
 import { compareRows, orderKeyOf } from './page.js';
 import type { ShelfRow } from './row.js';
@@ -37,20 +37,20 @@ interface Corpus {
 }
 
 /**
- * Repo-relative, off the vitest root, which is `app/`.
+ * Both files arrive through Vite's `?raw`, and **not** through `node:fs`.
  *
- * **Not `fileURLToPath(new URL(…, import.meta.url))`**, the idiom every *node*-project test here
- * uses: this file belongs to the **dom** project, where modules are served rather than loaded off
- * disk, so `import.meta.url` is an `http:` URL and `fileURLToPath` throws *The URL must be of
- * scheme file*. With a template literal in it, Vite instead rewrites the `new URL` into an asset
- * glob over the parent directory and fails on the first file it will not serve. `__dirname` is
- * not available either.
+ * This file belongs to the **dom** project, and `tsconfig.web.json` withholds `@types/node` on
+ * purpose — *withholding them makes reaching for one a compile error rather than a review
+ * comment* (`app/test/toolchain.test.ts:77-82`). The idiom every node-project test here uses,
+ * `fileURLToPath(new URL(…, import.meta.url))`, does not work either: modules are served rather
+ * than loaded off disk, so `import.meta.url` is an `http:` URL and `fileURLToPath` throws *The
+ * URL must be of scheme file*.
+ *
+ * It is still the **tracked** schema and not the gitignored generated file, which is the part
+ * that matters: a check that reads an ignored path is a check that can never fail.
  */
-const read = (relative: string): string =>
-  readFileSync(join(process.cwd(), '..', relative), 'utf8');
-
-const corpus = JSON.parse(read('protocol/shelf/order-corpus.json')) as Corpus;
-const schema = JSON.parse(read('protocol/schema/protocol.json')) as {
+const corpus = JSON.parse(corpusRaw) as Corpus;
+const schema = JSON.parse(schemaRaw) as {
   types: { SortKey: { variants: readonly string[] } };
 };
 
