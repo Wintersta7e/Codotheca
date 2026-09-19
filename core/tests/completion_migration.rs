@@ -115,7 +115,7 @@ fn every_check_state_and_every_check_key_inserts() {
             .unwrap_or_else(|e| panic!("state {text:?} is not insertable: {e}"));
         inserted += 1;
     }
-    println!("check states inserted: {inserted}");
+    eprintln!("check states inserted: {inserted}");
     assert_eq!(
         inserted, 4,
         "a run that inserts zero states is a failing run"
@@ -130,7 +130,7 @@ fn every_check_state_and_every_check_key_inserts() {
             .unwrap_or_else(|e| panic!("key {:?} is not insertable: {e}", slug(&key)));
         keys += 1;
     }
-    println!("check keys inserted: {keys}");
+    eprintln!("check keys inserted: {keys}");
     assert_eq!(keys, 10);
 
     // A word neither list holds.
@@ -161,12 +161,12 @@ fn every_unknown_reason_inserts_and_a_stranger_does_not() {
         .unwrap_or_else(|e| panic!("unknown_reason {text:?} is not insertable: {e}"));
         inserted += 1;
     }
-    println!("unknown reasons inserted: {inserted}");
+    eprintln!("unknown reasons inserted: {inserted}");
     assert!(
         inserted > 0,
         "a run that inserts zero reasons is a failing run"
     );
-    assert_eq!(inserted, UnknownReason::ALL.len() as u32);
+    assert_eq!(usize::try_from(inserted).unwrap(), UnknownReason::ALL.len());
 
     let stored: BTreeSet<String> = {
         let mut st = conn
@@ -248,7 +248,7 @@ fn location_gained_exactly_one_column_and_it_is_tag_count() {
 
     let was = columns(&before, "location");
     let now = columns(&after, "location");
-    println!(
+    eprintln!(
         "location columns: {} before 0015, {} after",
         was.len(),
         now.len()
@@ -294,7 +294,7 @@ fn the_migration_names_no_pragma() {
         .filter(|(_, line)| line.to_ascii_uppercase().contains("PRAGMA"))
         .map(|(i, line)| (i + 1, line))
         .collect();
-    println!("0015_completion.sql: {lines} lines scanned for PRAGMA");
+    eprintln!("0015_completion.sql: {lines} lines scanned for PRAGMA");
     assert!(lines > 0, "a run that scanned zero lines is a failing run");
     assert!(hits.is_empty(), "R59: {hits:?}");
 

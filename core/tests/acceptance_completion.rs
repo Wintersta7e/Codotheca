@@ -14,13 +14,15 @@
 mod support;
 
 use codotheca_core::clock::SystemClock;
+use codotheca_core::completion::proposal::{proposes_na, suppressed_source};
 use codotheca_core::debt::singletons::{evaluate_singletons, ArmReading, SINGLETON_ARMS};
 use codotheca_core::debt::store::SqliteDebtStore;
 use codotheca_core::git::read_ref_state;
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
+use codotheca_core::jobs::classify::ARCHETYPES;
 use codotheca_core::jobs::j1_refstate::persist;
-use codotheca_core::protocol::{DebtSource, LocationId, ProjectId};
+use codotheca_core::protocol::{CompletionCheck, DebtSource, LocationId, ProjectId};
 use support::TestRepo;
 
 fn fresh() -> (tempfile::TempDir, rusqlite::Connection) {
@@ -124,8 +126,8 @@ fn ac_p3_31_11_j1_persists_the_tag_count() {
     repo.git(&["tag", "v2"]);
     repo.git(&["tag", "v3"]);
 
-    let expected: i64 = repo.git(&["tag", "--list"]).lines().count() as i64;
-    println!("fixture tags: {expected}");
+    let expected = i64::try_from(repo.git(&["tag", "--list"]).lines().count()).unwrap();
+    eprintln!("fixture tags: {expected}");
     assert!(
         expected > 0,
         "a fixture that created no tag proves nothing about the column"
@@ -282,5 +284,75 @@ fn ac_p3_31_12_release_reads_the_primary_locations_tag_count() {
         no_release_reading(&mut conn, r),
         ArmReading::Unobservable,
         "a sibling copy's count is not the primary copy's observation"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// AC-P3-31-17 — the proposal's coverage half
+// ---------------------------------------------------------------------------------------------
+
+/// The proposal table is asserted **against `classify.rs`'s returned archetype strings**, not
+/// against a copy of them, and the count is derived rather than pinned at *"the eight"*
+/// (R132/F11). **No literal `8` appears in this test.**
+///
+/// The command half — `na = true` surviving a J3 re-run, `na = null` returning the key to the
+/// proposal, `na = false` forcing evaluation — is `projects.setCheckNa`'s.
+#[test]
+fn ac_p3_31_17_the_proposal_covers_every_archetype_and_every_key() {
+    let mut covered = 0_u32;
+    let mut proposed = 0_u32;
+    for archetype in ARCHETYPES {
+        for key in CompletionCheck::ALL {
+            let structurally_meaningless = matches!(
+                key,
+                CompletionCheck::Tests
+                    | CompletionCheck::Ci
+                    | CompletionCheck::Deps
+                    | CompletionCheck::Release
+            );
+            let expected = matches!(archetype, "docs" | "config") && structurally_meaningless;
+            assert_eq!(
+                proposes_na(Some(archetype), key),
+                expected,
+                "{archetype} / {key:?}"
+            );
+            covered += 1;
+            proposed += u32::from(expected);
+        }
+    }
+    eprintln!(
+        "archetypes covered: {} · pairs asserted: {covered} · proposals: {proposed}",
+        ARCHETYPES.len()
+    );
+    assert!(
+        !ARCHETYPES.is_empty(),
+        "a run covering no archetype is a failing run"
+    );
+    assert_eq!(
+        covered,
+        u32::try_from(ARCHETYPES.len() * CompletionCheck::ALL.len()).unwrap()
+    );
+    assert!(proposed > 0, "a table that proposes nothing proves nothing");
+
+    // The second vocabulary. §30's suppression is over `DebtSource`, and the four keys a
+    // documentation project proposes map onto three sources plus one deliberate absence — `ci`
+    // owns no item at all, which is the dash in §31.4's table.
+    let sources: Vec<Option<DebtSource>> = [
+        CompletionCheck::Tests,
+        CompletionCheck::Ci,
+        CompletionCheck::Deps,
+        CompletionCheck::Release,
+    ]
+    .into_iter()
+    .map(suppressed_source)
+    .collect();
+    assert_eq!(
+        sources,
+        vec![
+            Some(DebtSource::MissingTests),
+            None,
+            Some(DebtSource::DependencyAdvisory),
+            Some(DebtSource::NoRelease),
+        ]
     );
 }

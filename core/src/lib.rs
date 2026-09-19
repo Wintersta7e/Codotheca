@@ -19,6 +19,7 @@ pub mod assembly;
 pub mod cancel;
 pub mod clock;
 pub mod commands;
+pub mod completion;
 #[cfg(feature = "testkit")]
 pub mod corpus;
 pub mod debt;

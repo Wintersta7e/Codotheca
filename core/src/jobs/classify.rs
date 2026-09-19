@@ -151,6 +151,25 @@ const MANIFESTS: &[&str] = &[
     "Makefile",
 ];
 
+/// Every value [`archetype_of`] can return. **One owner**, and the test below proves it complete
+/// by set **equality**: an archetype added without a list entry fails, and an entry no archetype
+/// returns fails too.
+///
+/// [p3] §31.4's proposal table is asserted against this rather than against a copy of the eight
+/// strings (`AC-P3-31-17`), and R132/F11 requires the count to be derived from it rather than
+/// pinned at *"the eight"*. There is no generated enum to derive from — the archetype is a free
+/// TEXT column J3 writes — so this is the one place the set is written down.
+pub const ARCHETYPES: [&str; 8] = [
+    "notebook",
+    "service",
+    "site",
+    "cli",
+    "library",
+    "docs",
+    "config",
+    "unclassified",
+];
+
 /// The project's shape, from its tracked paths.
 ///
 /// First match wins. Reads no file contents — only the tracked path set, which is exactly what
@@ -315,5 +334,41 @@ mod tests {
     #[test]
     fn an_empty_path_set_is_unclassified_not_vacuously_docs() {
         assert_eq!(archetype_of(&[]), "unclassified");
+    }
+
+    /// [p3] §31.4: [`ARCHETYPES`] is the exhaustive return set, proven by **equality**.
+    ///
+    /// Membership would let an archetype be added with no entry; equality fails on that and on
+    /// the converse — an entry no fixture can reach. The fixture list is one path set per
+    /// archetype, built to hit each branch of `archetype_of` in its own first-match order.
+    #[test]
+    fn every_archetype_of_returns_a_member() {
+        let fixtures: &[&[&str]] = &[
+            &["Analysis.ipynb"],
+            &["Dockerfile", "src/app.py"],
+            &["index.html", "style.css"],
+            &["src/main.rs"],
+            &["Cargo.toml", "src/lib.rs"],
+            &["README.md", "docs/guide.rst"],
+            &[".gitignore", "config.toml"],
+            &["a.bin"],
+        ];
+        let mut seen: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::new();
+        for fixture in fixtures {
+            seen.insert(archetype_of(&paths(fixture)));
+        }
+        // stderr, not stdout: stdout carries protocol frames and `print_stdout` is denied
+        // crate-wide. The count still prints, which is the requirement.
+        eprintln!("archetypes reached by a fixture: {}", seen.len());
+        assert!(
+            !seen.is_empty(),
+            "a run that classified nothing is a failing run"
+        );
+        let declared: std::collections::BTreeSet<&'static str> =
+            ARCHETYPES.iter().copied().collect();
+        assert_eq!(
+            seen, declared,
+            "ARCHETYPES and what archetype_of can return are one set stated twice"
+        );
     }
 }
