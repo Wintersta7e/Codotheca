@@ -102,7 +102,7 @@ export function ListView(props: ListViewProps): ReactElement {
                 <span
                   className="cdt-list-rank"
                   aria-hidden="true"
-                  style={{ color: token(rung.inkToken) } as CSSProperties}
+                  style={{ color: token(rung.inkToken) }}
                 />
               )}
             </span>
@@ -116,7 +116,7 @@ export function ListView(props: ListViewProps): ReactElement {
                 bare numerator**. `null` is uncomputed and renders nothing. */}
             <span
               className="cdt-list-c7"
-              style={(rung === null ? {} : { color: token(rung.inkToken) }) as CSSProperties}
+              style={rung === null ? undefined : { color: token(rung.inkToken) }}
             >
               {score}
             </span>

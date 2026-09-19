@@ -41,7 +41,7 @@ export function parseQuery(input: string): QueryAst {
       continue;
     }
 
-    if ((NEVER_EVALUATED as readonly string[]).includes(field)) {
+    if (NEVER_EVALUATED.includes(field)) {
       ignored.push({ text: token.text, reason: 'notComputed' });
       continue;
     }

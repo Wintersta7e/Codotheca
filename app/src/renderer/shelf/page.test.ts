@@ -145,8 +145,8 @@ describe('buildShelfPage', () => {
     expect(build(rows, '', 'name').reference.map((row) => row.name)).toEqual(['alpha', 'zulu']);
   });
   it('carries the ignored terms so the empty state can name them', () => {
-    expect(build([r(1)], 'completion:>5').ignored).toEqual([
-      { text: 'completion:>5', reason: 'notComputed' },
+    expect(build([r(1)], 'is:sideways').ignored).toEqual([
+      { text: 'is:sideways', reason: 'malformedValue' },
     ]);
   });
   it('reports the query it was asked, not the one it ran the tail with', () => {

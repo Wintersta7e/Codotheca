@@ -186,9 +186,22 @@ describe('evaluateQuery', () => {
     expect(result.ignored).toEqual([{ text: 'has:ci', reason: 'notAvailable' }]);
   });
   it("carries the parser's own soft errors through", () => {
-    expect(evaluateQuery([base(1)], parseQuery('completion:>5'), ctx).ignored).toEqual([
-      { text: 'completion:>5', reason: 'notComputed' },
+    expect(evaluateQuery([base(1)], parseQuery('is:sideways'), ctx).ignored).toEqual([
+      { text: 'is:sideways', reason: 'malformedValue' },
     ]);
+  });
+  // [p3] §31.1: the term filters, and **a row with no measurement matches neither comparison**.
+  // It is not ignored — it is answered `Unknown`, which no polarity matches.
+  it('answers completion for a measured row and excludes an unmeasured one from both sides', () => {
+    const measured = { ...base(1), completionLit: 8, completionApplicable: 10 };
+    const above = evaluateQuery([measured], parseQuery('completion:>5'), ctx);
+    expect(above.ignored).toEqual([]);
+    expect(above.rows.map((r) => r.id)).toEqual([1]);
+
+    const unmeasured = base(2);
+    expect(evaluateQuery([unmeasured], parseQuery('completion:>5'), ctx).rows).toEqual([]);
+    expect(evaluateQuery([unmeasured], parseQuery('completion:<5'), ctx).rows).toEqual([]);
+    expect(evaluateQuery([unmeasured], parseQuery('-completion:>5'), ctx).rows).toEqual([]);
   });
   it('drops is:new when the first-run clock is unavailable rather than guessing', () => {
     const blind = { ...ctx, firstRunCompletedAt: null };
