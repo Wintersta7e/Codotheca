@@ -276,7 +276,23 @@ impl JobRunner {
                 &crate::debt::store::SqliteDebtStore,
             )
             .map_err(debt_to_index)?;
-            crate::derive::persist::recompute(tx, job.project_id, now)
+            let recomputed = crate::derive::persist::recompute(tx, job.project_id, now)?;
+            // [p3] §31.5's evaluator — **hook site 1 of exactly two** (R123). None of §31.5's
+            // three triggers is observable: `coverage_for` returns two booleans and
+            // `next_jobs_after` returns empty for four job kinds, so *the last input job* is a
+            // thing nothing can report. A settle hook is countable, and `completion_hooks.rs`
+            // counts it.
+            //
+            // **After `settle_singletons` above, and the order is load-bearing**: six of §31's
+            // ten checks read what §28 wrote in this same transaction (R124), so reversing the
+            // two would make every Group-A check answer from the PREVIOUS settle — a one-settle
+            // lag no test of either plan alone would catch, because §28's tests see correct rows
+            // written and §31's see rows that are merely stale.
+            //
+            // **It is not folded into `recompute`**: that has other callers, and a hook firing
+            // from an unbounded set is a hook nobody can count.
+            crate::completion::evaluate_and_write(tx, job.project_id, now)?;
+            Ok(recomputed)
         });
         if let Ok(r) = &recomputed {
             if r.changed_condition {

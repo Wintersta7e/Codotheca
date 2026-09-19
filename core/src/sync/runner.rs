@@ -629,6 +629,35 @@ impl SyncRunner {
             });
         }
 
+        // [p3] §31.5's evaluator — **hook site 2 of exactly two** (R123).
+        //
+        // **Two of §31's ten checks come from sync and one from a scheduled sweep**, so a
+        // job-shaped trigger cannot fire for `description`, `ciGreen` or `deps` at all: a forge
+        // description written here would otherwise sit unread until some unrelated job settled.
+        //
+        // The project set is resolved from the task, and **the account-scoped kinds fire on a
+        // terminal outcome only, never on a `NextPage`** — the same rule §22.7's trigger applies
+        // twelve lines above, for the same reason: a twenty-page listing would otherwise
+        // re-evaluate every project of that account twenty times. **Correctness does not depend
+        // on which settles fire** — the evaluator is idempotent and change-gated — only cost
+        // does, and this is where the cost is decided.
+        //
+        // **This plan emits no event from `settle`.** The gated `projects.upserted` emit is
+        // §30's (R121) and its gate is a different mechanism: the diff gate below decides
+        // whether ten rows are *written*, R121's two conjuncts decide whether a row change is
+        // *announced*. A recompute during a bulk first scan writes rows and announces nothing,
+        // which is correct — the bulk case stays covered by `scan/finished`.
+        let projects = self.projects_for_sync_task(task, &outcome);
+        if !projects.is_empty() {
+            let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+            let _ = guard.with_tx(|tx| {
+                for project in &projects {
+                    let _ = crate::completion::evaluate_and_write(tx, *project, now);
+                }
+                Ok(())
+            });
+        }
+
         // [p3] §32.12's **one** notification, decided at the settle that could have changed it.
         //
         // The core observes the transition and emits; `app/src/main` posts. The renderer's
@@ -711,6 +740,50 @@ impl SyncRunner {
         };
         if let Some(alert) = alert {
             crate::sync::events::emit_advisory_alert(self.events.as_ref(), &alert);
+        }
+    }
+
+    /// [p3] §31.5's hook-site-2 project set, resolved from the task that just settled.
+    ///
+    /// | Task | Projects re-evaluated |
+    /// |---|---|
+    /// | `ProjectRemote { project_id }` | that one |
+    /// | `AccountRepos` · `RenameProbe` | every project with a `project_account` row for that account |
+    /// | `Advisories` (key NULL, library-wide) | every project the sweep's verdict covers |
+    ///
+    /// **The account-scoped kinds answer an empty set on a `NextPage`**, which is what keeps a
+    /// twenty-page listing from re-evaluating every project of that account twenty times. A
+    /// throttle, a park and every other non-terminal outcome are the same: nothing has settled,
+    /// so nothing has changed.
+    fn projects_for_sync_task(&self, task: &SyncTask, outcome: &SyncOutcome) -> Vec<ProjectId> {
+        let terminal = !matches!(outcome, SyncOutcome::NextPage { .. });
+        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let conn = guard.conn();
+        match task {
+            SyncTask::ProjectRemote { project_id } => vec![*project_id],
+            SyncTask::AccountRepos { account_id } | SyncTask::RenameProbe { account_id } => {
+                if !terminal {
+                    return Vec::new();
+                }
+                project_ids(
+                    conn,
+                    "SELECT project_id FROM project_account WHERE account_id = ?1",
+                    rusqlite::params![account_id.0],
+                )
+            }
+            // The sweep is library-wide, so *the projects its verdict covers* is the set that has
+            // a dependency reading at all. A project with no lockfile scan has no `deps` answer
+            // the sweep could have moved.
+            SyncTask::Advisories => {
+                if !terminal {
+                    return Vec::new();
+                }
+                project_ids(
+                    conn,
+                    "SELECT project_id FROM project_dependency_scan",
+                    rusqlite::params![],
+                )
+            }
         }
     }
 
@@ -912,5 +985,132 @@ impl SyncSink for SyncRunner {
         self.enqueue(SyncTask::ProjectRemote {
             project_id: project,
         });
+    }
+}
+
+/// [p3] A project-id column into a list, with a read failure answering **empty** rather than
+/// guessing at a set.
+///
+/// An empty set skips a recompute, which is a missed refresh; a wrong set recomputes projects
+/// whose inputs did not move. The evaluator is change-gated, so the first costs nothing a later
+/// settle does not fix.
+fn project_ids(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    params: &[&dyn rusqlite::ToSql],
+) -> Vec<ProjectId> {
+    let Ok(mut st) = conn.prepare(sql) else {
+        return Vec::new();
+    };
+    let Ok(rows) = st.query_map(params, |r| r.get::<_, i64>(0)) else {
+        return Vec::new();
+    };
+    rows.flatten().map(ProjectId).collect()
+}
+
+#[cfg(all(test, feature = "testkit"))]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    /// [p3] §31.5's hook-site-2 project set.
+    ///
+    /// **The account-scoped kinds answer an empty set on a `NextPage`.** A twenty-page listing
+    /// would otherwise re-evaluate every project of that account twenty times — and correctness
+    /// does not depend on which settles fire, because the evaluator is idempotent and
+    /// change-gated. **Only cost does**, which is what this asserts.
+    #[test]
+    fn a_next_page_resolves_no_project_for_the_account_scoped_kinds() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut index = Index::open_at(dir.path(), 0).unwrap();
+        let (account, project) = index
+            .with_tx(|tx| {
+                tx.execute(
+                    "INSERT INTO account (provider, host, login, auth_kind, scope_tier,
+                                          granted_scopes, token_ref, connected_at)
+                     VALUES ('github', 'h', 'o', 'device', 'private', 'repo', 'r', 1)",
+                    [],
+                )?;
+                let account = AccountId(tx.last_insert_rowid());
+                tx.execute(
+                    "INSERT INTO project (name, seed_basename, created_at, updated_at)
+                     VALUES ('a', 'a', 1, 1)",
+                    [],
+                )?;
+                let project = ProjectId(tx.last_insert_rowid());
+                tx.execute(
+                    "INSERT INTO project_account
+                        (project_id, account_id, affiliation, can_push, observed_at)
+                     VALUES (?1, ?2, 'owner', 1, 1)",
+                    rusqlite::params![project.0, account.0],
+                )?;
+                Ok((account, project))
+            })
+            .unwrap();
+
+        let runner = SyncRunner::new(
+            Arc::new(Mutex::new(index)),
+            test_deps(),
+            Arc::new(NullEvents) as Arc<dyn EventSink>,
+        );
+
+        let listing = SyncTask::AccountRepos {
+            account_id: account,
+        };
+        assert_eq!(
+            runner.projects_for_sync_task(
+                &listing,
+                &SyncOutcome::NextPage {
+                    cursor: "2".to_owned()
+                }
+            ),
+            Vec::new(),
+            "a page is not a settle"
+        );
+        assert_eq!(
+            runner.projects_for_sync_task(&listing, &SyncOutcome::Done),
+            vec![project],
+            "the terminal outcome resolves the account's projects once"
+        );
+
+        // A per-project task has no pagination to wait for, so it resolves whatever the outcome.
+        let one = SyncTask::ProjectRemote {
+            project_id: project,
+        };
+        assert_eq!(
+            runner.projects_for_sync_task(&one, &SyncOutcome::Done),
+            vec![project]
+        );
+    }
+
+    #[derive(Debug)]
+    struct NullEvents;
+    impl EventSink for NullEvents {
+        fn emit(&self, _topic: &str, _event: &str, _payload: serde_json::Value) {}
+    }
+
+    fn test_deps() -> SyncDeps {
+        let transport = Arc::new(crate::testing::FakeTransport::new());
+        let clock = Arc::new(crate::testing::FakeClock::new(1));
+        let observing = Arc::new(crate::sync::ObservingTransport::new(
+            Arc::clone(&transport) as Arc<dyn crate::http::HttpTransport>,
+            Arc::clone(&clock) as Arc<dyn crate::clock::Clock>,
+        ));
+        SyncDeps {
+            provider: Arc::new(crate::provider::GitHubProvider::new(
+                Arc::clone(&observing) as Arc<dyn crate::http::HttpTransport>,
+                "h".to_owned(),
+            )),
+            transport: observing,
+            tokens: Arc::new(crate::testing::FakeTokenStore::available()),
+            clock: Arc::clone(&clock) as Arc<dyn crate::clock::Clock>,
+            cancel: crate::cancel::CancelToken::new(),
+            tz_offset_min: 0,
+        }
     }
 }
