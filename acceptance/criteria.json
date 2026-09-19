@@ -1428,7 +1428,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-forbidden:c46-colour-literals",
-          "assert": "The built stylesheet contains none of the four snapped grounds, none of the additional off-token ground, none of the off-token greys other than the condition-dot fills, and not the dropped blue. The language palette and everything the rasterizer computes are exempt by name and never reach a stylesheet."
+          "assert": "The built stylesheet contains none of the four snapped grounds, none of the additional off-token ground, none of the off-token greys other than the condition-dot fills, and not the dropped blue. The language palette is exempt by name, and so are the plate stops and vent alphas the rasterizer computes. [p3] MATERIAL LAYERS ARE NO LONGER EXEMPT (§33.9 / A1): §33 composes the five layers in the DOM over a bitmap decay never enters, so their colours reach decay.css and every one must resolve to a declared token — --dust, --silver, --rust, --fail, --growth."
         },
         {
           "id": "AC-46-motion",

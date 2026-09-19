@@ -17,6 +17,10 @@ const anyToken: Readonly<Record<string, string | undefined>> = TOKENS;
 
 function declarationsInStylesheet(): Map<string, string> {
   const css = tokensCss;
+  // A `?raw` import resolves to the EMPTY STRING when vitest runs this file outside the app's
+  // own config, and every assertion below then passes against nothing. That has shipped here
+  // once — assert the text before reading it.
+  expect(css.length, 'tokens.css?raw imported as an empty string').toBeGreaterThan(0);
   const out = new Map<string, string>();
   for (const line of css.split('\n')) {
     const m = /^\s*--([a-z0-9-]+)\s*:\s*([^;]+);/.exec(line);
@@ -40,6 +44,40 @@ describe('the token block', () => {
     expect(tokenValue('sig-edge')).toBe('#3a4a5e');
     expect(tokenValue('edge-strong')).toBe('#7f9aa0');
     expect(tokenValue('interrupt')).toBe('#c8563c');
+  });
+
+  /**
+   * [p3] §33.9's five layer colours, four of which §8.7 already declares.
+   *
+   * **`--dust` has to exist before a single line of layer CSS is written.** Criterion 46's
+   * built-CSS grep fails any undeclared `var(--name)`, and its exemption used to cover *material
+   * layers* — so the five literals a layer author would otherwise hard-code were pre-exempted by
+   * the bar written to catch them. The exemption is withdrawn in the same change that declares
+   * this token (A14.5): §33 states the requirement with its exact name and value and does not
+   * edit §8.7.
+   *
+   * The value is a **material tint, not a step on §8.7's closed grey ladder**, exactly as
+   * `--silver` is not — which is why it sits in the *Signal and state* block beside `--rust`,
+   * `--growth` and `--silver`.
+   *
+   * Read off the stylesheet source, not off `TOKENS` alone: a cross-file mirror needs a test
+   * reading the other side (R12, R24).
+   */
+  it('declares the five §33.9 layer tokens in both files', () => {
+    const css = declarationsInStylesheet();
+    const layers: ReadonlyArray<readonly [string, string]> = [
+      ['dust', '#8e97a0'],
+      ['silver', '#b9c4cc'],
+      ['rust', '#96522a'],
+      ['fail', '#8c4a3c'],
+      ['growth', '#54703e'],
+    ];
+    for (const [name, value] of layers) {
+      expect(css.get(name), `--${name} is not declared in tokens.css`).toBe(value);
+      expect(anyToken[name], `--${name} is missing from the typed mirror`).toBe(value);
+    }
+    // `--fail-hot` is a different token with a different job and is not a layer colour.
+    expect(css.get('fail-hot')).toBe('#e0533d');
   });
 
   it('carries the derived accent and no deferred alternate', () => {
