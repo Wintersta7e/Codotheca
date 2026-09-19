@@ -25,3 +25,105 @@
 pub mod evaluate;
 pub mod inputs;
 pub mod proposal;
+pub mod store;
+
+use rusqlite::Transaction;
+
+use crate::index::completion::{set_completion, Completion};
+use crate::index::IndexError;
+use crate::protocol::{CompletionCheck, ProjectId};
+
+use evaluate::{evaluate, CheckRow, Counts};
+
+/// What one recomputation did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Written {
+    /// `gather` declined: Reference, authorship not computed, not cloned, or a frozen reading.
+    /// **Nothing is written and nothing is cleared** — a stored reading stands.
+    Skipped(inputs::NotScorable),
+    /// The ten computed rows equal the ten stored ones, so nothing was written and every
+    /// `observed_at` is where it was.
+    Unchanged,
+    /// Ten rows and the projection were replaced.
+    Rewritten { counts: Counts },
+}
+
+/// Recompute one project's ten rows and its projection, in the caller's transaction.
+///
+/// **The one entry point both hooks call**, and the only production call site of
+/// [`set_completion`].
+///
+/// **Never incremental.** A partial numerator over a growing denominator would render three
+/// different tiers in five seconds on first run, and the tier is *material*. One write, one
+/// transaction, all ten rows plus the projection.
+///
+/// **The diff gate** compares the computed rows against the stored ones on
+/// `(check_key, state, user_na, unknown_reason)` — **`observed_at` is excluded**, which is what
+/// makes *attempted* a derivation rather than a stored column (R123). A no-change recompute
+/// writes nothing and leaves `observed_at` where it was: it is when a check's state was last
+/// **established**, which is the conservative direction, because an older timestamp never
+/// over-claims currency.
+///
+/// # Errors
+/// Fails when SQLite cannot be read or refuses a write.
+pub fn evaluate_and_write(
+    tx: &Transaction<'_>,
+    project: ProjectId,
+    now: i64,
+) -> Result<Written, IndexError> {
+    let gathered = match inputs::gather(tx, project)? {
+        Ok(gathered) => gathered,
+        Err(why) => return Ok(Written::Skipped(why)),
+    };
+    let rows = evaluate(&gathered, now);
+
+    let stored = store::load_rows(tx, project)?;
+    if stored.len() == rows.len() && stored.iter().zip(rows.iter()).all(|(a, b)| same(a, b)) {
+        return Ok(Written::Unchanged);
+    }
+
+    store::write_all_ten(tx, project, &rows)?;
+    let (lit, evaluable) = store::recount(&rows);
+    // **`evaluable == 0` is not a zero; it is `NotComputed`.** The guard inside `set_completion`
+    // refuses `applicable = 0` outright, so the choice is made here rather than left to an error
+    // the caller would have to interpret.
+    let value = if evaluable == 0 {
+        Completion::NotComputed
+    } else {
+        Completion::Computed {
+            lit,
+            applicable: evaluable,
+        }
+    };
+    set_completion(tx, project, value)?;
+
+    Ok(Written::Rewritten {
+        counts: Counts::of(&rows),
+    })
+}
+
+/// Everything the diff compares, and deliberately **not** `observed_at`.
+fn same(a: &CheckRow, b: &CheckRow) -> bool {
+    a.key == b.key
+        && a.state == b.state
+        && a.user_na == b.user_na
+        && a.unknown_reason == b.unknown_reason
+}
+
+/// Write the user's ruling for one key and recompute in the same transaction.
+///
+/// §31.5 names three triggers for the evaluator and R123 kept only the two settle hooks; this is
+/// the third, and it is the only one that survives as a trigger rather than a hook.
+///
+/// # Errors
+/// Fails when SQLite cannot be read or refuses a write.
+pub fn set_check_na(
+    tx: &Transaction<'_>,
+    project: ProjectId,
+    key: CompletionCheck,
+    na: Option<bool>,
+    now: i64,
+) -> Result<Written, IndexError> {
+    store::set_user_na(tx, project, key, na)?;
+    evaluate_and_write(tx, project, now)
+}

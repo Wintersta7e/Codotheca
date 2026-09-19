@@ -98,26 +98,46 @@ fn more_lit_than_applicable_is_refused() {
     .is_err());
 }
 
-/// §1.2 and §7.7a: nothing in phase 1 computes completion, so nothing in phase 1 calls this.
-/// Asserted the same way criterion 63 asserts `project.slow_repo` has no writers.
+/// **`AC-P3-31-4`. [p3] Inverted, not deleted** (§31.10).
+///
+/// §1.2 and §7.7a said nothing in phase 1 computes completion, so nothing called this writer.
+/// §31.5 gives it **exactly one** production call site — the evaluator — and the assertion turns
+/// over with the claim rather than being dropped.
+///
+/// **And the walk now prints its file count and fails at zero.** It printed nothing before, which
+/// is the *gate whose passing run scans zero files* pattern its own sibling at
+/// `core/tests/remote_no_completion_writer.rs:74-81` already got right: a walk over an empty root
+/// finds no second caller and passes for the wrong reason.
 #[test]
-fn set_completion_has_no_call_sites_outside_this_module_and_the_tests() {
+fn set_completion_has_exactly_one_production_call_site() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut scanned = 0_u32;
     let mut callers = Vec::new();
     walk(&root, &mut |file: &std::path::Path| {
-        if file.ends_with("index/completion.rs") {
-            return;
-        }
         let Ok(text) = std::fs::read_to_string(file) else {
             return;
         };
+        // Counted after the read, so a file that vanished between the walk and the read is
+        // skipped BEFORE it is counted and the guard below keeps meaning what it says.
+        scanned += 1;
+        if file.ends_with("index/completion.rs") {
+            return;
+        }
         if text.contains("set_completion") {
             callers.push(file.display().to_string());
         }
     });
+    eprintln!("index_completion: walked {scanned} core source file(s)");
+    assert!(scanned > 0, "the walk read no file, so it proved nothing");
+    assert_eq!(
+        callers.len(),
+        1,
+        "§31.5: the evaluator is the only caller, and a second one is a second source of truth: \
+         {callers:?}"
+    );
     assert!(
-        callers.is_empty(),
-        "phase 1 computes no completion; these call the writer: {callers:?}"
+        callers[0].contains("completion"),
+        "the one caller is §31's evaluator: {callers:?}"
     );
 }
 

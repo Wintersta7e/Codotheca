@@ -15,10 +15,13 @@ mod support;
 
 use codotheca_core::clock::SystemClock;
 use codotheca_core::completion::proposal::{proposes_na, suppressed_source};
+use codotheca_core::completion::{evaluate_and_write, Written};
 use codotheca_core::debt::singletons::{evaluate_singletons, ArmReading, SINGLETON_ARMS};
 use codotheca_core::debt::store::SqliteDebtStore;
 use codotheca_core::git::read_ref_state;
+use codotheca_core::index::completion::{set_completion, Completion};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
+use codotheca_core::index::IndexError;
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::jobs::classify::ARCHETYPES;
 use codotheca_core::jobs::j1_refstate::persist;
@@ -355,4 +358,358 @@ fn ac_p3_31_17_the_proposal_covers_every_archetype_and_every_key() {
             Some(DebtSource::NoRelease),
         ]
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// AC-P3-31-1, -2, -3, -13 — the writer, the projection and the two NULL cases
+// ---------------------------------------------------------------------------------------------
+
+/// A project past every §31.8 gate, with one present copy whose refstate has been observed.
+fn scorable(conn: &rusqlite::Connection, name: &str) -> i64 {
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, lineage_key, authored_by_user,
+                              created_at, updated_at)
+         VALUES (?1, ?1, 'abc123', 1, 1, 100)",
+        [name],
+    )
+    .unwrap();
+    let id = conn.last_insert_rowid();
+    let loc = insert_location(conn, id, Some(10));
+    conn.execute(
+        "UPDATE location SET refstate_observed_at = 50 WHERE id = ?1",
+        [loc.0],
+    )
+    .unwrap();
+    id
+}
+
+fn sweep(
+    conn: &rusqlite::Connection,
+    project: i64,
+    source: &str,
+    outcome: &str,
+    items: Option<i64>,
+) {
+    conn.execute(
+        "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+         VALUES (?1, ?2, ?3, ?4, 10)
+         ON CONFLICT(project_id, source) DO UPDATE SET outcome = excluded.outcome,
+             item_count = excluded.item_count",
+        rusqlite::params![project, source, outcome, items],
+    )
+    .unwrap();
+}
+
+fn content_scan(conn: &rusqlite::Connection, project: i64, ci: &str) {
+    conn.execute(
+        "INSERT INTO project_content_scan
+            (project_id, head_oid, complete_head_oid, blobs_total, blobs_pending,
+             predicate_version, has_readme, has_license, has_tests, has_ci,
+             presence_observed_at, enumerated_at, completed_at)
+         VALUES (?1, 'head0', 'head0', 1, 0, 1, 'present', 'present', 'present', ?2, 1, 1, 1)
+         ON CONFLICT(project_id) DO UPDATE SET has_ci = excluded.has_ci",
+        rusqlite::params![project, ci],
+    )
+    .unwrap();
+}
+
+fn recompute(conn: &mut rusqlite::Connection, project: i64, now: i64) -> Written {
+    let tx = conn.transaction().unwrap();
+    let written = evaluate_and_write(&tx, ProjectId(project), now).unwrap();
+    tx.commit().unwrap();
+    written
+}
+
+fn projection(conn: &rusqlite::Connection, project: i64) -> (Option<i64>, Option<i64>) {
+    conn.query_row(
+        "SELECT completion_lit, completion_applicable FROM project WHERE id = ?1",
+        [project],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap()
+}
+
+/// **`AC-P3-31-1`.** The projection equals a recount **from `project_check`**, taken in the test
+/// rather than read back from the helper that wrote it.
+#[test]
+fn ac_p3_31_1_the_projection_equals_a_recount_of_the_rows() {
+    let (_dir, mut conn) = fresh();
+
+    // Three shapes, so the recount is exercised over more than one arithmetic.
+    let all_pass = scorable(&conn, "all-pass");
+    for source in [
+        "missing_readme",
+        "missing_license",
+        "missing_tests",
+        "ci_red",
+        "unpushed_commits",
+        "no_release",
+    ] {
+        sweep(&conn, all_pass, source, "complete", Some(0));
+    }
+    content_scan(&conn, all_pass, "present");
+
+    let some_fail = scorable(&conn, "some-fail");
+    sweep(&conn, some_fail, "missing_readme", "complete", Some(0));
+    sweep(&conn, some_fail, "missing_license", "unobservable", None);
+    content_scan(&conn, some_fail, "absent");
+
+    let unswept = scorable(&conn, "unswept");
+
+    for id in [all_pass, some_fail, unswept] {
+        recompute(&mut conn, id, 1_000);
+    }
+
+    let mut recounted = 0_u32;
+    let mut st = conn
+        .prepare("SELECT DISTINCT project_id FROM project_check")
+        .unwrap();
+    let ids: Vec<i64> = st
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    for id in ids {
+        let lit: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM project_check WHERE project_id = ?1 AND state = 'pass'",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let evaluable: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM project_check
+                  WHERE project_id = ?1 AND state IN ('pass', 'fail')",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let (stored_lit, stored_applicable) = projection(&conn, id);
+        if evaluable == 0 {
+            // §31.1: `evaluable == 0` is not a zero; it is NotComputed, and both columns are NULL.
+            assert_eq!(
+                (stored_lit, stored_applicable),
+                (None, None),
+                "project {id}"
+            );
+        } else {
+            assert_eq!(stored_lit, Some(lit), "project {id} lit");
+            assert_eq!(
+                stored_applicable,
+                Some(evaluable),
+                "project {id} applicable is the EVALUABLE count"
+            );
+        }
+        recounted += 1;
+    }
+    eprintln!("projects recounted: {recounted}");
+    assert!(
+        recounted > 0,
+        "a run that recounted nothing is a failing run"
+    );
+}
+
+/// **`AC-P3-31-2`.** No project holds a row count outside `{0, 10}`.
+#[test]
+fn ac_p3_31_2_a_project_holds_ten_rows_or_none() {
+    let (_dir, mut conn) = fresh();
+    let scored = scorable(&conn, "scored");
+    content_scan(&conn, scored, "present");
+    recompute(&mut conn, scored, 1_000);
+
+    // A Reference project and a not-cloned one both write nothing at all.
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, authored_by_user, is_reference,
+                              created_at, updated_at)
+         VALUES ('ref', 'ref', 0, 1, 1, 1)",
+        [],
+    )
+    .unwrap();
+    let reference = conn.last_insert_rowid();
+    insert_location(&conn, reference, Some(1));
+    recompute(&mut conn, reference, 1_000);
+
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, authored_by_user, created_at, updated_at)
+         VALUES ('uncloned', 'uncloned', 1, 1, 1)",
+        [],
+    )
+    .unwrap();
+    let uncloned = conn.last_insert_rowid();
+    recompute(&mut conn, uncloned, 1_000);
+
+    let mut st = conn
+        .prepare(
+            "SELECT p.id, (SELECT count(*) FROM project_check c WHERE c.project_id = p.id)
+               FROM project p",
+        )
+        .unwrap();
+    let counts: Vec<(i64, i64)> = st
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    let mut distinct: Vec<i64> = counts.iter().map(|(_, n)| *n).collect();
+    distinct.sort_unstable();
+    distinct.dedup();
+    eprintln!("distinct project_check row counts observed: {distinct:?}");
+    assert!(
+        !counts.is_empty(),
+        "a run that scanned no project proves nothing"
+    );
+    for (id, n) in &counts {
+        assert!(
+            *n == 0 || *n == 10,
+            "project {id} holds {n} rows, which is neither none nor ten"
+        );
+    }
+    assert!(
+        distinct.contains(&10),
+        "no project was scored, so nothing was proven"
+    );
+    assert!(
+        distinct.contains(&0),
+        "no project was skipped, so nothing was proven"
+    );
+}
+
+/// **`AC-P3-31-3`.** Ten rows that are all `unknown` or `na` store NULL on **both** columns, and
+/// the guard that refuses `applicable = 0` stays rather than being removed.
+#[test]
+fn ac_p3_31_3_zero_evaluable_writes_null_and_keeps_its_guard() {
+    let (_dir, mut conn) = fresh();
+    // Nothing swept, no content scan, no remote, no refstate observed: every check is unknown,
+    // except `description`, which is `na` because the project has no remote at all.
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, authored_by_user, created_at, updated_at)
+         VALUES ('bare', 'bare', 1, 1, 1)",
+        [],
+    )
+    .unwrap();
+    let p = conn.last_insert_rowid();
+    insert_location(&conn, p, Some(1));
+
+    let written = recompute(&mut conn, p, 1_000);
+    assert!(matches!(written, Written::Rewritten { .. }));
+
+    let rows: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM project_check WHERE project_id = ?1",
+            [p],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        rows, 10,
+        "the ten rows are written; only the projection is NULL"
+    );
+    let evaluable: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM project_check
+              WHERE project_id = ?1 AND state IN ('pass', 'fail')",
+            [p],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(evaluable, 0);
+    assert_eq!(projection(&conn, p), (None, None));
+
+    // The guard is asserted, not removed.
+    assert!(matches!(
+        set_completion(
+            &conn,
+            ProjectId(p),
+            Completion::Computed {
+                lit: 0,
+                applicable: 0
+            }
+        ),
+        Err(IndexError::CompletionNotComputable)
+    ));
+}
+
+/// **`AC-P3-31-13`.** A Reference project is never scored — and this is §31.10's
+/// permanently-`NotComputed` fixture, which §16's criteria 45a–45c need to stay testable.
+#[test]
+fn ac_p3_31_13_a_reference_project_is_never_scored() {
+    let (_dir, mut conn) = fresh();
+    let mut scanned = 0_u32;
+    for name in ["ref-one", "ref-two"] {
+        conn.execute(
+            "INSERT INTO project (name, seed_basename, authored_by_user, is_reference,
+                                  created_at, updated_at)
+             VALUES (?1, ?1, 0, 1, 1, 1)",
+            [name],
+        )
+        .unwrap();
+        let id = conn.last_insert_rowid();
+        insert_location(&conn, id, Some(1));
+        // Even fully swept, it is excluded: the gate is the project's kind, not its evidence.
+        for source in ["missing_readme", "missing_license", "missing_tests"] {
+            sweep(&conn, id, source, "complete", Some(0));
+        }
+        content_scan(&conn, id, "present");
+
+        let written = recompute(&mut conn, id, 1_000);
+        assert!(
+            matches!(written, Written::Skipped(_)),
+            "{name} was scored, and a Reference project is excluded for ever"
+        );
+        let rows: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM project_check WHERE project_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 0, "{name} holds a project_check row");
+        assert_eq!(projection(&conn, id), (None, None), "{name}");
+        scanned += 1;
+    }
+    eprintln!("reference fixtures scanned: {scanned}");
+    assert!(
+        scanned > 0,
+        "a run that scanned no Reference project is a failing run"
+    );
+}
+
+/// The diff gate: a recompute that changes nothing writes nothing, and `observed_at` does not
+/// move. That is what makes *attempted* a derivation rather than a stored column (R123).
+#[test]
+fn a_no_change_recompute_leaves_observed_at_where_it_was() {
+    let (_dir, mut conn) = fresh();
+    let p = scorable(&conn, "steady");
+    content_scan(&conn, p, "present");
+    assert!(matches!(
+        recompute(&mut conn, p, 1_000),
+        Written::Rewritten { .. }
+    ));
+
+    let stamps = |conn: &rusqlite::Connection| -> Vec<i64> {
+        let mut st = conn
+            .prepare(
+                "SELECT observed_at FROM project_check WHERE project_id = ?1 ORDER BY check_key",
+            )
+            .unwrap();
+        st.query_map([p], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    let before = stamps(&conn);
+    assert_eq!(recompute(&mut conn, p, 9_999), Written::Unchanged);
+    assert_eq!(
+        stamps(&conn),
+        before,
+        "observed_at is when a state was last ESTABLISHED, not when it was last attempted"
+    );
+
+    // And a real change does move it.
+    content_scan(&conn, p, "absent");
+    assert!(matches!(
+        recompute(&mut conn, p, 9_999),
+        Written::Rewritten { .. }
+    ));
+    assert!(stamps(&conn).contains(&9_999));
 }
