@@ -120,13 +120,22 @@ pub const MIGRATIONS: &[Migration] = &[
         // It carries live scheduling state and both partial indexes across.
         rebuilds_a_table: true,
     },
+    Migration {
+        version: 15,
+        name: "completion",
+        sql: include_str!("../../migrations/0015_completion.sql"),
+        // §31.5: `project_check` is a new table, and `location.tag_count` is an `ALTER` on a
+        // table that is STRICT but **not** WITHOUT ROWID — so nothing is copied, dropped or
+        // renamed and no foreign key is left dangling part-way through the file.
+        rebuilds_a_table: false,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 14;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 15;
 
 pub fn schema_version(conn: &Connection) -> Result<u32, IndexError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;

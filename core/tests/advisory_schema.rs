@@ -305,16 +305,21 @@ fn ac_p3_32_23_the_rebuild_keeps_its_indexes_and_its_rows() {
     );
 }
 
-/// R68's half for this file: the chain reaches 14 with no hole, and the constant a start-up guard
-/// compares against agrees with it.
+/// R68's half for this file: the chain reaches its tip with no hole, and the constant a start-up
+/// guard compares against agrees with it.
+///
+/// [p3] `0015_completion.sql` moved the tip from 14 to 15. The subject here is the
+/// **contiguity**, not the number, so the last assertion compares the migrated database against
+/// the constant rather than repeating a literal a third time — a hole still fails, and the next
+/// migration raises two lines instead of three.
 #[test]
-fn the_migration_chain_reaches_fourteen_with_no_hole() {
-    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), 14);
-    assert_eq!(SUPPORTED_SCHEMA_VERSION, 14);
+fn the_migration_chain_reaches_its_tip_with_no_hole() {
+    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), 15);
+    assert_eq!(SUPPORTED_SCHEMA_VERSION, 15);
     assert_eq!(
         MIGRATIONS.last().map(|m| m.version),
         Some(SUPPORTED_SCHEMA_VERSION)
     );
     let (_dir, conn) = fresh();
-    assert_eq!(schema_version(&conn).unwrap(), 14);
+    assert_eq!(schema_version(&conn).unwrap(), SUPPORTED_SCHEMA_VERSION);
 }
