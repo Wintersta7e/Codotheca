@@ -19,6 +19,7 @@ use codotheca_core::completion::{evaluate_and_write, set_check_na, Written};
 use codotheca_core::debt::singletons::{evaluate_singletons, ArmReading, SINGLETON_ARMS};
 use codotheca_core::debt::store::SqliteDebtStore;
 use codotheca_core::git::read_ref_state;
+use codotheca_core::identity::merge::recompute_derived;
 use codotheca_core::index::completion::{set_completion, Completion};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::IndexError;
@@ -801,4 +802,112 @@ fn ac_p3_31_17_a_user_ruling_survives_a_reclassification() {
         )
         .unwrap();
     assert_eq!(projection(&conn, p).0, Some(lit));
+}
+
+// ---------------------------------------------------------------------------------------------
+// AC-P3-31-15 — the merge sweep deletes and recomputes, and the projection goes with the rows
+// ---------------------------------------------------------------------------------------------
+
+/// **`AC-P3-31-15`.** After a merge neither side holds a stale `project_check` row, and **both
+/// sides' projections are NULL** — the half R131/F9 added, because the pair was in no merge class
+/// at all and a survivor could carry a figure with zero rows behind it.
+///
+/// The class assignment is also read **off the source**, so `derived`, `not-recomputable` and
+/// `reparented` are distinguished by the test and not by a comment.
+#[test]
+fn ac_p3_31_15_a_merge_clears_the_rows_and_the_projection_on_both_sides() {
+    let (_dir, mut conn) = fresh();
+    let survivor = scorable(&conn, "survivor");
+    let absorbed = scorable(&conn, "absorbed");
+    for id in [survivor, absorbed] {
+        content_scan(&conn, id, "present");
+        for source in [
+            "missing_readme",
+            "missing_license",
+            "missing_tests",
+            "ci_red",
+            "unpushed_commits",
+            "no_release",
+        ] {
+            sweep(&conn, id, source, "complete", Some(0));
+        }
+        recompute(&mut conn, id, 1_000);
+        assert_ne!(projection(&conn, id), (None, None), "seeded");
+    }
+
+    let tx = conn.transaction().unwrap();
+    recompute_derived(&tx, survivor, absorbed).unwrap();
+    tx.commit().unwrap();
+
+    // **Scoped to every project, not to every project with rows** — the old scoping is exactly
+    // what let a survivor with zero rows and a non-null pair pass.
+    let mut checked = 0_u32;
+    for id in [survivor, absorbed] {
+        let rows: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM project_check WHERE project_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 0, "project {id} kept a stale row across the merge");
+        assert_eq!(
+            projection(&conn, id),
+            (None, None),
+            "project {id} kept a projection with zero rows behind it"
+        );
+        checked += 1;
+    }
+    eprintln!("merge sides checked: {checked}");
+    assert_eq!(checked, 2);
+
+    // And the next settle recomputes the survivor.
+    recompute(&mut conn, survivor, 2_000);
+    let rows: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM project_check WHERE project_id = ?1",
+            [survivor],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(rows, 10);
+}
+
+/// The three classes, read from the source rather than from a comment about it.
+#[test]
+fn ac_p3_31_15_project_check_is_derived_and_is_not_reparented() {
+    let source = include_str!("../src/identity/merge.rs");
+    let lines = source.lines().count();
+    eprintln!("identity/merge.rs: {lines} lines read");
+    assert!(lines > 0, "a run that read nothing is a failing run");
+
+    let derived_list = source
+        .split_once("for table in [")
+        .map(|(_, rest)| rest.split_once("] {").map(|(list, _)| list))
+        .and_then(|inner| inner)
+        .expect("the derived list");
+    assert!(
+        derived_list.contains("\"project_check\""),
+        "project_check is not in recompute_derived's derived list"
+    );
+
+    // `reparent_rows` rewrites `project_id` and never deletes. A table in both classes would be
+    // deleted and then reparented, which is how earned XP gets double-counted or lost.
+    let reparent = source
+        .split_once("fn reparent_rows")
+        .map(|(_, rest)| rest)
+        .expect("reparent_rows");
+    // Bounded at the next item declaration, so the slice is this function and not the rest of
+    // the file — an unbounded slice would read `recompute_derived`'s list below and report the
+    // table as reparented when it is only deleted.
+    let end = ["\npub fn ", "\nfn ", "\npub(crate) fn "]
+        .iter()
+        .filter_map(|marker| reparent.find(marker))
+        .min()
+        .unwrap_or(reparent.len());
+    let reparent_body = &reparent[..end];
+    assert!(
+        !reparent_body.contains("project_check"),
+        "project_check is reparented as well as deleted, which is two classes at once"
+    );
 }
