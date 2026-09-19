@@ -728,6 +728,43 @@
       }
     },
 
+    "Rect": {
+      "kind": "struct",
+      "$comment": "[p3] §33.3's anchor rectangle in §7.3's 2x card space: top-left origin, y down, `i32` exactly as `core/src/art/scene.rs` stores it. R115: the section wrote `[[i32]]` and the grammar parses only `Name` | `Name?` | `[Name]` | `[Name]?`, so `validateSchema` throws before `gen` emits — a named struct is what the grammar's own docstring prescribes, and it is also what makes the shape greppable from the spec.",
+      "fields": { "x": "i32", "y": "i32", "w": "i32", "h": "i32" }
+    },
+    "Point": {
+      "kind": "struct",
+      "$comment": "[p3] §33.3's rust anchor: the fastener centre alone. **No `kind` and no `rot`** — the head is in the bitmap and the layer draws only the stain, which runs +y under gravity and does not read the head's orientation. Two fields nothing would read are two fields that drift.",
+      "fields": { "x": "i32", "y": "i32" }
+    },
+    "Polyline": {
+      "kind": "struct",
+      "$comment": "[p3] §33.3's cracks anchor: one seam path. A struct rather than `[[i32]]` for R115's reason, and a struct rather than `[Point]` directly because `WeatherLayer.paths` is a list OF polylines and the grammar does not nest.",
+      "fields": { "points": "[Point]" }
+    },
+    "WeatherLayer": {
+      "kind": "struct",
+      "$comment": "[p3] §33.3's resolved anchors for one layer. **Three typed arrays rather than one tagged list**: each layer's anchor kind is fixed by the table, so a tag would be a second spelling of `layer`. **AT MOST ONE is non-empty (R127.1)** — on a `Plain` scene with no vents, the majority shape, `dust` and `overgrowth` resolve to zero anchors and all three are empty. `layer` references p3-28's generated enum and re-declares nothing (R113, R31).",
+      "fields": {
+        "layer": "DecayLayer",
+        "rects": "[Rect]",
+        "points": "[Point]",
+        "paths": "[Polyline]"
+      }
+    },
+    "Weathering": {
+      "kind": "struct",
+      "$comment": "[p3] §33.8's reply. It carries geometry and **nothing about debt**: no value, no item id, no `computedAt` and no freeze state — the anchor set is a pure function of the stored scene document, and the lit set is the renderer's. `sceneHash` is NULL when the project has no `art_scene` row, and `layers` is then empty. `spaceW`/`spaceH` are `u32` while the stored space is `i32`; the handler casts once at the reply and REFUSES rather than truncating a negative, because a silent `as u32` turns a corrupt document into an enormous positive.",
+      "fields": {
+        "projectId": "ProjectId",
+        "sceneHash": "SceneHash?",
+        "spaceW": "u32",
+        "spaceH": "u32",
+        "layers": "[WeatherLayer]"
+      }
+    },
+
     "ProjectDetail": {
       "kind": "struct",
       "fields": {
@@ -756,8 +793,10 @@
         "debtSweeps": "[DebtSweepState]",
         "dependencyVerdict": "DependencyVerdict?",
         "dependencyObservedAt": "Timestamp?",
-        "health": "HealthReading"
-      }
+        "health": "HealthReading",
+        "conditionMaterial": "ConditionSignal?"
+      },
+      "$comment": "[p3] `conditionMaterial` is §33.7's inner needle — the COMMIT clock, beside `row.conditionSignal`'s interaction clock. R138: phase 1 computes and stores it (`core/src/derive/persist.rs:26,142,158`) and it reached no wire type at all, which made `AC-P3-33-11` unpassable. It reuses the generated `ConditionSignal` and declares no second enum (R31), so it is a FIELD addition and moves no total. **NULL means *never computed*** and draws no inner needle and no divergence line — never a needle at zero. It lands on `ProjectDetail` rather than `ProjectRow` because the panel is page-only, the same shape as §30.7's *no grid surface renders a health count*."
     },
 
     "HealthState": {
@@ -1743,6 +1782,12 @@
       "privileged": true,
       "mutatesFilesystem": true,
       "$comment": "§24.3c: kills the clone's process group and removes the staging directory under §24.6's warrant, so it writes to disk as surely as the start did. Non-idempotent: a replay would kill a group a later run may by then own."
+    },
+    {
+      "name": "health.weathering",
+      "args": { "projectId": "ProjectId" },
+      "returns": "Weathering",
+      "$comment": "[p3] §33.8, and the first name spent from the `health.*` prefix §30 opened and occupied none of (§30.11). It reads `art_scene.scene_json` and nothing else — no debt table, no `health_delta`, no `location`, no clock — so it is read-only and idempotent, and unprivileged because it carries no Bytes and writes nothing. The anchor set is keyed by `scene_hash`, which is why it is a command of its own rather than a field on `ProjectDetail`: that payload is re-fetched on every debt change, and the geometry moves only when the art re-renders."
     }
   ],
   "topics": {

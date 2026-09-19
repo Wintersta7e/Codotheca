@@ -813,6 +813,12 @@ impl CommandHandler for CoreHandler {
             }
             Route::Remote => Self::remote_arm(&guard, command, args, now),
             Route::Readme => Self::readme_arm(&guard, self.events.as_ref(), command, args, now),
+            // [p3] §33.8. It takes no `now`: the anchor set is a derivation over a stored
+            // document, not an observation.
+            Route::Weathering => {
+                let ctx = crate::weathering::WeatheringCtx { index: &guard };
+                crate::weathering::dispatch_weathering_command(&ctx, command, args)
+            }
         };
 
         claimed.unwrap_or_else(|| Err(Self::declined(command, dest)))

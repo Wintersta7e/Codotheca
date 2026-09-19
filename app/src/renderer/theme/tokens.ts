@@ -41,6 +41,8 @@ export const TOKENS = {
   silver: '#b9c4cc',
   rust: '#96522a',
   growth: '#54703e',
+  // [p3] §33.9's dust tint. A material tint, not a step on §8.7's closed grey ladder.
+  dust: '#8e97a0',
   // §8.5.5's lane baseline. An achromatic alpha, so it is not on the ladder and carries no ratio.
   'baseline-hairline': 'rgb(255 255 255 / 0.05)',
   'tier-gold': '#e8c268',

@@ -5,6 +5,10 @@ import { GRID_TILE_BANDS, HERO_BANDS } from '../card/geometry';
 // jsdom `import.meta.url` is not a file URL. The dom project processes these stylesheets so the
 // query returns the real text — Vitest otherwise stubs CSS to an empty module, `?raw` included.
 import css from './card.css?raw';
+// [p3] §33.4's layer stack is declared in its own stylesheet, so the clamp-name check below has
+// to read both. Scoped to `card.css` alone it reports a correct `.cdt-decay` clamp entry as a
+// clamp that selects nothing.
+import decayCss from './decay.css?raw';
 import motionCss from './motion.css?raw';
 
 /**
@@ -15,9 +19,10 @@ import motionCss from './motion.css?raw';
  * in this repo, on a run that was green immediately before and after.
  */
 describe('the stylesheets under test actually arrived', () => {
-  it('reads real text for both, because every assertion here is vacuous against ""', () => {
+  it('reads real text for all three, because every assertion here is vacuous against ""', () => {
     expect(css.length).toBeGreaterThan(1000);
     expect(motionCss.length).toBeGreaterThan(500);
+    expect(decayCss.length).toBeGreaterThan(500);
   });
 });
 
@@ -206,6 +211,9 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+/** Clamped by `motion.css`, declared by no stylesheet yet, with the plan that owes each. */
+const UNDECLARED = new Map([['.cdt-surge', 'p3-34 — §34.8 lands the restoration element']]);
+
 describe('the motion tier clamp resolves against these class names', () => {
   it('declares every class motion.css clamps, or the clamp selects nothing', () => {
     // The cascade assertions below mount a fixture carrying these names, so they prove the clamp
@@ -214,8 +222,30 @@ describe('the motion tier clamp resolves against these class names', () => {
     // half a rename breaks: motion.css names nine classes and every one is declared by this file.
     const clamped = [...new Set(motionCss.match(/\.cdt-[a-z-]+/g) ?? [])];
     expect(clamped.length).toBeGreaterThan(0);
+    // [p3] Both card-plate stylesheets: `card.css` declares the shell, `decay.css` the five
+    // material layers. A name declared in neither selects nothing.
+    const declared = `${body}\n${decayCss.replace(/\/\*[\s\S]*?\*\//g, '')}`;
     for (const name of clamped) {
-      expect(body, `${name} is clamped by motion.css and declared by no card rule`).toContain(name);
+      if (UNDECLARED.has(name)) continue;
+      expect(declared, `${name} is clamped by motion.css and declared by no rule`).toContain(name);
+    }
+  });
+
+  /**
+   * [p3] `.cdt-surge` is **clamped here and declared by p3-34**, which lands §34's restoration
+   * element. R112 split the two deliberately: `motion.css` has one owner in phase 3, and the
+   * plan that owns the file lands both class names in one change so the two sections cannot each
+   * write half the clamp. The entry with no rule is the visible cost of that split, named here
+   * rather than left to read as a typo.
+   */
+  it('names the clamped classes no stylesheet declares yet, with the plan that owes each', () => {
+    const declared = `${body}\n${decayCss.replace(/\/\*[\s\S]*?\*\//g, '')}`;
+    expect(UNDECLARED.size).toBeGreaterThan(0);
+    for (const [name, owner] of UNDECLARED) {
+      expect(declared, `${name} is declared now — take it off the pending list`).not.toContain(
+        name,
+      );
+      expect(motionCss, `${name} is pending for ${owner} but nothing clamps it`).toContain(name);
     }
   });
 

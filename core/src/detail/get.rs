@@ -20,9 +20,9 @@ use crate::projects::rows::{
 };
 use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::protocol::{
-    Activity, ActivityWeek, AssociationKind, HeadComparison, LaneState, LocationDetail, LocationId,
-    LocationRef, ProjectDetail, ProjectId, ProjectsGetArgs, RemoteLinkBasis, ResolvedTarget,
-    SessionRef, TargetRow,
+    Activity, ActivityWeek, AssociationKind, ConditionSignal, HeadComparison, LaneState,
+    LocationDetail, LocationId, LocationRef, ProjectDetail, ProjectId, ProjectsGetArgs,
+    RemoteLinkBasis, ResolvedTarget, SessionRef, TargetRow,
 };
 
 /// §8.5.5's chart: 26 weekly slots, the axis running `26 WEEKS AGO` → `THIS WEEK`.
@@ -91,12 +91,17 @@ struct ProjectScalars {
     /// §22.11's basis. NULL is *not yet resolved*, which is the honest value for every project
     /// until a listing or a lookup binds one, and is not the same as either variant.
     remote_link_basis: Option<String>,
+    /// [p3] §33.7's inner needle — the **commit** clock, beside `row.condition_signal`'s
+    /// interaction clock. NULL is *never computed*, and §33.7 draws no inner needle and no
+    /// divergence line for it rather than a needle at zero.
+    condition_material: Option<String>,
 }
 
 fn project_scalars(conn: &rusqlite::Connection, id: i64) -> Result<ProjectScalars, CommandFailure> {
     conn.query_row(
         "SELECT notes, remote_key, lineage_key, association_kind, first_commit_sha,
-                first_commit_tz_offset_min, size_worktree_bytes, is_shallow, remote_link_basis
+                first_commit_tz_offset_min, size_worktree_bytes, is_shallow, remote_link_basis,
+                condition_material
            FROM project WHERE id = ?1",
         [id],
         |r| {
@@ -110,6 +115,7 @@ fn project_scalars(conn: &rusqlite::Connection, id: i64) -> Result<ProjectScalar
                 size_worktree_bytes: r.get(6)?,
                 is_shallow: r.get::<_, i64>(7)? != 0,
                 remote_link_basis: r.get(8)?,
+                condition_material: r.get(9)?,
             })
         },
     )
@@ -504,6 +510,13 @@ pub fn handle_project_get(
         health: crate::health::read_for_project(conn, ProjectId(id))
             .map_err(internal)?
             .0,
+        // [p3] §33.7's second clock, computed and stored since phase 1 and rendered by nothing
+        // until now (R138). An unreadable slug is **NULL, not a default**: the panel draws no
+        // inner needle for `None`, which is the honest rendering of *never computed*.
+        condition_material: scalars
+            .condition_material
+            .as_deref()
+            .and_then(enum_from_column::<ConditionSignal>),
         locations,
         row,
     })

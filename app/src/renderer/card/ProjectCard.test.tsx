@@ -312,7 +312,18 @@ describe('§11.7: the cell', () => {
  * the product, and nothing said so — R36's shape one level down. This is the half that a rename
  * on either side breaks: what the clamp names, and what a real mounted tile carries.
  */
-const UNMOUNTED = new Set(['.cdt-bracket']);
+const UNMOUNTED = new Map([
+  ['.cdt-bracket', '§7.8 names them and no section gives them a corner geometry'],
+  // [p3] §33.4: the layers mount on the **opened hero and nowhere else** — never the grid, Peek,
+  // the list, the quick-switch palette, triage or the Amnesty card, the same scope roasting has.
+  // Their absence from a grid tile is the rule rather than a gap, and the sibling test below is
+  // what asserts it. It is also the performance answer: five extra elements on the one card on
+  // screen, never five on each of 140 mounted tiles.
+  ['.cdt-decay', '§33.4 — the opened hero only; a grid tile must never carry one'],
+  // [p3] p3-34 lands §34.8's restoration element. R112 gives `motion.css` one owner in phase 3,
+  // so p3-33 landed the clamp entry and the element it selects arrives a wave later.
+  ['.cdt-surge', 'p3-34 — §34.8 lands the element this entry selects'],
+]);
 
 describe('the mounted tile carries the class names motion.css clamps', () => {
   it('mounts every clamped class except the ones nothing produces yet', () => {
@@ -333,8 +344,9 @@ describe('the mounted tile carries the class names motion.css clamps', () => {
     // rule, but no section gives them a corner geometry, so this plan mounts none. If one is
     // ever mounted this fails and the exception above must shrink with it.
     const container = draw({ row: row({ isPinned: true }) });
-    for (const name of UNMOUNTED) {
-      expect(container.querySelector(name)).toBeNull();
+    expect(UNMOUNTED.size).toBeGreaterThan(0);
+    for (const [name, why] of UNMOUNTED) {
+      expect(container.querySelector(name), `${name} is now mounted — ${why}`).toBeNull();
     }
   });
 });

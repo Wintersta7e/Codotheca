@@ -87,6 +87,15 @@ export interface CardBitmap {
   readonly src: string | null;
   /** True while a newer scene hash is decoding behind a bitmap that is still on screen. */
   readonly held: boolean;
+  /**
+   * [p3] The hash of the raster **actually on screen**, or `null` when there is none.
+   *
+   * §33.4 mounts the decay layers only when this equals `Weathering.sceneHash`. It is set in the
+   * same state update as `shown`, and **it is not parsed back out of the address**: §7.3a's
+   * standing rule is that the renderer resolves nothing from a name, and a URL parser here would
+   * be a second resolver in the product.
+   */
+  readonly decodedSceneHash: SceneHash | null;
 }
 
 function decodeImage(src: string): Promise<void> {
@@ -111,7 +120,9 @@ export function useCardBitmap(input: CardBitmapInput): CardBitmap {
       : input.src === ''
         ? null
         : input.src;
-  const [shown, setShown] = useState<string | null>(null);
+  // [p3] The decoded address and the scene it belongs to move as one value, so no render can see
+  // a hash that does not describe what is painted.
+  const [shown, setShown] = useState<{ src: string; hash: SceneHash | null } | null>(null);
 
   // The decoder is a seam, not an input: a caller that inlines it would re-run the decode on
   // every render if it were a dependency, and the shelf mounts a hundred and forty of these.
@@ -129,7 +140,7 @@ export function useCardBitmap(input: CardBitmapInput): CardBitmap {
     let live = true;
     void decodeRef.current(wanted).then(
       () => {
-        if (live) setShown(wanted);
+        if (live) setShown({ src: wanted, hash: input.sceneHash });
       },
       () => {
         /* §7.5: a missing or corrupt file demotes to the nameplate, never a hole. */
@@ -138,9 +149,17 @@ export function useCardBitmap(input: CardBitmapInput): CardBitmap {
     return (): void => {
       live = false;
     };
+    // `input.sceneHash` is read inside the resolve rather than depended on: the address is the
+    // only thing that moves a decode, and adding the hash would re-run one for a scene whose
+    // address is unchanged.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wanted]);
 
-  return { src: shown, held: shown !== null && shown !== wanted };
+  return {
+    src: shown?.src ?? null,
+    held: shown !== null && shown.src !== wanted,
+    decodedSceneHash: shown?.hash ?? null,
+  };
 }
 
 /**

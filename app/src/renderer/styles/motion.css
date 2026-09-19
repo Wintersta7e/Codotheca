@@ -24,7 +24,14 @@
 [data-effects-tier='reduced'] .cdt-bracket,
 [data-effects-tier='off'] .cdt-bracket,
 [data-effects-tier='reduced'] .cdt-scanline,
-[data-effects-tier='off'] .cdt-scanline {
+[data-effects-tier='off'] .cdt-scanline,
+/* [p3] §34.8's restoration surge, whose element p3-34 mounts. A light front expanding from a
+   point is a travelling highlight, so it goes with the rest of them, and `AC-P3-34-13` requires
+   both tiers to resolve `display: none`. §33.10 instructs it into `.cdt-decay`'s two rules
+   instead, which would leave it painting at `reduced` on a user who asked their operating system
+   for reduced motion (R112). p3-33 owns this file for phase 3 and lands the entry. */
+[data-effects-tier='reduced'] .cdt-surge,
+[data-effects-tier='off'] .cdt-surge {
   display: none;
 }
 
@@ -36,7 +43,12 @@
 [data-effects-tier='reduced'] .cdt-dot,
 [data-effects-tier='off'] .cdt-dot,
 [data-effects-tier='reduced'] .cdt-strip,
-[data-effects-tier='off'] .cdt-strip {
+[data-effects-tier='off'] .cdt-strip,
+/* [p3] §33.5: the five material layers RENDER at `reduced` and at `off` — identical set,
+   identical positions — with no transform, so no motes, no crack-weld travel, no debris. A tier
+   that hid decay would tell a user their project is clean because they turned effects down. */
+[data-effects-tier='reduced'] .cdt-decay,
+[data-effects-tier='off'] .cdt-decay {
   transform: none;
 }
 
@@ -50,7 +62,12 @@
 }
 
 [data-effects-tier='reduced'] .cdt-strip,
-[data-effects-tier='reduced'] .cdt-pin-silhouette {
+[data-effects-tier='reduced'] .cdt-pin-silhouette,
+/* [p3] §33.5's tier table asks for OPACITY ONLY. This rule, not its three siblings: the two
+   above declare `background-color` and `box-shadow`, which the table does not ask to clamp, and
+   the one below declares `transition: none`, which would give the layers no transition at
+   `reduced` at all — a plausible resolved style nothing but a tier test catches (R138). */
+[data-effects-tier='reduced'] .cdt-decay {
   transition: opacity 160ms cubic-bezier(0.2, 0.85, 0.2, 1);
 }
 

@@ -54,6 +54,8 @@ export interface CardProps {
   readonly isArchived: boolean;
   readonly isReference: boolean;
   readonly art: ReactNode;
+  /** [p3] §33.4's layer stack, passed straight through. **No band gains an element.** */
+  readonly decay?: ReactNode;
   readonly bands: CardBands;
   readonly halo: CardHalo;
   readonly hovered: boolean;
@@ -134,7 +136,12 @@ export function Card(props: CardProps): ReactElement {
           props.onClick?.(event.shiftKey);
         }}
       >
-        <CardPlate surface={props.surface} isArchived={props.isArchived} art={props.art}>
+        <CardPlate
+          surface={props.surface}
+          isArchived={props.isArchived}
+          art={props.art}
+          decay={props.decay}
+        >
           {/* Band 1 — furniture only. */}
           {bands.hazard ? (
             <span

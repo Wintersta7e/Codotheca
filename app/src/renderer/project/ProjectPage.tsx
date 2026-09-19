@@ -28,6 +28,7 @@ import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
 import { ActivityTab } from './activity/ActivityTab';
 import { BackupStateBlock } from './BackupState';
 import { useProjectPageDeps } from './deps';
+import { ConditionPanel } from './condition/ConditionPanel';
 import { HeroTile } from './hero/HeroTile';
 import { Identity } from './Identity';
 import { LocationsPanel } from './locations/LocationsPanel';
@@ -299,6 +300,10 @@ export function ProjectPageView({
               firstRunCompletedAt={firstRunCompletedAt}
               isPinned={pinnedOverride ?? detail.row.isPinned}
               onTogglePin={onTogglePin}
+              // [p3] §33.2's input: §28's flat list, grouped by layer in the renderer (R120).
+              // The opened hero is the one surface that receives it — never the grid, Peek, the
+              // list, the quick-switch palette or triage.
+              debt={detail.debt}
             />
             {/* [p2] §24.8's removal, mounted. The verdict is fetched when the affordance opens
                 and at no other time; the page holds it because the rail is arrangement and the
@@ -349,6 +354,17 @@ export function ProjectPageView({
                   {/* §25.3: between the description and the NOTE block, for every project with
                       at least one location. §23 rules the zero-location case, where there is no
                       local copy to be the only copy of. */}
+                  {/* [p3] §33.7's two clocks, in OVERVIEW rather than in the health tab. §30.7
+                      mounts that tab on a predicate of its own; these are phase-1 derived facts
+                      every project has whether or not a health reading exists, so mounting them
+                      behind that predicate would hide a computed fact. This panel reads neither
+                      the reading nor any exclusion — it is handed two condition values. */}
+                  <ConditionPanel
+                    signal={detail.row.conditionSignal}
+                    material={detail.conditionMaterial}
+                    isReference={detail.row.isReference}
+                    isArchived={detail.row.isArchived}
+                  />
                   <BackupStateBlock state={detail.backup} location={primary} now={deps.now()} />
                   <LocationsPanel
                     detail={detail}

@@ -29,6 +29,28 @@ const REMOTE_MARKERS: &[&str] = &[
 /// surface is what earns them.
 const COMPLETION_COLUMNS: &[&str] = &["completion_lit", "completion_applicable"];
 
+/// Where a banned identifier is permitted, per path **and per token**, with the reason.
+///
+/// `{path, token, why}` rather than `{path, why}`: a site of the second shape would permit
+/// *every* banned word at that path rather than the one it was granted, which is the defect
+/// `scripts/check-destructive-tokens.mjs` records against its own site list.
+const AGGREGATE_SITES: &[(&str, &str, &str)] = &[(
+    "detail/get.rs",
+    "ConditionSignal",
+    "[p3] §33.7 / R138: `projects.get` READS the stored `project.condition_material` column and \
+     puts it on `ProjectDetail`. Phase 1 computed that column from `last_commit_at` \
+     (core/src/derive/persist.rs:26,142,158); no run set is involved and nothing here derives a \
+     condition from one. The file is on the remote list only because the same command also \
+     assembles `RemoteFacts`. The ban stays live everywhere it means what it says: a \
+     `ConditionSignal` produced FROM a CI run set is still the thing §25.4 forbids.",
+)];
+
+fn granted(file: &str, needle: &str) -> bool {
+    AGGREGATE_SITES
+        .iter()
+        .any(|(path, token, _)| file.ends_with(path) && *token == needle)
+}
+
 fn core_src() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
 }
@@ -140,7 +162,7 @@ fn no_remote_path_produces_an_aggregate_over_a_run_set() {
     let mut offenders = Vec::new();
     for (name, text) in &remote_files {
         for needle in banned {
-            if text.contains(needle) {
+            if text.contains(needle) && !granted(name, needle) {
                 offenders.push(format!("{name} names {needle}"));
             }
         }
@@ -149,4 +171,16 @@ fn no_remote_path_produces_an_aggregate_over_a_run_set() {
         offenders.is_empty(),
         "a remote path produces an aggregate or a condition, both phase 3's: {offenders:?}"
     );
+
+    // **An empty grant list is not a licence to stop asserting**, and a stale one is worse: a
+    // site granted for a file that no longer names the token reads as a live exemption and
+    // silently covers the next author who reintroduces it.
+    for (path, token, _) in AGGREGATE_SITES {
+        assert!(
+            remote_files
+                .iter()
+                .any(|(name, text)| name.ends_with(path) && text.contains(token)),
+            "{path} is granted {token} and no longer names it — delete the site"
+        );
+    }
 }

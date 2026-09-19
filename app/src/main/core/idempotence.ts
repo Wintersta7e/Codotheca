@@ -98,6 +98,9 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   // [p2] §21.13. A read of two tables and the runner's own process state. It queues nothing and
   // spawns nothing, so replaying it costs a second answer to the same question.
   'sync.status': 'read',
+  // [p3] §33.8. It deserialises one stored scene document and answers geometry — no table is
+  // written, no job enqueued, no process spawned.
+  'health.weathering': 'read',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {

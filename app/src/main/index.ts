@@ -169,6 +169,10 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   // both answered by the core, so the shell knows both. Nothing is deferred any more.
   'install.start',
   'install.cancel',
+  // [p3] weathering::dispatch_weathering_command — the anchor set for one scene. Read-only and
+  // unprivileged: it reads one stored document and answers geometry, and which of those anchors
+  // light is the renderer decision.
+  'health.weathering',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two

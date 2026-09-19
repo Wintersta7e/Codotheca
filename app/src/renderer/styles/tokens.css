@@ -53,6 +53,10 @@
   --silver: #b9c4cc;
   --rust: #96522a;
   --growth: #54703e;
+  /* [p3] §33.9's dust tint. A material tint, not a step on the closed grey ladder above — the
+     same standing --silver has — and it is declared here so criterion 46's built-CSS grep can
+     gate the five layer colours instead of pre-exempting them (A14.5). */
+  --dust: #8e97a0;
 
   /* §8.5.5's lane baseline: an achromatic alpha, not a colour choice, so it is named once here
      rather than written into every lane that draws a measured zero */

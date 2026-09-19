@@ -3,6 +3,9 @@ import './styles/tokens.css';
 import './styles/base.css';
 // Between base and motion, so §11.6's tier clamps still win on order as well as specificity.
 import './styles/card.css';
+// [p3] §33.4's layer stack: after card.css, which gives `.cdt-plate` the clip the layers rely on,
+// and before motion.css, which clamps `.cdt-decay` at the two lower tiers.
+import './styles/decay.css';
 import './styles/projectPage.css';
 import './shelf/shelf.css';
 // §8.5.1's gesture spans the shelf and the page, so it sits after both and before the tier clamp.
