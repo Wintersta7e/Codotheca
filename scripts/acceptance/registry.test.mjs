@@ -1145,6 +1145,26 @@ test('a phase-3 deferral to a plan is a deferral to nobody, and a bare register 
  */
 const MOVED_BY_PLAN = [
   {
+    id: '46',
+    plan: 'p3-33',
+    why: '§36.3 / A1: the exemption loses *material layers*. Under A1 the five layers are composed in the DOM, so their colours reach decay.css and every one must resolve to a declared token — --dust, --silver, --rust, --fail, --growth. Vents and plate stops stay exempt, because a vent really is drawn into the bitmap. Left as it was, five colour literals would have shipped past a green run, pre-exempted by name.',
+  },
+  {
+    id: '50',
+    plan: 'p3-33',
+    why: "§36.3 / §36.2 rule 9: the hand-maintained class-name count is REMOVED, not incremented. It read nine against a real ten, c256eca corrected it to ten, and §33 and §34 each add one more without being able to see the other — three moves in one round. The checker now derives the set from motion.css, prints it, and fails at zero. §34's `.cdt-surge` half lands in wave 5 against the same derived checker, so this entry covers the joint row.",
+  },
+  {
+    id: '58',
+    plan: 'p3-33',
+    why: '§36.3: three dots on an open project page, not two. §33.7 draws the two-clock dial — the interaction clock it already had, plus conditionMaterial as the inner needle, which phase 1 computed and stored and no wire type carried until R138 added the field.',
+  },
+  {
+    id: '62',
+    plan: 'p3-33',
+    why: "§36.3: the clause said decay rendering is not in phase 1 and is not tested. §33.11's twelve AC-P3-33-* ids now test it, so that half expires. The first-commit-sha half of the same sentence is untouched and stays — it is a seed assertion §33 has no quarrel with, and deleting it along with the decay half would retire a criterion nobody moved.",
+  },
+  {
     id: '66',
     plan: 'p3-35',
     why: "§36.3: AC-66-sort gains `needs_attention` and `Completion` stays absent. The check also flips deferred → automated, because §35.6's AC-P3-35-4 is the first test to implement it — it derives the cycle's membership from protocol/schema/protocol.json rather than counting it by hand.",

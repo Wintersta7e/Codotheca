@@ -328,7 +328,7 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8, §25.8, §24.9, §21.13 and nothing extra', () => {
   // [p3] Two commands landed in one wave: §33.8's `health.weathering` and §31.6's
   // `projects.setCheckNa`. Each lane called its own "the 61st"; after the merge neither is.
-  assert.equal(names.length, 61, `expected 61 commands, found ${names.length}`);
+  assert.equal(names.length, 62, `expected 62 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 

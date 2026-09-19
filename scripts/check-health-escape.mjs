@@ -131,10 +131,31 @@ function hitsIn(code, needles) {
   return hits;
 }
 
-/** Word-boundary, over comment-stripped source: a comment naming an identifier is not a figure. */
+/**
+ * Word-boundary, over comment-stripped source: a comment naming an identifier is not a figure.
+ *
+ * **Quoted string literals are blanked first, and template literals are NOT.** A health-derived
+ * figure reaching a window is a value, so it arrives either bare or interpolated —
+ * `` `${summary.scoredOpen} open` `` stays visible and is exactly the case this gate exists for.
+ * A plain `'…'` or `"…"` is a name, not a value: `app/src/main/index.ts` lists the command
+ * `'health.weathering'` in its allowlist, and the carrier field `health` matched inside it while
+ * the same file's generic `notify` plumbing supplied the escape call. That reported the one
+ * legitimate notification site in the shell — which this gate's own comment already names as the
+ * criterion's trap, arriving here as an identifier rather than a call.
+ *
+ * Blanking rather than deleting keeps every column, so a reported line number still points at the
+ * line the reader has to open.
+ */
+function withoutQuotedNames(text) {
+  return text.replace(/'[^'\\]*(?:\\.[^'\\]*)*'|"[^"\\]*(?:\\.[^"\\]*)*"/gu, (match) =>
+    ' '.repeat(match.length),
+  );
+}
+
 function identifierHits(code, identifiers) {
   const hits = [];
-  for (const [index, text] of code.split('\n').entries()) {
+  for (const [index, line] of code.split('\n').entries()) {
+    const text = withoutQuotedNames(line);
     for (const identifier of identifiers) {
       if (new RegExp(`\\b${identifier}\\b`, 'u').test(text)) {
         hits.push({ line: index + 1, token: identifier });

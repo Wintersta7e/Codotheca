@@ -796,7 +796,7 @@ mod corehandler {
         // recomputes ten rows. Each lane stated its own +1 off the base it read, which is the
         // right form; the ordinal was the part that could not survive the merge.
         assert_eq!(
-            checked, 59,
+            checked, 60,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(
