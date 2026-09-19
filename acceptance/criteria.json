@@ -1919,7 +1919,7 @@
           "status": "automated",
           "runner": "cargo",
           "test": "acceptance_art::ac_62_seed_inputs_are_basename_and_offset",
-          "assert": "The first-commit sha is not an art-seed input and its empty-repository case is not tested; a first commit on a previously-empty repository changes era detail only. Decay rendering is not in phase 1 and is not tested."
+          "assert": "The first-commit sha is not an art-seed input and its empty-repository case is not tested; a first commit on a previously-empty repository changes era detail only. [p3] Decay rendering IS tested: \u00a733.11's twelve AC-P3-33-* ids cover it, and AC-P3-33-9 re-points criterion 62's own byte-identity shape at a different input \u2014 over a fixture where every open debt item is closed, scene_hash and the bytes of both rendition files are identical before and after, and no re-render is enqueued. The first-commit clause above is unchanged: it is a different fact in the same sentence."
         }
       ]
     },
