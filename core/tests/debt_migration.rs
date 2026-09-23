@@ -653,3 +653,78 @@ fn both_tables_cascade_from_project_and_the_index_exists() {
         .unwrap();
     assert_eq!(idx, 1);
 }
+
+// ---------------------------------------------------------------------------------------------
+// §28.2's name ban — `AC-P3-28-18a`, the exact-name half
+// ---------------------------------------------------------------------------------------------
+
+/// The four classes §30.6 refuses as debt, each named for why: decay by staleness alone,
+/// upstream drift no offered act can close, uncacheable worktree state, and a remote's absence.
+const BANNED_SOURCE_NAMES: [&str; 4] =
+    ["staleness", "behind_upstream", "uncommitted", "dead_remote"];
+
+/// Every quoted literal inside `CHECK (<column> IN (…))` in one table's DDL.
+fn check_literals(ddl: &str, column: &str) -> Vec<String> {
+    let opener = format!("CHECK ({column} IN (");
+    let start = ddl
+        .find(&opener)
+        .unwrap_or_else(|| panic!("no `{opener}` in {ddl}"))
+        + opener.len();
+    let body = &ddl[start..];
+    let end = body.find(')').expect("the IN list closes");
+    body[..end]
+        .split(',')
+        .map(|v| v.trim().trim_matches('\'').to_owned())
+        .collect()
+}
+
+/// **`AC-P3-28-18a`, the exact-name half.** The rendered-string half is `check-forbidden`'s
+/// `p3-28-debt-source-names`, which must match value shapes (`uncommitted_work`) because the bare
+/// word `uncommitted` is a live chip id — so a variant spelled exactly `uncommitted` passes it.
+/// This half bans all four names **bare**, over the vocabularies where a source name can land: the
+/// generated enums and every CHECK literal the migrated schema holds for a source or check key.
+#[test]
+fn ac_p3_28_18a_no_source_or_check_key_is_a_banned_name() {
+    let mut scanned = 0_usize;
+    for enumeration in ["DebtSource", "CompletionCheck"] {
+        let variants = schema_variants(enumeration);
+        for banned in BANNED_SOURCE_NAMES {
+            assert!(
+                !variants.iter().any(|v| v == banned),
+                "{enumeration} declares the banned name {banned:?}"
+            );
+        }
+        eprintln!("{enumeration}: {} variants scanned", variants.len());
+        scanned += variants.len();
+    }
+
+    let (_d, conn) = fresh();
+    for (table, column) in [
+        ("debt_item", "source"),
+        ("debt_sweep", "source"),
+        ("project_check", "check_key"),
+    ] {
+        let ddl: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                [table],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|e| panic!("{table} is not in the migrated schema: {e}"));
+        let literals = check_literals(&ddl, column);
+        for banned in BANNED_SOURCE_NAMES {
+            assert!(
+                !literals.iter().any(|v| v == banned),
+                "{table}.{column}'s CHECK admits the banned name {banned:?}"
+            );
+        }
+        eprintln!(
+            "{table}.{column}: {} CHECK literals scanned",
+            literals.len()
+        );
+        scanned += literals.len();
+    }
+
+    eprintln!("name ban: {scanned} names scanned in total");
+    assert!(scanned > 0, "scanned nothing, so the ban proved nothing");
+}

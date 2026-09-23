@@ -151,6 +151,23 @@ describe('AC-P3-31-5: the notch fires on evaluable, not on the N/A count', () =>
   });
 });
 
+describe('AC-P3-31-10: a content-scan budget exceedance is unknown, not absent', () => {
+  it('ac_p3_31_10_not_read_keeps_seven_of_seven_gold_notched_while_absent_demotes', () => {
+    // The core projection has seven passing checks. The three content checks are excluded from
+    // its denominator when their enumeration reports not_read, so the card must qualify 7/7
+    // with a notch. When those same checks are absent, all three fail and ciGreen becomes N/A;
+    // the frame must reflect the resulting 6/9 measurement.
+    const notRead = draw({ completionLit: 7, completionApplicable: 7 });
+    expect(resolvedFrame(notRead)).toBe(TOKENS['tier-gold']);
+    expect(notRead.querySelector('.cdt-frame-notch')).not.toBeNull();
+
+    cleanup();
+    const absent = draw({ completionLit: 6, completionApplicable: 9 });
+    expect(resolvedFrame(absent)).toBe(TOKENS['tier-steel']);
+    expect(absent.querySelector('.cdt-frame-notch')).toBeNull();
+  });
+});
+
 describe('AC-P3-31-7: no surface paints a ladder rung while completion_lit is NULL', () => {
   it('paints no rung on the permanently-NotComputed fixture', () => {
     // §31.10's fixture, and the one §16's criteria 45a–45c need to stay testable once they are

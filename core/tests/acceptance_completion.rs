@@ -13,12 +13,13 @@
 
 mod support;
 
+use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::SystemClock;
 use codotheca_core::completion::proposal::{proposes_na, suppressed_source};
 use codotheca_core::completion::{evaluate_and_write, set_check_na, Written};
 use codotheca_core::debt::singletons::{evaluate_singletons, ArmReading, SINGLETON_ARMS};
 use codotheca_core::debt::store::SqliteDebtStore;
-use codotheca_core::git::read_ref_state;
+use codotheca_core::git::{head_tree, read_ref_state, RunLimits};
 use codotheca_core::identity::merge::recompute_derived;
 use codotheca_core::index::completion::{set_completion, Completion};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
@@ -26,6 +27,8 @@ use codotheca_core::index::IndexError;
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::jobs::classify::ARCHETYPES;
 use codotheca_core::jobs::j1_refstate::persist;
+use codotheca_core::jobs::j6_content::{self, ContentFacts};
+use codotheca_core::jobs::presence::{presence_for, PresenceAnswers, PresenceState};
 use codotheca_core::protocol::{CompletionCheck, DebtSource, LocationId, ProjectId};
 use support::TestRepo;
 
@@ -428,6 +431,249 @@ fn projection(conn: &rusqlite::Connection, project: i64) -> (Option<i64>, Option
         |r| Ok((r.get(0)?, r.get(1)?)),
     )
     .unwrap()
+}
+
+fn committed_presence(repo: &TestRepo) -> PresenceAnswers {
+    let entries = head_tree(
+        &repo.exec(),
+        &repo.handle(),
+        RunLimits::none(),
+        &CancelToken::new(),
+    )
+    .unwrap();
+    assert!(
+        !entries.is_empty(),
+        "the fixture must enumerate committed paths"
+    );
+    presence_for(&entries)
+}
+
+/// Seed the independent observations so only the three budget-limited checks can be unknown.
+fn observed_completion_inputs(conn: &rusqlite::Connection, project: i64) {
+    conn.execute(
+        "UPDATE location SET ahead = 0, tag_count = 1, branch = 'main' WHERE project_id = ?1",
+        [project],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE project SET remote_key = 'forge/fixture/project', provider = 'forge',
+                provider_repo_id = ?1 WHERE id = ?1",
+        [project],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT OR IGNORE INTO account
+            (provider, host, login, auth_kind, scope_tier, granted_scopes, token_ref, connected_at)
+         VALUES ('forge', 'forge.invalid', 'fixture', 'pat', 'public', '', 'fixture-ref', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO remote_repo (provider, provider_repo_id, description, observed_at)
+         VALUES ('forge', ?1, 'fixture description', 50)",
+        [project],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO remote_topic (provider, provider_repo_id, topic) VALUES ('forge', ?1, 'topic')",
+        [project],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO remote_ci_run
+            (provider, provider_repo_id, run_id, workflow_name, conclusion, branch, run_number,
+             started_at)
+         VALUES ('forge', ?1, 1, 'checks', 'success', 'main', 1, 50)",
+        [project],
+    )
+    .unwrap();
+    dependency_scan(conn, project, true, 0);
+}
+
+fn open_items(conn: &rusqlite::Connection, project: i64, source: &str) -> i64 {
+    conn.query_row(
+        "SELECT count(*) FROM debt_item WHERE project_id = ?1 AND source = ?2 AND state = 'open'",
+        rusqlite::params![project, source],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// Uses the persisted §29 row seam: a real J7 enumeration budget failure marks all FOUR
+/// predicates `not_read`, including README. This criterion needs only three unknowns and seven
+/// evaluable checks, so retain the observed README and inject the other three budget answers.
+/// Both trees are enumerated with J7's HEAD path predicates before supplying those answers.
+/// The renderer's companion check covers the notched frame and its demotion rule.
+#[test]
+fn ac_p3_31_10_budget_exceeded_is_unknown_but_absent_is_fail() {
+    let (_dir, mut conn) = fresh();
+    for exists in [true, false] {
+        let repo = TestRepo::init();
+        repo.write("README.md", b"# fixture\n");
+        for path in ["LICENSE", "tests/check.rs", ".github/workflows/ci.yml"] {
+            if exists {
+                repo.write(path, b"fixture\n");
+            }
+        }
+        repo.commit("fixture");
+        let actual = committed_presence(&repo);
+        let expected = if exists {
+            PresenceState::Present
+        } else {
+            PresenceState::Absent
+        };
+        assert_eq!(actual.readme, PresenceState::Present);
+        assert_eq!([actual.license, actual.tests, actual.ci], [expected; 3]);
+
+        let p = scorable(&conn, if exists { "budget-exceeded" } else { "absent" });
+        observed_completion_inputs(&conn, p);
+        let reported = if exists { "not_read" } else { "absent" };
+        content_scan(&conn, p, reported);
+        conn.execute(
+            "UPDATE project_content_scan SET has_license = ?2, has_tests = ?2 WHERE project_id = ?1",
+            rusqlite::params![p, reported],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+        evaluate_singletons(&tx, ProjectId(p), 100, &SqliteDebtStore).unwrap();
+        let written = evaluate_and_write(&tx, ProjectId(p), 100).unwrap();
+        tx.commit().unwrap();
+
+        for key in ["license", "tests", "ci"] {
+            let expected = if exists {
+                ("unknown".to_owned(), Some("notRead".to_owned()))
+            } else {
+                ("fail".to_owned(), None)
+            };
+            assert_eq!(check_state(&conn, p, key), expected, "{reported}: {key}");
+        }
+        for source in ["missing_license", "missing_tests"] {
+            assert_eq!(open_items(&conn, p, source), i64::from(!exists), "{source}");
+        }
+        let Written::Rewritten { counts } = written else {
+            panic!("expected new check rows")
+        };
+        if exists {
+            assert_eq!(
+                (counts.lit, counts.evaluable, counts.unknown, counts.na),
+                (7, 7, 3, 0)
+            );
+            assert_eq!(projection(&conn, p), (Some(7), Some(7)));
+        } else {
+            // No CI configuration makes ciGreen N/A; the three absent checks still fail.
+            assert_eq!(
+                (counts.lit, counts.evaluable, counts.unknown, counts.na),
+                (6, 9, 0, 1)
+            );
+            assert_eq!(projection(&conn, p), (Some(6), Some(9)));
+        }
+    }
+}
+
+/// Model a read failure at J6's persistence seam, without platform-specific permissions:
+/// a committed README path, `readme_seen = true`, and no excerpt. J6 writes the same NULL
+/// excerpt for the absent sibling, while §29's HEAD enumeration distinguishes their presence.
+#[test]
+fn ac_p3_31_18_unreadable_readme_passes_but_missing_readme_fails() {
+    for exists in [true, false] {
+        let (_dir, mut conn) = fresh();
+        let repo = TestRepo::init();
+        repo.write("src/main.rs", b"fn main() {}\n");
+        if exists {
+            repo.write("README.md", b"# fixture\n");
+        }
+        repo.commit("fixture");
+        let actual = committed_presence(&repo);
+        assert_eq!(
+            actual.readme,
+            if exists {
+                PresenceState::Present
+            } else {
+                PresenceState::Absent
+            }
+        );
+        let p = scorable(
+            &conn,
+            if exists {
+                "unreadable-readme"
+            } else {
+                "missing-readme"
+            },
+        );
+        content_scan(&conn, p, actual.ci.slug());
+        conn.execute(
+            "UPDATE project_content_scan SET has_readme = ?2, has_license = ?3, has_tests = ?4
+             WHERE project_id = ?1",
+            rusqlite::params![
+                p,
+                actual.readme.slug(),
+                actual.license.slug(),
+                actual.tests.slug()
+            ],
+        )
+        .unwrap();
+        let facts = ContentFacts {
+            readme_path: exists.then(|| "README.md".to_owned()),
+            readme_seen: true,
+            readme_excerpt: None,
+            ..ContentFacts::default()
+        };
+        let tx = conn.transaction().unwrap();
+        j6_content::persist(&tx, ProjectId(p), &facts, 100).unwrap();
+        evaluate_singletons(&tx, ProjectId(p), 100, &SqliteDebtStore).unwrap();
+        evaluate_and_write(&tx, ProjectId(p), 100).unwrap();
+        tx.commit().unwrap();
+
+        // query_row must find a row; a missing row cannot masquerade as a NULL excerpt.
+        let excerpt: Option<String> = conn
+            .query_row(
+                "SELECT readme_excerpt FROM peek_cache WHERE project_id = ?1",
+                [p],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(excerpt, None);
+        assert_eq!(
+            check_state(&conn, p, "readme"),
+            (if exists { "pass" } else { "fail" }.to_owned(), None)
+        );
+        assert_eq!(open_items(&conn, p, "missing_readme"), i64::from(!exists));
+    }
+    assert_no_completion_peek_cache_reads();
+}
+
+fn assert_no_completion_peek_cache_reads() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut pending = vec![root.join("completion")];
+    let mut completion_files = 0;
+    let mut offenders = Vec::new();
+    while let Some(path) = pending.pop() {
+        if path.is_dir() {
+            pending.extend(std::fs::read_dir(path).unwrap().map(|e| e.unwrap().path()));
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            let text = std::fs::read_to_string(&path).unwrap();
+            completion_files += 1;
+            if text.contains("peek_cache") {
+                offenders.push(path.strip_prefix(&root).unwrap().display().to_string());
+            }
+        }
+    }
+    let singletons = std::fs::read_to_string(root.join("debt/singletons.rs")).unwrap();
+    if singletons.contains("peek_cache") {
+        offenders.push("debt/singletons.rs".to_owned());
+    }
+    eprintln!(
+        "peek_cache gate: read {completion_files} completion files and 1 singleton file ({} total)",
+        completion_files + 1
+    );
+    assert!(
+        completion_files > 0,
+        "source walk read zero completion files"
+    );
+    assert!(
+        offenders.is_empty(),
+        "completion reads peek_cache: {offenders:?}"
+    );
 }
 
 /// **`AC-P3-31-1`.** The projection equals a recount **from `project_check`**, taken in the test
