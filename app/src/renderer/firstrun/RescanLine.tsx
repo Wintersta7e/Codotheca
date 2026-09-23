@@ -58,8 +58,9 @@ export function RescanLine(props: RescanLineProps): ReactElement | null {
     // Not a paused line and not a zero-height one: nothing, so idle holds zero frames.
     return null;
   }
-  // §11.6's clamp lives in the class rather than in a tier selector: this line is full-bleed
-  // under the top bar and has no `.cdt-fr-view` ancestor for a stylesheet to reach it through.
+  // §11.6's clamp lives in the class rather than in a `.cdt-fr-view` tier selector: this line is
+  // full-bleed under the top bar and has no such ancestor. `firstRun.css` scopes the travelling
+  // rule to the document's `full` tier as well, which is what the clamp checker reads.
   const travelling = allowsTravellingHighlights(props.tier);
   return (
     <button

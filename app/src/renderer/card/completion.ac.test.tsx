@@ -1,6 +1,9 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LocationId, ProjectId, ProjectRow, SceneHash } from '../../generated/protocol';
+import cardCss from '../styles/card.css?raw';
+import motionCss from '../styles/motion.css?raw';
+import transitionCss from '../styles/transition.css?raw';
 import { withProjectDeps } from '../testing/deps';
 import { TOKENS, type TokenName } from '../theme/tokens';
 import { ProjectCard, type ProjectCardProps } from './ProjectCard';
@@ -221,33 +224,114 @@ describe('AC-P3-31-3: zero evaluable renders the uncomputed treatment, from the 
   });
 });
 
+/**
+ * **`AC-P3-31-14`'s renderer half.** jsdom runs no CSS animation and fires no `animationstart`,
+ * so a listener alone asserts nothing: what is asserted is that **the same mounted frame**,
+ * re-rendered from a higher tier to a lower one, resolves no animation and gains no attribute or
+ * class a stylesheet could animate it by — at `full`, the one tier at which frame animations
+ * exist. The core half, *no `health_delta` row*, is `core/tests/acceptance_completion.rs`.
+ */
 describe('AC-P3-31-14: a demotion is silent', () => {
-  it('fires no animation on the frame when the tier drops', () => {
-    const container = draw({ completionLit: 7, completionApplicable: 7 });
-    const frame = container.querySelector<HTMLElement>('.cdt-card-frame');
-    if (frame === null) throw new Error('no frame');
-    const started: string[] = [];
-    frame.addEventListener('animationstart', (e) => {
-      started.push(e.animationName);
-    });
+  const SHEETS = [
+    ['card.css', cardCss],
+    ['transition.css', transitionCss],
+    ['motion.css', motionCss],
+  ] as const;
 
-    // Notched gold 7/7 → brass 8/9: connecting an account widened the denominator faster than
-    // the numerator, which is a measurement changing and not an earned thing being removed.
-    cleanup();
-    const demoted = draw({ completionLit: 8, completionApplicable: 9 });
-    expect(
-      rungFor({
-        completionLit: 8,
-        completionApplicable: 9,
-        isReference: false,
-        hasWorkingCopy: true,
-        isArchived: false,
-      })?.rung,
-    ).toBe('brass');
-    expect(started).toHaveLength(0);
-    // No animation is declared on the frame for the transition, and no gap appears either: the
-    // measurement is still a measurement.
-    expect(demoted.querySelector('.cdt-frame-gap')).toBeNull();
-    expect(demoted.querySelector('.cdt-frame-notch')).toBeNull();
+  function withFrameStyles(): () => void {
+    for (const [name, css] of SHEETS) {
+      expect(css.length, `${name}?raw imported as an empty string`).toBeGreaterThan(0);
+    }
+    const style = document.createElement('style');
+    style.textContent = SHEETS.map(([, css]) => css).join('\n');
+    document.head.append(style);
+    document.documentElement.setAttribute('data-effects-tier', 'full');
+    return () => {
+      style.remove();
+      document.documentElement.removeAttribute('data-effects-tier');
+    };
+  }
+
+  /**
+   * The keyframe names a resolved `animation` runs; `[]` is none. Split on top-level commas only,
+   * because a timing function carries commas of its own.
+   */
+  function animationsOn(element: Element): string[] {
+    const value = getComputedStyle(element).animation;
+    if (value === '' || /^none\b/u.test(value)) return [];
+    const names: string[] = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i <= value.length; i += 1) {
+      const c = value[i];
+      if (c === '(') depth += 1;
+      else if (c === ')') depth -= 1;
+      else if ((c === ',' && depth === 0) || c === undefined) {
+        names.push(value.slice(start, i).trim().split(/\s+/u)[0] ?? '');
+        start = i + 1;
+      }
+    }
+    return names;
+  }
+
+  it('fires no animation on the frame when the tier drops', () => {
+    const restore = withFrameStyles();
+    try {
+      // The control: this cascade does animate this element when something asks it to, so the
+      // empty result below is about the demotion and not a sheet jsdom never applied.
+      const gestured = render(
+        <ProjectCard
+          {...props({ row: row({ completionLit: 7, completionApplicable: 7 }), gesture: 'unfold' })}
+        />,
+        { wrapper: withProjectDeps() },
+      ).container.querySelector('.cdt-card-frame');
+      if (gestured === null) throw new Error('no frame');
+      expect(animationsOn(gestured)).toEqual(['cardUnfold']);
+      cleanup();
+
+      // Notched gold 7/7 → brass 8/9: connecting an account widened the denominator faster than
+      // the numerator, which is a measurement changing and not an earned thing being removed.
+      const { container, rerender } = render(
+        <ProjectCard {...props({ row: row({ completionLit: 7, completionApplicable: 7 }) })} />,
+        { wrapper: withProjectDeps() },
+      );
+      const frame = container.querySelector<HTMLElement>('.cdt-card-frame');
+      if (frame === null) throw new Error('no frame');
+      expect(resolvedFrame(container)).toBe(TOKENS['tier-gold']);
+      const started: string[] = [];
+      frame.addEventListener('animationstart', (e) => {
+        started.push(e.animationName);
+      });
+      const classes = frame.className;
+      const attributes = frame.getAttributeNames().sort();
+      expect(animationsOn(frame)).toEqual([]);
+
+      rerender(
+        <ProjectCard {...props({ row: row({ completionLit: 8, completionApplicable: 9 }) })} />,
+      );
+      // The same element, repainted: a remount would reset any animation rather than show one.
+      expect(container.querySelector('.cdt-card-frame')).toBe(frame);
+      expect(resolvedFrame(container)).toBe(TOKENS['tier-brass']);
+      expect(
+        rungFor({
+          completionLit: 8,
+          completionApplicable: 9,
+          isReference: false,
+          hasWorkingCopy: true,
+          isArchived: false,
+        })?.rung,
+      ).toBe('brass');
+
+      expect(animationsOn(frame), 'the demoted frame resolves an animation').toEqual([]);
+      expect(frame.getAttribute('data-gesture')).toBeNull();
+      expect(frame.className).toBe(classes);
+      expect(frame.getAttributeNames().sort()).toEqual(attributes);
+      expect(started).toHaveLength(0);
+      // No gap appears either: the measurement is still a measurement.
+      expect(container.querySelector('.cdt-frame-gap')).toBeNull();
+      expect(container.querySelector('.cdt-frame-notch')).toBeNull();
+    } finally {
+      restore();
+    }
   });
 });

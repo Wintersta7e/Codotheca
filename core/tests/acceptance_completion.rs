@@ -1273,3 +1273,92 @@ fn ac_p3_31_16_deps_reads_the_advisory_set_and_owns_no_item() {
         .unwrap();
     assert_eq!(mis_keyed, 0);
 }
+
+// ---------------------------------------------------------------------------------------------
+// AC-P3-31-14 — silent demotion
+// ---------------------------------------------------------------------------------------------
+
+fn count_for(conn: &rusqlite::Connection, table: &str, project: i64) -> i64 {
+    conn.query_row(
+        &format!("SELECT count(*) FROM {table} WHERE project_id = ?1"),
+        [project],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// **`AC-P3-31-14`, the core half.** A recompute that lowers the tier writes **no `health_delta`
+/// row** across its transaction. A delta is a transition in the open debt set (A15) and never a
+/// completion tick, so a demotion made by a check that owns no item — `ci`, whose workflow file
+/// went away — moves the projection and nothing else. The recompute takes no event sink, so it
+/// has no way to notify either; the renderer half asserts the frame plays nothing.
+#[test]
+fn ac_p3_31_14_a_demotion_writes_no_health_delta_row() {
+    let (_dir, mut conn) = fresh();
+    let p = scorable(&conn, "demoted");
+    observed_completion_inputs(&conn, p);
+    for source in [
+        "missing_readme",
+        "missing_license",
+        "missing_tests",
+        "ci_red",
+        "unpushed_commits",
+        "no_release",
+    ] {
+        sweep(&conn, p, source, "complete", Some(0));
+    }
+    content_scan(&conn, p, "present");
+    recompute(&mut conn, p, 1_000);
+    let (Some(lit_before), Some(evaluable_before)) = projection(&conn, p) else {
+        panic!("the fixture must start measured");
+    };
+    // Every evaluable check passing is the top of §31.6's ladder, so anything lower is a demotion.
+    assert_eq!(
+        lit_before, evaluable_before,
+        "the fixture must start at the top rung: {lit_before}/{evaluable_before}"
+    );
+    let deltas_before = count_for(&conn, "health_delta", p);
+    let items_before = count_for(&conn, "debt_item", p);
+
+    content_scan(&conn, p, "absent");
+    let tx = conn.transaction().unwrap();
+    let written = evaluate_and_write(&tx, ProjectId(p), 2_000).unwrap();
+    // Counted inside the transaction as well, so a row written and then deleted before the commit
+    // could not pass either.
+    let deltas_in_tx = count_for(&tx, "health_delta", p);
+    tx.commit().unwrap();
+
+    let (Some(lit_after), Some(evaluable_after)) = projection(&conn, p) else {
+        panic!("a demotion is still a measurement");
+    };
+    let deltas_after = count_for(&conn, "health_delta", p);
+    let items_after = count_for(&conn, "debt_item", p);
+    eprintln!(
+        "AC-P3-31-14 completion {lit_before}/{evaluable_before} -> {lit_after}/{evaluable_after}; \
+         health_delta rows {deltas_before} -> {deltas_in_tx} in the transaction -> \
+         {deltas_after}; debt items {items_before} -> {items_after}"
+    );
+
+    assert!(
+        matches!(written, Written::Rewritten { .. }),
+        "the recompute must have run"
+    );
+    assert!(
+        // `ci` fails and `ciGreen` stops applying: 10/10 is the top rung and 8/9 is below it.
+        lit_after < evaluable_after,
+        "the fixture must demote: {lit_before}/{evaluable_before} -> {lit_after}/{evaluable_after}"
+    );
+    assert_eq!(check_state(&conn, p, "ci").0, "fail");
+    assert_eq!(
+        items_after, items_before,
+        "the demotion must move no item, or a delta would be owed"
+    );
+    assert_eq!(
+        deltas_in_tx, deltas_before,
+        "a demotion wrote a health_delta row"
+    );
+    assert_eq!(
+        deltas_after, deltas_before,
+        "a demotion wrote a health_delta row"
+    );
+}

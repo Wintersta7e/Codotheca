@@ -141,18 +141,27 @@ test('ac_p3_34_14 fails a run that scans nothing', () => {
 });
 
 test('ac_p3_34_14 lets the known-escape list only shrink', () => {
-  assert.ok(KNOWN_ESCAPES.size > 0);
-  const [name] = KNOWN_ESCAPES.keys();
+  // The real list is empty — every escape it landed with is clamped, and a name is never added
+  // to pass the gate — so the mechanism is proved over a fixture entry instead.
+  assert.equal(KNOWN_ESCAPES.size, 0, `KNOWN_ESCAPES grew: ${[...KNOWN_ESCAPES.keys()].join(' ')}`);
+  const name = 'cdt-listed-escape';
+  const known = new Map([[name, 'a fixture entry, unclamped at reduced']]);
   const dir = fixtureTree();
   try {
-    // Clamp one listed escape at both tiers: it stops escaping, so its entry must go.
+    addSheet(dir, 'listed.css', `.${name} { animation: listed-sweep 900ms linear both; }\n`);
+    // Listed and still escaping: excused, and nothing else fails.
+    const excused = checkMotionClamp(dir, known);
+    assert.deepEqual(excused.known, [name]);
+    assert.deepEqual(excused.failures, []);
+
+    // Clamp it at both tiers: it stops escaping, so its entry must go.
     addSheet(
       dir,
       'fixed.css',
       `[data-effects-tier='reduced'] .${name},\n[data-effects-tier='off'] .${name} {\n` +
         '  animation: none;\n  transition: none;\n}\n',
     );
-    const result = checkMotionClamp(dir);
+    const result = checkMotionClamp(dir, known);
     assert.ok(
       result.failures.some((f) => f.includes('KNOWN_ESCAPES') && f.includes(`.${name}`)),
       `a fixed escape stayed on the list silently: ${result.failures.join('\n')}`,

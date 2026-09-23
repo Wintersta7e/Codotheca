@@ -754,7 +754,8 @@
 
 /* At `reduced` and `off` this rule is the whole line: a static 2px --sig. The tier is decided
    in `RescanLine.tsx`, because this element is full-bleed under the top bar and has no
-   `.cdt-fr-view` ancestor that a tier selector here could reach it through. */
+   `.cdt-fr-view` ancestor that a tier selector here could reach it through; the document
+   element's tier still reaches it, which is what scopes the travelling rule below. */
 .cdt-fr-rescan-line {
   position: relative;
   display: block;
@@ -776,8 +777,10 @@
 }
 /* §10.5a: the section strip-light geometry with its easing removed — a one-shot curve reads as
    a stutter when looped. Indeterminate, because a generation walk has no denominator until it
-   ends and a bar that retreats poisons every figure beside it. */
-.cdt-fr-rescan-line--travelling {
+   ends and a bar that retreats poisons every figure beside it. A travelling highlight exists at
+   `full` only: `RescanLine.tsx` adds the class only there, and the rule is scoped to the tier on
+   the document element as well, so the stylesheet says so where the clamp checker can read it. */
+[data-effects-tier='full'] .cdt-fr-rescan-line--travelling {
   background-color: var(--line-2);
   background-image: linear-gradient(
     90deg,
@@ -910,7 +913,22 @@
 .cdt-fr-view[data-effects-tier='off'] .cdt-fr-panel {
   animation: none;
 }
-.cdt-fr-view[data-effects-tier='off'] {
+/* The views' own entries. `viewIn` is opacity only, so at `reduced` it survives, clamped to
+   REDUCED_CLAMP_MS (`motion/tier.ts`). `panelIn` also translates and scales, so the evidence
+   block falls back to `viewIn` there, as the settings panel does. Every class that animates is
+   named on its own element, because the clamp is read per element; `off` runs nothing. */
+.cdt-fr-view[data-effects-tier='reduced'],
+.cdt-fr-view--scan[data-effects-tier='reduced'],
+.cdt-fr-view--turn[data-effects-tier='reduced'] {
+  animation: viewIn 160ms both;
+}
+.cdt-fr-view[data-effects-tier='reduced'] .cdt-fr-evidence {
+  animation: viewIn 160ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+.cdt-fr-view[data-effects-tier='off'],
+.cdt-fr-view--scan[data-effects-tier='off'],
+.cdt-fr-view--turn[data-effects-tier='off'],
+.cdt-fr-view[data-effects-tier='off'] .cdt-fr-evidence {
   animation: none;
 }
 /* §10.4a's three entry animations. The line's `turnIn` also carries the tracking, so a clamped

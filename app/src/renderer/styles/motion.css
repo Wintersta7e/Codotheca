@@ -52,6 +52,16 @@
   transform: none;
 }
 
+/* §7.8's sigil scales on hover through `.cdt-card[data-hovered='true'] .cdt-sigil` (card.css),
+   which outranks a bare tier selector — so the clamp names the hovered sigil as well, or the
+   scale would still land below `full`. */
+[data-effects-tier='reduced'] .cdt-sigil,
+[data-effects-tier='off'] .cdt-sigil,
+[data-effects-tier='reduced'] .cdt-card[data-hovered='true'] .cdt-sigil,
+[data-effects-tier='off'] .cdt-card[data-hovered='true'] .cdt-sigil {
+  transform: none;
+}
+
 /* `reduced`: opacity and colour transitions only, clamped. */
 [data-effects-tier='reduced'] .cdt-card {
   transition: background-color 160ms cubic-bezier(0.2, 0.85, 0.2, 1);
@@ -71,6 +81,11 @@
   transition: opacity 160ms cubic-bezier(0.2, 0.85, 0.2, 1);
 }
 
+/* The sigil's brightening is a colour change, so it survives at `reduced`, clamped. */
+[data-effects-tier='reduced'] .cdt-sigil {
+  transition: color 160ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
 [data-effects-tier='reduced'] .cdt-dot,
 [data-effects-tier='reduced'] .cdt-plate {
   transition: none;
@@ -80,7 +95,8 @@
 [data-effects-tier='off'] .cdt-card,
 [data-effects-tier='off'] .cdt-card *,
 [data-effects-tier='off'] .cdt-card-halo,
-[data-effects-tier='off'] .cdt-bloom {
+[data-effects-tier='off'] .cdt-bloom,
+[data-effects-tier='off'] .cdt-sigil {
   transition: none;
   animation: none;
 }

@@ -325,6 +325,9 @@ const UNMOUNTED = new Map([
   // on the grid, Workshop on the page*. The grid's answer to a restoration is the existing
   // `condition_changed` repaint, with no animation, so its absence here is the rule.
   ['.cdt-surge', '§34.1 — the opened hero only; a grid tile must never carry one'],
+  // §7.8's watermark is clamped ahead of any producer: no section gives it a glyph, so `Card`
+  // passes `CardPlate` none and a clamp that waited for one would ship an escape the day it came.
+  ['.cdt-sigil', '§7.8 — no section gives the watermark a glyph, so nothing mounts one'],
 ]);
 
 describe('the mounted tile carries the class names motion.css clamps', () => {

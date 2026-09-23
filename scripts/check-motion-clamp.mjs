@@ -38,18 +38,11 @@ const RESULT_ID = 'check-motion-clamp:every-animated-class-is-clamped';
  * Animated classes this checker found unclamped when it landed, each with the reason. **The list
  * can only shrink**: an entry that stops escaping fails the run until it is removed, so it cannot
  * sit here after the defect behind it is fixed. A new name is never added to pass the gate.
+ *
+ * Empty now: the six it landed with were clamped in the stylesheets that own them, and the one
+ * that only code gated — the rescan line's travelling band — is scoped to `full` in CSS too.
  */
-export const KNOWN_ESCAPES = new Map([
-  [
-    'cdt-fr-rescan-line--travelling',
-    'applied only at `full` — RescanLine.tsx gates the class in code, which no stylesheet shows',
-  ],
-  ['cdt-fr-view', "first run's `viewIn` entry runs its full duration at `reduced`"],
-  ['cdt-fr-view--scan', "first run's `viewIn` entry runs its full duration at `reduced`"],
-  ['cdt-fr-view--turn', "first run's `viewIn` entry runs its full duration at `reduced`"],
-  ['cdt-fr-evidence', "first run's `panelIn` entry runs its full duration at `reduced`"],
-  ['cdt-sigil', "§7.8's watermark transform has no `reduced` clamp; nothing mounts one yet"],
-]);
+export const KNOWN_ESCAPES = new Map();
 
 /** `REDUCED_CLAMP_MS`, read out of the one file that declares it. */
 export function reducedClampMs(tierSource) {
