@@ -61,7 +61,9 @@ fn rust_sources(root: &Path) -> Vec<(String, String)> {
             } else if path.extension().is_some_and(|e| e == "rs") {
                 // Skipped BEFORE it is counted, so the guard below keeps meaning what it says.
                 if let Ok(text) = std::fs::read_to_string(&path) {
-                    out.push((path.display().to_string(), text));
+                    // Forward slashes on every platform: the suffixes below are written with
+                    // `/`, and Windows displays a path with `\`.
+                    out.push((path.to_string_lossy().replace('\\', "/"), text));
                 }
             }
         }
