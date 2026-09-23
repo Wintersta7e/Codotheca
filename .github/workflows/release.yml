@@ -18,10 +18,11 @@ jobs:
       fail-fast: false
       matrix: { os: [ubuntu-latest, windows-latest] }
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with: { toolchain: stable }
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         # `package.json` declares engines.node ">=22.12.0". Pinning 20 here made the release
         # build the one place in the project running below its own floor.
         with: { node-version: 22, cache: npm }
@@ -57,7 +58,7 @@ jobs:
           echo "packaged artifacts: $count"
           test "$count" -gt 0 || { echo 'no artifact was produced'; ls -la dist || true; exit 1; }
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: 'codotheca-${{ matrix.os }}'
           path: dist/*
