@@ -35,7 +35,11 @@ const settings: Settings = {
   logLevel: 'info',
   installRootId: null,
   contentScanEnabled: false,
-  healthChecks: [],
+  // [p3] Two of §30.9's rows, one each way, so the per-check switches are in the audit below.
+  healthChecks: [
+    { check: 'todo_marker', enabled: true },
+    { check: 'missing_readme', enabled: false },
+  ],
 };
 
 /** Every slot supplied, so every row the registry declares is actually drawn. */
@@ -120,8 +124,9 @@ describe('the dead-switch rule, over the whole drawer', () => {
   it('draws every row it registers, once the host supplies every slot', async () => {
     const { deps } = harness();
     const container = await open(deps);
-    // Two rows are templates the roots group clones per root, and there is no root here.
-    const templates = new Set(['roots-enabled', 'roots-descend']);
+    // Templates are cloned per root and per check, under their own ids. There is no root here;
+    // the check rows are the health group's own test (`groupsHealth.test.tsx`).
+    const templates = new Set(['roots-enabled', 'roots-descend', 'health-check']);
     for (const spec of SETTINGS_ROWS) {
       if (templates.has(spec.id)) continue;
       expect(container.querySelector(`[data-row="${spec.id}"]`), spec.id).not.toBeNull();

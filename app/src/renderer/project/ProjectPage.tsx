@@ -23,7 +23,7 @@ import type {
   Settings,
 } from '../../generated/protocol';
 import { useInstallOffer } from '../install/useInstallOffer';
-import { toSettingsPatch } from '../settings/Drawer';
+import { movesHealthReading, toSettingsPatch } from '../settings/Drawer';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
 import { ActivityTab } from './activity/ActivityTab';
 import { BackupStateBlock } from './BackupState';
@@ -39,6 +39,7 @@ import { ReadmePanel } from './readme/ReadmePanel';
 import { RemoteTab } from './remote/RemoteTab';
 import { RoastNote } from './RoastNote';
 import { CompletionChecklist } from './completion/CompletionChecklist';
+import { DebtList } from './health/DebtList';
 import { HealthTab } from './health/HealthTab';
 import { BASE_PROJECT_TABS, fallbackTab, nextTab, tabsFor, type ProjectTab } from './tabs';
 import { useUninstallOffer } from './uninstall/useUninstall';
@@ -70,6 +71,15 @@ export interface ProjectPageProps {
    * offers no upgrade rather than a switch that does nothing (§11.3a).
    */
   onOpenSettings?: () => void;
+  /**
+   * [p3] Moves each time a stored write `movesHealthReading` — the drawer's, or this page's own
+   * grant, which reports to the same handler through `onHealthInputsChanged`. `settings.set`
+   * raises no event, so the page re-reads its detail and its settings on this: a check switched
+   * off takes its items off the list and the layers (§30.9), and the grant moves `todo_marker`.
+   */
+  healthInputsNonce?: number;
+  /** [p3] The same handler the drawer reports to, for the tab's own grant. */
+  onHealthInputsChanged?: (() => void) | undefined;
 }
 
 export function primaryLocation(detail: ProjectDetail): LocationDetail | null {
@@ -117,6 +127,8 @@ export function ProjectPageView({
   firstRunCompletedAt = null,
   racking = false,
   onOpenSettings,
+  healthInputsNonce = 0,
+  onHealthInputsChanged,
 }: ProjectPageProps): ReactElement {
   const { state, heroHash, redirectedTo, reload } = useProjectDetail(projectId);
   const [tab, setTab] = useState<ProjectTab>('overview');
@@ -147,6 +159,7 @@ export function ProjectPageView({
 
   // §11.3a's switch defaults **on**, so a settings read that has not landed yet must not silence
   // a note that would render, and a read that fails leaves the documented default in place.
+  // Re-read when a health input moves, so the HEALTH tab's two causes of `off` follow the drawer.
   useEffect(() => {
     let live = true;
     deps
@@ -160,7 +173,15 @@ export function ProjectPageView({
     return () => {
       live = false;
     };
-  }, [deps]);
+  }, [deps, healthInputsNonce]);
+
+  // The mount already read the detail, so only a nonce that has moved since re-reads it.
+  const seenHealthInputs = useRef(healthInputsNonce);
+  useEffect(() => {
+    if (seenHealthInputs.current === healthInputsNonce) return;
+    seenHealthInputs.current = healthInputsNonce;
+    reload();
+  }, [healthInputsNonce, reload]);
 
   const detailPinned = state.kind === 'ready' ? state.detail.row.isPinned : null;
 
@@ -399,18 +420,27 @@ export function ProjectPageView({
                   now={deps.now()}
                   onGrantSourceReading={() => {
                     // §29.8's grant, through the existing `settings.set`. §30 adds no command.
+                    const grant = { contentScanEnabled: true };
                     void deps
                       .request('settings.set', {
                         // `SettingsPatch` carries every field and `null` means *leave it alone*,
                         // so a partial is widened by the one helper that owns that rule — a
                         // forgotten field written here would silently read as a change.
-                        patch: toSettingsPatch({ contentScanEnabled: true }),
+                        patch: toSettingsPatch(grant),
                       })
-                      .then(setSettings)
+                      .then((answer) => {
+                        setSettings(answer);
+                        // The reading on this page and the shelf's rows were computed without
+                        // the grant, so the stored write re-reads both, as the drawer's does.
+                        if (movesHealthReading(grant)) onHealthInputsChanged?.();
+                      })
                       .catch(() => undefined);
                   }}
                 />
               ) : null}
+              {/* [p3] §33.2: every item in text, whatever the layers could draw. Not behind the
+                  settings read — the list needs no setting, and a failed read hides no item. */}
+              {shownTab === 'health' ? <DebtList debt={detail.debt} /> : null}
               {/* [p3] §31.7: the ten ticks live here. §30.7 alone decides whether the tab
                   mounts; this renders nothing when the detail is NULL and takes no view on it. */}
               {shownTab === 'health' ? (

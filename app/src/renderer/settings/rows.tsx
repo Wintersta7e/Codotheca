@@ -20,6 +20,7 @@ export type SettingsGroupId =
   | 'targets'
   | 'excluded'
   | 'scanning'
+  | 'healthChecks'
   | 'motion'
   | 'residency'
   | 'projectPage'
@@ -28,12 +29,17 @@ export type SettingsGroupId =
   | 'github'
   | 'notifications';
 
-/** §11.3a's table, in its order: 1–9 with 8a between 8 and 9, then the notification block. */
+/**
+ * §11.3a's table, in its order: 1–9 with 8a between 8 and 9, then the notification block.
+ * [p3] §30.9's check switches sit after group 4, beside the source-reading grant that one of
+ * them also needs (R142).
+ */
 export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = [
   'roots',
   'targets',
   'excluded',
   'scanning',
+  'healthChecks',
   'motion',
   'residency',
   'projectPage',

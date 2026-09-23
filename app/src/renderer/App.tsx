@@ -62,6 +62,15 @@ export function App(props: AppProps = {}): ReactElement {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  // [p3] A check switch or the source-reading grant moves every project's health reading, and
+  // `settings.set` raises no event — so, as with the identity set above, the shelf is re-read on
+  // the write, and an open page is told to re-read its own detail.
+  const [healthInputs, setHealthInputs] = useState(0);
+  const { reload: reloadLibrary } = library;
+  const healthInputsChanged = useCallback(() => {
+    setHealthInputs((n) => n + 1);
+    reloadLibrary();
+  }, [reloadLibrary]);
 
   // §11.6 resolves `auto` here, where the media query and the compositor live. Software
   // compositing is the shell's finding and reaches the window as the tier it already resolved,
@@ -138,6 +147,8 @@ export function App(props: AppProps = {}): ReactElement {
         onOpenSettings={() => {
           setSettingsOpen(true);
         }}
+        healthInputsNonce={healthInputs}
+        onHealthInputsChanged={healthInputsChanged}
       />
     ) : (
       <ShelfScreen
@@ -215,6 +226,7 @@ export function App(props: AppProps = {}): ReactElement {
           onCloseSettings={() => {
             setSettingsOpen(false);
           }}
+          onHealthInputsChanged={healthInputsChanged}
           summaryOpen={summaryOpen}
           onCloseSummary={() => {
             setSummaryOpen(false);

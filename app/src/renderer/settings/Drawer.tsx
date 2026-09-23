@@ -37,6 +37,7 @@ import { resolveKey } from '../keyboard/contexts.js';
 import type { ResolvedTier } from '../motion/tier.js';
 import { unwrapReply, type CoreCall } from '../core/call.js';
 import { DATA_GROUP_ROWS, DataGroups } from './groupsData.js';
+import { HEALTH_GROUP_ROWS, HealthGroups } from './groupsHealth.js';
 import { MOTION_GROUP_ROWS, MotionGroups } from './groupsMotion.js';
 import { SCAN_GROUP_ROWS, ScanGroups } from './groupsScan.js';
 import { SETTINGS_GROUP_ORDER, type SettingsRowSpec, type SettingsSlots } from './rows.js';
@@ -48,6 +49,7 @@ export const DRAWER_TITLE = 'SETTINGS';
 /** The registry every dead-switch audit walks. One entry per drawn row, in §11.3a's order. */
 export const SETTINGS_ROWS: readonly SettingsRowSpec[] = [
   ...SCAN_GROUP_ROWS,
+  ...HEALTH_GROUP_ROWS,
   ...MOTION_GROUP_ROWS,
   ...DATA_GROUP_ROWS,
 ].sort((a, b) => SETTINGS_GROUP_ORDER.indexOf(a.group) - SETTINGS_GROUP_ORDER.indexOf(b.group));
@@ -69,6 +71,15 @@ export function toSettingsPatch(patch: Partial<Settings>): SettingsPatch {
     contentScanEnabled: patch.contentScanEnabled ?? null,
     healthChecks: patch.healthChecks ?? null,
   };
+}
+
+/**
+ * [p3] Whether a write moves any project's health reading: a check's switch takes its items off
+ * every project (§30.9), and the source-reading grant decides whether `todo_marker` is `off`
+ * (R142). No other field reaches a reading, and a write of one re-reads nothing.
+ */
+export function movesHealthReading(patch: Partial<Settings>): boolean {
+  return patch.healthChecks !== undefined || patch.contentScanEnabled !== undefined;
 }
 
 /**
@@ -97,6 +108,11 @@ export interface SettingsDrawerProps {
   readonly onClose: () => void;
   readonly deps: SettingsDrawerDeps;
   readonly slots: SettingsSlots;
+  /**
+   * Called once the core has stored a write that `movesHealthReading`. `settings.set` raises no
+   * event, so whoever holds a reading — the shelf's rows, an open page's detail — hears it here.
+   */
+  readonly onHealthInputsChanged?: (() => void) | undefined;
 }
 
 export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null {
@@ -141,12 +157,22 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null 
     panel.current?.focus();
   }, [props.open, call, shell, readRoots]);
 
-  /** One writer: the core answers with the whole `Settings`, and that answer is the state. */
+  /**
+   * One writer: the core answers with the whole `Settings`, and that answer is the state. A
+   * refused write moved nothing, so only an answered one tells the readings to re-read.
+   */
+  const { onHealthInputsChanged } = props;
   const patch = useCallback(
     (next: Partial<Settings>) => {
-      call('settings.set', { patch: toSettingsPatch(next) }).then(setSettings, () => undefined);
+      call('settings.set', { patch: toSettingsPatch(next) }).then(
+        (answer) => {
+          setSettings(answer);
+          if (movesHealthReading(next)) onHealthInputsChanged?.();
+        },
+        () => undefined,
+      );
     },
-    [call],
+    [call, onHealthInputsChanged],
   );
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -222,6 +248,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null 
             }}
             slots={props.slots}
           />
+          {settings !== null && <HealthGroups settings={settings} onPatch={patch} />}
           {settings !== null && (
             <MotionGroups
               settings={settings}

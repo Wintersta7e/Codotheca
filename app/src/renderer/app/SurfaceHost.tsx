@@ -26,6 +26,8 @@ export interface SurfaceHostProps {
   readonly failure: FailureFact | null;
   readonly settingsOpen: boolean;
   readonly onCloseSettings: () => void;
+  /** [p3] A stored write that moves health readings; see `movesHealthReading`. */
+  readonly onHealthInputsChanged?: (() => void) | undefined;
   readonly summaryOpen: boolean;
   readonly onCloseSummary: () => void;
   readonly problems: Problems | null;
@@ -85,6 +87,7 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
       <SettingsDrawer
         open={props.settingsOpen}
         onClose={props.onCloseSettings}
+        onHealthInputsChanged={props.onHealthInputsChanged}
         deps={{
           call: request,
           shell: {
