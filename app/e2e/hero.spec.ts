@@ -1,9 +1,15 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
+import {
+  _electron as electron,
+  expect,
+  test,
+  type ElectronApplication,
+  type Page,
+} from '@playwright/test';
 
 // Playwright transpiles specs to CommonJS, so `__dirname` is correct here and `import.meta` is
 // not — the opposite of every vitest file in this repo.
@@ -49,13 +55,29 @@ function seedHome(): string {
   return home;
 }
 
-function launch(home: string): Promise<ElectronApplication> {
-  const userData = mkdtempSync(path.join(tmpdir(), 'codotheca-hero-data-'));
+function launch(home: string, userData: string): Promise<ElectronApplication> {
   return electron.launch({
     args: ['.', `--user-data-dir=${userData}`],
     cwd: appDir,
     env: { ...process.env, HOME: home, USERPROFILE: home, CODOTHECA_DATA_DIR: userData },
   });
+}
+
+/**
+ * A stalled first run leaves no evidence on a CI runner once the window closes, so the screen,
+ * the visible text and the shell's log are kept beside the test's output, which CI uploads.
+ */
+async function keepEvidence(window: Page, userData: string): Promise<void> {
+  await window
+    .screenshot({ path: test.info().outputPath('stall.png') })
+    .catch((e: unknown) => console.warn(`no stall screenshot: ${String(e)}`));
+  const text = await window
+    .evaluate(() => document.body.innerText)
+    .catch((e: unknown) => `no body text: ${String(e)}`);
+  writeFileSync(test.info().outputPath('stall.txt'), text, 'utf8');
+  const log = path.join(userData, 'logs', 'codotheca.log');
+  if (existsSync(log)) copyFileSync(log, test.info().outputPath('codotheca.log'));
+  else console.warn(`no shell log at ${log}`);
 }
 
 test('the project page hero keeps its 268×402 box, and its plate fills it', async () => {
@@ -66,7 +88,8 @@ test('the project page hero keeps its 268×402 box, and its plate fills it', asy
   test.setTimeout(240_000);
 
   const home = seedHome();
-  const app = await launch(home);
+  const userData = mkdtempSync(path.join(tmpdir(), 'codotheca-hero-data-'));
+  const app = await launch(home, userData);
   try {
     const window = await app.firstWindow();
     await window.waitForLoadState('domcontentloaded');
@@ -78,7 +101,12 @@ test('the project page hero keeps its 268×402 box, and its plate fills it', asy
     await expect(corpusRow).toHaveCount(1);
     await window.getByRole('button', { name: 'DIG', exact: true }).click();
     const goOn = window.getByRole('button', { name: 'GO ON', exact: true });
-    await goOn.waitFor({ state: 'visible', timeout: 150_000 });
+    try {
+      await goOn.waitFor({ state: 'visible', timeout: 150_000 });
+    } catch (error) {
+      await keepEvidence(window, userData);
+      throw error;
+    }
     await goOn.click();
     const notNow = window.getByRole('button', { name: 'NOT NOW', exact: true });
     await notNow.waitFor({ state: 'visible', timeout: 60_000 });
