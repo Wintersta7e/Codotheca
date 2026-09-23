@@ -90,6 +90,12 @@ fn world() -> World {
 /// One installed, enrolled, authored project with a lineage key — the ledger is keyed on the
 /// subject, and an enrolled authored project has a health reading for a delta to move.
 fn copy(index: &Mutex<Index>, name: &str) -> Copy {
+    copy_keyed(index, name, Some(name))
+}
+
+/// [`copy`] with the lineage key given, or none: a repository with no commits has no lineage,
+/// and no remote either here.
+fn copy_keyed(index: &Mutex<Index>, name: &str, lineage: Option<&str>) -> Copy {
     let work = tempfile::tempdir().unwrap();
     let mut guard = index.lock().unwrap();
     let project = guard
@@ -97,8 +103,8 @@ fn copy(index: &Mutex<Index>, name: &str) -> Copy {
             tx.execute(
                 "INSERT INTO project (name, seed_basename, lineage_key, acknowledged_at,
                                       authored_by_user, is_reference, created_at, updated_at)
-                 VALUES (?1, ?1, ?1, ?2, 1, 0, 1, 1)",
-                rusqlite::params![name, NOW],
+                 VALUES (?1, ?1, ?2, ?3, 1, 0, 1, 1)",
+                rusqlite::params![name, lineage, NOW],
             )?;
             let project = ProjectId(tx.last_insert_rowid());
             let path = work.path().to_string_lossy().into_owned();
@@ -694,4 +700,186 @@ fn an_off_or_not_applicable_dependency_advisory_is_not_swept() {
     assert_eq!(items(&world), opened, "an N/A source closed its item");
     assert_eq!(advisory_sweep_row(&world), None, "an N/A source was swept");
     assert_eq!(ledger(&world), ledger_before, "an N/A source paid");
+}
+
+/// **§28.1: the subject key is total.** A repository with no commits has no lineage key, and with
+/// no remote it has no remote key either — but it has a copy on disk, and its subject is that
+/// copy's path. Its advisory items are computed, its first computation is seeded **once**, and a
+/// new critical advisory afterwards is announced for it exactly as for a project with keys.
+#[test]
+fn a_project_with_no_lineage_or_remote_is_computed_seeded_once_and_alerted() {
+    let world = world();
+    let keyed = world.alpha.project.0;
+    let bare = copy_keyed(&world.index, "fresh", None);
+    lock(&world, &world.alpha, "1.0.0", NOW);
+    lock(&world, &bare, "1.0.0", NOW);
+
+    let first = alerts(&sweep(
+        &world,
+        NOW,
+        Some(&format!(
+            "[{}]",
+            advisory("GHSA-aaaa", "CVE-2026-0001", None)
+        )),
+    ));
+    let computed: Vec<(i64, String)> = {
+        let guard = world.index.lock().unwrap();
+        let mut stmt = guard
+            .conn()
+            .prepare(
+                "SELECT s.project_id, i.subject_key FROM debt_sweep s
+                   JOIN debt_item i ON i.project_id = s.project_id
+                                   AND i.source = 'dependency_advisory'
+                  WHERE s.source = 'dependency_advisory' ORDER BY s.project_id",
+            )
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    eprintln!(
+        "advisory_sweep_settle: first sweep alerts {first:?}, computed {computed:?}, ledger {:?}",
+        notified(&world)
+    );
+    assert!(first.is_empty(), "a first computation toasted: {first:?}");
+    assert_eq!(
+        computed.len(),
+        2,
+        "a project was never computed: {computed:?}"
+    );
+    assert!(
+        computed
+            .iter()
+            .any(|(p, key)| *p == bare.project.0 && key.starts_with("path:")),
+        "the project with no lineage was not keyed on its copy's path: {computed:?}"
+    );
+
+    let second = alerts(&sweep(
+        &world,
+        NOW + DAY,
+        Some(&format!(
+            "[{},{}]",
+            advisory("GHSA-aaaa", "CVE-2026-0001", None),
+            advisory("GHSA-bbbb", "CVE-2026-0002", None)
+        )),
+    ));
+    eprintln!(
+        "advisory_sweep_settle: second sweep alerts {second:?}, ledger {:?}",
+        notified(&world)
+    );
+    assert_eq!(second.len(), 1, "one alert per settle");
+    assert_eq!(
+        second[0]["projectCount"], 2,
+        "the new advisory was not announced for both projects"
+    );
+    assert_eq!(
+        notified(&world),
+        vec![
+            (keyed, "GHSA-aaaa".to_owned(), 1),
+            (keyed, "GHSA-bbbb".to_owned(), 0),
+            (bare.project.0, "GHSA-aaaa".to_owned(), 1),
+            (bare.project.0, "GHSA-bbbb".to_owned(), 0),
+        ],
+        "a project was re-seeded after its first computation instead of told"
+    );
+}
+
+/// **§32.12, ruled: a check switched back on is a first computation.** An advisory that arrives
+/// while `dependency_advisory` is switched off is seeded, not toasted — during the off interval and
+/// at the first sweep after it is switched back on. A **new** advisory after that is told once.
+#[test]
+fn an_advisory_that_arrives_while_deps_is_off_is_seeded_not_toasted() {
+    use codotheca_core::health::switches::write_switches;
+    use codotheca_core::protocol::{DebtSource, HealthCheckSwitch};
+
+    let world = world();
+    let alpha = world.alpha.project.0;
+    let toggle = |enabled: bool| {
+        let mut guard = world.index.lock().unwrap();
+        guard
+            .with_tx(|tx| {
+                write_switches(
+                    tx,
+                    &[HealthCheckSwitch {
+                        check: DebtSource::DependencyAdvisory,
+                        enabled,
+                    }],
+                )
+            })
+            .unwrap();
+    };
+    let answer_with = |ids: &[(&str, &str)]| {
+        let body: Vec<String> = ids
+            .iter()
+            .map(|(id, cve)| advisory(id, cve, None))
+            .collect();
+        format!("[{}]", body.join(","))
+    };
+
+    // Computed once while on, so what follows is not the project's very first computation.
+    lock(&world, &world.alpha, "1.0.0", NOW);
+    let on = alerts(&sweep(
+        &world,
+        NOW,
+        Some(&answer_with(&[("GHSA-aaaa", "CVE-2026-0001")])),
+    ));
+    assert!(on.is_empty(), "the first computation toasted: {on:?}");
+
+    // Off, and a new critical advisory with a fix arrives.
+    toggle(false);
+    let while_off = alerts(&sweep(
+        &world,
+        NOW + DAY,
+        Some(&answer_with(&[
+            ("GHSA-aaaa", "CVE-2026-0001"),
+            ("GHSA-bbbb", "CVE-2026-0002"),
+        ])),
+    ));
+
+    // Back on: the next sweep is a first computation.
+    toggle(true);
+    let back_on = alerts(&sweep(
+        &world,
+        NOW + 2 * DAY,
+        Some(&answer_with(&[
+            ("GHSA-aaaa", "CVE-2026-0001"),
+            ("GHSA-bbbb", "CVE-2026-0002"),
+        ])),
+    ));
+    eprintln!(
+        "advisory_sweep_settle: alerts while off {while_off:?}, back on {back_on:?}, ledger {:?}, \
+         items {:?}",
+        notified(&world),
+        items(&world)
+    );
+    assert!(
+        while_off.is_empty() && back_on.is_empty(),
+        "an advisory that arrived while the check was off was toasted: {while_off:?} {back_on:?}"
+    );
+    assert!(
+        notified(&world).contains(&(alpha, "GHSA-bbbb".to_owned(), 1)),
+        "the advisory that arrived while off was not seeded"
+    );
+    assert!(
+        items(&world)
+            .iter()
+            .any(|(fingerprint, state, _)| fingerprint == "npm:left:GHSA-bbbb" && state == "open"),
+        "the advisory that arrived while off does not render as an item"
+    );
+
+    // A new advisory once the check is on again is told, once.
+    let after = alerts(&sweep(
+        &world,
+        NOW + 3 * DAY,
+        Some(&answer_with(&[
+            ("GHSA-aaaa", "CVE-2026-0001"),
+            ("GHSA-bbbb", "CVE-2026-0002"),
+            ("GHSA-cccc", "CVE-2026-0003"),
+        ])),
+    ));
+    eprintln!("advisory_sweep_settle: alerts after switching back on {after:?}");
+    assert_eq!(after.len(), 1, "a new advisory was not told exactly once");
+    assert_eq!(after[0]["advisoryId"], "GHSA-cccc");
+    assert!(notified(&world).contains(&(alpha, "GHSA-cccc".to_owned(), 0)));
 }

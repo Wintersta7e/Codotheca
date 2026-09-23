@@ -139,8 +139,11 @@ pub fn sync_advisory_items(
     {
         return Ok(AdvisoryItemSweep::default());
     }
-    // A project with neither a lineage key nor a remote key has no subject to key a ledger on,
-    // and §1.7 records what keying it on `project_id` did instead: the ledger broke on merges.
+    // §28.1: the subject key is total. A project with no lineage is keyed on its copy's path, so
+    // `None` means no project row and no location at all — which no scanned project can be: J6
+    // reads through a location, no location row is ever deleted, and a merge deletes the
+    // absorbed side's scan row. Never keyed on `project_id`: §1.7 records the ledger broke on
+    // merges.
     let Some(subject) =
         crate::index::subject::subject_for_project(tx, project)?.map(|s| s.to_key())
     else {
