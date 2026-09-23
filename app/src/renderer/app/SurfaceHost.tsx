@@ -7,7 +7,13 @@
  */
 import { useCallback, useEffect, useMemo, useRef, type ReactElement } from 'react';
 
-import type { LocationId, Problems, ProjectId, ProjectRow } from '../../generated/protocol.js';
+import type {
+  LocationId,
+  Problems,
+  ProjectId,
+  ProjectRow,
+  Settings,
+} from '../../generated/protocol.js';
 import type { FailureFact } from '../failure/copy.js';
 import { FailureWindow } from '../failure/FailureWindow.js';
 import type { ResolvedTier } from '../motion/tier.js';
@@ -28,6 +34,8 @@ export interface SurfaceHostProps {
   readonly onCloseSettings: () => void;
   /** [p3] A stored write that moves health readings; see `movesHealthReading`. */
   readonly onHealthInputsChanged?: (() => void) | undefined;
+  /** Every `Settings` the drawer's writes are answered with; the motion rows act on the window. */
+  readonly onSettings?: ((settings: Settings) => void) | undefined;
   readonly summaryOpen: boolean;
   readonly onCloseSummary: () => void;
   readonly problems: Problems | null;
@@ -88,6 +96,7 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
         open={props.settingsOpen}
         onClose={props.onCloseSettings}
         onHealthInputsChanged={props.onHealthInputsChanged}
+        onSettings={props.onSettings}
         deps={{
           call: request,
           shell: {

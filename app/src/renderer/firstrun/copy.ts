@@ -6,7 +6,7 @@
  * makes the claim diffable in a single read.
  */
 
-import { LOCKFILE_CAP_TEXT, LOCKFILE_DEPTH_TEXT } from '../../shared/lockfileNames';
+import { LOCKFILE_CAP_TEXT, LOCKFILE_DEPTH_TEXT, LOCKFILE_NAMES } from '../../shared/lockfileNames';
 
 /**
  * §10.1 verbatim. Any change here is a change to what the code is allowed to read.
@@ -30,11 +30,11 @@ import { LOCKFILE_CAP_TEXT, LOCKFILE_DEPTH_TEXT } from '../../shared/lockfileNam
 export const CONSENT_PARAGRAPH =
   "Codotheca reads your repositories' git metadata, the names and timestamps of files in your " +
   'working trees, and a small named set of files — README, LICENSE, and package manifests at the ' +
-  'repository root, up to 256 KB each. It also reads your lock files — package-lock.json, ' +
-  'yarn.lock, pnpm-lock.yaml, Cargo.lock, poetry.lock and uv.lock — up to three directories deep ' +
-  'and up to 16 MB each, to check your dependencies against published advisories. It does not ' +
-  'read the text of your source files unless you turn that on in settings, and it is off until ' +
-  'you do. Nothing is uploaded. There is no account.';
+  'repository root, up to 256 KB each. It also reads your lock files — ' +
+  `${LOCKFILE_NAMES.slice(0, -1).join(', ')} and ${LOCKFILE_NAMES[LOCKFILE_NAMES.length - 1]} — ` +
+  `up to ${LOCKFILE_DEPTH_TEXT} and up to ${LOCKFILE_CAP_TEXT}, to check your dependencies ` +
+  'against published advisories. It does not read the text of your source files unless you turn ' +
+  'that on in settings, and it is off until you do. Nothing is uploaded. There is no account.';
 
 export const ROOTS_EYEBROW = 'CODOTHECA';
 export const ROOTS_HEADLINE = "LET'S SEE WHAT YOU HAVE WRITTEN";

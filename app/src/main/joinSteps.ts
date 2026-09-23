@@ -62,3 +62,17 @@ export function logLevelStep(
     },
   };
 }
+
+/**
+ * §11.2a: on join the core's tier wins and `boot.json` is rewritten if it differs. Without this
+ * the file keeps what it last held — `auto` on every install — and the tier a user stored never
+ * reaches the first frame of a later launch.
+ */
+export function bootMirrorStep(request: Request, mirror: (settings: Settings) => void): JoinStep {
+  return {
+    name: 'boot.mirror',
+    run: async () => {
+      mirror((await request('settings.get', {})) as Settings);
+    },
+  };
+}

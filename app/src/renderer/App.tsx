@@ -17,6 +17,7 @@ import { SurfaceHost } from './app/SurfaceHost';
 import { useCoreStatus } from './app/useCoreStatus';
 import { useIdentity, identityNeedsConfirming } from './app/useIdentity';
 import { useLibrary } from './app/useLibrary';
+import { useMotionSettings } from './app/useMotionSettings';
 import { useNotices } from './app/useNotices';
 import { useProblems } from './app/useProblems';
 import { useScanStatus } from './app/useScanStatus';
@@ -74,8 +75,10 @@ export function App(props: AppProps = {}): ReactElement {
 
   // §11.6 resolves `auto` here, where the media query and the compositor live. Software
   // compositing is the shell's finding and reaches the window as the tier it already resolved,
-  // so there is nothing further for the renderer to detect.
-  const tier = useResolvedTier(deps.effectsTier, false, false);
+  // so there is nothing further for the renderer to detect. The stored tier and the override are
+  // the drawer's, and reach the resolver as the core answers them, not at the next launch.
+  const motion = useMotionSettings(deps);
+  const tier = useResolvedTier(motion.effectsTier, false, motion.reducedMotionOverride);
   // And it has to reach the document element, or the CSS reads the unresolved boot value forever.
   useTierOnDocument(tier);
   // §8.5.1: the gesture owns which view is on screen while it runs, so the route reads from it
@@ -227,6 +230,7 @@ export function App(props: AppProps = {}): ReactElement {
             setSettingsOpen(false);
           }}
           onHealthInputsChanged={healthInputsChanged}
+          onSettings={motion.accept}
           summaryOpen={summaryOpen}
           onCloseSummary={() => {
             setSummaryOpen(false);

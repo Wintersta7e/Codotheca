@@ -398,7 +398,12 @@
   padding: 0 0 6px;
 }
 
+/* The label, summary and flags are the button's children, not the header's, so the header's gap
+   never reached them and `LIVE` ran into `4 projects`. The button lays them out itself. */
 .cdt-era-chevron {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   color: var(--text-3);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -510,7 +515,10 @@
   letter-spacing: 0.02em;
 }
 
+/* Section 8.0b stacks the sub-line under its label. Both are spans, so without `block` they sat
+   on one line with nothing between them and read `ALLTHE WHOLE LIBRARY`. */
 .cdt-attention-label {
+  display: block;
   color: var(--text-2);
   font-family: var(--font-mono);
   font-size: 8.5px;
@@ -518,6 +526,8 @@
 }
 
 .cdt-attention-sub {
+  display: block;
+  margin-top: 3px;
   color: var(--text-3);
   font-family: var(--font-mono);
   font-size: 8px;
@@ -526,6 +536,16 @@
 
 .cdt-attention-chip:hover .cdt-attention-sub {
   color: var(--text-2);
+}
+
+/* Section 8.0b: right-aligned, the headline with `SPACE = PEEK` beneath it. */
+.cdt-attention-tail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 5px;
+  margin-left: auto;
 }
 
 .cdt-attention-headline {

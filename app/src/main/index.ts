@@ -38,6 +38,7 @@ import { registerShellServices } from './shellServices';
 import { readStartupFailure } from './startupFailure';
 import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
 import { bootstrap, clearPaintFailure } from './bootstrap';
+import { tierMirror, withBootMirror } from './bootMirror';
 import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
 import { registerExternalLink } from './dialogs/externalLink';
@@ -54,7 +55,13 @@ import { resolveCoreBinary, resolveDataDir, resolveWorkerBinary, WORKER_ARCHES }
 import { installQuitGate } from './quitGate';
 import { formatArtifactStamp, readArtifactStamp } from './update/artifact';
 import { registerFocusRelease } from './session/focus';
-import { logLevelStep, residentShortcutStep, staleTargets, verifyTargetsStep } from './joinSteps';
+import {
+  bootMirrorStep,
+  logLevelStep,
+  residentShortcutStep,
+  staleTargets,
+  verifyTargetsStep,
+} from './joinSteps';
 import { launchJoinSteps } from './startup/launchSteps';
 import {
   contentSecurityPolicyListener,
@@ -381,9 +388,18 @@ async function main(): Promise<void> {
     },
   });
 
+  // §11.2a's mirror, where `bootstrap` reads it. Run at join and after every stored write, so the
+  // next launch paints its first frame at the tier the user last chose.
+  const mirrorTier = tierMirror(
+    { dataDir: app.getPath('userData'), readBoot: readBootFile, writeBoot: writeBootFile },
+    (error) => {
+      log.write('warn', 'shell', `boot.json mirror failed: ${String(error)}`);
+    },
+  );
+
   // The drawer rebinds by writing `settings.set`, which otherwise reaches the core and nothing
-  // else — the chord would be stored and never registered.
-  const request = withShortcutRebind(coreRequest, shortcut.apply);
+  // else — the chord would be stored and never registered, and the tier never mirrored.
+  const request = withBootMirror(withShortcutRebind(coreRequest, shortcut.apply), mirrorTier);
 
   // [p3] §32.12: **the shell posts the one notification phase 3 may fire**, and it subscribes
   // here — before the renderer asks for anything — because the alert is not a status delta and is
@@ -635,6 +651,7 @@ async function main(): Promise<void> {
         (name, args) => client.request(name as never, args as never),
         shortcut.apply,
       ),
+      bootMirrorStep((name, args) => client.request(name as never, args as never), mirrorTier),
     ],
   });
 

@@ -22,6 +22,41 @@ export function mirrorOnJoin(deps: BootMirrorDeps, settings: Settings): BootFile
 }
 
 /**
+ * The one mirror the join and the write path share. It never throws: the core has already stored
+ * the value by the time the file is touched, and a failed write rejected here would read as a
+ * failed setting.
+ */
+export function tierMirror(
+  deps: BootMirrorDeps,
+  onError: (error: unknown) => void,
+): (settings: Settings) => void {
+  return (settings) => {
+    try {
+      mirrorOnJoin(deps, settings);
+    } catch (error: unknown) {
+      onError(error);
+    }
+  };
+}
+
+/**
+ * The drawer stores the tier through `settings.set`, which reaches the core and nothing else — so
+ * without this the file is a launch behind every change, and the next launch paints its first
+ * frame at the tier the user left. The answer is the whole stored `Settings`, so the value
+ * mirrored is the one the core kept rather than the patch that asked for it.
+ */
+export function withBootMirror<N extends string, A, R>(
+  request: (name: N, args: A) => Promise<R>,
+  mirror: (settings: Settings) => void,
+): (name: N, args: A) => Promise<R> {
+  return async (name, args) => {
+    const value = await request(name, args);
+    if ((name as string) === 'settings.set') mirror(value as Settings);
+    return value;
+  };
+}
+
+/**
  * §11.2's UI lane paints from this, because §2.3's snapshot is a backpressure frame inside a
  * live subscription and at first paint there is no subscription.
  */

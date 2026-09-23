@@ -1,6 +1,19 @@
-import { type Mock, describe, expect, it, vi } from 'vitest';
-import { mirrorOnJoin, mirrorShelf, noteForcedOff } from '../src/main/bootMirror';
-import type { BootFile } from '../src/shared/bootFile';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
+import { type Mock, afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  mirrorOnJoin,
+  mirrorShelf,
+  noteForcedOff,
+  tierMirror,
+  withBootMirror,
+} from '../src/main/bootMirror';
+import { bootFilePath, readBootFile, writeBootFile } from '../src/main/bootStore';
+import { bootMirrorStep } from '../src/main/joinSteps';
+import { DEFAULT_BOOT_FILE, type BootFile } from '../src/shared/bootFile';
 import type { Settings } from '../src/generated/protocol';
 
 function deps(stored: BootFile): {
@@ -72,5 +85,150 @@ describe('the boot mirror', () => {
     const { deps: d, writeBoot } = deps({ ...stored, paintFailForcedAt: 42 });
     mirrorShelf(d, { rows: [1] });
     expect((writeBoot.mock.calls[0]?.[1] as BootFile).paintFailForcedAt).toBe(42);
+  });
+});
+
+/**
+ * §11.2a's mirror existed and nothing called it: `boot.json` kept `auto` on every install, so a
+ * tier the user stored never reached the first frame of any later launch — the one moment the
+ * setting exists for, since the GPU is what may be broken.
+ */
+describe('the boot mirror runs at join and on every stored write', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function dataDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'codotheca-boot-'));
+    dirs.push(dir);
+    writeBootFile(dir, DEFAULT_BOOT_FILE);
+    return dir;
+  }
+
+  const onDisk = (dir: string): unknown =>
+    (JSON.parse(readFileSync(bootFilePath(dir), 'utf8')) as { effects_tier?: unknown })
+      .effects_tier;
+
+  it('the join step writes the stored tier into boot.json on disk', async () => {
+    const dir = dataDir();
+    const request = vi.fn(() => Promise.resolve({ ...settings, effectsTier: 'off' }));
+    const step = bootMirrorStep(
+      request,
+      tierMirror({ dataDir: dir, readBoot: readBootFile, writeBoot: writeBootFile }, vi.fn()),
+    );
+    expect(onDisk(dir)).toBe('auto');
+    await step.run();
+    expect(request).toHaveBeenCalledWith('settings.get', {});
+    expect(onDisk(dir)).toBe('off');
+  });
+
+  it('a stored write is mirrored as the core answered it, and its answer passes through', async () => {
+    const dir = dataDir();
+    const request = vi.fn((name: string) =>
+      Promise.resolve(name === 'settings.set' ? { ...settings, effectsTier: 'reduced' } : null),
+    );
+    const mirrored = withBootMirror(
+      request,
+      tierMirror({ dataDir: dir, readBoot: readBootFile, writeBoot: writeBootFile }, vi.fn()),
+    );
+    await mirrored('settings.get', {});
+    expect(onDisk(dir)).toBe('auto');
+    const answer = await mirrored('settings.set', { patch: {} });
+    expect((answer as Settings).effectsTier).toBe('reduced');
+    expect(onDisk(dir)).toBe('reduced');
+  });
+
+  // The core has stored the write by the time the file is touched. A mirror that threw would
+  // reject a write that succeeded, and the drawer would go on showing the old tier.
+  it('a mirror that cannot write reports it and never fails the write it follows', async () => {
+    const dir = dataDir();
+    writeFileSync(bootFilePath(dir), 'not json', 'utf8');
+    const onError = vi.fn();
+    const mirror = tierMirror(
+      {
+        dataDir: dir,
+        readBoot: readBootFile,
+        writeBoot: () => {
+          throw new Error('disk full');
+        },
+      },
+      onError,
+    );
+    const mirrored = withBootMirror(() => Promise.resolve(settings), mirror);
+    await expect(mirrored('settings.set', { patch: {} })).resolves.toEqual(settings);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The production caller, read from the shell's entry point. Importing `src/main/index.ts` pulls in
+ * Electron, which vitest's node project cannot load, so the wiring is checked on the syntax tree:
+ * a comment or a string naming either function matches nothing here.
+ */
+describe('the shell wires the mirror', () => {
+  const file = fileURLToPath(new URL('../src/main/index.ts', import.meta.url));
+  const source = ts.createSourceFile(
+    file,
+    readFileSync(file, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+
+  function callsTo(root: ts.Node, name: string): ts.CallExpression[] {
+    const found: ts.CallExpression[] = [];
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === name
+      ) {
+        found.push(node);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(root);
+    return found;
+  }
+
+  function property(call: ts.CallExpression, name: string): ts.Node | undefined {
+    const [argument] = call.arguments;
+    if (argument === undefined || !ts.isObjectLiteralExpression(argument)) return undefined;
+    return argument.properties.find(
+      (p) => p.name !== undefined && ts.isIdentifier(p.name) && p.name.text === name,
+    );
+  }
+
+  it('runs the mirror as a join step', () => {
+    const [startup] = callsTo(source, 'runStartup');
+    expect(startup, 'index.ts calls runStartup').toBeDefined();
+    const steps = startup === undefined ? undefined : property(startup, 'joinSteps');
+    expect(steps, 'runStartup is given joinSteps').toBeDefined();
+    expect(steps === undefined ? [] : callsTo(steps, 'bootMirrorStep')).toHaveLength(1);
+  });
+
+  it('hands the renderer a request that mirrors every stored write', () => {
+    const [bridge] = callsTo(source, 'registerBridge');
+    const given = bridge === undefined ? undefined : property(bridge, 'request');
+    expect(given, 'registerBridge is given a request').toBeDefined();
+    // `request` is passed by name; its one declaration is what the renderer's writes go through.
+    const declarations: ts.VariableDeclaration[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+        if (node.name.text === 'request') declarations.push(node);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    expect(given !== undefined && ts.isShorthandPropertyAssignment(given)).toBe(true);
+    expect(declarations).toHaveLength(1);
+    const [declaration] = declarations;
+    const initializer = declaration?.initializer;
+    expect(
+      initializer !== undefined &&
+        ts.isCallExpression(initializer) &&
+        ts.isIdentifier(initializer.expression) &&
+        initializer.expression.text === 'withBootMirror',
+    ).toBe(true);
   });
 });

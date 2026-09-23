@@ -16,6 +16,11 @@ import {
   CONTENT_SCAN_LANGUAGES_CAPTION,
   CONTENT_SCAN_NOTE,
 } from '../../shared/contentScan.js';
+import {
+  LOCKFILE_CAP_TEXT,
+  LOCKFILE_DEPTH_TEXT,
+  LOCKFILE_NAMES,
+} from '../../shared/lockfileNames.js';
 import { EXCLUSION_LIST } from '../../shared/skipList.js';
 import { verifyNote } from '../project/rail/OpensIn.js';
 import {
@@ -72,8 +77,10 @@ export const SCANNING_STATEMENTS = [
   // measurement, this repository's own lock file being 287,417 bytes — so the two rows carry two
   // numbers rather than one that is wrong for one of them.
   {
-    label: 'Your lock files, up to three directories deep',
-    note: 'PACKAGE-LOCK.JSON · YARN.LOCK · PNPM-LOCK.YAML · CARGO.LOCK · POETRY.LOCK · UV.LOCK · 16 MB EACH · CHECKED AGAINST PUBLISHED ADVISORIES',
+    label: `Your lock files, up to ${LOCKFILE_DEPTH_TEXT}`,
+    note: [...LOCKFILE_NAMES, LOCKFILE_CAP_TEXT, 'CHECKED AGAINST PUBLISHED ADVISORIES']
+      .join(' · ')
+      .toUpperCase(),
   },
   {
     label: 'Your scan roots, and the projects you opened most recently',

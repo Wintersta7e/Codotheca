@@ -113,6 +113,11 @@ export interface SettingsDrawerProps {
    * event, so whoever holds a reading — the shelf's rows, an open page's detail — hears it here.
    */
   readonly onHealthInputsChanged?: (() => void) | undefined;
+  /**
+   * Called with every answer to a write. The motion rows act on the window rather than on the
+   * core, and `settings.set` raises no event, so the window hears a stored tier here.
+   */
+  readonly onSettings?: ((settings: Settings) => void) | undefined;
 }
 
 export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null {
@@ -161,18 +166,19 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null 
    * One writer: the core answers with the whole `Settings`, and that answer is the state. A
    * refused write moved nothing, so only an answered one tells the readings to re-read.
    */
-  const { onHealthInputsChanged } = props;
+  const { onHealthInputsChanged, onSettings } = props;
   const patch = useCallback(
     (next: Partial<Settings>) => {
       call('settings.set', { patch: toSettingsPatch(next) }).then(
         (answer) => {
           setSettings(answer);
+          onSettings?.(answer);
           if (movesHealthReading(next)) onHealthInputsChanged?.();
         },
         () => undefined,
       );
     },
-    [call, onHealthInputsChanged],
+    [call, onHealthInputsChanged, onSettings],
   );
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {

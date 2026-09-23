@@ -118,34 +118,28 @@ export function Card(props: CardProps): ReactElement {
         <span
           className="cdt-frame-notch"
           aria-hidden="true"
-          style={
-            {
-              right: GOLD_NOTCH.right,
-              top: GOLD_NOTCH.top,
-              width: GOLD_NOTCH.width,
-              height: GOLD_NOTCH.height,
-              // The same `setProperty` route the gap below takes, and for the same reason.
-              'background-color': token('surface-1'),
-            } as CSSProperties
-          }
+          style={{
+            right: GOLD_NOTCH.right,
+            top: GOLD_NOTCH.top,
+            width: GOLD_NOTCH.width,
+            height: GOLD_NOTCH.height,
+            backgroundColor: token('surface-1'),
+          }}
         />
       )}
       {bands.rank === null ? null : (
         <span
           className="cdt-frame-gap"
           aria-hidden="true"
-          style={
-            {
-              left: bands.rank.gap.left,
-              top: bands.rank.gap.top,
-              width: bands.rank.gap.width,
-              height: bands.rank.gap.height,
-              // A `var()` is not a colour to jsdom's parser and an assignment to `backgroundColor`
-              // is dropped; `setProperty` is what React does for a hyphenated key, and it keeps
-              // the token rather than a hex.
-              'background-color': token(bands.rank.gap.fillToken),
-            } as CSSProperties
-          }
+          style={{
+            left: bands.rank.gap.left,
+            top: bands.rank.gap.top,
+            width: bands.rank.gap.width,
+            height: bands.rank.gap.height,
+            // The token, never a hex: the fill is the surface behind the frame, and a token is
+            // what moves with it.
+            backgroundColor: token(bands.rank.gap.fillToken),
+          }}
         />
       )}
 

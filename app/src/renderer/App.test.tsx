@@ -134,9 +134,20 @@ describe('App — the composition root', () => {
   // composition root rather than on the hook, because the defect was a missing CALL: a hook-only
   // test passes while nobody calls it, which is the shape this project keeps getting caught by.
   it('resolves auto onto the document element, so no CSS tier rule is inert', async () => {
-    const fake = fakeAppDeps(repliesFor([row(1, 'alpha')], scanned), { effectsTier: 'auto' });
+    // The core stores `auto` too: the stored tier replaces the launch value once it answers, so a
+    // fixture storing anything else would test that replacement instead.
+    const fake = fakeAppDeps(
+      {
+        ...repliesFor([row(1, 'alpha')], scanned),
+        'settings.get': () => ({ ...settings, effectsTier: 'auto' }),
+      },
+      { effectsTier: 'auto' },
+    );
     fake.setNow(NOW);
     render(<App deps={fake.deps} />);
+    await waitFor(() => {
+      expect(fake.calls.some((call) => call.name === 'settings.get')).toBe(true);
+    });
     await waitFor(() => {
       expect(document.documentElement.getAttribute(EFFECTS_TIER_ATTRIBUTE)).toBe('full');
     });
