@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(cleanup);
 
-import type { HealthReading, Settings } from '../../../generated/protocol';
+import type { DebtSource, HealthReading, Settings } from '../../../generated/protocol';
 import { GRANT_ASK_ACTION } from './GrantAsk';
 import { HealthTab } from './HealthTab';
 import { SOURCE_LABELS } from './labels';
@@ -171,9 +171,9 @@ describe('each check row reads as text', () => {
     );
     const texts = [...root.querySelectorAll('.cp-health-check')].map((li) => li.textContent);
     expect(texts).toEqual([
-      `${SOURCE_LABELS.missing_license} · OPEN`,
-      `${SOURCE_LABELS.missing_tests} · UNKNOWN · scheduled, and has not run yet`,
-      `${SOURCE_LABELS.todo_marker} · SWITCHED OFF · you switched this check off`,
+      `${SOURCE_LABELS.missing_license.check} · OPEN`,
+      `${SOURCE_LABELS.missing_tests.check} · UNKNOWN · scheduled, and has not run yet`,
+      `${SOURCE_LABELS.todo_marker.check} · SWITCHED OFF · you switched this check off`,
     ]);
   });
 
@@ -186,9 +186,33 @@ describe('each check row reads as text', () => {
       expect(id, 'the row carries its id for code to find').not.toBe('');
       expect(row.textContent ?? '', id).not.toContain(id);
       expect(row.querySelector('.cp-health-check-name')?.textContent).toBe(
-        SOURCE_LABELS[id as keyof typeof SOURCE_LABELS],
+        SOURCE_LABELS[id as keyof typeof SOURCE_LABELS].check,
       );
     }
+  });
+});
+
+describe('a check is named for what it looks at, never for what it finds', () => {
+  it('a passing check does not state the problem it looks for', () => {
+    const root = draw(
+      reading({
+        checks: [
+          { id: 'missing_readme', outcome: 'ok', unknownReason: null },
+          { id: 'ci_red', outcome: 'ok', unknownReason: null },
+        ],
+      }),
+    );
+    const texts = [...root.querySelectorAll('.cp-health-check')].map((li) => li.textContent);
+    // `No README · PASSED` tells a project that has a README that it has none.
+    expect(texts).toEqual(['README · PASSED', 'CI green · PASSED']);
+  });
+
+  it('names a check this build does not know by its id rather than leaving it blank', () => {
+    // A newer core's tenth source: the table has no words for it, and a blank name is worse
+    // than the id.
+    const tenth = 'tenth_source' as unknown as DebtSource;
+    const root = draw(reading({ checks: [{ id: tenth, outcome: 'failed', unknownReason: null }] }));
+    expect(root.querySelector('.cp-health-check-name')?.textContent).toBe('tenth_source');
   });
 });
 

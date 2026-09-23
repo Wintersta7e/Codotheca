@@ -224,10 +224,10 @@ async function pageBehindDrawer(fake: FakeAppDeps): Promise<HTMLElement> {
     expect(document.querySelector('.cdt-reference-row')).not.toBeNull();
   });
   fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-  await screen.findByRole('switch', { name: SOURCE_LABELS.missing_readme });
+  await screen.findByRole('switch', { name: SOURCE_LABELS.missing_readme.check });
   await openHealthTab();
   const list = await screen.findByTestId('cp-health-debt');
-  expect(list.textContent).toContain(SOURCE_LABELS.missing_readme);
+  expect(list.textContent).toContain(SOURCE_LABELS.missing_readme.item);
   expect(count(fake, 'projects.get')).toBe(1);
   return list;
 }
@@ -245,18 +245,20 @@ describe('§30.9 a switch reaches the readings already on screen', () => {
     await pageBehindDrawer(fake);
     const listsBefore = count(fake, 'projects.list');
 
-    fireEvent.click(screen.getByRole('switch', { name: SOURCE_LABELS.missing_readme }));
+    fireEvent.click(screen.getByRole('switch', { name: SOURCE_LABELS.missing_readme.check }));
     await waitFor(() => {
       expect(count(fake, 'projects.get')).toBe(2);
     });
     await waitFor(() => {
       expect(screen.getByTestId('cp-health-debt').textContent).not.toContain(
-        SOURCE_LABELS.missing_readme,
+        SOURCE_LABELS.missing_readme.item,
       );
     });
     // The list re-rendered from the second answer rather than emptying: the other check's item
     // is still there.
-    expect(screen.getByTestId('cp-health-debt').textContent).toContain(SOURCE_LABELS.todo_marker);
+    expect(screen.getByTestId('cp-health-debt').textContent).toContain(
+      SOURCE_LABELS.todo_marker.item,
+    );
     expect(count(fake, 'projects.list')).toBe(listsBefore + 1);
   });
 

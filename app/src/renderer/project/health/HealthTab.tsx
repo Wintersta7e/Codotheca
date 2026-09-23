@@ -22,7 +22,7 @@ import {
   openLine,
 } from './checkForms';
 import { GrantAsk } from './GrantAsk';
-import { SOURCE_LABELS } from './labels';
+import { checkLabel } from './labels';
 import { PartSeparator } from './PartSeparator';
 
 /** The tab's own head, as `ACTIVITY` carries its name at the top of its panel. */
@@ -96,7 +96,7 @@ export function HealthTab({
               data-check={check.id}
               data-outcome={check.outcome}
             >
-              <span className="cp-health-check-name">{SOURCE_LABELS[check.id]}</span>
+              <span className="cp-health-check-name">{checkLabel(check.id)}</span>
               <PartSeparator />
               <span className="cp-health-check-word">{form.word}</span>
               {form.detail === '' ? null : (

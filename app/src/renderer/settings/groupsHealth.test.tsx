@@ -103,13 +103,30 @@ describe('§30.9 the per-check switches', () => {
     for (const check of VARIANTS) {
       expect(group.querySelectorAll(`[data-row="health-check-${check}"]`), check).toHaveLength(1);
       // Named in words; the raw id stays in `data-row`, out of sight.
-      const control = screen.getByRole('switch', { name: SOURCE_LABELS[check] });
+      const control = screen.getByRole('switch', { name: SOURCE_LABELS[check].check });
       expect(control.getAttribute('aria-checked'), check).toBe('true');
       expect(
         group.querySelector(`[data-row="health-check-${check}"]`)?.textContent ?? '',
         check,
       ).not.toContain(check);
     }
+  });
+
+  it('names a switch for what its check looks at, so an on switch states nothing false', async () => {
+    await openGroup(deps(settingsWith()).deps);
+    // `CI is red, switch, on` is what a screen reader said over every project whose CI is green.
+    const ci = screen.getByRole('switch', { name: 'CI green' });
+    expect(ci.getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByRole('switch', { name: /\bis red\b|^No /u })).toBeNull();
+  });
+
+  it('names a check this build does not know by its id rather than leaving it blank', async () => {
+    // A newer core's tenth source: the table has no words for it.
+    const tenth = { check: 'tenth_source' as unknown as DebtSource, enabled: true };
+    await openGroup(deps(settingsWith({ healthChecks: [...everyCheck(), tenth] })).deps);
+    expect(screen.getByRole('switch', { name: 'tenth_source' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
   });
 
   it('draws the rows the core sends and holds no list of its own', async () => {
@@ -123,14 +140,14 @@ describe('§30.9 the per-check switches', () => {
       'health-check-ci_red',
     ]);
     expect(
-      screen.getByRole('switch', { name: SOURCE_LABELS.ci_red }).getAttribute('aria-checked'),
+      screen.getByRole('switch', { name: SOURCE_LABELS.ci_red.check }).getAttribute('aria-checked'),
     ).toBe('false');
   });
 
   it('switching a check off sends settings.set naming only that check, flipped', async () => {
     const { call, deps: d } = deps(settingsWith());
     await openGroup(d);
-    fireEvent.click(screen.getByRole('switch', { name: SOURCE_LABELS.missing_tests }));
+    fireEvent.click(screen.getByRole('switch', { name: SOURCE_LABELS.missing_tests.check }));
     await waitFor(() => {
       expect(call).toHaveBeenCalledWith('settings.set', {
         patch: toSettingsPatch({ healthChecks: [{ check: 'missing_tests', enabled: false }] }),
@@ -149,13 +166,13 @@ describe('§30.9 the per-check switches', () => {
     const total = String(VARIANTS.length);
     expect(caption()).toBe(`${total} OF ${total} ON`);
 
-    fireEvent.click(screen.getByRole('switch', { name: SOURCE_LABELS.missing_tests }));
+    fireEvent.click(screen.getByRole('switch', { name: SOURCE_LABELS.missing_tests.check }));
     await waitFor(() => {
       expect(caption()).toBe(`${String(VARIANTS.length - 1)} OF ${total} ON`);
     });
     expect(
       screen
-        .getByRole('switch', { name: SOURCE_LABELS.missing_tests })
+        .getByRole('switch', { name: SOURCE_LABELS.missing_tests.check })
         .getAttribute('aria-checked'),
     ).toBe('false');
     expect(HEALTH_CHECKS_FOOTNOTE).not.toBe('');

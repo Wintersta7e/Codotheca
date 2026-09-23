@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   DebtItem,
+  DebtSource,
+  DecayLayer,
   HealthReading,
   ProjectDetail,
   ProjectId,
@@ -193,6 +195,32 @@ describe('code reads as code', () => {
   });
 });
 
+describe('an item is named for the problem it is', () => {
+  it('keeps the words of the problem, which a check row does not', async () => {
+    const list = await debtList([README]);
+    expect(rowWith(list, 'README').querySelector('.cp-health-debt-source')?.textContent).toBe(
+      'No README',
+    );
+  });
+
+  it('heads a layer and names a source this build does not know by its id, last, never blank', async () => {
+    // A newer core's sixth layer and tenth source: the tables have no words for either.
+    const tenth = item({
+      source: 'tenth_source' as unknown as DebtSource,
+      fingerprint: 'tenth:0',
+      layer: 'sediment' as unknown as DecayLayer,
+    });
+    const list = await debtList([tenth, README]);
+    const layers = [...list.querySelectorAll('[data-layer]')].map((g) =>
+      g.getAttribute('data-layer'),
+    );
+    expect(layers).toEqual(['dust', 'sediment']);
+    const group = list.querySelector('[data-layer="sediment"]');
+    expect(group?.querySelector('h4')?.textContent).toBe('SEDIMENT');
+    expect(group?.querySelector('.cp-health-debt-source')?.textContent).toBe('tenth_source');
+  });
+});
+
 describe('§33.2 the HEALTH tab lists every item, in text', () => {
   it('lists every item grouped by layer, and a layer with no items draws no group', async () => {
     const list = await debtList();
@@ -215,7 +243,9 @@ describe('§33.2 the HEALTH tab lists every item, in text', () => {
     for (const entry of DEBT) {
       const group = list.querySelector(`[data-layer="${entry.layer}"]`);
       // Named in words; the raw id stays in `data-source`, out of sight.
-      expect(group?.textContent ?? '', entry.fingerprint).toContain(SOURCE_LABELS[entry.source]);
+      expect(group?.textContent ?? '', entry.fingerprint).toContain(
+        SOURCE_LABELS[entry.source].item,
+      );
       expect(list.textContent ?? '', entry.source).not.toContain(entry.source);
     }
     expect(list.querySelector('h3')?.textContent).toBe(DEBT_LIST_TITLE);
@@ -233,7 +263,7 @@ describe('§33.2 the HEALTH tab lists every item, in text', () => {
   // is counted by nothing and pays nothing, is `core/tests/debt_lifecycle.rs`.
   it('AC-P3-28-14 shown_only and unverified items render and say they are not counted', async () => {
     const list = await debtList();
-    const counted = rowWith(list, SOURCE_LABELS.missing_readme);
+    const counted = rowWith(list, SOURCE_LABELS.missing_readme.item);
     const unverified = rowWith(list, 'src/main.rs');
     const shownOnly = rowWith(list, 'other-pkg');
     expect(UNVERIFIED_NOTE).not.toBe('');

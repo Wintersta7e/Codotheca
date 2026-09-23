@@ -19,7 +19,7 @@ import { Fragment, type ReactElement } from 'react';
 import type { AdvisoryDetail, DebtItem, DecayLayer } from '../../../generated/protocol';
 import { DECAY_LAYER_ORDER } from '../../decay/layers';
 import { groupByLayer } from '../../debt/groupByLayer';
-import { LAYER_LABELS, SOURCE_LABELS } from './labels';
+import { itemLabel, layerLabel } from './labels';
 import { PartSeparator } from './PartSeparator';
 
 export const DEBT_LIST_TITLE = 'DEBT ITEMS';
@@ -64,7 +64,7 @@ interface Part {
 }
 
 function partsOf(item: DebtItem): Part[] {
-  const parts: Part[] = [{ kind: 'source', text: SOURCE_LABELS[item.source] }];
+  const parts: Part[] = [{ kind: 'source', text: itemLabel(item.source) }];
   const where = whereOf(item);
   if (where !== null) parts.push({ kind: 'where', text: where });
   if (item.salientText !== null) parts.push({ kind: 'text', text: item.salientText });
@@ -114,7 +114,7 @@ export function DebtList({ debt }: DebtListProps): ReactElement | null {
       <h3 className="cp-health-debt-title">{DEBT_LIST_TITLE}</h3>
       {groups.map(([layer, items]) => (
         <section key={layer} className="cp-health-debt-layer" data-layer={layer}>
-          <h4 className="cp-health-debt-layer-name">{LAYER_LABELS[layer]}</h4>
+          <h4 className="cp-health-debt-layer-name">{layerLabel(layer)}</h4>
           <ul className="cp-health-debt-items">
             {items.map((item) => (
               <DebtRow key={`${item.source}:${item.fingerprint}`} item={item} />
