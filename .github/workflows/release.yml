@@ -10,8 +10,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # §13: the Windows installer carries a Linux worker per architecture, for repositories that live
+  # inside WSL. `build/worker/` is gitignored, so on a fresh checkout nothing is staged there and
+  # the pack would ship without one; it is built here and handed to the Windows pack instead.
+  worker:
+    name: wsl worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with: { persist-credentials: false }
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with: { toolchain: stable }
+      # The same two builds as `ci.yml`'s worker step, in release mode. `--no-default-features`
+      # drops §20.6's keychain: the worker stores no credentials, and the keychain's Linux backend
+      # is a system-header dependency with no arm64 sysroot on this image.
+      - name: build for x64 and arm64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
+          cargo build --release --locked --no-default-features --manifest-path core/Cargo.toml \
+            --bin codotheca-worker
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+            cargo build --release --locked --no-default-features --manifest-path core/Cargo.toml \
+              --bin codotheca-worker --target aarch64-unknown-linux-gnu
+          mkdir -p worker/linux-x64 worker/linux-arm64
+          cp core/target/release/codotheca-worker worker/linux-x64/
+          cp core/target/aarch64-unknown-linux-gnu/release/codotheca-worker worker/linux-arm64/
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: wsl-worker
+          path: worker/
+          retention-days: 1
+          if-no-files-found: error
+
   build:
     name: package (${{ matrix.os }})
+    needs: worker
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -40,6 +76,18 @@ jobs:
           sudo apt-get install -y libdbus-1-dev pkg-config
       - run: npm run build:core
       - run: npm run build:app
+      - name: fetch the WSL worker
+        if: runner.os == 'Windows'
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: { name: wsl-worker, path: worker }
+      # The script validates each ELF header and derives the architecture from it, so a swapped
+      # or truncated artifact fails here instead of shipping an installer that cannot reach WSL.
+      - name: stage the WSL worker
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          node scripts/stage-worker.mjs --from worker/linux-x64/codotheca-worker
+          node scripts/stage-worker.mjs --from worker/linux-arm64/codotheca-worker
       # NOTE: Windows code signing needs a certificate and a hardware token or a cloud signer.
       # That is procurement with weeks of lead time, not a build flag. See the packaging spec §14.
       # Until it exists, Windows artifacts are unsigned and SmartScreen will warn.
@@ -59,6 +107,15 @@ jobs:
             \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) | wc -l)
           echo "packaged artifacts: $count"
           test "$count" -gt 0 || { echo 'no artifact was produced'; ls -la dist || true; exit 1; }
+      # An `extraResources` filter that matches nothing packs nothing and says so nowhere.
+      - name: the Windows pack carries both workers
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          for arch in x64 arm64; do
+            test -s "dist/win-unpacked/resources/worker/linux-$arch/codotheca-worker" \
+              || { echo "no linux-$arch worker in the pack"; exit 1; }
+          done
 
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
