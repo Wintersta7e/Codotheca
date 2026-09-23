@@ -1,0 +1,17 @@
+{
+  "about": "What the core hands a project with every health check switched off. core/tests/acceptance_p3_health.rs compares the real producer's output against this file and fails on any drift; app/test/acceptance/health.test.ts renders from it.",
+  "reading": {
+    "state": "absent",
+    "scoredOpen": null,
+    "basis": null,
+    "checks": []
+  },
+  "summary": {
+    "state": "absent",
+    "scoredOpen": null,
+    "unverified": null,
+    "unknownChecks": null,
+    "observedAt": null
+  },
+  "items": []
+}

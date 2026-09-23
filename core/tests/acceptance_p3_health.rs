@@ -12,6 +12,7 @@
 )]
 
 use codotheca_core::health::read_for_project;
+use codotheca_core::health::summary::summary_for;
 use codotheca_core::health::switches::{read_switches, write_switches};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
@@ -155,8 +156,29 @@ fn ac_p3_30_1_with_every_check_off_a_reading_carries_no_figure() {
     }
     assert!(read_switches(&conn).unwrap().iter().all(|s| !s.enabled));
 
+    // **The cross-language mirror.** What the producer hands down — the page's reading, the
+    // shelf's summary and the item list — is the fixture the renderer's half of this criterion
+    // renders from, field for field, or this fails. Each project holds an open item, so an empty
+    // list is the producer setting it aside rather than there being nothing to hand down.
+    let fixture_name = "protocol/health/all-checks-off.json";
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .join(fixture_name);
+    let fixture: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&fixture_path).unwrap()).unwrap();
     for project in &projects {
-        let (reading, _items) = read_for_project(&conn, ProjectId(*project)).unwrap();
+        conn.execute(
+            "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state, scoring,
+                                    first_seen_at, last_seen_at)
+             VALUES (?1, ?2, 'missing_readme', '', 'open', 'scored', ?3, ?3)",
+            rusqlite::params![project, format!("lineage:p{project}|remote:"), NOW],
+        )
+        .unwrap();
+    }
+
+    for project in &projects {
+        let (reading, items) = read_for_project(&conn, ProjectId(*project)).unwrap();
         assert_eq!(
             reading.state,
             HealthState::Absent,
@@ -169,7 +191,22 @@ fn ac_p3_30_1_with_every_check_off_a_reading_carries_no_figure() {
         assert!(reading.basis.is_none(), "a zeroed basis was written");
         // An empty array is the state saying nothing was computed, never a count of zero checks.
         assert!(reading.checks.is_empty(), "{:?}", reading.checks);
+
+        let (summary, _) = summary_for(&conn, ProjectId(*project)).unwrap();
+        let produced =
+            serde_json::json!({ "reading": reading, "summary": summary, "items": items });
+        for key in ["reading", "summary", "items"] {
+            assert_eq!(
+                produced[key], fixture[key],
+                "project {project}: the producer's {key} drifted from {fixture_name}"
+            );
+        }
     }
+    eprintln!(
+        "AC-P3-30-1 compared {} project(s) against {}",
+        projects.len(),
+        fixture_name
+    );
 }
 
 /// **`AC-P3-30-15`, the schema half.** §30 adds no command, no event and no topic — it moves the

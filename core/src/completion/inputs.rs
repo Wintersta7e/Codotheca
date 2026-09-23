@@ -197,7 +197,8 @@ fn stored_row_count(conn: &Connection, project: ProjectId) -> Result<i64, IndexE
 /// §28's stored answer for one source.
 ///
 /// **A missing `debt_sweep` row is `None`, never a zero.** It is what makes a source that was
-/// never observed render as *not run yet* rather than as *nothing wrong*.
+/// never observed render as *not run yet* rather than as *nothing wrong*. `open_items` counts
+/// only scored open items, which §31.1b reads under §30.3's *an item observed is an item* rule.
 fn singleton(
     conn: &Connection,
     project: ProjectId,

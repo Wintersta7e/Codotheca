@@ -143,20 +143,26 @@ fn every_sweep_outcome_maps_for_every_group_a_key() {
                 );
                 let rows = checked(&inputs);
                 let got = row(&rows, key);
-                match outcome {
-                    DebtSweepOutcome::Complete if open >= 1 => {
-                        assert_eq!(got.state, CheckState::Fail, "{key:?} {outcome:?}");
-                    }
-                    DebtSweepOutcome::Complete => {
-                        assert_eq!(got.state, CheckState::Pass, "{key:?} {outcome:?}");
-                    }
-                    _ => {
-                        assert_eq!(
-                            got.state,
-                            CheckState::Unknown,
-                            "{key:?} {outcome:?} is never a fail"
-                        );
-                        assert!(got.unknown_reason.is_some(), "{key:?} {outcome:?}");
+                if open >= 1 {
+                    assert_eq!(got.state, CheckState::Fail, "{key:?} {outcome:?}");
+                    assert_eq!(got.unknown_reason, None, "{key:?} {outcome:?}");
+                } else {
+                    match outcome {
+                        DebtSweepOutcome::Complete => {
+                            assert_eq!(got.state, CheckState::Pass, "{key:?} {outcome:?}");
+                        }
+                        DebtSweepOutcome::Partial
+                        | DebtSweepOutcome::Failed
+                        | DebtSweepOutcome::Unobservable
+                        | DebtSweepOutcome::SkippedReference
+                        | DebtSweepOutcome::SkippedSuppressed => {
+                            assert_eq!(
+                                got.state,
+                                CheckState::Unknown,
+                                "{key:?} {outcome:?} with no item cannot pass"
+                            );
+                            assert!(got.unknown_reason.is_some(), "{key:?} {outcome:?}");
+                        }
                     }
                 }
                 cases += 1;

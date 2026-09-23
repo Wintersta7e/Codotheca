@@ -1362,3 +1362,201 @@ fn ac_p3_31_14_a_demotion_writes_no_health_delta_row() {
         "a demotion wrote a health_delta row"
     );
 }
+
+/// Every event the runner emits, as `(topic, event)`.
+#[derive(Debug, Default)]
+struct RecordingSink(std::sync::Mutex<Vec<(String, String)>>);
+
+impl codotheca_core::proto::EventSink for RecordingSink {
+    fn emit(&self, topic: &str, event: &str, _payload: serde_json::Value) {
+        self.0
+            .lock()
+            .unwrap()
+            .push((topic.to_owned(), event.to_owned()));
+    }
+}
+
+/// **The protocol's notification events, derived and never listed.** An event is a notification
+/// when the schema's own comment on its payload type says it is one — which is how §32.12's alert
+/// is declared — so a notification added later is covered without this test being edited.
+fn notification_events() -> Vec<(String, String)> {
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root");
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo.join("protocol/schema/protocol.json")).unwrap(),
+    )
+    .unwrap();
+    let mut out = Vec::new();
+    for (topic, events) in schema["topics"].as_object().expect("topics") {
+        for (event, payload) in events.as_object().expect("events") {
+            let comment = payload
+                .as_str()
+                .and_then(|ty| schema["types"][ty]["$comment"].as_str())
+                .unwrap_or_default()
+                .to_lowercase();
+            if comment.contains("notification") {
+                out.push((topic.clone(), event.clone()));
+            }
+        }
+    }
+    out
+}
+
+/// One project a real `JobRunner` can settle at the top rung: a real repository for the job to
+/// read, the refstate facts `remote` and `release` read seeded on its copy, and every presence
+/// answer `present`.
+fn seed_demotable(index: &std::sync::Mutex<Index>, repo: &TestRepo) -> (i64, LocationId) {
+    let guard = index.lock().unwrap();
+    let conn = guard.conn();
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, lineage_key, remote_key,
+                              authored_by_user, created_at, updated_at)
+         VALUES ('p', 'p', 'abc123', 'forge/o/r', 1, 0, 0)",
+        [],
+    )
+    .unwrap();
+    let project = conn.last_insert_rowid();
+    let path = repo.path().to_string_lossy().into_owned();
+    conn.execute(
+        "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                               store_key, presence, repo_kind, tag_count, refstate_observed_at)
+         VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree', 1, 50)",
+        rusqlite::params![project, path.as_bytes(), path],
+    )
+    .unwrap();
+    let location = LocationId(conn.last_insert_rowid());
+    content_scan(conn, project, "present");
+    (project, location)
+}
+
+/// The product's job runner over `index`, reporting to `sink`, with git pointed at `repo`.
+fn real_runner(
+    index: &std::sync::Arc<std::sync::Mutex<Index>>,
+    repo: &TestRepo,
+    sink: &std::sync::Arc<RecordingSink>,
+) -> std::sync::Arc<codotheca_core::jobs::scheduler::JobRunner> {
+    use codotheca_core::git::{GitSlots, SystemGit};
+    use std::sync::Arc;
+
+    let clock = Arc::new(codotheca_core::testing::FakeClock::new(1_700_000_000));
+    let deps = codotheca_core::jobs::JobDeps {
+        git: Arc::new(SystemGit::new(
+            Arc::new(repo.exec()),
+            Arc::new(GitSlots::new(4)),
+            Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        )),
+        clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        cancel: CancelToken::new(),
+        tz_offset_min: 0,
+    };
+    codotheca_core::jobs::scheduler::JobRunner::new(
+        Arc::clone(index),
+        deps,
+        Arc::clone(sink) as Arc<dyn codotheca_core::proto::EventSink>,
+    )
+}
+
+/// **`AC-P3-31-14`, through the real settle.** A demotion driven by a real `JobRunner` job — the
+/// evaluator's first hook site, with the event sink the product gives it — emits no notification
+/// and no `health_delta` event, the restoration surge's only transport, and writes no row.
+///
+/// The job is one that chains no other: a chained job would re-read the tree and overwrite the
+/// facts this test moves.
+#[test]
+fn ac_p3_31_14_a_demotion_through_a_real_settle_emits_no_notification() {
+    use codotheca_core::jobs::{Job, JobKind, JobOrigin, Priority};
+    use std::sync::{Arc, Mutex};
+
+    let notifications = notification_events();
+    eprintln!("AC-P3-31-14 notification events derived from the protocol: {notifications:?}");
+    assert!(
+        !notifications.is_empty(),
+        "the schema declares no notification, so an assertion over it proves nothing"
+    );
+
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"one\n");
+    repo.commit("first");
+    let dir = tempfile::tempdir().unwrap();
+    let index = Arc::new(Mutex::new(Index::open_at(dir.path(), 0).unwrap()));
+    let (project, location) = seed_demotable(&index, &repo);
+    let projected = |index: &Mutex<Index>| projection(index.lock().unwrap().conn(), project);
+    let deltas =
+        |index: &Mutex<Index>| count_for(index.lock().unwrap().conn(), "health_delta", project);
+
+    let sink = Arc::new(RecordingSink::default());
+    let runner = real_runner(&index, &repo, &sink);
+    let job = Job {
+        kind: JobKind::J2Status,
+        project_id: ProjectId(project),
+        location_id: location,
+        store_key: "store".to_owned(),
+        store_kind: codotheca_core::mount::StoreClass::Local,
+        priority: Priority::Interactive,
+        not_before: 0,
+        origin: JobOrigin::Interactive,
+    };
+    let settle_until = |want: &dyn Fn((Option<i64>, Option<i64>)) -> bool| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while std::time::Instant::now() < deadline && !(runner.is_idle() && want(projected(&index)))
+        {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+    };
+
+    assert!(runner.enqueue(job.clone()));
+    runner.start(1);
+    settle_until(&|(lit, evaluable)| lit.is_some() && lit == evaluable);
+    let (Some(lit_before), Some(evaluable_before)) = projected(&index) else {
+        panic!("the first settle computed no completion");
+    };
+    assert_eq!(
+        lit_before, evaluable_before,
+        "the fixture must start at the top rung: {lit_before}/{evaluable_before}"
+    );
+    let deltas_before = deltas(&index);
+    sink.0.lock().unwrap().clear();
+
+    // The CI config goes away: `ci` fails and `ciGreen` stops applying — a demotion that moves no
+    // debt item, settled by the same real job.
+    content_scan(index.lock().unwrap().conn(), project, "absent");
+    assert!(runner.enqueue(job));
+    settle_until(&|(lit, evaluable)| lit < evaluable);
+    runner.request_stop();
+    runner.join();
+
+    let (Some(lit_after), Some(evaluable_after)) = projected(&index) else {
+        panic!("a demotion is still a measurement");
+    };
+    let emitted = sink.0.lock().unwrap().clone();
+    eprintln!(
+        "AC-P3-31-14 real settle: completion {lit_before}/{evaluable_before} -> \
+         {lit_after}/{evaluable_after}; health_delta rows {deltas_before} -> {}; events {emitted:?}",
+        deltas(&index)
+    );
+    assert!(
+        lit_after < evaluable_after,
+        "the fixture must demote: {lit_before}/{evaluable_before} -> {lit_after}/{evaluable_after}"
+    );
+    assert!(
+        !emitted.is_empty(),
+        "the settle emitted nothing, so the sink observed nothing"
+    );
+    for event in &emitted {
+        assert!(
+            !notifications.contains(event),
+            "a demotion emitted a notification: {event:?}"
+        );
+        assert_ne!(
+            (event.0.as_str(), event.1.as_str()),
+            ("projects", "health_delta"),
+            "a demotion announced a restoration surge"
+        );
+    }
+    assert_eq!(
+        deltas(&index),
+        deltas_before,
+        "a demotion wrote a health_delta row"
+    );
+}

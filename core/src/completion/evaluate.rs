@@ -28,7 +28,8 @@ use super::proposal::{proposes_na, suppressed_source};
 /// §28's stored answer for one source, shaped for the map below.
 ///
 /// `outcome: None` is **no sweep row** — this source was never observed — which is `notRunYet`
-/// and never a zero. `open_items` is only ever read when the outcome is `complete`.
+/// and never a zero. §31.1b follows §30.3's *an item observed is an item*: a scored open item
+/// fails the check whatever the sweep outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SingletonReading {
     pub source: DebtSource,
@@ -196,11 +197,16 @@ fn reason_for(key: CompletionCheck, account_connected: bool) -> UnknownReason {
 }
 
 /// §28's stored answer, mapped onto a state. **Total**, and it re-derives no predicate.
+/// §31.1b follows §30.3's *an item observed is an item*: a scored open item fails before the
+/// sweep outcome is considered; without one, only a complete outcome can pass.
 fn from_singleton(
     key: CompletionCheck,
     reading: SingletonReading,
     account_connected: bool,
 ) -> (CheckState, Option<UnknownReason>) {
+    if reading.open_items >= 1 {
+        return plain(CheckState::Fail);
+    }
     match reading.outcome {
         // **Four causes, one answer, and the answer is `notRunYet` for all four because all
         // four resolve at the next sweep** — which is exactly what separates `notRunYet` from
@@ -208,8 +214,8 @@ fn from_singleton(
         //
         // * `None` — no sweep row: this source was never observed.
         // * `skipped_suppressed` — the sweep was declined, so nothing was looked at.
-        // * `partial` — **a partial sweep may open items and may never close one**, so an item
-        //   it did not reach looks exactly like an item that is gone.
+        // * `partial` — with no standing item, a partial sweep may still have missed one, so it
+        //   cannot prove a pass.
         // * `skipped_reference` — unreachable, because `gather` excludes a Reference project
         //   before this read. Named anyway: a total `match` cannot acquire a silent default.
         None
@@ -221,13 +227,7 @@ fn from_singleton(
         Some(DebtSweepOutcome::Unobservable | DebtSweepOutcome::Failed) => {
             unknown(reason_for(key, account_connected))
         }
-        Some(DebtSweepOutcome::Complete) => {
-            if reading.open_items >= 1 {
-                plain(CheckState::Fail)
-            } else {
-                plain(CheckState::Pass)
-            }
-        }
+        Some(DebtSweepOutcome::Complete) => plain(CheckState::Pass),
     }
 }
 

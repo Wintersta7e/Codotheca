@@ -1417,3 +1417,81 @@ fn a_not_applicable_checks_items_leave_the_list_and_every_count_and_come_back_un
         "the items came back with a different identity"
     );
 }
+
+/// §30.1's ruling — **what freezes is the observation, not the user's preference.** A check
+/// switched off while the store is offline reads `off` and its items leave the list and every
+/// count, while every other check keeps the outcome and the age it was frozen with.
+#[test]
+fn a_switch_applies_live_to_a_frozen_reading_and_the_other_checks_stay_frozen() {
+    let (_dir, conn) = store();
+    let project = seed_live(&conn);
+    sweep(&conn, project, "missing_readme", "complete", READ_NOW - 600);
+    item(&conn, project, "missing_readme", "", "open");
+    sweep(
+        &conn,
+        project,
+        "missing_license",
+        "complete",
+        READ_NOW - 600,
+    );
+    item(&conn, project, "missing_license", "", "open");
+
+    // The control: the store goes away and both checks keep their `failed`, their items and
+    // their age under glass.
+    conn.execute(
+        "UPDATE location SET presence = 'offline' WHERE project_id = ?1",
+        [project],
+    )
+    .unwrap();
+    let (frozen, frozen_items) = read_for_project(&conn, ProjectId(project)).unwrap();
+    assert_eq!(frozen.state, HealthState::Frozen);
+    assert_eq!(
+        outcome_of(&frozen, DebtSource::MissingLicense),
+        CheckOutcome::Failed
+    );
+    assert_eq!(frozen_items.len(), 2);
+    assert_eq!(frozen.scored_open, Some(2));
+
+    switch(&conn, DebtSource::MissingLicense, false);
+
+    let (after, items) = read_for_project(&conn, ProjectId(project)).unwrap();
+    let (summary, _) = summary_for(&conn, ProjectId(project)).unwrap();
+    let basis = after
+        .basis
+        .clone()
+        .expect("a frozen reading carries its basis");
+    eprintln!(
+        "frozen, license switched off: state {:?}, license {:?}, readme {:?}, items {:?}, \
+         scoredOpen {:?} (shelf {:?}), observedAt {}",
+        after.state,
+        outcome_of(&after, DebtSource::MissingLicense),
+        outcome_of(&after, DebtSource::MissingReadme),
+        items.iter().map(|i| i.source).collect::<Vec<_>>(),
+        after.scored_open,
+        summary.scored_open,
+        basis.observed_at
+    );
+    assert_eq!(
+        after.state,
+        HealthState::Frozen,
+        "the switch unfroze the store"
+    );
+    assert_eq!(
+        outcome_of(&after, DebtSource::MissingLicense),
+        CheckOutcome::Off,
+        "a switch waited on a disk: the frozen reading kept the check's frozen outcome"
+    );
+    assert_eq!(
+        outcome_of(&after, DebtSource::MissingReadme),
+        CheckOutcome::Failed,
+        "a check the user did not touch lost its frozen outcome"
+    );
+    assert_eq!(
+        items.iter().map(|i| i.source).collect::<Vec<_>>(),
+        vec![DebtSource::MissingReadme],
+        "a switched-off check's item stayed on a frozen project's list"
+    );
+    assert_eq!(after.scored_open, Some(1));
+    assert_eq!(summary.scored_open, Some(1));
+    assert_eq!(basis.observed_at, READ_NOW - 600, "the frozen age moved");
+}

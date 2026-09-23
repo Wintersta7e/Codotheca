@@ -22,7 +22,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import type { HealthCheck, HealthReading, HealthSummary } from '../../src/generated/protocol';
+import type {
+  DebtItem,
+  HealthCheck,
+  HealthReading,
+  HealthSummary,
+} from '../../src/generated/protocol';
+import { litCounts } from '../../src/renderer/decay/lit';
 import { basisLine, formFor, openLine } from '../../src/renderer/project/health/checkForms';
 import { SOURCE_LABELS } from '../../src/renderer/project/health/labels';
 import { tabsFor } from '../../src/renderer/project/tabs';
@@ -35,6 +41,14 @@ const TAB_SOURCE = readFileSync(
   fileURLToPath(new URL('../../src/renderer/project/health/HealthTab.tsx', import.meta.url)),
   'utf8',
 );
+
+/** The core's own all-checks-off output, which the core's half of `AC-P3-30-1` pins. */
+const ALL_CHECKS_OFF = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL('../../../protocol/health/all-checks-off.json', import.meta.url)),
+    'utf8',
+  ),
+) as { reading: HealthReading; summary: HealthSummary; items: DebtItem[] };
 
 /** Every string the tab would draw for this reading, in the order it draws them. */
 function surfaceOf(reading: HealthReading): string[] {
@@ -53,17 +67,11 @@ function surfaceOf(reading: HealthReading): string[] {
 
 describe('health', () => {
   it('AC-P3-30-1 with every check off no surface renders a health number', () => {
-    // Every check off is a reading with nothing eligible, and §30.1 rules that `absent`: no
-    // checks, no `scoredOpen`, no basis — exactly what the core produces for that case, on the
-    // page and flattened onto the shelf row.
-    const reading: HealthReading = { state: 'absent', scoredOpen: null, basis: null, checks: [] };
-    const summary: HealthSummary = {
-      state: 'absent',
-      scoredOpen: null,
-      unverified: null,
-      unknownChecks: null,
-      observedAt: null,
-    };
+    // What the CORE hands down with every check off — the page's reading, the shelf's summary and
+    // the item list — read from the fixture `core/tests/acceptance_p3_health.rs` holds the real
+    // producer's output equal to. A reading built here instead would test the renderer against
+    // this file's own idea of the core.
+    const { reading, summary, items } = ALL_CHECKS_OFF;
     const projects = [1, 2, 3];
     let inspected = 0;
     for (const project of projects) {
@@ -78,12 +86,15 @@ describe('health', () => {
       // The shelf: §35's rank reads no number off the summary, so the row sorts to the tail.
       expect(rankOf(toShelfRow(rowFixture({ healthSummary: summary })))).toBeNull();
       inspected += 1;
+      // The hero: §33 lights a layer from an open item and is handed none.
+      expect(litCounts(items).size).toBe(0);
+      inspected += 1;
       // eslint-disable-next-line no-console
       console.log(`AC-P3-30-1 project ${project}: tabs ${JSON.stringify(tabs)}, tab strings []`);
     }
     // eslint-disable-next-line no-console
     console.log(`AC-P3-30-1 surfaces inspected: ${inspected}`);
-    expect(inspected).toBe(projects.length * 3);
+    expect(inspected).toBe(projects.length * 4);
     expect(inspected).toBeGreaterThan(0);
 
     // And the tab draws exactly those strings, so the emptiness above is the page's emptiness.
