@@ -281,8 +281,7 @@
         "\\bdeadRemote\\b"
       ],
       "flags": "iu",
-      "exempt": [],
-      "pendingRegistryEntry": { "criterion": "P3-28-18a" }
+      "exempt": []
     },
     {
       "id": "p2-20-scope-strings",

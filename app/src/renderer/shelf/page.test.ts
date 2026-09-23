@@ -7,6 +7,7 @@ import type {
   SortKey,
 } from '../../generated/protocol.js';
 import schemaRaw from '../../../../protocol/schema/protocol.json?raw';
+import orderCorpusRaw from '../../../../protocol/shelf/order-corpus.json?raw';
 import { isCollapsed } from './collapse.js';
 import type { ShelfRow } from './row.js';
 import { rankOf, toShelfRow } from './row.js';
@@ -279,12 +280,19 @@ describe('orderKeyOf', () => {
   it('is stable for the same ordered ids and changes when the order changes', () => {
     expect(orderKeyOf([1, 2, 3])).toBe(orderKeyOf([1, 2, 3]));
     expect(orderKeyOf([1, 2, 3])).not.toBe(orderKeyOf([3, 2, 1]));
-    // The other side is `core/tests/projects_list.rs:278`, in the test named
-    // `the_order_key_is_the_same_cursor_the_renderer_computes`. **The literal is the shared
-    // value, not a golden of this implementation** — and it sits after the two assertions above
-    // on purpose: change the FNV offset basis and they still pass while this one fails, which is
-    // the whole of §27.7's finding in one run.
-    expect(orderKeyOf([1, 2, 3])).toBe('794671b5');
+    // The other side is `core/tests/projects_list.rs`, in the test named
+    // `the_order_key_is_the_same_cursor_the_renderer_computes`, and **both read the expected keys
+    // from `protocol/shelf/order-corpus.json`** (§36.2 rule 7): a literal pinned on each side stays
+    // green while one implementation and its own literal move together. It sits after the two
+    // assertions above on purpose: change the FNV offset basis and they still pass while this
+    // one fails, which is the whole of §27.7's finding in one run.
+    const cases = (
+      JSON.parse(orderCorpusRaw) as {
+        cases: { name: string; expectedIds: number[]; expectedOrderKey: string }[];
+      }
+    ).cases;
+    expect(cases.length, 'a run that compared no key proves nothing').toBeGreaterThan(0);
+    for (const c of cases) expect(orderKeyOf(c.expectedIds), c.name).toBe(c.expectedOrderKey);
   });
   it('changes when a row is inserted, which is the signal to re-cut the window', () => {
     expect(orderKeyOf([1, 2])).not.toBe(orderKeyOf([1, 2, 3]));

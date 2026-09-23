@@ -296,10 +296,38 @@ fn ac_p3_35_2_the_tail_never_interleaves_and_is_never_ordered_as_zero() {
     assert!(position(1) < position(3) && position(2) < position(3));
 }
 
+/// §36.2 rule 7: a cross-language agreement reads both languages. The keys are read from
+/// `protocol/shelf/order-corpus.json`, which `app/src/renderer/shelf/page.test.ts` reads too, so
+/// neither side holds a literal the other never sees — a literal on each side stays green while
+/// one implementation and its own literal move together.
 #[test]
 fn the_order_key_is_the_same_cursor_the_renderer_computes() {
-    // FNV-1a over the ordered ids, little-endian, eight hex digits.
-    assert_eq!(order_key_of(&[1, 2, 3]), "794671b5");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../protocol/shelf/order-corpus.json"
+    );
+    let text = std::fs::read_to_string(path).expect("order-corpus.json is readable");
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("order-corpus.json is JSON");
+    let cases = doc["cases"].as_array().expect("cases is an array");
+    let mut compared = 0_usize;
+    for case in cases {
+        let ids: Vec<i64> = case["expectedIds"]
+            .as_array()
+            .expect("expectedIds")
+            .iter()
+            .map(|id| id.as_i64().expect("an id is an integer"))
+            .collect();
+        // FNV-1a over the ordered ids, little-endian, eight hex digits.
+        assert_eq!(
+            order_key_of(&ids),
+            case["expectedOrderKey"].as_str().expect("expectedOrderKey"),
+            "{}",
+            case["name"]
+        );
+        compared += 1;
+    }
+    eprintln!("the order key matched the shared corpus over {compared} case(s)");
+    assert!(compared > 0, "a run that compared no key proves nothing");
     assert_ne!(order_key_of(&[1, 2, 3]), order_key_of(&[3, 2, 1]));
     assert_ne!(order_key_of(&[1, 2]), order_key_of(&[1, 2, 3]));
 }

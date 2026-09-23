@@ -79,14 +79,16 @@ test('countByPhase splits the register without a second file', () => {
   const registry = loadRegistry(registryPath);
   const counts = countByPhase(registry);
   assert.equal(counts[1].criteria, 70);
-  assert.equal(counts[1].checks, 171);
-  // [p3] The third phase is a key with a zero in it, not an absent key: `byPhase[3] += 1` on an
-  // object without a `3` yields NaN, and the run report prints `Phase 3: NaN checks`.
+  // [p3-36] 171 + AC-22-gpu-residency, the one phase-1 check phase 3 adds, + AC-42-register-audit.
+  assert.equal(counts[1].checks, 173);
+  // [p3] The third phase is a key with a count in it, not an absent key: `byPhase[3] += 1` on an
+  // object without a `3` yields NaN, and the run report prints `Phase 3: NaN checks`. [p3-36] The
+  // figure is the register's as registered on this branch, measured rather than predicted.
   assert.deepEqual(
     { criteria: counts[3].criteria, checks: counts[3].checks },
     {
-      criteria: 0,
-      checks: 0,
+      criteria: 146,
+      checks: 338,
     },
   );
   // [p2] §20's thirteen plus §21's fifteen plus §23's twelve plus §25's twenty-six. Phase 1's
@@ -108,7 +110,7 @@ test('the line a successful run prints states what it validated, per phase', () 
   // about the register, and a run that validated nothing must not read like a clean one.
   assert.equal(
     renderRegistryLine(loadRegistry(registryPath)),
-    '174 criteria / 396 checks validated — phase 1 70/171, phase 2 104/225, phase 3 0/0',
+    '320 criteria / 736 checks validated — phase 1 70/173, phase 2 104/225, phase 3 146/338',
   );
   assert.equal(
     renderRegistryLine({ criteria: [] }),
@@ -131,12 +133,18 @@ test('the table names both phases, and says phase 2 holds nothing yet rather tha
 // phase is empty, so a wave-0 table would have said "No phase-2 criteria are registered yet"
 // under the Phase 3 heading, beside a full phase-2 table. Its own comment says a reader must be
 // able to tell "none registered yet" from "the renderer stopped reading" — a wrong phase name
-// says neither.
-test('the table names the third phase and says phase 3 holds nothing yet, in its own name', () => {
+// says neither. [p3-36] Turned around: phase 3 is registered, so its heading carries a criterion
+// table and the sentence is said of no phase — while an empty register still says it, in its name.
+test('the table names the third phase, renders its criteria, and says nothing is missing', () => {
   const rendered = renderDispositions(loadRegistry(registryPath));
   assert.match(rendered, /## Phase 3/u);
-  assert.match(rendered, /No phase-3 criteria are registered yet\./u);
-  assert.doesNotMatch(rendered, /no phase-2 criteria are registered yet/iu);
+  const phase3 = rendered.slice(rendered.indexOf('## Phase 3'));
+  assert.match(phase3, /\| P3-\d{2}-\d{1,2}[a-c]? \| /u);
+  assert.doesNotMatch(rendered, /no phase-\d criteria are registered yet/iu);
+  assert.match(
+    renderDispositions({ version: 1, criteria: [] }),
+    /No phase-3 criteria are registered yet\./u,
+  );
 });
 
 test('a phase-3 check is counted, not added to a key that is not there', () => {
@@ -170,7 +178,7 @@ test('the run report splits its check count by phase', () => {
   const registry = loadRegistry(registryPath);
   const join = joinResults(registry, []);
   const rendered = renderRunReport(registry, join, { newFailures: [], stale: [], missing: [] }, []);
-  assert.match(rendered, /Phase 1: 171 checks/u);
+  assert.match(rendered, /Phase 1: 173 checks/u);
   assert.match(rendered, /Phase 2: 225 checks/u);
-  assert.match(rendered, /Phase 3: 0 checks/u);
+  assert.match(rendered, /Phase 3: 338 checks/u);
 });

@@ -1,7 +1,8 @@
-//! The eight observation jobs, their budgets and their scheduling vocabulary (§4.1, §4.1a).
+//! The observation jobs, their budgets and their scheduling vocabulary (§4.1, §4.1a).
 //!
-//! The count in this comment said *six* while the enum held seven, which is why §29.1 corrects it
-//! by number rather than by adding a variant beside it.
+//! How many there are is [`JobKind::ALL`]'s to say, and no comment restates it: this line said
+//! *six* while the enum held seven, then *eight* once corrected — a count a human maintains is a
+//! defect with a delay.
 
 pub mod classify;
 pub mod content_scan;
@@ -26,7 +27,7 @@ use std::time::Duration;
 // which never produced them; a hand-written pair here would be the R31 shape exactly.
 use crate::protocol::{LocationId, ProjectId};
 
-/// Which of §4.1's eight jobs a work item is.
+/// Which of §4.1's jobs a work item is; [`JobKind::ALL`] holds every one.
 ///
 /// A deliberate subset of the schema's `Job` (**R34**): `j0` is plan 07's walk, reported on the
 /// wire when it finishes but never queued by this scheduler, and `j5` is plan 10's art. Every

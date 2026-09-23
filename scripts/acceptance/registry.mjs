@@ -24,7 +24,7 @@ export const GROUPS = [
   'surfaces',
   'subsystems',
 ];
-export const RUNNERS = ['cargo', 'vitest', 'e2e', 'script', 'perf', 'manual', 'none'];
+export const RUNNERS = ['cargo', 'vitest', 'e2e', 'node', 'script', 'perf', 'manual', 'none'];
 
 const CHECK_ID_P1 = /^AC-(\d{1,2}[a-c]?)(-[a-z0-9]+)*$/u;
 // `AC-P2-<section>-<n>`. The slug segment must begin with a letter, or `AC-P2-25-10-ddl` is
@@ -267,9 +267,9 @@ function checkProblems(entry, check, seenCheckIds, problems, root) {
   }
 
   if (check.status === 'automated') {
-    if (!['cargo', 'vitest', 'e2e', 'script'].includes(check.runner)) {
+    if (!['cargo', 'vitest', 'e2e', 'node', 'script'].includes(check.runner)) {
       problems.push(
-        `${where}: an automated check runs on cargo, vitest, e2e or script — never perf`,
+        `${where}: an automated check runs on cargo, vitest, e2e, node or script — never perf`,
       );
     }
     if (typeof check.test !== 'string' || check.test.length === 0) {

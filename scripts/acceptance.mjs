@@ -28,6 +28,7 @@ import {
 import { loadRegistry, validatePhase2Complete, validateRegistry } from './acceptance/registry.mjs';
 import {
   parseLibtest,
+  parseNodeTest,
   parsePlaywright,
   parseScriptResults,
   parseVitest,
@@ -52,6 +53,10 @@ export function collectResults(dir) {
     else if (extname(name) !== '.json') continue;
     else if (name === 'vitest.json') out.push(...parseVitest(JSON.parse(text)));
     else if (name === 'e2e.json') out.push(...parsePlaywright(JSON.parse(text)));
+    // The two `node:test` suites run as two gate steps, so each writes a capture of its own
+    // rather than overwriting one.
+    else if (name === 'node-harness.json') out.push(...parseNodeTest(JSON.parse(text)));
+    else if (name === 'node-protocol.json') out.push(...parseNodeTest(JSON.parse(text)));
     else if (name.startsWith('script-')) out.push(...parseScriptResults(JSON.parse(text)));
   }
   return out;

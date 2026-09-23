@@ -633,14 +633,18 @@ test('the freeze holds the nine phase-1 entries the phase-2 sections govern', ()
 // registration is the first change that legitimately moves the totals, so the assertion moves
 // with it — and keeps its real content, which is that **phase 1 is untouched**. A phase-2 lane
 // that disturbed a phase-1 criterion still fails here.
-test('registering a phase-2 section leaves phase 1 at 70 and 171', () => {
+// [p3-36] Phase 1 moves twice, deliberately: criterion 22 gains AC-22-gpu-residency (R127.6), the
+// one phase-1 check phase 3 adds, and criterion 42 gains AC-42-register-audit, the §26.3 audit
+// the node:test capture made visible, registered as an audit of the entry. Any other movement
+// still fails here.
+test('registering later phases leaves phase 1 at 70 and 173', () => {
   const registry = loadRegistry(registryPath);
   assert.deepEqual(validateRegistry(registry, repoRoot), []);
   const phase1 = registry.criteria.filter((c) => phaseOf(c.id) === 1);
   assert.equal(phase1.length, 70);
   assert.equal(
     phase1.reduce((n, c) => n + c.checks.length, 0),
-    171,
+    173,
   );
   // §20 owns thirteen, §21 seventeen, §22 thirteen, §23 twelve, §24 twenty-three and §25
   // twenty-six, which is what
@@ -1117,8 +1121,10 @@ test('a phase-3 deferral to a plan is a deferral to nobody, and a bare register 
   assert.ok(bare.some((p) => p.includes('no scanning check at all')));
   assert.ok(bare.some((p) => p.includes('no mirror at all')));
   assert.ok(p3Complete([p3Entry({ checks: [] })]).some((p) => p.includes('carries no check')));
-  // An empty phase-3 register is silent, which is what lets this land in wave 0.
-  assert.deepEqual(validatePhase3Complete(loadRegistry(registryPath)), []);
+  // An empty phase-3 register is silent, which is what let this land in wave 0. [p3-36] Asserted
+  // over an empty register rather than the shipped one, which is no longer empty: the shipped
+  // register's completeness is the section tests' and `validateRegistry`'s.
+  assert.deepEqual(validatePhase3Complete({ version: 1, criteria: [] }), []);
 });
 
 // [p3] The record of what §36.3 moves, taken before wave 1 can touch it. `phase1-frozen.json` is
@@ -1145,6 +1151,16 @@ test('a phase-3 deferral to a plan is a deferral to nobody, and a bare register 
  */
 const MOVED_BY_PLAN = [
   {
+    id: '21',
+    plan: 'p3-34',
+    why: '§36.3 row 21: the surge sits beside the specular sweep, and the sentence bans a schedule, not a response. AC-21-frames gains the clause §16 row 21 now carries: both are bounded one-shots for a change the user is present for, and idle requires no project page open, so neither can breach the budget. Applied by p3-36 for §34, whose lane merged without it.',
+  },
+  {
+    id: '22',
+    plan: 'p3-36',
+    why: "§36.3 / R127.6: criterion 22's GPU clause gets one value and one owner. AC-22-gpu-residency states the cap at ~165 MB — §7.6's re-derivation against the real card, superseding the < 128 MB that re-derivation moved away from — as unmeasurable, with no budget, because no residency instrument exists in either language. AC-22-art-cache's 'the GPU texture clause is phase 3 and is not tested' now points at that check. D9's gate stays on AC-30-pacing's budget.",
+  },
+  {
     id: '46',
     plan: 'p3-33',
     why: '§36.3 / A1: the exemption loses *material layers*. Under A1 the five layers are composed in the DOM, so their colours reach decay.css and every one must resolve to a declared token — --dust, --silver, --rust, --fail, --growth. Vents and plate stops stay exempt, because a vent really is drawn into the bitmap. Left as it was, five colour literals would have shipped past a green run, pre-exempted by name.',
@@ -1162,7 +1178,7 @@ const MOVED_BY_PLAN = [
   {
     id: '62',
     plan: 'p3-33',
-    why: "§36.3: the clause said decay rendering is not in phase 1 and is not tested. §33.11's twelve AC-P3-33-* ids now test it, so that half expires. The first-commit-sha half of the same sentence is untouched and stays — it is a seed assertion §33 has no quarrel with, and deleting it along with the decay half would retire a criterion nobody moved.",
+    why: "§36.3: the clause said decay rendering is not in phase 1 and is not tested. §33.11's twelve AC-P3-33-* ids now test it, so that half expires. The first-commit-sha half of the same sentence is untouched and stays — it is a seed assertion §33 has no quarrel with, and deleting it along with the decay half would retire a criterion nobody moved. [p3-36] AC-62-fade's phase pin moved too, on the owing lane's behalf: fade's two values are an invariant (§33.2), not a phase-1 pin.",
   },
   {
     id: '66',
@@ -1227,5 +1243,225 @@ test('the shipped register and the shipped rule files complete without a problem
       forbidden: read('forbidden.json'),
     }),
     [],
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// [p3-36] The phase-3 register, section by section. A registered section holds all of its
+// criteria or this says which are missing; the count is `PHASE3_SECTIONS`', never restated here.
+// ---------------------------------------------------------------------------------------------
+
+/** The shipped entries of one phase-3 section: bare ids by number, lettered ids apart. */
+function shippedSection(section) {
+  const entries = loadRegistry(registryPath).criteria.filter((c) =>
+    String(c.id).startsWith(`P3-${section}-`),
+  );
+  const bare = entries
+    .filter((c) => !/[a-c]$/u.test(c.id))
+    .map((c) => Number.parseInt(c.id.slice(`P3-${section}-`.length), 10))
+    .sort((a, b) => a - b);
+  const lettered = entries
+    .filter((c) => /[a-c]$/u.test(c.id))
+    .map((c) => c.id)
+    .sort();
+  return { entries, bare, lettered };
+}
+
+/**
+ * Contiguous over `PHASE3_SECTIONS`' range, the ruled lettered ids and no other, every entry citing
+ * its section's criteria block in its section's group, and every check a test that ran, owned by
+ * the phase-3 plan that landed it. The three live observations are the only checks with no test.
+ */
+function assertShippedSection(section, { spec, group, lettered = [] }) {
+  const { entries, bare, lettered: held } = shippedSection(section);
+  const range = Array.from({ length: PHASE3_SECTIONS[section] }, (_, i) => i + 1);
+  const missing = range.filter((n) => !bare.includes(n));
+  assert.deepEqual(missing, [], `§${String(section)} is missing ${missing.join(', ')}`);
+  assert.deepEqual(bare, range, `§${String(section)} holds an id outside its range or twice`);
+  assert.deepEqual(held, lettered);
+  for (const entry of entries) {
+    assert.equal(entry.spec, spec, `${entry.id} cites its section's criteria block`);
+    assert.equal(entry.group, group, `${entry.id} is ${group}`);
+    assert.ok(entry.checks.length > 0, `${entry.id} carries no check`);
+    for (const check of entry.checks) {
+      assert.match(String(check.owner), /^p3-\d{2}$/u, `${check.id} names the plan that landed it`);
+      if (check.deferral === 'live-observation') continue;
+      assert.equal(check.status, 'automated', `${check.id} names a test that ran`);
+      assert.ok(String(check.test ?? '').length > 0, `${check.id} names no test`);
+    }
+  }
+}
+
+// A cargo `test` is `<binary>::<function>`, and a join key one character off reads as "not run"
+// only against a capture. This reads the tree instead, so a typo fails here without one.
+test('every phase-3 cargo check names a function its test file declares', () => {
+  const core = fileURLToPath(new URL('../../core/tests/', import.meta.url));
+  const checks = loadRegistry(registryPath)
+    .criteria.filter((c) => phaseOf(c.id) === 3)
+    .flatMap((c) => c.checks)
+    .filter((k) => k.runner === 'cargo' && String(k.test).split('::').length === 2);
+  console.error(`phase-3 cargo checks read against the tree: ${String(checks.length)}`);
+  assert.ok(checks.length > 0, 'a run that read no check against the tree proves nothing');
+  for (const check of checks) {
+    const [binary, fn] = String(check.test).split('::');
+    const source = readFileSync(`${core}${binary}.rs`, 'utf8');
+    assert.ok(
+      new RegExp(`^\\s*(async )?fn ${fn}\\(`, 'mu').test(source),
+      `${check.id}: core/tests/${binary}.rs declares no fn ${fn}`,
+    );
+  }
+});
+
+/** One Rust test function's text, from its `fn` line to the next top-level item. */
+function rustFn(file, fn) {
+  const source = readFileSync(fileURLToPath(new URL(`../../${file}`, import.meta.url)), 'utf8');
+  const start = source.search(new RegExp(`^fn ${fn}\\(`, 'mu'));
+  assert.ok(start >= 0, `${file} declares no fn ${fn}`);
+  const rest = source.slice(start + 1);
+  const end = rest.search(/^(?:#\[|\/\/\/|fn |pub |struct |impl |const |mod )/mu);
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
+// [Task 1] §28's eighteen and R139's P3-28-18a — the one task that moves §36.1's total to 146.
+test('§28 holds its eighteen criteria and P3-28-18a', () => {
+  assertShippedSection(28, { spec: '§28.12', group: 'functional', lettered: ['P3-28-18a'] });
+});
+
+test('a register holding P3-28-18a without P3-28-18 is a problem', () => {
+  const lone = validatePhase3Complete({
+    version: 1,
+    criteria: loadRegistry(registryPath).criteria.filter((c) => c.id !== 'P3-28-18'),
+  });
+  assert.ok(
+    lone.some((p) => p.includes('P3-28-18a is registered and P3-28-18 is not')),
+    lone.join('\n'),
+  );
+});
+
+// [Task 2] §29's twenty-nine, three of them in the form a ruling amended.
+test('§29 holds its twenty-nine criteria, every one automated', () => {
+  assertShippedSection(29, { spec: '§29.14', group: 'functional' });
+});
+
+test('§29 registers the three amended criteria in their ruled form, read off the test bodies', () => {
+  // R132/F12: the fixture is read from the Rust constant and compared against it, not a literal.
+  const exhaustive = rustFn(
+    'core/tests/acceptance_content_scan.rs',
+    'ac_p3_29_13_the_presence_predicates_are_exhaustive',
+  );
+  assert.match(exhaustive, /0\.\.ARCHETYPE_SAMPLE\b/u);
+  assert.match(exhaustive, /> ARCHETYPE_SAMPLE\b/u);
+  assert.doesNotMatch(exhaustive, /\b4_?000\b/u, 'a copied 4,000 is §36.2 rule 8 again');
+  // R132/F16: the set, printed, and no numeral stating its size.
+  const vocab = rustFn(
+    'core/tests/acceptance_content_scan.rs',
+    'ac_p3_29_21_the_job_vocabularies_stay_disjoint_and_complete',
+  );
+  assert.match(vocab, /JobKind::ALL/u);
+  assert.match(vocab, /eprintln!/u);
+  assert.doesNotMatch(vocab, /len\(\),\s*\d/u, 'the size is the type’s, never the test’s');
+  // R127.3: the assertion is `present`, kept, and the unreadable-fixture justification is gone.
+  const readme = rustFn(
+    'core/tests/acceptance_content_scan.rs',
+    'ac_p3_29_26_an_unreadable_readme_is_not_a_missing_one',
+  );
+  assert.match(readme, /PresenceState::Present/u);
+  assert.match(readme, /PresenceState::Absent/u);
+});
+
+// [Task 3] §30's eighteen and the one lettered id §36.1 names, and the three criteria R140 split
+// across waves: each is two checks with two owners, never one `deferred` check.
+test('§30 holds its eighteen criteria and P3-30-11a', () => {
+  assertShippedSection(30, { spec: '§30.13', group: 'functional', lettered: ['P3-30-11a'] });
+});
+
+test('P3-30-19 exists nowhere: the index minted it, withdrew it and ruled P3-28-18a instead', () => {
+  const registry = loadRegistry(registryPath);
+  assert.ok(!registry.criteria.some((c) => c.id === 'P3-30-19'));
+  assert.ok(!registry.criteria.flatMap((c) => c.checks).some((k) => /^AC-P3-30-19\b/u.test(k.id)));
+});
+
+test('each of R140’s three split criteria carries two checks, two owners and no deferral', () => {
+  const registry = loadRegistry(registryPath);
+  for (const id of ['P3-30-11', 'P3-30-16', 'P3-30-18']) {
+    const entry = registry.criteria.find((c) => c.id === id);
+    assert.ok(entry, `${id} is registered`);
+    const owners = new Set(entry.checks.map((k) => k.owner));
+    const tests = new Set(entry.checks.map((k) => k.test));
+    assert.ok(owners.size >= 2, `${id} is owned by one plan; R140 splits it across two`);
+    assert.equal(tests.size, entry.checks.length, `${id} joins two checks to one test`);
+    for (const check of entry.checks) assert.equal(check.status, 'automated', check.id);
+  }
+});
+
+// [Task 5] §32's twenty-three, and the three readings §36.6 says no fixture can take. Each rides a
+// criterion whose first check is automated; only the values are unobserved.
+test('§32 holds its twenty-three criteria', () => {
+  assertShippedSection(32, { spec: '§32.20', group: 'functional' });
+});
+
+test('exactly the three phase-3 live observations are registered, each with no test', () => {
+  const checks = loadRegistry(registryPath)
+    .criteria.filter((c) => phaseOf(c.id) === 3)
+    .flatMap((c) => c.checks);
+  const live = checks.filter((k) => k.deferral === 'live-observation');
+  assert.deepEqual(
+    live.map((k) => k.id).sort(),
+    LIVE_OBSERVATION_CHECKS.filter((id) => id.startsWith('AC-P3-')).sort(),
+  );
+  for (const check of live) {
+    assert.equal(check.status, 'deferred', check.id);
+    assert.equal(check.test, undefined, `${check.id}: a test would be an assertion`);
+    assert.deepEqual(
+      Object.keys(check.verification ?? {}).sort(),
+      ['evidence', 'recordedAt'],
+      `${check.id} carries its verification record`,
+    );
+  }
+});
+
+// [Task 4] §31's eighteen. AC-P3-31-18 is registered in R127.2's corrected form or not at all.
+test('§31 holds its eighteen criteria, every one automated', () => {
+  assertShippedSection(31, { spec: '§31.11', group: 'functional' });
+});
+
+// [Task 6] §33's twelve, over a rendered element, so `surfaces`.
+test('§33 holds its twelve criteria, every one automated', () => {
+  assertShippedSection(33, { spec: '§33.11', group: 'surfaces' });
+});
+
+// [Task 7] §34's seventeen. The clamp gate is the `script` runner reading the checker's own
+// capture, and AC-P3-34-12 is registered only against a test that tells all three merge classes
+// apart (R129/F8).
+test('§34 holds its seventeen criteria, every one automated', () => {
+  assertShippedSection(34, { spec: '§34.10', group: 'surfaces' });
+  const clamp = loadRegistry(registryPath)
+    .criteria.find((c) => c.id === 'P3-34-14')
+    ?.checks.find((k) => k.id === 'AC-P3-34-14');
+  assert.equal(clamp?.runner, 'script');
+  assert.equal(clamp?.test, 'check-motion-clamp:every-animated-class-is-clamped');
+});
+
+// [Task 8] §35's nine, and the two markings a phase-3 register with none of has stopped reading:
+// §36.2 rule 7's cross-language mirror and a scan that prints its count.
+test('§35 holds its nine criteria, and phase 3 carries a mirror and a scanning check', () => {
+  assertShippedSection(35, { spec: '§35.11', group: 'surfaces' });
+  const checks = loadRegistry(registryPath)
+    .criteria.filter((c) => phaseOf(c.id) === 3)
+    .flatMap((c) => c.checks);
+  assert.ok(
+    checks.some((k) => k.mirror !== undefined),
+    'no phase-3 check reads both sides',
+  );
+  assert.ok(
+    checks.some((k) => k.scanning === true),
+    'no phase-3 check prints what it scanned',
+  );
+  assert.ok(
+    loadRegistry(registryPath)
+      .criteria.filter((c) => c.id.startsWith('P3-35-'))
+      .flatMap((c) => c.checks)
+      .some((k) => k.mirror !== undefined),
+    '§35 adds the first new sort key since the cursor pair was written, and asserts it both sides',
   );
 });

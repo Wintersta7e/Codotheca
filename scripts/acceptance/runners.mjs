@@ -143,3 +143,23 @@ export function parseScriptResults(rows) {
     return { id: row.id, status: row.status, runner: 'script', tags: [] };
   });
 }
+
+/**
+ * The `node:test` capture `scripts/acceptance/node-reporter.mjs` writes: `[{ id, status }]`, the id
+ * `<file>::<full test name>`. Unlike a static gate's row, a test's name carries its criterion tag,
+ * so these reach the untagged net — without them a whole runner's tags were invisible to it.
+ *
+ * @returns {TestResult[]}
+ */
+export function parseNodeTest(rows) {
+  if (!Array.isArray(rows)) throw new TypeError('node:test results must be an array');
+  return rows.map((row) => {
+    if (typeof row.id !== 'string' || !row.id.includes('::')) {
+      throw new TypeError('node:test result has no <file>::<name> id');
+    }
+    if (!['passed', 'failed', 'skipped'].includes(row.status)) {
+      throw new TypeError(`node:test result ${row.id} has an unknown status`);
+    }
+    return result(row.id, row.status, 'node');
+  });
+}

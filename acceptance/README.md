@@ -113,11 +113,46 @@ discharges.
 - **vitest** — the reporter's `fullName`, which is every enclosing `describe` title and the test
   title joined by a single space. A test with no `describe` around it joins on its title alone.
 - **e2e** — the Playwright spec title.
+- **node** — `<file>::<full name>` for a `node:test` test in the harness or the protocol suite:
+  the file relative to the repository, then every enclosing suite and the test joined by a single
+  space, e.g. `scripts/check-motion-clamp.test.mjs::ac_p3_34_15 no acceptance assert …`.
 - **script** — the check id the static gate emits, e.g. `check-forbidden:c44-forget-token`.
 
 There is no name table, on purpose: a table mapping criterion to test name is a second copy of
 the truth and rots on the first rename. A rename makes the gate report the check as **not run**,
 which is the intended behaviour.
+
+## Who writes the captures
+
+`npm run acceptance` runs no suite: it grades whatever `acceptance/results/` holds. So **every
+capture file the CLI parses has a gate step that writes it**, or the register is graded against a
+tree nobody ran. The writers are named here and never counted — the count was stated four ways
+and was wrong each time:
+
+| Capture | Written by | Reached from the gate through |
+|---|---|---|
+| `cargo.txt` | `cargo test`, copied by the gate | the gate's own copy |
+| `vitest.json` | vitest's JSON reporter | the gate's `--outputFile.json` |
+| `e2e.json` | Playwright, copied by the gate | the gate's own copy |
+| `node-harness.json` | `node:test`, through `scripts/acceptance/node-reporter.mjs` | the gate's `NODE_OPTIONS` on its harness step |
+| `node-protocol.json` | `node:test`, through `scripts/acceptance/node-reporter.mjs` | the gate's `NODE_OPTIONS` on its protocol step |
+| `script-bundle.json` | `scripts/check-bundle.mjs` | `npm run check:bundle` |
+| `script-callsites.json` | `scripts/check-call-sites.mjs` | `npm run check:callsites` |
+| `script-forbidden.json` | `scripts/check-forbidden.mjs` | `npm run check:forbidden` |
+| `script-motionclamp.json` | `scripts/check-motion-clamp.mjs` | `npm run lint` → `lint:shell` → `lint:clamp` |
+| `script-problems.json` | `scripts/check-problem-kinds.mjs` | `npm run check:problems` |
+
+`scripts/acceptance/captures.mjs` holds the declared list. Its test derives the writers from the
+tree and fails when the two disagree, and `captures.mjs --gate <gate script>` runs **in** the gate
+and fails when a writer's npm script is not **reachable** from a step — through `package.json`'s
+script graph, so a writer chained into `lint:shell` counts. A new writer is refused by name until
+it is declared and given a step.
+
+**The two `node:test` suites write a capture each**, one per gate step so neither overwrites the
+other. The reporter runs on `node:test`'s own reporter API rather than the built-in `junit`
+reporter, which records a test's name and not its file. The flags travel in `NODE_OPTIONS`
+because a flag placed after the file patterns is **silently ignored**, and a `node --test`
+started inside a test file must drop `NODE_TEST_CONTEXT` or it reports to its parent instead.
 
 ## Dispositions today
 
@@ -126,6 +161,14 @@ sentence written here that can drift from it: run `npm run acceptance -- --repor
 current roll-up, and read `DISPOSITIONS.md` for the committed one. `DISPOSITIONS.md` is a pure
 function of `criteria.json` and is diff-gated, so editing the registry without regenerating it
 fails the build.
+
+The roll-up is per phase, three of them, and each is printed rather than restated here. A passing
+run's first line is `renderRegistryLine`'s `<n> criteria / <m> checks validated — phase 1 <c>/<k>,
+phase 2 <c>/<k>, phase 3 <c>/<k>`, and `DISPOSITIONS.md` renders one table per phase with its own
+disposition counts. Every phase-3 section, §28 to §35, is registered in full, which
+`validatePhase3Complete` asserts against `PHASE3_SECTIONS`. A criterion's disposition is its
+weakest check's, so an audit of a register entry registered beside a deferred behaviour check —
+`AC-42-register-audit` — leaves the criterion reading `deferred`.
 
 `baseline.json` holds failing tests that are **known** red. It compares by identity, never by
 count: a failure that is not listed fails the build, a listed test that now passes fails the
