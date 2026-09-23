@@ -18,14 +18,16 @@ jobs:
       fail-fast: false
       matrix: { os: [ubuntu-latest, windows-latest] }
     steps:
+      # No caches anywhere in this file. A cache is written by whatever ran last on the branch, so
+      # a release restored from one ships what that run left behind; this build starts cold.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with: { persist-credentials: false }
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with: { toolchain: stable }
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         # `package.json` declares engines.node ">=22.12.0". Pinning 20 here made the release
         # build the one place in the project running below its own floor.
-        with: { node-version: 22, cache: npm }
+        with: { node-version: 22, package-manager-cache: false }
       - run: npm ci
       - run: npm run gen
       # §20's keychain reaches the Secret Service over D-Bus on Linux, so `libdbus-sys` compiles
