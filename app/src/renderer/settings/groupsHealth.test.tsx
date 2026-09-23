@@ -17,6 +17,7 @@ import type {
   Settings,
 } from '../../generated/protocol.js';
 import { CONTENT_SCAN_LABEL } from '../../shared/contentScan.js';
+import { SOURCE_LABELS } from '../project/health/labels.js';
 import { SettingsDrawer, toSettingsPatch, type SettingsDrawerDeps } from './Drawer.js';
 import { GRANT_MISSING_NOTE, HEALTH_CHECKS_FOOTNOTE } from './groupsHealth.js';
 
@@ -101,8 +102,13 @@ describe('§30.9 the per-check switches', () => {
     expect(rows).toHaveLength(VARIANTS.length);
     for (const check of VARIANTS) {
       expect(group.querySelectorAll(`[data-row="health-check-${check}"]`), check).toHaveLength(1);
-      const control = screen.getByRole('switch', { name: check });
+      // Named in words; the raw id stays in `data-row`, out of sight.
+      const control = screen.getByRole('switch', { name: SOURCE_LABELS[check] });
       expect(control.getAttribute('aria-checked'), check).toBe('true');
+      expect(
+        group.querySelector(`[data-row="health-check-${check}"]`)?.textContent ?? '',
+        check,
+      ).not.toContain(check);
     }
   });
 
@@ -116,15 +122,15 @@ describe('§30.9 the per-check switches', () => {
       'health-check-missing_readme',
       'health-check-ci_red',
     ]);
-    expect(screen.getByRole('switch', { name: 'ci_red' }).getAttribute('aria-checked')).toBe(
-      'false',
-    );
+    expect(
+      screen.getByRole('switch', { name: SOURCE_LABELS.ci_red }).getAttribute('aria-checked'),
+    ).toBe('false');
   });
 
   it('switching a check off sends settings.set naming only that check, flipped', async () => {
     const { call, deps: d } = deps(settingsWith());
     await openGroup(d);
-    fireEvent.click(screen.getByRole('switch', { name: 'missing_tests' }));
+    fireEvent.click(screen.getByRole('switch', { name: SOURCE_LABELS.missing_tests }));
     await waitFor(() => {
       expect(call).toHaveBeenCalledWith('settings.set', {
         patch: toSettingsPatch({ healthChecks: [{ check: 'missing_tests', enabled: false }] }),
@@ -143,13 +149,15 @@ describe('§30.9 the per-check switches', () => {
     const total = String(VARIANTS.length);
     expect(caption()).toBe(`${total} OF ${total} ON`);
 
-    fireEvent.click(screen.getByRole('switch', { name: 'missing_tests' }));
+    fireEvent.click(screen.getByRole('switch', { name: SOURCE_LABELS.missing_tests }));
     await waitFor(() => {
       expect(caption()).toBe(`${String(VARIANTS.length - 1)} OF ${total} ON`);
     });
-    expect(screen.getByRole('switch', { name: 'missing_tests' }).getAttribute('aria-checked')).toBe(
-      'false',
-    );
+    expect(
+      screen
+        .getByRole('switch', { name: SOURCE_LABELS.missing_tests })
+        .getAttribute('aria-checked'),
+    ).toBe('false');
     expect(HEALTH_CHECKS_FOOTNOTE).not.toBe('');
     expect(group.textContent ?? '').toContain(HEALTH_CHECKS_FOOTNOTE);
     expect(HEALTH_CHECKS_FOOTNOTE).toMatch(/hides its items/u);

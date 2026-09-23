@@ -24,6 +24,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { HealthCheck, HealthReading, HealthSummary } from '../../src/generated/protocol';
 import { basisLine, formFor, openLine } from '../../src/renderer/project/health/checkForms';
+import { SOURCE_LABELS } from '../../src/renderer/project/health/labels';
 import { tabsFor } from '../../src/renderer/project/tabs';
 import { detailFixture, rowFixture } from '../../src/renderer/project/testFixtures';
 import { rankOf, toShelfRow } from '../../src/renderer/shelf/row';
@@ -44,7 +45,7 @@ function surfaceOf(reading: HealthReading): string[] {
   if (coverage !== null) out.push(coverage);
   for (const check of reading.checks) {
     const form = formFor(check);
-    out.push(check.id, form.word);
+    out.push(SOURCE_LABELS[check.id], form.word);
     if (form.detail !== '') out.push(form.detail);
   }
   return out;
@@ -117,6 +118,8 @@ describe('health', () => {
     expect(TAB_SOURCE).toContain('{form.word}');
     expect(TAB_SOURCE).toContain('{form.detail}');
     expect(TAB_SOURCE).toContain('data-outcome={check.outcome}');
+    // …and names each check from the one label table, as `surfaceOf` above does.
+    expect(TAB_SOURCE).toContain('{SOURCE_LABELS[check.id]}');
 
     // The basis renders beside them, dated from its one owner.
     const basis = { ran: 1, eligible: 2, unknown: 1, off: 1, notApplicable: 1, observedAt: NOW };

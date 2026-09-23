@@ -17,6 +17,7 @@ import { ProjectPageView } from '../ProjectPage';
 import { DAY, detailFixture, NOW } from '../testFixtures';
 import projectPageCss from '../../styles/projectPage.css?raw';
 import { DEBT_LIST_TITLE, SHOWN_ONLY_NOTE, UNVERIFIED_NOTE } from './DebtList';
+import { SOURCE_LABELS } from './labels';
 
 afterEach(cleanup);
 
@@ -175,7 +176,7 @@ describe('code reads as code', () => {
     document.head.append(style);
     try {
       const list = await debtList();
-      const marker = rowWith(list, 'todo_marker');
+      const marker = rowWith(list, 'src/main.rs');
       for (const part of ['.cp-health-debt-where', '.cp-health-debt-text']) {
         const node = marker.querySelector(part);
         if (node === null) throw new Error(`the marker row drew no ${part}`);
@@ -213,11 +214,13 @@ describe('§33.2 the HEALTH tab lists every item, in text', () => {
 
     for (const entry of DEBT) {
       const group = list.querySelector(`[data-layer="${entry.layer}"]`);
-      expect(group?.textContent ?? '', entry.fingerprint).toContain(entry.source);
+      // Named in words; the raw id stays in `data-source`, out of sight.
+      expect(group?.textContent ?? '', entry.fingerprint).toContain(SOURCE_LABELS[entry.source]);
+      expect(list.textContent ?? '', entry.source).not.toContain(entry.source);
     }
     expect(list.querySelector('h3')?.textContent).toBe(DEBT_LIST_TITLE);
 
-    const marker = rowWith(list, 'todo_marker');
+    const marker = rowWith(list, 'src/main.rs');
     expect(marker.textContent).toContain('src/main.rs:12:5');
     expect(marker.textContent).toContain('TODO: a shaped marker');
     // A content fingerprint is a hash; the path and the text say more, so it stays unrendered.
@@ -230,8 +233,8 @@ describe('§33.2 the HEALTH tab lists every item, in text', () => {
   // is counted by nothing and pays nothing, is `core/tests/debt_lifecycle.rs`.
   it('AC-P3-28-14 shown_only and unverified items render and say they are not counted', async () => {
     const list = await debtList();
-    const counted = rowWith(list, 'missing_readme');
-    const unverified = rowWith(list, 'todo_marker');
+    const counted = rowWith(list, SOURCE_LABELS.missing_readme);
+    const unverified = rowWith(list, 'src/main.rs');
     const shownOnly = rowWith(list, 'other-pkg');
     expect(UNVERIFIED_NOTE).not.toBe('');
     expect(SHOWN_ONLY_NOTE).not.toBe('');

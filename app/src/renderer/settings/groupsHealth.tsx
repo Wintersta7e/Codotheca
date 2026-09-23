@@ -7,15 +7,17 @@
  *
  * **The observable effect is what makes each row a control and not a statement row:** the
  * check's items leave the project page's list, `eligible` drops, and this group's caption says
- * so. Off hides; it never closes, and a check switched back on reads `unknown` until it next
- * runs — the footnote states that rather than leaving it to be discovered.
+ * so. Off hides; it never closes, and what a check switched back on reads is stated in the
+ * footnote rather than left to be discovered.
  *
- * Each row is named by its `DebtSource` variant, which is the name the `HEALTH` tab gives the
- * same check; a second vocabulary for one check would be two names drifting apart.
+ * Each row is named by `SOURCE_LABELS`, the one table the `HEALTH` tab names the same check from;
+ * a second vocabulary for one check would be two names drifting apart. The raw `DebtSource` id
+ * stays in the row's `data-row`.
  */
 import type { ReactElement } from 'react';
 import type { HealthCheckSwitch, Settings } from '../../generated/protocol.js';
 import { offCause } from '../project/health/checkForms.js';
+import { SOURCE_LABELS } from '../project/health/labels.js';
 import { SettingsGroup, SwitchRow, type SettingsRowSpec } from './rows.js';
 import { SD } from './styles.js';
 
@@ -84,7 +86,7 @@ export function HealthGroups(props: HealthGroupsProps): ReactElement {
           spec={{
             ...template,
             id: `${template.id}-${entry.check}`,
-            label: entry.check,
+            label: SOURCE_LABELS[entry.check],
             note: rowNote(entry, props.settings),
           }}
           checked={entry.enabled}

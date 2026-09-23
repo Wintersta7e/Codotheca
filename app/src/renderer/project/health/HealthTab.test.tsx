@@ -10,6 +10,7 @@ afterEach(cleanup);
 import type { HealthReading, Settings } from '../../../generated/protocol';
 import { GRANT_ASK_ACTION } from './GrantAsk';
 import { HealthTab } from './HealthTab';
+import { SOURCE_LABELS } from './labels';
 
 const NOW = 1_700_000_000;
 
@@ -170,10 +171,24 @@ describe('each check row reads as text', () => {
     );
     const texts = [...root.querySelectorAll('.cp-health-check')].map((li) => li.textContent);
     expect(texts).toEqual([
-      'missing_license · OPEN',
-      'missing_tests · UNKNOWN · scheduled, and has not run yet',
-      'todo_marker · SWITCHED OFF · you switched this check off',
+      `${SOURCE_LABELS.missing_license} · OPEN`,
+      `${SOURCE_LABELS.missing_tests} · UNKNOWN · scheduled, and has not run yet`,
+      `${SOURCE_LABELS.todo_marker} · SWITCHED OFF · you switched this check off`,
     ]);
+  });
+
+  it('names each check in words and keeps the raw id out of sight', () => {
+    const root = draw(reading());
+    const rows = [...root.querySelectorAll('.cp-health-check')];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const id = row.getAttribute('data-check') ?? '';
+      expect(id, 'the row carries its id for code to find').not.toBe('');
+      expect(row.textContent ?? '', id).not.toContain(id);
+      expect(row.querySelector('.cp-health-check-name')?.textContent).toBe(
+        SOURCE_LABELS[id as keyof typeof SOURCE_LABELS],
+      );
+    }
   });
 });
 
@@ -192,9 +207,7 @@ describe('R142 the in-context grant ask', () => {
         offMarker,
         settings({ contentScanEnabled, healthChecks: [{ check: 'todo_marker', enabled }] }),
       );
-      const row = [...root.querySelectorAll('.cp-health-check')].find(
-        (li) => li.querySelector('.cp-health-check-id')?.textContent === 'todo_marker',
-      );
+      const row = root.querySelector('.cp-health-check[data-check="todo_marker"]');
       return [
         row?.querySelector('.cp-health-check-word')?.textContent ?? '',
         root.querySelector('[data-testid="cp-health-basis"]')?.textContent ?? '',

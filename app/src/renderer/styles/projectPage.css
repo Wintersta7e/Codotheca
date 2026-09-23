@@ -1292,12 +1292,295 @@
   letter-spacing: 0.08em;
 }
 
+/* --- [p3] §30.7 the HEALTH tab ---------------------------------------------------------- *
+ *
+ * The reading, the checks it was read over, the debt items by layer and the ten-row checklist,
+ * in the design's own list idiom: a section head with a trailing rule, then rows parted by a
+ * hairline, with no list markers. The design's Decay Track and damage bar are not built — the
+ * spec did not adopt them — and nothing here moves: no transition, no animation.
+ */
+
+/* Section heads: `ACTIVITY`'s title, with the design's rule running to the right edge. */
+.cp-health-title,
+.cp-health-debt-title,
+.cp-completion-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--text-1);
+}
+.cp-health-title::after,
+.cp-health-debt-title::after,
+.cp-completion-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background-color: var(--line-2);
+}
+
+/* A styled row lays its parts out apart, so the separator the text carries is not drawn. */
+.cp-health .cp-sep,
+.cp-health-debt .cp-sep,
+.cp-completion .cp-sep {
+  display: none;
+}
+
+.cp-health-checks,
+.cp-health-debt-items,
+.cp-completion-checks {
+  margin: 0;
+  padding: 0;
+  list-style-type: none;
+}
+
+/* The reading: the item count, then the checks it was read over, then its age. */
+.cp-health-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.cp-health-open {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.cp-health-basis,
+.cp-health-age {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+
+/* One check per row: its name, the outcome's form, and what the outcome means. */
+.cp-health-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 7px;
+  padding: 7px 0;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-bottom-color: var(--line-1);
+}
+.cp-health-check-name {
+  flex: 0 1 260px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+.cp-health-check-detail {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
 /*
- * [p3] A debt item's path and its marker text are code, copied out of a file: in the body face
- * `--verbose` reads as one long dash. The design sets code in the mono token. Only the face is
- * stated here; the rest of the tab's styling is a separate decision.
+ * §30.4's forms, which §33.9 colours: `--pass`, `--fail`, and `--unknown` with its own ink. `off`
+ * takes §8.7's dashed treatment and not-applicable no box at all, so none of the three that are
+ * not a pass wears the passing form. Every word stays at `--text-3` or lighter, or on its pair.
+ */
+.cp-health-check-word {
+  flex: none;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  border-width: 1px;
+  border-style: solid;
+  border-color: transparent;
+}
+.cp-health-check[data-outcome='ok'] .cp-health-check-word {
+  color: var(--pass-ink);
+  border-color: var(--pass);
+}
+.cp-health-check[data-outcome='failed'] .cp-health-check-word {
+  color: var(--text-0);
+  background-color: var(--fail);
+  border-color: var(--fail);
+}
+.cp-health-check[data-outcome='unknown'] .cp-health-check-word {
+  color: var(--unknown-ink);
+  background-color: var(--unknown);
+  border-color: var(--unknown);
+}
+.cp-health-check[data-outcome='off'] .cp-health-check-word {
+  border-style: dashed;
+  border-color: var(--line-5);
+}
+
+/* §29.8's ask, on its own line under the check, in the page's other consent control's style. */
+.cp-health-ask {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.cp-health-ask-line {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.cp-health-ask-action {
+  padding: 4px 9px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: var(--text-2);
+  background-color: var(--surface-3);
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--line-2);
+  cursor: pointer;
+}
+.cp-health-ask-action:hover,
+.cp-health-ask-action:focus-visible {
+  color: var(--text-1);
+  border-color: var(--line-3);
+}
+
+/* The debt items, grouped by layer, each group headed in its layer's colour (§33.9). */
+.cp-health-debt-layer + .cp-health-debt-layer {
+  margin-top: 12px;
+}
+.cp-health-debt-layer-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 2px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+.cp-health-debt-layer-name::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background-color: var(--line-5);
+}
+.cp-health-debt-layer[data-layer='dust'] .cp-health-debt-layer-name::before {
+  background-color: var(--dust);
+}
+.cp-health-debt-layer[data-layer='cobwebs'] .cp-health-debt-layer-name::before {
+  background-color: var(--silver);
+}
+.cp-health-debt-layer[data-layer='rust'] .cp-health-debt-layer-name::before {
+  background-color: var(--rust);
+}
+.cp-health-debt-layer[data-layer='cracks'] .cp-health-debt-layer-name::before {
+  background-color: var(--fail);
+}
+.cp-health-debt-layer[data-layer='overgrowth'] .cp-health-debt-layer-name::before {
+  background-color: var(--growth);
+}
+.cp-health-debt-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 7px 0 7px 15px;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-bottom-color: var(--line-1);
+}
+.cp-health-debt-source {
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+/* An item shown but not counted keeps its words and gives up the brightest ink. */
+.cp-health-debt-item[data-state='unverified'] .cp-health-debt-source,
+.cp-health-debt-item[data-scoring='shown_only'] .cp-health-debt-source {
+  color: var(--text-2);
+}
+/*
+ * A debt item's path and its marker text are code, copied out of a file: in the body face
+ * `--verbose` reads as one long dash. The design sets code in the mono token.
  */
 .cp-health-debt-where,
 .cp-health-debt-text {
   font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+.cp-health-debt-advisory,
+.cp-health-debt-fingerprint {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+.cp-health-debt-note {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+
+/* §31.7's ten ticks, in the design's two-up grid. */
+.cp-completion-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  column-gap: 20px;
+}
+.cp-completion-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-bottom-color: var(--line-1);
+}
+.cp-completion-mark {
+  flex: none;
+  width: 11px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+.cp-completion-check[data-state='pass'] .cp-completion-mark {
+  color: var(--pass-ink);
+}
+.cp-completion-check[data-state='unknown'] .cp-completion-mark {
+  color: var(--unknown-ink);
+}
+.cp-completion-check[data-state='na'] .cp-completion-mark {
+  color: var(--line-5);
+}
+.cp-completion-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.cp-completion-check[data-state='pass'] .cp-completion-label {
+  color: var(--text-1);
+}
+.cp-completion-note {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  white-space: nowrap;
 }

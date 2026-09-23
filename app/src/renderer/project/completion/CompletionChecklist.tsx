@@ -10,8 +10,11 @@
 import type { ReactElement } from 'react';
 
 import type { CompletionDetail } from '../../../generated/protocol';
-import { PART_SEPARATOR } from '../health/checkForms';
+import { PartSeparator } from '../health/PartSeparator';
 import { CHECK_LABELS, markFor, noteFor } from './checklist';
+
+/** The design's own name for this block, as it heads it in the `HEALTH` tab. */
+export const COMPLETION_TITLE = 'COMPLETION';
 
 export interface CompletionChecklistProps {
   readonly completion: CompletionDetail | null;
@@ -26,6 +29,7 @@ export function CompletionChecklist({ completion }: CompletionChecklistProps): R
       data-testid="cp-completion"
       aria-label="Completion checklist"
     >
+      <h3 className="cp-completion-title">{COMPLETION_TITLE}</h3>
       <ul className="cp-completion-checks">
         {completion.checks.map((row) => {
           const mark = markFor(row);
@@ -45,7 +49,7 @@ export function CompletionChecklist({ completion }: CompletionChecklistProps): R
               <span className="cp-completion-label">{CHECK_LABELS[row.key]}</span>
               {note === null ? null : (
                 <>
-                  {PART_SEPARATOR}
+                  <PartSeparator />
                   <span className="cp-completion-note">{note}</span>
                 </>
               )}

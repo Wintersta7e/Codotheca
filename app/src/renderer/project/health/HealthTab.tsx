@@ -20,9 +20,13 @@ import {
   needsSourceGrant,
   offCause,
   openLine,
-  PART_SEPARATOR,
 } from './checkForms';
 import { GrantAsk } from './GrantAsk';
+import { SOURCE_LABELS } from './labels';
+import { PartSeparator } from './PartSeparator';
+
+/** The tab's own head, as `ACTIVITY` carries its name at the top of its panel. */
+export const HEALTH_TITLE = 'HEALTH';
 
 export interface HealthTabProps {
   readonly reading: HealthReading;
@@ -61,6 +65,7 @@ export function HealthTab({
 
   return (
     <section className="cp-health" data-testid="cp-health" aria-label="Project health">
+      <h2 className="cp-health-title">{HEALTH_TITLE}</h2>
       <header className="cp-health-head">
         {open === null ? null : (
           <p className="cp-health-open" data-testid="cp-health-open">
@@ -84,20 +89,25 @@ export function HealthTab({
           const form = formFor(check, cause);
           return (
             // The parts are separated in the text itself, as the debt list's are, so the row
-            // reads as parts before any stylesheet does: never `missing_readmeOPEN`.
-            <li key={check.id} className="cp-health-check" data-outcome={check.outcome}>
-              <span className="cp-health-check-id">{check.id}</span>
-              {PART_SEPARATOR}
+            // reads as parts before any stylesheet does: never `No READMEOPEN`.
+            <li
+              key={check.id}
+              className="cp-health-check"
+              data-check={check.id}
+              data-outcome={check.outcome}
+            >
+              <span className="cp-health-check-name">{SOURCE_LABELS[check.id]}</span>
+              <PartSeparator />
               <span className="cp-health-check-word">{form.word}</span>
               {form.detail === '' ? null : (
                 <>
-                  {PART_SEPARATOR}
+                  <PartSeparator />
                   <span className="cp-health-check-detail">{form.detail}</span>
                 </>
               )}
               {cause === 'switchedOff' ? (
                 <>
-                  {PART_SEPARATOR}
+                  <PartSeparator />
                   <span className="cp-health-check-detail">you switched this check off</span>
                 </>
               ) : null}

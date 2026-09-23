@@ -24,6 +24,7 @@ import type {
 import { App } from './App';
 import { fakeAppDeps, type FakeAppDeps } from './app/testDeps';
 import { GRANT_ASK_ACTION } from './project/health/GrantAsk';
+import { SOURCE_LABELS } from './project/health/labels';
 import { detailFixture, rowFixture } from './project/testFixtures';
 import { makeProjectRow } from './testing/projectRow';
 
@@ -223,20 +224,18 @@ async function pageBehindDrawer(fake: FakeAppDeps): Promise<HTMLElement> {
     expect(document.querySelector('.cdt-reference-row')).not.toBeNull();
   });
   fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-  await screen.findByRole('switch', { name: 'missing_readme' });
+  await screen.findByRole('switch', { name: SOURCE_LABELS.missing_readme });
   await openHealthTab();
   const list = await screen.findByTestId('cp-health-debt');
-  expect(list.textContent).toContain('missing_readme');
+  expect(list.textContent).toContain(SOURCE_LABELS.missing_readme);
   expect(count(fake, 'projects.get')).toBe(1);
   return list;
 }
 
-/** The `HEALTH` tab's row for one check. */
+/** The `HEALTH` tab's row for one check, found by its raw id. */
 function checkRow(id: DebtSource): HTMLElement {
-  const row = [...document.querySelectorAll<HTMLElement>('.cp-health-check')].find(
-    (li) => li.querySelector('.cp-health-check-id')?.textContent === id,
-  );
-  if (row === undefined) throw new Error(`the HEALTH tab draws no ${id} row`);
+  const row = document.querySelector<HTMLElement>(`.cp-health-check[data-check="${id}"]`);
+  if (row === null) throw new Error(`the HEALTH tab draws no ${id} row`);
   return row;
 }
 
@@ -246,16 +245,18 @@ describe('§30.9 a switch reaches the readings already on screen', () => {
     await pageBehindDrawer(fake);
     const listsBefore = count(fake, 'projects.list');
 
-    fireEvent.click(screen.getByRole('switch', { name: 'missing_readme' }));
+    fireEvent.click(screen.getByRole('switch', { name: SOURCE_LABELS.missing_readme }));
     await waitFor(() => {
       expect(count(fake, 'projects.get')).toBe(2);
     });
     await waitFor(() => {
-      expect(screen.getByTestId('cp-health-debt').textContent).not.toContain('missing_readme');
+      expect(screen.getByTestId('cp-health-debt').textContent).not.toContain(
+        SOURCE_LABELS.missing_readme,
+      );
     });
     // The list re-rendered from the second answer rather than emptying: the other check's item
     // is still there.
-    expect(screen.getByTestId('cp-health-debt').textContent).toContain('todo_marker');
+    expect(screen.getByTestId('cp-health-debt').textContent).toContain(SOURCE_LABELS.todo_marker);
     expect(count(fake, 'projects.list')).toBe(listsBefore + 1);
   });
 
