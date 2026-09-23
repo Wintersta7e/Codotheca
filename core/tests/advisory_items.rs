@@ -18,10 +18,13 @@ use std::path::Path;
 
 use codotheca_core::advisories::items::{advisory_fingerprint, sync_advisory_items};
 use codotheca_core::advisories::lockfiles::read_lockfiles;
-use codotheca_core::debt::store::{DebtCloseReason, SqliteDebtStore};
+use codotheca_core::debt::store::{DebtCloseReason, DebtStore, SqliteDebtStore};
+use codotheca_core::debt::sweep::SweepObservation;
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
-use codotheca_core::protocol::{DebtScoring, Ecosystem, ProjectId};
+use codotheca_core::protocol::{
+    DebtScoring, DebtSource, DebtSweepOutcome, Ecosystem, ObservationBasis, ProjectId,
+};
 
 const NOW: i64 = 1_800_000_000;
 
@@ -347,7 +350,10 @@ fn an_unreadable_project_marks_unverified_and_pays_nothing() {
 }
 
 /// **AC-P3-32-18, second half.** **No closure is computed by diffing a worktree observation
-/// against a HEAD observation.** A HEAD-basis sweep row for the same project closes nothing here.
+/// against a HEAD observation.** A complete HEAD-basis sweep of this source that saw nothing goes
+/// through the same `DebtStore::observe` the advisory items close through, and closes nothing.
+///
+/// The observation shares the item's anchor, so the basis is the only thing that differs.
 #[test]
 fn ac_p3_32_18_a_head_basis_sweep_closes_nothing() {
     let (_d, mut conn) = fresh();
@@ -357,28 +363,45 @@ fn ac_p3_32_18_a_head_basis_sweep_closes_nothing() {
     scan(&mut conn, project, dir.path(), NOW);
     answer(&conn, "left", "1.0.0", NOW, Some(("GHSA-x", true)));
     sync(&mut conn, project, NOW);
-    assert_eq!(items(&conn).len(), 1);
+    let before = items(&conn);
+    assert_eq!(before.len(), 1);
+    let ledger_before = ledger(&conn);
 
-    // A HEAD-basis sweep for this very source, claiming it observed nothing.
-    conn.execute(
-        "INSERT INTO debt_sweep (project_id, source, outcome, basis, item_count, observed_at)
-         VALUES (?1, 'dependency_advisory', 'complete', 'head', 0, ?2)
-         ON CONFLICT DO UPDATE SET basis = 'head', item_count = 0",
-        rusqlite::params![project.0, NOW + 60],
-    )
-    .unwrap();
+    // A HEAD-basis sweep for this very source, at the item's own anchor, claiming it observed
+    // nothing.
+    let head = SweepObservation {
+        project,
+        source: DebtSource::DependencyAdvisory,
+        outcome: DebtSweepOutcome::Complete,
+        location: None,
+        generation: None,
+        basis: Some(ObservationBasis::Head),
+        item_count: Some(0),
+        observed_at: NOW + 60,
+    };
+    let tx = conn.transaction().unwrap();
+    let effect = SqliteDebtStore.observe(&tx, &head, &[]).unwrap();
+    tx.commit().unwrap();
 
     let rows = items(&conn);
     eprintln!(
-        "advisory_items: {} row(s) after a HEAD-basis sweep",
-        rows.len()
+        "advisory_items: {} closed, {} row(s) after a HEAD-basis sweep, state {:?}",
+        effect.closed.len(),
+        rows.len(),
+        rows.first().map(|r| r.2.as_str())
+    );
+    assert!(
+        effect.closed.is_empty(),
+        "a HEAD observation closed a worktree item: {:?}",
+        effect.closed
     );
     assert_eq!(
         rows.len(),
         1,
         "a HEAD observation cannot close a worktree item"
     );
-    assert_eq!(rows[0].2, "open");
+    assert_eq!(rows[0].0, before[0].0, "the same row: nothing was closed");
+    assert_eq!(ledger(&conn), ledger_before, "nothing was paid");
 }
 
 /// The scored set is exactly the **fixable** set; the shown set is larger. The two reconcile by
@@ -422,4 +445,21 @@ fn shown_is_wider_than_scored() {
         2,
         "two values, orthogonal to the item's state"
     );
+}
+
+/// An index fault reading an advisory's detail is an **error**, never an absent detail: read as
+/// absent, the page would show an advisory item with its severity silently missing.
+#[test]
+fn an_index_fault_reading_the_detail_is_an_error() {
+    let (_d, conn) = fresh();
+    let fingerprint = advisory_fingerprint(Ecosystem::Npm, "left", "GHSA-x");
+    assert_eq!(
+        codotheca_core::advisories::items::advisory_detail_for(&conn, &fingerprint).unwrap(),
+        None,
+        "no advisory row is no detail"
+    );
+    conn.execute_batch("DROP TABLE advisory_match").unwrap();
+    let faulted = codotheca_core::advisories::items::advisory_detail_for(&conn, &fingerprint);
+    eprintln!("advisory_items: a faulted detail read returned {faulted:?}");
+    assert!(faulted.is_err(), "an index fault read as no detail");
 }

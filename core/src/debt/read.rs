@@ -94,6 +94,20 @@ pub fn load_debt(conn: &Connection, project: ProjectId) -> Result<Vec<DebtItem>,
                     .ok_or_else(|| DebtError::Codec(format!("debt_item.basis holds {raw:?}")))?,
             ),
         };
+        // [p3] R118's struct is §32's, and so is the only producer that has an advisory to
+        // name. Every other source leaves it absent — one nullable struct rather than six
+        // nullable fields NULL for eight of the nine sources.
+        let advisory = if source == DebtSource::DependencyAdvisory {
+            crate::advisories::items::advisory_detail_for(conn, &row.2).map_err(|e| match e {
+                crate::advisories::AdvisoryError::Index(inner) => DebtError::Index(inner),
+                crate::advisories::AdvisoryError::Debt(inner) => inner,
+                other @ crate::advisories::AdvisoryError::Parse(_) => {
+                    DebtError::Codec(other.to_string())
+                }
+            })?
+        } else {
+            None
+        };
         out.push(DebtItem {
             source,
             fingerprint: row.2,
@@ -112,10 +126,7 @@ pub fn load_debt(conn: &Connection, project: ProjectId) -> Result<Vec<DebtItem>,
             first_seen_at: row.8,
             last_seen_at: row.9,
             basis,
-            // [p3] R118's struct is §32's, and so is the only producer that has an advisory to
-            // name. Every other source leaves it absent — one nullable struct rather than six
-            // nullable fields NULL for eight of the nine sources.
-            advisory: None,
+            advisory,
         });
     }
 

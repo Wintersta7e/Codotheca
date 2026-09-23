@@ -8,12 +8,12 @@
 //! from one vulnerable version to another must not close and reopen an identically-meaning item
 //! and pay XP twice. The `advisory_id` is the GHSA id, never the CVE id.
 
-use rusqlite::{Connection, Transaction};
+use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use crate::advisories::verdict::verdict_for;
 use crate::advisories::{eco_slug, AdvisoryError};
 use crate::debt::identity::DebtKey;
-use crate::debt::store::{DebtCloseReason, DebtStore, ObservedItem, SweepEffect};
+use crate::debt::store::{DebtCloseReason, DebtStore, ObservedItem, SqliteDebtStore, SweepEffect};
 use crate::debt::sweep::SweepObservation;
 use crate::protocol::{
     AdvisoryDetail, DebtScoring, DebtSource, DebtSweepOutcome, DependencyVerdict, Ecosystem,
@@ -247,6 +247,51 @@ pub fn sync_advisory_items(
     Ok(result)
 }
 
+/// Sync every scanned project's items and pay its closes, at the close of a sweep that has asked
+/// about every triple. Returns the number of projects synced.
+///
+/// **Here, in the sweep, and not at the settle's alert**: §31's `deps` check reads these items,
+/// and the settle runs its completion evaluator before the alert, so a sync placed after it would
+/// answer every `deps` check from the previous sweep.
+///
+/// **Unanchored** (`location: None`): the triples are a fact about the project, not about the
+/// copy they were read from, so an item is not stranded as `unverified` when the primary moves.
+///
+/// Each project's closes are paid in the same transaction as the deletions, as every other
+/// producer's are; `pay_debt_day` excludes the `invalidated` ones.
+///
+/// # Errors
+/// Fails when the index refuses a read or a write.
+pub fn settle_advisory_items(
+    tx: &Transaction<'_>,
+    now: i64,
+    tz_offset_min: i32,
+) -> Result<usize, AdvisoryError> {
+    // §32.12 rule 3: a project's first computation is seeded before the sync marks it computed,
+    // so no later settle can decide on a pair it never seeded.
+    crate::advisories::notify::seed_first_computations(tx, now)?;
+    let projects: Vec<i64> = {
+        let mut stmt = tx
+            .prepare("SELECT project_id FROM project_dependency_scan ORDER BY project_id")
+            .map_err(crate::index::IndexError::from)?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, i64>(0))
+            .map_err(crate::index::IndexError::from)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(crate::index::IndexError::from)?;
+        rows
+    };
+    for id in &projects {
+        let project = ProjectId(*id);
+        let swept = sync_advisory_items(tx, project, None, now, &SqliteDebtStore)?;
+        let subject = crate::index::subject::subject_for_project(tx, project)?
+            .map(|s| s.to_key())
+            .unwrap_or_default();
+        crate::debt::xp::pay_debt_day(tx, project, &subject, &swept.effect, now, tz_offset_min)?;
+    }
+    Ok(projects.len())
+}
+
 /// Fill `DebtItem.advisory` for one item, **including every CVE id**.
 ///
 /// R118: one nullable struct, not six nullable fields NULL for eight of the nine sources. `None`
@@ -279,7 +324,10 @@ pub fn advisory_detail_for(
             rusqlite::params![advisory_id, package],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
-        .ok();
+        // `optional`, not `ok`: no advisory row is *no detail*, and an index fault is an error —
+        // read as the first, it would show an advisory item with its severity silently missing.
+        .optional()
+        .map_err(crate::index::IndexError::from)?;
     let Some((severity, fixed_version)) = row else {
         return Ok(None);
     };

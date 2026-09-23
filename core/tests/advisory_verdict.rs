@@ -211,24 +211,58 @@ fn ac_p3_32_15_unparsed_no_lockfile_and_never_scanned_differ() {
 /// **AC-P3-32-20.** An **uninstalled** project still produces a verdict, with the triples' own age
 /// attached, and **no byte is read from that project's disk**.
 ///
-/// The root is pointed at a path that does not exist; the call still answers, because the join is
-/// a pure recompute over stored facts.
+/// The copy is uninstalled the way `uninstall_location` leaves it: the row kept, `removed_at` set
+/// and §24.6b's ten columns cleared. The working copy is then deleted, so the call can only answer
+/// from stored facts.
 #[test]
 fn ac_p3_32_20_an_uninstalled_project_still_gets_a_verdict() {
     let (_d, mut conn) = fresh();
     let project = insert_project(&conn, "gone");
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "Cargo.lock", &cargo_lock("left", "1.0.0"));
+    let path = dir.path().to_string_lossy().into_owned();
+    conn.execute(
+        "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display, store_key,
+                               presence, repo_kind)
+         VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree')",
+        rusqlite::params![project.0, path.as_bytes(), path],
+    )
+    .unwrap();
     scan(&mut conn, project, dir.path(), NOW);
     answer(&conn, "left", "1.0.0", NOW, 1);
-    conn.execute(
-        "INSERT INTO location (project_id, path_display, path_key, kind, presence, removed_at,
-                               first_seen_at, last_seen_at)
-         VALUES (?1, '/gone', 'gone', 'native', 'missing', ?2, ?2, ?2)",
-        rusqlite::params![project.0, NOW],
-    )
-    .ok();
+
+    // The removal's own update. `presence` is left `present`, as the uninstall leaves it.
+    let clears = codotheca_core::uninstall::command::cleared_columns()
+        .iter()
+        .map(|column| format!("{column} = NULL"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let updated = conn
+        .execute(
+            &format!("UPDATE location SET removed_at = ?2, {clears} WHERE project_id = ?1"),
+            rusqlite::params![project.0, NOW + 60],
+        )
+        .unwrap();
+    assert_eq!(updated, 1, "the uninstall marked no location");
+    let (copies, installed): (i64, i64) = conn
+        .query_row(
+            "SELECT count(*), count(*) FILTER (WHERE removed_at IS NULL AND presence = 'present')
+               FROM location WHERE project_id = ?1",
+            [project.0],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    eprintln!("advisory_verdict: {copies} copy row(s), {installed} installed");
+    assert_eq!(
+        (copies, installed),
+        (1, 0),
+        "the project is not in the uninstalled state"
+    );
     drop(dir);
+    assert!(
+        !Path::new(&path).exists(),
+        "the working copy is still on disk"
+    );
 
     let reading = verdict_for(&conn, project, NOW + DAY).unwrap();
     assert_eq!(reading.verdict, DependencyVerdict::Vulnerable);

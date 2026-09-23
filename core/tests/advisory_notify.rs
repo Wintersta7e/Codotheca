@@ -12,7 +12,7 @@
 //! breach it by addition rather than by wording, which is why the payload's fields are asserted
 //! against a forbidden list and not merely read.
 
-use codotheca_core::advisories::notify::{nothing_suppressed, notifiable, seed_notified};
+use codotheca_core::advisories::notify::{notifiable, seed_notified};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::protocol::{AdvisoryAlert, ProjectId};
@@ -121,7 +121,8 @@ fn vulnerable(conn: &rusqlite::Connection, project: ProjectId, package: &str, ad
 
 fn fire(conn: &mut rusqlite::Connection) -> Option<AdvisoryAlert> {
     let tx = conn.transaction().unwrap();
-    let alert = notifiable(&tx, NOW, &nothing_suppressed()).unwrap();
+    // Nothing suppressed: these fixtures test the other four conjuncts.
+    let alert = notifiable(&tx, NOW, &|_| false).unwrap();
     tx.commit().unwrap();
     alert
 }

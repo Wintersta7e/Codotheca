@@ -571,10 +571,25 @@ pub fn run_one(
             })?;
             Ok(JobOutcome::Done)
         }
+        // §32.6: the lockfile read rides J6's named-file grant and is not compute-suppressed. It
+        // reads here, unlocked, and writes in J6's own transaction. A bare repository has no
+        // worktree to install anything into, so it is not read: an empty walk of its git
+        // directory would store *ran and found nothing*, which renders a clean verdict.
         JobKind::J6Content => {
             let facts = j6_content::read_content(&place.work_dir, j6_content::J6_BYTE_CAP);
+            let lockfiles = (place.repo_kind != "bare")
+                .then(|| crate::advisories::lockfiles::read_lockfile_set(&place.work_dir));
             write(index, |tx| {
-                j6_content::persist(tx, job.project_id, &facts, now)
+                j6_content::persist(tx, job.project_id, &facts, now)?;
+                if let Some(reading) = &lockfiles {
+                    crate::advisories::lockfiles::write_lockfile_set(
+                        tx,
+                        job.project_id,
+                        reading,
+                        now,
+                    )?;
+                }
+                Ok(())
             })?;
             Ok(JobOutcome::Done)
         }

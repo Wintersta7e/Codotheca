@@ -282,6 +282,10 @@ pub fn unanswered_triples(
 
 /// The distinct triples the whole library holds, for a diagnostic count.
 ///
+/// **Diagnostic, read by no surface.** It is §32.18 measurement 3's instrument: a sweep costs
+/// `ceil(distinct triples / batch cap)` requests, so this count decides whether a daily sweep fits
+/// the unauthenticated hourly allowance.
+///
 /// # Errors
 /// Fails when SQLite cannot be read.
 pub fn distinct_triples(conn: &Connection) -> Result<Vec<(Ecosystem, PackageVersion)>, IndexError> {

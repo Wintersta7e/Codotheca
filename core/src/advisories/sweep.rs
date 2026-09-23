@@ -2,7 +2,8 @@
 //!
 //! It reads the distinct `(ecosystem, package_name, version)` triples the whole library holds,
 //! batched, and writes four library-wide facts — the advisory, its CVE ids, the match, and the
-//! record that the question was asked. **No project row, no working copy, no git invocation.**
+//! record that the question was asked. **No project row, no working copy, no git invocation** —
+//! until the close, which computes each scanned project's advisory items from what was stored.
 //!
 //! **The batch is the transaction, and a batch is one request.** A sweep over a real library costs
 //! more than one request and may cost more than one hour's allowance, so each batch settles
@@ -68,6 +69,22 @@ pub fn run_advisory_sweep(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.with_tx(|tx| close_sweep(tx, sweep_id, now, "done", true))?;
+        // §32.10: every triple has been asked, so every scanned project's items are computed
+        // now. A separate transaction, so an item fault cannot keep the sweep open for ever: it
+        // is logged, and the next sweep computes them again.
+        let items = guard.with_tx(|tx| {
+            crate::advisories::items::settle_advisory_items(tx, now, deps.tz_offset_min).map_err(
+                |e| match e {
+                    crate::advisories::AdvisoryError::Index(inner) => inner,
+                    other => crate::index::IndexError::Corrupt {
+                        detail: other.to_string(),
+                    },
+                },
+            )
+        });
+        if let Err(e) = items {
+            eprintln!("sync: advisory items were not computed: {e}");
+        }
         return Ok(SyncOutcome::Done);
     };
 

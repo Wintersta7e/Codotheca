@@ -39,10 +39,18 @@ struct Candidate {
 /// The fifth — **not `surface_suppressed`** — is §30's and is supplied by the caller. A11.2 rules
 /// that suppression gates rendering, ranking **and notification**, and §30 owns the predicate;
 /// reimplementing it here would be a second one that could disagree with the first, so it arrives
-/// as a parameter. **Until §30 lands, the caller passes a predicate that suppresses nothing**,
-/// which is the honest state of a build that declares no suppression.
-fn candidates(tx: &Transaction<'_>, now: i64) -> Result<Vec<Candidate>, AdvisoryError> {
+/// as a parameter. The sync runner passes `health::enrolment::surface_suppressed` over each
+/// project's stored enrolment and archive facts.
+///
+/// `project` narrows the read to one project through `project_dependency`'s primary key, so a
+/// per-project seed does not rescan the whole library once per project.
+fn candidates(
+    tx: &Transaction<'_>,
+    now: i64,
+    project: Option<ProjectId>,
+) -> Result<Vec<Candidate>, AdvisoryError> {
     let _ = now;
+    let (low, high) = project.map_or((i64::MIN, i64::MAX), |p| (p.0, p.0));
     let mut stmt = tx
         .prepare(
             "SELECT DISTINCT d.project_id, a.advisory_id, m.ecosystem, m.package_name,
@@ -55,6 +63,7 @@ fn candidates(tx: &Transaction<'_>, now: i64) -> Result<Vec<Candidate>, Advisory
                 AND d.package_name = m.package_name
                 AND d.version = m.version
               WHERE a.severity = ?1
+                AND d.project_id BETWEEN ?2 AND ?3
                 AND a.withdrawn_at IS NULL
                 AND m.fix_available = 1
                 AND EXISTS (SELECT 1 FROM location l
@@ -68,7 +77,7 @@ fn candidates(tx: &Transaction<'_>, now: i64) -> Result<Vec<Candidate>, Advisory
         )
         .map_err(IndexError::from)?;
     let rows = stmt
-        .query_map([NOTIFIABLE_SEVERITY], |row| {
+        .query_map(rusqlite::params![NOTIFIABLE_SEVERITY, low, high], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
                 row.get::<_, String>(1)?,
@@ -112,10 +121,7 @@ pub fn seed_notified(
     now: i64,
 ) -> Result<usize, AdvisoryError> {
     let mut seeded = 0usize;
-    for candidate in candidates(tx, now)? {
-        if candidate.project != project {
-            continue;
-        }
+    for candidate in candidates(tx, now, Some(project))? {
         seeded += tx
             .execute(
                 "INSERT INTO advisory_notified (project_id, advisory_id, at, seeded)
@@ -124,6 +130,38 @@ pub fn seed_notified(
                 rusqlite::params![project.0, candidate.advisory_id, now],
             )
             .map_err(IndexError::from)?;
+    }
+    Ok(seeded)
+}
+
+/// Seed every project whose advisory items have **never been computed**. Returns the number of
+/// pairs seeded.
+///
+/// *Computed* is the `dependency_advisory` sweep row that `sync_advisory_items` writes on every
+/// run, so a project is in its first computation until that row exists. It runs before every
+/// alert decision **and** before the item sync that writes the row: the one without the other
+/// leaves a settle at which a project is computed, or decided on, with pairs it never seeded.
+///
+/// # Errors
+/// Fails when SQLite refuses the read or the write.
+pub fn seed_first_computations(tx: &Transaction<'_>, now: i64) -> Result<usize, AdvisoryError> {
+    let mut stmt = tx
+        .prepare(
+            "SELECT s.project_id FROM project_dependency_scan s
+              WHERE NOT EXISTS (SELECT 1 FROM debt_sweep d
+                                 WHERE d.project_id = s.project_id
+                                   AND d.source = 'dependency_advisory')
+              ORDER BY s.project_id",
+        )
+        .map_err(IndexError::from)?;
+    let projects = stmt
+        .query_map([], |row| row.get::<_, i64>(0))
+        .map_err(IndexError::from)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(IndexError::from)?;
+    let mut seeded = 0usize;
+    for project in projects {
+        seeded += seed_notified(tx, ProjectId(project), now)?;
     }
     Ok(seeded)
 }
@@ -143,7 +181,7 @@ pub fn notifiable(
     now: i64,
     suppressed: &dyn Fn(ProjectId) -> bool,
 ) -> Result<Option<AdvisoryAlert>, AdvisoryError> {
-    let found: Vec<Candidate> = candidates(tx, now)?
+    let found: Vec<Candidate> = candidates(tx, now, None)?
         .into_iter()
         .filter(|c| !suppressed(c.project))
         .collect();
@@ -191,12 +229,4 @@ pub fn notifiable(
         ecosystem: single.map(|c| c.ecosystem),
         advisory_count,
     }))
-}
-
-/// A predicate that suppresses nothing, for a build that declares no suppression.
-///
-/// Named rather than written as a closure at each call site, so the day §30 lands there is one
-/// place to look for what has to change.
-pub fn nothing_suppressed() -> impl Fn(ProjectId) -> bool {
-    |_| false
 }

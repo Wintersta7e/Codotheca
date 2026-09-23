@@ -6,6 +6,8 @@
  * makes the claim diffable in a single read.
  */
 
+import { LOCKFILE_CAP_TEXT, LOCKFILE_DEPTH_TEXT } from '../../shared/lockfileNames';
+
 /**
  * §10.1 verbatim. Any change here is a change to what the code is allowed to read.
  *
@@ -63,11 +65,14 @@ export interface ConsentRow {
  */
 export const CONSENT_ROWS: readonly ConsentRow[] = [
   {
+    // [p3] §32.6: the lock file read rides this row's grant, so the row names it. Four root files
+    // alone would under-describe a read that goes three directories deep.
     kind: 'control',
     body:
       'Index what is already public inside a repo — names, dates, branches, remotes — and four ' +
-      'named files at its root, 256 KB each.',
-    note: 'READ FROM .git AND FOUR ROOT FILES · NEEDED NOW',
+      `named files at its root, 256 KB each, and its lock files ${LOCKFILE_DEPTH_TEXT}, ` +
+      `${LOCKFILE_CAP_TEXT}.`,
+    note: 'READ FROM .git, FOUR ROOT FILES AND LOCK FILES · NEEDED NOW',
   },
   {
     // §29.8: it stays a **statement** here. The ask is in context, so a checkbox on this screen

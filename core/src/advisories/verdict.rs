@@ -14,9 +14,8 @@
 
 use rusqlite::Connection;
 
-use crate::advisories::eco_slug;
 use crate::index::IndexError;
-use crate::protocol::{DependencyVerdict, Ecosystem, ProjectId};
+use crate::protocol::{DependencyVerdict, ProjectId};
 
 /// How long a `clean` verdict stands before it expires to `unknown`.
 ///
@@ -185,21 +184,4 @@ fn unknown(observed_at: Option<i64>) -> DependencyReading {
         verdict: DependencyVerdict::Unknown,
         observed_at,
     }
-}
-
-/// The distinct ecosystems one project resolves, for a diagnostic.
-///
-/// # Errors
-/// Fails when SQLite cannot be read.
-pub fn ecosystems_of(conn: &Connection, project: ProjectId) -> Result<Vec<Ecosystem>, IndexError> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT ecosystem FROM project_dependency WHERE project_id = ?1 ORDER BY 1",
-    )?;
-    let rows: Vec<String> = stmt
-        .query_map([project.0], |row| row.get(0))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|raw| Ecosystem::ALL.into_iter().find(|e| eco_slug(*e) == raw))
-        .collect())
 }

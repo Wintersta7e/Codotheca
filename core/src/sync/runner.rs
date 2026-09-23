@@ -717,23 +717,30 @@ impl SyncRunner {
             let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
             guard
                 .with_tx(|tx| {
-                    crate::advisories::notify::notifiable(
-                        tx,
-                        now,
-                        &crate::advisories::notify::nothing_suppressed(),
-                    )
-                    .map_err(|e| match e {
-                        crate::advisories::AdvisoryError::Index(index) => index,
-                        other => {
-                            // A decision this build could not make is not one to guess at: no
-                            // event, a line on stderr for the log the shell keeps, and the ledger
-                            // untouched so the next settle can decide it again.
-                            eprintln!("sync: the advisory alert could not be decided: {other}");
-                            IndexError::Corrupt {
-                                detail: other.to_string(),
+                    // §32.12's fifth conjunct is §30's surface gate. Read before the decision, so
+                    // a failed read is an index error rather than a guess inside the predicate.
+                    let suppressed = surface_suppressed_projects(tx)?;
+                    // §32.12 rule 3: a project not yet computed is seeded here, never told. Its
+                    // pairs can already match — a batch folded, or its lockfile named a triple an
+                    // earlier sweep answered — at a settle that computes no items.
+                    crate::advisories::notify::seed_first_computations(tx, now)
+                        .and_then(|_| {
+                            crate::advisories::notify::notifiable(tx, now, &|p| {
+                                suppressed.contains(&p.0)
+                            })
+                        })
+                        .map_err(|e| match e {
+                            crate::advisories::AdvisoryError::Index(index) => index,
+                            other => {
+                                // A decision this build could not make is not one to guess at:
+                                // no event, a line on stderr for the log the shell keeps, and the
+                                // ledger untouched so the next settle can decide it again.
+                                eprintln!("sync: the advisory alert could not be decided: {other}");
+                                IndexError::Corrupt {
+                                    detail: other.to_string(),
+                                }
                             }
-                        }
-                    })
+                        })
                 })
                 .ok()
                 .flatten()
@@ -826,6 +833,34 @@ impl SyncRunner {
         let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         crate::sync::events::budgets(guard.conn())
     }
+}
+
+/// [p3] Every project §30's surface gate suppresses, by id.
+///
+/// The gate is `health::enrolment::surface_suppressed` and nothing here restates it: this reads
+/// the two facts it takes, for every project, once per decision.
+fn surface_suppressed_projects(
+    tx: &rusqlite::Transaction<'_>,
+) -> Result<std::collections::HashSet<i64>, IndexError> {
+    let mut stmt = tx.prepare("SELECT id, acknowledged_at, is_archived FROM project")?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, Option<i64>>(1)?,
+            r.get::<_, i64>(2)? != 0,
+        ))
+    })?;
+    let mut suppressed = std::collections::HashSet::new();
+    for row in rows {
+        let (id, acknowledged_at, is_archived) = row?;
+        if crate::health::enrolment::surface_suppressed(
+            crate::health::enrolment::is_enrolled(acknowledged_at),
+            is_archived,
+        ) {
+            suppressed.insert(id);
+        }
+    }
+    Ok(suppressed)
 }
 
 /// Queue an `account_repos` row for every account `due_listings` names, and say how many.

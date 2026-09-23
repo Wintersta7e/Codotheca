@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
 import * as copy from './copy';
 import { SKIP_AHEAD_LABEL } from '../a11y/names'; // R12: plan 12b declares it.
-import { LOCKFILE_NAMES } from '../../shared/lockfileNames';
+import { LOCKFILE_CAP_TEXT, LOCKFILE_DEPTH_TEXT, LOCKFILE_NAMES } from '../../shared/lockfileNames';
 
 /** Every rendered string this module exports, however deeply it is nested. */
 function everyString(value: unknown): string[] {
@@ -45,10 +45,16 @@ test('the consent paragraph is what phase 1 actually reads', () => {
 
 // §10.1b: row 1's prototype note is `READ FROM .git · NEEDED NOW`, word for word the claim
 // §10.1 exists to kill.
-test('consent row 1 names the root files as well as .git', () => {
+test('consent row 1 names the root files and the lock files as well as .git', () => {
   const [first] = copy.CONSENT_ROWS;
   expect(first?.kind).toBe('control');
-  expect(first?.note).toBe('READ FROM .git AND FOUR ROOT FILES · NEEDED NOW');
+  expect(first?.note).toBe('READ FROM .git, FOUR ROOT FILES AND LOCK FILES · NEEDED NOW');
+  // [p3] §32.6: the lock file read rides this row's grant and goes three directories deep, so a
+  // row naming only the root files under-describes it. The bound and the cap are the shared
+  // constants the paragraph and the settings row are checked against.
+  expect(first?.body).toContain('four named files at its root, 256 KB each');
+  expect(first?.body).toContain(`lock files ${LOCKFILE_DEPTH_TEXT}`);
+  expect(first?.body).toContain(LOCKFILE_CAP_TEXT);
 });
 
 // §10.1b: rows 2 and 3 are statements, because a checkbox there would store a preference

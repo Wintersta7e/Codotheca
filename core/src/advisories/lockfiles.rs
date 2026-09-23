@@ -15,6 +15,7 @@ use rusqlite::Transaction;
 use crate::advisories::parse::{parse_lockfile, LockfileRead};
 use crate::advisories::store::{clear_project_read, write_lockfile_row, write_scan_row};
 use crate::advisories::AdvisoryError;
+use crate::index::IndexError;
 use crate::protocol::{DependencyReadState, Ecosystem, ProjectId};
 
 /// The largest lockfile this read will open.
@@ -27,9 +28,10 @@ pub const LOCKFILE_BYTE_CAP: u64 = 16 * 1024 * 1024;
 
 /// The largest number of lockfiles this read will open for one project.
 ///
-/// **Two bounds and not three**: each file is parsed and its triples written before the next is
-/// opened, so the peak memory is one file and [`LOCKFILE_BYTE_CAP`] already governs it. A third
-/// number would be a third thing to drift.
+/// **Two bounds and not three**: each file's bytes are parsed and dropped before the next is
+/// opened, so the peak raw read is one file and [`LOCKFILE_BYTE_CAP`] already governs it; the
+/// parsed pairs held until the write are bounded by the two caps together. A third number would
+/// be a third thing to drift.
 pub const LOCKFILE_COUNT_CAP: usize = 32;
 
 /// How far below the repository root the walk descends, **counting the file itself**: a lockfile
@@ -210,7 +212,18 @@ fn relative_display(root: &Path, path: &Path) -> Option<String> {
     Some(out)
 }
 
-/// Read one project's lockfiles and write what was seen. Returns the **triple count written**.
+/// One project's lockfile read **before anything is written**: the walk, and each file's result
+/// in the walk's order.
+///
+/// The read and the write are two halves so that J6 can do the filesystem work with the index
+/// unlocked and take the lock only to write, which is the discipline every job arm keeps.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockfileReading {
+    walk: LockfileWalk,
+    reads: Vec<LockfileRead>,
+}
+
+/// Walk `root` and parse every lockfile found. **Opens files and writes nothing.**
 ///
 /// **A cap exceedance is `not_read`, never `absent`, and never a partial parse.** A project with
 /// any `not_read` lockfile has an `unknown` verdict, whatever its other lockfiles said. *A timeout
@@ -218,30 +231,16 @@ fn relative_display(root: &Path, path: &Path) -> Option<String> {
 /// dependency list — so a producer must distinguish *absent* from *unreadable* before it may open
 /// an item, and `read_capped` returning `None` is the live instance that would have opened a
 /// `missing_readme` item on a repository that has one.
-///
-/// **Three read outcomes are distinguished and stored, never two.** `parsed` and `not_read` are
-/// `project_lockfile.read_state`; *the scan has not run* is the **absence** of a
-/// `project_dependency_scan` row. Collapsing that last one makes every unscanned project claim to
-/// have no dependencies.
-///
-/// # Errors
-/// Fails when SQLite refuses a write.
-pub fn read_lockfiles(
-    tx: &Transaction<'_>,
-    project: ProjectId,
-    root: &Path,
-    now: i64,
-) -> Result<usize, AdvisoryError> {
+#[must_use]
+pub fn read_lockfile_set(root: &Path) -> LockfileReading {
     let walk = walk_lockfiles(root);
-    // A re-read replaces: a lockfile that has been deleted must not leave its triples behind,
-    // which would be a dependency this project no longer resolves, dated as if it did.
-    clear_project_read(tx, project)?;
-
-    let mut written = 0usize;
-    for hit in &walk.files {
-        let read = if hit.size_bytes > LOCKFILE_BYTE_CAP {
-            LockfileRead::NotRead
-        } else {
+    let reads = walk
+        .files
+        .iter()
+        .map(|hit| {
+            if hit.size_bytes > LOCKFILE_BYTE_CAP {
+                return LockfileRead::NotRead;
+            }
             match std::fs::read(root.join(&hit.source_path)) {
                 Ok(bytes) => {
                     let name = hit.source_path.rsplit('/').next().unwrap_or("");
@@ -250,8 +249,33 @@ pub fn read_lockfiles(
                 // Unreadable is **not** evidence of absence.
                 Err(_) => LockfileRead::NotRead,
             }
-        };
-        let state = match &read {
+        })
+        .collect();
+    LockfileReading { walk, reads }
+}
+
+/// Write what [`read_lockfile_set`] saw. Returns the **triple count written**.
+///
+/// **Three read outcomes are distinguished and stored, never two.** `parsed` and `not_read` are
+/// `project_lockfile.read_state`; *the scan has not run* is the **absence** of a
+/// `project_dependency_scan` row. Collapsing that last one makes every unscanned project claim to
+/// have no dependencies.
+///
+/// # Errors
+/// Fails when SQLite refuses a write.
+pub fn write_lockfile_set(
+    tx: &Transaction<'_>,
+    project: ProjectId,
+    reading: &LockfileReading,
+    now: i64,
+) -> Result<usize, IndexError> {
+    // A re-read replaces: a lockfile that has been deleted must not leave its triples behind,
+    // which would be a dependency this project no longer resolves, dated as if it did.
+    clear_project_read(tx, project)?;
+
+    let mut written = 0usize;
+    for (hit, read) in reading.walk.files.iter().zip(&reading.reads) {
+        let state = match read {
             LockfileRead::Parsed(_) => DependencyReadState::Parsed,
             LockfileRead::NotRead => DependencyReadState::NotRead,
         };
@@ -262,12 +286,31 @@ pub fn read_lockfiles(
                 project,
                 &hit.source_path,
                 hit.ecosystem,
-                &pairs,
+                pairs,
                 now,
             )?;
         }
     }
 
-    write_scan_row(tx, project, &walk, now)?;
+    write_scan_row(tx, project, &reading.walk, now)?;
     Ok(written)
+}
+
+/// Read one project's lockfiles and write what was seen, in one call. Returns the **triple count
+/// written**. The two halves are [`read_lockfile_set`] and [`write_lockfile_set`].
+///
+/// # Errors
+/// Fails when SQLite refuses a write.
+pub fn read_lockfiles(
+    tx: &Transaction<'_>,
+    project: ProjectId,
+    root: &Path,
+    now: i64,
+) -> Result<usize, AdvisoryError> {
+    Ok(write_lockfile_set(
+        tx,
+        project,
+        &read_lockfile_set(root),
+        now,
+    )?)
 }
