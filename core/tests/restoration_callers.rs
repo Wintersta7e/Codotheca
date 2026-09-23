@@ -279,7 +279,9 @@ struct ReleaseRig {
 impl ReleaseRig {
     fn new() -> ReleaseRig {
         let repo = TestRepo::init();
-        repo.write("a.txt", b"one\n");
+        // An entry point, so J3 classifies it `cli`. A text-only tree is `docs`, for which
+        // `release` is N/A: once J3 ran, the next settle set the item aside instead of closing it.
+        repo.write("main.py", b"print('one')\n");
         repo.commit("first");
         let dir = tempfile::tempdir().unwrap();
         let mut index = Index::open_at(dir.path(), T0).unwrap();
@@ -367,6 +369,57 @@ impl ReleaseRig {
         drop(guard);
         n
     }
+
+    /// Everything the delta's precondition reads, as text, for a wait that timed out. A timeout
+    /// otherwise surfaces as a missing row, which names nothing about why the row is missing.
+    fn dump(&self) -> String {
+        let guard = self.index.lock().unwrap();
+        let conn = guard.conn();
+        let mut out = String::new();
+        for (label, sql) in [
+            (
+                "project",
+                "SELECT 'authored=' || ifnull(authored_by_user, 'NULL') || ' reference=' || \
+                 ifnull(is_reference, 'NULL') || ' ack=' || ifnull(acknowledged_at, 'NULL') || \
+                 ' archetype=' || ifnull(archetype, 'NULL') FROM project WHERE id = ?1",
+            ),
+            (
+                "location",
+                "SELECT 'presence=' || presence || ' tags=' || ifnull(tag_count, 'NULL') \
+                 FROM location WHERE project_id = ?1",
+            ),
+            (
+                "debt_item",
+                "SELECT source || ' ' || state || ' ' || scoring || ' seen=' || last_seen_at \
+                 FROM debt_item WHERE project_id = ?1",
+            ),
+            (
+                "debt_sweep",
+                "SELECT source || ' ' || outcome || ' at=' || observed_at \
+                 FROM debt_sweep WHERE project_id = ?1",
+            ),
+            (
+                "job_state",
+                "SELECT job || ' ' || state || ' ' || ifnull(reason, '') \
+                 FROM project_job_state WHERE project_id = ?1",
+            ),
+            (
+                "health_delta",
+                "SELECT layer || ' ' || from_value || '->' || to_value || ' ' || detected_in \
+                 FROM health_delta WHERE project_id = ?1",
+            ),
+        ] {
+            let mut statement = conn.prepare(sql).unwrap();
+            let rows: Vec<String> = statement
+                .query_map([self.project.0], |r| r.get::<_, String>(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect();
+            let _ = writeln!(out, "  {label}: {rows:?}");
+        }
+        drop(guard);
+        out
+    }
 }
 
 fn settle_a_release(origin: JobOrigin) -> Settled {
@@ -377,6 +430,12 @@ fn settle_a_release(origin: JobOrigin) -> Settled {
         rig.count("SELECT count(*) FROM debt_item WHERE project_id = ?1 AND source = 'no_release'")
             == 1
     });
+    assert_eq!(
+        rig.count("SELECT count(*) FROM debt_item WHERE project_id = ?1 AND source = 'no_release'"),
+        1,
+        "{origin:?}: the no_release item never opened within the wait\n{}",
+        rig.dump()
+    );
     assert_eq!(
         rig.count("SELECT count(*) FROM health_delta WHERE project_id = ?1"),
         0,
@@ -404,6 +463,11 @@ fn settle_a_release(origin: JobOrigin) -> Settled {
         rig.count("SELECT count(*) FROM health_delta WHERE project_id = ?1") >= 1
             && !seen.named("health_delta").is_empty()
     });
+    assert!(
+        rig.count("SELECT count(*) FROM health_delta WHERE project_id = ?1") >= 1,
+        "{origin:?}: the release settled no health_delta row within the wait\n{}",
+        rig.dump()
+    );
 
     let guard = rig.index.lock().unwrap();
     let row = only_row(guard.conn());
