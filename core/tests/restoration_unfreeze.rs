@@ -52,6 +52,16 @@ use support::TestRepo;
 const T0: i64 = 1_700_000_000;
 const STORE: &str = "store-a";
 
+/// The host's own location kind. The fixture's paths are real temp directories, so a `linux`
+/// key over a `C:\` path puts the repository under no root and the store never goes offline.
+fn native_kind() -> &'static str {
+    if cfg!(windows) {
+        "win"
+    } else {
+        "linux"
+    }
+}
+
 #[derive(Debug, Default)]
 struct RecordingSink {
     events: Mutex<Vec<(String, String)>>,
@@ -160,10 +170,10 @@ impl Rig {
                 common_dir: handle.common_dir.clone(),
             },
             root_id: 1,
-            kind: "linux".to_owned(),
+            kind: native_kind().to_owned(),
             distro: String::new(),
             path_bytes: path_bytes(path),
-            path_key: path_key(path, platform_of("linux")),
+            path_key: path_key(path, platform_of(native_kind())),
             path_display: path_display(path),
             store_key: STORE.to_owned(),
             volume_key: Some("vol-a".to_owned()),
@@ -187,10 +197,10 @@ impl Rig {
         let parent: &Path = self.repo.path().parent().unwrap();
         let roots = [ScanRootRow {
             root_id: 1,
-            kind: "linux".to_owned(),
+            kind: native_kind().to_owned(),
             distro: String::new(),
             path_bytes: path_bytes(parent),
-            path_key: path_key(parent, platform_of("linux")),
+            path_key: path_key(parent, platform_of(native_kind())),
             enabled: true,
             descend_into_repos: false,
         }];
