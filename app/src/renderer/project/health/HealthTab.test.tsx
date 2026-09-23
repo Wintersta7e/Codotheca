@@ -178,6 +178,48 @@ describe('each check row reads as text', () => {
 });
 
 describe('R142 the in-context grant ask', () => {
+  it('the word and the basis line follow the cause of off, and the switch wins', () => {
+    const offMarker = reading({
+      scoredOpen: 0,
+      basis: { ran: 1, eligible: 1, unknown: 0, off: 1, notApplicable: 0, observedAt: NOW - 5 },
+      checks: [
+        { id: 'missing_readme', outcome: 'ok', unknownReason: null },
+        { id: 'todo_marker', outcome: 'off', unknownReason: null },
+      ],
+    });
+    const drawn = (enabled: boolean, contentScanEnabled: boolean): [string, string] => {
+      const root = draw(
+        offMarker,
+        settings({ contentScanEnabled, healthChecks: [{ check: 'todo_marker', enabled }] }),
+      );
+      const row = [...root.querySelectorAll('.cp-health-check')].find(
+        (li) => li.querySelector('.cp-health-check-id')?.textContent === 'todo_marker',
+      );
+      return [
+        row?.querySelector('.cp-health-check-word')?.textContent ?? '',
+        root.querySelector('[data-testid="cp-health-basis"]')?.textContent ?? '',
+      ];
+    };
+
+    // The user's act: the switch is off.
+    const [switchedWord, switchedBasis] = drawn(false, true);
+    expect(switchedWord).toBe('SWITCHED OFF');
+    expect(switchedBasis).toContain('1 switched off');
+    expect(switchedBasis).not.toMatch(/grant/u);
+
+    // Not the user's act: the switch is on and the grant was never given.
+    const [grantWord, grantBasis] = drawn(true, false);
+    expect(grantWord).toBe('NEEDS A GRANT');
+    expect(grantBasis).toContain('1 needs a grant');
+    expect(grantBasis).not.toMatch(/switched off/u);
+
+    // Both apply: the switch wins.
+    const [bothWord, bothBasis] = drawn(false, false);
+    expect(bothWord).toBe('SWITCHED OFF');
+    expect(bothBasis).toContain('1 switched off');
+    expect(bothBasis).not.toMatch(/grant/u);
+  });
+
   it('the two causes of off render two different sentences', () => {
     const switched = draw(
       reading({

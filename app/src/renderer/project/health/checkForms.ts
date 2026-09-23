@@ -62,13 +62,23 @@ const OUTCOME_WORD: Record<CheckOutcome, string> = {
 };
 
 /**
- * The form one check takes.
+ * R142: `off` for want of the source-reading grant is not the user's act, so it does not take
+ * the switch's word. Still not the passing form.
+ */
+const NEEDS_GRANT_WORD = 'NEEDS A GRANT';
+
+/**
+ * The form one check takes. `cause` is `offCause`'s answer for an `off` check — the one place the
+ * two are told apart — and picks its word; it is ignored for every other outcome.
  *
  * An `unknown` check **is always named**, with §30.3's vocabulary: a count of unknowns with no
  * reason is the prototype's single `UNKNOWN · NEEDS GITHUB` note in a different shape.
  */
-export function formFor(check: HealthCheck): CheckForm {
-  const word = OUTCOME_WORD[check.outcome];
+export function formFor(check: HealthCheck, cause: OffCause | null = null): CheckForm {
+  const word =
+    check.outcome === 'off' && cause === 'grantMissing'
+      ? NEEDS_GRANT_WORD
+      : OUTCOME_WORD[check.outcome];
   if (check.outcome === 'unknown') {
     // The reason is never omitted, defaulted or collapsed to one string. A payload that carried
     // none would be a producer defect, and saying so is more honest than inventing a sentence.
@@ -124,17 +134,32 @@ export function needsSourceGrant(source: DebtSource): boolean {
  *
  * A `null` basis is *nothing has been observed*, which the per-check list already says one row at
  * a time. Inventing a coverage figure for it would be the same zero one step along.
+ *
+ * `needsGrant` is how many of `basis.off` are off for want of the grant (`grantMissingCount`),
+ * so the line names the user's act only for the checks the user switched off (R142).
  */
-export function basisLine(basis: HealthBasis | null, state: HealthState): string | null {
+export function basisLine(
+  basis: HealthBasis | null,
+  state: HealthState,
+  needsGrant = 0,
+): string | null {
   if (basis === null) return null;
   if (state !== 'live' && state !== 'frozen') return null;
   const parts: string[] = [];
   if (basis.ran > 0) parts.push(`${basis.ran} of ${basis.eligible} checks ran`);
   else parts.push(`no check has run yet, of ${basis.eligible} that could`);
   if (basis.unknown > 0) parts.push(`${basis.unknown} could not be evaluated`);
-  if (basis.off > 0) parts.push(`${basis.off} switched off`);
+  const switchedOff = basis.off - needsGrant;
+  if (switchedOff > 0) parts.push(`${switchedOff} switched off`);
+  if (needsGrant > 0) parts.push(`${needsGrant} ${needsGrant === 1 ? 'needs' : 'need'} a grant`);
   if (basis.notApplicable > 0) parts.push(`${basis.notApplicable} do not apply here`);
   return parts.join(' · ');
+}
+
+/** How many `off` checks `offCause` puts down to the missing grant rather than the switch. */
+export function grantMissingCount(checks: readonly HealthCheck[], settings: Settings): number {
+  return checks.filter((c) => c.outcome === 'off' && offCause(c, settings) === 'grantMissing')
+    .length;
 }
 
 /**

@@ -16,6 +16,7 @@ import { WORKTREE_STALE_AFTER_SECS } from '../../derive/observation';
 import {
   basisLine,
   formFor,
+  grantMissingCount,
   needsSourceGrant,
   offCause,
   openLine,
@@ -54,7 +55,7 @@ export function HealthTab({
   onGrantSourceReading,
 }: HealthTabProps): ReactElement {
   const basis = reading.basis;
-  const coverage = basisLine(basis, reading.state);
+  const coverage = basisLine(basis, reading.state, grantMissingCount(reading.checks, settings));
   const open = openLine(reading.scoredOpen, basis);
   const age = basis === null ? null : ageLine(basis.observedAt, now, reading.state === 'frozen');
 
@@ -79,8 +80,8 @@ export function HealthTab({
       </header>
       <ul className="cp-health-checks">
         {reading.checks.map((check) => {
-          const form = formFor(check);
           const cause = check.outcome === 'off' ? offCause(check, settings) : null;
+          const form = formFor(check, cause);
           return (
             // The parts are separated in the text itself, as the debt list's are, so the row
             // reads as parts before any stylesheet does: never `missing_readmeOPEN`.

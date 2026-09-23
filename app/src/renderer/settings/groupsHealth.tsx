@@ -21,9 +21,14 @@ import { SD } from './styles.js';
 
 export const HEALTH_CHECKS_TITLE = 'HEALTH CHECKS';
 
+/**
+ * §30.9 as ruled: an item that survived the off period is still observed, so the check comes back
+ * `failed` (the tab's OPEN); only with no item left does it wait, `unknown`, for its next run.
+ */
 export const HEALTH_CHECKS_FOOTNOTE =
   'A check switched off hides its items and is left out of what is counted. It closes nothing: ' +
-  'switched back on, it reads unknown until it next runs, and its items return as they were.';
+  'switched back on, it reads open if one of its items is still open, and unknown until it ' +
+  'next runs otherwise.';
 
 /**
  * R142: `todo_marker` is `off` while the source-reading grant is missing, whatever its switch

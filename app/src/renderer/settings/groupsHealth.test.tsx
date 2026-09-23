@@ -153,7 +153,10 @@ describe('§30.9 the per-check switches', () => {
     expect(HEALTH_CHECKS_FOOTNOTE).not.toBe('');
     expect(group.textContent ?? '').toContain(HEALTH_CHECKS_FOOTNOTE);
     expect(HEALTH_CHECKS_FOOTNOTE).toMatch(/hides its items/u);
-    expect(HEALTH_CHECKS_FOOTNOTE).toMatch(/reads unknown until it next runs/u);
+    // §30.9: an item that survived the off period makes the check read open straight away; only
+    // with no item left does it wait, unknown, for its next run. Half of that is not the rule.
+    expect(HEALTH_CHECKS_FOOTNOTE).toMatch(/reads open if one of its items is still open/u);
+    expect(HEALTH_CHECKS_FOOTNOTE).toMatch(/unknown until it next runs otherwise/u);
   });
 
   it('R142 the todo_marker row names the source-reading grant only while the switch is on and the grant is off', async () => {
