@@ -13,9 +13,17 @@
 
 mod support;
 
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use codotheca_core::cancel::CancelToken;
+use codotheca_core::clock::{Clock, SystemClock};
+use codotheca_core::completion::evaluate_and_write;
+use codotheca_core::debt::singletons::evaluate_singletons;
+use codotheca_core::debt::store::SqliteDebtStore;
 use codotheca_core::git::{
-    head_tree, read_blobs, GitBackend, JobClass, JobContext, RepoHandle, RunLimits, TreeEntry,
+    head_tree, read_blobs, GitBackend, GitError, GitSlots, JobClass, JobContext, RepoHandle,
+    RunLimits, SystemGit, TreeEntry,
 };
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
@@ -26,8 +34,12 @@ use codotheca_core::jobs::j3_inventory::ARCHETYPE_SAMPLE;
 use codotheca_core::jobs::j7_markers::{self, ContentGates, ContentScanRow};
 use codotheca_core::jobs::markers::{J7_BLOB_BYTE_CAP, J7_CHUNK_BLOBS, J7_SCANNER_VERSION};
 use codotheca_core::jobs::presence::{presence_for, PresenceAnswers, PresenceState};
+use codotheca_core::jobs::scheduler::JobRunner;
 use codotheca_core::jobs::state::{apply_outcome, JobStateRow};
-use codotheca_core::jobs::{JobKind, JobOutcome, JobState};
+use codotheca_core::jobs::{
+    run_one, JobDeps, JobError, JobKind, JobOrigin, JobOutcome, JobSink, JobState, Priority,
+};
+use codotheca_core::mount::StoreClass;
 use codotheca_core::projects::rows::{LoadedRow, RowFacts};
 use codotheca_core::proto::txguard::TxGuard;
 use codotheca_core::protocol::{
@@ -253,86 +265,306 @@ fn ac_p3_29_13_the_presence_predicates_are_exhaustive() {
     assert_eq!(presence_for(&entries).license, PresenceState::Present);
 }
 
+/// A real repository filed as one project, run through the production dispatch.
+///
+/// `Rig` below scripts a tree through the fake seam; the criteria that use this one turn on what
+/// real git answers and what the job then **stores**, so nothing here is scripted. The project is
+/// past §29.7's three gates, so a run reads blobs as well as names.
+struct GitRig {
+    _dir: tempfile::TempDir,
+    index: Mutex<Index>,
+    deps: JobDeps,
+    project: ProjectId,
+    location: LocationId,
+}
+
+impl GitRig {
+    fn new(repo: &TestRepo) -> GitRig {
+        let dir = tempfile::tempdir().unwrap();
+        let index = Index::open(&dir.path().join("index")).unwrap();
+        let path = repo.path().to_string_lossy().into_owned();
+        let (project, location) = {
+            let conn = index.conn();
+            conn.execute(
+                "INSERT INTO project
+                   (name, seed_basename, created_at, updated_at, authored_by_user, is_reference,
+                    acknowledged_at)
+                 VALUES ('p', 'p', 0, 0, 1, 0, 1)",
+                [],
+            )
+            .unwrap();
+            let project = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO app_meta (k, v) VALUES ('content_scan_enabled', '1')
+                 ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                       store_key, presence, repo_kind)
+                 VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree')",
+                rusqlite::params![project, path.as_bytes(), path],
+            )
+            .unwrap();
+            (ProjectId(project), LocationId(conn.last_insert_rowid()))
+        };
+        GitRig {
+            _dir: dir,
+            index: Mutex::new(index),
+            deps: system_deps(repo),
+            project,
+            location,
+        }
+    }
+
+    /// One job through `run_one`, the dispatch `JobRunner` itself calls.
+    fn run(&self, kind: JobKind) -> Result<JobOutcome, JobError> {
+        run_one(
+            &self.index,
+            &self.deps,
+            &codotheca_core::jobs::Job {
+                kind,
+                project_id: self.project,
+                location_id: self.location,
+                store_key: "store".to_owned(),
+                store_kind: StoreClass::Local,
+                priority: Priority::Standard,
+                not_before: 0,
+                origin: JobOrigin::Walk,
+            },
+        )
+    }
+
+    /// J7 alone, under a deadline the caller chooses. `run_one` hands J7 none — §29.6's budget is
+    /// a chunk, not a deadline — so this is the seam a timed-out enumeration reaches J7 through.
+    fn j7_within(
+        &self,
+        repo: &RepoHandle,
+        deadline: Option<Duration>,
+    ) -> Result<JobOutcome, JobError> {
+        let cancel = CancelToken::new();
+        let ctx = JobContext::new(JobClass::Background, &cancel, deadline);
+        j7_markers::run_j7(
+            &self.index,
+            self.deps.git.as_ref(),
+            repo,
+            &ctx,
+            j7_markers::ScanRun {
+                project: self.project,
+                location: self.location,
+                cursor: None,
+                now: 1_700_000_000,
+                tz_offset_min: 0,
+            },
+        )
+    }
+
+    /// The four answers **as stored**, in `has_readme, has_license, has_tests, has_ci` order, and
+    /// `blobs_total`. Raw spellings, because `presence_for_project` reads a spelling it cannot
+    /// name as `NotRead` and would pass a wrong write. `None` is *no row*.
+    fn stored(&self) -> Option<([String; 4], Option<i64>)> {
+        let guard = self.index.lock().unwrap();
+        let row = rusqlite::OptionalExtension::optional(guard.conn().query_row(
+            "SELECT has_readme, has_license, has_tests, has_ci, blobs_total
+               FROM project_content_scan WHERE project_id = ?1",
+            [self.project.0],
+            |r| Ok(([r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?], r.get(4)?)),
+        ))
+        .unwrap();
+        drop(guard);
+        row
+    }
+
+    /// §28's singleton evaluator, then §31's, in one transaction and in that order — the two
+    /// calls `JobRunner::settle` makes after every job.
+    fn evaluate(&self) {
+        let mut guard = self.index.lock().unwrap();
+        guard
+            .with_tx(|tx| {
+                evaluate_singletons(tx, self.project, 1_700_000_000, &SqliteDebtStore).unwrap();
+                evaluate_and_write(tx, self.project, 1_700_000_000).unwrap();
+                Ok(())
+            })
+            .unwrap();
+        drop(guard);
+    }
+
+    fn check(&self, key: &str) -> String {
+        let guard = self.index.lock().unwrap();
+        let state = guard
+            .conn()
+            .query_row(
+                "SELECT state FROM project_check WHERE project_id = ?1 AND check_key = ?2",
+                rusqlite::params![self.project.0, key],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|e| panic!("no {key} row: {e}"));
+        drop(guard);
+        state
+    }
+
+    /// One concluded forge run on the branch J1 read — the shape §28's `ci_red` arm reads (R145:
+    /// the latest concluded run on the primary copy's branch). Re-seeding moves the conclusion.
+    fn forge_run(&self, conclusion: &str) {
+        let guard = self.index.lock().unwrap();
+        let conn = guard.conn();
+        conn.execute(
+            "UPDATE project SET remote_key = 'forge/fixture/project', provider = 'forge',
+                    provider_repo_id = 'r1' WHERE id = ?1",
+            [self.project.0],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO remote_repo (provider, provider_repo_id, observed_at)
+             VALUES ('forge', 'r1', 50)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO remote_ci_run
+               (provider, provider_repo_id, run_id, workflow_name, conclusion, branch, run_number,
+                started_at)
+             VALUES ('forge', 'r1', 1, 'checks', ?1, 'main', 1, 50)
+             ON CONFLICT(provider, provider_repo_id, run_id)
+               DO UPDATE SET conclusion = excluded.conclusion",
+            [conclusion],
+        )
+        .unwrap();
+        drop(guard);
+    }
+}
+
+/// The production git seam over real `git`, as `JobRunner` is handed it.
+fn system_deps(repo: &TestRepo) -> JobDeps {
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
+    JobDeps {
+        git: Arc::new(SystemGit::new(
+            Arc::new(repo.exec()),
+            Arc::new(GitSlots::new(4)),
+            Arc::clone(&clock),
+        )),
+        clock,
+        cancel: CancelToken::new(),
+        tz_offset_min: 0,
+    }
+}
+
 /// **AC-P3-29-12.** A budget exceedance is `not_read`, never `absent`.
 ///
-/// The two cases are asserted separately and **by identity**: a timeout looks exactly like a
-/// missing file, and this is the single most likely place phase 3 renders unknown as zero.
+/// Both repositories commit the same tree — a README and no licence — and J7 runs over each
+/// through real git after J1 has read the head; the budget is the only difference. The stored
+/// answers are read back as raw column spellings and compared **by identity**: a timeout looks
+/// exactly like a missing file, and this is the single most likely place phase 3 renders unknown
+/// as zero.
 #[test]
 fn ac_p3_29_12_a_budget_exceedance_is_not_read_never_absent() {
-    // A repository whose enumeration fails: no commits, so `ls-tree HEAD` has nothing to name.
-    let unborn = TestRepo::init();
-    let failed = head_tree(
-        &unborn.exec(),
-        &unborn.handle(),
-        RunLimits::none(),
-        &CancelToken::new(),
-    );
-    assert!(failed.is_err(), "the enumeration was expected to fail");
-    let unread = PresenceAnswers::not_read();
-    eprintln!("a failed enumeration answers: {unread:?}");
-    assert_eq!(unread.readme, PresenceState::NotRead);
-    assert_eq!(unread.license, PresenceState::NotRead);
-    assert_eq!(unread.tests, PresenceState::NotRead);
-    assert_eq!(unread.ci, PresenceState::NotRead);
+    let commit_tree = |repo: &TestRepo| {
+        repo.write("README.md", b"# a project\n");
+        repo.write("src/main.rs", b"fn main() {}\n");
+        repo.commit("first");
+    };
 
-    // A repository enumerated with no licence: a known false, and a different value.
+    // A spent budget: git is refused before it starts and answers `Budget`, the error a timed-out
+    // enumeration produces. J7 stores its row before it returns the error.
+    let spent = TestRepo::init();
+    commit_tree(&spent);
+    let failed = GitRig::new(&spent);
+    assert_eq!(failed.run(JobKind::J1Refstate).unwrap(), JobOutcome::Done);
+    let error = failed
+        .j7_within(&spent.handle(), Some(Duration::ZERO))
+        .unwrap_err();
+    let unread = failed.stored();
+    eprintln!("a spent budget returned {error:?} and stored {unread:?}");
+    assert!(
+        matches!(error, JobError::Git(GitError::Budget { .. })),
+        "the enumeration was expected to fail on its budget"
+    );
+    let (unread, unread_total) = unread.expect("a failed enumeration stored no row at all");
+    assert_eq!(unread, ["not_read"; 4]);
+    assert_eq!(unread_total, None, "a tree nobody read was counted");
+
+    // The same tree, enumerated: a known false for the licence.
     let read = TestRepo::init();
-    read.write("src/main.rs", b"fn main() {}\n");
-    read.commit("first");
-    let answers = presence_of(&read);
-    eprintln!("an enumerated repository with no licence answers: {answers:?}");
-    assert_eq!(answers.license, PresenceState::Absent);
-    assert_ne!(answers.license, unread.license);
+    commit_tree(&read);
+    let enumerated = GitRig::new(&read);
+    assert_eq!(
+        enumerated.run(JobKind::J1Refstate).unwrap(),
+        JobOutcome::Done
+    );
+    assert_eq!(
+        enumerated.j7_within(&read.handle(), None).unwrap(),
+        JobOutcome::Done
+    );
+    let (answers, total) = enumerated.stored().expect("an enumeration stored no row");
+    eprintln!("the same tree, enumerated, stored {answers:?} over {total:?} blobs");
+    assert_eq!(answers, ["present", "absent", "absent", "absent"]);
+    assert!(total.is_some(), "an enumerated tree carries no count");
+
+    // By identity: the licence answer the budget produced is not the one the tree produced.
+    assert_ne!(unread[1], answers[1]);
 }
 
 /// **AC-P3-29-15.** `ci` and `ciGreen` are two facts, and neither is derived from the other.
 ///
-/// `ci` is *a CI configuration exists at HEAD* — this section's path predicate. `ciGreen` is the
-/// forge's latest conclusion, a remote fact with its own `observed_at`. The conclusion is moved
-/// from `failure` to `success` and the presence answer does not move with it.
+/// `ci` is *a CI configuration exists at HEAD*, stored by a real J7 run. `ciGreen` is the forge's
+/// latest conclusion, read by §28's `ci_red` arm. Both reach `project_check` through the two
+/// evaluators in `settle`'s order. Three readings: a configuration and a `failure` run answer
+/// `pass` and `fail` at once; moving the run to `success` moves `ciGreen` and leaves `ci`; and a
+/// tree with no configuration answers `ci = fail` although the forge reports a run, with
+/// `ciGreen` N/A (§31.1a).
 #[test]
 fn ac_p3_29_15_ci_and_ci_green_are_two_facts() {
-    let repo = TestRepo::init();
-    repo.write(".github/workflows/ci.yml", b"on: push\n");
-    repo.commit("first");
-    let answers = presence_of(&repo);
+    let scanned = |ci_config: bool| {
+        let repo = TestRepo::init();
+        repo.write("src/main.rs", b"fn main() {}\n");
+        if ci_config {
+            repo.write(".github/workflows/ci.yml", b"on: push\n");
+        }
+        repo.commit("first");
+        let rig = GitRig::new(&repo);
+        assert_eq!(rig.run(JobKind::J1Refstate).unwrap(), JobOutcome::Done);
+        assert_eq!(rig.run(JobKind::J7Markers).unwrap(), JobOutcome::Done);
+        (repo, rig)
+    };
+    let mut readings = Vec::new();
 
-    let (_dir, conn) = migrated();
-    conn.execute(
-        "INSERT INTO remote_repo (provider, provider_repo_id) VALUES ('github', 'r1')",
-        [],
-    )
-    .unwrap();
-    let mut conclusions = Vec::new();
-    for conclusion in ["failure", "success"] {
-        conn.execute(
-            "INSERT INTO remote_ci_run
-               (provider, provider_repo_id, run_id, workflow_name, conclusion, branch, run_number)
-             VALUES ('github', 'r1', ?1, 'ci', ?2, 'main', 1)
-             ON CONFLICT(provider, provider_repo_id, run_id)
-               DO UPDATE SET conclusion = excluded.conclusion",
-            rusqlite::params![1, conclusion],
-        )
-        .unwrap();
-        let stored: String = conn
-            .query_row(
-                "SELECT conclusion FROM remote_ci_run WHERE run_id = 1",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        conclusions.push(stored);
-        assert_eq!(
-            presence_for(&[]).ci,
-            PresenceState::Absent,
-            "the predicate reads the tree, and an empty tree has no CI configuration"
-        );
-        assert_eq!(answers.ci, PresenceState::Present);
-    }
-    eprintln!("ci = {:?} across conclusions {conclusions:?}", answers.ci);
+    let (_configured, with) = scanned(true);
+    let has_ci = with.stored().expect("J7 stored no row").0[3].clone();
+    assert_eq!(has_ci, "present");
+    with.forge_run("failure");
+    with.evaluate();
+    let failing = (with.check("ci"), with.check("ciGreen"));
+    readings.push(("configured, failure", has_ci.clone(), failing.clone()));
+
+    with.forge_run("success");
+    with.evaluate();
+    let passing = (with.check("ci"), with.check("ciGreen"));
+    readings.push(("configured, success", has_ci, passing.clone()));
+
+    let (_unconfigured, without) = scanned(false);
+    let no_ci = without.stored().expect("J7 stored no row").0[3].clone();
+    without.forge_run("failure");
+    without.evaluate();
+    let unconfigured = (without.check("ci"), without.check("ciGreen"));
+    readings.push(("unconfigured, failure", no_ci.clone(), unconfigured.clone()));
+
+    eprintln!("(case, stored has_ci, (ci, ciGreen)): {readings:?}");
     assert_eq!(
-        conclusions,
-        vec!["failure".to_owned(), "success".to_owned()]
+        failing,
+        ("pass".to_owned(), "fail".to_owned()),
+        "a present configuration and a failed run are one pass and one failure, at once"
+    );
+    assert_eq!(
+        passing,
+        ("pass".to_owned(), "pass".to_owned()),
+        "the conclusion moved and ci moved with it, or ciGreen did not"
+    );
+    assert_eq!(no_ci, "absent");
+    assert_eq!(
+        unconfigured,
+        ("fail".to_owned(), "na".to_owned()),
+        "a forge run is not a CI configuration at HEAD"
     );
 }
 
@@ -907,12 +1139,52 @@ fn ac_p3_29_6_a_moved_head_restarts_the_scan() {
     assert_eq!(after.blobs_total, before.blobs_total);
 }
 
+/// File `path` as a `repo_kind = 'bare'` location of a new project, with the grant on.
+///
+/// The fixture's committer is the user, so J1.5 classifies the project as authored and chains
+/// J7. Authorship is left for J1.5 to compute rather than written here.
+fn file_bare_location(index: &Mutex<Index>, path: &str) -> (ProjectId, LocationId) {
+    let guard = index.lock().unwrap();
+    let conn = guard.conn();
+    conn.execute(
+        "INSERT INTO identity (email, source, confirmed_at)
+         VALUES ('fixture@example.invalid', 'manual', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, created_at, updated_at, acknowledged_at)
+         VALUES ('p', 'p', 0, 0, 1)",
+        [],
+    )
+    .unwrap();
+    let project = ProjectId(conn.last_insert_rowid());
+    conn.execute(
+        "INSERT INTO app_meta (k, v) VALUES ('content_scan_enabled', '1')
+         ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                               store_key, presence, repo_kind)
+         VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'bare')",
+        rusqlite::params![project.0, path.as_bytes(), path],
+    )
+    .unwrap();
+    let location = LocationId(conn.last_insert_rowid());
+    drop(guard);
+    (project, location)
+}
+
 /// **AC-P3-29-28.** A bare repository with commits is scanned.
 ///
 /// **Bare is not the discriminator** (§29.1): `--full-tree` needs no working tree, so a bare
 /// repository with commits enumerates exactly like any other. Written because the shape it guards
-/// is a gate on `repo_kind` that no other criterion would catch. The count of bare repositories
-/// exercised is printed and the criterion fails at zero.
+/// is a gate on `repo_kind` that no other criterion would catch — so the bare clone is filed as a
+/// `repo_kind = 'bare'` location and driven from the scan's own hand-off, `on_location_indexed`,
+/// through J1 → J1.5 → J7 on a real `JobRunner`. A skip anywhere on that path leaves no row. The
+/// count of bare repositories exercised is derived from the index, printed, and fails at zero.
 #[test]
 fn ac_p3_29_28_a_bare_repository_with_commits_is_scanned() {
     let source = TestRepo::init();
@@ -922,39 +1194,100 @@ fn ac_p3_29_28_a_bare_repository_with_commits_is_scanned() {
     source.write(".github/workflows/ci.yml", b"on: push\n");
     source.write("tests/it.rs", b"fn t() {}\n");
     source.commit("first");
-    let bare = TestRepo::init_bare();
-    let path = bare.path().join("copy.git");
-    source.git(&["clone", "-q", "--bare", ".", &path.to_string_lossy()]);
-    let handle = RepoHandle::bare(
-        &path,
-        codotheca_core::git::StoreKey::new("test-store"),
-        codotheca_core::mount::StoreClass::Local,
-    );
+    let path = source.scratch().join("copy.git");
+    let path = path.to_string_lossy().into_owned();
+    source.git(&["clone", "-q", "--bare", ".", &path]);
+    let head = source.git(&["rev-parse", "HEAD"]).trim().to_owned();
 
-    // The corpus, so the count is derived from what was built rather than written down.
-    let corpus: Vec<RepoHandle> = vec![handle];
-    let mut exercised = 0;
-    for bare_repo in &corpus {
-        let entries = head_tree(
-            &source.exec(),
-            bare_repo,
-            RunLimits::none(),
-            &CancelToken::new(),
+    let dir = tempfile::tempdir().unwrap();
+    let index = Arc::new(Mutex::new(Index::open(&dir.path().join("index")).unwrap()));
+    let (project, location) = file_bare_location(&index, &path);
+
+    let runner = JobRunner::new(
+        Arc::clone(&index),
+        system_deps(&source),
+        Arc::new(Silent) as Arc<dyn codotheca_core::proto::EventSink>,
+    );
+    runner.start(2);
+    runner.on_location_indexed(project, location, "store", StoreClass::Local);
+    let j7_state = || {
+        let guard = index.lock().unwrap();
+        let rows = codotheca_core::jobs::state::load(guard.conn(), project).unwrap();
+        drop(guard);
+        rows.into_iter()
+            .find(|row| row.job == JobKind::J7Markers)
+            .map(|row| row.state)
+    };
+    // Spun rather than slept: J7 is queued at `Deferred`, behind the rest of the chain.
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while std::time::Instant::now() < deadline
+        && !matches!(
+            j7_state(),
+            Some(JobState::Done | JobState::Failed | JobState::DeferredSlow)
+        )
+    {
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    runner.request_stop();
+    runner.join();
+
+    let guard = index.lock().unwrap();
+    let conn = guard.conn();
+    let row: Option<(String, Option<String>, [String; 4])> =
+        rusqlite::OptionalExtension::optional(conn.query_row(
+            "SELECT head_oid, complete_head_oid, has_readme, has_license, has_tests, has_ci
+               FROM project_content_scan WHERE project_id = ?1",
+            [project.0],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    [r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?],
+                ))
+            },
+        ))
+        .unwrap();
+    let findings: Vec<String> = conn
+        .prepare("SELECT salient_text_capped FROM blob_finding")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    let exercised: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM location l
+               JOIN project_content_scan s ON s.project_id = l.project_id
+              WHERE l.repo_kind = 'bare'",
+            [],
+            |r| r.get(0),
         )
         .unwrap();
-        let answers = presence_for(&entries);
-        eprintln!(
-            "a bare repository enumerated {} paths: {answers:?}",
-            entries.len()
-        );
-        assert!(!entries.is_empty());
-        assert_eq!(answers.readme, PresenceState::Present);
-        assert_eq!(answers.license, PresenceState::Present);
-        assert_eq!(answers.tests, PresenceState::Present);
-        assert_eq!(answers.ci, PresenceState::Present);
-        exercised += 1;
-    }
+    drop(guard);
+
+    eprintln!(
+        "j7 settled {:?}; row {row:?}; findings {findings:?}",
+        j7_state()
+    );
     eprintln!("bare repositories exercised: {exercised}");
+    assert_eq!(
+        j7_state(),
+        Some(JobState::Done),
+        "J7 never ran to completion"
+    );
+    let (head_oid, complete_head_oid, answers) =
+        row.expect("a bare repository with commits produced no project_content_scan row");
+    assert_eq!(head_oid, head);
+    assert_eq!(answers, ["present"; 4]);
+    assert_eq!(
+        complete_head_oid.as_deref(),
+        Some(head.as_str()),
+        "the scan never completed"
+    );
+    assert!(
+        findings.iter().any(|f| f.contains("in a bare clone")),
+        "no blob was read out of the bare repository"
+    );
     assert!(exercised > 0, "no bare repository was exercised");
 }
 
