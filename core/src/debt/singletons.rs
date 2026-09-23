@@ -324,10 +324,23 @@ pub fn evaluate_singletons(
     let subject_key = crate::index::subject::subject_for_project(tx, project)?
         .map(|s| s.to_key())
         .unwrap_or_default();
+    let not_applicable = crate::completion::inputs::not_applicable_sources(tx, project)?;
+    let off = crate::health::switches::off_sources(
+        &crate::health::switches::read_switches(tx)?,
+        crate::surfaces::settings::content_scan_enabled(tx)?,
+    );
 
     let mut total = SweepEffect::default();
     for arm in SINGLETON_ARMS {
         let source = arm.source();
+        // An `off` source (§30.9) and an N/A one (§31.9: *a check that is `na` produces no debt
+        // item*) are not swept at all. The arm does not run, so it opens nothing and closes
+        // nothing — an item already open is set aside by the reading (§30), never closed and
+        // never paid — and no sweep row is written: nothing was observed. Switch-off deleted this
+        // source's row, and writing it back would make a check switched on again read as swept.
+        if off.contains(&source) || not_applicable.contains(&source) {
+            continue;
+        }
         let row = registry_for(source);
         let anchor = anchor_for(tx, project, *row)?;
         let reading = arm.observe(tx, project)?;

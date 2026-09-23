@@ -18,7 +18,7 @@ use crate::index::IndexError;
 use crate::jobs::j7_markers::presence_for_project;
 use crate::protocol::{CompletionCheck, DebtSource, DebtSweepOutcome, ProjectId};
 
-use super::evaluate::{CompletionInputs, DepsReading, SingletonReading};
+use super::evaluate::{source_not_applicable, CompletionInputs, DepsReading, SingletonReading};
 
 /// The gates `gather` answers `None` for, kept as a named value so the reason a project was not
 /// scored is sayable rather than inferred from a bare `None` at the call site.
@@ -253,7 +253,10 @@ fn deps(conn: &Connection, project: ProjectId, now: i64) -> Result<DepsReading, 
 ///
 /// **NULL is *the user has not ruled*** and is what lets a J3 re-run re-propose without erasing a
 /// decision the user made.
-fn stored_user_na(conn: &Connection, project: ProjectId) -> Result<[Option<bool>; 10], IndexError> {
+pub(crate) fn stored_user_na(
+    conn: &Connection,
+    project: ProjectId,
+) -> Result<[Option<bool>; 10], IndexError> {
     let mut out = [None; 10];
     let mut st = conn.prepare(
         "SELECT check_key, user_na FROM project_check WHERE project_id = ?1 AND user_na IS NOT NULL",
@@ -263,16 +266,67 @@ fn stored_user_na(conn: &Connection, project: ProjectId) -> Result<[Option<bool>
     })?;
     for row in rows {
         let (key, value) = row?;
-        if let Some(index) = CompletionCheck::ALL
-            .iter()
-            .position(|k| enum_slug(k) == key)
-        {
-            if let Some(slot) = out.get_mut(index) {
-                *slot = Some(value != 0);
-            }
-        }
+        place_ruling(&mut out, &key, value);
     }
     Ok(out)
+}
+
+/// The debt sources that are N/A for this project (§30.3's `notApplicable`), from the two stored
+/// facts §31.4's gate reads — J3's archetype and the user's rulings — through that gate.
+///
+/// # Errors
+/// Fails when SQLite cannot be read.
+pub fn not_applicable_sources(
+    conn: &Connection,
+    project: ProjectId,
+) -> Result<Vec<DebtSource>, IndexError> {
+    let archetype: Option<String> = conn
+        .query_row(
+            "SELECT archetype FROM project WHERE id = ?1",
+            [project.0],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    let user_na = stored_user_na(conn, project)?;
+    Ok(DebtSource::ALL
+        .into_iter()
+        .filter(|source| source_not_applicable(*source, archetype.as_deref(), &user_na))
+        .collect())
+}
+
+/// Every project's stored rulings in **one** statement, for a caller projecting the whole library.
+/// A project with no ruling has no entry, which reads the same as `[None; 10]`.
+pub(crate) fn all_stored_user_na(
+    conn: &Connection,
+) -> Result<std::collections::BTreeMap<i64, [Option<bool>; 10]>, IndexError> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut st = conn.prepare(
+        "SELECT project_id, check_key, user_na FROM project_check WHERE user_na IS NOT NULL",
+    )?;
+    let rows = st.query_map([], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, i64>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (project, key, value) = row?;
+        place_ruling(out.entry(project).or_insert([None; 10]), &key, value);
+    }
+    Ok(out)
+}
+
+fn place_ruling(out: &mut [Option<bool>; 10], key: &str, value: i64) {
+    if let Some(index) = CompletionCheck::ALL
+        .iter()
+        .position(|k| enum_slug(k) == key)
+    {
+        if let Some(slot) = out.get_mut(index) {
+            *slot = Some(value != 0);
+        }
+    }
 }
 
 /// A generated enum's own wire spelling, read back through serde rather than restated (R24).

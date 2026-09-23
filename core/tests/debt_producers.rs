@@ -781,6 +781,71 @@ fn set_abandoned(conn: &rusqlite::Connection, project: i64, abandoned: bool) {
     .unwrap();
 }
 
+/// §29.8's content-scan grant. `todo_marker` is `off` without it (R128/F8), and an off check's
+/// items are set aside — so a test counting a planted `todo_marker` item grants it first.
+fn grant_content_scan(conn: &rusqlite::Connection) {
+    conn.execute(
+        "INSERT INTO app_meta (k, v) VALUES ('content_scan_enabled', '1')
+         ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+        [],
+    )
+    .unwrap();
+}
+
+/// §30.9 — one check switched off, which sets its items aside.
+fn switch_off(conn: &rusqlite::Connection, check: codotheca_core::protocol::DebtSource) {
+    let tx = conn.unchecked_transaction().unwrap();
+    codotheca_core::health::switches::write_switches(
+        &tx,
+        &[codotheca_core::protocol::HealthCheckSwitch {
+            check,
+            enabled: false,
+        }],
+    )
+    .unwrap();
+    tx.commit().unwrap();
+}
+
+/// **The conjunct counts only what the reading counts.** A project whose only open scored items
+/// belong to checks the reading sets aside — ungranted, switched off, not applicable — has no
+/// outstanding work the reading speaks for, so `abandoned_with_debt` does not open.
+#[test]
+fn a_set_aside_item_does_not_light_the_conjunct() {
+    use codotheca_core::protocol::DebtSource;
+
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    insert_location(&conn, p);
+    set_abandoned(&conn, p, true);
+    // Three causes: `todo_marker` with no grant, `missing_license` switched off, and
+    // `missing_tests` on a docs project, whose archetype proposes it N/A.
+    plant_item(&conn, p, "todo_marker", "scored");
+    plant_item(&conn, p, "missing_license", "scored");
+    switch_off(&conn, DebtSource::MissingLicense);
+    conn.execute("UPDATE project SET archetype = 'docs' WHERE id = ?1", [p])
+        .unwrap();
+    plant_item(&conn, p, "missing_tests", "scored");
+
+    let tx = conn.transaction().unwrap();
+    let lit = abandoned_conjunct(&tx, ProjectId(p)).unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    eprintln!(
+        "three set-aside items: conjunct {lit}, abandoned_with_debt items {}",
+        items_of(&conn, p, "abandoned_with_debt")
+    );
+    assert!(!lit, "the conjunct counted an item the reading sets aside");
+    assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 0);
+
+    // The control: granted, `todo_marker` is back inside the reading, and the conjunct lights.
+    grant_content_scan(&conn);
+    let tx = conn.transaction().unwrap();
+    assert!(abandoned_conjunct(&tx, ProjectId(p)).unwrap());
+    evaluate_singletons(&tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 1);
+}
+
 /// Open one item of `source` with the given scoring, outside the evaluator, so the conjunct is
 /// tested against a stored set rather than against whatever the arms happened to write.
 fn plant_item(conn: &rusqlite::Connection, project: i64, source: &str, scoring: &str) {
@@ -806,6 +871,7 @@ fn ac_p3_28_13_the_conjunct_does_not_satisfy_itself() {
     let p = insert_project(&conn, "thing");
     insert_location(&conn, p);
     set_abandoned(&conn, p, true);
+    grant_content_scan(&conn);
     plant_item(&conn, p, "todo_marker", "scored");
 
     // One scored item of another source, so the conjunct lights and the item opens.
@@ -863,6 +929,7 @@ fn a_shown_only_item_does_not_light_the_conjunct() {
     assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 0);
 
     // The same project with one scored item **does** light it.
+    grant_content_scan(&conn);
     plant_item(&conn, p, "todo_marker", "scored");
     let tx = conn.transaction().unwrap();
     assert!(abandoned_conjunct(&tx, ProjectId(p)).unwrap());
@@ -880,6 +947,7 @@ fn leaving_the_abandoned_band_closes_the_item() {
     let p = insert_project(&conn, "thing");
     insert_location(&conn, p);
     set_abandoned(&conn, p, true);
+    grant_content_scan(&conn);
     plant_item(&conn, p, "todo_marker", "scored");
 
     let tx = conn.transaction().unwrap();
@@ -904,6 +972,7 @@ fn the_abandoned_item_is_shown_only_and_anchored_nowhere() {
     let p = insert_project(&conn, "thing");
     insert_location(&conn, p);
     set_abandoned(&conn, p, true);
+    grant_content_scan(&conn);
     plant_item(&conn, p, "todo_marker", "scored");
 
     let tx = conn.transaction().unwrap();
@@ -971,4 +1040,174 @@ fn the_self_exclusion_holds_even_for_a_scored_abandoned_item() {
         open, 0,
         "an abandoned project could never reach an empty set"
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// §31.9 — *a check that is `na` produces no debt item: unevaluable data never becomes one*
+// ---------------------------------------------------------------------------------------------
+
+/// **The arm of a check that is N/A for the project does not run.** It opens nothing on a project
+/// whose archetype proposes the check N/A; and on an item already open when the user ruled the
+/// check N/A, an observation that would close it closes nothing and pays nothing.
+#[test]
+fn a_check_that_is_not_applicable_opens_nothing_and_closes_nothing() {
+    use codotheca_core::completion::{evaluate_and_write, set_check_na};
+    use codotheca_core::debt::singletons::settle_singletons;
+    use codotheca_core::protocol::CompletionCheck;
+
+    let (_d, mut conn) = fresh();
+
+    // A docs project, whose archetype proposes `tests` N/A, with no tests and no README.
+    let docs = insert_project(&conn, "docs");
+    insert_location(&conn, docs);
+    conn.execute(
+        "UPDATE project SET archetype = 'docs' WHERE id = ?1",
+        [docs],
+    )
+    .unwrap();
+    presence(&conn, docs, "absent", "present", "absent");
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(docs), 10, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    eprintln!(
+        "docs project: missing_readme items {}, missing_tests items {}, missing_tests sweep {:?}",
+        items_of(&conn, docs, "missing_readme"),
+        items_of(&conn, docs, "missing_tests"),
+        sweep_of(&conn, docs, "missing_tests")
+    );
+    assert_eq!(
+        items_of(&conn, docs, "missing_readme"),
+        1,
+        "the control opened nothing"
+    );
+    assert_eq!(
+        items_of(&conn, docs, "missing_tests"),
+        0,
+        "an N/A check became a debt item"
+    );
+    // Not observed, so nothing claims it was: no sweep row speaks for a check that did not run.
+    assert_eq!(sweep_of(&conn, docs, "missing_tests"), None);
+
+    // A project with an open `missing_tests` item, which the user then rules N/A.
+    let lib = insert_project(&conn, "lib");
+    insert_location(&conn, lib);
+    conn.execute(
+        "UPDATE project SET authored_by_user = 1 WHERE id = ?1",
+        [lib],
+    )
+    .unwrap();
+    presence(&conn, lib, "present", "present", "absent");
+    let tx = conn.transaction().unwrap();
+    evaluate_singletons(&tx, ProjectId(lib), 10, &SqliteDebtStore).unwrap();
+    evaluate_and_write(&tx, ProjectId(lib), 10).unwrap();
+    set_check_na(&tx, ProjectId(lib), CompletionCheck::Tests, Some(true), 10).unwrap();
+    tx.commit().unwrap();
+    let ruled: Option<i64> = conn
+        .query_row(
+            "SELECT user_na FROM project_check WHERE project_id = ?1 AND check_key = 'tests'",
+            [lib],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ruled, Some(1), "the ruling did not land");
+    assert_eq!(items_of(&conn, lib, "missing_tests"), 1);
+
+    // Tests now exist: an observation that would close the item — if the arm ran.
+    presence(&conn, lib, "present", "present", "present");
+    let xp = |conn: &rusqlite::Connection| -> i64 {
+        conn.query_row("SELECT count(*) FROM xp_events", [], |r| r.get(0))
+            .unwrap()
+    };
+    let xp_before = xp(&conn);
+    let tx = conn.transaction().unwrap();
+    let effect = settle_singletons(&tx, ProjectId(lib), 20, 0, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    eprintln!(
+        "lib project after an N/A ruling: missing_tests items {}, closed {:?}, xp_events {} -> {}",
+        items_of(&conn, lib, "missing_tests"),
+        effect.closed,
+        xp_before,
+        xp(&conn)
+    );
+    assert_eq!(
+        items_of(&conn, lib, "missing_tests"),
+        1,
+        "an N/A ruling closed the item"
+    );
+    assert_eq!(xp(&conn), xp_before, "an N/A ruling paid");
+}
+
+/// §30.9 and R128/F8 — **`todo_marker` off is not swept**, whether its switch is off or §29.8's
+/// grant is missing. An ungranted run reads no blob, so its empty occurrence list is not an
+/// observation of an empty set: sweeping it would close every item as fixed and pay for it.
+#[test]
+fn a_switched_off_or_ungranted_todo_marker_is_not_swept() {
+    use codotheca_core::health::switches::write_switches;
+    use codotheca_core::protocol::{DebtSource, HealthCheckSwitch};
+
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let loc = insert_location(&conn, p);
+    content_scan(&conn, p, true);
+    let store = SqliteDebtStore;
+    let toggle = |conn: &rusqlite::Connection, enabled: bool| {
+        let tx = conn.unchecked_transaction().unwrap();
+        write_switches(
+            &tx,
+            &[HealthCheckSwitch {
+                check: DebtSource::TodoMarker,
+                enabled,
+            }],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    };
+
+    // The control: switched on and granted, the run sweeps and opens.
+    let one = vec![occurrence("a.rs", 4, "x")];
+    let tx = conn.transaction().unwrap();
+    build_items(&tx, ProjectId(p), Some(loc), gates(true), &one, 10, &store).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(items(&conn, p).len(), 1, "the control opened nothing");
+    assert!(sweep_of(&conn, p, "todo_marker").is_some());
+
+    // Switched off: a run finding nothing would close the item — if it swept.
+    toggle(&conn, false);
+    let tx = conn.transaction().unwrap();
+    let off = build_items(&tx, ProjectId(p), Some(loc), gates(true), &[], 20, &store).unwrap();
+    tx.commit().unwrap();
+    eprintln!(
+        "switched off: sweep {:?}, items {}, closed {}",
+        sweep_of(&conn, p, "todo_marker"),
+        items(&conn, p).len(),
+        off.closed.len()
+    );
+    assert_eq!(
+        sweep_of(&conn, p, "todo_marker"),
+        None,
+        "a switched-off source was swept"
+    );
+    assert_eq!(items(&conn, p).len(), 1, "a switched-off source closed");
+
+    // Back on, but ungranted: the same, for R128/F8's second cause of `off`.
+    toggle(&conn, true);
+    let ungranted = ContentGates {
+        granted: false,
+        ..gates(true)
+    };
+    let tx = conn.transaction().unwrap();
+    let off = build_items(&tx, ProjectId(p), Some(loc), ungranted, &[], 30, &store).unwrap();
+    tx.commit().unwrap();
+    eprintln!(
+        "ungranted: sweep {:?}, items {}, closed {}",
+        sweep_of(&conn, p, "todo_marker"),
+        items(&conn, p).len(),
+        off.closed.len()
+    );
+    assert_eq!(
+        sweep_of(&conn, p, "todo_marker"),
+        None,
+        "an ungranted source was swept"
+    );
+    assert_eq!(items(&conn, p).len(), 1, "an ungranted run closed an item");
 }

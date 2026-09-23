@@ -76,6 +76,19 @@ pub fn outcome_for(facts: &SweepFacts, switch: &SwitchState) -> CheckOutcome {
     CheckOutcome::Unknown
 }
 
+/// §30.3's *In `eligible`?* column: `ok`, `failed` and `unknown` are in it; `off` and
+/// `notApplicable` are not. **The one expression of that column** — the basis counts over it and
+/// the producer's `eligible = 0` gate reads it, so the two cannot disagree about a check.
+#[must_use]
+pub const fn in_eligible(outcome: CheckOutcome) -> bool {
+    // Exhaustive, with no `_ =>` arm: a sixth outcome fails to compile here rather than landing
+    // silently on either side.
+    match outcome {
+        CheckOutcome::Ok | CheckOutcome::Failed | CheckOutcome::Unknown => true,
+        CheckOutcome::Off | CheckOutcome::NotApplicable => false,
+    }
+}
+
 /// One check as the basis counts it: the outcome, and when the evidence behind it was read.
 #[derive(Debug, Clone)]
 pub struct CheckObservation {
@@ -123,10 +136,7 @@ pub fn basis_over(entries: &[CheckObservation]) -> Option<HealthBasis> {
             CheckOutcome::Off => off += 1,
             CheckOutcome::NotApplicable => not_applicable += 1,
         }
-        if matches!(
-            entry.check.outcome,
-            CheckOutcome::Ok | CheckOutcome::Failed | CheckOutcome::Unknown
-        ) {
+        if in_eligible(entry.check.outcome) {
             any_oldest = older(any_oldest, entry.observed_at);
         }
     }

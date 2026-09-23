@@ -19,7 +19,8 @@ mod detail_rig;
 use codotheca_core::detail::get::handle_project_get;
 use codotheca_core::health::acknowledge::{stamp_acknowledged, stamp_and_read_enrolment};
 use codotheca_core::health::enrolment::is_enrolled;
-use codotheca_core::protocol::ProjectId;
+use codotheca_core::health::read_for_project;
+use codotheca_core::protocol::{HealthState, ProjectId};
 use detail_rig::{Rig, NOW};
 use serde_json::json;
 
@@ -125,10 +126,37 @@ fn ac_p3_30_9_the_first_get_on_an_unenrolled_project_is_not_suppressed() {
     assert!(!is_enrolled(None));
     assert!(is_enrolled(Some(NOW)));
 
-    // And through the real handler, whose detail is built from the same post-stamp read.
+    // And through the real handler, on a project that passes every gate above suppression —
+    // authored, not Reference, one present copy — so enrolment is the only thing between it and
+    // a reading.
     let rig2 = Rig::new();
     rig2.project(1, "alpha");
-    handle_project_get(&rig2.ctx(), json!({ "id": 1 })).expect("first get");
+    rig2.location(1, 1, "/a", "present", Some("main"), Some(0), Some(NOW));
+    rig2.conn()
+        .execute("UPDATE project SET authored_by_user = 1 WHERE id = 1", [])
+        .unwrap();
+
+    // The control: read before any stamp, this project is `suppressed`. Without it, a fixture
+    // stopped at an earlier gate would read `absent` in either order and prove nothing.
+    let (before, _) = read_for_project(rig2.conn(), ProjectId(1)).unwrap();
+    assert_eq!(acknowledged_at(&rig2, 1), None, "the control stamped");
+    assert_eq!(
+        before.state,
+        HealthState::Suppressed,
+        "the fixture stops at a gate before suppression, so it cannot tell the two orders apart"
+    );
+
+    let detail = handle_project_get(&rig2.ctx(), json!({ "id": 1 })).expect("first get");
+    eprintln!(
+        "AC-P3-30-9 state before any stamp: {:?}; returned by the first get: {:?}",
+        before.state, detail.health.state
+    );
+    assert_ne!(
+        detail.health.state,
+        HealthState::Suppressed,
+        "the first projects.get served the reading computed before its own stamp"
+    );
+    assert_eq!(detail.health.state, HealthState::Live);
     assert!(
         is_enrolled(acknowledged_at(&rig2, 1)),
         "one projects.get leaves the project enrolled"

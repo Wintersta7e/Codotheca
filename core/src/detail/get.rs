@@ -460,6 +460,11 @@ pub fn handle_project_get(
     let dependency =
         crate::advisories::verdict::verdict_for(conn, ProjectId(id), ctx.now).map_err(internal)?;
 
+    // [p3] §30.1's reading and the open-item list it hands down, from **one** call, computed
+    // **after** the stamp above committed — so the first open serves the enrolled answer rather
+    // than `suppressed`, and a switched-off check's items have already left the list (§30.9).
+    let (health, debt) = crate::health::read_for_project(conn, ProjectId(id)).map_err(internal)?;
+
     Ok(ProjectDetail {
         resolved_target: resolved_target(
             conn,
@@ -498,7 +503,7 @@ pub fn handle_project_get(
         size_worktree_bytes: scalars.size_worktree_bytes,
         // [p3] §28.9, R120: **one flat list, grouped by layer in the renderer**, plus the
         // sweeps that make an empty list readable as *no debt* rather than *nobody looked*.
-        debt: crate::debt::read::load_debt(conn, ProjectId(id)).map_err(internal)?,
+        debt,
         debt_sweeps: crate::debt::read::load_debt_sweeps(conn, ProjectId(id)).map_err(internal)?,
         // [p3] §32.8's verdict is **derived at read time and stored nowhere**: every input
         // already has an owner, so a fourth column would be a second one. One call, two fields —
@@ -506,11 +511,7 @@ pub fn handle_project_get(
         // age that renders needs a field of its own.
         dependency_verdict: Some(dependency.verdict),
         dependency_observed_at: dependency.observed_at,
-        // [p3] §30.1's reading, computed **after** the stamp above committed — so the first
-        // open serves the enrolled answer rather than `suppressed`.
-        health: crate::health::read_for_project(conn, ProjectId(id))
-            .map_err(internal)?
-            .0,
+        health,
         // [p3] §33.7's second clock, computed and stored since phase 1 and rendered by nothing
         // until now (R138). An unreadable slug is **NULL, not a default**: the panel draws no
         // inner needle for `None`, which is the honest rendering of *never computed*.

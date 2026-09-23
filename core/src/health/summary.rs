@@ -75,6 +75,7 @@ pub fn summary_for(
         counts: counts.clone(),
         refstate_observed: super::any_refstate_observed(conn, project)?,
         condition_signal: super::condition_signal_of(conn, project)?,
+        user_na: super::stored_user_na(conn, project)?,
     };
     project_summary(&shared, &per_project, &counts)
 }
@@ -93,6 +94,8 @@ pub fn summaries_for_all(
     let sweeps = all_sweeps(conn)?;
     let counts = all_item_counts(conn)?;
     let observed = all_refstate_observed(conn)?;
+    let rulings =
+        crate::completion::inputs::all_stored_user_na(conn).map_err(ProjectsError::Index)?;
 
     let mut out = BTreeMap::new();
     for (id, (row_facts, signal)) in facts {
@@ -104,6 +107,7 @@ pub fn summaries_for_all(
             counts: per_counts.clone(),
             refstate_observed: observed.contains(&id),
             condition_signal: signal,
+            user_na: rulings.get(&id).copied().unwrap_or([None; 10]),
         };
         out.insert(id, project_summary(&shared, &per_project, &per_counts)?);
     }
@@ -115,8 +119,18 @@ fn project_summary(
     project: &PerProject,
     counts: &CountsBySource,
 ) -> Result<(HealthSummary, ProjectLifecycle), ProjectsError> {
-    let reading = super::reading_from(shared, project)?;
-    let unverified = counts.values().map(|(_, unverified)| *unverified).sum();
+    let (reading, hidden) = super::reading_from(shared, project)?;
+    // Over the same items the page lists: a set-aside check's items have left the list, so they
+    // leave this count with them, as they leave `scoredOpen`.
+    let uncounted: Vec<String> = hidden
+        .into_iter()
+        .map(super::slug_of)
+        .collect::<Result<_, _>>()?;
+    let unverified = counts
+        .iter()
+        .filter(|(source, _)| !uncounted.contains(source))
+        .map(|(_, (_, unverified))| *unverified)
+        .sum();
     let lifecycle = lifecycle_of(
         &reading,
         project.facts.is_archived,
@@ -130,7 +144,7 @@ fn all_project_facts(
 ) -> Result<BTreeMap<i64, (ProjectFacts, Option<ConditionSignal>)>, ProjectsError> {
     let mut stmt = conn.prepare(
         "SELECT id, is_reference, authored_by_user, error_kind, acknowledged_at, is_archived,
-                condition_signal
+                condition_signal, archetype
            FROM project",
     )?;
     let mut rows = stmt.query([])?;
@@ -143,6 +157,7 @@ fn all_project_facts(
             error_kind: r.get(3)?,
             acknowledged_at: r.get(4)?,
             is_archived: r.get::<_, i64>(5)? != 0,
+            archetype: r.get(7)?,
         };
         out.insert(id, (facts, parse_condition(r.get(6)?)?));
     }

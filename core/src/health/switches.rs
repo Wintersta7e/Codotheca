@@ -73,6 +73,25 @@ pub fn read_switches(conn: &Connection) -> Result<Vec<HealthCheckSwitch>, IndexE
     Ok(out)
 }
 
+/// R128/F8: `todo_marker` is the one source whose evidence needs §29.8's content-scan grant.
+#[must_use]
+pub const fn needs_grant(source: DebtSource) -> bool {
+    matches!(source, DebtSource::TodoMarker)
+}
+
+/// The sources that are **off** for every project: switched off, or needing a grant that is not
+/// given (R128/F8). The one statement of *off* the producers read: an off source is not swept at
+/// all — no sweep row, no item opened or closed — so a check switched back on is `unknown` until
+/// it next runs, whatever settled while it was off.
+#[must_use]
+pub fn off_sources(switches: &[HealthCheckSwitch], granted: bool) -> Vec<DebtSource> {
+    switches
+        .iter()
+        .filter(|s| !s.enabled || (needs_grant(s.check) && !granted))
+        .map(|s| s.check)
+        .collect()
+}
+
 /// Apply **only the entries the patch names**, following the seven existing settings' shape.
 ///
 /// Turning a check off takes its `debt_sweep` row with it, and leaves every `debt_item` row

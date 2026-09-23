@@ -15,9 +15,7 @@ use codotheca_core::health::read_for_project;
 use codotheca_core::health::switches::{read_switches, write_switches};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
-use codotheca_core::protocol::{
-    CheckOutcome, DebtSource, HealthCheckSwitch, HealthState, ProjectId,
-};
+use codotheca_core::protocol::{DebtSource, HealthCheckSwitch, HealthState, ProjectId};
 
 const NOW: i64 = 1_781_179_200;
 
@@ -107,13 +105,37 @@ fn ac_p3_30_2_the_health_types_keep_items_and_checks_in_separate_fields() {
     }
 }
 
-/// **`AC-P3-30-1`, the core half.** With every check off, nothing is eligible, so the reading
-/// carries no basis and no `scoredOpen` — **not a zeroed one**.
+/// **`AC-P3-30-1`, the core half.** With every check off, nothing is eligible, and §30.1 rules
+/// that **`eligible = 0` is `absent`, never `0 open`**: no checks, no `scoredOpen`, no basis —
+/// **not a zeroed one**, and not a `live` reading of nothing.
+///
+/// Every project here would read `live` with a check on, and one is unenrolled so it would read
+/// `suppressed`: `absent` outranks both, because with nothing eligible there is no subject to
+/// withhold.
 #[test]
 fn ac_p3_30_1_with_every_check_off_a_reading_carries_no_figure() {
     let (_dir, conn) = store();
-    let projects: Vec<i64> = (0..3).map(|_| seed_live(&conn)).collect();
+    let mut projects: Vec<i64> = (0..3).map(|_| seed_live(&conn)).collect();
+    let unenrolled = seed_live(&conn);
+    conn.execute(
+        "UPDATE project SET acknowledged_at = NULL WHERE id = ?1",
+        [unenrolled],
+    )
+    .unwrap();
+    projects.push(unenrolled);
     eprintln!("AC-P3-30-1 projects scanned: {}", projects.len());
+
+    // The control: with the default switches the same projects are `live` and `suppressed`, so
+    // the `absent` below is the switches' doing and not the fixture's.
+    for project in &projects {
+        let (reading, _items) = read_for_project(&conn, ProjectId(*project)).unwrap();
+        let want = if *project == unenrolled {
+            HealthState::Suppressed
+        } else {
+            HealthState::Live
+        };
+        assert_eq!(reading.state, want, "project {project} with every check on");
+    }
     assert!(
         !projects.is_empty(),
         "a scan over no projects proves nothing"
@@ -135,19 +157,18 @@ fn ac_p3_30_1_with_every_check_off_a_reading_carries_no_figure() {
 
     for project in &projects {
         let (reading, _items) = read_for_project(&conn, ProjectId(*project)).unwrap();
-        assert_eq!(reading.state, HealthState::Live);
+        assert_eq!(
+            reading.state,
+            HealthState::Absent,
+            "project {project}: nothing eligible is a project this app has nothing to say about"
+        );
         assert_eq!(
             reading.scored_open, None,
             "a zero was written for a reading with nothing eligible"
         );
         assert!(reading.basis.is_none(), "a zeroed basis was written");
-        // Every check is still named, and every one of them is `off` — the tab renders the
-        // switch rather than going silent.
-        assert_eq!(reading.checks.len(), DebtSource::ALL.len());
-        for check in &reading.checks {
-            assert_eq!(check.outcome, CheckOutcome::Off, "{check:?}");
-            assert_eq!(check.unknown_reason, None);
-        }
+        // An empty array is the state saying nothing was computed, never a count of zero checks.
+        assert!(reading.checks.is_empty(), "{:?}", reading.checks);
     }
 }
 

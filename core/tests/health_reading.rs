@@ -1067,3 +1067,353 @@ fn the_projection_issues_a_bounded_number_of_statements_for_n_projects() {
         "the statement count scales with the project count: this is the query storm"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// §30.3's `notApplicable` — *marked not-applicable for this project through §31's
+// archetype-proposed mechanism*, read over §31.9's bijection.
+// ---------------------------------------------------------------------------------------------
+
+use codotheca_core::completion::proposal::suppressed_source;
+use codotheca_core::completion::{evaluate_and_write, set_check_na};
+use codotheca_core::health::switches::write_switches;
+use codotheca_core::protocol::{CompletionCheck, HealthCheckSwitch, HealthReading};
+
+/// §31's ten rows exist, so a ruling has a row to land on — which is how the product reaches it.
+fn rule_na(conn: &rusqlite::Connection, project: i64, key: CompletionCheck, na: Option<bool>) {
+    let tx = conn.unchecked_transaction().unwrap();
+    evaluate_and_write(&tx, ProjectId(project), READ_NOW).unwrap();
+    set_check_na(&tx, ProjectId(project), key, na, READ_NOW).unwrap();
+    tx.commit().unwrap();
+    let key_slug = serde_json::to_value(key).unwrap();
+    let stored: Option<i64> = conn
+        .query_row(
+            "SELECT user_na FROM project_check WHERE project_id = ?1 AND check_key = ?2",
+            rusqlite::params![project, key_slug.as_str().unwrap()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, na.map(i64::from), "the ruling did not land");
+}
+
+fn switch(conn: &rusqlite::Connection, check: DebtSource, enabled: bool) {
+    let tx = conn.unchecked_transaction().unwrap();
+    write_switches(&tx, &[HealthCheckSwitch { check, enabled }]).unwrap();
+    tx.commit().unwrap();
+}
+
+fn outcome_of(reading: &HealthReading, source: DebtSource) -> CheckOutcome {
+    reading
+        .checks
+        .iter()
+        .find(|c| c.id == source)
+        .expect("every declared source is named")
+        .outcome
+}
+
+/// **A check the user marked N/A reads `notApplicable`, leaves `eligible`, and its open item
+/// neither fails it nor counts.** Through the one producer, on both the page and the shelf path.
+#[test]
+fn a_check_the_user_marked_not_applicable_reads_not_applicable_and_leaves_eligible() {
+    let (_dir, conn) = store();
+    let project = seed_live(&conn);
+    sweep(&conn, project, "missing_readme", "complete", READ_NOW - 60);
+    sweep(&conn, project, "missing_tests", "complete", READ_NOW - 60);
+    item(&conn, project, "missing_tests", "", "open");
+
+    // The control: with no ruling the open item fails the check and is counted.
+    let (before, _) = read_for_project(&conn, ProjectId(project)).unwrap();
+    let before_basis = before.basis.clone().expect("a live reading");
+    assert_eq!(
+        outcome_of(&before, DebtSource::MissingTests),
+        CheckOutcome::Failed
+    );
+    assert_eq!(before.scored_open, Some(1));
+    assert_eq!(before_basis.not_applicable, 0);
+
+    rule_na(&conn, project, CompletionCheck::Tests, Some(true));
+
+    let (after, _) = read_for_project(&conn, ProjectId(project)).unwrap();
+    let basis = after.basis.clone().expect("a live reading");
+    eprintln!(
+        "before: eligible={} ran={} notApplicable={} scoredOpen={:?}; after: eligible={} ran={} \
+         notApplicable={} scoredOpen={:?}",
+        before_basis.eligible,
+        before_basis.ran,
+        before_basis.not_applicable,
+        before.scored_open,
+        basis.eligible,
+        basis.ran,
+        basis.not_applicable,
+        after.scored_open
+    );
+    assert_eq!(after.state, HealthState::Live);
+    assert_eq!(
+        outcome_of(&after, DebtSource::MissingTests),
+        CheckOutcome::NotApplicable,
+        "the user's N/A ruling never reached the reading"
+    );
+    assert_eq!(basis.not_applicable, 1);
+    assert_eq!(
+        basis.eligible,
+        before_basis.eligible - 1,
+        "N/A stayed eligible"
+    );
+    assert_eq!(basis.ran, before_basis.ran - 1);
+    assert!(
+        after
+            .checks
+            .iter()
+            .all(|c| c.outcome != CheckOutcome::Failed),
+        "an N/A check's item failed the reading: {:?}",
+        after.checks
+    );
+    assert_eq!(
+        after.scored_open,
+        Some(0),
+        "an N/A check's item was counted"
+    );
+
+    // The shelf's two paths read the same ruling, or the page and the row disagree.
+    let (summary, _) = summary_for(&conn, ProjectId(project)).unwrap();
+    assert_eq!(summary.scored_open, Some(0));
+    assert_eq!(
+        summaries_for_all(&conn)
+            .unwrap()
+            .get(&project)
+            .map(|s| &s.0),
+        Some(&summary)
+    );
+
+    // §30.3's order: the switch is the user's own statement about the check and is tested first.
+    switch(&conn, DebtSource::MissingTests, false);
+    let (off, _) = read_for_project(&conn, ProjectId(project)).unwrap();
+    assert_eq!(
+        outcome_of(&off, DebtSource::MissingTests),
+        CheckOutcome::Off
+    );
+}
+
+/// **The archetype proposes; the user rules.** A proposal reaches the reading with no ruling, and
+/// the user's `false` overrides it — the same gate §31's evaluator runs, read and not re-derived.
+#[test]
+fn an_archetype_proposal_reads_not_applicable_until_the_user_overrides_it() {
+    let (_dir, conn) = store();
+    let project = seed_live(&conn);
+    sweep(&conn, project, "missing_readme", "complete", READ_NOW - 60);
+    sweep(&conn, project, "missing_tests", "complete", READ_NOW - 60);
+    item(&conn, project, "missing_tests", "", "open");
+    conn.execute(
+        "UPDATE project SET archetype = 'docs' WHERE id = ?1",
+        [project],
+    )
+    .unwrap();
+
+    let (proposed, _) = read_for_project(&conn, ProjectId(project)).unwrap();
+    let na: Vec<DebtSource> = proposed
+        .checks
+        .iter()
+        .filter(|c| c.outcome == CheckOutcome::NotApplicable)
+        .map(|c| c.id)
+        .collect();
+    eprintln!("sources N/A on a docs project with no ruling: {na:?}");
+    assert!(
+        na.contains(&DebtSource::MissingTests),
+        "the archetype's proposal never reached the reading"
+    );
+    // `ci_red` is N/A only through §31.1a's derived `ciGreen` rule, which §30 never reads.
+    assert!(!na.contains(&DebtSource::CiRed));
+    assert_eq!(proposed.scored_open, Some(0));
+
+    rule_na(&conn, project, CompletionCheck::Tests, Some(false));
+    let (overridden, _) = read_for_project(&conn, ProjectId(project)).unwrap();
+    assert_eq!(
+        outcome_of(&overridden, DebtSource::MissingTests),
+        CheckOutcome::Failed,
+        "the user's override lost to the proposal"
+    );
+    assert_eq!(overridden.scored_open, Some(1));
+}
+
+/// §30.1 over both causes at once: **`eligible = 0` is `absent`** whether a check left `eligible`
+/// by its switch or by N/A.
+#[test]
+fn every_check_off_or_not_applicable_is_absent() {
+    let (_dir, conn) = store();
+    let project = seed_live(&conn);
+    sweep(&conn, project, "missing_readme", "complete", READ_NOW - 60);
+
+    // Sources no check stands behind cannot be N/A, so their switches go off.
+    let covered: Vec<DebtSource> = CompletionCheck::ALL
+        .into_iter()
+        .filter_map(suppressed_source)
+        .collect();
+    for source in DebtSource::ALL {
+        if !covered.contains(&source) {
+            switch(&conn, source, false);
+        }
+    }
+    let (partial, _) = read_for_project(&conn, ProjectId(project)).unwrap();
+    assert_eq!(
+        partial.state,
+        HealthState::Live,
+        "the control is already absent"
+    );
+
+    for key in CompletionCheck::ALL {
+        if suppressed_source(key).is_some() {
+            rule_na(&conn, project, key, Some(true));
+        }
+    }
+    let (reading, _) = read_for_project(&conn, ProjectId(project)).unwrap();
+    eprintln!(
+        "{} source(s) N/A, {} switched off: {:?}",
+        covered.len(),
+        DebtSource::ALL.len() - covered.len(),
+        reading.state
+    );
+    assert!(!covered.is_empty());
+    assert_eq!(reading.state, HealthState::Absent);
+    assert_eq!(reading.scored_open, None);
+    assert!(reading.basis.is_none());
+    assert!(reading.checks.is_empty());
+}
+
+// ---------------------------------------------------------------------------------------------
+// §30.9 — **off hides; it never closes, and it never pays.**
+// ---------------------------------------------------------------------------------------------
+
+fn item_rows(conn: &rusqlite::Connection, project: i64) -> i64 {
+    conn.query_row(
+        "SELECT count(*) FROM debt_item WHERE project_id = ?1",
+        [project],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// A switched-off check's open item leaves `scoredOpen` on the page and on the shelf, and its row
+/// stays where it was.
+#[test]
+fn a_switched_off_checks_open_items_leave_scored_open() {
+    let (_dir, conn) = store();
+    let project = seed_live(&conn);
+    sweep(&conn, project, "missing_readme", "complete", READ_NOW - 60);
+    sweep(&conn, project, "missing_tests", "complete", READ_NOW - 60);
+    item(&conn, project, "missing_tests", "", "open");
+
+    // The control: switched on, the item fails its check and is counted.
+    let (before, _) = read_for_project(&conn, ProjectId(project)).unwrap();
+    assert_eq!(
+        outcome_of(&before, DebtSource::MissingTests),
+        CheckOutcome::Failed
+    );
+    assert_eq!(before.scored_open, Some(1));
+
+    switch(&conn, DebtSource::MissingTests, false);
+
+    let (after, _) = read_for_project(&conn, ProjectId(project)).unwrap();
+    let (summary, _) = summary_for(&conn, ProjectId(project)).unwrap();
+    eprintln!(
+        "scoredOpen switched on: {:?}; switched off: page {:?}, shelf {:?}; item rows {}",
+        before.scored_open,
+        after.scored_open,
+        summary.scored_open,
+        item_rows(&conn, project)
+    );
+    assert_eq!(after.state, HealthState::Live);
+    assert_eq!(
+        outcome_of(&after, DebtSource::MissingTests),
+        CheckOutcome::Off
+    );
+    assert_eq!(
+        after.scored_open,
+        Some(0),
+        "a switched-off check's item was counted"
+    );
+    assert_eq!(summary.scored_open, Some(0));
+    assert_eq!(
+        summaries_for_all(&conn)
+            .unwrap()
+            .get(&project)
+            .map(|s| &s.0),
+        Some(&summary)
+    );
+    assert_eq!(
+        item_rows(&conn, project),
+        1,
+        "switching a check off closed its item"
+    );
+}
+
+/// **An N/A check's items are treated as `off`'s**: §31.9 rules an N/A check never becomes a debt
+/// item, so one already open when the check became N/A leaves the list and every count, on the
+/// page and on the shelf — never closed — and comes back unchanged when the ruling is reverted.
+#[test]
+fn a_not_applicable_checks_items_leave_the_list_and_every_count_and_come_back_unchanged() {
+    let (_dir, conn) = store();
+    let project = seed_live(&conn);
+    sweep(&conn, project, "missing_readme", "complete", READ_NOW - 60);
+    sweep(&conn, project, "missing_tests", "complete", READ_NOW - 60);
+    item(&conn, project, "missing_tests", "", "open");
+    item(&conn, project, "missing_tests", "u", "unverified");
+
+    // The control: both items listed, one counted as open and one as unverified.
+    let (before, before_items) = read_for_project(&conn, ProjectId(project)).unwrap();
+    let (before_summary, _) = summary_for(&conn, ProjectId(project)).unwrap();
+    assert_eq!(before_items.len(), 2);
+    assert_eq!(before.scored_open, Some(1));
+    assert_eq!(before_summary.unverified, Some(1));
+
+    rule_na(&conn, project, CompletionCheck::Tests, Some(true));
+
+    let (after, items) = read_for_project(&conn, ProjectId(project)).unwrap();
+    let (summary, _) = summary_for(&conn, ProjectId(project)).unwrap();
+    eprintln!(
+        "N/A: items listed {} -> {}, scoredOpen {:?} -> {:?}, unverified {:?} -> {:?}",
+        before_items.len(),
+        items.len(),
+        before.scored_open,
+        after.scored_open,
+        before_summary.unverified,
+        summary.unverified
+    );
+    assert_eq!(
+        outcome_of(&after, DebtSource::MissingTests),
+        CheckOutcome::NotApplicable
+    );
+    assert!(
+        items.is_empty(),
+        "an N/A check's items are still on the list: {items:?}"
+    );
+    assert_eq!(after.scored_open, Some(0));
+    assert_eq!(
+        summary.unverified,
+        Some(0),
+        "an N/A check's unverified item was counted"
+    );
+    assert_eq!(
+        summaries_for_all(&conn)
+            .unwrap()
+            .get(&project)
+            .map(|s| &s.0),
+        Some(&summary)
+    );
+    assert_eq!(item_rows(&conn, project), 2, "an N/A ruling closed an item");
+
+    // Reverted: the same two items, with the identity they had.
+    rule_na(&conn, project, CompletionCheck::Tests, None);
+    let (_, back) = read_for_project(&conn, ProjectId(project)).unwrap();
+    let identity = |items: &[codotheca_core::protocol::DebtItem]| -> Vec<(String, i64)> {
+        let mut out: Vec<_> = items
+            .iter()
+            .map(|i| (i.fingerprint.clone(), i.first_seen_at))
+            .collect();
+        out.sort();
+        out
+    };
+    assert_eq!(
+        identity(&back),
+        identity(&before_items),
+        "the items came back with a different identity"
+    );
+}

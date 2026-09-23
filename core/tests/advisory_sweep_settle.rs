@@ -593,3 +593,105 @@ fn a_withdrawn_advisory_writes_its_row_and_announces_nothing() {
         "a withdrawal was announced as a restoration: {announced:?}"
     );
 }
+
+/// The `dependency_advisory` sweep row for `alpha`: `(outcome, observed_at)`.
+fn advisory_sweep_row(world: &World) -> Option<(String, i64)> {
+    use rusqlite::OptionalExtension as _;
+    let guard = world.index.lock().unwrap();
+    guard
+        .conn()
+        .query_row(
+            "SELECT outcome, observed_at FROM debt_sweep
+              WHERE project_id = ?1 AND source = 'dependency_advisory'",
+            [world.alpha.project.0],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .unwrap()
+}
+
+/// §30.9 and §31.9 — **an `off` or N/A `dependency_advisory` is not swept.** Through the real
+/// runner: switched off, a sweep that would close the item opens nothing, closes nothing, pays
+/// nothing and writes no sweep row — and the same while `deps` is N/A for the project.
+#[test]
+fn an_off_or_not_applicable_dependency_advisory_is_not_swept() {
+    use codotheca_core::health::switches::write_switches;
+    use codotheca_core::protocol::{DebtSource, HealthCheckSwitch};
+
+    let world = world();
+    let toggle = |enabled: bool| {
+        let mut guard = world.index.lock().unwrap();
+        guard
+            .with_tx(|tx| {
+                write_switches(
+                    tx,
+                    &[HealthCheckSwitch {
+                        check: DebtSource::DependencyAdvisory,
+                        enabled,
+                    }],
+                )
+            })
+            .unwrap();
+    };
+
+    // The control: switched on, a sweep opens the item and writes the row.
+    lock(&world, &world.alpha, "1.0.0", NOW);
+    sweep(
+        &world,
+        NOW,
+        Some(&format!(
+            "[{}]",
+            advisory("GHSA-aaaa", "CVE-2026-0001", None)
+        )),
+    );
+    let opened = items(&world);
+    assert_eq!(opened.len(), 1, "the control opened nothing");
+    assert!(advisory_sweep_row(&world).is_some());
+    let ledger_before = ledger(&world);
+
+    // Switched off, then the user upgrades past the fix: a sweep would close the item as fixed.
+    toggle(false);
+    assert_eq!(advisory_sweep_row(&world), None, "switch-off kept the row");
+    lock(&world, &world.alpha, "2.0.0", NOW + DAY);
+    sweep(&world, NOW + DAY, Some("[]"));
+    eprintln!(
+        "switched off: items {:?}, sweep row {:?}",
+        items(&world),
+        advisory_sweep_row(&world)
+    );
+    assert_eq!(
+        items(&world),
+        opened,
+        "a switched-off source closed its item"
+    );
+    assert_eq!(
+        advisory_sweep_row(&world),
+        None,
+        "a switched-off source was swept"
+    );
+    assert_eq!(ledger(&world), ledger_before, "a switched-off source paid");
+
+    // Back on, but `deps` is N/A: a docs project, whose archetype proposes it.
+    toggle(true);
+    {
+        let mut guard = world.index.lock().unwrap();
+        guard
+            .with_tx(|tx| {
+                tx.execute(
+                    "UPDATE project SET archetype = 'docs' WHERE id = ?1",
+                    [world.alpha.project.0],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    }
+    sweep(&world, NOW + 2 * DAY, Some("[]"));
+    eprintln!(
+        "not applicable: items {:?}, sweep row {:?}",
+        items(&world),
+        advisory_sweep_row(&world)
+    );
+    assert_eq!(items(&world), opened, "an N/A source closed its item");
+    assert_eq!(advisory_sweep_row(&world), None, "an N/A source was swept");
+    assert_eq!(ledger(&world), ledger_before, "an N/A source paid");
+}

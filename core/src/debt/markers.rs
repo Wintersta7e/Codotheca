@@ -115,6 +115,10 @@ fn basis_of(raw: &str) -> ObservationBasis {
 /// **Returns [`SweepEffect::default`] and writes nothing when `content_sweep_state` is `None`**:
 /// that is *never observed*, it is not an outcome, and a project with no `debt_sweep` row renders
 /// as *not computed* rather than as zero.
+///
+/// **Nor when `todo_marker` is off** (§30.9, R128/F8) — switched off, or `gates.granted` false. An
+/// ungranted run reads no blob, so its empty occurrence list is not an observation of an empty
+/// set, and sweeping it would close every item as fixed.
 pub fn build_items(
     tx: &Transaction<'_>,
     project: ProjectId,
@@ -124,6 +128,13 @@ pub fn build_items(
     now: i64,
     store: &dyn DebtStore,
 ) -> Result<SweepEffect, DebtError> {
+    let off = crate::health::switches::off_sources(
+        &crate::health::switches::read_switches(tx)?,
+        gates.granted,
+    );
+    if off.contains(&DebtSource::TodoMarker) {
+        return Ok(SweepEffect::default());
+    }
     let Some(state) = content_sweep_state(tx, project)? else {
         return Ok(SweepEffect::default());
     };

@@ -126,6 +126,19 @@ pub fn sync_advisory_items(
     now: i64,
     store: &dyn DebtStore,
 ) -> Result<AdvisoryItemSweep, AdvisoryError> {
+    // §30.9 and §31.9: an `off` source, or one whose `deps` check is N/A for this project, is not
+    // swept at all — nothing opened, closed or marked `unverified`, and no sweep row, so a check
+    // switched on again reads as not run yet. An item already open is set aside by the reading.
+    let off = crate::health::switches::off_sources(
+        &crate::health::switches::read_switches(tx)?,
+        crate::surfaces::settings::content_scan_enabled(tx)?,
+    );
+    let not_applicable = crate::completion::inputs::not_applicable_sources(tx, project)?;
+    if off.contains(&DebtSource::DependencyAdvisory)
+        || not_applicable.contains(&DebtSource::DependencyAdvisory)
+    {
+        return Ok(AdvisoryItemSweep::default());
+    }
     // A project with neither a lineage key nor a remote key has no subject to key a ledger on,
     // and §1.7 records what keying it on `project_id` did instead: the ledger broke on merges.
     let Some(subject) =

@@ -2,8 +2,8 @@
  * [p3] Acceptance: §30 — the two criteria whose surfaces are the app's.
  *
  * `AC-P3-30-1`'s second half: **with every check off, no surface renders a health number for any
- * project.** The core half — that a reading with nothing eligible carries no basis and no
- * `scoredOpen` — is `core/tests/acceptance_p3_health.rs`.
+ * project.** The core half — that a reading with nothing eligible is `absent`, with no checks, no
+ * basis and no `scoredOpen` — is `core/tests/acceptance_p3_health.rs`.
  *
  * `AC-P3-30-3`: the four outcomes in four distinct rendered forms, none of the three withheld
  * ones taking the passing one's shape.
@@ -22,8 +22,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import type { HealthCheck, HealthReading } from '../../src/generated/protocol';
+import type { HealthCheck, HealthReading, HealthSummary } from '../../src/generated/protocol';
 import { basisLine, formFor, openLine } from '../../src/renderer/project/health/checkForms';
+import { tabsFor } from '../../src/renderer/project/tabs';
+import { detailFixture, rowFixture } from '../../src/renderer/project/testFixtures';
+import { rankOf, toShelfRow } from '../../src/renderer/shelf/row';
 
 const NOW = 1_700_000_000;
 
@@ -49,32 +52,37 @@ function surfaceOf(reading: HealthReading): string[] {
 
 describe('health', () => {
   it('AC-P3-30-1 with every check off no surface renders a health number', () => {
-    // Every check off is a reading with nothing eligible: `scoredOpen` and `basis` are NULL,
-    // which is exactly what the core produces for that case, and the page must render no figure
-    // from it.
-    const reading: HealthReading = {
-      state: 'live',
+    // Every check off is a reading with nothing eligible, and §30.1 rules that `absent`: no
+    // checks, no `scoredOpen`, no basis — exactly what the core produces for that case, on the
+    // page and flattened onto the shelf row.
+    const reading: HealthReading = { state: 'absent', scoredOpen: null, basis: null, checks: [] };
+    const summary: HealthSummary = {
+      state: 'absent',
       scoredOpen: null,
-      basis: null,
-      checks: [
-        { id: 'todo_marker', outcome: 'off', unknownReason: null },
-        { id: 'missing_readme', outcome: 'off', unknownReason: null },
-        { id: 'missing_license', outcome: 'off', unknownReason: null },
-      ],
+      unverified: null,
+      unknownChecks: null,
+      observedAt: null,
     };
     const projects = [1, 2, 3];
     let inspected = 0;
     for (const project of projects) {
-      const surface = surfaceOf(reading);
-      // eslint-disable-next-line no-console
-      console.log(`AC-P3-30-1 surface for project ${project}: ${JSON.stringify(surface)}`);
-      expect(surface.length).toBeGreaterThan(0);
-      for (const line of surface) expect(line).not.toMatch(/\d/u);
+      // The page: §30.7 mounts no `HEALTH` tab on an `absent` reading.
+      const tabs = tabsFor(detailFixture({ health: reading })).map((tab) => tab.id);
+      expect(tabs).not.toContain('health');
       inspected += 1;
+      // The tab's own strings, were it drawn: none at all.
+      const surface = surfaceOf(reading);
+      expect(surface).toEqual([]);
+      inspected += 1;
+      // The shelf: §35's rank reads no number off the summary, so the row sorts to the tail.
+      expect(rankOf(toShelfRow(rowFixture({ healthSummary: summary })))).toBeNull();
+      inspected += 1;
+      // eslint-disable-next-line no-console
+      console.log(`AC-P3-30-1 project ${project}: tabs ${JSON.stringify(tabs)}, tab strings []`);
     }
     // eslint-disable-next-line no-console
     console.log(`AC-P3-30-1 surfaces inspected: ${inspected}`);
-    expect(inspected).toBe(projects.length);
+    expect(inspected).toBe(projects.length * 3);
     expect(inspected).toBeGreaterThan(0);
 
     // And the tab draws exactly those strings, so the emptiness above is the page's emptiness.

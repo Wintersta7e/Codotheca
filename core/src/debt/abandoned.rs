@@ -33,6 +33,11 @@ use crate::protocol::{DebtSource, ProjectId};
 
 /// The excluded-source, scored-only predicate — **the single owner of this form.**
 ///
+/// **It counts only what the reading counts.** An item of a check the reading sets aside —
+/// switched off, ungranted, not applicable — is no outstanding work the reading speaks for, so it
+/// cannot open this item either. Which sources are set aside is the reading's to say
+/// (`crate::health::set_aside_sources`), not a third statement here.
+///
 /// # Errors
 /// Fails when SQLite refuses a read.
 pub fn abandoned_conjunct(tx: &Transaction<'_>, project: ProjectId) -> Result<bool, DebtError> {
@@ -44,16 +49,32 @@ pub fn abandoned_conjunct(tx: &Transaction<'_>, project: ProjectId) -> Result<bo
     if !abandoned {
         return Ok(false);
     }
-    let others: i64 = tx.query_row(
-        "SELECT count(*) FROM debt_item
+    let set_aside = crate::health::set_aside_sources(tx, project).map_err(projects_error)?;
+    let mut st = tx.prepare(
+        "SELECT DISTINCT source FROM debt_item
           WHERE project_id = ?1
             AND state = 'open'
             AND scoring = 'scored'
             AND source <> 'abandoned_with_debt'",
-        [project.0],
-        |r| r.get(0),
     )?;
-    Ok(others > 0)
+    let mut rows = st.query([project.0])?;
+    while let Some(row) = rows.next()? {
+        let raw: String = row.get(0)?;
+        let source: DebtSource = super::enum_from_text(&raw)
+            .ok_or_else(|| DebtError::Codec(format!("debt_item.source holds {raw:?}")))?;
+        if !set_aside.contains(&source) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn projects_error(error: crate::projects::ProjectsError) -> DebtError {
+    match error {
+        crate::projects::ProjectsError::Index(inner) => DebtError::Index(inner),
+        crate::projects::ProjectsError::Sqlite(inner) => DebtError::from(inner),
+        other => DebtError::Codec(other.to_string()),
+    }
 }
 
 /// The seventh [`SingletonArm`].

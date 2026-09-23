@@ -23,7 +23,7 @@ use crate::protocol::{
     UnknownReason,
 };
 
-use super::proposal::proposes_na;
+use super::proposal::{proposes_na, suppressed_source};
 
 /// §28's stored answer for one source, shaped for the map below.
 ///
@@ -316,6 +316,26 @@ fn is_na(key: CompletionCheck, user_na: Option<bool>, archetype: Option<&str>) -
         Some(false) => false,
         None => proposes_na(archetype, key),
     }
+}
+
+/// §30.3's `notApplicable` input, in §28's vocabulary: whether the check standing behind `source`
+/// (§31.9's bijection) is N/A for this project, by the gate above and no second one.
+///
+/// `user_na` is in `CompletionCheck::ALL` order, as [`CompletionInputs::user_na`] is. A source no
+/// check stands behind is never N/A. **§31.1a's derived `ciGreen` rule is not read**: `ci_red`
+/// is N/A only when `ciGreen` itself is, which is what `suppressed_source` promises §30.
+#[must_use]
+pub fn source_not_applicable(
+    source: DebtSource,
+    archetype: Option<&str>,
+    user_na: &[Option<bool>; 10],
+) -> bool {
+    CompletionCheck::ALL
+        .iter()
+        .zip(user_na)
+        .any(|(key, ruling)| {
+            suppressed_source(*key) == Some(source) && is_na(*key, *ruling, archetype)
+        })
 }
 
 /// The ten checks, in `CompletionCheck` declaration order.

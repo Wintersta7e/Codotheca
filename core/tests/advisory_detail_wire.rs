@@ -33,7 +33,16 @@ fn item(rig: &Rig, source: &str, fingerprint: &str) {
 fn an_advisory_item_carries_its_detail_and_every_other_item_none() {
     let rig = Rig::new();
     rig.project(1, "alpha");
+    // A project whose reading is `live` — authored, one present copy — and a granted content
+    // scan, so neither item is set aside before it can reach the wire: §30 hands an `absent`
+    // reading no items, and an ungranted `todo_marker` is `off`.
+    rig.location(1, 1, "/a", "present", Some("main"), Some(0), Some(NOW));
     let conn = rig.conn();
+    conn.execute_batch(
+        "UPDATE project SET authored_by_user = 1 WHERE id = 1;
+         INSERT INTO app_meta (k, v) VALUES ('content_scan_enabled', '1');",
+    )
+    .unwrap();
     conn.execute_batch(
         "INSERT INTO advisory_sweep (id, started_at, settled_at, outcome, complete)
            VALUES (1, 1, 1, 'done', 1);
