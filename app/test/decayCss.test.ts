@@ -83,7 +83,10 @@ describe('the decay stylesheet', () => {
     // `motion.css` carries the tier-clamp selector rows, which R112 makes p3-33's for phase 3.
     // A third file growing a `.cdt-decay` rule is what this catches.
     const { rules } = decayRules();
-    const files = [...new Set(rules.map((r) => r.file.replace(RENDERER, '')))].sort();
+    // Forward slashes: on Windows the relative path reads `styles\decay.css`.
+    const files = [
+      ...new Set(rules.map((r) => r.file.replace(RENDERER, '').replaceAll('\\', '/'))),
+    ].sort();
     expect(files).toEqual(['styles/decay.css', 'styles/motion.css']);
 
     for (const rule of rules.filter((r) => r.file.endsWith('motion.css'))) {

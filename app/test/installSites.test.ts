@@ -49,10 +49,12 @@ test('InstallControl is mounted in exactly two places and no third', () => {
   expect(sources.length, 'the renderer scan read nothing').toBeGreaterThan(50);
 
   const importers = sources
+    // Forward slashes before any path test: on Windows the walk yields `install\InstallControl`.
+    .map((source) => ({ ...source, path: source.path.replaceAll('\\', '/') }))
     .filter(({ path }) => !path.includes(`${'install'}${'/'}InstallControl`))
     .filter(({ path }) => !path.endsWith('.test.ts') && !path.endsWith('.test.tsx'))
     .filter(({ text }) => /\bInstallControl\b/u.test(text))
-    .map(({ path }) => path.slice(RENDERER.length + 1).replaceAll('\\', '/'));
+    .map(({ path }) => path.slice(RENDERER.length + 1));
 
   expect(
     importers.sort(),
@@ -74,10 +76,11 @@ test('UninstallControl is mounted in exactly one place and no second', () => {
   expect(sources.length, 'the renderer scan read nothing').toBeGreaterThan(50);
 
   const importers = sources
+    .map((source) => ({ ...source, path: source.path.replaceAll('\\', '/') }))
     .filter(({ path }) => !path.includes(`${'uninstall'}${'/'}UninstallControl`))
     .filter(({ path }) => !path.endsWith('.test.ts') && !path.endsWith('.test.tsx'))
     .filter(({ text }) => /\bUninstallControl\b/u.test(text))
-    .map(({ path }) => path.slice(RENDERER.length + 1).replaceAll('\\', '/'));
+    .map(({ path }) => path.slice(RENDERER.length + 1));
 
   expect(
     importers.sort(),
