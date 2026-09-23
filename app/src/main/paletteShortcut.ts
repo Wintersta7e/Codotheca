@@ -1,4 +1,3 @@
-import type { Settings } from '../generated/protocol.js';
 import { IPC_OPEN_PALETTE, IPC_SHORTCUT_STATE, type ShortcutState } from '../shared/channels.js';
 import { ResidentShortcut, residentShortcutStatusText } from './shortcut.js';
 import type { BindOutcome, ShortcutHost } from './shortcut.js';
@@ -88,27 +87,6 @@ export function startShortcutService(deps: ShortcutServiceDeps): ResidentShortcu
       deps.send(IPC_SHORTCUT_STATE, state);
     },
   });
-}
-
-/**
- * The rebind path. The drawer changes the chord by writing `settings.set`, which travels the
- * command channel and never touches this process's binding — so without this the new chord is
- * stored, never registered, and the row goes on describing the old one.
- *
- * `settings.set` returns the whole `Settings`, so the value applied is the value that was
- * stored rather than the patch the renderer hoped for.
- */
-export function withShortcutRebind<N extends string, A, R>(
-  request: (name: N, args: A) => Promise<R>,
-  apply: (chord: string | null) => BindOutcome,
-): (name: N, args: A) => Promise<R> {
-  return async (name, args) => {
-    const value = await request(name, args);
-    if ((name as string) === 'settings.set') {
-      apply((value as Settings | null)?.residentShortcut ?? null);
-    }
-    return value;
-  };
 }
 
 /** §8.6: tray-icon activation is not that gesture. It shows the shelf and opens nothing. */

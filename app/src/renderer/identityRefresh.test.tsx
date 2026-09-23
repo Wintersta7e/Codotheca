@@ -190,4 +190,18 @@ describe('§1.4 the identity card follows the authorship job', () => {
     await new Promise((resolve) => setTimeout(resolve, IDENTITY_REREAD_MS + 200));
     expect(reads(fake)).toBe(before);
   });
+
+  // A run's last word re-reads the set at once, and that read is issued after every settle that
+  // came before it — so a re-read still pending from one of those settles has nothing left to do.
+  it('the read at the end of a run absorbs a re-read still pending', async () => {
+    const { fake } = mount(address(1, 1));
+    await sourceLine();
+    const before = reads(fake);
+    act(() => {
+      fake.emit(jobDone('j1_5', 1));
+      fake.emit({ topic: 'scan', event: 'finished', data: {} });
+    });
+    await new Promise((resolve) => setTimeout(resolve, IDENTITY_REREAD_MS + 200));
+    expect(reads(fake) - before).toBe(1);
+  });
 });

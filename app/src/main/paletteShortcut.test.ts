@@ -5,7 +5,6 @@ import {
   installResidentShortcut,
   shortcutStateOf,
   startShortcutService,
-  withShortcutRebind,
 } from './paletteShortcut.js';
 import type { ShortcutHost } from './shortcut.js';
 
@@ -191,38 +190,6 @@ describe('startShortcutService', () => {
     h.fire();
     expect(order).toEqual(['show', 'palette']);
     expect(sent).toContain(IPC_OPEN_PALETTE);
-  });
-});
-
-describe('withShortcutRebind', () => {
-  it('re-applies the chord the drawer just wrote, so the row is not a dead switch', async () => {
-    const applied: (string | null)[] = [];
-    const request = withShortcutRebind(
-      (name) =>
-        Promise.resolve(
-          name === 'settings.set' ? { residentShortcut: 'Alt+F12' } : { residentShortcut: null },
-        ),
-      (chord) => {
-        applied.push(chord);
-        return { kind: 'bound' as const, chord: chord ?? '' };
-      },
-    );
-
-    await request('settings.set', { patch: {} });
-    expect(applied).toEqual(['Alt+F12']);
-  });
-
-  it('leaves every other command untouched', async () => {
-    const applied: (string | null)[] = [];
-    const request = withShortcutRebind(
-      () => Promise.resolve({ residentShortcut: 'Alt+F12' }),
-      (chord) => {
-        applied.push(chord);
-        return { kind: 'unbound' as const };
-      },
-    );
-    await request('settings.get', {});
-    expect(applied).toEqual([]);
   });
 });
 

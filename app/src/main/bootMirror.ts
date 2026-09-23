@@ -12,11 +12,24 @@ export interface BootMirrorDeps {
   writeBoot(dataDir: string, file: BootFile): void;
 }
 
-/** Returns the file as it now stands, written only if the core disagreed with it. */
+/**
+ * Returns the file as it now stands, written only if the core disagreed with it. The tier and the
+ * reduced-motion override travel together: the override clamps the tier, so a first frame that
+ * had one without the other would run motion the user turned down.
+ */
 export function mirrorOnJoin(deps: BootMirrorDeps, settings: Settings): BootFile {
   const stored = deps.readBoot(deps.dataDir);
-  if (stored.effectsTier === settings.effectsTier) return stored;
-  const next: BootFile = { ...stored, effectsTier: settings.effectsTier };
+  if (
+    stored.effectsTier === settings.effectsTier &&
+    stored.reducedMotionOverride === settings.reducedMotionOverride
+  ) {
+    return stored;
+  }
+  const next: BootFile = {
+    ...stored,
+    effectsTier: settings.effectsTier,
+    reducedMotionOverride: settings.reducedMotionOverride,
+  };
   deps.writeBoot(deps.dataDir, next);
   return next;
 }
@@ -25,34 +38,32 @@ export function mirrorOnJoin(deps: BootMirrorDeps, settings: Settings): BootFile
  * The one mirror the join and the write path share. It never throws: the core has already stored
  * the value by the time the file is touched, and a failed write rejected here would read as a
  * failed setting.
+ *
+ * It remembers the pair it last left in the file, so an answer that moves neither — a check
+ * switch, the roast, the shortcut — costs no synchronous read of it. Nothing else in this process
+ * writes either field after launch, so the memory cannot go stale.
  */
 export function tierMirror(
   deps: BootMirrorDeps,
   onError: (error: unknown) => void,
 ): (settings: Settings) => void {
+  let mirrored: Pick<BootFile, 'effectsTier' | 'reducedMotionOverride'> | null = null;
   return (settings) => {
+    if (
+      mirrored?.effectsTier === settings.effectsTier &&
+      mirrored.reducedMotionOverride === settings.reducedMotionOverride
+    ) {
+      return;
+    }
     try {
-      mirrorOnJoin(deps, settings);
+      const file = mirrorOnJoin(deps, settings);
+      mirrored = {
+        effectsTier: file.effectsTier,
+        reducedMotionOverride: file.reducedMotionOverride,
+      };
     } catch (error: unknown) {
       onError(error);
     }
-  };
-}
-
-/**
- * The drawer stores the tier through `settings.set`, which reaches the core and nothing else — so
- * without this the file is a launch behind every change, and the next launch paints its first
- * frame at the tier the user left. The answer is the whole stored `Settings`, so the value
- * mirrored is the one the core kept rather than the patch that asked for it.
- */
-export function withBootMirror<N extends string, A, R>(
-  request: (name: N, args: A) => Promise<R>,
-  mirror: (settings: Settings) => void,
-): (name: N, args: A) => Promise<R> {
-  return async (name, args) => {
-    const value = await request(name, args);
-    if ((name as string) === 'settings.set') mirror(value as Settings);
-    return value;
   };
 }
 

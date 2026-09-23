@@ -21,6 +21,7 @@ describe('the boot file on disk', () => {
       effectsTier: 'off',
       paintFailCount: 2,
       paintFailForcedAt: 1_700_000_000_000,
+      reducedMotionOverride: true,
       shelfProjection: null,
     } as const;
     writeBootFile(dir, file);
@@ -51,6 +52,7 @@ describe('resolveBootEffectsTier', () => {
     effectsTier: 'full',
     paintFailCount: 0,
     paintFailForcedAt: null,
+    reducedMotionOverride: false,
     shelfProjection: null,
   } as const;
 

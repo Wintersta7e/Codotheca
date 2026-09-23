@@ -39,6 +39,7 @@ import {
   effectsTierFromArgv,
   effectsTierSourceFromArgv,
   paintFailForcedAtFromArgv,
+  reducedMotionOverrideFromArgv,
 } from '../shared/effectsTier';
 import { logPathFromArgv } from '../shared/windowArgs';
 
@@ -49,6 +50,7 @@ const bridge: CodothecaBridge = {
   effectsTier: effectsTierFromArgv(process.argv) ?? 'auto',
   effectsTierSource: effectsTierSourceFromArgv(process.argv) ?? 'boot-file',
   paintFailForcedAt: paintFailForcedAtFromArgv(process.argv),
+  reducedMotionOverride: reducedMotionOverrideFromArgv(process.argv),
   logPath: logPathFromArgv(process.argv),
   request: (name: string, args: unknown): Promise<unknown> =>
     ipcRenderer.invoke(IPC_REQUEST, { name, args }),

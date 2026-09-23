@@ -21,6 +21,7 @@ function boot(over: Partial<BootFile> = {}): BootFile {
     effectsTier: 'auto',
     paintFailCount: 0,
     paintFailForcedAt: null,
+    reducedMotionOverride: false,
     shelfProjection: null,
     ...over,
   };

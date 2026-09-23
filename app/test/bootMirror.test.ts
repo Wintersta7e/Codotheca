@@ -4,15 +4,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { type Mock, afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  mirrorOnJoin,
-  mirrorShelf,
-  noteForcedOff,
-  tierMirror,
-  withBootMirror,
-} from '../src/main/bootMirror';
+import { mirrorOnJoin, mirrorShelf, noteForcedOff, tierMirror } from '../src/main/bootMirror';
 import { bootFilePath, readBootFile, writeBootFile } from '../src/main/bootStore';
 import { bootMirrorStep } from '../src/main/joinSteps';
+import { onStoredSettings } from '../src/main/storedSettings';
 import { DEFAULT_BOOT_FILE, type BootFile } from '../src/shared/bootFile';
 import type { Settings } from '../src/generated/protocol';
 
@@ -41,6 +36,7 @@ const stored: BootFile = {
   effectsTier: 'full',
   paintFailCount: 0,
   paintFailForcedAt: null,
+  reducedMotionOverride: false,
   shelfProjection: null,
 };
 
@@ -56,6 +52,17 @@ describe('the boot mirror', () => {
     const { deps: d, writeBoot } = deps({ ...stored, effectsTier: 'reduced' });
     mirrorOnJoin(d, settings);
     expect(writeBoot).not.toHaveBeenCalled();
+  });
+
+  // The override clamps the tier, so a file carrying the tier alone would paint a launch's first
+  // frame — and every frame, if the core never answers — at motion the user turned down.
+  it('mirrors the reduced-motion override beside the tier', () => {
+    const { deps: d, writeBoot } = deps({ ...stored, effectsTier: 'reduced' });
+    const next = mirrorOnJoin(d, { ...settings, reducedMotionOverride: true });
+    expect(next.reducedMotionOverride).toBe(true);
+    expect(next.effectsTier).toBe('reduced');
+    expect(writeBoot).toHaveBeenCalledTimes(1);
+    expect((writeBoot.mock.calls[0]?.[1] as BootFile).reducedMotionOverride).toBe(true);
   });
 
   it('mirrors the shelf projection without disturbing the tier', () => {
@@ -106,21 +113,25 @@ describe('the boot mirror runs at join and on every stored write', () => {
     return dir;
   }
 
-  const onDisk = (dir: string): unknown =>
-    (JSON.parse(readFileSync(bootFilePath(dir), 'utf8')) as { effects_tier?: unknown })
-      .effects_tier;
+  const onDisk = (dir: string): { effects_tier?: unknown; reduced_motion_override?: unknown } =>
+    JSON.parse(readFileSync(bootFilePath(dir), 'utf8')) as {
+      effects_tier?: unknown;
+      reduced_motion_override?: unknown;
+    };
 
-  it('the join step writes the stored tier into boot.json on disk', async () => {
+  it('the join step writes the stored tier and override into boot.json on disk', async () => {
     const dir = dataDir();
-    const request = vi.fn(() => Promise.resolve({ ...settings, effectsTier: 'off' }));
+    const request = vi.fn(() =>
+      Promise.resolve({ ...settings, effectsTier: 'off', reducedMotionOverride: true }),
+    );
     const step = bootMirrorStep(
       request,
       tierMirror({ dataDir: dir, readBoot: readBootFile, writeBoot: writeBootFile }, vi.fn()),
     );
-    expect(onDisk(dir)).toBe('auto');
+    expect(onDisk(dir).effects_tier).toBe('auto');
     await step.run();
     expect(request).toHaveBeenCalledWith('settings.get', {});
-    expect(onDisk(dir)).toBe('off');
+    expect(onDisk(dir)).toMatchObject({ effects_tier: 'off', reduced_motion_override: true });
   });
 
   it('a stored write is mirrored as the core answered it, and its answer passes through', async () => {
@@ -128,15 +139,15 @@ describe('the boot mirror runs at join and on every stored write', () => {
     const request = vi.fn((name: string) =>
       Promise.resolve(name === 'settings.set' ? { ...settings, effectsTier: 'reduced' } : null),
     );
-    const mirrored = withBootMirror(
+    const mirrored = onStoredSettings(
       request,
       tierMirror({ dataDir: dir, readBoot: readBootFile, writeBoot: writeBootFile }, vi.fn()),
     );
     await mirrored('settings.get', {});
-    expect(onDisk(dir)).toBe('auto');
+    expect(onDisk(dir).effects_tier).toBe('auto');
     const answer = await mirrored('settings.set', { patch: {} });
     expect((answer as Settings).effectsTier).toBe('reduced');
-    expect(onDisk(dir)).toBe('reduced');
+    expect(onDisk(dir).effects_tier).toBe('reduced');
   });
 
   // The core has stored the write by the time the file is touched. A mirror that threw would
@@ -155,8 +166,47 @@ describe('the boot mirror runs at join and on every stored write', () => {
       },
       onError,
     );
-    const mirrored = withBootMirror(() => Promise.resolve(settings), mirror);
+    const mirrored = onStoredSettings(() => Promise.resolve(settings), mirror);
     await expect(mirrored('settings.set', { patch: {} })).resolves.toEqual(settings);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  // Most writes are a check switch, the roast or the shortcut. None moves the file, and a
+  // synchronous read of it on each one blocks the main process for nothing.
+  it('reads boot.json only when the tier or the override moved since it last looked', () => {
+    let file: BootFile = { ...stored, effectsTier: 'auto' };
+    const readBoot = vi.fn(() => file);
+    const writeBoot = vi.fn((_dir: string, next: BootFile) => {
+      file = next;
+    });
+    const mirror = tierMirror({ dataDir: '/data', readBoot, writeBoot }, vi.fn());
+    const counts = (): number[] => [readBoot.mock.calls.length, writeBoot.mock.calls.length];
+
+    mirror(settings);
+    expect(counts()).toEqual([1, 1]);
+    mirror({ ...settings, roastEnabled: false });
+    mirror({ ...settings, residentShortcut: 'Alt+F12' });
+    expect(counts()).toEqual([1, 1]);
+    mirror({ ...settings, reducedMotionOverride: true });
+    expect(counts()).toEqual([2, 2]);
+    expect(file.reducedMotionOverride).toBe(true);
+    mirror({ ...settings, effectsTier: 'off', reducedMotionOverride: true });
+    expect(counts()).toEqual([3, 3]);
+    expect(file.effectsTier).toBe('off');
+  });
+
+  // A write that failed left the file where it was, so the next answer has to try again.
+  it('a failed write is retried on the next answer rather than remembered as done', () => {
+    let fail = true;
+    const writeBoot = vi.fn(() => {
+      if (fail) throw new Error('disk full');
+    });
+    const onError = vi.fn();
+    const mirror = tierMirror({ dataDir: '/data', readBoot: () => stored, writeBoot }, onError);
+    mirror(settings);
+    fail = false;
+    mirror(settings);
+    expect(writeBoot).toHaveBeenCalledTimes(2);
     expect(onError).toHaveBeenCalledTimes(1);
   });
 });
@@ -222,13 +272,35 @@ describe('the shell wires the mirror', () => {
     visit(source);
     expect(given !== undefined && ts.isShorthandPropertyAssignment(given)).toBe(true);
     expect(declarations).toHaveLength(1);
-    const [declaration] = declarations;
-    const initializer = declaration?.initializer;
-    expect(
+    const initializer = declarations[0]?.initializer;
+    const wrapped =
       initializer !== undefined &&
-        ts.isCallExpression(initializer) &&
-        ts.isIdentifier(initializer.expression) &&
-        initializer.expression.text === 'withBootMirror',
-    ).toBe(true);
+      ts.isCallExpression(initializer) &&
+      ts.isIdentifier(initializer.expression) &&
+      initializer.expression.text === 'onStoredSettings'
+        ? initializer
+        : undefined;
+    expect(wrapped, 'request is built by onStoredSettings').toBeDefined();
+    const listeners = wrapped?.arguments.slice(1) ?? [];
+    expect(listeners.some((arg) => ts.isIdentifier(arg) && arg.text === 'mirrorTier')).toBe(true);
+  });
+
+  // The override reaches the first frame on the window's argv, beside the tier (§11.2a).
+  it('puts the boot values on the window through bootArguments', () => {
+    const found: ts.Node[] = [];
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isPropertyAssignment(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === 'additionalArguments'
+      ) {
+        found.push(node.initializer);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    expect(found).toHaveLength(1);
+    const [list] = found;
+    expect(list === undefined ? [] : callsTo(list, 'bootArguments')).toHaveLength(1);
   });
 });

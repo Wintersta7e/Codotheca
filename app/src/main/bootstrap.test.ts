@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BOOT_FILE_GENERATION, type BootFile } from '../shared/bootFile';
-import { type BootstrapDeps, bootstrap, clearPaintFailure } from './bootstrap';
+import {
+  effectsTierFromArgv,
+  effectsTierSourceFromArgv,
+  paintFailForcedAtFromArgv,
+  reducedMotionOverrideFromArgv,
+} from '../shared/effectsTier';
+import { type BootstrapDeps, bootArguments, bootstrap, clearPaintFailure } from './bootstrap';
 
 function stored(overrides: Partial<BootFile> = {}): BootFile {
   return {
@@ -8,6 +14,7 @@ function stored(overrides: Partial<BootFile> = {}): BootFile {
     effectsTier: 'full',
     paintFailCount: 0,
     paintFailForcedAt: null,
+    reducedMotionOverride: false,
     shelfProjection: null,
     ...overrides,
   };
@@ -102,7 +109,41 @@ describe('clearPaintFailure', () => {
       // A successful paint clears the counter, not the record of which launch forced the tier
       // off — §11.3's control is what clears that, and it is the only thing that does.
       paintFailForcedAt: 555,
+      reducedMotionOverride: false,
       shelfProjection: null,
+    });
+  });
+});
+
+describe('bootArguments', () => {
+  const parsed = (argv: readonly string[]): Record<string, unknown> => ({
+    tier: effectsTierFromArgv(argv),
+    source: effectsTierSourceFromArgv(argv),
+    forcedAt: paintFailForcedAtFromArgv(argv),
+    override: reducedMotionOverrideFromArgv(argv),
+  });
+
+  // The window's argv is the only carrier the first frame has, so what the shell writes must be
+  // what the preload's parsers read back — the override included, or it clamps nothing until
+  // the core answers.
+  it('carries the tier, its source, the forcing and the override to the preload', () => {
+    const boot = bootstrap(
+      deps({ readBoot: () => stored({ reducedMotionOverride: true, paintFailForcedAt: 555 }) }),
+    );
+    expect(parsed(['app', ...bootArguments(boot)])).toEqual({
+      tier: 'full',
+      source: 'boot-file',
+      forcedAt: 555,
+      override: true,
+    });
+  });
+
+  it('carries no override and no forcing when the file holds neither', () => {
+    expect(parsed(['app', ...bootArguments(bootstrap(deps()))])).toEqual({
+      tier: 'full',
+      source: 'boot-file',
+      forcedAt: null,
+      override: false,
     });
   });
 });

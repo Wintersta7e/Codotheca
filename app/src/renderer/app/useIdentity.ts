@@ -95,9 +95,17 @@ export function useIdentity(deps: AppDeps, onApplied: () => void): IdentityState
   // go on settling after the run has ended, so the end of the run is not the last word either.
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    const cancelPending = (): void => {
+      if (pending.current !== null) clearTimeout(pending.current);
+      pending.current = null;
+    };
     const unsubscribe = subscribe((event: RendererEvent) => {
-      if (endsAScanRun(event)) read();
-      else if (settlesAuthorship(event) && pending.current === null) {
+      if (endsAScanRun(event)) {
+        // Issued after every settle that came before it, so a re-read one of them left pending
+        // would only read the same set again.
+        cancelPending();
+        read();
+      } else if (settlesAuthorship(event) && pending.current === null) {
         pending.current = setTimeout(() => {
           pending.current = null;
           read();
@@ -106,8 +114,7 @@ export function useIdentity(deps: AppDeps, onApplied: () => void): IdentityState
     });
     return () => {
       unsubscribe();
-      if (pending.current !== null) clearTimeout(pending.current);
-      pending.current = null;
+      cancelPending();
     };
   }, [subscribe, read]);
 

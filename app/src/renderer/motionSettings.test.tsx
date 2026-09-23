@@ -7,7 +7,7 @@
  * nothing did. Driven through the real `App` and drawer against a fake core that stores what it is
  * sent, because the defect was a missing wire between two components that each worked alone.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ProjectId, ScanStatus, Settings, ViewState } from '../generated/protocol';
@@ -57,9 +57,14 @@ interface Launch {
   /** What the core has stored. */
   readonly stored: EffectsTier;
   readonly override?: boolean;
+  /** The override as the shell carried it from `boot.json`, before any read. */
+  readonly launchOverride?: boolean;
+  /** How many `settings.get` reads the core refuses before it answers, as a restart does. */
+  readonly refusedReads?: number;
 }
 
 function mount(launch: Launch): FakeAppDeps {
+  let refused = launch.refusedReads ?? 0;
   let settings: Settings = {
     effectsTier: launch.stored,
     reducedMotionOverride: launch.override ?? false,
@@ -93,7 +98,13 @@ function mount(launch: Launch): FakeAppDeps {
         header: { walkedDirs: 0, repositories: 0, problemCount: null, ambiguousLineageCount: null },
         groups: [],
       }),
-      'settings.get': () => settings,
+      'settings.get': () => {
+        if (refused > 0) {
+          refused -= 1;
+          throw new Error('CORE_RESTARTED');
+        }
+        return settings;
+      },
       // The core's answer is the whole stored `Settings`, with only the named fields moved.
       'settings.set': ({ patch }) => {
         settings = {
@@ -104,7 +115,11 @@ function mount(launch: Launch): FakeAppDeps {
         return settings;
       },
     },
-    { effectsTier: launch.boot, effectsTierSource: launch.source ?? 'boot-file' },
+    {
+      effectsTier: launch.boot,
+      effectsTierSource: launch.source ?? 'boot-file',
+      reducedMotionOverride: launch.launchOverride ?? false,
+    },
   );
   fake.setNow(NOW);
   render(<App deps={fake.deps} />);
@@ -180,5 +195,50 @@ describe('§11.3a the drawer’s motion rows reach the resolved tier', () => {
       expect(document.querySelector('.cdt-shelf')).not.toBeNull();
     });
     expect(rootTier()).toBe('full');
+  });
+
+  // The shell carries the stored override from `boot.json` as it carries the tier, so it clamps
+  // the first frame — and a core that never answers cannot leave the window at full motion.
+  it('an override carried at launch clamps before the core answers, and with no answer at all', async () => {
+    const fake = mount({
+      boot: 'full',
+      stored: 'full',
+      override: true,
+      launchOverride: true,
+      refusedReads: Number.POSITIVE_INFINITY,
+    });
+    await waitFor(() => {
+      expect(fake.calls.some((call) => call.name === 'settings.get')).toBe(true);
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.cdt-shelf')).not.toBeNull();
+    });
+    expect(rootTier()).toBe('reduced');
+  });
+
+  // A core that restarts rejects every pending request (`CORE_RESTARTED`), the mount read among
+  // them. The lane coming back is when the stored tier is readable again.
+  it('a read the core refused is made again when the core is ready', async () => {
+    const fake = mount({ boot: 'full', stored: 'reduced', refusedReads: 1 });
+    await waitFor(() => {
+      expect(fake.calls.filter((call) => call.name === 'settings.get')).toHaveLength(1);
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.cdt-shelf')).not.toBeNull();
+    });
+    expect(rootTier()).toBe('full');
+
+    act(() => {
+      fake.setCoreStatus({
+        kind: 'ready',
+        epoch: 2,
+        coreVersion: '1.0.0',
+        protocolVersion: 1,
+        pid: 2,
+      });
+    });
+    await waitFor(() => {
+      expect(rootTier()).toBe('reduced');
+    });
   });
 });

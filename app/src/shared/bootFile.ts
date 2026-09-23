@@ -18,7 +18,9 @@ export const BOOT_FILE_NAME = 'boot.json';
  * §11.2a rules that as a fall back to `auto` and an empty shelf, which costs one cold first
  * paint and is not an error.
  *
- * 2 added `paint_fail_forced_at`.
+ * 2 added `paint_fail_forced_at`. `reduced_motion_override` came later **without** a bump: absent
+ * reads as off, which is what every earlier file meant, whereas a bump would discard the file —
+ * and with it the paint-failure count that forces `off` on a broken GPU.
  */
 export const BOOT_FILE_GENERATION = 2;
 
@@ -37,6 +39,12 @@ export interface BootFile {
    */
   readonly paintFailForcedAt: number | null;
   /**
+   * §11.3a's reduced-motion override, mirrored beside the tier it clamps. Without it the first
+   * frame of every launch — and every frame of one whose core never answers — runs the stored
+   * tier unclamped for a user who asked for less motion.
+   */
+  readonly reducedMotionOverride: boolean;
+  /**
    * The last shelf projection (§8.2) the UI lane paints from. Typed `unknown` here on
    * purpose: plan 13 owns the projection's shape and validates this field. Anything read out
    * of it before then is untrusted disk content.
@@ -49,6 +57,7 @@ export const DEFAULT_BOOT_FILE: BootFile = {
   effectsTier: 'auto',
   paintFailCount: 0,
   paintFailForcedAt: null,
+  reducedMotionOverride: false,
   shelfProjection: null,
 };
 
@@ -82,6 +91,7 @@ export function parseBootFile(text: string): BootFile {
       typeof forcedValue === 'number' && Number.isFinite(forcedValue) && forcedValue > 0
         ? forcedValue
         : null,
+    reducedMotionOverride: record['reduced_motion_override'] === true,
     shelfProjection: 'shelf_projection' in record ? record['shelf_projection'] : null,
   };
 }
@@ -93,6 +103,7 @@ export function serializeBootFile(file: BootFile): string {
       effects_tier: file.effectsTier,
       paint_fail_count: file.paintFailCount,
       paint_fail_forced_at: file.paintFailForcedAt,
+      reduced_motion_override: file.reducedMotionOverride,
       shelf_projection: file.shelfProjection,
     },
     null,

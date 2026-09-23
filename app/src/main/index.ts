@@ -27,18 +27,14 @@ import {
   type Topic,
 } from '../generated/protocol';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
-import {
-  EFFECTS_TIER_FLAG,
-  EFFECTS_TIER_SOURCE_FLAG,
-  PAINT_FAIL_FORCED_AT_FLAG,
-} from '../shared/effectsTier';
 import { logPathArgument } from '../shared/windowArgs';
-import { startShortcutService, withShortcutRebind } from './paletteShortcut';
+import { startShortcutService } from './paletteShortcut';
 import { registerShellServices } from './shellServices';
 import { readStartupFailure } from './startupFailure';
+import { onStoredSettings } from './storedSettings';
 import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
-import { bootstrap, clearPaintFailure } from './bootstrap';
-import { tierMirror, withBootMirror } from './bootMirror';
+import { bootArguments, bootstrap, clearPaintFailure } from './bootstrap';
+import { tierMirror } from './bootMirror';
 import { readBootFile, writeBootFile } from './bootStore';
 import { type BridgeRequest, registerBridge } from './core/bridge';
 import { registerExternalLink } from './dialogs/externalLink';
@@ -227,16 +223,9 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       nodeIntegration: false,
       webviewTag: false,
-      // §11.2a: the tier and the account of where it came from both reach the document with
-      // no round trip, because the core joins after first paint.
-      additionalArguments: [
-        `${EFFECTS_TIER_FLAG}${boot.tier}`,
-        `${EFFECTS_TIER_SOURCE_FLAG}${boot.source}`,
-        ...(boot.stored.paintFailForcedAt === null
-          ? []
-          : [`${PAINT_FAIL_FORCED_AT_FLAG}${String(boot.stored.paintFailForcedAt)}`]),
-        logPathArgument(logPath),
-      ],
+      // §11.2a: the tier, the account of where it came from and the override that clamps it
+      // all reach the document with no round trip, because the core joins after first paint.
+      additionalArguments: [...bootArguments(boot), logPathArgument(logPath)],
     },
   });
 
@@ -397,9 +386,13 @@ async function main(): Promise<void> {
     },
   );
 
-  // The drawer rebinds by writing `settings.set`, which otherwise reaches the core and nothing
-  // else — the chord would be stored and never registered, and the tier never mirrored.
-  const request = withBootMirror(withShortcutRebind(coreRequest, shortcut.apply), mirrorTier);
+  // The drawer writes through `settings.set`, which otherwise reaches the core and nothing else —
+  // the chord would be stored and never registered, and the tier never mirrored.
+  const request = onStoredSettings(
+    coreRequest,
+    (stored) => shortcut.apply(stored.residentShortcut),
+    mirrorTier,
+  );
 
   // [p3] §32.12: **the shell posts the one notification phase 3 may fire**, and it subscribes
   // here — before the renderer asks for anything — because the alert is not a status delta and is

@@ -36,6 +36,8 @@ export interface CodothecaBridge {
    * the epoch.
    */
   readonly paintFailForcedAt: number | null;
+  /** §11.3a's reduced-motion override as `boot.json` mirrored it, until the core answers. */
+  readonly reducedMotionOverride: boolean;
   /**
    * The rolling log's path, for §11.2a's failure windows to name.
    *

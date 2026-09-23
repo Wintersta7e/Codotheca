@@ -129,6 +129,7 @@ describe('createDefaultDeps', () => {
       // §11's shell services, added for the same reason.
       effectsTierSource: 'boot-file',
       paintFailForcedAt: null,
+      reducedMotionOverride: false,
       pickExecutable: () => Promise.resolve({ ok: true, value: null }),
       reveal: () => Promise.resolve({ ok: true, value: null }),
       indexLocation: () => Promise.resolve({ ok: true, value: null }),

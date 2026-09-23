@@ -78,6 +78,8 @@ export interface AppDeps extends ProjectPageDeps {
   readonly effectsTier: EffectsTier;
   readonly effectsTierSource: EffectsTierSource;
   readonly paintFailForcedAt: number | null;
+  /** §11.3a's override as the shell carried it from `boot.json`; the core's answer replaces it. */
+  readonly reducedMotionOverride: boolean;
   /** §11.2a names the log on every failure window. Display only; empty means none was passed. */
   readonly logPath: string;
 }
@@ -130,6 +132,7 @@ export function createDefaultAppDeps(): AppDeps {
     effectsTier: bridge.effectsTier,
     effectsTierSource: bridge.effectsTierSource,
     paintFailForcedAt: bridge.paintFailForcedAt,
+    reducedMotionOverride: bridge.reducedMotionOverride,
     logPath: bridge.logPath,
   };
 }

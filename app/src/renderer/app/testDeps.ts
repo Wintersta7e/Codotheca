@@ -86,6 +86,7 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
     effectsTier: 'full',
     effectsTierSource: 'boot-file',
     paintFailForcedAt: null,
+    reducedMotionOverride: false,
     logPath: '/tmp/codotheca/logs/codotheca.log',
     ...over,
   };

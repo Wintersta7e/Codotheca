@@ -1,6 +1,12 @@
 import type { CustomScheme } from 'electron';
 import type { BootFile } from '../shared/bootFile';
-import type { EffectsTier } from '../shared/effectsTier';
+import {
+  EFFECTS_TIER_FLAG,
+  EFFECTS_TIER_SOURCE_FLAG,
+  type EffectsTier,
+  PAINT_FAIL_FORCED_AT_FLAG,
+  REDUCED_MOTION_OVERRIDE_FLAG,
+} from '../shared/effectsTier';
 import { type EffectsTierSource, resolveBootEffectsTier } from './bootStore';
 import { registerArtSchemePrivileges } from './scheme';
 
@@ -46,6 +52,22 @@ export function bootstrap(deps: BootstrapDeps): BootstrapResult {
   deps.writeBoot(deps.userDataDir, { ...stored, paintFailCount: stored.paintFailCount + 1 });
 
   return { tier, source, stored };
+}
+
+/**
+ * §11.2a: what the first frame needs from `boot.json` reaches the window with no round trip, on
+ * its argv — the tier, where it came from, which launch forced it off, and the override that
+ * clamps it. The preload's parsers in `shared/effectsTier.ts` read back exactly these.
+ */
+export function bootArguments(boot: BootstrapResult): string[] {
+  return [
+    `${EFFECTS_TIER_FLAG}${boot.tier}`,
+    `${EFFECTS_TIER_SOURCE_FLAG}${boot.source}`,
+    ...(boot.stored.paintFailForcedAt === null
+      ? []
+      : [`${PAINT_FAIL_FORCED_AT_FLAG}${String(boot.stored.paintFailForcedAt)}`]),
+    ...(boot.stored.reducedMotionOverride ? [REDUCED_MOTION_OVERRIDE_FLAG] : []),
+  ];
 }
 
 export function clearPaintFailure(deps: {

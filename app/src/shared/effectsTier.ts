@@ -71,6 +71,17 @@ export function effectsTierFromArgv(argv: readonly string[]): EffectsTier | null
 export const EFFECTS_TIER_SOURCE_FLAG = '--effects-tier-source=';
 export const PAINT_FAIL_FORCED_AT_FLAG = '--paint-fail-forced-at=';
 
+/**
+ * §11.3a's reduced-motion override, carried the same way for the same reason: it clamps the tier,
+ * so a first frame that knew the tier and not the override would run motion the user turned down.
+ * Present means on. Nothing overrides it from argv or the environment; only `boot.json` sets it.
+ */
+export const REDUCED_MOTION_OVERRIDE_FLAG = '--reduced-motion-override';
+
+export function reducedMotionOverrideFromArgv(argv: readonly string[]): boolean {
+  return argv.includes(REDUCED_MOTION_OVERRIDE_FLAG);
+}
+
 const EFFECTS_TIER_SOURCES = [
   'argv',
   'environment',
