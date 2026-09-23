@@ -39,6 +39,12 @@ jobs:
       - name: actionlint
         uses: docker://rhysd/actionlint:1.7.7
         with: { args: -color }
+      # actionlint asks whether a workflow is well formed; zizmor asks what it permits — an action
+      # not pinned to a commit, a cache a release build restores, a token left in the checkout.
+      - name: zizmor
+        run: pipx run zizmor==1.30.1 --format=github .github
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   core:
     name: core (${{ matrix.os }})
