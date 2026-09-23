@@ -48,6 +48,8 @@ jobs:
   build:
     name: package (${{ matrix.os }})
     needs: worker
+    # `id-token` signs the provenance below and `attestations` stores it; nothing else writes.
+    permissions: { contents: read, id-token: write, attestations: write }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -117,9 +119,59 @@ jobs:
               || { echo "no linux-$arch worker in the pack"; exit 1; }
           done
 
+      # Signed provenance: which workflow, at which commit, produced each file. It is not a
+      # code-signing certificate and SmartScreen still warns, but anyone can check a download with
+      # `gh attestation verify <file> --repo <owner>/<repo>`. GitHub offers it to public
+      # repositories only, so a private run skips it rather than failing the release.
+      - name: attest the Windows artifacts
+        if: runner.os == 'Windows' && !github.event.repository.private
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with: { subject-path: 'dist/*.exe' }
+      - name: attest the Linux artifacts
+        if: runner.os == 'Linux' && !github.event.repository.private
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: 'codotheca-${{ matrix.os }}'
           path: dist/*
           retention-days: 14
           if-no-files-found: error
+
+  # A tag becomes a DRAFT release: the installers, their checksums, and notes generated from the
+  # commits since the previous tag. Publishing it stays a person's decision, on the release page.
+  release:
+    name: draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: { pattern: 'codotheca-*', path: dist, merge-multiple: true }
+      # GitHub renames a release asset's spaces to dots, so the files are renamed first and the
+      # checksums name exactly what a user downloads. The attestations are by digest and do not
+      # care what the file is called.
+      - name: checksums and the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f -name '* *' -print0 |
+            while IFS= read -r -d '' f; do mv -- "$f" "${f// /.}"; done
+          mapfile -d '' files < <(find . -maxdepth 1 -type f \
+            \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) \
+            -printf '%P\0' | sort -z)
+          test "${#files[@]}" -gt 0 || { echo 'no artifact to release'; exit 1; }
+          sha256sum -- "${files[@]}" > SHA256SUMS
+          cat SHA256SUMS
+          gh release create "$TAG" --draft --verify-tag --generate-notes --title "$TAG" \
+            -- "${files[@]}" SHA256SUMS
