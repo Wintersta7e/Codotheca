@@ -19,10 +19,11 @@
 use std::sync::Mutex;
 
 use crate::cancel::CancelToken;
+use crate::debt::store::{DebtStore as _, SqliteDebtStore};
 use crate::derive::LocationKind;
 use crate::git::{GitBackend, GitError, JobClass, JobContext, RepoHandle, StoreKey};
 use crate::identity::probe::probe_identity;
-use crate::identity::store::{resolve_identity, upsert_location, LocationInput};
+use crate::identity::store::{resolve_identity, stored_presence, upsert_location, LocationInput};
 use crate::identity::IdentityError;
 use crate::index::path::StoredPath;
 use crate::index::{Index, IndexError};
@@ -147,8 +148,20 @@ pub fn hand_off_discovered(
         // not an account — a scan holds none.
         let outcome =
             resolve_identity(tx, &probe, &basename, &aliases, now).map_err(as_index_error)?;
+        // [p3] §30.1's unfreeze, recorded where it is first known: this write is what turns a
+        // copy that was away — offline, missing, unscanned — back into `present`. Everything
+        // observed there before it left is withdrawn in the same transaction, so the first sweep
+        // after the return is diffed against nothing from before it (§34.2).
+        let returning = stored_presence(tx, &input)
+            .map_err(as_index_error)?
+            .is_some_and(|before| before != Presence::Present);
         let location =
             upsert_location(tx, outcome.project_id, &input, now).map_err(as_index_error)?;
+        if returning {
+            SqliteDebtStore
+                .mark_root_unobserved(tx, LocationId(location))
+                .map_err(debt_error)?;
+        }
         Ok(Indexed {
             project: ProjectId(outcome.project_id),
             location: LocationId(location),
@@ -199,5 +212,13 @@ fn as_index_error(e: IdentityError) -> IndexError {
         other => IndexError::Corrupt {
             detail: format!("identity: {other:?}"),
         },
+    }
+}
+
+/// The debt store's refusal, carried through the same transaction's error type.
+fn debt_error(e: crate::debt::DebtError) -> IndexError {
+    match e {
+        crate::debt::DebtError::Index(e) => e,
+        crate::debt::DebtError::Codec(detail) => IndexError::Corrupt { detail },
     }
 }

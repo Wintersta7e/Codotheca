@@ -200,6 +200,38 @@ pub fn upsert_location(
     Ok(id)
 }
 
+/// The presence already stored for the row [`upsert_location`] would write, or `None` when no
+/// such row exists yet — read by the same `(kind, distro, path_key)` key the upsert conflicts on,
+/// so the caller learns what the write is about to replace.
+///
+/// # Errors
+/// Fails when SQLite refuses the read, or the stored value is not one of the four.
+pub fn stored_presence(
+    tx: &Transaction<'_>,
+    loc: &LocationInput,
+) -> Result<Option<Presence>, IdentityError> {
+    let (_, path_key, _) = loc.path.as_params();
+    let raw: Option<String> = tx
+        .query_row(
+            "SELECT presence FROM location WHERE kind = ?1 AND distro = ?2 AND path_key = ?3",
+            params![
+                loc.kind.as_str(),
+                loc.distro.as_deref().unwrap_or(""),
+                path_key
+            ],
+            |r| r.get(0),
+        )
+        .optional()?;
+    raw.map(|raw| {
+        Presence::parse(&raw).ok_or_else(|| {
+            IdentityError::Index(crate::index::IndexError::Corrupt {
+                detail: format!("location.presence holds {raw:?}"),
+            })
+        })
+    })
+    .transpose()
+}
+
 /// Assign this repository its project (§1.1). Writes `project` only; the `location` row for the
 /// path goes through [`upsert_location`] under the returned id, in this same transaction.
 ///

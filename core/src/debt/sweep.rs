@@ -101,6 +101,29 @@ pub fn outcome_at_root(
     }
 }
 
+/// The outcome of the one sweep row this `(project, source)` has, or `None` when it has none.
+///
+/// # Errors
+/// Fails when SQLite refuses the read or the stored outcome is not one this build declares.
+pub fn stored_outcome(
+    conn: &rusqlite::Connection,
+    project: ProjectId,
+    source: DebtSource,
+) -> Result<Option<DebtSweepOutcome>, DebtError> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT outcome FROM debt_sweep WHERE project_id = ?1 AND source = ?2",
+            rusqlite::params![project.0, enum_text(&source)?],
+            |r| r.get(0),
+        )
+        .optional()?;
+    raw.map(|raw| {
+        enum_from_text(&raw)
+            .ok_or_else(|| DebtError::Codec(format!("debt_sweep.outcome holds {raw:?}")))
+    })
+    .transpose()
+}
+
 /// Write the one row this `(project, source)` has, replacing whatever it held.
 ///
 /// The DDL's own CHECK refuses an `item_count` on an outcome that did not observe, so a caller

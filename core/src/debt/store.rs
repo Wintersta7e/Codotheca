@@ -122,6 +122,34 @@ pub trait DebtStore: Send + Sync {
     /// own source records an `unobservable` sweep through [`DebtStore::observe`] instead, which
     /// freezes that source alone.
     fn mark_unverified(&self, tx: &Transaction<'_>, project: ProjectId) -> Result<u32, DebtError>;
+
+    /// **Rule 3 at the moment a root comes back** — §30.1's unfreeze, and the same for a copy that
+    /// was missing or unscanned and is present again.
+    ///
+    /// Nothing sweeps a root that is not there, so while it was away the evidence anchored at
+    /// `location` stayed whatever was observed before it left — unless some job for that project
+    /// happened to settle meanwhile and record `unobservable`, which nothing guarantees. This
+    /// records that outcome now, at the one moment the absence is known to have ended: every sweep
+    /// anchored here that had observed (`complete`, `partial`) becomes `unobservable`, and every
+    /// open item anchored here becomes `unverified`. The next sweep of each source re-observes it
+    /// — a partial one re-verifies only what it reaches — so the first difference after the
+    /// return is never taken against evidence from before it.
+    ///
+    /// **Not a closure and not a payout**: no item is deleted and no XP moves; a withdrawn claim of
+    /// currency is all it is. A sweep that never observed — skipped, failed — carries no evidence
+    /// and is left as it is.
+    fn mark_root_unobserved(
+        &self,
+        tx: &Transaction<'_>,
+        location: LocationId,
+    ) -> Result<RootUnobserved, DebtError>;
+}
+
+/// What [`DebtStore::mark_root_unobserved`] withdrew. The counts a test prints; stored nowhere.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RootUnobserved {
+    pub sweeps: u32,
+    pub items: u32,
 }
 
 /// The production implementation.
@@ -219,6 +247,27 @@ impl DebtStore for SqliteDebtStore {
             [project.0],
         )?;
         Ok(u32::try_from(marked).unwrap_or(u32::MAX))
+    }
+
+    fn mark_root_unobserved(
+        &self,
+        tx: &Transaction<'_>,
+        location: LocationId,
+    ) -> Result<RootUnobserved, DebtError> {
+        let sweeps = tx.execute(
+            "UPDATE debt_sweep SET outcome = 'unobservable', item_count = NULL
+              WHERE location_id = ?1 AND outcome IN ('complete', 'partial')",
+            [location.0],
+        )?;
+        let items = tx.execute(
+            "UPDATE debt_item SET state = 'unverified'
+              WHERE last_seen_location_id = ?1 AND state = 'open'",
+            [location.0],
+        )?;
+        Ok(RootUnobserved {
+            sweeps: u32::try_from(sweeps).unwrap_or(u32::MAX),
+            items: u32::try_from(items).unwrap_or(u32::MAX),
+        })
     }
 }
 

@@ -23,7 +23,7 @@ use super::presence::{presence_for, PresenceAnswers, PresenceState, PREDICATE_VE
 use super::{JobError, JobOutcome};
 use crate::git::{GitBackend, JobContext, RepoHandle, TreeEntry};
 use crate::index::IndexError;
-use crate::protocol::{LocationId, ProjectId};
+use crate::protocol::{DebtSource, DebtSweepOutcome, LocationId, ProjectId};
 
 /// §29.2's rules 1–3, in order, over one enumeration.
 ///
@@ -158,6 +158,58 @@ pub fn write_enumeration(
             answers.ci.slug(),
             now,
         ],
+    )?;
+    Ok(())
+}
+
+/// Where this run starts in the filtered enumeration, or `None` when the stored scan already
+/// answers for this head and nothing needs reading.
+///
+/// A moved head restarts at ordinal 0 against the new head. [p3] **An unchanged head vouches for
+/// the tree, not for evidence the store has since withdrawn**: a copy that went away and came
+/// back has its marker sweep recorded `unobservable` and its items `unverified`
+/// (`DebtStore::mark_root_unobserved`), and skipping here would leave them uncounted until the
+/// next commit. That one case rescans from ordinal 0 — every blob already cached, so no blob is
+/// read — and every other unchanged head still invokes git zero times.
+fn start_ordinal(
+    index: &std::sync::Mutex<crate::index::Index>,
+    gates: ContentGates,
+    project: ProjectId,
+    head_oid: &str,
+    stored: Option<&ContentScanRow>,
+    cursor: Option<&str>,
+) -> Result<Option<usize>, JobError> {
+    let complete = stored.is_some_and(|row| row.complete_head_oid.as_deref() == Some(head_oid));
+    let withdrawn = complete
+        && gates.reads_blobs()
+        && super::read(index, |conn| {
+            crate::debt::sweep::stored_outcome(conn, project, DebtSource::TodoMarker)
+                .map(|outcome| outcome == Some(DebtSweepOutcome::Unobservable))
+                .map_err(debt_to_index)
+        })?;
+    if complete && !withdrawn {
+        return Ok(None);
+    }
+    if withdrawn {
+        super::write(index, |tx| restart_scan(tx, project))?;
+    }
+    let moved = stored.is_some_and(|row| row.head_oid != head_oid);
+    Ok(Some(if moved || withdrawn {
+        0
+    } else {
+        cursor_ordinal(cursor)
+    }))
+}
+
+/// Take a completed scan back to its start at the same head, so the next chunks re-observe the
+/// whole tree: the completion marker goes, and every blob is pending again until a chunk covers
+/// it. The cache is untouched, so a re-covered blob is a lookup and not a read.
+fn restart_scan(tx: &Transaction<'_>, project: ProjectId) -> Result<(), IndexError> {
+    tx.execute(
+        "UPDATE project_content_scan
+            SET complete_head_oid = NULL, completed_at = NULL, blobs_pending = blobs_total
+          WHERE project_id = ?1",
+        [project.0],
     )?;
     Ok(())
 }
@@ -336,15 +388,10 @@ pub fn run_j7(
     let Some(head_oid) = head_oid else {
         return Ok(JobOutcome::Done);
     };
-    if stored
-        .as_ref()
-        .is_some_and(|row| row.complete_head_oid.as_deref() == Some(head_oid.as_str()))
-    {
+    let Some(from) = start_ordinal(index, gates, project, &head_oid, stored.as_ref(), cursor)?
+    else {
         return Ok(JobOutcome::Done);
-    }
-    // A moved head restarts at ordinal 0 against the new head.
-    let moved = stored.as_ref().is_some_and(|row| row.head_oid != head_oid);
-    let from = if moved { 0 } else { cursor_ordinal(cursor) };
+    };
 
     // 2. The enumeration. A failure stores `not_read` for all four rather than `absent`: a
     //    timeout looks exactly like a missing file.
