@@ -153,24 +153,20 @@ fn job(rig: &Rig, kind: JobKind, priority: Priority, origin: JobOrigin) -> Job {
     }
 }
 
-/// Wait until the sink has been quiet for `quiet`, or the deadline passes. A chain settles
-/// several jobs, so *"the work is over"* is *"no new event for a while"* rather than a count.
-fn quiesce(events: &RecordingSink, quiet: Duration, deadline: Duration) -> usize {
+/// Wait until the runner is idle — nothing in flight and nothing due — and fail at the deadline.
+///
+/// A quiet window on the sink is not enough: on a slow machine one git call outlasts it, and the
+/// rest of the chain lands in the next measurement. A worker settles, and so emits and enqueues
+/// the follow-ups, before it releases its slot, which is what makes idleness the end of a chain.
+fn quiesce(runner: &JobRunner, events: &RecordingSink, deadline: Duration) -> usize {
     let start = Instant::now();
-    let mut last = events.total();
-    let mut since = Instant::now();
-    while start.elapsed() < deadline {
+    while start.elapsed() < deadline && !runner.is_idle() {
         std::thread::sleep(Duration::from_millis(25));
-        let now = events.total();
-        if now == last {
-            if since.elapsed() >= quiet {
-                return now;
-            }
-        } else {
-            last = now;
-            since = Instant::now();
-        }
     }
+    assert!(
+        runner.is_idle(),
+        "the chain was still running after {deadline:?}"
+    );
     events.total()
 }
 
@@ -209,11 +205,7 @@ fn a_walk_originated_settle_emits_no_upserted_even_when_the_row_changes() {
         Priority::RefState,
         JobOrigin::Walk,
     ));
-    let total = quiesce(
-        &rig.events,
-        Duration::from_millis(400),
-        Duration::from_secs(40),
-    );
+    let total = quiesce(&rig.runner, &rig.events, Duration::from_secs(40));
     rig.runner.request_stop();
     rig.runner.join();
 
@@ -254,11 +246,7 @@ fn a_settle_that_changes_the_row_on_an_interactive_chain_emits_projects_upserted
         Priority::RefState,
         JobOrigin::Interactive,
     ));
-    let total = quiesce(
-        &rig.events,
-        Duration::from_millis(400),
-        Duration::from_secs(40),
-    );
+    let total = quiesce(&rig.runner, &rig.events, Duration::from_secs(40));
     rig.runner.request_stop();
     rig.runner.join();
 
@@ -298,11 +286,7 @@ fn a_settle_that_changes_nothing_emits_nothing() {
         Priority::RefState,
         JobOrigin::Interactive,
     ));
-    quiesce(
-        &rig.events,
-        Duration::from_millis(400),
-        Duration::from_secs(40),
-    );
+    quiesce(&rig.runner, &rig.events, Duration::from_secs(40));
     let settles_first = rig.events.count("scan", "job_done");
     let upserted_first = rig.events.count("projects", "upserted");
     assert!(settles_first > 0, "the first chain settled nothing");
@@ -315,11 +299,7 @@ fn a_settle_that_changes_nothing_emits_nothing() {
         Priority::RefState,
         JobOrigin::Interactive,
     ));
-    quiesce(
-        &rig.events,
-        Duration::from_millis(400),
-        Duration::from_secs(40),
-    );
+    quiesce(&rig.runner, &rig.events, Duration::from_secs(40));
     rig.runner.request_stop();
     rig.runner.join();
 

@@ -55,6 +55,12 @@ impl SlotState {
         }
     }
 
+    /// How many jobs hold a slot right now.
+    #[must_use]
+    pub fn in_flight(&self) -> usize {
+        self.in_flight
+    }
+
     /// Register a store's ceiling. Resolved from `MountFacts.class`, never from the queue.
     pub fn set_store_cap(&mut self, store_key: &str, cap: usize) {
         let entry = self.stores.entry(store_key.to_owned()).or_insert((0, cap));
@@ -179,6 +185,12 @@ impl JobQueue {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.ready.is_empty()
+    }
+
+    /// True when a queued job is past its backoff at `now`. A parked retry is queued but not due.
+    #[must_use]
+    pub fn has_due(&self, now: i64) -> bool {
+        self.ready.values().any(|job| job.not_before <= now)
     }
 }
 

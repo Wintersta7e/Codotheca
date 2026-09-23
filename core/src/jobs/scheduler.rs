@@ -163,6 +163,20 @@ impl JobRunner {
         pushed
     }
 
+    /// Whether no job holds a slot and none is due.
+    ///
+    /// A worker settles a job — which enqueues its follow-ups — before it gives the slot back, so
+    /// `true` means every chain that was due has run to its end. A retry parked behind its backoff
+    /// is queued but not due, and does not count.
+    #[cfg(feature = "testkit")]
+    #[must_use]
+    pub fn is_idle(&self) -> bool {
+        let now = self.deps.clock.now_unix();
+        self.shared
+            .lock()
+            .is_ok_and(|shared| shared.slots.in_flight() == 0 && !shared.queue.has_due(now))
+    }
+
     /// Ask every worker to finish its current job and stop.
     pub fn request_stop(&self) {
         if let Ok(mut shared) = self.shared.lock() {
