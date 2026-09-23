@@ -549,6 +549,47 @@ impl SyncRunner {
         emit_progress(self.events.as_ref(), &payload);
     }
 
+    /// §28.2's singleton evaluator for one project, with §34's `health_delta` producer around it,
+    /// in one transaction, and the event announced after the commit.
+    ///
+    /// A sync is a scheduled sweep, so whatever it observes is `background`. A snapshot that
+    /// cannot be read records no delta and costs the singleton write nothing — the write was
+    /// never gated on it before the producer existed.
+    fn settle_project_debt(&self, project_id: ProjectId, now: i64) {
+        let tz_offset_min = self.deps.tz_offset_min;
+        let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let announce = guard
+            .with_tx(|tx| {
+                let layers_before = crate::restoration::LayerValues::read(tx, project_id).ok();
+                let Ok(effect) = crate::debt::singletons::settle_singletons(
+                    tx,
+                    project_id,
+                    now,
+                    tz_offset_min,
+                    &crate::debt::store::SqliteDebtStore,
+                ) else {
+                    return Ok(None);
+                };
+                let Some(layers_before) = layers_before else {
+                    return Ok(None);
+                };
+                crate::restoration::record_after_write(
+                    tx,
+                    project_id,
+                    &layers_before,
+                    &effect.closed,
+                    crate::protocol::HealthDetectedIn::Background,
+                    now,
+                )
+            })
+            .ok()
+            .flatten();
+        drop(guard);
+        if let Some(delta) = announce {
+            crate::restoration::emit_health_delta(self.events.as_ref(), &delta);
+        }
+    }
+
     fn settle(&self, task: &SyncTask, outcome: Result<SyncOutcome, SyncError>, reserved: bool) {
         let now = self.deps.clock.now_unix();
         let kind = task.kind();
@@ -615,18 +656,7 @@ impl SyncRunner {
         //
         // It runs **before** §31's completion evaluator here too; do not reorder them.
         if let SyncTask::ProjectRemote { project_id } = task {
-            let tz_offset_min = self.deps.tz_offset_min;
-            let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-            let _ = guard.with_tx(|tx| {
-                let _ = crate::debt::singletons::settle_singletons(
-                    tx,
-                    *project_id,
-                    now,
-                    tz_offset_min,
-                    &crate::debt::store::SqliteDebtStore,
-                );
-                Ok(())
-            });
+            self.settle_project_debt(*project_id, now);
         }
 
         // [p3] §31.5's evaluator — **hook site 2 of exactly two** (R123).

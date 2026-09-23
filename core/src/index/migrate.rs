@@ -129,13 +129,21 @@ pub const MIGRATIONS: &[Migration] = &[
         // renamed and no foreign key is left dangling part-way through the file.
         rebuilds_a_table: false,
     },
+    Migration {
+        version: 16,
+        name: "health_delta",
+        sql: include_str!("../../migrations/0016_health_delta.sql"),
+        // §34.3: `health_delta` is STRICT, so its index, its `layer` CHECK and its missing
+        // cascade ride one create-copy-drop-rename — the only rebuild the table may have.
+        rebuilds_a_table: true,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 15;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 16;
 
 pub fn schema_version(conn: &Connection) -> Result<u32, IndexError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;

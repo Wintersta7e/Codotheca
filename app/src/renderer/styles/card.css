@@ -200,6 +200,104 @@
   background-position: -60% 0;
 }
 
+/*
+ * [p3] §34's restoration surge — one bounded light front on the opened hero, played once for a
+ * change the user is present for, then gone. It spans the plate beside the specular sweep for the
+ * sweep's reason: it carries no content. Its tier contract is `motion.css`'s — absent at
+ * `reduced` and at `off` — and the state it resolves to renders at every tier without it.
+ *
+ * Written as longhands so the one envelope (§11.6's `Restoration surge` beat, on the
+ * `Sweep / travel` curve) is declared once, and the three renderings below differ by
+ * `animation-name` alone. The end state is invisible: the page with no surge at all.
+ */
+.cdt-surge {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  animation-duration: 2300ms;
+  animation-timing-function: cubic-bezier(0.3, 0.7, 0.2, 1);
+  animation-fill-mode: both;
+}
+
+/* A front expanding from the place the fix happened. The position arrives as a fraction of the
+   scene space, written as a percentage; nothing here is a pixel. */
+.cdt-surge[data-surge='point'] {
+  background-image: radial-gradient(
+    circle at var(--cdt-surge-x) var(--cdt-surge-y),
+    rgb(255 255 255 / 0.42),
+    rgb(255 255 255 / 0.16) 18%,
+    transparent 42%
+  );
+  transform-origin: var(--cdt-surge-x) var(--cdt-surge-y);
+  animation-name: cdt-surge-point;
+}
+
+/* The wipe: a fix with no point to express. The majority case (A1b), built as a variant of its
+   own and not as a degraded point. */
+.cdt-surge[data-surge='wipe'] {
+  background-image: linear-gradient(
+    101deg,
+    transparent 30%,
+    rgb(255 255 255 / 0.18) 50%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  animation-name: cdt-surge-wipe;
+}
+
+/* Every lit layer reached zero at once: no single cause, so the whole card lights together. */
+.cdt-surge[data-surge='whole'] {
+  background-color: rgb(255 255 255 / 0.16);
+  animation-name: cdt-surge-whole;
+}
+
+@keyframes cdt-surge-point {
+  0% {
+    opacity: 1;
+    transform: scale(0);
+  }
+
+  70% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(3);
+  }
+}
+
+@keyframes cdt-surge-wipe {
+  0% {
+    opacity: 1;
+    background-position: 155% 0;
+  }
+
+  85% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    background-position: -60% 0;
+  }
+}
+
+@keyframes cdt-surge-whole {
+  0% {
+    opacity: 0;
+  }
+
+  30% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
 .cdt-scanline {
   inset: 0 0 auto 0;
   height: 16%;

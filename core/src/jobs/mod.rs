@@ -499,10 +499,15 @@ fn class_of(kind: JobKind, priority: Priority) -> crate::git::JobClass {
 /// discipline that makes that safe is structural rather than stated: **the lock is taken to read
 /// the inputs, released, git runs, and the lock is taken again to write.** No arm below holds it
 /// across a git invocation, so a twenty-second J4 blocks no command.
+///
+/// [p3] `announce` collects the §34 `health_delta` events a job wrote inside its own committed
+/// transaction — J7's item build is the one arm that writes debt items itself — for the runner to
+/// emit.
 pub fn run_one(
     index: &std::sync::Mutex<crate::index::Index>,
     deps: &JobDeps,
     job: &Job,
+    announce: &std::cell::RefCell<Vec<crate::protocol::ProjectHealthDelta>>,
 ) -> Result<JobOutcome, JobError> {
     let place = read_place(index, job.location_id)?;
     let repo = place.handle(job);
@@ -613,6 +618,8 @@ pub fn run_one(
                     cursor: cursor.as_deref(),
                     now,
                     tz_offset_min: deps.tz_offset_min,
+                    detected_in: crate::restoration::detected_in_for(job.origin),
+                    announce: Some(announce),
                 },
             )
         }

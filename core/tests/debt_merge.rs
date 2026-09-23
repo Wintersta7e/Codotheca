@@ -206,7 +206,7 @@ fn health_delta_is_reparented_by_another_function_entirely() {
     let absorbed = insert_project(&conn, "b", "l2");
     conn.execute(
         "INSERT INTO health_delta (project_id, ts, layer, from_value, to_value, detected_in)
-         VALUES (?1, 1, 'x', 0.0, 1.0, 'background')",
+         VALUES (?1, 1, 'rust', 1.0, 0.0, 'background')",
         [absorbed],
     )
     .unwrap();

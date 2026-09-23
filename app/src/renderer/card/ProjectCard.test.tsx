@@ -320,9 +320,11 @@ const UNMOUNTED = new Map([
   // what asserts it. It is also the performance answer: five extra elements on the one card on
   // screen, never five on each of 140 mounted tiles.
   ['.cdt-decay', '§33.4 — the opened hero only; a grid tile must never carry one'],
-  // [p3] p3-34 lands §34.8's restoration element. R112 gives `motion.css` one owner in phase 3,
-  // so p3-33 landed the clamp entry and the element it selects arrives a wave later.
-  ['.cdt-surge', 'p3-34 — §34.8 lands the element this entry selects'],
+  // [p3] §34.1: the restoration surge plays on the **opened hero and nowhere else** — a light
+  // front on a grid tile would be material decay on the grid, and the split is settled: *Signal
+  // on the grid, Workshop on the page*. The grid's answer to a restoration is the existing
+  // `condition_changed` repaint, with no animation, so its absence here is the rule.
+  ['.cdt-surge', '§34.1 — the opened hero only; a grid tile must never carry one'],
 ]);
 
 describe('the mounted tile carries the class names motion.css clamps', () => {

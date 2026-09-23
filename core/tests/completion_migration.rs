@@ -81,11 +81,13 @@ fn columns(conn: &rusqlite::Connection, table: &str) -> Vec<String> {
     rows
 }
 
+/// `0015` stamps fifteen. [p3] `0016` moved the chain's tip, so this file's own version is read
+/// off the chain at fifteen rather than off the tip, and the tip is compared to the constant.
 #[test]
-fn the_schema_version_reaches_fifteen() {
-    let (_dir, conn) = fresh();
+fn the_completion_migration_stamps_fifteen() {
+    let (_dir, conn) = migrated_to(15);
     assert_eq!(schema_version(&conn).unwrap(), 15);
-    assert_eq!(SUPPORTED_SCHEMA_VERSION, 15);
+    assert_eq!(MIGRATIONS[14].name, "completion");
     // The literal and the table move together, which is the only thing that keeps a build from
     // refusing a database it wrote itself.
     assert_eq!(
@@ -243,8 +245,10 @@ fn one_row_per_project_and_key() {
 /// other columns. The diff answers *what changed*, which is the claim.
 #[test]
 fn location_gained_exactly_one_column_and_it_is_tag_count() {
-    let (_before_dir, before) = migrated_to(MIGRATIONS.len() - 1);
-    let (_after_dir, after) = fresh();
+    // [p3] Pinned to `0015`'s own step: the chain's tip moved past it, and a tip-relative pair
+    // would diff whichever migration happens to be last.
+    let (_before_dir, before) = migrated_to(14);
+    let (_after_dir, after) = migrated_to(15);
 
     let was = columns(&before, "location");
     let now = columns(&after, "location");

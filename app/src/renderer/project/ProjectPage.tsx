@@ -9,6 +9,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -22,7 +23,9 @@ import type {
   ProjectId,
   Settings,
 } from '../../generated/protocol';
+import { litCounts } from '../decay/lit';
 import { useInstallOffer } from '../install/useInstallOffer';
+import { useHealthDelta } from '../restoration/useHealthDelta';
 import { movesHealthReading, toSettingsPatch } from '../settings/Drawer';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
 import { ActivityTab } from './activity/ActivityTab';
@@ -217,6 +220,11 @@ export function ProjectPageView({
   }, [deps, detailPinned, pinnedOverride, projectId]);
 
   const detail = state.kind === 'ready' ? state.detail : null;
+  // [p3] §34.6: the restoration is decided at the event's arrival, against the layers the page is
+  // showing then — the event names only the layers that changed, and §34.5's whole-card rule is
+  // about all five.
+  const lit = useMemo(() => litCounts(detail?.debt ?? []), [detail]);
+  const surge = useHealthDelta(projectId, lit);
   // §25.1: the mounted list is this project's. While the detail is still loading the bar draws
   // the two every project has, so it gains a tab rather than emptying and refilling.
   const tabs = detail === null ? BASE_PROJECT_TABS : tabsFor(detail);
@@ -329,6 +337,8 @@ export function ProjectPageView({
               // The opened hero is the one surface that receives it — never the grid, Peek, the
               // list, the quick-switch palette or triage.
               debt={detail.debt}
+              // [p3] §34: the one surface a restoration plays on.
+              surge={surge}
             />
             {/* [p2] §24.8's removal, mounted. The verdict is fetched when the affordance opens
                 and at no other time; the page holds it because the rail is arrangement and the

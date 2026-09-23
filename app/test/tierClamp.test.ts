@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { clampClassNames, type ClampSets } from '../../scripts/lib/motion-clamp.mjs';
 
 /**
  * §11.6's tier clamp, **derived from `motion.css` rather than enumerated**.
@@ -19,60 +20,13 @@ import { describe, expect, it } from 'vitest';
  * The file is read with `node:fs`, not imported as `?raw`. `app/test/**` runs in vitest's **node**
  * project, whose config carries no `css.include` — a `?raw` CSS import there resolves to the
  * empty string and every assertion below would pass against nothing.
+ *
+ * [p3] **The parse has one owner, `scripts/lib/motion-clamp.mjs`**, which §34.8's standing checker
+ * (`scripts/check-motion-clamp.mjs`) reads too. This file asks which rule group a name joins; the
+ * checker asks whether every animated class joins one. Two parsers of one stylesheet would be two
+ * answers to the same question waiting to disagree.
  */
 const MOTION_CSS = fileURLToPath(new URL('../src/renderer/styles/motion.css', import.meta.url));
-
-export interface ClampSets {
-  readonly displayNone: ReadonlySet<string>;
-  readonly noTransform: ReadonlySet<string>;
-  readonly clamped: ReadonlySet<string>;
-  readonly all: ReadonlySet<string>;
-}
-
-/**
- * Every class name a `[data-effects-tier=…]` rule selects, bucketed by what the rule declares.
- *
- * `clamped` is a transition with a **duration**, which is what §11.6 means by clamping. The
- * `transition: none` rules declare the same property and clamp nothing, so they are deliberately
- * not in that bucket — landing a name there produces no transition at `reduced` at all, which
- * resolves as a plausible style and is exactly the mistake a line-range edit makes.
- */
-export function clampClassNames(css: string): ClampSets {
-  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//gu, '');
-  const displayNone = new Set<string>();
-  const noTransform = new Set<string>();
-  const clamped = new Set<string>();
-  const all = new Set<string>();
-
-  const rule = /([^{}]+)\{([^{}]*)\}/gu;
-  let match = rule.exec(withoutComments);
-  while (match !== null) {
-    const selectors = match[1] ?? '';
-    const body = match[2] ?? '';
-    const names = new Set<string>();
-    for (const selector of selectors.split(',')) {
-      if (!selector.includes('[data-effects-tier')) continue;
-      for (const found of selector.matchAll(/\.([a-z][a-z0-9-]*)/gu)) {
-        const name = found[1];
-        if (name !== undefined) names.add(name);
-      }
-    }
-    if (names.size > 0) {
-      const declares = (property: string, value: string): boolean =>
-        new RegExp(`(^|;)\\s*${property}\\s*:\\s*${value}\\s*(;|$)`, 'u').test(body.trim());
-      const isClamped = /(^|;)\s*transition\s*:\s*[a-z-]+\s+\d/u.test(body.trim());
-      for (const name of names) {
-        all.add(name);
-        if (declares('display', 'none')) displayNone.add(name);
-        if (declares('transform', 'none')) noTransform.add(name);
-        if (isClamped) clamped.add(name);
-      }
-    }
-    match = rule.exec(withoutComments);
-  }
-
-  return { displayNone, noTransform, clamped, all };
-}
 
 function sets(): ClampSets {
   const css = readFileSync(MOTION_CSS, 'utf8');

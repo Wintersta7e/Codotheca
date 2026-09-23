@@ -182,9 +182,14 @@ fn ac_p3_30_15_the_health_reading_adds_no_command_event_or_topic() {
         }
         assert!(!name.contains("health"), "§30 declared a command: {name}");
     }
+    // **`projects/health_delta` is the same kind of exemption, and it is §34.4's.** The delta table
+    // records it against Δ34; §30 declares no event, and that is still asserted for every other.
     for (topic, entries) in schema["topics"].as_object().expect("topics") {
         assert!(!topic.to_lowercase().contains("health"));
         for event in entries.as_object().expect("events").keys() {
+            if topic == "projects" && event == "health_delta" {
+                continue;
+            }
             assert!(
                 !event.to_lowercase().contains("health"),
                 "§30 declared an event: {topic}/{event}"

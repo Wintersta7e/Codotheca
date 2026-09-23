@@ -67,6 +67,8 @@ export interface CardProps {
   readonly art: ReactNode;
   /** [p3] §33.4's layer stack, passed straight through. **No band gains an element.** */
   readonly decay?: ReactNode;
+  /** [p3] §34.1's surge, passed straight through to the plate. Grid tiles pass none. */
+  readonly surge?: ReactNode;
   readonly bands: CardBands;
   readonly halo: CardHalo;
   readonly hovered: boolean;
@@ -168,6 +170,7 @@ export function Card(props: CardProps): ReactElement {
           isArchived={props.isArchived}
           art={props.art}
           decay={props.decay}
+          surge={props.surge}
         >
           {/* Band 1 — furniture only. */}
           {bands.hazard ? (

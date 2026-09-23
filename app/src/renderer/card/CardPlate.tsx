@@ -34,6 +34,14 @@ export interface CardPlateProps {
    * triage — the same scope roasting has.
    */
   readonly decay?: ReactNode;
+  /**
+   * [p3] §34.1's restoration surge, mounted **immediately after the bitmap** so it is a sibling of
+   * `.cdt-art` inside the plate, and therefore inside the card subtree `motion.css`'s `off`
+   * blanket reaches. Only the opened hero hands one over: a restoration on the grid is the
+   * existing `condition_changed` repaint and nothing more — *Signal on the grid, Workshop on the
+   * page*.
+   */
+  readonly surge?: ReactNode;
   /** The five bands. */
   readonly children: ReactNode;
 }
@@ -43,6 +51,7 @@ export function CardPlate(props: CardPlateProps): ReactElement {
   return (
     <div className="cdt-plate">
       {props.art}
+      {props.surge}
       <span
         className="cdt-sheen"
         aria-hidden="true"

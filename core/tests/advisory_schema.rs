@@ -230,7 +230,9 @@ fn a_slug_no_enum_declares_is_refused_by_every_column() {
 /// error reports and no later run can reconstruct.
 #[test]
 fn ac_p3_32_23_the_rebuild_keeps_its_indexes_and_its_rows() {
-    let before = MIGRATIONS.len() - 1;
+    // [p3] Pinned to the step before `0014`: relative to the tip, every later migration moved the
+    // row's write past the rebuild it exists to cross, and the test stayed green proving nothing.
+    let before = 13;
     let dir = tempfile::tempdir().unwrap();
     let path = Index::db_path(dir.path());
     let mut conn = open_connection(&path).unwrap();
@@ -308,14 +310,14 @@ fn ac_p3_32_23_the_rebuild_keeps_its_indexes_and_its_rows() {
 /// R68's half for this file: the chain reaches its tip with no hole, and the constant a start-up
 /// guard compares against agrees with it.
 ///
-/// [p3] `0015_completion.sql` moved the tip from 14 to 15. The subject here is the
-/// **contiguity**, not the number, so the last assertion compares the migrated database against
-/// the constant rather than repeating a literal a third time — a hole still fails, and the next
-/// migration raises two lines instead of three.
+/// [p3] `0015_completion.sql` moved the tip from 14 to 15, and `0016_health_delta.sql` from 15 to
+/// 16. The subject here is the **contiguity**, not the number, so the last assertion compares the
+/// migrated database against the constant rather than repeating a literal a third time — a hole
+/// still fails, and the next migration raises two lines instead of three.
 #[test]
 fn the_migration_chain_reaches_its_tip_with_no_hole() {
-    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), 15);
-    assert_eq!(SUPPORTED_SCHEMA_VERSION, 15);
+    assert_eq!(guard_contiguous(MIGRATIONS).unwrap(), 16);
+    assert_eq!(SUPPORTED_SCHEMA_VERSION, 16);
     assert_eq!(
         MIGRATIONS.last().map(|m| m.version),
         Some(SUPPORTED_SCHEMA_VERSION)

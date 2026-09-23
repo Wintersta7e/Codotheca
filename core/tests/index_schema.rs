@@ -537,20 +537,30 @@ fn xp_event_track_and_kind_cannot_disagree() {
     assert!(duplicate.is_err(), "dedupe_key is UNIQUE");
 }
 
+/// [p3] §34.3's rebuilt table: a `DecayLayer` word and a known provenance are accepted, and each
+/// CHECK refuses on its own — the refused rows differ from the accepted one in one column apiece,
+/// so neither assertion can pass on the other's rule.
 #[test]
-fn health_delta_exists_with_no_producer() {
+fn health_delta_takes_a_decay_layer_and_a_known_provenance() {
     let (_d, conn) = fresh();
     let p = insert_project(&conn, "thing");
     conn.execute(
         "INSERT INTO health_delta (project_id, ts, layer, from_value, to_value, detected_in)
-         VALUES (?1, 1, 'roof', 0.2, 0.9, 'background')",
+         VALUES (?1, 1, 'dust', 2.0, 1.0, 'background')",
         [p],
     )
     .unwrap();
     assert!(conn
         .execute(
             "INSERT INTO health_delta (project_id, ts, layer, detected_in)
-             VALUES (?1, 2, 'roof', 'elsewhere')",
+             VALUES (?1, 2, 'dust', 'elsewhere')",
+            [p],
+        )
+        .is_err());
+    assert!(conn
+        .execute(
+            "INSERT INTO health_delta (project_id, ts, layer, detected_in)
+             VALUES (?1, 3, 'roof', 'background')",
             [p],
         )
         .is_err());

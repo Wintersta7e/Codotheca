@@ -117,6 +117,8 @@ impl Rig {
                 cursor: None,
                 now: NOW,
                 tz_offset_min: 0,
+                detected_in: codotheca_core::protocol::HealthDetectedIn::Background,
+                announce: None,
             },
         )
         .unwrap()

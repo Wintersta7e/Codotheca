@@ -76,6 +76,38 @@ pub fn next_jobs_after(done: JobKind, is_reference: Option<bool>) -> Vec<(JobKin
     }
 }
 
+/// §28.2's singleton evaluator — **R145's first of two call sites, both §28's** — with §34's
+/// `health_delta` producer around it, in the settle's own transaction.
+///
+/// Every job-fed arm answers here: the three `missing_*` and `unpushed_commits`. The producer's
+/// first snapshot is taken before the debt write — reading only after it would leave no `before`
+/// to recover — and the row commits with the debt set that moved it or not at all. The provenance
+/// is the chain's origin, never the priority. The event it returns is announced after the commit.
+fn settle_debt(
+    tx: &rusqlite::Transaction<'_>,
+    job: &Job,
+    now: i64,
+    tz_offset_min: i32,
+) -> Result<Option<crate::protocol::ProjectHealthDelta>, crate::index::IndexError> {
+    let layers_before = crate::restoration::LayerValues::read(tx, job.project_id)?;
+    let effect = crate::debt::singletons::settle_singletons(
+        tx,
+        job.project_id,
+        now,
+        tz_offset_min,
+        &crate::debt::store::SqliteDebtStore,
+    )
+    .map_err(debt_to_index)?;
+    crate::restoration::record_after_write(
+        tx,
+        job.project_id,
+        &layers_before,
+        &effect.closed,
+        crate::restoration::detected_in_for(job.origin),
+        now,
+    )
+}
+
 #[derive(Debug)]
 struct Shared {
     queue: JobQueue,
@@ -204,7 +236,14 @@ impl JobRunner {
     /// This function owns only the hand-off, so a job's behaviour is reviewable without reading
     /// the scheduler.
     fn execute(&self, job: &Job) -> JobOutcome {
-        match run_one(self.index.as_ref(), &self.deps, job) {
+        let announce = std::cell::RefCell::new(Vec::new());
+        let result = run_one(self.index.as_ref(), &self.deps, job, &announce);
+        // [p3] §34: J7 writes its deltas inside its own transaction, which has committed by the
+        // time `run_one` returns — so they are announced here, never from inside it.
+        for delta in announce.into_inner() {
+            crate::restoration::emit_health_delta(self.events.as_ref(), &delta);
+        }
+        match result {
             Ok(outcome) => outcome,
             Err(super::JobError::RepositoryBusy) => JobOutcome::TransientFail {
                 reason: "repository_busy".to_owned(),
@@ -264,18 +303,10 @@ impl JobRunner {
         let tz_offset_min = self.deps.tz_offset_min;
         let recomputed = self.write_index(|tx| {
             put(tx, job.project_id, &row)?;
-            // §28.2's singleton evaluator — **R145's first of two call sites, both §28's.** Every
-            // job-fed arm answers here: the three `missing_*` and `unpushed_commits`. It runs
-            // **before** §31's completion evaluator, or every Group-A check answers from the
-            // previous settle; do not reorder them.
-            crate::debt::singletons::settle_singletons(
-                tx,
-                job.project_id,
-                now,
-                tz_offset_min,
-                &crate::debt::store::SqliteDebtStore,
-            )
-            .map_err(debt_to_index)?;
+            // §28.2's singleton evaluator, and §34's producer around it. It runs **before** §31's
+            // completion evaluator, or every Group-A check answers from the previous settle; do
+            // not reorder them.
+            let announce = settle_debt(tx, job, now, tz_offset_min)?;
             let recomputed = crate::derive::persist::recompute(tx, job.project_id, now)?;
             // [p3] §31.5's evaluator — **hook site 1 of exactly two** (R123). None of §31.5's
             // three triggers is observable: `coverage_for` returns two booleans and
@@ -292,9 +323,9 @@ impl JobRunner {
             // **It is not folded into `recompute`**: that has other callers, and a hook firing
             // from an unbounded set is a hook nobody can count.
             crate::completion::evaluate_and_write(tx, job.project_id, now)?;
-            Ok(recomputed)
+            Ok((recomputed, announce))
         });
-        if let Ok(r) = &recomputed {
+        if let Ok((r, _)) = &recomputed {
             if r.changed_condition {
                 self.events.emit(
                     "projects",
@@ -310,6 +341,11 @@ impl JobRunner {
         }
 
         self.publish_row_change(job, before);
+
+        // [p3] §34.4: after the commit, beside the state's own transport and never instead of it.
+        if let Ok((_, Some(delta))) = &recomputed {
+            crate::restoration::emit_health_delta(self.events.as_ref(), delta);
+        }
 
         self.events.emit(
             "scan",

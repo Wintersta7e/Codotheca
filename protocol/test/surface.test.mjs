@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSchema, parseTypeExpr } from '../lib/schema.mjs';
@@ -441,6 +442,9 @@ const TOPICS = {
     'art_ready',
     'snapshot',
     'readme_remote_changed',
+    // [p3] §34.4 adds `health_delta` to the **existing** topic: the surge needs a push while the
+    // page is open, and the page already subscribes here. No new topic, no command.
+    'health_delta',
   ],
   session: ['started', 'segment_closed', 'ended'],
   core: ['error', 'degraded', 'snapshot'],
@@ -1112,10 +1116,13 @@ test('the four totals agree with the phase-2 delta table', () => {
     `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 + §33's 1 + §31's 1 = 62, found ${commands}`,
   );
   assert.equal(topics, 7, `topics: 4 + accounts + sync + install = 7, found ${topics}`);
-  // [p3] §32.12 raises this by exactly one from the branch base: `sync/advisory_alert`. p3-34
-  // raises it by its own delta from its own base, so a textual conflict at the wave merge is the
-  // assertion working and the resolution is the sum.
-  assert.equal(events, 35, `events: 19 + 3 + 6 + 0 + 0 + 5 + 1 + §32's 1 = 35, found ${events}`);
+  // [p3] §32.12 raises this by exactly one from the branch base: `sync/advisory_alert`. §34.4
+  // raises it by its own one, `projects/health_delta`, off the merged base.
+  assert.equal(
+    events,
+    36,
+    `events: 19 + 3 + 6 + 0 + 0 + 5 + 1 + §32's 1 + §34's 1 = 36, found ${events}`,
+  );
   assert.equal(
     schema.errors.length,
     14,
@@ -1182,11 +1189,14 @@ test('the four totals agree with the phase-2 delta table', () => {
    * **Wave 4 merged two lanes that each stated a correct +N off its own base — §33's 187 and
    * §31's 186 — and the merged total is neither.** Both were right; only the sum is. Counted off
    * the merged schema, never added up from a branch: 160 + 8 + 9 + 5 + 5 + 4 = **191**.
+   *
+   * §34.4 moves it by **+3** off that merged base: `ProjectHealthDelta`, `HealthLayerDelta` and
+   * `HealthDetectedIn`. `DecayLayer` is §28's declaration and §34 references it (R113, R31).
    */
   assert.equal(
     types,
-    191,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4; found ${types}`,
+    194,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3; found ${types}`,
   );
 });
 
@@ -1543,9 +1553,10 @@ test('§30: the health reading moves the type row alone', () => {
   // because this test's subject IS the totals.
   assert.equal(schema.commands.length, 62);
   assert.equal(Object.keys(schema.topics).length, 7);
+  // [p3] §34.4's `projects/health_delta` raised the event row by ONE, and it is not §30's.
   assert.equal(
     Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0),
-    35,
+    36,
   );
   assert.equal(schema.errors.length, 14);
 });
@@ -1627,5 +1638,67 @@ test('§33.8: health.weathering is read-only, idempotent and unprivileged', () =
     names.filter((n) => n.startsWith('health.')).length,
     1,
     'health.* holds exactly the one name §33 spends',
+  );
+});
+
+/**
+ * [p3] **`AC-P3-34-16`.** §34.4 adds one event and three types, and **no command, no topic and
+ * no error**. The surge needs a push while the page is open, so the event rides the existing
+ * `projects` subscription; the payload carries no origin, because §33's anchor set already reaches
+ * the page and a coordinate on the event would be the same value travelling twice.
+ *
+ * Each mirror is read from the other side rather than restated: the provenance enum against the
+ * `detected_in` CHECK in `0003`, the command total against `core/src/assembly/route.rs`'s own
+ * literal, and the four totals against the regenerated lock.
+ */
+test('ac_p3_34_16 the health delta is one event and three types on the existing topic', () => {
+  assert.equal(schema.topics.projects.health_delta, 'ProjectHealthDelta');
+
+  const delta = schema.types.ProjectHealthDelta;
+  assert.equal(delta?.kind, 'struct');
+  assert.deepEqual(delta.fields, {
+    id: 'ProjectId',
+    ts: 'Timestamp',
+    detectedIn: 'HealthDetectedIn',
+    layers: '[HealthLayerDelta]',
+  });
+
+  const layer = schema.types.HealthLayerDelta;
+  assert.equal(layer?.kind, 'struct');
+  // `DecayLayer` is §28's declaration and §33's meaning; §34 references it and spells no layer.
+  assert.equal(layer.fields.layer, 'DecayLayer');
+  assert.equal(schema.types.DecayLayer.kind, 'enum');
+  // `f64`: the scalar table declares no `f32`, and the column's own affinity is REAL.
+  assert.equal(layer.fields.fromValue, 'f64?');
+  assert.equal(layer.fields.toValue, 'f64?');
+
+  const ddl = readFileSync(
+    join(here, '../../core/migrations/0003_identity_and_events.sql'),
+    'utf8',
+  );
+  const check = /detected_in\s+TEXT NOT NULL CHECK \(detected_in IN \(([^)]*)\)\)/u.exec(ddl);
+  assert.ok(check, 'the detected_in CHECK was not found in 0003');
+  const allowed = check[1].split(',').map((v) => v.trim().replace(/^'|'$/gu, ''));
+  console.error(`AC-P3-34-16 detected_in CHECK: ${allowed.join(' ')}`);
+  assert.ok(allowed.length > 0);
+  assert.equal(schema.types.HealthDetectedIn?.kind, 'enum');
+  assert.deepEqual(schema.types.HealthDetectedIn.variants, allowed);
+
+  const route = readFileSync(join(here, '../../core/src/assembly/route.rs'), 'utf8');
+  const routed = /commands\.len\(\),\s*(\d+),/u.exec(route);
+  assert.ok(routed, 'route.rs asserts no command total');
+  assert.equal(schema.commands.length, Number(routed[1]), 'the command total moved');
+
+  const lock = JSON.parse(readFileSync(join(here, '../generated.lock'), 'utf8'));
+  const events = Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0);
+  assert.deepEqual(
+    [lock.commands, lock.topics, lock.events, lock.types],
+    [
+      schema.commands.length,
+      Object.keys(schema.topics).length,
+      events,
+      Object.keys(schema.types).length,
+    ],
+    'the lock was not regenerated from this schema',
   );
 });

@@ -211,9 +211,6 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-/** Clamped by `motion.css`, declared by no stylesheet yet, with the plan that owes each. */
-const UNDECLARED = new Map([['.cdt-surge', 'p3-34 — §34.8 lands the restoration element']]);
-
 describe('the motion tier clamp resolves against these class names', () => {
   it('declares every class motion.css clamps, or the clamp selects nothing', () => {
     // The cascade assertions below mount a fixture carrying these names, so they prove the clamp
@@ -224,28 +221,12 @@ describe('the motion tier clamp resolves against these class names', () => {
     expect(clamped.length).toBeGreaterThan(0);
     // [p3] Both card-plate stylesheets: `card.css` declares the shell, `decay.css` the five
     // material layers. A name declared in neither selects nothing.
+    // [p3] `.cdt-surge` sat on a pending list here while `motion.css` clamped a class no rule
+    // declared yet — R112 gave the clamp and the element to two different changes. `card.css`
+    // declares it now, so every clamped name is held to this assertion and none is excused.
     const declared = `${body}\n${decayCss.replace(/\/\*[\s\S]*?\*\//g, '')}`;
     for (const name of clamped) {
-      if (UNDECLARED.has(name)) continue;
       expect(declared, `${name} is clamped by motion.css and declared by no rule`).toContain(name);
-    }
-  });
-
-  /**
-   * [p3] `.cdt-surge` is **clamped here and declared by p3-34**, which lands §34's restoration
-   * element. R112 split the two deliberately: `motion.css` has one owner in phase 3, and the
-   * plan that owns the file lands both class names in one change so the two sections cannot each
-   * write half the clamp. The entry with no rule is the visible cost of that split, named here
-   * rather than left to read as a typo.
-   */
-  it('names the clamped classes no stylesheet declares yet, with the plan that owes each', () => {
-    const declared = `${body}\n${decayCss.replace(/\/\*[\s\S]*?\*\//g, '')}`;
-    expect(UNDECLARED.size).toBeGreaterThan(0);
-    for (const [name, owner] of UNDECLARED) {
-      expect(declared, `${name} is declared now — take it off the pending list`).not.toContain(
-        name,
-      );
-      expect(motionCss, `${name} is pending for ${owner} but nothing clamps it`).toContain(name);
     }
   });
 

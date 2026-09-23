@@ -333,6 +333,7 @@ impl GitRig {
                 not_before: 0,
                 origin: JobOrigin::Walk,
             },
+            &std::cell::RefCell::new(Vec::new()),
         )
     }
 
@@ -356,6 +357,8 @@ impl GitRig {
                 cursor: None,
                 now: 1_700_000_000,
                 tz_offset_min: 0,
+                detected_in: codotheca_core::protocol::HealthDetectedIn::Background,
+                announce: None,
             },
         )
     }
@@ -912,6 +915,8 @@ impl Rig {
                 now: 1_700_000_000,
                 // UTC, so a test's local date never depends on the machine running it.
                 tz_offset_min: 0,
+                detected_in: codotheca_core::protocol::HealthDetectedIn::Background,
+                announce: None,
             },
         )
         .unwrap()

@@ -14,6 +14,10 @@
  * hover effects are still grid effects, so this tile emits **zero animation frames** once the
  * page's entry has played — the layers transition on opacity and animate nothing.
  *
+ * **[p3] §34.6: that sentence bans a schedule, not a response.** The restoration surge mounts
+ * through `HeroFrame`'s `surge` slot for a change the user is present for, plays one bounded
+ * envelope and ends — the specular sweep's carve-out, not the key-light drift's revival.
+ *
  * ~~All five material layers are out — dust, cobwebs, rust, cracks, overgrowth. Only cobwebs has
  * a phase-1 trigger, and shipping one layer of five would read as a bug in the decay model
  * rather than as its absence.~~
@@ -23,11 +27,14 @@
  * either, because band 3 already reads `RANK NOT COMPUTED` and one surface states an absence
  * once. That reason expires with §31; the absence rule does not.
  */
-import type { ReactElement } from 'react';
+import { useRef, type ReactElement } from 'react';
 
 import type { DebtItem, ProjectId, ProjectRow, SceneHash } from '../../../generated/protocol';
 import { DecayStack } from '../../decay/DecayStack';
 import { useWeathering } from '../../decay/useWeathering';
+import { originFor, type Origin } from '../../restoration/origin';
+import type { Selection } from '../../restoration/select';
+import { Surge, type SurgeRequest } from '../../restoration/Surge';
 import { statusChips } from '../../card/chips';
 import { scoreText } from '../../card/completion';
 import { HeroFrame } from '../../card/HeroFrame';
@@ -65,6 +72,11 @@ export interface HeroTileProps {
    * layer; the anchors arrive separately, from the core, keyed by scene.
    */
   debt?: readonly DebtItem[];
+  /**
+   * [p3] §34's restoration, as the page decided it at the event's arrival. `null` or absent draws
+   * nothing. The hero is the only surface that takes one.
+   */
+  surge?: SurgeRequest | null;
 }
 
 /**
@@ -85,6 +97,34 @@ function HeroDecay(props: {
 }): ReactElement | null {
   const weathering = useWeathering(props.projectId, props.decodedSceneHash);
   return <DecayStack weathering={weathering} debt={props.debt} />;
+}
+
+/**
+ * [p3] §34.5's surge, against the hash **actually on screen**, for `HeroDecay`'s reason.
+ *
+ * **Mounted for as long as the page is, not only while a surge plays**, so the anchor set is
+ * already here when a restoration arrives: a surge that fetched its anchors on arrival would
+ * start as the wipe and turn into the front part-way through.
+ *
+ * **The origin is fixed for the life of one selection.** An anchor reply that lands mid-surge must
+ * not change the rendering under the animation — the selection's own origin, or its absence, is
+ * the whole of what that surge says.
+ */
+function HeroSurge(props: {
+  projectId: ProjectId;
+  decodedSceneHash: SceneHash | null;
+  request: SurgeRequest;
+}): ReactElement | null {
+  const weathering = useWeathering(props.projectId, props.decodedSceneHash);
+  const fixed = useRef<{ selection: Selection; origin: Origin | null } | null>(null);
+  const { selection, end } = props.request;
+  if (fixed.current === null || fixed.current.selection !== selection) {
+    fixed.current = {
+      selection,
+      origin: selection.kind === 'layer' ? originFor(weathering, selection.layer) : null,
+    };
+  }
+  return <Surge selection={selection} origin={fixed.current.origin} onEnd={end} />;
 }
 
 export function heroIdentityLine(row: ProjectRow): string | null {
@@ -123,6 +163,7 @@ export function HeroTile({
   unknownChecks,
   onTogglePin,
   debt = [],
+  surge = null,
 }: HeroTileProps): ReactElement {
   const deps = useProjectPageDeps();
   // §23.5: the hero asks the core for the pass it needs, and that request **is** the demand that
@@ -158,6 +199,13 @@ export function HeroTile({
       decay={(decodedSceneHash) =>
         isBlueprint ? null : (
           <HeroDecay projectId={row.id} decodedSceneHash={decodedSceneHash} debt={debt} />
+        )
+      }
+      // [p3] §34: never on a blueprint pass either — line art with no machined parts has no
+      // working copy whose debt could have been restored.
+      surge={(decodedSceneHash) =>
+        isBlueprint || surge === null ? null : (
+          <HeroSurge projectId={row.id} decodedSceneHash={decodedSceneHash} request={surge} />
         )
       }
       chips={statusChips(row, deps.now(), firstRunCompletedAt)}

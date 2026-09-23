@@ -1245,3 +1245,117 @@ fn a_project_remote_sync_settle_writes_the_ten_completion_rows_with_no_job_invol
         "a forge description and a topic, read at the settle that could have changed them"
     );
 }
+
+/// **[p3] `AC-P3-34-8`'s sync half — a scheduled sweep writes `background`.** §34.2's third
+/// production caller: `ci_red`'s input arrives on a sync, so the transition that closes it is
+/// observed by `SyncRunner::settle` and no job is involved. A failing run opens the item (a first
+/// observation, no row); a later passing run closes it, and that settle writes one `cracks` row
+/// whose provenance is the sweep's, never the user's attention.
+#[test]
+fn ac_p3_34_8_a_project_remote_sync_settle_writes_a_background_delta() {
+    let f = fixture(Duration::from_millis(0));
+    for _ in 0..16 {
+        f.scripted.push(ok_page("{}"));
+    }
+
+    {
+        let mut guard = f.index.lock().expect("index");
+        guard
+            .with_tx(|tx| {
+                // An enrolled, authored project — a reading exists to move.
+                tx.execute(
+                    "UPDATE project SET authored_by_user = 1, is_reference = 0,
+                                        acknowledged_at = ?2
+                      WHERE id = ?1",
+                    rusqlite::params![f.project.0, NOW - 100],
+                )?;
+                tx.execute(
+                    "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                           store_key, presence, repo_kind, branch)
+                     VALUES (?1, 'linux', x'2f61', x'2f61', '/a', 'store', 'present', 'worktree',
+                             'main')",
+                    [f.project.0],
+                )?;
+                tx.execute(
+                    "INSERT INTO remote_ci_run
+                        (provider, provider_repo_id, run_id, workflow_name, conclusion, branch,
+                         run_number, started_at)
+                     VALUES ('github', '7', 1, 'build', 'failure', 'main', 1, 100)",
+                    [],
+                )?;
+                Ok(())
+            })
+            .expect("seed");
+    }
+
+    let runner = SyncRunner::new(
+        Arc::clone(&f.index),
+        f.deps,
+        Arc::clone(&f.events) as Arc<dyn EventSink>,
+    );
+    runner.enqueue(SyncTask::ProjectRemote {
+        project_id: f.project,
+    });
+    runner.start();
+
+    let count = |sql: &str| -> i64 {
+        let guard = f.index.lock().expect("index");
+        guard
+            .conn()
+            .query_row(sql, [f.project.0], |r| r.get(0))
+            .unwrap_or(0)
+    };
+    until("the first sync settle to open ci_red", || {
+        count("SELECT count(*) FROM debt_item WHERE project_id = ?1 AND source = 'ci_red'") == 1
+    });
+    assert_eq!(
+        count("SELECT count(*) FROM health_delta WHERE project_id = ?1"),
+        0,
+        "a first observation wrote a row"
+    );
+
+    // The next run on the branch passed.
+    {
+        let guard = f.index.lock().expect("index");
+        guard
+            .conn()
+            .execute(
+                "INSERT INTO remote_ci_run
+                    (provider, provider_repo_id, run_id, workflow_name, conclusion, branch,
+                     run_number, started_at)
+                 VALUES ('github', '7', 2, 'build', 'success', 'main', 2, 200)",
+                [],
+            )
+            .expect("a passing run");
+    }
+    runner.enqueue(SyncTask::ProjectRemote {
+        project_id: f.project,
+    });
+    until("the second sync settle to write a health delta", || {
+        count("SELECT count(*) FROM health_delta WHERE project_id = ?1") == 1
+    });
+
+    let guard = f.index.lock().expect("index");
+    let row: (String, f64, f64, String) = guard
+        .conn()
+        .query_row(
+            "SELECT layer, from_value, to_value, detected_in FROM health_delta",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .expect("the row");
+    drop(guard);
+    eprintln!("sync settle: {row:?}");
+    assert_eq!(
+        row,
+        ("cracks".to_owned(), 1.0, 0.0, "background".to_owned())
+    );
+    until("the delta to be announced after its commit", || {
+        f.events
+            .seen
+            .lock()
+            .expect("recorder")
+            .iter()
+            .any(|(topic, event, _)| topic == "projects" && event == "health_delta")
+    });
+}

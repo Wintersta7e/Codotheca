@@ -765,6 +765,31 @@
       }
     },
 
+    "ProjectHealthDelta": {
+      "kind": "struct",
+      "$comment": "[p3] §34.4's push: one event per debt-set transition that wrote a `health_delta` row, sent after the writer's transaction commits. It is the restoration surge's transport and NOTHING ELSE — the page's layer values refresh off `projects.upserted` (R121) whether or not this arrives. **It carries no origin**: `health.weathering` already ships the anchor set and the scene space to the one page the surge plays on, so a coordinate here would be the same value travelling twice, derived by two code paths from one source. `layers` holds one entry per layer the event may animate; a layer whose whole decrease was withdrawn by its source (R135) is recorded and not sent, and an event with nothing left is not sent at all.",
+      "fields": {
+        "id": "ProjectId",
+        "ts": "Timestamp",
+        "detectedIn": "HealthDetectedIn",
+        "layers": "[HealthLayerDelta]"
+      }
+    },
+    "HealthLayerDelta": {
+      "kind": "struct",
+      "$comment": "[p3] §34.4's one layer of a delta, both ends as the stored row carries them. `f64` because the scalar table declares no `f32` and the column's affinity is REAL; the values are small open-item counts and exact in IEEE-754. Nullable because the column is — a NULL `fromValue` is never observed, and a renderer never animates one. `layer` references §28's `DecayLayer` and re-declares nothing (R113, R31).",
+      "fields": {
+        "layer": "DecayLayer",
+        "fromValue": "f64?",
+        "toValue": "f64?"
+      }
+    },
+    "HealthDetectedIn": {
+      "kind": "enum",
+      "$comment": "[p3] §34.2's provenance of the job that observed the change — not the user's attention. `foreground` is a chain a user started, including the rescan after the window regains focus; `background` is a scheduled sweep or the walk. `health_delta.detected_in`'s CHECK in `0003_identity_and_events.sql` carries exactly these two words. Whether the surge PLAYS is a second predicate, the renderer's, and is never stored.",
+      "variants": ["foreground", "background"]
+    },
+
     "ProjectDetail": {
       "kind": "struct",
       "fields": {
@@ -1865,7 +1890,8 @@
       "condition_changed": "ProjectConditionChanged",
       "art_ready": "ArtReady",
       "snapshot": "ProjectsSnapshot",
-      "readme_remote_changed": "ReadmeRemoteChanged"
+      "readme_remote_changed": "ReadmeRemoteChanged",
+      "health_delta": "ProjectHealthDelta"
     },
     "session": {
       "started": "SessionStarted",

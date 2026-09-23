@@ -64,6 +64,12 @@ export interface HeroFrameProps {
    * whole feature mounts on.
    */
   readonly decay?: (decodedSceneHash: SceneHash | null) => ReactNode;
+  /**
+   * [p3] §34.5's surge — a function of the decoded hash **for the same reason as `decay`**: its
+   * origin is read from the anchor set of the scene actually on screen, and that hash lives in
+   * this component's own `useCardBitmap` call.
+   */
+  readonly surge?: (decodedSceneHash: SceneHash | null) => ReactNode;
   readonly children: ReactNode;
 }
 
@@ -111,6 +117,7 @@ export function HeroFrame(props: HeroFrameProps): ReactElement {
       focused={false}
       selected={false}
       decay={props.decay?.(bitmap.decodedSceneHash)}
+      surge={props.surge?.(bitmap.decodedSceneHash)}
       art={
         bitmap.src === null ? null : (
           <img

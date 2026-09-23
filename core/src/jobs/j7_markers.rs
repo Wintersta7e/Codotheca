@@ -290,6 +290,12 @@ pub struct ScanRun<'a> {
     /// The machine's offset, from `JobDeps`. §28.4's `debt_day` key is a **local** date and the
     /// item build runs from here, so the run carries it rather than reading a zone.
     pub tz_offset_min: i32,
+    /// [p3] §34.2's provenance of the job running this scan, recorded on any `health_delta` row
+    /// the item build writes.
+    pub detected_in: crate::protocol::HealthDetectedIn,
+    /// [p3] Where the item build hands the event for a delta it wrote, **once its transaction has
+    /// committed**, for the runner to announce. `None` records the rows and announces nothing.
+    pub announce: Option<&'a std::cell::RefCell<Vec<crate::protocol::ProjectHealthDelta>>>,
 }
 
 /// Run one chunk of J7 against one project.
@@ -308,7 +314,9 @@ pub fn run_j7(
         location,
         cursor,
         now,
-        tz_offset_min,
+        tz_offset_min: _,
+        detected_in: _,
+        announce,
     } = run;
     let gates = super::read(index, |conn| gates_for(conn, project))?;
     // Predicate 1 stays in the job as defence-in-depth: `next_jobs_after` skips Reference, and
@@ -367,11 +375,12 @@ pub fn run_j7(
     //    whichever comes first (§29.6).
     let window: Vec<&TreeEntry> = filtered.iter().skip(from).take(J7_CHUNK_BLOBS).collect();
     if window.is_empty() {
-        let pending = super::write(index, |tx| {
+        let (pending, delta) = super::write(index, |tx| {
             let pending = commit_chunk(tx, project, &head_oid, &[], 0, now)?;
-            build_debt_items(tx, project, location, gates, &filtered, now, tz_offset_min)?;
-            Ok(pending)
+            let delta = build_debt_items(tx, &run, gates, &filtered)?;
+            Ok((pending, delta))
         })?;
+        hand_out(announce, delta);
         return Ok(finish(pending, from, total));
     }
     let cached_before = cached_blobs(index, &window)?;
@@ -399,7 +408,7 @@ pub fn run_j7(
             break;
         }
     }
-    let pending = super::write(index, |tx| {
+    let (pending, delta) = super::write(index, |tx| {
         let pending = commit_chunk(
             tx,
             project,
@@ -408,9 +417,10 @@ pub fn run_j7(
             i64::try_from(consumed).unwrap_or(i64::MAX),
             now,
         )?;
-        build_debt_items(tx, project, location, gates, &filtered, now, tz_offset_min)?;
-        Ok(pending)
+        let delta = build_debt_items(tx, &run, gates, &filtered)?;
+        Ok((pending, delta))
     })?;
+    hand_out(announce, delta);
     Ok(finish(pending, from + consumed, total))
 }
 
@@ -421,16 +431,24 @@ pub fn run_j7(
 /// re-runs `ls-tree` per chunk deliberately — and `settle` holds no enumeration and no repository
 /// handle. This is the one place the entries exist beside a transaction.
 ///
-/// It returns the `pending` it was given, so the caller's cursor arithmetic is untouched by it.
+/// [p3] **It is also one of §34's three `health_delta` callers**, for the same reason: the marker
+/// items open and close here, so the before-snapshot, the item write and the row all share this
+/// transaction. It returns the event to announce once the caller's transaction has committed.
 fn build_debt_items(
     tx: &rusqlite::Transaction<'_>,
-    project: ProjectId,
-    location: LocationId,
+    run: &ScanRun<'_>,
     gates: ContentGates,
     filtered: &[TreeEntry],
-    now: i64,
-    tz_offset_min: i32,
-) -> Result<(), crate::index::IndexError> {
+) -> Result<Option<crate::protocol::ProjectHealthDelta>, crate::index::IndexError> {
+    let ScanRun {
+        project,
+        location,
+        now,
+        tz_offset_min,
+        detected_in,
+        ..
+    } = *run;
+    let layers_before = crate::restoration::LayerValues::read(tx, project)?;
     let occurrences = occurrences_for_project(tx, filtered)?;
     let store = crate::debt::store::SqliteDebtStore;
     let effect = crate::debt::markers::build_items(
@@ -451,7 +469,25 @@ fn build_debt_items(
         .unwrap_or_default();
     crate::debt::xp::pay_debt_day(tx, project, &subject, &effect, now, tz_offset_min)
         .map_err(debt_to_index)?;
-    Ok(())
+    crate::restoration::record_after_write(
+        tx,
+        project,
+        &layers_before,
+        &effect.closed,
+        detected_in,
+        now,
+    )
+}
+
+/// Hand a committed delta to the runner. Called only after `super::write` has returned `Ok`, so
+/// nothing reaches the announcer that a rollback could still remove.
+fn hand_out(
+    announce: Option<&std::cell::RefCell<Vec<crate::protocol::ProjectHealthDelta>>>,
+    delta: Option<crate::protocol::ProjectHealthDelta>,
+) {
+    if let (Some(out), Some(delta)) = (announce, delta) {
+        out.borrow_mut().push(delta);
+    }
 }
 
 fn debt_to_index(error: crate::debt::DebtError) -> crate::index::IndexError {

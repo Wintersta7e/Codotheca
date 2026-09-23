@@ -896,7 +896,7 @@ mod tests {
         .unwrap();
         conn.execute(
             "INSERT INTO health_delta (project_id, ts, layer, from_value, to_value, detected_in)
-             VALUES (?1, 5, 'x', 0, 1, 'background')",
+             VALUES (?1, 5, 'rust', 1, 0, 'background')",
             rusqlite::params![a],
         )
         .unwrap();

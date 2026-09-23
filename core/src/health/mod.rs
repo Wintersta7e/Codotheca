@@ -70,6 +70,22 @@ pub fn read_for_project(
     conn: &Connection,
     project: ProjectId,
 ) -> Result<(HealthReading, Vec<DebtItem>), ProjectsError> {
+    let reading = reading_for_project(conn, project)?;
+    Ok((
+        reading,
+        // The item set, from the same call. A `frozen` project is handed the last computed set —
+        // which is the stored one, because nothing recomputes a set it cannot observe.
+        crate::debt::read::load_debt(conn, project).map_err(debt_error)?,
+    ))
+}
+
+/// The reading alone, through the same producer — for §34's delta producer, which runs twice
+/// inside every settle's write transaction and needs the state and the eligible set, never the
+/// path-resolved item list.
+pub(crate) fn reading_for_project(
+    conn: &Connection,
+    project: ProjectId,
+) -> Result<HealthReading, ProjectsError> {
     let shared = SharedInputs::load(conn)?;
     let per_project = PerProject {
         facts: project_facts(conn, project)?,
@@ -79,13 +95,7 @@ pub fn read_for_project(
         refstate_observed: any_refstate_observed(conn, project)?,
         condition_signal: condition_signal_of(conn, project)?,
     };
-    let reading = reading_from(&shared, &per_project)?;
-    Ok((
-        reading,
-        // The item set, from the same call. A `frozen` project is handed the last computed set —
-        // which is the stored one, because nothing recomputes a set it cannot observe.
-        crate::debt::read::load_debt(conn, project).map_err(debt_error)?,
-    ))
+    reading_from(&shared, &per_project)
 }
 
 /// Everything a reading needs that is **the same for every project**: read once, whether the
