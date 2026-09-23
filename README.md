@@ -6,8 +6,9 @@ Every git repository you own becomes a tile with generated cover art, real statu
 button. It counts time the way a game launcher does, shows which projects are rotting, and adds a
 light, ignorable layer that makes upkeep visible. Local-first, no account, no telemetry.
 
+[![CI](https://github.com/Wintersta7e/Codotheca/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Wintersta7e/Codotheca/actions/workflows/ci.yml)
 ![Electron](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)
-![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Rust](https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 ![Status](https://img.shields.io/badge/status-public%20beta-brightgreen)
@@ -26,14 +27,16 @@ your disks, identifies each repository by its root commit, generates a piece of 
 the project itself, and shows you what git actually says: dirty, ahead, shallow, stashed, untouched
 since 2021.
 
-The upkeep layer is deliberately quiet. It shows a condition dot and a roast when you open a card.
-It does not nag, it does not gamify, and it never invents a number it did not measure.
+The upkeep layer is deliberately quiet. A neglected project's cover art gathers dust, cobwebs and
+rust drawn from what is actually wrong with it, and polishes back when you fix the thing. It does
+not nag, it does not gamify, and it never invents a number it did not measure.
 
 ## Status
 
-**v1.0.0 — public beta.** Phase 1 is complete and the app runs on Windows and Linux. It is a
-personal tool built for one person's library; you are welcome to clone and build it, but there is no
-adoption goal and no support guarantee.
+**v1.0.0 — public beta.** Three of the six planned phases are complete — the shelf, remote
+repositories with the quick-switch palette, and upkeep — and the app runs on Windows and Linux. It
+is a personal tool built for one person's library; you are welcome to clone and build it, but there
+is no adoption goal and no support guarantee.
 
 ### Implemented
 
@@ -54,10 +57,33 @@ adoption goal and no support guarantee.
   side by side and never summed.
 - **First run** — consent, root suggestion, a scan you can watch, and six reveal figures each
   carrying the coverage it was computed over.
+- **GitHub, if you want it** — connect through GitHub's device flow, with the token kept in the OS
+  keychain. Your own and your organisations' repositories join the shelf, matched to local copies
+  by root commit; one you have not cloned shows as a blueprint tile. A `REMOTE` tab shows the
+  forge's side of a project — CI runs, releases, and its README rendered in a sandbox, with remote
+  images blocked per project until you allow them.
+- **Install and Uninstall** — Install clones a blueprint into place. Uninstall removes a working
+  copy only after a pre-flight proves nothing in it exists nowhere else, and is disabled, never
+  confirmed through, when that is not proven. Git itself never removes anything: its only writes
+  are `clone` and `fetch`, and `fetch` never prunes.
+- **Health** — nine checks per project: a missing README, licence or tests, no release, unpushed
+  commits, red CI, known-vulnerable dependencies, `TODO` markers in the source, and a project
+  abandoned while it still carries debt. Each check can be switched off, and one that cannot see
+  its evidence says so rather than reading as clean. Reading source for markers is a grant of its
+  own. A `HEALTH` tab lists what is open.
+- **Completion** — a ten-point checklist per project (remote, README, licence, description, tests,
+  CI, CI green, pushed, dependencies, release). A check that does not fit the project is marked
+  not applicable rather than failed: a documentation repository is not failed for having no tests.
+- **Dependency advisories** — lockfiles in six formats, checked against GitHub's public advisory
+  database. The lookup is unauthenticated and sends package names and versions, never source.
+- **Condition** — five material layers on the cover art (dust, cobwebs, rust, cracks and
+  overgrowth), each fed by the checks behind it, and a restoration surge when a fix lands. The
+  shelf can sort by what needs attention; it is a sort, not a feed.
 - **Packaging** — portable `.exe`, NSIS installer, AppImage, `.deb` and `.rpm`.
 
-About 3,500 automated tests across the core, the shell and the renderer, plus a Playwright test that
-launches the real Electron app and asserts a painted screen.
+About 5,500 automated tests across the core, the shell and the renderer; eight Playwright tests that
+launch the real Electron app, one of them asserting a painted screen; and an acceptance register
+tying 737 checks to 320 written criteria.
 
 ### Known limits
 
@@ -74,15 +100,22 @@ launches the real Electron app and asserts a painted screen.
 - **Repositories inside WSL work through a second Linux binary** the Windows build carries. The path
   is tested on both sides but has not been driven end to end against a live distro.
 
-### Not in this release
+### Not yet
 
-Phase 1 deliberately ships without the Amnesty, XP and levels, the Health and Remote tabs, GitHub
-integration, and material decay. **If you find no GitHub integration, it is scheduled, not broken** —
-accounts, remote repositories and Install-as-clone are phase 2.
+- **Phase 4, motivation and the Amnesty** — rings, level, badges, recaps and quests, and the Amnesty:
+  a safe way to retire a project, with its full recovery model. `push`, `checkout` and
+  `worktree add` arrive with it, because that model is their undo.
+- **Phase 5, the watchlist** — starred repositories as a wishlist, and a release feed.
+- **Phase 6, polish** — cosmetics, custom art, a table view, and config sync.
+- **Not in v1** — forges other than GitHub; and failing tests or compiler warnings as debt, because
+  finding them means building or running your project, which Codotheca never does.
 
 ### Explicitly declined
 
-- **No account, and no telemetry.** Phase 1 makes no network requests at all.
+- **No account, and no telemetry.** There is no Codotheca account and nothing reports on you. The
+  network is reached for three things only: GitHub, once you connect it; the dependency-advisory
+  lookup, covered by the file-reading consent on the first-run screen; and a README's remote
+  images, per project, once you allow them.
 - **No currency, ever.** If XP could buy anything, every honest XP source becomes a farm.
 - **Not Tauri.** A system webview means Windows and Linux render through different engines, so a
   bug reproducible on one target need not exist on the other and CI cannot cover both.
@@ -105,6 +138,11 @@ accounts, remote repositories and Install-as-clone are phase 2.
 | `Ctrl+S` | shelf | save the current query as a collection |
 | `←` `→` | project page | cycle tabs |
 | `Escape` | project page | back to the shelf |
+| `↑` `↓` | quick switch | move through the results |
+| `Enter` | quick switch | launch the project |
+| `Shift+Enter` | quick switch | open the project page |
+| `Escape` | quick switch | close |
+| `Escape` | settings | close the drawer |
 
 Every context owns its keys exclusively and nothing is bound twice — `←` `→` move the grid on the
 shelf and cycle tabs on the project page, and only one of those contexts is ever live.
@@ -145,10 +183,13 @@ cargo test --manifest-path core/Cargo.toml --features testkit   # testkit is man
 npm run test --workspace app
 npm run test --workspace protocol
 npm run acceptance                                              # the criteria registry
+cargo build --release --manifest-path core/Cargo.toml && npm run test:e2e --workspace app
 ```
 
 `--features testkit` is not optional: the test seams sit behind a default-off feature, so a bare
-`cargo test` skips every test that goes through them and still reports success.
+`cargo test` skips every test that goes through them and still reports success. The end-to-end
+tests launch the real app against a release core and skip without one, which is why the build
+comes first.
 
 Build artifacts land in `dist/`.
 
