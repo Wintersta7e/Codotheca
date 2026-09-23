@@ -170,3 +170,100 @@ export function clampClassNames(css) {
 
   return { displayNone, noTransform, clamped, all };
 }
+
+/** A pseudo-class whose weight is its argument's. None occurs in the tree; one is refused. */
+export const UNWEIGHED_PSEUDO = /:(is|not|where|has)\(/u;
+
+/**
+ * One selector's specificity, `[ids, classes, types]` — attribute selectors and pseudo-classes
+ * weigh as classes, pseudo-elements as types, `*` as nothing. **Per selector, never per rule**: a
+ * browser weighs the selector in a comma list that matched, not the heaviest one beside it.
+ */
+export function specificity(selector) {
+  let ids = 0;
+  let classes = 0;
+  let types = 0;
+  let rest = selector.replace(/\[[^\]]*\]/gu, () => {
+    classes += 1;
+    return ' ';
+  });
+  rest = rest.replace(/#[\w-]+/gu, () => {
+    ids += 1;
+    return ' ';
+  });
+  rest = rest.replace(/\.[\w-]+/gu, () => {
+    classes += 1;
+    return ' ';
+  });
+  rest = rest.replace(/::[\w-]+/gu, () => {
+    types += 1;
+    return ' ';
+  });
+  rest = rest.replace(/:[\w-]+(\([^)]*\))?/gu, () => {
+    classes += 1;
+    return ' ';
+  });
+  types += [...rest.matchAll(/(?:^|[\s>+~])[a-zA-Z][\w-]*/gu)].length;
+  return [ids, classes, types];
+}
+
+/** Negative, zero or positive, as `a` is weaker than, equal to or stronger than `b`. */
+export function compareSpecificity(a, b) {
+  for (let i = 0; i < 3; i += 1) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) - (b[i] ?? 0);
+  }
+  return 0;
+}
+
+/**
+ * What a rule sets moving: `transform` (anything but `none`), `animation` (anything but `none`),
+ * or `transition` (a duration over the clamp).
+ */
+export function motionFamilies(body, clampMs) {
+  const out = new Set();
+  for (const { property, value } of declarations(body)) {
+    const none = /^none\b/iu.test(value);
+    if (property === 'transform' && !none) out.add('transform');
+    else if ((property === 'animation' || property === 'animation-name') && !none) {
+      out.add('animation');
+    } else if (
+      property === 'transition' &&
+      transitionDurationsMs(value).some((ms) => ms > clampMs)
+    ) {
+      out.add('transition');
+    } else if (
+      property === 'transition-duration' &&
+      durationsMs(value).some((ms) => ms > clampMs)
+    ) {
+      out.add('transition');
+    }
+  }
+  return out;
+}
+
+/**
+ * What a rule scoped to `tier` clamps: `transform: none`; an animation that is `none`, or at
+ * `reduced` a finite one within the clamp; a transition that is `none`, or at `reduced` within the
+ * clamp. `display: none` clamps everything, since nothing on an absent element moves.
+ */
+export function clampFamilies(body, tier, clampMs) {
+  const out = new Set();
+  for (const { property, value } of declarations(body)) {
+    const none = /^none\b/iu.test(value);
+    if (property === 'display' && none) out.add('all');
+    else if (property === 'transform' && none) out.add('transform');
+    else if (property === 'animation' || property === 'animation-name') {
+      const clamped =
+        tier === 'reduced' &&
+        property === 'animation' &&
+        !/\binfinite\b/iu.test(value) &&
+        (durationsMs(value)[0] ?? Infinity) <= clampMs;
+      if (none || clamped) out.add('animation');
+    } else if (property === 'transition') {
+      const clamped =
+        tier === 'reduced' && transitionDurationsMs(value).every((ms) => ms <= clampMs);
+      if (none || clamped) out.add('transition');
+    }
+  }
+  return out;
+}

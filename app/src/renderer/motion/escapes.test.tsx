@@ -21,7 +21,7 @@ import { RescanLine } from '../firstrun/RescanLine';
 import { RevealScreen } from '../firstrun/RevealScreen';
 import type { RevealDeps } from '../firstrun/revealModel';
 import { ScanScreen } from '../firstrun/ScanScreen';
-import { INITIAL_SCAN_FEED } from '../firstrun/scanFeed';
+import { INITIAL_SCAN_FEED, scanFeedReducer, type ScanFeedEvent } from '../firstrun/scanFeed';
 import { TurnScreen } from '../firstrun/TurnScreen';
 import cardCss from '../styles/card.css?raw';
 import motionCss from '../styles/motion.css?raw';
@@ -248,5 +248,57 @@ describe('§11.6 the rescan line travels at full only', () => {
     expect(resolved['full']).toBe('rescanTravel');
     expect(resolved['reduced']).toBeNull();
     expect(resolved['off']).toBeNull();
+  });
+});
+
+/**
+ * The escapes the checker's specificity pass named, **where jsdom can tell a fix from none**.
+ *
+ * Three it cannot, stated rather than asserted, because a test that passes on the broken sheet is
+ * not a guard — `scripts/check-motion-clamp.mjs` is:
+ *  - **the hovered condition dot and data strip.** jsdom weighs a rule by the heaviest selector in
+ *    its comma list, and the old `transform: none` rule listed `.cdt-card:active` at (0,3,0), so
+ *    jsdom resolved `none` over the (0,3,0) hover rule on the broken sheet too. A browser weighs
+ *    the (0,2,0) selector that matched, and the hover rule won;
+ *  - **SHOW ME's hover lift.** jsdom matches no `:hover`, so neither state can be resolved;
+ *  - **`off` naming the dot, the strip and the layers.** `[data-effects-tier='off'] .cdt-card *`
+ *    already reached each inside a card, so the sheet resolved the same before and after; the
+ *    checker reads the element a rule styles, and a universal descendant names none.
+ */
+describe('§11.6 the merging tile, clamped', () => {
+  function mergingTile(tier: ResolvedTier): CSSStyleDeclaration {
+    atTier(tier);
+    const events: ScanFeedEvent[] = [
+      { kind: 'upserted', id: 1 as ProjectId, name: 'a', primaryLanguage: 'Rust' },
+      { kind: 'upserted', id: 2 as ProjectId, name: 'b', primaryLanguage: 'Rust' },
+      { kind: 'flush' },
+      { kind: 'merged', from: 1 as ProjectId, into: 2 as ProjectId },
+    ];
+    const feed = events.reduce(scanFeedReducer, INITIAL_SCAN_FEED);
+    render(
+      <ScanScreen
+        deps={{ jewelFor: () => null, onSkipAhead: () => undefined, onOpenScanSummary: () => {} }}
+        feed={feed}
+        rootLine="a root"
+        milestone={null}
+        tier={tier}
+      />,
+    );
+    const tile = document.querySelector('.cdt-fr-tile[data-merged="true"]');
+    if (tile === null) throw new Error('no merging tile mounted');
+    return getComputedStyle(tile);
+  }
+
+  it('fades on opacity inside the clamp at reduced and not at all at off', () => {
+    const full = mergingTile('full').transition;
+    expect(full, 'the control: the fade runs past the clamp at full').toMatch(/\bopacity\b/u);
+    expect(firstMs(full) ?? 0).toBeGreaterThan(REDUCED_CLAMP_MS);
+
+    const reduced = mergingTile('reduced').transition;
+    expect(reduced).toMatch(/\bopacity\b/u);
+    expect(firstMs(reduced) ?? Infinity).toBeLessThanOrEqual(REDUCED_CLAMP_MS);
+
+    const off = mergingTile('off').transition;
+    expect(firstMs(off) ?? 0, `off resolved a timed transition: ${off}`).toBe(0);
   });
 });

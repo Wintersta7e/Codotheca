@@ -909,6 +909,13 @@
 .cdt-fr-view[data-effects-tier='off'] .cdt-fr-tile {
   animation: none;
 }
+/* A merging tile fades on `opacity`, which `reduced` keeps inside the clamp and `off` drops. */
+.cdt-fr-view[data-effects-tier='reduced'] .cdt-fr-tile {
+  transition: opacity 160ms;
+}
+.cdt-fr-view[data-effects-tier='off'] .cdt-fr-tile {
+  transition: none;
+}
 .cdt-fr-view[data-effects-tier='reduced'] .cdt-fr-panel,
 .cdt-fr-view[data-effects-tier='off'] .cdt-fr-panel {
   animation: none;
@@ -945,4 +952,9 @@
 .cdt-fr-view--turn[data-effects-tier='reduced'] .cdt-fr-turn-not-now,
 .cdt-fr-view--turn[data-effects-tier='off'] .cdt-fr-turn-not-now {
   animation: none;
+}
+/* SHOW ME lifts a pixel on hover; the brightening stays, the lift does not. */
+.cdt-fr-view--turn[data-effects-tier='reduced'] .cdt-fr-turn-show-me:hover,
+.cdt-fr-view--turn[data-effects-tier='off'] .cdt-fr-turn-show-me:hover {
+  transform: none;
 }

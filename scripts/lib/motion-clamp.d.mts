@@ -24,3 +24,17 @@ export declare function transitionDurationsMs(value: string): number[];
 export declare function tierOf(selector: string): string | null;
 export declare function subjectClasses(selector: string): string[];
 export declare function clampClassNames(css: string): ClampSets;
+
+/** `[ids, classes, types]`. */
+export type Specificity = readonly [number, number, number];
+export type MotionFamily = 'transform' | 'animation' | 'transition';
+
+export declare const UNWEIGHED_PSEUDO: RegExp;
+export declare function specificity(selector: string): Specificity;
+export declare function compareSpecificity(a: Specificity, b: Specificity): number;
+export declare function motionFamilies(body: string, clampMs: number): Set<MotionFamily>;
+export declare function clampFamilies(
+  body: string,
+  tier: string,
+  clampMs: number,
+): Set<MotionFamily | 'all'>;

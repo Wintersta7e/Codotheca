@@ -15,6 +15,11 @@
 // or under `REDUCED_CLAMP_MS` at `reduced`. A rule scoped to `full` is absent below it by
 // construction and clamps itself.
 //
+// A clamp that exists must also win, so a second pass weighs every selector that moves a clamped
+// class against its clamps, selector by selector as a browser does. The resolved-style tests
+// cannot be the guard for that: jsdom weighs a rule by the heaviest selector in its comma list,
+// so a clamp listed beside `.cdt-card:active` resolves as winning where a browser lets it lose.
+//
 // Durations are compared as numbers; `REDUCED_CLAMP_MS` is read from `motion/tier.ts`, never
 // restated. Stylesheets are read through `read-scanned.mjs`, which skips a file a parallel test
 // removed BEFORE it is counted, and a run that scans no stylesheet or no animated selector fails.
@@ -22,17 +27,25 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  clampFamilies,
+  compareSpecificity,
   cssRules,
   declarations,
   durationsMs,
+  motionFamilies,
+  specificity,
   subjectClasses,
   tierOf,
   transitionDurationsMs,
+  UNWEIGHED_PSEUDO,
 } from './lib/motion-clamp.mjs';
 import { readScannedFile } from './lib/read-scanned.mjs';
 
 const GATE = 'check-motion-clamp';
 const RESULT_ID = 'check-motion-clamp:every-animated-class-is-clamped';
+
+/** `[data-effects-tier='off'] *`'s weight: one attribute selector, and `*` weighs nothing. */
+const OFF_BLANKET_WEIGHT = [0, 1, 0];
 
 /**
  * Animated classes this checker found unclamped when it landed, each with the reason. **The list
@@ -138,29 +151,43 @@ export function checkMotionClamp(root, known = KNOWN_ESCAPES) {
         ),
     );
 
-  // Every class a tier-scoped rule names as the element it styles, per tier.
+  // Every tier-scoped selector: the classes it names as the element it styles, per tier, and — for
+  // the second pass — what it clamps and how heavily a browser weighs it.
   const named = { reduced: new Set(), off: new Set() };
+  const clamps = [];
   for (const sheet of sheets) {
     for (const rule of cssRules(sheet.text)) {
       for (const selector of rule.selectors) {
         const tier = tierOf(selector);
         if (tier !== 'reduced' && tier !== 'off') continue;
-        for (const name of subjectClasses(selector)) named[tier].add(name);
+        const classes = subjectClasses(selector);
+        for (const name of classes) named[tier].add(name);
+        if (clampMs === null) continue;
+        clamps.push({
+          tier,
+          classes,
+          weight: specificity(selector),
+          families: clampFamilies(rule.body, tier, clampMs),
+        });
       }
     }
   }
 
   const subjects = [];
+  const moving = [];
   for (const sheet of sheets) {
     for (const rule of cssRules(sheet.text)) {
-      const motionFacts = clampMs === null ? null : motionOf(rule.body, clampMs);
-      if (motionFacts === null) continue;
+      if (clampMs === null) continue;
+      const motionFacts = motionOf(rule.body, clampMs);
+      const families = motionFamilies(rule.body, clampMs);
       for (const selector of rule.selectors) {
         const tier = tierOf(selector);
         // A rule scoped to a tier is either the clamp itself (`reduced`, `off`) or absent below
         // `full` by construction; neither is an escape.
         if (tier !== null) continue;
-        subjects.push({ file: relative(root, sheet.path), selector, motion: motionFacts });
+        const file = relative(root, sheet.path);
+        if (motionFacts !== null) subjects.push({ file, selector, motion: motionFacts });
+        if (families.size > 0) moving.push({ file, selector, families, motion: motionFacts });
       }
     }
   }
@@ -196,6 +223,73 @@ export function checkMotionClamp(root, known = KNOWN_ESCAPES) {
     }
   }
 
+  // Second pass: a clamp that exists must also WIN. Every selector that sets a clamped class
+  // moving needs, at each tier, a clamp of the same kind naming that class at a specificity at
+  // least its own — weighed selector by selector, as a browser does — or a hover rule outranks
+  // the clamp and the element moves anyway.
+  const clampSet = new Set([...named.reduced, ...named.off]);
+  let weighed = 0;
+  let held = 0;
+  for (const subject of moving) {
+    const classes = subjectClasses(subject.selector);
+    if (!classes.some((c) => clampSet.has(c))) continue;
+    if (UNWEIGHED_PSEUDO.test(subject.selector)) {
+      failures.push(
+        `${subject.file}: \`${subject.selector}\` holds a pseudo-class whose weight this checker ` +
+          'does not compute, so its clamp cannot be weighed',
+      );
+      continue;
+    }
+    weighed += 1;
+    const weight = specificity(subject.selector);
+    const facts = subject.motion;
+    const animationWithinCeiling =
+      facts !== null && facts.animation && !facts.infinite && facts.longest <= (clampMs ?? 0);
+    const lost = [];
+    for (const tier of ['reduced', 'off']) {
+      for (const family of subject.families) {
+        if (family === 'animation' && tier === 'reduced' && animationWithinCeiling) continue;
+        if (
+          family === 'animation' &&
+          tier === 'off' &&
+          offAnimationBlanket &&
+          compareSpecificity(OFF_BLANKET_WEIGHT, weight) >= 0
+        ) {
+          continue;
+        }
+        const candidates = clamps.filter(
+          (k) =>
+            k.tier === tier &&
+            k.classes.some((c) => classes.includes(c)) &&
+            (k.families.has(family) || k.families.has('all')),
+        );
+        // `display: none` wins whatever its weight: nothing on an absent element moves.
+        if (
+          candidates.some((k) => k.families.has('all') || compareSpecificity(k.weight, weight) >= 0)
+        ) {
+          continue;
+        }
+        const strongest = candidates
+          .map((k) => k.weight)
+          .sort(compareSpecificity)
+          .at(-1);
+        lost.push(
+          `${family} at ${tier}: (${weight.join(',')}) against ` +
+            (strongest === undefined ? 'no clamp of that kind' : `(${strongest.join(',')})`),
+        );
+      }
+    }
+    if (lost.length === 0) {
+      held += 1;
+      continue;
+    }
+    for (const name of classes) {
+      const list = escapes.get(name) ?? [];
+      list.push(`${subject.file}: \`${subject.selector}\` outranks its clamp — ${lost.join('; ')}`);
+      escapes.set(name, list);
+    }
+  }
+
   const excused = [];
   for (const [name, where] of escapes) {
     if (known.has(name)) excused.push(name);
@@ -209,14 +303,20 @@ export function checkMotionClamp(root, known = KNOWN_ESCAPES) {
 
   if (sheets.length === 0) failures.push('scanned no stylesheet, so it proved nothing');
   if (subjects.length === 0) failures.push('found no animated selector, so it proved nothing');
+  if (weighed === 0) {
+    failures.push('weighed no selector against a clamp, so the specificity pass proved nothing');
+  }
 
   return {
     clampMs,
     sheets: sheets.length,
     scanned: subjects.length,
     matched,
+    weighed,
+    held,
+    clampSelectors: clamps.length,
     known: excused,
-    clampSet: new Set([...named.reduced, ...named.off]),
+    clampSet,
     failures,
   };
 }
@@ -235,6 +335,10 @@ function main(argv) {
     `${GATE}: ${String(result.sheets)} stylesheets, scanned ${String(result.scanned)} animated ` +
       `selectors, matched ${String(result.matched)}, known escapes ${String(result.known.length)}` +
       (result.known.length > 0 ? ` (${result.known.join(' ')})` : ''),
+  );
+  console.error(
+    `${GATE}: specificity: weighed ${String(result.weighed)} moving selectors on clamped ` +
+      `classes against ${String(result.clampSelectors)} clamp selectors, held ${String(result.held)}`,
   );
   for (const failure of result.failures) console.error(`${GATE}: ${failure}`);
 

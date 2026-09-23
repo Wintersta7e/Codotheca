@@ -52,13 +52,18 @@
   transform: none;
 }
 
-/* §7.8's sigil scales on hover through `.cdt-card[data-hovered='true'] .cdt-sigil` (card.css),
-   which outranks a bare tier selector — so the clamp names the hovered sigil as well, or the
-   scale would still land below `full`. */
+/* A hover transform set through `.cdt-card[data-hovered='true'] .<class>` (card.css) outranks a
+   bare tier selector — so the clamp names each hovered state as well, or the sigil's scale, the
+   condition dot's scale and the strip's travel would still land below `full`. A browser weighs
+   the selector that matched, so the `:active` selectors above do not lend these their weight. */
 [data-effects-tier='reduced'] .cdt-sigil,
 [data-effects-tier='off'] .cdt-sigil,
 [data-effects-tier='reduced'] .cdt-card[data-hovered='true'] .cdt-sigil,
-[data-effects-tier='off'] .cdt-card[data-hovered='true'] .cdt-sigil {
+[data-effects-tier='off'] .cdt-card[data-hovered='true'] .cdt-sigil,
+[data-effects-tier='reduced'] .cdt-card[data-hovered='true'] .cdt-dot,
+[data-effects-tier='off'] .cdt-card[data-hovered='true'] .cdt-dot,
+[data-effects-tier='reduced'] .cdt-card[data-hovered='true'] .cdt-strip,
+[data-effects-tier='off'] .cdt-card[data-hovered='true'] .cdt-strip {
   transform: none;
 }
 
@@ -91,12 +96,17 @@
   transition: none;
 }
 
-/* `off`: no transition and no animation of any property. The states themselves remain. */
+/* `off`: no transition and no animation of any property. The states themselves remain. The
+   card's own layers are named as well as reached through `.cdt-card *`, so the clamp holds
+   wherever one is mounted and the checker can read it off the element it styles. */
 [data-effects-tier='off'] .cdt-card,
 [data-effects-tier='off'] .cdt-card *,
 [data-effects-tier='off'] .cdt-card-halo,
 [data-effects-tier='off'] .cdt-bloom,
-[data-effects-tier='off'] .cdt-sigil {
+[data-effects-tier='off'] .cdt-sigil,
+[data-effects-tier='off'] .cdt-dot,
+[data-effects-tier='off'] .cdt-strip,
+[data-effects-tier='off'] .cdt-decay {
   transition: none;
   animation: none;
 }

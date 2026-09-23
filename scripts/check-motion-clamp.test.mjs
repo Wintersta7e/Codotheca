@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkMotionClamp, KNOWN_ESCAPES, reducedClampMs } from './check-motion-clamp.mjs';
+import { compareSpecificity, specificity } from './lib/motion-clamp.mjs';
 import { readScannedFile } from './lib/read-scanned.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -61,6 +62,65 @@ test('ac_p3_34_14 passes over the real tree, printing what it scanned and what i
   assert.ok(scanned > 0, 'a run that scanned nothing proved nothing');
   assert.ok(matched > 0);
   assert.ok(Number(set[1]) > 0);
+
+  const weighed = /weighed (\d+) moving selectors .* held (\d+)/u.exec(result.stderr);
+  assert.ok(weighed, `the checker printed no specificity count:\n${result.stderr}`);
+  console.error(`AC-P3-34-14 real tree: weighed ${weighed[1]}, held ${weighed[2]}`);
+  assert.ok(Number(weighed[1]) > 0, 'a specificity pass that weighed nothing proved nothing');
+  assert.equal(weighed[2], weighed[1]);
+});
+
+test('weighs a selector as a browser does', () => {
+  assert.deepEqual(specificity(".cdt-card[data-hovered='true'] .cdt-dot"), [0, 3, 0]);
+  assert.deepEqual(specificity("[data-effects-tier='reduced'] .cdt-dot"), [0, 2, 0]);
+  assert.deepEqual(specificity("[data-effects-tier='off'] *"), [0, 1, 0]);
+  assert.deepEqual(specificity('.cdt-fr-turn-show-me:hover'), [0, 2, 0]);
+  assert.deepEqual(specificity('.cdt-fr-rescan-line::before'), [0, 1, 1]);
+  assert.deepEqual(specificity('#root'), [1, 0, 0]);
+  assert.deepEqual(specificity('body .cdt-card'), [0, 1, 1]);
+  assert.ok(compareSpecificity([0, 3, 0], [0, 2, 0]) > 0);
+  assert.ok(compareSpecificity([0, 2, 5], [0, 3, 0]) < 0);
+  assert.equal(compareSpecificity([0, 2, 0], [0, 2, 0]), 0);
+});
+
+test('ac_p3_34_14 names a hover rule that outranks its clamp, weighing each selector alone', () => {
+  const dir = fixtureTree();
+  try {
+    // The shape jsdom resolves wrongly: the clamp shares a comma list with a heavier `:active`
+    // selector. A browser weighs `[reduced] .cdt-probe` at (0,2,0), and the hover rule wins.
+    addSheet(
+      dir,
+      'probe.css',
+      '.cdt-probe { transform: scale(1); }\n' +
+        ".cdt-card[data-hovered='true'] .cdt-probe { transform: scale(1.5); }\n" +
+        "[data-effects-tier='reduced'] .cdt-card:active,\n" +
+        "[data-effects-tier='reduced'] .cdt-probe,\n" +
+        "[data-effects-tier='off'] .cdt-probe {\n  transform: none;\n}\n",
+    );
+    const outranked = checkMotionClamp(dir).failures.filter((f) => f.includes('cdt-probe'));
+    console.error(`AC-P3-34-14 outranked clamp:\n${outranked.join('\n')}`);
+    assert.equal(outranked.length, 1, outranked.join('\n'));
+    assert.ok(
+      outranked[0]?.includes("`.cdt-card[data-hovered='true'] .cdt-probe` outranks its clamp"),
+    );
+    assert.ok(outranked[0]?.includes('transform at reduced: (0,3,0) against (0,2,0)'));
+    assert.ok(outranked[0]?.includes('transform at off: (0,3,0) against (0,2,0)'));
+
+    // Naming the hovered state in the clamp is what makes it win.
+    addSheet(
+      dir,
+      'probe-fixed.css',
+      "[data-effects-tier='reduced'] .cdt-card[data-hovered='true'] .cdt-probe,\n" +
+        "[data-effects-tier='off'] .cdt-card[data-hovered='true'] .cdt-probe {\n" +
+        '  transform: none;\n}\n',
+    );
+    assert.deepEqual(
+      checkMotionClamp(dir).failures.filter((f) => f.includes('cdt-probe')),
+      [],
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('ac_p3_34_14 names a new unclamped animated class and exits non-zero', () => {
