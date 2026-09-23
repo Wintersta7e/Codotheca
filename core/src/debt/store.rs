@@ -115,6 +115,12 @@ pub trait DebtStore: Send + Sync {
     ) -> Result<u32, DebtError>;
 
     /// Mark every open item of this project `unverified`, in the caller's transaction.
+    ///
+    /// **§28.3's uninstall guard, and only that**: `locations.uninstall` calls it inside the
+    /// transaction that sets `removed_at`, because the removed bytes leave a readable-looking
+    /// absence the next sweep would close as fixed. A producer that merely could not observe its
+    /// own source records an `unobservable` sweep through [`DebtStore::observe`] instead, which
+    /// freezes that source alone.
     fn mark_unverified(&self, tx: &Transaction<'_>, project: ProjectId) -> Result<u32, DebtError>;
 }
 

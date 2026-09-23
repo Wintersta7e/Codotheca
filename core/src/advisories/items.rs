@@ -17,7 +17,7 @@ use crate::debt::store::{DebtCloseReason, DebtStore, ObservedItem, SqliteDebtSto
 use crate::debt::sweep::SweepObservation;
 use crate::protocol::{
     AdvisoryDetail, DebtScoring, DebtSource, DebtSweepOutcome, DependencyVerdict, Ecosystem,
-    LocationId, ObservationBasis, ProjectId,
+    HealthDetectedIn, LocationId, ObservationBasis, ProjectHealthDelta, ProjectId,
 };
 
 /// What one item sweep changed. The counts a test prints; **stored nowhere**.
@@ -158,8 +158,12 @@ pub fn sync_advisory_items(
     // **Unknown is not an observation of an empty set either.** The verdict is `unknown` exactly
     // when the evidence could not be re-read or was never asked about, so the items are marked
     // `unverified` and **none is closed**.
+    //
+    // Through `observe`, as every other producer records an unobservable sweep: §28's diff marks
+    // **this source's** open items `unverified` and closes nothing. A whole-project mark would
+    // take the project's TODO and README items out of every count for a read that never looked
+    // at them.
     if !installed || reading.verdict == DependencyVerdict::Unknown {
-        let unverified = store.mark_unverified(tx, project)?;
         let observation = SweepObservation {
             project,
             source: DebtSource::DependencyAdvisory,
@@ -172,9 +176,10 @@ pub fn sync_advisory_items(
             item_count: None,
             observed_at: now,
         };
-        crate::debt::sweep::upsert_sweep(tx, &observation)?;
+        let effect = store.observe(tx, &observation, &[])?;
         return Ok(AdvisoryItemSweep {
-            unverified: unverified as usize,
+            unverified: effect.unverified as usize,
+            effect,
             ..AdvisoryItemSweep::default()
         });
     }
@@ -248,17 +253,21 @@ pub fn sync_advisory_items(
 }
 
 /// Sync every scanned project's items and pay its closes, at the close of a sweep that has asked
-/// about every triple. Returns the number of projects synced.
+/// about every triple. Returns the health deltas to announce **once the caller's transaction has
+/// committed**.
 ///
-/// **Here, in the sweep, and not at the settle's alert**: §31's `deps` check reads these items,
-/// and the settle runs its completion evaluator before the alert, so a sync placed after it would
-/// answer every `deps` check from the previous sweep.
+/// **Before the settle, never at its alert**: §31's `deps` check reads these items, and the
+/// settle runs its completion evaluator before the alert, so a sync placed after it would answer
+/// every `deps` check from the previous sweep.
 ///
 /// **Unanchored** (`location: None`): the triples are a fact about the project, not about the
 /// copy they were read from, so an item is not stranded as `unverified` when the primary moves.
 ///
 /// Each project's closes are paid in the same transaction as the deletions, as every other
-/// producer's are; `pay_debt_day` excludes the `invalidated` ones.
+/// producer's are; `pay_debt_day` excludes the `invalidated` ones. **Each project's write is
+/// wrapped by §34's producer** (A15: a delta from every debt-set transition), with the closes
+/// passed so a decrease that is only withdrawals is written and not announced (R135). A scheduled
+/// sweep observes in the `background`.
 ///
 /// # Errors
 /// Fails when the index refuses a read or a write.
@@ -266,7 +275,7 @@ pub fn settle_advisory_items(
     tx: &Transaction<'_>,
     now: i64,
     tz_offset_min: i32,
-) -> Result<usize, AdvisoryError> {
+) -> Result<Vec<ProjectHealthDelta>, AdvisoryError> {
     // §32.12 rule 3: a project's first computation is seeded before the sync marks it computed,
     // so no later settle can decide on a pair it never seeded.
     crate::advisories::notify::seed_first_computations(tx, now)?;
@@ -281,15 +290,31 @@ pub fn settle_advisory_items(
             .map_err(crate::index::IndexError::from)?;
         rows
     };
+    let mut deltas = Vec::new();
     for id in &projects {
         let project = ProjectId(*id);
+        // A snapshot that cannot be read records no delta and costs the item write nothing, as
+        // at the producer's other callers.
+        let before = crate::restoration::LayerValues::read(tx, project).ok();
         let swept = sync_advisory_items(tx, project, None, now, &SqliteDebtStore)?;
         let subject = crate::index::subject::subject_for_project(tx, project)?
             .map(|s| s.to_key())
             .unwrap_or_default();
         crate::debt::xp::pay_debt_day(tx, project, &subject, &swept.effect, now, tz_offset_min)?;
+        if let Some(before) = before {
+            if let Some(delta) = crate::restoration::record_after_write(
+                tx,
+                project,
+                &before,
+                &swept.effect.closed,
+                HealthDetectedIn::Background,
+                now,
+            )? {
+                deltas.push(delta);
+            }
+        }
     }
-    Ok(projects.len())
+    Ok(deltas)
 }
 
 /// Fill `DebtItem.advisory` for one item, **including every CVE id**.

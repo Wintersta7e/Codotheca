@@ -514,12 +514,50 @@ impl SyncRunner {
                         .flatten()
                         .and_then(|row| row.cursor)
                 };
-                crate::advisories::sweep::run_advisory_sweep(
+                let outcome = crate::advisories::sweep::run_advisory_sweep(
                     &self.deps,
                     self.index.as_ref(),
                     cursor.as_deref(),
-                )
+                );
+                // §32.10: a closed sweep has asked about every triple, so each scanned project's
+                // items are computed now — here, before `settle`, whose completion evaluator reads
+                // them.
+                if matches!(outcome, Ok(SyncOutcome::Done)) {
+                    self.settle_advisory_debt();
+                }
+                outcome
             }
+        }
+    }
+
+    /// §32.10's items for every scanned project, each wrapped by §34's `health_delta` producer,
+    /// in one transaction, and the deltas announced after the commit — `settle_project_debt`'s
+    /// shape for the sweep.
+    ///
+    /// A transaction of its own, so an item fault cannot keep the sweep open for ever: it is
+    /// logged, and the next sweep computes the items again.
+    fn settle_advisory_debt(&self) {
+        let now = self.deps.clock.now_unix();
+        let tz_offset_min = self.deps.tz_offset_min;
+        let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let deltas = guard.with_tx(|tx| {
+            crate::advisories::items::settle_advisory_items(tx, now, tz_offset_min).map_err(|e| {
+                match e {
+                    crate::advisories::AdvisoryError::Index(inner) => inner,
+                    other => IndexError::Corrupt {
+                        detail: other.to_string(),
+                    },
+                }
+            })
+        });
+        drop(guard);
+        match deltas {
+            Ok(deltas) => {
+                for delta in &deltas {
+                    crate::restoration::emit_health_delta(self.events.as_ref(), delta);
+                }
+            }
+            Err(e) => eprintln!("sync: advisory items were not computed: {e}"),
         }
     }
 

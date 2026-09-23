@@ -7,10 +7,12 @@
 //! One transaction, no second connection, and no third stored quantity: a delta is a function of
 //! two observed readings.
 //!
-//! **Every writer of the open debt set calls it, in its own transaction**, and there are three:
+//! **Every writer of the open debt set calls it, in its own transaction**, and there are four:
 //! `JobRunner::settle` around §28's singleton evaluator, J7's item build (which writes inside the
-//! job's own transaction because only it holds the HEAD enumeration), and `SyncRunner::settle`
-//! around the same evaluator for a `ProjectRemote` sync. A producer wired at fewer sites is the
+//! job's own transaction because only it holds the HEAD enumeration), `SyncRunner::settle`
+//! around the same evaluator for a `ProjectRemote` sync, and §32's advisory item sync at an
+//! advisory sweep's close (`advisories::items::settle_advisory_items`, per project, inside the
+//! runner's transaction for that close). A producer wired at fewer sites is the
 //! trait-with-a-fake-and-no-real-caller shape by another route: it compiles, every unit test is
 //! green, and the TODO the user just closed plays nothing.
 //!

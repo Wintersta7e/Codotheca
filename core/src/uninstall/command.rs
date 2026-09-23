@@ -7,8 +7,11 @@
 //!
 //! The order below is not negotiable.
 
+use rusqlite::OptionalExtension;
+
+use crate::debt::store::{DebtStore, SqliteDebtStore};
 use crate::proto::dispatch::CommandFailure;
-use crate::protocol::{LocationId, UninstallDisposition};
+use crate::protocol::{LocationId, ProjectId, UninstallDisposition};
 use crate::removal::{remove_warranted, RemovalOutcome, SystemTrash, Warrant};
 use crate::uninstall::preflight::{compute_verdict, VerdictInputs};
 
@@ -95,14 +98,20 @@ pub fn uninstall_location(
     //    **The mark is `state = 'unverified'` and nothing else.** No closure, no XP, no
     //    `health_delta`, and `last_seen_location_id` is **kept**: it is what the reap later
     //    compares against, and clearing it would turn a reapable item into a permanently
-    //    stranded one.
-    tx.execute(
-        "UPDATE debt_item SET state = 'unverified'
-          WHERE state = 'open'
-            AND project_id = (SELECT project_id FROM location WHERE id = ?1)",
-        rusqlite::params![inputs.snapshot.id.0],
-    )
-    .map_err(|error| CommandFailure::internal(error.to_string()))?;
+    //    stranded one. The rule has one owner, §28's store, and this is its caller.
+    let project: Option<i64> = tx
+        .query_row(
+            "SELECT project_id FROM location WHERE id = ?1",
+            [inputs.snapshot.id.0],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|error| CommandFailure::internal(error.to_string()))?;
+    if let Some(project) = project {
+        SqliteDebtStore
+            .mark_unverified(tx, ProjectId(project))
+            .map_err(|error| CommandFailure::internal(error.to_string()))?;
+    }
 
     Ok(Removed {
         location: inputs.snapshot.id,

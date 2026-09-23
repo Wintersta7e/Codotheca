@@ -33,14 +33,33 @@ const DAY: i64 = 86_400;
 const HOST: &str = "forge.example.invalid";
 const DEADLINE: Duration = Duration::from_secs(10);
 
-/// Every event the runner emits, kept so a test can find the alerts.
+/// One emitted event: `(topic, event, payload)`.
+type Emitted = (String, String, serde_json::Value);
+
+/// Every event the runner emits, kept so a test can find the ones it asserts on.
 #[derive(Debug, Default)]
-struct Recorder(Mutex<Vec<(String, serde_json::Value)>>);
+struct Recorder(Mutex<Vec<Emitted>>);
 
 impl codotheca_core::proto::EventSink for Recorder {
-    fn emit(&self, _topic: &str, event: &str, payload: serde_json::Value) {
-        self.0.lock().unwrap().push((event.to_owned(), payload));
+    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        self.0
+            .lock()
+            .unwrap()
+            .push((topic.to_owned(), event.to_owned(), payload));
     }
+}
+
+/// The payloads of every `topic/event` in `emitted`.
+fn payloads(emitted: &[Emitted], topic: &str, event: &str) -> Vec<serde_json::Value> {
+    emitted
+        .iter()
+        .filter(|(t, e, _)| t == topic && e == event)
+        .map(|(_, _, payload)| payload.clone())
+        .collect()
+}
+
+fn alerts(emitted: &[Emitted]) -> Vec<serde_json::Value> {
+    payloads(emitted, "sync", "advisory_alert")
 }
 
 /// One project and the working copy its lockfile is read from.
@@ -68,7 +87,8 @@ fn world() -> World {
     }
 }
 
-/// One installed, enrolled project with a lineage key — the ledger is keyed on the subject.
+/// One installed, enrolled, authored project with a lineage key — the ledger is keyed on the
+/// subject, and an enrolled authored project has a health reading for a delta to move.
 fn copy(index: &Mutex<Index>, name: &str) -> Copy {
     let work = tempfile::tempdir().unwrap();
     let mut guard = index.lock().unwrap();
@@ -76,8 +96,8 @@ fn copy(index: &Mutex<Index>, name: &str) -> Copy {
         .with_tx(|tx| {
             tx.execute(
                 "INSERT INTO project (name, seed_basename, lineage_key, acknowledged_at,
-                                      created_at, updated_at)
-                 VALUES (?1, ?1, ?1, ?2, 1, 1)",
+                                      authored_by_user, is_reference, created_at, updated_at)
+                 VALUES (?1, ?1, ?1, ?2, 1, 0, 1, 1)",
                 rusqlite::params![name, NOW],
             )?;
             let project = ProjectId(tx.last_insert_rowid());
@@ -133,8 +153,8 @@ fn answer(json: &str) -> HttpResponse {
 }
 
 /// Queue the sweep, script the answer if the sweep will ask, run the real runner at `at` until
-/// the sweep settles, and return every `advisory_alert` payload it emitted.
-fn sweep(world: &World, at: i64, response: Option<&str>) -> Vec<serde_json::Value> {
+/// the sweep settles, and return every event it emitted.
+fn sweep(world: &World, at: i64, response: Option<&str>) -> Vec<Emitted> {
     {
         let mut guard = world.index.lock().unwrap();
         guard
@@ -194,15 +214,8 @@ fn sweep(world: &World, at: i64, response: Option<&str>) -> Vec<serde_json::Valu
     runner.request_stop();
     runner.join();
 
-    let alerts = events
-        .0
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|(event, _)| event == "advisory_alert")
-        .map(|(_, payload)| payload.clone())
-        .collect();
-    alerts
+    let emitted = events.0.lock().unwrap().clone();
+    emitted
 }
 
 /// Every `dependency_advisory` item: `(fingerprint, state, scoring)`.
@@ -338,14 +351,14 @@ fn a_first_computation_seeds_and_a_new_advisory_fires_once() {
     let world = world();
     let alpha = world.alpha.project.0;
     lock(&world, &world.alpha, "1.0.0", NOW);
-    let first = sweep(
+    let first = alerts(&sweep(
         &world,
         NOW,
         Some(&format!(
             "[{}]",
             advisory("GHSA-aaaa", "CVE-2026-0001", None)
         )),
-    );
+    ));
     eprintln!(
         "advisory_sweep_settle: first sweep alerts {first:?}, ledger {:?}",
         notified(&world)
@@ -357,7 +370,7 @@ fn a_first_computation_seeds_and_a_new_advisory_fires_once() {
         "the first computation seeded nothing"
     );
 
-    let second = sweep(
+    let second = alerts(&sweep(
         &world,
         NOW + DAY,
         Some(&format!(
@@ -365,7 +378,7 @@ fn a_first_computation_seeds_and_a_new_advisory_fires_once() {
             advisory("GHSA-aaaa", "CVE-2026-0001", None),
             advisory("GHSA-bbbb", "CVE-2026-0002", None)
         )),
-    );
+    ));
     eprintln!("advisory_sweep_settle: second sweep alerts {second:?}");
     assert_eq!(second.len(), 1, "a new advisory fires exactly once");
     assert_eq!(second[0]["advisoryId"], "GHSA-bbbb");
@@ -413,17 +426,170 @@ fn a_project_first_computed_at_a_close_that_asks_nothing_is_seeded() {
             })
             .unwrap();
     }
-    let alerts = sweep(&world, NOW + DAY, None);
+    let fired = alerts(&sweep(&world, NOW + DAY, None));
     eprintln!(
-        "advisory_sweep_settle: close-only sweep alerts {alerts:?}, ledger {:?}",
+        "advisory_sweep_settle: close-only sweep alerts {fired:?}, ledger {:?}",
         notified(&world)
     );
     assert!(
-        alerts.is_empty(),
-        "a first computation at the close toasted: {alerts:?}"
+        fired.is_empty(),
+        "a first computation at the close toasted: {fired:?}"
     );
     assert!(
         notified(&world).contains(&(beta.project.0, "GHSA-aaaa".to_owned(), 1)),
         "the close did not seed the new copy's first computation"
+    );
+}
+
+/// An advisory read that **cannot observe** marks the project's **advisory** items `unverified`
+/// and no other source's. A TODO item is evidence the advisory read never looked at, so it stays
+/// `open` and stays counted.
+#[test]
+fn an_unobservable_advisory_read_marks_only_advisory_items() {
+    let world = world();
+    let alpha = world.alpha.project;
+    lock(&world, &world.alpha, "1.0.0", NOW);
+    sweep(
+        &world,
+        NOW,
+        Some(&format!(
+            "[{}]",
+            advisory("GHSA-aaaa", "CVE-2026-0001", None)
+        )),
+    );
+    {
+        let guard = world.index.lock().unwrap();
+        guard
+            .conn()
+            .execute(
+                "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state,
+                                        scoring, first_seen_at, last_seen_at)
+                 VALUES (?1, 'lineage:alpha|remote:', 'todo_marker', 'todo', 'open', 'scored',
+                         ?2, ?2)",
+                rusqlite::params![alpha.0, NOW],
+            )
+            .unwrap();
+    }
+
+    // A manifest of an ecosystem this build has no parser for: the read runs and cannot resolve
+    // it, so the verdict is `unknown` and the advisory items become unobservable.
+    std::fs::write(world.alpha.work.path().join("go.mod"), "module x\n").unwrap();
+    lock(&world, &world.alpha, "1.0.0", NOW + DAY);
+    sweep(
+        &world,
+        NOW + DAY,
+        Some(&format!(
+            "[{}]",
+            advisory("GHSA-aaaa", "CVE-2026-0001", None)
+        )),
+    );
+
+    let states: Vec<(String, String)> = {
+        let guard = world.index.lock().unwrap();
+        let mut stmt = guard
+            .conn()
+            .prepare("SELECT source, state FROM debt_item WHERE project_id = ?1 ORDER BY source")
+            .unwrap();
+        stmt.query_map([alpha.0], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    eprintln!("advisory_sweep_settle: after an unobservable read {states:?}");
+    assert_eq!(
+        states,
+        vec![
+            ("dependency_advisory".to_owned(), "unverified".to_owned()),
+            ("todo_marker".to_owned(), "open".to_owned()),
+        ],
+        "an advisory read that could not observe froze another source's item"
+    );
+}
+
+/// Every `health_delta` row: `(layer, from_value, to_value, detected_in)`.
+fn delta_rows(world: &World) -> Vec<(String, f64, f64, String)> {
+    let guard = world.index.lock().unwrap();
+    let mut stmt = guard
+        .conn()
+        .prepare("SELECT layer, from_value, to_value, detected_in FROM health_delta ORDER BY id")
+        .unwrap();
+    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+/// **A15 for the advisory items.** A fixed advisory's close writes one `rust` decrease, observed
+/// in the `background`, and announces it once on `projects/health_delta` after the commit. The
+/// item's opening is a first observation and writes nothing.
+#[test]
+fn a_fixed_advisory_writes_one_rust_decrease_and_announces_it() {
+    let world = world();
+    lock(&world, &world.alpha, "1.0.0", NOW);
+    let opened = sweep(
+        &world,
+        NOW,
+        Some(&format!(
+            "[{}]",
+            advisory("GHSA-aaaa", "CVE-2026-0001", None)
+        )),
+    );
+    assert_eq!(items(&world).len(), 1, "a matching advisory opened no item");
+    assert!(
+        delta_rows(&world).is_empty(),
+        "a first observation wrote a row"
+    );
+    assert!(payloads(&opened, "projects", "health_delta").is_empty());
+
+    lock(&world, &world.alpha, "2.0.0", NOW + DAY);
+    let closed = sweep(&world, NOW + DAY, Some("[]"));
+    let rows = delta_rows(&world);
+    let announced = payloads(&closed, "projects", "health_delta");
+    eprintln!("advisory_sweep_settle: fixed close rows {rows:?}, announced {announced:?}");
+    assert_eq!(
+        rows,
+        vec![("rust".to_owned(), 1.0, 0.0, "background".to_owned())],
+        "the fixed close wrote no rust decrease"
+    );
+    assert_eq!(announced.len(), 1, "the decrease was not announced once");
+    assert_eq!(announced[0]["id"], world.alpha.project.0);
+    assert_eq!(announced[0]["layers"][0]["layer"], "rust");
+}
+
+/// **R135.** A withdrawn advisory's close writes its `rust` row — the value did move — and
+/// announces nothing: a third party changing its mind is not a restoration.
+#[test]
+fn a_withdrawn_advisory_writes_its_row_and_announces_nothing() {
+    let world = world();
+    lock(&world, &world.alpha, "1.0.0", NOW);
+    sweep(
+        &world,
+        NOW,
+        Some(&format!(
+            "[{}]",
+            advisory("GHSA-aaaa", "CVE-2026-0001", None)
+        )),
+    );
+    assert_eq!(items(&world).len(), 1, "a matching advisory opened no item");
+
+    let withdrawn = sweep(
+        &world,
+        NOW + DAY,
+        Some(&format!(
+            "[{}]",
+            advisory("GHSA-aaaa", "CVE-2026-0001", Some("2027-01-02T03:04:05Z"))
+        )),
+    );
+    let rows = delta_rows(&world);
+    let announced = payloads(&withdrawn, "projects", "health_delta");
+    eprintln!("advisory_sweep_settle: withdrawn close rows {rows:?}, announced {announced:?}");
+    assert_eq!(
+        rows,
+        vec![("rust".to_owned(), 1.0, 0.0, "background".to_owned())],
+        "the withdrawal's decrease was not written"
+    );
+    assert!(
+        announced.is_empty(),
+        "a withdrawal was announced as a restoration: {announced:?}"
     );
 }
