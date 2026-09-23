@@ -322,7 +322,7 @@ fn absolute_helper_token(path: &Path) -> io::Result<String> {
             ));
         };
         let (prefix, rest) = text.split_at(prefix_len);
-        return Ok(format!("{prefix}{}", shell_quote(rest)));
+        Ok(format!("{prefix}{}", shell_quote(rest)))
     }
     #[cfg(unix)]
     {
@@ -665,9 +665,11 @@ mod platform {
         let worker = thread::Builder::new()
             .name("credential-one-shot".to_owned())
             .spawn(move || {
+                // The closure owns `cleanup`, so its `Drop` (the unlink) still runs as the
+                // thread ends, right after `serve_tcp` returns.
                 serve_tcp(
                     listener,
-                    cleanup,
+                    &cleanup,
                     &thread_stop,
                     &expected_nonce,
                     &expected_host,
@@ -693,7 +695,7 @@ mod platform {
             let path = std::env::temp_dir()
                 .join(format!("codotheca-credential-test-{}", std::process::id()));
             std::fs::create_dir_all(&path)?;
-            return Ok(path);
+            Ok(path)
         }
         #[cfg(not(feature = "testkit"))]
         Err(io::Error::new(
@@ -728,7 +730,7 @@ mod platform {
     #[cfg(windows)]
     fn serve_tcp(
         listener: TcpListener,
-        cleanup: Cleanup,
+        cleanup: &Cleanup,
         stop: &AtomicBool,
         nonce: &str,
         host: &str,
