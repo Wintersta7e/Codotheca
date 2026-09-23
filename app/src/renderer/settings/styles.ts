@@ -211,7 +211,15 @@ export const SD: Readonly<Record<SettingsStyleKey, CSSProperties>> = {
     cursor: 'pointer',
   },
   switchTrackOn: { background: sig, boxShadow: `inset 0 0 0 1px ${sig}` },
-  switchKnob: { width: '10px', height: '10px', margin: '2px', background: text3 },
+  // A block, or the `<span>` stays inline inside its `<button>` and its box is ignored: the knob
+  // measured 0px wide in the built app and every switch read as a bare coloured bar.
+  switchKnob: {
+    display: 'block',
+    width: '10px',
+    height: '10px',
+    margin: '2px',
+    background: text3,
+  },
   switchKnobOn: { background: sigInk, transform: 'translateX(12px)' },
   // §11.3a's statement variant, verbatim: the track collapses to 3px at top 7px, the edge goes
   // transparent, the knob is gone and the cursor is default. It is not a disabled switch —

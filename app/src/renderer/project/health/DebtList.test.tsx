@@ -15,6 +15,7 @@ import type {
 import { ProjectPageDepsContext, type ProjectPageDeps } from '../deps';
 import { ProjectPageView } from '../ProjectPage';
 import { DAY, detailFixture, NOW } from '../testFixtures';
+import projectPageCss from '../../styles/projectPage.css?raw';
 import { DEBT_LIST_TITLE, SHOWN_ONLY_NOTE, UNVERIFIED_NOTE } from './DebtList';
 
 afterEach(cleanup);
@@ -160,6 +161,36 @@ const rowWith = (list: HTMLElement, text: string): HTMLElement => {
   expect(rows, text).toHaveLength(1);
   return rows[0] as HTMLElement;
 };
+
+describe('code reads as code', () => {
+  it('sets an item path and its marker text in the mono token', async () => {
+    // In the body face `--verbose` reads as one long dash. jsdom resolves the declaration, and
+    // the token it names is the design's code face.
+    expect(
+      projectPageCss.length,
+      'projectPage.css?raw imported as an empty string',
+    ).toBeGreaterThan(0);
+    const style = document.createElement('style');
+    style.textContent = projectPageCss;
+    document.head.append(style);
+    try {
+      const list = await debtList();
+      const marker = rowWith(list, 'todo_marker');
+      for (const part of ['.cp-health-debt-where', '.cp-health-debt-text']) {
+        const node = marker.querySelector(part);
+        if (node === null) throw new Error(`the marker row drew no ${part}`);
+        expect(getComputedStyle(node).fontFamily, part).toContain('--font-mono');
+      }
+      // The item's source name is prose, not a quotation from a file, and keeps the page's face.
+      const source = marker.querySelector('.cp-health-debt-source');
+      expect(source === null ? '' : getComputedStyle(source).fontFamily).not.toContain(
+        '--font-mono',
+      );
+    } finally {
+      style.remove();
+    }
+  });
+});
 
 describe('§33.2 the HEALTH tab lists every item, in text', () => {
   it('lists every item grouped by layer, and a layer with no items draws no group', async () => {

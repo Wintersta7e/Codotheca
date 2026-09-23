@@ -19,6 +19,7 @@ import { Fragment, type ReactElement } from 'react';
 import type { AdvisoryDetail, DebtItem, DecayLayer } from '../../../generated/protocol';
 import { DECAY_LAYER_ORDER } from '../../decay/layers';
 import { groupByLayer } from '../../debt/groupByLayer';
+import { PART_SEPARATOR } from './checkForms';
 
 export const DEBT_LIST_TITLE = 'DEBT ITEMS';
 export const UNVERIFIED_NOTE = 'not being counted right now — its evidence cannot be seen';
@@ -90,7 +91,7 @@ function DebtRow({ item }: { readonly item: DebtItem }): ReactElement {
       {/* Separated in the text itself, so the row reads as parts before any stylesheet does. */}
       {partsOf(item).map((part, index) => (
         <Fragment key={index}>
-          {index === 0 ? null : ' · '}
+          {index === 0 ? null : PART_SEPARATOR}
           <span className={`cp-health-debt-${part.kind}`}>{part.text}</span>
         </Fragment>
       ))}

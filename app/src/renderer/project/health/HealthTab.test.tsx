@@ -155,6 +155,28 @@ describe('§30.4 what the tab may never claim', () => {
   });
 });
 
+describe('each check row reads as text', () => {
+  it('separates the check, its word and its detail in the text a reader gets', () => {
+    // The tab carries no stylesheet for these spans, so the text is all a reader has to go on.
+    const root = draw(
+      reading({
+        checks: [
+          { id: 'missing_license', outcome: 'failed', unknownReason: null },
+          { id: 'missing_tests', outcome: 'unknown', unknownReason: 'notRunYet' },
+          { id: 'todo_marker', outcome: 'off', unknownReason: null },
+        ],
+      }),
+      settings({ healthChecks: [{ check: 'todo_marker', enabled: false }] }),
+    );
+    const texts = [...root.querySelectorAll('.cp-health-check')].map((li) => li.textContent);
+    expect(texts).toEqual([
+      'missing_license · OPEN',
+      'missing_tests · UNKNOWN · scheduled, and has not run yet',
+      'todo_marker · SWITCHED OFF · you switched this check off',
+    ]);
+  });
+});
+
 describe('R142 the in-context grant ask', () => {
   it('the two causes of off render two different sentences', () => {
     const switched = draw(

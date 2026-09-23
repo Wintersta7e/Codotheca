@@ -37,6 +37,26 @@ describe('the two row variants, and no third', () => {
     expect(onChange).toHaveBeenCalledWith(true);
   });
 
+  it('draws the knob as a box, left when off and moved across when on', () => {
+    // A `<span>` inside a `<button>` is inline unless told otherwise, and an inline box ignores
+    // its width and height: the knob measured 0px wide in the built app. jsdom lays nothing
+    // out, so the resolved `display` is what can be asserted here.
+    const knobOf = (checked: boolean): HTMLElement => {
+      cleanup();
+      render(<SwitchRow spec={controlSpec} checked={checked} onChange={vi.fn()} />);
+      const knob = screen.getByRole('switch', { name: controlSpec.label }).firstElementChild;
+      if (!(knob instanceof HTMLElement)) throw new Error('the switch drew no knob');
+      return knob;
+    };
+    const off = knobOf(false);
+    expect(getComputedStyle(off).display).not.toBe('inline');
+    expect(Number.parseFloat(getComputedStyle(off).width)).toBeGreaterThan(0);
+    expect(off.style.transform).toBe('');
+    const on = knobOf(true);
+    expect(getComputedStyle(on).display).not.toBe('inline');
+    expect(on.style.transform).toBe('translateX(12px)');
+  });
+
   it('a statement row exposes no control at all — not a disabled one', () => {
     const { container } = render(<SwitchRow spec={statementSpec} on />);
     expect(screen.queryByRole('switch')).toBeNull();

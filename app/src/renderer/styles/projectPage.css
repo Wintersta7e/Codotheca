@@ -1291,3 +1291,13 @@
 .cp-condition-divergence {
   letter-spacing: 0.08em;
 }
+
+/*
+ * [p3] A debt item's path and its marker text are code, copied out of a file: in the body face
+ * `--verbose` reads as one long dash. The design sets code in the mono token. Only the face is
+ * stated here; the rest of the tab's styling is a separate decision.
+ */
+.cp-health-debt-where,
+.cp-health-debt-text {
+  font-family: var(--font-mono);
+}

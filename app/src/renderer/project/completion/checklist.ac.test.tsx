@@ -134,6 +134,22 @@ describe('AC-P3-31-13: the checklist renders ten rows, or none at all', () => {
   });
 });
 
+describe('the checklist reads as text', () => {
+  it('separates the mark, the label and the note in the text a reader gets', () => {
+    // The tab carries no stylesheet for these spans, so the text is all a reader has to go on.
+    const { container } = render(
+      <CompletionChecklist
+        completion={detail([
+          row({ key: 'remote', state: 'fail' }),
+          row({ key: 'pushed', state: 'unknown', unknownReason: 'notObserved' }),
+        ])}
+      />,
+    );
+    const texts = [...container.querySelectorAll('.cp-completion-check')].map((i) => i.textContent);
+    expect(texts).toEqual(['□ REMOTE', '◌ PUSHED · UNKNOWN · NOT OBSERVED']);
+  });
+});
+
 describe('the na split renders both forms', () => {
   it('distinguishes a stored ruling from the archetype’s proposal', () => {
     const { container } = render(

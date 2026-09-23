@@ -25,6 +25,13 @@ import type {
   UnknownReason,
 } from '../../../generated/protocol';
 
+/**
+ * What separates the parts of one row on the `HEALTH` tab, **in the text itself**, so a row
+ * reads as parts with or without a stylesheet — `missing_readme · OPEN`, never
+ * `missing_readmeOPEN`.
+ */
+export const PART_SEPARATOR = ' · ';
+
 /** The rendered form of one check: a word, and the sentence under it. */
 export interface CheckForm {
   readonly outcome: CheckOutcome;

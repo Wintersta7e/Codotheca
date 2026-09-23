@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LocationRef, SceneHash } from '../../generated/protocol';
+import cardCss from '../styles/card.css?raw';
 import { HeroFrame, type HeroRow } from './HeroFrame';
 import { bandsFor } from './geometry';
 
@@ -93,6 +94,32 @@ describe('the hero is not the tile at hero scale', () => {
         .querySelector<HTMLElement>('.cdt-card-frame')
         ?.style.getPropertyValue('--cdt-frame'),
     ).toBe('var(--tier-ref)');
+  });
+});
+
+/**
+ * **§8.5: the hero has a box.** Every layer in it is positioned, so its ratio is its only height;
+ * at `aspect-ratio: auto` it measured 268×2 in the built app and the plate, the decay layers and
+ * the restoration surge all drew into nothing. jsdom lays nothing out, so this asserts the
+ * resolved declaration; `app/e2e/hero.spec.ts` measures the box in a real window.
+ */
+describe('§8.5: the hero keeps the 2:3 box', () => {
+  it('resolves the tile ratio on the hero card, never auto', () => {
+    expect(cardCss.length, 'card.css?raw imported as an empty string').toBeGreaterThan(0);
+    const style = document.createElement('style');
+    style.textContent = cardCss;
+    document.head.append(style);
+    try {
+      const card = draw().querySelector('.cdt-card');
+      if (card === null) throw new Error('no hero card mounted');
+      expect(card.getAttribute('data-surface')).toBe('hero');
+      const ratio = getComputedStyle(card).getPropertyValue('aspect-ratio');
+      const numbers = [...ratio.matchAll(/\d*\.?\d+/gu)].map((m) => Number(m[0]));
+      expect(ratio, 'the hero resolved no box of its own').not.toMatch(/^\s*(auto)?\s*$/u);
+      expect(numbers).toEqual([2, 3]);
+    } finally {
+      style.remove();
+    }
   });
 });
 

@@ -10,6 +10,7 @@
 import type { ReactElement } from 'react';
 
 import type { CompletionDetail } from '../../../generated/protocol';
+import { PART_SEPARATOR } from '../health/checkForms';
 import { CHECK_LABELS, markFor, noteFor } from './checklist';
 
 export interface CompletionChecklistProps {
@@ -36,11 +37,18 @@ export function CompletionChecklist({ completion }: CompletionChecklistProps): R
               data-check={row.key}
               data-state={row.state}
             >
+              {/* Separated in the text, as the rest of the tab is: `□ REMOTE`, never `□REMOTE`,
+                  and `PUSHED · UNKNOWN · NOT OBSERVED`, never `PUSHEDUNKNOWN`. */}
               <span className="cp-completion-mark" data-hollow={mark.hollow} aria-hidden="true">
                 {mark.glyph}
-              </span>
+              </span>{' '}
               <span className="cp-completion-label">{CHECK_LABELS[row.key]}</span>
-              {note === null ? null : <span className="cp-completion-note">{note}</span>}
+              {note === null ? null : (
+                <>
+                  {PART_SEPARATOR}
+                  <span className="cp-completion-note">{note}</span>
+                </>
+              )}
             </li>
           );
         })}
