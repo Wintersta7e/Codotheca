@@ -67,8 +67,11 @@ pub fn may_close(item: &StoredItem, obs: &SweepObservation) -> bool {
 /// `locations.uninstall` removes the bytes and **keeps the row**, so a naive sweep afterwards
 /// finds a readable-looking absence, reports `complete` with zero items, closes every item and
 /// pays for it.
-pub fn root_is_observable(tx: &Transaction<'_>, location: LocationId) -> Result<bool, DebtError> {
-    let answer: Option<i64> = tx
+pub fn root_is_observable(
+    conn: &rusqlite::Connection,
+    location: LocationId,
+) -> Result<bool, DebtError> {
+    let answer: Option<i64> = conn
         .query_row(
             "SELECT 1 FROM location
               WHERE id = ?1 AND presence = 'present' AND removed_at IS NULL",

@@ -135,6 +135,9 @@ pub trait DebtStore: Send + Sync {
     /// — a partial one re-verifies only what it reaches — so the first difference after the
     /// return is never taken against evidence from before it.
     ///
+    /// Each withdrawn sweep is dated `now`, like every other `unobservable` row: its outcome and
+    /// its `observed_at` state one fact, and the old date belongs to the evidence withdrawn.
+    ///
     /// **Not a closure and not a payout**: no item is deleted and no XP moves; a withdrawn claim of
     /// currency is all it is. A sweep that never observed — skipped, failed — carries no evidence
     /// and is left as it is.
@@ -142,6 +145,7 @@ pub trait DebtStore: Send + Sync {
         &self,
         tx: &Transaction<'_>,
         location: LocationId,
+        now: i64,
     ) -> Result<RootUnobserved, DebtError>;
 }
 
@@ -253,11 +257,12 @@ impl DebtStore for SqliteDebtStore {
         &self,
         tx: &Transaction<'_>,
         location: LocationId,
+        now: i64,
     ) -> Result<RootUnobserved, DebtError> {
         let sweeps = tx.execute(
-            "UPDATE debt_sweep SET outcome = 'unobservable', item_count = NULL
+            "UPDATE debt_sweep SET outcome = 'unobservable', item_count = NULL, observed_at = ?2
               WHERE location_id = ?1 AND outcome IN ('complete', 'partial')",
-            [location.0],
+            rusqlite::params![location.0, now],
         )?;
         let items = tx.execute(
             "UPDATE debt_item SET state = 'unverified'

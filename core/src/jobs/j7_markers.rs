@@ -171,10 +171,16 @@ pub fn write_enumeration(
 /// (`DebtStore::mark_root_unobserved`), and skipping here would leave them uncounted until the
 /// next commit. That one case rescans from ordinal 0 — every blob already cached, so no blob is
 /// read — and every other unchanged head still invokes git zero times.
+///
+/// **Only at a root that is there to re-observe** (§28.5's rule 4). The copy can leave again, or
+/// be uninstalled, before this job runs, and an opened page still queues it against that copy:
+/// a rescan there reads nothing, and would clear the completed scan and store `not_read` over the
+/// four presence answers it established. The withdrawn sweep waits for the copy's next return.
 fn start_ordinal(
     index: &std::sync::Mutex<crate::index::Index>,
     gates: ContentGates,
     project: ProjectId,
+    location: LocationId,
     head_oid: &str,
     stored: Option<&ContentScanRow>,
     cursor: Option<&str>,
@@ -183,9 +189,12 @@ fn start_ordinal(
     let withdrawn = complete
         && gates.reads_blobs()
         && super::read(index, |conn| {
-            crate::debt::sweep::stored_outcome(conn, project, DebtSource::TodoMarker)
-                .map(|outcome| outcome == Some(DebtSweepOutcome::Unobservable))
-                .map_err(debt_to_index)
+            let unobserved =
+                crate::debt::sweep::stored_outcome(conn, project, DebtSource::TodoMarker)
+                    .map_err(debt_to_index)?
+                    == Some(DebtSweepOutcome::Unobservable);
+            Ok(unobserved
+                && crate::debt::sweep::root_is_observable(conn, location).map_err(debt_to_index)?)
         })?;
     if complete && !withdrawn {
         return Ok(None);
@@ -388,7 +397,15 @@ pub fn run_j7(
     let Some(head_oid) = head_oid else {
         return Ok(JobOutcome::Done);
     };
-    let Some(from) = start_ordinal(index, gates, project, &head_oid, stored.as_ref(), cursor)?
+    let Some(from) = start_ordinal(
+        index,
+        gates,
+        project,
+        location,
+        &head_oid,
+        stored.as_ref(),
+        cursor,
+    )?
     else {
         return Ok(JobOutcome::Done);
     };

@@ -159,7 +159,7 @@ pub fn hand_off_discovered(
             upsert_location(tx, outcome.project_id, &input, now).map_err(as_index_error)?;
         if returning {
             SqliteDebtStore
-                .mark_root_unobserved(tx, LocationId(location))
+                .mark_root_unobserved(tx, LocationId(location), now)
                 .map_err(debt_error)?;
         }
         Ok(Indexed {
