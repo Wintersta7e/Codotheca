@@ -5819,7 +5819,10 @@
           "runner": "cargo",
           "owner": "p3-30",
           "test": "acceptance_p3_health::ac_p3_30_1_with_every_check_off_a_reading_carries_no_figure",
-          "assert": "With every check switched off, every project's reading is absent with scoredOpen and basis NULL and no checks, where the same projects read live, or suppressed when unenrolled, with every check on; absent outranks suppressed. Prints the number of projects scanned; the surfaces inspected are AC-P3-30-1-surface's."
+          "assert": "With every check switched off, every project's reading is absent with scoredOpen and basis NULL and no checks, where the same projects read live, or suppressed when unenrolled, with every check on; absent outranks suppressed. The producer's reading, summary and item list equal protocol/health/all-checks-off.json field for field, with an open item held by each project so the empty list is the producer setting it aside. Prints the number of projects scanned; the surfaces inspected are AC-P3-30-1-surface's.",
+          "mirror": {
+            "other": "protocol/health/all-checks-off.json"
+          }
         },
         {
           "id": "AC-P3-30-1-switches",
@@ -5835,7 +5838,7 @@
           "runner": "vitest",
           "owner": "p3-30",
           "test": "health AC-P3-30-1 with every check off no surface renders a health number",
-          "assert": "The surface half: an absent reading with every quantity NULL mounts no HEALTH tab, draws no tab string and gives the shelf row no rank, for each of three projects, printing the count of surfaces inspected; HealthTab.tsx is read to prove it draws exactly those producer strings. The reading is a fixture of the shape the core half asserts, not the core's output."
+          "assert": "The surface half renders from protocol/health/all-checks-off.json, the core producer's own output as AC-P3-30-1 pins it: that reading mounts no HEALTH tab and draws no tab string, that summary gives the shelf row no rank, and that item list lights no hero layer, for each of three projects, printing the count of surfaces inspected; HealthTab.tsx is read to prove it draws exactly those producer strings."
         }
       ]
     },
@@ -6788,6 +6791,14 @@
           "owner": "p3-31",
           "test": "acceptance_completion::ac_p3_31_14_a_demotion_writes_no_health_delta_row",
           "assert": "A recompute that lowers the tier from the top rung writes no health_delta row, counted inside the transaction and after the commit, and moves no debt item; the fixture is asserted to demote and the recompute to have run."
+        },
+        {
+          "id": "AC-P3-31-14-settle",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-31",
+          "test": "acceptance_completion::ac_p3_31_14_a_demotion_through_a_real_settle_emits_no_notification",
+          "assert": "The notification clause, through a real settle: a demotion driven by a real JobRunner J2 job, with a recording event sink, emits no notification and no projects.health_delta event and writes no health_delta row. Notifications are derived from the schema, every event whose payload type's comment names a notification, and printed; the test fails when none is derived, when the sink observed nothing, or when the fixture does not demote."
         },
         {
           "id": "AC-P3-31-14-frame",

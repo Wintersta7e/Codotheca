@@ -208,7 +208,7 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 144 | 335 |
+| automated | 144 | 336 |
 | deferred | 2 | 3 |
 | manual | 0 | 0 |
 | unmeasurable | 0 | 0 |
@@ -296,7 +296,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P3-31-11 | automated | release never reads a shallow zero as a failure | `AC-P3-31-11` automated, runs now — `acceptance_completion::ac_p3_31_11_a_shallow_zero_is_unknown_and_a_real_zero_is_a_failure`<br>`AC-P3-31-11-j1` automated, runs now — `acceptance_completion::ac_p3_31_11_j1_persists_the_tag_count` |
 | P3-31-12 | automated | Multi-location aggregation is the primary location's | `AC-P3-31-12` automated, runs now — `acceptance_completion::ac_p3_31_12_release_reads_the_primary_locations_tag_count` |
 | P3-31-13 | automated | A Reference project is never scored | `AC-P3-31-13` automated, runs now — `acceptance_completion::ac_p3_31_13_a_reference_project_is_never_scored`<br>`AC-P3-31-13-render` automated, runs now — `AC-P3-31-13: the checklist renders ten rows, or none at all renders nothing when the detail is NULL — a Reference project mounts no checklist`<br>`AC-P3-31-13-ten` automated, runs now — `AC-P3-31-13: the checklist renders ten rows, or none at all renders all ten rows with their reasons when evaluable is zero` |
-| P3-31-14 | automated | Silent demotion | `AC-P3-31-14` automated, runs now — `acceptance_completion::ac_p3_31_14_a_demotion_writes_no_health_delta_row`<br>`AC-P3-31-14-frame` automated, runs now — `AC-P3-31-14: a demotion is silent fires no animation on the frame when the tier drops` |
+| P3-31-14 | automated | Silent demotion | `AC-P3-31-14` automated, runs now — `acceptance_completion::ac_p3_31_14_a_demotion_writes_no_health_delta_row`<br>`AC-P3-31-14-settle` automated, runs now — `acceptance_completion::ac_p3_31_14_a_demotion_through_a_real_settle_emits_no_notification`<br>`AC-P3-31-14-frame` automated, runs now — `AC-P3-31-14: a demotion is silent fires no animation on the frame when the tier drops` |
 | P3-31-15 | automated | The merge sweep deletes and recomputes | `AC-P3-31-15` automated, runs now — `acceptance_completion::ac_p3_31_15_a_merge_clears_the_rows_and_the_projection_on_both_sides`<br>`AC-P3-31-15-class` automated, runs now — `acceptance_completion::ac_p3_31_15_project_check_is_derived_and_is_not_reparented` |
 | P3-31-16 | automated | deps reads the set and owns no item | `AC-P3-31-16` automated, runs now — `acceptance_completion::ac_p3_31_16_deps_reads_the_advisory_set_and_owns_no_item` |
 | P3-31-17 | automated | N/A is two facts | `AC-P3-31-17` automated, runs now — `acceptance_completion::ac_p3_31_17_a_user_ruling_survives_a_reclassification`<br>`AC-P3-31-17-proposal` automated, runs now — `acceptance_completion::ac_p3_31_17_the_proposal_covers_every_archetype_and_every_key`<br>`AC-P3-31-17-render` automated, runs now — `the na split renders both forms distinguishes a stored ruling from the archetype’s proposal` |
