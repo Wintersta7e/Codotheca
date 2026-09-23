@@ -13,6 +13,8 @@ light, ignorable layer that makes upkeep visible. Local-first, no account, no te
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 ![Status](https://img.shields.io/badge/status-public%20beta-brightgreen)
 
+![The shelf: twelve projects with generated cover art, their status badges and the attention row](docs/screenshots/shelf.png)
+
 * * *
 
 ## Why
@@ -30,6 +32,15 @@ since 2021.
 The upkeep layer is deliberately quiet. A neglected project's cover art gathers dust, cobwebs and
 rust drawn from what is actually wrong with it, and polishes back when you fix the thing. It does
 not nag, it does not gamify, and it never invents a number it did not measure.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![The first-run reveal: six figures computed from the history just scanned](docs/screenshots/reveal.png) | ![Quick switch: Alt+Space from anywhere, filtered as you type](docs/screenshots/quick-switch.png) |
+| ![A project page: the hero card, condition, copies and README](docs/screenshots/project.png) | ![The HEALTH tab: every check, the open debt items and the completion checklist](docs/screenshots/health.png) |
+
+Every repository in these screenshots is invented; they were taken from the real app.
 
 ## Status
 
