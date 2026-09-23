@@ -343,6 +343,30 @@ test('the reveal waits out the settle hold and then loads once', async () => {
   expect(deps.loadReveal).toHaveBeenCalledTimes(1);
 });
 
+// The core answers `scan.start` and announces the walk as separate messages, and nothing holds
+// the walk back until the gate has re-rendered. A one-repository walk finished inside that window
+// on a CI runner, its `finished` reached no listener, and the scan screen waited for ever.
+test('a walk that finishes before scan.start resolves still reaches the reveal', async () => {
+  vi.useFakeTimers();
+  const view = harness();
+  view.deps.startScan.mockImplementation(() => {
+    view.emit({ kind: 'upserted', id: 1 as ProjectId, name: 'alpha', primaryLanguage: 'Rust' });
+    view.emit({ kind: 'progress', indexedProjects: 1, walkedDirs: 10, foundRepos: 1 });
+    view.emit({ kind: 'finished' });
+    return Promise.resolve(undefined);
+  });
+  await act(async () => {});
+  dig();
+  await act(async () => {});
+  expect(view.deps.startScan).toHaveBeenCalledTimes(1);
+  act(() => {
+    vi.advanceTimersByTime(SETTLE_HOLD_MS + 1);
+  });
+  await act(async () => {});
+  expect(screen.getByText(copy.EVIDENCE_FOOTER)).toBeTruthy();
+  expect(view.deps.loadReveal).toHaveBeenCalledTimes(1);
+});
+
 // §10.3a: SKIP AHEAD reaches the reveal immediately — the walk keeps running behind it, which
 // is the only thing the DIG note claims.
 test('skip ahead reaches the reveal without waiting for the walk', async () => {

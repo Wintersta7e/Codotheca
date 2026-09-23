@@ -137,11 +137,14 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
     };
   }, [decision, suggestRoots]);
 
-  // The live feed. One subscription, released when the beats are done.
+  // The live feed. One subscription, released when the beats are done. It opens on the roots
+  // screen, before `DIG` starts anything: the core answers `scan.start` and announces the walk as
+  // separate messages, so a small walk can finish before the phase leaves `roots`, and a
+  // `finished` that reached no listener left the scan screen waiting for ever.
   useEffect(() => {
-    if (!active || state.phase === 'roots') return undefined;
+    if (!active) return undefined;
     return subscribe(feedDispatch);
-  }, [active, state.phase, subscribe]);
+  }, [active, subscribe]);
 
   // §10.3: a fixed cadence, so a batch is whatever the walk produced in the last 600 ms and the
   // acceleration is emergent rather than fitted to a total that does not exist.
