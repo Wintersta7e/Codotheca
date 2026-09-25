@@ -69,15 +69,23 @@ impl std::fmt::Debug for ThreadScanLauncher {
 /// A struct rather than eight positional arguments: two of them are `Arc<dyn …>` over traits
 /// with no relation to each other, and a swapped pair would compile.
 pub struct ScanLauncherDeps {
+    /// The scanner's seam onto its own rows, over the same connection as `index`.
     pub store: Arc<dyn ScanStore>,
+    /// The one index connection, which the hand-off writes `location` rows through (R39).
     pub index: Arc<Mutex<Index>>,
+    /// Git, for discovery's probe and the hand-off's reads.
     pub git: Arc<dyn GitBackend>,
+    /// Resolves a path's device identities (§4.7).
     pub mounts: Arc<dyn MountResolver>,
+    /// The unix-seconds clock that runs and their events are stamped with.
     pub clock: Arc<dyn Clock>,
+    /// The exclusion list (§4.3) every run applies.
     pub skip: Arc<SkipList>,
     /// §13's dispatcher. `None` on a host with no WSL, or in a build that staged no worker.
     pub wsl: Option<Arc<crate::wsl::dispatch::WslDispatcher>>,
+    /// §4.1a's queue for each newly indexed location.
     pub jobs: Arc<dyn JobSink>,
+    /// Where the `scan` topic's events are published.
     pub events: Arc<dyn EventSink>,
 }
 
@@ -88,6 +96,7 @@ impl std::fmt::Debug for ScanLauncherDeps {
 }
 
 impl ThreadScanLauncher {
+    /// A launcher holding `deps` for every run it starts.
     #[must_use]
     pub fn new(deps: ScanLauncherDeps) -> Self {
         Self {

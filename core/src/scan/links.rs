@@ -19,10 +19,17 @@ use crate::paths::{is_under, path_display, path_key};
 /// Windows. Two paths that name one directory compare equal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileId {
+    /// The device number on Unix; the volume serial number on Windows.
     pub volume: u64,
+    /// The inode on Unix; the file index on Windows.
     pub index: u64,
 }
 
+/// The identity of the directory `path` names, following links.
+///
+/// # Errors
+///
+/// When `path`'s metadata cannot be read — it does not exist, or permission is denied.
 #[cfg(unix)]
 pub fn file_id(path: &Path) -> std::io::Result<FileId> {
     use std::os::unix::fs::MetadataExt as _;
@@ -33,6 +40,11 @@ pub fn file_id(path: &Path) -> std::io::Result<FileId> {
     })
 }
 
+/// The identity of the directory `path` names, following links.
+///
+/// # Errors
+///
+/// When `path` cannot be opened for its metadata, or its file information cannot be read.
 #[cfg(windows)]
 pub fn file_id(path: &Path) -> std::io::Result<FileId> {
     use std::os::windows::fs::OpenOptionsExt as _;
@@ -51,13 +63,18 @@ pub fn file_id(path: &Path) -> std::io::Result<FileId> {
     })
 }
 
+/// What [`LinkPolicy::judge`] decided about one symlink or junction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkVerdict {
+    /// Every boundary passed: the walk enters the target.
     Follow,
     /// The default policy. Not a refusal and not counted as one.
     NotFollowed,
+    /// The target lies outside every enabled root — the consent boundary.
     RefusedOutsideRoots,
+    /// The target is on a store no walked root covers — the mount boundary.
     RefusedCrossStore,
+    /// This run already reached the target's directory, which is also what breaks a cycle.
     RefusedDuplicate,
     /// The target's identity or its store could not be established. Refusing is the honest
     /// answer: assuming it onto the root's store would put work on a queue the run never sized,
@@ -66,6 +83,7 @@ pub enum LinkVerdict {
 }
 
 impl LinkVerdict {
+    /// True for [`LinkVerdict::Follow`] alone.
     #[must_use]
     pub const fn is_follow(self) -> bool {
         matches!(self, Self::Follow)
@@ -96,6 +114,8 @@ impl std::fmt::Debug for LinkPolicy {
 }
 
 impl LinkPolicy {
+    /// A policy for one run: `root_keys` are the walked roots' path keys and `root_stores` their
+    /// store keys. With `follow_links` off every link is `NotFollowed`.
     #[must_use]
     pub fn new(
         follow_links: bool,
@@ -149,6 +169,7 @@ impl LinkPolicy {
         }
     }
 
+    /// Links refused so far; `NotFollowed` is not counted.
     #[must_use]
     pub fn refused(&self) -> u64 {
         self.refused.load(Ordering::Relaxed)

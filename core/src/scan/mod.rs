@@ -14,23 +14,33 @@ pub mod submodules;
 pub mod walk;
 pub mod wsl;
 
-/// The six `scan_problem.kind` values §11.1 groups. Deferred-slow is the seventh group and reads
-/// `project_job_state`, not this table; ambiguous lineage is the eighth and reads `project`.
-/// Neither is a `ScanProblemKind` and neither may be added here.
+/// The six `scan_problem.kind` values §11.1 groups.
+///
+/// Deferred-slow is the seventh group and reads `project_job_state`, not this table; ambiguous
+/// lineage is the eighth and reads `project`. Neither is a `ScanProblemKind` and neither may be
+/// added here.
 ///
 /// R26: these strings are the serialised protocol values character for character, and the
 /// `scan_problem.kind` CHECK constraint spells the same six. A rename here is a migration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanProblemKind {
+    /// The OS refused to read a directory or a repository — fixed by changing a mode.
     PermissionDenied,
+    /// Git refused a repository it does not trust — fixed by trusting it.
     UntrustedRepo,
+    /// A repository was found but could not be read or indexed; the catch-all group.
     UnreadableRepo,
+    /// §11.1's clock-skew group. The host-side scanner never raises it; it arrives only as a
+    /// slug in the in-distro worker's report.
     ClockSkew,
+    /// A repository's path is not valid UTF-8, so the path the user is shown is lossy.
     NonUtf8Path,
+    /// A root, its store or a WSL distro could not be reached or identified this run.
     OfflineStore,
 }
 
 impl ScanProblemKind {
+    /// The `scan_problem.kind` text, identical to the wire's `ProblemKind` spelling (R26).
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -57,8 +67,11 @@ impl ScanProblemKind {
 /// One row of `scan_problem` (§1.9). `detail` is diagnostic and the shell owns the prose.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanProblem {
+    /// Which of §11.1's six problem groups the row is filed under.
     pub kind: ScanProblemKind,
+    /// The lossy display form of the path the problem is about, for the problems window.
     pub path_display: String,
+    /// Diagnostic text for the log and the row; the shell owns the prose the user sees.
     pub detail: String,
 }
 
@@ -73,21 +86,36 @@ pub struct ScanProblem {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum WalkEvent {
+    /// A directory the walk classified as a repository, before its root and mount are attached.
     Repo(discover::RepoCandidate),
+    /// A repository carrying everything its `location` row needs, emitted once the run layer
+    /// has handed it to the index.
     Discovered(Box<run::Discovered>),
+    /// A superproject-to-submodule edge read from `.gitmodules` (§4.4).
     SubmoduleEdge(Box<submodules::SubmoduleEdgeCandidate>),
+    /// A problem for §11.1's window; the run layer also records it in `scan_problem`.
     Problem(ScanProblem),
+    /// A WSL bridge path the walk refused to enter (§4.5); the run layer crosses it through the
+    /// in-distro worker instead.
     WslBridge {
+        /// The distro the bridge path names.
         distro: String,
+        /// The bridge path as displayed, which the run layer parses back into the distro's own
+        /// Linux path.
         path_display: String,
     },
     /// Raw walk counter, emitted every 512 directories. The run layer converts these into
     /// `Progress`; nothing else should consume them.
     Walked {
+        /// Directories this root's walk has visited so far.
         dirs: u64,
     },
+    /// The run's progress figures, which the launcher publishes as `ScanProgress`.
     Progress {
+        /// The current root's walk counter, or `0` when a discovery rather than the counter
+        /// raised the event.
         walked_dirs: u64,
+        /// Repositories found so far, floored at the already-indexed count (see `scan::run`).
         found_repos: u64,
     },
 }
@@ -110,9 +138,14 @@ pub type WalkSink<'a> = dyn Fn(WalkEvent) + Send + Sync + 'a;
 /// row (§1.9); `follow_links` is off by default per §4.3.
 #[derive(Debug, Clone, Copy)]
 pub struct WalkOptions {
+    /// Walker threads; the default is the core count, capped at 8.
     pub threads: usize,
+    /// §4.3: follow symlinks and junctions, each still judged by `LinkPolicy`.
     pub follow_links: bool,
+    /// §4.2: keep walking below a repository root instead of stopping at it.
     pub descend_into_repos: bool,
+    /// Test bare-shaped directories for a bare repository. §4.2 allows it only under an
+    /// explicitly enabled root, and submodule enumeration clears it.
     pub bare_candidates: bool,
 }
 
@@ -153,9 +186,13 @@ use crate::scan::presence::{ScanStore, ScanStoreError};
 /// `Debug` is written by hand: neither `ScanStore` nor `EventSink` requires it, and
 /// `missing_debug_implementations` is denied crate-wide.
 pub struct ScanCtx<'a> {
+    /// The scanner's one seam onto the database.
     pub store: &'a dyn ScanStore,
+    /// Where `scan.start` publishes `run_started` on the `scan` topic.
     pub events: &'a dyn EventSink,
+    /// Whoever knows whether a run is live.
     pub scans: &'a ScanSupervisor,
+    /// The caller's clock reading, in unix seconds.
     pub now: i64,
 }
 
@@ -186,6 +223,7 @@ impl ScanProgressCell {
         self.found_repos.store(found_repos, Ordering::Relaxed);
     }
 
+    /// The last `(walked_dirs, found_repos)` pair passed to [`ScanProgressCell::observe`].
     #[must_use]
     pub fn snapshot(&self) -> (u64, u64) {
         (
@@ -200,6 +238,7 @@ impl ScanProgressCell {
         self.finished.store(true, Ordering::SeqCst);
     }
 
+    /// True once [`ScanProgressCell::finish`] has run; the supervisor then reaps the run.
     #[must_use]
     pub fn is_finished(&self) -> bool {
         self.finished.load(Ordering::SeqCst)
@@ -209,20 +248,30 @@ impl ScanProgressCell {
 /// What a launcher reports back once the `scan_run` row exists and the walk is under way.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchedScan {
+    /// The `scan_run` row the launcher wrote.
     pub scan_run_id: ScanRunId,
+    /// The generation the run took from `next_generation`.
     pub generation: i64,
+    /// The enabled roots the run walks, as `ScanRunStarted.roots` reports them.
     pub roots: Vec<RootId>,
 }
 
 /// The one run this process has in flight.
 #[derive(Debug, Clone)]
 pub struct LiveScan {
+    /// The run's `scan_run` row, which `scan.cancel` must name to cancel it.
     pub scan_run_id: ScanRunId,
+    /// The generation the run stamps on the locations it sees.
     pub generation: i64,
+    /// Full or incremental, as `scan.start` asked.
     pub mode: ScanMode,
+    /// The `now` of the `scan.start` that began it, in unix seconds.
     pub started_at: i64,
+    /// The enabled roots the run walks.
     pub roots: Vec<RootId>,
+    /// The run's §4.8 token; `scan.cancel` sets it and the walk polls it.
     pub cancel: CancelToken,
+    /// The counters `scan.status` reads mid-run, and the flag that frees the supervisor's slot.
     pub progress: Arc<ScanProgressCell>,
 }
 
@@ -234,6 +283,14 @@ pub struct LiveScan {
 /// `WalkEvent` onto the `scan` topic (R8) and what calls `ScanRunner::run` with the roots
 /// `ScanStore::scan_roots` returns — §2.4: no path reaches it from the caller.
 pub trait ScanLauncher: Send + Sync {
+    /// Start a `mode` run that polls `cancel` and reports through `progress`, calling
+    /// [`ScanProgressCell::finish`] when it stops. `now` is the caller's clock in unix seconds.
+    ///
+    /// # Errors
+    ///
+    /// When the run's `scan_run` row cannot be written or the walk cannot be started — for the
+    /// production launcher, a failed store read or insert, or a worker thread that would not
+    /// spawn.
     fn launch(
         &self,
         mode: ScanMode,
@@ -259,6 +316,7 @@ impl std::fmt::Debug for ScanSupervisor {
 }
 
 impl ScanSupervisor {
+    /// A supervisor with no run in flight, starting runs through `launcher`.
     #[must_use]
     pub fn new(launcher: Arc<dyn ScanLauncher>) -> Self {
         Self {
@@ -288,6 +346,7 @@ impl ScanSupervisor {
         }
     }
 
+    /// The run in flight, or `None`. A run whose worker has finished is reaped first.
     #[must_use]
     pub fn live(&self) -> Option<LiveScan> {
         let mut slot = self.slot();
@@ -297,6 +356,11 @@ impl ScanSupervisor {
 
     /// The second element is `true` when this call started the run, and `false` when it coalesced
     /// onto a live one. It is what decides whether `run_started` is emitted.
+    ///
+    /// # Errors
+    ///
+    /// Whatever [`ScanLauncher::launch`] returns when it cannot start the run; the slot then
+    /// stays empty.
     pub fn start(&self, mode: ScanMode, now: i64) -> Result<(LiveScan, bool), ScanStoreError> {
         let mut slot = self.slot();
         Self::reap(&mut slot);
@@ -320,6 +384,7 @@ impl ScanSupervisor {
             progress,
         };
         *slot = Some(live.clone());
+        drop(slot);
         Ok((live, true))
     }
 
@@ -352,7 +417,7 @@ impl ScanSupervisor {
 /// The commands this module owns, in the order the dispatcher matches them. Exposed so the table
 /// can be asserted without constructing a store.
 #[must_use]
-pub fn dispatch_scan_command_names() -> [&'static str; 3] {
+pub const fn dispatch_scan_command_names() -> [&'static str; 3] {
     ["scan.start", "scan.cancel", "scan.status"]
 }
 

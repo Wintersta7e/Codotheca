@@ -34,8 +34,9 @@ pub struct SqliteScanStore {
 }
 
 impl SqliteScanStore {
+    /// A store over the shared index connection; it never opens a second one.
     #[must_use]
-    pub fn new(index: Arc<Mutex<Index>>) -> Self {
+    pub const fn new(index: Arc<Mutex<Index>>) -> Self {
         Self { index }
     }
 

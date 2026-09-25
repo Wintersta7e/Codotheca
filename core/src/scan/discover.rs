@@ -27,6 +27,8 @@ const DOT_GIT_FILE_CAP: u64 = 4 * 1024;
 /// This probe is a handful of file reads behind a process spawn; it is not a job budget (§4.1).
 pub const GIT_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How a discovered directory holds its repository — the value `location.repo_kind` stores.
+///
 /// **R7: serde and an inverse are both required, not conveniences.** `location.repo_kind` is a
 /// TEXT column, so every value `as_str` writes has to be readable back; and plan 18's in-distro
 /// worker returns a classified candidate across the protocol, so the enum has to serialise.
@@ -59,6 +61,7 @@ impl RepoKind {
         !matches!(self, Self::Bare)
     }
 
+    /// The `location.repo_kind` text, which the serde renames spell identically.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -90,11 +93,18 @@ impl RepoKind {
     }
 }
 
+/// A directory the walk found to be a repository, before identity decides which project it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoCandidate {
+    /// The directory itself: the worktree, or for a bare repository the repository.
     pub path: PathBuf,
+    /// How the directory holds its repository.
     pub kind: RepoKind,
+    /// The repository's git dir: the `.git` directory, the target of a `.git` file, or the bare
+    /// repository.
     pub git_dir: PathBuf,
+    /// Where the objects and refs live. For a linked worktree, the main repository's git dir;
+    /// otherwise the same directory as `git_dir`.
     pub common_dir: PathBuf,
 }
 
@@ -114,6 +124,7 @@ pub struct ProbeCtx<'a> {
 }
 
 impl<'a> ProbeCtx<'a> {
+    /// A probe that runs git against the enclosing root's store and stops when `cancel` fires.
     #[must_use]
     pub fn new(
         git: &'a dyn GitBackend,
@@ -131,7 +142,7 @@ impl<'a> ProbeCtx<'a> {
 
     /// The run's cancellation token, so the walk does not carry a second copy of it.
     #[must_use]
-    pub fn cancel(&self) -> &CancelToken {
+    pub const fn cancel(&self) -> &CancelToken {
         self.cancel
     }
 

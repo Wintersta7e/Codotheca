@@ -20,11 +20,17 @@ use crate::scan::{ScanProblem, ScanProblemKind, WalkEvent, WalkOptions, WalkSink
 /// One `Walked` event per this many directories, so a large root does not flood the pipe.
 const PROGRESS_EVERY: u64 = 512;
 
+/// What one root's walk counted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WalkStats {
+    /// Directories the walk visited, the root and every skipped one included.
     pub walked_dirs: u64,
+    /// Repositories classified, plus the submodules enumerated when the walk does not descend
+    /// into repositories.
     pub repos_found: u64,
+    /// Links this root's policy refused.
     pub links_refused: u64,
+    /// True when the walk stopped on the cancel token.
     pub cancelled: bool,
 }
 
@@ -34,9 +40,13 @@ pub struct WalkStats {
 /// probes it makes are cancelled by the same §4.8 token, and two fields would be two places for
 /// one run's cancellation to be wired up wrongly.
 pub struct WalkCtx<'a> {
+    /// This root's walk policy.
     pub opts: &'a WalkOptions,
+    /// The exclusion list, applied to every directory below the root.
     pub skip: &'a SkipList,
+    /// Discovery's git probe, carrying the run's cancel token.
     pub probe: &'a ProbeCtx<'a>,
+    /// The link policy every worker thread consults before entering a link.
     pub links: Arc<LinkPolicy>,
 }
 
@@ -48,6 +58,8 @@ impl std::fmt::Debug for WalkCtx<'_> {
     }
 }
 
+/// Walk one root on `ctx.opts.threads` threads, sending every repository, submodule edge,
+/// problem, bridge and progress tick to `sink`, and return what it counted.
 pub fn walk_root(root: &Path, ctx: &WalkCtx<'_>, sink: &WalkSink<'_>) -> WalkStats {
     let walked = AtomicU64::new(0);
     let found = AtomicU64::new(0);

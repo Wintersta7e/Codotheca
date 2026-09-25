@@ -29,7 +29,9 @@ pub const MAX_SUBMODULE_DEPTH: usize = 32;
 /// One row of `submodule_edge` (§1.9), minus the ids plan 08 assigns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubmoduleEdgeCandidate {
+    /// The superproject's worktree, whose `.gitmodules` declared the submodule.
     pub parent_worktree: PathBuf,
+    /// The submodule's own directory: the parent's worktree joined with `path_bytes`.
     pub child_worktree: PathBuf,
     /// The submodule's path within the parent, exactly as `.gitmodules` records it.
     pub path_bytes: Vec<u8>,
@@ -79,9 +81,10 @@ pub fn is_safe_submodule_path(raw: &[u8]) -> bool {
         && path.components().all(|c| matches!(c, Component::Normal(_)))
 }
 
-/// Enumerate this repository's submodules, recursively. Emits `WalkEvent::Repo` for each child
-/// when `emit_repos` is set — which the walk clears when `descend_into_repos` would find them
-/// anyway — and always emits `WalkEvent::SubmoduleEdge`.
+/// Enumerate this repository's submodules, recursively.
+///
+/// Emits `WalkEvent::Repo` for each child when `emit_repos` is set — which the walk clears when
+/// `descend_into_repos` would find them anyway — and always emits `WalkEvent::SubmoduleEdge`.
 pub fn enumerate_submodules(
     parent: &Path,
     opts: &WalkOptions,

@@ -47,6 +47,11 @@ fn scan_mode(raw: &str) -> Option<ScanMode> {
 
 /// §2.4: the only argument is `full`. No path crosses the wire — the roots come from `scan_root`,
 /// read by the launcher.
+///
+/// # Errors
+///
+/// `PROTOCOL` when `args` is not a `ScanStartArgs`; an internal failure when the launcher cannot
+/// start the run or a payload cannot be encoded.
 pub fn handle_start(ctx: &ScanCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
     let args: ScanStartArgs = parse_args(args)?;
     let mode = if args.full {
@@ -77,12 +82,21 @@ pub fn handle_start(ctx: &ScanCtx<'_>, args: Value) -> Result<Value, CommandFail
 /// It deliberately emits nothing: `ScanCancelled` carries `endedAt` and `indexedProjects`, which
 /// are true only once the run has stopped. Cancelling also does not clear the live slot — the
 /// run's own completion does. A request is not an ending.
+///
+/// # Errors
+///
+/// `PROTOCOL` when `args` is not a `ScanCancelArgs`. Naming a run that is not live is not one.
 pub fn handle_cancel(ctx: &ScanCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
     let args: ScanCancelArgs = parse_args(args)?;
     let _cancelled = ctx.scans.cancel(args.id);
     Ok(serde_json::json!({}))
 }
 
+/// `scan.status`: [`scan_status`], encoded for the wire.
+///
+/// # Errors
+///
+/// Whatever [`scan_status`] returns, or an internal failure when the answer cannot be encoded.
 pub fn handle_status(ctx: &ScanCtx<'_>) -> Result<Value, CommandFailure> {
     encode(&scan_status(ctx)?)
 }
@@ -94,6 +108,11 @@ pub fn handle_status(ctx: &ScanCtx<'_>) -> Result<Value, CommandFailure> {
 /// type — recomputing them here would put one number in two places. The three non-nullable
 /// counters read `0` beside a `None` `run_id`, which is the wire's floor and not a claim about a
 /// run that did not happen: no consumer reads them without reading `run_id` or `running` first.
+///
+/// # Errors
+///
+/// An internal failure when the store cannot count indexed projects or read the latest
+/// `scan_run` row.
 pub fn scan_status(ctx: &ScanCtx<'_>) -> Result<ScanStatus, CommandFailure> {
     let indexed_projects = ctx
         .store

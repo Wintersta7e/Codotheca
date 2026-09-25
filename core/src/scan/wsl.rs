@@ -9,6 +9,7 @@ use std::path::Path;
 /// A distro named by a bridge path the walk refused to enter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WslBridgeRef {
+    /// The distro name as the path spells it, case kept.
     pub distro: String,
 }
 

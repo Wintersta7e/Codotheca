@@ -41,15 +41,21 @@ const ROOT_PROBE_SLOW: Duration = Duration::from_millis(2_000);
 /// assigns when it resolves identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Discovered {
+    /// What the walk classified: the directory, its repository kind, git dir and common dir.
     pub candidate: RepoCandidate,
+    /// The `scan_root` the repository was found under.
     pub root_id: i64,
     /// `location.kind` — `win` | `linux` | `wsl`, taken from the root.
     pub kind: String,
     /// `location.distro` — NOT NULL, `""` when not WSL (§1.3).
     pub distro: String,
+    /// `location.path_bytes` — the lossless form the core opens.
     pub path_bytes: Vec<u8>,
+    /// `location.path_key` — the comparison form, case-folded by the root's kind (R2).
     pub path_key: Vec<u8>,
+    /// `location.path_display` — lossy, for the UI only (§1.3).
     pub path_display: String,
+    /// `location.store_key` — the device or share the repository lives on (§4.7).
     pub store_key: String,
     /// **R27: `None` is not `""`.** No stable identifier exists for a bind mount, overlayfs or
     /// tmpfs, the column is nullable for exactly that reason, and a location with no volume key
@@ -64,6 +70,7 @@ pub struct Discovered {
 pub use crate::protocol::ScanMode;
 
 impl ScanMode {
+    /// The `scan_run.mode` text: `full` or `incremental`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -73,30 +80,51 @@ impl ScanMode {
     }
 }
 
+/// What one run did, as [`ScanRunner::finish`] reports it once the `scan_run` row is closed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanRunOutcome {
+    /// The run's `scan_run` row.
     pub scan_run_id: i64,
+    /// The generation the run stamped on the locations it saw.
     pub generation: i64,
+    /// Directories visited across every root the run walked.
     pub walked_dirs: u64,
     /// `max(found this run, already indexed)` — see the module note.
     pub found_repos: u64,
+    /// Projects already indexed when the run began: the floor `found_repos` never drops below.
     pub resumed_from: u64,
+    /// True when the run stopped on its token; `presence` is then all zero.
     pub cancelled: bool,
+    /// Store keys of every root the run walked, which presence reads as the stores reachable
+    /// this run.
     pub present_stores: BTreeSet<String>,
+    /// Roots whose first `metadata` call took two seconds or more — possibly dead network
+    /// mounts, kept out of `timed_elapsed_ms`.
     pub isolated_roots: Vec<i64>,
+    /// Symlinks and junctions the link policy refused, across every root.
     pub links_refused: u64,
+    /// Wall time from `begin` to the end of the presence pass, in milliseconds.
     pub elapsed_ms: u64,
     /// `elapsed_ms` minus every isolated root's probe time — the figure a timing gate may use.
     pub timed_elapsed_ms: u64,
+    /// What the presence pass decided; all zero for a cancelled run.
     pub presence: PresenceSummary,
 }
 
+/// Everything one scan run reaches, borrowed for the length of the run.
 pub struct ScanRunner<'a> {
+    /// The scanner's seam onto its own rows: generation, roots, `scan_run`, `scan_problem` and
+    /// presence.
     pub store: &'a dyn ScanStore,
+    /// Git, for discovery's `rev-parse` probe and the hand-off's reads.
     pub git: &'a dyn GitBackend,
+    /// Resolves a path's device identities (§4.7); shared with each root's link policy.
     pub mounts: Arc<dyn MountResolver>,
+    /// The unix-seconds clock the `scan_run` row and the hand-off are stamped with.
     pub clock: &'a dyn Clock,
+    /// The exclusion list (§4.3) the walk and presence both apply.
     pub skip: &'a SkipList,
+    /// The run's §4.8 token, polled by the walk and handed to every git probe it makes.
     pub cancel: &'a CancelToken,
     /// The one `rusqlite::Connection`, shared rather than owned (R39).
     ///
@@ -151,9 +179,13 @@ struct Walkable<'a> {
 /// does both.
 #[derive(Debug)]
 pub struct StartedScan {
+    /// The `scan_run` row `begin` wrote.
     pub scan_run_id: i64,
+    /// The generation `begin` took.
     pub generation: i64,
+    /// Projects already indexed at `begin`: the floor for the run's `found_repos`.
     pub resumed_from: u64,
+    /// Every `scan_root` row as `begin` read it, enabled or not.
     pub roots: Vec<ScanRootRow>,
     started: Instant,
 }
@@ -172,6 +204,11 @@ impl StartedScan {
 
 impl ScanRunner<'_> {
     /// Take a generation and write the `scan_run` row. Spawns nothing and walks nothing.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot issue a generation, count indexed projects, read the roots or
+    /// insert the `scan_run` row.
     pub fn begin(&self, mode: ScanMode) -> Result<StartedScan, ScanStoreError> {
         let started = Instant::now();
         let generation = self.store.next_generation()?;
@@ -192,6 +229,11 @@ impl ScanRunner<'_> {
         })
     }
 
+    /// [`ScanRunner::begin`] then [`ScanRunner::finish`], both on the calling thread.
+    ///
+    /// # Errors
+    ///
+    /// Whatever `begin` or `finish` returns.
     pub fn run(
         &self,
         mode: ScanMode,
@@ -202,6 +244,11 @@ impl ScanRunner<'_> {
     }
 
     /// Walk, classify, apply presence and close the run out.
+    ///
+    /// # Errors
+    ///
+    /// When the presence pass fails or the `scan_run` row cannot be closed. A problem row that
+    /// cannot be written is logged and is never an error.
     pub fn finish(
         &self,
         begun: StartedScan,
@@ -654,9 +701,11 @@ struct Survey<'a> {
     isolated_ms: u64,
 }
 
-/// R2: the root's `kind` decides case-folding, not the host. `win` is the only case-insensitive
-/// one; a `linux` or `wsl` root holds paths where `Repo` and `repo` are two directories, and
-/// folding them together on a Windows host would merge two locations into one row.
+/// R2: the root's `kind` decides case-folding, not the host.
+///
+/// `win` is the only case-insensitive one; a `linux` or `wsl` root holds paths where `Repo` and
+/// `repo` are two directories, and folding them together on a Windows host would merge two
+/// locations into one row.
 #[must_use]
 pub fn platform_of(kind: &str) -> PathPlatform {
     if kind == "win" {
@@ -671,7 +720,7 @@ pub fn platform_of(kind: &str) -> PathPlatform {
 /// The three that have their own group keep it: an untrusted repository is fixed by trusting it
 /// and a permission error by changing a mode, and filing either under *unreadable* would offer
 /// the user no action. Everything else is `unreadable_repo`.
-fn problem_kind_for(err: &HandoffError) -> ScanProblemKind {
+const fn problem_kind_for(err: &HandoffError) -> ScanProblemKind {
     match err {
         HandoffError::Git(GitError::Untrusted { .. }) => ScanProblemKind::UntrustedRepo,
         HandoffError::Git(GitError::PermissionDenied { .. }) => ScanProblemKind::PermissionDenied,

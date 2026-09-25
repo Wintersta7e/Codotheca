@@ -28,6 +28,7 @@ use crate::scan::skiplist::SkipList;
 pub use crate::protocol::Presence;
 
 impl Presence {
+    /// The text `location.presence` stores; [`Presence::parse`] reads it back.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -38,6 +39,8 @@ impl Presence {
         }
     }
 
+    /// [`Presence::as_str`]'s inverse. `None` for any other text, which the production store
+    /// reports as a corrupt row rather than guessing a presence.
     #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
         match raw {
@@ -53,31 +56,53 @@ impl Presence {
 /// One `scan_root` row (§1.9).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanRootRow {
+    /// `scan_root.id` — the `RootId` the wire names this root by, and what `roots_json` records.
     pub root_id: i64,
+    /// `win` | `linux` | `wsl`. Decides case-folding for every path under the root (R2) and is
+    /// copied onto each location found there.
     pub kind: String,
+    /// The WSL distro for a `wsl` root; `""` for any other kind (§1.3).
     pub distro: String,
+    /// The root's path in `location.path_bytes` encoding — the form the walk opens.
     pub path_bytes: Vec<u8>,
+    /// The root's comparison key from `paths::path_key`, which containment is tested against.
     pub path_key: Vec<u8>,
+    /// False once the user switches the root off: it is not walked and its locations read
+    /// `unscanned`.
     pub enabled: bool,
+    /// §4.2: keep walking below a repository root instead of stopping at it.
     pub descend_into_repos: bool,
 }
 
 /// The columns of `location` (§1.3) presence classification reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocationPresenceRow {
+    /// The `location` row, and the one `set_presence` rewrites.
     pub location_id: i64,
+    /// The project the location belongs to, for the offline-project rollup.
     pub project_id: i64,
+    /// The location's path, lossless, for the exclusion-list check.
     pub path_bytes: Vec<u8>,
+    /// The location's comparison key, tested for containment under each root's.
     pub path_key: Vec<u8>,
+    /// The device or share the location was last seen on; whether it was reachable this run is
+    /// what separates `missing` from `offline`.
     pub store_key: String,
+    /// The last generation whose walk saw this location; equal to the run's means `present`.
     pub scan_generation: i64,
+    /// What the row holds now, so the pass rewrites only the rows whose answer changed.
     pub presence: Presence,
 }
 
+/// The run-wide facts §4.6's rule classifies every location against.
 #[derive(Debug)]
 pub struct PresenceContext<'a> {
+    /// The generation this run stamped on every location its walk saw.
     pub generation: i64,
+    /// Every `scan_root` row, enabled or not; a location under no enabled one is `unscanned`.
     pub roots: &'a [ScanRootRow],
+    /// The exclusion list in force, so a location inside an excluded directory reads
+    /// `unscanned` rather than `missing`.
     pub skip: &'a SkipList,
     /// Every store at least one enabled root was reachable on this generation.
     pub present_stores: &'a BTreeSet<String>,
@@ -132,23 +157,33 @@ pub fn project_presence(locations: &[Presence]) -> Presence {
     Presence::Unscanned
 }
 
+/// What one [`apply_presence`] pass decided. All zero for a cancelled run, which applies none.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PresenceSummary {
+    /// Locations classified `present`.
     pub present: u64,
+    /// Locations classified `missing` — gone from a store that was reachable.
     pub missing: u64,
+    /// Locations classified `offline` — their store was not reachable this run.
     pub offline: u64,
+    /// Locations classified `unscanned` — under no enabled root, or inside an excluded directory.
     pub unscanned: u64,
     /// How many rows the pass actually rewrote.
     pub changed: u64,
+    /// Projects whose every location is `offline`, by the project rollup.
     pub offline_projects: u64,
 }
 
+/// A [`ScanStore`] read or write that failed.
 #[derive(Debug)]
 pub struct ScanStoreError {
+    /// The cause as text — SQLite's own message in production — for stderr and internal
+    /// command failures.
     pub message: String,
 }
 
 impl ScanStoreError {
+    /// Wrap a cause's text.
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
         Self {
@@ -168,17 +203,26 @@ impl std::error::Error for ScanStoreError {}
 /// One `scan_run` row at insert time (§1.9). `mode` is `"full"` or `"incremental"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanRunStart {
+    /// The generation this run stamps on every location it sees, from `next_generation`.
     pub generation: i64,
+    /// When the run began, in unix seconds (R3).
     pub started_at: i64,
+    /// `ScanMode::as_str` of the run's mode.
     pub mode: &'static str,
+    /// The roots as they stood at the start: a JSON array of ids and enabled flags, no paths.
     pub roots_json: String,
 }
 
+/// The `scan_run` columns written once a run stops, whether it completed or was cancelled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScanRunFinish {
+    /// When the run stopped, in unix seconds (R3).
     pub ended_at: i64,
+    /// Directories visited across every root the run walked.
     pub walked_dirs: u64,
+    /// Repositories counted, floored at the already-indexed count (see `scan::run`).
     pub found_repos: u64,
+    /// True when the run stopped on its cancel token; presence was then not applied (§4.8).
     pub cancelled: bool,
 }
 
@@ -186,13 +230,22 @@ pub struct ScanRunFinish {
 /// into the generated `ScanMode` through serde rather than through a second table of two strings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanRunRow {
+    /// `scan_run.id`, which the wire carries as `ScanRunId`.
     pub id: i64,
+    /// The generation the run stamped on the locations it saw.
     pub generation: i64,
+    /// When the run began, in unix seconds.
     pub started_at: i64,
+    /// When it stopped, in unix seconds. `None` while it runs, and for ever if its worker never
+    /// started — nothing closes that row.
     pub ended_at: Option<i64>,
+    /// The stored mode text, `full` or `incremental`.
     pub mode: String,
+    /// Directories walked, as written at finish; the column's default `0` until then.
     pub walked_dirs: i64,
+    /// Repositories counted, as written at finish; the column's default `0` until then.
     pub found_repos: i64,
+    /// True when the run was cancelled rather than completed.
     pub cancelled: bool,
 }
 
@@ -211,20 +264,59 @@ pub struct ScanRunRow {
 /// `scan.status` — `rusqlite::Connection` is `Send` but not `Sync` (R39), so the production
 /// implementation owns it behind a mutex rather than handing one out.
 pub trait ScanStore: Send + Sync {
+    /// One above the highest generation any run or location has carried, so none is reissued.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read — in production, a failed SQLite statement.
     fn next_generation(&self) -> Result<i64, ScanStoreError>;
+    /// Every `scan_root` row, enabled or not, in id order.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read — in production, a failed SQLite statement.
     fn scan_roots(&self) -> Result<Vec<ScanRootRow>, ScanStoreError>;
     /// Projects already indexed, for §4.8's resumed counter.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read — in production, a failed SQLite statement.
     fn indexed_project_count(&self) -> Result<u64, ScanStoreError>;
+    /// Every `location` row, in id order, with the columns §4.6 classifies on.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read, or a row's `presence` is not one of the four values.
     fn locations_for_presence(&self) -> Result<Vec<LocationPresenceRow>, ScanStoreError>;
     /// Writes `location.presence` and nothing else — `scan_generation` belongs to whoever saw
     /// the location, and `last_seen_at` to whoever upserted it.
+    ///
+    /// # Errors
+    ///
+    /// When the write fails — in production, a failed SQLite statement.
     fn set_presence(&self, location_id: i64, presence: Presence) -> Result<(), ScanStoreError>;
+    /// Insert the `scan_run` row for a starting run and return its id.
+    ///
+    /// # Errors
+    ///
+    /// When the insert fails — in production, a failed SQLite statement.
     fn begin_scan_run(&self, start: &ScanRunStart) -> Result<i64, ScanStoreError>;
+    /// Close a run's row with its end time, counters and whether it was cancelled.
+    ///
+    /// # Errors
+    ///
+    /// When the update fails — in production, a failed SQLite statement.
     fn finish_scan_run(
         &self,
         scan_run_id: i64,
         finish: &ScanRunFinish,
     ) -> Result<(), ScanStoreError>;
+    /// Append one `scan_problem` row, with a count of one, to the given run.
+    ///
+    /// # Errors
+    ///
+    /// When the insert fails — in production, a failed SQLite statement, including one the
+    /// `scan_problem.kind` CHECK constraint rejects.
     fn record_problem(
         &self,
         scan_run_id: i64,
@@ -235,17 +327,34 @@ pub trait ScanStore: Send + Sync {
     /// `None` is the fact that separates *no scan has ever run* from *a scan ran and found
     /// nothing*; plan 16's first-run gate is exactly that distinction, so confusing the two
     /// either replays the whole reveal on a configured machine or withholds it on an empty one.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read — in production, a failed SQLite statement.
     fn latest_scan_run(&self) -> Result<Option<ScanRunRow>, ScanStoreError>;
     /// How many `scan_problem` rows one run recorded. §11.1's header figure, computed once here
     /// rather than in both the launcher's `ScanFinished` and plan 17's `problems.list`.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read — in production, a failed SQLite statement.
     fn problem_count(&self, scan_run_id: i64) -> Result<u64, ScanStoreError>;
     /// Projects whose lineage could not be decided (§1.1). A live query over `project`, not a
     /// `scan_problem` kind — §11.1's eighth group reads the column, not this table.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read — in production, a failed SQLite statement.
     fn ambiguous_lineage_count(&self) -> Result<u64, ScanStoreError>;
 }
 
 /// Run §4.6 over every location. Called **only after a run completes** — a cancelled run did not
 /// visit everything, so applying this to one would mark half the library `missing` (§4.8).
+///
+/// # Errors
+///
+/// Whatever [`ScanStore::locations_for_presence`] or the first failing
+/// [`ScanStore::set_presence`] returns. Rows rewritten before that failure stay rewritten.
 pub fn apply_presence(
     store: &dyn ScanStore,
     ctx: &PresenceContext<'_>,
@@ -279,7 +388,13 @@ pub fn apply_presence(
 }
 
 /// §4.6: disabling a root marks its locations `unscanned` — neither gone nor verified — at the
-/// moment `roots.setEnabled` runs, without waiting for the next scan.
+/// moment `roots.setEnabled` runs, without waiting for the next scan. Returns how many rows it
+/// rewrote.
+///
+/// # Errors
+///
+/// Whatever [`ScanStore::locations_for_presence`] or the first failing
+/// [`ScanStore::set_presence`] returns. Rows rewritten before that failure stay rewritten.
 pub fn mark_root_unscanned(
     store: &dyn ScanStore,
     root: &ScanRootRow,

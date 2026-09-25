@@ -1,7 +1,9 @@
-//! §4.3's exclusion list. It is **shown verbatim to the user as the privacy policy** (§10.1b),
-//! so the strings and their order are the spec's and are not to be tidied, sorted or corrected.
-//! §10.1b also notes that the design prototype misspells one of them: the rendered string is
-//! `$RECYCLE.BIN`, because a privacy policy that misspells what it matches is false.
+//! §4.3's exclusion list.
+//!
+//! It is **shown verbatim to the user as the privacy policy** (§10.1b), so the strings and their
+//! order are the spec's and are not to be tidied, sorted or corrected. §10.1b also notes that the
+//! design prototype misspells one of them: the rendered string is `$RECYCLE.BIN`, because a
+//! privacy policy that misspells what it matches is false.
 //!
 //! Two rules that are **not** entries and must not be added to the list, because the list is
 //! rendered: a directory named `.git` is never descended into (that is the walk's rule, and it
@@ -99,12 +101,10 @@ impl SkipList {
             .iter()
             .map(|entry| {
                 let normalised = normalise(entry);
-                if let Some(absolute) = normalised.strip_prefix('/') {
-                    Rule::Absolute(format!("/{absolute}"))
-                } else if normalised.contains('/') {
-                    Rule::Suffix(format!("/{normalised}"))
-                } else {
-                    Rule::Name(normalised)
+                match normalised.strip_prefix('/') {
+                    Some(absolute) => Rule::Absolute(format!("/{absolute}")),
+                    None if normalised.contains('/') => Rule::Suffix(format!("/{normalised}")),
+                    None => Rule::Name(normalised),
                 }
             })
             .collect();
