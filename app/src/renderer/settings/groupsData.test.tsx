@@ -2,10 +2,13 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { IdentityId, IdentityRow } from '../../generated/protocol.js';
 import {
+  BUNDLE_STATE,
   DATA_GROUP_ROWS,
   DataGroups,
   GITHUB_CONSEQUENCE,
   NOT_IN_THIS_BUILD,
+  REAL_PATHS_LABEL,
+  REAL_PATHS_NOTE,
   bundleResultText,
   identityCaption,
   indexSizeText,
@@ -61,11 +64,11 @@ describe('group 8, DATA', () => {
     expect(onReveal).toHaveBeenCalledWith('index');
   });
 
-  it('exports anonymised by default, with SHOW REAL PATHS as the explicit toggle', () => {
+  it('leaves names, notes and full paths out by default, with one explicit toggle', () => {
     const onShowRealPaths = vi.fn();
     render(<DataGroups {...props} onShowRealPaths={onShowRealPaths} />);
-    const toggle = screen.getByRole('switch', { name: 'SHOW REAL PATHS' });
-    // §11.4 anonymises by default and one click reveals.
+    const toggle = screen.getByRole('switch', { name: REAL_PATHS_LABEL });
+    // R161: off by default, and one click reveals.
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     fireEvent.click(toggle);
     expect(onShowRealPaths).toHaveBeenCalledWith(true);
@@ -73,18 +76,22 @@ describe('group 8, DATA', () => {
 
   it('says which state the last export was written in, and nothing before there is one', () => {
     expect(bundleResultText(null)).toBeNull();
-    render(
-      <DataGroups
-        {...props}
-        bundle={{
-          pathBytes: { b64: '' },
-          pathDisplay: '<data>/bundle.json',
-          sizeBytes: 2048,
-          anonymised: true,
-        }}
-      />,
-    );
-    expect(screen.getByText(/ANONYMISED/)).toBeTruthy();
+    const bundle = {
+      pathBytes: { b64: '' },
+      pathDisplay: '<data>/bundle.json',
+      sizeBytes: 2048,
+      anonymised: true,
+    };
+    render(<DataGroups {...props} bundle={bundle} />);
+    expect(screen.getByText(new RegExp(BUNDLE_STATE.default, 'u'))).toBeTruthy();
+    expect(bundleResultText({ ...bundle, anonymised: false })).toContain(BUNDLE_STATE.revealed);
+  });
+
+  it('never calls the default export anonymous, private or unidentifiable', () => {
+    // C12's constraint: the default keeps basenames, so no word may promise more than it does.
+    for (const text of [REAL_PATHS_LABEL, REAL_PATHS_NOTE, ...Object.values(BUNDLE_STATE)]) {
+      expect(text).not.toMatch(/anonym|private|unidentifiable/iu);
+    }
   });
 
   it('draws HIDE A PROJECT only when a picker exists behind CHOOSE', () => {

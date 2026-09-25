@@ -12,9 +12,10 @@ would be a private address in a public file.
 
 What helps in a report: what you did, what happened, the version from the release page or the
 commit you built, and your operating system. If a diagnostics bundle is relevant, note that
-`EXPORT EVERYTHING` writes one that is **anonymised by default** — it carries basenames and a
-per-volume pseudonym rather than your directory tree, and it names the rolling log rather than
-embedding it, so you attach that separately and deliberately.
+`EXPORT EVERYTHING` writes one that leaves out project names, note text and full paths by
+default — it keeps basenames and a per-volume pseudonym, because a bundle without any paths is no
+use for diagnosis — and it names the rolling log rather than embedding it, so you attach that
+separately and deliberately.
 
 Expect an acknowledgement within a week. This is a small project with one maintainer; there is
 no paid triage rota and no bounty.

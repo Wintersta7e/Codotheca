@@ -7,8 +7,9 @@
  *    the host supplies the picker, because a `CHOOSE` button with nothing behind it is the
  *    dead-switch failure §11.3a names.
  *  - **Group 8a is omitted entirely without §1.4's card.** That is the rule's second limb.
- *  - **`SHOW REAL PATHS` is a real control** — it is the argument to the next `diag.bundle`, and
- *    the row says which state the last export was written in. §11.4 anonymises by default.
+ *  - **`INCLUDE NAMES, NOTES AND PATHS` is a real control** — it is the argument to the next
+ *    `diag.bundle`, and the row says which state the last export was written in. By default the
+ *    bundle leaves out project names, note text and full paths (§48.3 row 11, R161).
  */
 import type { ReactElement } from 'react';
 import type { DiagBundle, IdentityRow } from '../../generated/protocol.js';
@@ -26,7 +27,11 @@ import { NOTIFICATION_LINES } from '../../shared/notificationCopy';
 
 export const EXPORT_NOTE = 'One JSON file · every project, session and note';
 export const HIDE_NOTE = 'Keeps it off the shelf and out of every count. Nothing is removed.';
-export const REAL_PATHS_NOTE = 'OFF EXPORTS BASENAMES AND VOLUME SHAPES ONLY';
+export const REAL_PATHS_LABEL = 'INCLUDE NAMES, NOTES AND PATHS';
+export const REAL_PATHS_NOTE =
+  'OFF LEAVES OUT PROJECT NAMES, NOTES AND FULL PATHS · KEEPS BASENAMES AND VOLUME SHAPES';
+/** What the last export was written with: the default, or with the reveal switched on. */
+export const BUNDLE_STATE = { default: 'NAMES LEFT OUT', revealed: 'NAMES AND PATHS' } as const;
 
 /** §11.3a, verbatim. The control is cut; the line it justified stands. */
 export const GITHUB_CONSEQUENCE =
@@ -57,7 +62,7 @@ export function indexSizeText(location: IndexLocation | null): string {
 
 export function bundleResultText(bundle: DiagBundle | null): string | null {
   if (bundle === null) return null;
-  const state = bundle.anonymised ? 'ANONYMISED' : 'REAL PATHS';
+  const state = bundle.anonymised ? BUNDLE_STATE.default : BUNDLE_STATE.revealed;
   return `${bundle.pathDisplay} · ${formatTrackedBytes(bundle.sizeBytes)} · ${state}`;
 }
 
@@ -78,7 +83,7 @@ export const DATA_GROUP_ROWS: readonly SettingsRowSpec[] = [
   {
     id: 'data-real-paths',
     group: 'data',
-    label: 'SHOW REAL PATHS',
+    label: REAL_PATHS_LABEL,
     note: REAL_PATHS_NOTE,
     backing: { kind: 'command', command: 'diag.bundle' },
   },

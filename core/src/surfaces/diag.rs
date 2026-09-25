@@ -1,9 +1,16 @@
 //! §11.3a group 8's `EXPORT EVERYTHING`, and §11.4's anonymise-by-default rule.
 //! One exporting path, not two: §2.5 already tags exported bytes `{"b64": …}`.
 //!
+//! **The default carries no project name, no note text and no full path** (§48.3 row 11, R161):
+//! a bundle is made to be attached to a public issue. It keeps each path's basename and its
+//! volume's shape, because a bundle without any paths is no use for diagnosis, and it keeps one
+//! entry per noted project so the section still says which projects carry a note.
+//! `includeRealPaths` reveals all three.
+//!
 //! **The rolling log is not embedded.** It is a free-text stream this module cannot anonymise
 //! field by field, and a half-scrubbed log is worse than an absent one. The bundle names the
-//! file so the user attaches it deliberately — the same consent shape as `SHOW REAL PATHS`.
+//! file so the user attaches it deliberately — the same consent shape as the drawer's
+//! `INCLUDE NAMES, NOTES AND PATHS`.
 
 use crate::index::path::DisplayPathTable;
 use crate::index::{Index, IndexError};
@@ -91,10 +98,10 @@ pub fn build(
         "gitVersion": meta(conn, "git_version")?,
         "settings": settings::read(conn)?,
         "roots": roots(conn, &mut paths)?,
-        "projects": projects(conn)?,
+        "projects": projects(conn, include_real_paths)?,
         "locations": locations(conn, &mut paths)?,
         "sessions": sessions(conn)?,
-        "notes": notes(conn)?,
+        "notes": notes(conn, include_real_paths)?,
         "scanProblems": scan_problems(conn, &mut paths)?,
         "jobStates": job_states(conn)?,
         // §11.4: a free-text stream cannot be anonymised field by field, so the
@@ -180,7 +187,10 @@ fn roots(
     Ok(plain)
 }
 
-fn projects(conn: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, IndexError> {
+fn projects(
+    conn: &rusqlite::Connection,
+    include_real: bool,
+) -> Result<Vec<serde_json::Value>, IndexError> {
     rows(
         conn,
         "SELECT id, name, primary_language, archetype, condition_signal,
@@ -189,9 +199,8 @@ fn projects(conn: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, Index
                 tracked_files, size_tracked_bytes, art_state
          FROM project ORDER BY id",
         |r| {
-            Ok(serde_json::json!({
+            let mut row = serde_json::json!({
                 "id": r.get::<_, i64>(0)?,
-                "name": r.get::<_, String>(1)?,
                 "primaryLanguage": r.get::<_, Option<String>>(2)?,
                 "archetype": r.get::<_, Option<String>>(3)?,
                 "conditionSignal": r.get::<_, Option<String>>(4)?,
@@ -207,7 +216,12 @@ fn projects(conn: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, Index
                 "trackedFiles": r.get::<_, Option<i64>>(14)?,
                 "sizeTrackedBytes": r.get::<_, Option<i64>>(15)?,
                 "artState": r.get::<_, String>(16)?,
-            }))
+            });
+            // A project's name is often its author's, or a client's: only the reveal carries it.
+            if let (true, Some(object)) = (include_real, row.as_object_mut()) {
+                object.insert("name".to_owned(), r.get::<_, String>(1)?.into());
+            }
+            Ok(row)
         },
     )
 }
@@ -230,15 +244,21 @@ fn sessions(conn: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, Index
     )
 }
 
-fn notes(conn: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, IndexError> {
+fn notes(
+    conn: &rusqlite::Connection,
+    include_real: bool,
+) -> Result<Vec<serde_json::Value>, IndexError> {
     rows(
         conn,
         "SELECT id, notes FROM project WHERE notes IS NOT NULL ORDER BY id",
         |r| {
-            Ok(serde_json::json!({
-                "projectId": r.get::<_, i64>(0)?,
-                "note": r.get::<_, String>(1)?,
-            }))
+            // The section stays and says which projects carry a note; the text is the user's
+            // own writing, and only the reveal carries it.
+            let mut row = serde_json::json!({ "projectId": r.get::<_, i64>(0)? });
+            if let (true, Some(object)) = (include_real, row.as_object_mut()) {
+                object.insert("note".to_owned(), r.get::<_, String>(1)?.into());
+            }
+            Ok(row)
         },
     )
 }
