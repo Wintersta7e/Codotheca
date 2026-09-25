@@ -42,6 +42,7 @@ impl ProjectRow {
             is_archived: false,
             is_hidden: false,
             is_reference: false,
+            authored_by_user: None,
             is_fork: false,
             is_bare: false,
             is_shallow: false,

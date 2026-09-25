@@ -44,6 +44,7 @@ const row = (over: Partial<ProjectRow> = {}): ProjectRow => ({
   isArchived: false,
   isHidden: false,
   isReference: false,
+  authoredByUser: null,
   isFork: false,
   isBare: false,
   isShallow: false,

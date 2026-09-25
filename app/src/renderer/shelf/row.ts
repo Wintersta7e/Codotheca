@@ -6,7 +6,6 @@ import type { ConditionSignal, ProjectRow } from '../../generated/protocol.js';
  * "this repository has no README".
  */
 export interface ProjectRowExtras {
-  readonly authoredByUser: boolean | null;
   readonly locationKind: 'win' | 'linux' | 'wsl' | null;
   readonly distro: string | null;
   readonly hasReadme: boolean | null;
@@ -16,14 +15,14 @@ export interface ProjectRowExtras {
   // §23.7: `hasRemote` is **not** here any more. It is a field of `ProjectRow` itself, because
   // the shelf projection is `ProjectRow` and nothing else — a producer that is not a field on it
   // is not a producer. `has:remote` was answered by the core and dropped by the renderer, which
-  // is R1/R35a/R40/R46 in projection form.
+  // is R1/R35a/R40/R46 in projection form. `authoredByUser` followed it (R245): declared here and
+  // carried by no row, it read null for every project and the classified figure was always 0.
   readonly hasSubmodules: boolean | null;
 }
 
 export type ShelfRow = ProjectRow & ProjectRowExtras;
 
 const EXTRA_KEYS = [
-  'authoredByUser',
   'locationKind',
   'distro',
   'hasReadme',
@@ -37,7 +36,6 @@ export function toShelfRow(row: ProjectRow): ShelfRow {
   const carried = row as ProjectRow & Partial<ProjectRowExtras>;
   return {
     ...row,
-    authoredByUser: carried.authoredByUser ?? null,
     locationKind: carried.locationKind ?? null,
     distro: carried.distro ?? null,
     hasReadme: carried.hasReadme ?? null,
@@ -99,6 +97,7 @@ export function projectionCapabilities(rows: readonly ShelfRow[]): ProjectionCap
     for (const key of EXTRA_KEYS) {
       if (row[key] !== null) answered.add(key);
     }
+    if (row.authoredByUser !== null) answered.add('authoredByUser');
     // `hasRemote` is a wire field rather than an extra, so it is answered by any row at all —
     // and the same rule applies: an empty projection answers nothing.
     answered.add('hasRemote');

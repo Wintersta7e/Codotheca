@@ -32,6 +32,9 @@ function base(id: number, over: Record<string, unknown> = {}): ShelfRow {
     isArchived: false,
     isHidden: false,
     isReference: false,
+    // J1.5 has not run. The cast below would let this go missing, and a missing field is
+    // `undefined`, which the classified count reads as known.
+    authoredByUser: null,
     isFork: false,
     isBare: false,
     isShallow: false,
@@ -99,10 +102,7 @@ describe('shelfCounts', () => {
     expect(shelfCounts([base(1)], 1).classificationKnown).toBe(false);
   });
   it('counts classified rows once the field arrives', () => {
-    const rows = [
-      base(1),
-      toShelfRow({ ...base(2), authoredByUser: true } as unknown as ProjectRow),
-    ];
+    const rows = [base(1), base(2, { authoredByUser: true })];
     const counts = shelfCounts(rows, 2);
     expect(counts.classificationKnown).toBe(true);
     expect(counts.classified).toBe(1);

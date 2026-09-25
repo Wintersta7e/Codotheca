@@ -397,3 +397,46 @@ fn the_two_fields_the_jewel_is_derived_from_cross_as_stored_and_not_as_defaults(
     assert_eq!(wire["seedBasename"], "other-basename");
     assert_eq!(wire["rerollOffset"], 3);
 }
+
+/// §38.7.3, R245 — **authorship crosses as stored.** The shelf's classified figure counts rows
+/// whose `authoredByUser` is not null; with no such field on the wire every row read as
+/// unclassified and the headline said `(OF 0 CLASSIFIED)` over a fully classified library. NULL
+/// is *J1.5 has not run* and stays null — never `false`, which would say *someone else's*.
+#[test]
+fn authorship_crosses_the_wire_as_stored_and_null_stays_null() {
+    let (_dir, index) = opened();
+    for (id, name, authored) in [
+        (1, "pending", None),
+        (2, "mine", Some(1)),
+        (3, "theirs", Some(0)),
+    ] {
+        project(index.conn(), id, name, NOW - id);
+        index
+            .conn()
+            .execute(
+                "UPDATE project SET authored_by_user = ?2 WHERE id = ?1",
+                rusqlite::params![id, authored],
+            )
+            .expect("set authorship");
+    }
+    let sink = CollectingSink::default();
+    let rows = load_project_rows(&ctx(&index, &sink, &Deps::new())).expect("load");
+
+    let by_name: Vec<(String, Option<serde_json::Value>)> = rows
+        .iter()
+        .map(|loaded| {
+            let wire = serde_json::to_value(&loaded.row).expect("serialise");
+            (loaded.row.name.clone(), wire.get("authoredByUser").cloned())
+        })
+        .collect();
+    eprintln!("authoredByUser on the wire: {by_name:?}");
+    assert_eq!(
+        by_name,
+        vec![
+            ("pending".to_owned(), Some(serde_json::Value::Null)),
+            ("mine".to_owned(), Some(serde_json::Value::Bool(true))),
+            ("theirs".to_owned(), Some(serde_json::Value::Bool(false))),
+        ],
+        "the stored authorship did not cross the wire as stored"
+    );
+}

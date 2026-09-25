@@ -379,6 +379,9 @@ fn map_loaded_row(
     let first_commit_tz: Option<i64> = r.get(26)?;
     let readme_computed_at: Option<i64> = r.get(36)?;
     let readme_excerpt: Option<String> = r.get(37)?;
+    // NULL is *J1.5 has not run* and crosses as null, never `false` — which would say the
+    // repository is someone else's. Read once; the wire row and the query facts carry the same.
+    let authored_by_user: Option<bool> = r.get::<_, Option<i64>>(33)?.map(|v| v != 0);
 
     let row = ProjectRow {
         id: ProjectId(id),
@@ -406,6 +409,7 @@ fn map_loaded_row(
         is_archived: r.get::<_, i64>(13)? != 0,
         is_hidden: r.get::<_, i64>(14)? != 0,
         is_reference: r.get::<_, i64>(15)? != 0,
+        authored_by_user,
         is_fork: r.get::<_, i64>(16)? != 0,
         is_bare: r.get::<_, i64>(17)? != 0,
         is_shallow: r.get::<_, i64>(18)? != 0,
@@ -473,7 +477,7 @@ fn map_loaded_row(
     };
 
     let facts = RowFacts {
-        authored_by_user: r.get::<_, Option<i64>>(33)?.map(|v| v != 0),
+        authored_by_user,
         location_kind: primary.map(|l| l.kind),
         distro: primary.map(|l| l.distro.clone()),
         has_remote: r.get::<_, Option<String>>(34)?.is_some(),

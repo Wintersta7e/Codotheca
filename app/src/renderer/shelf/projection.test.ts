@@ -31,6 +31,7 @@ function row(id: number, over: Partial<ProjectRow> = {}): ProjectRow {
     isArchived: false,
     isHidden: false,
     isReference: false,
+    authoredByUser: null,
     isFork: false,
     isBare: false,
     isShallow: false,
@@ -87,13 +88,19 @@ function reading(state: HealthState, scoredOpen: number | null = null): HealthSu
 describe('toShelfRow', () => {
   it('fills every extra with null when the wire row does not carry it', () => {
     const shelfRow = toShelfRow(row(1));
-    expect(shelfRow.authoredByUser).toBeNull();
     expect(shelfRow.locationKind).toBeNull();
     expect(shelfRow.hasCi).toBeNull();
   });
   it('picks an extra up when the wire row does carry it', () => {
-    const shelfRow = toShelfRow({ ...row(1), authoredByUser: true } as unknown as ProjectRow);
-    expect(shelfRow.authoredByUser).toBe(true);
+    const shelfRow = toShelfRow({ ...row(1), hasCi: true } as unknown as ProjectRow);
+    expect(shelfRow.hasCi).toBe(true);
+  });
+  // R245: authorship is a wire field, not an extra, and crosses as the core stated it — null is
+  // *not classified yet* and must never become `false`, which would say *someone else's*.
+  it('carries authorship as the wire row states it, null included', () => {
+    expect(toShelfRow(row(1)).authoredByUser).toBeNull();
+    expect(toShelfRow(row(1, { authoredByUser: false })).authoredByUser).toBe(false);
+    expect(toShelfRow(row(1, { authoredByUser: true })).authoredByUser).toBe(true);
   });
 });
 
@@ -102,10 +109,7 @@ describe('projectionCapabilities', () => {
     expect(projectionCapabilities([toShelfRow(row(1))]).authoredByUser).toBe(false);
   });
   it('reports it present as soon as one row answers it', () => {
-    const rows = [
-      toShelfRow(row(1)),
-      toShelfRow({ ...row(2), authoredByUser: false } as unknown as ProjectRow),
-    ];
+    const rows = [toShelfRow(row(1)), toShelfRow(row(2, { authoredByUser: false }))];
     expect(projectionCapabilities(rows).authoredByUser).toBe(true);
   });
 

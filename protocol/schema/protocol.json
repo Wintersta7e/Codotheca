@@ -458,6 +458,7 @@
         "isArchived": "bool",
         "isHidden": "bool",
         "isReference": "bool",
+        "authoredByUser": "bool?",
         "isFork": "bool",
         "isBare": "bool",
         "isShallow": "bool",
