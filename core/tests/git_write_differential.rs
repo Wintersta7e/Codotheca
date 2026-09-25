@@ -1064,7 +1064,7 @@ fn a_verify_read_writes_no_ref_under_a_pruning_refspec() {
 // §47.9 C — layer C: every intent's effect under the hostile profile, by four routes.
 // ---------------------------------------------------------------------------
 
-const LAYER_C_TEST: &str = "every_intent_matches_its_declared_effect_under_every_route";
+const LAYER_C_TEST: &str = "ac_p4_47_6";
 const ROUTE_VAR: &str = "CODOTHECA_LAYER_C_ROUTE";
 
 /// The intents layer C drives against a world: a clone to a destination that does not exist,
@@ -1124,7 +1124,7 @@ fn path_with_helpers(world: &support::git_world::World) -> OsString {
 /// as it would from a user's shell. `HEAD` is detached for two of the four routes (D10's
 /// detached variant).
 #[test]
-fn every_intent_matches_its_declared_effect_under_every_route() {
+fn ac_p4_47_6() {
     use support::git_world::{child_dir, effect_violations, is_child, run_in_child, Route, World};
 
     if is_child() {
@@ -1296,14 +1296,14 @@ fn the_transport_fixture_is_the_only_test_to_production_difference() {
     assert!(compared > 0);
 }
 
-const M2_TEST: &str = "the_retired_fetch_deletes_refs_where_the_verifying_read_does_not";
+const M2_TEST: &str = "ac_p4_47_7";
 
 /// **AC-P4-47-7 — the §37.8 defect, proved visible.** The differential harness, driven with the
 /// retired argv `fetch --progress origin` (a literal here: the variant is gone), reports M2's
 /// branch and tag deletions under the environment route and under repository config; the same
 /// harness passes the verifying read.
 #[test]
-fn the_retired_fetch_deletes_refs_where_the_verifying_read_does_not() {
+fn ac_p4_47_7() {
     use support::git_world::{child_dir, effect_violations, is_child, run_in_child, Route, World};
 
     if is_child() {
@@ -1409,7 +1409,7 @@ fn the_retired_fetch_deletes_refs_where_the_verifying_read_does_not() {
     assert_eq!(reported + skipped, 2);
 }
 
-const PINS_TEST: &str = "the_production_pins_refuse_a_helper_a_file_remote_and_a_rewrite";
+const PINS_TEST: &str = "ac_p4_47_9";
 
 /// The production write path, recording each step it was asked to spawn.
 #[derive(Debug)]
@@ -1482,7 +1482,7 @@ fn helper_runs_without_the_transport_pins(
 /// same-machine and never advertised. And, proved live in the same run: the same helper child
 /// rendered without `-c protocol.file.allow=never` and without `GIT_ALLOW_PROTOCOL` runs it.
 #[test]
-fn the_production_pins_refuse_a_helper_a_file_remote_and_a_rewrite() {
+fn ac_p4_47_9() {
     use codotheca_core::analyser::remote::{GitRemoteVerifier, RemoteReading, RemoteVerifier as _};
     use support::git_world::{child_dir, is_child, run_in_child, World};
 
@@ -1585,7 +1585,7 @@ fn the_production_pins_refuse_a_helper_a_file_remote_and_a_rewrite() {
 /// has classified does not stop the verifying read or a clone: only `TagArchived`, the one write
 /// into an existing repository, refuses on an unknown key (§47.7).
 #[test]
-fn an_unrecognised_audited_key_lets_verify_read_and_clone_run() {
+fn ac_p4_47_12() {
     use codotheca_core::analyser::remote::{GitRemoteVerifier, RemoteReading, RemoteVerifier as _};
     use support::git_world::World;
 

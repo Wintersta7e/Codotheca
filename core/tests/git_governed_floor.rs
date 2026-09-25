@@ -70,7 +70,7 @@ fn stand_in(dir: &Path, name: &str) -> PathBuf {
 /// probe — and fails `TooOld` carrying the line git printed. **`Clone` still runs** (§47.8: its
 /// pins are config keys an older git ignores).
 #[test]
-fn below_the_floor_a_verifying_read_spawns_nothing_and_a_clone_runs() {
+fn ac_p4_47_11() {
     let temp = tempfile::tempdir().expect("tempdir");
     let hooks = temp.path().join("hooks-empty");
     std::fs::create_dir_all(&hooks).expect("hooks");

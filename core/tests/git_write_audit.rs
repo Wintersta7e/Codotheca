@@ -322,7 +322,7 @@ fn no_rendered_argv_contains_a_forbidden_flag() {
 /// **AC-P4-47-2 — the per-intent allow-list, default-deny**: every flag each child carries is
 /// on its own intent's row or is a base option.
 #[test]
-fn every_rendered_flag_is_on_its_intents_allow_list() {
+fn ac_p4_47_2() {
     let children = children();
     let mut checked = 0;
     for (intent, call) in &children {
@@ -342,7 +342,7 @@ fn every_rendered_flag_is_on_its_intents_allow_list() {
 /// and both uniform pins, appear **exactly once**; `GIT_ALLOW_PROTOCOL` equals the intent's
 /// list; the objects step carries the no-replace and absent-graft pins.
 #[test]
-fn every_pin_appears_exactly_once_in_its_child() {
+fn ac_p4_47_4() {
     let children = children();
     let mut pins = 0;
     for (intent, call) in &children {
@@ -385,7 +385,7 @@ fn every_pin_appears_exactly_once_in_its_child() {
 /// **AC-P4-47-3 — layer A: stdin.** Every line the objects step's child reads parses as an
 /// `AdvertisedRef`; no other step reads any.
 #[test]
-fn every_stdin_line_is_an_advertised_ref() {
+fn ac_p4_47_3() {
     let children = children();
     let mut lines = 0;
     for (intent, call) in &children {

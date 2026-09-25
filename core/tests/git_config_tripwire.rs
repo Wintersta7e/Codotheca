@@ -50,7 +50,7 @@ fn git_output(args: &[&str]) -> String {
 
 /// **AC-P4-47-5.** Every key `git help --config` lists in §47.9 B's namespaces is classified.
 #[test]
-fn every_audited_config_key_the_gates_git_lists_is_classified() {
+fn ac_p4_47_5() {
     let version = git_output(&["--version"]);
     let listing_text = git_output(&["help", "--config"]);
     let listing: Vec<&str> = listing_text
