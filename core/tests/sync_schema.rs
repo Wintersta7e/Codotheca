@@ -76,7 +76,7 @@ fn the_sync_and_job_vocabularies_are_disjoint() {
 /// insertion against a migrated database and printing the number inserted.
 ///
 /// The shape is `every_job_state_slug_is_accepted_by_the_column`, whose real home is
-/// `core/tests/jobs_state.rs:45` — `core/src/jobs/mod.rs:200-206` is the doc comment *about* it.
+/// `core/tests/jobs_state.rs:47` — `core/src/jobs/mod.rs:202-208` is the doc comment *about* it.
 /// It is the pattern that caught R26: a DDL CHECK rejecting the values its own core emits.
 #[test]
 fn every_sync_slug_is_accepted_by_its_column() {

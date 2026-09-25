@@ -10,7 +10,7 @@
 //! - **Never a percentage, and never a figure that retreats.**
 //!
 //! **No forge listing in phase 2 supplies a total**, and that is by design rather than by
-//! omission: p2-20's `Page<T>` (`core/src/provider/listing.rs:24-27`) carries `items` and
+//! omission: p2-20's `Page<T>` (`core/src/provider/listing.rs:31-36`) carries `items` and
 //! `next_cursor` and nothing else, because the only denominator the endpoint could offer is
 //! `pages × per_page` off the `Link` header — which is exactly the guess §21.11 bans. So
 //! `total` is `None` on every event this phase emits. It stays on the wire because the type has

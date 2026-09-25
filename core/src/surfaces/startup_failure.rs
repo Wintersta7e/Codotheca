@@ -74,7 +74,7 @@ pub enum StartupFailure {
         /// Whether the gap's contents can be counted. Always `false` today, because what was
         /// made in the gap was recorded only in the destroyed database.
         gap_counts_recoverable: bool,
-        /// `None` until a rebuild has run. `core/src/index/recovery.rs:73` already records
+        /// `None` until a rebuild has run. `core/src/index/recovery.rs:83` already records
         /// why: a figure nobody computed must not print as `0` on the one screen whose
         /// subject is what was lost.
         re_derivable: Option<LedgerCounts>,

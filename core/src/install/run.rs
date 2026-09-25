@@ -10,7 +10,7 @@
 //! exiting and the rename completing leaves nothing any surface would read as a working copy.
 //!
 //! **Install owns no bespoke indexer.** Steps 3 and 4 are `hand_off_discovered` followed by
-//! `JobSink::on_location_indexed` — the same pair `core/src/scan/run.rs:588-593` performs when
+//! `JobSink::on_location_indexed` — the same pair `core/src/scan/run.rs:635-640` performs when
 //! the walk indexes a location. Writing a `location` row here by hand would be a second
 //! definition of what indexing means, and it would skip `resolve_identity`: the clone would be
 //! bolted to the project that asked for it even when §1.5 says it belongs to another.
@@ -310,7 +310,7 @@ fn publish(
 /// §24.3c's cancel, end to end.
 ///
 /// **Kills the group, not the child.** `WriteExec` spawns through `CommandGroup::group_spawn`
-/// (`core/src/gitw/exec.rs:240`) and kills through the group handle when this token fires; a
+/// (`core/src/gitw/exec.rs:244`) and kills through the group handle when this token fires; a
 /// Windows child killed without a Job Object leaves orphans holding file locks, and the staging
 /// removal then fails with *Access is denied*. Recorded in this repository and in §24.3c.
 ///

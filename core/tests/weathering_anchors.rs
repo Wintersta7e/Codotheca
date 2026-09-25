@@ -167,7 +167,7 @@ fn dust_and_overgrowth_are_empty_on_a_plain_scene_with_no_vents() {
         overgrowth.rects.is_empty() && overgrowth.points.is_empty() && overgrowth.paths.is_empty()
     );
 
-    // The livery seam is always drawn (`compose.rs:339-343`), so cracks is the one layer with a
+    // The livery seam is always drawn (`compose.rs:398-402`), so cracks is the one layer with a
     // guaranteed anchor and the empty case above is not the resolver returning nothing at all.
     let cracks = layer(&layers, DecayLayer::Cracks);
     assert!(!cracks.paths.is_empty(), "the livery seam is always drawn");

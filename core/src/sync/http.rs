@@ -30,8 +30,8 @@
 //!
 //! **There is no `SYNC_LIMITS`, and that is a deviation from this plan's own task table.**
 //! §21.2's budget — 10 s connect, 30 s total — is already declared once, as
-//! `crate::http::ACCOUNT_LIMITS` (`core/src/http/mod.rs:44-55`), whose doc names §21.2 and whose
-//! values `core/tests/http_transport.rs:428-441` already asserts. A second constant would be
+//! `crate::http::ACCOUNT_LIMITS` (`core/src/http/mod.rs:49-60`), whose doc names §21.2 and whose
+//! values `core/tests/http_transport.rs:430-443` already asserts. A second constant would be
 //! that value stated twice (R12) **and would have no caller**: this runner constructs no
 //! `HttpRequest` at all, because `GitHubProvider` builds every one of them
 //! (`core/src/provider/github.rs:82,95,174`) and passes `ACCOUNT_LIMITS` itself. A constant whose

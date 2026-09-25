@@ -384,7 +384,7 @@ fn the_pump_the_composition_root_builds_drains_a_handed_off_location() {
 /// guard is held**, because that is the only way it is ever called.
 ///
 /// `Assembly` dispatches `Route::Projects` and `Route::Detail` with the guard held
-/// (`core/src/assembly/mod.rs:508,519` — `index: &guard`), and `projects.peek`
+/// (`core/src/assembly/mod.rs:521,532` — `index: &guard`), and `projects.peek`
 /// (`core/src/projects/peek.rs:170`) and `projects.get` (`core/src/detail/get.rs:397`) both call
 /// `jobs::visible::notify_visible`, which calls `JobSink::on_visible` on that same thread. A sink
 /// that re-locks the index self-deadlocks — `std::sync::Mutex` is not reentrant — the guard is

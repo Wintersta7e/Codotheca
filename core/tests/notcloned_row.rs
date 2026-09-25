@@ -295,7 +295,7 @@ fn the_render_contract_over_a_zero_location_row() {
     );
     assert_eq!(agg.tracked_bytes, 0);
 
-    // 5. `last_touched_at` falls back to `created_at` (`rows.rs:310-313`). It stays, and from
+    // 5. `last_touched_at` falls back to `created_at` (`rows.rs:345-348`). It stays, and from
     //    here it orders rows **within** the not-cloned tail and does nothing else.
     assert_eq!(r.last_touched_at, r.created_at);
 

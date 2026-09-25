@@ -76,7 +76,7 @@ pub struct SyncDeps {
     /// while a request already in flight runs to its own time bound.
     pub cancel: CancelToken,
     /// **A property of the machine, read ONCE by the composition root and passed down as data**
-    /// — `ProjectsCtx.tz_offset_min`'s twin (`core/src/clock.rs:65-67`). §28.4's `debt_day` key
+    /// — `ProjectsCtx.tz_offset_min`'s twin (`core/src/clock.rs:66-68`). §28.4's `debt_day` key
     /// is a **local** date and §28's singleton evaluator settles from here, so nothing below the
     /// root reaches for a zone of its own.
     pub tz_offset_min: i32,

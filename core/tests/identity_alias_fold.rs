@@ -1,7 +1,7 @@
 //! §22.2 — the provider-declared host-alias fold. **AC-P2-22-11.**
 //!
 //! `host_of` lowercases and strips a numeric port and does nothing else
-//! (`core/src/identity/remote.rs:78-90`), so a clone taken over an alias host and a listing
+//! (`core/src/identity/remote.rs:81-93`), so a clone taken over an alias host and a listing
 //! published on the canonical one are three different keys today. The fold is the fix §1.1 names
 //! and does not supply.
 

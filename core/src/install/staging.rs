@@ -99,7 +99,7 @@ pub fn staging_warrant_for(
 
 /// What §24.3c's start-up sweep did and what it refused to touch.
 ///
-/// **Not `SweepReport`**, which is live at `core/src/art/store.rs:347` for the raster cache. Two
+/// **Not `SweepReport`**, which is live at `core/src/art/store.rs:421` for the raster cache. Two
 /// types of that name in one crate is a collision, not a coincidence.
 ///
 /// `sweep_staging` itself is Task 14's; this plan declares the shape its ninth problem group is

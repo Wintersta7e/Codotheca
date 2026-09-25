@@ -6913,7 +6913,7 @@
           "runner": "cargo",
           "owner": "p3-32",
           "test": "sync_budget::ac_p3_32_1_the_reserve_is_a_fraction_of_its_own_pool",
-          "assert": "A scheduled task spending from a 60/hr pool issues a second request: with limit 60 and remaining 59 mirrored, a scheduled pick is answered Spend and not Reserved. It is the regression test for \u00a732.3 and fails against phase 2's absolute reserve (core/src/sync/budget.rs:20,222). The same test asserts limit 5000, remaining 199 still yields Reserved, so the authenticated case is proven unmoved rather than assumed.",
+          "assert": "A scheduled task spending from a 60/hr pool issues a second request: with limit 60 and remaining 59 mirrored, a scheduled pick is answered Spend and not Reserved. It is the regression test for \u00a732.3 and fails against phase 2's absolute reserve (core/src/sync/budget.rs:20,233). The same test asserts limit 5000, remaining 199 still yields Reserved, so the authenticated case is proven unmoved rather than assumed.",
           "source": "\u00a732.3"
         },
         {
@@ -6938,7 +6938,7 @@
           "runner": "cargo",
           "owner": "p3-32",
           "test": "advisory_task_row::ac_p3_32_2_a_key_less_task_row_is_picked_run_and_settled",
-          "assert": "A sync_task_state row with key IS NULL is picked, run and settled \u2014 phase 2's runner filtered it out of the pick and never claimed it (core/src/sync/runner.rs:734-735, :406) \u2014 and the test reads the column back as key NULL, state ok."
+          "assert": "A sync_task_state row with key IS NULL is picked, run and settled \u2014 phase 2's runner filtered it out of the pick and never claimed it (core/src/sync/runner.rs:738-739, :409) \u2014 and the test reads the column back as key NULL, state ok."
         },
         {
           "id": "AC-P3-32-2-outstanding",

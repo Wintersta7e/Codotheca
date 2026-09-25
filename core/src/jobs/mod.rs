@@ -346,7 +346,7 @@ pub trait JobSink: Send + Sync + std::fmt::Debug {
     ///
     /// **`needs_art` is decided by the caller, and that is R75's rule arriving on `Route::Detail`
     /// and `Route::Projects`.** Every call site reaches this method while `Assembly` holds the one
-    /// `Arc<Mutex<Index>>` guard (`assembly/mod.rs:508,519` pass `index: &guard`), so a sink that
+    /// `Arc<Mutex<Index>>` guard (`assembly/mod.rs:521,532` pass `index: &guard`), so a sink that
     /// takes that mutex again self-deadlocks — `std::sync::Mutex` is not reentrant — and the guard
     /// is then never released, wedging every later command behind it. The caller already has the
     /// connection; it answers the art question there and hands the answer over.
@@ -406,7 +406,7 @@ pub struct JobDeps {
     /// The scan run's token. Cancellation propagates to the whole git process tree.
     pub cancel: crate::cancel::CancelToken,
     /// **A property of the machine, read ONCE by the composition root and passed down as data**
-    /// — `ProjectsCtx.tz_offset_min`'s twin (`core/src/clock.rs:65-67`). §28.4's `debt_day` key
+    /// — `ProjectsCtx.tz_offset_min`'s twin (`core/src/clock.rs:66-68`). §28.4's `debt_day` key
     /// is a **local** date, so nothing below the root may reach for a zone of its own.
     pub tz_offset_min: i32,
 }

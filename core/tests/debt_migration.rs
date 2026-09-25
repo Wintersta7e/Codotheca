@@ -1,6 +1,6 @@
 //! `0013_debt.sql` — the `xp_events` rebuild, §28.4a's backfill, and the two debt tables.
 //!
-//! §27.7's `subject_key` defect rides this plan: `core/src/index/subject.rs:34-37` renders
+//! §27.7's `subject_key` defect rides this plan: `core/src/index/subject.rs:45-48` renders
 //! `lineage:{k}|remote:{r}` and `core/src/jobs/j4_history.rs` rendered `{lineage}:{remote}` for
 //! the same logical subject. **A test exercising only the new writer proves nothing about the
 //! defect** — every case below that matters reads the *other* writer's rows.
@@ -415,7 +415,7 @@ fn insert_item(
 /// **`AC-P3-28-10`.** The four mirrored CHECK literals are one value stated twice with a
 /// generated enum (R26). Each loop **enumerates the schema** — never a literal beside the
 /// column — inserts one row per variant against a real migrated database, prints the count, and
-/// fails at zero. `core/src/jobs/mod.rs:200-206` is the shape, and its own doc comment records
+/// fails at zero. `core/src/jobs/mod.rs:202-208` is the shape, and its own doc comment records
 /// R26 firing in production: the DDL rejected a value the column's own producer emits.
 #[test]
 fn ac_p3_28_10_every_declared_variant_is_accepted_by_its_column() {

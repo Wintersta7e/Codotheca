@@ -50,7 +50,7 @@ const AGGREGATE_SITES: &[(&str, &str, &str)] = &[(
     "ConditionSignal",
     "[p3] §33.7 / R138: `projects.get` READS the stored `project.condition_material` column and \
      puts it on `ProjectDetail`. Phase 1 computed that column from `last_commit_at` \
-     (core/src/derive/persist.rs:26,142,158); no run set is involved and nothing here derives a \
+     (core/src/derive/persist.rs:26,149,165); no run set is involved and nothing here derives a \
      condition from one. The file is on the remote list only because the same command also \
      assembles `RemoteFacts`. The ban stays live everywhere it means what it says: a \
      `ConditionSignal` produced FROM a CI run set is still the thing §25.4 forbids.",

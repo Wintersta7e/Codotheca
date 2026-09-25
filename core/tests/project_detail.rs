@@ -422,7 +422,7 @@ fn a_project_with_no_remote_key_carries_no_remote_facts() {
 
 /// **[p3] `condition_material` reaches the wire (§33.7, R138).**
 ///
-/// It is computed from `last_commit_at` and persisted (`core/src/derive/persist.rs:26,142,158`)
+/// It is computed from `last_commit_at` and persisted (`core/src/derive/persist.rs:26,149,165`)
 /// and reached **no wire type at all** — `protocol/schema/protocol.json` contained the string
 /// `material` zero times. §33.7 requires the inner needle of the two-clock dial to render it, so
 /// `AC-P3-33-11` was unpassable until the field landed: *a criterion a correct implementation

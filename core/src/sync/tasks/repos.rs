@@ -185,7 +185,7 @@ pub fn run_account_repos(
                 // §21.9: a sync write that changes an input to a derived value recomputes it
                 // **before this transaction commits**. Safe for a zero-location project —
                 // `all_offline` is guarded by `!locations.is_empty()`
-                // (`core/src/derive/persist.rs:119-122`).
+                // (`core/src/derive/persist.rs:126-129`).
                 for project in touched {
                     crate::derive::persist::recompute(tx, ProjectId(project), now)?;
                 }

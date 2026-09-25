@@ -96,7 +96,7 @@ impl SyncOutcome {
 /// only the first two are observable. GitHub marks an SSO refusal with `x-github-sso` on the 403
 /// (`core/src/accounts/commands.rs:113-129`), and **nothing separates a missing scope from a
 /// revoked grant**: both arrive as a bare 403. p2-20 already recorded that and collapses them
-/// (`core/src/accounts/commands.rs:132-139`, *"insufficient scope, or an OAuth app the org
+/// (`core/src/accounts/commands.rs:136-143`, *"insufficient scope, or an OAuth app the org
 /// restricts — and both are answered on the account surface"*).
 ///
 /// So the third variant is `Forbidden`, which is §21.8's own table spelling at

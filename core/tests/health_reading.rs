@@ -150,7 +150,7 @@ fn ac_p3_30_7_the_six_gates_apply_in_precedence_order() {
 /// **A freeze must never manufacture a zero**, and freezing is not clearing.
 ///
 /// `{offline, missing}` rolls up to `Missing` and `{offline, unscanned}` to `Unscanned`
-/// (`core/src/scan/presence.rs:129-132`). Neither is `Offline`, so **neither freezes** — §4.6's
+/// (`core/src/scan/presence.rs:154-157`). Neither is `Offline`, so **neither freezes** — §4.6's
 /// prose mentions neither case, and the code is right where the prose is under-specified.
 #[test]
 fn ac_p3_30_6_a_frozen_reading_carries_its_age_and_an_offline_project_with_no_prior_reading_is_absent(

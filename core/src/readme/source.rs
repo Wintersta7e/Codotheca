@@ -6,7 +6,7 @@
 //! location is `PROTOCOL`.
 //!
 //! **Why this does not call `j6_content::read_content`.** That reader takes exactly `cap` bytes
-//! (`j6_content.rs:36-42`) and returns them with no way to tell a file that ended from a file
+//! (`j6_content.rs:37-43`) and returns them with no way to tell a file that ended from a file
 //! that was cut — the module header claims *"on exceed the field is omitted, never truncated
 //! into a claim"* and the code truncates. J6's behaviour is phase-1 shipped contract and is not
 //! this plan's to change, so the read here asks for `cap + 1` bytes and reports the difference.

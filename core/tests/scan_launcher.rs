@@ -243,7 +243,7 @@ fn a_finished_run_publishes_progress_and_finished_on_the_scan_topic() {
 /// after `start` has returned — by which time a one-repository tree has often already been walked,
 /// and the run finished normally. That is not hypothetical: it passed on this machine and on the
 /// `core` runner and failed in the `acceptance` job on the same commit, `assertion failed:
-/// row.cancelled`. Cancelling here is deterministic because `core/src/scan/run.rs:368` reads the
+/// row.cancelled`. Cancelling here is deterministic because `core/src/scan/run.rs:415` reads the
 /// token before the walk loop, and `launch` writes the `scan_run` row on the calling thread.
 struct CancelAtLaunch(Arc<dyn ScanLauncher>);
 

@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 pub struct CoreDeps {
     /// **`Arc<Mutex<Index>>`, not an owned `Index`.** `ScanStore` is `Send + Sync` because the
     /// walk thread writes presence rows through it, and `SqliteScanStore` therefore takes the
-    /// index this way (`scan/store.rs:39`), as `JobRunner` already does (R39,
+    /// index this way (`scan/store.rs:40`), as `JobRunner` already does (R39,
     /// `jobs/scheduler.rs:85`). There is still exactly one `rusqlite::Connection` in the
     /// process; the mutex is what lets the one connection be reached from the loop thread and
     /// from a worker without a second one existing.

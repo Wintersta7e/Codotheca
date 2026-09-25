@@ -89,7 +89,7 @@ export type PaletteRowAction =
  *
  * `install` is §23.1's one predicate — `primaryLocation === null`, the same expression
  * `subLineInputFor` reads and never a second one. On the wire `presence` is
- * `primary.map(|l| l.presence)` (`core/src/projects/rows.rs:368`) over a `pick_primary` that does
+ * `primary.map(|l| l.presence)` (`core/src/projects/rows.rs:403`) over a `pick_primary` that does
  * **not** filter on presence (`:112`), so `presence === null` is that same predicate rendered,
  * not an independent one.
  *
