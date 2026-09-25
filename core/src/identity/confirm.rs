@@ -4,18 +4,38 @@
 use std::collections::BTreeSet;
 
 use crate::index::IndexError;
-use crate::protocol::IdentityConfirm;
+use crate::protocol::{IdentityConfirm, ProjectId};
 
 /// What confirming this set would do, or has just done.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Delta {
     /// Projects that would become Reference: none of their committers is in the set.
     pub moved_to_reference: u32,
-    /// `commit_day` rows those projects hold, which the recompute would not give back.
+    /// `commit_day` rows those projects hold that the write deletes, which the recompute would
+    /// not give back. A project whose history cannot be re-read keeps its rows and is not counted.
     pub commit_days_removed: i64,
-    /// The projects whose authorship changes. Their history jobs are re-queued so the
-    /// git-derived ledger is rebuilt rather than left missing.
+    /// The projects whose authorship changes. Those whose history can be re-read
+    /// ([`history_readable`]) lose their git rows and have their history jobs re-queued, so the
+    /// git-derived ledger is rebuilt rather than left missing; the others keep their rows.
     pub affected: Vec<i64>,
+}
+
+/// §38.7.1: git rows are deleted only for a project whose history can be re-read — some copy is
+/// neither removed nor away. An offline copy is not readable; its rows wait for the drive.
+///
+/// # Errors
+/// Returns [`IndexError`] when the read fails.
+pub fn history_readable(
+    conn: &rusqlite::Connection,
+    project: ProjectId,
+) -> Result<bool, IndexError> {
+    let readable: i64 = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM location
+                         WHERE project_id = ?1 AND removed_at IS NULL AND presence = 'present')",
+        [project.0],
+        |r| r.get(0),
+    )?;
+    Ok(readable != 0)
 }
 
 /// One project's authorship, before and after.
@@ -82,9 +102,13 @@ pub fn preview(conn: &rusqlite::Connection, emails: &[String]) -> Result<Delta, 
         u32::try_from(verdicts.iter().filter(|v| v.moves_in()).count()).unwrap_or(u32::MAX);
 
     // Only a project moving *into* Reference loses days; one moving out gains them back on the
-    // recompute, and reporting that as a removal would be false.
+    // recompute, and reporting that as a removal would be false. The preview is the join the
+    // write performs, so a project whose rows the write keeps (§38.7.1) is not counted either.
     let mut commit_days_removed: i64 = 0;
     for verdict in verdicts.iter().filter(|v| v.moves_in()) {
+        if !history_readable(conn, ProjectId(verdict.id))? {
+            continue;
+        }
         let removed: i64 = conn.query_row(
             "SELECT COUNT(*) FROM xp_events WHERE project_id = ?1 AND kind = 'commit_day'",
             rusqlite::params![verdict.id],
@@ -159,7 +183,13 @@ pub fn apply(
 
     // §1.7: git-derived events are a pure function of history and are deleted and recomputed,
     // never migrated. Session-derived rows are untouched — two ledgers, never merged.
+    // §38.7.3: only where the history can be walked again. An uninstalled or offline project
+    // keeps its rows and is not re-queued — its authorship still moves, with the rows frozen.
     for id in &delta.affected {
+        let project = ProjectId(*id);
+        if !history_readable(&tx, project)? {
+            continue;
+        }
         for kind in crate::identity::merge::GIT_DERIVED_XP_KINDS {
             tx.execute(
                 "DELETE FROM xp_events WHERE project_id = ?1 AND kind = ?2 AND track = 'git'",
@@ -168,7 +198,7 @@ pub fn apply(
         }
         crate::jobs::state::reset_for(
             &tx,
-            crate::protocol::ProjectId(*id),
+            project,
             crate::jobs::state::ResetCause::UserRequested,
             now,
         )?;
@@ -277,6 +307,19 @@ mod tests {
         .unwrap();
     }
 
+    /// One present, unremoved copy, so the project's history can be re-read (§38.7.1) and a
+    /// confirmation may delete its git rows.
+    fn readable(conn: &rusqlite::Connection, project: i64) {
+        let path = format!("/copy-of-{project}");
+        conn.execute(
+            "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                   store_key, presence, repo_kind)
+             VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree')",
+            rusqlite::params![project, path.as_bytes(), path],
+        )
+        .unwrap();
+    }
+
     // §1.4 / §2.4: apply:false returns {movedToReference, commitDaysRemoved} and writes nothing.
     #[test]
     fn the_preview_writes_nothing() {
@@ -284,6 +327,7 @@ mod tests {
         let conn = index.conn();
         let mine = project(conn, "mine");
         let theirs = project(conn, "theirs");
+        readable(conn, theirs);
         committer(conn, mine, "a@example.invalid");
         committer(conn, theirs, "other@example.invalid");
         commit_day(conn, theirs, "k1");
@@ -317,6 +361,7 @@ mod tests {
             let conn = index.conn();
             let mine = project(conn, "mine");
             let theirs = project(conn, "theirs");
+            readable(conn, theirs);
             committer(conn, mine, "a@example.invalid");
             committer(conn, theirs, "other@example.invalid");
             commit_day(conn, theirs, "k1");
@@ -356,6 +401,17 @@ mod tests {
             )
             .unwrap();
         assert_eq!(kept, 1, "an untouched project keeps its ledger");
+        let removed: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM xp_events WHERE project_id = ?1",
+                [theirs],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            removed, 0,
+            "the moved project's commit-days were not deleted"
+        );
     }
 
     // §1.4 / §1.7: level_floor is stamped before the delete, or it is unrecoverable.
@@ -366,6 +422,7 @@ mod tests {
             let conn = index.conn();
             let mine = project(conn, "mine");
             let theirs = project(conn, "theirs");
+            readable(conn, theirs);
             committer(conn, mine, "a@example.invalid");
             committer(conn, theirs, "other@example.invalid");
             commit_day(conn, theirs, "k1");
