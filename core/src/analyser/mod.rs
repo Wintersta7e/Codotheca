@@ -42,7 +42,7 @@ use crate::protocol::{
     LocationId, NestedRepository, PreciousSummary, TrashRefusalKind, UninstallBlocker,
     UninstallDisposition, UninstallVerdict,
 };
-use crate::removal::{Trash, TrashAvailability, TrashRefusal};
+use crate::removal::{Trash, TrashAvailability};
 
 use self::compose::{compose_remote_blockers, is_undischargeable, RemoteSummary};
 use self::gates::OtherLocation;
@@ -612,24 +612,10 @@ fn finish(findings: Findings, row: &LocationRow, seams: &AnalyserSeams<'_>, now:
     }
 }
 
-/// §46.7's wire reason for one availability reading.
-///
-/// An `Io` from the pre-check is a setting that could not be established, which is
-/// `capacity_unknown`: unknown behaves as unsafe.
+/// §46.7's wire reason for one availability reading: the classifier's, carried as it named it.
 const fn trash_refusal_of(availability: &TrashAvailability) -> Option<TrashRefusalKind> {
     match availability {
         TrashAvailability::Available => None,
-        TrashAvailability::Unavailable(TrashRefusal::Unsupported) => {
-            Some(TrashRefusalKind::Unsupported)
-        }
-        TrashAvailability::Unavailable(TrashRefusal::NetworkDrive) => {
-            Some(TrashRefusalKind::NetworkDrive)
-        }
-        TrashAvailability::Unavailable(TrashRefusal::OversizedFolder) => {
-            Some(TrashRefusalKind::OversizedFolder)
-        }
-        TrashAvailability::Unavailable(TrashRefusal::Io(_)) => {
-            Some(TrashRefusalKind::CapacityUnknown)
-        }
+        TrashAvailability::Unavailable(kind) => Some(*kind),
     }
 }

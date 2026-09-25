@@ -4,12 +4,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 // `?raw` rather than node:fs: the renderer project carries no Node types by design.
 import schemaRaw from '../../../../../protocol/schema/protocol.json?raw';
 import type {
+  TrashRefusalKind,
   UninstallBlocker,
   UninstallDisposition,
   UninstallVerdict,
 } from '../../../generated/protocol';
 import { UninstallControl } from './UninstallControl';
-import { blockerSentence, UNINSTALL_CONFIRMATION, UNINSTALL_LABEL } from './uninstallCopy';
+import {
+  blockerSentence,
+  TRASH_AVAILABLE_NOTE,
+  trashRefusalSentence,
+  UNINSTALL_CONFIRMATION,
+  UNINSTALL_LABEL,
+} from './uninstallCopy';
 
 afterEach(cleanup);
 
@@ -22,6 +29,13 @@ function schemaBlockers(): UninstallBlocker[] {
   expect(schemaRaw.length, 'protocol.json read as an empty string').toBeGreaterThan(0);
   const raw = JSON.parse(schemaRaw) as { types?: Record<string, { variants?: string[] }> };
   return (raw.types?.['UninstallBlocker']?.variants ?? []) as UninstallBlocker[];
+}
+
+/** Every reason the bin can refuse a copy, read from the same schema (§46.7). */
+function schemaTrashRefusals(): TrashRefusalKind[] {
+  expect(schemaRaw.length, 'protocol.json read as an empty string').toBeGreaterThan(0);
+  const raw = JSON.parse(schemaRaw) as { types?: Record<string, { variants?: string[] }> };
+  return (raw.types?.['TrashRefusalKind']?.variants ?? []) as TrashRefusalKind[];
 }
 
 const verdict = (over: Partial<UninstallVerdict> = {}): UninstallVerdict => ({
@@ -139,10 +153,8 @@ describe('the uninstall control', () => {
 
   it('says what will happen to the copy before the click', () => {
     render(<UninstallControl verdict={verdict({ trashAvailable: true })} onUninstall={vi.fn()} />);
-    expect(document.body.textContent).toContain('recycle bin');
-    cleanup();
-    render(<UninstallControl verdict={verdict({ trashAvailable: false })} onUninstall={vi.fn()} />);
-    expect(document.body.textContent).toContain('outright');
+    expect(document.body.textContent).toContain(TRASH_AVAILABLE_NOTE);
+    expect(screen.getByRole('button', { name: UNINSTALL_LABEL })).toBeTruthy();
   });
 
   it('is disabled while the verdict is in flight, and never enabled-then-disabled', () => {
@@ -186,4 +198,34 @@ describe('the panel offers no bulk selection', () => {
       }
     }
   });
+});
+
+/**
+ * **AC-P4-46-13's control half (§46.7's interim rule).** For every reason the schema declares, a
+ * `safe` verdict whose bin cannot take the copy renders that reason and **nothing that could
+ * reach the removal**; with no reason, the recycle-bin note and the button.
+ */
+it('AC-P4-46-13-control', () => {
+  const kinds = schemaTrashRefusals();
+  let covered = 0;
+  for (const kind of kinds) {
+    cleanup();
+    render(
+      <UninstallControl
+        verdict={verdict({ trashAvailable: false, trashRefusal: kind })}
+        onUninstall={vi.fn()}
+      />,
+    );
+    expect(document.body.textContent, kind).toContain(trashRefusalSentence(kind));
+    expect(reachableActivators(), `${kind} rendered an activator`).toHaveLength(0);
+    covered += 1;
+  }
+  cleanup();
+  render(<UninstallControl verdict={verdict()} onUninstall={vi.fn()} />);
+  expect(document.body.textContent).toContain(TRASH_AVAILABLE_NOTE);
+  expect(screen.getByRole('button', { name: UNINSTALL_LABEL })).toBeTruthy();
+  expect(
+    covered,
+    'the schema declares zero trash refusals, so this asserts nothing',
+  ).toBeGreaterThan(0);
 });

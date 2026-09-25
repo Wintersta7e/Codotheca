@@ -274,6 +274,7 @@ mod corehandler {
             write_git: Arc::new(codotheca_core::testing::FakeMutatingGit::new(
                 codotheca_core::testing::CloneBehaviour::Succeed,
             )),
+            trash: Arc::new(codotheca_core::testing::CountingTrash::new()),
             mount: Arc::new(codotheca_core::testing::FakeMountResolver::default()),
             spawner: Box::new(codotheca_core::launch::spawn::RecordingSpawner::new()),
             sessions: codotheca_core::session::manager::SessionManager::new(

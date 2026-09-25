@@ -38,6 +38,9 @@ pub struct CoreDeps {
     /// §24.1's write seam. Separate from `git` because the two have different argv prefixes and
     /// different audits — one is proven read-only, the other is the only thing that may write.
     pub write_git: Arc<dyn crate::gitw::backend::MutatingGit>,
+    /// §24.7F's destination for a removed working copy, and §46.7's reading of whether it will
+    /// take one. Production is `SystemTrash` over the platform's bin settings.
+    pub trash: Arc<dyn crate::removal::Trash>,
     /// Resolves a path to the store it lives on and that store's class (§3.4).
     pub mount: Arc<dyn crate::mount::MountResolver>,
     /// Starts a launch target's process for `projects.launch`.
@@ -99,6 +102,7 @@ pub struct CoreHandler {
     clock: Arc<dyn crate::clock::Clock>,
     git: Arc<dyn crate::git::GitBackend>,
     write_git: Arc<dyn crate::gitw::backend::MutatingGit>,
+    trash: Arc<dyn crate::removal::Trash>,
     /// §24.3e's queue — one install in flight, FIFO. Held here rather than in `jobs` because
     /// R52 keeps installs out of the scheduler entirely.
     installs: Arc<crate::install::queue::InstallQueue>,
@@ -149,6 +153,7 @@ impl CoreHandler {
             clock: deps.clock,
             git: deps.git,
             write_git: deps.write_git,
+            trash: deps.trash,
             installs: Arc::new(crate::install::queue::InstallQueue::new()),
             install_stages: Arc::new(crate::install::state::InstallStateStore::new()),
             mount: deps.mount,
@@ -487,7 +492,7 @@ impl CoreHandler {
         let seams = crate::analyser::AnalyserSeams {
             git: self.git.as_ref(),
             remotes: &remotes,
-            trash: &crate::removal::SystemTrash,
+            trash: self.trash.as_ref(),
             #[cfg(feature = "testkit")]
             before_act: None,
         };

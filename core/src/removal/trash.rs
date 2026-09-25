@@ -8,39 +8,36 @@
 //! test double.
 
 use std::path::Path;
+use std::sync::Arc;
 
+use super::bins::{trash_refusal_for, tree_bytes, BinSettings};
 use super::RemovalOutcome;
+use crate::protocol::TrashRefusalKind;
 
-/// Why the OS trash cannot take a path.
+/// Why a send failed: the platform's own reason, carried verbatim.
 ///
-/// **`OversizedFolder` has no producer in this plan, and that is stated rather than hidden.**
-/// Windows' Recycle Bin silently permanently-deletes items above its per-volume quota; detecting
-/// that needs the quota and a verified `IFileOperation` result code, neither of which this plan
-/// can exercise — it has no uninstall path to run them against. **p2-24b owns producing it**, in
-/// the change that gives `Trash` a consumer on a real working copy. Declaring it here keeps one
-/// vocabulary for both plans; producing it from a guess would be worse than the gap.
+/// [p4] **What happens above a volume's quota is unmeasured.** The crate asks the shell for a
+/// nuke warning (`FOF_WANTNUKEWARNING`, `trash-5.2.3/src/windows.rs:44`) under `FOF_NO_UI`, and
+/// what the shell then does — prompt, refuse, or delete outright — is §46.7's probe to record on
+/// a disposable Windows VM. The reasons a bin cannot take a copy are named **before** the send,
+/// by [`TrashAvailability`]; this is only what a send that was attempted reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrashRefusal {
-    /// This platform or this location has no trash to send to.
-    Unsupported,
-    /// Larger than the bin will hold, so sending would be a silent permanent delete.
-    OversizedFolder,
-    /// A network location. Windows does not recycle these; a delete there is permanent.
-    NetworkDrive,
     /// The attempt failed and the platform said why.
     Io(String),
 }
 
 /// Whether the OS trash will take this path.
 ///
-/// A pre-flight, not a promise: it reports what can be established cheaply and without writing.
-/// `send` reports what actually happened. p2-24b surfaces this as `UninstallVerdict.trashAvailable`.
+/// A pre-flight, not a promise: it reports what can be established without writing. `send`
+/// reports what actually happened. It surfaces as `UninstallVerdict.trashRefusal`, and
+/// `trashAvailable` is its absence, from the same reading (§46.7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrashAvailability {
-    /// Nothing cheap and certain stands in the way.
+    /// Nothing that can be read stands in the way.
     Available,
     /// It will not work, and this is the reason to state.
-    Unavailable(TrashRefusal),
+    Unavailable(TrashRefusalKind),
 }
 
 /// Where removed bytes go.
@@ -53,7 +50,7 @@ pub enum TrashAvailability {
 /// that did the removing is the only thing that knows whether the bytes are recoverable, so it
 /// returns that rather than having a second method — or a caller — restate it. One value, one
 /// owner; the alternative is `RemovalOutcome` and the behaviour drifting apart.
-pub trait Trash: std::fmt::Debug {
+pub trait Trash: Send + Sync + std::fmt::Debug {
     /// What `send` would do, established without writing anything.
     fn availability(&self, path: &Path) -> TrashAvailability;
 
@@ -90,48 +87,30 @@ impl Trash for HardDelete {
     }
 }
 
-/// §24.7F's Recycle Bin on Windows and XDG trash on Linux.
-///
-/// **Its consumer arrives with p2-24b** (deviation 9). It is real here rather than deferred
-/// because a `Trash` seam whose only implementation removes bytes permanently would make the
-/// recoverable path the one that was never written.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SystemTrash;
+/// §24.7F's Recycle Bin on Windows and XDG trash on Linux, its availability read from the
+/// platform's bin settings (§46.7).
+#[derive(Debug, Clone)]
+pub struct SystemTrash {
+    bins: Arc<dyn BinSettings>,
+}
 
-/// A Windows UNC path — `\\server\share\…`.
-///
-/// Windows does not recycle network locations: a delete there is permanent and silent, which is
-/// precisely the silent fallback §24.7F forbids. Checked by prefix because it needs no handle and
-/// no syscall, and a false negative is caught by `send` reporting the platform's own reason.
-#[cfg(windows)]
-fn is_network_path(path: &Path) -> bool {
-    let text = path.as_os_str().to_string_lossy();
-    text.starts_with(r"\\") && !text.starts_with(r"\\?\")
+impl SystemTrash {
+    /// The system trash, whose availability `bins` decides.
+    #[must_use]
+    pub fn new(bins: Arc<dyn BinSettings>) -> Self {
+        Self { bins }
+    }
 }
 
 impl Trash for SystemTrash {
     fn availability(&self, path: &Path) -> TrashAvailability {
-        #[cfg(windows)]
-        if is_network_path(path) {
-            return TrashAvailability::Unavailable(TrashRefusal::NetworkDrive);
-        }
-        // The freedesktop trash is a directory under the user's data home. With no home there is
-        // nowhere to put anything, and saying so is the honest answer rather than attempting it.
-        #[cfg(all(unix, not(target_os = "macos")))]
-        if std::env::var_os("XDG_DATA_HOME").is_none() && std::env::var_os("HOME").is_none() {
-            return TrashAvailability::Unavailable(TrashRefusal::Unsupported);
-        }
-        let _ = path;
-        TrashAvailability::Available
+        trash_refusal_for(&self.bins.for_path(path), || tree_bytes(path))
+            .map_or(TrashAvailability::Available, TrashAvailability::Unavailable)
     }
 
+    /// The crate's own message is carried verbatim; the reasons a bin cannot take a path were
+    /// named before this was called (`remove_warranted` asks `availability` first).
     fn send(&self, path: &Path) -> Result<RemovalOutcome, TrashRefusal> {
-        if let TrashAvailability::Unavailable(reason) = self.availability(path) {
-            return Err(reason);
-        }
-        // The crate's own message is carried verbatim. Mapping an OS result code onto
-        // `OversizedFolder` or `NetworkDrive` would be inventing a classification this plan
-        // cannot run against a real Recycle Bin — see `TrashRefusal`'s note.
         trash::delete(path)
             .map(|()| RemovalOutcome::Trashed)
             .map_err(|error| TrashRefusal::Io(error.to_string()))
@@ -176,9 +155,7 @@ mod tests {
         let error = HardDelete
             .send(&missing)
             .expect_err("a missing path is not a success");
-        match error {
-            TrashRefusal::Io(message) => assert!(!message.is_empty(), "{message}"),
-            other => panic!("expected the platform's own reason, got {other:?}"),
-        }
+        let TrashRefusal::Io(message) = error;
+        assert!(!message.is_empty(), "the platform's own reason: {message}");
     }
 }

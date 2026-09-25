@@ -85,6 +85,14 @@ pub fn handle_uninstall_off_lock(
         )));
     }
 
+    // §46.7's interim rule: a bin that cannot take the copy ends the act before step 9. The
+    // verdict already named why, before the click; nothing removes the copy outright instead.
+    if let Some(kind) = analysis.verdict.trash_refusal {
+        return Err(CommandFailure::protocol(format!(
+            "uninstall refused: the recycle bin cannot take this copy ({kind:?})"
+        )));
+    }
+
     // Between step 8 and step 9: a test's perturbation lands here, where step 9 must see it.
     #[cfg(feature = "testkit")]
     if let Some(hook) = seams.before_act {

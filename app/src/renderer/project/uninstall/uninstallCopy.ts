@@ -5,7 +5,11 @@
  * **The word is `UNINSTALL`.** Phase 2 ships no `DELETE`, no `REMOVE`, no `RECLAIM SPACE` and
  * **no override of any kind**.
  */
-import type { UninstallBlocker, UninstallDisposition } from '../../../generated/protocol';
+import type {
+  TrashRefusalKind,
+  UninstallBlocker,
+  UninstallDisposition,
+} from '../../../generated/protocol';
 
 export const UNINSTALL_LABEL = 'UNINSTALL';
 
@@ -26,8 +30,26 @@ export const UNINSTALL_CONFIRMATION = 'Uninstall — the tile stays, re-clone an
 
 /** Said before the click, so the copy knows what will happen to it (§24.7F). */
 export const TRASH_AVAILABLE_NOTE = 'This copy goes to the recycle bin.';
-export const TRASH_UNAVAILABLE_NOTE =
-  'The recycle bin is not available here, so this copy is removed outright.';
+
+/**
+ * §46.7: why the recycle bin cannot take this copy, said **before** the click — and there is no
+ * click, because nothing removes a copy outright instead. An **exhaustive switch over the
+ * generated enum**, so a new reason fails to compile rather than rendering nothing.
+ */
+export function trashRefusalSentence(kind: TrashRefusalKind): string {
+  switch (kind) {
+    case 'unsupported':
+      return 'There is no recycle bin for this location, so I will not uninstall this copy.';
+    case 'network_drive':
+      return 'This copy is on a network drive, which has no recycle bin, so I will not uninstall it.';
+    case 'oversized_folder':
+      return 'This copy is larger than the space left in the recycle bin, so I will not uninstall it.';
+    case 'disabled_on_volume':
+      return 'The recycle bin is turned off for this drive, so I will not uninstall this copy.';
+    case 'capacity_unknown':
+      return "I could not read this drive's recycle-bin settings, so I will not uninstall this copy.";
+  }
+}
 
 /** While the verdict is in flight. It never renders enabled-then-disabled. */
 export const CHECKING_NOTE = 'Checking what this copy holds…';

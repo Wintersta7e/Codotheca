@@ -373,6 +373,11 @@ fn main() -> ExitCode {
             std::path::PathBuf::from("git"),
             hooks_dir,
         )),
+        // §46.7: the bin's own settings decide whether a copy can go to it, named before the
+        // click.
+        trash: Arc::new(codotheca_core::removal::SystemTrash::new(Arc::new(
+            codotheca_core::removal::SystemBinSettings,
+        ))),
         mount: Arc::clone(&mount),
         spawner: Box::new(codotheca_core::launch::spawn::OsSpawner),
         sessions: SessionManager::new(

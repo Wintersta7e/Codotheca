@@ -11,11 +11,13 @@
 //! measured baseline pinned per line in `acceptance/callsites.json`, not a wildcard, so an
 //! eighteenth cannot appear silently inside an already-listed file.
 
+pub mod bins;
 pub mod trash;
 pub mod warrant;
 
 use std::path::{Component, Path};
 
+pub use bins::{trash_refusal_for, tree_bytes, BinFacts, BinSettings, SystemBinSettings};
 pub use trash::{HardDelete, SystemTrash, Trash, TrashAvailability, TrashRefusal};
 pub use warrant::{SessionNonce, Warrant, WarrantKind, WarrantVariant};
 
@@ -47,6 +49,9 @@ pub enum RemovalRefusal {
     Io(String),
     /// [p2-24b] §24.7E: the directory is no longer the repository its row describes.
     IdentityChanged,
+    /// [p4] §46.7: the destination cannot take this path, for this reason. Named before any
+    /// send, so a copy the bin cannot keep is never handed to it.
+    TrashUnavailable(crate::protocol::TrashRefusalKind),
 }
 
 /// Remove the one path this warrant authorises.
@@ -119,10 +124,13 @@ pub fn remove_warranted(
         Err(error) => return Err(RemovalRefusal::Io(error.to_string())),
     }
 
-    destination.send(path).map_err(|refusal| match refusal {
-        TrashRefusal::Io(message) => RemovalRefusal::Io(message),
-        other => RemovalRefusal::Io(format!("{other:?}")),
-    })
+    // §46.7: the destination's availability is asked **before** anything is sent to it.
+    if let TrashAvailability::Unavailable(kind) = destination.availability(path) {
+        return Err(RemovalRefusal::TrashUnavailable(kind));
+    }
+    destination
+        .send(path)
+        .map_err(|TrashRefusal::Io(message)| RemovalRefusal::Io(message))
 }
 
 /// Is `path` exactly one ordinary component below `root`?

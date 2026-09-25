@@ -13,7 +13,7 @@ mod scan;
 mod tokens;
 pub mod wsl;
 
-pub use bins::CountingTrash;
+pub use bins::{CountingTrash, FixedBinSettings};
 pub use clock::FakeClock;
 pub use git::{FakeGitBackend, GitReply, RecordedGitCall, RecordingGitBackend};
 pub use gitw::{CloneBehaviour, FakeMutatingGit};

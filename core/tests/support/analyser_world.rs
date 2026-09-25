@@ -355,10 +355,19 @@ impl Library {
 
     /// `locations.uninstallPreflight` over `remotes`.
     pub(crate) fn preflight(&self, id: LocationId, remotes: &dyn RemoteVerifier) -> Verdict {
-        let trash = CountingTrash::new();
+        self.preflight_with(id, remotes, &CountingTrash::new())
+    }
+
+    /// `locations.uninstallPreflight` over `remotes` and `trash`.
+    pub(crate) fn preflight_with(
+        &self,
+        id: LocationId,
+        remotes: &dyn RemoteVerifier,
+        trash: &CountingTrash,
+    ) -> Verdict {
         let value = codotheca_core::uninstall::handle_preflight_off_lock(
             &self.index,
-            &self.seams(remotes, &trash),
+            &self.seams(remotes, trash),
             serde_json::json!({ "locationId": id }),
             NOW,
         )
