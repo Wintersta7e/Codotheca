@@ -433,6 +433,57 @@ impl GitBackend for LockWatch {
         self.inner
             .read_blobs(repo, oids, byte_cap, budget_bytes, ctx)
     }
+    fn enumerate_refs(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<codotheca_core::git::RefListing> {
+        self.observe();
+        self.inner.enumerate_refs(repo, ctx)
+    }
+    fn stash_entries(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<codotheca_core::git::StashEntries> {
+        self.observe();
+        self.inner.stash_entries(repo, ctx)
+    }
+    fn worktree_scan(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<codotheca_core::git::WorktreeScan> {
+        self.observe();
+        self.inner.worktree_scan(repo, ctx)
+    }
+    fn objects_present(
+        &self,
+        repo: &RepoHandle,
+        oids: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<bool>> {
+        self.observe();
+        self.inner.objects_present(repo, oids, ctx)
+    }
+    fn any_uncovered(
+        &self,
+        repo: &RepoHandle,
+        roots: &[String],
+        covered: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<bool> {
+        self.observe();
+        self.inner.any_uncovered(repo, roots, covered, ctx)
+    }
+    fn interrupted_ops(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<codotheca_core::git::InterruptedOperation>> {
+        self.observe();
+        self.inner.interrupted_ops(repo, ctx)
+    }
 }
 
 #[test]

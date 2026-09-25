@@ -7,6 +7,7 @@
 //!
 //! `GIT_FLOOR` lives in [`version`] and the shell mirrors it, which a test pins.
 
+mod analyse;
 mod backend;
 mod error;
 mod exec;
@@ -23,6 +24,10 @@ mod status;
 mod tree;
 pub mod version;
 
+pub use analyse::{
+    is_object_id, HeadState, InterruptedOperation, RefBackend, RefEntry, RefListing, StashEntries,
+    StatusEntry, WorktreeScan,
+};
 pub use backend::{require_floor, GitBackend, JobContext, SystemGit};
 pub use error::{classify, classify_spawn, transport_refused, BusyMarker, GitError, GitResult};
 pub use exec::{GitExec, GitOutput, RunLimits};

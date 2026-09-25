@@ -7,8 +7,9 @@
 
 use crate::git::{
     Authorship, BlobBatch, CommitSubject, Divergence, GitBackend, GitError, GitResult, GitVersion,
-    JobContext, RefState, RepoFacts, RepoHandle, RootCommit, StatusOptions, StoreKey,
-    TrackedInventory, TreeEntry, UntrackedMode, WorktreeStatus,
+    InterruptedOperation, JobContext, RefListing, RefState, RepoFacts, RepoHandle, RootCommit,
+    StashEntries, StatusOptions, StoreKey, TrackedInventory, TreeEntry, UntrackedMode,
+    WorktreeScan, WorktreeStatus,
 };
 use crate::mount::StoreClass;
 use crate::wsl::conn::{WslError, WslWorker};
@@ -241,6 +242,60 @@ impl GitBackend for WslGitBackend {
             ctx,
         )
     }
+
+    // D-11: the deletion analyser runs on the host's git only (`CoreHandler.git`); this backend
+    // serves the scanner. Each of its six reads refuses **explicitly**, as an unreadable fact the
+    // analyser maps to an unknown blocker, rather than answering from a worker that has no such
+    // operation. The first job that needs one of them forwards it as a `WorkerGitOp` in its own
+    // change (R169, R237).
+    fn enumerate_refs(&self, _repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<RefListing> {
+        host_only(ctx, "enumerate_refs")
+    }
+
+    fn stash_entries(&self, _repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<StashEntries> {
+        host_only(ctx, "stash_entries")
+    }
+
+    fn worktree_scan(&self, _repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<WorktreeScan> {
+        host_only(ctx, "worktree_scan")
+    }
+
+    fn objects_present(
+        &self,
+        _repo: &RepoHandle,
+        _oids: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<bool>> {
+        host_only(ctx, "objects_present")
+    }
+
+    fn any_uncovered(
+        &self,
+        _repo: &RepoHandle,
+        _roots: &[String],
+        _covered: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<bool> {
+        host_only(ctx, "any_uncovered")
+    }
+
+    fn interrupted_ops(
+        &self,
+        _repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<InterruptedOperation>> {
+        host_only(ctx, "interrupted_ops")
+    }
+}
+
+/// D-11's refusal: the analyser's reads run on the host git, never through the worker.
+fn host_only<T>(ctx: &JobContext<'_>, read: &str) -> GitResult<T> {
+    ctx.cancel.check()?;
+    Err(GitError::Unreadable {
+        detail: format!(
+            "{read} is the host-only deletion analyser's read; the WSL worker has none"
+        ),
+    })
 }
 
 #[cfg(all(test, feature = "testkit"))]

@@ -7,6 +7,7 @@ use crate::cancel::CancelToken;
 use crate::clock::Clock;
 use crate::mount::StoreClass;
 
+use super::analyse::{self, InterruptedOperation, RefListing, StashEntries, WorktreeScan};
 use super::error::{GitError, GitResult};
 use super::exec::{GitExec, RunLimits};
 use super::facts::{repo_facts, RepoFacts};
@@ -215,6 +216,68 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
         budget_bytes: u64,
         ctx: &JobContext<'_>,
     ) -> GitResult<BlobBatch>;
+    /// §45.2 rows 1–2: every ref but `refs/remotes/*` and `refs/prefetch/*`, with its object
+    /// and type, and `HEAD`. The deletion analyser's, and the one ref listing J1, J4 and the tag
+    /// pre-flight read (R169).
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise a read
+    /// that failed, warned on stderr, or disagreed with the files-backend walk. **Never a
+    /// shorter listing.**
+    fn enumerate_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<RefListing>;
+    /// §45.2 row 3: every stash entry, newest first, through `log -g`.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise a read
+    /// that failed or did not parse. An unreadable files-backend reflog is the answer
+    /// `StashEntries::Unreadable`, not an error.
+    fn stash_entries(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<StashEntries>;
+    /// §45.2 rows 5–8: status with untracked and ignored paths, the hidden flags and the index.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise one of
+    /// the three reads failed, warned, or did not parse.
+    fn worktree_scan(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<WorktreeScan>;
+    /// Whether each of `oids` is present in the repository's own store, in order.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; an id that is not
+    /// an object id; otherwise the read's failure.
+    fn objects_present(
+        &self,
+        repo: &RepoHandle,
+        oids: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<bool>>;
+    /// §45.6 step 7: is any commit reachable from `roots` not reachable from `covered`? One
+    /// walk, replace objects and grafts off, whatever the number of refs.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; an id that is not
+    /// an object id; otherwise the walk's failure — a missing object included.
+    fn any_uncovered(
+        &self,
+        repo: &RepoHandle,
+        roots: &[String],
+        covered: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<bool>;
+    /// §45.5: the operations git left unfinished in this worktree.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise a read
+    /// that failed, or a marker whose presence cannot be established.
+    fn interrupted_ops(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<InterruptedOperation>>;
 }
 
 /// Native git, under the slot caps.
@@ -415,6 +478,57 @@ impl GitBackend for SystemGit {
                 ctx.limits(),
                 ctx.cancel,
             )
+        })
+    }
+
+    fn enumerate_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<RefListing> {
+        self.with_slot(repo, ctx, || {
+            analyse::enumerate_refs(&self.exec, repo, ctx.limits(), ctx.cancel)
+        })
+    }
+
+    fn stash_entries(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<StashEntries> {
+        self.with_slot(repo, ctx, || {
+            analyse::stash_entries(&self.exec, repo, ctx.limits(), ctx.cancel)
+        })
+    }
+
+    fn worktree_scan(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<WorktreeScan> {
+        self.with_slot(repo, ctx, || {
+            analyse::worktree_scan(&self.exec, repo, ctx.limits(), ctx.cancel)
+        })
+    }
+
+    fn objects_present(
+        &self,
+        repo: &RepoHandle,
+        oids: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<bool>> {
+        self.with_slot(repo, ctx, || {
+            analyse::objects_present(&self.exec, repo, oids, ctx.limits(), ctx.cancel)
+        })
+    }
+
+    fn any_uncovered(
+        &self,
+        repo: &RepoHandle,
+        roots: &[String],
+        covered: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<bool> {
+        self.with_slot(repo, ctx, || {
+            analyse::any_uncovered(&self.exec, repo, roots, covered, ctx.limits(), ctx.cancel)
+        })
+    }
+
+    fn interrupted_ops(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<InterruptedOperation>> {
+        self.with_slot(repo, ctx, || {
+            analyse::interrupted_ops(&self.exec, repo, ctx.limits(), ctx.cancel)
         })
     }
 }

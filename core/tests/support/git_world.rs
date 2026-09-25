@@ -7,6 +7,7 @@
 //! one named test.
 
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -208,4 +209,56 @@ pub(crate) fn scrub_report(hostile: &HostileEnv, child_env: &[String]) -> ScrubR
         }
     }
     report
+}
+
+/// §45.6's hostile **read** profile: the config that lies to a naive read.
+///
+/// Each key, left alone, makes a read report less than is there — untracked files hidden, a dirty
+/// submodule silenced, a stale untracked cache believed, a log that prints signatures or colour
+/// into what a parser reads, a reflog never written, paths quoted into a form nobody unquotes.
+pub(crate) const HOSTILE_READ_PROFILE: [(&str, &str); 9] = [
+    ("status.showUntrackedFiles", "no"),
+    ("core.untrackedCache", "true"),
+    ("diff.ignoreSubmodules", "all"),
+    ("submodule.sub.ignore", "all"),
+    ("log.showSignature", "true"),
+    ("format.pretty", "oneline"),
+    ("core.logAllRefUpdates", "false"),
+    ("color.ui", "always"),
+    ("core.quotePath", "true"),
+];
+
+/// Deliver the hostile read profile through the repository's own config, and populate the
+/// untracked cache it enables so a stale one exists to be believed.
+pub(crate) fn apply_hostile_read_profile(repo: &super::TestRepo) {
+    for (key, value) in HOSTILE_READ_PROFILE {
+        repo.git(&["config", key, value]);
+    }
+    repo.git(&["update-index", "--untracked-cache"]);
+    repo.git(&["status", "--porcelain"]);
+}
+
+/// The same profile as a user-global config file, for the `GIT_CONFIG_GLOBAL` route.
+pub(crate) fn hostile_read_global(dir: &Path) -> PathBuf {
+    let mut text = String::new();
+    for (key, value) in HOSTILE_READ_PROFILE {
+        let (section, name) = key.rsplit_once('.').expect("a dotted key");
+        let header = section.split_once('.').map_or_else(
+            || format!("[{section}]"),
+            |(outer, inner)| format!("[{outer} \"{inner}\"]"),
+        );
+        let _ = writeln!(text, "{header}\n\t{name} = {value}");
+    }
+    let path = dir.join("hostile-read.gitconfig");
+    std::fs::write(&path, text).expect("hostile global config");
+    path
+}
+
+/// The production read backend over `repo`, with its own empty hooks directory.
+pub(crate) fn system_git(repo: &super::TestRepo) -> codotheca_core::git::SystemGit {
+    codotheca_core::git::SystemGit::new(
+        std::sync::Arc::new(repo.exec()),
+        std::sync::Arc::new(codotheca_core::git::GitSlots::for_machine()),
+        std::sync::Arc::new(codotheca_core::clock::SystemClock::new()),
+    )
 }

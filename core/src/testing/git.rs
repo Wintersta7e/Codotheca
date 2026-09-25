@@ -18,8 +18,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::git::{
     Authorship, BlobBatch, BlobRead, CommitSubject, Divergence, GitBackend, GitError, GitResult,
-    GitVersion, JobContext, RefState, RepoFacts, RepoHandle, RootCommit, StatusOptions,
-    TrackedInventory, TreeEntry, WorktreeStatus,
+    GitVersion, InterruptedOperation, JobContext, RefListing, RefState, RepoFacts, RepoHandle,
+    RootCommit, StashEntries, StatusOptions, TrackedInventory, TreeEntry, WorktreeScan,
+    WorktreeStatus,
 };
 use crate::testing::FakeClock;
 
@@ -113,6 +114,12 @@ pub struct FakeGitBackend {
     authorship: Op<Authorship>,
     commit_subjects: Op<Vec<CommitSubject>>,
     head_tree: Op<Vec<TreeEntry>>,
+    enumerate_refs: Op<RefListing>,
+    stash_entries: Op<StashEntries>,
+    worktree_scan: Op<WorktreeScan>,
+    objects_present: Op<Vec<bool>>,
+    any_uncovered: Op<bool>,
+    interrupted_ops: Op<Vec<InterruptedOperation>>,
     /// §29.3's scripted blob bodies, keyed by object id — content-addressed here for the same
     /// reason the cache is: two projects holding identical bytes hold one object.
     blobs: Mutex<BTreeMap<String, Vec<u8>>>,
@@ -244,6 +251,12 @@ setters! {
     authorship: Authorship, on_authorship, always_authorship;
     commit_subjects: Vec<CommitSubject>, on_commit_subjects, always_commit_subjects;
     head_tree: Vec<TreeEntry>, on_head_tree, always_head_tree;
+    enumerate_refs: RefListing, on_enumerate_refs, always_enumerate_refs;
+    stash_entries: StashEntries, on_stash_entries, always_stash_entries;
+    worktree_scan: WorktreeScan, on_worktree_scan, always_worktree_scan;
+    objects_present: Vec<bool>, on_objects_present, always_objects_present;
+    any_uncovered: bool, on_any_uncovered, always_any_uncovered;
+    interrupted_ops: Vec<InterruptedOperation>, on_interrupted_ops, always_interrupted_ops;
 }
 
 /// An unconfigured operation fails loudly rather than inventing a value: a fake that answers
@@ -383,6 +396,77 @@ impl GitBackend for FakeGitBackend {
         })
     }
 
+    fn enumerate_refs(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<RefListing> {
+        self.answer(
+            "enumerate_refs",
+            &self.enumerate_refs,
+            Some(&repo.work_dir),
+            || unconfigured("enumerate_refs"),
+        )
+    }
+
+    fn stash_entries(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<StashEntries> {
+        self.answer(
+            "stash_entries",
+            &self.stash_entries,
+            Some(&repo.work_dir),
+            || unconfigured("stash_entries"),
+        )
+    }
+
+    fn worktree_scan(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<WorktreeScan> {
+        self.answer(
+            "worktree_scan",
+            &self.worktree_scan,
+            Some(&repo.work_dir),
+            || unconfigured("worktree_scan"),
+        )
+    }
+
+    fn objects_present(
+        &self,
+        repo: &RepoHandle,
+        _oids: &[String],
+        _ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<bool>> {
+        self.answer(
+            "objects_present",
+            &self.objects_present,
+            Some(&repo.work_dir),
+            || unconfigured("objects_present"),
+        )
+    }
+
+    fn any_uncovered(
+        &self,
+        repo: &RepoHandle,
+        _roots: &[String],
+        _covered: &[String],
+        _ctx: &JobContext<'_>,
+    ) -> GitResult<bool> {
+        // Unconfigured fails loudly: a fake answering *covered* by default would teach a
+        // deletion gate that every commit is pushed.
+        self.answer(
+            "any_uncovered",
+            &self.any_uncovered,
+            Some(&repo.work_dir),
+            || unconfigured("any_uncovered"),
+        )
+    }
+
+    fn interrupted_ops(
+        &self,
+        repo: &RepoHandle,
+        _ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<InterruptedOperation>> {
+        self.answer(
+            "interrupted_ops",
+            &self.interrupted_ops,
+            Some(&repo.work_dir),
+            || unconfigured("interrupted_ops"),
+        )
+    }
+
     /// Answers from the scripted blob map and records every oid asked for. An oid with no
     /// scripted bytes is **missing**, which is what real `cat-file --batch` answers and what a
     /// test needs to express a pruned object.
@@ -437,6 +521,9 @@ impl GitBackend for FakeGitBackend {
 pub struct RecordingGitBackend<B> {
     inner: B,
     calls: Mutex<Vec<RecordedGitCall>>,
+    /// When set, `version` answers this instead of asking the inner backend — the seam the
+    /// governed-floor tests drive a release below the floor through.
+    version: Option<GitVersion>,
 }
 
 impl<B: GitBackend> RecordingGitBackend<B> {
@@ -445,6 +532,16 @@ impl<B: GitBackend> RecordingGitBackend<B> {
         Self {
             inner,
             calls: Mutex::new(Vec::new()),
+            version: None,
+        }
+    }
+
+    /// Wrap `inner`, answering `version` with `version` — every other read still passes through.
+    pub const fn with_version(inner: B, version: GitVersion) -> Self {
+        Self {
+            inner,
+            calls: Mutex::new(Vec::new()),
+            version: Some(version),
         }
     }
 
@@ -467,7 +564,9 @@ impl<B: GitBackend> RecordingGitBackend<B> {
 impl<B: GitBackend> GitBackend for RecordingGitBackend<B> {
     fn version(&self, ctx: &JobContext<'_>) -> GitResult<GitVersion> {
         self.record("version", None);
-        self.inner.version(ctx)
+        self.version
+            .as_ref()
+            .map_or_else(|| self.inner.version(ctx), |pinned| Ok(pinned.clone()))
     }
 
     fn repo_facts(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<RepoFacts> {
@@ -569,5 +668,50 @@ impl<B: GitBackend> GitBackend for RecordingGitBackend<B> {
         self.record("read_blobs", Some(&repo.work_dir));
         self.inner
             .read_blobs(repo, oids, byte_cap, budget_bytes, ctx)
+    }
+
+    fn enumerate_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<RefListing> {
+        self.record("enumerate_refs", Some(&repo.work_dir));
+        self.inner.enumerate_refs(repo, ctx)
+    }
+
+    fn stash_entries(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<StashEntries> {
+        self.record("stash_entries", Some(&repo.work_dir));
+        self.inner.stash_entries(repo, ctx)
+    }
+
+    fn worktree_scan(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<WorktreeScan> {
+        self.record("worktree_scan", Some(&repo.work_dir));
+        self.inner.worktree_scan(repo, ctx)
+    }
+
+    fn objects_present(
+        &self,
+        repo: &RepoHandle,
+        oids: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<bool>> {
+        self.record("objects_present", Some(&repo.work_dir));
+        self.inner.objects_present(repo, oids, ctx)
+    }
+
+    fn any_uncovered(
+        &self,
+        repo: &RepoHandle,
+        roots: &[String],
+        covered: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<bool> {
+        self.record("any_uncovered", Some(&repo.work_dir));
+        self.inner.any_uncovered(repo, roots, covered, ctx)
+    }
+
+    fn interrupted_ops(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<InterruptedOperation>> {
+        self.record("interrupted_ops", Some(&repo.work_dir));
+        self.inner.interrupted_ops(repo, ctx)
     }
 }

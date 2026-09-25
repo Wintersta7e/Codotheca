@@ -10,7 +10,7 @@
 //!   reading deadlocks once git's stdout fills the pipe buffer, and this API gives a caller no
 //!   way to express that shape.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
@@ -124,22 +124,46 @@ impl GitExec {
         limits: RunLimits,
         cancel: &CancelToken,
     ) -> GitResult<GitOutput> {
-        let stdout = self.run_piped(
+        self.run_with_stdin(repo, args, Vec::new(), &[], limits, cancel)
+    }
+
+    /// Run a subcommand with `stdin` written on its own thread and then closed, `env` set on the
+    /// child after the scrub, and **both** streams returned.
+    ///
+    /// Stderr is returned because §45.6 makes a non-empty diagnostic stream on an enumerating
+    /// read an error in itself: `rev-parse --all` exits 0 while warning that it skipped a ref.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::run_piped`].
+    pub fn run_with_stdin(
+        &self,
+        repo: &RepoHandle,
+        args: &[&OsStr],
+        stdin: Vec<u8>,
+        env: &[(&str, OsString)],
+        limits: RunLimits,
+        cancel: &CancelToken,
+    ) -> GitResult<GitOutput> {
+        let (stdout, stderr) = self.run_inner(
             repo,
             args,
+            env,
             limits,
             cancel,
-            |_stdin| Ok(()),
-            |out| {
-                let mut buf = Vec::new();
-                out.read_to_end(&mut buf)?;
-                Ok(buf)
-            },
+            (
+                move |sink: &mut dyn Write| {
+                    sink.write_all(&stdin)?;
+                    sink.flush()
+                },
+                |out: &mut dyn BufRead| {
+                    let mut buf = Vec::new();
+                    out.read_to_end(&mut buf)?;
+                    Ok(buf)
+                },
+            ),
         )?;
-        Ok(GitOutput {
-            stdout,
-            stderr: Vec::new(),
-        })
+        Ok(GitOutput { stdout, stderr })
     }
 
     /// Run a subcommand, writing stdin on one thread and draining stdout on another.
@@ -168,6 +192,38 @@ impl GitExec {
         R: FnOnce(&mut dyn BufRead) -> std::io::Result<T> + Send + 'static,
         T: Send + 'static,
     {
+        self.run_inner(repo, args, &[], limits, cancel, (write_stdin, read_stdout))
+            .map(|(value, _stderr)| value)
+    }
+
+    /// [`Self::run_piped`]'s body, with per-call environment pins and the captured stderr.
+    ///
+    /// Run a subcommand, writing stdin on one thread and draining stdout on another.
+    ///
+    /// `write_stdin` receives a writer; when it returns, the handle is dropped so git sees
+    /// EOF. `read_stdout` receives a buffered reader and returns whatever the caller wants to
+    /// keep — it should stream rather than collect when the output is large.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when `cancel` fires before or during the run; `GitError::Budget`
+    /// when the deadline is zero or elapses; `GitError::Missing`, `PermissionDenied` or `Internal`
+    /// when the spawn fails; the [`classify`]d failure when git exits non-zero with a code
+    /// `limits` does not tolerate; `GitError::Internal` when writing stdin or reading stdout fails.
+    fn run_inner<W, R, T>(
+        &self,
+        repo: &RepoHandle,
+        args: &[&OsStr],
+        env: &[(&str, OsString)],
+        limits: RunLimits,
+        cancel: &CancelToken,
+        (write_stdin, read_stdout): (W, R),
+    ) -> GitResult<(T, Vec<u8>)>
+    where
+        W: FnOnce(&mut dyn Write) -> std::io::Result<()> + Send + 'static,
+        R: FnOnce(&mut dyn BufRead) -> std::io::Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
         cancel.check()?;
         // A budget of zero has nothing left to spend, and the poll loop below cannot enforce it:
         // it reads `try_wait` first, so a subcommand that exits inside the first 250 µs poll is an
@@ -185,6 +241,11 @@ impl GitExec {
         cmd.args(base_args(repo, &self.hooks_dir));
         cmd.args(args);
         neutralise_env(&mut cmd);
+        // Per-call pins go on **after** the scrub, which would otherwise remove the very
+        // variables they set (§47.3: `GIT_GRAFT_FILE` is scrubbed and then pinned absent).
+        for (key, value) in env {
+            cmd.env(key, value);
+        }
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -265,8 +326,9 @@ impl GitExec {
                 });
             }
         }
-        read.map_err(|e| GitError::Internal {
-            detail: e.to_string(),
-        })
+        read.map(|value| (value, stderr_bytes))
+            .map_err(|e| GitError::Internal {
+                detail: e.to_string(),
+            })
     }
 }

@@ -124,6 +124,25 @@ const NON_LITERAL_OS_STR_ALLOWLIST: &[NonLiteralOsStrAllowance] = &[
                  packed-refs yielded, never a caller's string, and it sits after `rev-list` as \
                  a revision rather than as a subcommand",
     },
+    NonLiteralOsStrAllowance {
+        file: "analyse.rs",
+        call: "OsStr::new(REFS_STASH)",
+        reason: "[p4] the constant `refs/stash`, a revision after `rev-parse --verify` and \
+                 `log -g` — §45.2 row 3 reads the stash through git and never through `git stash`",
+    },
+    NonLiteralOsStrAllowance {
+        file: "analyse.rs",
+        call: "OsStr::new(UNTRACKED_CACHE_OFF)",
+        reason: "[p4] the constant `core.untrackedCache=false`, the value of a `-c` before \
+                 `status` — §45.2 row 7 reads the worktree with the stale-prone cache off",
+    },
+    NonLiteralOsStrAllowance {
+        file: "analyse.rs",
+        call: "OsStr::new(pseudoref)",
+        reason: "[p4] each value is one of the three constant pseudoref names \
+                 (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`) after `rev-parse --verify \
+                 --quiet` — §45.5 resolves an interrupted operation through git",
+    },
 ];
 
 /// Collect `OsStr::new(...)` calls whose argument is not exactly one string literal.
