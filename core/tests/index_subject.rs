@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! Project subjects: the key shapes, and a subject that survives a rebuild reassigning ids.
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::path::{PathPlatform, StoredPath};

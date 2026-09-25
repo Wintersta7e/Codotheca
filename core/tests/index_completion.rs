@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! The completion columns: not computed is two NULLs, a real zero is writable, one writer.
 
 use codotheca_core::index::completion::{get_completion, set_completion, Completion};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};

@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! Stored paths: bytes that survive any name, the per-platform key, and the one display door.
 
 use codotheca_core::index::path::{PathPlatform, StoredPath};
 

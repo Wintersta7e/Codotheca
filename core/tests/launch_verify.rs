@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! Verifying launch targets: missing and not executable told apart, and no row ever disabled.
 
 use codotheca_core::index::Index;
 use codotheca_core::launch::verify::{verify_all, verify_path, VerifyState};

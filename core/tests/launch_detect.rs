@@ -5,6 +5,7 @@
     clippy::indexing_slicing
 )]
 #![cfg(feature = "testkit")]
+//! Launch-target detection: the global rows it writes, and a re-detection that rewrites them.
 
 use codotheca_core::index::Index;
 use codotheca_core::launch::catalogue::TargetKind;

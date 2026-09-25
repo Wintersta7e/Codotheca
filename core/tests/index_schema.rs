@@ -9,10 +9,12 @@
     clippy::must_use_candidate,
     clippy::missing_panics_doc
 )]
+//! The migrated schema: every table's columns, constraints and indexes, as the spec names them.
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
 use codotheca_core::index::{open_connection, Index};
 
+/// A database with every shipped migration applied, and the directory that holds it.
 pub fn fresh() -> (tempfile::TempDir, rusqlite::Connection) {
     let dir = tempfile::tempdir().unwrap();
     let mut conn = open_connection(&Index::db_path(dir.path())).unwrap();
@@ -21,6 +23,7 @@ pub fn fresh() -> (tempfile::TempDir, rusqlite::Connection) {
     (dir, conn)
 }
 
+/// Whether `sqlite_master` holds exactly one object of `kind` (`table`, `index`) named `name`.
 pub fn has(conn: &rusqlite::Connection, kind: &str, name: &str) -> bool {
     let n: i64 = conn
         .query_row(
@@ -32,6 +35,7 @@ pub fn has(conn: &rusqlite::Connection, kind: &str, name: &str) -> bool {
     n == 1
 }
 
+/// `table`'s column names, in declaration order.
 pub fn columns(conn: &rusqlite::Connection, table: &str) -> Vec<String> {
     let mut stmt = conn
         .prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
@@ -262,6 +266,14 @@ use codotheca_core::index::path::{PathPlatform, StoredPath};
 
 // R1: this is a TEST HELPER. There is no production `location` writer in plan 04; plan 08 owns
 // it, written in the same transaction as `resolve_identity`.
+/// One `location` row for `project_id` at `raw`, returning its id.
+///
+/// `raw` is read as a path on `kind`'s platform, and `distro` is written only when given, so a
+/// test can leave the column to its default.
+///
+/// # Errors
+///
+/// The `INSERT`'s own error: the tests here reach the CHECK and UNIQUE constraints through it.
 pub fn insert_location(
     conn: &rusqlite::Connection,
     project_id: i64,

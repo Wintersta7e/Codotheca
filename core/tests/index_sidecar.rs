@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! The sidecar export: keyed on a subject, what it leaves out, and how it is written and checked.
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::sidecar::{

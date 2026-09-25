@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! Opening the index: its pragmas, the one-writer rule, and the migration and backup on open.
 
 use codotheca_core::index::{open_connection, Index, IndexError};
 

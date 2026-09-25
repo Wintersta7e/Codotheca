@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! Recovering the index: an orphaned WAL, a corrupt file, quarantine, and a sidecar rebuild.
 
 use std::io::Write as _;
 

@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! Launch-target resolution: five tiers in order, the first hit wins, and nothing means ask.
 
 use codotheca_core::index::Index;
 use codotheca_core::launch::catalogue::TargetKind;

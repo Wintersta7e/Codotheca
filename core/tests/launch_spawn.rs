@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! Spawning a launch target: the exit waiter, a detached child, and our stdout never inherited.
 
 use codotheca_core::launch::argv::Invocation;
 use codotheca_core::launch::spawn::{OsSpawner, Spawner};
