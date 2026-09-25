@@ -176,9 +176,14 @@ pub fn handle_start(
 /// a git binary: the assembly passes one that spawns the run thread, a test passes one that
 /// records what it was asked to start.
 pub struct StartCtx<'a> {
+    /// The one index; `handle_start` locks it for its own transaction and releases it before
+    /// `begin` runs.
     pub index: &'a std::sync::Arc<std::sync::Mutex<crate::index::Index>>,
+    /// §24.3e's FIFO queue the new run is pushed onto.
     pub queue: &'a queue::InstallQueue,
+    /// The caller's clock reading, in unix seconds.
     pub now: i64,
+    /// Starts the queued run: its id, request, root, paths and clone URL.
     #[allow(clippy::type_complexity)]
     pub begin: &'a dyn Fn(
         crate::protocol::InstallRunId,

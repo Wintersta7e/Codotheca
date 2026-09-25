@@ -15,17 +15,24 @@ use crate::uninstall::verdict::{fold_disposition, VerdictSeal};
 /// One location's facts, read from the row before any network call.
 #[derive(Debug, Clone)]
 pub struct LocationSnapshot {
+    /// The `location` row these facts were read from.
     pub id: LocationId,
+    /// The working copy's directory: what would be removed.
     pub path: PathBuf,
+    /// When ref state was last observed; `None` blocks the verdict as never observed (§24.7G).
     pub refstate_observed_at: Option<i64>,
+    /// When the worktree was last observed; `None` blocks the verdict the same way.
     pub worktree_observed_at: Option<i64>,
+    /// Whether the project's history is shallow, which blocks the verdict (§24.7B).
     pub is_shallow: bool,
+    /// When this copy was uninstalled, or `None` while its bytes are on disk.
     pub removed_at: Option<i64>,
 }
 
 /// Everything the verdict is computed from that is not the row.
 #[derive(Debug, Clone)]
 pub struct VerdictInputs {
+    /// The row's own facts.
     pub snapshot: LocationSnapshot,
     /// The configured scan roots, for §24.7D's containment check.
     pub roots: Vec<PathBuf>,
@@ -35,6 +42,8 @@ pub struct VerdictInputs {
     pub unique: Vec<UninstallBlocker>,
     /// A live launch session on this location (§24.7D).
     pub live_session: bool,
+    /// The clock reading, in unix seconds: the verdict's `computedAt` and a removal's
+    /// `removed_at`.
     pub now: i64,
 }
 

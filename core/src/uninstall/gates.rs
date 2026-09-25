@@ -25,6 +25,7 @@ pub const fn gate_shallow(is_shallow: bool) -> Option<UninstallBlocker> {
 /// What a live remote check established.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RemoteVerification {
+    /// What the check's outcome blocks; `verify_remote` leaves it empty only for `Reached`.
     pub blockers: Vec<UninstallBlocker>,
     /// When the remote was actually reached. `None` means it was not — never an old value, and
     /// never a zero.

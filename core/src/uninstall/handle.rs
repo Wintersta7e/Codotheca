@@ -319,5 +319,6 @@ pub fn handle_uninstall_off_lock(
     // The same projection RELOCATE returns — the one the page already reads, never a second one.
     let detail: LocationDetail =
         crate::detail::get::location_detail(guard.conn(), removed.location)?;
+    drop(guard);
     serde_json::to_value(detail).map_err(internal)
 }

@@ -170,7 +170,11 @@ fn warrant_for_path(index: &std::sync::Mutex<crate::index::Index>, path: &Path) 
         .optional()
         .ok()
         .flatten()?;
-    staging_warrant_for(&tx, InstallRunId(run)).ok().flatten()
+    let warrant = staging_warrant_for(&tx, InstallRunId(run)).ok().flatten();
+    // `tx` borrows the one connection behind the lock, so it ends first.
+    drop(tx);
+    drop(held);
+    warrant
 }
 
 #[cfg(test)]

@@ -51,6 +51,7 @@ pub struct InstallQueue {
 }
 
 impl InstallQueue {
+    /// An empty queue: nothing in flight, nothing waiting.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -100,6 +101,7 @@ impl InstallQueue {
         } else {
             state.waiting.push_back((run, request));
         }
+        drop(state);
         Ok(run)
     }
 
@@ -149,13 +151,11 @@ impl InstallQueue {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match state.tokens.get(&run.0) {
-            Some(token) => {
-                token.cancel();
-                true
-            }
-            None => false,
-        }
+        state
+            .tokens
+            .get(&run.0)
+            .inspect(|token| token.cancel())
+            .is_some()
     }
 
     /// How many runs are waiting behind the one in flight.

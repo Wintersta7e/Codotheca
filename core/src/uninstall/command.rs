@@ -36,8 +36,11 @@ const CLEARED_ON_REMOVAL: [&str; 10] = [
 /// What a completed removal did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removed {
+    /// The copy whose bytes were removed; its row is kept.
     pub location: LocationId,
+    /// Whether the bytes went to the trash or were deleted outright.
     pub outcome: RemovalOutcome,
+    /// The `location.removed_at` stamp written, in unix seconds.
     pub removed_at: i64,
 }
 

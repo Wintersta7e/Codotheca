@@ -39,6 +39,7 @@ pub struct InstallStateStore {
 const KEEP_ENDED: usize = 8;
 
 impl InstallStateStore {
+    /// A store that knows no run, so the `install` snapshot is *not computed* until one begins.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -92,6 +93,7 @@ impl InstallStateStore {
             entry.ended = true;
         }
         Self::trim(&mut runs);
+        drop(runs);
     }
 
     /// The frame a subscriber builds from.

@@ -107,9 +107,11 @@ fn project_seed(tx: &Transaction<'_>, project: ProjectId) -> rusqlite::Result<Op
     .optional()
 }
 
-/// The HTTPS clone URL for one live project, from the same constructor as every rendered
-/// repository URL. `None` means the key is absent, malformed or outside the configured host
-/// allowlist; Install never invents a second spelling for the endpoint Git will contact.
+/// The HTTPS clone URL for one live project.
+///
+/// It comes from the same constructor as every rendered repository URL. `None` means the key is
+/// absent, malformed or outside the configured host allowlist; Install never invents a second
+/// spelling for the endpoint Git will contact.
 ///
 /// # Errors
 /// Fails when the project or account-host tables cannot be read.
@@ -265,6 +267,11 @@ pub(crate) fn compose_destination_checked(
 /// chooser's no-selection state and is owned by Task 19, so this function cannot return it.
 /// A storage fault is conservatively refused as `root_unavailable`; [`super::handle_preview`]
 /// uses the checked form above and reports the same fault as `INTERNAL` instead.
+///
+/// # Errors
+/// The first refusal that applies, in the checked form's order: `RootUnavailable`, `NoCloneUrl`,
+/// `UnsafeName`, `PrivateNeedsUpgrade`, then `DestinationExists` or `AlreadyInstalled` — and
+/// `RootUnavailable` for a storage fault.
 pub fn compose_destination(
     tx: &Transaction<'_>,
     project: ProjectId,

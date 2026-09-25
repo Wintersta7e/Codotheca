@@ -55,14 +55,20 @@ pub struct InstallCtx<'a> {
     pub git: &'a dyn MutatingGit,
     /// The read seam, for the identity probe after the rename.
     pub probe: &'a dyn GitBackend,
+    /// The one index, locked around each transaction and never across a git invocation.
     pub index: &'a Arc<Mutex<Index>>,
+    /// Where step 4 enqueues the ordinary J0–J6 pipeline for the new location.
     pub jobs: &'a dyn JobSink,
+    /// Resolves the destination's store key, volume key and store class.
     pub mounts: &'a dyn MountResolver,
     /// §24.4's stage state, so a tile that mounts mid-clone reads a snapshot rather than waiting
     /// for the next event (R54).
     pub stages: &'a InstallStateStore,
+    /// Where the run's `install/stage` and `install/failed` events are published.
     pub events: &'a dyn EventSink,
+    /// This run's token; `install.cancel` fires it and the clone's process group is killed.
     pub cancel: &'a CancelToken,
+    /// The clock reading taken when `install.start` was answered, in unix seconds.
     pub now: i64,
 }
 
@@ -79,14 +85,18 @@ impl std::fmt::Debug for InstallCtx<'_> {
 /// Where a run's bytes go, re-derived from the request rather than carried in it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunPaths {
+    /// The staging directory the clone is written into, a sibling under the same root.
     pub staging: PathBuf,
+    /// `<root>/<seed_basename>`, which the staging directory is renamed onto.
     pub destination: PathBuf,
 }
 
 /// The root row's own facts, which a run needs and the queue does not hold.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootFacts {
+    /// The `scan_root` row these facts were read from.
     pub root_id: i64,
+    /// The root's directory, which the destination is joined onto.
     pub path: PathBuf,
     /// `win` | `linux` | `wsl`.
     pub kind: String,
@@ -246,6 +256,7 @@ fn mark_done(ctx: &InstallCtx<'_>, run: InstallRunId) -> Result<(), InstallFailu
             rusqlite::params![run.0, ctx.now],
         )
         .map_err(|_| InstallFailure::RenameFailed)?;
+    drop(guard);
     Ok(())
 }
 
@@ -335,15 +346,18 @@ pub fn finish_failed(
 ) {
     let removed = {
         let _guard = crate::proto::txguard::TxGuard::enter();
-        let held = ctx
+        let warrant = ctx
             .index
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let warrant = held.conn().unchecked_transaction().ok().and_then(|tx| {
-            crate::install::staging::staging_warrant_for(&tx, run)
-                .ok()
-                .flatten()
-        });
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .conn()
+            .unchecked_transaction()
+            .ok()
+            .and_then(|tx| {
+                crate::install::staging::staging_warrant_for(&tx, run)
+                    .ok()
+                    .flatten()
+            });
         warrant.is_some_and(|warrant| {
             // A staging warrant proves *this process, this session*; §24.7E's root-commit check cannot
             // apply to a partial clone and is not claimed, so no identity is supplied.

@@ -19,6 +19,7 @@ use crate::protocol::InstallStageKind;
 /// One parsed stderr line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StageObservation {
+    /// The §24.4 stage the line's milestone belongs to.
     pub kind: InstallStageKind,
     /// Items done **within this phase**.
     pub done: Option<i64>,
@@ -51,7 +52,7 @@ fn rank(kind: InstallStageKind) -> usize {
 fn parse_bytes(text: &str) -> Option<i64> {
     let (number, unit) = text.split_once(' ').or_else(|| {
         let idx = text.find(|c: char| c.is_ascii_alphabetic())?;
-        Some((&text[..idx], &text[idx..]))
+        text.split_at_checked(idx)
     })?;
     let scale: i64 = match unit.trim() {
         "B" => 1,
@@ -60,7 +61,10 @@ fn parse_bytes(text: &str) -> Option<i64> {
         "GiB" => 1024 * 1024 * 1024,
         _ => return None,
     };
-    let (whole, fraction) = number.trim().split_once('.').unwrap_or((number.trim(), ""));
+    let (whole, fraction) = number
+        .trim()
+        .split_once('.')
+        .unwrap_or_else(|| (number.trim(), ""));
     let whole: i64 = whole.parse().ok()?;
     let mut bytes = whole.checked_mul(scale)?;
     if !fraction.is_empty() {
@@ -93,10 +97,9 @@ pub fn parse_progress_line(line: &str) -> Option<StageObservation> {
     let mut bytes = None;
     for part in rest.split(',') {
         let part = part.trim();
-        if let Some(open) = part.find('(') {
+        if let Some((_, opened)) = part.split_once('(') {
             // `Receiving objects:  73% (2196/3007), 2.14 MiB | 1.07 MiB/s`
-            if let Some(close) = part[open..].find(')') {
-                let inner = &part[open + 1..open + close];
+            if let Some((inner, _)) = opened.split_once(')') {
                 if let Some((a, b)) = inner.split_once('/') {
                     done = a.trim().parse().ok();
                     total = b.trim().parse().ok();
@@ -139,14 +142,16 @@ impl Default for StageMachine {
 }
 
 impl StageMachine {
+    /// A machine at `plans`, the stage every run starts in, with no figure seen yet.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             current: InstallStageKind::Plans,
             high_water: None,
         }
     }
 
+    /// The stage the run is in now: the last one entered.
     #[must_use]
     pub const fn current(&self) -> InstallStageKind {
         self.current
