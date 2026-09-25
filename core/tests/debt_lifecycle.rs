@@ -9,14 +9,14 @@
 )]
 
 use codotheca_core::debt::identity::DebtKey;
+use codotheca_core::debt::singletons::settle_singletons;
 use codotheca_core::debt::store::{
-    DebtCloseReason, DebtClosure, DebtStore, ObservedItem, SqliteDebtStore, StoredItem, SweepEffect,
+    DebtCloseReason, DebtClosure, DebtStore, ObservedItem, SqliteDebtStore, StoredItem,
 };
 use codotheca_core::debt::sweep::{
     comparable, latest_sweep, may_close, outcome_at_root, root_is_observable, upsert_sweep,
     SweepObservation,
 };
-use codotheca_core::debt::xp::pay_debt_day;
 use codotheca_core::debt::{registry_for, IdentityShape, SOURCE_REGISTRY};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
@@ -881,67 +881,101 @@ fn the_registry_carries_the_layer_shape_and_basis_the_section_states() {
     );
 }
 
+/// Every `xp_events` row as `(dedupe_key, meta)`, so a failure names the row that paid.
+fn xp_rows(conn: &rusqlite::Connection) -> Vec<(String, Option<String>)> {
+    let mut st = conn
+        .prepare("SELECT dedupe_key, meta FROM xp_events ORDER BY id")
+        .unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
 /// **`AC-P3-28-14`, this plan's half.** A `shown_only` item is written, readable, and contributes
 /// to **no** `xp_events` row. `scoring` is about CONSEQUENCE and `state` is about OBSERVATION;
 /// folding them puts six meanings in one column and the first reader collapses two of them.
+///
+/// **Driven through `settle_singletons`, a production caller of the payout.** The test this
+/// replaces filtered the scoring itself before calling the payout — a step production lacked — so
+/// it passed against the defect. `abandoned_with_debt` is the one producer of a `shown_only`
+/// singleton, and the project is enrolled so the enrolment gate cannot be what stops the row.
 #[test]
-fn ac_p3_28_14_a_shown_only_item_renders_and_pays_nothing() {
+fn ac_p3_28_14_a_shown_only_closure_through_the_singleton_settle_pays_nothing() {
     let (_d, mut conn) = fresh();
     let p = insert_project(&conn, "thing");
-    let loc = LocationId(insert_location(&conn, p, "present"));
-    let store = SqliteDebtStore;
-    let key = DebtKey::singleton(SUBJECT, DebtSource::AbandonedWithDebt);
-
-    let tx = conn.transaction().unwrap();
-    let obs = sweep_at(
-        p,
-        DebtSource::AbandonedWithDebt,
-        DebtSweepOutcome::Complete,
-        None,
-        None,
-    );
-    let mut observed = seen(key.clone(), None, "", 0);
-    observed.scoring = DebtScoring::ShownOnly;
-    observed.basis = None;
-    observed.path_bytes = None;
-    observed.path_display = None;
-    observed.line = None;
-    observed.column = None;
-    observed.salient_text = None;
-    let opened = store
-        .observe(&tx, &obs, std::slice::from_ref(&observed))
-        .unwrap();
-    assert_eq!(opened.opened, vec![key]);
-
-    // It closes, and the closure pays nothing because the item was never scored.
-    let closed = store.observe(&tx, &obs, &[]).unwrap();
-    assert_eq!(closed.closed.len(), 1);
-    let payout = pay_debt_day(
-        &tx,
-        ProjectId(p),
-        SUBJECT,
-        &SweepEffect {
-            closed: closed
-                .closed
-                .iter()
-                .filter(|c| registry_for(c.key.source).default_scoring == DebtScoring::Scored)
-                .cloned()
-                .collect(),
-            ..SweepEffect::default()
-        },
-        1_789_646_400,
-        0,
+    insert_location(&conn, p, "present");
+    conn.execute(
+        "UPDATE project SET acknowledged_at = 1, condition_signal = 'abandoned' WHERE id = ?1",
+        [p],
     )
     .unwrap();
-    tx.commit().unwrap();
+    conn.execute(
+        "INSERT INTO app_meta (k, v) VALUES ('content_scan_enabled', '1')
+         ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+        [],
+    )
+    .unwrap();
+    // One open scored item of another source, so the abandoned conjunct lights.
+    conn.execute(
+        "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state, scoring,
+                                first_seen_at, last_seen_at)
+         VALUES (?1, ?2, 'todo_marker', 'planted', 'open', 'scored', 1, 1)",
+        rusqlite::params![p, SUBJECT],
+    )
+    .unwrap();
 
-    assert!(!payout.wrote_row, "a shown_only closure paid XP");
-    let xp: i64 = conn
-        .query_row("SELECT count(*) FROM xp_events", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(xp, 0);
-    // The anchor is untouched: `loc` exists and the item never referenced it.
-    assert!(loc.0 > 0);
+    let tx = conn.transaction().unwrap();
+    settle_singletons(&tx, ProjectId(p), 1_789_646_400, 0, &SqliteDebtStore).unwrap();
+    tx.commit().unwrap();
+    let stored: Vec<String> = {
+        let mut st = conn
+            .prepare(
+                "SELECT scoring FROM debt_item
+                  WHERE project_id = ?1 AND source = 'abandoned_with_debt'",
+            )
+            .unwrap();
+        st.query_map([p], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert_eq!(stored, vec!["shown_only".to_owned()], "the item is written");
+
+    // The project stops being abandoned; the next settle closes the item.
+    conn.execute(
+        "UPDATE project SET condition_signal = 'idle' WHERE id = ?1",
+        [p],
+    )
+    .unwrap();
+    let idle_tx = conn.transaction().unwrap();
+    let closed = settle_singletons(
+        &idle_tx,
+        ProjectId(p),
+        1_789_646_400 + 60,
+        0,
+        &SqliteDebtStore,
+    )
+    .unwrap();
+    idle_tx.commit().unwrap();
+
+    let closures: Vec<_> = closed
+        .closed
+        .iter()
+        .map(|c| (c.key.source, c.reason, c.scoring))
+        .collect();
+    eprintln!("AC-P3-28-14: the settle closed {closures:?}");
+    assert_eq!(
+        closures,
+        vec![(
+            DebtSource::AbandonedWithDebt,
+            DebtCloseReason::Fixed,
+            DebtScoring::ShownOnly
+        )],
+        "the settle closed something other than the one shown_only item"
+    );
+    let rows = xp_rows(&conn);
+    assert!(rows.is_empty(), "a shown_only closure paid XP: {rows:?}");
 }
 
 /// **Five further sources are declared in §28's prose and are in neither the DDL CHECK nor the

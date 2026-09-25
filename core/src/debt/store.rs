@@ -80,9 +80,10 @@ pub struct ObservedItem {
 /// Why an item stopped existing.
 ///
 /// **Two reasons, never one.** `Fixed` is a transition the user performed and enters the day's
-/// payout; `Invalidated` is a third party retracting the evidence — a withdrawn advisory — and
-/// **pays nothing**. **It is not a column**: the row is deleted, so there is nowhere to store it
-/// and nothing that could read it back. XP already paid is never clawed back.
+/// payout when the item was `scored` ([`DebtClosure::scoring`]); `Invalidated` is a third party
+/// retracting the evidence — a withdrawn advisory — and **pays nothing**. **It is not a column**:
+/// the row is deleted, so there is nowhere to store it and nothing that could read it back. XP
+/// already paid is never clawed back.
 ///
 /// **Nothing in §28 produces `Invalidated`**, and that is a statement about wave 2 rather than a
 /// gap: every source §28 sweeps is evidence the *user* controls, so its disappearance is the user
@@ -93,7 +94,8 @@ pub struct ObservedItem {
 /// [`pay_debt_day`]: crate::debt::xp::pay_debt_day
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DebtCloseReason {
-    /// A complete, comparable sweep no longer saw the item: the user acted, and it pays.
+    /// A complete, comparable sweep no longer saw the item: the user acted, and it pays if the
+    /// item was `scored`.
     Fixed,
     /// A third party withdrew the evidence; the item is gone and pays nothing.
     Invalidated,

@@ -250,8 +250,9 @@ pub fn sync_advisory_items(
     let mut effect = store.observe(tx, &observation, &seen)?;
 
     // **The reclassification, and it is not cosmetic.** `pay_debt_day` pays exactly the closes
-    // marked `Fixed`; leaving a withdrawal marked that way puts an unearned event in an
-    // append-only ledger with a monotonic `level_floor`, for a fix the user did not perform.
+    // marked `Fixed` of items that were `scored`; leaving a withdrawn scored item marked `Fixed`
+    // puts an unearned event in an append-only ledger with a monotonic `level_floor`, for a fix
+    // the user did not perform.
     for closure in &mut effect.closed {
         if withdrawn.contains(&closure.key) {
             closure.reason = DebtCloseReason::Invalidated;
@@ -286,7 +287,8 @@ pub fn sync_advisory_items(
 /// copy they were read from, so an item is not stranded as `unverified` when the primary moves.
 ///
 /// Each project's closes are paid in the same transaction as the deletions, as every other
-/// producer's are; `pay_debt_day` excludes the `invalidated` ones. **Each project's write is
+/// producer's are; `pay_debt_day` excludes the `invalidated` ones and those of `shown_only`
+/// items (an advisory with no fix). **Each project's write is
 /// wrapped by §34's producer** (A15: a delta from every debt-set transition), with the closes
 /// passed so a decrease that is only withdrawals is written and not announced (R135). A scheduled
 /// sweep observes in the `background`.

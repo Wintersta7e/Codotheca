@@ -5194,7 +5194,7 @@
           "status": "automated",
           "runner": "cargo",
           "owner": "p3-28",
-          "test": "debt_lifecycle::ac_p3_28_14_a_shown_only_item_renders_and_pays_nothing",
+          "test": "debt_lifecycle::ac_p3_28_14_a_shown_only_closure_through_the_singleton_settle_pays_nothing",
           "assert": "A shown_only item renders, lights its layer, and contributes to neither the health count nor any xp_events row."
         },
         {

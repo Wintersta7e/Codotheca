@@ -56,21 +56,34 @@ fn path_subject(byte: u8) -> ProjectSubject {
     }
 }
 
+/// The `i`th closure of `source`, distinct from every other `i`.
+fn closure(
+    i: usize,
+    reason: DebtCloseReason,
+    scoring: DebtScoring,
+    source: DebtSource,
+) -> DebtClosure {
+    let mut key = DebtKey::content("subject", &format!("{i:064x}"), 0);
+    key.source = source;
+    DebtClosure {
+        key,
+        reason,
+        scoring,
+    }
+}
+
 fn closures(n: usize, reason: DebtCloseReason, source: DebtSource) -> SweepEffect {
     SweepEffect {
         closed: (0..n)
-            .map(|i| {
-                let mut key = DebtKey::content("subject", &format!("{i:064x}"), 0);
-                key.source = source;
-                DebtClosure {
-                    key,
-                    reason,
-                    scoring: DebtScoring::Scored,
-                }
-            })
+            .map(|i| closure(i, reason, DebtScoring::Scored, source))
             .collect(),
         ..SweepEffect::default()
     }
+}
+
+fn xp_count(conn: &rusqlite::Connection) -> i64 {
+    conn.query_row("SELECT count(*) FROM xp_events", [], |r| r.get(0))
+        .unwrap()
 }
 
 fn row(conn: &rusqlite::Connection) -> (i64, Option<i64>, String, String, String, String) {
@@ -242,6 +255,79 @@ fn ac_p3_28_15_an_invalidated_closure_pays_nothing() {
     assert_eq!(row(&conn), earned, "a withdrawal rewrote an earned row");
     assert_eq!(meta(&conn)["closed"], 1, "a withdrawal entered the count");
     assert_eq!(meta(&conn)["sources"], serde_json::json!(["todo_marker"]));
+}
+
+/// **§38.8.1 gate 1, §28.6.** Only a closure of a `scored` item pays. A day whose only closure
+/// is `shown_only` writes no row, and on a day that mixes the two the `shown_only` closure enters
+/// neither `closed` nor `sources` — the treatment `Invalidated` already gets.
+#[test]
+fn a_shown_only_closure_pays_nothing_and_leaves_the_day_to_what_pays() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let subject = lineage_subject().to_key();
+
+    let tx = conn.transaction().unwrap();
+    let alone = pay_debt_day(
+        &tx,
+        ProjectId(p),
+        &subject,
+        &SweepEffect {
+            closed: vec![closure(
+                0,
+                DebtCloseReason::Fixed,
+                DebtScoring::ShownOnly,
+                DebtSource::DependencyAdvisory,
+            )],
+            ..SweepEffect::default()
+        },
+        NOON,
+        0,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    assert!(!alone.wrote_row, "a shown_only closure paid");
+    assert_eq!(xp_count(&conn), 0);
+
+    let mixed_tx = conn.transaction().unwrap();
+    let mixed = pay_debt_day(
+        &mixed_tx,
+        ProjectId(p),
+        &subject,
+        &SweepEffect {
+            closed: vec![
+                closure(
+                    1,
+                    DebtCloseReason::Fixed,
+                    DebtScoring::Scored,
+                    DebtSource::TodoMarker,
+                ),
+                closure(
+                    2,
+                    DebtCloseReason::Fixed,
+                    DebtScoring::ShownOnly,
+                    DebtSource::DependencyAdvisory,
+                ),
+            ],
+            ..SweepEffect::default()
+        },
+        NOON + 60,
+        0,
+    )
+    .unwrap();
+    mixed_tx.commit().unwrap();
+
+    assert!(mixed.wrote_row);
+    assert_eq!(xp_count(&conn), 1);
+    assert_eq!(
+        meta(&conn)["closed"],
+        1,
+        "a shown_only closure entered the count"
+    );
+    assert_eq!(
+        meta(&conn)["sources"],
+        serde_json::json!(["todo_marker"]),
+        "a shown_only closure named its source"
+    );
 }
 
 /// **The key is `<subject_key>` and not §1.7's `<lineage_key>:<remote_key>`.** That shape is safe

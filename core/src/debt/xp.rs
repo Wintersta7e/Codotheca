@@ -20,14 +20,15 @@ use super::store::{DebtCloseReason, SweepEffect};
 use super::{enum_from_text, enum_text, DebtError};
 use crate::git::local_day;
 use crate::jobs::j4_history::local_date;
-use crate::protocol::{DebtSource, ProjectId};
+use crate::protocol::{DebtScoring, DebtSource, ProjectId};
 
 /// What one call did, so the caller can report a day without re-reading it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DebtDayPayout {
     /// True only when this call inserted the day's row. The payout is the row's existence.
     pub wrote_row: bool,
-    /// Every `Fixed` closure of this project on this local date, including earlier calls'.
+    /// Every paying closure — `Fixed`, of a `scored` item — of this project on this local date,
+    /// including earlier calls'.
     pub closed_today: u32,
     /// The day's sources, sorted and deduplicated.
     pub sources: Vec<DebtSource>,
@@ -53,8 +54,10 @@ pub fn debt_day_dedupe_key(subject_key: &str, local_date: &str) -> String {
 /// The ledger row and the item deletions commit together: a tree with the items gone and no
 /// payout, or a payout with the items still open, is the state the ordering exists to prevent.
 ///
-/// **`Invalidated` closures are excluded from the count and from `sources` before the row is
-/// written**, and a day whose only closures are invalidated writes **no row at all**.
+/// **A closure pays only when it is `Fixed` and its item was `scored` when it closed** (§38.8.1
+/// gate 1, §28.6). Every other closure — `Invalidated`, or of a `shown_only` item — is excluded
+/// from the count and from `sources` before the row is written, and a day with no paying closure
+/// writes **no row at all**.
 ///
 /// # Errors
 /// Fails when SQLite refuses the read or the write, the day's stored `meta` is not JSON, or it
@@ -70,7 +73,7 @@ pub fn pay_debt_day(
     let paid: Vec<DebtSource> = effect
         .closed
         .iter()
-        .filter(|c| c.reason == DebtCloseReason::Fixed)
+        .filter(|c| c.reason == DebtCloseReason::Fixed && c.scoring == DebtScoring::Scored)
         .map(|c| c.key.source)
         .collect();
 
