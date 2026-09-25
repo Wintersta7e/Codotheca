@@ -992,11 +992,10 @@
         },
         {
           "id": "AC-28-anonymise",
-          "status": "manual",
-          "runner": "manual",
-          "gate": "DIAG-ANONYMISATION",
-          "assert": "Against a real index whose locations sit under a home directory, a bundle exported with the default setting carries no home directory, no drive letter, no mount root and no user name \u2014 only the basename and the per-volume pseudonym \u00a711.4 specifies. The same export with SHOW REAL PATHS must put them back, so a clean default run is known to have had something to remove.",
-          "reason": "A reviewer performs this before a release, against the built binary rather than the source. It is not automated here for two reasons. The cargo half (AC-28-fields, owner 17) asserts the document's shape but builds no bundle from host-shaped paths, so it cannot see an anonymiser that stopped covering a field. And the control half is what makes the result mean anything: without re-exporting the same index with real paths and watching the assertion fail, a clean run is indistinguishable from a run whose fixture never reached the anonymiser at all. That pairing is a judgement about whether the fixture was representative, which is why it is a person's gate and not a machine's."
+          "status": "automated",
+          "runner": "cargo",
+          "test": "diag_anonymise::ac_p4_48_8_the_default_bundle_carries_no_name_no_note_and_no_full_path_and_the_reveal_restores_them",
+          "assert": "diag.bundle, driven through the production dispatcher over an index whose project name, note text, remote key and every interior segment of a location's and a root's path are distinct sentinels, writes a default bundle holding none of them and keeping the basename and the per-volume pseudonym; the same export with the reveal on holds the name, the note and the full path, so a clean default run is known to have had something to remove."
         }
       ]
     },
