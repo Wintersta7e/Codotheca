@@ -18,7 +18,7 @@ import type {
 } from '../generated/protocol';
 import type { RendererEvent } from '../shared/channels';
 import { App } from './App';
-import { IDENTITY_REREAD_MS } from './app/useIdentity';
+import { AUTHORSHIP_REREAD_MS } from './app/useLibrary';
 import { fakeAppDeps, type FakeAppDeps } from './app/testDeps';
 import { makeProjectRow } from './testing/projectRow';
 
@@ -153,7 +153,7 @@ describe('§1.4 the identity card follows the authorship job', () => {
           'GIT CONFIG · 4 REPOSITORIES · 6 COMMITS IN 4 PROJECTS',
         );
       },
-      { timeout: IDENTITY_REREAD_MS + 1000 },
+      { timeout: AUTHORSHIP_REREAD_MS + 1000 },
     );
   });
 
@@ -174,7 +174,7 @@ describe('§1.4 the identity card follows the authorship job', () => {
           'GIT CONFIG · 30 REPOSITORIES · 45 COMMITS IN 30 PROJECTS',
         );
       },
-      { timeout: IDENTITY_REREAD_MS + 1000 },
+      { timeout: AUTHORSHIP_REREAD_MS + 1000 },
     );
     expect(reads(fake) - before).toBeLessThanOrEqual(2);
   });
@@ -187,7 +187,7 @@ describe('§1.4 the identity card follows the authorship job', () => {
       fake.emit(jobDone('j2', 1));
       fake.emit(jobDone('j4', 1));
     });
-    await new Promise((resolve) => setTimeout(resolve, IDENTITY_REREAD_MS + 200));
+    await new Promise((resolve) => setTimeout(resolve, AUTHORSHIP_REREAD_MS + 200));
     expect(reads(fake)).toBe(before);
   });
 
@@ -201,7 +201,7 @@ describe('§1.4 the identity card follows the authorship job', () => {
       fake.emit(jobDone('j1_5', 1));
       fake.emit({ topic: 'scan', event: 'finished', data: {} });
     });
-    await new Promise((resolve) => setTimeout(resolve, IDENTITY_REREAD_MS + 200));
+    await new Promise((resolve) => setTimeout(resolve, AUTHORSHIP_REREAD_MS + 200));
     expect(reads(fake) - before).toBe(1);
   });
 });

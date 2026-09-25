@@ -1,5 +1,6 @@
 /**
- * The resident §8.3 projection: one store, fed by one topic and re-read when a scan run ends.
+ * The resident §8.3 projection: one store, fed by one topic and re-read when a scan run ends or
+ * its authorship jobs settle.
  *
  * The store is `shelf/ProjectionStore` and the generation is **the store's**. A counter kept
  * beside it is how `orderKey` comes to disagree with the rows it addresses: the page is built
@@ -9,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   ConditionSignal,
+  Job,
   ProjectId,
   ProjectPage,
   ProjectRow,
@@ -92,14 +94,38 @@ export function applyProjectsEvent(store: ProjectionStore, event: RendererEvent)
  * **The `projects` topic does not announce what a walk writes.** It carries `upserted` for a
  * project something read, `merged`, `flags_changed`, `condition_changed` and `art_ready` — never
  * the scan's own inserts, which land in SQLite and are published by nobody. A run ending is
- * therefore the one moment the resident projection is known to be stale, and re-reading it is
- * what turns a finished scan into a shelf. Without it a first run indexes everything and shows
+ * therefore a moment the resident projection is known to be stale — the authorship jobs settling
+ * after it are the other ([`settlesAuthorship`]) — and re-reading it is what turns a finished
+ * scan into a shelf. Without it a first run indexes everything and shows
  * §8.3a's empty state until the app is restarted, which is what a packaged build did.
  *
  * `cancelled` counts: a cancelled run still wrote every project it reached before it stopped.
  */
 export function endsAScanRun(event: RendererEvent): boolean {
   return event.topic === 'scan' && (event.event === 'finished' || event.event === 'cancelled');
+}
+
+/**
+ * How long a settled authorship job waits before a re-read. Every settle inside the window rides
+ * the same read, so a first scan costs one read per window rather than one per repository, and
+ * the last settle is always followed by one.
+ */
+export const AUTHORSHIP_REREAD_MS = 500;
+
+/** §4.1a's J1.5, the job that writes `project_committer` and `authored_by_user`. */
+const AUTHORSHIP_JOB: Job = 'j1_5';
+
+/**
+ * Whether this event is an authorship job settling. It runs per repository and after the walk
+ * has ended, so what was read when a run ended can be missing every repository whose job had not
+ * settled yet — on a first scan, often all of them.
+ */
+export function settlesAuthorship(event: RendererEvent): boolean {
+  return (
+    event.topic === 'scan' &&
+    event.event === 'job_done' &&
+    (event.data as { job?: unknown } | null)?.job === AUTHORSHIP_JOB
+  );
 }
 
 interface Snapshot {
@@ -145,14 +171,35 @@ export function useLibrary(deps: AppDeps): LibraryState {
     };
   }, [reload]);
 
-  useEffect(
-    () =>
-      subscribe((event) => {
-        applyProjectsEvent(store, event);
-        if (endsAScanRun(event)) reload();
-      }),
-    [subscribe, store, reload],
-  );
+  // A run ending is not the last write a scan makes: its authorship jobs go on settling after it,
+  // and a walk chain announces no row change. Without this re-read the rows read at the run's end
+  // keep every project whose job settled later unclassified — measured: a three-repository first
+  // run whose headline sat at `(OF 2 CLASSIFIED)` over a store holding all three — until
+  // something else re-reads it.
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const cancelPending = (): void => {
+      if (pending.current !== null) clearTimeout(pending.current);
+      pending.current = null;
+    };
+    const unsubscribe = subscribe((event) => {
+      applyProjectsEvent(store, event);
+      if (endsAScanRun(event)) {
+        // Issued after every settle that came before it, so a pending re-read has nothing left.
+        cancelPending();
+        reload();
+      } else if (settlesAuthorship(event) && pending.current === null) {
+        pending.current = setTimeout(() => {
+          pending.current = null;
+          reload();
+        }, AUTHORSHIP_REREAD_MS);
+      }
+    });
+    return () => {
+      unsubscribe();
+      cancelPending();
+    };
+  }, [subscribe, store, reload]);
 
   return useMemo(() => {
     const rows = snapshot?.rows ?? null;

@@ -11,33 +11,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { IdentityConfirm, IdentityRow, Job } from '../../generated/protocol.js';
+import type { IdentityConfirm, IdentityRow } from '../../generated/protocol.js';
 import type { RendererEvent } from '../../shared/channels.js';
 import type { AppDeps } from './deps.js';
-import { endsAScanRun } from './useLibrary.js';
-
-/**
- * How long a settled authorship job waits before the set is re-read. Every settle inside the
- * window rides the same read, so a first scan costs one read per window rather than one per
- * repository, and the last settle is always followed by one.
- */
-export const IDENTITY_REREAD_MS = 500;
-
-/** §4.1a's J1.5, the job that writes `project_committer` — the weight on every row. */
-const AUTHORSHIP_JOB: Job = 'j1_5';
-
-/**
- * Whether this event is an authorship job settling. It runs per repository and after the walk
- * has ended, so the set read when a run ends can be missing every repository whose job had not
- * settled yet — on a first scan, often all of them.
- */
-export function settlesAuthorship(event: RendererEvent): boolean {
-  return (
-    event.topic === 'scan' &&
-    event.event === 'job_done' &&
-    (event.data as { job?: unknown } | null)?.job === AUTHORSHIP_JOB
-  );
-}
+import { AUTHORSHIP_REREAD_MS, endsAScanRun, settlesAuthorship } from './useLibrary.js';
 
 export interface IdentityState {
   /** `null` until `identity.list` answers. */
@@ -109,7 +86,7 @@ export function useIdentity(deps: AppDeps, onApplied: () => void): IdentityState
         pending.current = setTimeout(() => {
           pending.current = null;
           read();
-        }, IDENTITY_REREAD_MS);
+        }, AUTHORSHIP_REREAD_MS);
       }
     });
     return () => {

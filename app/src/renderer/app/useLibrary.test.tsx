@@ -3,10 +3,11 @@ import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import type { ProjectId, ProjectPage, ProjectRow } from '../../generated/protocol';
+import type { RendererEvent } from '../../shared/channels';
 import { makeProjectRow } from '../testing/projectRow';
 import type { AppDeps } from './deps';
 import { fakeAppDeps, type FakeAppDeps } from './testDeps';
-import { useLibrary, type LibraryState } from './useLibrary';
+import { AUTHORSHIP_REREAD_MS, useLibrary, type LibraryState } from './useLibrary';
 
 function page(rows: readonly ProjectRow[], generation = 3): ProjectPage {
   return {
@@ -39,6 +40,15 @@ function mount(fake: FakeAppDeps): { seen: LibraryState[]; last: () => LibrarySt
 
 const row = (id: number, over: Partial<ProjectRow> = {}): ProjectRow =>
   makeProjectRow({ id: id as ProjectId, name: `p${String(id)}`, ...over });
+
+const jobDone = (job: string, projectId: number): RendererEvent => ({
+  topic: 'scan',
+  event: 'job_done',
+  data: { projectId, locationId: projectId, job, state: 'ok' },
+});
+
+const lists = (fake: FakeAppDeps): number =>
+  fake.calls.filter((call) => call.name === 'projects.list').length;
 
 describe('useLibrary', () => {
   it('holds null before the first answer and an empty array after an empty one', async () => {
@@ -243,6 +253,56 @@ describe('useLibrary', () => {
       fake.emit({ topic: 'scan', event: 'run_started', data: {} });
     });
     expect(fake.calls.filter((call) => call.name === 'projects.list')).toHaveLength(1);
+  });
+
+  // §38.7.3, `hs:H9`. J1.5 writes `authored_by_user` per repository after the walk has ended,
+  // and a walk chain announces no row change, so the rows read when the run ended held every
+  // project unclassified — and the shelf's classified figure read 0 until something re-read it.
+  it('re-reads the projection when authorship settles after the run ended', async () => {
+    let rows: readonly ProjectRow[] = [row(1, { authoredByUser: null })];
+    const fake = fakeAppDeps({ 'projects.list': () => page(rows) });
+    const view = mount(fake);
+    await waitFor(() => {
+      expect(view.last().rows?.[0]?.authoredByUser).toBeNull();
+    });
+
+    rows = [row(1, { authoredByUser: true })];
+    act(() => {
+      fake.emit(jobDone('j1_5', 1));
+    });
+    await waitFor(
+      () => {
+        expect(view.last().rows?.[0]?.authoredByUser).toBe(true);
+      },
+      { timeout: AUTHORSHIP_REREAD_MS + 1000 },
+    );
+  });
+
+  it('a burst of authorship settles costs one read, not one per repository', async () => {
+    const fake = fakeAppDeps({ 'projects.list': () => page([row(1)]) });
+    mount(fake);
+    await waitFor(() => {
+      expect(lists(fake)).toBe(1);
+    });
+    act(() => {
+      for (let id = 1; id <= 30; id += 1) fake.emit(jobDone('j1_5', id));
+    });
+    await new Promise((resolve) => setTimeout(resolve, AUTHORSHIP_REREAD_MS + 200));
+    expect(lists(fake)).toBe(2);
+  });
+
+  it('a settle of any other job reads nothing', async () => {
+    const fake = fakeAppDeps({ 'projects.list': () => page([row(1)]) });
+    mount(fake);
+    await waitFor(() => {
+      expect(lists(fake)).toBe(1);
+    });
+    act(() => {
+      fake.emit(jobDone('j2', 1));
+      fake.emit(jobDone('j4', 1));
+    });
+    await new Promise((resolve) => setTimeout(resolve, AUTHORSHIP_REREAD_MS + 200));
+    expect(lists(fake)).toBe(1);
   });
 
   it('a refused projects.list leaves the library uncomputed rather than empty', async () => {
