@@ -6,8 +6,11 @@ use std::path::{Path, PathBuf};
 /// Which of the three files a suggestion came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SourceKind {
+    /// An `includeIf "gitdir:…"` section in the user's git config.
     GitConfig,
+    /// An editor's recent-workspaces JSON store.
     VsCode,
+    /// An IDE's recent-projects XML.
     JetBrains,
 }
 
@@ -15,7 +18,7 @@ impl SourceKind {
     /// The stable machine token that crosses the wire as `RootSuggestion.provenanceDetail`.
     /// The rendered label is shell-owned prose (§2.4) and is not built here.
     #[must_use]
-    pub fn detail(self) -> &'static str {
+    pub const fn detail(self) -> &'static str {
         match self {
             Self::GitConfig => "includeif",
             Self::VsCode => "vscode",
@@ -27,7 +30,9 @@ impl SourceKind {
 /// One path named by one source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceHit {
+    /// The file that named the path.
     pub kind: SourceKind,
+    /// The path as the file named it, `~` and `$USER_HOME$` already expanded.
     pub path: PathBuf,
     /// True when the path already names a directory *of* repositories, as a `gitdir:` directive
     /// does. False when it names one repository, as an editor's recent list does — those take
@@ -112,8 +117,8 @@ fn percent_decode(input: &str) -> String {
     while i < bytes.len() {
         match bytes.get(i) {
             Some(b'%') => {
-                let hi = bytes.get(i + 1).and_then(|c| (*c as char).to_digit(16));
-                let lo = bytes.get(i + 2).and_then(|c| (*c as char).to_digit(16));
+                let hi = bytes.get(i + 1).and_then(|c| char::from(*c).to_digit(16));
+                let lo = bytes.get(i + 2).and_then(|c| char::from(*c).to_digit(16));
                 if let (Some(hi), Some(lo)) = (hi, lo) {
                     out.push(u8::try_from(hi * 16 + lo).unwrap_or(b'?'));
                     i += 3;
@@ -132,9 +137,10 @@ fn percent_decode(input: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Recent workspace folders out of the editor's global-storage JSON, in file order, deduplicated
-/// by first appearance. Both shapes the store has carried are read; a single file is not a
-/// workspace and is skipped.
+/// Recent workspace folders out of the editor's global-storage JSON, in file order.
+///
+/// Deduplicated by first appearance. Both shapes the store has carried are read; a single file
+/// is not a workspace and is skipped.
 #[must_use]
 pub fn parse_recent_workspaces_json(bytes: &[u8]) -> Vec<PathBuf> {
     let Ok(root) = serde_json::from_slice::<serde_json::Value>(bytes) else {
@@ -210,6 +216,7 @@ fn attribute<'a>(attrs: &'a str, name: &str) -> Option<&'a str> {
 /// touches a real home directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceEnv {
+    /// The user's home directory, where the git config is read and `~` expands to.
     pub home: PathBuf,
     /// Windows roaming application data, when this is Windows.
     pub app_data: Option<PathBuf>,

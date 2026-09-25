@@ -20,11 +20,13 @@ pub struct SuggestionCache {
 }
 
 impl SuggestionCache {
+    /// An empty cache: nothing has been suggested yet.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Replace the remembered keys with the ones the latest `roots.suggest` produced.
     pub fn remember(&self, keys: impl IntoIterator<Item = Vec<u8>>) {
         if let Ok(mut set) = self.keys.lock() {
             set.clear();
@@ -32,6 +34,7 @@ impl SuggestionCache {
         }
     }
 
+    /// Whether `key` is a path the latest `roots.suggest` proposed.
     #[must_use]
     pub fn contains(&self, key: &[u8]) -> bool {
         self.keys.lock().is_ok_and(|set| set.contains(key))
@@ -41,21 +44,30 @@ impl SuggestionCache {
 /// Everything `add_root` needs.
 #[derive(Debug)]
 pub struct AddParams<'a> {
+    /// The root's path as raw bytes, from the shell's dialog or a suggestion.
     pub path_bytes: &'a [u8],
+    /// The user has already confirmed a large root, so no directory estimate is taken.
     pub confirm_large: bool,
+    /// The home directory, which a root may not be on its own (§10.1a).
     pub home: &'a Path,
+    /// The directories the estimate does not descend into.
     pub skip: &'a SkipList,
+    /// The latest suggestions; a suggested path is never estimated (§10.1b).
     pub cache: &'a SuggestionCache,
+    /// The platform whose rules fold the path into its comparison key (R2).
     pub platform: PathPlatform,
+    /// The WSL distro the path lives in; empty for a native path.
     pub distro: &'a str,
+    /// Where the path came from: the dialog is stored as `user`, anything else as `suggested`.
     pub provenance: RootProvenance,
+    /// Unix seconds stamped as the root's `added_at`.
     pub now: i64,
     /// The ceiling, overridable so a test does not have to create half a million directories.
     pub ceiling_for_tests: i64,
 }
 
 impl AddParams<'_> {
-    fn kind(&self) -> LocationKind {
+    const fn kind(&self) -> LocationKind {
         if self.distro.is_empty() {
             match self.platform {
                 PathPlatform::Windows => LocationKind::Win,
@@ -67,7 +79,7 @@ impl AddParams<'_> {
     }
 }
 
-fn kind_str(kind: LocationKind) -> &'static str {
+const fn kind_str(kind: LocationKind) -> &'static str {
     match kind {
         LocationKind::Win => "win",
         LocationKind::Linux => "linux",

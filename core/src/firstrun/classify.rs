@@ -16,14 +16,18 @@ use crate::wsl::distros::DistroInfo;
 /// What a suggested root is, for the purpose of arriving ticked or unticked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RootTrait {
+    /// A plain local directory; the suggestion arrives ticked.
     Ordinary,
+    /// A folder whose contents a sync client recalls on access; arrives unticked (§10.1a).
     CloudSynced,
+    /// Inside an operating-system directory; arrives unticked and labelled (§10.1a).
     SystemRoot,
 }
 
 /// The seam. Plan 06's `MountResolver` is behind the native implementation; a test supplies
 /// `FixedClassifier` instead and never touches a real mount table.
 pub trait RootClassifier: Send + Sync + std::fmt::Debug {
+    /// What `path` is, for deciding whether its suggestion arrives ticked.
     fn classify(&self, path: &Path) -> RootTrait;
 }
 
@@ -71,6 +75,7 @@ pub struct NativeRootClassifier {
 }
 
 impl NativeRootClassifier {
+    /// A classifier reading store classes from `mounts`.
     #[must_use]
     pub fn new(mounts: Arc<dyn MountResolver>) -> Self {
         Self { mounts }
@@ -102,7 +107,7 @@ fn recalls_on_access(path: &Path) -> bool {
 }
 
 #[cfg(not(windows))]
-fn recalls_on_access(_path: &Path) -> bool {
+const fn recalls_on_access(_path: &Path) -> bool {
     false
 }
 
@@ -113,6 +118,7 @@ pub struct FixedClassifier {
 }
 
 impl FixedClassifier {
+    /// A classifier answering each path by the longest prefix in `map`, `Ordinary` otherwise.
     #[must_use]
     pub fn new(mut map: Vec<(PathBuf, RootTrait)>) -> Self {
         map.sort_by_key(|(p, _)| std::cmp::Reverse(p.components().count()));
@@ -131,6 +137,8 @@ impl RootClassifier for FixedClassifier {
     }
 }
 
+/// The `path_display` of a distro row: the home parent, in the Linux form.
+///
 /// **R9.** The distro facts struct is plan 18's `crate::wsl::distros::DistroInfo { name, state }`
 /// and is consumed, never redeclared: plan 18 owns §13, and `DistroState` carries strictly more
 /// than the `running: bool` this module used to fold into it.
@@ -144,6 +152,7 @@ pub const DISTRO_HOME_DISPLAY: &str = "/home";
 /// The seam plan 18 fills. §13: starting a stopped distro is an explicit, consented action and
 /// never automatic during first run, so the probe reports and never starts.
 pub trait DistroProbe: Send + Sync + std::fmt::Debug {
+    /// Every installed distro with its state, as reported; none is started to ask.
     fn distros(&self) -> Vec<DistroInfo>;
 }
 

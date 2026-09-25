@@ -19,13 +19,16 @@ pub const FULL_WALK_AFTER_SECS: i64 = 86_400;
 /// What the launch trigger asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LaunchDecision {
+    /// No scan has completed, or the last is at least `FULL_WALK_AFTER_SECS` old.
     FullWalk,
+    /// The last scan is recent, so the walk is the incremental one.
     Incremental,
 }
 
 impl LaunchDecision {
+    /// The scan mode this decision starts.
     #[must_use]
-    pub fn mode(self) -> ScanMode {
+    pub const fn mode(self) -> ScanMode {
         match self {
             Self::FullWalk => ScanMode::Full,
             Self::Incremental => ScanMode::Incremental,
@@ -39,7 +42,7 @@ impl LaunchDecision {
 /// has moved backwards reads as recent rather than as stale, so a bad clock cannot pin the app
 /// into a full walk on every launch.
 #[must_use]
-pub fn on_launch(last_scan_at: Option<i64>, now: i64) -> LaunchDecision {
+pub const fn on_launch(last_scan_at: Option<i64>, now: i64) -> LaunchDecision {
     match last_scan_at {
         None => LaunchDecision::FullWalk,
         Some(at) if now.saturating_sub(at) >= FULL_WALK_AFTER_SECS => LaunchDecision::FullWalk,
@@ -75,6 +78,7 @@ pub fn watch_targets(
 /// The failure a watch can produce.
 #[derive(Debug)]
 pub enum RootWatchError {
+    /// The platform watcher refused; the text is its own message.
     Notify(String),
 }
 

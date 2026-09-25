@@ -13,7 +13,9 @@ use crate::wsl::distros::DistroState; // R9: plan 18 owns the distro facts.
 /// and never a path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggested {
+    /// The suggested root's path, which never leaves the core.
     pub path: PathBuf,
+    /// The row the roots screen draws, carrying only `path_display`.
     pub row: RootSuggestion,
 }
 
@@ -47,9 +49,13 @@ pub fn container_for(hit: &SourceHit, home: &Path) -> Option<PathBuf> {
 /// Everything `assemble` needs that is not a hit.
 #[derive(Debug)]
 pub struct SuggestInputs<'a> {
+    /// Where the three files live, and the home directory the rules refuse.
     pub env: &'a sources::SourceEnv,
+    /// What decides whether a row arrives ticked.
     pub classifier: &'a dyn classify::RootClassifier,
+    /// The WSL distros offered as rows of their own.
     pub distros: &'a dyn classify::DistroProbe,
+    /// The host platform, which names a native row's `kind`.
     pub platform: PathPlatform,
 }
 
@@ -87,7 +93,7 @@ pub fn assemble(
 
     let mut sourced: Vec<Suggested> = counts
         .iter()
-        .map(|(path, (hits, kind))| {
+        .map(|(path, (hit_count, kind))| {
             let base = match kind {
                 SourceKind::GitConfig => RootProvenance::Gitconfig,
                 SourceKind::VsCode | SourceKind::JetBrains => RootProvenance::EditorRecent,
@@ -96,7 +102,7 @@ pub fn assemble(
                 path,
                 base,
                 Some(kind.detail().to_owned()),
-                Some(*hits),
+                Some(*hit_count),
                 inputs,
             )
         })

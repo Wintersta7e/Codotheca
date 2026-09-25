@@ -34,11 +34,17 @@ pub const FIRST_RUN_COMMANDS: [&str; 9] = [
 /// Everything first run needs that is not the database.
 #[derive(Debug)]
 pub struct FirstRunEnv {
+    /// Where §10.1a's three named files live on this machine.
     pub sources: sources::SourceEnv,
+    /// What decides whether a suggested root arrives ticked.
     pub classifier: Arc<dyn classify::RootClassifier>,
+    /// The WSL distros offered as rows of their own.
     pub distros: Arc<dyn classify::DistroProbe>,
+    /// The host platform, whose rules fold a root's path into its key.
     pub platform: PathPlatform,
+    /// The directories a `roots.add` estimate does not descend into.
     pub skip: SkipList,
+    /// The paths the latest `roots.suggest` produced, which are never estimated.
     pub cache: roots::SuggestionCache,
 }
 
@@ -97,7 +103,7 @@ fn empty() -> Value {
     serde_json::json!({})
 }
 
-fn handle_list(conn: &mut rusqlite::Connection) -> Result<Value, CommandFailure> {
+fn handle_list(conn: &rusqlite::Connection) -> Result<Value, CommandFailure> {
     let rows = roots::list_roots(conn).map_err(|e| internal(&e))?;
     encode(&rows)
 }
@@ -124,7 +130,7 @@ struct SetDescendArgs {
     descend_into_repos: bool,
 }
 
-fn handle_remove(conn: &mut rusqlite::Connection, args: &Value) -> Result<Value, CommandFailure> {
+fn handle_remove(conn: &rusqlite::Connection, args: &Value) -> Result<Value, CommandFailure> {
     let parsed: RootIdArgs = parse_args(args.clone())?;
     // The boolean is dropped deliberately: an id that is already gone is the state the caller
     // asked for, and §2.2 must be able to replay this.
@@ -132,19 +138,13 @@ fn handle_remove(conn: &mut rusqlite::Connection, args: &Value) -> Result<Value,
     Ok(empty())
 }
 
-fn handle_set_enabled(
-    conn: &mut rusqlite::Connection,
-    args: &Value,
-) -> Result<Value, CommandFailure> {
+fn handle_set_enabled(conn: &rusqlite::Connection, args: &Value) -> Result<Value, CommandFailure> {
     let parsed: SetEnabledArgs = parse_args(args.clone())?;
     roots::set_enabled(conn, parsed.id.0, parsed.enabled).map_err(|e| internal(&e))?;
     Ok(empty())
 }
 
-fn handle_set_descend(
-    conn: &mut rusqlite::Connection,
-    args: &Value,
-) -> Result<Value, CommandFailure> {
+fn handle_set_descend(conn: &rusqlite::Connection, args: &Value) -> Result<Value, CommandFailure> {
     let parsed: SetDescendArgs = parse_args(args.clone())?;
     roots::set_descend(conn, parsed.id.0, parsed.descend_into_repos).map_err(|e| internal(&e))?;
     Ok(empty())
@@ -158,7 +158,7 @@ struct AddArgs {
 }
 
 fn handle_add(
-    conn: &mut rusqlite::Connection,
+    conn: &rusqlite::Connection,
     env: &FirstRunEnv,
     args: &Value,
     now: i64,
@@ -180,12 +180,12 @@ fn handle_add(
     encode(&out)
 }
 
-fn handle_reveal(conn: &mut rusqlite::Connection, now: i64) -> Result<Value, CommandFailure> {
+fn handle_reveal(conn: &rusqlite::Connection, now: i64) -> Result<Value, CommandFailure> {
     let out = crate::stats::reveal::reveal(conn, now).map_err(|e| internal(&e))?;
     encode(&out)
 }
 
-fn handle_identity_list(conn: &mut rusqlite::Connection) -> Result<Value, CommandFailure> {
+fn handle_identity_list(conn: &rusqlite::Connection) -> Result<Value, CommandFailure> {
     let out = crate::identity::people::list(conn).map_err(|e| internal(&e))?;
     encode(&out)
 }
