@@ -25,12 +25,14 @@ export type BindOutcome =
   | { readonly kind: 'refused'; readonly chord: string };
 
 export class ResidentShortcut {
+  private readonly host: ShortcutHost;
+  private readonly onPress: () => void;
   #outcome: BindOutcome = { kind: 'unbound' };
 
-  constructor(
-    private readonly host: ShortcutHost,
-    private readonly onPress: () => void,
-  ) {}
+  constructor(host: ShortcutHost, onPress: () => void) {
+    this.host = host;
+    this.onPress = onPress;
+  }
 
   get outcome(): BindOutcome {
     return this.#outcome;

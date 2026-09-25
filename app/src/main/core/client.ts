@@ -28,14 +28,16 @@ export interface SupervisorLike {
 }
 
 export class CoreRequestError extends Error {
-  constructor(
-    readonly code: ErrorCode,
-    /** `null` — definitely did not take effect. `'unknown'` — may have. */
-    readonly outcome: Outcome | null,
-    readonly retryable: boolean,
-    message: string,
-  ) {
+  readonly code: ErrorCode;
+  /** `null` — definitely did not take effect. `'unknown'` — may have. */
+  readonly outcome: Outcome | null;
+  readonly retryable: boolean;
+
+  constructor(code: ErrorCode, outcome: Outcome | null, retryable: boolean, message: string) {
     super(message);
+    this.code = code;
+    this.outcome = outcome;
+    this.retryable = retryable;
     this.name = 'CoreRequestError';
   }
 }

@@ -34,11 +34,24 @@ const REQUIRED_STRICT_FLAGS = [
   'useUnknownInCatchVariables',
 ] as const;
 
+// Landed with the strict lint set, each measured clean across all three projects. Two are
+// `false` because the strict setting of those flags is the off one.
+const REQUIRED_STRICT_VALUES = {
+  verbatimModuleSyntax: true,
+  erasableSyntaxOnly: true,
+  noUncheckedSideEffectImports: true,
+  allowUnreachableCode: false,
+  allowUnusedLabels: false,
+} as const;
+
 describe('the app TypeScript projects', () => {
   it('sets every required strict flag in the shared base', () => {
     const options = compilerOptions('tsconfig.base.json');
     for (const flag of REQUIRED_STRICT_FLAGS) {
       expect(options[flag], `tsconfig.base.json must set ${flag}`).toBe(true);
+    }
+    for (const [flag, value] of Object.entries(REQUIRED_STRICT_VALUES)) {
+      expect(options[flag], `tsconfig.base.json must set ${flag} to ${String(value)}`).toBe(value);
     }
   });
 

@@ -8,8 +8,11 @@
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 
 export class FrameOversizeError extends Error {
-  constructor(readonly declared: number) {
+  readonly declared: number;
+
+  constructor(declared: number) {
     super(`frame length ${String(declared)} exceeds the ${String(MAX_FRAME_BYTES)}-byte cap`);
+    this.declared = declared;
     this.name = 'FrameOversizeError';
   }
 }

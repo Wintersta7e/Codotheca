@@ -37,10 +37,13 @@ export function rescanIsDue(status: ScanStatus, nowMs: number): boolean {
 }
 
 export class Residency {
+  private readonly deps: ResidencyDeps;
   private cancelDestroy: (() => void) | null = null;
   private cancelPoll: (() => void) | null = null;
 
-  constructor(private readonly deps: ResidencyDeps) {}
+  constructor(deps: ResidencyDeps) {
+    this.deps = deps;
+  }
 
   get timers(): number {
     return (this.cancelDestroy === null ? 0 : 1) + (this.cancelPoll === null ? 0 : 1);
