@@ -115,7 +115,9 @@ export function validateForbidden(rules, registry) {
       if (typeof check.test !== 'string' || !check.test.startsWith(`${GATE}:`)) continue;
       const id = check.test.slice(GATE.length + 1);
       claimed.add(id);
-      if (!declared.has(id))
+      // A deferred check is its owning plan's promise to land the rule, not a claim that the
+      // rule runs: phase 4 registers every criterion before the lane that writes its rule.
+      if (!declared.has(id) && check.status !== 'deferred')
         problems.push(`${check.id}: names ${check.test} and no rule implements it`);
     }
   }

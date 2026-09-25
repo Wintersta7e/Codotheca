@@ -164,6 +164,66 @@ test('the forbidden rule file and the registry claim each other in both directio
   assert.ok(problems.some((p) => p.includes('no check in criteria.json claims')));
 });
 
+// [p4] The register's side of the same escape. Phase 4 registers every criterion before its lanes
+// land, and `pendingRegistryEntry` cannot serve a criterion that is already registered — so a
+// lane lands its rule under the key of the check already deferred to it. Until then that check is
+// a promise its owner keeps, not a claim that the rule runs; a check that says it runs still must
+// find its rule, in both gates.
+test('a deferred check may name a rule its lane has not landed, and nothing else may', () => {
+  const deferred = (gate) => ({
+    criteria: [
+      {
+        id: 'P4-41-12',
+        checks: [
+          { id: 'AC-P4-41-12-x', status: 'deferred', owner: 'p4-41', test: `${gate}:not-yet` },
+        ],
+      },
+    ],
+  });
+  const automated = (gate) => {
+    const registry = deferred(gate);
+    registry.criteria[0].checks[0].status = 'automated';
+    return registry;
+  };
+  const forbidden = {
+    version: 1,
+    rules: [
+      {
+        id: 'x',
+        kind: 'literal',
+        why: 'w'.repeat(30),
+        spec: '§1',
+        targets: ['t'],
+        pendingRegistryEntry: { criterion: '63' },
+      },
+    ],
+  };
+  const callsites = {
+    rules: [
+      {
+        id: 'x',
+        roots: ['a'],
+        patterns: ['p'],
+        why: 'w'.repeat(30),
+        allow: [],
+        pendingRegistryEntry: { criterion: '63' },
+      },
+    ],
+  };
+  assert.deepEqual(validateForbidden(forbidden, deferred('check-forbidden')), []);
+  assert.deepEqual(validateCallSites(callsites, deferred('check-call-sites')), []);
+  assert.ok(
+    validateForbidden(forbidden, automated('check-forbidden')).some((p) =>
+      p.includes('no rule implements it'),
+    ),
+  );
+  assert.ok(
+    validateCallSites(callsites, automated('check-call-sites')).some((p) =>
+      p.includes('no rule implements it'),
+    ),
+  );
+});
+
 test('a call-site rule no check claims is a problem unless it says its entry is pending', () => {
   const registry = { criteria: [] };
   const orphan = {
