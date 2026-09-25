@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -1231,6 +1232,172 @@ test('the freeze holds the fourteen entries the phase-3 sections govern', () => 
     held += 1;
   }
   assert.equal(held, frozen.criteria.length - MOVED_BY_PLAN.length);
+});
+
+// [p4] The record of what §49.3 moves, taken from the phase-4 base rather than the working tree, so
+// it is right whichever lane merges first. `phase3-frozen.json` is not extended: it is a record of a
+// different set at a different tree. Fifty-five entries: §49.3's fifty-two rows, R157's `P3-28-5`
+// and `-15`, and R222's `P3-34-11`.
+const PHASE4_FROZEN_IDS = [
+  '3',
+  '8',
+  '9',
+  '14',
+  '21',
+  '25',
+  '26',
+  '27',
+  '28',
+  '29',
+  '44',
+  '50',
+  '51',
+  '54',
+  '64',
+  '66',
+  'P2-20-2',
+  'P2-20-13',
+  'P2-21-3',
+  'P2-24-1',
+  'P2-24-2',
+  'P2-24-3',
+  'P2-24-4',
+  'P2-24-5',
+  'P2-24-6',
+  'P2-24-13',
+  'P2-24-14',
+  'P2-24-15',
+  'P2-24-16',
+  'P2-24-18',
+  'P2-24-21',
+  'P2-25-11',
+  'P3-28-5',
+  'P3-28-14',
+  'P3-28-15',
+  'P3-30-11',
+  'P3-30-13',
+  'P3-31-11',
+  'P3-31-14',
+  'P3-32-3',
+  'P3-32-12',
+  'P3-32-13',
+  'P3-32-14',
+  'P3-32-16',
+  'P3-33-8',
+  'P3-34-11',
+  'P3-34-14',
+  'P3-34-15',
+  'P3-35-1',
+  'P3-35-3',
+  'P3-35-4',
+  'P3-35-5',
+  'P3-35-6',
+  'P3-35-7',
+  'P3-35-9',
+];
+
+const phase4Frozen = () =>
+  JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL('../../acceptance/phase4-frozen.json', import.meta.url)),
+      'utf8',
+    ),
+  );
+
+test('phase4-frozen.json holds §49.3’s entries and every one is registered', () => {
+  const frozen = phase4Frozen();
+  assert.equal(frozen.version, 1);
+  assert.equal(frozen.frozenFrom, 'acceptance/criteria.json');
+  assert.match(frozen.takenOn, /^[0-9a-f]{40}$/u);
+  assert.equal(PHASE4_FROZEN_IDS.length, 55);
+  assert.deepEqual(frozen.criteria.map((c) => c.id).sort(), [...PHASE4_FROZEN_IDS].sort());
+  const live = new Set(loadRegistry(registryPath).criteria.map((c) => String(c.id)));
+  for (const entry of frozen.criteria) {
+    assert.ok(live.has(entry.id), `${entry.id} is not in criteria.json`);
+    assert.ok(entry.checks.length > 0, `${entry.id} was frozen without its checks`);
+  }
+});
+
+// A record, not a copy of itself: every entry is the base's own, read out of git. A depth-1 CI
+// checkout does not hold the base, so there the test says why it skipped and the unchanged-set
+// test below is the half that still runs.
+test('phase4-frozen.json is the base commit’s register, entry for entry', (t) => {
+  const frozen = phase4Frozen();
+  try {
+    execFileSync('git', ['cat-file', '-e', `${frozen.takenOn}^{commit}`], {
+      cwd: repoRoot,
+      stdio: 'ignore',
+    });
+  } catch {
+    const why = `${frozen.takenOn} is not in this clone (a shallow checkout); nothing to compare`;
+    console.error(`phase4-frozen: skipped — ${why}`);
+    t.skip(why);
+    return;
+  }
+  const base = JSON.parse(
+    execFileSync('git', ['show', `${frozen.takenOn}:acceptance/criteria.json`], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    }),
+  );
+  const byId = new Map(base.criteria.map((c) => [String(c.id), c]));
+  for (const entry of frozen.criteria) {
+    assert.deepEqual(entry, byId.get(entry.id), `${entry.id} differs from ${frozen.takenOn}`);
+  }
+  console.error(`phase4-frozen: ${String(frozen.criteria.length)} entries equal the base's`);
+});
+
+// The half of §49.3 that is true at every merge from here to the tag: the checks it says stand
+// unchanged. The moved rows are asserted against the same file when every lane has landed, never
+// here, or the first Lane-0 merge that moves its row as §49.3 requires would redden this.
+const PHASE4_UNCHANGED = [
+  'AC-P2-24-1',
+  'AC-P2-24-1-destructive',
+  'AC-P2-24-1-justified',
+  'AC-P2-24-1-fixture',
+  'AC-P2-24-1-reads',
+  'AC-P2-24-1-remote-url',
+  'AC-P2-24-3',
+  'AC-P2-20-2',
+  'AC-P2-20-2-denylist',
+  'AC-P2-24-4',
+  'AC-P2-24-4-filters',
+  'AC-P2-24-4-enumeration',
+  'AC-P2-24-5',
+  'AC-P2-24-13',
+  'AC-P2-24-15',
+  'AC-P2-24-16-shallow',
+  'AC-P2-25-11-producer',
+  'AC-P2-25-11-unknown',
+  'AC-P3-30-13-variant',
+  'AC-P3-34-15',
+  'AC-44-token',
+  'AC-44-readonly-argv',
+  'AC-44-no-destructive-git',
+];
+// §49.3: these pass over five sort keys "with no edit to their assertions"; the rest of the check
+// may move with the lane that re-measures them.
+const PHASE4_ASSERT_UNCHANGED = ['AC-P3-35-4', 'AC-P3-35-5', 'AC-P3-35-6', 'AC-P3-35-9'];
+
+test('what §49.3 leaves unchanged stays byte-identical to the frozen copy', () => {
+  const checksOf = (criteria) =>
+    new Map(criteria.flatMap((c) => c.checks).map((k) => [String(k.id), k]));
+  const frozen = checksOf(phase4Frozen().criteria);
+  const live = checksOf(loadRegistry(registryPath).criteria);
+  let compared = 0;
+  for (const id of PHASE4_UNCHANGED) {
+    assert.ok(frozen.has(id), `${id} is not in the frozen copy`);
+    assert.deepEqual(live.get(id), frozen.get(id), `${id} has moved, and §49.3 says it stands`);
+    compared += 1;
+  }
+  for (const id of PHASE4_ASSERT_UNCHANGED) {
+    assert.ok(frozen.has(id), `${id} is not in the frozen copy`);
+    assert.equal(live.get(id)?.assert, frozen.get(id).assert, `${id}'s assert has been edited`);
+    compared += 1;
+  }
+  console.error(`phase4-frozen: ${String(compared)} unchanged checks compared`);
+  assert.ok(compared > 0, 'a comparison of nothing proves nothing');
 });
 
 test('the shipped register and the shipped rule files complete without a problem', () => {

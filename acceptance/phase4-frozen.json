@@ -1,0 +1,2108 @@
+{
+  "version": 1,
+  "why": "The fifty-five entries phase 4 moves or holds unchanged, copied out of criteria.json at the phase-4 base before any phase-4 lane could touch them: the fifty-two rows of the section that rules which earlier criteria phase 4 moves, the two further phase-3 checks the ledger fixes move, and the cascade-children check the removal substrate rewrites. You cannot verify that something moved correctly without a record of what it was. phase3-frozen.json is not extended: it is a record of a different set at a different tree.",
+  "frozenFrom": "acceptance/criteria.json",
+  "takenOn": "a2fc9355ccd282ae2e1380a1330b72c95106a496",
+  "criteria": [
+    {
+      "id": "3",
+      "title": "A merge is transactional and loses no work",
+      "group": "functional",
+      "spec": "\u00a716.3",
+      "checks": [
+        {
+          "id": "AC-3-transactional",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "08",
+          "test": "acceptance_identity::ac_3_merge_is_transactional",
+          "assert": "Amendment 3: git-derived rows are deleted and recomputed for the survivor, session-derived rows are reparented, a redirect is written, level_floor cannot fall, and projects.merged is emitted."
+        }
+      ]
+    },
+    {
+      "id": "8",
+      "title": "A WSL-resident repository launches with translated paths",
+      "group": "functional",
+      "spec": "\u00a716.8",
+      "checks": [
+        {
+          "id": "AC-8-translate",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "18",
+          "test": "acceptance_wsl::ac_8_path_translation_round_trips",
+          "assert": "Windows-to-distro and distro-to-Windows translation round-trips for drive-mounted, VHD-resident and UNC paths."
+        },
+        {
+          "id": "AC-8-live",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "WSL-LAUNCH",
+          "reason": "No CI runner provides a WSL distro: nested virtualisation is not available on hosted Windows runners, so the in-distro worker cannot be started. Run on Reference A before a release. The bridge has never been crossed on a real machine here either \u2014 the dispatcher is asserted over a loopback worker only.",
+          "assert": "A repository inside a distro launches its target and runs git inside the distro."
+        }
+      ]
+    },
+    {
+      "id": "9",
+      "title": "The query grammar, its soft errors and saved queries",
+      "group": "functional",
+      "spec": "\u00a716.9",
+      "checks": [
+        {
+          "id": "AC-9-grammar",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-9 the grammar parses every documented field, negation and comparison",
+          "assert": "The query conformance corpus runs in both the renderer and the core and produces identical ASTs."
+        },
+        {
+          "id": "AC-9-soft-error",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13",
+          "test": "AC-9 an unknown field soft-errors without discarding the query",
+          "assert": "The unknown term is dropped, named in the ignored clause, and the surviving terms still run."
+        },
+        {
+          "id": "AC-9-saved",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "15b",
+          "test": "AC-9 a saved query survives a restart",
+          "assert": "A saved collection re-lights after a relaunch by AST comparison against the restored query."
+        }
+      ]
+    },
+    {
+      "id": "14",
+      "title": "A future schema refuses to open; a corrupt database quarantines and rebuilds",
+      "group": "functional",
+      "spec": "\u00a716.14",
+      "checks": [
+        {
+          "id": "AC-14-future-schema",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_recovery::ac_14_schema_from_the_future_refuses_to_open",
+          "assert": "A PRAGMA user_version above SUPPORTED_SCHEMA_VERSION yields SchemaFromFuture carrying both numbers, and the file is left untouched."
+        },
+        {
+          "id": "AC-14-quarantine",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "acceptance_recovery::ac_14_corrupt_database_quarantines_and_rebuilds",
+          "assert": "A corrupt file is quarantined with its wal and shm, rebuild returns a RebuildReport, and the report names exactly what was not derivable."
+        },
+        {
+          "id": "AC-14-message",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17c",
+          "test": "AC-14 the failure window states the schema number and the restore time",
+          "assert": "Criterion 57's failed-migration window renders the restored schema number and the restore time."
+        }
+      ]
+    },
+    {
+      "id": "21",
+      "title": "Idle on Reference A",
+      "group": "performance",
+      "spec": "\u00a716.21",
+      "checks": [
+        {
+          "id": "AC-21-frames",
+          "status": "deferred",
+          "runner": "perf",
+          "owner": "12c",
+          "test": "perf::idle_scheduled_frames",
+          "assert": "Amendment 21: zero scheduled frames while unfocused or hidden, and at most one flicker element while focused, sampled over at least 60 s in the defined idle state. [p3] The sentence bans a schedule, not a response: the user-triggered specular sweep and the restoration surge (\u00a734.6) beside it are bounded one-shots for a change the user is present for and are absent at reduced and off; idle requires no project page open, so neither can breach this budget.",
+          "measurement": {
+            "kind": "rate",
+            "run": "at least 60 s with the shelf visible and focused, no project page open, no session open, no job running, and no pointer or keyboard input for at least 5 s",
+            "thermal": "warm",
+            "machines": ["A"]
+          },
+          "budget": [
+            {
+              "metric": "max",
+              "op": "<=",
+              "value": 1,
+              "unit": "flicker elements",
+              "machine": "A"
+            }
+          ]
+        },
+        {
+          "id": "AC-21-flicker",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12c",
+          "test": "AC-21 the scheduled flicker obeys its eligibility and its parameters",
+          "assert": "At most one card in the viewport \u2014 mounted is not enough; 1 to 2 sub-dips of 15 to 25% of steady glow, each 80 to 140 ms, a deterministic Poisson process at about 9 s mean seeded per session, suspended while unfocused and resuming with no backlog. Eligibility is condition_signal in {neglected, abandoned}, location present, is_reference = 0. The design's 50% depth, fixed 130 ms hold and fixed 9,000 ms period are cut and must not be asserted."
+        },
+        {
+          "id": "AC-21-cpu",
+          "status": "unmeasurable",
+          "runner": "none",
+          "reason": "Amendment 21 marks the CPU figure provisional: the 0.014 to 0.017% in the probe results was taken before any scheduled frame existed, so it describes a different build. It is re-measured before the public beta rather than gated on now.",
+          "assert": "No idle CPU or GPU budget is gated in phase 1."
+        },
+        {
+          "id": "AC-21-audio",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "IDLE-AUDIO",
+          "reason": "Asserting the app is absent from the OS audio mixer requires an OS audio mixer; no hosted CI runner exposes one, and a stubbed audio device would assert the stub.",
+          "assert": "The app does not appear in the OS audio mixer while idle."
+        }
+      ]
+    },
+    {
+      "id": "25",
+      "title": "Every promised problem is reachable; every never-indexed repository carries an explained error",
+      "group": "honesty",
+      "spec": "\u00a716.25",
+      "checks": [
+        {
+          "id": "AC-25-kinds",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-problem-kinds:reachable",
+          "assert": "Every problem kind the protocol declares is representable in the store and appears in the scan summary's group list; a kind that the protocol can emit and the schema cannot store is a defect, not an omission."
+        },
+        {
+          "id": "AC-25-summary",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "17c",
+          "test": "AC-25 every counted problem is reachable in the scan summary",
+          "assert": "Each group in problems.list renders with a count and a way to reach its rows."
+        },
+        {
+          "id": "AC-25-explained",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_25_never_indexed_carries_an_explained_error",
+          "assert": "A repository that has never successfully indexed carries error_kind, error_detail and error_at, and its condition_signal stays NULL rather than being invented."
+        },
+        {
+          "id": "AC-25-problem-location",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "04",
+          "test": "acceptance_jobs::ac_25_a_problem_row_names_the_location_it_came_from",
+          "assert": "A problem row names which copy raised it.",
+          "reason": "scan_problem has no location_id column. A project with two copies on two volumes can raise a problem on one of them and the row cannot say which, so the reachable-rows half of the criterion resolves to the project and not to the thing the user has to go and look at. The scan now writes problem rows, which makes the omission live rather than theoretical. Closing it is the schema plan's column plus the surfaces plan's rendering."
+        }
+      ]
+    },
+    {
+      "id": "26",
+      "title": "Signed per-user NSIS with a working updater round trip",
+      "group": "distribution",
+      "spec": "\u00a716.26",
+      "checks": [
+        {
+          "id": "AC-26-roundtrip",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "19",
+          "test": "AC-26 the updater round trip completes against a local feed",
+          "assert": "A per-user NSIS install updates from a locally served feed, including an update staged while the core is running, which completes the shutdown first.",
+          "reason": "Phase 1 ships no update channel. There is no auto-updater, no update server and no feed: distribution is a release page downloaded by hand. electron-updater is not a dependency and a gate asserts its absence, so the round trip has nothing to round-trip against. This is neither covered nor failing \u2014 the criterion's subject does not exist in this phase, and the check is here so that adding an updater later cannot arrive without it."
+        },
+        {
+          "id": "AC-26-signature",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "RELEASE-SIGNING",
+          "reason": "The code-signing certificate is a hardware-token procurement and none has been obtained: phase 1 ships unsigned and the packager reports that posture rather than hiding it. The private key could not exist in CI even once it does, so no automated job can produce or verify a genuinely signed artifact.",
+          "assert": "The shipped installer and its update artifacts carry a valid signature."
+        }
+      ]
+    },
+    {
+      "id": "27",
+      "title": "AppImage self-updates; deb and rpm install with the updater disabled",
+      "group": "distribution",
+      "spec": "\u00a716.27",
+      "checks": [
+        {
+          "id": "AC-27-appimage",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "19",
+          "test": "AC-27 the AppImage self-updates from a local feed",
+          "assert": "Run with --appimage-extract-and-run on a Linux runner, the AppImage completes an update round trip.",
+          "reason": "Phase 1 ships no update channel, so the AppImage self-update has nothing to update from. The AppImage target itself is built and packed."
+        },
+        {
+          "id": "AC-27-packages",
+          "status": "deferred",
+          "runner": "script",
+          "owner": "19",
+          "test": "check-packages:updater-disabled",
+          "assert": "The built .deb and .rpm carry the build-time artifact flag that disables the updater, and installing them on a runner leaves no updater timer.",
+          "reason": "There is no updater to disable and therefore no flag to carry. What ships instead is the stronger statement, gated today by scripts/check-no-updater.mjs in the bundle guard: the updater package is absent from the dependency tree and from the built shell entirely. That gate emits no joinable result row, so the criterion cannot claim it until either it does or this check is rewritten against what actually exists."
+        }
+      ]
+    },
+    {
+      "id": "28",
+      "title": "diag.bundle exports the stated fields, anonymised by default",
+      "group": "distribution",
+      "spec": "\u00a716.28",
+      "checks": [
+        {
+          "id": "AC-28-fields",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "17",
+          "test": "acceptance_diag::ac_28_bundle_exports_the_stated_fields",
+          "assert": "diag.bundle returns exactly the stated fields and no path, no remote URL and no email survives anonymisation by default."
+        },
+        {
+          "id": "AC-28-anonymise",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "DIAG-ANONYMISATION",
+          "assert": "Against a real index whose locations sit under a home directory, a bundle exported with the default setting carries no home directory, no drive letter, no mount root and no user name \u2014 only the basename and the per-volume pseudonym \u00a711.4 specifies. The same export with SHOW REAL PATHS must put them back, so a clean default run is known to have had something to remove.",
+          "reason": "A reviewer performs this before a release, against the built binary rather than the source. It is not automated here for two reasons. The cargo half (AC-28-fields, owner 17) asserts the document's shape but builds no bundle from host-shaped paths, so it cannot see an anonymiser that stopped covering a field. And the control half is what makes the result mean anything: without re-exporting the same index with real paths and watching the assertion fail, a clean run is indistinguishable from a run whose fixture never reached the anonymiser at all. That pairing is a judgement about whether the fixture was representative, which is why it is a person's gate and not a machine's."
+        }
+      ]
+    },
+    {
+      "id": "29",
+      "title": "Real Linux GPU rendering across the driver and compositor matrix",
+      "group": "external",
+      "spec": "\u00a716.29",
+      "checks": [
+        {
+          "id": "AC-29-linux-gpu",
+          "status": "external",
+          "runner": "none",
+          "reason": "Neither the maintainer nor CI can exercise it: development is on Windows with WSL, WSLg is unrepresentative, and CI runners are headless. Criteria 15 and 21 are measured on A and on WSLg only; the Linux figures come from external users during the public beta. This is a known, accepted gap and it is the reason phase 1 ships publicly as a beta.",
+          "assert": "Not verified here. The harness reports it as external and refuses any other status."
+        }
+      ]
+    },
+    {
+      "id": "44",
+      "title": "Nothing on the page mutates disk",
+      "group": "surfaces",
+      "spec": "\u00a716.44",
+      "checks": [
+        {
+          "id": "AC-44-no-destruction",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14b",
+          "test": "AC-44 no surface offers a destructive control and RELOCATE rewrites one row",
+          "assert": "No Remove, no clean, no push, no checkout on any surface; RELOCATE rewrites the location row's path only, verified by hashing the location's tree before and after; setTrusted and requeue are read-only with respect to the filesystem and git config."
+        },
+        {
+          "id": "AC-44-token",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c44-forget-token",
+          "assert": "The forget token appears in no rendered string, no accessible name and no command name anywhere in the built bundle or in the protocol schema."
+        },
+        {
+          "id": "AC-44-readonly-argv",
+          "status": "automated",
+          "runner": "cargo",
+          "test": "git_readonly::no_source_file_names_a_destructive_subcommand",
+          "assert": "Every argv literal the git module can emit is on a read-only allow list and none is on the destructive deny list, audited over the module's own source with its own scanned-nothing guard. It reads core/src/git only and one literal form, which is why the static call-site rule covers argv assembled elsewhere in the core."
+        },
+        {
+          "id": "AC-44-no-destructive-git",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-call-sites:no-destructive-git",
+          "assert": "No destructive git subcommand appears as an argv literal anywhere in the core \u2014 push, clean, checkout, reset, fetch, pull, gc, prune and restore, fetch included because a directional claim would need one."
+        }
+      ]
+    },
+    {
+      "id": "50",
+      "title": "Effects tier off",
+      "group": "surfaces",
+      "spec": "\u00a716.50",
+      "checks": [
+        {
+          "id": "AC-50-zero-animation",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "12",
+          "test": "AC-50 tier off runs zero animations and schedules zero frames",
+          "assert": "At reduced and off the scheduled flicker is absent \u2014 steady glow, no dip. Hazard tape renders identically and the pin mark is a static silhouette no tier deletes. Verified by resolving a style on a real element under each tier, never by matching the stylesheet's text. [p3] THE CLASS-NAME LIST AND ITS COUNT ARE DELETED, NOT INCREMENTED (\u00a733.5 / R112). The list read nine against a real ten, was corrected to ten, and \u00a733 and \u00a734 then moved it twice more from two sections that cannot see each other \u2014 three moves is the argument for deriving it. `app/test/tierClamp.test.ts` parses `motion.css`, derives the set PER RULE GROUP, prints the set and its size, and fails at zero; no section and no criterion states a count. The clamp-membership half of this check is discharged by `AC-P3-33-8`. The clauses above \u2014 the scheduled flicker, the hazard tape, the pin silhouette \u2014 are phase-1 debt owned by plan 12, which is why this check stays `deferred`."
+        },
+        {
+          "id": "AC-50-readability",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "EFFECTS-OFF-READABILITY",
+          "reason": "The criterion is marked half in the spec: whether condition, tier, rank and safety remain readable from static form alone is a human reading, and absence of a condition dot is a correct static reading rather than a failure.",
+          "assert": "Condition, tier, rank and safety are readable at tier off."
+        }
+      ]
+    },
+    {
+      "id": "51",
+      "title": "Copy voice",
+      "group": "surfaces",
+      "spec": "\u00a716.51",
+      "checks": [
+        {
+          "id": "AC-51-voice",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "COPY-VOICE",
+          "reason": "The spec marks this criterion as not automatable: no second-person accusation, no editorialised figure and nothing that congratulates volume are judgements about prose, and a machine reading them would be asserting a keyword list rather than the rule.",
+          "assert": "Every user-visible string passes the copy-voice ruling; roast copy is gated by criterion 54 instead."
+        }
+      ]
+    },
+    {
+      "id": "54",
+      "title": "The roast producer",
+      "group": "subsystems",
+      "spec": "\u00a716.54",
+      "checks": [
+        {
+          "id": "AC-54-selection",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-54 first match wins over the five clauses and silence when none matches",
+          "assert": "At most one line, describing the shown location and never the aggregate; nothing when the switch is off, the project is Reference or archived, the shown location is not present, or the project never succeeded. Clause 2 is the only clause carrying a time and is not produced at all past 24 h."
+        },
+        {
+          "id": "AC-54-scope",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "14",
+          "test": "AC-54 a DOM audit finds zero roast blocks outside an opened project card",
+          "assert": "The grid, Peek, the list, quick switch, the scan summary and every notification contain no roast block. This is the half that makes the feature admissible."
+        },
+        {
+          "id": "AC-54-superseded",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c54-superseded-roast",
+          "assert": "The superseded roast strings appear nowhere in the built renderer."
+        }
+      ]
+    },
+    {
+      "id": "64",
+      "title": "Era sections, header aggregates and the watch set",
+      "group": "subsystems",
+      "spec": "\u00a716.64",
+      "checks": [
+        {
+          "id": "AC-64-sections",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "13",
+          "test": "acceptance_shelf::ac_64_era_section_ids_and_orders",
+          "assert": "The section id table and nothing else, with the tail carrying no year, the not-cloned section never emitted in phase 1, and Reference rendering in its own chrome below the grid rather than as an era section."
+        },
+        {
+          "id": "AC-64-aggregates",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-64 the header renders the indexed and unchecked counts, including all-zero with unchecked above zero",
+          "assert": "The flag line still renders in that case, because an absent flag line may only ever mean observed and nothing to report. The label is absent from the response; order, year and the calendar year grouped against are present."
+        },
+        {
+          "id": "AC-64-watch-set",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_64_watch_set_invalidates_and_never_scans",
+          "assert": "The bounded worktree watch set invalidates the worktree observation time and never starts a scan or discovers a repository."
+        },
+        {
+          "id": "AC-64-copy",
+          "status": "automated",
+          "runner": "script",
+          "test": "check-forbidden:c64-watch-set-copy",
+          "assert": "The sentence claiming nothing is watched inside a repository is false and appears nowhere."
+        }
+      ]
+    },
+    {
+      "id": "66",
+      "title": "The top bar and density",
+      "group": "subsystems",
+      "spec": "\u00a716.66",
+      "checks": [
+        {
+          "id": "AC-66-density",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 density cycles exactly three steps and each moves the column count by one",
+          "assert": "Each step carries its stated card composition; the chosen step persists and survives a restart; in list view the control is not rendered at all."
+        },
+        {
+          "id": "AC-66-hash-stable",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 the scene hash is byte-identical across every density press",
+          "assert": "Density is a render parameter, never a seed input, and the 2x track clears the largest step."
+        },
+        {
+          "id": "AC-66-sort",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "the sort ladder AC-P3-35-4 the control offers every variant the schema declares",
+          "assert": "[p3] The cycle's membership is derived from protocol/schema/protocol.json rather than counted by hand, every variant carries a non-empty label, and nextSort reaches each one exactly once. Completion stays absent and is 31's to move."
+        },
+        {
+          "id": "AC-66-shed",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13b",
+          "test": "AC-66 at the minimum window width nothing overlaps and the bar sheds in the stated order",
+          "assert": "The floor itself is measured, not asserted; every label a user must read to work a control sits at text-3 or lighter. The written 924px minimum is superseded by measurement: the unshed bar fits from 861px and the fully shed one from the measured floor."
+        }
+      ]
+    },
+    {
+      "id": "P2-20-2",
+      "title": "No source file in the core sends a scope outside the two tier sets",
+      "group": "functional",
+      "spec": "\u00a720.3",
+      "checks": [
+        {
+          "id": "AC-P2-20-2",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "provider_scope_audit::every_scope_literal_is_on_a_tier_list",
+          "assert": "Walks every .rs under core/src/, prints the count of files scanned and fails at zero, and asserts a scope literal is written only in provider/scopes.rs.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-20-2-denylist",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "provider_scope_audit::the_core_never_names_a_destructive_or_unrequested_scope",
+          "assert": "Prints the count of files scanned and fails at zero; no file in the core names delete_repo, gist, notifications, workflow, or any admin: or write: scope.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-20-13",
+      "title": "The two tier sets authorize what the surface claims",
+      "group": "functional",
+      "spec": "\u00a720.3",
+      "checks": [
+        {
+          "id": "AC-P2-20-13",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "assert": "That the two tier sets authorize the reads \u00a720 makes, that permissions.push is present on listings under the public tier, that a slow_down response carries a replacement interval, and that requesting a narrower set does not narrow an existing grant.",
+          "deferral": "live-observation",
+          "reason": "Documentation knowledge against a live API that neither the decision round nor this lane has called. It is honest as deferred and stops being honest the moment someone reads it as verified.",
+          "verification": {
+            "recordedAt": null,
+            "evidence": null
+          }
+        },
+        {
+          "id": "AC-P2-20-13-copy",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-20",
+          "test": "accounts_consent_copy::no_rendered_string_names_a_scope",
+          "assert": "Prints the count of settings source files scanned and fails at zero; no rendered string names a scope, so no consent copy asserting one can ship before the live check runs.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-25-11",
+      "title": "The backup state is one producer with two consumers",
+      "group": "surfaces",
+      "spec": "\u00a725.3",
+      "checks": [
+        {
+          "id": "AC-P2-25-11-producer",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-25",
+          "test": "\u00a725.3 the backup line states a fact and offers no control AC-P2-25-11-producer renders the only-copy row with its plate and its edge token",
+          "assert": "Three of the four rows are exercised \u2014 only_copy, not_anywhere_else and verified \u2014 plus the NULL that row 4 produces, with singularisation at one and at two and no zero clause. The word clean appears in no rendered output. The fourth row's unreadable-stash limb is AC-P2-25-11-unknown's, p2-24b's, because RefState.stash_count is a u32 today and cannot represent it."
+        },
+        {
+          "id": "AC-P2-25-11-unknown",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_25_11_unknown_an_unknown_stash_count_produces_no_block",
+          "assert": "Row 4's unreadable-stash limb: with RefState.stash_count an Option<u32>, a location whose stash count is unknown falls through to no block rather than to verified. Registered against the suite and the name p2-24b landed, not the ones this entry was written against before it did (R51)."
+        }
+      ]
+    },
+    {
+      "id": "P2-21-3",
+      "title": "The three 403 shapes settle three different ways",
+      "group": "functional",
+      "spec": "\u00a721.16",
+      "checks": [
+        {
+          "id": "AC-P2-21-3-primary",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_state::a_primary_yield_parks_to_the_reset_and_moves_neither_counter",
+          "assert": "A 403 carrying x-ratelimit-remaining: 0 parks to reset_at with fail_count and throttle_count both unchanged."
+        },
+        {
+          "id": "AC-P2-21-3-secondary",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_state::a_secondary_limit_increments_its_own_counter_and_lengthens_the_park",
+          "assert": "A 403 carrying retry-after with remaining above zero parks and increments throttle_count, floored at 60 s and doubled on the second consecutive one."
+        },
+        {
+          "id": "AC-P2-21-3-terminal",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "test": "sync_state::a_terminal_403_blocks_with_no_scheduled_retry",
+          "assert": "A 403 carrying neither header leaves the task blocked with no not_before and no scheduled retry, and no passage of time makes it runnable."
+        },
+        {
+          "id": "AC-P2-21-3-floor",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p2-21",
+          "assert": "That a forge's secondary rate limit is not usefully retried inside 60 seconds, which is what the floor in secondary_park_secs is set from.",
+          "deferral": "live-observation",
+          "reason": "\u00a721.4 states the 60 s floor as documentation knowledge, and no call has been made against a live forge by the decision round or by this lane. The implementation carries the floor; whether 60 s is the right number is the part that is unverified.",
+          "verification": {
+            "recordedAt": null,
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "P2-24-1",
+      "title": "core/src/git/ is provably read-only, and its lists did not move",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-1",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::every_subcommand_literal_is_on_the_read_only_allow_list",
+          "assert": "Every subcommand literal in core/src/git/ is on the phase-1 ALLOWED list, so a write subcommand added to the read-only module fails here and not in review."
+        },
+        {
+          "id": "AC-P2-24-1-destructive",
+          "shares": "AC-44-readonly-argv",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::no_source_file_names_a_destructive_subcommand",
+          "assert": "No source file of the read-only module names a destructive subcommand at all, which is the half a literal allow-list cannot state."
+        },
+        {
+          "id": "AC-P2-24-1-justified",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::every_non_literal_os_str_call_is_explicitly_justified",
+          "assert": "Every argv built from something other than a literal carries a written justification, so the allow-list cannot be evaded by construction."
+        },
+        {
+          "id": "AC-P2-24-1-fixture",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::a_non_literal_os_str_fixture_is_rejected",
+          "assert": "A planted non-literal call is rejected, which is what proves the audit above is not passing vacuously."
+        },
+        {
+          "id": "AC-P2-24-1-reads",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::the_audit_actually_reads_argv_literals",
+          "assert": "The audit reads real argv literals out of the module rather than an empty set \u2014 the scans-nothing failure, stated as its own case."
+        },
+        {
+          "id": "AC-P2-24-1-remote-url",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::the_remote_url_argv_is_a_read",
+          "assert": "The remote-URL argv this section added is a read like every other, so the module's guarantee is unchanged by it."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-2",
+      "title": "Every write intent renders an audited argv",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-2",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::every_rendered_subcommand_is_write_allowed",
+          "assert": "Every Intent::ALL variant renders a subcommand in clone or fetch and nothing else \u2014 git is additive-only in phase 2."
+        },
+        {
+          "id": "AC-P2-24-2-flags",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::no_rendered_argv_contains_a_forbidden_flag",
+          "assert": "No rendered argv carries any token from the eight-entry FLAG_FORBIDDEN set."
+        },
+        {
+          "id": "AC-P2-24-2-floor",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::the_exhaustive_intent_list_has_two_renderable_variants",
+          "assert": "Intent::ALL's length equals its hard-coded floor, so adding a variant without raising the floor fails.",
+          "source": "\u00a724.11"
+        },
+        {
+          "id": "AC-P2-24-2-sentinel",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::the_sentinel_reaches_no_child_argv_config_url_or_environment",
+          "assert": "A sentinel credential appears in no rendered argv, no -c value, no URL and no environment entry."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-3",
+      "title": "Every git spawn goes through the audited renderer",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-3",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p2-24",
+          "test": "check-call-sites:no-unaudited-git-spawn",
+          "assert": "The rule names exactly three files and the gate prints a rule count, a violation count and a file-read count on the passing run; a run that walked zero files or read zero files fails.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-24-4",
+      "title": "A fetch prunes nothing and a clone lands where nothing was",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-4",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::rendering_an_intent_repeatedly_is_byte_identical_and_never_grows_a_flag",
+          "assert": "Re-rendering an intent under every scheduler retry path is byte-identical and never grows a flag, which is where a --prune would appear if one ever did."
+        },
+        {
+          "id": "AC-P2-24-4-filters",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::a_configured_filter_driver_is_neutralised_in_the_child_argv",
+          "assert": "A clone's child argv neutralises every configured filter driver, so a machine-local clean filter cannot rewrite what lands on disk."
+        },
+        {
+          "id": "AC-P2-24-4-enumeration",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::a_failed_filter_enumeration_refuses_the_clone",
+          "assert": "A filter enumeration that fails refuses the clone rather than proceeding with an unknown filter set."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-5",
+      "title": "FORGET appears nowhere, including the modules that now remove",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-5",
+          "shares": "AC-44-token",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p2-24",
+          "test": "check-forbidden:c44-forget-token",
+          "assert": "The forbidden-token rule, widened to cover core/src/gitw/, finds FORGET in no rendered string, accessible name or command. Criterion 44's own check names this same rule and is kept verbatim."
+        },
+        {
+          "id": "AC-P2-24-5-module",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::the_forbidden_token_appears_nowhere_in_the_module",
+          "assert": "The token appears in no source file of either mutating module."
+        },
+        {
+          "id": "AC-P2-24-5-planted",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_readonly::a_planted_token_in_either_mutating_module_would_be_caught",
+          "assert": "A planted token in either module is caught, which is what stops the absence above passing vacuously."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-6",
+      "title": "The destructive-token gate permits uninstall only where it is rendered",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-6",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "the destructive-token gate permits UNINSTALL only at its enumerated sites",
+          "assert": "The word is permitted at the enumerated sites and an occurrence outside them fails, so the site list is a claim about where the word is rendered rather than a hole."
+        },
+        {
+          "id": "AC-P2-24-6-words",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "the destructive-token gate bans the three removal words uppercase-exact, and permits the command names",
+          "assert": "DELETE, REMOVE and RECLAIM SPACE are banned uppercase-exact, while the shipped command names that contain remove still pass."
+        },
+        {
+          "id": "AC-P2-24-6-allowlist",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "the destructive-token gate keeps the escape hatch shut",
+          "assert": "ALLOWLIST is empty, so no path carries a general exemption for a banned word."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-13",
+      "title": "The removal recomputes its own verdict and refuses if it moved",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-13",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_13_no_verdict_token_crosses_the_wire",
+          "assert": "A LocationId is the only argument and no verdict token crosses the boundary, so there is nothing for a caller to forge or replay."
+        },
+        {
+          "id": "AC-P2-24-13-recompute",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_command::a_copy_that_changed_after_the_preflight_is_refused_and_survives",
+          "assert": "Mutating the working copy between the pre-flight and the call makes the recomputed verdict differ, and the removal is refused with the copy intact."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-14",
+      "title": "No path past a non-safe disposition exists anywhere",
+      "group": "surfaces",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-14",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "the uninstall control renders unknown distinctly from blocked",
+          "assert": "unknown renders distinctly from blocked \u2014 not the same disabled state with different words, which is the type-level collapse \u00a724.8 exists to prevent."
+        },
+        {
+          "id": "AC-P2-24-14-blockers",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "the uninstall control names every one of the fourteen blockers when it is blocked",
+          "assert": "The control is disabled with its reasons named, for every one of the fourteen blockers rather than the first."
+        },
+        {
+          "id": "AC-P2-24-14-sources",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-14: no path past a non-safe disposition exists in the sources finds no override, confirmation-through or bulk wording anywhere in the app",
+          "assert": "Scans every app source, prints the count scanned and the count of hits, and fails at zero files: no override, confirmation-through or bulk selection reaches removal from any surface.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-24-14-channel",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-14: no path past a non-safe disposition exists in the sources routes the removal through the shell, never through a renderer-held command name",
+          "assert": "No renderer file names the privileged command; the removal travels a shell-owned channel and the renderer names only that channel."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-15",
+      "title": "An unreadable stash is unknown and never safe",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-15",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_15_an_unreadable_stash_reflog_is_unknown_and_never_safe",
+          "assert": "With logs/refs/stash unreadable the pre-flight yields stash_unreadable and disposition unknown, never safe."
+        },
+        {
+          "id": "AC-P2-24-15-packed",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_15_a_packed_only_stash_is_a_stash",
+          "assert": "A stash reachable only through a packed refs/stash yields stash_present, so a repository with reflogs off does not read as empty."
+        },
+        {
+          "id": "AC-P2-24-15-column",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_preflight::the_uninstall_module_never_reads_the_cached_stash_column",
+          "assert": "No pre-flight code path reads location.stash_count, which cannot distinguish unreadable from zero."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-16",
+      "title": "Nothing the remote or the history failed to establish is safe",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-16",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_16_no_remote_or_history_failure_ever_yields_safe",
+          "assert": "A 401, a 403, a 404 and an offline machine each yield unknown, and none of the four ever yields safe."
+        },
+        {
+          "id": "AC-P2-24-16-fold",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_16_every_blocker_alone_keeps_the_answer_away_from_safe",
+          "assert": "Every blocker on its own folds the answer away from safe, which is the property the criterion is really about."
+        },
+        {
+          "id": "AC-P2-24-16-mirror",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_gates::a_local_mirror_is_blocked_and_not_treated_as_a_backup",
+          "assert": "A remote URL resolving to a local path yields remote_is_local_mirror and is never counted as a second copy."
+        },
+        {
+          "id": "AC-P2-24-16-shallow",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_gates::a_shallow_clone_never_clears",
+          "assert": "A shallow clone yields shallow_clone, because every local ref being present upstream cannot be proved over a truncated graph."
+        }
+      ]
+    },
+    {
+      "id": "P2-24-18",
+      "title": "Every filesystem removal goes through one warranted primitive",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-18",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "uninstall_acceptance::ac_p2_24_18_the_warrant_set_grew_and_the_audit_covers_all_of_it",
+          "assert": "The warrant set grew with the uninstall variant and the audit covers every variant of it, so a second warrant kind cannot ship uncovered."
+        },
+        {
+          "id": "AC-P2-24-18-audit",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24b",
+          "test": "removal_audit::every_removal_is_warranted_or_a_reasoned_baseline_entry",
+          "assert": "Walks every source file that can delete from the filesystem, prints the file count and the call-site count, and fails below a floor \u2014 a run scanning zero files fails.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-24-18-sites",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p2-24b",
+          "test": "check-call-sites:no-unwarranted-removal",
+          "assert": "The call-site gate finds no removal outside the warranted primitive and prints a rule count, a violation count and a file-read count; a run that read zero files fails.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P2-24-18-recursive",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p2-24b",
+          "test": "check-call-sites:no-unwarranted-recursive-removal",
+          "assert": "The recursive half of the same rule, printing its own file-read count and failing the same way at zero files read.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-24-21",
+      "title": "A credential reaches no argv, no config and no produced clone",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-21",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::a_real_clone_persists_no_sentinel_and_an_origin_without_userinfo",
+          "assert": "A sentinel driven through a real authenticated clone appears in no produced .git/config, and the clone's origin URL carries an empty userinfo field."
+        },
+        {
+          "id": "AC-P2-24-21-fetch",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p2-24",
+          "test": "git_write_audit::the_sentinel_reaches_no_rendered_fetch_argv_although_fetch_never_spawns",
+          "assert": "The same holds for the fetch intent, asserted although fetch never spawns, so the guarantee does not rest on which variants happen to run."
+        }
+      ]
+    },
+    {
+      "id": "P3-28-5",
+      "title": "Forty closures in one day pay once",
+      "group": "functional",
+      "spec": "\u00a728.12",
+      "checks": [
+        {
+          "id": "AC-P3-28-5",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-28",
+          "test": "debt_xp::ac_p3_28_5_forty_closures_in_one_day_pay_once",
+          "assert": "Forty items closed in one local date write exactly one xp_events row; meta.closed reads 40, and the second closure updates meta and no other column."
+        }
+      ]
+    },
+    {
+      "id": "P3-28-14",
+      "title": "A shown_only item renders and scores nothing",
+      "group": "functional",
+      "spec": "\u00a728.12",
+      "checks": [
+        {
+          "id": "AC-P3-28-14",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-28",
+          "test": "debt_lifecycle::ac_p3_28_14_a_shown_only_item_renders_and_pays_nothing",
+          "assert": "A shown_only item renders, lights its layer, and contributes to neither the health count nor any xp_events row."
+        },
+        {
+          "id": "AC-P3-28-14-layer",
+          "shares": "AC-P3-33-2",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-33",
+          "test": "ac p3 33 2 \u2014 the count is the open items, and cobwebs comes from \u00a728 ac_p3_33_2 counts open items at either scoring and never an unverified one",
+          "assert": "The lights-its-layer half, which is \u00a733's: an open shown_only item counts toward its layer's lit anchors exactly as a scored one does."
+        },
+        {
+          "id": "AC-P3-28-14-render",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-30",
+          "test": "\u00a733.2 the HEALTH tab lists every item, in text AC-P3-28-14 shown_only and unverified items render and say they are not counted",
+          "assert": "The renders half: on the HEALTH tab's item list a shown_only item and an unverified item render, each carrying the note that says it is not counted, while a scored open item carries neither note."
+        }
+      ]
+    },
+    {
+      "id": "P3-28-15",
+      "title": "A withdrawn advisory pays nothing",
+      "group": "functional",
+      "spec": "\u00a728.12",
+      "checks": [
+        {
+          "id": "AC-P3-28-15",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-28",
+          "test": "debt_xp::ac_p3_28_15_an_invalidated_closure_pays_nothing",
+          "assert": "A withdrawn advisory closes as invalidated, pays nothing, and leaves XP already paid for that project untouched."
+        }
+      ]
+    },
+    {
+      "id": "P3-30-11",
+      "title": "Suppression gates only the blob read",
+      "group": "functional",
+      "spec": "\u00a730.13",
+      "checks": [
+        {
+          "id": "AC-P3-30-11",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-30",
+          "test": "health_suppression::ac_p3_30_11_a_surface_suppressed_project_still_runs_its_bounded_work",
+          "assert": "For a surface_suppressed project, \u00a732's lockfile reads, \u00a729's presence probes and \u00a729's enumeration all run and write their rows, while \u00a729's blob read does not; no surface renders any of it. Prints the row counts on both sides; a zero on the running side fails."
+        },
+        {
+          "id": "AC-P3-30-11-gate",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-30",
+          "test": "health_suppression::ac_p3_30_11_the_blob_read_gate_reads_acknowledged_at",
+          "assert": "Driven through J7's real gates_for: an unenrolled project reads no blob while an enrolled one does, the enumeration writes its row on both sides with the counts printed, and archiving closes the gate again."
+        },
+        {
+          "id": "AC-P3-30-11-predicate",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-30",
+          "test": "health_suppression::ac_p3_30_11_both_gates_read_one_predicate",
+          "assert": "A11.2: compute_suppressed and surface_suppressed are one predicate \u2014 not enrolled, or archived \u2014 over every enrolment and archive combination, printing the combination count."
+        },
+        {
+          "id": "AC-P3-30-11-callsite",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-30",
+          "test": "health_suppression::ac_p3_30_11_compute_suppressed_is_consulted_at_exactly_one_call_site",
+          "assert": "A source audit over core/src: the compute gate is read by J7's blob read and by \u00a728's skipped_suppressed sweep record and by nothing else, printing the count of files and code lines scanned and failing at zero.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P3-30-11-lockfiles",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "test": "advisory_lockfile_job::ac_p3_30_11_a_suppressed_projects_lockfiles_are_still_read",
+          "assert": "R140's \u00a732 half: for a surface_suppressed project \u2014 unenrolled, and enrolled but archived \u2014 \u00a732's lockfile read, driven through J6's job path, still writes its project_dependency_scan, project_lockfile and project_dependency rows while no blob is read; the row counts on both sides are printed and a zero on the running side fails."
+        }
+      ]
+    },
+    {
+      "id": "P3-30-13",
+      "title": "The lifecycle verdict",
+      "group": "functional",
+      "spec": "\u00a730.13",
+      "checks": [
+        {
+          "id": "AC-P3-30-13",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-30",
+          "test": "health_lifecycle::ac_p3_30_13_done_only_where_every_eligible_check_is_ok_from_a_live_reading",
+          "assert": "lifecycle is done only where every eligible check is ok from a live reading \u2014 R131/F10 drops the three extra settled conjuncts, which every eligible check ok already carries; a project whose reading is absent, suppressed or frozen is never done; archived tracks is_archived and is derived from nothing else; a project at condition_signal live or idle is active whatever its tree says. ConditionSignal gains no variant \u2014 asserted against the generated enum's arity."
+        },
+        {
+          "id": "AC-P3-30-13-never",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-30",
+          "test": "health_lifecycle::ac_p3_30_13_absent_suppressed_and_frozen_are_never_done",
+          "assert": "A project whose reading is absent, suppressed or frozen is never done, each state exercised separately over a reading that would otherwise be done."
+        },
+        {
+          "id": "AC-P3-30-13-archived",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-30",
+          "test": "health_lifecycle::ac_p3_30_13_archived_tracks_is_archived_and_is_derived_from_nothing_else",
+          "assert": "archived tracks is_archived, outranks a reading that would be done, and no non-archived combination of reading state and condition_signal produces it."
+        },
+        {
+          "id": "AC-P3-30-13-hold",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-30",
+          "test": "health_lifecycle::ac_p3_30_13_a_project_at_condition_signal_live_or_idle_is_active_whatever_its_tree_says",
+          "assert": "A project at condition_signal live or idle is active whatever its tree says, and the other five bands do not hold a reading that is otherwise done."
+        },
+        {
+          "id": "AC-P3-30-13-variant",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-30",
+          "test": "health_lifecycle::ac_p3_30_13_condition_signal_gains_no_variant",
+          "assert": "ConditionSignal gains no variant: the generated enum's arity equals the variant count protocol/schema/protocol.json declares, printed, and a run over zero variants fails; neither done nor stable is a variant, and ProjectLifecycle's vocabulary is disjoint from it.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P3-31-11",
+      "title": "release never reads a shallow zero as a failure",
+      "group": "functional",
+      "spec": "\u00a731.11",
+      "checks": [
+        {
+          "id": "AC-P3-31-11",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-31",
+          "test": "acceptance_completion::ac_p3_31_11_a_shallow_zero_is_unknown_and_a_real_zero_is_a_failure",
+          "assert": "With location.tag_count = 0 and project.is_shallow = 1, release is unknown. With tag_count = 0 and is_shallow = 0 it is fail. With tag_count IS NULL it is unknown whatever is_shallow says."
+        },
+        {
+          "id": "AC-P3-31-11-j1",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-31",
+          "test": "acceptance_completion::ac_p3_31_11_j1_persists_the_tag_count",
+          "assert": "J1 writes the column: after a refstate persist, the primary location's tag_count is non-NULL and equals the repository's tag count."
+        }
+      ]
+    },
+    {
+      "id": "P3-31-14",
+      "title": "Silent demotion",
+      "group": "functional",
+      "spec": "\u00a731.11",
+      "checks": [
+        {
+          "id": "AC-P3-31-14",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-31",
+          "test": "acceptance_completion::ac_p3_31_14_a_demotion_writes_no_health_delta_row",
+          "assert": "A recompute that lowers the tier from the top rung writes no health_delta row, counted inside the transaction and after the commit, and moves no debt item; the fixture is asserted to demote and the recompute to have run."
+        },
+        {
+          "id": "AC-P3-31-14-settle",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-31",
+          "test": "acceptance_completion::ac_p3_31_14_a_demotion_through_a_real_settle_emits_no_notification",
+          "assert": "The notification clause, through a real settle: a demotion driven by a real JobRunner J2 job, with a recording event sink, emits no notification and no projects.health_delta event and writes no health_delta row. Notifications are derived from the schema, every event whose payload type's comment names a notification, and printed; the test fails when none is derived, when the sink observed nothing, or when the fixture does not demote."
+        },
+        {
+          "id": "AC-P3-31-14-frame",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-31",
+          "test": "AC-P3-31-14: a demotion is silent fires no animation on the frame when the tier drops",
+          "assert": "The renderer half at tier full: the same mounted frame, re-rendered from notched gold 7/7 to brass 8/9, resolves no animation and gains no class, attribute or data-gesture, and records zero animationstart events; a gestured frame under the same cascade resolving cardUnfold is the control. jsdom fires no animationstart, so the resolved animation is what can fail."
+        }
+      ]
+    },
+    {
+      "id": "P3-32-3",
+      "title": "The sweep's budget read is keyed by its own response's resource",
+      "group": "functional",
+      "spec": "\u00a732.20",
+      "checks": [
+        {
+          "id": "AC-P3-32-3",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "test": "advisory_task_row::ac_p3_32_3_the_sweep_reads_the_pool_its_response_named",
+          "assert": "The advisory sweep's pre-issue budget read is keyed by the resource its own last response named, proven with a fake whose responses carry a resource other than core; the request is braked rather than issued unbounded."
+        },
+        {
+          "id": "AC-P3-32-3-header",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "deferral": "live-observation",
+          "assert": "Whether a real advisories response carries an x-ratelimit-resource header at all (\u00a732.18 measurement 1). With none, nothing is mirrored, may_spend answers Unknown, and the sweep runs with no brake.",
+          "reason": "Documentation knowledge against a live endpoint that no round here has called. AC-P3-32-3 proves the keying against a fake that names a resource, and a fake that returned the header would assert the fake. A response carrying no resource header is not mirrored and must not be given a synthetic key (\u00a732.3), so its absence is a property of the endpoint that only an observation can establish.",
+          "verification": {
+            "recordedAt": null,
+            "evidence": null
+          }
+        },
+        {
+          "id": "AC-P3-32-3-resource",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "deferral": "live-observation",
+          "assert": "What x-ratelimit-resource the advisories endpoint names, against the fallback DEFAULT_RESOURCE = core that the pre-issue read uses until one response has named a pool (\u00a732.3, \u00a732.18 measurement 1). A name other than core costs one unbraked request before the sweep's persisted advisory_sweep.resource takes over.",
+          "reason": "Documentation knowledge against a live API that no round here has called. The fallback is process-wide (core/src/sync/runner.rs:85) and its own doc comment calls it a guess that costs one request and corrects itself; whether the endpoint answers from core or from a pool shared with every other unauthenticated call the app makes is unobserved.",
+          "verification": {
+            "recordedAt": null,
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "P3-32-12",
+      "title": "The advisory alert fires once per pair and never on a first computation",
+      "group": "functional",
+      "spec": "\u00a732.20",
+      "checks": [
+        {
+          "id": "AC-P3-32-12",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "test": "advisory_notify::ac_p3_32_12_it_fires_once_ever_and_never_on_a_first_computation",
+          "assert": "The notification fires once and only once per (project_id, advisory_id), and zero times on a project's first computation, over a fixture holding several critical advisories with fixes."
+        }
+      ]
+    },
+    {
+      "id": "P3-32-13",
+      "title": "No alert for a non-installed project, and no token naming an absence",
+      "group": "functional",
+      "spec": "\u00a732.20",
+      "checks": [
+        {
+          "id": "AC-P3-32-13",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "test": "advisory_notify::ac_p3_32_13_the_four_non_installed_states_fire_nothing",
+          "assert": "No notification fires for a project in each of the four non-installed states, and the emitted payload contains no token naming an absence \u2014 asserted by scanning the payload's fields against a forbidden-name list, printing the field count and failing a scan over zero fields.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P3-32-14",
+      "title": "A no-fix critical is shown and never scored",
+      "group": "functional",
+      "spec": "\u00a732.20",
+      "checks": [
+        {
+          "id": "AC-P3-32-14",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "test": "advisory_items::ac_p3_32_14_a_no_fix_advisory_is_shown_only",
+          "assert": "A no-fix critical opens a visible item, moves no reading, darkens no tick and does not toast; the same advisory gaining a fix flips it to scored without a new item."
+        },
+        {
+          "id": "AC-P3-32-14-toast",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "test": "advisory_notify::a_critical_advisory_with_no_fix_does_not_interrupt",
+          "assert": "The does-not-toast half: a critical advisory with no fix fires no notification, and neither does a non-critical one with a fix, because severity is the source's own word and is never re-scored."
+        }
+      ]
+    },
+    {
+      "id": "P3-32-16",
+      "title": "A lockfile over the cap is not read",
+      "group": "functional",
+      "spec": "\u00a732.20",
+      "checks": [
+        {
+          "id": "AC-P3-32-16",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "test": "advisory_lockfiles::ac_p3_32_16_a_file_over_the_cap_is_not_read",
+          "assert": "A lockfile over the per-file cap yields not_read and an unknown verdict, never a partial parse and never clean. Asserted against a file built to exceed the cap, printing its byte size."
+        },
+        {
+          "id": "AC-P3-32-16-verdict",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "test": "advisory_verdict::one_unreadable_lockfile_makes_the_whole_project_unknown",
+          "assert": "The verdict half: a lockfile the read could not take is notRead, and one notRead lockfile makes the whole project unknown whatever the other lockfiles said, so a cap exceedance can never read as clean."
+        },
+        {
+          "id": "AC-P3-32-16-caps",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p3-32",
+          "deferral": "live-observation",
+          "assert": "That \u00a732.6's 16 MB per-file cap and 32-lockfile per-project cap sit above the lockfile sizes and counts of a real scan corpus (\u00a732.18 measurement 4), so a cap exceedance is the rare not_read it is written as rather than a routine unknown.",
+          "reason": "Both caps are documentation knowledge with one datum behind them \u2014 one package-lock.json of 287,417 bytes (\u00a732.6) \u2014 which refutes J6's 256 KB and says nothing about either ceiling. AC-P3-32-16 proves a file over the cap is not_read against a file built to exceed it; the values themselves are unobserved.",
+          "verification": {
+            "recordedAt": null,
+            "evidence": null
+          },
+          "source": "\u00a732.6"
+        }
+      ]
+    },
+    {
+      "id": "P3-33-8",
+      "title": "The clamp's class count is derived and printed",
+      "group": "surfaces",
+      "spec": "\u00a733.11",
+      "checks": [
+        {
+          "id": "AC-P3-33-8",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-33",
+          "test": "the tier clamp, derived from motion.css ac_p3_33_8 reads a non-empty class set and prints it",
+          "assert": "The checker parses motion.css, derives the set of class names the tier rules select, prints the set and its size, and asserts cdt-decay is a member of both the no-transform rule and the clamped-transition rule. A run that derives zero names fails. No count is written into the assertion text.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P3-33-8-zero",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-33",
+          "test": "the tier clamp, derived from motion.css ac_p3_33_8 fails at zero rather than reporting an empty set as absent",
+          "assert": "The parser derives an empty set in every rule group from an empty stylesheet, which is the case the non-empty floor above refuses."
+        },
+        {
+          "id": "AC-P3-33-8-decay",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-33",
+          "test": "the tier clamp, derived from motion.css ac_p3_33_8 puts .cdt-decay in the transform:none rule and in the clamped rule",
+          "assert": "cdt-decay is in the transform: none group and the clamped-transition group, and not in the display: none group \u2014 no tier removes a layer."
+        },
+        {
+          "id": "AC-P3-33-8-surge",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-33",
+          "test": "the tier clamp, derived from motion.css ac_p3_33_8 puts .cdt-surge in the display:none rule and in neither other",
+          "assert": "R112's joint row, as set membership: cdt-surge is in the display: none group and in neither the no-transform nor the clamped group. The resolved-style half is AC-P3-34-13's."
+        }
+      ]
+    },
+    {
+      "id": "P3-34-11",
+      "title": "The health_delta rebuild",
+      "group": "surfaces",
+      "spec": "\u00a734.10",
+      "checks": [
+        {
+          "id": "AC-P3-34-11",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-34",
+          "test": "health_delta_migration::ac_p3_34_11_rebuild_preserves_columns_and_adds_index_and_cascade",
+          "assert": "After the migration, health_delta carries idx_health_delta_project_ts on (project_id, ts), a layer CHECK and ON DELETE CASCADE, and no column moved. The mirror test reads protocol/schema/protocol.json, enumerates DecayLayer, inserts one row per variant and prints the count inserted, failing at zero; layer = 'web' and layer = 'growth' are rejected; over a bare fixture \u2014 a project holding nothing but health_delta rows (R129/F1) \u2014 a DELETE FROM project removes that project's rows and raises no FK error, which proves health_delta no longer blocks the delete and nothing about deleting a project. sqlite_sequence's high-water mark for health_delta survives the rebuild."
+        },
+        {
+          "id": "AC-P3-34-11-mirror",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-34",
+          "test": "health_delta_migration::ac_p3_34_11_layer_check_mirrors_schema_and_rejects_prototype_keys",
+          "assert": "The mirror: DecayLayer's variants are read from protocol/schema/protocol.json, one row per variant is inserted and the count printed, failing at zero, and 'web' and 'growth' are refused.",
+          "scanning": true,
+          "mirror": {
+            "other": "protocol/schema/protocol.json"
+          },
+          "source": "schema"
+        },
+        {
+          "id": "AC-P3-34-11-bare",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-34",
+          "test": "health_delta_migration::ac_p3_34_11_bare_fixture_cascades_without_a_project_deletion_guarantee",
+          "assert": "Over a bare fixture with foreign keys on, DELETE FROM project removes the two health_delta rows and raises no FK error \u2014 stated as bare, so it is no project-deletion guarantee."
+        },
+        {
+          "id": "AC-P3-34-11-sequence",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-34",
+          "test": "health_delta_migration::ac_p3_34_11_deleted_rows_keep_the_sequence_high_water_mark",
+          "assert": "sqlite_sequence's high-water mark for health_delta survives the rebuild over a table whose rows were all deleted, so no old id is handed out again."
+        },
+        {
+          "id": "AC-P3-34-11-rows",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-34",
+          "test": "health_delta_migration::ac_p3_34_11_existing_rows_survive_the_copy",
+          "assert": "Rows written before the rebuild come across unchanged, ids included."
+        },
+        {
+          "id": "AC-P3-34-11-pragma",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-34",
+          "test": "health_delta_migration::ac_p3_34_11_migration_leaves_pragma_to_the_runner",
+          "assert": "R59: 0016's statements, comments stripped, contain no PRAGMA, which inside apply_all's transaction would be a no-op that reads as if it did something."
+        },
+        {
+          "id": "AC-P3-34-11-cascades",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-34",
+          "test": "health_delta_migration::ac_p3_34_11_cascade_comment_matches_the_live_set",
+          "assert": "The cascade-child enumeration 0016 states is compared against the migrated schema's own cascading children of project, so a later migration adding one without the list fails here."
+        }
+      ]
+    },
+    {
+      "id": "P3-34-14",
+      "title": "The standing clamp checker",
+      "group": "surfaces",
+      "spec": "\u00a734.10",
+      "checks": [
+        {
+          "id": "AC-P3-34-14",
+          "status": "automated",
+          "runner": "script",
+          "owner": "p3-34",
+          "test": "check-motion-clamp:every-animated-class-is-clamped",
+          "assert": "The standing checker runs in the gate, enumerates every class selector declaring an animation or a transition longer than REDUCED_CLAMP_MS (read from motion/tier.ts), asserts each is named under both [data-effects-tier='reduced'] and [data-effects-tier='off'], prints the count scanned and the count matched, fails at zero scanned, reads through scripts/lib/read-scanned.mjs, and compares durations as numbers.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P3-34-14-real-tree",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p3-34",
+          "test": "scripts/check-motion-clamp.test.mjs::ac_p3_34_14 passes over the real tree, printing what it scanned and what it matched",
+          "assert": "Over the real tree the checker exits 0 and prints the count of animated selectors it scanned, the count it matched and the size of the clamp set it derived; the case fails when any of the three is zero.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P3-34-14-rogue",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p3-34",
+          "test": "scripts/check-motion-clamp.test.mjs::ac_p3_34_14 names a new unclamped animated class and exits non-zero",
+          "assert": "The checker can fail: over a copy of the tree, which first passes unaltered, an added animation and an added long transition on two new classes make it exit non-zero, naming the first unclamped at reduced and the second at reduced and off, and naming nothing else, so the known escapes neither mask a new one nor add to it."
+        },
+        {
+          "id": "AC-P3-34-14-threshold",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p3-34",
+          "test": "scripts/check-motion-clamp.test.mjs::ac_p3_34_14 reads the clamp from tier.ts rather than restating it",
+          "assert": "The threshold is REDUCED_CLAMP_MS read from motion/tier.ts and never restated: in a copy of the tree a transition 100 ms over today's clamp fails, and raising the constant in the copy's tier.ts past that duration clears the failure, compared as numbers."
+        },
+        {
+          "id": "AC-P3-34-14-empty",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p3-34",
+          "test": "scripts/check-motion-clamp.test.mjs::ac_p3_34_14 fails a run that scans nothing",
+          "assert": "A run over an empty tree exits non-zero and prints that it scanned 0 animated selectors, so a gate that read nothing cannot pass."
+        },
+        {
+          "id": "AC-P3-34-14-escapes",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p3-34",
+          "test": "scripts/check-motion-clamp.test.mjs::ac_p3_34_14 lets the known-escape list only shrink",
+          "assert": "KNOWN_ESCAPES only shrinks: clamping a listed escape at both tiers in a copy of the tree makes the checker fail, naming that entry as one to remove, so a fixed escape cannot stay on the list silently."
+        },
+        {
+          "id": "AC-P3-34-14-outranked",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p3-34",
+          "test": "scripts/check-motion-clamp.test.mjs::ac_p3_34_14 names a hover rule that outranks its clamp, weighing each selector alone",
+          "assert": "Specificity is weighed per selector, never per comma list: in a copy of the tree, a hover rule at (0,3,0) over a clamp whose own selector weighs (0,2,0), listed beside a heavier :active selector, is named as outranking its clamp at reduced and at off, with no other failure for that class, and a clamp that names the hovered state clears it."
+        }
+      ]
+    },
+    {
+      "id": "P3-34-15",
+      "title": "No assert states the clamp count",
+      "group": "surfaces",
+      "spec": "\u00a734.10",
+      "checks": [
+        {
+          "id": "AC-P3-34-15",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p3-34",
+          "test": "scripts/check-motion-clamp.test.mjs::ac_p3_34_15 no acceptance assert states the clamp class-name count",
+          "assert": "No acceptance assert states the clamp's class-name count as a literal: a check over acceptance/criteria.json finds none, printing the count of asserts it scanned and failing at zero. The count reaches a reader only through AC-P3-34-14's printed output.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P3-35-1",
+      "title": "The exclusion set is applied once, upstream",
+      "group": "surfaces",
+      "spec": "\u00a735.11",
+      "checks": [
+        {
+          "id": "AC-P3-35-1",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-35",
+          "test": "projects_list::ac_p3_35_1_the_exclusion_set_is_applied_once_upstream",
+          "assert": "Over a fixture holding a Reference row, an archived row, a done row, a frozen row, a surface_suppressed row, a not-cloned row and at least two ranked rows, the ranked run and the tail are exactly what \u00a730's readings imply \u2014 Done ranks at the bottom of the ranked run and archived tails (R131/F6). Then, with the readings held constant, flipping isReference and isArchived on a ranked row does not move it, proving the comparator carries no second gate of its own. Prints the fixture row count."
+        },
+        {
+          "id": "AC-P3-35-1-ts",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "compareRows AC-P3-35-1 the exclusion set is applied once, upstream",
+          "assert": "The renderer comparator over the same eight cases: compareRows('needs_attention') yields the order \u00a730's readings imply, and flipping isReference and isArchived on a ranked row, ageing a frozen reading, or moving unverified and unknownChecks leaves it unchanged."
+        }
+      ]
+    },
+    {
+      "id": "P3-35-3",
+      "title": "The two comparators produce the same order",
+      "group": "surfaces",
+      "spec": "\u00a735.11",
+      "checks": [
+        {
+          "id": "AC-P3-35-3",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-35",
+          "test": "sort_corpus::ac_p3_35_3_rust_comparator_matches_every_order_corpus_case",
+          "assert": "One machine-readable fixture of rows and expected id order, read by a vitest test and a Rust test in the shape protocol/query/corpus.json already uses; both emit the ordered ids and assert the same orderKey. Prints the case count on both sides, and a run that compares zero cases fails. The fixture is protocol/shelf/order-corpus.json and each case carries expectedIds and expectedOrderKey.",
+          "scanning": true,
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-schema",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-35",
+          "test": "sort_corpus::ac_p3_35_3_the_corpus_covers_every_sort_key_the_schema_declares",
+          "assert": "The corpus exercises every SortKey variant protocol/schema/protocol.json declares and no other, derived from the schema rather than counted; it prints the count of variants it derived and fails at zero. Case names are unique, because both sides report failures by name.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P3-35-3-loader",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-35",
+          "test": "sort_corpus::ac_p3_35_3_the_loader_names_a_row_key_it_does_not_know",
+          "assert": "The Rust loader rejects a row key it does not know, naming it, so a field added to one side's loader and not the other cannot hide."
+        },
+        {
+          "id": "AC-P3-35-3-ts-nonempty",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order compares a non-empty corpus",
+          "assert": "The TypeScript half reads a corpus holding at least one case."
+        },
+        {
+          "id": "AC-P3-35-3-ts-schema",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order covers every SortKey variant the schema declares, and no other",
+          "assert": "The TypeScript half's coverage: the corpus's sort keys equal the SortKey variants protocol/schema/protocol.json declares."
+        },
+        {
+          "id": "AC-P3-35-3-ts-names",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order has unique case names, since both languages report failures by name",
+          "assert": "The corpus case names are unique."
+        },
+        {
+          "id": "AC-P3-35-3-ts-loader",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order names a row key it does not know",
+          "assert": "The TypeScript loader rejects a row key it does not know, naming it."
+        },
+        {
+          "id": "AC-P3-35-3-ts-last-touched-plain",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: last_touched: a plain ordering",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under last_touched, compareRows orders the case \"last_touched: a plain ordering\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-last-touched-tie-last-touched",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: last_touched: a tie broken on last touched",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under last_touched, compareRows orders the case \"last_touched: a tie broken on last touched\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-last-touched-tie-id",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: last_touched: a tie broken on id",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under last_touched, compareRows orders the case \"last_touched: a tie broken on id\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-last-touched-all-tail",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: last_touched: an all-tail set",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under last_touched, compareRows orders the case \"last_touched: an all-tail set\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-last-touched-mixed",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: last_touched: a mixed ranked and tail set",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under last_touched, compareRows orders the case \"last_touched: a mixed ranked and tail set\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-last-touched-computed-zero",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: last_touched: a computed zero against a tail row",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under last_touched, compareRows orders the case \"last_touched: a computed zero against a tail row\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-name-plain",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: name: a plain ordering",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under name, compareRows orders the case \"name: a plain ordering\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-name-tie-last-touched",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: name: a tie broken on last touched",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under name, compareRows orders the case \"name: a tie broken on last touched\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-name-tie-id",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: name: a tie broken on id",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under name, compareRows orders the case \"name: a tie broken on id\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-name-all-tail",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: name: an all-tail set",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under name, compareRows orders the case \"name: an all-tail set\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-name-mixed",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: name: a mixed ranked and tail set",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under name, compareRows orders the case \"name: a mixed ranked and tail set\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-name-computed-zero",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: name: a computed zero against a tail row",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under name, compareRows orders the case \"name: a computed zero against a tail row\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-size-plain",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: size: a plain ordering",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under size, compareRows orders the case \"size: a plain ordering\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-size-tie-last-touched",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: size: a tie broken on last touched",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under size, compareRows orders the case \"size: a tie broken on last touched\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-size-tie-id",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: size: a tie broken on id",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under size, compareRows orders the case \"size: a tie broken on id\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-size-all-tail",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: size: an all-tail set",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under size, compareRows orders the case \"size: an all-tail set\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-size-mixed",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: size: a mixed ranked and tail set",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under size, compareRows orders the case \"size: a mixed ranked and tail set\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-size-computed-zero",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: size: a computed zero against a tail row",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under size, compareRows orders the case \"size: a computed zero against a tail row\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-needs-attention-plain",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: needs_attention: a plain ordering",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under needs_attention, compareRows orders the case \"needs_attention: a plain ordering\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-needs-attention-tie-last-touched",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: needs_attention: a tie broken on last touched",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under needs_attention, compareRows orders the case \"needs_attention: a tie broken on last touched\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-needs-attention-tie-id",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: needs_attention: a tie broken on id",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under needs_attention, compareRows orders the case \"needs_attention: a tie broken on id\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-needs-attention-all-tail",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: needs_attention: an all-tail set",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under needs_attention, compareRows orders the case \"needs_attention: an all-tail set\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-needs-attention-mixed",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: needs_attention: a mixed ranked and tail set",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under needs_attention, compareRows orders the case \"needs_attention: a mixed ranked and tail set\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        },
+        {
+          "id": "AC-P3-35-3-ts-needs-attention-computed-zero",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-3 the two comparators produce the same order TS: needs_attention: a computed zero against a tail row",
+          "assert": "The TypeScript half, one case of protocol/shelf/order-corpus.json: under needs_attention, compareRows orders the case \"needs_attention: a computed zero against a tail row\" to its expectedIds and orderKeyOf yields its expectedOrderKey \u2014 the case core/tests/sort_corpus.rs reads.",
+          "mirror": {
+            "other": "protocol/shelf/order-corpus.json"
+          }
+        }
+      ]
+    },
+    {
+      "id": "P3-35-4",
+      "title": "The control offers every variant the schema declares",
+      "group": "surfaces",
+      "spec": "\u00a735.11",
+      "checks": [
+        {
+          "id": "AC-P3-35-4",
+          "shares": "AC-66-sort",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "the sort ladder AC-P3-35-4 the control offers every variant the schema declares",
+          "assert": "The test derives the variant list from the generated contract, asserts the cycle covers it exactly and that every variant has a non-empty label, and prints the derived count. It fails when a variant exists that the cycle cannot reach."
+        }
+      ]
+    },
+    {
+      "id": "P3-35-5",
+      "title": "The floor is measured at the widest label, and the widest label is derived",
+      "group": "surfaces",
+      "spec": "\u00a735.11",
+      "checks": [
+        {
+          "id": "AC-P3-35-5",
+          "status": "automated",
+          "runner": "e2e",
+          "owner": "p3-35",
+          "test": "AC-P3-35-5 the top bar has a measured floor at the widest label, and nothing overlaps at it",
+          "assert": "app/e2e/topbar-floor.spec.ts selects its widest sort by measuring every variant rather than naming one; TOP_BAR_FLOOR_PX equals the measured floor; at that width the fully shed bar shows no horizontal overlap. Prints the label it measured, and prints the count of sort variants it measured and fails at zero.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P3-35-6",
+      "title": "The capability rule, and no write-back",
+      "group": "surfaces",
+      "spec": "\u00a735.11",
+      "checks": [
+        {
+          "id": "AC-P3-35-6",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "useViewState AC-P3-35-6 the key is not offered when nothing carries a reading, and nothing is written back renders in the default order and issues no view.set when no row carries a reading",
+          "assert": "With no row carrying a reading the key is not offered by the control; with a stored needs_attention in that state the shelf renders in the default order and issues no view.set. Asserted by observing the command stream, not by reading the stored value back."
+        },
+        {
+          "id": "AC-P3-35-6-again",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "useViewState AC-P3-35-6 the key is not offered when nothing carries a reading, and nothing is written back offers the key again the moment one row carries a reading, still writing nothing",
+          "assert": "The stored preference returns the moment one row carries a reading, and the command stream still carries no view.set."
+        },
+        {
+          "id": "AC-P3-35-6-capability",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "projectionCapabilities AC-P3-35-6 answers health only when a row carries a reading",
+          "assert": "projectionCapabilities answers health only when at least one row carries a reading: absent and suppressed carry none, and a computed zero or a frozen reading answers it."
+        },
+        {
+          "id": "AC-P3-35-6-offered",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "the sort ladder AC-P3-35-6 the key is not offered when nothing carries a reading, and nothing is written back",
+          "assert": "offeredSorts withholds needs_attention while nothing carries a reading, resolveSort maps a stored needs_attention to the default without deleting it, and the cycle cannot land on a key the control does not show."
+        }
+      ]
+    },
+    {
+      "id": "P3-35-7",
+      "title": "No health-derived figure leaves the window",
+      "group": "surfaces",
+      "spec": "\u00a735.11",
+      "checks": [
+        {
+          "id": "AC-P3-35-7",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-7 no health-derived figure leaves the window states what it scanned and finds nothing",
+          "assert": "A matcher over the built renderer asserts no health-derived count reaches a notification, a window title, a taskbar, a tray or an app-icon API. It states what it scanned and fails at zero scanned; the substring it bans must not also match the thing it is meant to allow.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P3-35-7-schema",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-7 no health-derived figure leaves the window derives its identifiers from the schema rather than listing them",
+          "assert": "The health identifiers the gate matches are derived from protocol/schema/protocol.json \u2014 HealthSummary, healthSummary and scoredOpen among them \u2014 and never the bare field name state."
+        },
+        {
+          "id": "AC-P3-35-7-tray",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-7 no health-derived figure leaves the window does not report activateFromTray, which is the trap the criterion names",
+          "assert": "The banned substring does not match the thing it must allow: activateFromTray in app/src/main/paletteShortcut.ts is no escape site."
+        },
+        {
+          "id": "AC-P3-35-7-bites",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-7 no health-derived figure leaves the window reports a health figure beside an escape call, and names the file",
+          "assert": "A probe carrying an escape call and a health identifier in one file is a violation, reported with its file."
+        },
+        {
+          "id": "AC-P3-35-7-escape-only",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-7 no health-derived figure leaves the window does not report an escape call that carries no health figure",
+          "assert": "An escape call with no health identifier is recorded as an escape site and is not a violation."
+        },
+        {
+          "id": "AC-P3-35-7-figure-only",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-7 no health-derived figure leaves the window does not report a health figure that reaches no escape call",
+          "assert": "A health identifier with no escape call beside it is not a violation."
+        },
+        {
+          "id": "AC-P3-35-7-comment",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-7 no health-derived figure leaves the window ignores a comment, because a comment is not a rendered figure",
+          "assert": "An escape call and a health identifier that appear only inside a comment are not a violation."
+        },
+        {
+          "id": "AC-P3-35-7-zero",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-7 no health-derived figure leaves the window refuses to pass on a scan it did not run",
+          "assert": "Pointed at an empty root the gate exits non-zero and says it scanned 0 files."
+        }
+      ]
+    },
+    {
+      "id": "P3-35-9",
+      "title": "The sort does not re-cut the shelf",
+      "group": "surfaces",
+      "spec": "\u00a735.11",
+      "checks": [
+        {
+          "id": "AC-P3-35-9",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p3-35",
+          "test": "projects_list::ac_p3_35_9_the_sort_does_not_re_cut_the_shelf",
+          "assert": "Over one fixture, each row's era section id is identical under every sort key, asserted on both sides. Prints the row count, and the count of SortKey variants derived from the schema, and fails at zero of either.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P3-35-9-ts",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-9 the sort does not re-cut the shelf buckets every row where \u00a78.1 says, under every sort key the schema declares",
+          "assert": "The renderer side: under every SortKey variant the schema declares, buildShelfPage buckets each row where \u00a78.1 says and keeps the section order, while needs_attention does reorder the rows."
+        },
+        {
+          "id": "AC-P3-35-9-collapse",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p3-35",
+          "test": "AC-P3-35-9 the sort does not re-cut the shelf leaves a collapsed decade collapsed, because the sort key reaches neither argument",
+          "assert": "A collapsed section's collapse answer is identical under every sort key."
+        }
+      ]
+    }
+  ]
+}
