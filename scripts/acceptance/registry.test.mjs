@@ -278,6 +278,21 @@ test('every deferred check names a plan that exists in the plan set', () => {
     'p3-35',
     'p3-36',
     'p3-36a',
+    // [p4] The phase-4 lanes, Lane 0 through the register. Same rule: a literal.
+    'p4-L0a',
+    'p4-L0b',
+    'p4-L0c',
+    'p4-38',
+    'p4-39',
+    'p4-40',
+    'p4-41',
+    'p4-42',
+    'p4-43',
+    'p4-44',
+    'p4-46a',
+    'p4-46b',
+    'p4-48',
+    'p4-49',
   ]);
   // The phase-3 lanes, in the set before the first `AC-P3-*` id is written anywhere. Same rule
   // again: a literal, because the plans live under a gitignored directory.
@@ -958,16 +973,23 @@ test('a deferred check may name a phase-3 plan, and a phase nobody has is refuse
   const owned = (owner) => [
     p3Entry({ checks: [p3Check({ status: 'deferred', owner, test: 'a::b' })] }),
   ];
-  // The earlier forms stay valid: a plan number, a second half, a phase-2 id.
-  for (const owner of ['13', '13c', 'p2-20', 'p3-31', 'p3-36a']) {
+  // The earlier forms stay valid: a plan number, a second half, a phase-2 id. [p4] A phase-4
+  // plan id owns a check too, and the Lane-0 ids carry a capital L, so the prefix alone was not
+  // enough (R210).
+  for (const owner of ['13', '13c', 'p2-20', 'p3-31', 'p3-36a', 'p4-38', 'p4-46a', 'p4-L0a']) {
     assert.ok(
       !validateRegistry({ version: 1, criteria: owned(owner) }).some((p) => p.includes('owner')),
       `${owner} is a plan id`,
     );
   }
-  assert.ok(
-    validateRegistry({ version: 1, criteria: owned('p4-31') }).some((p) => p.includes('owner')),
-  );
+  // [p4] R218: the unheld phase moves to phase 5, never deleted. A fourth Lane-0 plan and a
+  // lower-case `l0` are not plan ids either.
+  for (const owner of ['p5-31', 'p4-L0d', 'p4-l0a']) {
+    assert.ok(
+      validateRegistry({ version: 1, criteria: owned(owner) }).some((p) => p.includes('owner')),
+      `${owner} is not a plan id`,
+    );
+  }
 });
 
 const p3Live = (over = {}) => [

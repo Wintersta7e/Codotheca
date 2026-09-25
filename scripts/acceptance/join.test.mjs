@@ -107,10 +107,11 @@ test('a baseline row may be owned by a phase-3 plan id', () => {
   const row = (owner) => ({
     knownRed: [{ test: 'r::ac_14_a', criterion: '14', owner, reason: 'x'.repeat(25) }],
   });
-  for (const owner of ['17', '13c', 'p2-20', 'p3-33', 'p3-36a']) {
+  for (const owner of ['17', '13c', 'p2-20', 'p3-33', 'p3-36a', 'p4-44', 'p4-L0b']) {
     assert.deepEqual(validateBaseline(row(owner), registry), [], owner);
   }
-  assert.ok(validateBaseline(row('p4-33'), registry).some((p) => p.includes('owner')));
+  // [p4] R218: the unheld phase moves to phase 5, never deleted.
+  assert.ok(validateBaseline(row('p5-33'), registry).some((p) => p.includes('owner')));
 });
 
 test('a tagged test no check claims fails the gate', () => {

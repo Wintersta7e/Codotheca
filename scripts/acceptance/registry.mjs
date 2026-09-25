@@ -44,13 +44,14 @@ const P3_ID = /^P3-(2[89]|3[0-5])-(\d{1,2}[a-c]?)$/u;
 const CHECK_ID_P4 = /^AC-(P4-(?:3[89]|4[0-8])-\d{1,2})(-[a-z][a-z0-9]*)*$/u;
 const P4_ID = /^P4-(3[89]|4[0-8])-(\d{1,2})$/u;
 // R44: a plan number, optionally with the letter suffix of a second half — `13`, `13b`, `13c`
-// — and a phase-2 or phase-3 plan id, `p2-20`, `p3-36a`.
+// — and a phase-2, phase-3 or phase-4 plan id, `p2-20`, `p3-36a`, `p4-46b`. Phase 4's three
+// Lane-0 plans carry a capital `L` (`p4-L0a`), so widening the prefix alone refused all three.
 //
 // §36.1 says the owning plan is *"deliberately absent"* and this requires one on every `deferred`
 // check. Both are right: an `owner` field is absent from §36.1's **register table**, and a
 // `deferred` check still names the plan that will discharge it. The table is the ownership map
 // for criteria; the owner field is the discharge record for a check that has not landed.
-const OWNER = /^(?:p[23]-)?\d{2}[a-c]?$/u;
+const OWNER = /^(?:(?:p[234]-)?\d{2}[a-c]?|p4-L0[a-c])$/u;
 const GATE = /^[A-Z][A-Z0-9-]+$/u;
 const WEAKEST = ['automated', 'deferred', 'manual', 'unmeasurable', 'external'];
 const LETTERED = { 45: ['45a', '45b', '45c'], 48: ['48a', '48b'] };
@@ -167,7 +168,9 @@ function deferredProblems(where, check, problems) {
     return;
   }
   if (!OWNER.test(String(check.owner))) {
-    problems.push(`${where}: deferred needs an owner plan number, e.g. "13", "13c" or "p2-20"`);
+    problems.push(
+      `${where}: deferred needs an owner plan number, e.g. "13", "13c", "p2-20" or "p4-L0a"`,
+    );
   }
   if (deferral === 'plan') {
     if (typeof check.test !== 'string' || check.test.length === 0) {
