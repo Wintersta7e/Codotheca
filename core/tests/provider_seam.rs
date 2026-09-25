@@ -710,3 +710,118 @@ fn a_cross_host_next_link_is_not_followed() {
         Some(same)
     );
 }
+
+/// **AC-P4-47-19 — layer E: the forge seam issues `GET` only.** Every one of the seven request
+/// methods is driven through the recording transport, and every request it issues is a `GET`:
+/// U1 adds no forge write, so `delete_repo` stays never and §24.2d's *zero remote mutation* stays
+/// true of what the product actually sends.
+#[test]
+fn every_provider_request_method_issues_get_only() {
+    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    transport.push(ok(user_body()));
+    transport.push(ok(b"[]"));
+    transport.push(ok(b"[]"));
+    transport.push(ok(repo_body()));
+    transport.push(ok(repo_body()));
+    transport.push(ok(runs_body()));
+    transport.push(ok(b"[]"));
+    let secret = token();
+    provider.viewer(&secret).unwrap();
+    provider.list_orgs(&secret, None).unwrap();
+    provider.list_repos(&secret, None).unwrap();
+    provider.lookup_repo(&secret, "acme", "widget").unwrap();
+    provider
+        .repo_facts(&secret, "acme", "widget", None)
+        .unwrap();
+    provider.ci_runs(&secret, "acme", "widget", None).unwrap();
+    provider
+        .advisories(
+            codotheca_core::protocol::Ecosystem::Npm,
+            &[codotheca_core::provider::PackageVersion {
+                name: "widget".to_owned(),
+                version: "1.0.0".to_owned(),
+            }],
+            None,
+        )
+        .unwrap();
+    let methods: Vec<&str> = transport.requests().iter().map(|r| r.method).collect();
+    eprintln!(
+        "provider_seam: {} request methods driven, HTTP methods seen {methods:?}",
+        PROVIDER_REQUEST_METHODS.len()
+    );
+    assert_eq!(
+        methods.len(),
+        PROVIDER_REQUEST_METHODS.len(),
+        "every request method issues exactly one request"
+    );
+    assert!(
+        methods.iter().all(|m| *m == "GET"),
+        "a provider request method issued a non-GET request: {methods:?}"
+    );
+}
+
+/// The `method: "…"` literals in `source` that are not `GET`.
+fn non_get_method_literals(source: &str) -> Vec<String> {
+    source
+        .split("method: \"")
+        .skip(1)
+        .filter_map(|rest| rest.split('"').next())
+        .filter(|method| *method != "GET")
+        .map(str::to_owned)
+        .collect()
+}
+
+/// **AC-P4-47-19's call-site rule.** Across every Rust source file of the core, a request
+/// literal naming a method other than `GET` appears only at the OAuth device endpoint
+/// (`core/src/accounts/device.rs`, the Device Flow's `POST`). A forge write added anywhere else
+/// fails here, whatever it is called.
+#[test]
+fn no_non_get_method_literal_outside_the_device_endpoint() {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("readable") {
+            let entry = entry.expect("entry");
+            let path = entry.path();
+            if entry.file_type().expect("kind").is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    walk(&root, &mut files);
+    let mut literals = Vec::new();
+    let mut offenders = Vec::new();
+    for path in &files {
+        let Ok(source) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .display()
+            .to_string()
+            .replace('\\', "/");
+        for method in non_get_method_literals(&source) {
+            literals.push(format!("{rel}: {method}"));
+            if rel != "accounts/device.rs" {
+                offenders.push(format!("{rel}: {method}"));
+            }
+        }
+    }
+    eprintln!(
+        "provider_seam: {} core source files read; non-GET method literals {literals:?}",
+        files.len()
+    );
+    assert!(!files.is_empty(), "the literal scan read no files");
+    assert!(
+        offenders.is_empty(),
+        "a non-GET request literal outside the OAuth device endpoint: {offenders:?}"
+    );
+    // The bite, in the same run: a planted `DELETE` is what this scan exists to find.
+    assert_eq!(
+        non_get_method_literals("let r = HttpRequest { method: \"DELETE\", url };"),
+        vec!["DELETE".to_owned()]
+    );
+}

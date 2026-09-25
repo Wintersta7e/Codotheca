@@ -24,11 +24,13 @@
 //! layer compares the repository itself, because config decides what a verb writes.
 
 pub mod backend;
+pub mod config_keys;
 pub mod credential;
 pub mod exec;
 pub mod intent;
 
 pub use backend::{MutatingGit, RunOutput, SystemMutatingGit};
+pub use config_keys::{KeyClass, AUDITED_CORE_KEYS, AUDITED_NAMESPACES, CONFIG_KEY_CLASSES};
 pub use credential::CredentialChannel;
 #[cfg(feature = "testkit")]
 pub use exec::TransportFixture;
