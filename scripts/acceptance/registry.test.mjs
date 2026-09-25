@@ -1957,7 +1957,7 @@ test('an observed live verification names the commit it was observed against', (
 // ---------------------------------------------------------------------------------------------
 // [p4 Task 8] The phase-4 register, section by section. Registered ahead of its lanes, so a check
 // is `deferred` to the lane whose merge makes it passable (R163), `manual` where §49 rules a record,
-// and never yet `automated`.
+// and `automated` once the test it names has landed.
 // ---------------------------------------------------------------------------------------------
 
 const PHASE4_OWNER = /^p4-(?:\d{2}[ab]?|L0[a-c])$/u;
@@ -1994,9 +1994,12 @@ function assertRegisteredPhase4Section(section, { spec, group }) {
     for (const check of entry.checks) {
       // R236: every check names the lane that makes it passable, a manual one included.
       assert.match(String(check.owner), PHASE4_OWNER, `${check.id} names the lane R163 names`);
-      assert.ok(['deferred', 'manual'].includes(check.status), `${check.id} is ${check.status}`);
-      if (check.status === 'deferred') {
-        assert.ok(String(check.test ?? '').length > 0, `${check.id} names the test it will join`);
+      assert.ok(
+        ['automated', 'deferred', 'manual'].includes(check.status),
+        `${check.id} is ${check.status}`,
+      );
+      if (check.status !== 'manual') {
+        assert.ok(String(check.test ?? '').length > 0, `${check.id} names the test it joins`);
       } else {
         assert.ok('record' in check, `${check.id} carries the record key`);
         assert.ok(PHASE4_GATES.includes(check.gate), `${check.id}: ${String(check.gate)}`);

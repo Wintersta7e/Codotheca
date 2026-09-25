@@ -5,14 +5,15 @@
  *   npm run acceptance                     validate, join whatever ran, gate, write the report
  *   npm run acceptance -- --dispositions   regenerate the committed disposition table
  *   npm run acceptance -- --allow-empty    join an empty results directory without failing
+ *   npm run acceptance -- --tag ft|1.0     grade a tagged tree: the first tag, or 1.0
  *
  * The suites write into acceptance/results/; this script reads the directory. A partial run is
  * representable and says which suites were absent, instead of reporting every absent suite as a
  * wall of deleted tests.
  *
  * Exit 1 means the gate found problems. Exit 2 means the gate could not run — which is also a
- * failure, and includes a results directory with nothing in it. A gate whose passing run read
- * zero results is not a gate.
+ * failure, and includes a results directory with nothing in it, and a release run over a dirty
+ * tree. A gate whose passing run read zero results is not a gate.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -35,6 +36,7 @@ import {
   parseScriptResults,
   parseVitest,
 } from './acceptance/runners.mjs';
+import { dirtyTreeRefusal, releaseProblems } from './acceptance/release.mjs';
 import { renderDispositions, renderRegistryLine, renderRunReport } from './acceptance/report.mjs';
 
 const EXIT_PROBLEMS = 1;
@@ -128,7 +130,56 @@ function staticRules() {
   return { callsites: read('callsites.json'), forbidden: read('forbidden.json') };
 }
 
+const RELEASE_MODES = ['ft', '1.0'];
+
+/**
+ * `--tag ft|1.0`: the release run. It refuses a dirty tree before anything is graded, runs the
+ * ordinary gate, then applies the release rules on top — `release.mjs` owns them.
+ */
+function releaseMode(argv) {
+  const at = argv.indexOf('--tag');
+  if (at === -1) return { mode: null, porcelain: '' };
+  const mode = argv[at + 1];
+  if (!RELEASE_MODES.includes(mode)) {
+    return { error: `--tag takes ${RELEASE_MODES.join(' or ')}, not ${String(mode)}` };
+  }
+  let porcelain;
+  try {
+    porcelain = git(root, ['status', '--porcelain']);
+  } catch {
+    return { error: 'a release run grades a git checkout, and this is not one' };
+  }
+  return { mode, porcelain };
+}
+
+function releaseRun(mode, porcelain, registry, joined) {
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  const { notRun, problems } = releaseProblems(registry, joined, mode, { readme, porcelain });
+  if (mode === '1.0') {
+    console.error(`acceptance: release 1.0: not run by derivation, ${String(notRun.length)}:`);
+    for (const n of notRun) console.error(`acceptance:   ${n.id} — ${n.why}`);
+  }
+  console.error(`acceptance: release ${mode}: README.md is compared with the register's line:`);
+  console.error(`acceptance:   ${renderRegistryLine(registry)}`);
+  for (const p of problems) console.error(`acceptance: release ${mode}: ${p}`);
+  console.error(`acceptance: release ${mode}: ${String(problems.length)} problems`);
+  return problems.length;
+}
+
 function main(argv) {
+  const release = releaseMode(argv);
+  if (release.error !== undefined) {
+    console.error(`acceptance: ${release.error}`);
+    return EXIT_CANNOT_RUN;
+  }
+  if (release.mode !== null) {
+    const refused = dirtyTreeRefusal(release.porcelain);
+    if (refused !== null) {
+      console.error(`acceptance: release ${release.mode}: refused — ${refused}`);
+      return EXIT_CANNOT_RUN;
+    }
+  }
+
   const registry = loadRegistry(registryPath);
   const problems = validateRegistry(registry, root);
   // R46, mechanically: a phase-2 criterion deferred to a plan that has merged, a static rule
@@ -196,7 +247,9 @@ function main(argv) {
     `acceptance: ${String(joined.checks.length)} checks, ${String(results.length)} results, ` +
       `${String(gate.length)} problems`,
   );
-  return gate.length === 0 ? 0 : EXIT_PROBLEMS;
+  const releaseCount =
+    release.mode === null ? 0 : releaseRun(release.mode, release.porcelain, registry, joined);
+  return gate.length === 0 && releaseCount === 0 ? 0 : EXIT_PROBLEMS;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) process.exit(main(process.argv.slice(2)));

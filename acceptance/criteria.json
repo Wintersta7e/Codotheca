@@ -15606,7 +15606,7 @@
         },
         {
           "id": "AC-P4-48-11-zero",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-49",
           "test": "scripts/acceptance/release.test.mjs::ac_p4_48_11 a README quoting no register figure fails rather than passing on nothing",
@@ -15951,7 +15951,7 @@
       "checks": [
         {
           "id": "AC-P4-48-27",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-49",
           "test": "scripts/acceptance/release.test.mjs::ac_p4_48_27 the 1.0 mode prints the not-run set it derives and fails on any other",
@@ -15959,7 +15959,7 @@
         },
         {
           "id": "AC-P4-48-27-list",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-49",
           "test": "scripts/acceptance/release.test.mjs::ac_p4_48_27 RELEASE_NOT_RUN is closed and every entry carries its ruling",
@@ -15967,7 +15967,7 @@
         },
         {
           "id": "AC-P4-48-27-dirty",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-49",
           "test": "scripts/acceptance/release.test.mjs::ac_p4_48_27 a release run refuses a dirty tree",

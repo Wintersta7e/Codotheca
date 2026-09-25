@@ -192,6 +192,31 @@ reporter, which records a test's name and not its file. The flags travel in `NOD
 because a flag placed after the file patterns is **silently ignored**, and a `node --test`
 started inside a test file must drop `NODE_TEST_CONTEXT` or it reports to its parent instead.
 
+## Grading a tag
+
+`npm run acceptance -- --tag ft` grades the first tag and `-- --tag 1.0` grades 1.0. Either
+**refuses a dirty tree** — `git status --porcelain` names anything, and it exits 2 before grading —
+then runs the ordinary gate, then applies the release rules on top of it:
+
+- **`ft`**: every `firstTag` check is `automated` and passed, or `manual` and `recorded`.
+- **`1.0`**: prints the set allowed not to run, which it **derives** rather than lists — the `perf`
+  runner (by runner, not by group, so a behaviour check in a performance criterion is still
+  graded), status `external`, status `unmeasurable`, and `RELEASE_NOT_RUN` — and fails on every
+  other check that did not pass or is not recorded. **Any `plan` deferral outside that set fails,
+  in any phase**: at the last tag every plan has merged, and a deferral to a merged plan is a
+  deferral to nobody.
+- **Both**: every *"`<n>` checks … `<m>` criteria"* figure `README.md` quotes must equal the
+  register's own line, which the run prints for the comparison; a README quoting none fails.
+
+`RELEASE_NOT_RUN` (`scripts/acceptance/release.mjs`) is closed like `LIVE_OBSERVATION_CHECKS`, and
+every entry carries the ruling that exempts it. Another needs a ruling, not a field.
+
+**The order that can pass.** A tag's own release job writes half the evidence — the version, the
+pipeline, the launches and the glibc floor are recorded from its run — and that cannot exist before
+the tag. So: tag, and keep the draft unpublished; commit the records against the **tagged** commit;
+run `--tag` on that register-only descendant, where the records still count because only register
+files moved; then publish.
+
 ## Dispositions today
 
 Most criteria carry a mixture, and the honest statement is the generated one rather than a

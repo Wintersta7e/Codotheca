@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 0 | 0 |
-| deferred | 231 | 552 |
+| automated | 1 | 4 |
+| deferred | 230 | 548 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -611,7 +611,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-48-8 | deferred | `diag.bundle` anonymised | `AC-P4-48-8` deferred, plan p4-L0c — `diag_anonymise::ac_p4_48_8_the_default_bundle_carries_no_name_no_note_and_no_full_path_and_the_reveal_restores_them` |
 | P4-48-9 | deferred | residency claims have callers | `AC-P4-48-9` deferred, plan p4-L0c — `AC-P4-48-9 no residency claim the drawer or a notice renders is unqualified`<br>`AC-P4-48-9-caller` deferred, plan p4-42 — `AC-P4-48-9-caller` |
 | P4-48-10 | manual | the floor is read | `AC-P4-48-10` manual, gate `RELEASE-GLIBC-FLOOR`<br>`AC-P4-48-10-weak` deferred, plan p4-L0c — `scripts/check-glibc-floor.test.mjs::AC-P4-48-10 the highest non-weak GLIBC need is reported and a weak one is ignored`<br>`AC-P4-48-10-zero` deferred, plan p4-L0c — `scripts/check-glibc-floor.test.mjs::AC-P4-48-10 zero binaries read fails`<br>`AC-P4-48-10-modes` deferred, plan p4-L0c — `scripts/check-glibc-floor.test.mjs::AC-P4-48-10 enforce mode fails above the baseline; report mode prints and passes`<br>`AC-P4-48-10-real-elf` deferred, plan p4-L0c — `scripts/check-glibc-floor.test.mjs::AC-P4-48-10 a real ELF is read`<br>`AC-P4-48-10-enforce` deferred, plan p4-49 — `scripts/check-release-workflow.test.mjs::ac_p4_48_10_enforce` |
-| P4-48-11 | deferred | quoted figures are generated | `AC-P4-48-11` deferred, plan p4-L0c — `scripts/readme-figures.test.mjs::AC-P4-48-11 the register figures the README quotes are the register's`<br>`AC-P4-48-11-zero` deferred, plan p4-49 — `scripts/acceptance/release.test.mjs::ac_p4_48_11 a README quoting no register figure fails rather than passing on nothing` |
+| P4-48-11 | deferred | quoted figures are generated | `AC-P4-48-11` deferred, plan p4-L0c — `scripts/readme-figures.test.mjs::AC-P4-48-11 the register figures the README quotes are the register's`<br>`AC-P4-48-11-zero` automated, runs now — `scripts/acceptance/release.test.mjs::ac_p4_48_11 a README quoting no register figure fails rather than passing on nothing` |
 | P4-48-12 | deferred | the chain, end to end | `AC-P4-48-12` deferred, plan p4-48 — `AC-P4-48-12 the corrupt-index chain restores every registered section end to end`<br>`AC-P4-48-12-floor` deferred, plan p4-38 — `AC-P4-48-12 the corrupt-index chain restores every registered section end to end` |
 | P4-48-13 | deferred | every report window paints | `AC-P4-48-13` deferred, plan p4-48 — `AC-P4-48-13 every startup report window paints` |
 | P4-48-14 | deferred | a failed rebuild changes nothing | `AC-P4-48-14` deferred, plan p4-48 — `sidecar_rebuild::ac_p4_48_14_a_failed_rebuild_changes_nothing`<br>`AC-P4-48-14-opens` deferred, plan p4-48 — `sidecar_rebuild::a_database_that_opens_is_never_quarantined` |
@@ -627,7 +627,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-48-24 | deferred | `boot.json` has one directory | `AC-P4-48-24` deferred, plan p4-48 — `AC-P4-48-24 with CODOTHECA_DATA_DIR set, the reset and the bootstrap use one boot.json` |
 | P4-48-25 | deferred | the version line | `AC-P4-48-25` deferred, plan p4-L0c — `AC-P4-48-25 the drawer renders the stamped version and artifact kind`<br>`AC-P4-48-25-package` deferred, plan p4-L0c — `AC-P4-48-25 the stamped version equals the root package.json` |
 | P4-48-26 | deferred | no updater | `AC-P4-48-26` deferred, plan p4-L0c — `scripts/check-release-workflow.test.mjs::AC-P4-48-26 no updater: the metadata guard fails a draft carrying latest*.yml or a blockmap`<br>`AC-P4-48-26-shell` deferred, plan p4-L0c — `scripts/check-no-updater.test.mjs::ac_p4_48_26_shell` |
-| P4-48-27 | deferred | the register at the tag | `AC-P4-48-27` deferred, plan p4-49 — `scripts/acceptance/release.test.mjs::ac_p4_48_27 the 1.0 mode prints the not-run set it derives and fails on any other`<br>`AC-P4-48-27-list` deferred, plan p4-49 — `scripts/acceptance/release.test.mjs::ac_p4_48_27 RELEASE_NOT_RUN is closed and every entry carries its ruling`<br>`AC-P4-48-27-dirty` deferred, plan p4-49 — `scripts/acceptance/release.test.mjs::ac_p4_48_27 a release run refuses a dirty tree` |
+| P4-48-27 | automated | the register at the tag | `AC-P4-48-27` automated, runs now — `scripts/acceptance/release.test.mjs::ac_p4_48_27 the 1.0 mode prints the not-run set it derives and fails on any other`<br>`AC-P4-48-27-list` automated, runs now — `scripts/acceptance/release.test.mjs::ac_p4_48_27 RELEASE_NOT_RUN is closed and every entry carries its ruling`<br>`AC-P4-48-27-dirty` automated, runs now — `scripts/acceptance/release.test.mjs::ac_p4_48_27 a release run refuses a dirty tree` |
 
 ## Why a check is not automated, or is automated over less than it looks
 
