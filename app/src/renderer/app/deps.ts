@@ -82,6 +82,8 @@ export interface AppDeps extends ProjectPageDeps {
   readonly reducedMotionOverride: boolean;
   /** §11.2a names the log on every failure window. Display only; empty means none was passed. */
   readonly logPath: string;
+  /** §48.5 item 1: the version and artifact kind the shell stamped; empty means none was passed. */
+  readonly buildStamp: string;
 }
 
 export const AppDepsContext = createContext<AppDeps | null>(null);
@@ -134,5 +136,6 @@ export function createDefaultAppDeps(): AppDeps {
     paintFailForcedAt: bridge.paintFailForcedAt,
     reducedMotionOverride: bridge.reducedMotionOverride,
     logPath: bridge.logPath,
+    buildStamp: bridge.buildStamp,
   };
 }

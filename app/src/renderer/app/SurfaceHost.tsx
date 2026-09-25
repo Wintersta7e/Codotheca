@@ -108,6 +108,7 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
             onShortcutState: (cb) => {
               onShortcutState(cb);
             },
+            buildStamp: deps.buildStamp,
           },
           tier,
         }}

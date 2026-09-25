@@ -76,6 +76,7 @@ function harness(): {
           Promise.resolve({ ok: true, value: { pathDisplay: '<data>/index.db', sizeBytes: 2048 } }),
         ),
         onShortcutState: vi.fn(),
+        buildStamp: '',
       },
       tier: 'full',
     },

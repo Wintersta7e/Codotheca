@@ -23,11 +23,31 @@ export function logPathArgument(path: string): string {
  * for an empty path rather than a note about nothing.
  */
 export function logPathFromArgv(argv: readonly string[]): string {
+  return lastDecoded(argv, LOG_PATH_FLAG);
+}
+
+/**
+ * §48.5 item 1: with no updater, the drawer states which build it is. The line is the shell's
+ * artifact stamp — the version from the packaged manifest and the artifact kind observed at run
+ * time — formatted once, by `formatArtifactStamp`, so the drawer and the rolling log say the same.
+ */
+export const BUILD_STAMP_FLAG = '--build-stamp=';
+
+export function buildStampArgument(line: string): string {
+  return `${BUILD_STAMP_FLAG}${encodeURIComponent(line)}`;
+}
+
+/** The last decodable `--build-stamp=` in `argv`, or the empty string: no line is drawn then. */
+export function buildStampFromArgv(argv: readonly string[]): string {
+  return lastDecoded(argv, BUILD_STAMP_FLAG);
+}
+
+function lastDecoded(argv: readonly string[], flag: string): string {
   let found = '';
   for (const argument of argv) {
-    if (!argument.startsWith(LOG_PATH_FLAG)) continue;
+    if (!argument.startsWith(flag)) continue;
     try {
-      found = decodeURIComponent(argument.slice(LOG_PATH_FLAG.length));
+      found = decodeURIComponent(argument.slice(flag.length));
     } catch {
       found = '';
     }

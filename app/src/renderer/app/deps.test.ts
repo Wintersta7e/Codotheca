@@ -22,6 +22,7 @@ function stubBridge(): StubBridge {
     paintFailForcedAt: null,
     reducedMotionOverride: false,
     logPath: '/tmp/codotheca/logs/codotheca.log',
+    buildStamp: '0.0.0 · unpackaged',
     request: () => Promise.resolve({ ok: true, value: null }),
     relocate: () => Promise.resolve({ kind: 'cancelled' }),
     openRemoteLink: () => Promise.resolve({ kind: 'not_linkable' }),

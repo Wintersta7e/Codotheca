@@ -88,6 +88,7 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
     paintFailForcedAt: null,
     reducedMotionOverride: false,
     logPath: '/tmp/codotheca/logs/codotheca.log',
+    buildStamp: '0.0.0 · unpackaged',
     ...over,
   };
 

@@ -49,6 +49,12 @@ export interface CodothecaBridge {
    */
   readonly logPath: string;
   /**
+   * §48.5 item 1: the build this window belongs to — version and artifact kind, as the shell
+   * stamped them at start. A value, not a request: the drawer's footer draws it, and the empty
+   * string is "the shell passed none", which draws nothing.
+   */
+  readonly buildStamp: string;
+  /**
    * One command. Resolves to a `BridgeReply`, never rejects: the renderer needs `code`,
    * `outcome` and `retryable` to decide whether a retry is safe, and a thrown string carries
    * none of them.

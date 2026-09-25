@@ -132,6 +132,8 @@ export interface DataGroupsProps {
   readonly bundle: DiagBundle | null;
   readonly showRealPaths: boolean;
   readonly identities: readonly IdentityRow[] | null;
+  /** §48.5 item 1: the shell's stamp — version and artifact kind. Empty draws no line. */
+  readonly buildStamp: string;
   readonly slots: SettingsSlots;
   readonly onReveal: (target: RevealTarget) => void;
   readonly onShowRealPaths: (next: boolean) => void;
@@ -239,6 +241,8 @@ export function DataGroups(props: DataGroupsProps): ReactElement {
           {FOOTER_LINES.map((line) => (
             <span key={line}>{line}</span>
           ))}
+          {/* §48.5 item 1: with no updater, the app says which build it is. */}
+          {props.buildStamp !== '' && <span data-line="build-stamp">{props.buildStamp}</span>}
         </footer>
       </SettingsGroup>
     </>

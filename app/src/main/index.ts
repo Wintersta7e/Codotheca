@@ -27,7 +27,7 @@ import {
   type Topic,
 } from '../generated/protocol';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
-import { logPathArgument } from '../shared/windowArgs';
+import { buildStampArgument, logPathArgument } from '../shared/windowArgs';
 import { startShortcutService } from './paletteShortcut';
 import { registerShellServices } from './shellServices';
 import { readStartupFailure } from './startupFailure';
@@ -207,6 +207,9 @@ let win: BrowserWindow | null = null;
 // Set before the window is created, in `main`. The renderer needs it on its first frame —
 // §11.2a's failure windows name the log — and a round trip is exactly what §11.2 forbids there.
 let logPath = '';
+// Set in `main` beside it: the drawer states which build it is (§48.5 item 1), and the line is
+// the same one the rolling log records.
+let buildStamp = '';
 
 function entryUrl(): string {
   // pathToFileURL, not string concatenation: on Windows a drive-letter path concatenated
@@ -229,7 +232,11 @@ function createWindow(): BrowserWindow {
       webviewTag: false,
       // §11.2a: the tier, the account of where it came from and the override that clamps it
       // all reach the document with no round trip, because the core joins after first paint.
-      additionalArguments: [...bootArguments(boot), logPathArgument(logPath)],
+      additionalArguments: [
+        ...bootArguments(boot),
+        logPathArgument(logPath),
+        buildStampArgument(buildStamp),
+      ],
     },
   });
 
@@ -320,18 +327,15 @@ async function main(): Promise<void> {
   // §11.4: a diagnostics bundle has to name the build it came from, and neither half of that
   // name is a compile-time constant — the version is written into the packaged manifest after
   // the bundler has run, and which of the five artifacts is executing is only observable at
-  // run time. It goes to the rolling log, which is what the bundle collects.
-  log.write(
-    'info',
-    'shell',
-    `artifact: ${formatArtifactStamp(
-      readArtifactStamp({
-        appPath: app.getAppPath(),
-        readTextFile: (p) => readFileSync(p, 'utf8'),
-        artifact: { isPackaged: app.isPackaged, platform: process.platform, env: process.env },
-      }),
-    )}`,
+  // run time. It goes to the rolling log, which is what the bundle collects, and to the drawer.
+  buildStamp = formatArtifactStamp(
+    readArtifactStamp({
+      appPath: app.getAppPath(),
+      readTextFile: (p) => readFileSync(p, 'utf8'),
+      artifact: { isPackaged: app.isPackaged, platform: process.platform, env: process.env },
+    }),
   );
+  log.write('info', 'shell', `artifact: ${buildStamp}`);
 
   // After `app.ready`, before the window: the renderer cannot load `file:`, so a card that
   // paints before this is bound would 404 and fall back to the nameplate for its first frame.

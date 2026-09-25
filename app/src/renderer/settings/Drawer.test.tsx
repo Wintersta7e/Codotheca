@@ -16,10 +16,10 @@ afterEach(cleanup);
 /** `true` only when the two types are each assignable to the other, in both directions. */
 type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
-/** The four members of the real bridge the drawer's `SettingsShell` must match exactly. */
+/** The five members of the real bridge the drawer's `SettingsShell` must match exactly. */
 type SettingsShellShape = Pick<
   CodothecaBridge,
-  'pickRoot' | 'reveal' | 'indexLocation' | 'onShortcutState'
+  'pickRoot' | 'reveal' | 'indexLocation' | 'onShortcutState' | 'buildStamp'
 >;
 
 const settings: Settings = {
@@ -51,6 +51,7 @@ const deps = (over: Partial<SettingsDrawerDeps> = {}): SettingsDrawerDeps => ({
       Promise.resolve({ ok: true, value: { pathDisplay: '<data>/index.db', sizeBytes: 2048 } }),
     ),
     onShortcutState: vi.fn(),
+    buildStamp: '',
   },
   tier: 'full',
   ...over,

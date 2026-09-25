@@ -83,9 +83,9 @@ export function movesHealthReading(patch: Partial<Settings>): boolean {
 }
 
 /**
- * The four shell capabilities the drawer needs, in the shapes `CodothecaBridge` already has —
- * so the mount point passes `window.codotheca` and wraps nothing. `Drawer.test.tsx` assigns a
- * bridge to this type, which is what stops the two drifting apart.
+ * The four shell capabilities the drawer needs, and the one value it states, in the shapes
+ * `CodothecaBridge` already has — so the mount point passes `window.codotheca` and wraps nothing.
+ * `Drawer.test.tsx` assigns a bridge to this type, which is what stops the two drifting apart.
  *
  * `pickRoot` carries a flag, never a path: the renderer asks, the shell opens the dialog, and
  * the chosen folder never round-trips through the sandbox (§2.4).
@@ -95,6 +95,8 @@ export interface SettingsShell {
   readonly reveal: (target: RevealTarget) => Promise<unknown>;
   readonly indexLocation: () => Promise<unknown>;
   readonly onShortcutState: (cb: (state: ShortcutState) => void) => void;
+  /** §48.5 item 1: the footer states which build this is. Empty draws no line. */
+  readonly buildStamp: string;
 }
 
 export interface SettingsDrawerDeps {
@@ -276,6 +278,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null 
             bundle={bundle}
             showRealPaths={showRealPaths}
             identities={identities}
+            buildStamp={shell.buildStamp}
             slots={props.slots}
             onReveal={(target) => {
               shell.reveal(target).then(

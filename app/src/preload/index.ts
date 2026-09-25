@@ -41,7 +41,7 @@ import {
   paintFailForcedAtFromArgv,
   reducedMotionOverrideFromArgv,
 } from '../shared/effectsTier';
-import { logPathFromArgv } from '../shared/windowArgs';
+import { buildStampFromArgv, logPathFromArgv } from '../shared/windowArgs';
 
 // process.argv is available synchronously in a sandboxed preload, so the tier reaches the
 // document with no round trip — which is the whole point of §11.2a.
@@ -52,6 +52,7 @@ const bridge: CodothecaBridge = {
   paintFailForcedAt: paintFailForcedAtFromArgv(process.argv),
   reducedMotionOverride: reducedMotionOverrideFromArgv(process.argv),
   logPath: logPathFromArgv(process.argv),
+  buildStamp: buildStampFromArgv(process.argv),
   request: (name: string, args: unknown): Promise<unknown> =>
     ipcRenderer.invoke(IPC_REQUEST, { name, args }),
   // An id and nothing else. The folder is chosen in the main process, where the dialog lives.

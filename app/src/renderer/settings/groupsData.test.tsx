@@ -18,6 +18,7 @@ const props = {
   bundle: null,
   showRealPaths: false,
   identities: null,
+  buildStamp: '',
   slots: {},
   onReveal: vi.fn(),
   onShowRealPaths: vi.fn(),
