@@ -156,6 +156,7 @@ impl std::fmt::Debug for SyncRunner {
 }
 
 impl SyncRunner {
+    /// A stopped runner over the one index; [`SyncRunner::start`] sweeps and spawns its thread.
     #[must_use]
     pub fn new(index: Arc<Mutex<Index>>, deps: SyncDeps, events: Arc<dyn EventSink>) -> Arc<Self> {
         Arc::new(Self {
@@ -337,10 +338,12 @@ impl SyncRunner {
     }
 
     fn idle(&self, ceiling: Duration) {
-        let waiters = self.waiters.lock().unwrap_or_else(PoisonError::into_inner);
         let (mut waiters, _) = self
             .wake
-            .wait_timeout(waiters, ceiling)
+            .wait_timeout(
+                self.waiters.lock().unwrap_or_else(PoisonError::into_inner),
+                ceiling,
+            )
             .unwrap_or_else(PoisonError::into_inner);
         waiters.signalled = false;
     }
@@ -469,6 +472,7 @@ impl SyncRunner {
         };
         let resource = resource_for(guard.conn(), task);
         let row = read_budget(guard.conn(), account, &resource).ok().flatten();
+        drop(guard);
         may_spend(row.as_ref(), is_on_demand(task), now)
     }
 
@@ -828,16 +832,24 @@ impl SyncRunner {
     /// so nothing has changed.
     fn projects_for_sync_task(&self, task: &SyncTask, outcome: &SyncOutcome) -> Vec<ProjectId> {
         let terminal = !matches!(outcome, SyncOutcome::NextPage { .. });
-        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-        let conn = guard.conn();
+        // The guard is taken for the one read and released with it; nothing after needs it.
+        let query = |sql: &str, params: &[&dyn rusqlite::ToSql]| {
+            project_ids(
+                self.index
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .conn(),
+                sql,
+                params,
+            )
+        };
         match task {
             SyncTask::ProjectRemote { project_id } => vec![*project_id],
             SyncTask::AccountRepos { account_id } | SyncTask::RenameProbe { account_id } => {
                 if !terminal {
                     return Vec::new();
                 }
-                project_ids(
-                    conn,
+                query(
                     "SELECT project_id FROM project_account WHERE account_id = ?1",
                     rusqlite::params![account_id.0],
                 )
@@ -849,8 +861,7 @@ impl SyncRunner {
                 if !terminal {
                     return Vec::new();
                 }
-                project_ids(
-                    conn,
+                query(
                     "SELECT project_id FROM project_dependency_scan",
                     rusqlite::params![],
                 )
@@ -1059,7 +1070,7 @@ fn resource_for(conn: &rusqlite::Connection, task: &SyncTask) -> String {
 /// [`crate::sync::store::read_row`] refuses a slug it cannot resolve. Guessing which id an
 /// `advisories` row's stray key was would run the wrong task against it, and inventing one for a
 /// keyed kind would run a task against account or project zero.
-fn task_of(row: &SyncTaskStateRow) -> Option<SyncTask> {
+const fn task_of(row: &SyncTaskStateRow) -> Option<SyncTask> {
     match (row.kind, row.key) {
         (SyncTaskKind::AccountRepos, Some(key)) => Some(SyncTask::AccountRepos {
             account_id: AccountId(key),
@@ -1155,7 +1166,7 @@ mod tests {
         let runner = SyncRunner::new(
             Arc::new(Mutex::new(index)),
             test_deps(),
-            Arc::new(NullEvents) as Arc<dyn EventSink>,
+            Arc::new(NullEvents),
         );
 
         let listing = SyncTask::AccountRepos {
@@ -1194,20 +1205,22 @@ mod tests {
     }
 
     fn test_deps() -> SyncDeps {
-        let transport = Arc::new(crate::testing::FakeTransport::new());
-        let clock = Arc::new(crate::testing::FakeClock::new(1));
+        let transport: Arc<dyn crate::http::HttpTransport> =
+            Arc::new(crate::testing::FakeTransport::new());
+        let clock: Arc<dyn crate::clock::Clock> = Arc::new(crate::testing::FakeClock::new(1));
         let observing = Arc::new(crate::sync::ObservingTransport::new(
-            Arc::clone(&transport) as Arc<dyn crate::http::HttpTransport>,
-            Arc::clone(&clock) as Arc<dyn crate::clock::Clock>,
+            transport,
+            Arc::clone(&clock),
         ));
+        let provider_transport = Arc::clone(&observing);
         SyncDeps {
             provider: Arc::new(crate::provider::GitHubProvider::new(
-                Arc::clone(&observing) as Arc<dyn crate::http::HttpTransport>,
+                provider_transport,
                 "h".to_owned(),
             )),
             transport: observing,
             tokens: Arc::new(crate::testing::FakeTokenStore::available()),
-            clock: Arc::clone(&clock) as Arc<dyn crate::clock::Clock>,
+            clock,
             cancel: crate::cancel::CancelToken::new(),
             tz_offset_min: 0,
         }

@@ -30,7 +30,7 @@ pub const SYNC_STATES: [SyncTaskState; 6] = [
 /// two unrelated CHECK lists, each the R26 mirror for its own column. Same name, different shape
 /// — R15's rule, not a duplicate.
 #[must_use]
-pub fn state_slug(state: SyncTaskState) -> &'static str {
+pub const fn state_slug(state: SyncTaskState) -> &'static str {
     match state {
         SyncTaskState::Queued => "queued",
         SyncTaskState::Running => "running",
@@ -100,17 +100,22 @@ pub fn secondary_park_secs(retry_after: i64, throttle_count: u32) -> i64 {
 /// account-shaped and do not exist in the job vocabulary — compare shapes, not names (R15).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncResetCause {
+    /// The account was connected again.
     AccountReconnected,
+    /// The account's grant gained a scope.
     ScopeUpgraded,
+    /// The user opted one of the account's organisations in or out.
     OrgOptInChanged,
+    /// A newer build of the app is running.
     AppUpgraded,
+    /// The user asked for a retry — TRY AGAIN on one project.
     UserRequested,
 }
 
 impl SyncResetCause {
     /// Written into `reason`, so a later reader can see why the row was revived.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::AccountReconnected => "account_reconnected",
             Self::ScopeUpgraded => "scope_upgraded",
@@ -124,25 +129,33 @@ impl SyncResetCause {
 /// One row of `sync_task_state`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncTaskStateRow {
+    /// Which task the row schedules — the `task` column.
     pub kind: SyncTaskKind,
     /// Polymorphic: an account id for `account_repos`, a project id for the other two, `None`
     /// for a process-wide task. Phase 2 declares none.
     pub key: Option<i64>,
+    /// Where the task stands in §21.4's table.
     pub state: SyncTaskState,
     /// Resumption state, and **only** resumption state (§21.7). Cleared on any settle that is not
     /// `NextPage`.
     pub cursor: Option<String>,
+    /// Consecutive transient failures; the task goes `deferred` at [`SYNC_MAX_TRANSIENT_FAILS`].
     pub fail_count: u32,
+    /// Consecutive secondary-limit parks, each lengthening the next one.
     pub throttle_count: u32,
+    /// The slug or message saying why the row is in its state; `None` after a `Done`,
+    /// `NotModified` or `NextPage` settle.
     pub reason: Option<String>,
+    /// Unix second of the row's last transition.
     pub at: i64,
+    /// Unix second before which the task may not run; `0`, the column default, schedules nothing.
     pub not_before: i64,
 }
 
 impl SyncTaskStateRow {
     /// A fresh row, runnable now.
     #[must_use]
-    pub fn queued(kind: SyncTaskKind, key: Option<i64>, now: i64) -> Self {
+    pub const fn queued(kind: SyncTaskKind, key: Option<i64>, now: i64) -> Self {
         Self {
             kind,
             key,

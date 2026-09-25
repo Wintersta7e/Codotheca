@@ -22,16 +22,22 @@ pub const LISTING_INTERVAL_SECS: i64 = 6 * 60 * 60;
 /// What asked for a listing. Recorded so a reader can tell a scheduled run from a triggered one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncTrigger {
+    /// An account was connected.
     Connect,
+    /// An account's grant gained a scope.
     ScopeUpgrade,
+    /// The user opted one of the account's organisations in or out.
     OrgOptInChange,
+    /// The process started and found an account that has never listed.
     Startup,
+    /// [`LISTING_INTERVAL_SECS`] passed since the account's last settled listing.
     Interval,
 }
 
 impl SyncTrigger {
+    /// The trigger's `snake_case` spelling, in the shape of the other sync slugs.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::Connect => "connect",
             Self::ScopeUpgrade => "scope_upgrade",
@@ -109,8 +115,7 @@ pub fn advisory_due(conn: &Connection, now: i64) -> Result<bool, IndexError> {
             |row| row.get(0),
         )
         .unwrap_or(None);
-    Ok(match newest {
-        None => true,
-        Some(at) => at.saturating_add(ADVISORY_SWEEP_INTERVAL_SECS) <= now,
-    })
+    Ok(newest.map_or(true, |at| {
+        at.saturating_add(ADVISORY_SWEEP_INTERVAL_SECS) <= now
+    }))
 }

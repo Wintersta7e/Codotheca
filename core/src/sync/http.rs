@@ -52,7 +52,9 @@ use crate::sync::outcome::SyncOutcome;
 /// exactly why it would drift. Do not shorten it back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpObservation {
+    /// §21.8's classification of the response — or of the transport error when none arrived.
     pub outcome: SyncOutcome,
+    /// The `x-ratelimit-*` headers it carried, whatever its status.
     pub rate: RateSnapshot,
     /// When this machine saw it, from the injected clock — never `SystemTime::now`.
     pub at: i64,
@@ -86,6 +88,7 @@ pub struct ObservingTransport {
 }
 
 impl ObservingTransport {
+    /// Wrap `inner`, dating each observation from `clock`.
     #[must_use]
     pub fn new(inner: Arc<dyn HttpTransport>, clock: Arc<dyn Clock>) -> Self {
         Self {

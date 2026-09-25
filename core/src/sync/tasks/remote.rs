@@ -129,14 +129,14 @@ pub fn run_project_remote(
     }
 
     // ---- The Actions read, with its own validator and its own clock. -------------------------
-    let answer = deps.provider.ci_runs(
+    let ci_answer = deps.provider.ci_runs(
         &token,
         &target.owner,
         &target.name,
         target.ci_etag.as_deref(),
     );
-    let ci_observation = observe_one(deps, &answer);
-    let runs: Option<CiRunsRead> = answer.ok().map(|Observed { value, .. }| value);
+    let ci_observation = observe_one(deps, &ci_answer);
+    let runs: Option<CiRunsRead> = ci_answer.ok().map(|Observed { value, .. }| value);
 
     {
         let mut guard = index
@@ -240,6 +240,7 @@ fn read_target(index: &Mutex<Index>, project: ProjectId) -> Option<Target> {
             },
         )
         .unwrap_or((None, None));
+    drop(guard);
 
     Some(Target {
         account,

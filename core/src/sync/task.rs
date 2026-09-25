@@ -22,10 +22,14 @@ use crate::protocol::{AccountId, ProjectId, SyncTaskKind};
 /// needed no migration for the column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncTask {
+    /// The scheduled listing of an account's repositories, one page per step.
     AccountRepos {
+        /// The account whose repositories are listed.
         account_id: AccountId,
     },
+    /// The on-demand read of one repository's remote facts and its Actions runs.
     ProjectRemote {
+        /// The project whose forge binding is read.
         project_id: ProjectId,
     },
     /// **Keyed by account, not by project, which deviates from §21.3's table.** p2-22 shipped the
@@ -35,6 +39,7 @@ pub enum SyncTask {
     /// loop against the module p2-22 owns, which is R1's shape. `key` is polymorphic by design, so
     /// an account id here is exactly as representable as a project id.
     RenameProbe {
+        /// The account whose token the repair pass resolves unmatched keys with.
         account_id: AccountId,
     },
     /// **A unit variant, because the task is process-wide and has no id it is about.**
@@ -47,8 +52,9 @@ pub enum SyncTask {
 }
 
 impl SyncTask {
+    /// The schema's kind for this work item, dropping the id it is about.
     #[must_use]
-    pub fn kind(self) -> SyncTaskKind {
+    pub const fn kind(self) -> SyncTaskKind {
         match self {
             Self::AccountRepos { .. } => SyncTaskKind::AccountRepos,
             Self::ProjectRemote { .. } => SyncTaskKind::ProjectRemote,
@@ -71,7 +77,7 @@ impl SyncTask {
     /// wrapped it in `Some`. `SyncTaskStarted.key` and `SyncTaskSettled.key` are `i64?` on the
     /// wire already, so widening it moves no schema.
     #[must_use]
-    pub fn key(self) -> Option<i64> {
+    pub const fn key(self) -> Option<i64> {
         match self {
             Self::AccountRepos { account_id } | Self::RenameProbe { account_id } => {
                 Some(account_id.0)
@@ -94,7 +100,7 @@ impl SyncTask {
 
 /// The stored form, written into `sync_task_state.task` and constrained by that column's CHECK.
 #[must_use]
-pub fn kind_slug(kind: SyncTaskKind) -> &'static str {
+pub const fn kind_slug(kind: SyncTaskKind) -> &'static str {
     match kind {
         SyncTaskKind::AccountRepos => "account_repos",
         SyncTaskKind::ProjectRemote => "project_remote",

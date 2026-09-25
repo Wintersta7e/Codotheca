@@ -36,6 +36,9 @@ pub const ON_DEMAND_RESERVE_DIVISOR: i64 = 25;
 /// branch. Exactly **200 at `limit = 5000`**, so the authenticated case does not move by one unit,
 /// and **2 at `limit = 60`**.
 #[must_use]
+// Taking the `Option` is the contract, not a convenience: callers hand over the pool's `limit` as
+// read, and `core/tests/sync_budget.rs` pins `reserve_for(None) == None` as the unobserved case.
+#[allow(clippy::single_option_map)]
 pub fn reserve_for(limit: Option<i64>) -> Option<i64> {
     limit.map(|limit| limit / ON_DEMAND_RESERVE_DIVISOR)
 }
@@ -62,7 +65,7 @@ impl BudgetRow {
     /// The only constructor, and it takes the observation time because that is the one thing a
     /// row cannot be honest without.
     #[must_use]
-    pub fn observed(
+    pub const fn observed(
         remaining: Option<i64>,
         limit: Option<i64>,
         reset_at: Option<i64>,
@@ -76,25 +79,29 @@ impl BudgetRow {
         }
     }
 
+    /// Requests left in the pool as `x-ratelimit-remaining` last said, or `None` when that header
+    /// was never observed.
     #[must_use]
-    pub fn remaining(&self) -> Option<i64> {
+    pub const fn remaining(&self) -> Option<i64> {
         self.remaining
     }
 
+    /// The pool's size per window as `x-ratelimit-limit` last said, or `None` when unobserved.
     #[must_use]
-    pub fn limit(&self) -> Option<i64> {
+    pub const fn limit(&self) -> Option<i64> {
         self.limit
     }
 
     /// Already on **our** clock: `crate::sync::classify::translate_instant` moved it there before
     /// it was ever written.
     #[must_use]
-    pub fn reset_at(&self) -> Option<i64> {
+    pub const fn reset_at(&self) -> Option<i64> {
         self.reset_at
     }
 
+    /// The Unix second, on our clock, at which the mirror last wrote this row.
     #[must_use]
-    pub fn observed_at(&self) -> i64 {
+    pub const fn observed_at(&self) -> i64 {
         self.observed_at
     }
 }
@@ -108,6 +115,8 @@ impl BudgetRow {
 /// status reader can tell the three apart, and a single variant would make that reason a guess.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BudgetVerdict {
+    /// Issue the request: the pool has room, or its reset has passed and the request is what
+    /// refreshes a stale mirror.
     Spend,
     /// `remaining` is known to be 0 and the reset has not passed.
     ParkUntil(i64),
@@ -190,24 +199,26 @@ pub fn read_budget(
             row.get(3)?,
         ))
     };
-    let found = match account {
-        Some(account) => conn
-            .query_row(
-                "SELECT remaining, limit_, reset_at, observed_at FROM sync_budget
-                  WHERE account_id = ?1 AND resource = ?2",
-                rusqlite::params![account.0, resource],
-                read,
-            )
-            .ok(),
-        None => conn
-            .query_row(
+    let found = account.map_or_else(
+        || {
+            conn.query_row(
                 "SELECT remaining, limit_, reset_at, observed_at FROM sync_budget
                   WHERE account_id IS NULL AND resource = ?1",
                 rusqlite::params![resource],
                 read,
             )
-            .ok(),
-    };
+            .ok()
+        },
+        |account| {
+            conn.query_row(
+                "SELECT remaining, limit_, reset_at, observed_at FROM sync_budget
+                  WHERE account_id = ?1 AND resource = ?2",
+                rusqlite::params![account.0, resource],
+                read,
+            )
+            .ok()
+        },
+    );
     Ok(found)
 }
 

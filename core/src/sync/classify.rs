@@ -18,8 +18,12 @@ use crate::sync::outcome::{SyncOutcome, UnauthorizedReason};
 /// dates nothing.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RateSnapshot {
+    /// `x-ratelimit-resource`: the pool this response spent from, and the key its budget row is
+    /// mirrored under. `None` means the response cannot be mirrored at all.
     pub resource: Option<String>,
+    /// `x-ratelimit-remaining`: requests left in that pool.
     pub remaining: Option<i64>,
+    /// `x-ratelimit-limit`: the pool's size per window.
     pub limit: Option<i64>,
     /// **On our clock, not the server's** — see [`translate_instant`].
     pub reset_at: Option<i64>,

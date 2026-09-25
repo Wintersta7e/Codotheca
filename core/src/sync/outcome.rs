@@ -6,9 +6,13 @@
 /// What one forge response means to the task that caused it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncOutcome {
+    /// A 2xx that delivered everything asked for: no further page follows.
     Done,
+    /// A 304: the conditional request matched, and nothing changed since the last answer.
     NotModified,
+    /// A 2xx whose page carried a cursor, promoted by [`SyncOutcome::with_next_page`].
     NextPage {
+        /// The cursor the provider parsed out of the page, handed back to ask for the next one.
         cursor: String,
     },
     /// **`secondary` is this plan's, and it is a Rust-only widening of §21.9's `{ until }`.**
@@ -21,17 +25,32 @@ pub enum SyncOutcome {
     /// the classifier's decision without its inputs. **The wire is unaffected**: `SyncOutcomeKind`
     /// is a flat enum with one `throttled` variant.
     Throttled {
+        /// The later of `retry-after` and `x-ratelimit-reset`, in Unix seconds on our clock;
+        /// `now` when the server named neither.
         until: i64,
+        /// A secondary limit — `retry-after` present and `remaining > 0` — rather than a
+        /// primary yield.
         secondary: bool,
     },
+    /// A 401, or a 403 with neither `retry-after` nor a spent `remaining`: the row goes `blocked`
+    /// and is never retried on a backoff.
     Unauthorized {
+        /// What the response lets us say about why.
         reason: UnauthorizedReason,
     },
+    /// A 404: the resource is *unseen*, never *gone*, and no row is deleted for it.
     NotFound,
+    /// Any other 4xx, or a status no other step of §21.8 claims: terminal, because a request
+    /// this client formed wrongly will be formed wrongly again.
     Rejected {
+        /// The HTTP status the forge answered.
         status: u16,
     },
+    /// A 5xx, a transport failure, a provider call that failed before any response, or a task
+    /// step that ended in a [`crate::sync::SyncError`]: retried on §21.4's transient backoff and
+    /// `deferred` at the third.
     TransientFail {
+        /// The transport's, the server's or the provider's own words, for the row and the log.
         reason: String,
     },
 }
@@ -56,7 +75,7 @@ impl SyncOutcome {
 
     /// The flat wire vocabulary §21.13 declares, which carries the variant and none of its data.
     #[must_use]
-    pub fn kind(&self) -> crate::protocol::SyncOutcomeKind {
+    pub const fn kind(&self) -> crate::protocol::SyncOutcomeKind {
         use crate::protocol::SyncOutcomeKind as K;
         match self {
             Self::Done => K::Done,
@@ -99,7 +118,7 @@ pub enum UnauthorizedReason {
 impl UnauthorizedReason {
     /// Written into `sync_task_state.reason`.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::TokenInvalid => "token_invalid",
             Self::SsoRequired => "sso_required",
@@ -114,7 +133,7 @@ impl UnauthorizedReason {
     /// hand"* (R24). This is the one mapping function, and its test reads p2-20's generated enum
     /// rather than restating either spelling.
     #[must_use]
-    pub fn error_code(self) -> crate::protocol::ErrorCode {
+    pub const fn error_code(self) -> crate::protocol::ErrorCode {
         match self {
             Self::SsoRequired => crate::protocol::ErrorCode::SsoRequired,
             // p2-20's own ruling: a 403 the SSO check declined is this token's identity being

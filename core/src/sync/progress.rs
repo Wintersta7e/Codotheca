@@ -38,7 +38,7 @@ impl ListingProgress {
     /// `total` is what the **response** supplied, and `None` is *not observed* — never a
     /// denominator this process worked out for itself.
     #[must_use]
-    pub fn new(account: AccountId, total: Option<i64>) -> Self {
+    pub const fn new(account: AccountId, total: Option<i64>) -> Self {
         Self {
             account,
             listed: 0,
@@ -51,14 +51,15 @@ impl ListingProgress {
         self.listed = self.listed.saturating_add(n.max(0));
     }
 
+    /// Entries counted so far across every page of this listing.
     #[must_use]
-    pub fn listed(&self) -> i64 {
+    pub const fn listed(&self) -> i64 {
         self.listed
     }
 
     /// The wire shape, for the `listing_progress` event and for `sync.status`.
     #[must_use]
-    pub fn payload(&self) -> SyncListingProgress {
+    pub const fn payload(&self) -> SyncListingProgress {
         SyncListingProgress {
             account_id: self.account,
             listed: self.listed,

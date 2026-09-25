@@ -159,24 +159,26 @@ pub fn load(
     key: Option<i64>,
 ) -> Result<Option<SyncTaskStateRow>, IndexError> {
     let task = kind_slug(kind);
-    let found = match key {
-        Some(key) => conn
-            .query_row(
-                &format!("SELECT {COLUMNS} FROM sync_task_state WHERE task = ?1 AND key = ?2"),
-                rusqlite::params![task, key],
-                read_row,
-            )
-            .ok()
-            .flatten(),
-        None => conn
-            .query_row(
+    let found = key.map_or_else(
+        || {
+            conn.query_row(
                 &format!("SELECT {COLUMNS} FROM sync_task_state WHERE task = ?1 AND key IS NULL"),
                 rusqlite::params![task],
                 read_row,
             )
             .ok()
-            .flatten(),
-    };
+            .flatten()
+        },
+        |key| {
+            conn.query_row(
+                &format!("SELECT {COLUMNS} FROM sync_task_state WHERE task = ?1 AND key = ?2"),
+                rusqlite::params![task, key],
+                read_row,
+            )
+            .ok()
+            .flatten()
+        },
+    );
     Ok(found)
 }
 

@@ -19,6 +19,7 @@ use crate::sync::events::{status_payload, SyncLive};
 /// What `sync.status` reads.
 #[derive(Debug)]
 pub struct SyncCtx<'a> {
+    /// The index, borrowed through the guard the dispatcher already holds — never locked here.
     pub index: &'a Index,
     /// The runner's process-lifetime half. Empty before the pump has observed anything.
     pub live: SyncLive,

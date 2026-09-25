@@ -27,7 +27,10 @@ use crate::sync::store::load_all;
 /// observed an outcome yet.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LastSettle {
+    /// The kind of outcome §21.8's classifier gave the step.
     pub outcome: SyncOutcomeKind,
+    /// The accumulated listing summary when this settle ended an `account_repos` listing; `None`
+    /// for every other settle.
     pub summary: Option<SyncListingSummary>,
 }
 
@@ -38,7 +41,9 @@ pub struct LastSettle {
 /// restart, and a notice restored from a table would claim a failure nothing has re-observed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SyncLive {
+    /// Progress of the `account_repos` listing in flight; `None` when no listing is running.
     pub listing: Option<SyncListingProgress>,
+    /// The one banner the latest settle left standing; a success clears it to `None`.
     pub notice: Option<SyncNotice>,
     /// Keyed by `(kind, key)`, exactly as `sync_task_state` is.
     pub last: HashMap<(SyncTaskKind, Option<i64>), LastSettle>,

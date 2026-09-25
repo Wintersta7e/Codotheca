@@ -48,23 +48,32 @@ use crate::sync::task::SyncTask;
 /// machine failing: the index, the keychain, or an account row that is gone.
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
+    /// The index refused a read or a write the task needed to settle.
     #[error("sync index write failed: {0}")]
     Index(#[from] IndexError),
+    /// The account's identity or org rows could not be read — or the rename pass over its
+    /// repositories failed — carrying the underlying message.
     #[error("sync could not read the account: {0}")]
     Account(String),
+    /// The keychain refused the account's token, or holds no entry under its `token_ref`.
     #[error("sync could not read the token: {0}")]
     Keychain(String),
 }
 
 /// Everything a task needs that is not the index.
 pub struct SyncDeps {
+    /// The forge client every task issues its requests through.
     pub provider: Arc<dyn Provider>,
     /// The **decorated** transport, held so a task can drain what the provider's call observed.
     /// It is the same object the provider sends through, which is what makes the drain the
     /// provider's own responses rather than a parallel record of them.
     pub transport: Arc<ObservingTransport>,
+    /// The keychain each account's token is read from, through [`token_for`].
     pub tokens: Arc<dyn TokenStore>,
+    /// The runner's wall clock, in Unix seconds: settles, parks and budget checks all read it.
     pub clock: Arc<dyn Clock>,
+    /// The loop's stop token: once `SyncPump::stop` cancels it the loop takes no further task,
+    /// while a request already in flight runs to its own time bound.
     pub cancel: CancelToken,
     /// **A property of the machine, read ONCE by the composition root and passed down as data**
     /// — `ProjectsCtx.tz_offset_min`'s twin (`core/src/clock.rs:65-67`). §28.4's `debt_day` key
@@ -89,7 +98,7 @@ impl std::fmt::Debug for SyncDeps {
 /// `is_scheduled` would have to answer `true` for it and contradict the sentence it was named
 /// after. The reserve keys on the on-demand side, which is exactly one task.
 #[must_use]
-pub fn is_on_demand(task: &SyncTask) -> bool {
+pub const fn is_on_demand(task: &SyncTask) -> bool {
     matches!(task, SyncTask::ProjectRemote { .. })
 }
 
@@ -154,7 +163,7 @@ pub fn settle_of(observed: &[HttpObservation]) -> SyncOutcome {
 /// Terminal refusals outrank parks because waiting does not fix them; a park outranks a transient
 /// failure because the server named a time and a retry before it would spend the allowance to be
 /// refused again.
-fn severity(outcome: &SyncOutcome) -> u8 {
+const fn severity(outcome: &SyncOutcome) -> u8 {
     match outcome {
         SyncOutcome::Done | SyncOutcome::NextPage { .. } => 0,
         SyncOutcome::NotModified => 1,

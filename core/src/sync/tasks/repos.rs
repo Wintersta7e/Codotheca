@@ -35,11 +35,18 @@ use crate::sync::{observe_one, token_for, SyncDeps, SyncError};
 /// and never re-derived: the decision is p2-22's and the transport is this plan's.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ListingSummary {
+    /// Entries the admission pass let through to ingest.
     pub listed: i64,
+    /// Entries that reached a row — attached to a project or created one.
     pub admitted: i64,
+    /// Entries the admission pass skipped because they carried no permission object.
     pub skipped_unknown_permission: i64,
+    /// Projects caught in an ambiguous match, deduplicated within each page and summed across
+    /// pages.
     pub ambiguous: i64,
+    /// Entries withheld because an existing project blocked them.
     pub suppressed: i64,
+    /// The blocking project of each suppression, one entry per suppression.
     pub suppressed_by: Vec<ProjectId>,
 }
 
@@ -100,6 +107,7 @@ pub fn run_account_repos(
         let orgs = crate::accounts::store::list_orgs(guard.conn(), account)
             .map_err(|e| SyncError::Account(e.to_string()))?
             .unwrap_or_default();
+        drop(guard);
         let enabled: BTreeSet<String> = orgs
             .into_iter()
             .filter(|o| o.enabled)
