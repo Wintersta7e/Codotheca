@@ -10,14 +10,21 @@ use crate::corpus::CorpusError;
 /// The fixed identity every corpus commit carries. `.invalid` is reserved by RFC 2606 and can
 /// never route anywhere.
 pub const CORPUS_AUTHOR: &str = "Corpus Author";
+/// The fixed email beside [`CORPUS_AUTHOR`], on the reserved `.invalid` domain.
 pub const CORPUS_EMAIL: &str = "corpus@example.invalid";
 
+/// A git runner bound to a private config home, with every environment input git reads pinned.
 #[derive(Debug, Clone)]
 pub struct CorpusGit {
     home: PathBuf,
 }
 
 impl CorpusGit {
+    /// A runner whose config home is `home`, with its empty hooks and template directories
+    /// created.
+    ///
+    /// # Errors
+    /// `CorpusError::Io` when either directory cannot be created.
     pub fn new(home: PathBuf) -> Result<Self, CorpusError> {
         for leaf in ["hooks-empty", "template-empty"] {
             let path = home.join(leaf);
@@ -36,12 +43,20 @@ impl CorpusGit {
         format!("--template={}", self.home.join("template-empty").display())
     }
 
+    /// The installed git's version, without its `git version ` prefix.
+    ///
+    /// # Errors
+    /// `CorpusError::Git` when git cannot be spawned or exits non-zero.
     pub fn version(&self) -> Result<String, CorpusError> {
         let out = self.run(&self.home, 0, &["--version"])?;
         Ok(out.trim_start_matches("git version ").trim().to_owned())
     }
 
     /// Run git and return trimmed stdout as text.
+    ///
+    /// # Errors
+    /// `CorpusError::Git`, carrying the arguments, the exit code and stderr, when git cannot be
+    /// spawned or waited on, or exits non-zero.
     pub fn run(&self, cwd: &Path, at_unix: i64, args: &[&str]) -> Result<String, CorpusError> {
         let bytes = self.run_bytes(cwd, at_unix, args, &[])?;
         Ok(String::from_utf8_lossy(&bytes).trim_end().to_owned())
@@ -50,6 +65,10 @@ impl CorpusGit {
     /// Run git with raw stdin and raw stdout. stdin is written on a worker thread while this
     /// thread drains stdout: writing everything and then reading deadlocks as soon as git's
     /// stdout fills the pipe buffer, which is the failure that cost this project five hours.
+    ///
+    /// # Errors
+    /// `CorpusError::Git`, carrying the arguments, the exit code and stderr, when git cannot be
+    /// spawned or waited on, or exits non-zero.
     pub fn run_bytes(
         &self,
         cwd: &Path,
@@ -167,6 +186,9 @@ impl CorpusGit {
 }
 
 /// Write a file with exactly the bytes given, creating parents. Content is always LF.
+///
+/// # Errors
+/// `CorpusError::Io` when a parent directory cannot be created or the file cannot be written.
 pub fn write_file(path: &Path, contents: &[u8]) -> Result<(), CorpusError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| CorpusError::Io {

@@ -26,25 +26,40 @@ pub const BASE_UNIX: i64 = 1_700_000_000;
 /// The future-dated fixture's timestamp: 2100-01-01T00:00:00Z.
 pub const FUTURE_UNIX: i64 = 4_102_444_800;
 
+/// The fixed local volume's id, and its directory under the corpus root.
 pub const VOLUME_A: &str = "vol-a";
+/// The simulated removable volume's id, and its directory under the corpus root.
 pub const VOLUME_B: &str = "vol-b";
 
+/// Why building or reading the corpus failed.
 #[derive(Debug)]
 pub enum CorpusError {
+    /// A filesystem call failed.
     Io {
+        /// The path it failed on.
         path: PathBuf,
+        /// The OS error's text.
         message: String,
     },
+    /// A git invocation could not be spawned or waited on, or exited non-zero.
     Git {
+        /// The arguments after the pinned `-c` prefix.
         args: Vec<String>,
+        /// The exit code; `None` when git never ran or a signal ended it.
         code: Option<i32>,
+        /// What git wrote to stderr, or the spawn error's text.
         stderr: String,
     },
+    /// The installed git is below the 2.22 floor (§3.1).
     GitTooOld {
+        /// The version it reported.
         found: String,
     },
+    /// A fixture name no builder handles.
     UnknownFixture(String),
+    /// The manifest could not be read, written or trusted, or a shared corpus never appeared.
     Manifest(String),
+    /// A fixture the manifest lacks, or holds unbuilt — then with the reason.
     MissingFixture(String),
 }
 
@@ -65,20 +80,26 @@ impl fmt::Display for CorpusError {
 
 impl std::error::Error for CorpusError {}
 
+/// What to build, where, and how big.
 #[derive(Debug, Clone)]
 pub struct CorpusOptions {
+    /// Where the corpus goes; a relative root is resolved against the working directory.
     pub root: PathBuf,
     /// `None` builds everything. `Some(list)` builds exactly those plus their dependencies;
     /// `Some(empty)` builds the volumes and nothing else.
     pub only: Option<Vec<String>>,
+    /// Rebuild even when the manifest on disk already covers the selection.
     pub force: bool,
     /// Build the fixtures that cost real time and disk — currently `deep-history`.
     pub large: bool,
+    /// How many untracked files the huge-untracked fixture writes.
     pub untracked_files: u32,
+    /// How many commits the deep-history fixture imports.
     pub deep_history_commits: u32,
 }
 
 impl CorpusOptions {
+    /// Every fixture, at `root`, with `force` and the large fixtures off.
     #[must_use]
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self {
@@ -133,6 +154,11 @@ fn absolute(path: &Path) -> Result<PathBuf, CorpusError> {
 }
 
 /// Build the corpus at `options.root`, replacing whatever is there.
+///
+/// # Errors
+/// `CorpusError::Io` when the root cannot be cleared or a directory created, `Git` when git
+/// cannot report its version, `GitTooOld` below the 2.22 floor, and whatever a fixture builder
+/// or the manifest write returns.
 pub fn generate(options: &CorpusOptions) -> Result<CorpusManifest, CorpusError> {
     let root = &absolute(&options.root)?;
     if root.exists() {
@@ -217,9 +243,9 @@ fn check_floor(version: &str) -> Result<(), CorpusError> {
 
 /// Expand a selection with its dependencies and put it in `ORDER`. `None` means everything.
 fn resolve_wanted(only: Option<&[String]>) -> Vec<String> {
-    let selected: Vec<String> = match only {
-        None => fixtures::ORDER.iter().map(|n| (*n).to_owned()).collect(),
-        Some(list) => {
+    let selected: Vec<String> = only.map_or_else(
+        || fixtures::ORDER.iter().map(|n| (*n).to_owned()).collect(),
+        |list| {
             let mut wanted: Vec<String> = Vec::new();
             let mut queue: Vec<String> = list.to_vec();
             while let Some(name) = queue.pop() {
@@ -232,8 +258,8 @@ fn resolve_wanted(only: Option<&[String]>) -> Vec<String> {
                 wanted.push(name);
             }
             wanted
-        }
-    };
+        },
+    );
     fixtures::ORDER
         .iter()
         .filter(|name| selected.iter().any(|s| s == *name))
@@ -245,6 +271,9 @@ fn resolve_wanted(only: Option<&[String]>) -> Vec<String> {
 ///
 /// Reuse is what makes the corpus usable from a test: generating twenty repositories per test
 /// binary would dominate the suite. `force` rebuilds unconditionally.
+///
+/// # Errors
+/// Those of [`generate`], whenever a rebuild is needed.
 pub fn ensure(options: &CorpusOptions) -> Result<CorpusManifest, CorpusError> {
     if !options.force {
         if let Ok(existing) = CorpusManifest::load(&options.root) {
@@ -268,11 +297,16 @@ const WAIT_DELAY: Duration = Duration::from_millis(500);
 /// `CODOTHECA_CORPUS_DIR` lets CI build it once and hand the path to every job. Otherwise it
 /// lands in the system temp directory under a version-stamped name, so a version bump never
 /// reuses an incompatible tree.
+///
+/// # Errors
+/// `CorpusError::Io` when the lock's directory cannot be created, those of [`generate`] for the
+/// caller that takes the lock and builds, and `CorpusError::Manifest` for a waiter whose wait ran
+/// out.
 pub fn shared_corpus() -> Result<CorpusManifest, CorpusError> {
-    let root = match std::env::var_os("CODOTHECA_CORPUS_DIR") {
-        Some(dir) => PathBuf::from(dir),
-        None => std::env::temp_dir().join(format!("codotheca-corpus-v{CORPUS_VERSION}")),
-    };
+    let root = std::env::var_os("CODOTHECA_CORPUS_DIR").map_or_else(
+        || std::env::temp_dir().join(format!("codotheca-corpus-v{CORPUS_VERSION}")),
+        PathBuf::from,
+    );
     shared_corpus_at(&root, WAIT_ATTEMPTS, WAIT_DELAY)
 }
 
