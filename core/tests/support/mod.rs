@@ -9,6 +9,8 @@
 #![allow(dead_code)]
 //! The fixture builder every git integration test in this plan shares.
 
+pub(crate) mod git_world;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

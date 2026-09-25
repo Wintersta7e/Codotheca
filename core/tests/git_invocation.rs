@@ -6,6 +6,8 @@
 )]
 //! §3.2: argv only, never a shell, and every option that neutralises the user's config.
 
+mod support;
+
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::Command;
@@ -161,4 +163,107 @@ fn the_hooks_directory_is_created_and_empty() {
     // Idempotent, and it does not delete a foreign file it did not create.
     let again = ensure_empty_hooks_dir(tmp.path()).unwrap();
     assert_eq!(again, hooks);
+}
+
+/// §47.3: **no scrub variable reaches a read child**, whatever the parent's environment holds.
+///
+/// The hostile variables are set on a re-executed child of this test binary, never on this
+/// process: `set_var` here would race every other test. The child runs the **production**
+/// `GitExec` against the recording stand-in, which writes the environment it actually received;
+/// this half reads that file. The config file `GIT_CONFIG_GLOBAL` names is kept (§47.3), so it
+/// must arrive — a scrub that removed everything would pass the first half alone.
+#[cfg(feature = "testkit")]
+#[test]
+fn no_scrub_variable_reaches_a_read_child_under_a_hostile_parent() {
+    use codotheca_core::cancel::CancelToken;
+    use codotheca_core::git::{GitExec, RunLimits};
+    use support::git_world::{
+        child_dir, hostile_parent_env, is_child, read_recording, recording_git, run_in_child,
+        scrub_report,
+    };
+
+    if is_child() {
+        let dir = child_dir();
+        let work = dir.join("repo");
+        let repo = handle(&work);
+        let hooks = ensure_empty_hooks_dir(&dir).unwrap();
+        GitExec::new(recording_git(), hooks)
+            .run(
+                &repo,
+                &[std::ffi::OsStr::new("status")],
+                RunLimits::none(),
+                &CancelToken::new(),
+            )
+            .expect("the recording stand-in exits 0");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let hostile = hostile_parent_env(tmp.path());
+    run_in_child(
+        "no_scrub_variable_reaches_a_read_child_under_a_hostile_parent",
+        tmp.path(),
+        &hostile.all(),
+    );
+    let recorded = read_recording(&tmp.path().join("repo"));
+    let report = scrub_report(&hostile, &recorded.env);
+    eprintln!(
+        "read-path scrub: {} planted, {} scrubbed variables reached the child {:?}, {} kept \
+         variables lost {:?}",
+        report.planted,
+        report.leaked.len(),
+        report.leaked,
+        report.lost.len(),
+        report.lost
+    );
+    assert!(
+        report.planted > 0,
+        "nothing was planted, so nothing was proved"
+    );
+    assert!(
+        report.leaked.is_empty(),
+        "scrubbed variables reached the read child: {:?}",
+        report.leaked
+    );
+    assert!(
+        report.lost.is_empty(),
+        "the user's own config route must be kept: {:?}",
+        report.lost
+    );
+}
+
+/// R237: **one hooks directory name.** Both production backends are built in `main.rs`, where a
+/// second spelling (`empty-hooks` against `EMPTY_HOOKS_DIR_NAME`'s `git-hooks-empty`) once pointed
+/// the app at a directory nothing created. Neither backend exposes its directory after
+/// construction, so the rule is read off the source: no hooks literal, and the constant used.
+#[test]
+fn the_read_and_write_hooks_directories_are_one() {
+    let main = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("main.rs"),
+    )
+    .unwrap();
+    assert!(!main.is_empty(), "core/src/main.rs read as empty");
+    let literals: Vec<&str> = main
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .filter(|literal| literal.contains("hooks"))
+        .collect();
+    let uses = main.matches("EMPTY_HOOKS_DIR_NAME").count();
+    eprintln!(
+        "main.rs: {} bytes read, {} hooks literal(s) {literals:?}, {uses} use(s) of \
+         EMPTY_HOOKS_DIR_NAME",
+        main.len(),
+        literals.len()
+    );
+    assert!(
+        literals.is_empty(),
+        "main.rs spells a hooks directory as a literal: {literals:?}"
+    );
+    assert!(
+        uses >= 1,
+        "main.rs must build the hooks directory from EMPTY_HOOKS_DIR_NAME"
+    );
 }

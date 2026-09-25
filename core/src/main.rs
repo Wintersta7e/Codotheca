@@ -13,7 +13,7 @@
 use codotheca_core::assembly::startup::{open_index, run_startup};
 use codotheca_core::assembly::{CoreDeps, CoreHandler};
 use codotheca_core::clock::{local_utc_offset_min, Clock, SystemClock};
-use codotheca_core::git::{GitBackend, GitExec, GitSlots, SystemGit};
+use codotheca_core::git::{GitBackend, GitExec, GitSlots, SystemGit, EMPTY_HOOKS_DIR_NAME};
 use codotheca_core::gitw::credential::{
     configure_data_dir, run_credential_helper, CREDENTIAL_MODE_FLAG,
 };
@@ -253,7 +253,10 @@ fn main() -> ExitCode {
     };
     let index = Arc::new(Mutex::new(index));
 
-    let git_exec = Arc::new(GitExec::system(args.data_dir.join("empty-hooks")));
+    // One hooks directory for the read and the write path, named by its one owner: a second
+    // spelling here once pointed both at a directory nothing created (R237).
+    let hooks_dir = args.data_dir.join(EMPTY_HOOKS_DIR_NAME);
+    let git_exec = Arc::new(GitExec::system(hooks_dir.clone()));
     let slots = Arc::new(GitSlots::for_machine());
     let git: Arc<dyn GitBackend> = Arc::new(SystemGit::new(
         Arc::clone(&git_exec),
@@ -368,7 +371,7 @@ fn main() -> ExitCode {
         // uses. A second `SystemMutatingGit` would be a second `core.hooksPath` to keep in step.
         write_git: Arc::new(codotheca_core::gitw::backend::SystemMutatingGit::new(
             std::path::PathBuf::from("git"),
-            args.data_dir.join("empty-hooks"),
+            hooks_dir,
         )),
         mount: Arc::clone(&mount),
         spawner: Box::new(codotheca_core::launch::spawn::OsSpawner),

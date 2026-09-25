@@ -16,6 +16,8 @@
 //! looking at nothing. [`rendered`] therefore checks the floor **once, before any caller sees
 //! the set**, rather than leaving each test to remember.
 
+mod support;
+
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -849,5 +851,67 @@ fn every_variant_renders_the_maintenance_options() {
         Intent::ALL.len(),
         "the maintenance check looked at {checked} of {} variants",
         Intent::ALL.len()
+    );
+}
+
+/// §47.3: **no scrub variable reaches a write child**, whatever the parent's environment holds.
+///
+/// `GIT_CONFIG_COUNT` and its keys delivered the same branch and tag deletions as repository
+/// config (§47 M2), and `neutralise_env` is shared by both paths, so the write path is proved
+/// separately rather than inferred from the read one. The child drives the production
+/// `SystemMutatingGit` — filter enumeration and clone both — at the recording stand-in.
+#[test]
+fn no_scrub_variable_reaches_a_write_child_under_a_hostile_parent() {
+    use support::git_world::{
+        child_dir, hostile_parent_env, is_child, read_recording, run_in_child, scrub_report,
+    };
+
+    if is_child() {
+        let dir = child_dir();
+        let hooks = dir.join("hooks-empty");
+        std::fs::create_dir_all(&hooks).expect("hooks dir");
+        let intent = Intent::Clone {
+            url: codotheca_core::gitw::RemoteUrl::parse("https://forge.example/acme/widget.git")
+                .expect("fixture url"),
+            dest: dir.join("widget"),
+            depth: None,
+        };
+        SystemMutatingGit::new(recording_git(), hooks)
+            .run(&intent, &CancelToken::new(), &mut |_| {})
+            .expect("the recording stand-in exits 0");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let hostile = hostile_parent_env(tmp.path());
+    run_in_child(
+        "no_scrub_variable_reaches_a_write_child_under_a_hostile_parent",
+        tmp.path(),
+        &hostile.all(),
+    );
+    let recorded = read_recording(&tmp.path().join("widget"));
+    let report = scrub_report(&hostile, &recorded.env);
+    eprintln!(
+        "write-path scrub: {} planted, {} scrubbed variables reached the child {:?}, {} kept \
+         variables lost {:?}",
+        report.planted,
+        report.leaked.len(),
+        report.leaked,
+        report.lost.len(),
+        report.lost
+    );
+    assert!(
+        report.planted > 0,
+        "nothing was planted, so nothing was proved"
+    );
+    assert!(
+        report.leaked.is_empty(),
+        "scrubbed variables reached the write child: {:?}",
+        report.leaked
+    );
+    assert!(
+        report.lost.is_empty(),
+        "the user's own config route must be kept: {:?}",
+        report.lost
     );
 }

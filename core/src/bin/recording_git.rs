@@ -86,11 +86,25 @@ fn main() {
     //
     // Refusing here also keeps the audit honest: a variant with no path to key on cannot be
     // spawn-recorded at all, and the test must say so rather than read a file from somewhere else.
-    if !PathBuf::from(last).is_absolute() {
+    //
+    // **An invocation that runs *in* a repository is keyed on its `-C` directory** — the read
+    // path renders `-C <work_dir>` before every subcommand, so a read ending in a subcommand or a
+    // remote name still names an absolute path to record beside. It is only ever the directory's
+    // sibling `<dir>.recorded`, never a file inside the repository being recorded.
+    let work_dir = args
+        .windows(2)
+        .find(|pair| pair.first().is_some_and(|flag| flag == "-C"))
+        .and_then(|pair| pair.get(1))
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute());
+    let keyed_on_last = PathBuf::from(last).is_absolute();
+    let mut target = if keyed_on_last {
+        PathBuf::from(last)
+    } else if let Some(dir) = work_dir {
+        dir
+    } else {
         std::process::exit(6);
-    }
-
-    let mut target = PathBuf::from(last);
+    };
     let mut name = target.file_name().unwrap_or_default().to_os_string();
     name.push(".recorded");
     target.set_file_name(name);
@@ -117,6 +131,9 @@ fn main() {
     }
 
     // A real `git clone` creates its destination. Creating it here keeps the caller's own
-    // post-conditions meaningful without pretending to be git in any other way.
-    let _ = std::fs::create_dir_all(PathBuf::from(last));
+    // post-conditions meaningful without pretending to be git in any other way. An invocation
+    // keyed on its `-C` directory runs in a repository that already exists and creates nothing.
+    if keyed_on_last {
+        let _ = std::fs::create_dir_all(PathBuf::from(last));
+    }
 }
