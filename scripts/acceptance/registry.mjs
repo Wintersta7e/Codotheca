@@ -88,6 +88,32 @@ export const PHASE3_SECTIONS = { 28: 18, 29: 29, 30: 18, 31: 18, 32: 23, 33: 12,
 export const LETTERED_P3 = ['P3-28-18a', 'P3-30-11a'];
 
 /**
+ * §49.1's table, copied for §36.5's reason (`.dev/spec/` is absent on CI); summed once, at 253, in
+ * `registry.test.mjs`. Phase 4 has no letter, so the range and the total are the same number.
+ */
+export const PHASE4_SECTIONS = {
+  38: 24,
+  39: 13,
+  40: 22,
+  41: 16,
+  42: 25,
+  43: 22,
+  44: 30,
+  45: 22,
+  46: 30,
+  47: 22,
+  48: 27,
+};
+
+/**
+ * R207: no capture reads a Windows-native result — CI grades acceptance on Ubuntu and the gate
+ * copies the WSL cargo run — so a check naming Windows is a recorded manual gate, never an
+ * automated claim a Linux run would grade without executing it.
+ */
+const PLATFORMS = ['linux', 'windows'];
+const WINDOWS_GATE = 'WINDOWS-NATIVE';
+
+/**
  * A deferral says *what kind of thing has not happened yet*. `plan` is phase 1's meaning and
  * the default, so all 121 phase-1 deferrals are unchanged. `live-observation` is documentation
  * knowledge until it is checked against a live response, and it **refuses a test id** — a test
@@ -317,6 +343,43 @@ function checkProblems(entry, check, seenCheckIds, problems, root) {
 
   markingProblems(where, check, problems, root);
   if (phaseOf(entry.id) === 2) phase2CheckProblems(where, check, problems);
+  phase4FieldProblems(entry, where, check, problems);
+}
+
+/**
+ * The two fields phase 4 adds to a check, declared by the author and never inferred. `firstTag`
+ * is a copy of §49.1a's Bar column, which the release mode's `ft` run reads; `platforms` says which
+ * platform's results grade the check, absent meaning Linux — the only capture there is.
+ */
+function phase4FieldProblems(entry, where, check, problems) {
+  if (check.firstTag !== undefined) {
+    if (check.firstTag !== true) problems.push(`${where}: firstTag is true or absent`);
+    else if (phaseOf(entry.id) !== 4) {
+      problems.push(`${where}: firstTag marks a phase-4 check that gates the first tag`);
+    }
+  }
+  const p = check.platforms;
+  if (p !== undefined) {
+    if (
+      !Array.isArray(p) ||
+      p.length === 0 ||
+      p.some((x) => !PLATFORMS.includes(x)) ||
+      new Set(p).size !== p.length
+    ) {
+      problems.push(`${where}: platforms is a non-empty, duplicate-free subset of linux, windows`);
+    } else if (
+      p.includes('windows') &&
+      (check.status !== 'manual' || check.gate !== WINDOWS_GATE)
+    ) {
+      problems.push(
+        `${where}: a check naming windows is manual with gate ${WINDOWS_GATE} — no capture` +
+          ' reads a Windows result, so a Linux run would grade it without running it',
+      );
+    }
+  }
+  if (check.gate === WINDOWS_GATE && (p?.length !== 1 || p[0] !== 'windows')) {
+    problems.push(`${where}: a ${WINDOWS_GATE} check declares platforms ["windows"] exactly`);
+  }
 }
 
 /**
@@ -625,6 +688,82 @@ export function validatePhase3Complete(registry) {
 }
 
 /**
+ * Phase 4's own completeness rules, a fourth function for the reason the third exists: each
+ * phase's rules are its own ruling set.
+ *
+ * **Unlike phases 2 and 3 it permits a `deferred` check owned by a plan.** Phase 4 registers all of
+ * its criteria before its lanes land (so each lane's first test finds its check), and the release
+ * mode refuses every such deferral at the tag instead.
+ */
+export function validatePhase4Complete(registry) {
+  const problems = [];
+  const phase4 = (registry.criteria ?? []).filter((c) => phaseOf(c.id) === 4);
+  let scanning = 0;
+  let mirrors = 0;
+
+  for (const entry of phase4) {
+    const id = String(entry.id);
+    if ((entry.checks ?? []).length === 0) problems.push(`${id}: carries no check`);
+    for (const check of entry.checks ?? []) {
+      const where = `${id}/${String(check.id)}`;
+      if (check.scanning === true) scanning += 1;
+      if (check.mirror !== undefined) mirrors += 1;
+      if (
+        check.runner === 'perf' ||
+        check.measurement !== undefined ||
+        check.budget !== undefined
+      ) {
+        problems.push(
+          `${where}: no performance sample exists and phase 4 adds none — a phase-4 check` +
+            ' carries no perf runner, no measurement and no budget',
+        );
+      }
+      if (check.status === 'external') {
+        problems.push(`${where}: external is criterion 29 and is not reachable from phase 4`);
+      }
+    }
+  }
+
+  // Zero of either is the field never having been written, not a phase with no gate that scans
+  // and no value stated on both sides.
+  if (phase4.length > 0 && scanning === 0) {
+    problems.push('the phase-4 register holds no scanning check at all');
+  }
+  if (phase4.length > 0 && mirrors === 0) {
+    problems.push('the phase-4 register holds no mirror at all');
+  }
+
+  const bySection = new Map();
+  for (const entry of phase4) {
+    const m = P4_ID.exec(String(entry.id));
+    if (m === null) continue; // the id form already reported it
+    bySection.set(m[1], [...(bySection.get(m[1]) ?? []), Number.parseInt(m[2], 10)]);
+  }
+  for (const section of [...bySection.keys()].sort()) {
+    const ns = bySection.get(section);
+    const expected = PHASE4_SECTIONS[section];
+    // Without this the loop below runs `n <= undefined` — never once — and a section missing from
+    // the table would validate as **complete and silent**.
+    if (expected === undefined) {
+      problems.push(`P4-${section}: §${section} is not in PHASE4_SECTIONS and owns no criterion`);
+      continue;
+    }
+    const held = `§${section} holds ${String(ns.length)} of its ${String(expected)} criteria`;
+    for (let n = 1; n <= expected; n += 1) {
+      const hits = ns.filter((x) => x === n).length;
+      if (hits === 0) problems.push(`P4-${section}-${String(n)} is missing: ${held}`);
+      else if (hits > 1) problems.push(`P4-${section}-${String(n)} appears ${String(hits)} times`);
+    }
+    for (const n of ns) {
+      if (n < 1 || n > expected) {
+        problems.push(`P4-${section}-${String(n)} is outside §${section}'s 1..${String(expected)}`);
+      }
+    }
+  }
+  return problems;
+}
+
+/**
  * `root` is optional so a unit test can validate a registry object in isolation. Pass it from
  * any real run: without it a `mirror` is checked for shape and not for the file it names.
  */
@@ -705,5 +844,6 @@ export function validateRegistry(registry, root = null) {
   }
   problems.push(...validatePhase2Complete(registry));
   problems.push(...validatePhase3Complete(registry));
+  problems.push(...validatePhase4Complete(registry));
   return problems;
 }

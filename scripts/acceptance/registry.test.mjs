@@ -10,12 +10,14 @@ import {
   LIVE_OBSERVATION_CHECKS,
   PHASE2_SECTIONS,
   PHASE3_SECTIONS,
+  PHASE4_SECTIONS,
   criterionOf,
   loadRegistry,
   phaseOf,
   rollUp,
   validatePhase2Complete,
   validatePhase3Complete,
+  validatePhase4Complete,
   validateRegistry,
 } from './registry.mjs';
 import { tagsIn } from './tags.mjs';
@@ -1719,4 +1721,153 @@ test('a phase-4 id outside §38–§48 is refused by the id form', () => {
       `${id}\n${problems.join('\n')}`,
     );
   }
+});
+
+// [p4 Task 5] §49.1's table, copied for §36.5's reason: `.dev/spec/` is absent on CI. The total
+// lives in two places, §49.1 and this one assertion; no other file states it.
+test('PHASE4_SECTIONS is §49.1’s table and sums to 253', () => {
+  assert.deepEqual(PHASE4_SECTIONS, {
+    38: 24,
+    39: 13,
+    40: 22,
+    41: 16,
+    42: 25,
+    43: 22,
+    44: 30,
+    45: 22,
+    46: 30,
+    47: 22,
+    48: 27,
+  });
+  assert.equal(
+    Object.values(PHASE4_SECTIONS).reduce((a, b) => a + b, 0),
+    253,
+  );
+});
+
+/** A whole phase-4 section `1..n`, so a completeness assertion has a section to read. */
+function p4Section(section, n) {
+  const criteria = [];
+  for (let i = 1; i <= n; i += 1) {
+    criteria.push(
+      p4Entry({
+        id: `P4-${section}-${String(i)}`,
+        spec: `§${section}.1`,
+        checks: [
+          p4Check({
+            id: `AC-P4-${section}-${String(i)}`,
+            test: `acceptance_p4::ac_p4_${section}_${String(i)}`,
+          }),
+        ],
+      }),
+    );
+  }
+  return criteria;
+}
+
+const p4Complete = (criteria) => validatePhase4Complete({ version: 1, criteria });
+
+test('a §39 holding twelve of its thirteen names the one that is missing', () => {
+  const problems = p4Complete(p4Section(39, 12)).filter((p) => p.includes('P4-39-13'));
+  assert.equal(problems.length, 1, problems.join('\n'));
+  assert.ok(problems[0].includes('holds 12 of its 13'), problems[0]);
+});
+
+test('a duplicate inside a phase-4 section is a problem, and so is an id past its range', () => {
+  const doubled = p4Section(40, 22);
+  doubled[4] = { ...doubled[4], id: 'P4-40-4' };
+  assert.ok(p4Complete(doubled).some((p) => p.includes('P4-40-4 appears 2 times')));
+  const past = [...p4Section(47, 22), p4Entry({ id: 'P4-47-23', spec: '§47.1' })];
+  assert.ok(p4Complete(past).some((p) => p.includes("P4-47-23 is outside §47's 1..22")));
+});
+
+test('a phase-4 check carries no performance figure and is never external', () => {
+  for (const over of [
+    { runner: 'perf' },
+    { measurement: { kind: 'size', machines: ['A'], thermal: 'n/a' } },
+    { budget: [{ metric: 'bytes', op: '<', value: 1 }] },
+  ]) {
+    assert.ok(
+      p4Complete([p4Entry({ checks: [p4Check(over)] })]).some((p) =>
+        p.includes('phase 4 adds none'),
+      ),
+      `phase 4 records no ${JSON.stringify(over)}`,
+    );
+  }
+  const external = [p4Entry({ checks: [p4Check({ status: 'external', runner: 'none' })] })];
+  assert.ok(p4Complete(external).some((p) => p.includes('not reachable from phase 4')));
+});
+
+test('a phase-4 register with no scanning check or no mirror has stopped reading', () => {
+  const bare = p4Complete([p4Entry()]);
+  assert.ok(bare.some((p) => p.includes('phase-4 register holds no scanning check at all')));
+  assert.ok(bare.some((p) => p.includes('phase-4 register holds no mirror at all')));
+  assert.ok(p4Complete([p4Entry({ checks: [] })]).some((p) => p.includes('carries no check')));
+  // An empty phase-4 register is silent, which is what lets the harness land before any entry.
+  assert.deepEqual(validatePhase4Complete({ version: 1, criteria: [] }), []);
+});
+
+test('unlike phases 2 and 3, a phase-4 check may be deferred to the plan that lands it', () => {
+  const criteria = p4Section(38, 24);
+  criteria[0].checks[0] = p4Check({
+    owner: 'p4-44',
+    scanning: true,
+    mirror: { other: 'core/src/index/migrate.rs' },
+    assert: 'walks the tree, prints the count it scanned and fails at zero',
+  });
+  assert.deepEqual(p4Complete(criteria), []);
+  assert.deepEqual(
+    validateRegistry({ version: 1, criteria }, repoRoot).filter((p) => p.includes('P4-')),
+    [],
+  );
+});
+
+/** Only the problems a phase-4 check's own fields produce. */
+const fieldProblems = (over, id = 'P4-38-1') =>
+  validateRegistry({
+    version: 1,
+    criteria: [
+      id.startsWith('P4-')
+        ? p4Entry({ id, checks: [p4Check({ id: `AC-${id}`, ...over })] })
+        : p3Entry({ id, checks: [p3Check({ id: `AC-${id}`, ...over })] }),
+    ],
+  }).filter((p) => p.includes(`AC-${id}`));
+
+test('firstTag is true or absent, and only on a phase-4 check', () => {
+  assert.deepEqual(fieldProblems({ firstTag: true }), []);
+  assert.ok(fieldProblems({ firstTag: false }).some((p) => p.includes('firstTag')));
+  assert.ok(fieldProblems({ firstTag: true }, 'P3-28-1').some((p) => p.includes('firstTag')));
+});
+
+test('a check naming Windows is a manual WINDOWS-NATIVE record, never an automated claim', () => {
+  const winManual = {
+    status: 'manual',
+    runner: 'manual',
+    gate: 'WINDOWS-NATIVE',
+    reason: 'r'.repeat(30),
+    record: null,
+    test: undefined,
+    owner: 'p4-38',
+  };
+  assert.deepEqual(fieldProblems({ ...winManual, platforms: ['windows'] }), []);
+  for (const platforms of [['mac'], ['linux', 'linux'], []]) {
+    assert.ok(
+      fieldProblems({ platforms }).some((p) => p.includes('platforms')),
+      JSON.stringify(platforms),
+    );
+  }
+  // R207: no capture reads a Windows result, so an automated Windows claim would be graded by a
+  // Linux run that never executed it.
+  assert.ok(
+    fieldProblems({ status: 'automated', platforms: ['windows'] }).some((p) =>
+      p.includes('WINDOWS-NATIVE'),
+    ),
+  );
+  assert.ok(
+    fieldProblems({ ...winManual, platforms: ['linux', 'windows'] }).some((p) =>
+      p.includes('WINDOWS-NATIVE'),
+    ),
+  );
+  assert.ok(fieldProblems(winManual).some((p) => p.includes('platforms')));
+  assert.deepEqual(fieldProblems({ platforms: ['linux'] }), []);
 });
