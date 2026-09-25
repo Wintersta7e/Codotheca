@@ -78,17 +78,3 @@ pub fn identify(
         Derivation::Failed => IdentityOutcome::Unreadable,
     }
 }
-
-/// The same derivation, kept rather than compared: what `remove_warranted` checks the warrant's
-/// row lineage against at the moment of removal.
-#[must_use]
-pub fn live_identity(
-    git: &dyn GitBackend,
-    repo: &RepoHandle,
-    ctx: &JobContext<'_>,
-) -> LiveIdentity {
-    match derive(git, repo, ctx) {
-        Derivation::Lineage(live) => LiveIdentity::Derived(live),
-        Derivation::Shallow | Derivation::Failed => LiveIdentity::Underivable,
-    }
-}

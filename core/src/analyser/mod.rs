@@ -331,7 +331,8 @@ pub fn analyse(
     };
     match identify(git, &repo, row.lineage_key.as_deref(), &budget.ctx(&cancel)) {
         IdentityOutcome::Match => {}
-        IdentityOutcome::Shallow => found.push(UninstallBlocker::ShallowClone),
+        // D-2: a live shallow copy has no lineage to match; it is §24.7B's gate, read live.
+        IdentityOutcome::Shallow => found.extend(gates::gate_shallow(true)),
         // A different repository, or no identity at all: **the analysis stops here**, and the
         // one blocker is the whole answer — nothing after step 1 describes the row's repository.
         IdentityOutcome::Mismatch => {
