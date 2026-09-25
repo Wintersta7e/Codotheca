@@ -18,6 +18,8 @@ const GITHUB_PROVIDER_ID: &str = "github";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const API_VERSION: &str = "2022-11-28";
 
+/// The production [`Provider`]: the forge's REST API over the injected transport, on its public
+/// host or on an Enterprise install's.
 #[derive(Debug, Clone)]
 pub struct GitHubProvider {
     transport: Arc<dyn HttpTransport>,
@@ -31,6 +33,8 @@ pub struct GitHubProvider {
 }
 
 impl GitHubProvider {
+    /// A provider for `host`, sending every request through `transport`. An alias of the
+    /// canonical host is folded to it here.
     #[must_use]
     pub fn new(transport: Arc<dyn HttpTransport>, host: String) -> Self {
         let host = if GITHUB_HOST_ALIASES.contains(&host.as_str()) {
@@ -435,7 +439,7 @@ fn hex_digit(nibble: u8) -> char {
 /// Character-identical to [`Ecosystem`]'s wire spelling, and read back through serde rather than
 /// restated (R24): the set is a property of this app's parser coverage, and it is *sent* as the
 /// endpoint's parameter, so the two cannot be allowed to drift.
-fn ecosystem_slug(ecosystem: Ecosystem) -> &'static str {
+const fn ecosystem_slug(ecosystem: Ecosystem) -> &'static str {
     match ecosystem {
         Ecosystem::Npm => "npm",
         Ecosystem::Rust => "rust",
@@ -712,7 +716,7 @@ fn parse_rfc3339_secs(text: &str) -> Option<i64> {
 
 /// Days since 1970-01-01 from a proleptic Gregorian date — Howard Hinnant's `days_from_civil`,
 /// which is the algorithm every date library uses and is exact for every year this can see.
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+const fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = if year >= 0 { year } else { year - 399 } / 400;
     let yoe = year - era * 400;

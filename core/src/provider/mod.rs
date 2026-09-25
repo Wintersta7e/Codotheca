@@ -59,25 +59,41 @@ pub fn declared_host_aliases() -> crate::identity::alias::HostAliases {
 /// means the header was present and empty, a real observed empty grant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Observed<T> {
+    /// What the response said, parsed.
     pub value: T,
+    /// The response's `X-OAuth-Scopes`, split on commas; `None` when the header was absent.
     pub granted_scopes: Option<Vec<String>>,
 }
 
+/// Why a provider call produced no typed value.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ProviderError {
+    /// The forge answered with a status the method does not take as an answer.
     #[error("provider returned HTTP status {status}")]
     Http {
+        /// The HTTP status the forge answered.
         status: u16,
+        /// The response's headers, kept so a caller can tell refusals apart by them — an SSO
+        /// 403 carries `x-github-sso`.
         headers: Vec<(String, String)>,
     },
+    /// No response arrived: the transport failed or ran out of time.
     #[error("provider transport failed: {0}")]
     Transport(TransportError),
+    /// The body did not decode into the shape the method reads; carries the decoder's message.
     #[error("provider response could not be decoded: {0}")]
     Decode(String),
 }
 
+/// What every provider method returns.
 pub type ProviderResult<T> = Result<T, ProviderError>;
 
+/// The typed seam over one forge's API, held as `Arc<dyn Provider>`; [`GitHubProvider`] is its
+/// production implementation.
+///
+/// Every request method's `# Errors` shares one vocabulary: `Transport` when no response arrived,
+/// `Http` for a status the method does not take as an answer, and `Decode` for a body it cannot
+/// read.
 pub trait Provider: Send + Sync + std::fmt::Debug {
     /// Who this token is, and what it was granted — **in one request** (R79).
     ///
@@ -90,12 +106,28 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
     /// a token that does not authenticate. The grant travels on [`Observed::granted_scopes`],
     /// which is `None` when the response carried no `X-OAuth-Scopes` header — unknown, and not an
     /// empty grant, which would render the account as having no scopes at all.
+    ///
+    /// # Errors
+    /// `Http` for any non-2xx status — a 401 among them — `Transport` when no response arrived,
+    /// and `Decode` when the body is not a user.
     fn viewer(&self, t: &SecretToken) -> ProviderResult<Observed<Viewer>>;
+    /// One page of the organisations the token's user belongs to. `cur` is the previous page's
+    /// `next_cursor`, and `None` asks for the first page.
+    ///
+    /// # Errors
+    /// `Http` for any non-2xx status, `Transport` when no response arrived, and `Decode` when the
+    /// body is not a list of organisations.
     fn list_orgs(
         &self,
         t: &SecretToken,
         cur: Option<&str>,
     ) -> ProviderResult<Observed<Page<OrgListing>>>;
+    /// One page of the repositories the token's user owns, collaborates on or reaches through an
+    /// organisation. `cur` is the previous page's `next_cursor`, and `None` asks for the first.
+    ///
+    /// # Errors
+    /// `Http` for any non-2xx status, `Transport` when no response arrived, and `Decode` when the
+    /// body is not a list of repositories.
     fn list_repos(
         &self,
         t: &SecretToken,
@@ -110,6 +142,10 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
     /// It returns `ProviderResult<Observed<_>>` like the rest, and that is now part of the seam's
     /// contract (R76): the census tripwire classifies a request method by exactly that return
     /// shape, so a request method returning anything else would pass the census unseen.
+    ///
+    /// # Errors
+    /// `Http` for any non-2xx status other than 404 — a 403 among them — `Transport` when no
+    /// response arrived, and `Decode` when the body is not a repository.
     fn lookup_repo(
         &self,
         t: &SecretToken,
@@ -125,6 +161,10 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
     /// A `403` and a `404` are **answers, not errors**: they observe the *access* state and
     /// nothing else, and the writer turns them into `permitted = 0` while dating nothing. Only a
     /// transport failure, an unexpected status or an unparseable body is an `Err`.
+    ///
+    /// # Errors
+    /// `Http` for a status that is neither 2xx nor 304, 403 or 404, `Transport` when no response
+    /// arrived, and `Decode` when a 2xx body is not a repository.
     fn repo_facts(
         &self,
         t: &SecretToken,
@@ -140,6 +180,10 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
     /// the real scope is `workflow`, a *write* scope granting the addition and update of workflow
     /// files, and this project must never request it. Runs on a public repository need no scope
     /// at all, and on a private one they ride `repo`, which §20 already requests.
+    ///
+    /// # Errors
+    /// `Http` for a status that is neither 2xx nor 304, 403 or 404, `Transport` when no response
+    /// arrived, and `Decode` when a 2xx body is not a run listing.
     fn ci_runs(
         &self,
         t: &SecretToken,
@@ -170,6 +214,10 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
     /// the pair that matched, so two versions of one package in one request would be
     /// indistinguishable in the answer. The batcher is what keeps that true; this method does not
     /// re-check it, because a caller that got it wrong would get a wrong answer and not an error.
+    ///
+    /// # Errors
+    /// `Http` for any non-2xx status, `Transport` when no response arrived, and `Decode` when the
+    /// body is not a list of advisories.
     fn advisories(
         &self,
         ecosystem: Ecosystem,
@@ -177,7 +225,9 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
         cur: Option<&str>,
     ) -> ProviderResult<Observed<Page<AdvisoryPayload>>>;
 
+    /// The host this provider speaks to, in its canonical spelling.
     fn canonical_host(&self) -> &str;
+    /// Every spelling that names the canonical host's forge; empty for a host that declares none.
     fn host_aliases(&self) -> &[&str];
 }
 
@@ -187,7 +237,9 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
 /// keys on it: one request asks about one ecosystem's packages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageVersion {
+    /// The package's name, as its ecosystem spells it.
     pub name: String,
+    /// The version the library's lockfile resolves it at.
     pub version: String,
 }
 
@@ -200,12 +252,19 @@ pub struct PackageVersion {
 /// notifiable unit is the advisory rather than the CVE.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdvisoryPayload {
+    /// The forge's id for the advisory — the notifiable unit.
     pub advisory_id: String,
+    /// The forge's severity word, verbatim; `None` when it sent none.
     pub severity: Option<String>,
+    /// Every CVE id the advisory carries, possibly none.
     pub cve_ids: Vec<String>,
+    /// Unix second the advisory was withdrawn, or `None` while it stands.
     pub withdrawn_at: Option<i64>,
+    /// The advisory's one-line summary; empty when the forge sent none.
     pub summary: String,
+    /// The advisory's page on the forge; empty when the forge sent none.
     pub url: String,
+    /// Every package the advisory names, each with its own fix.
     pub affects: Vec<AffectedPackage>,
 }
 
@@ -220,8 +279,11 @@ pub struct AdvisoryPayload {
 /// *range*, and the version that matched is the one the request asked about.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AffectedPackage {
+    /// The affected package's name.
     pub name: String,
+    /// Whether the source named a first patched version for this package.
     pub fix_available: bool,
+    /// That first patched version, when the source named one.
     pub fixed_version: Option<String>,
 }
 
@@ -232,16 +294,24 @@ pub struct AffectedPackage {
 /// vocabulary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoFactsRead {
+    /// The HTTP status: a 2xx, or the 304, 403 or 404 that carries no facts.
     pub status: u16,
+    /// The validator for the next read: the response's own on a 2xx, the caller's carried forward
+    /// on a 304, and `None` on a 403 or 404.
     pub etag: Option<String>,
+    /// The parsed facts on a 2xx; `None` for every other answer.
     pub facts: Option<RepoFactsPayload>,
 }
 
 /// One conditional Actions read. Same shape, its own validator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CiRunsRead {
+    /// The HTTP status: a 2xx, or the 304, 403 or 404 that carries no runs.
     pub status: u16,
+    /// The validator for the next read: the response's own on a 2xx, the caller's carried forward
+    /// on a 304, and `None` on a 403 or 404.
     pub etag: Option<String>,
+    /// The parsed runs on a 2xx; `None` for every other answer.
     pub runs: Option<Vec<CiRunPayload>>,
 }
 
@@ -257,26 +327,43 @@ pub struct CiRunsRead {
 /// Unobserved renders `—`; a wrong number renders as a fact.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RepoFactsPayload {
+    /// `public` or `private`; a repository that is not public in any sense reads `private`.
     pub visibility: Option<String>,
+    /// The repository's description, when it has one.
     pub description: Option<String>,
+    /// The parent's canonical remote key, when the repository is a fork.
     pub fork_parent_remote_key: Option<String>,
+    /// The stargazer count.
     pub stars: Option<u32>,
+    /// Open issues alone — always `None` from this read, which cannot separate them from pull
+    /// requests.
     pub open_issues: Option<u32>,
+    /// Open issues labelled good-first-issue — always `None` from this read.
     pub good_first_issues: Option<u32>,
+    /// Open pull requests — always `None` from this read.
     pub open_prs: Option<u32>,
+    /// Open pull requests the user opened — always `None` from this read.
     pub open_prs_from_user: Option<u32>,
+    /// The repository's topics; empty when it has none or the forge sent none.
     pub topics: Vec<String>,
 }
 
-/// One `remote_ci_run` row, as parsed. `conclusion` is a nullable `String` and **not** an enum:
-/// the vocabulary belongs to the forge, and a closed mirror of a third party's vocabulary is R26
-/// by construction.
+/// One `remote_ci_run` row, as parsed.
+///
+/// `conclusion` is a nullable `String` and **not** an enum: the vocabulary belongs to the forge,
+/// and a closed mirror of a third party's vocabulary is R26 by construction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CiRunPayload {
+    /// The forge's id for the run.
     pub run_id: i64,
+    /// The workflow's name; `run <id>` when the forge sent none.
     pub workflow_name: String,
+    /// The forge's conclusion word, verbatim; `None` when it sent none.
     pub conclusion: Option<String>,
+    /// The branch the run ran on; empty when the forge sent none.
     pub branch: String,
+    /// The run's number within its workflow; `0` when the forge sent none.
     pub run_number: u32,
+    /// Unix second the run started; `None` when it was not sent or did not parse.
     pub started_at: Option<i64>,
 }

@@ -5,21 +5,30 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::protocol::{Affiliation, ScopeTier};
 use crate::provider::listing::RepoListing;
 
+/// What [`admit`] made of one page of listings: the admitted entries, and a count for every gate
+/// that turned one away.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Admission {
     /// Keyed by `(provider, provider_repo_id)`, so two accounts' listings of ONE repository
     /// collapse to one key BEFORE anything reaches a row - which is where the duplicate would
     /// otherwise be born.
     pub admitted: BTreeMap<(String, String), AdmittedRepo>,
+    /// Entries whose listing carried no push permission — unknown, and never taken as `false`.
     pub skipped_unknown_permission: usize,
+    /// Entries whose permission object says the account cannot push.
     pub skipped_no_push: usize,
+    /// Private entries skipped because the account holds only the public scope tier.
     pub skipped_private_under_public_tier: usize,
+    /// Entries in an organisation the user has not enabled.
     pub skipped_org_not_enabled: usize,
 }
 
+/// One listing entry that passed every gate, with how the account reaches it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdmittedRepo {
+    /// The entry as the provider listed it.
     pub listing: RepoListing,
+    /// Owner, collaborator or organisation member, from the listing and the viewer login.
     pub affiliation: Affiliation,
 }
 
