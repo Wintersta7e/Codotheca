@@ -60,13 +60,24 @@ function rolledUpCounts(criteria) {
   return counts;
 }
 
+/** A record's date and short commit, from the JSON alone: `DISPOSITIONS.md` reads no git. */
+const dated = (verb, r) =>
+  `${verb} ${String(r.recordedAt)} at \`${String(r.commit).slice(0, 12)}\``;
+
 function evidence(check) {
   if (check.status === 'automated') return `runs now — \`${check.test}\``;
   if (check.status === 'deferred' && check.deferral === 'live-observation') {
+    const v = check.verification;
+    if ((v?.recordedAt ?? null) !== null) return `plan ${check.owner} — ${dated('observed', v)}`;
     return `plan ${check.owner} — not observed yet`;
   }
   if (check.status === 'deferred') return `plan ${check.owner} — \`${check.test}\``;
-  if (check.status === 'manual') return `gate \`${check.gate}\``;
+  if (check.status === 'manual') {
+    const r = check.record ?? null;
+    return r === null
+      ? `gate \`${check.gate}\``
+      : `gate \`${check.gate}\` — ${dated('recorded', r)}`;
+  }
   return 'not gated';
 }
 

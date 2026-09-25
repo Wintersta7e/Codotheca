@@ -14,6 +14,7 @@
  * failure, and includes a results directory with nothing in it. A gate whose passing run read
  * zero results is not a gate.
  */
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +24,7 @@ import {
   diffAgainstBaseline,
   gateProblems,
   joinResults,
+  recordCounts,
   validateBaseline,
 } from './acceptance/join.mjs';
 import { loadRegistry, validatePhase2Complete, validateRegistry } from './acceptance/registry.mjs';
@@ -60,6 +62,55 @@ export function collectResults(dir) {
     else if (name.startsWith('script-')) out.push(...parseScriptResults(JSON.parse(text)));
   }
   return out;
+}
+
+const git = (root, args) =>
+  execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+
+/**
+ * The commit this run grades, or `null` outside a git checkout. A manual record binds to the tree
+ * it ran against (§49.6), so a run that cannot name its own commit cannot count one.
+ */
+export function gradedCommit(root) {
+  try {
+    return git(root, ['rev-parse', 'HEAD']).trim();
+  } catch {
+    return null;
+  }
+}
+
+const diffs = new Map();
+
+/**
+ * `git diff --name-only <from> <to>`, or `null` when `from` is not in this clone — CI checks out
+ * one commit deep, and a record whose commit it cannot see cannot be shown to count. Memoised per
+ * pair: every record made against one commit reads one diff.
+ */
+export function changedFiles(root, from, to) {
+  const key = `${root}\0${String(from)}\0${String(to)}`;
+  if (!diffs.has(key)) {
+    let files = null;
+    try {
+      git(root, ['cat-file', '-e', `${String(from)}^{commit}`]);
+      files = git(root, ['diff', '--name-only', String(from), String(to)])
+        .split('\n')
+        .filter((line) => line.length > 0);
+    } catch {
+      files = null;
+    }
+    diffs.set(key, files);
+  }
+  return diffs.get(key);
+}
+
+/** How a manual check's record stands at `graded`, for `joinResults`. */
+export function recordStatusAt(root, graded) {
+  return (check) => {
+    const record = check.record ?? null;
+    const changed =
+      record === null || graded === null ? [] : changedFiles(root, record.commit, graded);
+    return recordCounts(record, graded, changed);
+  };
 }
 
 /**
@@ -122,7 +173,7 @@ function main(argv) {
     return EXIT_CANNOT_RUN;
   }
 
-  const joined = joinResults(registry, results);
+  const joined = joinResults(registry, results, recordStatusAt(root, gradedCommit(root)));
   const diff = diffAgainstBaseline(results, baseline);
   const absent = absentRunners(joined, results);
   const gate = gateProblems(joined, diff, results);

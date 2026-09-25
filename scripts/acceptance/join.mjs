@@ -31,7 +31,53 @@ export function validateBaseline(baseline, registry) {
   return problems;
 }
 
-export function joinResults(registry, results) {
+/**
+ * §49.6: the files a record may see change and still count. Committing a record makes a new
+ * commit, so "the commit it ran against" can never be the graded one; a record counts when the
+ * tree has moved **only** in the register since.
+ */
+export const REGISTER_FILES = ['acceptance/criteria.json', 'acceptance/DISPOSITIONS.md'];
+
+/**
+ * Whether a manual record counts at the graded commit. `changed` is `git diff --name-only
+ * <record.commit> <graded>` as a list, or `null` when `record.commit` is not in this clone — a
+ * depth-1 checkout cannot say, and a record it cannot check does not count. Pure, so it is tested
+ * without git.
+ */
+export function recordCounts(record, graded, changed) {
+  if (record === null || record === undefined) return { counts: false, why: 'no record' };
+  if (graded === null) return { counts: false, why: 'no graded commit — not a git checkout' };
+  if (changed === null) {
+    return { counts: false, why: `${String(record.commit)} is not in this clone` };
+  }
+  const outside = changed.filter((file) => !REGISTER_FILES.includes(file));
+  if (outside.length > 0) {
+    return {
+      counts: false,
+      why: `the tree moved outside the register since ${String(record.commit)}: ${outside[0]}`,
+    };
+  }
+  return { counts: true, why: `recorded against ${String(record.commit)}` };
+}
+
+/**
+ * `recordStatus(check) => { counts, why }` decides a manual check's result; without one a manual
+ * check is `not-run`, as it always was. A live observation whose verification is dated is
+ * `recorded`. Neither is ever a gate problem: `gateProblems` reads automated checks only.
+ */
+function resultOf(check, found, recordStatus) {
+  if (found !== undefined) return { result: found.status, why: null };
+  if (check.status === 'manual' && recordStatus !== null) {
+    const status = recordStatus(check);
+    return { result: status.counts ? 'recorded' : 'not-run', why: status.why };
+  }
+  if (check.deferral === 'live-observation' && (check.verification?.recordedAt ?? null) !== null) {
+    return { result: 'recorded', why: null };
+  }
+  return { result: 'not-run', why: null };
+}
+
+export function joinResults(registry, results, recordStatus = null) {
   const byId = new Map(results.map((r) => [r.id, r]));
   const claimed = new Set();
   const checks = [];
@@ -39,6 +85,7 @@ export function joinResults(registry, results) {
     for (const check of entry.checks) {
       const found = check.test === undefined ? undefined : byId.get(check.test);
       if (found !== undefined) claimed.add(found.id);
+      const { result, why } = resultOf(check, found, recordStatus);
       checks.push({
         id: check.id,
         criterion: entry.id,
@@ -47,7 +94,8 @@ export function joinResults(registry, results) {
         owner: check.owner ?? null,
         gate: check.gate ?? null,
         test: check.test ?? null,
-        result: found === undefined ? 'not-run' : found.status,
+        result,
+        ...(why === null ? {} : { recordWhy: why }),
       });
     }
   }

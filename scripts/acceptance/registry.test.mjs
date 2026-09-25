@@ -1871,3 +1871,81 @@ test('a check naming Windows is a manual WINDOWS-NATIVE record, never an automat
   assert.ok(fieldProblems(winManual).some((p) => p.includes('platforms')));
   assert.deepEqual(fieldProblems({ platforms: ['linux'] }), []);
 });
+
+// [p4 Task 6] §49.6's manual record: all three fields or `null`, on a manual check only, and every
+// phase-4 manual check carries the key so an unrecorded gate is visible rather than absent.
+const manualP4 = (over = {}) =>
+  p4Check({
+    status: 'manual',
+    runner: 'manual',
+    gate: 'UNWIRED-AUDIT',
+    reason: 'r'.repeat(30),
+    test: undefined,
+    record: null,
+    ...over,
+  });
+
+const recordProblems = (check, id = 'P4-38-1') =>
+  validateRegistry({
+    version: 1,
+    criteria: [
+      id.startsWith('P4-')
+        ? p4Entry({ id, checks: [{ ...check, id: `AC-${id}` }] })
+        : entry({ id, checks: [{ ...check, id: `AC-${id}-x` }] }),
+    ],
+  }).filter((p) => p.includes('record'));
+
+const aRecord = (over = {}) => ({
+  recordedAt: '2026-09-25',
+  evidence: 'e'.repeat(30),
+  commit: 'a'.repeat(40),
+  ...over,
+});
+
+test('a manual record is all three fields or null, and a real one is well formed', () => {
+  assert.deepEqual(recordProblems(manualP4()), []);
+  assert.deepEqual(recordProblems(manualP4({ record: aRecord() })), []);
+  assert.deepEqual(recordProblems(manualP4({ record: aRecord({ commit: 'b'.repeat(64) }) })), []);
+  const { commit: _dropped, ...twoOfThree } = aRecord();
+  for (const record of [
+    twoOfThree,
+    aRecord({ commit: 'a'.repeat(39) }),
+    aRecord({ commit: 'A'.repeat(40) }),
+    aRecord({ evidence: 'e'.repeat(12) }),
+    aRecord({ recordedAt: '25/09/2026' }),
+  ]) {
+    assert.ok(recordProblems(manualP4({ record })).length > 0, JSON.stringify(record));
+  }
+});
+
+test('only a manual check carries a record, and every phase-4 manual check carries the key', () => {
+  assert.ok(recordProblems(p4Check({ record: aRecord() })).length > 0, 'a deferred check');
+  const { record: _none, ...keyless } = manualP4();
+  assert.ok(
+    recordProblems(keyless).some((p) => p.includes('carries the record key')),
+    'a phase-4 manual check with no record key',
+  );
+  // An earlier phase's manual gate gains the key when it is recorded, not before.
+  const phase1 = {
+    status: 'manual',
+    runner: 'manual',
+    gate: 'IDLE-AUDIO',
+    reason: 'r'.repeat(30),
+    assert: 'a'.repeat(12),
+  };
+  assert.deepEqual(recordProblems(phase1, '21'), []);
+  assert.deepEqual(recordProblems({ ...phase1, record: aRecord() }, '21'), []);
+});
+
+test('an observed live verification names the commit it was observed against', () => {
+  const observed = (verification) =>
+    validateRegistry({ version: 1, criteria: withLive({ verification }) }).filter((p) =>
+      p.includes('commit'),
+    );
+  assert.deepEqual(observed({ recordedAt: null, evidence: null }), []);
+  assert.deepEqual(
+    observed({ recordedAt: '2026-09-25', evidence: 'e'.repeat(30), commit: 'c'.repeat(40) }),
+    [],
+  );
+  assert.ok(observed({ recordedAt: '2026-09-25', evidence: 'e'.repeat(30) }).length > 0);
+});

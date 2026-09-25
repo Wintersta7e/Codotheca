@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  REGISTER_FILES,
   absentRunners,
   diffAgainstBaseline,
   gateProblems,
   joinResults,
+  recordCounts,
   validateBaseline,
 } from './join.mjs';
 
@@ -127,4 +129,93 @@ test('a tagged test no check claims fails the gate', () => {
     orphan,
   ]);
   assert.ok(problems.some((p) => p.includes('no check claims it') && p.includes('AC-99')));
+});
+
+// [p4 Task 6] §49.6: a record counts iff the tree moved only in register files since it was made.
+const record = { recordedAt: '2026-09-25', evidence: 'e'.repeat(30), commit: 'a'.repeat(40) };
+const graded = 'b'.repeat(40);
+
+test('a record counts only when the diff since it names register files alone', () => {
+  assert.deepEqual(REGISTER_FILES, ['acceptance/criteria.json', 'acceptance/DISPOSITIONS.md']);
+  assert.equal(recordCounts(record, graded, ['acceptance/criteria.json']).counts, true);
+  assert.equal(recordCounts(record, graded, []).counts, true);
+  const moved = recordCounts(record, graded, ['acceptance/criteria.json', 'README.md']);
+  assert.equal(moved.counts, false);
+  assert.match(moved.why, /moved outside the register/u);
+  assert.match(moved.why, /README\.md/u);
+  const shallow = recordCounts(record, graded, null);
+  assert.equal(shallow.counts, false);
+  assert.match(shallow.why, /not in this clone/u);
+  assert.match(recordCounts(null, graded, []).why, /no record/u);
+  assert.match(recordCounts(record, null, []).why, /no graded commit/u);
+});
+
+const manualRegistry = (check) => ({
+  version: 1,
+  criteria: [
+    {
+      id: 'P4-38-24',
+      title: 'Nothing unwired',
+      group: 'functional',
+      spec: '§38.16',
+      checks: [
+        {
+          id: 'AC-P4-38-24',
+          status: 'manual',
+          runner: 'manual',
+          owner: 'p4-38',
+          gate: 'UNWIRED-AUDIT',
+          reason: 'r'.repeat(30),
+          assert: 'a'.repeat(12),
+          record,
+          ...check,
+        },
+      ],
+    },
+  ],
+});
+
+test('a manual check whose record counts joins as recorded, and one that does not as not-run', () => {
+  const status = (changed) => (check) => recordCounts(check.record, graded, changed);
+  const counted = joinResults(manualRegistry({}), [], status(['acceptance/criteria.json']));
+  assert.equal(counted.checks[0].result, 'recorded');
+  const stale = joinResults(manualRegistry({}), [], status(['README.md']));
+  assert.equal(stale.checks[0].result, 'not-run');
+  assert.match(stale.checks[0].recordWhy, /moved outside the register/u);
+  // Without a record status a manual check is what it was before: not run, never gated.
+  assert.equal(joinResults(manualRegistry({}), []).checks[0].result, 'not-run');
+  assert.deepEqual(
+    gateProblems(stale, { newFailures: [], stale: [], missing: [] }, []),
+    [],
+    'a manual result is reported, never a problem',
+  );
+});
+
+test('an observed live verification joins as recorded', () => {
+  const live = {
+    version: 1,
+    criteria: [
+      {
+        id: 'P2-20-13',
+        title: 'Scopes',
+        group: 'subsystems',
+        spec: '§20.15',
+        checks: [
+          {
+            id: 'AC-P2-20-13',
+            status: 'deferred',
+            deferral: 'live-observation',
+            runner: 'none',
+            owner: 'p2-20',
+            reason: 'r'.repeat(30),
+            assert: 'a'.repeat(12),
+            verification: { recordedAt: '2026-09-25', evidence: 'e'.repeat(30), commit: graded },
+          },
+        ],
+      },
+    ],
+  };
+  assert.equal(joinResults(live, []).checks[0].result, 'recorded');
+  live.criteria[0].checks[0].verification = { recordedAt: null, evidence: null };
+  assert.equal(joinResults(live, []).checks[0].result, 'not-run');
 });

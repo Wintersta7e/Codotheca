@@ -3,8 +3,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-import { collectResults } from '../acceptance.mjs';
+import { changedFiles, collectResults, gradedCommit } from '../acceptance.mjs';
 
 test('collectResults reads every runner file in the directory', () => {
   const dir = mkdtempSync(join(tmpdir(), 'codotheca-acceptance-'));
@@ -47,4 +48,19 @@ test('collectResults on an empty directory returns nothing rather than throwing'
 
 test('collectResults on a directory that does not exist returns nothing', () => {
   assert.deepEqual(collectResults(join(tmpdir(), 'codotheca-acceptance-no-such-dir')), []);
+});
+
+// [p4 Task 6] The commit a run grades. Nothing in scripts/ read it before, so a record could not
+// be bound to the tree it ran against.
+test('gradedCommit reads the commit this checkout grades', () => {
+  const root = fileURLToPath(new URL('../..', import.meta.url));
+  assert.match(String(gradedCommit(root)), /^[0-9a-f]{40}$/u);
+  assert.equal(gradedCommit(mkdtempSync(join(tmpdir(), 'codotheca-no-git-'))), null);
+});
+
+test('changedFiles is the diff between two commits, and null for a commit this clone lacks', () => {
+  const root = fileURLToPath(new URL('../..', import.meta.url));
+  const head = gradedCommit(root);
+  assert.deepEqual(changedFiles(root, head, head), []);
+  assert.equal(changedFiles(root, 'f'.repeat(40), head), null);
 });

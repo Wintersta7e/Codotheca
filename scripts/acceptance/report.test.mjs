@@ -182,3 +182,53 @@ test('the run report splits its check count by phase', () => {
   assert.match(rendered, /Phase 2: 225 checks/u);
   assert.match(rendered, /Phase 3: 339 checks/u);
 });
+
+// [p4 Task 6] A recorded check names its date and the commit it counts against, read from the JSON
+// alone, so DISPOSITIONS.md stays a pure function of the register.
+test('a recorded manual check and an observed verification render their date and commit', () => {
+  const commit = '0123456789abcdef0123456789abcdef01234567';
+  const registry = {
+    version: 1,
+    criteria: [
+      {
+        id: '21',
+        title: 'Idle on Reference A',
+        group: 'performance',
+        spec: '§16.21',
+        checks: [
+          {
+            id: 'AC-21-audio',
+            status: 'manual',
+            runner: 'manual',
+            gate: 'IDLE-AUDIO',
+            reason: 'r'.repeat(30),
+            assert: 'a'.repeat(12),
+            record: { recordedAt: '2026-09-25', evidence: 'e'.repeat(30), commit },
+          },
+        ],
+      },
+      {
+        id: 'P2-20-13',
+        title: 'Scopes',
+        group: 'subsystems',
+        spec: '§20.15',
+        checks: [
+          {
+            id: 'AC-P2-20-13',
+            status: 'deferred',
+            deferral: 'live-observation',
+            runner: 'none',
+            owner: 'p2-20',
+            reason: 'r'.repeat(30),
+            assert: 'a'.repeat(12),
+            verification: { recordedAt: '2026-09-26', evidence: 'e'.repeat(30), commit },
+          },
+        ],
+      },
+    ],
+  };
+  const rendered = renderDispositions(registry);
+  assert.match(rendered, /gate `IDLE-AUDIO` — recorded 2026-09-25 at `0123456789ab`/u);
+  assert.match(rendered, /observed 2026-09-26 at `0123456789ab`/u);
+  assert.doesNotMatch(rendered, /not observed yet/u);
+});

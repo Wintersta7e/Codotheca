@@ -234,6 +234,47 @@ function deferredProblems(where, check, problems) {
   if (v.recordedAt !== null && (typeof v.evidence !== 'string' || v.evidence.length < 20)) {
     problems.push(`${where}: verification.recordedAt with no evidence — a date is not a record`);
   }
+  // §49.5 item 11: an observation is of a build, and the build is a commit.
+  if (v.recordedAt !== null && !FULL_COMMIT.test(String(v.commit))) {
+    problems.push(`${where}: verification.recordedAt needs the commit it was observed against`);
+  }
+}
+
+const FULL_COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+const RECORD_DATE = /^\d{4}-\d{2}-\d{2}$/u;
+
+/**
+ * §49.6's manual record: `{ recordedAt, evidence, commit }` with all three set, or `null` until the
+ * gate runs. Only a manual check carries it, and every phase-4 manual check carries the key, so an
+ * unrecorded gate reads as unrecorded rather than as a field nobody wrote. An earlier phase's
+ * manual gate gains the key when it is recorded, which keeps its entry untouched until then.
+ */
+function recordProblems(entry, where, check, problems) {
+  if (!('record' in check)) {
+    if (check.status === 'manual' && phaseOf(entry.id) === 4) {
+      problems.push(`${where}: a phase-4 manual check carries the record key, null until recorded`);
+    }
+    return;
+  }
+  if (check.status !== 'manual') {
+    problems.push(`${where}: only a manual check carries a record`);
+    return;
+  }
+  const r = check.record;
+  if (r === null) return;
+  if (typeof r !== 'object' || !('recordedAt' in r) || !('evidence' in r) || !('commit' in r)) {
+    problems.push(`${where}: a record is { recordedAt, evidence, commit }, all three, or null`);
+    return;
+  }
+  if (!RECORD_DATE.test(String(r.recordedAt))) {
+    problems.push(`${where}: record.recordedAt is a YYYY-MM-DD date`);
+  }
+  if (typeof r.evidence !== 'string' || r.evidence.length < 20) {
+    problems.push(`${where}: record.evidence is at least a sentence — a date is not a record`);
+  }
+  if (!FULL_COMMIT.test(String(r.commit))) {
+    problems.push(`${where}: record.commit is a full 40- or 64-hex commit id`);
+  }
 }
 
 /**
@@ -344,6 +385,7 @@ function checkProblems(entry, check, seenCheckIds, problems, root) {
   markingProblems(where, check, problems, root);
   if (phaseOf(entry.id) === 2) phase2CheckProblems(where, check, problems);
   phase4FieldProblems(entry, where, check, problems);
+  recordProblems(entry, where, check, problems);
 }
 
 /**
