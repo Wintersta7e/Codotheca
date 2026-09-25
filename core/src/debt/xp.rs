@@ -70,8 +70,8 @@ pub fn pay_debt_day(
     let paid: Vec<DebtSource> = effect
         .closed
         .iter()
-        .filter(|(_, reason)| *reason == DebtCloseReason::Fixed)
-        .map(|(key, _)| key.source)
+        .filter(|c| c.reason == DebtCloseReason::Fixed)
+        .map(|c| c.key.source)
         .collect();
 
     if paid.is_empty() {

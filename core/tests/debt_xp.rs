@@ -12,12 +12,12 @@
 )]
 
 use codotheca_core::debt::identity::DebtKey;
-use codotheca_core::debt::store::{DebtCloseReason, SweepEffect};
+use codotheca_core::debt::store::{DebtCloseReason, DebtClosure, SweepEffect};
 use codotheca_core::debt::xp::{debt_day_dedupe_key, pay_debt_day};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::subject::ProjectSubject;
 use codotheca_core::index::{open_connection, Index};
-use codotheca_core::protocol::{DebtSource, ProjectId};
+use codotheca_core::protocol::{DebtScoring, DebtSource, ProjectId};
 
 /// 2026-09-17 12:00:00 UTC — mid-day, so a small offset does not cross a boundary by accident.
 const NOON: i64 = 1_789_646_400;
@@ -59,10 +59,14 @@ fn path_subject(byte: u8) -> ProjectSubject {
 fn closures(n: usize, reason: DebtCloseReason, source: DebtSource) -> SweepEffect {
     SweepEffect {
         closed: (0..n)
-            .map(|i| (DebtKey::content("subject", &format!("{i:064x}"), 0), reason))
-            .map(|(mut key, reason)| {
+            .map(|i| {
+                let mut key = DebtKey::content("subject", &format!("{i:064x}"), 0);
                 key.source = source;
-                (key, reason)
+                DebtClosure {
+                    key,
+                    reason,
+                    scoring: DebtScoring::Scored,
+                }
             })
             .collect(),
         ..SweepEffect::default()

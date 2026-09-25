@@ -131,7 +131,7 @@ fn sync(conn: &mut rusqlite::Connection, project: ProjectId, at: i64) -> ItemSwe
         closed_fixed: got.closed_fixed,
         closed_invalidated: got.closed_invalidated,
         unverified: got.unverified,
-        reasons: got.effect.closed.iter().map(|(_, r)| *r).collect(),
+        reasons: got.effect.closed.iter().map(|c| c.reason).collect(),
     }
 }
 

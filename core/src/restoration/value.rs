@@ -34,8 +34,7 @@ use std::collections::HashMap;
 
 use rusqlite::Connection;
 
-use crate::debt::identity::DebtKey;
-use crate::debt::store::DebtCloseReason;
+use crate::debt::store::{DebtCloseReason, DebtClosure};
 use crate::debt::{enum_from_text, registry_for};
 use crate::health::delta_gate::{delta_admissible, Observation};
 use crate::index::IndexError;
@@ -178,11 +177,7 @@ impl LayerValues {
     /// the precondition refuses the pair, when nothing changed, and — for a **decrease** — when
     /// the newer sweep was `partial`.
     #[must_use]
-    pub fn diff(
-        &self,
-        after: &Self,
-        closed: &[(DebtKey, DebtCloseReason)],
-    ) -> Vec<LayerTransition> {
+    pub fn diff(&self, after: &Self, closed: &[DebtClosure]) -> Vec<LayerTransition> {
         let mut out = Vec::new();
         for (from, to) in self.layers.iter().zip(&after.layers) {
             // §30.1: *"writes no row on `Err`"*.
@@ -202,9 +197,9 @@ impl LayerValues {
             let layer = to.observation.layer;
             let not_user_caused = closed
                 .iter()
-                .filter(|(key, reason)| {
-                    *reason == DebtCloseReason::Invalidated
-                        && registry_for(key.source).layer == layer
+                .filter(|c| {
+                    c.reason == DebtCloseReason::Invalidated
+                        && registry_for(c.key.source).layer == layer
                 })
                 .count();
             out.push(LayerTransition {

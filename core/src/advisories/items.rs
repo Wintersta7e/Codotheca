@@ -252,9 +252,9 @@ pub fn sync_advisory_items(
     // **The reclassification, and it is not cosmetic.** `pay_debt_day` pays exactly the closes
     // marked `Fixed`; leaving a withdrawal marked that way puts an unearned event in an
     // append-only ledger with a monotonic `level_floor`, for a fix the user did not perform.
-    for (key, reason) in &mut effect.closed {
-        if withdrawn.contains(key) {
-            *reason = DebtCloseReason::Invalidated;
+    for closure in &mut effect.closed {
+        if withdrawn.contains(&closure.key) {
+            closure.reason = DebtCloseReason::Invalidated;
         }
     }
 
@@ -263,8 +263,8 @@ pub fn sync_advisory_items(
         unverified: usize::try_from(effect.unverified).unwrap_or(usize::MAX),
         ..AdvisoryItemSweep::default()
     };
-    for (_, reason) in &effect.closed {
-        match reason {
+    for closure in &effect.closed {
+        match closure.reason {
             DebtCloseReason::Invalidated => result.closed_invalidated += 1,
             DebtCloseReason::Fixed => result.closed_fixed += 1,
         }

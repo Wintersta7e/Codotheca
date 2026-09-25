@@ -99,13 +99,26 @@ pub enum DebtCloseReason {
     Invalidated,
 }
 
+/// One closure, as the closing observation saw it. The item row is deleted in the same
+/// transaction, so this is the only record of what it was.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DebtClosure {
+    /// The closed item's identity.
+    pub key: DebtKey,
+    /// Why it stopped existing — a user's fix or a third party's withdrawal.
+    pub reason: DebtCloseReason,
+    /// The stored item's scoring at the closing observation — the last one a refresh wrote
+    /// (`refresh` rewrites it on every observation), never the registry default.
+    pub scoring: DebtScoring,
+}
+
 /// What one `observe` changed — the input the XP writer and §34 both read.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SweepEffect {
     /// Keys seen for the first time, now stored `open`.
     pub opened: Vec<DebtKey>,
-    /// Keys whose rows this sweep deleted, each with the reason the XP writer pays on.
-    pub closed: Vec<(DebtKey, DebtCloseReason)>,
+    /// The items this sweep deleted, each with the reason and scoring the XP writer pays on.
+    pub closed: Vec<DebtClosure>,
     /// How many stored items the sweep saw again and rewrote as `open`.
     pub refreshed: u32,
     /// How many `open` items the sweep missed but could not close, now `unverified`.
@@ -228,9 +241,11 @@ impl DebtStore for SqliteDebtStore {
                 // Every source §28 sweeps is evidence the user controls, so its disappearance is
                 // the user having acted. See `DebtCloseReason`.
                 tx.execute("DELETE FROM debt_item WHERE id = ?1", [item.id])?;
-                effect
-                    .closed
-                    .push((item.key.clone(), DebtCloseReason::Fixed));
+                effect.closed.push(DebtClosure {
+                    key: item.key.clone(),
+                    reason: DebtCloseReason::Fixed,
+                    scoring: item.scoring,
+                });
             } else if comparable(item, obs) && obs.outcome == DebtSweepOutcome::Partial {
                 // A budget cut-off at the item's own anchor and basis observed the root; it
                 // simply did not finish. The item is still believed present, and marking it

@@ -4,8 +4,7 @@ use rusqlite::Transaction;
 
 use super::value::{LayerTransition, LayerValues};
 use crate::debt::enum_text;
-use crate::debt::identity::DebtKey;
-use crate::debt::store::DebtCloseReason;
+use crate::debt::store::DebtClosure;
 use crate::index::IndexError;
 use crate::jobs::JobOrigin;
 use crate::proto::EventSink;
@@ -24,7 +23,7 @@ pub fn record_layer_deltas(
     project: ProjectId,
     before: &LayerValues,
     after: &LayerValues,
-    closed: &[(DebtKey, DebtCloseReason)],
+    closed: &[DebtClosure],
     detected_in: HealthDetectedIn,
     now: i64,
 ) -> Result<Vec<LayerTransition>, IndexError> {
@@ -109,7 +108,7 @@ pub fn record_after_write(
     tx: &Transaction<'_>,
     project: ProjectId,
     before: &LayerValues,
-    closed: &[(DebtKey, DebtCloseReason)],
+    closed: &[DebtClosure],
     detected_in: HealthDetectedIn,
     now: i64,
 ) -> Result<Option<ProjectHealthDelta>, IndexError> {

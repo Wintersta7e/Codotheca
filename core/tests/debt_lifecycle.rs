@@ -10,7 +10,7 @@
 
 use codotheca_core::debt::identity::DebtKey;
 use codotheca_core::debt::store::{
-    DebtCloseReason, DebtStore, ObservedItem, SqliteDebtStore, StoredItem, SweepEffect,
+    DebtCloseReason, DebtClosure, DebtStore, ObservedItem, SqliteDebtStore, StoredItem, SweepEffect,
 };
 use codotheca_core::debt::sweep::{
     comparable, latest_sweep, may_close, outcome_at_root, root_is_observable, upsert_sweep,
@@ -383,11 +383,80 @@ fn a_marker_gone_from_a_readable_root_closes_fixed() {
 
     // The same sweep, with the marker gone.
     let second = store.observe(&tx, &obs, &[]).unwrap();
-    assert_eq!(second.closed, vec![(key, DebtCloseReason::Fixed)]);
+    assert_eq!(
+        second.closed,
+        vec![DebtClosure {
+            key,
+            reason: DebtCloseReason::Fixed,
+            scoring: DebtScoring::Scored,
+        }]
+    );
     assert!(second.opened.is_empty());
     tx.commit().unwrap();
 
     assert!(open_keys(&conn, p).is_empty(), "closed is a deletion");
+}
+
+/// §38.8.1 gate 1 reads the scoring an item held **when it closed**. The row is deleted by the
+/// closure, so the closure is the only place left to carry it — and it must be the value the last
+/// refresh wrote, not the registry default the item opened with.
+#[test]
+fn a_closure_carries_the_scoring_its_item_held_when_it_closed() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project(&conn, "thing");
+    let loc = LocationId(insert_location(&conn, p, "present"));
+    let store = SqliteDebtStore;
+    let stays = DebtKey::content(SUBJECT, "aaaa", 0);
+    let demoted = DebtKey::content(SUBJECT, "bbbb", 0);
+
+    let tx = conn.transaction().unwrap();
+    let obs = sweep_at(
+        p,
+        DebtSource::TodoMarker,
+        DebtSweepOutcome::Complete,
+        Some(loc),
+        Some(ObservationBasis::Head),
+    );
+    let opened = store
+        .observe(
+            &tx,
+            &obs,
+            &[
+                seen(stays.clone(), Some(loc), "a.rs", 1),
+                seen(demoted.clone(), Some(loc), "b.rs", 2),
+            ],
+        )
+        .unwrap();
+    assert_eq!(opened.opened.len(), 2);
+
+    // A refresh that re-observes one item as `shown_only`.
+    let mut refreshed = seen(demoted.clone(), Some(loc), "b.rs", 2);
+    refreshed.scoring = DebtScoring::ShownOnly;
+    let second = store
+        .observe(
+            &tx,
+            &obs,
+            &[seen(stays.clone(), Some(loc), "a.rs", 1), refreshed],
+        )
+        .unwrap();
+    assert_eq!(second.refreshed, 2);
+    assert!(second.closed.is_empty());
+
+    let third = store.observe(&tx, &obs, &[]).unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(third.closed.len(), 2, "{:?}", third.closed);
+    let scoring_of = |key: &DebtKey| {
+        let closure = third
+            .closed
+            .iter()
+            .find(|c| &c.key == key)
+            .unwrap_or_else(|| panic!("{key:?} did not close"));
+        assert_eq!(closure.reason, DebtCloseReason::Fixed);
+        closure.scoring
+    };
+    assert_eq!(scoring_of(&stays), DebtScoring::Scored);
+    assert_eq!(scoring_of(&demoted), DebtScoring::ShownOnly);
 }
 
 /// **`AC-P3-28-3`.** `refresh` updates the attributes and **never the fingerprint**, which is
@@ -855,7 +924,7 @@ fn ac_p3_28_14_a_shown_only_item_renders_and_pays_nothing() {
             closed: closed
                 .closed
                 .iter()
-                .filter(|(k, _)| registry_for(k.source).default_scoring == DebtScoring::Scored)
+                .filter(|c| registry_for(c.key.source).default_scoring == DebtScoring::Scored)
                 .cloned()
                 .collect(),
             ..SweepEffect::default()
