@@ -132,16 +132,13 @@ fn every_loop_iteration_pumps_the_handler_once() {
     assert_eq!(handler.pumped, 3);
 }
 
-// The crate root uses these, so they cannot be private, and rustc's `unreachable_pub` rejects
-// `pub` on an item no public path reaches: `pub(super)` is the only visibility left.
-#[allow(clippy::redundant_pub_crate)]
 mod wire {
     use codotheca_core::lifecycle::OsParentProbe;
     use codotheca_core::proto::frame::{read_frame, write_frame, FrameError};
     use std::sync::{Arc, Mutex};
 
     #[derive(Clone, Debug, Default)]
-    pub(super) struct CapturingWriter {
+    pub(crate) struct CapturingWriter {
         bytes: Arc<Mutex<Vec<u8>>>,
     }
 
@@ -180,7 +177,7 @@ mod wire {
         }
     }
 
-    pub(super) fn inbound(frames: &[serde_json::Value]) -> std::io::Cursor<Vec<u8>> {
+    pub(crate) fn inbound(frames: &[serde_json::Value]) -> std::io::Cursor<Vec<u8>> {
         let mut bytes = Vec::new();
         for frame in frames {
             let body = serde_json::to_vec(frame).expect("inbound frame");
@@ -189,7 +186,7 @@ mod wire {
         std::io::Cursor::new(bytes)
     }
 
-    pub(super) fn live_parent() -> OsParentProbe {
+    pub(crate) fn live_parent() -> OsParentProbe {
         OsParentProbe::new(std::process::id())
     }
 }

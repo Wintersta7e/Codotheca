@@ -176,9 +176,6 @@ fn a_request_through_the_production_wiring_produces_an_observation() {
 /// `sync_assembly::…` reads as *did not run*. Flat, it records as
 /// `sync_assembly::the_real_binary_answers_sync_status_and_exits`, like every other cargo id in
 /// the register.
-// The crate root uses these, so they cannot be private, and rustc's `unreachable_pub` rejects
-// `pub` on an item no public path reaches: `pub(crate)` is the only visibility left.
-#[allow(clippy::redundant_pub_crate)]
 mod frames {
     use codotheca_core::proto::frame::{read_frame, write_frame};
     use std::io::Write as _;

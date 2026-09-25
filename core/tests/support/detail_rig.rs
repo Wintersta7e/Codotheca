@@ -1,9 +1,6 @@
 //! Fixtures for the project page's core half. Not API — a rig, kept out of the two test files
 //! so both can share one seeding vocabulary instead of drifting into two.
 #![allow(dead_code)]
-// Each suite that includes this rig uses it from its root, and rustc's `unreachable_pub` rejects
-// `pub` on an item no public path reaches: `pub(crate)` is the only visibility left.
-#![allow(clippy::redundant_pub_crate)]
 
 use codotheca_core::art::testsupport::CollectingSink;
 use codotheca_core::detail::DetailCtx;
