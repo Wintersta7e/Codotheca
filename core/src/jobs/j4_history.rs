@@ -118,6 +118,10 @@ pub fn fold_authorship(walked: &Authorship, identities: &IdentitySet) -> History
 }
 
 /// Read one project's history.
+///
+/// # Errors
+///
+/// `JobError::Git` carrying the failure of the root, authorship or subject read.
 pub fn observe(
     git: &dyn GitBackend,
     repo: &RepoHandle,
@@ -135,6 +139,10 @@ pub fn observe(
 }
 
 /// §1.1's roots, with `first_commit_at` taken from the **earliest** of them.
+///
+/// # Errors
+///
+/// `JobError::Git` carrying the root read's failure.
 pub fn read_root_facts(
     git: &dyn GitBackend,
     repo: &RepoHandle,
@@ -158,6 +166,10 @@ pub fn read_root_facts(
 ///
 /// `track = 'git'` is the class that recomputes; `track = 'session'` is reparented and never
 /// recomputed, and the two must never be confused.
+///
+/// # Errors
+///
+/// `IndexError::Sqlite` when the insert cannot be prepared or a row cannot be written.
 pub fn commit_days(
     tx: &Transaction<'_>,
     project: ProjectId,
@@ -218,6 +230,11 @@ impl HistoryFacts {
 ///
 /// Reads `lineage_key` and `remote_key` from the row rather than taking them, so the dedupe key
 /// cannot be built from a stale copy the caller was holding.
+///
+/// # Errors
+///
+/// `IndexError::Sqlite` when the project row cannot be read (including a project that is not
+/// there) or any write fails.
 pub fn commit_history(
     tx: &Transaction<'_>,
     project: ProjectId,
@@ -326,7 +343,7 @@ mod tests {
         let facts = fold_authorship(&walked, &ids(&["me@x"]));
         assert_eq!(facts.last_commit_at, Some(1_700_000_000));
         assert_eq!(facts.last_user_commit_at, Some(1_600_000_000));
-        assert_eq!(facts.days, [18_518].into_iter().collect());
+        assert_eq!(facts.days, std::iter::once(18_518).collect());
     }
 
     /// Two of the user's addresses committing on one day is still one day.

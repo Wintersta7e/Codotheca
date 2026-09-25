@@ -62,6 +62,10 @@ fn mtime_secs(p: &Path) -> Option<i64> {
 /// Run one inventory.
 ///
 /// `work_dir` is read for mtimes only; every git fact comes through the backend.
+///
+/// # Errors
+///
+/// `JobError::Git` carrying the backend's inventory failure; an unreadable mtime is skipped.
 pub fn observe(
     git: &dyn GitBackend,
     repo: &RepoHandle,
@@ -104,6 +108,10 @@ pub fn observe(
 ///
 /// A half-counted total rendered as `41 GB tracked` is a wrong figure, and §8.2's `indexedCount`
 /// counts completed inventories precisely so a partial one is absent rather than wrong.
+///
+/// # Errors
+///
+/// `IndexError::Sqlite` when either update fails.
 pub fn commit_inventory(
     tx: &Transaction<'_>,
     project: ProjectId,

@@ -15,6 +15,10 @@ use super::JobError;
 ///
 /// Two calls: `ref_state` is file reads and takes no slot; `divergence` costs at most one bounded
 /// `rev-list`, and nothing at all when the tips are equal or no upstream is configured.
+///
+/// # Errors
+///
+/// `JobError::Git` carrying the failure of either call.
 pub fn observe(
     git: &dyn GitBackend,
     repo: &RepoHandle,
@@ -51,6 +55,10 @@ pub fn apply_divergence(state: &mut RefState, counts: Option<Divergence>) {
 /// for this copy*, never *no tags*. A stored `0` on a depth-1 clone says *not fetched*, which is
 /// why §28's `no_release` arm reads `project.is_shallow` beside it rather than treating a zero
 /// as a failure.
+///
+/// # Errors
+///
+/// `IndexError::Sqlite` when the update fails.
 pub fn persist(
     tx: &rusqlite::Transaction<'_>,
     location: crate::protocol::LocationId,

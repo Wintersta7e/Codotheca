@@ -7,9 +7,10 @@ use std::path::Path;
 /// §4.1's cap on any one file J6 reads.
 pub const J6_BYTE_CAP: usize = 256 * 1024;
 
-/// The filenames J6 looks for, in order, and the **one** owner of that list: `projects.readme`
-/// (§25.5) reads the same five so the panel's header can name the file that was actually read
-/// rather than a literal. One value stated twice drifts.
+/// The filenames J6 looks for, in order, and the **one** owner of that list.
+///
+/// `projects.readme` (§25.5) reads the same five so the panel's header can name the file that was
+/// actually read rather than a literal. One value stated twice drifts.
 pub const README_NAMES: &[&str] = &[
     "README.md",
     "README.rst",
@@ -128,6 +129,11 @@ pub fn read_content(work_dir: &Path, cap: usize) -> ContentFacts {
 ///
 /// `now` is the caller's, matching every other writer in the tree: the transaction and the
 /// clock both belong to whoever opened them, which is what keeps the `Clock` seam out of here.
+///
+/// # Errors
+///
+/// `IndexError::Sqlite` when the project row cannot be read (including a project that is not
+/// there) or either write fails.
 pub fn persist(
     tx: &rusqlite::Transaction<'_>,
     project: crate::protocol::ProjectId,

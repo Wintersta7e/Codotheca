@@ -36,7 +36,7 @@ impl PresenceState {
 
     /// The stored form.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::Present => "present",
             Self::Absent => "absent",
@@ -74,7 +74,7 @@ impl PresenceAnswers {
     /// The answer set for an enumeration that did not happen. **All four `not_read`, never
     /// `absent`** — §29.4's single most likely place to render unknown as zero.
     #[must_use]
-    pub fn not_read() -> Self {
+    pub const fn not_read() -> Self {
         Self {
             readme: PresenceState::NotRead,
             license: PresenceState::NotRead,

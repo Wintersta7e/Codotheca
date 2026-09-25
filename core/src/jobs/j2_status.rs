@@ -21,7 +21,7 @@ use super::JobError;
 /// never-render-unknown-as-zero encoding doing the work, so a `degraded: bool` beside the
 /// `Option` would be the same fact stated twice.
 #[must_use]
-pub fn is_degraded(status: &WorktreeStatus) -> bool {
+pub const fn is_degraded(status: &WorktreeStatus) -> bool {
     status.untracked_count.is_none()
 }
 
@@ -33,6 +33,12 @@ pub fn is_degraded(status: &WorktreeStatus) -> bool {
 ///
 /// A busy repository is **not** degraded to: §3.5 says defer rather than store a torn read, and
 /// a tracked-only reading taken mid-rebase is still a reading taken mid-rebase.
+///
+/// # Errors
+///
+/// `JobError::RepositoryBusy` when an operation marker is in the way, `JobError::TornRead` when
+/// the state moved mid-read, `JobError::BudgetExceeded` when the degraded retry also overruns,
+/// and `JobError::Git` for any other git failure.
 pub fn observe(
     git: &dyn GitBackend,
     repo: &RepoHandle,
@@ -64,6 +70,10 @@ fn map_error(e: GitError) -> JobError {
 /// `untracked_count` is written NULL on a degraded reading, which is the whole encoding of
 /// §4.1's "the UI shows partial". There is no `refstate_basis` here and there never will be:
 /// worktree state has no fingerprint (§6).
+///
+/// # Errors
+///
+/// `IndexError::Sqlite` when the update fails.
 pub fn persist(
     tx: &rusqlite::Transaction<'_>,
     location: crate::protocol::LocationId,
@@ -117,7 +127,7 @@ mod tests {
         }
     }
 
-    fn ctx_with(cancel: &CancelToken) -> JobContext<'_> {
+    const fn ctx_with(cancel: &CancelToken) -> JobContext<'_> {
         JobContext::new(JobClass::Background, cancel, None)
     }
 

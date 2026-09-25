@@ -375,9 +375,8 @@ pub fn run_j7(
         location,
         cursor,
         now,
-        tz_offset_min: _,
-        detected_in: _,
         announce,
+        ..
     } = run;
     let gates = super::read(index, |conn| gates_for(conn, project))?;
     // Predicate 1 stays in the job as defence-in-depth: `next_jobs_after` skips Reference, and

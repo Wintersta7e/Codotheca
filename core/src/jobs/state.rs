@@ -38,7 +38,7 @@ pub enum ResetCause {
 impl ResetCause {
     /// Written into `reason`, so a later reader can see why the row was revived.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::FingerprintChanged => "fingerprint_changed",
             Self::StoreReturned => "store_returned",
@@ -113,6 +113,10 @@ pub fn apply_outcome(
 ///
 /// Takes the caller's transaction so a merge and its requeue commit together — plan 08 Task 17
 /// is the reason this signature is what it is.
+///
+/// # Errors
+///
+/// `IndexError::Sqlite` when the update fails.
 pub fn reset_for(
     tx: &Transaction<'_>,
     project: ProjectId,
@@ -138,6 +142,10 @@ pub struct JobCoverage {
 }
 
 /// Read one project's coverage.
+///
+/// # Errors
+///
+/// As [`load`].
 pub fn coverage_for(conn: &Connection, project: ProjectId) -> Result<JobCoverage, IndexError> {
     let rows = load(conn, project)?;
     let done = |k: JobKind| rows.iter().any(|r| r.job == k && r.state == JobState::Done);
@@ -171,7 +179,7 @@ pub struct JobStateRow {
 impl JobStateRow {
     /// A row with no history behind it.
     #[must_use]
-    pub fn fresh(job: JobKind, state: JobState, at: i64) -> Self {
+    pub const fn fresh(job: JobKind, state: JobState, at: i64) -> Self {
         Self {
             job,
             state,
@@ -186,6 +194,12 @@ impl JobStateRow {
 }
 
 /// Every job row for one project.
+///
+/// A row whose job or state slug this build does not know is skipped, not an error.
+///
+/// # Errors
+///
+/// `IndexError::Sqlite` when the query cannot be prepared or a row cannot be read.
 pub fn load(conn: &Connection, project: ProjectId) -> Result<Vec<JobStateRow>, IndexError> {
     let mut stmt = conn.prepare(
         "SELECT job, state, fail_count, reason, at, cursor, progress_done, progress_total
@@ -232,6 +246,10 @@ pub fn load(conn: &Connection, project: ProjectId) -> Result<Vec<JobStateRow>, I
 ///
 /// Takes the caller's transaction rather than opening its own, so a merge and its requeue land
 /// together — plan 08's writers have the same shape and for the same reason.
+///
+/// # Errors
+///
+/// `IndexError::Sqlite` when the upsert fails, e.g. a slug the column's CHECK rejects.
 pub fn put(tx: &Transaction<'_>, project: ProjectId, row: &JobStateRow) -> Result<(), IndexError> {
     tx.execute(
         "INSERT INTO project_job_state
@@ -282,11 +300,11 @@ mod tests {
 
         let (r2, _) = apply_outcome(&row, &fail(), 200);
         row = r2;
-        let (r3, when) = apply_outcome(&row, &fail(), 300);
+        let (r3, deferred_until) = apply_outcome(&row, &fail(), 300);
         assert_eq!(r3.fail_count, MAX_TRANSIENT_FAILS);
         assert_eq!(r3.state, JobState::DeferredSlow);
         // deferred_slow is not a retry schedule. It waits for a reset.
-        assert_eq!(when, None);
+        assert_eq!(deferred_until, None);
     }
 
     #[test]

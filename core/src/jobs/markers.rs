@@ -13,9 +13,10 @@ use crate::debt::identity::normalise_salient;
 /// `concept.md`'s three and only those, matched case-sensitively and upper case.
 pub const MARKERS: [&str; 3] = ["TODO", "FIXME", "HACK"];
 
-/// Everything that changes what a blob read produces: the three markers, the boundary rule, J7's
-/// extraction, §28.1's normalisation and cap **as J7 applies them**, [`J7_BLOB_BYTE_CAP`] and
-/// [`J7_BINARY_SNIFF_BYTES`].
+/// The version of everything that changes what a blob read produces.
+///
+/// That is the three markers, the boundary rule, J7's extraction, §28.1's normalisation and cap
+/// **as J7 applies them**, [`J7_BLOB_BYTE_CAP`] and [`J7_BINARY_SNIFF_BYTES`].
 ///
 /// A change to any of them makes a stored row a **miss, not a hit**, which is the whole reason
 /// the cache carries a version. `art_scene.schema_version` is the precedent.
@@ -43,8 +44,11 @@ pub const J7_CHUNK_BYTES: u64 = 8 * 1024 * 1024;
 /// One of [`MARKERS`], named.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Marker {
+    /// An occurrence of the upper-case text `TODO`.
     Todo,
+    /// An occurrence of the upper-case text `FIXME`.
     Fixme,
+    /// An occurrence of the upper-case text `HACK`.
     Hack,
 }
 
@@ -54,7 +58,7 @@ impl Marker {
 
     /// The stored form. `blob_finding.marker`'s CHECK mirrors these character for character.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::Todo => "TODO",
             Self::Fixme => "FIXME",
@@ -109,10 +113,10 @@ fn automaton() -> &'static AhoCorasick {
 /// **The byte after is unconstrained**: a trailing boundary would reject `TODOs`, which is a real
 /// marker, while the leading one is what rejects `NOTODO`.
 fn boundary_before(bytes: &[u8], start: usize) -> bool {
-    match start.checked_sub(1).and_then(|i| bytes.get(i)) {
-        None => true,
-        Some(b) => !(b.is_ascii_alphanumeric() || *b == b'_'),
-    }
+    start
+        .checked_sub(1)
+        .and_then(|i| bytes.get(i))
+        .map_or(true, |b| !(b.is_ascii_alphanumeric() || *b == b'_'))
 }
 
 /// Every marker occurrence in `bytes`, in `(line, column)` order.

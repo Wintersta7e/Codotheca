@@ -82,7 +82,7 @@ impl JobKind {
     /// `JobDone.job` on the wire, and constrained by the column's own CHECK — renaming one is a
     /// migration, and the three must agree.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::J1Refstate => "j1",
             Self::J15Authorship => "j1_5",
@@ -105,7 +105,7 @@ impl JobKind {
     /// The interval between yield checks, not a deadline to fail against. J4 has none:
     /// it is resumable and chunked, and a deadline would strand the biggest histories.
     #[must_use]
-    pub fn slice_budget(self) -> Option<Duration> {
+    pub const fn slice_budget(self) -> Option<Duration> {
         match self {
             Self::J1Refstate => Some(Duration::from_millis(50)),
             Self::J2Status => Some(Duration::from_millis(500)),
@@ -123,13 +123,13 @@ impl JobKind {
 
     /// §6: worktree state has no fingerprint and never will. Everything else caches on one.
     #[must_use]
-    pub fn is_cacheable(self) -> bool {
+    pub const fn is_cacheable(self) -> bool {
         !matches!(self, Self::J2Status)
     }
 
     /// Ruling 1: ref and worktree state are per-copy; history and inventory are the project's.
     #[must_use]
-    pub fn scope(self) -> JobScope {
+    pub const fn scope(self) -> JobScope {
         match self {
             Self::J1Refstate | Self::J2Status => JobScope::PerLocation,
             Self::J15Authorship
@@ -143,7 +143,7 @@ impl JobKind {
 
     /// Every job holds one store slot for its whole run; J4 additionally takes a J4 slot.
     #[must_use]
-    pub fn takes_j4_slot(self) -> bool {
+    pub const fn takes_j4_slot(self) -> bool {
         matches!(self, Self::J4History)
     }
 }
@@ -165,12 +165,14 @@ pub enum Priority {
     Deferred = 5,
 }
 
-/// One queued unit of work. **Not** the schema's `Job` — `protocol/schema/protocol.json`
-/// declares `Job` as the job *identifier* enum (`j0 … j7`), which is what `JobDone.job` carries
-/// and which `JobKind::slug` produces above. This is a scheduler work item: a kind plus the
-/// place, the store, the priority and the backoff gate. R31 does not apply to it — the two are
-/// different shapes in different modules, and neither can be substituted for the other by
-/// accident. **Do not delete this on a name match.**
+/// One queued unit of work.
+///
+/// **Not** the schema's `Job` — `protocol/schema/protocol.json` declares `Job` as the job
+/// *identifier* enum (`j0 … j7`), which is what `JobDone.job` carries and which `JobKind::slug`
+/// produces above. This is a scheduler work item: a kind plus the place, the store, the priority
+/// and the backoff gate. R31 does not apply to it — the two are different shapes in different
+/// modules, and neither can be substituted for the other by accident. **Do not delete this on a
+/// name match.**
 #[derive(Debug, Clone)]
 pub struct Job {
     /// Which of the eight.
@@ -252,7 +254,7 @@ impl JobState {
     /// `every_job_state_slug_is_accepted_by_the_column` in `core/tests/jobs_state.rs` reads the
     /// other side rather than restating it.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::Queued => "queued",
             Self::Running => "running",
@@ -504,6 +506,12 @@ fn class_of(kind: JobKind, priority: Priority) -> crate::git::JobClass {
 /// [p3] `announce` collects the §34 `health_delta` events a job wrote inside its own committed
 /// transaction — J7's item build is the one arm that writes debt items itself — for the runner to
 /// emit.
+///
+/// # Errors
+///
+/// `JobError::Io` when the index lock is poisoned; `JobError::Index` when the location row, the
+/// identity set or the cursor cannot be read or the job's write fails; `JobError::Git` when git
+/// fails; and, from J2, `RepositoryBusy`, `TornRead` or `BudgetExceeded`.
 pub fn run_one(
     index: &std::sync::Mutex<crate::index::Index>,
     deps: &JobDeps,

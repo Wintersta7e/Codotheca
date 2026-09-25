@@ -187,10 +187,10 @@ impl JobRunner {
 
     /// Wait for every worker to exit. Call [`JobRunner::request_stop`] first or this blocks.
     pub fn join(&self) {
-        let handles: Vec<JoinHandle<()>> = match self.workers.lock() {
-            Ok(mut w) => std::mem::take(&mut *w),
-            Err(_) => Vec::new(),
-        };
+        let handles: Vec<JoinHandle<()>> = self
+            .workers
+            .lock()
+            .map_or_else(|_| Vec::new(), |mut w| std::mem::take(&mut *w));
         for h in handles {
             drop(h.join());
         }
@@ -510,7 +510,7 @@ pub fn is_reference(
     })
 }
 
-fn git_error_kind(e: &crate::git::GitError) -> &'static str {
+const fn git_error_kind(e: &crate::git::GitError) -> &'static str {
     use crate::git::GitError;
     match e {
         GitError::Untrusted { .. } => "UNTRUSTED_REPO",

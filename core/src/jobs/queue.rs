@@ -57,7 +57,7 @@ impl SlotState {
 
     /// How many jobs hold a slot right now.
     #[must_use]
-    pub fn in_flight(&self) -> usize {
+    pub const fn in_flight(&self) -> usize {
         self.in_flight
     }
 

@@ -151,9 +151,10 @@ const MANIFESTS: &[&str] = &[
     "Makefile",
 ];
 
-/// Every value [`archetype_of`] can return. **One owner**, and the test below proves it complete
-/// by set **equality**: an archetype added without a list entry fails, and an entry no archetype
-/// returns fails too.
+/// Every value [`archetype_of`] can return.
+///
+/// **One owner**, and the test below proves it complete by set **equality**: an archetype added
+/// without a list entry fails, and an entry no archetype returns fails too.
 ///
 /// [p3] §31.4's proposal table is asserted against this rather than against a copy of the eight
 /// strings (`AC-P3-31-17`), and R132/F11 requires the count to be derived from it rather than

@@ -1,6 +1,8 @@
-//! J1.5 — authorship (§4.1a). Runs immediately after J1 and BEFORE J2 and J3, because the
-//! most expensive repositories to scan are shallow clones of large public projects, those are
-//! exactly the ones that resolve to Reference, and gating cost 0.8% of what it saved.
+//! J1.5 — authorship (§4.1a).
+//!
+//! Runs immediately after J1 and BEFORE J2 and J3, because the most expensive repositories to
+//! scan are shallow clones of large public projects, those are exactly the ones that resolve to
+//! Reference, and gating cost 0.8% of what it saved.
 
 use std::collections::BTreeMap;
 
@@ -73,6 +75,10 @@ pub fn tally_counted(
 /// **The walk itself is plan 05's** `GitBackend::authorship`, which already tallies per address;
 /// this re-folds it against the identity set, which is the part the git layer has no business
 /// knowing about.
+///
+/// # Errors
+///
+/// `JobError::Git` carrying the walk's failure.
 pub fn census(
     git: &dyn GitBackend,
     repo: &RepoHandle,
@@ -90,6 +96,11 @@ pub fn census(
 ///
 /// §5.5's derivation happens here and nowhere else. A NULL authorship writes neither column:
 /// not computed is not "somebody else wrote it".
+///
+/// # Errors
+///
+/// `IndexError::Sqlite` when clearing, inserting or updating a row fails; the caller's
+/// transaction then rolls the whole census back.
 pub fn persist(
     tx: &Transaction<'_>,
     project: ProjectId,

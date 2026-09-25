@@ -36,7 +36,7 @@ impl BlobOutcome {
 
     /// The stored form.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::Scanned => "scanned",
             Self::TooLarge => "too_large",
@@ -152,7 +152,10 @@ pub fn record_read(
     let outcome = match read.bytes.as_deref() {
         // The body was dropped at the seam because the header said it was over the cap.
         None => BlobOutcome::TooLarge,
-        Some(bytes) if bytes.len() as u64 > J7_BLOB_BYTE_CAP => BlobOutcome::TooLarge,
+        // A `usize` always fits a `u64` on the targets this builds for; saturating is moot.
+        Some(bytes) if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > J7_BLOB_BYTE_CAP => {
+            BlobOutcome::TooLarge
+        }
         Some(bytes) => {
             let sniff = bytes.get(..J7_BINARY_SNIFF_BYTES).unwrap_or(bytes);
             if sniff.contains(&0) {
