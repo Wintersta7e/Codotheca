@@ -30,8 +30,9 @@ use crate::launch::LaunchError;
 pub use crate::protocol::TargetTier;
 
 impl TargetTier {
+    /// The tier's name as `resolve` reports it.
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Project => "project",
             Self::Location => "location",
@@ -41,27 +42,48 @@ impl TargetTier {
     }
 }
 
+/// One `launch_target` row, decoded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredTarget {
+    /// `launch_target.id`, which the wire carries as `TargetId`.
     pub id: i64,
+    /// Editor, terminal, file manager or git client.
     pub kind: TargetKind,
+    /// The display name; with `kind`, the key re-detection rewrites rows by.
     pub name: String,
+    /// The project the row is scoped to; `None` for a row scoped to none.
     pub project_id: Option<i64>,
+    /// The copy the row is scoped to — a location override; `None` otherwise.
     pub location_id: Option<i64>,
+    /// The language a language default applies to. `None` means any language, never an
+    /// unknown one.
     pub language: Option<String>,
+    /// Order within a scope; the lowest is that scope's default.
     pub sort_index: i64,
+    /// True when detection wrote the row, false when the user did.
     pub detected: bool,
+    /// §11.5's last verdict as stored: `unverified`, `ok`, `missing` or `not_executable`.
+    /// Resolution never reads it.
     pub verify_state: String,
+    /// The unix-seconds stamp beside `verify_state`; `None` until a verification or a
+    /// re-detection stamps it.
     pub verified_at: Option<i64>,
+    /// The executable, in `location.path_bytes` encoding.
     pub exec_bytes: Vec<u8>,
+    /// The argv after the program, from `args_json`.
     pub args: Vec<String>,
+    /// Whether the process starts in the copy's directory.
     pub cwd_mode: CwdMode,
+    /// `(name, value)` pairs from `env_json`, set on top of the inherited environment.
     pub env: Vec<(String, String)>,
 }
 
+/// The row §4bis.2a resolved, and the tier it came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolution {
+    /// The winning row.
     pub target: StoredTarget,
+    /// The tier that produced it.
     pub tier: TargetTier,
 }
 
@@ -94,6 +116,11 @@ fn row_to_target(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredTarget> {
     })
 }
 
+/// One row by id, disabled rows excluded.
+///
+/// # Errors
+///
+/// `NoSuchTarget` when no enabled row has `target_id`; `Sqlite` for any other query failure.
 pub fn load_target(
     conn: &rusqlite::Connection,
     target_id: i64,
@@ -111,6 +138,10 @@ pub fn load_target(
 
 /// Every row id, disabled ones included: §4bis.2a's verification is per row and unfiltered,
 /// where resolution is filtered. A disabled row still has an executable that can go missing.
+///
+/// # Errors
+///
+/// `Sqlite` when the query fails.
 pub fn all_target_ids(conn: &rusqlite::Connection) -> Result<Vec<i64>, LaunchError> {
     let mut stmt = conn.prepare("SELECT id FROM launch_target ORDER BY id")?;
     let mapped = stmt.query_map([], |row| row.get::<_, i64>(0))?;
@@ -122,6 +153,10 @@ pub fn all_target_ids(conn: &rusqlite::Connection) -> Result<Vec<i64>, LaunchErr
 }
 
 /// [`load_target`] without its `disabled = 0` clause.
+///
+/// # Errors
+///
+/// `NoSuchTarget` when no row has `target_id`; `Sqlite` for any other query failure.
 pub fn load_any_target(
     conn: &rusqlite::Connection,
     target_id: i64,
@@ -161,6 +196,10 @@ fn head_of(
 
 /// §4bis.2a, first hit wins. A tier with no row is skipped; nothing anywhere is `Ok(None)`,
 /// which is tier 5 — ask.
+///
+/// # Errors
+///
+/// `Sqlite` when a tier's query fails.
 pub fn resolve(
     conn: &rusqlite::Connection,
     project_id: i64,
@@ -218,6 +257,10 @@ pub fn resolve(
 
 /// Every row the `OPENS IN` menu may draw for this project: its own overrides, its copy's,
 /// and the global rows. Ordered by kind then `sort_index`, disabled rows excluded.
+///
+/// # Errors
+///
+/// `Sqlite` when the query fails.
 pub fn menu_rows(
     conn: &rusqlite::Connection,
     project_id: Option<i64>,
@@ -238,6 +281,7 @@ pub fn menu_rows(
     Ok(out)
 }
 
+/// The row's executable as a lossy display path, for logs and failure messages.
 #[must_use]
 pub fn exec_display(target: &StoredTarget) -> String {
     crate::paths::path_display(&crate::paths::path_from_bytes(&target.exec_bytes))

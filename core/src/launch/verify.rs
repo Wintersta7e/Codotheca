@@ -18,8 +18,9 @@ use crate::proto::txguard::TxGuard;
 pub use crate::protocol::VerifyState;
 
 impl VerifyState {
+    /// The `launch_target.verify_state` text.
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Unverified => "unverified",
             Self::Ok => "ok",
@@ -27,6 +28,7 @@ impl VerifyState {
             Self::NotExecutable => "not_executable",
         }
     }
+    /// [`VerifyState::as_str`]'s inverse; `None` for any other text.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
@@ -39,11 +41,16 @@ impl VerifyState {
     }
 }
 
+/// One row's verdict, as it was written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verification {
+    /// The `launch_target` row that was checked.
     pub target_id: i64,
+    /// What [`verify_path`] found at its executable.
     pub verify_state: VerifyState,
+    /// When, in unix seconds — the caller's `now`.
     pub verified_at: i64,
+    /// The executable as a lossy display path, for §11.5's window.
     pub exec_display: String,
 }
 
@@ -88,6 +95,11 @@ fn record(
 
 /// Every stored row, override, language and global alike, disabled ones included.
 /// Language-blind by construction: the query has no `language` predicate at all.
+///
+/// # Errors
+///
+/// Whatever reading the rows returns, or `Sqlite` when the transaction, an update or the commit
+/// fails. No verdict is kept unless the commit succeeds.
 pub fn verify_all(
     conn: &mut rusqlite::Connection,
     now: i64,
@@ -107,6 +119,12 @@ pub fn verify_all(
     Ok(out)
 }
 
+/// Check one enabled row's executable and record the verdict.
+///
+/// # Errors
+///
+/// `NoSuchTarget` when no enabled row has `target_id`; `Sqlite` when the read, the transaction,
+/// the update or the commit fails.
 pub fn verify_one(
     conn: &mut rusqlite::Connection,
     target_id: i64,

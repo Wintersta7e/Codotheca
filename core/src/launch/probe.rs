@@ -5,24 +5,35 @@ use std::path::PathBuf;
 
 use crate::launch::catalogue::{lookup, CatalogueEntry};
 
+/// Where a probe found an application; [`ProbeSource::rank`] orders them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProbeSource {
+    /// A Windows App Paths registry key.
     Registry,
+    /// A Linux desktop entry's `Exec=` line.
     Desktop,
+    /// The target of a Windows Start Menu shortcut.
     StartMenu,
+    /// An IDE vendor's toolbox scripts directory.
     Toolbox,
+    /// An installed flatpak, started through `flatpak run`.
     Flatpak,
+    /// An installed snap, under `/snap/bin`.
     Snap,
+    /// A Windows package manager's shim directory.
     Shim,
+    /// The OS's registered handler for folders.
     OsHandler,
+    /// An executable inside a WSL distro (§4bis.1).
     Distro,
+    /// A directory on `PATH`.
     Path,
 }
 
 impl ProbeSource {
     /// Higher wins when two sources name one executable.
     #[must_use]
-    pub fn rank(self) -> u8 {
+    pub const fn rank(self) -> u8 {
         match self {
             Self::Registry | Self::Desktop => 5,
             Self::StartMenu | Self::Toolbox => 4,
@@ -33,10 +44,14 @@ impl ProbeSource {
     }
 }
 
+/// One installed application a probe found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProbedApp {
+    /// The executable found for it.
     pub exec: PathBuf,
+    /// The executable's file stem, which the catalogue is matched on.
     pub stem: String,
+    /// Where it was found; decides which of two sightings of one executable survives.
     pub source: ProbeSource,
     /// `Some` only for a target that lives inside a WSL distro (§4bis.1).
     pub distro: Option<String>,
@@ -44,8 +59,10 @@ pub struct ProbedApp {
     pub installed_at: Option<i64>,
 }
 
+/// Everything one probe of the host found.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProbeFacts {
+    /// The applications found. The system probes keep catalogued ones only, de-duplicated.
     pub apps: Vec<ProbedApp>,
     /// `$EDITOR` or `$VISUAL`, reduced to a stem. Step 3.
     pub editor_env: Option<String>,
@@ -53,7 +70,9 @@ pub struct ProbeFacts {
     pub folder_handler_stem: Option<String>,
 }
 
+/// §4bis.1's discovery seam: what the host has installed.
 pub trait TargetProbe: Send + Sync + std::fmt::Debug {
+    /// Everything this probe finds, from all of its sources.
     fn probe(&self) -> ProbeFacts;
 }
 
@@ -70,6 +89,8 @@ pub fn system_probe() -> Box<dyn TargetProbe> {
     }
 }
 
+/// One entry per executable per distro: the highest-ranked source's sighting, the first on a
+/// tie. The result is in key order, not input order.
 #[must_use]
 pub fn dedupe(apps: Vec<ProbedApp>) -> Vec<ProbedApp> {
     let mut best: BTreeMap<(Option<String>, Vec<u8>), ProbedApp> = BTreeMap::new();
@@ -98,6 +119,7 @@ pub fn catalogued(apps: &[ProbedApp]) -> Vec<(&ProbedApp, &'static CatalogueEntr
         .collect()
 }
 
+/// A [`TargetProbe`] that reports exactly what a test configured.
 #[cfg(feature = "testkit")]
 #[derive(Debug, Default)]
 pub struct FakeProbe {
@@ -106,11 +128,13 @@ pub struct FakeProbe {
 
 #[cfg(feature = "testkit")]
 impl FakeProbe {
+    /// A probe that finds nothing until configured.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add an application at `exec`, its stem taken from the path.
     pub fn app(&mut self, exec: &str, source: ProbeSource) -> &mut Self {
         let path = PathBuf::from(exec);
         let stem = path
@@ -127,6 +151,7 @@ impl FakeProbe {
         self
     }
 
+    /// Add an application at `exec` inside WSL distro `distro`.
     pub fn in_distro(&mut self, exec: &str, distro: &str) -> &mut Self {
         self.app(exec, ProbeSource::Distro);
         if let Some(last) = self.facts.apps.last_mut() {
@@ -135,6 +160,7 @@ impl FakeProbe {
         self
     }
 
+    /// Set the install time, unix seconds, on every application already added at `exec`.
     pub fn installed_at(&mut self, exec: &str, at: i64) -> &mut Self {
         for a in &mut self.facts.apps {
             if a.exec == *exec {
@@ -144,11 +170,13 @@ impl FakeProbe {
         self
     }
 
+    /// Report `value` as the `$VISUAL`/`$EDITOR` stem.
     pub fn editor_env(&mut self, value: &str) -> &mut Self {
         self.facts.editor_env = Some(value.to_owned());
         self
     }
 
+    /// Report `stem` as the OS default handler for a folder.
     pub fn folder_handler(&mut self, stem: &str) -> &mut Self {
         self.facts.folder_handler_stem = Some(stem.to_owned());
         self

@@ -12,8 +12,9 @@
 pub use crate::protocol::{CwdMode, TargetKind};
 
 impl TargetKind {
+    /// The `launch_target.kind` text.
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Editor => "editor",
             Self::Terminal => "terminal",
@@ -21,6 +22,7 @@ impl TargetKind {
             Self::GitClient => "git_client",
         }
     }
+    /// [`TargetKind::as_str`]'s inverse; `None` for any other text.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
@@ -34,13 +36,15 @@ impl TargetKind {
 }
 
 impl CwdMode {
+    /// The `launch_target.cwd_mode` text.
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Location => "location",
             Self::None => "none",
         }
     }
+    /// [`CwdMode::as_str`]'s inverse; `None` for any other text.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
@@ -59,36 +63,56 @@ impl CwdMode {
 /// and self-corrects when the arguments are edited.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WaitMode {
+    /// Not waited on: the process's exit says nothing about the session.
     Never,
+    /// Always waited on: the process *is* the session, as a terminal editor's is.
     Always,
+    /// Waited on only while the row's argv still carries this flag.
     Flag(&'static str),
 }
 
 /// Where this application records the projects it has opened (§4bis.2, step 1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecentsSource {
+    /// It records nothing this build can read.
     None,
+    /// A read-only SQLite state database whose `ItemTable` value is a JSON recents list.
     SqliteState {
+        /// The database, relative to the per-user config root.
         rel: &'static str,
+        /// The `ItemTable` key whose value holds the list.
         key: &'static str,
     },
+    /// An XML options file whose `key="…"` attributes are project paths, `$USER_HOME$` expanded.
     JetBrainsXml {
+        /// The options file, relative to the per-user config root.
         rel: &'static str,
     },
+    /// A JSON file holding an array of folder paths.
     JsonList {
+        /// The file, relative to the per-user config root.
         rel: &'static str,
+        /// The JSON pointer to the array.
         pointer: &'static str,
     },
 }
 
+/// One application this build knows how to launch.
 #[derive(Debug, Clone, Copy)]
 pub struct CatalogueEntry {
+    /// Executable stems that identify the application, matched case-insensitively.
     pub binaries: &'static [&'static str],
+    /// The display name; with `kind`, the key re-detection rewrites rows by.
     pub name: &'static str,
+    /// Editor, terminal, file manager or git client.
     pub kind: TargetKind,
+    /// The argv a detected row is stored with; `{path}` becomes the copy's path.
     pub args: &'static [&'static str],
+    /// Whether its exit ends a session.
     pub wait: WaitMode,
+    /// Whether it is started in the copy's directory.
     pub cwd: CwdMode,
+    /// Where it records the projects it has opened.
     pub recents: RecentsSource,
     /// Relative to the platform's per-user config or data root; probed for mtime (step 2).
     pub config_dirs: &'static [&'static str],
@@ -97,6 +121,7 @@ pub struct CatalogueEntry {
     pub wsl_args: Option<&'static [&'static str]>,
 }
 
+/// Every application this build knows; [`lookup`] takes the first entry claiming a stem.
 pub const CATALOGUE: &[CatalogueEntry] = &[
     CatalogueEntry {
         binaries: &["code", "code-insiders", "codium"],

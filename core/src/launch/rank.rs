@@ -9,37 +9,55 @@ use std::path::PathBuf;
 
 use crate::index::path::native_platform;
 
+/// What one installed editor offers as evidence for §4bis.2's five steps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditorEvidence {
     /// Index into the caller's candidate list; the ranker never reorders that list.
     pub index: usize,
+    /// The executable's stem, compared with the `$VISUAL`/`$EDITOR` and folder-handler stems.
     pub stem: String,
+    /// Folders the editor records having opened (step 1).
     pub recent_paths: Vec<PathBuf>,
+    /// Newest mtime among its config directories, unix seconds (step 2).
     pub state_mtime: Option<i64>,
+    /// The executable's mtime, unix seconds (step 5).
     pub installed_at: Option<i64>,
 }
 
+/// Everything [`rank_editors`] weighs.
 #[derive(Debug)]
 pub struct RankInputs<'a> {
+    /// The candidates, in the caller's order.
     pub editors: &'a [EditorEvidence],
     /// `path_key` of every location the scan has indexed.
     pub known_locations: &'a BTreeSet<Vec<u8>>,
+    /// `$VISUAL` or `$EDITOR`, reduced to a stem (step 3).
     pub editor_env_stem: Option<&'a str>,
+    /// The OS default handler for a folder, reduced to a stem (step 4).
     pub folder_handler_stem: Option<&'a str>,
 }
 
+/// The §4bis.2 step that decided a ranking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RankStep {
+    /// Step 1: most recent projects that are repositories the scan indexed.
     RecentOverlap,
+    /// Step 2: most recently touched config directory.
     StateMtime,
+    /// Step 3: named by `$VISUAL` or `$EDITOR`.
     EditorEnv,
+    /// Step 4: the OS default handler for a folder.
     FolderHandler,
+    /// Step 5: most recently installed executable.
     InstallRecency,
 }
 
+/// The winning candidate and the step that chose it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ranked {
+    /// The winner's [`EditorEvidence::index`].
     pub index: usize,
+    /// The step that chose it — `RecentOverlap` also for a lone candidate, which needs none.
     pub step: RankStep,
 }
 
@@ -85,6 +103,8 @@ fn strict_max<F: Fn(&EditorEvidence) -> Option<i64>>(
 /// One step's score for one candidate. `None` means this step has nothing to say about it.
 type Score<'a> = &'a dyn Fn(&EditorEvidence) -> Option<i64>;
 
+/// The global default editor: the sole winner of the first of §4bis.2's five steps to have one,
+/// or `None` when none does. A lone candidate wins without evidence.
 #[must_use]
 pub fn rank_editors(inputs: &RankInputs<'_>) -> Option<Ranked> {
     if let [only] = inputs.editors {
@@ -215,34 +235,40 @@ mod tests {
     fn the_environment_then_the_folder_handler_then_install_recency() {
         let mut editors = [ed(0, "alpha", &[]), ed(1, "beta", &[])];
         let empty = BTreeSet::new();
-        let r = rank_editors(&RankInputs {
+        let by_env = rank_editors(&RankInputs {
             editors: &editors,
             known_locations: &empty,
             editor_env_stem: Some("beta"),
             folder_handler_stem: Some("alpha"),
         })
         .unwrap();
-        assert_eq!((r.index, r.step), (1, RankStep::EditorEnv));
+        assert_eq!((by_env.index, by_env.step), (1, RankStep::EditorEnv));
 
-        let r = rank_editors(&RankInputs {
+        let by_handler = rank_editors(&RankInputs {
             editors: &editors,
             known_locations: &empty,
             editor_env_stem: None,
             folder_handler_stem: Some("alpha"),
         })
         .unwrap();
-        assert_eq!((r.index, r.step), (0, RankStep::FolderHandler));
+        assert_eq!(
+            (by_handler.index, by_handler.step),
+            (0, RankStep::FolderHandler)
+        );
 
         editors[1].installed_at = Some(500);
         editors[0].installed_at = Some(400);
-        let r = rank_editors(&RankInputs {
+        let by_recency = rank_editors(&RankInputs {
             editors: &editors,
             known_locations: &empty,
             editor_env_stem: None,
             folder_handler_stem: None,
         })
         .unwrap();
-        assert_eq!((r.index, r.step), (1, RankStep::InstallRecency));
+        assert_eq!(
+            (by_recency.index, by_recency.step),
+            (1, RankStep::InstallRecency)
+        );
     }
 
     #[test]

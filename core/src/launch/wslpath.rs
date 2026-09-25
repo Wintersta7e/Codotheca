@@ -1,3 +1,7 @@
+//! §4bis.4: a copy's path in its Windows form and in the Linux form a WSL distro knows it by.
+
+/// Where a distro mounts the Windows drives unless configured otherwise; each drive letter is a
+/// directory beneath it.
 pub const DEFAULT_DRVFS_ROOT: &str = "/mnt";
 const UNC_PREFIXES: [&str; 2] = [r"\\wsl.localhost\", r"\\wsl$\"];
 
@@ -20,6 +24,11 @@ pub fn is_wsl_unc(win: &str) -> Option<(String, String)> {
     Some((distro.to_owned(), linux))
 }
 
+/// The Linux path `distro` knows a Windows path by.
+///
+/// A drive path maps under `drvfs_root`, and a WSL share path must name `distro` itself. `None`
+/// for any other share, for a share into a different distro, and for anything that is not an
+/// absolute drive path.
 #[must_use]
 pub fn windows_to_wsl(win: &str, distro: &str, drvfs_root: &str) -> Option<String> {
     if let Some((found, linux)) = is_wsl_unc(win) {
@@ -49,6 +58,8 @@ pub fn windows_to_wsl(win: &str, distro: &str, drvfs_root: &str) -> Option<Strin
     Some(out)
 }
 
+/// The Windows form of `distro`'s absolute Linux path: a drive path when it lies under
+/// `drvfs_root`, otherwise the `\\wsl.localhost\` share path. `None` for a relative path.
 #[must_use]
 pub fn wsl_to_windows(linux: &str, distro: &str, drvfs_root: &str) -> Option<String> {
     if !linux.starts_with('/') {

@@ -18,17 +18,26 @@ use std::process::{Command, Stdio};
 use crate::launch::argv::Invocation;
 use crate::launch::LaunchError;
 
+/// A process that started.
 #[derive(Debug)]
 pub struct Spawned {
+    /// The OS process id.
     pub pid: u32,
     /// `Some` only in wait mode; joining it yields the child's exit code (§9, mechanism 1).
     pub waiter: Option<std::thread::JoinHandle<Option<i32>>>,
 }
 
+/// Starts an [`Invocation`]; the seam that keeps tests from starting real programs.
 pub trait Spawner: Send + Sync + std::fmt::Debug {
+    /// Start `inv`. `exec_display` names the executable in the error if it will not start.
+    ///
+    /// # Errors
+    ///
+    /// `Spawn`, carrying the OS's reason, when the process cannot be started.
     fn spawn(&self, inv: &Invocation, exec_display: &str) -> Result<Spawned, LaunchError>;
 }
 
+/// The production [`Spawner`]: argv only, never a shell, stdio closed, detached unless waited on.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OsSpawner;
 
@@ -75,6 +84,7 @@ impl Spawner for OsSpawner {
     }
 }
 
+/// A [`Spawner`] that starts nothing: it records each invocation and reports pid 1.
 #[cfg(feature = "testkit")]
 #[derive(Debug, Default)]
 pub struct RecordingSpawner {
@@ -85,16 +95,19 @@ pub struct RecordingSpawner {
 
 #[cfg(feature = "testkit")]
 impl RecordingSpawner {
+    /// A spawner that has recorded nothing and fails nothing.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Every invocation asked for so far, failed ones included, in order.
     #[must_use]
     pub fn calls(&self) -> Vec<Invocation> {
         self.calls.lock().map_or_else(|_| Vec::new(), |c| c.clone())
     }
 
+    /// Make the next spawn fail with `Spawn`, carrying `detail` as the OS's reason.
     pub fn fail_next(&self, detail: &str) {
         if let Ok(mut slot) = self.fail.lock() {
             *slot = Some(detail.to_owned());

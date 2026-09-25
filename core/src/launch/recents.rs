@@ -94,6 +94,8 @@ pub fn parse_jetbrains_recents(xml: &str, user_home: &str) -> Vec<PathBuf> {
     out
 }
 
+/// The strings in the array `pointer` names in `json`, as paths. Empty when the JSON does not
+/// parse or the pointer names no array.
 #[must_use]
 pub fn parse_json_list(json: &str, pointer: &str) -> Vec<PathBuf> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
@@ -110,6 +112,9 @@ pub fn parse_json_list(json: &str, pointer: &str) -> Vec<PathBuf> {
         })
 }
 
+/// The `ItemTable` value stored under `key` in a foreign state database; `None` when the file,
+/// the table or the key is absent, or the database will not open.
+///
 /// Opens a **foreign** database read-only. This is not a second writer: §1.10's one-writer
 /// invariant covers Codotheca's index, and this connection is `mode=ro`, is never written, and
 /// is dropped before the function returns.
@@ -130,6 +135,8 @@ pub fn read_sqlite_state(db: &Path, key: &str) -> Option<String> {
     .ok()
 }
 
+/// The folders an application records having opened, read from its `source` under
+/// `config_root`. Empty when it records none or the record cannot be read.
 #[must_use]
 pub fn recent_paths(source: RecentsSource, config_root: &Path, user_home: &str) -> Vec<PathBuf> {
     match source {

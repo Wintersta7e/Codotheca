@@ -20,14 +20,25 @@ use crate::launch::recents::recent_paths;
 use crate::launch::LaunchError;
 use crate::proto::txguard::TxGuard;
 
+/// What one detection pass wrote.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DetectReport {
+    /// Global-scope rows inserted for applications that had none.
     pub inserted: u64,
+    /// Existing rows, in any scope, whose `exec_bytes` re-detection rewrote.
     pub rewritten: u64,
+    /// The evidence winner's global row, which heads its kind; `None` when nothing ranked.
     pub default_target_id: Option<i64>,
+    /// The ranking step that chose the winner — `RecentOverlap` also for a lone editor, which
+    /// needed no evidence.
     pub ranked_by: Option<RankStep>,
 }
 
+/// The `path_key` of every indexed location, for the ranking's recents-overlap step.
+///
+/// # Errors
+///
+/// When the `location` query fails.
 pub fn known_location_keys(conn: &rusqlite::Connection) -> Result<BTreeSet<Vec<u8>>, LaunchError> {
     let mut stmt = conn.prepare("SELECT path_key FROM location")?;
     let mapped = stmt.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
@@ -41,7 +52,12 @@ pub fn known_location_keys(conn: &rusqlite::Connection) -> Result<BTreeSet<Vec<u
 /// §4bis.2a: re-detection rewrites `exec_bytes` for **every** row matching `(kind, name)`.
 ///
 /// The row goes back to `unverified` because the executable it names has changed, and §11.5's
-/// window must not show a stale `ok` for a path nothing has looked at.
+/// window must not show a stale `ok` for a path nothing has looked at. Returns how many rows
+/// changed.
+///
+/// # Errors
+///
+/// When the `UPDATE` fails.
 pub fn rewrite_exec_for(
     tx: &rusqlite::Transaction<'_>,
     kind: TargetKind,
@@ -58,6 +74,13 @@ pub fn rewrite_exec_for(
     Ok(changed)
 }
 
+/// Probe the host, rank its editors on §4bis.2's evidence, and write every catalogued
+/// application at global scope in one transaction.
+///
+/// # Errors
+///
+/// When the known locations cannot be read, or the transaction, a rewrite, an insert or the
+/// commit fails. Nothing from the transaction is kept unless the commit succeeds.
 pub fn detect_and_store(
     conn: &mut rusqlite::Connection,
     probe: &dyn TargetProbe,

@@ -9,10 +9,15 @@ use std::path::{Path, PathBuf};
 
 use crate::launch::probe::{ProbeFacts, ProbeSource, ProbedApp, TargetProbe};
 
+/// The Linux [`TargetProbe`]: desktop entries, `PATH`, `flatpak` and `snap`, each filtered
+/// through the catalogue.
 #[derive(Debug)]
 pub struct LinuxProbe {
+    /// Directories whose `*.desktop` entries are read.
     pub xdg_data_dirs: Vec<PathBuf>,
+    /// `PATH`'s directories, each listed for catalogued executables.
     pub path_dirs: Vec<PathBuf>,
+    /// The environment `VISUAL` and `EDITOR` are read from, for ranking step 3.
     pub env: BTreeMap<String, String>,
     /// Injected so `flatpak` and `snap` are a seam, not a hard dependency on the host.
     pub run: fn(&str, &[&str]) -> Option<String>,
@@ -32,6 +37,8 @@ fn run_capture(program: &str, args: &[&str]) -> Option<String> {
 }
 
 impl LinuxProbe {
+    /// A probe over this process's environment: `HOME` and `PATH` decide the directories, and
+    /// the host's own `flatpak`, `snap` and `xdg-mime` are run.
     #[must_use]
     pub fn new() -> Self {
         let env: BTreeMap<String, String> = std::env::vars().collect();
@@ -223,6 +230,8 @@ fn split_exec(value: &str) -> Vec<String> {
     out
 }
 
+/// Application ids from `flatpak list --columns=application`: on each line past the leading
+/// header, the first tab-separated field that contains a `.`.
 #[must_use]
 pub fn parse_flatpak_list(text: &str) -> Vec<String> {
     text.lines()
@@ -231,6 +240,7 @@ pub fn parse_flatpak_list(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Snap names from `snap list`: the first column of every line after the header.
 #[must_use]
 pub fn parse_snap_list(text: &str) -> Vec<String> {
     text.lines()

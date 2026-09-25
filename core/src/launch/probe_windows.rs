@@ -47,15 +47,16 @@ pub fn parse_command_line_exec(command: &str) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
-    let exec = if let Some(rest) = trimmed.strip_prefix('"') {
-        rest.split('"').next().unwrap_or_default().to_owned()
-    } else {
-        trimmed
-            .split_whitespace()
-            .next()
-            .unwrap_or_default()
-            .to_owned()
-    };
+    let exec = trimmed.strip_prefix('"').map_or_else(
+        || {
+            trimmed
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_owned()
+        },
+        |rest| rest.split('"').next().unwrap_or_default().to_owned(),
+    );
     if exec.is_empty() {
         None
     } else {
@@ -81,12 +82,15 @@ pub fn shim_targets(dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The Windows [`TargetProbe`]: the registry and Start Menu walk on Windows. Built for any other
+/// host it finds nothing.
 #[derive(Debug, Default)]
 pub struct WindowsProbe;
 
 impl WindowsProbe {
+    /// A probe of this host; it carries no state of its own.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 }

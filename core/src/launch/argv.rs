@@ -27,19 +27,36 @@ use crate::launch::catalogue::{lookup, CwdMode, WaitMode};
 use crate::launch::resolve::StoredTarget;
 use crate::launch::wslpath::{windows_to_wsl, DEFAULT_DRVFS_ROOT};
 
+/// The placeholder a stored row's argument, or a catalogue `wsl_args` pattern, uses for the path.
+const PATH_PLACEHOLDER: &str = "{path}";
+/// The placeholder a stored row's argument, or a catalogue `wsl_args` pattern, uses for the
+/// distro.
+const DISTRO_PLACEHOLDER: &str = "{distro}";
+
+/// The copy a launch opens.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchSite {
+    /// Which filesystem the copy is on; `Wsl` switches to the catalogue's `wsl_args` form.
     pub kind: LocationKind,
+    /// The WSL distro for a `Wsl` site; `""` otherwise.
     pub distro: String,
+    /// The copy's path in `location.path_bytes` encoding.
     pub path_bytes: Vec<u8>,
 }
 
+/// One process to start, fully assembled: nothing in it is ever joined and re-split.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invocation {
+    /// The executable, from the row's `exec_bytes`.
     pub program: PathBuf,
+    /// The arguments after the program, one `OsString` each.
     pub argv: Vec<OsString>,
+    /// The working directory: the copy's path under `CwdMode::Location`, otherwise `None` —
+    /// and always `None` at a distro site.
     pub cwd: Option<PathBuf>,
+    /// `(name, value)` pairs from the stored row, set on top of the inherited environment.
     pub env: Vec<(String, String)>,
+    /// §9, mechanism 1: the session waits for this process to exit.
     pub wait: bool,
 }
 
@@ -70,17 +87,23 @@ pub fn wants_wait(target: &StoredTarget) -> bool {
 /// A stored row's argument: replaced only when the whole argument is the placeholder.
 fn substitute(pattern: &str, path: &str, distro: &str) -> OsString {
     match pattern {
-        "{path}" => OsString::from(path),
-        "{distro}" => OsString::from(distro),
+        PATH_PLACEHOLDER => OsString::from(path),
+        DISTRO_PLACEHOLDER => OsString::from(distro),
         other => OsString::from(other),
     }
 }
 
 /// A catalogue `wsl_args` pattern: interpolated, because `wsl+{distro}` is one argument.
 fn interpolate(pattern: &str, path: &str, distro: &str) -> OsString {
-    OsString::from(pattern.replace("{distro}", distro).replace("{path}", path))
+    OsString::from(
+        pattern
+            .replace(DISTRO_PLACEHOLDER, distro)
+            .replace(PATH_PLACEHOLDER, path),
+    )
 }
 
+/// The argv for opening `site` with `target`. `None` for a distro site whose target has no
+/// catalogue `wsl_args` form, or whose path has no Linux form in that distro.
 #[must_use]
 pub fn build(target: &StoredTarget, site: &LaunchSite) -> Option<Invocation> {
     let program = crate::paths::path_from_bytes(&target.exec_bytes);

@@ -25,30 +25,44 @@ pub use catalogue::{CwdMode, TargetKind};
 /// The closed set of failures the launch subsystem can produce.
 #[derive(Debug, thiserror::Error)]
 pub enum LaunchError {
+    /// SQLite refused a statement.
     #[error("sqlite: {0}")]
     Sqlite(#[from] rusqlite::Error),
 
+    /// The index layer failed beneath a statement.
     #[error("index: {0}")]
     Index(#[from] crate::index::IndexError),
 
+    /// An internal fault carried as text — in practice, a stored column holding a value outside
+    /// its enum.
     #[error("io: {0}")]
     Io(String),
 
+    /// No `launch_target` row has this id.
     #[error("no launch target {0}")]
     NoSuchTarget(i64),
 
+    /// No `location` row has this id.
     #[error("no location {0}")]
     NoSuchLocation(i64),
 
+    /// The location with this id is not `present`, so there is nothing to launch in.
     #[error("location {0} is not present")]
     LocationNotPresent(i64),
 
+    /// The target's executable is not a file the OS would run.
     #[error("{exec_display} is not an executable file")]
-    NotExecutable { exec_display: String },
+    NotExecutable {
+        /// The executable's path in display form, for the log.
+        exec_display: String,
+    },
 
+    /// The OS refused to start the process.
     #[error("could not start {exec_display}: {detail}")]
     Spawn {
+        /// The executable's path in display form, for the log.
         exec_display: String,
+        /// The OS's own error text.
         detail: String,
     },
 }
@@ -57,7 +71,7 @@ impl LaunchError {
     /// The wire code §11.5's failure window keys its copy off. The message above is a
     /// diagnostic for the log; it is never rendered raw.
     #[must_use]
-    pub fn code(&self) -> crate::protocol::ErrorCode {
+    pub const fn code(&self) -> crate::protocol::ErrorCode {
         use crate::protocol::ErrorCode;
         match self {
             Self::NoSuchTarget(_) | Self::NoSuchLocation(_) => ErrorCode::Protocol,
