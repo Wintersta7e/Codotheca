@@ -125,7 +125,10 @@ describe('AC-P2-24-19: every disk-mutating command is off the renderer-callable 
     }
   });
 
-  it('leaves the pre-flight unprivileged, because it writes nothing', () => {
+  // [p4] R186: renamed from *"… because it writes nothing"* — the pre-flight now runs §47's
+  // verifying read, whose only write is objects into the location's own store. It stays
+  // unprivileged: objects move no ref, no tree, no index and no config (§47.1).
+  it('leaves the pre-flight unprivileged, because its only write is objects', () => {
     const preflight = schema().commands.find((c) => c.name === 'locations.uninstallPreflight');
     expect(preflight, 'the pre-flight is declared').toBeDefined();
     expect(preflight?.mutatesFilesystem).toBeUndefined();

@@ -1747,7 +1747,7 @@
       "name": "locations.uninstallPreflight",
       "args": { "locationId": "LocationId" },
       "returns": "UninstallVerdict",
-      "$comment": "§24.7: read-only and UNPRIVILEGED — it writes nothing and originates no path. It does perform a network fetch to verify the remote rather than believe it, so it is not callable on hover"
+      "$comment": "§24.7, §45.12: it runs §45's analyser. Its only write is §47's VerifyRead: objects into the location's own store, no ref, no FETCH_HEAD. It takes no path from the renderer and is not callable on hover"
     },
     {
       "name": "locations.uninstall",

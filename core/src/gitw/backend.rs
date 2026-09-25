@@ -13,19 +13,27 @@ use crate::gitw::credential::CredentialChannel;
 use crate::gitw::exec::{WriteEnv, WriteExec};
 use crate::gitw::intent::Intent;
 
+/// What a write child produced beyond its exit.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunOutput {
+    /// The child's stdout — filled **only** when the intent's `stdout_use()` is `Parse` (the
+    /// verifying read's URL and advertisement), and empty otherwise.
+    pub stdout: Vec<u8>,
+}
+
 /// The one seam through which the product asks git to write bytes.
 pub trait MutatingGit: Send + Sync + fmt::Debug {
     /// Run the intent, streaming the child's stderr a line at a time.
     ///
     /// # Errors
     /// Fails when the filter enumeration cannot complete, when the child cannot be spawned, when
-    /// it exits non-zero, or when `cancel` fires.
+    /// it exits non-zero, when its deadline elapses, or when `cancel` fires.
     fn run(
         &self,
         intent: &Intent,
         cancel: &CancelToken,
         on_stderr: &mut dyn FnMut(&str),
-    ) -> GitResult<()>;
+    ) -> GitResult<RunOutput>;
 }
 
 /// The real thing: it spawns git.
@@ -44,6 +52,20 @@ impl SystemMutatingGit {
             hooks_dir,
         }
     }
+
+    /// The production write path with the test's one permitted difference (§47.9 C).
+    #[cfg(feature = "testkit")]
+    #[must_use]
+    pub const fn with_transport_fixture(
+        git: PathBuf,
+        hooks_dir: PathBuf,
+        fixture: crate::gitw::exec::TransportFixture,
+    ) -> Self {
+        Self {
+            exec: WriteExec::with_transport_fixture(git, fixture),
+            hooks_dir,
+        }
+    }
 }
 
 impl MutatingGit for SystemMutatingGit {
@@ -52,14 +74,13 @@ impl MutatingGit for SystemMutatingGit {
         intent: &Intent,
         cancel: &CancelToken,
         on_stderr: &mut dyn FnMut(&str),
-    ) -> GitResult<()> {
+    ) -> GitResult<RunOutput> {
         // [p2-24b] **The gap p2-24 named is closed by the type, and that is why no arm is left
-        // here.** `Intent::Fetch` carried only a remote name, so a fetch would have run in
-        // whatever the process's working directory happened to be — a write into a repository
-        // nobody named — and this function refused it rather than guess. The variant now carries
-        // its `work_dir` and `write_base_args` renders it as `-C`, so the state the refusal
-        // guarded against cannot be built. A `match` that now has nothing to refuse would be a
-        // guard asserting its own defaults.
+        // here.** An intent that runs in a repository carries that repository — `VerifyRead`'s
+        // `repo`, rendered as `-C` by `write_base_args` — so no intent can run in whatever the
+        // process's working directory happens to be. A `match` that has nothing to refuse would
+        // be a guard asserting its own defaults. [p4] `Intent::Fetch`, which this comment used
+        // to describe, is retired (§47.2).
 
         // The precondition read, and the reason it is a `?` rather than a default: a clone whose
         // filters cannot be enumerated is **refused, never run unfiltered** (§24.1b). A checkout
@@ -69,8 +90,8 @@ impl MutatingGit for SystemMutatingGit {
 
         let env = WriteEnv {
             // **Left `None` on purpose, now that the intent answers for itself.** A clone's
-            // destination does not exist yet, so there is no `-C` to render; a fetch carries its
-            // own `work_dir` and `write_base_args` prefers it. Supplying a second one here would
+            // destination does not exist yet, so there is no `-C` to render; the verifying read
+            // carries its own `repo` and `write_base_args` prefers it. Supplying a second one here would
             // be two places that decide which repository is written to.
             work_dir: None,
             hooks_dir: self.hooks_dir.clone(),

@@ -25,12 +25,31 @@ use std::process::{Command, Stdio};
 use codotheca_core::accounts::keychain::SecretToken;
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::gitw::{
-    write_base_args, AuditFixture, CredentialChannel, FilterDrivers, Intent, MutatingGit,
-    SystemMutatingGit, WriteEnv, WriteExec,
+    write_base_args, AuditFixture, CredentialChannel, FilterDrivers, Intent, IntentKind,
+    MutatingGit, SystemMutatingGit, VerifyStep, VerifyStepKind, WriteEnv, WriteExec,
 };
 
-/// §24.2a assertion 1's allow list.
-const WRITE_ALLOWED: &[&str] = &["clone", "fetch"];
+/// §47.9 A's first rule, replacing §24.2a's `WRITE_ALLOWED`: **each intent's own subcommands**,
+/// by step. A variant that renders another intent's subcommand fails, which a flat list of
+/// allowed verbs could not see.
+const SUBCOMMANDS_BY_INTENT: &[(IntentKind, Option<VerifyStepKind>, &str)] = &[
+    (IntentKind::Clone, None, "clone"),
+    (
+        IntentKind::VerifyRead,
+        Some(VerifyStepKind::ResolveUrl),
+        "ls-remote",
+    ),
+    (
+        IntentKind::VerifyRead,
+        Some(VerifyStepKind::Advertise),
+        "ls-remote",
+    ),
+    (
+        IntentKind::VerifyRead,
+        Some(VerifyStepKind::Objects),
+        "fetch",
+    ),
+];
 
 /// §24.2a assertion 2's deny list — the eight tokens that turn an additive invocation into a
 /// destructive one.
@@ -55,13 +74,31 @@ fn rendered() -> Vec<Intent> {
     let fixture =
         AuditFixture::new(temp.path(), SecretToken::new(SENTINEL.to_owned())).expect("fixture");
     let intents = Intent::all_for_audit(&fixture);
+    // **Both coverages, not one length**: every kind, and every step of the one that has steps.
+    let kinds: Vec<IntentKind> = Intent::ALL
+        .into_iter()
+        .filter(|kind| intents.iter().any(|i| i.kind() == *kind))
+        .collect();
+    let steps: Vec<VerifyStepKind> = VerifyStep::ALL
+        .into_iter()
+        .filter(|step| intents.iter().any(|i| i.step() == Some(*step)))
+        .collect();
+    eprintln!(
+        "git-write-audit: rendered {} intents — kinds {kinds:?}, steps {steps:?}",
+        intents.len()
+    );
     assert_eq!(
-        intents.len(),
+        kinds.len(),
         Intent::ALL.len(),
-        "all_for_audit rendered {} of {} variants; every assertion in this file loops over this \
+        "all_for_audit rendered {kinds:?} of {:?}; every assertion in this file loops over this \
          set, so a short one passes by not looking",
-        intents.len(),
-        Intent::ALL.len()
+        Intent::ALL
+    );
+    assert_eq!(
+        steps.len(),
+        VerifyStep::ALL.len(),
+        "all_for_audit rendered steps {steps:?} of {:?}",
+        VerifyStep::ALL
     );
     assert!(
         !intents.is_empty(),
@@ -71,23 +108,29 @@ fn rendered() -> Vec<Intent> {
 }
 
 #[test]
-fn every_rendered_subcommand_is_write_allowed() {
+fn every_rendered_subcommand_is_on_its_intents_row() {
     let intents = rendered();
     let mut tokens = 0;
     for intent in &intents {
         let argv = intent.argv();
         tokens += argv.len();
         let subcommand = argv.first().and_then(|arg| arg.to_str()).unwrap_or("");
-        assert!(
-            WRITE_ALLOWED.contains(&subcommand),
-            "{:?} rendered forbidden subcommand {subcommand:?}: {argv:?}",
-            intent.kind()
+        let row = SUBCOMMANDS_BY_INTENT
+            .iter()
+            .find(|(kind, step, _)| *kind == intent.kind() && *step == intent.step())
+            .unwrap_or_else(|| panic!("{:?} {:?} has no row", intent.kind(), intent.step()));
+        assert_eq!(
+            subcommand,
+            row.2,
+            "{:?} {:?} rendered {subcommand:?}, not its own row's verb: {argv:?}",
+            intent.kind(),
+            intent.step()
         );
     }
     eprintln!(
-        "git-write-audit: {} variants, {tokens} argv tokens, {} allowed subcommands",
+        "git-write-audit: {} intents, {tokens} argv tokens, {} subcommand rows",
         intents.len(),
-        WRITE_ALLOWED.len()
+        SUBCOMMANDS_BY_INTENT.len()
     );
 }
 
@@ -119,26 +162,24 @@ fn no_rendered_argv_contains_a_forbidden_flag() {
 
 #[test]
 fn the_exhaustive_intent_list_has_two_renderable_variants() {
+    // `rendered` asserts every kind and every step was rendered.
     let intents = rendered();
     assert_eq!(
         Intent::ALL.len(),
         2,
         "Intent::ALL changed; review every write-boundary assertion before accepting a new variant"
     );
-    assert_eq!(
-        intents.len(),
-        Intent::ALL.len(),
-        "all_for_audit did not render every Intent::ALL discriminant"
-    );
+    assert!(intents.len() >= Intent::ALL.len());
 }
 
 /// **AC-P2-24-4, in the form that is expressible here.**
 ///
-/// `Intent::Fetch` has no product caller in this plan — the in-session fetch is p2-24b's §24.7C —
-/// so the criterion's *"under every scheduler retry path"* cannot be exercised by driving a
-/// scheduler that does not exist. What **is** provable, and is the property the criterion rests
-/// on, is that `argv()` is a **pure function of the variant**: rendering the same intent N times
-/// yields byte-identical argv, so no retry can produce a token the first attempt did not.
+/// No scheduler retries a write intent, so the criterion's *"under every scheduler retry path"*
+/// cannot be exercised by driving one. What **is** provable, and is the property the criterion
+/// rests on, is that `argv()` is a **pure function of the (variant, step)**: rendering the same
+/// intent N times yields byte-identical argv, so no retry can produce a token the first attempt
+/// did not. [p4] Its argv half stays true and **is not the claim** — §47.9 C's differential
+/// layer is (`AC-P4-47-6`).
 ///
 /// Stated plainly because claiming otherwise would be a bar written past its defect: **this is
 /// the property, not an exercised scheduler.**
@@ -246,16 +287,14 @@ fn authenticated_env(root: &Path, host: &str, work_dir: Option<PathBuf>) -> Writ
     }
 }
 
-/// Drive one variant into the recording stand-in and read what the child received.
+/// Drive a clone into the recording stand-in and read what the child received.
 ///
-/// **Only `Clone` can be spawn-recorded, and that is a property of the variant rather than a gap
-/// in the audit.** The recorder keys its output on the last argv element, which must be an
-/// absolute path; `Intent::Fetch` renders its **remote name** last, so there is nothing to key on
-/// and the stand-in refuses. An earlier version of this helper pointed the `Fetch` case at a file
-/// name it invented, which is a test reading a recording no child wrote.
+/// The recorder keys a clone on its destination, the absolute last argv element; an intent that
+/// runs in a repository is keyed on its `-C` directory instead (see
+/// `the_sentinel_reaches_no_verify_read_child`).
 fn drive_recorded_clone(root: &Path, intent: &Intent, host: &str) -> Recorded {
     let Intent::Clone { dest, .. } = intent else {
-        panic!("only Intent::Clone can be spawn-recorded; Fetch renders no path to key on");
+        panic!("this helper drives a clone; the verifying read is keyed on its -C directory");
     };
     let env = authenticated_env(root, host, None);
     std::fs::create_dir_all(&env.hooks_dir).expect("hooks dir");
@@ -267,7 +306,7 @@ fn drive_recorded_clone(root: &Path, intent: &Intent, host: &str) -> Recorded {
 }
 
 /// The sentinel must appear in none of these, whichever way the argv was obtained.
-fn assert_no_sentinel(kind: codotheca_core::gitw::IntentKind, argv: &[String], env: &[String]) {
+fn assert_no_sentinel(kind: IntentKind, argv: &[String], env: &[String]) {
     let mut urls = 0;
     for arg in argv {
         assert!(
@@ -311,7 +350,7 @@ fn the_sentinel_reaches_no_child_argv_config_url_or_environment() {
     let fixture =
         AuditFixture::new(temp.path(), SecretToken::new(SENTINEL.to_owned())).expect("fixture");
     let intents = Intent::all_for_audit(&fixture);
-    assert_eq!(intents.len(), Intent::ALL.len(), "audit variant floor");
+    assert!(intents.len() >= Intent::ALL.len(), "audit variant floor");
 
     let clone = intents
         .iter()
@@ -329,48 +368,52 @@ fn the_sentinel_reaches_no_child_argv_config_url_or_environment() {
     assert_no_sentinel(clone.kind(), &recorded.argv, &recorded.env);
 }
 
-/// **Assertion 3, for `Fetch`: over the rendered argv, and stated as such.**
+/// **Assertion 3, for `VerifyRead`: over what each step's spawned child actually received.**
 ///
-/// `Intent::Fetch` **cannot be spawn-recorded**: it renders a remote name rather than a path, so
-/// the stand-in has nothing to key its recording on and refuses. It also has no production caller
-/// in this plan — the in-session fetch is p2-24b's §24.7C — and `SystemMutatingGit::run` refuses
-/// it outright rather than guessing a repository.
-///
-/// So this half asserts over `write_base_args`'s output rather than over a child's. **That is a
-/// weaker claim than the `Clone` half and it is labelled weaker**: claiming it observed a spawn
-/// would be the bar written past its defect. What it does prove is that the credential never
-/// enters the rendering, which is the only layer `Fetch` has.
+/// [p4] Renamed from `the_sentinel_reaches_no_rendered_fetch_argv_although_fetch_never_spawns`:
+/// `Intent::Fetch` is retired, and the verifying read that replaces it **does** spawn in
+/// production, so this now reads every step's child — keyed on its `-C` directory — rather than
+/// a rendered argv (AC-P4-47-4).
 #[test]
-fn the_sentinel_reaches_no_rendered_fetch_argv_although_fetch_never_spawns() {
+fn the_sentinel_reaches_no_verify_read_child() {
     let temp = tempfile::tempdir().expect("tempdir");
     let fixture =
         AuditFixture::new(temp.path(), SecretToken::new(SENTINEL.to_owned())).expect("fixture");
-    let fetch = Intent::all_for_audit(&fixture)
+    let steps: Vec<Intent> = Intent::all_for_audit(&fixture)
         .into_iter()
-        .find(|i| matches!(i, Intent::Fetch { .. }))
-        .expect("the exhaustive set contains a Fetch");
-
-    let env = authenticated_env(
-        temp.path(),
-        fixture.url().host(),
-        Some(temp.path().to_path_buf()),
-    );
-    let mut argv: Vec<String> = write_base_args(&fetch, &env)
-        .iter()
-        .map(|a| a.to_string_lossy().into_owned())
+        .filter(|i| matches!(i, Intent::VerifyRead { .. }))
         .collect();
-    argv.extend(
-        fetch
-            .argv()
-            .iter()
-            .map(|a| a.to_string_lossy().into_owned()),
+    assert_eq!(steps.len(), VerifyStep::ALL.len(), "every step is rendered");
+
+    let env = authenticated_env(temp.path(), fixture.url().host(), None);
+    std::fs::create_dir_all(&env.hooks_dir).expect("hooks dir");
+    let exec = WriteExec::new(recording_git());
+    for intent in &steps {
+        exec.run(intent, &env, &CancelToken::new(), &mut |_| {})
+            .expect("the recording stand-in exits 0");
+    }
+    let calls = support::git_world::read_recordings(fixture.dest());
+    assert_eq!(calls.len(), steps.len(), "one child per step");
+    for (intent, call) in steps.iter().zip(&calls) {
+        assert!(
+            call.argv
+                .iter()
+                .any(|arg| arg.starts_with("credential.helper=") && arg != "credential.helper="),
+            "{:?} was not rendered with the authenticated sentinel channel: {:?}",
+            intent.step(),
+            call.argv
+        );
+        assert_no_sentinel(intent.kind(), &call.argv, &call.env);
+        assert!(
+            !String::from_utf8_lossy(&call.stdin).contains(SENTINEL),
+            "the sentinel reached {:?}'s stdin",
+            intent.step()
+        );
+    }
+    eprintln!(
+        "git-write-audit: {} verify-read children, sentinel in none",
+        calls.len()
     );
-    assert!(
-        argv.iter()
-            .any(|arg| arg.starts_with("credential.helper=") && arg != "credential.helper="),
-        "Fetch was not rendered with the authenticated sentinel channel: {argv:?}"
-    );
-    assert_no_sentinel(fetch.kind(), &argv, &[]);
 }
 
 fn run_git(cwd: &Path, args: &[&str]) {
@@ -848,9 +891,9 @@ fn every_variant_renders_the_maintenance_options() {
     }
     assert_eq!(
         checked,
-        Intent::ALL.len(),
-        "the maintenance check looked at {checked} of {} variants",
-        Intent::ALL.len()
+        intents.len(),
+        "the maintenance check looked at {checked} of {} rendered intents",
+        intents.len()
     );
 }
 

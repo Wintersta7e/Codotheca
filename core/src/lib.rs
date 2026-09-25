@@ -14,6 +14,7 @@
 
 pub mod accounts;
 pub mod advisories;
+pub mod analyser;
 pub mod art;
 pub mod assembly;
 pub mod cancel;

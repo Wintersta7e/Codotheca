@@ -37,6 +37,11 @@ pub enum IntentRefusal {
     UrlCarriesUserinfo,
     /// A remote name that is not a single safe segment. A remote name is never a path.
     UnsafeRemoteName,
+    /// Not `HEAD` and not a `refs/` name git's ref-name rules admit (§47.2's `AdvertisedRef`).
+    /// A stdin line is argv by another channel: a destination on it wrote a ref (§47 M5).
+    UnsafeRefName,
+    /// Not 40 or 64 lowercase hex characters.
+    NotAnObjectId,
 }
 
 /// An `https` remote URL, validated at construction and carrying no userinfo.
@@ -143,6 +148,154 @@ impl RemoteName {
     }
 }
 
+/// One ref name a remote advertised, fit to be a source on the objects step's stdin (§47.2).
+///
+/// **Built only from one line of `ls-remote`'s output.** It refuses anything but `HEAD` or a
+/// `refs/` name git's ref-name rules admit: no `:`, `*`, `?`, `[`, `^`, `~`, `\`, space or control
+/// byte, no `..` or `@{`, no empty component, none starting with `.` or ending with `.lock`, and
+/// no trailing `/` or `.`. The `:` is the one that matters most: a stdin line
+/// `refs/heads/main:refs/heads/injected` wrote a ref under every other pin (§47 M5), so the
+/// grammar, not a flag, is what keeps the objects step objects-only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdvertisedRef(String);
+
+impl AdvertisedRef {
+    /// Parse one advertised ref name.
+    ///
+    /// # Errors
+    /// [`IntentRefusal::UnsafeRefName`] for anything §47.2's grammar refuses.
+    pub fn parse(raw: &str) -> Result<Self, IntentRefusal> {
+        if raw == "HEAD" {
+            return Ok(Self(raw.to_owned()));
+        }
+        let forbidden_byte = raw.bytes().any(|b| {
+            b.is_ascii_control()
+                || matches!(b, b':' | b'*' | b'?' | b'[' | b'^' | b'~' | b'\\' | b' ')
+        });
+        let bad_component = raw.split('/').any(|component| {
+            component.is_empty()
+                || component.starts_with('.')
+                || Path::new(component)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("lock"))
+        });
+        let safe = raw.starts_with("refs/")
+            && !forbidden_byte
+            && !bad_component
+            && !raw.contains("..")
+            && !raw.contains("@{")
+            && !raw.ends_with('.');
+        if safe {
+            Ok(Self(raw.to_owned()))
+        } else {
+            Err(IntentRefusal::UnsafeRefName)
+        }
+    }
+
+    /// The name as it is written to stdin, byte for byte.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Is this a tip the objects step may fetch — `HEAD`, a branch or a tag (§47.4 step 3)?
+    /// Review refs and custom namespaces are never fetched.
+    #[must_use]
+    pub fn is_branch_or_tag_tip(&self) -> bool {
+        self.0 == "HEAD" || self.0.starts_with("refs/heads/") || self.0.starts_with("refs/tags/")
+    }
+}
+
+/// An object id: 40 or 64 lowercase hex characters, the shape the read path's
+/// [`crate::git::is_object_id`] owns.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ObjectId(String);
+
+impl ObjectId {
+    /// Parse an object id from a read.
+    ///
+    /// # Errors
+    /// [`IntentRefusal::NotAnObjectId`] for anything but 40 or 64 lowercase hex characters.
+    pub fn parse(raw: &str) -> Result<Self, IntentRefusal> {
+        if crate::git::is_object_id(raw) {
+            Ok(Self(raw.to_owned()))
+        } else {
+            Err(IntentRefusal::NotAnObjectId)
+        }
+    }
+
+    /// The id as hex.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// The verifying read's three steps (§47.4), one child each.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerifyStep {
+    /// `ls-remote --get-url <remote>`: the effective URL after `insteadOf`, contacting nothing.
+    ResolveUrl,
+    /// `ls-remote <remote>`: the advertisement.
+    Advertise,
+    /// `fetch --stdin …`: the objects of the branch and tag tips absent locally, and no ref.
+    Objects {
+        /// The tips to fetch, one stdin line each.
+        tips: Vec<AdvertisedRef>,
+    },
+}
+
+/// The discriminant of a [`VerifyStep`], for the audit's exhaustive rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerifyStepKind {
+    /// [`VerifyStep::ResolveUrl`].
+    ResolveUrl,
+    /// [`VerifyStep::Advertise`].
+    Advertise,
+    /// [`VerifyStep::Objects`].
+    Objects,
+}
+
+impl VerifyStep {
+    /// Every step, for the audit to render each one.
+    pub const ALL: [VerifyStepKind; 3] = [
+        VerifyStepKind::ResolveUrl,
+        VerifyStepKind::Advertise,
+        VerifyStepKind::Objects,
+    ];
+
+    /// This step's discriminant.
+    #[must_use]
+    pub const fn kind(&self) -> VerifyStepKind {
+        match self {
+            Self::ResolveUrl => VerifyStepKind::ResolveUrl,
+            Self::Advertise => VerifyStepKind::Advertise,
+            Self::Objects { .. } => VerifyStepKind::Objects,
+        }
+    }
+}
+
+/// What the write path does with a child's stdout (§47.3's *Streams*).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StdoutUse {
+    /// Kept and returned: the answer is on stdout.
+    Parse,
+    /// Read and discarded, so a chatty child cannot fill the pipe. It never reaches the core's
+    /// own stdout, which carries protocol frames and nothing else.
+    Drain,
+}
+
+/// What an intent is declared to write (§47.1): §47.9 C compares the repository against it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclaredEffect {
+    /// A new repository at a destination that did not exist.
+    NewRepository,
+    /// Nothing at all.
+    Nothing,
+    /// Objects into the repository's own store; no ref, no `FETCH_HEAD`, no config.
+    ObjectsOnly,
+}
+
 /// The discriminant of an [`Intent`], with no payload.
 ///
 /// It exists so [`Intent::ALL`] can be an **iterable** exhaustive list rather than a count: a
@@ -152,11 +305,16 @@ impl RemoteName {
 pub enum IntentKind {
     /// `git clone` — the destination must not exist before the call.
     Clone,
-    /// `git fetch` — never with `--prune`.
-    Fetch,
+    /// §47.4's verifying read — objects into the repository's own store, and no ref.
+    VerifyRead,
 }
 
-/// §24.1's whole git write surface: two subcommands, and nothing else reaches a child.
+/// §47.2's intent set, as far as Lane 0 lands it: every git write this product makes.
+///
+/// **`Fetch` is retired** (PA1). Its argv was `fetch --progress <remote>` and nothing else, and a
+/// user's refspec, `fetch.prune` and `pruneTags` made it delete a checked-out branch holding a
+/// local-only commit and a local-only tag (§37.8, M2). `VerifyRead` replaces it; each later
+/// variant lands with its production caller, never before it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Intent {
     /// Clone into a destination that does not yet exist.
@@ -168,28 +326,24 @@ pub enum Intent {
         /// `--depth`, when a shallow clone is wanted.
         depth: Option<u32>,
     },
-    /// Fetch from an already-configured remote.
-    Fetch {
-        /// The repository the fetch runs in, rendered as `-C <work_dir>` by the write path.
-        ///
-        /// **[p2-24b] A field rather than an argument, and that is the whole point.** p2-24 left
-        /// this variant carrying only a remote name and made `SystemMutatingGit::run` refuse it,
-        /// because a fetch without a repository *"would fetch in whatever the process's working
-        /// directory happens to be, which is a write into a repository nobody named"*. Supplying
-        /// it through `WriteEnv` instead would leave that state constructible — an `Intent::Fetch`
-        /// beside an env with no `work_dir` compiles and runs. Here it cannot be built at all.
-        work_dir: PathBuf,
-        /// The remote's name, never a URL and never a path.
+    /// §47.4: one step of the verifying read of one configured remote.
+    VerifyRead {
+        /// The repository the read runs in, rendered as `-C` by `write_base_args` and never by
+        /// `argv()`: core-resolved, a location re-resolved from disk or a nested repository.
+        repo: PathBuf,
+        /// The remote's configured name, never a URL and never a path.
         remote: RemoteName,
+        /// Which of the three steps.
+        step: VerifyStep,
     },
 }
 
 impl Intent {
     /// The exhaustive discriminant list. Its length is a deliberate tripwire on its own growth,
     /// and `core/tests/git_write_audit.rs` pins it.
-    pub const ALL: [IntentKind; 2] = [IntentKind::Clone, IntentKind::Fetch];
+    pub const ALL: [IntentKind; 2] = [IntentKind::Clone, IntentKind::VerifyRead];
 
-    /// Render this intent's argv. **Total over the variant** — no `_ =>` arm, and no
+    /// Render this intent's argv. **Total over (variant, step)** — no `_ =>` arm, and no
     /// caller-supplied string reaches argv unrendered.
     ///
     /// `--progress` is here because git writes progress to **stderr** only when it is not
@@ -209,14 +363,143 @@ impl Intent {
             }
             // `-C` is **not** rendered here. It is a base argument, prepended by
             // `write_base_args` before the subcommand, and `git_write_audit.rs` reads `argv[0]`
-            // as the subcommand — a `-C` in front of `fetch` would make the audit read a path
-            // where it looks for a write-allowed verb.
-            Self::Fetch { remote, .. } => vec![
-                OsString::from("fetch"),
-                OsString::from("--progress"),
-                OsString::from(remote.as_str()),
-            ],
+            // as the subcommand.
+            Self::VerifyRead { remote, step, .. } => {
+                let mut argv: Vec<OsString> = match step {
+                    VerifyStep::ResolveUrl => vec!["ls-remote".into(), "--get-url".into()],
+                    VerifyStep::Advertise => vec!["ls-remote".into()],
+                    // §47.3's pins, each exactly once. `--refmap=` empties the configured
+                    // refspecs so no tracking ref moves; `--stdin` takes only the tips; the four
+                    // `--no-*` keep the read to objects.
+                    VerifyStep::Objects { .. } => vec![
+                        "fetch".into(),
+                        "--refmap=".into(),
+                        "--stdin".into(),
+                        "--no-prune".into(),
+                        "--no-tags".into(),
+                        "--no-recurse-submodules".into(),
+                        "--no-write-fetch-head".into(),
+                        "--no-write-commit-graph".into(),
+                    ],
+                };
+                argv.push(OsString::from(remote.as_str()));
+                argv
+            }
         }
+    }
+
+    /// The `-c` pins this intent's child carries beyond the uniform ones, each exactly once.
+    ///
+    /// `protocol.file.allow=never` on every verifying step (PA1): a second net under
+    /// `GIT_ALLOW_PROTOCOL`, which layer A can read off the argv.
+    #[must_use]
+    pub const fn config_pins(&self) -> &'static [&'static str] {
+        match self {
+            Self::Clone { .. } => &[],
+            Self::VerifyRead { .. } => &["protocol.file.allow=never"],
+        }
+    }
+
+    /// §47.3's per-intent pins — every token that must appear **exactly once** in this intent's
+    /// child argv: the argv flags and the `-c` values.
+    ///
+    /// A clone's pins are its filter neutralisation, which is the effective config's and is
+    /// asserted where it is enumerated.
+    #[must_use]
+    pub fn pins(&self) -> Vec<&'static str> {
+        let flags: &[&'static str] = match self {
+            Self::Clone { .. }
+            | Self::VerifyRead {
+                step: VerifyStep::ResolveUrl | VerifyStep::Advertise,
+                ..
+            } => &[],
+            Self::VerifyRead {
+                step: VerifyStep::Objects { .. },
+                ..
+            } => &[
+                "--refmap=",
+                "--stdin",
+                "--no-prune",
+                "--no-tags",
+                "--no-recurse-submodules",
+                "--no-write-fetch-head",
+                "--no-write-commit-graph",
+            ],
+        };
+        flags.iter().chain(self.config_pins()).copied().collect()
+    }
+
+    /// The bytes this intent's child reads on stdin, or `None` for `Stdio::null()`.
+    ///
+    /// Only the objects step has any: its tips, one [`AdvertisedRef`] per line. Stdin is argv by
+    /// another channel, so it is built from the validated newtype alone (§47.2 rule 2).
+    #[must_use]
+    pub fn stdin_payload(&self) -> Option<Vec<u8>> {
+        match self {
+            Self::VerifyRead {
+                step: VerifyStep::Objects { tips },
+                ..
+            } => {
+                let mut payload = Vec::new();
+                for tip in tips {
+                    payload.extend_from_slice(tip.as_str().as_bytes());
+                    payload.push(b'\n');
+                }
+                Some(payload)
+            }
+            Self::Clone { .. }
+            | Self::VerifyRead {
+                step: VerifyStep::ResolveUrl | VerifyStep::Advertise,
+                ..
+            } => None,
+        }
+    }
+
+    /// What the write path does with this intent's stdout.
+    #[must_use]
+    pub const fn stdout_use(&self) -> StdoutUse {
+        match self {
+            Self::VerifyRead {
+                step: VerifyStep::ResolveUrl | VerifyStep::Advertise,
+                ..
+            } => StdoutUse::Parse,
+            Self::Clone { .. }
+            | Self::VerifyRead {
+                step: VerifyStep::Objects { .. },
+                ..
+            } => StdoutUse::Drain,
+        }
+    }
+
+    /// The environment this intent's child gets **after** `neutralise_env` (§47.3).
+    ///
+    /// `GIT_ALLOW_PROTOCOL` always — the load-bearing transport pin. The objects step also gets
+    /// `GIT_NO_REPLACE_OBJECTS=1` and `GIT_GRAFT_FILE` at a path inside the empty hooks directory
+    /// that never exists: a graft or replace ref otherwise rewrites the graph the fetch walks.
+    #[must_use]
+    pub fn env_pins(&self, hooks_dir: &Path) -> Vec<(&'static str, OsString)> {
+        let mut pins = vec![(
+            "GIT_ALLOW_PROTOCOL",
+            OsString::from(self.allowed_protocols()),
+        )];
+        match self {
+            Self::VerifyRead {
+                step: VerifyStep::Objects { .. },
+                ..
+            } => {
+                pins.push(("GIT_NO_REPLACE_OBJECTS", OsString::from("1")));
+                pins.push((
+                    "GIT_GRAFT_FILE",
+                    crate::git::absent_graft_path(hooks_dir).into_os_string(),
+                ));
+            }
+            Self::Clone { .. }
+            | Self::VerifyRead {
+                step: VerifyStep::ResolveUrl | VerifyStep::Advertise,
+                ..
+            } => {}
+        }
+        pins
     }
 
     /// The repository this intent runs in, when it has one.
@@ -227,20 +510,20 @@ impl Intent {
     pub fn work_dir(&self) -> Option<&Path> {
         match self {
             Self::Clone { .. } => None,
-            Self::Fetch { work_dir, .. } => Some(work_dir.as_path()),
+            Self::VerifyRead { repo, .. } => Some(repo.as_path()),
         }
     }
 
     /// How long this intent's child may run before the core kills its process group (§47.3).
     ///
     /// `None` for a clone: it reports progress to a user who can cancel it, and a large clone
-    /// legitimately runs for minutes. Every intent that runs while a user waits for a verdict
-    /// carries [`GIT_INVOCATION_DEADLINE`].
+    /// legitimately runs for minutes. Every step of the verifying read, which runs while a user
+    /// waits for a verdict, carries [`GIT_INVOCATION_DEADLINE`].
     #[must_use]
     pub const fn deadline(&self) -> Option<Duration> {
         match self {
             Self::Clone { .. } => None,
-            Self::Fetch { .. } => Some(GIT_INVOCATION_DEADLINE),
+            Self::VerifyRead { .. } => Some(GIT_INVOCATION_DEADLINE),
         }
     }
 
@@ -250,12 +533,39 @@ impl Intent {
     /// `protocol.<helper>.allow=always` ran a helper past `-c protocol.allow=never`, and a
     /// user-global `protocol.file.allow=always` opened a file remote past it; the environment
     /// variable refused both (§47 M4). A clone is https only (§24.1c): a config that rewrites its
-    /// URL to a path or to ssh now fails instead of cloning over that transport.
+    /// URL to a path or to ssh now fails instead of cloning over that transport. The verifying
+    /// read admits the user's ssh transport as well (PA1).
     #[must_use]
     pub const fn allowed_protocols(&self) -> &'static str {
         match self {
             Self::Clone { .. } => "https",
-            Self::Fetch { .. } => "https:ssh",
+            Self::VerifyRead { .. } => "https:ssh",
+        }
+    }
+
+    /// What this intent is declared to write (§47.1).
+    #[must_use]
+    pub const fn effect(&self) -> DeclaredEffect {
+        match self {
+            Self::Clone { .. } => DeclaredEffect::NewRepository,
+            Self::VerifyRead {
+                step: VerifyStep::ResolveUrl | VerifyStep::Advertise,
+                ..
+            } => DeclaredEffect::Nothing,
+            Self::VerifyRead {
+                step: VerifyStep::Objects { .. },
+                ..
+            } => DeclaredEffect::ObjectsOnly,
+        }
+    }
+
+    /// Is this intent part of an act §45.1 governs, and so refused below the governed git floor
+    /// (§47.8)? A clone is not: it runs on every git the app runs on.
+    #[must_use]
+    pub const fn is_governed(&self) -> bool {
+        match self {
+            Self::Clone { .. } => false,
+            Self::VerifyRead { .. } => true,
         }
     }
 
@@ -264,34 +574,56 @@ impl Intent {
     pub const fn kind(&self) -> IntentKind {
         match self {
             Self::Clone { .. } => IntentKind::Clone,
-            Self::Fetch { .. } => IntentKind::Fetch,
+            Self::VerifyRead { .. } => IntentKind::VerifyRead,
         }
     }
 
-    /// One fully-populated intent per [`IntentKind`], over a fixture carrying the sentinel
-    /// credential the audit scans for.
+    /// The step a verifying read carries, or `None` for an intent that has no steps.
+    #[must_use]
+    pub const fn step(&self) -> Option<VerifyStepKind> {
+        match self {
+            Self::Clone { .. } => None,
+            Self::VerifyRead { step, .. } => Some(step.kind()),
+        }
+    }
+
+    /// One fully-populated intent per [`IntentKind`] **and per [`VerifyStepKind`]**, over a
+    /// fixture carrying the sentinel credential the audit scans for.
     ///
-    /// The `match` below is **exhaustive over `IntentKind`**, so a variant added without a case
-    /// here fails to compile. That is strictly stronger than the count in [`Intent::ALL`], and it
-    /// is why both are asserted: the count alone is a number somebody can raise, and this is a
+    /// Both `match`es below are **exhaustive**, so a variant or a step added without a case here
+    /// fails to compile. That is strictly stronger than the count in [`Intent::ALL`], and it is
+    /// why both are asserted: the count alone is a number somebody can raise, and this is a
     /// build failure nobody can miss.
     #[cfg(feature = "testkit")]
     #[must_use]
     pub fn all_for_audit(fixture: &AuditFixture) -> Vec<Self> {
-        Self::ALL
-            .into_iter()
-            .map(|kind| match kind {
-                IntentKind::Clone => Self::Clone {
+        let mut out = Vec::new();
+        for kind in Self::ALL {
+            match kind {
+                IntentKind::Clone => out.push(Self::Clone {
                     url: fixture.url().clone(),
                     dest: fixture.dest().to_path_buf(),
                     depth: Some(1),
-                },
-                IntentKind::Fetch => Self::Fetch {
-                    work_dir: fixture.dest().to_path_buf(),
-                    remote: fixture.remote().clone(),
-                },
-            })
-            .collect()
+                }),
+                IntentKind::VerifyRead => {
+                    for step_kind in VerifyStep::ALL {
+                        let step = match step_kind {
+                            VerifyStepKind::ResolveUrl => VerifyStep::ResolveUrl,
+                            VerifyStepKind::Advertise => VerifyStep::Advertise,
+                            VerifyStepKind::Objects => VerifyStep::Objects {
+                                tips: fixture.tips().to_vec(),
+                            },
+                        };
+                        out.push(Self::VerifyRead {
+                            repo: fixture.dest().to_path_buf(),
+                            remote: fixture.remote().clone(),
+                            step,
+                        });
+                    }
+                }
+            }
+        }
+        out
     }
 }
 
@@ -309,6 +641,7 @@ pub struct AuditFixture {
     url: RemoteUrl,
     dest: PathBuf,
     remote: RemoteName,
+    tips: Vec<AdvertisedRef>,
     token: SecretToken,
 }
 
@@ -327,6 +660,10 @@ impl AuditFixture {
             url: RemoteUrl::parse("https://forge.example/acme/widget.git")?,
             dest: root.join("widget"),
             remote: RemoteName::parse("origin")?,
+            tips: vec![
+                AdvertisedRef::parse("HEAD")?,
+                AdvertisedRef::parse("refs/heads/main")?,
+            ],
             token,
         })
     }
@@ -354,6 +691,12 @@ impl AuditFixture {
     pub const fn remote(&self) -> &RemoteName {
         &self.remote
     }
+
+    /// The tips the fixture's objects step carries on stdin.
+    #[must_use]
+    pub fn tips(&self) -> &[AdvertisedRef] {
+        &self.tips
+    }
 }
 
 #[cfg(test)]
@@ -367,7 +710,10 @@ mod tests {
 
     use std::path::{Path, PathBuf};
 
-    use super::{Intent, IntentRefusal, RemoteName, RemoteUrl};
+    use super::{
+        AdvertisedRef, DeclaredEffect, Intent, IntentRefusal, ObjectId, RemoteName, RemoteUrl,
+        StdoutUse, VerifyStep,
+    };
 
     #[test]
     fn every_non_https_scheme_is_refused_as_such() {
@@ -446,34 +792,65 @@ mod tests {
         assert_eq!(url.host(), "forge.example");
     }
 
-    #[test]
-    fn a_fetch_renders_its_remote_and_no_flag_beyond_progress() {
-        let intent = Intent::Fetch {
-            work_dir: PathBuf::from("/srv/work/thing"),
+    fn verify(step: VerifyStep) -> Intent {
+        Intent::VerifyRead {
+            repo: PathBuf::from("/srv/work/thing"),
             remote: RemoteName::parse("origin").unwrap(),
-        };
-        let argv: Vec<String> = intent
+            step,
+        }
+    }
+
+    fn strings(intent: &Intent) -> Vec<String> {
+        intent
             .argv()
             .iter()
             .map(|a| a.to_string_lossy().into_owned())
-            .collect();
-        // The repository is **not** in here: `-C` is a base argument and the audit reads
-        // `argv[0]` as the subcommand, so a path in front of `fetch` would be read as a verb.
-        assert_eq!(argv, vec!["fetch", "--progress", "origin"]);
+            .collect()
     }
 
-    /// [p2-24b] §24.7C's fetch names the repository it runs in, by type.
-    ///
-    /// The variant that could not say where it ran is the one p2-24 refused to execute, and the
-    /// refusal is gone now because the state it guarded against is unconstructible.
+    /// §47.4's three steps, each its own argv. The repository is **not** in any of them: `-C` is
+    /// a base argument and the audit reads `argv[0]` as the subcommand.
     #[test]
-    fn a_fetch_names_the_repository_it_runs_in_and_a_clone_does_not() {
-        let fetch = Intent::Fetch {
-            work_dir: PathBuf::from("/srv/work/thing"),
-            remote: RemoteName::parse("origin").unwrap(),
-        };
-        assert_eq!(fetch.work_dir(), Some(Path::new("/srv/work/thing")));
+    fn each_verify_step_renders_its_own_argv_and_no_repository() {
+        assert_eq!(
+            strings(&verify(VerifyStep::ResolveUrl)),
+            vec!["ls-remote", "--get-url", "origin"]
+        );
+        assert_eq!(
+            strings(&verify(VerifyStep::Advertise)),
+            vec!["ls-remote", "origin"]
+        );
+        let objects = verify(VerifyStep::Objects {
+            tips: vec![AdvertisedRef::parse("refs/heads/main").unwrap()],
+        });
+        assert_eq!(
+            strings(&objects),
+            vec![
+                "fetch",
+                "--refmap=",
+                "--stdin",
+                "--no-prune",
+                "--no-tags",
+                "--no-recurse-submodules",
+                "--no-write-fetch-head",
+                "--no-write-commit-graph",
+                "origin"
+            ]
+        );
+        assert_eq!(objects.stdin_payload(), Some(b"refs/heads/main\n".to_vec()));
+        assert_eq!(objects.effect(), DeclaredEffect::ObjectsOnly);
+        assert_eq!(objects.stdout_use(), StdoutUse::Drain);
+        assert_eq!(verify(VerifyStep::Advertise).stdout_use(), StdoutUse::Parse);
+        assert!(objects.is_governed());
+    }
 
+    /// [p2-24b] The verifying read names the repository it runs in, by type; a clone does not.
+    #[test]
+    fn a_verify_read_names_the_repository_it_runs_in_and_a_clone_does_not() {
+        assert_eq!(
+            verify(VerifyStep::Advertise).work_dir(),
+            Some(Path::new("/srv/work/thing"))
+        );
         let clone = Intent::Clone {
             url: RemoteUrl::parse("https://forge.example/acme/widget.git").unwrap(),
             dest: PathBuf::from("/srv/work/new"),
@@ -482,5 +859,55 @@ mod tests {
         // A clone's destination does not exist yet, so `-C` would name a directory git is about
         // to create.
         assert_eq!(clone.work_dir(), None);
+        assert!(!clone.is_governed());
+        assert_eq!(clone.effect(), DeclaredEffect::NewRepository);
+    }
+
+    /// §47.2's grammar: a destination on a stdin line wrote a ref under every pin (M5).
+    #[test]
+    fn an_advertised_ref_is_head_or_a_well_formed_refs_name() {
+        for good in [
+            "HEAD",
+            "refs/heads/main",
+            "refs/tags/v1.0",
+            "refs/changes/12/34/1",
+        ] {
+            assert!(AdvertisedRef::parse(good).is_ok(), "{good}");
+        }
+        for bad in [
+            "refs/heads/main:refs/heads/injected",
+            "+refs/heads/main",
+            "refs/heads/*",
+            "refs/tags/v1^{}",
+            "refs/heads/a..b",
+            "refs/heads/x@{1}",
+            "refs/heads/.hidden",
+            "refs/heads/x.lock",
+            "refs/heads/",
+            "refs/heads/x.",
+            "refs//heads",
+            "refs/heads/sp ace",
+            "main",
+            "-refs/heads/main",
+        ] {
+            assert_eq!(
+                AdvertisedRef::parse(bad),
+                Err(IntentRefusal::UnsafeRefName),
+                "{bad:?} must be refused"
+            );
+        }
+        assert!(AdvertisedRef::parse("refs/tags/v1")
+            .unwrap()
+            .is_branch_or_tag_tip());
+        assert!(!AdvertisedRef::parse("refs/changes/1/1/1")
+            .unwrap()
+            .is_branch_or_tag_tip());
+    }
+
+    #[test]
+    fn an_object_id_is_forty_or_sixty_four_lowercase_hex() {
+        assert!(ObjectId::parse(&"a".repeat(40)).is_ok());
+        assert!(ObjectId::parse(&"b".repeat(64)).is_ok());
+        assert_eq!(ObjectId::parse("HEAD"), Err(IntentRefusal::NotAnObjectId));
     }
 }

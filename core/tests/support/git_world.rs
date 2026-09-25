@@ -55,18 +55,31 @@ pub(crate) fn run_in_child(test: &str, dir: &Path, env: &[(String, OsString)]) -
     out
 }
 
-/// What `codotheca-recording-git` wrote: the argv it was given and the environment it ran in.
+/// What `codotheca-recording-git` wrote for one invocation: its argv, environment and stdin.
 #[derive(Debug, Clone)]
 pub(crate) struct Recording {
     /// Every argv element after argv\[0\], lossily decoded.
     pub(crate) argv: Vec<String>,
     /// Every environment entry, `KEY=VALUE`.
     pub(crate) env: Vec<String>,
+    /// The bytes it read on stdin; empty for `Stdio::null()`.
+    pub(crate) stdin: Vec<u8>,
 }
 
-/// Read the stand-in's recording for a child keyed on `key` — the absolute last argv element,
-/// or the `-C` directory — which it writes beside the key as `<name>.recorded`.
-pub(crate) fn read_recording(key: &Path) -> Recording {
+impl Recording {
+    /// The value of `key` in this invocation's environment.
+    pub(crate) fn env_value(&self, key: &str) -> Option<&str> {
+        self.env.iter().find_map(|entry| {
+            entry
+                .split_once('=')
+                .and_then(|(k, v)| (k == key).then_some(v))
+        })
+    }
+}
+
+/// Every invocation the stand-in recorded for `key` — the absolute last argv element, or the `-C`
+/// directory — in the order they ran. It appends to `<name>.recorded` beside the key.
+pub(crate) fn read_recordings(key: &Path) -> Vec<Recording> {
     let mut path = key.to_path_buf();
     let mut name = path
         .file_name()
@@ -80,21 +93,43 @@ pub(crate) fn read_recording(key: &Path) -> Recording {
             path.display()
         )
     });
-    let mut argv = Vec::new();
-    let mut env = Vec::new();
+    let mut calls: Vec<Recording> = Vec::new();
     for record in blob.split(|b| *b == 0) {
-        let text = String::from_utf8_lossy(record);
-        if let Some(rest) = text.strip_prefix("ARGV\t") {
-            argv.push(rest.to_owned());
-        } else if let Some(rest) = text.strip_prefix("ENV\t") {
-            env.push(rest.to_owned());
+        if record == b"CALL" {
+            calls.push(Recording {
+                argv: Vec::new(),
+                env: Vec::new(),
+                stdin: Vec::new(),
+            });
+            continue;
+        }
+        let Some(call) = calls.last_mut() else {
+            continue;
+        };
+        if let Some(rest) = record.strip_prefix(b"ARGV\t") {
+            call.argv.push(String::from_utf8_lossy(rest).into_owned());
+        } else if let Some(rest) = record.strip_prefix(b"ENV\t") {
+            call.env.push(String::from_utf8_lossy(rest).into_owned());
+        } else if let Some(rest) = record.strip_prefix(b"STDIN\t") {
+            call.stdin = rest.to_vec();
         }
     }
     assert!(
-        !argv.is_empty() && !env.is_empty(),
-        "the recording holds no argv or no environment, so every assertion over it is vacuous"
+        !calls.is_empty()
+            && calls
+                .iter()
+                .all(|c| !c.argv.is_empty() && !c.env.is_empty()),
+        "the recording holds an invocation with no argv or no environment, so every assertion \
+         over it is vacuous"
     );
-    Recording { argv, env }
+    calls
+}
+
+/// The **last** invocation recorded for `key`.
+pub(crate) fn read_recording(key: &Path) -> Recording {
+    read_recordings(key)
+        .pop()
+        .expect("read_recordings asserts at least one")
 }
 
 /// The recording stand-in for git, declared as a `testkit` binary.

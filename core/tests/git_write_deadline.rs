@@ -9,6 +9,7 @@
 //! The verifying read runs while a user waits. Before this, the wait loop in `WriteExec::run`
 //! checked `cancel` and nothing else, and nothing ever fired it: an endpoint that accepted the
 //! connection and never answered held the core's handler for as long as git cared to wait.
+//! Driven through the verifying read's advertisement step, the one that talks to the endpoint.
 
 mod support;
 
@@ -20,7 +21,7 @@ use std::time::{Duration, Instant};
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::git::GitError;
 use codotheca_core::gitw::intent::GIT_INVOCATION_DEADLINE;
-use codotheca_core::gitw::{Intent, MutatingGit, RemoteName, SystemMutatingGit};
+use codotheca_core::gitw::{Intent, MutatingGit, RemoteName, SystemMutatingGit, VerifyStep};
 use support::TestRepo;
 
 /// What the test allows beyond the deadline for the kill and the wait to land, named so the
@@ -61,9 +62,11 @@ fn a_stalled_child_is_killed_at_its_deadline_and_leaves_no_survivor() {
     let hooks = repo.scratch().join("hooks-empty");
     std::fs::create_dir_all(&hooks).expect("hooks dir");
 
-    let intent = Intent::Fetch {
-        work_dir: repo.path().to_path_buf(),
+    // The advertisement step: it is the one that talks to the endpoint on every read.
+    let intent = Intent::VerifyRead {
+        repo: repo.path().to_path_buf(),
         remote: RemoteName::parse("origin").expect("remote"),
+        step: VerifyStep::Advertise,
     };
     assert_eq!(intent.deadline(), Some(GIT_INVOCATION_DEADLINE));
 

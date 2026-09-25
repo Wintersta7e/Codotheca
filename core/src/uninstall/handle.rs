@@ -2,11 +2,11 @@
 //!
 //! **This is the layer p2-24b's route arms named and did not build.** `compute_verdict` and
 //! `uninstall_location` were complete; what nobody wrote was the code that fills a
-//! `VerdictInputs` — the row, the roots, the live session, the uniqueness analysis and §24.7C's
-//! in-session fetch — so both commands answered `Route::NoOwner` and the whole feature was
-//! unreachable at the core's own dispatcher.
+//! `VerdictInputs` — the row, the roots, the live session, the uniqueness analysis and the remote
+//! check — so both commands answered `Route::NoOwner` and the whole feature was unreachable at
+//! the core's own dispatcher.
 //!
-//! **Neither handler holds the index mutex across the network.** §24.7C requires a fetch
+//! **Neither handler holds the index mutex across the network.** §47.4's verifying read runs
 //! immediately before the verdict, and `SqliteScanStore` takes the same `std::sync::Mutex`, which
 //! is not reentrant — so these take the guard, read, drop it, go to the network, and take it
 //! again. It is `readme::handle_readme_assets_off_lock`'s shape, for the same reason.
@@ -20,9 +20,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::Value;
 
+use crate::analyser::remote::{GitRemoteVerifier, RemoteReading, RemoteVerifier as _};
 use crate::git::{GitBackend, JobClass, JobContext, RepoHandle, StoreKey};
 use crate::gitw::backend::MutatingGit;
-use crate::gitw::intent::{Intent, RemoteName, GIT_INVOCATION_DEADLINE};
+use crate::gitw::intent::GIT_INVOCATION_DEADLINE;
 use crate::index::Index;
 use crate::mount::StoreClass;
 use crate::proto::dispatch::{parse_args, CommandFailure};
@@ -32,10 +33,6 @@ use crate::protocol::{
 use crate::uninstall::gates::{self, RemoteOutcome};
 use crate::uninstall::preflight::{compute_verdict, LocationSnapshot, VerdictInputs};
 use crate::uninstall::{uninstall_location, unique};
-
-/// The remote a fetch verifies against. §24.1a's `RemoteName` refuses anything that is not one
-/// safe segment, so this cannot become a path.
-const ORIGIN: &str = "origin";
 
 fn internal(e: impl std::fmt::Display) -> CommandFailure {
     CommandFailure::internal(e.to_string())
@@ -127,52 +124,56 @@ fn read_row(index: &mut Index, id: LocationId) -> Result<RowFacts, CommandFailur
         })
 }
 
-/// §24.7C: **verified, not believed.**
+/// §47.4: **verified, not believed** — every configured remote, one at a time, through the
+/// verifying read, which writes objects and no ref.
 ///
-/// A fetch that reached the remote is the only thing that yields `Reached`. Everything else is a
-/// class of not-knowing, and every one of them behaves as unsafe — a 401, 403 or 404 is *unknown*
-/// and never *gone*, which is the specific mistake that would turn this into a shredder.
-fn verify_remote_live(
+/// **Interim, until the analyser's own composition lands.** The readings are folded to phase 2's
+/// `RemoteOutcome`: any network remote that did not answer — a not-admitted transport included —
+/// is `Unreachable`; only same-machine remotes is `LocalMirror`; no remote at all is
+/// `Unreachable`; otherwise `Reached`. Uniqueness is still computed before this read, against
+/// tracking refs the read no longer refreshes, so the answer can only block more: the safe
+/// direction.
+fn verify_remotes(
     repo: &RepoHandle,
     git: &dyn GitBackend,
     write_git: &dyn MutatingGit,
     ctx: &JobContext<'_>,
 ) -> RemoteOutcome {
-    // A remote on this machine is a mirror, not a backup, and it is recognised before the fetch:
-    // fetching from it would succeed and prove nothing.
-    match git.remote_urls(repo, ctx) {
-        Ok(urls) => {
-            // `(name, url)` pairs: the URL is what a mirror check reads, never the remote name.
-            if urls.iter().any(|(_, url)| gates::is_local_mirror(url)) {
-                return RemoteOutcome::LocalMirror;
-            }
-            if urls.is_empty() {
-                // No remote at all: nothing upstream can hold this work.
-                return RemoteOutcome::Unreachable;
-            }
-        }
+    let Ok(urls) = git.remote_urls(repo, ctx) else {
         // A config that could not be read is a remote that was not established.
-        Err(_) => return RemoteOutcome::Unreachable,
-    }
-
-    let Ok(remote) = RemoteName::parse(ORIGIN) else {
         return RemoteOutcome::Unreachable;
     };
-    let intent = Intent::Fetch {
-        work_dir: repo.work_dir.clone(),
-        remote,
-    };
-    // The child's stderr is read and dropped: §24.7C needs *whether* the remote answered, and the
-    // core's own stdout carries protocol frames and nothing else.
-    let mut sink = |_: &str| {};
-    match write_git.run(&intent, ctx.cancel, &mut sink) {
-        Ok(()) => RemoteOutcome::Reached,
-        // A refusal and a failure to arrive are different facts and §24.7C keeps them apart, but
-        // both behave as unsafe. `GitError` does not carry an HTTP status, so the distinction is
-        // drawn where it is available: a permission error is a refusal, everything else is a
-        // remote that was never reached.
-        Err(crate::git::GitError::PermissionDenied { .. }) => RemoteOutcome::Refused,
-        Err(_) => RemoteOutcome::Unreachable,
+    // `(name, url)` pairs, one per configured URL: the names, once each, in config order. The
+    // URL here is the configured one; §45.3(a) classifies the effective one the read resolves.
+    let mut names: Vec<String> = Vec::new();
+    for (name, _) in urls {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        // No remote at all: nothing upstream can hold this work.
+        return RemoteOutcome::Unreachable;
+    }
+    let verifier = GitRemoteVerifier::new(write_git, git);
+    let mut network = false;
+    let mut all_answered = true;
+    for name in &names {
+        match verifier.read(repo, name, ctx) {
+            RemoteReading::SameMachine => {}
+            RemoteReading::Answered { .. } => network = true,
+            RemoteReading::DidNotAnswer(_) => {
+                network = true;
+                all_answered = false;
+            }
+        }
+    }
+    if !all_answered {
+        RemoteOutcome::Unreachable
+    } else if network {
+        RemoteOutcome::Reached
+    } else {
+        RemoteOutcome::LocalMirror
     }
 }
 
@@ -214,14 +215,15 @@ fn assemble(
     VerdictInputs {
         snapshot: facts.snapshot.clone(),
         roots: facts.roots.clone(),
-        remote: verify_remote_live(&repo, git, write_git, &ctx),
+        remote: verify_remotes(&repo, git, write_git, &ctx),
         unique: blockers,
         live_session: facts.live_session,
         now,
     }
 }
 
-/// §24.7's pre-flight. **Read-only, unprivileged, and not callable on hover** — it fetches.
+/// §24.7's pre-flight. **Unprivileged, and not callable on hover** — its only write is objects,
+/// through §47.4's verifying read, and it goes to the network (R186).
 ///
 /// # Errors
 /// `PROTOCOL` for an argument shape the schema does not admit or an id that names no location;

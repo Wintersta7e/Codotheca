@@ -14,7 +14,7 @@ use std::sync::Mutex;
 
 use crate::cancel::CancelToken;
 use crate::git::{GitError, GitResult};
-use crate::gitw::backend::MutatingGit;
+use crate::gitw::backend::{MutatingGit, RunOutput};
 use crate::gitw::intent::Intent;
 
 /// What the fake should do when asked to clone.
@@ -76,14 +76,16 @@ impl MutatingGit for FakeMutatingGit {
         intent: &Intent,
         cancel: &CancelToken,
         on_stderr: &mut dyn FnMut(&str),
-    ) -> GitResult<()> {
+    ) -> GitResult<RunOutput> {
         self.calls
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(intent.clone());
 
         let Intent::Clone { dest, .. } = intent else {
-            return Ok(());
+            // Only a clone is scripted here; the verifying read's tests drive the real backend
+            // or `FixtureRemoteVerifier`, never an empty answer from this fake.
+            return Ok(RunOutput::default());
         };
         self.destinations
             .lock()
@@ -117,6 +119,6 @@ impl MutatingGit for FakeMutatingGit {
                 on_stderr("Receiving objects: 100% (3/3), done.");
             }
         }
-        Ok(())
+        Ok(RunOutput::default())
     }
 }

@@ -4211,7 +4211,7 @@
           "status": "automated",
           "runner": "cargo",
           "owner": "p2-24",
-          "test": "git_write_audit::every_rendered_subcommand_is_write_allowed",
+          "test": "git_write_audit::every_rendered_subcommand_is_on_its_intents_row",
           "assert": "Every Intent::ALL variant renders a subcommand in clone or fetch and nothing else \u2014 git is additive-only in phase 2."
         },
         {
@@ -4786,7 +4786,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-24b",
-          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface leaves the pre-flight unprivileged, because it writes nothing",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface leaves the pre-flight unprivileged, because its only write is objects",
           "assert": "The pre-flight is neither privileged nor filesystem-mutating, which is what keeps the verdict renderable at all."
         }
       ]
@@ -4843,7 +4843,7 @@
           "status": "automated",
           "runner": "cargo",
           "owner": "p2-24",
-          "test": "git_write_audit::the_sentinel_reaches_no_rendered_fetch_argv_although_fetch_never_spawns",
+          "test": "git_write_audit::the_sentinel_reaches_no_verify_read_child",
           "assert": "The same holds for the fetch intent, asserted although fetch never spawns, so the guarantee does not rest on which variants happen to run."
         }
       ]

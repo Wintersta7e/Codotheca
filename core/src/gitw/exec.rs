@@ -9,7 +9,7 @@
 //! `-c credential.helper=`, not the environment half.
 
 use std::ffi::OsString;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -20,8 +20,9 @@ use command_group::CommandGroup;
 
 use crate::cancel::CancelToken;
 use crate::git::{classify_spawn, neutralise_env, transport_refused, GitError, GitResult};
+use crate::gitw::backend::RunOutput;
 use crate::gitw::credential::CredentialChannel;
-use crate::gitw::intent::Intent;
+use crate::gitw::intent::{Intent, StdoutUse};
 
 /// The filter drivers configured in the effective config, **and the proof that they were read**.
 ///
@@ -61,7 +62,7 @@ impl FilterDrivers {
 /// Everything a write invocation needs beyond the [`Intent`] itself.
 #[derive(Debug, Clone)]
 pub struct WriteEnv {
-    /// The repository a `Fetch` runs in.
+    /// The repository an intent runs in, when the intent itself names none.
     ///
     /// `None` for a clone: its destination **does not exist yet**, which is §24.1's precondition,
     /// and rendering `-C` for it would name a directory git is about to create.
@@ -120,8 +121,8 @@ fn parse_filter_drivers(stdout: &[u8]) -> Vec<String> {
 pub fn write_base_args(intent: &Intent, env: &WriteEnv) -> Vec<OsString> {
     let mut argv: Vec<OsString> = Vec::with_capacity(24);
     // [p2-24b] The **intent's** repository wins, because it is the one the type guarantees. The
-    // env's stays as the fallback for a caller that has one and an intent that does not; a fetch
-    // now carries its own, so the two cannot disagree about which repository is written to.
+    // env's stays as the fallback for a caller that has one and an intent that does not; the
+    // verifying read carries its own, so the two cannot disagree about which repository is read.
     if let Some(dir) = intent
         .work_dir()
         .map(std::path::Path::to_path_buf)
@@ -158,6 +159,10 @@ pub fn write_base_args(intent: &Intent, env: &WriteEnv) -> Vec<OsString> {
     // empty value stopped it; `transfer.bundleURI=false` stops a server-advertised list.
     cfg(&mut argv, OsString::from("fetch.bundleURI="));
     cfg(&mut argv, OsString::from("transfer.bundleURI=false"));
+    // The intent's own `-c` pins (§47.3), each exactly once.
+    for pin in intent.config_pins() {
+        cfg(&mut argv, OsString::from(*pin));
+    }
     argv.extend(env.credential.helper_args());
     // §3.2's parenthesis — *"clean/smudge filters are not disabled … but phase 1 never checks
     // out"* — becomes load-bearing here, because a clone checks out.
@@ -172,8 +177,59 @@ pub fn write_base_args(intent: &Intent, env: &WriteEnv) -> Vec<OsString> {
             OsString::from(format!("filter.{driver}.smudge=")),
         );
     }
-    let _ = intent;
     argv
+}
+
+/// The one permitted difference between a test's write child and the production one.
+///
+/// §47.9 C, D-6: the local fixtures are reached over `file`, which production's
+/// `GIT_ALLOW_PROTOCOL` refuses. It appends `file` to the list of every intent that uses a transport, **rendered
+/// last**, and the verifying read admits a `file://` URL under its root as a network remote.
+/// Layer C asserts it is the only difference.
+#[cfg(feature = "testkit")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransportFixture {
+    root: PathBuf,
+}
+
+#[cfg(feature = "testkit")]
+impl TransportFixture {
+    /// A fixture whose local remotes all live under `root`.
+    #[must_use]
+    pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self { root: root.into() }
+    }
+
+    /// Where the fixture's local remotes live.
+    #[must_use]
+    pub fn root(&self) -> &std::path::Path {
+        &self.root
+    }
+
+    /// The intent's transport list with `file` appended, for every intent that uses one.
+    #[must_use]
+    pub fn widened(&self, intent: &Intent) -> Option<String> {
+        match intent {
+            Intent::Clone { .. } | Intent::VerifyRead { .. } => {
+                Some(format!("{}:file", intent.allowed_protocols()))
+            }
+        }
+    }
+
+    /// Is `url` one of this fixture's local remotes — a `file://` URL or an absolute path under
+    /// its root? The verifying read classifies such a URL as network, and nothing else.
+    #[must_use]
+    pub fn admits(&self, url: &str) -> bool {
+        let normal = |text: &str| text.replace('\\', "/").trim_end_matches('/').to_owned();
+        let path = url.strip_prefix("file://").unwrap_or(url);
+        // `file:///C:/…` on Windows carries one slash before the drive.
+        let path = path
+            .strip_prefix('/')
+            .filter(|rest| rest.as_bytes().get(1) == Some(&b':'))
+            .unwrap_or(path);
+        let root = normal(&self.root.to_string_lossy());
+        !root.is_empty() && normal(path).starts_with(&root)
+    }
 }
 
 /// The second and last git spawn site in the product.
@@ -185,6 +241,9 @@ pub fn write_base_args(intent: &Intent, env: &WriteEnv) -> Vec<OsString> {
 #[derive(Debug, Clone)]
 pub struct WriteExec {
     git: PathBuf,
+    /// Test-only: widens the transport list for local fixtures, and nothing else.
+    #[cfg(feature = "testkit")]
+    fixture: Option<TransportFixture>,
 }
 
 enum Stop {
@@ -194,11 +253,31 @@ enum Stop {
     Deadline(u64),
 }
 
+/// The child's output once the wait is over.
+struct Finished {
+    stop: Stop,
+    elapsed_ms: u128,
+}
+
 impl WriteExec {
     /// Point the write path at a git binary.
     #[must_use]
     pub const fn new(git: PathBuf) -> Self {
-        Self { git }
+        Self {
+            git,
+            #[cfg(feature = "testkit")]
+            fixture: None,
+        }
+    }
+
+    /// The write path with the test's one permitted difference, [`TransportFixture`].
+    #[cfg(feature = "testkit")]
+    #[must_use]
+    pub const fn with_transport_fixture(git: PathBuf, fixture: TransportFixture) -> Self {
+        Self {
+            git,
+            fixture: Some(fixture),
+        }
     }
 
     /// Enumerate the filter drivers the effective config declares.
@@ -248,53 +327,82 @@ impl WriteExec {
     /// Object leaves orphans holding file locks, and the staging removal then fails with *Access
     /// is denied*.
     ///
-    /// The child's stdout and stderr are read by the core and **never forwarded** — the core's own
-    /// stdout carries protocol frames and nothing else. `--progress` writes to stderr, which is
-    /// where the stage parser reads, so stderr is delivered to `on_stderr` on the calling thread
-    /// while stdout is drained on another. Draining both is what stops a chatty child filling a
-    /// pipe buffer and blocking forever.
+    /// **Streams (§47.3).** Stdin, when the intent has a payload, is written on its own thread and
+    /// then closed; otherwise it is `Stdio::null()`. Stdout is kept when the intent parses it and
+    /// drained otherwise — never forwarded, since the core's own stdout carries protocol frames
+    /// and nothing else. Stderr is delivered to `on_stderr` on the calling thread.
     ///
-    /// **The intent's deadline is enforced here, by the core** (§47.3). On expiry the whole
-    /// process group is killed and waited for — a `git-remote-https` left running would hold the
-    /// connection and the staging directory — and the call returns `Budget`.
+    /// **The intent's deadline is enforced here, by the core.** On expiry the whole process group
+    /// is killed and waited for — a `git-remote-https` left running would hold the connection —
+    /// and the call returns `Budget`.
     ///
-    /// `GIT_ALLOW_PROTOCOL` is set to the intent's own list **after** `neutralise_env` has removed
-    /// the parent's, so a user's value can neither widen nor survive it.
+    /// **Environment.** The intent's own pins go on after `neutralise_env` has removed the
+    /// parent's values, so a user's `GIT_ALLOW_PROTOCOL` can neither widen nor survive them.
     ///
     /// # Errors
     /// `GitError::Cancelled` when `cancel` fires before the spawn or while the child runs;
     /// `GitError::Budget` when the intent's deadline elapses; the spawn's classification
     /// (`Missing`, `PermissionDenied`, `Internal`) when the group cannot be started or waited on;
     /// `TransportRefused` when git refused a transport the intent does not list; and `Internal`
-    /// when a pipe is missing or git exits unsuccessfully otherwise.
+    /// when a pipe is missing, stdin cannot be written, or git exits unsuccessfully otherwise.
     pub fn run(
         &self,
         intent: &Intent,
         env: &WriteEnv,
         cancel: &CancelToken,
         on_stderr: &mut dyn FnMut(&str),
-    ) -> GitResult<()> {
+    ) -> GitResult<RunOutput> {
         cancel.check()?;
 
         let mut cmd = Command::new(&self.git);
         cmd.args(write_base_args(intent, env));
         cmd.args(intent.argv());
         neutralise_env(&mut cmd);
-        cmd.env("GIT_ALLOW_PROTOCOL", intent.allowed_protocols());
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        for (key, value) in intent.env_pins(&env.hooks_dir) {
+            cmd.env(key, value);
+        }
+        #[cfg(feature = "testkit")]
+        if let Some(widened) = self.fixture.as_ref().and_then(|f| f.widened(intent)) {
+            cmd.env("GIT_ALLOW_PROTOCOL", widened);
+        }
+        let payload = intent.stdin_payload();
+        cmd.stdin(if payload.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
         let mut child = cmd.group_spawn().map_err(|e| classify_spawn(&e))?;
         let missing = || GitError::Internal {
             detail: "child pipe was not created".to_owned(),
         };
+        let writer = match payload {
+            Some(bytes) => {
+                let mut stdin = child.inner().stdin.take().ok_or_else(missing)?;
+                // Written on its own thread and then closed, while stdout and stderr drain on
+                // others: writing everything before reading deadlocks once a pipe fills (§3.3).
+                Some(thread::spawn(move || {
+                    let outcome = stdin.write_all(&bytes).and_then(|()| stdin.flush());
+                    drop(stdin);
+                    outcome
+                }))
+            }
+            None => None,
+        };
         let stdout = child.inner().stdout.take().ok_or_else(missing)?;
         let stderr = child.inner().stderr.take().ok_or_else(missing)?;
 
-        let drain = thread::spawn(move || {
+        let keep = intent.stdout_use() == StdoutUse::Parse;
+        let reader = thread::spawn(move || {
             let mut sink = Vec::new();
             let _ = BufReader::new(stdout).read_to_end(&mut sink);
+            if keep {
+                sink
+            } else {
+                Vec::new()
+            }
         });
         let (tx, rx) = mpsc::channel::<String>();
         let lines = thread::spawn(move || {
@@ -314,60 +422,86 @@ impl WriteExec {
             }
             on_stderr(line);
         };
-
-        let deadline = intent.deadline();
-        let started = Instant::now();
-        let mut poll = Duration::from_micros(250);
-        let stop = loop {
-            while let Ok(line) = rx.try_recv() {
-                deliver(&line);
-            }
-            match child.try_wait() {
-                Ok(Some(status)) => break Stop::Exited(status),
-                Ok(None) => {}
-                Err(e) => return Err(classify_spawn(&e)),
-            }
-            if cancel.is_cancelled() {
-                let _ = child.kill();
-                let _ = child.wait();
-                break Stop::Cancelled;
-            }
-            if let Some(limit) = deadline {
-                let elapsed = started.elapsed();
-                if elapsed >= limit {
-                    // The group, not the child: a transport helper outliving git would keep the
-                    // connection open and the process tree alive past the answer.
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break Stop::Deadline(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX));
-                }
-            }
-            thread::sleep(poll);
-            poll = (poll * 2).min(Duration::from_millis(10));
-        };
+        let finished = wait(&mut child, &rx, &mut deliver, cancel, intent.deadline())?;
 
         // The reader threads end when their pipes close, which the exit or the kill above has
         // already caused. Draining after the join is what delivers the last progress lines.
         let _ = lines.join();
-        let _ = drain.join();
+        let parsed = reader.join().unwrap_or_default();
         while let Ok(line) = rx.try_recv() {
             deliver(&line);
         }
+        let wrote = writer.map(|handle| {
+            handle
+                .join()
+                .unwrap_or_else(|_| Err(std::io::Error::other("stdin writer panicked")))
+        });
 
-        match stop {
+        match finished.stop {
             Stop::Cancelled => Err(GitError::Cancelled),
             Stop::Deadline(after_ms) => Err(GitError::Budget { after_ms }),
-            Stop::Exited(status) if status.success() => Ok(()),
+            Stop::Exited(status) if status.success() => {
+                if let Some(Err(e)) = wrote {
+                    return Err(GitError::Internal {
+                        detail: format!("stdin could not be written: {e}"),
+                    });
+                }
+                Ok(RunOutput { stdout: parsed })
+            }
             Stop::Exited(status) => Err(refused.map_or_else(
                 || GitError::Internal {
                     detail: format!(
                         "git exited with {} after {} ms",
                         status.code().unwrap_or(-1),
-                        started.elapsed().as_millis()
+                        finished.elapsed_ms
                     ),
                 },
                 |protocol| GitError::TransportRefused { protocol },
             )),
         }
     }
+}
+
+/// Watch the child until it exits, `cancel` fires, or `deadline` elapses — delivering stderr lines
+/// as they arrive. The cancel and the deadline kill the **group** and wait for it.
+fn wait(
+    child: &mut command_group::GroupChild,
+    rx: &mpsc::Receiver<String>,
+    deliver: &mut dyn FnMut(&str),
+    cancel: &CancelToken,
+    deadline: Option<Duration>,
+) -> GitResult<Finished> {
+    let started = Instant::now();
+    let mut poll = Duration::from_micros(250);
+    let stop = loop {
+        while let Ok(line) = rx.try_recv() {
+            deliver(&line);
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break Stop::Exited(status),
+            Ok(None) => {}
+            Err(e) => return Err(classify_spawn(&e)),
+        }
+        if cancel.is_cancelled() {
+            let _ = child.kill();
+            let _ = child.wait();
+            break Stop::Cancelled;
+        }
+        if let Some(limit) = deadline {
+            let elapsed = started.elapsed();
+            if elapsed >= limit {
+                // The group, not the child: a transport helper outliving git would keep the
+                // connection open and the process tree alive past the answer.
+                let _ = child.kill();
+                let _ = child.wait();
+                break Stop::Deadline(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX));
+            }
+        }
+        thread::sleep(poll);
+        poll = (poll * 2).min(Duration::from_millis(10));
+    };
+    Ok(Finished {
+        stop,
+        elapsed_ms: started.elapsed().as_millis(),
+    })
 }

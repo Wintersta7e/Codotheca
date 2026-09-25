@@ -1,10 +1,10 @@
 /**
  * §24.8's verdict, as the project page holds it.
  *
- * **The verdict is fetched when the affordance opens, and at no other time.**
- * `locations.uninstallPreflight` performs an in-session fetch to verify the remote rather than
- * believe it (§24.7C), so it is not free and `protocol.json` says outright it is *not callable
- * on hover*. There is no prefetch here, no hover handler and no effect that runs on mount: the
+ * **The verdict is requested when the affordance opens, and at no other time.**
+ * `locations.uninstallPreflight` reads every remote over the network to verify it rather than
+ * believe it (§47's verifying read), so it is not free and `protocol.json` says outright it is
+ * *not callable on hover*. There is no prefetch here, no hover handler and no effect that runs on mount: the
  * only thing that starts a pre-flight is a press.
  *
  * **The renderer confirms; it never decides.** Nothing in this file composes a disposition, adds
