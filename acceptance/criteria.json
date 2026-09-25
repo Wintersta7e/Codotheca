@@ -4574,7 +4574,7 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-24b",
-          "test": "the uninstall control names every one of the fourteen blockers when it is blocked",
+          "test": "the uninstall control names every blocker the schema declares when it is blocked",
           "assert": "The control is disabled with its reasons named, for every one of the fourteen blockers rather than the first."
         },
         {

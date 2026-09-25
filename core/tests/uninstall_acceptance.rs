@@ -26,7 +26,7 @@ use codotheca_core::uninstall::gates::RemoteOutcome;
 use codotheca_core::uninstall::verdict::VerdictSeal;
 use codotheca_core::uninstall::{
     compute_verdict, is_unknown_blocker, read_stash_truth, uninstall_location, LocationSnapshot,
-    StashTruth, VerdictInputs, ALL_BLOCKERS,
+    StashTruth, VerdictInputs,
 };
 
 fn identity() -> RootCommit {
@@ -234,14 +234,17 @@ fn ac_p2_24_16_no_remote_or_history_failure_ever_yields_safe() {
 }
 
 /// The fold's totality, stated as the criterion implies it rather than as the enum declares it:
-/// **every one of the fourteen blockers, alone, keeps the answer away from `safe`.** A fifteenth
-/// variant that nobody classified would be caught here as well as by `verdict.rs`'s match.
+/// **every blocker the schema declares, alone, keeps the answer away from `safe`.** The set is the
+/// generated `UninstallBlocker::ALL` and its size is printed, never written here: a hand count
+/// is one value stated twice, and it was wrong the moment §45 added eight.
 #[test]
 fn ac_p2_24_16_every_blocker_alone_keeps_the_answer_away_from_safe() {
     let (_dir, root, copy) = fixture();
-    assert_eq!(ALL_BLOCKERS.len(), 14, "the set is closed at fourteen");
+    let all = UninstallBlocker::ALL;
+    assert!(!all.is_empty(), "the schema declares zero blockers");
+    eprintln!("ac_p2_24_16: {} blockers, each alone", all.len());
 
-    for blocker in ALL_BLOCKERS {
+    for blocker in all {
         let mut inputs = clean_inputs(&root, &copy);
         inputs.unique.push(blocker);
         let verdict = verdict_for(&inputs);

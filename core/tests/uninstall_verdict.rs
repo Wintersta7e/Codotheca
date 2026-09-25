@@ -8,7 +8,7 @@
 //! §24.8's fold, and the seal that never leaves the core.
 
 use codotheca_core::protocol::{UninstallBlocker, UninstallDisposition};
-use codotheca_core::uninstall::{fold_disposition, is_unknown_blocker, VerdictSeal, ALL_BLOCKERS};
+use codotheca_core::uninstall::{fold_disposition, is_unknown_blocker, VerdictSeal};
 
 #[test]
 fn no_blockers_is_safe() {
@@ -39,30 +39,48 @@ fn a_known_bad_blocker_wins_and_hides_nothing() {
     );
 }
 
-/// The two classes **partition** all fourteen: no overlap, no omission. A fifteenth variant fails
-/// to compile inside `is_unknown`'s exhaustive match rather than falling into a default.
+/// The two classes **partition** every blocker the schema declares: no overlap, no omission. A
+/// new variant fails to compile inside `is_unknown`'s exhaustive match rather than falling into a
+/// default, and the set iterated here is the generated `UninstallBlocker::ALL`, never a hand
+/// list — a count written into this file is one value stated twice (§45.9, AC-P4-45-1).
 #[test]
-fn the_two_classes_partition_all_fourteen_blockers() {
-    assert_eq!(ALL_BLOCKERS.len(), 14);
-    let unknowns: Vec<_> = ALL_BLOCKERS
-        .iter()
-        .filter(|b| is_unknown_blocker(**b))
-        .collect();
-    let known: Vec<_> = ALL_BLOCKERS
-        .iter()
-        .filter(|b| !is_unknown_blocker(**b))
-        .collect();
-    assert_eq!(
-        unknowns.len(),
-        4,
-        "shallow, unreachable, unreadable, never observed"
+fn the_two_classes_partition_every_blocker_the_schema_declares() {
+    let all = UninstallBlocker::ALL;
+    assert!(
+        !all.is_empty(),
+        "the schema declares zero blockers, so the partition asserts nothing"
     );
-    assert_eq!(known.len(), 10);
-    assert_eq!(unknowns.len() + known.len(), ALL_BLOCKERS.len());
+    for blocker in all {
+        let class = if is_unknown_blocker(blocker) {
+            "unknown"
+        } else {
+            "known-bad"
+        };
+        eprintln!("class {blocker:?} {class}");
+    }
+    let unknowns: Vec<_> = all.iter().filter(|b| is_unknown_blocker(**b)).collect();
+    let known: Vec<_> = all.iter().filter(|b| !is_unknown_blocker(**b)).collect();
+    eprintln!(
+        "known-bad {} / unknown {} / total {}",
+        known.len(),
+        unknowns.len(),
+        all.len()
+    );
+    assert!(
+        !unknowns.is_empty() && !known.is_empty(),
+        "both classes must be inhabited"
+    );
+    assert_eq!(unknowns.len() + known.len(), all.len());
+    // §45.9: it appears only beside another blocker, and as a known-bad member it would turn
+    // *the network remote was offline* into `blocked`.
+    assert!(
+        is_unknown_blocker(UninstallBlocker::RemoteIsLocalMirror),
+        "remote_is_local_mirror moved to the unknown class"
+    );
 
-    // Every one of the fourteen folds to a disposition on its own, and an unknown never folds to
-    // `blocked` by itself.
-    for blocker in ALL_BLOCKERS {
+    // Every blocker folds to a disposition on its own, and an unknown never folds to `blocked`
+    // by itself.
+    for blocker in all {
         let folded = fold_disposition(&[blocker]);
         assert_ne!(
             folded,

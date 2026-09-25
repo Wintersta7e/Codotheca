@@ -1059,8 +1059,32 @@ test('§24.8: uninstall is two commands with opposite trust classes', () => {
   assert.deepEqual(Object.keys(uninstall.args), ['locationId']);
 });
 
-test('§24.8: the blocker vocabulary is fourteen, and the disposition is three', () => {
-  assert.equal(schema.types.UninstallBlocker.variants.length, 14);
+/**
+ * [p4] §45.12 adds eight blockers to phase 2's fourteen. Asserted by NAME rather than by length:
+ * the class partition is derived from this list in both languages, and a length written here is
+ * the fourth copy of one count (§45.9). The unknown class is named in the enum's own comment,
+ * which states no count.
+ */
+test("§24.8, §45.12: the blocker vocabulary carries §45's eight, and the disposition is three", () => {
+  const variants = schema.types.UninstallBlocker.variants;
+  for (const added of [
+    'no_remote',
+    'unpushed_tag',
+    'interrupted_operation',
+    'borrowed_by_another_repository',
+    'refs_unreadable',
+    'hidden_from_status',
+    'lfs_unverified',
+    'nesting_too_deep',
+  ]) {
+    assert.ok(variants.includes(added), `UninstallBlocker is missing §45.12's ${added}`);
+  }
+  assert.equal(new Set(variants).size, variants.length, 'a blocker is declared twice');
+  assert.doesNotMatch(
+    schema.types.UninstallBlocker.$comment,
+    /\b(ten|four|fourteen|twenty)\b/iu,
+    'the comment names the unknown class and states no count',
+  );
   assert.deepEqual(schema.types.UninstallDisposition.variants, ['safe', 'blocked', 'unknown']);
   // `unknown` is a disposition of its own, not a flag on `blocked`: collapsing the two would
   // render an absence as a fact.
@@ -1075,6 +1099,22 @@ test('§24.8: the verdict carries every blocker and no token', () => {
     'remoteVerifiedAt',
     'trashAvailable',
     'computedAt',
+    'nested',
+    'precious',
+    'trashRefusal',
+  ]);
+  // [p4] §45.12's two and §46.7's one, by shape: a null `precious` is *not enumerated*, and the
+  // trash reason is nullable because `trashAvailable` is true exactly when it is null.
+  assert.equal(schema.types.UninstallVerdict.fields.nested, '[NestedRepository]');
+  assert.equal(schema.types.UninstallVerdict.fields.precious, 'PreciousSummary?');
+  assert.equal(schema.types.UninstallVerdict.fields.trashRefusal, 'TrashRefusalKind?');
+  assert.deepEqual(schema.types.NestedKind.variants, ['submodule', 'module_gitdir', 'independent']);
+  assert.deepEqual(schema.types.TrashRefusalKind.variants, [
+    'unsupported',
+    'network_drive',
+    'oversized_folder',
+    'disabled_on_volume',
+    'capacity_unknown',
   ]);
   // The seal `locations.uninstall` compares against is in-core only. A token on the wire would
   // be a capability the renderer could hold, and §24.8 gives it none.
@@ -1192,11 +1232,15 @@ test('the four totals agree with the phase-2 delta table', () => {
    *
    * §34.4 moves it by **+3** off that merged base: `ProjectHealthDelta`, `HealthLayerDelta` and
    * `HealthDetectedIn`. `DecayLayer` is §28's declaration and §34 references it (R113, R31).
+   *
+   * [p4] Lane 0 moves the base first (R147): §45.12's **+4** — `NestedRepository`, `NestedKind`,
+   * `PreciousSummary`, `PreciousEntry` — and §46.7's **+1**, `TrashRefusalKind`. The figure is
+   * the generator's (`protocol/generated.lock`), never a sum carried from another branch.
    */
   assert.equal(
     types,
-    194,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3; found ${types}`,
+    199,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1; found ${types}`,
   );
 });
 

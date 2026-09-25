@@ -1,6 +1,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+// `?raw` rather than node:fs: the renderer project carries no Node types by design.
+import schemaRaw from '../../../../../protocol/schema/protocol.json?raw';
 import type {
   UninstallBlocker,
   UninstallDisposition,
@@ -11,30 +13,16 @@ import { blockerSentence, UNINSTALL_CONFIRMATION, UNINSTALL_LABEL } from './unin
 
 afterEach(cleanup);
 
-/** All fourteen, so the loops below cannot silently cover thirteen. */
-const ALL_BLOCKERS: UninstallBlocker[] = [
-  'unpushed_commits',
-  'uncommitted_changes',
-  'stash_present',
-  'untracked_precious',
-  'ignored_precious',
-  'submodule_unsafe',
-  'linked_worktree',
-  'shallow_clone',
-  'remote_unreachable',
-  'remote_is_local_mirror',
-  'stash_unreadable',
-  'live_session',
-  'refused_path',
-  'never_observed',
-];
-
-const UNKNOWN_CLASS: UninstallBlocker[] = [
-  'shallow_clone',
-  'remote_unreachable',
-  'stash_unreadable',
-  'never_observed',
-];
+/**
+ * Every blocker **the schema declares**, read from the tracked schema both languages are generated
+ * from. A hand list here was the fourth copy of one count (§45.9, R201): it said fourteen after
+ * the schema said more, and every loop below would have covered the old set and passed.
+ */
+function schemaBlockers(): UninstallBlocker[] {
+  expect(schemaRaw.length, 'protocol.json read as an empty string').toBeGreaterThan(0);
+  const raw = JSON.parse(schemaRaw) as { types?: Record<string, { variants?: string[] }> };
+  return (raw.types?.['UninstallBlocker']?.variants ?? []) as UninstallBlocker[];
+}
 
 const verdict = (over: Partial<UninstallVerdict> = {}): UninstallVerdict => ({
   disposition: 'safe',
@@ -42,6 +30,9 @@ const verdict = (over: Partial<UninstallVerdict> = {}): UninstallVerdict => ({
   remoteVerifiedAt: 1_700_000_000,
   trashAvailable: true,
   computedAt: 1_700_000_000,
+  nested: [],
+  precious: null,
+  trashRefusal: null,
   ...over,
 });
 
@@ -65,21 +56,35 @@ function reachableActivators(): Element[] {
 }
 
 describe('the uninstall control', () => {
-  it('names every one of the fourteen blockers when it is blocked', () => {
-    for (const blocker of ALL_BLOCKERS) {
-      cleanup();
-      render(
-        <UninstallControl
-          verdict={verdict({
-            disposition: UNKNOWN_CLASS.includes(blocker) ? 'unknown' : 'blocked',
-            blockers: [blocker],
-          })}
-          onUninstall={vi.fn()}
-        />,
-      );
-      expect(screen.getByText(blockerSentence(blocker)), blocker).toBeTruthy();
-      expect(reachableActivators(), `${blocker} must reach nothing`).toHaveLength(0);
+  it('names every blocker the schema declares when it is blocked', () => {
+    const all = schemaBlockers();
+    let covered = 0;
+    for (const blocker of all) {
+      // Both dispositions: the renderer never classifies, so each sentence must render under the
+      // one the core would choose whichever class the core puts it in.
+      for (const disposition of ['blocked', 'unknown'] as const) {
+        cleanup();
+        render(
+          <UninstallControl
+            verdict={verdict({ disposition, blockers: [blocker] })}
+            onUninstall={vi.fn()}
+          />,
+        );
+        const sentence = blockerSentence(blocker) as string | undefined;
+        expect(
+          sentence ?? '',
+          `schema declares ${String(all.length)}, sentence missing for ${blocker}`,
+        ).not.toBe('');
+        expect(screen.getByText(blockerSentence(blocker)), blocker).toBeTruthy();
+        expect(reachableActivators(), `${blocker} must reach nothing`).toHaveLength(0);
+      }
+      covered += 1;
     }
+    console.warn(`uninstall control: ${String(covered)} / ${String(all.length)} blockers named`);
+    expect(covered, 'the schema declares zero blockers, so this asserts nothing').toBeGreaterThan(
+      0,
+    );
+    expect(covered).toBe(all.length);
   });
 
   it('names every blocker when there are several, not just the first', () => {

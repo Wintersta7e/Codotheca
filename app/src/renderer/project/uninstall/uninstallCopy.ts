@@ -35,11 +35,13 @@ export const CHECKING_NOTE = 'Checking what this copy holds…';
 export const UNKNOWN_GLYPH = '—';
 
 /**
- * One sentence per blocker, in an **exhaustive switch over the generated enum**: a fifteenth
- * variant fails to compile rather than rendering nothing.
+ * One sentence per blocker, in an **exhaustive switch over the generated enum**: a new variant
+ * fails to compile rather than rendering nothing.
  *
  * Every sentence says what was found, not what the user should do — the control's job is to name
- * the reason, and the remedy is the user's.
+ * the reason, and the remedy is the user's. §45.10: each states what was read and never claims
+ * *backed up*; `remote_unreachable` never says *unpushed*, and `no_remote` never says
+ * *unreachable*. The words are the user's.
  */
 export function blockerSentence(blocker: UninstallBlocker): string {
   switch (blocker) {
@@ -50,18 +52,17 @@ export function blockerSentence(blocker: UninstallBlocker): string {
     case 'stash_present':
       return 'There is stashed work here.';
     case 'untracked_precious':
-      return 'There are untracked files here that are not build output.';
+      return 'There are untracked files or hooks here that are not build output.';
     case 'ignored_precious':
       return 'There are ignored files here that do not look rebuildable.';
     case 'submodule_unsafe':
-      return 'A submodule holds work of its own.';
+      return 'A repository inside this copy holds work of its own.';
     case 'linked_worktree':
-      return 'Another worktree points into this copy.';
+      return 'This copy and another worktree are linked.';
     case 'shallow_clone':
       return 'This is a shallow clone, so I cannot tell whether every commit is upstream.';
     case 'remote_unreachable':
-      // §24.7C's existing copy, verbatim.
-      return "Can't reach GitHub, so I can't confirm this is backed up. Everything else still works.";
+      return "A remote did not answer, so I can't confirm this copy's work is on it. Everything else still works.";
     case 'remote_is_local_mirror':
       return 'The remote is on this machine, so it is not a second copy.';
     case 'stash_unreadable':
@@ -72,6 +73,22 @@ export function blockerSentence(blocker: UninstallBlocker): string {
       return 'This path is not one I will remove.';
     case 'never_observed':
       return 'I have never successfully read this copy.';
+    case 'no_remote':
+      return 'This copy has no remote on another machine, so nothing I read shows its commits anywhere else.';
+    case 'unpushed_tag':
+      return 'This copy has an annotated tag no remote has.';
+    case 'interrupted_operation':
+      return "An operation on this copy's history was left unfinished.";
+    case 'borrowed_by_another_repository':
+      return 'Another repository relies on files inside this copy.';
+    case 'refs_unreadable':
+      return 'I could not read every branch and tag here, so I cannot tell what is unique to this copy.';
+    case 'hidden_from_status':
+      return 'Some tracked files here are set to hide their changes, so I cannot tell whether they changed.';
+    case 'lfs_unverified':
+      return 'This copy holds large-file content, and I cannot confirm any server has it.';
+    case 'nesting_too_deep':
+      return 'Repositories are nested here more deeply than I check, so I cannot tell what they hold.';
   }
 }
 

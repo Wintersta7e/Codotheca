@@ -7,8 +7,8 @@
 use std::path::PathBuf;
 
 use crate::proto::dispatch::CommandFailure;
-use crate::protocol::{LocationId, UninstallBlocker, UninstallVerdict};
-use crate::removal::{SystemTrash, Trash as _, TrashAvailability};
+use crate::protocol::{LocationId, TrashRefusalKind, UninstallBlocker, UninstallVerdict};
+use crate::removal::{SystemTrash, Trash as _, TrashAvailability, TrashRefusal};
 use crate::uninstall::gates;
 use crate::uninstall::verdict::{fold_disposition, VerdictSeal};
 
@@ -82,20 +82,46 @@ pub fn compute_verdict(
     let disposition = fold_disposition(&blockers);
     let seal = VerdictSeal::of(&blockers, disposition);
 
-    // §24.7F: the copy says what will happen **before the click**.
-    let trash_available = matches!(
-        SystemTrash.availability(&inputs.snapshot.path),
-        TrashAvailability::Available
-    );
+    // §24.7F: the copy says what will happen **before the click**. §46.7: the reason and the
+    // boolean come from one reading, so `trashAvailable` cannot disagree with `trashRefusal`.
+    let trash_refusal = trash_refusal_of(&SystemTrash.availability(&inputs.snapshot.path));
 
     Ok((
         UninstallVerdict {
             disposition,
             blockers,
             remote_verified_at: verification.verified_at,
-            trash_available,
+            trash_available: trash_refusal.is_none(),
             computed_at: inputs.now,
+            // §45.12's two fields are filled by the analyser's worktree and nested steps. Until
+            // those exist nothing is itemised here, and `precious: None` says *not enumerated*,
+            // never *none*.
+            nested: Vec::new(),
+            precious: None,
+            trash_refusal,
         },
         seal,
     ))
+}
+
+/// §46.7's wire reason for one availability reading.
+///
+/// An `Io` from the pre-check is a setting that could not be established, which is
+/// `capacity_unknown`: unknown behaves as unsafe.
+const fn trash_refusal_of(availability: &TrashAvailability) -> Option<TrashRefusalKind> {
+    match availability {
+        TrashAvailability::Available => None,
+        TrashAvailability::Unavailable(TrashRefusal::Unsupported) => {
+            Some(TrashRefusalKind::Unsupported)
+        }
+        TrashAvailability::Unavailable(TrashRefusal::NetworkDrive) => {
+            Some(TrashRefusalKind::NetworkDrive)
+        }
+        TrashAvailability::Unavailable(TrashRefusal::OversizedFolder) => {
+            Some(TrashRefusalKind::OversizedFolder)
+        }
+        TrashAvailability::Unavailable(TrashRefusal::Io(_)) => {
+            Some(TrashRefusalKind::CapacityUnknown)
+        }
+    }
 }

@@ -14,17 +14,24 @@ use crate::protocol::{UninstallBlocker, UninstallDisposition};
 
 /// Is this blocker a known-bad fact, or an absence of knowledge?
 ///
-/// An exhaustive `match` with **no wildcard arm**: a fifteenth variant fails to compile rather
-/// than falling silently into one class or the other.
+/// An exhaustive `match` with **no wildcard arm**: a new variant fails to compile rather than
+/// falling silently into one class or the other. §45.9's table is the classification.
 const fn is_unknown(blocker: UninstallBlocker) -> bool {
     match blocker {
-        // Four unknowns: the app could not establish the fact, which is not the same as
-        // establishing that the fact is fine.
+        // The unknowns: the app could not establish the fact, which is not the same as
+        // establishing that the fact is fine. `remote_is_local_mirror` is here because it only
+        // ever accompanies an uncovered root, and as a known-bad member it would turn *the
+        // network remote was offline* into `blocked` (§45.9).
         UninstallBlocker::ShallowClone
         | UninstallBlocker::RemoteUnreachable
+        | UninstallBlocker::RemoteIsLocalMirror
         | UninstallBlocker::StashUnreadable
-        | UninstallBlocker::NeverObserved => true,
-        // Ten known-bad: each one is something the app read and can name.
+        | UninstallBlocker::NeverObserved
+        | UninstallBlocker::RefsUnreadable
+        | UninstallBlocker::HiddenFromStatus
+        | UninstallBlocker::LfsUnverified
+        | UninstallBlocker::NestingTooDeep => true,
+        // The known-bad: each one is something the app read and can name.
         UninstallBlocker::UnpushedCommits
         | UninstallBlocker::UncommittedChanges
         | UninstallBlocker::StashPresent
@@ -34,7 +41,10 @@ const fn is_unknown(blocker: UninstallBlocker) -> bool {
         | UninstallBlocker::LinkedWorktree
         | UninstallBlocker::LiveSession
         | UninstallBlocker::RefusedPath
-        | UninstallBlocker::RemoteIsLocalMirror => false,
+        | UninstallBlocker::NoRemote
+        | UninstallBlocker::UnpushedTag
+        | UninstallBlocker::InterruptedOperation
+        | UninstallBlocker::BorrowedByAnotherRepository => false,
     }
 }
 
@@ -111,26 +121,16 @@ const fn slug(blocker: UninstallBlocker) -> &'static str {
         UninstallBlocker::LiveSession => "live_session",
         UninstallBlocker::RefusedPath => "refused_path",
         UninstallBlocker::NeverObserved => "never_observed",
+        UninstallBlocker::NoRemote => "no_remote",
+        UninstallBlocker::UnpushedTag => "unpushed_tag",
+        UninstallBlocker::InterruptedOperation => "interrupted_operation",
+        UninstallBlocker::BorrowedByAnotherRepository => "borrowed_by_another_repository",
+        UninstallBlocker::RefsUnreadable => "refs_unreadable",
+        UninstallBlocker::HiddenFromStatus => "hidden_from_status",
+        UninstallBlocker::LfsUnverified => "lfs_unverified",
+        UninstallBlocker::NestingTooDeep => "nesting_too_deep",
     }
 }
-
-/// Every blocker, for the partition test and for anything that must iterate them.
-pub const ALL_BLOCKERS: [UninstallBlocker; 14] = [
-    UninstallBlocker::UnpushedCommits,
-    UninstallBlocker::UncommittedChanges,
-    UninstallBlocker::StashPresent,
-    UninstallBlocker::UntrackedPrecious,
-    UninstallBlocker::IgnoredPrecious,
-    UninstallBlocker::SubmoduleUnsafe,
-    UninstallBlocker::LinkedWorktree,
-    UninstallBlocker::ShallowClone,
-    UninstallBlocker::RemoteUnreachable,
-    UninstallBlocker::RemoteIsLocalMirror,
-    UninstallBlocker::StashUnreadable,
-    UninstallBlocker::LiveSession,
-    UninstallBlocker::RefusedPath,
-    UninstallBlocker::NeverObserved,
-];
 
 /// Whether a blocker is an unknown, for callers outside this module.
 #[must_use]

@@ -23,6 +23,9 @@ function verdict(over: Partial<UninstallVerdict> = {}): UninstallVerdict {
     remoteVerifiedAt: null,
     trashAvailable: true,
     computedAt: NOW,
+    nested: [],
+    precious: null,
+    trashRefusal: null,
     ...over,
   };
 }

@@ -563,7 +563,7 @@
 
     "UninstallBlocker": {
       "kind": "enum",
-      "$comment": "§24.8: the verdict is never a boolean. Every failing condition is named so a surface states WHY a control is disabled rather than only disabling it. Ten are known-bad; four — shallow_clone, remote_unreachable, stash_unreadable, never_observed — are unknowns.",
+      "$comment": "§24.8, §45.9: the verdict is never a boolean. Every failing condition is named so a surface states WHY a control is disabled rather than only disabling it. The unknown class is shallow_clone, remote_unreachable, remote_is_local_mirror, stash_unreadable, never_observed, refs_unreadable, hidden_from_status, lfs_unverified, nesting_too_deep; every other variant is known-bad.",
       "variants": [
         "unpushed_commits",
         "uncommitted_changes",
@@ -578,19 +578,76 @@
         "stash_unreadable",
         "live_session",
         "refused_path",
-        "never_observed"
+        "never_observed",
+        "no_remote",
+        "unpushed_tag",
+        "interrupted_operation",
+        "borrowed_by_another_repository",
+        "refs_unreadable",
+        "hidden_from_status",
+        "lfs_unverified",
+        "nesting_too_deep"
+      ]
+    },
+
+    "NestedKind": {
+      "kind": "enum",
+      "$comment": "§45.2 row 9's three kinds: a gitlink in the index, a gitdir under .git/modules/ (a de-initialised submodule keeps its refs there), and any other in-tree directory holding .git, junk directories included.",
+      "variants": ["submodule", "module_gitdir", "independent"]
+    },
+
+    "NestedRepository": {
+      "kind": "struct",
+      "$comment": "§45.12: one nested repository's own analysis, itemised and never folded to one word. Flat: depth is encoded in pathDisplay, relative to the location. pathDisplay follows §24.3a — lossy, display-only, never opened, never sent back.",
+      "fields": {
+        "pathDisplay": "String",
+        "kind": "NestedKind",
+        "disposition": "UninstallDisposition",
+        "blockers": "[UninstallBlocker]"
+      }
+    },
+
+    "PreciousEntry": {
+      "kind": "struct",
+      "$comment": "§45.12: one untracked or ignored path that is not junk. `bytes` is null when its size could not be read, never zero. pathDisplay follows §24.3a.",
+      "fields": { "pathDisplay": "String", "bytes": "i64?" }
+    },
+
+    "PreciousSummary": {
+      "kind": "struct",
+      "$comment": "§45.12: the precious paths the analyser found, largest first then by path, capped at the core's PRECIOUS_DISPLAY_CAP. The renderer never restates the cap: it reads truncated and totalCount. totalBytes is null when any size is unknown, never a partial sum.",
+      "fields": {
+        "entries": "[PreciousEntry]",
+        "totalCount": "i64",
+        "totalBytes": "i64?",
+        "truncated": "bool"
+      }
+    },
+
+    "TrashRefusalKind": {
+      "kind": "enum",
+      "$comment": "§46.7: why the OS trash cannot take a copy, established before the click. capacity_unknown is a bin setting that could not be read, and unknown behaves as unsafe.",
+      "variants": [
+        "unsupported",
+        "network_drive",
+        "oversized_folder",
+        "disabled_on_volume",
+        "capacity_unknown"
       ]
     },
 
     "UninstallVerdict": {
       "kind": "struct",
-      "$comment": "§24.8's per-item value. `blockers` always carries EVERY blocker found, of both classes, so the fold never hides one. No token crosses this boundary: the seal `locations.uninstall` compares against is in-core only.",
+      "$comment": "§24.8's per-item value. `blockers` always carries EVERY blocker found, of both classes, so the fold never hides one. No token crosses this boundary: the seal `locations.uninstall` compares against is in-core only. §45.12: `nested` is empty when there is none, and a null `precious` means not enumerated, never none. §46.7: `trashAvailable` is derived from `trashRefusal` by the same function — true exactly when it is null.",
       "fields": {
         "disposition": "UninstallDisposition",
         "blockers": "[UninstallBlocker]",
         "remoteVerifiedAt": "Timestamp?",
         "trashAvailable": "bool",
-        "computedAt": "Timestamp"
+        "computedAt": "Timestamp",
+        "nested": "[NestedRepository]",
+        "precious": "PreciousSummary?",
+        "trashRefusal": "TrashRefusalKind?"
       }
     },
 

@@ -356,6 +356,9 @@ describe('the removal the page offers', () => {
       remoteVerifiedAt: null,
       trashAvailable: true,
       computedAt: NOW,
+      nested: [],
+      precious: null,
+      trashRefusal: null,
     }) as unknown as UninstallVerdict;
 
   const blocked = (): UninstallVerdict =>
@@ -365,6 +368,9 @@ describe('the removal the page offers', () => {
       remoteVerifiedAt: null,
       trashAvailable: true,
       computedAt: NOW,
+      nested: [],
+      precious: null,
+      trashRefusal: null,
     }) as unknown as UninstallVerdict;
 
   it('mounts the affordance and runs no pre-flight until it is pressed', async () => {

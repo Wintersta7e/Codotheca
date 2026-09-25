@@ -56,6 +56,10 @@ fn no_remote_failure_ever_yields_safe() {
 
 /// A mirror on the same machine is reported honestly and never counted as a backup: one disk
 /// failure takes both copies.
+///
+/// **[p4] §45.9 moved `remote_is_local_mirror` to the unknown class**, so alone it folds to
+/// `unknown` — still never `safe`. The name's *blocked* stops being true here; the test is
+/// renamed with its body when §45.3's composition replaces `verify_remote`.
 #[test]
 fn a_local_mirror_is_blocked_and_not_treated_as_a_backup() {
     let verification = verify_remote(RemoteOutcome::LocalMirror, 100);
@@ -65,8 +69,8 @@ fn a_local_mirror_is_blocked_and_not_treated_as_a_backup() {
     );
     assert_eq!(
         fold_disposition(&verification.blockers),
-        UninstallDisposition::Blocked,
-        "a known-bad fact, not an absence"
+        UninstallDisposition::Unknown,
+        "never counted as a backup, and never a verdict on its own (§45.9)"
     );
 }
 
