@@ -234,6 +234,28 @@ impl Library {
         self.push_to(path, "origin", &origin);
     }
 
+    /// A copy at `<root>/widget` pushed to its origin, with a submodule `sub` whose own origin
+    /// is under `net/`, committed and pushed.
+    pub(crate) fn with_submodule(&self) -> PathBuf {
+        let sub_seed = self.base.join("sub-seed");
+        self.pushed_repo_at(&sub_seed, "sub");
+        let copy = self.pushed_repo("widget");
+        self.git(
+            &copy,
+            &[
+                "submodule",
+                "add",
+                "-q",
+                &self.net.join("sub.git").to_string_lossy(),
+                "sub",
+            ],
+        );
+        self.git(&copy, &["commit", "-q", "-m", "add sub"]);
+        self.git(&copy, &["push", "-q", "origin", "main"]);
+        self.git(&copy, &["fetch", "-q", "origin"]);
+        copy
+    }
+
     /// A shallow clone at `<root>/<name>`, one commit deep, of a network origin holding two.
     pub(crate) fn shallow_repo(&self, name: &str) -> PathBuf {
         let seed = self.base.join(format!("{name}-seed"));

@@ -141,27 +141,6 @@ fn ac_p4_45_9() {
     assert!(!argv.iter().any(|a| a == "-uall"), "{argv:?}");
 }
 
-/// A parent pushed to its origin, with a submodule `sub` whose own origin is under `net/`.
-fn with_submodule(lib: &Library) -> std::path::PathBuf {
-    let sub_seed = lib.base.join("sub-seed");
-    lib.pushed_repo_at(&sub_seed, "sub");
-    let copy = lib.pushed_repo("widget");
-    lib.git(
-        &copy,
-        &[
-            "submodule",
-            "add",
-            "-q",
-            &lib.net.join("sub.git").to_string_lossy(),
-            "sub",
-        ],
-    );
-    lib.git(&copy, &["commit", "-q", "-m", "add sub"]);
-    lib.git(&copy, &["push", "-q", "origin", "main"]);
-    lib.git(&copy, &["fetch", "-q", "origin"]);
-    copy
-}
-
 /// **AC-P4-45-10 — nesting.** A checked-out submodule with a local-only commit is `submodule`
 /// `blocked`; a de-initialised `.git/modules/<n>` with a local-only branch is `module_gitdir`
 /// `blocked`; a submodule whose only remote is unreachable leaves the parent `unknown`; depth 4
@@ -170,14 +149,14 @@ fn with_submodule(lib: &Library) -> std::path::PathBuf {
 fn ac_p4_45_10() {
     let checked_out = {
         let lib = Library::new();
-        let copy = with_submodule(&lib);
+        let copy = lib.with_submodule();
         lib.commit(&copy.join("sub"), "s.txt", "local in the submodule\n");
         let id = lib.register(&copy);
         lib.preflight(id, &lib.verifier())
     };
     let deinitialised = {
         let lib = Library::new();
-        let copy = with_submodule(&lib);
+        let copy = lib.with_submodule();
         let sub = copy.join("sub");
         lib.git(&sub, &["checkout", "-q", "-b", "local"]);
         lib.commit(&sub, "s.txt", "local branch\n");
@@ -188,7 +167,7 @@ fn ac_p4_45_10() {
     };
     let offline = {
         let lib = Library::new();
-        let copy = with_submodule(&lib);
+        let copy = lib.with_submodule();
         lib.git(
             &copy.join("sub"),
             &["remote", "rename", "origin", "upstream"],
