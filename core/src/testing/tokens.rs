@@ -24,8 +24,9 @@ impl Default for FakeTokenStore {
 }
 
 impl FakeTokenStore {
+    /// A working keychain: `probe` succeeds and every write and delete takes effect.
     #[must_use]
-    pub fn available() -> Self {
+    pub const fn available() -> Self {
         Self {
             available: true,
             fail_store: false,

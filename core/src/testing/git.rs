@@ -35,12 +35,16 @@ pub struct RecordedGitCall {
 /// What the fake should do for one call.
 #[derive(Debug, Clone)]
 pub enum GitReply<T> {
+    /// Answer with this value.
     Ok(T),
+    /// Fail with this error.
     Err(GitError),
     /// Answer after `delay_ms`, which advances the injected clock rather than sleeping. A test
     /// for a 500 ms budget must not take 500 ms.
     Slow {
+        /// How far to advance the fake's clock, in milliseconds; nothing moves without one.
         delay_ms: u64,
+        /// The reply given once the delay has passed.
         then: Box<Self>,
     },
 }
@@ -118,6 +122,8 @@ pub struct FakeGitBackend {
 }
 
 impl FakeGitBackend {
+    /// A fake with no clock and nothing scripted: an unconfigured operation fails, `divergence`
+    /// answers `None`, and `read_blobs` finds every object missing.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -138,6 +144,7 @@ impl FakeGitBackend {
         self.calls.lock().map_or_else(|_| Vec::new(), |c| c.clone())
     }
 
+    /// Forget the recorded calls and blob requests; scripted replies and blobs stay.
     pub fn clear(&self) {
         if let Ok(mut c) = self.calls.lock() {
             c.clear();
@@ -194,10 +201,9 @@ impl FakeGitBackend {
         default: impl FnOnce() -> GitResult<T>,
     ) -> GitResult<T> {
         self.record(op, repo);
-        match which.take(repo) {
-            Some(reply) => self.settle(reply),
-            None => default(),
-        }
+        which
+            .take(repo)
+            .map_or_else(default, |reply| self.settle(reply))
     }
 }
 
@@ -407,7 +413,7 @@ impl GitBackend for FakeGitBackend {
             let Some(bytes) = scripted.get(oid) else {
                 continue; // missing: no body, no row — and the cursor may still pass it
             };
-            let size = bytes.len() as u64;
+            let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
             let keep = size <= byte_cap;
             if keep {
                 kept_bytes = kept_bytes.saturating_add(size);
@@ -434,13 +440,15 @@ pub struct RecordingGitBackend<B> {
 }
 
 impl<B: GitBackend> RecordingGitBackend<B> {
-    pub fn new(inner: B) -> Self {
+    /// Wrap `inner`, with nothing recorded yet.
+    pub const fn new(inner: B) -> Self {
         Self {
             inner,
             calls: Mutex::new(Vec::new()),
         }
     }
 
+    /// Every call passed through to the inner backend, in order.
     #[must_use]
     pub fn calls(&self) -> Vec<RecordedGitCall> {
         self.calls.lock().map_or_else(|_| Vec::new(), |c| c.clone())

@@ -41,8 +41,9 @@ pub struct FakeMutatingGit {
 }
 
 impl FakeMutatingGit {
+    /// A fake that answers every clone with `behaviour`, with nothing recorded yet.
     #[must_use]
-    pub fn new(behaviour: CloneBehaviour) -> Self {
+    pub const fn new(behaviour: CloneBehaviour) -> Self {
         Self {
             behaviour: Mutex::new(behaviour),
             calls: Mutex::new(Vec::new()),

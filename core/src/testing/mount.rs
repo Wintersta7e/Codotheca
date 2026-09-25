@@ -15,6 +15,7 @@ pub struct FakeMountResolver {
 }
 
 impl FakeMountResolver {
+    /// An empty mount table, under which every path resolves to `Unsupported`.
     #[must_use]
     pub fn new() -> Self {
         Self::default()

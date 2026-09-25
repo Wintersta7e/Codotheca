@@ -16,8 +16,9 @@ pub struct FakeClock {
 }
 
 impl FakeClock {
+    /// A clock at `unix_secs` wall time and monotonic zero, with no sleep recorded.
     #[must_use]
-    pub fn new(unix_secs: i64) -> Self {
+    pub const fn new(unix_secs: i64) -> Self {
         Self {
             unix_secs: AtomicI64::new(unix_secs),
             mono_ms: AtomicU64::new(0),

@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex};
 
 type MakeContext = dyn Fn(&str) -> WorkerContext + Send + Sync;
 
+/// A `WorkerLauncher` that runs each distro's worker on a thread in this process, over loopback
+/// TCP, instead of spawning one inside WSL.
 pub struct LoopbackLauncher {
     make: Arc<MakeContext>,
     launched: Mutex<Vec<String>>,
@@ -22,6 +24,7 @@ impl std::fmt::Debug for LoopbackLauncher {
 }
 
 impl LoopbackLauncher {
+    /// A launcher whose workers serve the context `make` builds for the distro named.
     #[must_use]
     pub fn new(make: impl Fn(&str) -> WorkerContext + Send + Sync + 'static) -> Self {
         Self {
@@ -86,12 +89,12 @@ impl WorkerLauncher for LoopbackLauncher {
             writer: Box::new(writer),
             stop: Box::new(move || {
                 let _ = stop_socket.shutdown(Shutdown::Both);
-                let server = match stop_server.lock() {
-                    Ok(mut server) => server.take(),
+                let handle = match stop_server.lock() {
+                    Ok(mut slot) => slot.take(),
                     Err(poisoned) => poisoned.into_inner().take(),
                 };
-                if let Some(server) = server {
-                    let _ = server.join();
+                if let Some(handle) = handle {
+                    let _ = handle.join();
                 }
             }),
         })

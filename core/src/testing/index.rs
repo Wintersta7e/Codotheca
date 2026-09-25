@@ -42,7 +42,7 @@ impl TempIndex {
 
     /// The index itself.
     #[must_use]
-    pub fn index(&self) -> &Index {
+    pub const fn index(&self) -> &Index {
         &self.index
     }
 

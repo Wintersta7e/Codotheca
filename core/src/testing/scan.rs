@@ -36,17 +36,21 @@ struct MemInner {
 }
 
 impl MemScanStore {
+    /// A store with no root, location, run or problem, at generation zero.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add one scan root for `scan_roots` to return.
     pub fn push_root(&self, root: ScanRootRow) {
         if let Ok(mut inner) = self.inner.lock() {
             inner.roots.push(root);
         }
     }
 
+    /// Insert or replace one location row, keyed by its id; the indexed-project count follows
+    /// the number of locations.
     pub fn push_location(&self, row: LocationPresenceRow) {
         if let Ok(mut inner) = self.inner.lock() {
             inner.locations.insert(row.location_id, row);
@@ -54,6 +58,7 @@ impl MemScanStore {
         }
     }
 
+    /// Set the scan generation that last saw one location; an unknown id changes nothing.
     pub fn set_generation_of(&self, location_id: i64, generation: i64) {
         if let Ok(mut inner) = self.inner.lock() {
             if let Some(row) = inner.locations.get_mut(&location_id) {
@@ -62,12 +67,14 @@ impl MemScanStore {
         }
     }
 
+    /// One location's stored presence, or `None` when no such row exists.
     #[must_use]
     pub fn presence_of(&self, location_id: i64) -> Option<Presence> {
         let inner = self.inner.lock().ok()?;
         inner.locations.get(&location_id).map(|row| row.presence)
     }
 
+    /// How many location rows the store holds.
     #[must_use]
     pub fn location_count(&self) -> usize {
         self.inner.lock().map_or(0, |inner| inner.locations.len())
@@ -81,6 +88,7 @@ impl MemScanStore {
         self.inner.lock().map_or(0, |inner| inner.problems.len())
     }
 
+    /// Every recorded problem, across all runs, in the order recorded.
     #[must_use]
     pub fn problems(&self) -> Vec<ScanProblem> {
         self.inner.lock().map_or_else(
@@ -89,6 +97,7 @@ impl MemScanStore {
         )
     }
 
+    /// The finish record of every run that finished, in the order the runs began.
     #[must_use]
     pub fn finished_runs(&self) -> Vec<ScanRunFinish> {
         self.inner.lock().map_or_else(
@@ -133,6 +142,7 @@ impl ScanStore for MemScanStore {
         if let Some(row) = inner.locations.get_mut(&location_id) {
             row.presence = presence;
         }
+        drop(inner);
         Ok(())
     }
 
@@ -152,6 +162,7 @@ impl ScanStore for MemScanStore {
         if let Some(slot) = inner.runs.get_mut(idx) {
             slot.1 = Some(*finish);
         }
+        drop(inner);
         Ok(())
     }
 
@@ -160,17 +171,24 @@ impl ScanStore for MemScanStore {
         scan_run_id: i64,
         problem: &ScanProblem,
     ) -> Result<(), ScanStoreError> {
-        let mut inner = self.inner.lock().map_err(|_| Self::err())?;
-        inner.problems.push((scan_run_id, problem.clone()));
+        self.inner
+            .lock()
+            .map_err(|_| Self::err())?
+            .problems
+            .push((scan_run_id, problem.clone()));
         Ok(())
     }
 
     fn latest_scan_run(&self) -> Result<Option<ScanRunRow>, ScanStoreError> {
-        let inner = self.inner.lock().map_err(|_| Self::err())?;
-        let Some((index, (start, finish))) = inner.runs.iter().enumerate().next_back() else {
+        let (count, last) = {
+            let inner = self.inner.lock().map_err(|_| Self::err())?;
+            (inner.runs.len(), inner.runs.last().cloned())
+        };
+        let Some((start, finish)) = last else {
             return Ok(None);
         };
-        let id = i64::try_from(index + 1).map_err(|_| Self::err())?;
+        // The last run's id is its 1-based position, which is the run count.
+        let id = i64::try_from(count).map_err(|_| Self::err())?;
         Ok(Some(ScanRunRow {
             id,
             generation: start.generation,
@@ -184,8 +202,10 @@ impl ScanStore for MemScanStore {
     }
 
     fn problem_count(&self, scan_run_id: i64) -> Result<u64, ScanStoreError> {
-        let inner = self.inner.lock().map_err(|_| Self::err())?;
-        let n = inner
+        let n = self
+            .inner
+            .lock()
+            .map_err(|_| Self::err())?
             .problems
             .iter()
             .filter(|(run, _)| *run == scan_run_id)
@@ -210,11 +230,13 @@ pub struct ScanLauncherFake {
 }
 
 impl ScanLauncherFake {
+    /// A launcher that has launched nothing; its first run id is `1`.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// How many times `launch` has been called.
     #[must_use]
     pub fn launches(&self) -> u64 {
         self.launches.load(std::sync::atomic::Ordering::Relaxed)
@@ -250,6 +272,7 @@ pub struct ScanEventFake {
 }
 
 impl ScanEventFake {
+    /// A sink that has recorded nothing.
     #[must_use]
     pub fn new() -> Self {
         Self::default()

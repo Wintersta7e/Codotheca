@@ -17,6 +17,7 @@ enum Scripted {
     Failure(TransportError),
 }
 
+/// An `HttpTransport` that answers from a script, in order, and records every request sent.
 #[derive(Debug, Default)]
 pub struct FakeTransport {
     scripted: Mutex<VecDeque<Scripted>>,
@@ -24,6 +25,7 @@ pub struct FakeTransport {
 }
 
 impl FakeTransport {
+    /// A transport with nothing scripted, so its first request fails as a test bug.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
