@@ -1262,8 +1262,8 @@ test('the freeze holds the fourteen entries the phase-3 sections govern', () => 
 
 // [p4] The record of what §49.3 moves, taken from the phase-4 base rather than the working tree, so
 // it is right whichever lane merges first. `phase3-frozen.json` is not extended: it is a record of a
-// different set at a different tree. Fifty-five entries: §49.3's fifty-two rows, R157's `P3-28-5`
-// and `-15`, and R222's `P3-34-11`.
+// different set at a different tree. Fifty-six entries: §49.3's fifty-two rows, R157's `P3-28-5`
+// and `-15`, R222's `P3-34-11` and R243's `P2-24-19`, whose pre-flight check a Lane-0 rename moves.
 const PHASE4_FROZEN_IDS = [
   '3',
   '8',
@@ -1295,6 +1295,7 @@ const PHASE4_FROZEN_IDS = [
   'P2-24-15',
   'P2-24-16',
   'P2-24-18',
+  'P2-24-19',
   'P2-24-21',
   'P2-25-11',
   'P3-28-5',
@@ -1335,7 +1336,7 @@ test('phase4-frozen.json holds §49.3’s entries and every one is registered', 
   assert.equal(frozen.version, 1);
   assert.equal(frozen.frozenFrom, 'acceptance/criteria.json');
   assert.match(frozen.takenOn, /^[0-9a-f]{40}$/u);
-  assert.equal(PHASE4_FROZEN_IDS.length, 55);
+  assert.equal(PHASE4_FROZEN_IDS.length, 56);
   assert.deepEqual(frozen.criteria.map((c) => c.id).sort(), [...PHASE4_FROZEN_IDS].sort());
   const live = new Set(loadRegistry(registryPath).criteria.map((c) => String(c.id)));
   for (const entry of frozen.criteria) {

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "why": "The fifty-five entries phase 4 moves or holds unchanged, copied out of criteria.json at the phase-4 base before any phase-4 lane could touch them: the fifty-two rows of the section that rules which earlier criteria phase 4 moves, the two further phase-3 checks the ledger fixes move, and the cascade-children check the removal substrate rewrites. You cannot verify that something moved correctly without a record of what it was. phase3-frozen.json is not extended: it is a record of a different set at a different tree.",
+  "why": "The fifty-six entries phase 4 moves or holds unchanged, copied out of criteria.json at the phase-4 base before any phase-4 lane could touch them: the fifty-two rows of the section that rules which earlier criteria phase 4 moves, the two further phase-3 checks the ledger fixes move, the cascade-children check the removal substrate rewrites, and the pre-flight check whose join key a Lane-0 rename moves. You cannot verify that something moved correctly without a record of what it was. phase3-frozen.json is not extended: it is a record of a different set at a different tree.",
   "frozenFrom": "acceptance/criteria.json",
   "takenOn": "a2fc9355ccd282ae2e1380a1330b72c95106a496",
   "criteria": [
@@ -991,6 +991,54 @@
           "test": "check-call-sites:no-unwarranted-recursive-removal",
           "assert": "The recursive half of the same rule, printing its own file-read count and failing the same way at zero files read.",
           "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P2-24-19",
+      "title": "Every disk-mutating command is off the renderer-callable surface",
+      "group": "functional",
+      "spec": "\u00a724.11",
+      "checks": [
+        {
+          "id": "AC-P2-24-19",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface finds the three the schema declares, and derives them rather than naming them",
+          "assert": "The set is derived from the schema rather than typed out, so a fourth mutating command joins it by existing and no plan can claim every while asserting one third of it."
+        },
+        {
+          "id": "AC-P2-24-19-privileged",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface marks each one privileged",
+          "assert": "Every command that mutates the filesystem is privileged: true."
+        },
+        {
+          "id": "AC-P2-24-19-refused",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface refuses each one by name on IPC_REQUEST",
+          "assert": "isRendererCallable refuses each one by name, and still admits the unprivileged pre-flight \u2014 so the guard is refusing these for being privileged and not refusing everything."
+        },
+        {
+          "id": "AC-P2-24-19-channel",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface gives each one a shell-owned channel of its own",
+          "assert": "Each reaches the core over a shell-owned channel of its own, never one shared door and never the request channel."
+        },
+        {
+          "id": "AC-P2-24-19-preflight",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p2-24b",
+          "test": "AC-P2-24-19: every disk-mutating command is off the renderer-callable surface leaves the pre-flight unprivileged, because it writes nothing",
+          "assert": "The pre-flight is neither privileged nor filesystem-mutating, which is what keeps the verdict renderable at all."
         }
       ]
     },
