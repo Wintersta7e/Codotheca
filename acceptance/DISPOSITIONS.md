@@ -363,6 +363,18 @@ One row per criterion; the disposition is the weakest of its checks.
 | P3-35-8 | automated | Every chip is one predicate and its own query's row count | `AC-P3-35-8` automated, runs now — `AC-P3-35-8 every chip is one predicate and its own query row count counts each chip through the evaluator, and nothing else does the counting`<br>`AC-P3-35-8-aggregate` automated, runs now — `AC-P3-35-8 every chip is one predicate and its own query row count renders no aggregate, no score and no band`<br>`AC-P3-35-8-identifiers` automated, runs now — `AC-P3-35-8 every chip is one predicate and its own query row count names no health identifier in the module that produces the counts` |
 | P3-35-9 | automated | The sort does not re-cut the shelf | `AC-P3-35-9` automated, runs now — `projects_list::ac_p3_35_9_the_sort_does_not_re_cut_the_shelf`<br>`AC-P3-35-9-ts` automated, runs now — `AC-P3-35-9 the sort does not re-cut the shelf buckets every row where §8.1 says, under every sort key the schema declares`<br>`AC-P3-35-9-collapse` automated, runs now — `AC-P3-35-9 the sort does not re-cut the shelf leaves a collapsed decade collapsed, because the sort key reaches neither argument` |
 
+## Phase 4 — §38–§48
+
+| Disposition | Criteria | Checks |
+|---|---|---|
+| automated | 0 | 0 |
+| deferred | 0 | 0 |
+| manual | 0 | 0 |
+| unmeasurable | 0 | 0 |
+| external | 0 | 0 |
+
+No phase-4 criteria are registered yet.
+
 ## Why a check is not automated, or is automated over less than it looks
 
 | Check | Status | Reason |

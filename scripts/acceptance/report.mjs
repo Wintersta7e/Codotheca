@@ -14,7 +14,12 @@ import { STATUSES, phaseOf, rollUp } from './registry.mjs';
  * phase 2 whatever phase it was rendering, and `byPhase` was seeded with the phases it knew, so a
  * check from any other incremented `undefined` and the report printed `NaN checks`.
  */
-const PHASE_TITLE = { 1: 'Phase 1 — §16', 2: 'Phase 2 — §20–§25', 3: 'Phase 3 — §28–§35' };
+const PHASE_TITLE = {
+  1: 'Phase 1 — §16',
+  2: 'Phase 2 — §20–§25',
+  3: 'Phase 3 — §28–§35',
+  4: 'Phase 4 — §38–§48',
+};
 const PHASES = Object.keys(PHASE_TITLE).map(Number);
 
 export function countByStatus(registry) {
