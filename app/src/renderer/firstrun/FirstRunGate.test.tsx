@@ -305,10 +305,10 @@ test('only an accepted pick becomes a row; cancelling and failing draw nothing',
 test('discoveries land in batches, not one at a time', async () => {
   vi.useFakeTimers();
   const { emit } = harness();
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(screen.getByText(copy.ROOTS_HEADLINE)).toBeTruthy();
   dig();
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(screen.getByRole('button', { name: SKIP_AHEAD_LABEL })).toBeTruthy();
   emit({ kind: 'upserted', id: 1 as ProjectId, name: 'alpha', primaryLanguage: null });
   expect(screen.queryByText('alpha')).toBeNull();
@@ -323,10 +323,10 @@ test('discoveries land in batches, not one at a time', async () => {
 test('the reveal waits out the settle hold and then loads once', async () => {
   vi.useFakeTimers();
   const { deps, emit } = harness();
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(screen.getByText(copy.ROOTS_HEADLINE)).toBeTruthy();
   dig();
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(screen.getByRole('button', { name: SKIP_AHEAD_LABEL })).toBeTruthy();
   emit({ kind: 'upserted', id: 1 as ProjectId, name: 'alpha', primaryLanguage: 'Rust' });
   emit({ kind: 'progress', indexedProjects: 1, walkedDirs: 10, foundRepos: 1 });
@@ -338,7 +338,7 @@ test('the reveal waits out the settle hold and then loads once', async () => {
   act(() => {
     vi.advanceTimersByTime(2);
   });
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(screen.getByText(copy.EVIDENCE_FOOTER)).toBeTruthy();
   expect(deps.loadReveal).toHaveBeenCalledTimes(1);
 });
@@ -355,14 +355,14 @@ test('a walk that finishes before scan.start resolves still reaches the reveal',
     view.emit({ kind: 'finished' });
     return Promise.resolve(undefined);
   });
-  await act(async () => {});
+  await act(() => Promise.resolve());
   dig();
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(view.deps.startScan).toHaveBeenCalledTimes(1);
   act(() => {
     vi.advanceTimersByTime(SETTLE_HOLD_MS + 1);
   });
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(screen.getByText(copy.EVIDENCE_FOOTER)).toBeTruthy();
   expect(view.deps.loadReveal).toHaveBeenCalledTimes(1);
 });
@@ -385,16 +385,16 @@ test('an empty library skips the reveal and the turn entirely', async () => {
   vi.useFakeTimers();
   const { deps, emit } = harness();
   deps.loadReveal.mockResolvedValue({ ...reveal, projectCount: { value: 0, basis } });
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(screen.getByText(copy.ROOTS_HEADLINE)).toBeTruthy();
   dig();
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(screen.getByRole('button', { name: SKIP_AHEAD_LABEL })).toBeTruthy();
   emit({ kind: 'finished' });
   act(() => {
     vi.advanceTimersByTime(SETTLE_HOLD_MS + 1);
   });
-  await act(async () => {});
+  await act(() => Promise.resolve());
   expect(screen.getByTestId('shelf')).toBeTruthy();
   expect(screen.queryByText(copy.EVIDENCE_FOOTER)).toBeNull();
   expect(screen.queryByRole('button', { name: copy.SHOW_ME_LABEL })).toBeNull();

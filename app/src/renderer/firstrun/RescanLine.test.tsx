@@ -11,6 +11,7 @@ import {
   armsIndicator,
 } from './RescanLine';
 import type { RescanLineProps } from './RescanLine';
+import { noop } from '../noop';
 
 afterEach(cleanup);
 
@@ -37,9 +38,7 @@ test('a walk that has ended arms nothing', () => {
 // When the walk ends the element is gone, not paused: returning null is what keeps criterion
 // 21's "zero scheduled frames at idle" true without a suspension rule.
 test('an unarmed line renders no element at all', () => {
-  render(
-    <RescanLine trigger="focus" running tier="full" elapsedMs={9_000} onOpenSummary={() => {}} />,
-  );
+  render(<RescanLine trigger="focus" running tier="full" elapsedMs={9_000} onOpenSummary={noop} />);
   expect(document.querySelector('.cdt-fr-rescan-line')).toBeNull();
   expect(document.body.textContent).toBe('');
 });
@@ -52,7 +51,7 @@ test('the band travels only at the full tier', () => {
     trigger: 'launch',
     running: true,
     elapsedMs: 600,
-    onOpenSummary: () => {},
+    onOpenSummary: noop,
   } as const satisfies Omit<RescanLineProps, 'tier'>;
   const { rerender } = render(<RescanLine {...props} tier="full" />);
   expect(document.querySelector('.cdt-fr-rescan-line--travelling')).not.toBeNull();
@@ -86,7 +85,7 @@ test('the line names itself and opens the scan summary', () => {
 // so nothing here may read as a fill.
 test('the line states no percentage and reports no progress', () => {
   render(
-    <RescanLine trigger="launch" running tier="full" elapsedMs={9_000} onOpenSummary={() => {}} />,
+    <RescanLine trigger="launch" running tier="full" elapsedMs={9_000} onOpenSummary={noop} />,
   );
   const line = screen.getByRole('button', { name: RESCAN_LINE_LABEL });
   expect(line.getAttribute('role')).not.toBe('progressbar');

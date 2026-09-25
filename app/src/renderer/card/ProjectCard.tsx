@@ -12,6 +12,7 @@ import { statusChips } from './chips';
 import { frameToken, rungFor, uncomputedRank } from './completion';
 import { densityStep } from './geometry';
 import { BENCH_LABEL, useBenchElapsed } from './useBenchElapsed';
+import { noop } from '../noop';
 
 /**
  * The grid tile the shelf mounts, and the composition every value in the card modules was
@@ -229,7 +230,7 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
         >
           <InstallControl
             preview={props.installPreview}
-            onInstall={props.onInstall ?? (() => {})}
+            onInstall={props.onInstall ?? noop}
             onOpenUpgrade={props.onOpenUpgrade}
           />
         </div>

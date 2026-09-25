@@ -6,6 +6,7 @@ import { parseCollapseState } from './collapse.js';
 import { EMPTY_MOUNT_WINDOW, sectionExtents, SECTION_HEADER_HEIGHT } from './measure.js';
 import type { ShelfPage } from './page.js';
 import { applyPeekHeight, rowTopOf, sameWindow, useVirtualizer } from './useVirtualizer.js';
+import { noop } from '../noop.js';
 
 function fakePage(counts: readonly number[]): ShelfPage {
   let next = 1;
@@ -60,8 +61,8 @@ beforeEach(() => {
       constructor(cb: () => void) {
         observed = cb;
       }
-      observe(): void {}
-      disconnect(): void {}
+      readonly observe = noop;
+      readonly disconnect = noop;
     },
   );
   // jsdom's own rAF is timer-driven, so `act()` returns before the callback runs and every
@@ -71,7 +72,7 @@ beforeEach(() => {
     return frames.length;
   });
   vi.stubGlobal('cancelAnimationFrame', (handle: number): void => {
-    frames[handle - 1] = () => {};
+    frames[handle - 1] = noop;
   });
 });
 afterEach(() => {

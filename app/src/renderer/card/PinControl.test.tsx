@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as pinModule from './PinControl';
 import { GRID_TILE_BANDS, HERO_BANDS } from './geometry';
 import { PIN_ROTATION, PinControl } from './PinControl';
+import { noop } from '../noop';
 
 afterEach(cleanup);
 
@@ -80,7 +81,7 @@ describe('the silhouette is two rectangles', () => {
 
   it('uses no icon font and no image, because the bundle guards three families', () => {
     const { container } = render(
-      <PinControl projectName="A" isPinned surface="card" visible onToggle={() => {}} />,
+      <PinControl projectName="A" isPinned surface="card" visible onToggle={noop} />,
     );
     expect(container.querySelector('svg')).toBeNull();
     expect(container.querySelector('img')).toBeNull();
@@ -143,10 +144,10 @@ describe('toggling', () => {
 
   it('renders from the prop, so the caller can flip its own projection immediately', () => {
     const { rerender } = render(
-      <PinControl projectName="A" isPinned={false} surface="card" visible onToggle={() => {}} />,
+      <PinControl projectName="A" isPinned={false} surface="card" visible onToggle={noop} />,
     );
     expect(screen.getByRole('button').getAttribute('aria-pressed')).toBe('false');
-    rerender(<PinControl projectName="A" isPinned surface="card" visible onToggle={() => {}} />);
+    rerender(<PinControl projectName="A" isPinned surface="card" visible onToggle={noop} />);
     expect(screen.getByRole('button').getAttribute('aria-pressed')).toBe('true');
   });
 });

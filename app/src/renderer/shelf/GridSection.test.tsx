@@ -8,6 +8,7 @@ import type { SectionExtent } from './measure.js';
 import type { ShelfSection } from './page.js';
 import { withProjectDeps } from '../testing/deps';
 import { toShelfRow } from './row.js';
+import { noop } from '../noop.js';
 
 vi.mock('../card/ProjectCard.js', () => ({
   // The mock mirrors the real card's own `tabIndex={focused ? 0 : -1}` and its `gridcell` role
@@ -90,10 +91,10 @@ const props = (over: Partial<GridSectionProps> = {}): GridSectionProps => ({
   sessions: new Map(),
   halo: null,
   peek: null,
-  onActivate: () => {},
-  onOpen: () => {},
-  onTogglePin: () => {},
-  onStopSession: () => {},
+  onActivate: noop,
+  onOpen: noop,
+  onTogglePin: noop,
+  onStopSession: noop,
   ...over,
 });
 const draw = (over: Partial<GridSectionProps> = {}): ReturnType<typeof render> =>

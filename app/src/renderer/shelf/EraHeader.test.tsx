@@ -4,6 +4,7 @@ import { EraHeader } from './EraHeader.js';
 import type { SectionAggregate } from './eras.js';
 import { summaryText, summaryTextTruncated } from './eras.js';
 import type { ShelfSection } from './page.js';
+import { noop } from '../noop.js';
 
 afterEach(cleanup);
 
@@ -30,16 +31,14 @@ const section = (over: Partial<ShelfSection> = {}): ShelfSection => ({
 
 describe('EraHeader', () => {
   it('is a real button carrying aria-expanded, named by its summary (§11.7)', () => {
-    render(<EraHeader section={section()} collapsed onToggle={() => {}} probe={() => false} />);
+    render(<EraHeader section={section()} collapsed onToggle={noop} probe={() => false} />);
     const button = screen.getByRole('button');
     expect(button.getAttribute('aria-expanded')).toBe('false');
     expect(button.getAttribute('aria-label')).toContain('212 projects');
   });
 
   it('flips aria-expanded with the section, so the chevron is not the only signal', () => {
-    render(
-      <EraHeader section={section()} collapsed={false} onToggle={() => {}} probe={() => false} />,
-    );
+    render(<EraHeader section={section()} collapsed={false} onToggle={noop} probe={() => false} />);
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
   });
 
@@ -53,9 +52,7 @@ describe('EraHeader', () => {
   });
 
   it('drops the byte figure with its parenthetical as one unit when it does not fit', () => {
-    render(
-      <EraHeader section={section()} collapsed={false} onToggle={() => {}} probe={() => true} />,
-    );
+    render(<EraHeader section={section()} collapsed={false} onToggle={noop} probe={() => true} />);
     const summary = document.querySelector('.cdt-era-summary');
     expect(summary?.textContent).toContain('212 projects');
     expect(summary?.textContent).not.toContain('tracked');
@@ -65,9 +62,7 @@ describe('EraHeader', () => {
   });
 
   it('keeps the whole summary when it fits', () => {
-    render(
-      <EraHeader section={section()} collapsed={false} onToggle={() => {}} probe={() => false} />,
-    );
+    render(<EraHeader section={section()} collapsed={false} onToggle={noop} probe={() => false} />);
     const summary = document.querySelector('.cdt-era-summary');
     expect(summary?.textContent).toContain('tracked');
     expect(summary?.textContent).toContain('of 198 indexed');
@@ -78,7 +73,7 @@ describe('EraHeader', () => {
     // The probe is called against the full string; once truncated the short one fits by
     // construction, so a probe re-run on the short form would restore the long one forever.
     const probe = vi.fn(() => true);
-    render(<EraHeader section={section()} collapsed={false} onToggle={() => {}} probe={probe} />);
+    render(<EraHeader section={section()} collapsed={false} onToggle={noop} probe={probe} />);
     expect(document.querySelector('.cdt-era-summary')?.textContent).toBe(
       summaryTextTruncated(agg()),
     );
@@ -90,7 +85,7 @@ describe('EraHeader', () => {
     // full string — not against the short one it happens to be showing.
     let fits = false;
     const { rerender } = render(
-      <EraHeader section={section()} collapsed={false} onToggle={() => {}} probe={() => !fits} />,
+      <EraHeader section={section()} collapsed={false} onToggle={noop} probe={() => !fits} />,
     );
     expect(document.querySelector('.cdt-era-summary')?.textContent).toBe(
       summaryTextTruncated(agg()),
@@ -101,7 +96,7 @@ describe('EraHeader', () => {
       <EraHeader
         section={section({ agg: grown })}
         collapsed={false}
-        onToggle={() => {}}
+        onToggle={noop}
         probe={() => !fits}
       />,
     );
@@ -115,7 +110,7 @@ describe('EraHeader', () => {
           agg: agg({ unpushed: 0, uncommitted: 0, interrupted: 0, unchecked: 7 }),
         })}
         collapsed={false}
-        onToggle={() => {}}
+        onToggle={noop}
         probe={() => false}
       />,
     );
@@ -129,7 +124,7 @@ describe('EraHeader', () => {
           agg: agg({ unpushed: 0, uncommitted: 0, interrupted: 0, unchecked: 0 }),
         })}
         collapsed={false}
-        onToggle={() => {}}
+        onToggle={noop}
         probe={() => false}
       />,
     );
@@ -137,9 +132,7 @@ describe('EraHeader', () => {
   });
 
   it('never truncates the flag line, whatever the summary does', () => {
-    render(
-      <EraHeader section={section()} collapsed={false} onToggle={() => {}} probe={() => true} />,
-    );
+    render(<EraHeader section={section()} collapsed={false} onToggle={noop} probe={() => true} />);
     expect(document.querySelector('.cdt-era-flags')?.textContent).toBe(
       '8 unpushed · 3 uncommitted · 3 interrupted',
     );
@@ -150,7 +143,7 @@ describe('EraHeader', () => {
       <EraHeader
         section={section({ id: 'era:tail', label: '2015 AND EARLIER' })}
         collapsed
-        onToggle={() => {}}
+        onToggle={noop}
         probe={() => false}
       />,
     );
@@ -188,7 +181,7 @@ describe('§23.4: a total over zero measurements is not a measurement', () => {
           }),
         })}
         collapsed={false}
-        onToggle={() => {}}
+        onToggle={noop}
         probe={() => false}
       />,
     );
@@ -224,7 +217,7 @@ describe('§23.4: a total over zero measurements is not a measurement', () => {
           }),
         })}
         collapsed={false}
-        onToggle={() => {}}
+        onToggle={noop}
         probe={() => false}
       />,
     );
@@ -242,7 +235,7 @@ describe('§23.4: a total over zero measurements is not a measurement', () => {
       <EraHeader
         section={section({ agg: agg({ count: 7, trackedBytes: 1024 ** 2, indexedCount: 1 }) })}
         collapsed={false}
-        onToggle={() => {}}
+        onToggle={noop}
         probe={() => false}
       />,
     );

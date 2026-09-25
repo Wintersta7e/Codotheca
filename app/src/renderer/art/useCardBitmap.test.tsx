@@ -8,6 +8,7 @@ import {
   useCardBitmap,
   useInstalledRenditionFlip,
 } from './useCardBitmap';
+import { noop } from '../noop';
 
 afterEach(() => {
   cleanup();
@@ -29,7 +30,7 @@ const shown = (): string => screen.getByTestId('src').textContent ?? '';
 const held = (): string | null => screen.getByTestId('src').getAttribute('data-held');
 
 /** Runs `fn` and flushes the decode's microtask inside one `act`, so React sees both. */
-const settle = async (fn: () => void = (): void => {}): Promise<void> => {
+const settle = async (fn: () => void = noop): Promise<void> => {
   await act(async () => {
     fn();
     await Promise.resolve();
@@ -59,7 +60,7 @@ describe('the address is two segments and is built in one place', () => {
 
 describe('§7.1a: the plate is held until that exact scene_hash has decoded', () => {
   it('shows the plate — no src at all — until the decode resolves', async () => {
-    let release = (): void => {};
+    let release = noop;
     const decode = async (): Promise<void> => {
       await new Promise<void>((resolve) => {
         release = resolve;
@@ -74,7 +75,7 @@ describe('§7.1a: the plate is held until that exact scene_hash has decoded', ()
   });
 
   it('holds the OLD bitmap while a new hash decodes, so no card changes under the pointer', async () => {
-    let release = (): void => {};
+    let release = noop;
     const stalled = async (): Promise<void> => {
       await new Promise<void>((resolve) => {
         release = resolve;
@@ -103,7 +104,7 @@ describe('§7.1a: the plate is held until that exact scene_hash has decoded', ()
   });
 
   it('never swaps to a decode that resolved after the address moved on', async () => {
-    let releaseFirst = (): void => {};
+    let releaseFirst = noop;
     const stalled = async (): Promise<void> => {
       await new Promise<void>((resolve) => {
         releaseFirst = resolve;
@@ -255,7 +256,7 @@ describe('the install-time rendition flip', () => {
 
     tile.rerender({ done: true });
     hero.rerender({ done: true });
-    await act(async () => {});
+    await act(() => Promise.resolve());
 
     expect(tile.result.current).toBe('card');
     expect(hero.result.current).toBe('hero');
@@ -273,7 +274,7 @@ describe('the install-time rendition flip', () => {
       { initialProps: { done: false } },
     );
     tile.rerender({ done: true });
-    await act(async () => {});
+    await act(() => Promise.resolve());
     expect(tile.result.current).toBe('card-blueprint');
   });
 
@@ -284,7 +285,7 @@ describe('the install-time rendition flip', () => {
       { initialProps: { done: false } },
     );
     tile.rerender({ done: true });
-    await act(async () => {});
+    await act(() => Promise.resolve());
     expect(tile.result.current).toBe('card-blueprint');
   });
 });

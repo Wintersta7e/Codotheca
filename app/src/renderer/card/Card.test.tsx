@@ -5,6 +5,7 @@ import { LADDER_RUNGS } from '../theme/tokens';
 import { Card, type CardProps } from './Card';
 import { uncomputedRank } from './completion';
 import { HAZARD_TAPE_HEIGHT_PX, bandsFor } from './geometry';
+import { noop } from '../noop';
 
 afterEach(cleanup);
 
@@ -127,7 +128,7 @@ describe('§7.7: no element may occupy two bands', () => {
           isPinned: false,
           surface: 'card',
           visible: true,
-          onToggle: () => {},
+          onToggle: noop,
         },
       },
       ...over,

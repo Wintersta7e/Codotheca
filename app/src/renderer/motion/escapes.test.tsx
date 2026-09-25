@@ -26,6 +26,7 @@ import { TurnScreen } from '../firstrun/TurnScreen';
 import cardCss from '../styles/card.css?raw';
 import motionCss from '../styles/motion.css?raw';
 import { REDUCED_CLAMP_MS, type ResolvedTier } from './tier';
+import { noop } from '../noop';
 
 const TIERS = ['full', 'reduced', 'off'] as const;
 
@@ -105,7 +106,7 @@ const REVEAL_DEPS: RevealDeps = {
 function scanView(tier: ResolvedTier): Element {
   render(
     <ScanScreen
-      deps={{ jewelFor: () => null, onSkipAhead: () => undefined, onOpenScanSummary: () => {} }}
+      deps={{ jewelFor: () => null, onSkipAhead: () => undefined, onOpenScanSummary: noop }}
       feed={INITIAL_SCAN_FEED}
       rootLine="a root"
       milestone={null}
@@ -277,7 +278,7 @@ describe('§11.6 the merging tile, clamped', () => {
     const feed = events.reduce(scanFeedReducer, INITIAL_SCAN_FEED);
     render(
       <ScanScreen
-        deps={{ jewelFor: () => null, onSkipAhead: () => undefined, onOpenScanSummary: () => {} }}
+        deps={{ jewelFor: () => null, onSkipAhead: () => undefined, onOpenScanSummary: noop }}
         feed={feed}
         rootLine="a root"
         milestone={null}

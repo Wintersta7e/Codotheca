@@ -4,6 +4,7 @@ import { LIST_COLUMNS, ListView } from './ListView.js';
 import type { ListViewProps } from './ListView.js';
 import { listRowChips } from './chips.js';
 import type { ShelfRow } from './row.js';
+import { noop } from '../noop.js';
 
 afterEach(cleanup);
 
@@ -43,8 +44,8 @@ const draw = (over: Partial<ListViewProps> = {}): ReturnType<typeof render> =>
       firstRunCompletedAt={0}
       selectedId={null}
       peek={null}
-      onActivate={() => {}}
-      onOpen={() => {}}
+      onActivate={noop}
+      onOpen={noop}
       {...over}
     />,
   );

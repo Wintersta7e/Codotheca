@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ArtState, ProjectRow, Rendition, SceneHash } from '../../generated/protocol';
 import { artUrl } from '../../shared/artAddress';
 import { useProjectPageDeps } from '../project/deps';
+import { noop } from '../noop';
 
 export { artUrl };
 
@@ -208,7 +209,7 @@ export function useInstalledRenditionFlip(
     };
     // A rendition that never decodes leaves the blueprint up, which is the honest outcome: the
     // old raster is a real picture of the same scene, and an empty plate is not.
-    image.onerror = () => {};
+    image.onerror = noop;
     image.src = address;
     return () => {
       live = false;

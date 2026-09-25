@@ -25,6 +25,7 @@ import { UNINSTALL_OPEN_LABEL, UNINSTALL_OPEN_NOTE } from '../uninstall/uninstal
 import { editorTargets, OpensIn } from './OpensIn';
 import { RerollStepper } from './RerollStepper';
 import { ctaState, type CtaState } from './statFormat';
+import { noop } from '../../noop';
 
 /**
  * Copy this plan adds. §8.5.1's CTA table has no row for it, and §11.3a forbids the alternative:
@@ -153,7 +154,7 @@ export function Rail({
       {installPreview === undefined ? null : installRoots === null || installRoots === undefined ? (
         <InstallControl
           preview={installPreview}
-          onInstall={onInstall ?? (() => {})}
+          onInstall={onInstall ?? noop}
           onOpenUpgrade={onOpenUpgrade}
         />
       ) : (
@@ -162,8 +163,8 @@ export function Rail({
         <RootChooser
           roots={installRoots}
           selected={null}
-          onSelect={onChooseRoot ?? (() => {})}
-          onAddFolder={onAddFolder ?? (() => {})}
+          onSelect={onChooseRoot ?? noop}
+          onAddFolder={onAddFolder ?? noop}
         />
       )}
       {control.kind === 'statement' ? (
@@ -248,7 +249,7 @@ export function Rail({
           </button>
         </div>
       ) : (
-        <UninstallControl verdict={uninstallVerdict} onUninstall={onUninstall ?? (() => {})} />
+        <UninstallControl verdict={uninstallVerdict} onUninstall={onUninstall ?? noop} />
       )}
     </div>
   );
