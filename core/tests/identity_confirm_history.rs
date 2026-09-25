@@ -2,7 +2,8 @@
 //! production dispatcher, `firstrun::dispatch`.
 //!
 //! `AC-P4-38-13`: a confirmation deletes a project's git-derived rows only when its history can be
-//! re-read (§38.7.1) — some copy neither removed nor away.
+//! re-read (§38.7.1) — some copy neither removed nor away. `AC-P4-38-21`'s store half: a
+//! confirmation leaves the number of classified projects unchanged.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -22,6 +23,7 @@ use serde_json::{json, Value};
 
 const NOW: i64 = 1_790_000_000;
 const A: &str = "a@example.invalid";
+const B: &str = "b@example.invalid";
 const OTHER: &str = "other@example.invalid";
 
 fn env(home: &std::path::Path) -> FirstRunEnv {
@@ -253,4 +255,65 @@ fn ac_p4_38_13_a_confirm_keeps_the_git_rows_of_a_history_it_cannot_reread() {
         vec![1, 1, 1, 1],
         "every project moves into Reference"
     );
+}
+
+fn classified(conn: &Connection) -> i64 {
+    conn.query_row(
+        "SELECT count(*) FROM project WHERE authored_by_user IS NOT NULL",
+        [],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// **`AC-P4-38-21`, the store half.** A confirmation changes which side of the line a project is
+/// on; it never changes *whether it is classified*. Authorship is written by J1.5's own writer;
+/// one project is still pending (J1.5 has not run) and one is hidden. Three confirmations: the
+/// seeded set as it is, a narrower one that moves nothing, and one that moves `mine` into
+/// Reference.
+#[test]
+fn ac_p4_38_21_a_confirm_leaves_the_classified_count_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut index = Index::open_at(dir.path(), NOW).unwrap();
+    let mine = {
+        let conn = index.conn_mut();
+        identity(conn, A, true);
+        identity(conn, B, true);
+        identity(conn, OTHER, false);
+        let mine = project(conn, "mine");
+        let theirs = project(conn, "theirs");
+        let both = project(conn, "both");
+        let pending = project(conn, "pending");
+        let hidden = project(conn, "hidden");
+        for p in [mine, theirs, both, pending, hidden] {
+            location(conn, p, "present", false);
+        }
+        authorship(conn, mine, &[A], Some(true));
+        authorship(conn, theirs, &[OTHER], Some(false));
+        authorship(conn, both, &[A, B], Some(true));
+        authorship(conn, hidden, &[A], Some(true));
+        conn.execute("UPDATE project SET is_hidden = 1 WHERE id = ?1", [hidden])
+            .unwrap();
+        mine
+    };
+
+    for set in [&[A, B][..], &[A][..], &[B][..]] {
+        let before = classified(index.conn());
+        confirm(&mut index, dir.path(), set, true);
+        let after = classified(index.conn());
+        eprintln!("AC-P4-38-21 confirm {set:?}: classified {before} → {after}");
+        assert_eq!(
+            after, before,
+            "confirming {set:?} changed the classified count"
+        );
+    }
+    let moved: (Option<i64>, i64) = index
+        .conn()
+        .query_row(
+            "SELECT authored_by_user, is_reference FROM project WHERE id = ?1",
+            [mine],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(moved, (Some(0), 1), "the last confirmation moved nothing");
 }
