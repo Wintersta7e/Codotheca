@@ -285,8 +285,8 @@ fn deleting_an_account_cascades_its_side_tables_and_no_project_row() {
         .unwrap();
     }
 
-    let project_ids = |conn: &rusqlite::Connection| -> Vec<i64> {
-        let mut stmt = conn.prepare("SELECT id FROM project ORDER BY id").unwrap();
+    let project_ids = |db: &rusqlite::Connection| -> Vec<i64> {
+        let mut stmt = db.prepare("SELECT id FROM project ORDER BY id").unwrap();
         let ids = stmt
             .query_map([], |row| row.get::<_, i64>(0))
             .unwrap()

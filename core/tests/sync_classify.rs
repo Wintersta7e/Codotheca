@@ -209,7 +209,7 @@ fn the_park_instant_is_translated_onto_our_clock_from_the_responses_own_date() {
         }
     );
 
-    let (_, rate) = classify(
+    let (_, behind_rate) = classify(
         &response(
             429,
             &[
@@ -219,15 +219,15 @@ fn the_park_instant_is_translated_onto_our_clock_from_the_responses_own_date() {
         ),
         NOW,
     );
-    assert_eq!(rate.reset_at, Some(NOW + 900), "server clock -7h");
+    assert_eq!(behind_rate.reset_at, Some(NOW + 900), "server clock -7h");
 
     // No `Date`: the offset is zero and the value is used as given. The only honest fallback.
-    let (_, rate) = classify(
+    let (_, dateless_rate) = classify(
         &response(429, &[("x-ratelimit-reset", &(ahead + 900).to_string())]),
         NOW,
     );
     assert_eq!(
-        rate.reset_at,
+        dateless_rate.reset_at,
         Some(ahead + 900),
         "with no Date header the server's epoch is used verbatim"
     );

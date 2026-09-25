@@ -226,9 +226,11 @@ fn ac_p2_24_16_no_remote_or_history_failure_ever_yields_safe() {
     // A shallow clone holds history no remote has, whatever the remote says.
     let mut shallow = clean_inputs(&root, &copy);
     shallow.snapshot.is_shallow = true;
-    let verdict = verdict_for(&shallow);
-    assert!(verdict.blockers.contains(&UninstallBlocker::ShallowClone));
-    assert_ne!(verdict.disposition, UninstallDisposition::Safe);
+    let shallow_verdict = verdict_for(&shallow);
+    assert!(shallow_verdict
+        .blockers
+        .contains(&UninstallBlocker::ShallowClone));
+    assert_ne!(shallow_verdict.disposition, UninstallDisposition::Safe);
 }
 
 /// The fold's totality, stated as the criterion implies it rather than as the enum declares it:
@@ -342,7 +344,7 @@ fn an_unknown_verdict_never_reaches_the_filesystem() {
         location,
         copy.clone(),
         identity(),
-        VerdictSeal::of(&[] as &[UninstallBlocker], UninstallDisposition::Safe),
+        VerdictSeal::of(&[], UninstallDisposition::Safe),
     );
 
     let _guard = codotheca_core::proto::txguard::TxGuard::enter();

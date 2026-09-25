@@ -195,7 +195,7 @@ fn runner_with_wsl<'a>(
         skip: &r.skip,
         cancel: &r.cancel,
         index: r.index.as_ref(),
-        jobs: Arc::clone(&r.jobs) as Arc<dyn codotheca_core::jobs::JobSink>,
+        jobs: r.jobs.clone(),
     }
 }
 
@@ -804,12 +804,12 @@ mod bridge {
             },
         }));
         let consent: BTreeSet<String> = if consented {
-            ["distro-a".to_owned()].into_iter().collect()
+            std::iter::once("distro-a".to_owned()).collect()
         } else {
             BTreeSet::new()
         };
         let dispatcher = WslDispatcher::new(
-            Arc::new(WslWorkerPool::new(Arc::clone(&launcher) as Arc<_>)),
+            Arc::new(WslWorkerPool::new(launcher.clone())),
             installed(),
             consent,
         );

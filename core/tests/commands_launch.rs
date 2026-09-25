@@ -137,8 +137,8 @@ fn fixture_with(kind: &str, distro: &str) -> Fixture {
     let clock = Arc::new(FakeClock::new(T0));
     let events = Arc::new(RecordingSink::default());
     let sessions = SessionManager::new(
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
-        Arc::clone(&events) as Arc<dyn codotheca_core::proto::EventSink>,
+        clock.clone(),
+        events.clone(),
         Box::new(FakeActivitySource::default()),
         Arc::new(FakeIgnoreCheck::new(&["dist/"])),
     );
@@ -524,8 +524,8 @@ fn the_session_records_the_location_and_target_it_was_launched_from() {
 fn ac_p3_30_8_launching_a_project_stamps_acknowledged_at_once() {
     let mut h = fixture();
     let project = h.project;
-    let read = |h: &Fixture| -> Option<i64> {
-        h.index
+    let read = |fx: &Fixture| -> Option<i64> {
+        fx.index
             .conn()
             .query_row(
                 "SELECT acknowledged_at FROM project WHERE id = ?1",
@@ -544,7 +544,7 @@ fn ac_p3_30_8_launching_a_project_stamps_acknowledged_at_once() {
     // Write-once: a second launch at a later clock cannot move the time the user first
     // acknowledged the project.
     h.clock.set_unix(T0 + 10_000);
-    let args = h.launch_args();
-    handle_launch(&mut h.ctx(), args).unwrap();
+    let second_args = h.launch_args();
+    handle_launch(&mut h.ctx(), second_args).unwrap();
     assert_eq!(read(&h), Some(first), "a second launch moves nothing");
 }

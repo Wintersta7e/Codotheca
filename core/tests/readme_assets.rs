@@ -32,7 +32,7 @@ const NOW: i64 = 1_781_179_200;
 /// match the type the production resolver has.
 #[allow(clippy::unnecessary_wraps)]
 fn public_resolver(_host: &str, _port: u16) -> std::io::Result<Vec<std::net::IpAddr>> {
-    Ok(vec!["203.0.113.10".parse().expect("literal")])
+    Ok(vec![std::net::Ipv4Addr::new(203, 0, 113, 10).into()])
 }
 
 /// A resolver that answers with a private address **consistently**.
@@ -43,7 +43,7 @@ fn public_resolver(_host: &str, _port: u16) -> std::io::Result<Vec<std::net::IpA
 /// this fixture exercises is the guard's happy path — a name whose answer is private every time.
 #[allow(clippy::unnecessary_wraps)]
 fn private_resolver(_host: &str, _port: u16) -> std::io::Result<Vec<std::net::IpAddr>> {
-    Ok(vec!["192.168.1.7".parse().expect("literal")])
+    Ok(vec![std::net::Ipv4Addr::new(192, 168, 1, 7).into()])
 }
 
 /// A resolver that cannot answer at all. A host that does not resolve is not reachable, and the
@@ -307,7 +307,7 @@ fn a_text_file_named_png_is_not_an_image_and_a_jpeg_named_png_is_a_jpeg() {
     assert!(
         uri.starts_with("data:image/jpeg;base64,"),
         "the extension said png and the bytes decide: {}",
-        &uri[..uri.len().min(40)]
+        uri.get(..uri.len().min(40)).expect("a data uri is ASCII")
     );
 }
 
@@ -595,7 +595,9 @@ fn an_ipv4_address_in_v6_clothes_is_refused_exactly_as_the_v4_address_is() {
 /// A resolver that answers with a mapped private address — the shape a hostile AAAA record has.
 #[allow(clippy::unnecessary_wraps)]
 fn mapped_private_resolver(_host: &str, _port: u16) -> std::io::Result<Vec<std::net::IpAddr>> {
-    Ok(vec!["::ffff:169.254.169.254".parse().expect("literal")])
+    Ok(vec![std::net::Ipv4Addr::new(169, 254, 169, 254)
+        .to_ipv6_mapped()
+        .into()])
 }
 
 #[test]

@@ -79,8 +79,8 @@ fn without_generated_all_lists(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(start) = rest.find("    pub const ALL: [") {
-        out.push_str(&rest[..start]);
-        let tail = &rest[start..];
+        let (kept, tail) = rest.split_at(start);
+        out.push_str(kept);
         // The `;` inside the type annotation `[BackupState; 3]` comes first, so skip past the
         // `=` before looking for the one that ends the item. One-line and multi-line forms both
         // end there, which is why this does not look for a closing bracket.
@@ -88,11 +88,13 @@ fn without_generated_all_lists(text: &str) -> String {
             rest = "";
             break;
         };
-        let Some(end) = tail[eq..].find(';') else {
+        let Some(end) = tail.get(eq..).expect("`=` was found at eq").find(';') else {
             rest = "";
             break;
         };
-        rest = &tail[eq + end + 1..];
+        rest = tail
+            .get(eq + end + 1..)
+            .expect("`;` is one byte, so the index after it is a boundary");
     }
     out.push_str(rest);
     out

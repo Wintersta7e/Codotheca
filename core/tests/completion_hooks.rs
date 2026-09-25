@@ -170,11 +170,13 @@ fn a_job_settle_leaves_ten_rows_and_a_moved_projection() {
             rusqlite::params![project.0, path.as_bytes(), path],
         )
         .unwrap();
-        (project, LocationId(conn.last_insert_rowid()))
+        let location = LocationId(conn.last_insert_rowid());
+        drop(guard);
+        (project, location)
     };
 
-    let rows = |index: &Mutex<Index>| -> i64 {
-        let guard = index.lock().unwrap();
+    let rows = |db: &Mutex<Index>| -> i64 {
+        let guard = db.lock().unwrap();
         guard
             .conn()
             .query_row(
@@ -191,17 +193,13 @@ fn a_job_settle_leaves_ten_rows_and_a_moved_projection() {
         git: Arc::new(SystemGit::new(
             Arc::new(repo.exec()),
             Arc::new(GitSlots::new(4)),
-            Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock.clone(),
         )),
-        clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        clock,
         cancel: CancelToken::new(),
         tz_offset_min: 0,
     };
-    let runner = JobRunner::new(
-        Arc::clone(&index),
-        deps,
-        Arc::new(SilentSink) as Arc<dyn EventSink>,
-    );
+    let runner = JobRunner::new(Arc::clone(&index), deps, Arc::new(SilentSink));
     assert!(runner.enqueue(Job {
         kind: JobKind::J1Refstate,
         project_id: project,

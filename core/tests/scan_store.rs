@@ -79,7 +79,9 @@ fn seed_location(h: &Harness, path: &str, store_key: &str, generation: i64) -> i
         rusqlite::params![project_id, bytes, key, display, store_key, generation],
     )
     .unwrap();
-    conn.last_insert_rowid()
+    let location_id = conn.last_insert_rowid();
+    drop(conn_guard);
+    location_id
 }
 
 #[test]

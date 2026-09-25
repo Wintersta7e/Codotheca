@@ -52,10 +52,10 @@ fn granting_writes_a_timestamp_and_publishes_it_revoking_writes_null() {
         readme_remote_at(index.index().conn(), project).expect("read"),
         None
     );
-    let events = sink.named("projects", "readme_remote_changed");
-    assert_eq!(events.len(), 2);
+    let after_revoke = sink.named("projects", "readme_remote_changed");
+    assert_eq!(after_revoke.len(), 2);
     assert_eq!(
-        events[1]["allowedAt"],
+        after_revoke[1]["allowedAt"],
         serde_json::Value::Null,
         "a revoked consent is NULL, not a dated denial"
     );

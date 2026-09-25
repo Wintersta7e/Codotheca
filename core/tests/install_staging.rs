@@ -139,6 +139,7 @@ fn the_sweep_removes_what_it_can_warrant_and_reports_what_it_cannot() {
     // And the user is told about it, by path.
     let held = index.lock().expect("lock");
     let items = abandoned_installs(held.conn()).expect("listed");
+    drop(held);
     assert!(
         items.is_empty(),
         "the only row left is the removed one, whose directory is gone: a run that ended \
@@ -185,6 +186,7 @@ fn a_row_whose_directory_is_still_there_is_reported_with_its_path() {
         .expect("run");
 
     let items = abandoned_installs(held.conn()).expect("listed");
+    drop(held);
     assert_eq!(items.len(), 1);
     assert!(
         items[0].path_display.contains("left"),
@@ -256,6 +258,7 @@ fn the_ninth_group_reaches_problems_list_and_not_only_its_own_function() {
     .expect("scan run");
 
     let problems = list(conn, None).expect("listed");
+    drop(held);
     let group = problems
         .groups
         .iter()
@@ -319,6 +322,7 @@ fn seed_run(
         )
         .expect("push");
     tx.commit().expect("commit");
+    drop(held);
     run
 }
 
@@ -397,6 +401,7 @@ fn a_cancelled_run_removes_its_staging_and_leaves_no_location() {
         .conn()
         .query_row("SELECT COUNT(*) FROM location", [], |row| row.get(0))
         .expect("count");
+    drop(held);
     assert_eq!(locations, 0, "the run never reached the rename");
     assert!(
         events.failed_reasons().contains(&"cancelled".to_owned()),

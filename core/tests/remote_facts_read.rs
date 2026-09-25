@@ -362,9 +362,11 @@ fn an_unparseable_body_is_a_failure_and_not_a_panic() {
         .repo_facts(&token(), "acme", "widget", None)
         .is_err());
 
-    let (transport, provider) = forge();
-    transport.push(answer(200, Vec::new(), b"{not json"));
-    assert!(provider.ci_runs(&token(), "acme", "widget", None).is_err());
+    let (runs_transport, runs_provider) = forge();
+    runs_transport.push(answer(200, Vec::new(), b"{not json"));
+    assert!(runs_provider
+        .ci_runs(&token(), "acme", "widget", None)
+        .is_err());
 }
 
 #[test]
@@ -633,11 +635,11 @@ fn writing_a_topic_set_twice_leaves_one_set_and_drops_what_the_forge_dropped() {
     in_tx(&mut index, |tx| {
         write_topics(tx, &binding(), &["rust".to_owned()]).expect("narrow");
     });
-    let count: i64 = index
+    let narrowed: i64 = index
         .conn()
         .query_row("SELECT COUNT(*) FROM remote_topic", [], |r| r.get(0))
         .expect("count");
-    assert_eq!(count, 1, "a topic the forge dropped is gone here too");
+    assert_eq!(narrowed, 1, "a topic the forge dropped is gone here too");
 }
 
 #[test]

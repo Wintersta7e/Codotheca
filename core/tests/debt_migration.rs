@@ -666,10 +666,9 @@ fn check_literals(ddl: &str, column: &str) -> Vec<String> {
         .find(&opener)
         .unwrap_or_else(|| panic!("no `{opener}` in {ddl}"))
         + opener.len();
-    let body = &ddl[start..];
-    let end = body.find(')').expect("the IN list closes");
-    body[..end]
-        .split(',')
+    let body = ddl.get(start..).expect("the opener ends inside the DDL");
+    let (list, _) = body.split_once(')').expect("the IN list closes");
+    list.split(',')
         .map(|v| v.trim().trim_matches('\'').to_owned())
         .collect()
 }

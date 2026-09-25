@@ -48,8 +48,8 @@ fn a_schema_from_the_future_writes_the_report_and_does_not_return() {
     if is_child() {
         // Must not return. Reaching the line below is the failure this test exists to catch.
         let _ = open_index(&child_dir(), NOW);
-        eprintln!("open_index returned on a schema from the future");
-        std::process::exit(99);
+        // The panic fails the child with libtest's own code, which is not the fatal one.
+        panic!("open_index returned on a schema from the future");
     }
 
     let dir = tempfile::tempdir().expect("tmp");

@@ -79,7 +79,9 @@ fn run_j6_as(
             rusqlite::params![project.0, path.as_bytes(), path, repo_kind],
         )
         .unwrap();
-        (project, LocationId(conn.last_insert_rowid()))
+        let location = LocationId(conn.last_insert_rowid());
+        drop(guard);
+        (project, location)
     };
 
     let clock = Arc::new(FakeClock::new(T0));
@@ -87,17 +89,13 @@ fn run_j6_as(
         git: Arc::new(SystemGit::new(
             Arc::new(repo.exec()),
             Arc::new(GitSlots::new(4)),
-            Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock.clone(),
         )),
-        clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        clock,
         cancel: CancelToken::new(),
         tz_offset_min: 0,
     };
-    let runner = JobRunner::new(
-        Arc::clone(&index),
-        deps,
-        Arc::new(SilentSink) as Arc<dyn EventSink>,
-    );
+    let runner = JobRunner::new(Arc::clone(&index), deps, Arc::new(SilentSink));
     assert!(runner.enqueue(Job {
         kind: JobKind::J6Content,
         project_id: project,
@@ -157,10 +155,14 @@ fn a_j6_run_reads_the_lockfiles_of_the_working_copy() {
                   WHERE project_id = ?1 ORDER BY package_name",
             )
             .unwrap();
-        stmt.query_map([project.0], |r| Ok((r.get(0)?, r.get(1)?)))
+        let rows = stmt
+            .query_map([project.0], |r| Ok((r.get(0)?, r.get(1)?)))
             .unwrap()
             .collect::<Result<_, _>>()
-            .unwrap()
+            .unwrap();
+        drop(stmt);
+        drop(guard);
+        rows
     };
     eprintln!(
         "advisory_lockfile_job: {scans} scan row(s), {files} parsed lockfile(s), triples {triples:?}"

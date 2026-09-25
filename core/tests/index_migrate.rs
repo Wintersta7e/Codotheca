@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! Schema migrations: their order, idempotence, rollback, and refusing a schema from the future.
 
 use codotheca_core::index::migrate::{
     apply_all, guard_not_from_the_future, schema_version, Migration, MIGRATIONS,
@@ -328,8 +329,8 @@ fn restore_over_replaces_the_database_and_clears_the_stale_wal() {
     assert!(!dir.path().join("index.db-wal").exists());
     assert!(!dir.path().join("index.db-shm").exists());
 
-    let conn = open_connection(&db).unwrap();
-    let bad: i64 = conn
+    let restored = open_connection(&db).unwrap();
+    let bad: i64 = restored
         .query_row(
             "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='bad'",
             [],

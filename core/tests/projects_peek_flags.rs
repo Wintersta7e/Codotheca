@@ -91,14 +91,14 @@ fn a_readme_that_was_never_indexed_is_not_a_readme_that_is_absent() {
             rusqlite::params![NOW],
         )
         .expect("j6 ran and found nothing");
-    let peek = call(
+    let read_peek = call(
         &index,
         &sink,
         "projects.peek",
         serde_json::json!({ "id": 1 }),
     );
-    assert_eq!(peek["readme"]["state"], "absent");
-    assert_eq!(peek["readme"]["readAt"], NOW);
+    assert_eq!(read_peek["readme"]["state"], "absent");
+    assert_eq!(read_peek["readme"]["readAt"], NOW);
 }
 
 #[test]
@@ -277,10 +277,11 @@ fn an_unknown_project_is_refused_rather_than_silently_creating_one() {
     .expect_err("refused");
     assert_eq!(err.code, codotheca_core::protocol::ErrorCode::Protocol);
 
-    let err = dispatch_projects_command(&ctx, "projects.peek", serde_json::json!({ "id": 99 }))
-        .expect("owned")
-        .expect_err("refused");
-    assert_eq!(err.code, codotheca_core::protocol::ErrorCode::Protocol);
+    let peek_err =
+        dispatch_projects_command(&ctx, "projects.peek", serde_json::json!({ "id": 99 }))
+            .expect("owned")
+            .expect_err("refused");
+    assert_eq!(peek_err.code, codotheca_core::protocol::ErrorCode::Protocol);
     // Refused means nothing was created.
     let rows: i64 = index
         .conn()

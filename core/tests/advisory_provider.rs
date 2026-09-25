@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 
-use codotheca_core::http::{HttpResponse, HttpTransport};
+use codotheca_core::http::HttpResponse;
 use codotheca_core::protocol::Ecosystem;
 use codotheca_core::provider::{
     GitHubProvider, PackageVersion, Provider, PROVIDER_REQUEST_METHODS,
@@ -68,10 +68,7 @@ const ONE_ADVISORY: &str = r#"[
 
 fn provider() -> (Arc<FakeTransport>, GitHubProvider) {
     let transport = Arc::new(FakeTransport::new());
-    let provider = GitHubProvider::new(
-        Arc::clone(&transport) as Arc<dyn HttpTransport>,
-        "forge.example.invalid".to_owned(),
-    );
+    let provider = GitHubProvider::new(transport.clone(), "forge.example.invalid".to_owned());
     (transport, provider)
 }
 
@@ -199,7 +196,7 @@ fn ac_p3_32_5_assembly_hands_out_the_production_provider() {
     let clock: Arc<dyn codotheca_core::clock::Clock> =
         Arc::new(codotheca_core::testing::FakeClock::new(1_800_000_000));
     let (provider, _observing) = codotheca_core::assembly::sync::build_forge(
-        Arc::clone(&transport) as Arc<dyn HttpTransport>,
+        transport.clone(),
         clock,
         "forge.example.invalid".to_owned(),
     );

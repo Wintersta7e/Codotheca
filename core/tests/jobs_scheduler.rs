@@ -85,7 +85,9 @@ fn rig(repo: &TestRepo) -> Rig {
             rusqlite::params![project.0, path.as_bytes(), path],
         )
         .unwrap();
-        (project, LocationId(conn.last_insert_rowid()))
+        let location = LocationId(conn.last_insert_rowid());
+        drop(guard);
+        (project, location)
     };
 
     let events = Arc::new(RecordingSink::default());
@@ -100,11 +102,7 @@ fn rig(repo: &TestRepo) -> Rig {
         // UTC, so a test's local date never depends on the machine running it.
         tz_offset_min: 0,
     };
-    let runner = JobRunner::new(
-        Arc::clone(&index),
-        deps,
-        Arc::clone(&events) as Arc<dyn EventSink>,
-    );
+    let runner = JobRunner::new(Arc::clone(&index), deps, events.clone());
 
     Rig {
         _dir: dir,
@@ -327,7 +325,9 @@ fn the_pump_the_composition_root_builds_drains_a_handed_off_location() {
             rusqlite::params![project.0, path.as_bytes(), path],
         )
         .unwrap();
-        (project, LocationId(conn.last_insert_rowid()))
+        let location = LocationId(conn.last_insert_rowid());
+        drop(guard);
+        (project, location)
     };
 
     let events = Arc::new(RecordingSink::default());
@@ -339,7 +339,7 @@ fn the_pump_the_composition_root_builds_drains_a_handed_off_location() {
             Arc::new(SystemClock::new()),
         )),
         Arc::new(SystemClock::new()),
-        Arc::clone(&events) as Arc<dyn EventSink>,
+        events.clone(),
         0,
     );
 
@@ -421,7 +421,9 @@ fn the_visible_sink_answers_while_the_index_guard_is_held() {
             rusqlite::params![project.0, path.as_bytes(), path],
         )
         .unwrap();
-        (project, LocationId(conn.last_insert_rowid()))
+        let location = LocationId(conn.last_insert_rowid());
+        drop(guard);
+        (project, location)
     };
 
     let events = Arc::new(RecordingSink::default());
@@ -433,7 +435,7 @@ fn the_visible_sink_answers_while_the_index_guard_is_held() {
             Arc::new(SystemClock::new()),
         )),
         Arc::new(SystemClock::new()),
-        Arc::clone(&events) as Arc<dyn EventSink>,
+        events,
         0,
     );
 

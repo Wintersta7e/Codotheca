@@ -138,9 +138,9 @@ fn ac_p3_28_5_forty_closures_in_one_day_pay_once() {
     );
 
     // A second closure, later the same local day, from a different source.
-    let tx = conn.transaction().unwrap();
+    let second_tx = conn.transaction().unwrap();
     let second = pay_debt_day(
-        &tx,
+        &second_tx,
         ProjectId(p),
         &subject,
         &closures(2, DebtCloseReason::Fixed, DebtSource::MissingReadme),
@@ -148,15 +148,15 @@ fn ac_p3_28_5_forty_closures_in_one_day_pay_once() {
         0,
     )
     .unwrap();
-    tx.commit().unwrap();
+    second_tx.commit().unwrap();
 
     assert!(!second.wrote_row, "the second closure of a day paid again");
     assert_eq!(second.closed_today, 42, "meta must describe the whole day");
 
-    let rows: i64 = conn
+    let rows_after_second: i64 = conn
         .query_row("SELECT count(*) FROM xp_events", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(rows, 1);
+    assert_eq!(rows_after_second, 1);
     assert_eq!(meta(&conn)["closed"], 42);
     assert_eq!(
         meta(&conn)["sources"],
@@ -205,9 +205,9 @@ fn ac_p3_28_15_an_invalidated_closure_pays_nothing() {
     assert_eq!(rows, 0, "a withdrawn advisory paid");
 
     // A real closure the same day pays, and a withdrawal afterwards leaves it alone.
-    let tx = conn.transaction().unwrap();
+    let fixed_tx = conn.transaction().unwrap();
     pay_debt_day(
-        &tx,
+        &fixed_tx,
         ProjectId(p),
         &subject,
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -215,13 +215,13 @@ fn ac_p3_28_15_an_invalidated_closure_pays_nothing() {
         0,
     )
     .unwrap();
-    tx.commit().unwrap();
+    fixed_tx.commit().unwrap();
     let earned = row(&conn);
     assert_eq!(meta(&conn)["closed"], 1);
 
-    let tx = conn.transaction().unwrap();
+    let withdrawn_tx = conn.transaction().unwrap();
     pay_debt_day(
-        &tx,
+        &withdrawn_tx,
         ProjectId(p),
         &subject,
         &closures(
@@ -233,7 +233,7 @@ fn ac_p3_28_15_an_invalidated_closure_pays_nothing() {
         0,
     )
     .unwrap();
-    tx.commit().unwrap();
+    withdrawn_tx.commit().unwrap();
 
     assert_eq!(row(&conn), earned, "a withdrawal rewrote an earned row");
     assert_eq!(meta(&conn)["closed"], 1, "a withdrawal entered the count");
@@ -313,9 +313,9 @@ fn closures_either_side_of_local_midnight_are_two_days() {
     // UTC+13 are still two local days, and the stored offset says which frame.
     let (_d2, mut other) = fresh();
     let q = insert_project(&other, "thing");
-    let tx = other.transaction().unwrap();
+    let other_tx = other.transaction().unwrap();
     pay_debt_day(
-        &tx,
+        &other_tx,
         ProjectId(q),
         &subject,
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -323,7 +323,7 @@ fn closures_either_side_of_local_midnight_are_two_days() {
         780,
     )
     .unwrap();
-    tx.commit().unwrap();
+    other_tx.commit().unwrap();
     let stored_offset: Option<i64> = other
         .query_row("SELECT tz_offset_min FROM xp_events", [], |r| r.get(0))
         .unwrap();

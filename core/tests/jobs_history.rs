@@ -164,7 +164,7 @@ fn a_fork_and_its_upstream_both_keep_their_commit_day() {
     let upstream = insert_project(&conn, "up");
     let fork = insert_project(&conn, "fork");
     let facts = HistoryFacts {
-        days: [19_675].into_iter().collect(),
+        days: std::iter::once(19_675).collect(),
         ..HistoryFacts::default()
     };
 
@@ -198,7 +198,7 @@ fn no_lineage_writes_no_commit_days() {
         None,
         None,
         &HistoryFacts {
-            days: [19_675].into_iter().collect(),
+            days: std::iter::once(19_675).collect(),
             ..HistoryFacts::default()
         },
     )
@@ -220,7 +220,7 @@ fn committing_history_writes_dates_and_never_a_count() {
         first_commit_sha: Some("a".repeat(40)),
     };
     let facts = HistoryFacts {
-        days: [19_675].into_iter().collect(),
+        days: std::iter::once(19_675).collect(),
         last_commit_at: Some(1_700_000_000),
         last_user_commit_at: Some(1_650_000_000),
         recent_subjects: vec!["third".to_owned(), "second".to_owned()],

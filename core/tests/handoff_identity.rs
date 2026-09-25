@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use codotheca_core::assembly::handoff::{hand_off_discovered, HandoffCtx, HandoffError};
 use codotheca_core::cancel::CancelToken;
-use codotheca_core::clock::{Clock, SystemClock};
+use codotheca_core::clock::SystemClock;
 use codotheca_core::git::{
     Authorship, CommitSubject, Divergence, GitBackend, GitExec, GitResult, GitSlots, GitVersion,
     JobContext, RefState, RepoFacts, RepoHandle, RootCommit, StatusOptions, StoreKey, SystemGit,
@@ -97,7 +97,7 @@ impl Rig {
         Arc::new(SystemGit::new(
             Arc::new(GitExec::system(hooks)),
             Arc::new(GitSlots::for_machine()),
-            Arc::new(SystemClock::new()) as Arc<dyn Clock>,
+            Arc::new(SystemClock::new()),
         ))
     }
 

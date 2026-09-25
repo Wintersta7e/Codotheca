@@ -239,15 +239,15 @@ fn ac_p3_34_2_the_debt_set_moves_a_layer_and_the_tick_does_not() {
     executed += 1;
 
     // The tick moves; the debt set does not.
-    let after = settle(&mut db, NOW + 20, |tx, db| {
+    let after_tick = settle(&mut db, NOW + 20, |tx, db| {
         set_check(tx, db.project, "readme", "fail", None);
         SweepEffect::default()
     });
     eprintln!(
         "tick unknown -> fail, no item change: {} new row(s)",
-        after - 1
+        after_tick - 1
     );
-    assert_eq!(after, 1, "a completion tick wrote a health delta");
+    assert_eq!(after_tick, 1, "a completion tick wrote a health delta");
     executed += 1;
 
     eprintln!("AC-P3-34-2 cases executed: {executed}");

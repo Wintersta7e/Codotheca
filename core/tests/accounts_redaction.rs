@@ -95,9 +95,10 @@ fn ac_p2_20_4_the_sentinel_appears_nowhere() {
     let tokens = FakeTokenStore::available();
 
     // 1. The answer.
+    let http: Arc<dyn HttpTransport> = transport.clone();
     let account = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
+        &http,
         &tokens,
         "forge.example.invalid",
         &SecretToken::new(SENTINEL.to_owned()),
@@ -117,9 +118,10 @@ fn ac_p2_20_4_the_sentinel_appears_nowhere() {
         headers: Vec::new(),
         body: br#"{"message":"Bad credentials"}"#.to_vec(),
     });
+    let failing_http: Arc<dyn HttpTransport> = failing;
     let failure = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&failing) as Arc<dyn HttpTransport>),
+        &failing_http,
         &tokens,
         "forge.example.invalid",
         &SecretToken::new(SENTINEL.to_owned()),
@@ -139,6 +141,7 @@ fn ac_p2_20_4_the_sentinel_appears_nowhere() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let bundle =
         codotheca_core::surfaces::diag::build(guard.conn(), false, 900).expect("the bundle builds");
+    drop(guard);
     let bytes = serde_json::to_string(&bundle).expect("the bundle serialises");
     assert!(!bytes.contains(SENTINEL), "the token reached diag.bundle");
     // The bundle must actually have content, or this assertion passes over nothing.

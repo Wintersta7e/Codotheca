@@ -336,7 +336,7 @@ fn the_warrant_variant_list_is_two_now_that_uninstall_has_landed() {
 #[test]
 fn an_uninstall_warrant_whose_identity_changed_is_refused() {
     use codotheca_core::git::RootCommit;
-    use codotheca_core::protocol::{LocationId, UninstallBlocker, UninstallDisposition};
+    use codotheca_core::protocol::{LocationId, UninstallDisposition};
     use codotheca_core::uninstall::VerdictSeal;
 
     let dir = tempfile::tempdir().expect("tmp");
@@ -352,7 +352,7 @@ fn an_uninstall_warrant_whose_identity_changed_is_refused() {
         LocationId(1),
         copy.clone(),
         expected.clone(),
-        VerdictSeal::of(&[] as &[UninstallBlocker], UninstallDisposition::Safe),
+        VerdictSeal::of(&[], UninstallDisposition::Safe),
     );
 
     // A different repository at the same path.
@@ -389,7 +389,7 @@ fn an_uninstall_warrant_whose_identity_changed_is_refused() {
 #[test]
 fn an_uninstall_warrant_on_a_symlink_is_refused_without_following_it() {
     use codotheca_core::git::RootCommit;
-    use codotheca_core::protocol::{LocationId, UninstallBlocker, UninstallDisposition};
+    use codotheca_core::protocol::{LocationId, UninstallDisposition};
     use codotheca_core::uninstall::VerdictSeal;
 
     let dir = tempfile::tempdir().expect("tmp");
@@ -415,7 +415,7 @@ fn an_uninstall_warrant_on_a_symlink_is_refused_without_following_it() {
         LocationId(1),
         link,
         identity.clone(),
-        VerdictSeal::of(&[] as &[UninstallBlocker], UninstallDisposition::Safe),
+        VerdictSeal::of(&[], UninstallDisposition::Safe),
     );
     assert_eq!(
         remove_warranted(&warrant, &HardDelete, Some(&identity)),

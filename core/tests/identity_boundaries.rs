@@ -182,13 +182,17 @@ fn only_one_module_parses_a_url_and_none_assembles_a_key() {
     let files = identity_sources();
     let mut scanned = 0_usize;
     let mut parsers = Vec::new();
+    // Searched for in source text: these are the format strings a hand-built key would use, so
+    // they have to look like format strings.
+    #[allow(clippy::literal_string_with_formatting_args)]
+    let key_formats = [r"{}/{}/{}", r"{host}/{owner}/{name}", r"{}/{owner}/{name}"];
     for (name, source) in &files {
         scanned += 1;
         let code = code_only(source);
         if code.contains(r#"split("://")"#) || code.contains(r#"split_once("://")"#) {
             parsers.push(name.clone());
         }
-        for needle in [r"{}/{}/{}", r"{host}/{owner}/{name}", r"{}/{owner}/{name}"] {
+        for needle in key_formats {
             assert!(
                 !code.contains(needle),
                 "{name} assembles a key by hand ({needle}); \

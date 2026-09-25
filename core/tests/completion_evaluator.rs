@@ -131,9 +131,9 @@ fn every_sweep_outcome_maps_for_every_group_a_key() {
 
         for outcome in DebtSweepOutcome::ALL {
             for open in [0_u32, 1] {
-                let mut inputs = baseline();
+                let mut swept_inputs = baseline();
                 put(
-                    &mut inputs,
+                    &mut swept_inputs,
                     key,
                     SingletonReading {
                         source,
@@ -141,8 +141,8 @@ fn every_sweep_outcome_maps_for_every_group_a_key() {
                         open_items: open,
                     },
                 );
-                let rows = checked(&inputs);
-                let got = row(&rows, key);
+                let swept_rows = checked(&swept_inputs);
+                let got = row(&swept_rows, key);
                 if open >= 1 {
                     assert_eq!(got.state, CheckState::Fail, "{key:?} {outcome:?}");
                     assert_eq!(got.unknown_reason, None, "{key:?} {outcome:?}");
@@ -413,10 +413,19 @@ fn the_na_gate_runs_before_every_read() {
     // `ciGreen`, which was only N/A derivatively.
     let mut overridden = docs;
     overridden.user_na[ci_index] = Some(false);
-    let rows = checked(&overridden);
-    assert_eq!(state(&rows, CompletionCheck::Ci), CheckState::Pass);
-    assert_eq!(state(&rows, CompletionCheck::CiGreen), CheckState::Pass);
-    assert_eq!(row(&rows, CompletionCheck::Ci).user_na, Some(false));
+    let overridden_rows = checked(&overridden);
+    assert_eq!(
+        state(&overridden_rows, CompletionCheck::Ci),
+        CheckState::Pass
+    );
+    assert_eq!(
+        state(&overridden_rows, CompletionCheck::CiGreen),
+        CheckState::Pass
+    );
+    assert_eq!(
+        row(&overridden_rows, CompletionCheck::Ci).user_na,
+        Some(false)
+    );
 
     // And a user ruling on a project whose archetype proposes nothing.
     let mut ruled = baseline();
@@ -425,9 +434,12 @@ fn the_na_gate_runs_before_every_read() {
         .position(|k| *k == CompletionCheck::Readme)
         .unwrap();
     ruled.user_na[readme_index] = Some(true);
-    let rows = checked(&ruled);
-    assert_eq!(state(&rows, CompletionCheck::Readme), CheckState::Na);
-    assert_eq!(row(&rows, CompletionCheck::Readme).user_na, Some(true));
+    let ruled_rows = checked(&ruled);
+    assert_eq!(state(&ruled_rows, CompletionCheck::Readme), CheckState::Na);
+    assert_eq!(
+        row(&ruled_rows, CompletionCheck::Readme).user_na,
+        Some(true)
+    );
 }
 
 // ---------------------------------------------------------------------------------------------

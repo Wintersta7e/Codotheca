@@ -43,7 +43,7 @@ fn harness() -> Harness {
     let dir = tempfile::tempdir().expect("tempdir");
     let index = Arc::new(Mutex::new(Index::open(dir.path()).expect("open")));
     let launcher = Arc::new(ScanLauncherFake::default());
-    let scans = ScanSupervisor::new(Arc::clone(&launcher) as Arc<_>);
+    let scans = ScanSupervisor::new(launcher.clone());
     Harness {
         _dir: dir,
         store: SqliteScanStore::new(index),
@@ -231,17 +231,17 @@ fn the_status_handler_returns_the_same_document_the_typed_half_builds() {
 fn scan_start_accepts_only_the_full_flag() {
     let h = harness();
     assert!(handle_start(&ctx(&h), serde_json::json!({ "full": true })).is_ok());
-    let h = harness();
+    let with_root = harness();
     let refused = handle_start(
-        &ctx(&h),
+        &ctx(&with_root),
         serde_json::json!({ "full": true, "root": "/etc" }),
     );
     assert!(
         refused.is_err(),
         "an unknown argument is a protocol error, not a path the core accepts"
     );
-    let h = harness();
-    assert!(handle_start(&ctx(&h), serde_json::json!({})).is_err());
+    let without_flag = harness();
+    assert!(handle_start(&ctx(&without_flag), serde_json::json!({})).is_err());
 }
 
 /// A run that has stopped clears the slot on its own, and `scan.status` then reads the row.

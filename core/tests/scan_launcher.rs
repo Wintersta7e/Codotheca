@@ -149,15 +149,15 @@ fn rig_with(root: &Path, wrap: impl FnOnce(Arc<dyn ScanLauncher>) -> Arc<dyn Sca
     let jobs = Arc::new(RecordingJobs::default());
     let launcher = Arc::new(ThreadScanLauncher::new(
         codotheca_core::scan::launcher::ScanLauncherDeps {
-            store: Arc::clone(&store) as Arc<_>,
+            store: store.clone(),
             index: Arc::clone(&index),
             git: Arc::new(git),
             mounts: Arc::new(mounts),
             clock: Arc::new(FakeClock::new(NOW)),
             skip: Arc::new(SkipList::default()),
             wsl: None,
-            jobs: Arc::clone(&jobs) as Arc<_>,
-            events: Arc::clone(&events) as Arc<_>,
+            jobs: jobs.clone(),
+            events: events.clone(),
         },
     ));
     Rig {
@@ -166,7 +166,7 @@ fn rig_with(root: &Path, wrap: impl FnOnce(Arc<dyn ScanLauncher>) -> Arc<dyn Sca
         store,
         events,
         jobs,
-        scans: Arc::new(ScanSupervisor::new(wrap(launcher as Arc<_>))),
+        scans: Arc::new(ScanSupervisor::new(wrap(launcher))),
     }
 }
 

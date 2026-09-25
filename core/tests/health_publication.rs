@@ -109,7 +109,9 @@ fn rig(repo: &TestRepo) -> Rig {
             rusqlite::params![project.0, path.as_bytes(), path],
         )
         .unwrap();
-        (project, LocationId(conn.last_insert_rowid()))
+        let location = LocationId(conn.last_insert_rowid());
+        drop(guard);
+        (project, location)
     };
 
     let clock = Arc::new(FakeClock::new(T0));
@@ -118,17 +120,13 @@ fn rig(repo: &TestRepo) -> Rig {
         git: Arc::new(SystemGit::new(
             Arc::new(repo.exec()),
             Arc::new(GitSlots::new(4)),
-            Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock.clone(),
         )),
-        clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        clock,
         cancel: CancelToken::new(),
         tz_offset_min: 0,
     };
-    let runner = JobRunner::new(
-        Arc::clone(&index),
-        deps,
-        Arc::clone(&events) as Arc<dyn EventSink>,
-    );
+    let runner = JobRunner::new(Arc::clone(&index), deps, events.clone());
 
     Rig {
         _dir: dir,

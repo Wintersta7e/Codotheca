@@ -248,7 +248,10 @@ fn the_completion_evaluator_coerces_no_null() {
 
     let arm = source
         .split_once("QueryTerm::Completion { op, value, .. }")
-        .map(|(_, rest)| &rest[..rest.len().min(400)])
+        .map(|(_, rest)| {
+            rest.get(..rest.len().min(400))
+                .expect("the 400-byte window ends on a character boundary")
+        })
         .expect("the completion arm");
     for banned in ["COALESCE", "IFNULL", "unwrap_or(0)", "unwrap_or_default"] {
         assert!(

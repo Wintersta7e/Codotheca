@@ -334,13 +334,13 @@ impl ReleaseRig {
             git: Arc::new(SystemGit::new(
                 Arc::new(self.repo.exec()),
                 Arc::new(GitSlots::new(4)),
-                Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+                clock.clone(),
             )),
-            clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock,
             cancel: CancelToken::new(),
             tz_offset_min: 0,
         };
-        let runner = JobRunner::new(Arc::clone(&self.index), deps, events as Arc<dyn EventSink>);
+        let runner = JobRunner::new(Arc::clone(&self.index), deps, events);
         assert!(runner.enqueue(Job {
             kind: JobKind::J1Refstate,
             project_id: self.project,
@@ -426,8 +426,8 @@ fn settle_a_release(origin: JobOrigin) -> Settled {
     let rig = ReleaseRig::new();
 
     // Phase one: the item opens. A first observation writes nothing.
-    rig.run(origin, Arc::new(RecordingSink::default()), &|rig| {
-        rig.count("SELECT count(*) FROM debt_item WHERE project_id = ?1 AND source = 'no_release'")
+    rig.run(origin, Arc::new(RecordingSink::default()), &|this| {
+        this.count("SELECT count(*) FROM debt_item WHERE project_id = ?1 AND source = 'no_release'")
             == 1
     });
     assert_eq!(
@@ -459,8 +459,8 @@ fn settle_a_release(origin: JobOrigin) -> Settled {
     rig.repo.git(&["tag", "v1"]);
     let events = Arc::new(RecordingSink::default());
     let seen = Arc::clone(&events);
-    rig.run(origin, Arc::clone(&events), &move |rig| {
-        rig.count("SELECT count(*) FROM health_delta WHERE project_id = ?1") >= 1
+    rig.run(origin, Arc::clone(&events), &move |this| {
+        this.count("SELECT count(*) FROM health_delta WHERE project_id = ?1") >= 1
             && !seen.named("health_delta").is_empty()
     });
     assert!(

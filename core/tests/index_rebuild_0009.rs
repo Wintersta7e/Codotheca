@@ -997,11 +997,13 @@ fn check_literals(column: &str) -> Vec<String> {
     let start = MIGRATION_0009
         .find(&needle)
         .unwrap_or_else(|| panic!("0009 declares no CHECK for {column}"));
-    let rest = &MIGRATION_0009[start + needle.len()..];
-    let end = rest
-        .find(')')
+    let rest = MIGRATION_0009
+        .get(start + needle.len()..)
+        .expect("the needle ends inside the migration");
+    let (list, _) = rest
+        .split_once(')')
         .unwrap_or_else(|| panic!("{column}'s CHECK has no closing parenthesis"));
-    let mut out: Vec<String> = rest[..end]
+    let mut out: Vec<String> = list
         .split('\'')
         .skip(1)
         .step_by(2)

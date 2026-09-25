@@ -532,9 +532,9 @@ fn drive_a_clone(root: &Path) -> (Recorded, PathBuf) {
     );
     let backend = SystemMutatingGit::new(recording_git(), hooks);
     let cancel = CancelToken::new();
-    let mut seen = Vec::new();
+    // The recording is what this returns; the child's stderr lines are not part of it.
     backend
-        .run(&intent, &cancel, &mut |line| seen.push(line.to_owned()))
+        .run(&intent, &cancel, &mut |_stderr_line| {})
         .expect("the recording stand-in exits 0");
     (Recorded::read(&dest), dest)
 }

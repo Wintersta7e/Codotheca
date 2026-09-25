@@ -93,9 +93,12 @@ fn a_document_one_byte_past_the_cap_is_truncated_and_says_so() {
     // And one byte under it is not truncated, so `truncated` is not simply always true.
     let under = "a".repeat(J6_BYTE_CAP - 1);
     std::fs::write(tmp.path().join("README.md"), &under).expect("write");
-    let source = read(&index, project, location).expect("present");
-    assert!(!source.truncated);
-    assert_eq!(source.text.as_deref().map(str::len), Some(J6_BYTE_CAP - 1));
+    let under_cap = read(&index, project, location).expect("present");
+    assert!(!under_cap.truncated);
+    assert_eq!(
+        under_cap.text.as_deref().map(str::len),
+        Some(J6_BYTE_CAP - 1)
+    );
 }
 
 #[test]
@@ -173,9 +176,10 @@ fn a_location_that_is_not_that_projects_is_a_protocol_error() {
     assert_eq!(error.code(), ErrorCode::Protocol);
 
     // …and an id that names no project at all is the same answer.
-    let error = read_readme_source(&ctx, codotheca_core::protocol::ProjectId(9_999), location)
-        .expect_err("must refuse");
-    assert_eq!(error.code(), ErrorCode::Protocol);
+    let unknown_error =
+        read_readme_source(&ctx, codotheca_core::protocol::ProjectId(9_999), location)
+            .expect_err("must refuse");
+    assert_eq!(unknown_error.code(), ErrorCode::Protocol);
     let _ = project;
 }
 

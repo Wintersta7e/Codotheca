@@ -274,9 +274,9 @@ fn ac_p3_32_20_an_uninstalled_project_still_gets_a_verdict() {
 
     // And a path that never existed answers just the same: the reading is frozen at the last
     // computed state, carrying the time it was computed.
-    let reading = verdict_for(&conn, project, NOW + 365 * DAY).unwrap();
-    assert_eq!(reading.verdict, DependencyVerdict::Vulnerable);
-    assert_eq!(reading.observed_at, Some(NOW));
+    let year_later = verdict_for(&conn, project, NOW + 365 * DAY).unwrap();
+    assert_eq!(year_later.verdict, DependencyVerdict::Vulnerable);
+    assert_eq!(year_later.observed_at, Some(NOW));
 }
 
 /// **A reading that was never computed is not frozen — it is absent.** An uninstalled project

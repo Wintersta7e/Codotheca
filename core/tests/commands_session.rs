@@ -76,8 +76,8 @@ struct Fixture {
 
 fn manager(clock: &Arc<FakeClock>, events: &Arc<RecordingSink>) -> SessionManager {
     SessionManager::new(
-        Arc::clone(clock) as Arc<dyn codotheca_core::clock::Clock>,
-        Arc::clone(events) as Arc<dyn codotheca_core::proto::EventSink>,
+        clock.clone(),
+        events.clone(),
         Box::new(FakeActivitySource::default()),
         Arc::new(FakeIgnoreCheck::new(&["dist/"])),
     )

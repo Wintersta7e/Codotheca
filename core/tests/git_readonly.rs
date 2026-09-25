@@ -75,10 +75,13 @@ fn os_str_literals(source: &str) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     let mut rest = source;
     while let Some(at) = rest.find("OsStr::new(\"") {
-        let after = &rest[at + "OsStr::new(\"".len()..];
+        let after = rest
+            .get(at + "OsStr::new(\"".len()..)
+            .expect("the needle ends inside the source");
         if let Some(end) = after.find('"') {
-            found.insert(after[..end].to_owned());
-            rest = &after[end..];
+            let (literal, from_quote) = after.split_at(end);
+            found.insert(literal.to_owned());
+            rest = from_quote;
         } else {
             break;
         }
@@ -129,7 +132,11 @@ fn non_literal_os_str_calls(source: &str) -> Vec<String> {
 
     let mut calls = Vec::new();
     let mut cursor = 0;
-    while let Some(relative_start) = source[cursor..].find(START) {
+    while let Some(relative_start) = source
+        .get(cursor..)
+        .expect("the cursor sits at the start or just past a `)`")
+        .find(START)
+    {
         let call_start = cursor + relative_start;
         let argument_start = call_start + START.len();
         let mut depth = 1_u32;
@@ -137,7 +144,11 @@ fn non_literal_os_str_calls(source: &str) -> Vec<String> {
         let mut escaped = false;
         let mut call_end = None;
 
-        for (relative, ch) in source[argument_start..].char_indices() {
+        for (relative, ch) in source
+            .get(argument_start..)
+            .expect("the argument starts after an ASCII `(`")
+            .char_indices()
+        {
             if in_string {
                 if escaped {
                     escaped = false;
@@ -165,9 +176,17 @@ fn non_literal_os_str_calls(source: &str) -> Vec<String> {
         let Some(call_end) = call_end else {
             break;
         };
-        let argument = source[argument_start..call_end].trim();
+        let argument = source
+            .get(argument_start..call_end)
+            .expect("both ends sit on ASCII parentheses")
+            .trim();
         if !(argument.starts_with('"') && argument.ends_with('"')) {
-            calls.push(source[call_start..=call_end].to_owned());
+            calls.push(
+                source
+                    .get(call_start..=call_end)
+                    .expect("both ends sit on ASCII delimiters")
+                    .to_owned(),
+            );
         }
         cursor = call_end + 1;
     }

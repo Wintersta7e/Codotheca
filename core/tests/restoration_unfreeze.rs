@@ -111,7 +111,7 @@ impl Rig {
         let git: Arc<dyn GitBackend> = Arc::new(SystemGit::new(
             Arc::new(repo.exec()),
             Arc::new(GitSlots::new(4)),
-            Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock.clone(),
         ));
         let mut rig = Self {
             repo,
@@ -220,7 +220,7 @@ impl Rig {
     fn deps(&self) -> JobDeps {
         JobDeps {
             git: Arc::clone(&self.git),
-            clock: Arc::clone(&self.clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock: self.clock.clone(),
             cancel: CancelToken::new(),
             tz_offset_min: 0,
         }
@@ -262,11 +262,7 @@ impl Rig {
 
     fn runner(&self) -> (Arc<JobRunner>, Arc<RecordingSink>) {
         let events = Arc::new(RecordingSink::default());
-        let runner = JobRunner::new(
-            Arc::clone(&self.index),
-            self.deps(),
-            Arc::clone(&events) as Arc<dyn EventSink>,
-        );
+        let runner = JobRunner::new(Arc::clone(&self.index), self.deps(), events.clone());
         (runner, events)
     }
 

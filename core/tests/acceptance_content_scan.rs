@@ -1064,9 +1064,12 @@ fn ac_p3_29_5_a_cut_off_is_partial_and_requeues_without_a_failure() {
     // The same tree, read without a chunk boundary, yields the same finding set by identity.
     let whole = Rig::new("head-one");
     build(&whole);
-    let mut cursor: Option<String> = None;
-    while let JobOutcome::Partial { cursor: next, .. } = whole.run(cursor.as_deref()) {
-        cursor = Some(next);
+    let mut whole_cursor: Option<String> = None;
+    while let JobOutcome::Partial {
+        cursor: whole_next, ..
+    } = whole.run(whole_cursor.as_deref())
+    {
+        whole_cursor = Some(whole_next);
     }
     let a = chunked.findings();
     let b = whole.findings();
@@ -1208,11 +1211,7 @@ fn ac_p3_29_28_a_bare_repository_with_commits_is_scanned() {
     let index = Arc::new(Mutex::new(Index::open(&dir.path().join("index")).unwrap()));
     let (project, location) = file_bare_location(&index, &path);
 
-    let runner = JobRunner::new(
-        Arc::clone(&index),
-        system_deps(&source),
-        Arc::new(Silent) as Arc<dyn codotheca_core::proto::EventSink>,
-    );
+    let runner = JobRunner::new(Arc::clone(&index), system_deps(&source), Arc::new(Silent));
     runner.start(2);
     runner.on_location_indexed(project, location, "store", StoreClass::Local);
     let j7_state = || {
@@ -1973,8 +1972,8 @@ fn ac_p3_29_24_a_partial_sweeps_evidence_is_incomplete_not_empty() {
 
     // A project J7 has never observed hands over **nothing**, which is not an outcome.
     let unseen = Rig::new("head-one");
-    let guard = unseen.index.lock().unwrap();
-    let none = j7_markers::content_sweep_state(guard.conn(), unseen.project).unwrap();
-    drop(guard);
+    let unseen_guard = unseen.index.lock().unwrap();
+    let none = j7_markers::content_sweep_state(unseen_guard.conn(), unseen.project).unwrap();
+    drop(unseen_guard);
     assert_eq!(none, None, "never observed was reported as an outcome");
 }

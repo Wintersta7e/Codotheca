@@ -42,11 +42,11 @@ fn rig() -> Rig {
     let transport = Arc::new(FakeTransport::new());
     let clock = Arc::new(FakeClock::new(NOW));
     let observing = Arc::new(codotheca_core::sync::http::ObservingTransport::new(
-        Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        transport.clone(),
+        clock.clone(),
     ));
     let provider = Arc::new(codotheca_core::provider::GitHubProvider::new(
-        Arc::clone(&observing) as Arc<dyn codotheca_core::http::HttpTransport>,
+        observing.clone(),
         HOST.to_owned(),
     ));
     Rig {
@@ -56,7 +56,7 @@ fn rig() -> Rig {
             provider,
             transport: observing,
             tokens: Arc::new(FakeTokenStore::available()),
-            clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock,
             cancel: codotheca_core::cancel::CancelToken::new(),
             tz_offset_min: 0,
         },
@@ -162,10 +162,14 @@ fn ac_p3_32_10_one_triple_holds_six_matches() {
             .conn()
             .prepare("SELECT severity FROM advisory ORDER BY advisory_id")
             .unwrap();
-        stmt.query_map([], |r| r.get(0))
+        let rows = stmt
+            .query_map([], |r| r.get(0))
             .unwrap()
             .map(Result::unwrap)
-            .collect()
+            .collect();
+        drop(stmt);
+        drop(guard);
+        rows
     };
     assert_eq!(
         severities,

@@ -21,6 +21,7 @@ use codotheca_core::jobs::state::{
 use codotheca_core::jobs::{JobKind, JobState};
 use codotheca_core::protocol::ProjectId;
 
+/// A database with every shipped migration applied, and the directory that holds it.
 pub fn fresh() -> (tempfile::TempDir, rusqlite::Connection) {
     let dir = tempfile::tempdir().unwrap();
     let mut conn = open_connection(&Index::db_path(dir.path())).unwrap();
@@ -28,6 +29,7 @@ pub fn fresh() -> (tempfile::TempDir, rusqlite::Connection) {
     (dir, conn)
 }
 
+/// A minimal project row named `name`, for job-state rows to reference.
 pub fn insert_project(conn: &rusqlite::Connection, name: &str) -> ProjectId {
     conn.execute(
         "INSERT INTO project (name, seed_basename, created_at, updated_at)
@@ -191,9 +193,9 @@ fn a_reset_revives_only_the_stuck_rows_and_records_why() {
     }
     tx.commit().unwrap();
 
-    let tx = conn.transaction().unwrap();
-    let n = reset_for(&tx, project, ResetCause::UserRequested, 500).unwrap();
-    tx.commit().unwrap();
+    let reset_tx = conn.transaction().unwrap();
+    let n = reset_for(&reset_tx, project, ResetCause::UserRequested, 500).unwrap();
+    reset_tx.commit().unwrap();
     assert_eq!(n, 2, "only deferred_slow and failed are revived");
 
     let rows = load(&conn, project).unwrap();
@@ -227,9 +229,9 @@ fn a_rolled_back_reset_leaves_the_rows_deferred() {
     .unwrap();
     tx.commit().unwrap();
 
-    let tx = conn.transaction().unwrap();
-    reset_for(&tx, project, ResetCause::StoreReturned, 7).unwrap();
-    tx.rollback().unwrap();
+    let reset_tx = conn.transaction().unwrap();
+    reset_for(&reset_tx, project, ResetCause::StoreReturned, 7).unwrap();
+    reset_tx.rollback().unwrap();
 
     assert_eq!(
         load(&conn, project).unwrap()[0].state,

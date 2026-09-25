@@ -203,17 +203,17 @@ fn unplugging_a_volume_moves_locations_offline_and_deletes_nothing() {
     // Re-plugging and re-walking restores present.
     store.set_generation_of(2, 9);
     store.set_generation_of(1, 9);
-    let present = stores(&["internal", "usb"]);
-    let ctx = PresenceContext {
+    let replugged = stores(&["internal", "usb"]);
+    let rewalk = PresenceContext {
         generation: 9,
         roots: &roots,
         skip: &skip,
-        present_stores: &present,
+        present_stores: &replugged,
     };
-    let summary = apply_presence(&store, &ctx).unwrap();
+    let restored = apply_presence(&store, &rewalk).unwrap();
     assert_eq!(store.presence_of(1), Some(Presence::Present));
     assert_eq!(store.presence_of(2), Some(Presence::Present));
-    assert_eq!(summary.offline_projects, 0);
+    assert_eq!(restored.offline_projects, 0);
     assert_eq!(store.location_count(), before);
 }
 

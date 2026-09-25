@@ -110,10 +110,10 @@ fn a_secondary_limit_increments_its_own_counter_and_lengthens_the_park() {
         "a 5 s retry against a secondary limit is what gets an account blocked"
     );
 
-    let (second, scheduled) = apply_outcome(&first, &outcome, NOW);
+    let (second, rescheduled) = apply_outcome(&first, &outcome, NOW);
     assert_eq!(second.throttle_count, 2);
     assert_eq!(
-        scheduled,
+        rescheduled,
         Some(NOW + 120),
         "doubled on the second consecutive one"
     );
@@ -250,10 +250,16 @@ fn a_200_and_a_304_each_reset_both_counters() {
         "its next trigger schedules it, not a backoff"
     );
 
-    let (after, _) = apply_outcome(&before, &outcome_of(304, &[]), NOW);
-    assert_eq!(after.state, SyncTaskState::Ok);
-    assert_eq!((after.fail_count, after.throttle_count), (0, 0));
-    assert_eq!(after.cursor, None);
+    let (after_not_modified, _) = apply_outcome(&before, &outcome_of(304, &[]), NOW);
+    assert_eq!(after_not_modified.state, SyncTaskState::Ok);
+    assert_eq!(
+        (
+            after_not_modified.fail_count,
+            after_not_modified.throttle_count
+        ),
+        (0, 0)
+    );
+    assert_eq!(after_not_modified.cursor, None);
 }
 
 /// A `NextPage` is the one settle that keeps a cursor and is immediately runnable: the next page

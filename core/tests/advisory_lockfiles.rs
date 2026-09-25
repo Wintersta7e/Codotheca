@@ -364,9 +364,9 @@ fn ac_p3_32_18_the_read_writes_worktree_rows_and_counts_them() {
     // A second read replaces: a deleted lockfile leaves no triples behind.
     std::fs::remove_file(root.join("web/package-lock.json")).unwrap();
     std::fs::remove_file(root.join("api/package-lock.json")).unwrap();
-    let tx = conn.transaction().unwrap();
-    read_lockfiles(&tx, project, root, NOW + 60).unwrap();
-    tx.commit().unwrap();
+    let reread_tx = conn.transaction().unwrap();
+    read_lockfiles(&reread_tx, project, root, NOW + 60).unwrap();
+    reread_tx.commit().unwrap();
     assert_eq!(
         triples(&conn, project),
         vec![("rust".to_owned(), "serde".to_owned(), "1.0.0".to_owned())]

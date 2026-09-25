@@ -128,7 +128,9 @@ fn exactly_one_reqwest_client_is_constructed_in_the_core() {
 fn has_await(code: &str) -> bool {
     let mut rest = code;
     while let Some(at) = rest.find(".await") {
-        let after = &rest[at + ".await".len()..];
+        let after = rest
+            .get(at + ".await".len()..)
+            .expect("the needle ends inside the code");
         match after.chars().next() {
             None => return true,
             Some(c) if !c.is_alphanumeric() && c != '_' => return true,
@@ -500,18 +502,18 @@ impl HopRecorder {
             url: url.to_owned(),
             headers: headers.to_vec(),
         });
-        match location {
-            Some(next) => HttpResponse {
-                status: 302,
-                headers: normalise_headers([("Location", next)]),
-                body: Vec::new(),
-            },
-            None => HttpResponse {
+        location.map_or_else(
+            || HttpResponse {
                 status: 200,
                 headers: Vec::new(),
                 body: b"{}".to_vec(),
             },
-        }
+            |next| HttpResponse {
+                status: 302,
+                headers: normalise_headers([("Location", next)]),
+                body: Vec::new(),
+            },
+        )
     }
 
     fn headers_of(&self, hop: usize) -> Vec<(String, String)> {

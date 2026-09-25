@@ -467,15 +467,15 @@ fn ac_p3_28_1_an_offline_anchor_marks_unverified_and_closes_nothing() {
     )
     .unwrap();
 
-    let tx = conn.transaction().unwrap();
+    let offline_tx = conn.transaction().unwrap();
     let frozen = SweepObservation {
-        outcome: outcome_at_root(&tx, Some(loc), DebtSweepOutcome::Complete).unwrap(),
+        outcome: outcome_at_root(&offline_tx, Some(loc), DebtSweepOutcome::Complete).unwrap(),
         item_count: None,
         ..live
     };
     assert_eq!(frozen.outcome, DebtSweepOutcome::Unobservable);
-    let effect = store.observe(&tx, &frozen, &[]).unwrap();
-    tx.commit().unwrap();
+    let effect = store.observe(&offline_tx, &frozen, &[]).unwrap();
+    offline_tx.commit().unwrap();
 
     assert!(
         effect.closed.is_empty(),
@@ -571,7 +571,7 @@ fn ac_p3_28_17_a_reap_writes_no_closure_and_no_xp() {
         .unwrap();
     let new = LocationId(insert_location(&conn, p, "present"));
 
-    let tx = conn.transaction().unwrap();
+    let fresh_tx = conn.transaction().unwrap();
     let at_new = sweep_at(
         p,
         DebtSource::TodoMarker,
@@ -584,15 +584,15 @@ fn ac_p3_28_17_a_reap_writes_no_closure_and_no_xp() {
     // with it, and an `observe` that folded the strand into `closed` would pay for it. This is
     // the half that bites — the `xp_events` half below cannot, because §28's XP writer pays from
     // `SweepEffect::closed` and a reap never reaches it.
-    let effect = store.observe(&tx, &at_new, &[]).unwrap();
+    let effect = store.observe(&fresh_tx, &at_new, &[]).unwrap();
     assert!(
         effect.closed.is_empty(),
         "a stranded item was closed rather than reaped: {:?}",
         effect.closed
     );
 
-    let reaped = store.reap(&tx, ProjectId(p), &at_new).unwrap();
-    tx.commit().unwrap();
+    let reaped = store.reap(&fresh_tx, ProjectId(p), &at_new).unwrap();
+    fresh_tx.commit().unwrap();
 
     assert_eq!(reaped, 1, "the stranded item was not reaped");
     assert!(open_keys(&conn, p).is_empty());
@@ -631,7 +631,7 @@ fn a_reap_refuses_a_sweep_that_is_not_complete_at_the_primary() {
         .unwrap();
     let new = LocationId(insert_location(&conn, p, "present"));
 
-    let tx = conn.transaction().unwrap();
+    let reap_tx = conn.transaction().unwrap();
     let partial = sweep_at(
         p,
         DebtSource::TodoMarker,
@@ -639,7 +639,7 @@ fn a_reap_refuses_a_sweep_that_is_not_complete_at_the_primary() {
         Some(new),
         Some(ObservationBasis::Head),
     );
-    assert_eq!(store.reap(&tx, ProjectId(p), &partial).unwrap(), 0);
+    assert_eq!(store.reap(&reap_tx, ProjectId(p), &partial).unwrap(), 0);
 
     // …and a complete sweep somewhere that is not the primary proves nothing either.
     let elsewhere = sweep_at(
@@ -649,7 +649,7 @@ fn a_reap_refuses_a_sweep_that_is_not_complete_at_the_primary() {
         Some(old),
         Some(ObservationBasis::Head),
     );
-    assert_eq!(store.reap(&tx, ProjectId(p), &elsewhere).unwrap(), 0);
+    assert_eq!(store.reap(&reap_tx, ProjectId(p), &elsewhere).unwrap(), 0);
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -537,16 +537,16 @@ fn a_not_cloned_project_never_suppresses() {
     // Give it a copy on disk and the same fixture now withholds the claim — which is what makes
     // the assertion above about the location clause rather than about an empty fixture.
     location(&tx, elsewhere, "/w/widget");
-    let blockers = load_suppressors(&tx, &ev, &forge_aliases()).unwrap();
+    let located = load_suppressors(&tx, &ev, &forge_aliases()).unwrap();
     tx.commit().unwrap();
 
     assert_eq!(
-        blockers.iter().map(|s| s.project_id).collect::<Vec<_>>(),
+        located.iter().map(|s| s.project_id).collect::<Vec<_>>(),
         vec![elsewhere]
     );
-    assert_eq!(blockers[0].name, "widget");
+    assert_eq!(located[0].name, "widget");
     assert_eq!(
-        match_listing(&ev, &[], &blockers),
+        match_listing(&ev, &[], &located),
         ListingMatch::Suppress {
             blocked_by: elsewhere
         }

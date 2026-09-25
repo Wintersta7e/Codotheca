@@ -416,10 +416,11 @@ fn ac_p3_30_14_observed_at_is_the_oldest_input() {
 
     // §30.4's ordinary case: nothing ran, something was read. The basis exists and says when.
     let nothing_ran = [check(CheckOutcome::Unknown, Some(old))];
-    let basis = basis_over(&nothing_ran).expect("an observed unknown still carries a basis");
-    assert_eq!(basis.ran, 0);
-    assert_eq!(basis.eligible, 1);
-    assert_eq!(basis.observed_at, old);
+    let unknown_basis =
+        basis_over(&nothing_ran).expect("an observed unknown still carries a basis");
+    assert_eq!(unknown_basis.ran, 0);
+    assert_eq!(unknown_basis.eligible, 1);
+    assert_eq!(unknown_basis.observed_at, old);
 
     // Nothing has ever been observed: there is no coverage figure to state, and none is invented.
     let never = [
@@ -892,12 +893,13 @@ fn the_writer_never_writes_zero_for_unknown() {
         [suppressed],
     )
     .unwrap();
-    let (reading, items) = read_for_project(&conn, ProjectId(suppressed)).unwrap();
-    assert_eq!(reading.state, HealthState::Suppressed);
-    assert_eq!(reading.scored_open, None);
-    assert!(reading.basis.is_none());
-    assert!(reading.checks.is_empty());
-    assert!(items.is_empty());
+    let (suppressed_reading, suppressed_items) =
+        read_for_project(&conn, ProjectId(suppressed)).unwrap();
+    assert_eq!(suppressed_reading.state, HealthState::Suppressed);
+    assert_eq!(suppressed_reading.scored_open, None);
+    assert!(suppressed_reading.basis.is_none());
+    assert!(suppressed_reading.checks.is_empty());
+    assert!(suppressed_items.is_empty());
 }
 
 /// §30.2's closing rule — **the freeze is applied once, upstream.** A `frozen` project is handed
@@ -1399,8 +1401,8 @@ fn a_not_applicable_checks_items_leave_the_list_and_every_count_and_come_back_un
     // Reverted: the same two items, with the identity they had.
     rule_na(&conn, project, CompletionCheck::Tests, None);
     let (_, back) = read_for_project(&conn, ProjectId(project)).unwrap();
-    let identity = |items: &[codotheca_core::protocol::DebtItem]| -> Vec<(String, i64)> {
-        let mut out: Vec<_> = items
+    let identity = |set: &[codotheca_core::protocol::DebtItem]| -> Vec<(String, i64)> {
+        let mut out: Vec<_> = set
             .iter()
             .map(|i| (i.fingerprint.clone(), i.first_seen_at))
             .collect();

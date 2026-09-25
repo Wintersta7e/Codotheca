@@ -452,7 +452,7 @@ fn no_age_is_produced_for_a_project_nothing_has_observed() {
     //     the assertion: the loader manufactures nothing.
     let facts_rows: i64 = index
         .conn()
-        .query_row("SELECT count(*) FROM remote_repo", [], |r| r.get(0))
+        .query_row("SELECT count(*) FROM remote_repo", [], |row| row.get(0))
         .expect("count");
     assert_eq!(facts_rows, 0, "the fixture writes no facts row");
     let wire = serde_json::to_value(r).expect("serialise");

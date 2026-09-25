@@ -90,10 +90,7 @@ fn fixture() -> Fixture {
 
     let scripted = Arc::new(FakeTransport::new());
     let clock = Arc::new(FakeClock::new(NOW));
-    let observing = Arc::new(ObservingTransport::new(
-        Arc::clone(&scripted) as Arc<dyn codotheca_core::http::HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
-    ));
+    let observing = Arc::new(ObservingTransport::new(scripted, clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     tokens
         .store(
@@ -101,10 +98,7 @@ fn fixture() -> Fixture {
             &SecretToken::new("t".to_owned()),
         )
         .expect("token");
-    let provider = Arc::new(GitHubProvider::new(
-        Arc::clone(&observing) as Arc<dyn codotheca_core::http::HttpTransport>,
-        HOST.to_owned(),
-    ));
+    let provider = Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned()));
 
     Fixture {
         index: Arc::new(Mutex::new(index)),
@@ -112,7 +106,7 @@ fn fixture() -> Fixture {
             provider,
             transport: observing,
             tokens,
-            clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock,
             cancel: codotheca_core::cancel::CancelToken::new(),
             tz_offset_min: 0,
         }),
@@ -251,6 +245,7 @@ fn a_row_the_pick_cannot_claim_does_not_keep_the_loop_awake() {
                 codotheca_core::sync::runner::any_outstanding(tx)
             })
             .expect("read");
+        drop(guard);
         assert!(before, "a claimable queued row IS outstanding");
     }
 }

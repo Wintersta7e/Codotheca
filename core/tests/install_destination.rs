@@ -119,6 +119,9 @@ impl Fixture {
             .expect("location fixture");
     }
 
+    // A read transaction the fixture cannot open is a broken fixture, not a refusal the composer
+    // could answer with, so it panics like every other fixture failure in this file.
+    #[allow(clippy::unwrap_in_result)]
     fn compose(&self, project: ProjectId) -> Result<InstallDestination, InstallRefusal> {
         let _tx_guard = TxGuard::enter();
         let tx = self

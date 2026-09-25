@@ -197,7 +197,7 @@ fn a_merge_does_not_touch_the_library_wide_cache() {
     let absorbed = project(&conn, "absorbed");
     seed_library_wide(&conn);
 
-    let snapshot = |conn: &rusqlite::Connection| -> Vec<(String, i64)> {
+    let snapshot = |db: &rusqlite::Connection| -> Vec<(String, i64)> {
         [
             "advisory_sweep",
             "advisory",
@@ -209,7 +209,7 @@ fn a_merge_does_not_touch_the_library_wide_cache() {
         .map(|t| {
             (
                 t.to_owned(),
-                count(conn, &format!("SELECT count(*) FROM {t}")),
+                count(db, &format!("SELECT count(*) FROM {t}")),
             )
         })
         .collect()

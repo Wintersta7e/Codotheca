@@ -154,8 +154,8 @@ fn an_interrupted_merge_and_rebase_are_seen() {
 
     std::fs::remove_file(repo.path().join(".git").join("MERGE_HEAD")).unwrap();
     std::fs::create_dir_all(repo.path().join(".git").join("rebase-merge")).unwrap();
-    let st = read_ref_state(&repo.handle(), &clock()).unwrap();
-    assert_eq!(st.interrupted_op, Some(InterruptedOp::Rebase));
+    let rebasing = read_ref_state(&repo.handle(), &clock()).unwrap();
+    assert_eq!(rebasing.interrupted_op, Some(InterruptedOp::Rebase));
 }
 
 #[test]
@@ -263,7 +263,7 @@ fn the_basis_round_trips_through_text_and_rejects_a_non_digest() {
         "lowercase hex only"
     );
     assert_eq!(
-        RefFingerprint::from_hex(&stored[..63]),
+        RefFingerprint::from_hex(stored.get(..63).expect("a digest is 64 hex characters")),
         None,
         "64 characters or nothing"
     );

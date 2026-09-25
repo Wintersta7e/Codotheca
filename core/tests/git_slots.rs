@@ -63,15 +63,25 @@ fn a_slow_store_admits_one_and_a_fast_store_admits_four() {
         );
     }
     let fifth = s;
-    let key = fast;
-    let cancel = CancelToken::new();
-    let waiter = cancel.clone();
-    let t = std::thread::spawn(move || {
-        fifth.acquire(&key, StoreClass::Local, JobClass::Background, &waiter)
+    let fifth_key = fast;
+    let fifth_cancel = CancelToken::new();
+    let fifth_waiter = fifth_cancel.clone();
+    let fifth_thread = std::thread::spawn(move || {
+        fifth.acquire(
+            &fifth_key,
+            StoreClass::Local,
+            JobClass::Background,
+            &fifth_waiter,
+        )
     });
     std::thread::sleep(Duration::from_millis(150));
-    cancel.cancel();
-    assert_eq!(t.join().unwrap().unwrap_err(), GitError::Cancelled);
+    fifth_cancel.cancel();
+    assert_eq!(
+        fifth_thread.join().unwrap().unwrap_err(),
+        GitError::Cancelled
+    );
+    // The four guards are what fill the store; they stay held until the fifth is refused.
+    drop(held);
 }
 
 #[test]
@@ -147,19 +157,22 @@ fn history_takes_at_most_a_quarter_of_the_slots_and_one_per_store() {
         )
         .unwrap();
     let third = s;
-    let cancel = CancelToken::new();
-    let waiter = cancel.clone();
-    let t = std::thread::spawn(move || {
+    let ceiling_cancel = CancelToken::new();
+    let ceiling_waiter = ceiling_cancel.clone();
+    let ceiling_thread = std::thread::spawn(move || {
         third.acquire(
             &StoreKey::new("usb"),
             StoreClass::Local,
             JobClass::History,
-            &waiter,
+            &ceiling_waiter,
         )
     });
     std::thread::sleep(Duration::from_millis(150));
-    cancel.cancel();
-    assert_eq!(t.join().unwrap().unwrap_err(), GitError::Cancelled);
+    ceiling_cancel.cancel();
+    assert_eq!(
+        ceiling_thread.join().unwrap().unwrap_err(),
+        GitError::Cancelled
+    );
 }
 
 #[test]
@@ -245,6 +258,8 @@ fn a_settings_override_replaces_a_store_cap() {
     std::thread::sleep(Duration::from_millis(150));
     cancel.cancel();
     assert_eq!(t.join().unwrap().unwrap_err(), GitError::Cancelled);
+    // The three guards are what fill the store; they stay held until the fourth is refused.
+    drop(held);
 }
 
 #[test]

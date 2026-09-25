@@ -260,12 +260,12 @@ fn the_remote_accessor_returns_the_description_and_the_topic_count() {
         )
         .unwrap();
     }
-    let inputs = got(&conn, p);
+    let observed = got(&conn, p);
     assert_eq!(
-        inputs.forge_description.as_deref(),
+        observed.forge_description.as_deref(),
         Some("a shaped description")
     );
-    assert_eq!(inputs.topic_count, 2);
+    assert_eq!(observed.topic_count, 2);
 }
 
 /// The stored user ruling is three-valued and lands on the right key.

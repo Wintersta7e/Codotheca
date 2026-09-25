@@ -516,9 +516,15 @@ fn both_orders_agree_on_the_basis() {
     // scan then sync: a scan made the row and the listing attaches to it.
     let (_b, mut scan_first) = migrated();
     let scanned = scanned_project(&scan_first, "widget", Some("lin"), KEY, 100);
-    let tx = scan_first.transaction().unwrap();
-    ingest_listing(&tx, &listing("42", "acme", "widget"), &aliases(), 500).unwrap();
-    tx.commit().unwrap();
+    let attach_tx = scan_first.transaction().unwrap();
+    ingest_listing(
+        &attach_tx,
+        &listing("42", "acme", "widget"),
+        &aliases(),
+        500,
+    )
+    .unwrap();
+    attach_tx.commit().unwrap();
 
     let basis_of = |conn: &rusqlite::Connection, id: i64| -> String {
         conn.query_row(

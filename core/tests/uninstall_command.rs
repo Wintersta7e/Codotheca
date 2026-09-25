@@ -118,7 +118,7 @@ fn a_copy_that_changed_after_the_preflight_is_refused_and_survives() {
         LocationId(1),
         copy.clone(),
         identity(),
-        VerdictSeal::of(&[] as &[UninstallBlocker], UninstallDisposition::Safe),
+        VerdictSeal::of(&[], UninstallDisposition::Safe),
     );
 
     let _guard = codotheca_core::proto::txguard::TxGuard::enter();
@@ -165,7 +165,7 @@ fn a_successful_removal_keeps_the_row_and_nulls_the_ten_columns() {
         location,
         copy,
         identity(),
-        VerdictSeal::of(&[] as &[UninstallBlocker], UninstallDisposition::Safe),
+        VerdictSeal::of(&[], UninstallDisposition::Safe),
     );
 
     let tx = conn.unchecked_transaction().expect("tx");
@@ -385,7 +385,7 @@ fn debt_warrant(location: LocationId, copy: PathBuf) -> Warrant {
         location,
         copy,
         identity(),
-        VerdictSeal::of(&[] as &[UninstallBlocker], UninstallDisposition::Safe),
+        VerdictSeal::of(&[], UninstallDisposition::Safe),
     )
 }
 
@@ -485,9 +485,9 @@ fn a_removal_marks_the_projects_debt_items_unverified() {
         .expect("presence");
     assert_eq!(presence, "present", "the fixture is not the hole it claims");
 
-    let tx = conn.unchecked_transaction().expect("tx");
+    let sweep_tx = conn.unchecked_transaction().expect("tx");
     let outcome = codotheca_core::debt::sweep::outcome_at_root(
-        &tx,
+        &sweep_tx,
         Some(location),
         codotheca_core::protocol::DebtSweepOutcome::Complete,
     )
