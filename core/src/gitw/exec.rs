@@ -47,7 +47,7 @@ impl FilterDrivers {
     /// The only constructor, named for what it proves. An empty list here is a real answer: the
     /// effective config was read and declares no filter driver.
     #[must_use]
-    pub fn enumerated(names: Vec<String>) -> Self {
+    pub const fn enumerated(names: Vec<String>) -> Self {
         Self { names }
     }
 
@@ -189,7 +189,7 @@ enum Stop {
 impl WriteExec {
     /// Point the write path at a git binary.
     #[must_use]
-    pub fn new(git: PathBuf) -> Self {
+    pub const fn new(git: PathBuf) -> Self {
         Self { git }
     }
 
@@ -202,6 +202,10 @@ impl WriteExec {
     /// [`FilterDrivers`] exists to prevent. So: `0` and `1` both produce an enumeration — one
     /// with names, one empty and **known** to be empty — and anything else is an error, on which
     /// the caller refuses the clone rather than running it unfiltered.
+    ///
+    /// # Errors
+    /// `GitError::Missing` when git is not found, `PermissionDenied` when it cannot be run, and
+    /// `Internal` for any other spawn failure or an exit above `1` or by signal.
     pub fn filter_drivers(&self) -> GitResult<FilterDrivers> {
         let mut cmd = Command::new(&self.git);
         cmd.arg("--no-optional-locks");
@@ -241,6 +245,11 @@ impl WriteExec {
     /// where the stage parser reads, so stderr is delivered to `on_stderr` on the calling thread
     /// while stdout is drained on another. Draining both is what stops a chatty child filling a
     /// pipe buffer and blocking forever.
+    ///
+    /// # Errors
+    /// `GitError::Cancelled` when `cancel` fires before the spawn or while the child runs; the
+    /// spawn's classification (`Missing`, `PermissionDenied`, `Internal`) when the group cannot be
+    /// started or waited on; and `Internal` when a pipe is missing or git exits unsuccessfully.
     pub fn run(
         &self,
         intent: &Intent,

@@ -165,7 +165,7 @@ impl Warrant {
     /// path comes from the `location` row this warrant is for, and the caller cannot substitute
     /// another.
     #[must_use]
-    pub(crate) fn for_uninstall(
+    pub(crate) const fn for_uninstall(
         location_id: LocationId,
         path: PathBuf,
         expected_root_commit: RootCommit,
@@ -184,7 +184,7 @@ impl Warrant {
     /// `for_uninstall` for the audit, which lives outside this crate. Testkit-only.
     #[cfg(feature = "testkit")]
     #[must_use]
-    pub fn for_uninstall_in_test(
+    pub const fn for_uninstall_in_test(
         location_id: LocationId,
         path: PathBuf,
         expected_root_commit: RootCommit,

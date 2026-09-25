@@ -48,6 +48,12 @@ impl RemoteUrl {
     /// characters, whitespace, and a leading `-`, which `git` reads as an option rather than as a
     /// URL. A URL type would never have been asked that last question.
     /// `core/src/identity/remote.rs` normalises remotes by hand for the same kind of reason.
+    ///
+    /// # Errors
+    /// [`IntentRefusal::NotHttps`] for any scheme but `https`, or none;
+    /// [`IntentRefusal::UrlCarriesUserinfo`] for an `@` in the authority; and
+    /// [`IntentRefusal::MalformedUrl`] for an empty value, a leading `-`, whitespace or a control
+    /// character, or an empty authority.
     pub fn parse(raw: &str) -> Result<Self, IntentRefusal> {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
@@ -101,6 +107,10 @@ pub struct RemoteName(String);
 
 impl RemoteName {
     /// Parse a remote name, refusing anything that is not a single safe segment.
+    ///
+    /// # Errors
+    /// [`IntentRefusal::UnsafeRemoteName`] for an empty name, `.`, `..`, a leading `-`, or any
+    /// character outside ASCII letters, digits, `-`, `_` and `.`.
     pub fn parse(raw: &str) -> Result<Self, IntentRefusal> {
         let safe = !raw.is_empty()
             && raw != "."
@@ -213,7 +223,7 @@ impl Intent {
 
     /// The discriminant of this intent, for an audit that reports which variant it rendered.
     #[must_use]
-    pub fn kind(&self) -> IntentKind {
+    pub const fn kind(&self) -> IntentKind {
         match self {
             Self::Clone { .. } => IntentKind::Clone,
             Self::Fetch { .. } => IntentKind::Fetch,
@@ -270,6 +280,10 @@ impl AuditFixture {
     ///
     /// The destination is a path under `root` that **does not exist**, which is §24.1's
     /// precondition for `clone` and what assertion 5 checks.
+    ///
+    /// # Errors
+    /// Never in practice: the fixture's URL and remote name are literals that pass
+    /// [`RemoteUrl::parse`] and [`RemoteName::parse`]; their refusals are propagated regardless.
     pub fn new(root: &Path, token: SecretToken) -> Result<Self, IntentRefusal> {
         Ok(Self {
             url: RemoteUrl::parse("https://forge.example/acme/widget.git")?,
@@ -281,13 +295,13 @@ impl AuditFixture {
 
     /// The sentinel credential every variant is rendered with.
     #[must_use]
-    pub fn token(&self) -> &SecretToken {
+    pub const fn token(&self) -> &SecretToken {
         &self.token
     }
 
     /// The fixture's remote URL.
     #[must_use]
-    pub fn url(&self) -> &RemoteUrl {
+    pub const fn url(&self) -> &RemoteUrl {
         &self.url
     }
 
@@ -299,7 +313,7 @@ impl AuditFixture {
 
     /// The fixture's remote name.
     #[must_use]
-    pub fn remote(&self) -> &RemoteName {
+    pub const fn remote(&self) -> &RemoteName {
         &self.remote
     }
 }

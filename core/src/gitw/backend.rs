@@ -38,7 +38,7 @@ pub struct SystemMutatingGit {
 impl SystemMutatingGit {
     /// Point the write path at a git binary and the empty hooks directory.
     #[must_use]
-    pub fn new(git: PathBuf, hooks_dir: PathBuf) -> Self {
+    pub const fn new(git: PathBuf, hooks_dir: PathBuf) -> Self {
         Self {
             exec: WriteExec::new(git),
             hooks_dir,

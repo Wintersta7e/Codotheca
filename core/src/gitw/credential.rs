@@ -66,7 +66,7 @@ pub enum CredentialChannel {
 impl CredentialChannel {
     /// A clone that authenticates with nothing.
     #[must_use]
-    pub fn anonymous() -> Self {
+    pub const fn anonymous() -> Self {
         Self::Anonymous
     }
 
@@ -75,6 +75,14 @@ impl CredentialChannel {
     /// The token is copied into the server thread's memory. It is never placed in argv, an
     /// environment variable, or a file. The nonce is a different value: it is stored in a private
     /// file, and only that file's path is rendered into the helper command.
+    ///
+    /// # Errors
+    /// `InvalidInput` when the token is empty or holds a NUL, CR or LF, or the host is empty or
+    /// holds whitespace or a control character, and also when a path the helper command is built
+    /// from is not Unicode or this executable's path is not absolute. Otherwise any I/O failure
+    /// locating this executable, creating the nonce file (and on Unix its private directory, with
+    /// their modes read back), binding the listener or starting the server thread — and, on
+    /// Windows outside `testkit`, a data directory [`configure_data_dir`] was never given.
     pub fn one_shot(token: &SecretToken, host: &str) -> io::Result<Self> {
         validate_protocol_value("token", token.expose())?;
         validate_host(host)?;
@@ -155,6 +163,13 @@ impl Drop for ChannelState {
 /// On Unix, the channel has its own mode-`0700` temporary directory and this is a no-op. On
 /// Windows, std has no ACL API: the nonce file **inherits the data directory's ACL, which this
 /// code does not set and cannot verify**. The normal binary calls this after parsing `--data-dir`.
+///
+/// # Errors
+/// Never on Unix. On Windows, when the directory cannot be created, when a different directory
+/// was already configured, or when a concurrent call configured one first.
+// The Unix body is the `cfg(not(windows))` no-op, which is all clippy sees on Linux; the
+// Windows body creates a directory and cannot be `const`.
+#[allow(clippy::missing_const_for_fn)]
 pub fn configure_data_dir(data_dir: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
@@ -182,6 +197,11 @@ pub fn configure_data_dir(data_dir: &Path) -> io::Result<()> {
 /// `nonce` is the nonce read from the mode-`0600` file by the helper entry point; `channel` is the
 /// public local address. The request itself is read from stdin using Git's credential protocol.
 /// A nonce or host mismatch produces no output.
+///
+/// # Errors
+/// `InvalidData` when the request or the channel's response exceeds 64 KiB; `InvalidInput` when
+/// the requested host holds whitespace or a control character or `channel` is malformed; and any
+/// I/O failure reading stdin, reaching the channel within its timeout, or writing `out`.
 pub fn run_credential_helper(nonce: &str, channel: &str, out: &mut dyn Write) -> io::Result<()> {
     let stdin = io::stdin();
     let mut input = stdin.lock();
