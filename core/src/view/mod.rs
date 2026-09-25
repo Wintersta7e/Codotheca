@@ -23,7 +23,9 @@ use crate::proto::dispatch::CommandFailure;
 /// reads the clock itself.
 #[derive(Debug)]
 pub struct ViewCtx<'a> {
+    /// The index `view_state` and the collection tables live in.
     pub index: &'a Index,
+    /// The caller's clock reading, in unix seconds; `view.set` stamps `saved_at` with it.
     pub now: i64,
 }
 
@@ -41,9 +43,10 @@ fn encode<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, CommandFa
     serde_json::to_value(value).map_err(|e| CommandFailure::internal(e.to_string()))
 }
 
-/// `None` means "this module does not own that command". Plan 21's router chains the
-/// sub-dispatchers on exactly that, so answering here for a neighbour's command would take it
-/// away from the plan that owns it.
+/// `None` means "this module does not own that command".
+///
+/// Plan 21's router chains the sub-dispatchers on exactly that, so answering here for a
+/// neighbour's command would take it away from the plan that owns it.
 #[must_use]
 pub fn dispatch_view_command(
     ctx: &ViewCtx<'_>,

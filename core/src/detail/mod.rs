@@ -1,8 +1,10 @@
 //! The opened project page's core half (§8.5): one project's detail, its scratchpad note, and
-//! RELOCATE. Plan 13's module answers the shelf's `projects.list` / `peek` / `setFlags`; this
-//! one answers a disjoint set of three, and the two are kept apart on purpose — a
-//! `dispatch_project_command` beside a `dispatch_projects_command` would have made one letter
-//! the only thing between a command and the wrong module.
+//! RELOCATE.
+//!
+//! Plan 13's module answers the shelf's `projects.list` / `peek` / `setFlags`; this one answers
+//! a disjoint set of three, and the two are kept apart on purpose — a `dispatch_project_command`
+//! beside a `dispatch_projects_command` would have made one letter the only thing between a
+//! command and the wrong module.
 //!
 //! **Nothing here is destructive** (§17). RELOCATE rewrites one `location` row's path columns:
 //! no file is moved, deleted, created or opened for writing, no git command mutates anything,
@@ -26,15 +28,20 @@ use crate::proto::EventSink;
 /// Everything the three commands need. `now` is unix **seconds**, supplied by the caller so no
 /// handler reads the clock itself.
 pub struct DetailCtx<'a> {
+    /// The index every read and write here goes through.
     pub index: &'a Index,
+    /// Git, for RELOCATE's lineage check of its target.
     pub git: &'a dyn GitBackend,
+    /// Resolves the store an opened page's copy, or a RELOCATE target, lives on.
     pub mount: &'a dyn MountResolver,
+    /// Where `projects/upserted` is published after a write.
     pub events: &'a dyn EventSink,
     /// §6: an opened page asks for a current worktree reading for the copy it is showing.
     pub jobs: &'a dyn crate::jobs::JobSink,
     /// §21.5: an opened page also asks for its **remote** facts, at the priority of the thing the
     /// user is looking at. One of exactly two sites.
     pub sync: &'a dyn crate::sync::runner::SyncSink,
+    /// The caller's clock reading, in unix seconds.
     pub now: i64,
 }
 
@@ -80,7 +87,7 @@ pub fn upserted_payload(
 /// The commands this module owns, in the order the dispatcher matches them. Exposed so the
 /// table can be asserted without constructing an `Index`.
 #[must_use]
-pub fn dispatch_detail_command_names() -> [&'static str; 4] {
+pub const fn dispatch_detail_command_names() -> [&'static str; 4] {
     [
         "projects.get",
         "projects.setNote",
@@ -91,8 +98,9 @@ pub fn dispatch_detail_command_names() -> [&'static str; 4] {
     ]
 }
 
-/// `None` means "this module does not own that command" — plan 21's router chains on it. A
-/// dispatcher that returned `Err(PROTOCOL)` for a stranger's command would stop the chain at
+/// `None` means "this module does not own that command" — plan 21's router chains on it.
+///
+/// A dispatcher that returned `Err(PROTOCOL)` for a stranger's command would stop the chain at
 /// whichever module happened to be asked first, and the failure would name the wrong owner.
 #[must_use]
 pub fn dispatch_detail_command(

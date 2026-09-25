@@ -11,14 +11,25 @@ use crate::proto::txguard::TxGuard;
 use crate::protocol::{ProjectId, SortKey, ViewMode, ViewPatch, ViewSetArgs, ViewState};
 use crate::view::ViewCtx;
 
+/// `view_state` key for the shelf's search text, stored as typed.
 pub const KEY_QUERY: &str = "shelf.query";
+/// `view_state` key for the shelf's sort, stored as its wire spelling.
 pub const KEY_SORT: &str = "shelf.sort";
+/// `view_state` key for the shelf's view mode, stored as its wire spelling.
 pub const KEY_VIEW_MODE: &str = "shelf.view_mode";
+/// `view_state` key for §8's `DENSITY` tile width in px, stored as a decimal.
 pub const KEY_DENSITY: &str = "shelf.density";
+/// `view_state` key for the shelf sections the user collapsed, stored as a JSON array.
 pub const KEY_COLLAPSED_SECTIONS: &str = "shelf.collapsed_sections";
+/// `view_state` key for the shelf's scroll position, stored as JSON.
 pub const KEY_SCROLL_OFFSET: &str = "shelf.scroll_offset";
+/// `view_state` key for the selected project's id, stored as a decimal. `load` drops it once
+/// the project row is gone.
 pub const KEY_SELECTED_PROJECT: &str = "shelf.selected_project_id";
+/// `view_state` key for the window's geometry, stored as JSON.
 pub const KEY_WINDOW_GEOMETRY: &str = "window.geometry";
+/// `view_state` key for when the view was last saved, in unix seconds stamped by the core —
+/// absent until the first `view.set`.
 pub const KEY_SAVED_AT: &str = "saved_at";
 
 /// §8.0's convention, restated by §1.9: **one row per dismissed notice**, `notice.dismissed.<id>`,
@@ -30,7 +41,7 @@ pub const DEFAULT_DENSITY: u32 = 186;
 
 /// Not a `const`: `ViewState` carries two `Vec`s.
 #[must_use]
-pub fn view_state_defaults() -> ViewState {
+pub const fn view_state_defaults() -> ViewState {
     ViewState {
         query: String::new(),
         sort: SortKey::LastTouched,

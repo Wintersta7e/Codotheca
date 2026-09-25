@@ -1,8 +1,10 @@
-//! RELOCATE (§8.5.2, §17, criterion 44). **Rewrites one `location` row's path and nothing
-//! else**: no file is moved, deleted, created or opened for writing, no git command mutates
-//! anything, and no row is removed. `presence`, `scan_generation`, `volume_key`, `store_key`
-//! and every observed fact stay exactly as the last scan wrote them — the row has been
-//! *pointed* at a folder, not *observed* there, and §6 does not let a pointer claim currency.
+//! RELOCATE (§8.5.2, §17, criterion 44).
+//!
+//! **Rewrites one `location` row's path and nothing else**: no file is moved, deleted, created
+//! or opened for writing, no git command mutates anything, and no row is removed. `presence`,
+//! `scan_generation`, `volume_key`, `store_key` and every observed fact stay exactly as the last
+//! scan wrote them — the row has been *pointed* at a folder, not *observed* there, and §6 does
+//! not let a pointer claim currency.
 //!
 //! **The renderer may never originate a filesystem path** (§2.4). The new path arrives as
 //! `pathBytes` — tagged bytes (§2.5) produced by the shell's native folder dialog. Two

@@ -26,14 +26,20 @@ use crate::query::ast::{QueryTerm, TextField};
 use crate::query::{parse_query, QUERY_GRAMMAR_VERSION};
 use crate::view::ViewCtx;
 
+/// §8.8's longest collection name, in `char`s of the trimmed name.
+///
 /// §8.8's two numbers. The renderer states them for its control text; the core is the **writer**,
 /// so it enforces them again and has the last word. The renderer measures the name in UTF-16 code
 /// units and this measures `char`s — they can disagree only on astral characters, and a name the
 /// field allowed and the core refuses comes back as `refusedBecause: too_long`, which the UI
 /// already renders.
 pub const COLLECTION_NAME_MAX_CHARS: usize = 48;
+/// §8.8's most collections: an insert at this many `collection` rows is refused
+/// `limit_reached`; a rename never is.
 pub const COLLECTION_LIMIT_ROWS: usize = 16;
 
+/// The `collections.upsert` argument struct, under the name plan 15 gave it.
+///
 /// **R31**: the argument struct is the schema's. Plan 15 named a hand-written `UpsertArgs` with
 /// the same six fields; a second declaration beside the generated one is how a wire type and its
 /// twin drift, so this is the generated one under the plan's name.
@@ -214,10 +220,11 @@ pub fn upsert(
     })
 }
 
-/// §8.8 and §17: this removes a name, not work. The member delete is explicit rather than left to
-/// `ON DELETE CASCADE` so the guarantee does not depend on a pragma being on. Removing an id that
-/// is not there is a no-op: the chip is gone either way, and there is nothing here that could be
-/// half-deleted.
+/// §8.8 and §17: this removes a name, not work.
+///
+/// The member delete is explicit rather than left to `ON DELETE CASCADE` so the guarantee does
+/// not depend on a pragma being on. Removing an id that is not there is a no-op: the chip is gone
+/// either way, and there is nothing here that could be half-deleted.
 ///
 /// # Errors
 /// `Sqlite` for anything the index refuses.
