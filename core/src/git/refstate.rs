@@ -102,7 +102,7 @@ pub enum InterruptedOp {
 impl InterruptedOp {
     /// The lowercase word §5.6 puts in its sentence.
     #[must_use]
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Merge => "merge",
             Self::Rebase => "rebase",
@@ -219,7 +219,10 @@ fn loose_refs(common_dir: &Path) -> BTreeMap<String, (u128, u64)> {
 /// `packed-refs` as a map. **`pub(crate)` so §24.7A's stash reader uses this parser rather than
 /// a second one** — two parsers for one file is the one-value-twice defect on the file that says
 /// whether a stash exists.
-pub fn packed_refs(common_dir: &Path) -> BTreeMap<String, String> {
+// `unreachable_pub` rejects a bare `pub` here, because this module is crate-private, and this
+// lint rejects the `pub(crate)` that answers it; the stash reader outside `git` needs one of them.
+#[allow(clippy::redundant_pub_crate)]
+pub(crate) fn packed_refs(common_dir: &Path) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     let Ok(text) = std::fs::read_to_string(common_dir.join("packed-refs")) else {
         return out;
@@ -356,6 +359,11 @@ fn read_stash_count(common_dir: &Path) -> Option<usize> {
 /// This function's job is to know that a linked worktree keeps `HEAD` and its operation markers
 /// in `git_dir` while refs, config and the stash reflog live in `common_dir` — a fact the pure
 /// digest has no business carrying.
+///
+/// # Errors
+///
+/// `GitError::PathGone` when the git dir is not there; `GitError::Unreadable` when the basis
+/// inputs cannot be read.
 pub fn ref_fingerprint(repo: &RepoHandle) -> GitResult<RefFingerprint> {
     Ok(crate::freshness::compute_basis(&basis_inputs(repo)?))
 }
@@ -377,6 +385,10 @@ fn basis_inputs(repo: &RepoHandle) -> GitResult<crate::freshness::BasisInputs> {
 ///
 /// Never stored, so its exact bytes do not matter — only that it moves whenever the basis or the
 /// index does. It extends the one basis digest instead of restating its inputs.
+///
+/// # Errors
+///
+/// As [`ref_fingerprint`]; the index's own stat is best-effort and never fails it.
 pub fn observation_fingerprint(repo: &RepoHandle) -> GitResult<ObservationFingerprint> {
     let mut h = crate::freshness::basis_hasher(&basis_inputs(repo)?);
     let index = repo.git_dir.join("index");
@@ -391,6 +403,10 @@ pub fn observation_fingerprint(repo: &RepoHandle) -> GitResult<ObservationFinger
 }
 
 /// Read every J1 fact from the filesystem.
+///
+/// # Errors
+///
+/// As [`ref_fingerprint`]. Every other file is read best-effort and never fails the read.
 pub fn read_ref_state(repo: &RepoHandle, clock: &dyn Clock) -> GitResult<RefState> {
     let basis = ref_fingerprint(repo)?;
     let head_raw = read_trimmed(&repo.git_dir.join("HEAD")).unwrap_or_default();
@@ -469,6 +485,11 @@ pub struct Divergence {
 ///
 /// `Ok(None)` means *not computed* — no branch, no upstream, no local tracking ref, or an
 /// unborn HEAD. It is never rendered as a zero (§7.7, §1.10).
+///
+/// # Errors
+///
+/// The `rev-list` invocation's failure as [`GitExec::run_piped`] classifies it, or
+/// `GitError::Internal` when its output is not two counts.
 pub fn divergence(
     exec: &GitExec,
     repo: &RepoHandle,

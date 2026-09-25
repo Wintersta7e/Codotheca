@@ -51,6 +51,12 @@ pub struct RepoHandle {
 impl RepoHandle {
     /// Resolve a working tree. Reads `.git` (directory or `gitdir:` file) and `commondir`;
     /// spawns nothing.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::PathGone` when `.git` is not there, `GitError::PermissionDenied` when its stat
+    /// is refused, `GitError::Stale` for any other stat or read failure, and
+    /// `GitError::Unreadable` when a `.git` file names no `gitdir:`.
     pub fn resolve(work_dir: &Path, store: StoreKey, store_class: StoreClass) -> GitResult<Self> {
         let dot_git = work_dir.join(".git");
         let meta = std::fs::metadata(&dot_git).map_err(|e| match e.kind() {
@@ -86,8 +92,9 @@ impl RepoHandle {
             }
         };
 
-        let common_dir = match std::fs::read_to_string(git_dir.join("commondir")) {
-            Ok(text) => {
+        let common_dir = std::fs::read_to_string(git_dir.join("commondir")).map_or_else(
+            |_| git_dir.clone(),
+            |text| {
                 let rel = text.trim();
                 let p = PathBuf::from(rel);
                 if p.is_absolute() {
@@ -95,9 +102,8 @@ impl RepoHandle {
                 } else {
                     git_dir.join(p)
                 }
-            }
-            Err(_) => git_dir.clone(),
-        };
+            },
+        );
 
         Ok(Self {
             work_dir: work_dir.to_path_buf(),
@@ -124,7 +130,7 @@ impl RepoHandle {
 
     /// Set the trust flag from `location.trusted_at`.
     #[must_use]
-    pub fn with_trust(mut self, trusted: bool) -> Self {
+    pub const fn with_trust(mut self, trusted: bool) -> Self {
         self.trusted = trusted;
         self
     }

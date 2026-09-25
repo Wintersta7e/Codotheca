@@ -67,6 +67,11 @@ pub fn busy_marker(repo: &RepoHandle) -> Option<BusyMarker> {
 /// Used by the index-touching jobs (J2, J3). **Not** used by the ref-state read, which is the
 /// read that discovers the marker in the first place and must keep working on a repository the
 /// user left mid-rebase.
+///
+/// # Errors
+///
+/// `GitError::Cancelled` when the token fires between attempts; `GitError::Busy` naming the
+/// marker still present when the backoff runs out; otherwise whatever `f` fails with.
 pub fn defer_while_locked<T>(
     repo: &RepoHandle,
     clock: &dyn Clock,
@@ -106,6 +111,11 @@ pub struct Observation<T> {
 }
 
 /// Fingerprint, observe, fingerprint again; discard the result if anything moved.
+///
+/// # Errors
+///
+/// `GitError::TornRead` when the fingerprint moved during `f`; `GitError::PathGone` or
+/// `GitError::Unreadable` when a fingerprint cannot be taken; otherwise whatever `f` fails with.
 pub fn observe_stable<T>(
     repo: &RepoHandle,
     clock: &dyn Clock,

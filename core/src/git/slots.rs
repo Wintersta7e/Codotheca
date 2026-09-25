@@ -67,13 +67,13 @@ impl GitSlots {
 
     /// The global cap.
     #[must_use]
-    pub fn global_limit(&self) -> usize {
+    pub const fn global_limit(&self) -> usize {
         self.global_limit
     }
 
     /// The J4 ceiling.
     #[must_use]
-    pub fn history_limit(&self) -> usize {
+    pub const fn history_limit(&self) -> usize {
         self.history_limit
     }
 
@@ -124,6 +124,11 @@ impl GitSlots {
     }
 
     /// Wait for a slot, or return [`GitError::Cancelled`] if the token fires first.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting; `GitError::Internal` when the
+    /// slot mutex is poisoned.
     pub fn acquire(
         self: &Arc<Self>,
         store: &StoreKey,

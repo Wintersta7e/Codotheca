@@ -43,7 +43,7 @@ pub struct RunLimits {
 impl RunLimits {
     /// No deadline.
     #[must_use]
-    pub fn none() -> Self {
+    pub const fn none() -> Self {
         Self {
             deadline: None,
             tolerated_exit: None,
@@ -52,7 +52,7 @@ impl RunLimits {
 
     /// Kill the tree after `d`.
     #[must_use]
-    pub fn after(d: Duration) -> Self {
+    pub const fn after(d: Duration) -> Self {
         Self {
             deadline: Some(d),
             tolerated_exit: None,
@@ -61,7 +61,7 @@ impl RunLimits {
 
     /// Accept `code` as an answer, keeping the stdout that came with it.
     #[must_use]
-    pub fn tolerating(self, code: i32) -> Self {
+    pub const fn tolerating(self, code: i32) -> Self {
         Self {
             tolerated_exit: Some(code),
             ..self
@@ -95,7 +95,7 @@ enum Stop {
 impl GitExec {
     /// Use an explicit binary — the WSL worker (§13) passes its in-distro path.
     #[must_use]
-    pub fn new(git: PathBuf, hooks_dir: PathBuf) -> Self {
+    pub const fn new(git: PathBuf, hooks_dir: PathBuf) -> Self {
         Self { git, hooks_dir }
     }
 
@@ -113,6 +113,10 @@ impl GitExec {
     }
 
     /// Run a subcommand that needs no stdin and buffer all of its stdout.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::run_piped`].
     pub fn run(
         &self,
         repo: &RepoHandle,
@@ -143,6 +147,13 @@ impl GitExec {
     /// `write_stdin` receives a writer; when it returns, the handle is dropped so git sees
     /// EOF. `read_stdout` receives a buffered reader and returns whatever the caller wants to
     /// keep — it should stream rather than collect when the output is large.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when `cancel` fires before or during the run; `GitError::Budget`
+    /// when the deadline is zero or elapses; `GitError::Missing`, `PermissionDenied` or `Internal`
+    /// when the spawn fails; the [`classify`]d failure when git exits non-zero with a code
+    /// `limits` does not tolerate; `GitError::Internal` when writing stdin or reading stdout fails.
     pub fn run_piped<W, R, T>(
         &self,
         repo: &RepoHandle,

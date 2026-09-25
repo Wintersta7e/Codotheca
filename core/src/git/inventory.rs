@@ -106,7 +106,7 @@ pub fn path_extension(path: &[u8]) -> String {
 ///
 /// Ordering on the stage number itself would rank stage 1 — the merge *base* — above stage 2,
 /// so a conflicted file would be measured at the size it had before either side touched it.
-fn stage_rank(stage: u8) -> u8 {
+const fn stage_rank(stage: u8) -> u8 {
     match stage {
         0 => 0, // the ordinary, unconflicted entry
         2 => 1, // "ours" while conflicted, which is what is on disk
@@ -132,6 +132,11 @@ fn one_per_path(entries: Vec<IndexEntry>) -> Vec<IndexEntry> {
 }
 
 /// Inventory the index and the HEAD blobs it points at.
+///
+/// # Errors
+///
+/// The failure of the `ls-files` or `cat-file` invocation as [`GitExec::run_piped`] classifies
+/// it, or `GitError::Internal` when the tracked file count exceeds `u32`.
 pub fn tracked_inventory(
     exec: &GitExec,
     repo: &RepoHandle,
@@ -229,6 +234,10 @@ const GITLINK_MODE: &str = "160000";
 /// `-z` switches off git's path quoting, which is what keeps a non-UTF-8 submodule path readable;
 /// the paths are passed after `--` so a submodule named like an option cannot become one. An
 /// empty `paths` asks git nothing rather than listing the whole index.
+///
+/// # Errors
+///
+/// The `ls-files` invocation's failure as [`GitExec::run_piped`] classifies it.
 pub fn submodule_gitlinks(
     exec: &GitExec,
     repo: &RepoHandle,

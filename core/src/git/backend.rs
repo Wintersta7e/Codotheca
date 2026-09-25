@@ -38,7 +38,7 @@ pub struct JobContext<'a> {
 impl<'a> JobContext<'a> {
     /// Assemble a context.
     #[must_use]
-    pub fn new(job: JobClass, cancel: &'a CancelToken, deadline: Option<Duration>) -> Self {
+    pub const fn new(job: JobClass, cancel: &'a CancelToken, deadline: Option<Duration>) -> Self {
         Self {
             job,
             cancel,
@@ -46,7 +46,7 @@ impl<'a> JobContext<'a> {
         }
     }
 
-    fn limits(&self) -> RunLimits {
+    const fn limits(&self) -> RunLimits {
         RunLimits {
             deadline: self.deadline,
             tolerated_exit: None,
@@ -60,12 +60,32 @@ impl<'a> JobContext<'a> {
 /// subcommand audit in `core/tests/git_readonly.rs` holds that mechanically.
 pub trait GitBackend: Send + Sync + std::fmt::Debug {
     /// `git --version`, for the floor check and `app_meta.git_version`.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Missing` when there is no git or its output is not a version line; otherwise
+    /// the invocation's failure as [`GitExec::run_piped`] classifies it.
     fn version(&self, ctx: &JobContext<'_>) -> GitResult<GitVersion>;
     /// Bare, shallow, git dir, common dir.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise the
+    /// invocation's failure, or `GitError::Internal` when its output has an unexpected shape.
     fn repo_facts(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<RepoFacts>;
     /// J1: ref state from file reads.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token has fired; `GitError::PathGone` when the git dir is
+    /// not there; `GitError::Unreadable` when the ref files' basis cannot be read.
     fn ref_state(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<RefState>;
     /// Ahead/behind, or `None` when there is nothing to compare against.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise the
+    /// `rev-list` invocation's failure, or `GitError::Internal` when its count does not parse.
     fn divergence(
         &self,
         repo: &RepoHandle,
@@ -73,6 +93,12 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
         ctx: &JobContext<'_>,
     ) -> GitResult<Option<Divergence>>;
     /// J2: one timestamped worktree observation.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Busy` when an operation marker outlasts the backoff; `GitError::Cancelled`;
+    /// `GitError::Internal` for a porcelain record type it does not know; otherwise the `status`
+    /// invocation's failure.
     fn worktree_status(
         &self,
         repo: &RepoHandle,
@@ -80,6 +106,12 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
         ctx: &JobContext<'_>,
     ) -> GitResult<WorktreeStatus>;
     /// J3: tracked files and HEAD blob bytes.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Busy` when an operation marker outlasts the backoff; `GitError::Cancelled`;
+    /// `GitError::Internal` when the file count exceeds `u32`; otherwise the failure of the
+    /// `ls-files` or `cat-file` invocation.
     fn tracked_inventory(
         &self,
         repo: &RepoHandle,
@@ -91,6 +123,11 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
     /// `ls-files -s` is the only read that reports a mode, and `TrackedInventory` discards it —
     /// and the scanner may not spawn git outside this seam (§15.2). A path with no gitlink is
     /// simply absent from the map; there is no placeholder OID.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise the
+    /// `ls-files` invocation's failure.
     fn submodule_gitlinks(
         &self,
         repo: &RepoHandle,
@@ -102,22 +139,47 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
     /// The scanner's, like `submodule_gitlinks`: `IdentityProbe` needs it and the scanner may not
     /// spawn git outside this seam (§15.2). An empty list is the answer *this repository has no
     /// remote* — §1.1's weak row keys on a NULL `remote_key` — and never a failure.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise the
+    /// `config` invocation's failure other than its exit `1` for "no match".
     fn remote_urls(
         &self,
         repo: &RepoHandle,
         ctx: &JobContext<'_>,
     ) -> GitResult<Vec<(String, String)>>;
     /// J4: the root set, with dates.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise the failure
+    /// of the `rev-list` or `show` invocation. A repository with no commits is an empty set.
     fn root_commits(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>>;
     /// [p2-24b] §24.7A: every local ref carrying commits no remote has.
     ///
     /// **Not just `HEAD`.** `refs/heads`, `refs/tags` and `refs/notes` are all enumerated; a
     /// pre-flight that looked only at the checked-out branch would let a deletion clear a feature
     /// branch, a release tag or a note that exists nowhere else.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise the walk's
+    /// failure. A ref whose reachability cannot be computed is an error, never an empty answer.
     fn unpushed_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<String>>;
     /// J1.5: the full committer walk.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise the `log`
+    /// invocation's failure. A repository with no commits is an empty tally.
     fn authorship(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Authorship>;
     /// J4: recent subjects, newest first.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise the `log`
+    /// invocation's failure. A repository with no commits has no subjects.
     fn commit_subjects(
         &self,
         repo: &RepoHandle,
@@ -128,6 +190,11 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
     ///
     /// **Not `tracked_inventory`'s basis.** That one reads the index and is J3's; this one reads
     /// the commit. Both stay, because the two questions are different ones.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise the
+    /// `ls-tree` invocation's failure, including an unborn `HEAD`.
     fn head_tree(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TreeEntry>>;
     /// J7 (§29.6): the bodies of `oids`, each kept up to `byte_cap`, stopping at `budget_bytes`
     /// across the batch.
@@ -135,6 +202,11 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
     /// Both ceilings are the caller's, not this seam's: §29.2 rule 4's `J7_BLOB_BYTE_CAP` and
     /// §29.6's chunk budget belong to the scanner. A blob over the per-blob cap is **recorded at
     /// its size with its body discarded** rather than buffered here and thrown away above.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise the
+    /// `cat-file` invocation's failure, or `GitError::Internal` when its output cannot be read.
     fn read_blobs(
         &self,
         repo: &RepoHandle,
@@ -348,6 +420,11 @@ impl GitBackend for SystemGit {
 }
 
 /// Read the version and enforce the floor in one call — what startup uses (§3.1, §11.2).
+///
+/// # Errors
+///
+/// `GitError::TooOld` when the version is below [`crate::git::GIT_FLOOR`]; otherwise whatever
+/// [`GitBackend::version`] fails with.
 pub fn require_floor(backend: &dyn GitBackend, ctx: &JobContext<'_>) -> GitResult<GitVersion> {
     let v = backend.version(ctx)?;
     if meets_floor(&v) {

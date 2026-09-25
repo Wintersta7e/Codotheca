@@ -107,6 +107,11 @@ fn is_empty_history(err: &GitError) -> bool {
 }
 
 /// `rev-list --max-parents=0 HEAD`, then one `show` for their dates.
+///
+/// # Errors
+///
+/// The failure of either invocation as [`GitExec::run_piped`] classifies it. A repository with
+/// no commits yet is not an error: it has no roots.
 pub fn root_commits(
     exec: &GitExec,
     repo: &RepoHandle,
@@ -145,9 +150,9 @@ pub fn root_commits(
     args.extend(oids.iter().map(|o| OsStr::new(o.as_str())));
     let dated = exec.run(repo, &args, limits, cancel)?;
 
-    let text = String::from_utf8_lossy(&dated.stdout);
+    let dated_text = String::from_utf8_lossy(&dated.stdout);
     let mut out = Vec::new();
-    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+    for line in dated_text.lines().filter(|l| !l.trim().is_empty()) {
         let mut parts = line.split('\t');
         let (Some(oid), Some(at), Some(tz)) = (parts.next(), parts.next(), parts.next()) else {
             continue;
@@ -168,6 +173,11 @@ pub fn root_commits(
 
 /// The full committer walk, streamed rather than buffered: a million-commit history is ~70 MB
 /// of output and nothing needs it in memory at once.
+///
+/// # Errors
+///
+/// The `log` invocation's failure as [`GitExec::run_piped`] classifies it. A repository with no
+/// commits yet is not an error: it has an empty tally.
 pub fn authorship(
     exec: &GitExec,
     repo: &RepoHandle,
@@ -233,6 +243,11 @@ pub fn authorship(
 }
 
 /// `log --format=%H%x09%ct%x09%s -n <limit>`, newest first.
+///
+/// # Errors
+///
+/// The `log` invocation's failure as [`GitExec::run_piped`] classifies it. A repository with no
+/// commits yet is not an error: it has no subjects.
 pub fn commit_subjects(
     exec: &GitExec,
     repo: &RepoHandle,

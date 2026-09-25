@@ -47,6 +47,11 @@ fn same_directory(left: &Path, right: &Path) -> bool {
 }
 
 /// One invocation; the four answers come back in the order the flags were given.
+///
+/// # Errors
+///
+/// The `rev-parse` invocation's failure as [`GitExec::run_piped`] classifies it, or
+/// `GitError::Internal` when it prints fewer than the four answers.
 pub fn repo_facts(
     exec: &GitExec,
     repo: &RepoHandle,

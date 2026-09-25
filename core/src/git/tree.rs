@@ -84,6 +84,11 @@ pub fn parse_ls_tree_z(bytes: &[u8]) -> Vec<TreeEntry> {
 /// **Bare is not the discriminator** (§29.1): `--full-tree` needs no working tree, so a bare
 /// repository with commits enumerates exactly like any other. The honest gate is an unborn HEAD,
 /// which the caller answers from `location.head_oid` before ever reaching here.
+///
+/// # Errors
+///
+/// The `ls-tree` invocation's failure as [`GitExec::run_piped`] classifies it, an unborn `HEAD`
+/// included.
 pub fn head_tree(
     exec: &GitExec,
     repo: &RepoHandle,
@@ -128,6 +133,11 @@ pub struct BlobBatch {
 /// **Past the budget the stream is drained and discarded rather than abandoned.** Returning early
 /// would leave git writing into a pipe nobody reads, which is the deadlock this module exists to
 /// avoid — the cost is one batch of transfer, and the memory ceiling is what the budget is for.
+///
+/// # Errors
+///
+/// The `cat-file` invocation's failure as [`GitExec::run_piped`] classifies it, or
+/// `GitError::Internal` when its output cannot be read.
 pub fn read_blobs(
     exec: &GitExec,
     repo: &RepoHandle,

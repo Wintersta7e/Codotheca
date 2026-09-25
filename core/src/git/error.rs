@@ -95,7 +95,7 @@ impl GitError {
     /// The closed-enum code from `protocol/schema/protocol.json`, or `None` when the failure is
     /// a scheduler state rather than a project error the shell renders (§11.1).
     #[must_use]
-    pub fn protocol_code(&self) -> Option<&'static str> {
+    pub const fn protocol_code(&self) -> Option<&'static str> {
         match self {
             Self::Missing => Some("GIT_MISSING"),
             Self::TooOld { .. } => Some("GIT_TOO_OLD"),
@@ -113,13 +113,13 @@ impl GitError {
     /// True only for the one failure that means the path is not there. A caller may set
     /// `presence = 'missing'` **only** when this is true (§3.5, §4.6).
     #[must_use]
-    pub fn implies_absent(&self) -> bool {
+    pub const fn implies_absent(&self) -> bool {
         matches!(self, Self::PathGone { .. })
     }
 
     /// True when the right response is to requeue rather than to record an error (§4.1).
     #[must_use]
-    pub fn is_deferral(&self) -> bool {
+    pub const fn is_deferral(&self) -> bool {
         matches!(self, Self::Busy { .. } | Self::TornRead | Self::Cancelled)
     }
 }

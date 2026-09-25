@@ -42,6 +42,11 @@ const NONE_IGNORED: i32 = 1;
 ///
 /// A `GitError` here is a real failure — `check-ignore`'s own "nothing matched" is exit `1`,
 /// which is tolerated and yields an empty listing rather than an error.
+///
+/// # Errors
+///
+/// Any batch's `check-ignore` failure as [`GitExec::run_piped`] classifies it; no verdict is
+/// returned for any path then.
 pub fn check_ignore(
     exec: &GitExec,
     repo: &RepoHandle,
@@ -68,9 +73,9 @@ pub fn check_ignore(
             limits.tolerating(NONE_IGNORED),
             cancel,
             move |stdin| stdin.write_all(&input),
-            |out| {
+            |reader| {
                 let mut buf = Vec::new();
-                out.read_to_end(&mut buf)?;
+                reader.read_to_end(&mut buf)?;
                 Ok(buf)
             },
         )?;

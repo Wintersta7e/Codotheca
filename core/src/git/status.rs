@@ -32,7 +32,7 @@ pub struct StatusOptions {
 impl StatusOptions {
     /// The ordinary observation.
     #[must_use]
-    pub fn full() -> Self {
+    pub const fn full() -> Self {
         Self {
             untracked: UntrackedMode::All,
         }
@@ -40,7 +40,7 @@ impl StatusOptions {
 
     /// The J2 degrade after the 500 ms budget is exceeded (§4.1).
     #[must_use]
-    pub fn degraded() -> Self {
+    pub const fn degraded() -> Self {
         Self {
             untracked: UntrackedMode::None,
         }
@@ -89,6 +89,10 @@ pub struct WorktreeStatus {
 ///
 /// Records are NUL-separated. A type `2` (rename/copy) record is followed by a **second**
 /// NUL-terminated field holding the original path, which must be consumed with it.
+///
+/// # Errors
+///
+/// `GitError::Internal` when a record starts with a type byte porcelain v2 does not define.
 pub fn parse_status_v2(bytes: &[u8]) -> GitResult<StatusCounts> {
     let mut counts = StatusCounts::default();
     let mut fields = bytes.split(|b| *b == 0).filter(|f| !f.is_empty());
@@ -132,6 +136,11 @@ pub fn parse_status_v2(bytes: &[u8]) -> GitResult<StatusCounts> {
 }
 
 /// Observe the working tree.
+///
+/// # Errors
+///
+/// The `status` invocation's failure as [`GitExec::run_piped`] classifies it, or
+/// [`parse_status_v2`]'s.
 pub fn worktree_status(
     exec: &GitExec,
     repo: &RepoHandle,
