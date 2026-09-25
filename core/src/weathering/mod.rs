@@ -22,6 +22,7 @@ use crate::weathering::store::{SceneSource, SqliteSceneSource};
 /// document and carries no observation time.
 #[derive(Debug)]
 pub struct WeatheringCtx<'a> {
+    /// The index the `project` row and the stored `art_scene` document are read from.
     pub index: &'a Index,
 }
 
@@ -88,6 +89,12 @@ fn handle_weathering(
 ///
 /// `sceneHash` is NULL when the project has no `art_scene` row, and `layers` is then **empty**:
 /// five empty entries and no hash would be a claim about a surface that does not exist.
+///
+/// # Errors
+///
+/// [`WeatheringError::NoProject`] when there is no `project` row; whatever `source` returns for
+/// the scene read; and [`WeatheringError::BadSpace`] when the stored space does not fit the
+/// wire's `u32`. A failed existence check is [`WeatheringError::Store`].
 pub fn weathering_for(
     source: &impl SceneSource,
     conn: &rusqlite::Connection,

@@ -94,9 +94,11 @@ pub fn health_delta_event(
     })
 }
 
-/// The call every debt-set writer makes after its write: read the second snapshot, write the
-/// rows, and return the event to announce **once the transaction has committed** — never inside
-/// it, where a rollback could still remove the state it announces.
+/// The call every debt-set writer makes after its write.
+///
+/// Read the second snapshot, write the rows, and return the event to announce **once the
+/// transaction has committed** — never inside it, where a rollback could still remove the state
+/// it announces.
 ///
 /// `before` is the caller's first snapshot, taken before its write. Reading only after the write
 /// would leave no `before` to recover, and a producer that invented one would invent the history.

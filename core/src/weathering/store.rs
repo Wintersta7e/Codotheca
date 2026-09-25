@@ -16,6 +16,12 @@ use crate::weathering::WeatheringError;
 /// different facts, and answering the first for the second is the conflation A13 forbids one
 /// level up.
 pub trait SceneSource {
+    /// The project's `(scene_hash, Scene)`, or `None` when it has no `art_scene` row.
+    ///
+    /// # Errors
+    ///
+    /// [`WeatheringError::UnreadableScene`] when the stored document does not deserialise, and
+    /// [`WeatheringError::Store`] when the read itself fails.
     fn scene_for(&self, id: ProjectId) -> Result<Option<(String, Scene)>, WeatheringError>;
 }
 
@@ -26,8 +32,9 @@ pub struct SqliteSceneSource<'a> {
 }
 
 impl<'a> SqliteSceneSource<'a> {
+    /// A source reading through `conn`, the caller's connection or transaction view.
     #[must_use]
-    pub fn new(conn: &'a rusqlite::Connection) -> Self {
+    pub const fn new(conn: &'a rusqlite::Connection) -> Self {
         Self { conn }
     }
 }

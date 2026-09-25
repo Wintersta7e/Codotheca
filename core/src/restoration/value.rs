@@ -65,8 +65,11 @@ pub struct LayerValues {
 /// so neither is optional here; they become `f64` only at the column and on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LayerTransition {
+    /// The layer whose value moved.
     pub layer: DecayLayer,
+    /// The open-item count in the first snapshot, before the write.
     pub from_value: u32,
+    /// The open-item count in the second snapshot, after it.
     pub to_value: u32,
     /// Closures in this layer the user did not cause — §32's withdrawn advisories, closed
     /// `Invalidated`. Carried so the emit gate can tell a restoration from a retraction.

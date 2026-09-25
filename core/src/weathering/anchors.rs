@@ -10,12 +10,13 @@
 use crate::art::scene::{Scene, SPACE_W};
 use crate::protocol::{DecayLayer, Point, Polyline, Rect, WeatherLayer};
 
-/// The generated enum's own order, iterable. `DecayLayer::ALL` is the declaration order, and
-/// §33.3's table is written in it — a second ordering here would be a second total order for
-/// A3's tie-break to disagree with.
+/// The generated enum's own order, iterable.
+///
+/// `DecayLayer::ALL` is the declaration order, and §33.3's table is written in it — a second
+/// ordering here would be a second total order for A3's tie-break to disagree with.
 pub const LAYER_ORDER: [DecayLayer; 5] = DecayLayer::ALL;
 
-fn rect_of(r: [i32; 4]) -> Rect {
+const fn rect_of(r: [i32; 4]) -> Rect {
     Rect {
         x: r[0],
         y: r[1],
@@ -24,7 +25,7 @@ fn rect_of(r: [i32; 4]) -> Rect {
     }
 }
 
-fn point_of(p: [i32; 2]) -> Point {
+const fn point_of(p: [i32; 2]) -> Point {
     Point { x: p[0], y: p[1] }
 }
 
