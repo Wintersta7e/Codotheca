@@ -938,7 +938,7 @@
           "owner": "19",
           "test": "AC-26 the updater round trip completes against a local feed",
           "assert": "A per-user NSIS install updates from a locally served feed, including an update staged while the core is running, which completes the shutdown first.",
-          "reason": "Phase 1 ships no update channel. There is no auto-updater, no update server and no feed: distribution is a release page downloaded by hand. electron-updater is not a dependency and a gate asserts its absence, so the round trip has nothing to round-trip against. This is neither covered nor failing \u2014 the criterion's subject does not exist in this phase, and the check is here so that adding an updater later cannot arrive without it."
+          "reason": "The project decided on 2026-09-02 to ship no updater, and the decision holds for 1.0. There is no auto-updater, no update server and no feed: distribution is a release page downloaded by hand. electron-updater is not a dependency and a gate asserts its absence, so the round trip has nothing to round-trip against. This is neither covered nor failing \u2014 the criterion's subject does not exist, and the check stays registered as a tripwire so that an updater cannot arrive without its round trip."
         },
         {
           "id": "AC-26-signature",
@@ -963,7 +963,7 @@
           "owner": "19",
           "test": "AC-27 the AppImage self-updates from a local feed",
           "assert": "Run with --appimage-extract-and-run on a Linux runner, the AppImage completes an update round trip.",
-          "reason": "Phase 1 ships no update channel, so the AppImage self-update has nothing to update from. The AppImage target itself is built and packed."
+          "reason": "The project decided on 2026-09-02 to ship no updater, so the AppImage self-update has nothing to update from. The AppImage target itself is built and packed, and the check stays registered as a tripwire so that an updater cannot arrive without its round trip."
         },
         {
           "id": "AC-27-packages",
@@ -972,7 +972,7 @@
           "owner": "19",
           "test": "check-packages:updater-disabled",
           "assert": "The built .deb and .rpm carry the build-time artifact flag that disables the updater, and installing them on a runner leaves no updater timer.",
-          "reason": "There is no updater to disable and therefore no flag to carry. What ships instead is the stronger statement, gated today by scripts/check-no-updater.mjs in the bundle guard: the updater package is absent from the dependency tree and from the built shell entirely. That gate emits no joinable result row, so the criterion cannot claim it until either it does or this check is rewritten against what actually exists."
+          "reason": "The project decided on 2026-09-02 to ship no updater, so there is no updater to disable and therefore no flag to carry. What ships instead is the stronger statement, gated today by scripts/check-no-updater.mjs in the bundle guard: the updater package is absent from the dependency tree and from the built shell entirely. That gate emits no joinable result row, so the criterion cannot claim it until either it does or this check is rewritten against what actually exists."
         }
       ]
     },
