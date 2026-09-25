@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from 'vitest';
 import { EXCLUSION_LIST, EXCLUSION_CAPTION } from '../src/shared/skipList';
+import { required } from '../src/shared/required';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -14,7 +15,9 @@ function coreSkipList(): string[] {
   const open = source.indexOf('[', source.indexOf('=', start));
   const close = source.indexOf('];', open);
   const body = source.slice(open + 1, close);
-  return [...body.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]!.replace(/\\(.)/g, '$1'));
+  return [...body.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) =>
+    required(m[1], 'skip-list entry').replace(/\\(.)/g, '$1'),
+  );
 }
 
 // §10.1b: the rendered strings are §4.3's, `$RECYCLE.BIN` included, because a privacy policy

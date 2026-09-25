@@ -8,6 +8,7 @@ import {
   HEARTBEATS_BEFORE_STALE,
   focusArgs,
 } from './sessionFocus';
+import { required } from './required';
 
 describe('the focus constants', () => {
   it('mirrors the Rust constant the core actually measures against', () => {
@@ -19,7 +20,8 @@ describe('the focus constants', () => {
     );
     const match = /FOCUS_STALE_SECS\s*:\s*i64\s*=\s*([0-9_]+)/.exec(source);
     expect(match, 'FOCUS_STALE_SECS is not declared in core/src/session/mod.rs').not.toBeNull();
-    expect(Number(match![1]!.replaceAll('_', ''))).toBe(FOCUS_STALE_SECS);
+    const digits = required(required(match, 'FOCUS_STALE_SECS declaration')[1], 'its value');
+    expect(Number(digits.replaceAll('_', ''))).toBe(FOCUS_STALE_SECS);
   });
 
   it('reads the Rust source it claims to, rather than an empty string', () => {

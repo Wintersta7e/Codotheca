@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NOTICE_DISMISS_LABEL, NoticeSlot } from './NoticeSlot.js';
 import type { Notice, NoticeKind } from './notice.js';
+import { required } from '../../shared/required.js';
 
 afterEach(cleanup);
 
@@ -48,13 +49,19 @@ describe('NoticeSlot', () => {
     const hot = render(
       <NoticeSlot candidates={[notice('coreFailure')]} dismissed={[]} onDismiss={vi.fn()} />,
     );
-    const hotBox = hot.container.querySelector('.cdt-shelf-notice') as HTMLElement;
+    const hotBox = required(
+      hot.container.querySelector<HTMLElement>('.cdt-shelf-notice'),
+      'hot notice',
+    );
     expect(hotBox.style.getPropertyValue('--cdt-notice-accent')).toBe('var(--fail-hot)');
 
     const warm = render(
       <NoticeSlot candidates={[notice('problems', 'r')]} dismissed={[]} onDismiss={vi.fn()} />,
     );
-    const warmBox = warm.container.querySelector('.cdt-shelf-notice') as HTMLElement;
+    const warmBox = required(
+      warm.container.querySelector<HTMLElement>('.cdt-shelf-notice'),
+      'warm notice',
+    );
     expect(warmBox.style.getPropertyValue('--cdt-notice-accent')).toBe('var(--sig)');
 
     // Everything else about the two boxes is the same rule.

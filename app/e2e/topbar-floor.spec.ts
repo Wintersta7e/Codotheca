@@ -332,11 +332,16 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
     return good;
   };
 
-  const fits = [await fitsFrom(0), await fitsFrom(1), await fitsFrom(2), await fitsFrom(3)];
+  const fits: readonly [number, number, number, number] = [
+    await fitsFrom(0),
+    await fitsFrom(1),
+    await fitsFrom(2),
+    await fitsFrom(3),
+  ];
 
   // A step engages at and below the widest width the step above it could not fit.
-  const measuredShedWidths = [fits[0]! - 1, fits[1]! - 1, fits[2]! - 1];
-  const measuredFloor = fits[3]!;
+  const measuredShedWidths = [fits[0] - 1, fits[1] - 1, fits[2] - 1];
+  const measuredFloor = fits[3];
 
   // eslint-disable-next-line no-console -- the measurement is the deliverable
   console.log(

@@ -5,6 +5,7 @@ import { ProjectPageDepsContext, type ProjectPageDeps } from './deps';
 import { primaryLocation, ProjectPageView, shownLocation } from './ProjectPage';
 import { detailFixture, locationFixture, NOW, rowFixture } from './testFixtures';
 import { blockerSentence, UNINSTALL_LABEL } from './uninstall/uninstallCopy';
+import { required } from '../../shared/required';
 
 afterEach(cleanup);
 
@@ -263,7 +264,7 @@ describe('the mounted body', () => {
     mount(detail);
     const adopts = await screen.findAllByTestId('cp-loc-adopt');
     expect(adopts).toHaveLength(2);
-    fireEvent.click(adopts[1] as HTMLElement);
+    fireEvent.click(required(adopts[1], 'second ADOPT button'));
     const second = String(detail.locations[1]?.location.id);
     await waitFor(() => {
       expect(screen.getByTestId('cp-tabpanel').dataset['shownLocation']).toBe(second);

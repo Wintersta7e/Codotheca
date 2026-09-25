@@ -4,6 +4,7 @@ import { afterEach, expect, test } from 'vitest';
 import type { InstallStage, InstallStageKind } from '../../generated/protocol.js';
 import { InstallReadout } from './InstallReadout.js';
 import { STAGE_FLOOR_MS } from './stageFloor.js';
+import { required } from '../../shared/required.js';
 
 afterEach(cleanup);
 
@@ -64,7 +65,7 @@ test('no rendered number decreases across the whole sequence', () => {
     const text = document.body.textContent ?? '';
     const match = /([\d,]+) of /u.exec(text);
     if (match === null) continue;
-    const value = Number(match[1]!.replaceAll(',', ''));
+    const value = Number(required(match[1], 'figure').replaceAll(',', ''));
     // Within one phase the figure is monotonic; across phases the denominator changes, so this
     // only asserts that a figure never retreats inside the phase it belongs to.
     if (value >= highest) highest = value;

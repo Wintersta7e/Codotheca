@@ -18,6 +18,7 @@ import {
   TARGET_FOOTNOTE,
   rootsCaption,
 } from './groupsScan.js';
+import { required } from '../../shared/required.js';
 
 afterEach(cleanup);
 
@@ -185,7 +186,7 @@ describe('group 2, LAUNCH TARGETS', () => {
     render(<ScanGroups {...props} targets={targets('ok')} slots={{ chooseLaunchTarget }} />);
     const buttons = screen.getAllByRole('button', { name: 'CHANGE' });
     expect(buttons).toHaveLength(LAUNCH_TARGET_LANGUAGES.length);
-    fireEvent.click(buttons[0] as HTMLElement);
+    fireEvent.click(required(buttons[0], 'first button'));
     expect(chooseLaunchTarget).toHaveBeenCalledWith('RS');
   });
 });

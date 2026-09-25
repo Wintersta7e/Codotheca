@@ -5,6 +5,7 @@ import { TOKENS } from '../theme/tokens';
 // returns the real text — Vitest otherwise stubs them to an empty module, `?raw` included.
 import CSS from './firstRun.css?raw';
 import vocabularyJson from '../styles/css-vocabulary.json?raw';
+import { required } from '../../shared/required';
 
 const VOCABULARY = JSON.parse(vocabularyJson) as {
   readonly durationsMs: readonly number[];
@@ -24,7 +25,9 @@ test('the stylesheet was actually read', () => {
 // across the tree; this asserts it for this file against the typed token table, so a `var()`
 // naming a token that does not exist fails here rather than painting nothing at runtime.
 test('every colour is a token and every token named exists', () => {
-  const named = [...CSS.matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1]!.slice(2));
+  const named = [...CSS.matchAll(/var\((--[a-z0-9-]+)/g)].map((m) =>
+    required(m[1], 'token name').slice(2),
+  );
   expect(named.length).toBeGreaterThan(20);
   for (const name of named) {
     expect(Object.keys(TOKENS), `var(--${name})`).toContain(name);
@@ -45,7 +48,7 @@ test('no duration and no curve outside the stated set', () => {
   for (const [, amount, unit] of CSS.matchAll(/(?<![\w.-])(\d+(?:\.\d+)?|\.\d+)(ms|s)(?![\w-])/g)) {
     const ms = unit === 's' ? Number(amount) * 1000 : Number(amount);
     seen.push(ms);
-    expect(durations, `duration ${amount!}${unit!}`).toContain(ms);
+    expect(durations, `duration ${String(amount)}${String(unit)}`).toContain(ms);
   }
   expect(seen.length).toBeGreaterThan(5);
 

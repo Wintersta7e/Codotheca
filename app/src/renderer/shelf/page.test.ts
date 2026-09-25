@@ -13,6 +13,7 @@ import type { ShelfRow } from './row.js';
 import { rankOf, toShelfRow } from './row.js';
 import type { QueryContext } from './evaluate.js';
 import { buildShelfPage, compareRows, orderKeyOf } from './page.js';
+import { required } from '../../shared/required.js';
 
 const DAY = 86_400;
 const NOW = Math.floor(Date.UTC(2026, 5, 15, 12) / 1000);
@@ -266,11 +267,11 @@ describe('AC-P3-35-9 the sort does not re-cut the shelf', () => {
     for (const variant of variants) {
       const page = build(rows, '', variant);
       for (const [index, section] of page.sections.entries()) {
-        const other = baseline.sections[index];
+        const other = required(baseline.sections[index], 'baseline section');
         expect(
           isCollapsed(collapsed, section.id, section.order, page.renderedTotal, true),
           `${variant} changed the collapse answer for ${section.id}`,
-        ).toBe(isCollapsed(collapsed, other!.id, other!.order, baseline.renderedTotal, true));
+        ).toBe(isCollapsed(collapsed, other.id, other.order, baseline.renderedTotal, true));
       }
     }
   });

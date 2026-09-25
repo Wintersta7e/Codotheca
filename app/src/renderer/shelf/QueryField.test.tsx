@@ -6,6 +6,7 @@ import { parseQuery } from '../../shared/query/parse.js';
 import source from './QueryField.tsx?raw';
 import type { QueryFieldModel } from './QueryField.js';
 import { QUERY_PLACEHOLDER, QueryFieldView, dropPill, fieldModel } from './QueryField.js';
+import { required } from '../../shared/required.js';
 
 afterEach(cleanup);
 
@@ -76,19 +77,21 @@ describe('the contract this plan needs from plan 13', () => {
     const text = 'LANG:Rust is:dirty';
     const pill = pillsOf(parseQuery(text), [])[0];
     expect(pill?.label).toBe('lang:rust');
-    expect(dropPill(text, parseQuery(text), pill!)).toBe('is:dirty');
+    expect(dropPill(text, parseQuery(text), required(pill, 'pill'))).toBe('is:dirty');
   });
   it('addresses a quoted value and a negated term without rewriting either', () => {
     const text = 'in:"two words" -is:dirty';
     const ast = parseQuery(text);
     const pills = pillsOf(ast, []);
-    expect(dropPill(text, ast, pills[0]!)).toBe('-is:dirty');
-    expect(dropPill(text, ast, pills[1]!)).toBe('in:"two words"');
+    expect(dropPill(text, ast, required(pills[0], 'first pill'))).toBe('-is:dirty');
+    expect(dropPill(text, ast, required(pills[1], 'second pill'))).toBe('in:"two words"');
   });
   it('leaves the query untouched rather than cutting the wrong term when it cannot address one', () => {
     // A pill from a different query addresses no token here. A no-op beats a wrong rewrite.
     const stray = pillsOf(parseQuery('lang:rust'), [])[0];
-    expect(dropPill('is:dirty', parseQuery('is:dirty'), stray!)).toBe('is:dirty');
+    expect(dropPill('is:dirty', parseQuery('is:dirty'), required(stray, 'stray pill'))).toBe(
+      'is:dirty',
+    );
   });
 });
 
@@ -97,13 +100,13 @@ describe('dropPill', () => {
     const text = 'lang:rust in:"two words" Codo';
     const ast = parseQuery(text);
     const pill = pillsOf(ast, [])[1];
-    expect(dropPill(text, ast, pill!)).toBe('lang:rust Codo');
+    expect(dropPill(text, ast, required(pill, 'pill'))).toBe('lang:rust Codo');
   });
   it('removes a soft-errored term by its own source text', () => {
     const text = 'nosuch:value is:dirty';
     const ast = parseQuery(text);
     const pill = pillsOf(ast, []).find((p) => p.state === 'error');
-    expect(dropPill(text, ast, pill!)).toBe('is:dirty');
+    expect(dropPill(text, ast, required(pill, 'pill'))).toBe('is:dirty');
   });
 });
 

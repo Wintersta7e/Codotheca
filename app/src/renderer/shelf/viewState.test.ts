@@ -17,6 +17,7 @@ import {
   resolveSort,
   viewFromState,
 } from './viewState.js';
+import { required } from '../../shared/required.js';
 
 /**
  * `SortKey`'s variants, off the **tracked** §2.4 contract rather than the gitignored generated
@@ -100,8 +101,8 @@ describe('the sort ladder', () => {
     // Deep equality alone does not catch a broken `nextSort`, and a variant in the array the
     // cycle cannot reach is exactly what the criterion says it fails on.
     const visited: SortKey[] = [];
-    let key: SortKey = variants[0]!;
-    for (let step = 0; step < variants.length; step += 1) {
+    let key: SortKey = required(variants[0], 'first sort variant');
+    while (visited.length < variants.length) {
       visited.push(key);
       key = nextSort(key);
     }

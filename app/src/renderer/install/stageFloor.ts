@@ -37,12 +37,13 @@ export function pacedStages(
   observed: readonly InstallStage[],
   elapsedMs: number,
 ): readonly InstallStageKind[] {
-  if (observed.length === 0) return [];
+  const [first] = observed;
+  if (first === undefined) return [];
   // The first stage is on screen at t=0 and the last becomes reachable **exactly** at the floor,
   // so the gaps are divided by `length - 1`, not by `length`. Dividing by `length` puts the final
   // stage one slice early — measured: with six stages it completed at 899 ms against a 900 ms
   // floor, which is the whole thing this constant exists to prevent.
-  if (observed.length === 1) return [observed[0]!.stage];
+  if (observed.length === 1) return [first.stage];
   const perStage = STAGE_FLOOR_MS / (observed.length - 1);
   const earned = Math.floor(Math.max(elapsedMs, 0) / perStage) + 1;
   const shown = Math.min(observed.length, Math.max(1, earned));

@@ -14,6 +14,7 @@ import type { HealthState, LocationRef, ProjectRow, SortKey } from '../../genera
 import { compareRows, orderKeyOf } from './page.js';
 import type { ShelfRow } from './row.js';
 import { toShelfRow } from './row.js';
+import { required } from '../../shared/required.js';
 
 interface CorpusRow {
   readonly id: number;
@@ -152,7 +153,8 @@ describe('AC-P3-35-3 the two comparators produce the same order', () => {
   });
 
   it('names a row key it does not know', () => {
-    const rogue = { ...corpus.cases[0]!.rows[0]!, weighting: 3 } as unknown as CorpusRow;
+    const first = required(required(corpus.cases[0], 'first case').rows[0], 'first row');
+    const rogue = { ...first, weighting: 3 } as unknown as CorpusRow;
     expect(() => rowOf(rogue)).toThrow(/weighting/);
   });
 

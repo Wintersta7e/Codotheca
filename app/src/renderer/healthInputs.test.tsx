@@ -27,6 +27,7 @@ import { GRANT_ASK_ACTION } from './project/health/GrantAsk';
 import { SOURCE_LABELS } from './project/health/labels';
 import { detailFixture, rowFixture } from './project/testFixtures';
 import { makeProjectRow } from './testing/projectRow';
+import { required } from '../shared/required';
 
 afterEach(cleanup);
 
@@ -210,7 +211,7 @@ async function openHealthTab(): Promise<void> {
   await waitFor(() => {
     expect(document.querySelector('.cdt-reference-row')).not.toBeNull();
   });
-  fireEvent.click(document.querySelector('.cdt-reference-row') as HTMLElement);
+  fireEvent.click(required(document.querySelector('.cdt-reference-row'), 'reference row'));
   fireEvent.click(await screen.findByRole('tab', { name: 'HEALTH' }));
 }
 

@@ -36,9 +36,8 @@ export function InstallReadout({
   elapsedMs,
   surface,
 }: InstallReadoutProps): ReactElement | null {
-  const shown = pacedStages(observed, elapsedMs);
-  if (shown.length === 0) return null;
-  const currentKind = shown[shown.length - 1]!;
+  const currentKind = pacedStages(observed, elapsedMs).at(-1);
+  if (currentKind === undefined) return null;
   // The last observation for the stage on screen — not the last observation overall, which may
   // belong to a stage the pacer has not revealed yet.
   const current = [...observed].reverse().find((stage) => stage.stage === currentKind);

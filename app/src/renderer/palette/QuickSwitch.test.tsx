@@ -7,6 +7,7 @@ import type { QuickSwitchProps } from './QuickSwitch.js';
 // The dom project processes the renderer's stylesheets so `?raw` returns the real text; without
 // that it is stubbed to an empty module and every assertion below passes on nothing.
 import css from './quickSwitch.css?raw';
+import { required } from '../../shared/required.js';
 
 afterEach(cleanup);
 
@@ -125,7 +126,7 @@ describe('QuickSwitch', () => {
 
   it('launches the selected row against its primary location and closes', () => {
     const { props } = view({ cursor: 0 });
-    fireEvent.click(screen.getAllByRole('option')[0] as HTMLElement);
+    fireEvent.click(required(screen.getAllByRole('option')[0], 'first option'));
     expect(props.onLaunch).toHaveBeenCalledWith(1 as ProjectId, 11 as LocationId);
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
@@ -142,7 +143,7 @@ describe('QuickSwitch', () => {
     (globalThis as { codotheca?: unknown }).codotheca = { request };
     try {
       const { props } = view({ cursor: 1 });
-      fireEvent.click(screen.getAllByRole('option')[1] as HTMLElement);
+      fireEvent.click(required(screen.getAllByRole('option')[1], 'second option'));
       expect(props.onLaunch).not.toHaveBeenCalled();
       expect(props.onOpenPage).toHaveBeenCalledWith(2 as ProjectId, 'install');
       expect(props.onClose).toHaveBeenCalledTimes(1);
@@ -166,7 +167,7 @@ describe('QuickSwitch', () => {
         }),
       ],
     });
-    fireEvent.click(screen.getAllByRole('option')[0] as HTMLElement);
+    fireEvent.click(required(screen.getAllByRole('option')[0], 'first option'));
     expect(props.onLaunch).not.toHaveBeenCalled();
     expect(props.onOpenPage).toHaveBeenCalledWith(3 as ProjectId);
   });
@@ -194,9 +195,9 @@ describe('QuickSwitch', () => {
 
   it('closes on a backdrop click and not on a click inside the panel', () => {
     const { props } = view();
-    fireEvent.click(document.querySelector('.qs-panel') as HTMLElement);
+    fireEvent.click(required(document.querySelector('.qs-panel'), 'palette panel'));
     expect(props.onClose).not.toHaveBeenCalled();
-    fireEvent.click(document.querySelector('.qs-backdrop') as HTMLElement);
+    fireEvent.click(required(document.querySelector('.qs-backdrop'), 'palette backdrop'));
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 

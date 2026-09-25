@@ -9,6 +9,7 @@ import type { ShelfSection } from './page.js';
 import { withProjectDeps } from '../testing/deps';
 import { toShelfRow } from './row.js';
 import { noop } from '../noop.js';
+import { required } from '../../shared/required.js';
 
 vi.mock('../card/ProjectCard.js', () => ({
   // The mock mirrors the real card's own `tabIndex={focused ? 0 : -1}` and its `gridcell` role
@@ -154,9 +155,9 @@ describe('GridSection', () => {
   });
   it('draws no leading spacer when the window starts at the top', () => {
     const { container } = draw();
-    expect((container.querySelector('.cdt-shelf-grid > *') as HTMLElement).className).toBe(
-      'cdt-shelf-grid-row',
-    );
+    expect(
+      required(container.querySelector('.cdt-shelf-grid > *'), 'first grid child').className,
+    ).toBe('cdt-shelf-grid-row');
   });
   it('draws no body at all when the section is collapsed', () => {
     const { container } = draw({ extent: { ...extent, collapsed: true, bodyHeight: 0 } });
@@ -165,15 +166,15 @@ describe('GridSection', () => {
   });
   it("puts Peek below the selected card's row, spanning the grid", () => {
     const { container } = draw({ selectedId: 2 as unknown as ProjectId, peek: <p>peek</p> });
-    const slot = container.querySelector('.cdt-shelf-peek-slot');
-    expect(slot?.textContent).toBe('peek');
+    const slot = required(container.querySelector('.cdt-shelf-peek-slot'), 'peek slot');
+    expect(slot.textContent).toBe('peek');
     const rows = [...container.querySelectorAll('.cdt-shelf-grid > *')];
-    expect(rows.indexOf(slot as Element)).toBeGreaterThan(0);
+    expect(rows.indexOf(slot)).toBeGreaterThan(0);
   });
   it('opens Peek under the row that holds the selection, not the first row', () => {
     const { container } = draw({ selectedId: 6 as unknown as ProjectId, peek: <p>peek</p> });
     const children = [...container.querySelectorAll('.cdt-shelf-grid > *')];
-    const slot = container.querySelector('.cdt-shelf-peek-slot') as Element;
+    const slot = required(container.querySelector('.cdt-shelf-peek-slot'), 'peek slot');
     const owningRow = children[children.indexOf(slot) - 1];
     expect(owningRow?.getAttribute('aria-rowindex')).toBe('2');
   });
@@ -222,7 +223,7 @@ describe('GridSection', () => {
     // `check-style-tokens.mjs:118-122` rejects a `var(--x)` that is neither in `tokens.css` nor
     // prefixed `cdt-`, so `--tile` is a property the grid could set and no rule could ever read.
     const { container } = draw({ density: 232 });
-    const grid = container.querySelector('.cdt-shelf-grid') as HTMLElement;
+    const grid = required(container.querySelector<HTMLElement>('.cdt-shelf-grid'), 'grid');
     expect(grid.style.getPropertyValue('--cdt-tile')).toBe('232px');
     expect(grid.style.getPropertyValue('--tile')).toBe('');
   });

@@ -16,6 +16,7 @@ import type {
 import { detailFixture } from './project/testFixtures';
 import { PROJECT_PAGE_ROOT_CLASS } from './project/ProjectPage';
 import { makeProjectRow } from './testing/projectRow';
+import { required } from '../shared/required';
 
 afterEach(() => {
   cleanup();
@@ -252,7 +253,7 @@ describe('App — the composition root', () => {
       expect(document.querySelector('.cdt-reference-row')).not.toBeNull();
     });
 
-    fireEvent.click(document.querySelector('.cdt-reference-row') as HTMLElement);
+    fireEvent.click(required(document.querySelector('.cdt-reference-row'), 'reference row'));
     await waitFor(() => {
       expect(document.querySelector(`.${PROJECT_PAGE_ROOT_CLASS}`)).not.toBeNull();
     });

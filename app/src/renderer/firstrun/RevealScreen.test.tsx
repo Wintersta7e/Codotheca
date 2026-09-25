@@ -4,6 +4,7 @@ import { RevealScreen } from './RevealScreen';
 import * as copy from './copy';
 import type { RevealDeps } from './revealModel';
 import type { ProjectId, Reveal, RevealBasis } from '../../generated/protocol';
+import { required } from '../../shared/required';
 
 afterEach(cleanup);
 
@@ -90,7 +91,7 @@ test('there are exactly six panels and neither phase-4 panel is drawn', () => {
 // on. The panel is the whole hit target.
 test('SHOW WORKING opens the evidence, flips to CLOSE and closes again', () => {
   draw();
-  const panel = screen.getAllByTestId('fr-panel')[0]!;
+  const panel = required(screen.getAllByTestId('fr-panel')[0], 'first panel');
   expect(panel.getAttribute('aria-expanded')).toBe('false');
   expect(within(panel).getByText(copy.SHOW_WORKING_LABEL)).toBeTruthy();
   fireEvent.click(panel);
@@ -107,7 +108,7 @@ test('SHOW WORKING opens the evidence, flips to CLOSE and closes again', () => {
 // the product. The tag, the type and the focus are the parts a wrong implementation loses.
 test('the panel is a real focusable button, which is what makes Enter toggle it', () => {
   draw();
-  const panel = screen.getAllByTestId('fr-panel')[0]!;
+  const panel = required(screen.getAllByTestId('fr-panel')[0], 'first panel');
   expect(panel.tagName).toBe('BUTTON');
   expect(panel.getAttribute('type')).toBe('button');
   expect(panel.getAttribute('tabindex')).toBeNull();
@@ -118,8 +119,8 @@ test('the panel is a real focusable button, which is what makes Enter toggle it'
 test('only one panel is open at a time', () => {
   draw();
   const panels = screen.getAllByTestId('fr-panel');
-  fireEvent.click(panels[0]!);
-  fireEvent.click(panels[3]!);
+  fireEvent.click(required(panels[0], 'first panel'));
+  fireEvent.click(required(panels[3], 'fourth panel'));
   expect(panels[0]?.getAttribute('aria-expanded')).toBe('false');
   expect(panels[3]?.getAttribute('aria-expanded')).toBe('true');
 });
@@ -129,7 +130,7 @@ test('only one panel is open at a time', () => {
 // repository is "unknown as zero" verbatim.
 test('the oldest panel evidence stops at the language', () => {
   draw();
-  const panel = screen.getAllByTestId('fr-panel')[4]!;
+  const panel = required(screen.getAllByTestId('fr-panel')[4], 'fifth panel');
   fireEvent.click(panel);
   expect(within(panel).getByTestId('fr-evidence-body').textContent).toBe(
     'ledger  ·  born 2014  ·  Rust',
@@ -140,7 +141,7 @@ test('the oldest panel evidence stops at the language', () => {
 // Never render unknown as zero. A figure the core could not compute says so.
 test('an uncomputed figure is named and never shown as a number', () => {
   draw({ reveal: { ...reveal(partial), bestYear: { value: null, basis: partial } } });
-  const panel = screen.getAllByTestId('fr-panel')[3]!;
+  const panel = required(screen.getAllByTestId('fr-panel')[3], 'fourth panel');
   expect(within(panel).getByText(copy.UNCOMPUTED_NOTE)).toBeTruthy();
   expect(within(panel).queryByText('0')).toBeNull();
   // Its coverage row is still there: an uncomputed figure is still a figure over a basis.

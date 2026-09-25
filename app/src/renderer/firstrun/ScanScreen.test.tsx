@@ -8,6 +8,7 @@ import css from './firstRun.css?raw';
 import type { ScanFeedEvent, ScanFeedState } from './scanFeed';
 import type { RevealPanel } from './revealModel';
 import type { ProjectId } from '../../generated/protocol';
+import { required } from '../../shared/required';
 
 afterEach(cleanup);
 
@@ -122,7 +123,7 @@ test('an unclassified tile keeps its stripe and paints it absent', () => {
 // §10.3a / §7.7: the scan tile sits outside the allocation entirely and is not a card.
 test('a scan tile carries no card furniture', () => {
   draw();
-  const tile = screen.getAllByTestId('fr-tile')[0]!;
+  const tile = required(screen.getAllByTestId('fr-tile')[0], 'first tile');
   expect(tile.className).toContain('cdt-fr-tile');
   expect(tile.className).not.toContain('cdt-card');
   expect(tile.querySelector('.cdt-chip')).toBeNull();

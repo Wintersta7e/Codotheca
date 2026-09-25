@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 // jsdom `import.meta.url` is not a file URL.
 import motionCss from './motion.css?raw';
 import css from './projectPage.css?raw';
+import { required } from '../../shared/required';
 
 /**
  * Both `?raw` imports, asserted non-empty before anything reads them. Vitest stubs CSS to an
@@ -227,7 +228,7 @@ describe('the removal block is styled, and states its disposition without colour
     // §24.5 puts the removal where the eye does not land first, so it does not take the fill
     // the page's primary control takes. Compared against that control, never against a literal.
     document.body.innerHTML += '<button class="cp-cta"></button>';
-    const cta = getComputedStyle(document.querySelector('.cp-cta') as Element);
+    const cta = getComputedStyle(required(document.querySelector('.cp-cta'), 'CTA'));
     expect(go.background).not.toBe(cta.background);
   });
 
@@ -243,8 +244,8 @@ describe('the removal block is styled, and states its disposition without colour
     document.body.innerHTML = `
       <div class="cp-uninstall" id="u" data-state="unknown"></div>
       <div class="cp-uninstall" id="b" data-state="blocked"></div>`;
-    const unknown = getComputedStyle(document.querySelector('#u') as Element);
-    const blocked = getComputedStyle(document.querySelector('#b') as Element);
+    const unknown = getComputedStyle(required(document.querySelector('#u'), '#u'));
+    const blocked = getComputedStyle(required(document.querySelector('#b'), '#b'));
     expect(unknown.borderLeftWidth).not.toBe(blocked.borderLeftWidth);
     for (const resolved of [unknown, blocked]) {
       expect(resolved.borderLeftColor).not.toMatch(/\bred\b/i);

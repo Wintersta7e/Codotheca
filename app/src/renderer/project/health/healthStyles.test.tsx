@@ -24,6 +24,7 @@ import { DAY, detailFixture, NOW } from '../testFixtures';
 import { COMPLETION_TITLE } from '../completion/CompletionChecklist';
 import { DEBT_LIST_TITLE } from './DebtList';
 import { HEALTH_TITLE } from './HealthTab';
+import { required } from '../../../shared/required';
 
 afterEach(cleanup);
 
@@ -145,7 +146,7 @@ async function healthTab(): Promise<HTMLElement> {
 function one(root: ParentNode, selector: string): HTMLElement {
   const found = root.querySelectorAll<HTMLElement>(selector);
   expect(found, selector).toHaveLength(1);
-  return found[0] as HTMLElement;
+  return required(found[0], 'matching element');
 }
 
 describe('§30.7 the HEALTH tab wears the design, not the browser default', () => {

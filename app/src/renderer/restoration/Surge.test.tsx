@@ -10,6 +10,7 @@ import cardCss from '../styles/card.css?raw';
 import type { Selection } from './select';
 import surgeSource from './Surge.tsx?raw';
 import type { SurgeRequest } from './Surge';
+import { required } from '../../shared/required';
 
 const HASH = 'aa11bb22' as unknown as SceneHash;
 const HERO_SRC = 'codotheca://art/aa11bb22/hero';
@@ -209,9 +210,7 @@ describe('ac p3 34 1 — one DOM element inside the hero plate', () => {
     await play({ kind: 'layer', layer: 'rust' }, () => Promise.resolve(screenScene()));
     const bitmap = await art();
     const surge = await waitFor(() => {
-      const node = document.querySelector('.cdt-surge');
-      expect(node).not.toBeNull();
-      return node as Element;
+      return required(document.querySelector('.cdt-surge'), 'surge element');
     });
 
     const plate = bitmap.parentElement;

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DENSITY_TILE_PX } from './viewState.js';
 import { DENSITY_LABELS, DensityControl, densityControlName } from './DensityControl.js';
+import { required } from '../../shared/required.js';
 
 afterEach(cleanup);
 
@@ -81,7 +82,10 @@ describe('DensityControl', () => {
     const { container } = render(
       <DensityControl density={186} viewMode="grid" showKey onCycle={vi.fn()} />,
     );
-    const key = container.querySelector('.cdt-shelf-control-key') as HTMLElement;
+    const key = required(
+      container.querySelector<HTMLElement>('.cdt-shelf-control-key'),
+      'density key',
+    );
     expect(key.className).toContain('cdt-shelf-control-key');
     expect(container.innerHTML).not.toMatch(/#7a8896|#6c7885|#4a5560/);
   });

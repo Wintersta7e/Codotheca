@@ -4,6 +4,7 @@ import type { ProjectDetail, RootId, TargetId } from '../../../generated/protoco
 import { ProjectPageDepsContext, type ProjectPageDeps } from '../deps';
 import { detailFixture, locationFixture, NOW, targetFixture } from '../testFixtures';
 import { fileManagerTarget, LocationsPanel } from './LocationsPanel';
+import { required } from '../../../shared/required';
 
 afterEach(cleanup);
 
@@ -90,7 +91,7 @@ describe('the rows', () => {
     const adopt = screen.getAllByTestId('cp-loc-adopt')[0];
     expect(adopt?.tagName).toBe('BUTTON');
     expect(adopt?.getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(adopt as HTMLElement);
+    fireEvent.click(required(adopt, 'ADOPT button'));
     expect(onShow).toHaveBeenCalled();
     expect(screen.queryByText('CURRENT')).toBeNull();
   });
@@ -104,7 +105,7 @@ describe('the rows', () => {
 
   it('paints the primary row in this project’s own jewel, not in a second derivation', () => {
     const { view } = draw(twoCopies());
-    const panel = view.container.querySelector('.cp-loc') as HTMLElement;
+    const panel = required(view.container.querySelector<HTMLElement>('.cp-loc'), 'locations panel');
     expect(panel.style.getPropertyValue('--cdt-jewel')).toMatch(/^oklch\(/);
     expect(panel.style.getPropertyValue('--cdt-jewel-55')).toContain('/ .55)');
   });
@@ -137,7 +138,9 @@ describe('the actions', () => {
   it('re-resolves the target for that copy before launching it', async () => {
     const detail = twoCopies();
     const { request } = draw(detail);
-    fireEvent.click(screen.getAllByRole('button', { name: 'OPEN' })[0] as HTMLElement);
+    fireEvent.click(
+      required(screen.getAllByRole('button', { name: 'OPEN' })[0], 'first OPEN button'),
+    );
     await waitFor(() => {
       expect(request).toHaveBeenCalledWith('targets.list', {
         projectId: detail.row.id,
@@ -166,7 +169,7 @@ describe('the actions', () => {
     const { onChanged } = draw(detail, {
       relocate: relocate as unknown as ProjectPageDeps['relocate'],
     });
-    const row = screen.getAllByTestId('cp-loc-row')[1] as HTMLElement;
+    const row = required(screen.getAllByTestId('cp-loc-row')[1], 'second location row');
     expect(row.textContent).not.toContain('OPEN');
     fireEvent.click(screen.getByRole('button', { name: 'RELOCATE' }));
     await waitFor(() => {

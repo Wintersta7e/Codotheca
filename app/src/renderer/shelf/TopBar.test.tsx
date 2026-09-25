@@ -9,6 +9,7 @@ import { TOP_BAR_FLOOR_PX, TOP_BAR_HEIGHT_PX, TopBar, WORDMARK } from './TopBar.
 // would re-export the hook's table through the component that imports the hook.
 import { SHED_ORDER, SHED_WIDTHS, shedLevelFor } from './useShedLevel.js';
 import { DEFAULT_SHELF_VIEW } from './viewState.js';
+import { required } from '../../shared/required.js';
 
 afterEach(cleanup);
 
@@ -70,7 +71,7 @@ describe('the seven slots', () => {
   it('advances the sort one step, and the caller writes it back', () => {
     const onSortChange = vi.fn();
     const { container } = render(<TopBar {...props({ onSortChange })} />);
-    fireEvent.click(container.querySelector('[data-slot="sort"]') as HTMLElement);
+    fireEvent.click(required(container.querySelector('[data-slot="sort"]'), 'sort slot'));
     expect(onSortChange).toHaveBeenCalledWith('name');
   });
 
@@ -126,8 +127,8 @@ describe('the seven slots', () => {
     const onOpenPalette = vi.fn();
     const onOpenSettings = vi.fn();
     const { container } = render(<TopBar {...props({ onOpenPalette, onOpenSettings })} />);
-    fireEvent.click(container.querySelector('[data-slot="switch"]') as HTMLElement);
-    fireEvent.click(container.querySelector('[data-slot="settings"]') as HTMLElement);
+    fireEvent.click(required(container.querySelector('[data-slot="switch"]'), 'switch slot'));
+    fireEvent.click(required(container.querySelector('[data-slot="settings"]'), 'settings slot'));
     expect(onOpenPalette).toHaveBeenCalledOnce();
     expect(onOpenSettings).toHaveBeenCalledOnce();
   });

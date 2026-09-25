@@ -11,6 +11,7 @@ import {
   windowFor,
 } from './measure.js';
 import type { ShelfPage } from './page.js';
+import { required } from '../../shared/required.js';
 
 describe('measureGrid', () => {
   it("uses §8.0's formula: W = containerWidth − 44 − 10", () => {
@@ -105,7 +106,9 @@ describe('sectionExtents', () => {
   });
   it('stacks the second section below the first', () => {
     const { extents } = sectionExtents(fakePage([4, 4]), metrics, parseCollapseState([]), true);
-    expect(extents[1]!.top).toBeGreaterThan(extents[0]!.top + SECTION_HEADER_HEIGHT);
+    expect(required(extents[1], 'second extent').top).toBeGreaterThan(
+      required(extents[0], 'first extent').top + SECTION_HEADER_HEIGHT,
+    );
   });
   it('numbers firstIndex over the flat row order, collapsed sections included', () => {
     // A collapsed section still owns its rows; if its count left the running index the flat
@@ -125,7 +128,7 @@ describe('sectionExtents', () => {
       parseCollapseState([]),
       true,
     );
-    const last = extents[1]!;
+    const last = required(extents[1], 'second extent');
     expect(canvasHeight).toBe(last.top + last.headerHeight + last.bodyHeight);
   });
 });

@@ -13,6 +13,7 @@ import {
   backdropAnimation,
   panelAnimation,
 } from './styles.js';
+import { required } from '../../shared/required.js';
 
 /** `var(--name, fallback)` — the fallback must be exactly what the token holds. */
 const VAR = /var\(--([a-z0-9-]+),\s*([^)]*)\)/g;
@@ -88,7 +89,9 @@ describe('the drawer stylesheet', () => {
       const px = Number(textOf(size).replace('px', ''));
       const family = familyOf(record);
       expect(family, `${key} sets a font size and no family`).not.toBeNull();
-      expect(isOnScale(family as TypeFamily, px), `${key}: ${textOf(size)}`).toBe(true);
+      expect(isOnScale(required(family, `${key}'s family`), px), `${key}: ${textOf(size)}`).toBe(
+        true,
+      );
       // §8.7: mono is always tracked, and so is display at 14px and below — the tracking is
       // what buys the size. `check-type-scale.mjs` enforces the same rule over the file.
       if (family === 'mono' || (family === 'display' && px <= 14)) {
@@ -131,7 +134,9 @@ describe('the drawer stylesheet', () => {
     expect(motionCss.length).toBeGreaterThan(0);
 
     const declared = (css: string): string[] =>
-      [...css.matchAll(/@keyframes\s+([A-Za-z_][\w-]*)/g)].map((m) => m[1] as string);
+      [...css.matchAll(/@keyframes\s+([A-Za-z_][\w-]*)/g)].map((m) =>
+        required(m[1], 'keyframes name'),
+      );
     const base = declared(baseCss);
     const motion = declared(motionCss);
 

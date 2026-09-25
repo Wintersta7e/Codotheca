@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { type Outbound, parseOutbound } from './wire';
+import { parseOutbound } from './wire';
+import { required } from '../../shared/required';
 
 const SAMPLES = fileURLToPath(new URL('../../../../protocol/wire-samples.json', import.meta.url));
 
@@ -18,8 +19,7 @@ describe('wire envelope', () => {
     expect(list.length).toBe(5);
     const tags = list.map((s) => {
       const frame = parseOutbound(JSON.stringify(s));
-      expect(frame).not.toBeNull();
-      return (frame as Outbound).t;
+      return required(frame, 'parsed outbound frame').t;
     });
     expect(tags).toEqual(['hello', 'response', 'error', 'event', 'snapshot']);
   });

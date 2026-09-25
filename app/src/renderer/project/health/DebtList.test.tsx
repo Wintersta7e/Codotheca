@@ -20,6 +20,7 @@ import { DAY, detailFixture, NOW } from '../testFixtures';
 import projectPageCss from '../../styles/projectPage.css?raw';
 import { DEBT_LIST_TITLE, SHOWN_ONLY_NOTE, UNVERIFIED_NOTE } from './DebtList';
 import { SOURCE_LABELS } from './labels';
+import { required } from '../../../shared/required';
 
 afterEach(cleanup);
 
@@ -162,7 +163,7 @@ const rowWith = (list: HTMLElement, text: string): HTMLElement => {
     (row.textContent ?? '').includes(text),
   );
   expect(rows, text).toHaveLength(1);
-  return rows[0] as HTMLElement;
+  return required(rows[0], 'matching row');
 };
 
 describe('code reads as code', () => {

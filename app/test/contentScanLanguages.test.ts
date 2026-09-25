@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from 'vitest';
 import { CONTENT_SCAN_LANGUAGES } from '../src/shared/contentScan';
+import { required } from '../src/shared/required';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -20,7 +21,7 @@ function coreProgrammingLanguages(): string[] {
   const close = source.indexOf('];', open);
   const body = source.slice(open + 1, close);
   const names = [...body.matchAll(/prog\("((?:[^"\\]|\\.)*)"\)/g)].map((m) =>
-    m[1]!.replace(/\\(.)/g, '$1'),
+    required(m[1], 'language name').replace(/\\(.)/g, '$1'),
   );
   return [...new Set(names)].sort();
 }
@@ -46,7 +47,9 @@ test('AC-P3-29-17 the rendered language list is the core programming-language se
 // lockfile is read by name elsewhere. None of them may appear on this surface.
 test('AC-P3-29-17 no markup language is rendered as one this scan reads', () => {
   const source = readFileSync(join(REPO_ROOT, 'core/src/jobs/classify.rs'), 'utf8');
-  const markup = [...source.matchAll(/markup\("((?:[^"\\]|\\.)*)"\)/g)].map((m) => m[1]!);
+  const markup = [...source.matchAll(/markup\("((?:[^"\\]|\\.)*)"\)/g)].map((m) =>
+    required(m[1], 'markup name'),
+  );
   process.stderr.write(
     `contentScanLanguages: core declares ${String(markup.length)} markup entr(ies)\n`,
   );

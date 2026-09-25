@@ -17,6 +17,7 @@ import type {
   ScanRunId,
   ScanStatus,
 } from '../../generated/protocol';
+import { required } from '../../shared/required';
 
 /**
  * The mocks keep their real signatures. Widening them to `ReturnType<typeof vi.fn>` makes every
@@ -253,7 +254,7 @@ test('the scan starts only after every ticked root is committed', async () => {
 test('withholding consent commits nothing and starts nothing', async () => {
   const { deps } = harness();
   await screen.findByText(copy.ROOTS_HEADLINE);
-  fireEvent.click(screen.getAllByRole('checkbox').at(-1)!);
+  fireEvent.click(required(screen.getAllByRole('checkbox').at(-1), 'last checkbox'));
   dig();
   expect(deps.commitSuggestion).not.toHaveBeenCalled();
   expect(deps.startScan).not.toHaveBeenCalled();

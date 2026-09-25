@@ -3,6 +3,7 @@ import { IPC_PICK_ROOT } from '../src/shared/channels';
 import type { PickRootReply } from '../src/shared/channels';
 import { encodePathBytes, registerRootPicker } from '../src/main/rootPicker';
 import type { RootAdd, RootId } from '../src/generated/protocol';
+import { required } from '../src/shared/required';
 
 function harness(
   dialog: { canceled: boolean; filePaths: string[] },
@@ -69,8 +70,9 @@ test('a chosen folder reaches roots.add exactly once, with the confirmation flag
   const reply = await handler({ confirmLarge: true });
   expect(reply).toEqual({ kind: 'added', add: added });
   expect(seen).toHaveLength(1);
-  expect(seen[0]!.confirmLarge).toBe(true);
-  expect(seen[0]!.pathBytes).toEqual(encodePathBytes('/somewhere/dev'));
+  const [call] = seen;
+  expect(required(call, 'roots.add call').confirmLarge).toBe(true);
+  expect(required(call, 'roots.add call').pathBytes).toEqual(encodePathBytes('/somewhere/dev'));
 });
 
 // §10.1a: a refusal comes back with an explanation, never a silent no. The refusal is a normal

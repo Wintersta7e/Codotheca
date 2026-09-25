@@ -5,6 +5,7 @@ import css from './shelf.css?raw';
 import type { ShelfProps } from './Shelf.js';
 import { SHELF_SCROLL_CLASS, Shelf } from './Shelf.js';
 import { DEFAULT_SHELF_VIEW } from './viewState.js';
+import { required } from '../../shared/required.js';
 
 afterEach(cleanup);
 
@@ -81,28 +82,40 @@ describe('the four blocks', () => {
       { kind: 'problems' as const, scope: 'run-7', title: 'PROBLEMS', body: 'b', actions: [] },
     ];
     const { container } = render(<Shelf {...props({ notices })} />);
-    const scroll = container.querySelector(`.${SHELF_SCROLL_CLASS}`) as HTMLElement;
+    const scroll = required(
+      container.querySelector<HTMLElement>(`.${SHELF_SCROLL_CLASS}`),
+      'shelf scroller',
+    );
     expect(scroll.firstElementChild?.className).toBe('cdt-shelf-notice-slot');
   });
 
   it('fills the vacated space with nothing', () => {
     // No placeholder band, no dimmed rings, no "arriving in a later release" strip.
     const { container } = render(<Shelf {...props()} />);
-    const scroll = container.querySelector(`.${SHELF_SCROLL_CLASS}`) as HTMLElement;
+    const scroll = required(
+      container.querySelector<HTMLElement>(`.${SHELF_SCROLL_CLASS}`),
+      'shelf scroller',
+    );
     expect(scroll.firstElementChild?.getAttribute('data-testid')).toBe('body');
     expect(container.textContent).not.toMatch(/LVL|RHYTHM|TONIGHT|AMNESTY/i);
   });
 
   it('publishes the density as the grid track floor on the scroll container', () => {
     const { container } = render(<Shelf {...props()} />);
-    const scroll = container.querySelector(`.${SHELF_SCROLL_CLASS}`) as HTMLElement;
+    const scroll = required(
+      container.querySelector<HTMLElement>(`.${SHELF_SCROLL_CLASS}`),
+      'shelf scroller',
+    );
     expect(scroll.style.getPropertyValue('--cdt-tile')).toBe('186px');
   });
 
   it('publishes the step the view holds, not a fixed default', () => {
     const view = { ...DEFAULT_SHELF_VIEW, density: 232 };
     const { container } = render(<Shelf {...props({ view })} />);
-    const scroll = container.querySelector(`.${SHELF_SCROLL_CLASS}`) as HTMLElement;
+    const scroll = required(
+      container.querySelector<HTMLElement>(`.${SHELF_SCROLL_CLASS}`),
+      'shelf scroller',
+    );
     expect(scroll.style.getPropertyValue('--cdt-tile')).toBe('232px');
   });
 
@@ -176,7 +189,10 @@ describe('the keyboard seam', () => {
 
   it('lets a declined key through, so the query field still receives it', () => {
     const { container } = render(<Shelf {...props()} />);
-    const input = container.querySelector('.cdt-shelf-field-input') as HTMLElement;
+    const input = required(
+      container.querySelector<HTMLElement>('.cdt-shelf-field-input'),
+      'query input',
+    );
     input.focus();
     const event = new KeyboardEvent('keydown', {
       key: 'p',

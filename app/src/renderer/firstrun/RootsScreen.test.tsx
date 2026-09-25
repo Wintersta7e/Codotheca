@@ -5,6 +5,7 @@ import { refusedRow, toRow } from './rootRows';
 import * as copy from './copy';
 import { EXCLUSION_CAPTION, EXCLUSION_LIST } from '../../shared/skipList';
 import type { RootAdd, RootSuggestion } from '../../generated/protocol';
+import { required } from '../../shared/required';
 
 afterEach(cleanup);
 
@@ -99,7 +100,7 @@ test('a cloud-synced row arrives unticked and says why', () => {
 
 test('ticking a row asks the gate, and never mutates a row itself', () => {
   const deps = draw();
-  fireEvent.click(screen.getAllByRole('checkbox')[1]!);
+  fireEvent.click(required(screen.getAllByRole('checkbox')[1], 'second checkbox'));
   expect(deps.onToggleRoot).toHaveBeenCalledWith('/somewhere/synced');
 });
 

@@ -11,6 +11,7 @@ import type { DebtSource, HealthReading, Settings } from '../../../generated/pro
 import { GRANT_ASK_ACTION } from './GrantAsk';
 import { HealthTab } from './HealthTab';
 import { SOURCE_LABELS } from './labels';
+import { required } from '../../../shared/required';
 
 const NOW = 1_700_000_000;
 
@@ -148,7 +149,10 @@ describe('§30.4 what the tab may never claim', () => {
 
   it('a frozen reading always renders its age and says the store is away', () => {
     const root = draw(
-      reading({ state: 'frozen', basis: { ...reading().basis!, observedAt: NOW - 5 } }),
+      reading({
+        state: 'frozen',
+        basis: { ...required(reading().basis, 'reading basis'), observedAt: NOW - 5 },
+      }),
     );
     expect(root.querySelector('[data-testid="cp-health-age"]')?.textContent ?? '').toMatch(
       /under glass/u,

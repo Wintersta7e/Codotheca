@@ -8,6 +8,7 @@ import {
   isControl,
   type SettingsRowSpec,
 } from './rows.js';
+import { required } from '../../shared/required.js';
 
 afterEach(cleanup);
 
@@ -73,7 +74,7 @@ describe('the two row variants, and no third', () => {
   it('a statement still reads its text, so the setting is discoverable', () => {
     render(<SwitchRow spec={statementSpec} on />);
     expect(screen.getByText(statementSpec.label)).toBeTruthy();
-    expect(screen.getByText(statementSpec.note as string)).toBeTruthy();
+    expect(screen.getByText(required(statementSpec.note, 'statement note'))).toBeTruthy();
   });
 
   it('isControl agrees with what the row renders, for every backing kind', () => {
