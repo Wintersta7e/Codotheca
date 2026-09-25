@@ -4227,7 +4227,7 @@
           "status": "automated",
           "runner": "cargo",
           "owner": "p2-24",
-          "test": "git_write_audit::the_exhaustive_intent_list_has_two_renderable_variants",
+          "test": "git_write_audit::the_exhaustive_intent_list_matches_its_floor",
           "assert": "Intent::ALL's length equals its hard-coded floor, so adding a variant without raising the floor fails.",
           "source": "\u00a724.11"
         },

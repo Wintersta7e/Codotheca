@@ -25,8 +25,8 @@ use std::process::{Command, Stdio};
 use codotheca_core::accounts::keychain::SecretToken;
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::gitw::{
-    write_base_args, AuditFixture, CredentialChannel, FilterDrivers, Intent, IntentKind,
-    MutatingGit, SystemMutatingGit, VerifyStep, VerifyStepKind, WriteEnv, WriteExec,
+    write_base_args, AdvertisedRef, AuditFixture, CredentialChannel, FilterDrivers, Intent,
+    IntentKind, MutatingGit, SystemMutatingGit, VerifyStep, VerifyStepKind, WriteEnv, WriteExec,
 };
 
 /// §47.9 A's first rule, replacing §24.2a's `WRITE_ALLOWED`: **each intent's own subcommands**,
@@ -53,9 +53,78 @@ const SUBCOMMANDS_BY_INTENT: &[(IntentKind, Option<VerifyStepKind>, &str)] = &[
 
 /// §24.2a assertion 2's deny list — the eight tokens that turn an additive invocation into a
 /// destructive one.
+///
+/// [p4] §47.9 A keeps the eight and adds sixteen, each matched as the token **or its `<token>=`
+/// form**. It stays the list that names the crime; the per-intent allow-list below is the
+/// load-bearing half.
 const FLAG_FORBIDDEN: &[&str] = &[
-    "--prune", "--force", "-f", "--hard", "--delete", "-d", "-D", "--mirror",
+    "--prune",
+    "--force",
+    "-f",
+    "--hard",
+    "--delete",
+    "-d",
+    "-D",
+    "--mirror",
+    "--prune-tags",
+    "-P",
+    "--update-head-ok",
+    "-u",
+    "--unshallow",
+    "--deepen",
+    "--update-shallow",
+    "--refetch",
+    "--tags",
+    "--write-fetch-head",
+    "--recurse-submodules",
+    "--sign",
+    "-s",
+    "--local-user",
+    "--force-with-lease",
+    "--force-if-includes",
 ];
+
+/// The one exception to [`FLAG_FORBIDDEN`] (R192): `CloneBundle` needs `--mirror` — `--bare`
+/// leaves notes and the stash dangling. Declared here and **unexercised** until the intent lands
+/// with its caller; any other intent carrying it fails.
+const FORBIDDEN_EXCEPTIONS: &[(&str, &str)] = &[("CloneBundle", "--mirror")];
+
+/// §47.9 A: the options every write child carries before its subcommand — `-C` for an intent that
+/// runs in a repository, and `-c` for each config pin.
+const BASE_FLAGS: &[&str] = &["-C", "--no-optional-locks", "-c"];
+
+/// §47.9 A's **per-intent flag allow-list, default-deny**: exactly each row of §47.2 and §47.3.
+/// A flag not on its intent's row fails, whether or not [`FLAG_FORBIDDEN`] names it.
+const FLAGS_BY_INTENT: &[(IntentKind, Option<VerifyStepKind>, &[&str])] = &[
+    (IntentKind::Clone, None, &["--progress", "--depth"]),
+    (
+        IntentKind::VerifyRead,
+        Some(VerifyStepKind::ResolveUrl),
+        &["--get-url"],
+    ),
+    (IntentKind::VerifyRead, Some(VerifyStepKind::Advertise), &[]),
+    (
+        IntentKind::VerifyRead,
+        Some(VerifyStepKind::Objects),
+        &[
+            "--refmap=",
+            "--stdin",
+            "--no-prune",
+            "--no-tags",
+            "--no-recurse-submodules",
+            "--no-write-fetch-head",
+            "--no-write-commit-graph",
+        ],
+    ),
+];
+
+/// §47.3's uniform pins, on every child.
+const UNIFORM_PINS: &[&str] = &["fetch.bundleURI=", "transfer.bundleURI=false"];
+
+/// The floor `Intent::ALL` is held to. **Renamed once, in Lane 0** (PA36): two variants still,
+/// one of them new. Two lanes raising it from one base resolve to the merged tree's
+/// `Intent::ALL.len()`, never to a hand sum.
+const INTENT_FLOOR: usize = 2;
 
 /// The sentinel the audit scans for. It is not a real credential and never reaches a forge.
 const SENTINEL: &str = "credential-sentinel-do-not-leak";
@@ -134,39 +203,259 @@ fn every_rendered_subcommand_is_on_its_intents_row() {
     );
 }
 
+/// Every `-`-prefixed token of a child argv that is a flag, not a value: the token after `-c`,
+/// `-C` or `--depth` is that option's value, and a lone `-` is a value (stdin), never a flag.
+fn flags_of(argv: &[String]) -> Vec<&str> {
+    let mut flags = Vec::new();
+    let mut skip = false;
+    for token in argv {
+        if skip {
+            skip = false;
+            continue;
+        }
+        if matches!(token.as_str(), "-c" | "-C" | "--depth") {
+            skip = true;
+        }
+        if token.starts_with('-') && token != "-" {
+            flags.push(token.as_str());
+        }
+    }
+    flags
+}
+
+/// The forbidden-flag check, as a function the planted proofs below feed directly.
+fn forbidden_in(intent: &str, argv: &[String]) -> Result<(), String> {
+    for flag in flags_of(argv) {
+        for forbidden in FLAG_FORBIDDEN {
+            let hit = flag == *forbidden || flag.starts_with(&format!("{forbidden}="));
+            let excepted = FORBIDDEN_EXCEPTIONS
+                .iter()
+                .any(|(who, what)| *who == intent && what == forbidden);
+            if hit && !excepted {
+                return Err(format!(
+                    "{intent} rendered forbidden flag {flag:?}: {argv:?}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The default-deny allow-list check, as a function the planted proofs feed directly.
+fn off_the_allow_list(
+    kind: IntentKind,
+    step: Option<VerifyStepKind>,
+    argv: &[String],
+) -> Result<(), String> {
+    let row = FLAGS_BY_INTENT
+        .iter()
+        .find(|(k, s, _)| *k == kind && *s == step)
+        .ok_or_else(|| format!("{kind:?} {step:?} has no flag row"))?;
+    for flag in flags_of(argv) {
+        if !BASE_FLAGS.contains(&flag) && !row.2.contains(&flag) {
+            return Err(format!(
+                "{kind:?} {step:?} rendered {flag:?}, which is not on its row: {argv:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Each pin exactly once — the check, as a function the planted proofs feed directly.
+fn pins_once(pins: &[&str], argv: &[String]) -> Result<usize, String> {
+    let mut counted = 0;
+    for pin in pins {
+        let seen = argv.iter().filter(|a| a.as_str() == *pin).count();
+        if seen != 1 {
+            return Err(format!("pin {pin:?} rendered {seen} times: {argv:?}"));
+        }
+        counted += 1;
+    }
+    Ok(counted)
+}
+
+/// Every intent and step, driven through the **production** `WriteExec` into the recording
+/// stand-in, paired with what each child actually received. A clone is keyed on its destination
+/// and a verifying read on its `-C` directory — the fixture's one path — so the recordings come
+/// back in the order the intents ran.
+fn children() -> Vec<(Intent, support::git_world::Recording)> {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let fixture =
+        AuditFixture::new(temp.path(), SecretToken::new(SENTINEL.to_owned())).expect("fixture");
+    let intents = Intent::all_for_audit(&fixture);
+    let env = authenticated_env(temp.path(), fixture.url().host(), None);
+    std::fs::create_dir_all(&env.hooks_dir).expect("hooks dir");
+    let exec = WriteExec::new(recording_git());
+    for intent in &intents {
+        exec.run(intent, &env, &CancelToken::new(), &mut |_| {})
+            .expect("the recording stand-in exits 0");
+    }
+    let calls = support::git_world::read_recordings(fixture.dest());
+    assert_eq!(calls.len(), intents.len(), "one child per intent and step");
+    intents.into_iter().zip(calls).collect()
+}
+
+/// **AC-P4-47-2 — the flag denylist**, over every child's real argv: no `FLAG_FORBIDDEN` token and
+/// no `<token>=` form, except the one printed exception.
 #[test]
 fn no_rendered_argv_contains_a_forbidden_flag() {
-    let intents = rendered();
+    let children = children();
     let mut scanned = 0;
-    for intent in &intents {
-        let argv = intent.argv();
-        for token in &argv {
-            scanned += 1;
-            let token = token.to_string_lossy();
-            assert!(
-                !FLAG_FORBIDDEN.contains(&token.as_ref()),
-                "{:?} rendered forbidden flag {token:?}: {argv:?}",
-                intent.kind()
-            );
+    for (intent, call) in &children {
+        scanned += flags_of(&call.argv).len();
+        if let Err(finding) = forbidden_in(&format!("{:?}", intent.kind()), &call.argv) {
+            panic!("{finding}");
         }
     }
     assert!(
         scanned > 0,
-        "the flag denylist scanned zero argv tokens, so it asserts nothing"
+        "the flag denylist scanned zero flags, so it asserts nothing"
     );
     eprintln!(
-        "git-write-audit: {scanned} argv tokens checked against {} forbidden flags",
+        "git-write-audit: {scanned} flags in {} children checked against {} forbidden flags; \
+         exceptions {FORBIDDEN_EXCEPTIONS:?}",
+        children.len(),
         FLAG_FORBIDDEN.len()
     );
 }
 
+/// **AC-P4-47-2 — the per-intent allow-list, default-deny**: every flag each child carries is
+/// on its own intent's row or is a base option.
 #[test]
-fn the_exhaustive_intent_list_has_two_renderable_variants() {
+fn every_rendered_flag_is_on_its_intents_allow_list() {
+    let children = children();
+    let mut checked = 0;
+    for (intent, call) in &children {
+        checked += flags_of(&call.argv).len();
+        if let Err(finding) = off_the_allow_list(intent.kind(), intent.step(), &call.argv) {
+            panic!("{finding}");
+        }
+    }
+    assert!(checked > 0, "the allow-list checked zero flags");
+    eprintln!(
+        "git-write-audit: {checked} flags in {} children on their rows",
+        children.len()
+    );
+}
+
+/// **AC-P4-47-4 — pins and environment, from the child.** Every pin §47.3 names for the intent,
+/// and both uniform pins, appear **exactly once**; `GIT_ALLOW_PROTOCOL` equals the intent's
+/// list; the objects step carries the no-replace and absent-graft pins.
+#[test]
+fn every_pin_appears_exactly_once_in_its_child() {
+    let children = children();
+    let mut pins = 0;
+    for (intent, call) in &children {
+        let mut expected: Vec<&str> = intent.pins();
+        expected.extend(UNIFORM_PINS);
+        pins += pins_once(&expected, &call.argv).unwrap_or_else(|f| panic!("{f}"));
+        assert_eq!(
+            call.env_value("GIT_ALLOW_PROTOCOL"),
+            Some(intent.allowed_protocols()),
+            "{:?} {:?}",
+            intent.kind(),
+            intent.step()
+        );
+        let objects = intent.step() == Some(VerifyStepKind::Objects);
+        assert_eq!(
+            call.env_value("GIT_NO_REPLACE_OBJECTS").is_some(),
+            objects,
+            "the no-replace pin is the objects step's alone"
+        );
+        let graft = call.env_value("GIT_GRAFT_FILE");
+        assert_eq!(
+            graft.is_some(),
+            objects,
+            "the graft pin is the objects step's alone"
+        );
+        if let Some(path) = graft {
+            assert!(
+                !Path::new(path).exists(),
+                "the graft file must never exist: {path}"
+            );
+        }
+    }
+    assert!(pins > 0, "zero pins counted");
+    eprintln!(
+        "git-write-audit: {pins} pins counted once each across {} children",
+        children.len()
+    );
+}
+
+/// **AC-P4-47-3 — layer A: stdin.** Every line the objects step's child reads parses as an
+/// `AdvertisedRef`; no other step reads any.
+#[test]
+fn every_stdin_line_is_an_advertised_ref() {
+    let children = children();
+    let mut lines = 0;
+    for (intent, call) in &children {
+        let text = String::from_utf8(call.stdin.clone()).expect("stdin is text");
+        if intent.step() != Some(VerifyStepKind::Objects) {
+            assert!(
+                text.is_empty(),
+                "{:?} {:?} read stdin",
+                intent.kind(),
+                intent.step()
+            );
+            continue;
+        }
+        for line in text.lines() {
+            assert!(
+                AdvertisedRef::parse(line).is_ok(),
+                "a stdin line is not an AdvertisedRef: {line:?}"
+            );
+            lines += 1;
+        }
+    }
+    assert!(
+        lines > 0,
+        "zero stdin lines parsed, so the grammar was never exercised"
+    );
+    eprintln!("git-write-audit: {lines} stdin lines parsed as AdvertisedRef");
+}
+
+/// **The planted proofs**: each checker, fed a shape it exists to refuse, refuses it — so a
+/// passing run above is the product's, not a checker that accepts everything.
+#[test]
+fn the_checkers_refuse_what_they_exist_to_refuse() {
+    let argv = |tokens: &[&str]| tokens.iter().map(|t| (*t).to_owned()).collect::<Vec<_>>();
+    let prune_tags = argv(&["fetch", "--prune-tags", "origin"]);
+    assert!(forbidden_in("VerifyRead", &prune_tags).is_err());
+    assert!(forbidden_in("TagArchived", &argv(&["tag", "-f", "archived"])).is_err());
+    assert!(forbidden_in("VerifyRead", &argv(&["fetch", "--tags=x", "origin"])).is_err());
+    assert!(forbidden_in("VerifyRead", &argv(&["clone", "--mirror", "b", "d"])).is_err());
+    assert!(
+        forbidden_in("CloneBundle", &argv(&["clone", "--mirror", "b", "d"])).is_ok(),
+        "the one printed exception"
+    );
+    assert!(
+        off_the_allow_list(
+            IntentKind::VerifyRead,
+            Some(VerifyStepKind::Objects),
+            &argv(&["fetch", "--stdin", "--tags", "origin"]),
+        )
+        .is_err(),
+        "a flag off the row fails whether or not the denylist names it"
+    );
+    assert!(pins_once(&["--stdin"], &argv(&["fetch", "--stdin", "--stdin"])).is_err());
+    assert!(
+        flags_of(&argv(&["tag", "-F", "-", "archived"])).contains(&"-F")
+            && !flags_of(&argv(&["tag", "-F", "-"])).contains(&"-"),
+        "a lone `-` is a value"
+    );
+    eprintln!("git-write-audit: 8 planted shapes refused, 1 exception admitted");
+}
+
+/// `Intent::ALL` is held to its floor. **Renamed once in Lane 0** from
+/// `the_exhaustive_intent_list_has_two_renderable_variants` (PA36): the floor is still two, and
+/// one of the two is new — `VerifyRead` replaced the retired `Fetch`.
+#[test]
+fn the_exhaustive_intent_list_matches_its_floor() {
     // `rendered` asserts every kind and every step was rendered.
     let intents = rendered();
     assert_eq!(
+        INTENT_FLOOR,
         Intent::ALL.len(),
-        2,
         "Intent::ALL changed; review every write-boundary assertion before accepting a new variant"
     );
     assert!(intents.len() >= Intent::ALL.len());

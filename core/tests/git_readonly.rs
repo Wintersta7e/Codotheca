@@ -227,6 +227,43 @@ fn rejected_non_literal_os_str_calls(file: &str, source: &str) -> Vec<String> {
         .collect()
 }
 
+/// `ALLOWED` as it stood when phase 4 began — the frozen copy AC-P4-47-21 compares against.
+///
+/// **Stated twice on purpose**: this is a freeze, not a mirror. `core/src/git/` gains reads in
+/// phase 4 (§45's analyser) and **no subcommand**, so the list that proves it read-only must not
+/// move with them; `ls-remote`, `tag` and `bundle` live in `core/src/gitw/`, under the write audit.
+const ALLOWED_AT_PHASE4_BASE: [&str; 11] = [
+    "--version",
+    "cat-file",
+    "check-ignore",
+    "log",
+    "ls-files",
+    "ls-tree",
+    "rev-list",
+    "rev-parse",
+    "show",
+    "status",
+    "HEAD",
+];
+
+/// **AC-P4-47-21 — what does not move.** The read allow-list is byte-identical to the phase-4
+/// base's, and holds none of the verbs phase 4 adds to the write side.
+#[test]
+fn the_read_allow_list_is_byte_identical_and_holds_no_write_verb() {
+    eprintln!("git_readonly: ALLOWED = {ALLOWED:?}");
+    assert_eq!(
+        ALLOWED,
+        ALLOWED_AT_PHASE4_BASE.as_slice(),
+        "the read allow-list moved; core/src/git/ gains reads, never subcommands (§47.1)"
+    );
+    for write_verb in ["ls-remote", "tag", "bundle", "fetch", "clone", "push"] {
+        assert!(
+            !ALLOWED.contains(&write_verb),
+            "{write_verb} reached the read allow-list"
+        );
+    }
+}
+
 #[test]
 fn no_source_file_names_a_destructive_subcommand() {
     for (name, source) in source_files() {
