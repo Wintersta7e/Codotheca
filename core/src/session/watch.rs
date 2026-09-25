@@ -17,21 +17,32 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher as _};
 use crate::protocol::SessionId;
 use crate::session::SessionError;
 
-/// Distinct paths buffered per session between drains. Beyond this, further paths are
-/// **dropped** rather than treated as activity: an overflow counted as activity would credit the
-/// dev-server case §9 exists to exclude. The trade is deliberate — a burst that large may hide
-/// one in-scope save until the next tick, and a file genuinely being worked on is seen again.
+/// Distinct paths buffered per session between drains.
+///
+/// Beyond this, further paths are **dropped** rather than treated as activity: an overflow
+/// counted as activity would credit the dev-server case §9 exists to exclude. The trade is
+/// deliberate — a burst that large may hide one in-scope save until the next tick, and a file
+/// genuinely being worked on is seen again.
 pub const ACTIVITY_PATHS_CAP: usize = 16_384;
 
+/// The distinct paths one live session's worktree reported since the last drain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActivityBatch {
+    /// The live session whose watched root the paths fall under.
     pub session: SessionId,
     /// Relative to the watched root, so `IgnoreCheck` can pass them to git unchanged.
     pub paths: Vec<PathBuf>,
 }
 
+/// Where the session manager gets worktree activity: a recursive watch per live session.
 pub trait ActivitySource: Send + std::fmt::Debug {
+    /// Start reporting changes under `root` against `session`.
+    ///
+    /// # Errors
+    ///
+    /// `SessionError::Watch` when the OS watch on `root` cannot be established.
     fn watch(&mut self, session: SessionId, root: &Path) -> Result<(), SessionError>;
+    /// Stop watching the session's root and drop any paths still buffered for it.
     fn unwatch(&mut self, session: SessionId);
     /// Every distinct path seen since the last call, grouped by session. Empties the buffer.
     fn drain(&mut self) -> Vec<ActivityBatch>;
@@ -120,6 +131,11 @@ pub struct NotifyActivitySource {
 }
 
 impl NotifyActivitySource {
+    /// Create the OS watcher, watching nothing until [`ActivitySource::watch`] names a root.
+    ///
+    /// # Errors
+    ///
+    /// `SessionError::Watch` when the OS refuses a watcher, e.g. an exhausted inotify budget.
     pub fn new() -> Result<Self, SessionError> {
         let (tx, rx) = mpsc::channel();
         let watcher = notify::recommended_watcher(move |event| {
@@ -170,6 +186,7 @@ pub struct FakeActivitySource {
 
 #[cfg(feature = "testkit")]
 impl FakeActivitySource {
+    /// A source watching nothing and holding no paths.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -183,6 +200,7 @@ impl FakeActivitySource {
         }
     }
 
+    /// Every session with a watched root, in id order.
     #[must_use]
     pub fn watched(&self) -> Vec<SessionId> {
         self.pending.roots.keys().copied().map(SessionId).collect()

@@ -20,16 +20,23 @@ use crate::protocol::{CloseReason, LocationId, ProjectId, SessionId, SessionRef,
 use crate::session::segment::ClosedSegment;
 use crate::session::{close_reason_from_str, close_reason_str, closed_by_str, SessionError};
 
+/// What a new `session` row is opened with; its end, reason and credit start empty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionOpen {
+    /// The project that was launched.
     pub project_id: ProjectId,
+    /// The location the launch ran from; `None` only where §1.6 permits a NULL column.
     pub location_id: Option<LocationId>,
+    /// The launch target that was run; `None` only where §1.6 permits a NULL column.
     pub target_id: Option<TargetId>,
+    /// Wall-clock unix seconds at which the session opened.
     pub started_at: i64,
 }
 
+/// What [`close_session`] wrote for a session it closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionClosed {
+    /// The session's final credit in seconds: the sum over its segments at close.
     pub credited_seconds: i64,
     /// What was actually stored, which is never earlier than the session's own `started_at`.
     pub ended_at: i64,
@@ -37,18 +44,29 @@ pub struct SessionClosed {
     pub condition_changed: bool,
 }
 
+/// One session with no `ended_at`, as [`open_sessions`] reads it for orphan recovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenSessionRow {
+    /// The session left open.
     pub session_id: SessionId,
+    /// The project the session was launched for.
     pub project_id: ProjectId,
+    /// The location it was launched from; `None` where the column is NULL.
     pub location_id: Option<LocationId>,
+    /// Wall-clock unix seconds at which the session opened.
     pub started_at: i64,
+    /// The row id of its segment with no `closed_by`, or `None` when every segment is closed.
     pub open_segment_id: Option<i64>,
     /// The watermark on that open segment: the last activity folded into it, or the moment it
     /// opened when none has been. `None` only when the session has no open segment at all.
     pub last_activity_at: Option<i64>,
 }
 
+/// Insert a new open `session` row with no end and zero credit, returning its id.
+///
+/// # Errors
+///
+/// `SessionError::Sqlite` when the insert fails, e.g. a foreign key naming no project.
 pub fn open_session(tx: &Transaction<'_>, open: &SessionOpen) -> Result<SessionId, SessionError> {
     tx.execute(
         "INSERT INTO session
@@ -65,6 +83,11 @@ pub fn open_session(tx: &Transaction<'_>, open: &SessionOpen) -> Result<SessionI
     Ok(SessionId(tx.last_insert_rowid()))
 }
 
+/// Insert a new open `session_segment` row under `session`, returning the segment's row id.
+///
+/// # Errors
+///
+/// `SessionError::Sqlite` when the insert fails, e.g. `session` names no row.
 pub fn open_segment(
     tx: &Transaction<'_>,
     session: SessionId,
@@ -80,8 +103,14 @@ pub fn open_segment(
 }
 
 /// Keep the open row current, so a crash credits up to the last observed activity and invents
-/// nothing after it. `max(…, 0)` because a wall clock can move backwards, and the guard on
-/// `closed_by IS NULL` is what stops a late activity batch reopening a segment already closed.
+/// nothing after it.
+///
+/// `max(…, 0)` because a wall clock can move backwards, and the guard on `closed_by IS NULL` is
+/// what stops a late activity batch reopening a segment already closed.
+///
+/// # Errors
+///
+/// `SessionError::Sqlite` when the update fails.
 pub fn mark_activity(tx: &Transaction<'_>, segment_id: i64, at: i64) -> Result<(), SessionError> {
     tx.execute(
         "UPDATE session_segment
@@ -92,6 +121,11 @@ pub fn mark_activity(tx: &Transaction<'_>, segment_id: i64, at: i64) -> Result<(
     Ok(())
 }
 
+/// Stamp an open segment's end, credit and `closed_by`; a segment already closed is left as is.
+///
+/// # Errors
+///
+/// `SessionError::Sqlite` when the update fails, e.g. a negative credit breaks §1.6's CHECK.
 pub fn close_segment(
     tx: &Transaction<'_>,
     segment_id: i64,
@@ -113,6 +147,12 @@ pub fn close_segment(
 
 /// `credited_seconds` is **always** the sum of segment credits (§9) — recomputed, never
 /// accumulated, so no lost tick can leave a residue.
+///
+/// # Errors
+///
+/// `SessionError::NoSuchSession` when no `session` row has that id, `SessionError::Sqlite` when a
+/// read or the update fails, and `SessionError::Index` when recomputing the project's derived
+/// state fails.
 pub fn close_session(
     tx: &Transaction<'_>,
     session: SessionId,
@@ -156,6 +196,10 @@ fn sum_segments(conn: &Connection, session: SessionId) -> Result<i64, SessionErr
 }
 
 /// The live credit of one session: the sum over its segments, closed and open alike.
+///
+/// # Errors
+///
+/// `SessionError::Sqlite` when the sum cannot be read.
 pub fn credited_seconds(conn: &Connection, session: SessionId) -> Result<i64, SessionError> {
     sum_segments(conn, session)
 }
@@ -175,6 +219,12 @@ type StoredSession = (
 ///
 /// `credited_seconds` comes from the segments rather than from `session.credited_seconds`, so a
 /// reference to a live session can never report a stale total.
+///
+/// # Errors
+///
+/// `SessionError::NoSuchSession` when no row has that id; `SessionError::BadColumn` when
+/// `location_id` or `target_id` is NULL or `close_reason` is outside §1.6's set;
+/// `SessionError::Sqlite` when a read fails.
 pub fn session_ref(conn: &Connection, session: SessionId) -> Result<SessionRef, SessionError> {
     // `project_id` and `started_at` are NOT NULL in §1.6; the other three are not.
     let row: StoredSession = conn
@@ -227,6 +277,10 @@ pub fn session_ref(conn: &Connection, session: SessionId) -> Result<SessionRef, 
 }
 
 /// Every session left open, with its open segment and that segment's watermark.
+///
+/// # Errors
+///
+/// `SessionError::Sqlite` when the query cannot be prepared or a row cannot be read.
 pub fn open_sessions(conn: &Connection) -> Result<Vec<OpenSessionRow>, SessionError> {
     let mut stmt = conn.prepare(
         "SELECT s.id, s.project_id, s.location_id, s.started_at, g.id, g.started_at,
@@ -262,6 +316,10 @@ pub fn open_sessions(conn: &Connection) -> Result<Vec<OpenSessionRow>, SessionEr
 
 /// Launched-session time only (§9, §8.5.5's `PLAYTIME`). One table, one ledger: nothing here
 /// joins a git-derived table, and there is no function anywhere that returns the two summed.
+///
+/// # Errors
+///
+/// `SessionError::Sqlite` when the sum cannot be read.
 pub fn playtime_seconds(conn: &Connection, project: ProjectId) -> Result<i64, SessionError> {
     Ok(conn.query_row(
         "SELECT COALESCE(SUM(credited_seconds), 0) FROM session WHERE project_id = ?1",

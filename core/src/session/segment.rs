@@ -21,7 +21,9 @@ use crate::session::{CloseReason, ClosedBy, SEGMENT_IDLE_MS, SEGMENT_IDLE_SECS, 
 /// clock, in epoch seconds, because that is what the columns hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tick {
+    /// The monotonic clock in milliseconds; the idle rule is decided on this.
     pub mono_ms: u64,
+    /// The wall clock in unix seconds; every column is stamped from this.
     pub unix: i64,
 }
 
@@ -37,20 +39,29 @@ pub enum Signal {
     None,
 }
 
+/// A segment the machine has just closed, ready to be written to its `session_segment` row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClosedSegment {
+    /// Wall-clock unix seconds at which the segment opened.
     pub started_at: i64,
+    /// Wall-clock unix seconds it closed at, never earlier than `started_at`.
     pub ended_at: i64,
+    /// Seconds credited, open-to-close and never negative.
     pub credited_seconds: i64,
+    /// What closed it: the idle rule, the session ending, or the app exiting.
     pub closed_by: ClosedBy,
 }
 
+/// What one step of the machine produced for the ledger. The default is "nothing happened".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SegmentOutcome {
+    /// Wall time at which a new segment opened, if one did.
     pub opened_segment_at: Option<i64>,
     /// The wall time of the activity that extended the open segment, for the durable watermark.
     pub activity_at: Option<i64>,
+    /// The segment this step closed, if it closed one.
     pub closed_segment: Option<ClosedSegment>,
+    /// The session's end time and reason, when this step ended the session.
     pub ended_session: Option<(i64, CloseReason)>,
 }
 
@@ -68,6 +79,7 @@ enum Phase {
     Ended,
 }
 
+/// One session's §9 state: in a segment, between segments, or ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SegmentMachine {
     phase: Phase,
@@ -101,13 +113,15 @@ impl SegmentMachine {
         )
     }
 
+    /// Whether a segment is open, i.e. time is currently being credited.
     #[must_use]
-    pub fn in_segment(&self) -> bool {
+    pub const fn in_segment(&self) -> bool {
         matches!(self.phase, Phase::InSegment { .. })
     }
 
+    /// Whether the session has ended; an ended machine ignores every further signal.
     #[must_use]
-    pub fn is_ended(&self) -> bool {
+    pub const fn is_ended(&self) -> bool {
         matches!(self.phase, Phase::Ended)
     }
 

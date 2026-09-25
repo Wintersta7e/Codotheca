@@ -20,8 +20,14 @@ pub use crate::git::CHECK_IGNORE_BATCH;
 /// Distinct verdicts kept per session. Bounded so a pathological writer cannot grow the process.
 pub const SCOPE_CACHE_CAP: usize = 4_096;
 
+/// The source of §9's scope verdicts: is a worktree path ignored by the repository's rules?
 pub trait IgnoreCheck: Send + Sync + std::fmt::Debug {
     /// One verdict per input, in order: `true` means "ignored, and therefore out of §9's scope".
+    ///
+    /// # Errors
+    ///
+    /// A `GitError` when no verdict could be had for the batch, e.g. the `check-ignore`
+    /// invocation failed. [`ScopeFilter::fold`] treats that as out of scope and caches nothing.
     fn ignored(&self, repo: &RepoHandle, rel: &[PathBuf]) -> Result<Vec<bool>, GitError>;
 }
 
@@ -36,7 +42,9 @@ pub fn is_git_internal(rel: &Path) -> bool {
 /// The production [`IgnoreCheck`]: the repository's own rules, via `check-ignore`.
 #[derive(Debug)]
 pub struct GitIgnoreCheck {
+    /// The shared git executor every invocation goes through.
     pub exec: Arc<crate::git::GitExec>,
+    /// The time and output bounds applied to each `check-ignore` run.
     pub limits: crate::git::RunLimits,
 }
 
@@ -62,6 +70,7 @@ pub struct ScopeFilter {
 }
 
 impl ScopeFilter {
+    /// A filter with no verdicts remembered yet, asking `check` for each new path.
     #[must_use]
     pub fn new(check: Arc<dyn IgnoreCheck>) -> Self {
         Self {
@@ -76,6 +85,10 @@ impl ScopeFilter {
         self.verdicts.len()
     }
 
+    /// `Signal::Worktree` when any path is in §9's scope, else `Signal::None`.
+    ///
+    /// Paths under `.git` are skipped, remembered verdicts answer without git, and the rest go to
+    /// the check in one batch.
     pub fn fold(&mut self, repo: &RepoHandle, paths: &[PathBuf]) -> Signal {
         let mut ask: Vec<PathBuf> = Vec::new();
         let mut in_scope = false;
@@ -129,6 +142,7 @@ pub struct FakeIgnoreCheck {
 
 #[cfg(feature = "testkit")]
 impl FakeIgnoreCheck {
+    /// A check that calls a path ignored when its text starts with any of `ignored_prefixes`.
     #[must_use]
     pub fn new(ignored_prefixes: &[&str]) -> Self {
         Self {

@@ -30,9 +30,13 @@ use crate::session::{SessionError, FOCUS_STALE_MS};
 /// Everything a successful spawn hands the ledger.
 #[derive(Debug)]
 pub struct LaunchedSession {
+    /// The project that was launched.
     pub project_id: ProjectId,
+    /// The location it was launched from; a location going offline ends its sessions.
     pub location_id: Option<LocationId>,
+    /// The launch target that was run.
     pub target_id: Option<TargetId>,
+    /// The worktree whose changes extend the session's segments.
     pub repo: crate::git::RepoHandle,
     /// `Some` in wait mode only (§9 mechanism 1). Joined, never killed (§17).
     pub waiter: Option<std::thread::JoinHandle<Option<i32>>>,
@@ -75,6 +79,7 @@ impl std::fmt::Debug for SessionManager {
 }
 
 impl SessionManager {
+    /// A manager with no live sessions; `activity` feeds it paths and `ignore` scopes them.
     #[must_use]
     pub fn new(
         clock: Arc<dyn crate::clock::Clock>,
@@ -110,6 +115,12 @@ impl SessionManager {
     ///
     /// A failed watch does not fail the launch: a session with no watcher still credits by focus
     /// and by the 20-minute bound, which is honest, where refusing to launch would not be.
+    ///
+    /// # Errors
+    ///
+    /// `SessionError::Sqlite` when the transaction or an insert fails, and
+    /// `SessionError::NoSuchSession` or `SessionError::BadColumn` when the new row cannot be read
+    /// back as a `SessionRef` (a NULL location or target). Nothing is watched or published then.
     pub fn launch(
         &mut self,
         index: &mut Index,
@@ -161,6 +172,14 @@ impl SessionManager {
     }
 
     /// §7.8's Stop: close the ledger. It writes nothing to disk and kills nothing.
+    ///
+    /// A session that is not live is already closed, and stopping it again is `Ok`.
+    ///
+    /// # Errors
+    ///
+    /// `SessionError::Sqlite` when a write fails, `SessionError::Index` when the project's derived
+    /// state cannot be recomputed, and `SessionError::BadColumn` when the ended row cannot be read
+    /// back for its event.
     pub fn stop(&mut self, index: &mut Index, session: SessionId) -> Result<(), SessionError> {
         self.end_one(index, session.0, CloseReason::Stop)
     }
@@ -171,6 +190,11 @@ impl SessionManager {
     /// languages, and it has no `offline` value; the credit is identical under either label,
     /// because the segments are already closed at their last observed activity. So `idle` is
     /// what is written. Recorded as a spec gap rather than a preference.
+    ///
+    /// # Errors
+    ///
+    /// The first error closing any one session, as for [`Self::stop`]; the sessions after it stay
+    /// live.
     pub fn location_offline(
         &mut self,
         index: &mut Index,
@@ -189,7 +213,15 @@ impl SessionManager {
     }
 
     /// §12-15: an update landing mid-session closes it with `close_reason='app_exit'`.
+    ///
+    /// # Errors
+    ///
+    /// The first error closing any one session, as for [`Self::stop`]; the sessions after it stay
+    /// live.
     pub fn shutdown(&mut self, index: &mut Index) -> Result<(), SessionError> {
+        // The collect ends the borrow of `self.live` before `end_one` takes `&mut self`; iterating
+        // the keys directly does not compile (E0502).
+        #[allow(clippy::needless_collect)]
         for id in self.live.keys().copied().collect::<Vec<_>>() {
             self.end_one(index, id, CloseReason::AppExit)?;
         }
@@ -212,6 +244,11 @@ impl SessionManager {
     }
 
     /// One pass of the whole of §9.
+    ///
+    /// # Errors
+    ///
+    /// The first error writing any one session's outcome, as for [`Self::stop`]; sessions later in
+    /// id order are not advanced this tick.
     pub fn tick(&mut self, index: &mut Index) -> Result<(), SessionError> {
         let now = self.now();
 
@@ -239,6 +276,9 @@ impl SessionManager {
             }
         }
 
+        // The collect ends the borrow of `self.live` before `apply` takes `&mut self`; iterating
+        // the keys directly does not compile (E0502).
+        #[allow(clippy::needless_collect)]
         for id in self.live.keys().copied().collect::<Vec<_>>() {
             let signal = signals.get(&id).copied().unwrap_or(Signal::None);
             let Some(live) = self.live.get_mut(&id) else {
@@ -249,7 +289,9 @@ impl SessionManager {
         }
 
         // §9 mechanism 1, the preferred one. `is_finished` does not block, so each tick asks the
-        // handle rather than parking on it.
+        // handle rather than parking on it. The collect ends the borrow of `self.live` before
+        // `apply` takes `&mut self`; iterating the keys directly does not compile (E0502).
+        #[allow(clippy::needless_collect)]
         for id in self.live.keys().copied().collect::<Vec<_>>() {
             let finished = self.live.get(&id).is_some_and(|live| {
                 live.waiter

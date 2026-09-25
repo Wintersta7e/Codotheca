@@ -28,8 +28,9 @@ pub const SESSION_IDLE_SECS: i64 = 3_600;
 /// The monotonic form of [`SESSION_IDLE_SECS`], derived rather than restated.
 pub const SESSION_IDLE_MS: u64 = SESSION_IDLE_SECS.unsigned_abs() * 1_000;
 
-/// After this long with no `session.focus` report, a held focus stops extending a segment. A
-/// renderer that died holding focus would otherwise hold one open indefinitely — the farming
+/// After this long with no `session.focus` report, a held focus stops extending a segment.
+///
+/// A renderer that died holding focus would otherwise hold one open indefinitely — the farming
 /// hole from the other end.
 pub const FOCUS_STALE_SECS: i64 = 120;
 /// The monotonic form of [`FOCUS_STALE_SECS`], derived rather than restated.
@@ -47,7 +48,7 @@ const _: () = assert!(DEFAULT_TICK_SECS < FOCUS_STALE_SECS.unsigned_abs());
 
 /// The `close_reason` column spelling of a generated variant (§1.6's CHECK).
 #[must_use]
-pub fn close_reason_str(reason: CloseReason) -> &'static str {
+pub const fn close_reason_str(reason: CloseReason) -> &'static str {
     match reason {
         CloseReason::Stop => "stop",
         CloseReason::Idle => "idle",
@@ -75,7 +76,7 @@ pub fn close_reason_from_str(text: &str) -> Option<CloseReason> {
 
 /// The `closed_by` column spelling of a generated variant (§1.6's CHECK).
 #[must_use]
-pub fn closed_by_str(closed_by: ClosedBy) -> &'static str {
+pub const fn closed_by_str(closed_by: ClosedBy) -> &'static str {
     match closed_by {
         ClosedBy::Idle => "idle",
         ClosedBy::SessionEnd => "session_end",
@@ -99,12 +100,15 @@ pub fn closed_by_from_str(text: &str) -> Option<ClosedBy> {
 /// The closed set of failures the session subsystem can produce.
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
+    /// A statement against the `session` or `session_segment` tables failed.
     #[error("sqlite: {0}")]
     Sqlite(#[from] rusqlite::Error),
 
+    /// An index call failed, e.g. recomputing a project's derived state after a session closed.
     #[error("index: {0}")]
     Index(#[from] crate::index::IndexError),
 
+    /// A git failure met while launching, carried so it maps onto the same wire codes.
     #[error("git: {0}")]
     Git(crate::git::GitError),
 
@@ -112,12 +116,18 @@ pub enum SessionError {
     #[error("watch: {0}")]
     Watch(String),
 
+    /// A caller named a session row id that does not exist.
     #[error("no session {0}")]
     NoSuchSession(i64),
 
     /// A stored enum column held a value the closed set does not contain.
     #[error("column {column} holds {value}, which is not a value of its enum")]
-    BadColumn { column: &'static str, value: String },
+    BadColumn {
+        /// The column that was read.
+        column: &'static str,
+        /// What it held, spelled as read; a NULL is spelled `NULL`.
+        value: String,
+    },
 }
 
 impl SessionError {

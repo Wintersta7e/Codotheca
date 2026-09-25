@@ -15,13 +15,27 @@ use crate::index::Index;
 use crate::protocol::{CloseReason, ProjectId};
 use crate::session::{close_reason_str, closed_by_str, ClosedBy, SessionError};
 
+/// What one startup recovery pass closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct OrphanReport {
+    /// Sessions a previous process left open, now closed as `orphaned`.
     pub sessions_closed: u64,
+    /// Segments left open under them, now closed at their watermark as `crash`.
     pub segments_closed: u64,
+    /// The total credit of the closed sessions in seconds, all of it earned before the crash.
     pub credited_seconds: i64,
 }
 
+/// Close every session a previous process left open, in one transaction, at its watermark.
+///
+/// `now` is passed only to the derived-state recompute each close triggers; no row is stamped
+/// with it.
+///
+/// # Errors
+///
+/// `SessionError::Sqlite` when the transaction or any statement in it fails, and
+/// `SessionError::Index` when recomputing a project's derived state fails. Either rolls the whole
+/// pass back.
 pub fn close_orphans(index: &mut Index, now: i64) -> Result<OrphanReport, SessionError> {
     let _guard = crate::proto::txguard::TxGuard::enter();
     let tx = index.conn_mut().transaction()?;
