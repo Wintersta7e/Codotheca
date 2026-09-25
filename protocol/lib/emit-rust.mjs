@@ -1,5 +1,5 @@
 // Schema -> core/src/protocol.rs. Pure; writes nothing.
-import { SCALARS, parseTypeExpr } from './schema.mjs';
+import { SCALARS, SYNTHESISED, parseTypeExpr } from './schema.mjs';
 import { pascal } from './emit-ts.mjs';
 
 const BANNER =
@@ -64,6 +64,8 @@ function snake(name) {
 }
 
 const DERIVE_DATA = '#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]';
+const DERIVE_DATA_EQ =
+  '#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]';
 const DERIVE_UNIT =
   '#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]';
 const DERIVE_TEXT_ID =
@@ -85,25 +87,64 @@ function enumOf(derive, name, variantLines, attrs = '') {
   return variantLines.length === 0 ? `${head} {}\n` : `${head} {\n${variantLines.join('\n')}\n}\n`;
 }
 
-function structOf(name, fields) {
+/**
+ * Which type expressions can derive `Eq`: everything except what reaches an `f64`. Computed as a
+ * greatest fixpoint rather than by recursion, so a cycle through a float-bearing type still comes
+ * out `false` — a provisional `true` read mid-recursion would emit an `Eq` that cannot compile.
+ */
+function eqOracle(schema) {
+  const eq = new Map(Object.keys(schema.types).map((n) => [n, true]));
+  const leafEq = (expr) => {
+    const { base } = parseTypeExpr(expr);
+    if (SCALARS[base]) return SCALARS[base].rs !== 'f64';
+    // A synthesised type is emitted as a unit enum, which always derives `Eq`.
+    return SYNTHESISED.has(base) || eq.get(base) === true;
+  };
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [name, decl] of Object.entries(schema.types)) {
+      if (!eq.get(name) || decl.kind === 'id' || decl.kind === 'enum') continue;
+      if (!Object.values(decl.fields).every(leafEq)) {
+        eq.set(name, false);
+        changed = true;
+      }
+    }
+  }
+  return leafEq;
+}
+
+function structOf(name, fields, leafEq) {
   const body = Object.entries(fields)
     .map(([f, e]) => `    pub ${snake(f)}: ${rsRef(e)},`)
     .join('\n');
-  return `${DERIVE_DATA}\n#[serde(rename_all = "camelCase", deny_unknown_fields)]\npub struct ${name} {${
+  const derive = Object.values(fields).every(leafEq) ? DERIVE_DATA_EQ : DERIVE_DATA;
+  return `${derive}\n#[serde(rename_all = "camelCase", deny_unknown_fields)]\npub struct ${name} {${
     body ? `\n${body}\n` : ''
   }}\n`;
 }
 
 export function emitRust(schema) {
+  const leafEq = eqOracle(schema);
   const L = [];
   L.push(BANNER);
+  L.push('//! The wire contract (§2.4), generated from `protocol/schema/protocol.json`.\n');
   L.push('// Bindings precede their consumers: a command is added to the schema before the core');
   L.push('// implements it, so unused variants are expected and are not a defect. The allows are');
   L.push('// shape complaints about generated data types, not about the code that uses them.');
+  L.push(
+    '// `missing_docs`: the schema carries no prose, and a sentence generated from a wire name',
+  );
+  L.push('// documents nothing; the spec section owning each value is its documentation.');
+  L.push(
+    "// `empty_structs_with_brackets`: an argument-less command's `Args` stays braced, because",
+  );
+  L.push('// serde_json reads a unit struct only from `null` and the wire sends `{}`.');
   // Laid out the way rustfmt lays it out: this file is checked by `cargo fmt --check` like any
   // other, so the emitter has to produce canonical text rather than merely valid text.
   L.push(`#![allow(
     dead_code,
+    missing_docs,
+    clippy::empty_structs_with_brackets,
     clippy::large_enum_variant,
     clippy::struct_excessive_bools,
     clippy::struct_field_names,
@@ -168,8 +209,8 @@ impl<'de> serde::Deserialize<'de> for Bytes {
       // `ALL` on core-side enums only, and a generated enum had none — so a consumer that needed
       // one at run time had to write the count down, which is the hand-maintained count R132/F11
       // rules against. Emitting it for every enum removes that for all of them at once.
-      const paths = decl.variants.map((v) => `${name}::${pascal(v)}`);
-      const head = `    pub const ALL: [${name}; ${decl.variants.length}] = `;
+      const paths = decl.variants.map((v) => `Self::${pascal(v)}`);
+      const head = `    pub const ALL: [Self; ${decl.variants.length}] = `;
       // **This emitter does not try to match rustfmt's line breaking, and must not start.**
       // `generate.mjs` pipes everything here through `rustfmt` before it is written, compared or
       // hashed, so one line is the right thing to emit however long it is.
@@ -185,7 +226,7 @@ impl<'de> serde::Deserialize<'de> for Bytes {
           `${body}\n}\n`,
       );
     } else {
-      L.push(structOf(name, decl.fields));
+      L.push(structOf(name, decl.fields, leafEq));
     }
   }
 
@@ -194,7 +235,7 @@ impl<'de> serde::Deserialize<'de> for Bytes {
     .join('\n');
   L.push(`${DERIVE_UNIT}\npub enum ErrorCode {\n${errVariants}\n}\n`);
 
-  for (const c of schema.commands) L.push(structOf(`${pascal(c.name)}Args`, c.args));
+  for (const c of schema.commands) L.push(structOf(`${pascal(c.name)}Args`, c.args, leafEq));
 
   L.push(
     enumOf(
@@ -204,9 +245,10 @@ impl<'de> serde::Deserialize<'de> for Bytes {
     ),
   );
 
+  const argsEq = schema.commands.every((c) => Object.values(c.args).every(leafEq));
   L.push(
     enumOf(
-      DERIVE_DATA,
+      argsEq ? DERIVE_DATA_EQ : DERIVE_DATA,
       'Command',
       schema.commands.map(
         (c) => `    #[serde(rename = "${c.name}")]\n    ${pascal(c.name)}(${pascal(c.name)}Args),`,
@@ -224,7 +266,8 @@ impl<'de> serde::Deserialize<'de> for Bytes {
   const resName = schema.commands
     .map((c) => `            Self::${pascal(c.name)}(_) => CommandName::${pascal(c.name)},`)
     .join('\n');
-  L.push(`#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+  const resEq = schema.commands.every((c) => leafEq(c.returns));
+  L.push(`#[derive(Debug, Clone, PartialEq${resEq ? ', Eq' : ''}, serde::Serialize)]
 #[serde(untagged)]
 pub enum CommandResultValue {
 ${resArms}
@@ -232,7 +275,7 @@ ${resArms}
 
 impl CommandResultValue {
     #[must_use]
-    pub fn command(&self) -> CommandName {
+    pub const fn command(&self) -> CommandName {
         match self {
 ${resName}
         }
@@ -253,7 +296,8 @@ ${resName}
     const evs = Object.entries(schema.topics[t]);
     const arms = evs.map(([e, expr]) => `    ${pascal(e)}(${rsRef(expr)}),`).join('\n');
     const names = evs.map(([e]) => `            Self::${pascal(e)}(_) => "${e}",`).join('\n');
-    L.push(`#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+    const evEq = evs.every(([, expr]) => leafEq(expr));
+    L.push(`#[derive(Debug, Clone, PartialEq${evEq ? ', Eq' : ''}, serde::Serialize)]
 #[serde(untagged)]
 pub enum ${pascal(t)}Event {
 ${arms}
@@ -261,14 +305,14 @@ ${arms}
 
 impl ${pascal(t)}Event {
     #[must_use]
-    pub fn name(&self) -> &'static str {
+    pub const fn name(&self) -> &'static str {
         match self {
 ${names}
         }
     }
 
     #[must_use]
-    pub fn topic(&self) -> Topic {
+    pub const fn topic(&self) -> Topic {
         Topic::${pascal(t)}
     }
 }

@@ -34,7 +34,7 @@ export function parseTypeExpr(expr) {
  * be hand-declared, but `ErrorFrame.code` still has to name it — so it must be referenceable
  * while remaining undeclarable. Both halves of that are load-bearing.
  */
-const SYNTHESISED = new Set(['ErrorCode']);
+export const SYNTHESISED = new Set(['ErrorCode']);
 
 function checkRef(schema, expr, where) {
   const { base } = parseTypeExpr(expr);

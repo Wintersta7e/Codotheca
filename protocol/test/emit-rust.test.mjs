@@ -61,10 +61,42 @@ test('the Command enum is externally tagged on command and args', () => {
 
 test('results and events are untagged and serialize-only, and name themselves', () => {
   assert.match(out, /#\[serde\(untagged\)\]\npub enum CommandResultValue \{/);
-  assert.match(out, /pub fn command\(&self\) -> CommandName \{/);
+  assert.match(out, /pub const fn command\(&self\) -> CommandName \{/);
   assert.match(out, /pub enum ProjectsEvent \{/);
-  assert.match(out, /pub fn name\(&self\) -> &'static str \{/);
-  assert.match(out, /pub fn topic\(&self\) -> Topic \{/);
+  assert.match(out, /pub const fn name\(&self\) -> &'static str \{/);
+  assert.match(out, /pub const fn topic\(&self\) -> Topic \{/);
+});
+
+// clippy's `derive_partial_eq_without_eq` is denied, so a type derives `Eq` exactly when no
+// `f64` is reachable from it — including through another type, and through a cycle.
+test('Eq is derived exactly where no float is reachable', () => {
+  const floats = emitRust({
+    ...schema,
+    types: {
+      ...schema.types,
+      Point: { kind: 'struct', fields: { x: 'f64' } },
+      Holder: { kind: 'struct', fields: { at: 'Point?' } },
+      Loop: { kind: 'struct', fields: { next: '[Knot]', point: 'Point' } },
+      Knot: { kind: 'struct', fields: { back: '[Loop]' } },
+      Fault: { kind: 'struct', fields: { code: 'ErrorCode' } },
+    },
+    topics: { projects: { upserted: 'Row', moved: 'Holder' } },
+  });
+  const derive = (name) =>
+    floats.match(
+      new RegExp(
+        `(#\\[derive\\([^)]*\\)\\])\\n(?:#\\[serde[^\\n]*\\n)*pub (?:struct|enum) ${name}\\b`,
+      ),
+    )?.[1];
+  assert.match(derive('Row'), /PartialEq, Eq,/);
+  assert.match(derive('Fault'), /PartialEq, Eq,/);
+  assert.doesNotMatch(derive('Point'), /, Eq,/);
+  assert.doesNotMatch(derive('Holder'), /, Eq,/);
+  assert.doesNotMatch(derive('Loop'), /, Eq,/);
+  assert.doesNotMatch(derive('Knot'), /, Eq,/);
+  assert.doesNotMatch(derive('ProjectsEvent'), /, Eq,/);
+  assert.match(derive('Command'), /PartialEq, Eq,/);
+  assert.match(derive('CommandResultValue'), /PartialEq, Eq,/);
 });
 
 test('every public item derives Debug, for missing_debug_implementations', () => {
