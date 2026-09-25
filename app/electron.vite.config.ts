@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
+import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from './src/shared/csp';
 
@@ -91,15 +91,15 @@ function contentSecurityPolicyPlugin(): Plugin {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
     build: {
+      externalizeDeps: true,
       outDir: 'out/main',
       lib: { entry: resolve(__dirname, 'src/main/index.ts') },
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     build: {
+      externalizeDeps: true,
       outDir: 'out/preload',
       lib: { entry: resolve(__dirname, 'src/preload/index.ts') },
       // sandbox: true loads the preload as a classic script. ESM would not run.
