@@ -17,6 +17,13 @@ use std::process::Command;
 use codotheca_core::git::{ensure_empty_hooks_dir, GitExec, RepoHandle, StoreKey};
 use codotheca_core::mount::StoreClass;
 
+/// The git binary the product's reads and writes run under test: `CODOTHECA_TEST_GIT` when set
+/// (§47.8's floor matrix points it at each candidate release), otherwise `git` from `PATH`.
+/// Fixture construction keeps the `PATH` git; only the product's children switch.
+pub(crate) fn test_git() -> PathBuf {
+    std::env::var_os("CODOTHECA_TEST_GIT").map_or_else(|| PathBuf::from("git"), PathBuf::from)
+}
+
 /// A throwaway repository built with real git plumbing.
 ///
 /// Fixture git runs with its own `HOME` so the developer's global config never leaks in, and
@@ -69,7 +76,7 @@ impl TestRepo {
 
     pub(crate) fn exec(&self) -> GitExec {
         let hooks = ensure_empty_hooks_dir(self.dir.path()).unwrap();
-        GitExec::system(hooks)
+        GitExec::new(test_git(), hooks)
     }
 
     pub(crate) fn write(&self, rel: &str, bytes: &[u8]) {

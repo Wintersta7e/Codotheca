@@ -27,6 +27,7 @@ pub mod backend;
 pub mod config_keys;
 pub mod credential;
 pub mod exec;
+pub mod floor;
 pub mod intent;
 
 pub use backend::{MutatingGit, RunOutput, SystemMutatingGit};
@@ -35,6 +36,7 @@ pub use credential::CredentialChannel;
 #[cfg(feature = "testkit")]
 pub use exec::TransportFixture;
 pub use exec::{write_base_args, FilterDrivers, WriteEnv, WriteExec};
+pub use floor::{meets_governed_floor, GOVERNED_GIT_FLOOR};
 #[cfg(feature = "testkit")]
 pub use intent::AuditFixture;
 pub use intent::{

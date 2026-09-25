@@ -86,6 +86,11 @@ impl MutatingGit for SystemMutatingGit {
         // filters cannot be enumerated is **refused, never run unfiltered** (§24.1b). A checkout
         // runs `.gitattributes` filters from the remote repository, so an empty list that was
         // never actually read would hand a remote's clean/smudge commands a live invocation.
+        // §47.8: a governed intent below the floor is refused before the precondition read, so
+        // nothing but the version probe is spawned for it. `WriteExec::run` checks again for a
+        // caller that reaches it directly.
+        self.exec
+            .refuse_below_governed_floor(intent, &self.hooks_dir)?;
         let filters = self.exec.filter_drivers()?;
 
         let env = WriteEnv {

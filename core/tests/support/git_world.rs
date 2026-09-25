@@ -274,8 +274,9 @@ pub(crate) fn apply_hostile_read_profile(repo: &super::TestRepo) {
     repo.git(&["status", "--porcelain"]);
 }
 
-/// The same profile as a user-global config file, for the `GIT_CONFIG_GLOBAL` route.
-pub(crate) fn hostile_read_global(dir: &Path) -> PathBuf {
+/// The same profile as the user's global config, as the environment that delivers it
+/// ([`user_global`]).
+pub(crate) fn hostile_read_global(dir: &Path) -> Vec<(String, OsString)> {
     let mut text = String::new();
     for (key, value) in HOSTILE_READ_PROFILE {
         let (section, name) = key.rsplit_once('.').expect("a dotted key");
@@ -285,9 +286,7 @@ pub(crate) fn hostile_read_global(dir: &Path) -> PathBuf {
         );
         let _ = writeln!(text, "{header}\n\t{name} = {value}");
     }
-    let path = dir.join("hostile-read.gitconfig");
-    std::fs::write(&path, text).expect("hostile global config");
-    path
+    user_global(dir, &text)
 }
 
 /// The production read backend over `repo`, with its own empty hooks directory.
@@ -297,6 +296,59 @@ pub(crate) fn system_git(repo: &super::TestRepo) -> codotheca_core::git::SystemG
         std::sync::Arc::new(codotheca_core::git::GitSlots::for_machine()),
         std::sync::Arc::new(codotheca_core::clock::SystemClock::new()),
     )
+}
+
+/// The environment that gives a product child `text` as the user's global config, on every git
+/// the floor matrix runs: `GIT_CONFIG_GLOBAL` (read from git 2.32) **and** `HOME` holding the
+/// same file as `.gitconfig`, which older releases read instead. `GIT_CONFIG_GLOBAL` alone left
+/// a pre-2.32 child reading the developer's own file, and a test on it passing vacuously.
+pub(crate) fn user_global(dir: &Path, text: &str) -> Vec<(String, OsString)> {
+    let home = dir.join("user-home");
+    std::fs::create_dir_all(&home).expect("user home");
+    let file = home.join(".gitconfig");
+    std::fs::write(&file, text).expect("user global");
+    vec![
+        ("GIT_CONFIG_GLOBAL".to_owned(), file.into_os_string()),
+        ("HOME".to_owned(), home.clone().into_os_string()),
+        ("XDG_CONFIG_HOME".to_owned(), home.into_os_string()),
+    ]
+}
+
+/// The `git --version` line of the git the product runs under test.
+pub(crate) fn test_git_version() -> String {
+    let out = Command::new(super::test_git())
+        .arg("--version")
+        .output()
+        .expect("git --version");
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// Whether the git under test reads config from `GIT_CONFIG_COUNT` (git 2.31). Measured, not
+/// looked up: a release without it has no environment route for a scrub to close.
+pub(crate) fn test_git_reads_config_env() -> bool {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = Command::new(super::test_git())
+        .current_dir(dir.path())
+        .args(["config", "--get", "codotheca.probe"])
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "codotheca.probe")
+        .env("GIT_CONFIG_VALUE_0", "yes")
+        .output()
+        .expect("git config");
+    String::from_utf8_lossy(&out.stdout).trim() == "yes"
+}
+
+/// Whether the git under test lists `key` in `git help --config` — how a floor-matrix run tells
+/// a hazard the release cannot have from a fixture that stopped reproducing one.
+pub(crate) fn test_git_lists_key(key: &str) -> bool {
+    let out = Command::new(super::test_git())
+        .args(["help", "--config"])
+        .output()
+        .expect("git help --config");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case(key))
 }
 
 // ---------------------------------------------------------------------------
@@ -690,11 +742,32 @@ impl World {
                 }
             }
         }
-        let global_path = self.root.join(format!("global-{}.gitconfig", route.slug()));
-        std::fs::write(&global_path, global).expect("global");
-        env.push(("GIT_CONFIG_GLOBAL".to_owned(), global_path.into_os_string()));
-        env.push(("HOME".to_owned(), self.home.clone().into_os_string()));
+        env.extend(user_global(&self.root, &global));
         env
+    }
+
+    /// Whether `env` (from [`Self::apply`]) delivers the hostile profile to the git under test:
+    /// `fetch.prune` reads `true` in the work repository. A route the release cannot read would
+    /// otherwise pass layer C vacuously.
+    pub(crate) fn route_delivers(&self, env: &[(String, OsString)]) -> bool {
+        let mut cmd = Command::new(super::test_git());
+        for (key, _) in std::env::vars_os() {
+            if key
+                .to_string_lossy()
+                .to_ascii_uppercase()
+                .starts_with("GIT_")
+            {
+                cmd.env_remove(key);
+            }
+        }
+        let out = cmd
+            .current_dir(&self.work)
+            .args(["config", "--get", "fetch.prune"])
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .envs(env.iter().map(|(key, value)| (key, value)))
+            .output()
+            .expect("git config");
+        String::from_utf8_lossy(&out.stdout).trim() == "true"
     }
 
     /// The comparator's view of the world at one instant.

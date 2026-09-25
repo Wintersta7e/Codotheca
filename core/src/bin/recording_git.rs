@@ -20,8 +20,13 @@
 //! steps, `ls-remote --get-url` and `ls-remote`, are answered on stdout as git would, and every
 //! invocation's stdin is recorded beside its argv and environment.
 //!
+//! **`git --version`**, the governed floor's probe (§47.8), is answered as a release above the
+//! floor and recorded beside the directory it runs in — the empty hooks directory.
+//!
 //! **Mode comes from argv\[0\], not from the environment.** A test that needs the
-//! no-filters-configured answer copies this binary under a name containing `nofilters`. An
+//! no-filters-configured answer copies this binary under a name containing `nofilters`; one that
+//! needs a git below the governed floor, under a name containing `oldgit`, which answers
+//! `--version` as 2.28.0. An
 //! environment variable would be process-global and therefore racy across parallel tests — and
 //! worse, `neutralise_env` is part of what this program exists to observe, so a recorder needing
 //! a variable to survive it would be observing itself.
@@ -40,11 +45,13 @@ const AUDIT_DRIVER: &str = "auditdriver";
 
 fn main() {
     let argv0 = std::env::args_os().next().unwrap_or_default();
-    let no_filters = PathBuf::from(&argv0)
+    let invoked_as = PathBuf::from(&argv0)
         .file_name()
         .unwrap_or_default()
         .to_string_lossy()
-        .contains("nofilters");
+        .into_owned();
+    let no_filters = invoked_as.contains("nofilters");
+    let old_git = invoked_as.contains("oldgit");
 
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
 
@@ -98,8 +105,13 @@ fn main() {
         .and_then(|pair| pair.get(1))
         .map(PathBuf::from)
         .filter(|dir| dir.is_absolute());
+    // The version probe runs in the empty hooks directory and names no path, so it is keyed on
+    // that working directory.
+    let version_probe = matches!(args.as_slice(), [only] if only == "--version");
     let keyed_on_last = PathBuf::from(last).is_absolute();
-    let mut target = if keyed_on_last {
+    let mut target = if version_probe {
+        std::env::current_dir().unwrap_or_else(|_| std::process::exit(6))
+    } else if keyed_on_last {
         PathBuf::from(last)
     } else if let Some(dir) = work_dir {
         dir
@@ -149,23 +161,7 @@ fn main() {
         std::process::exit(4);
     }
 
-    // The verifying read's two parsed steps answer on stdout, as git does. The URL is a network
-    // one under a reserved example host, so the read proceeds to its advertisement, which names
-    // the all-zero object: present nowhere, so the objects step runs and is recorded too.
-    let answer = if args.iter().any(|a| a == "ls-remote") {
-        if args.iter().any(|a| a == "--get-url") {
-            Some(format!(
-                "https://forge.example/{}.git\n",
-                last.to_string_lossy()
-            ))
-        } else {
-            let zero = "0".repeat(40);
-            Some(format!("{zero}\tHEAD\n{zero}\trefs/heads/main\n"))
-        }
-    } else {
-        None
-    };
-    if let Some(answer) = answer {
+    if let Some(answer) = answer(&args, last, version_probe, old_git) {
         let Some(mut out) = codotheca_core::proto::transport::claim_stdout() else {
             std::process::exit(5);
         };
@@ -179,5 +175,37 @@ fn main() {
     // keyed on its `-C` directory runs in a repository that already exists and creates nothing.
     if keyed_on_last {
         let _ = std::fs::create_dir_all(PathBuf::from(last));
+    }
+}
+
+/// What the stand-in prints on stdout, as git would: the version probe's line, and the
+/// verifying read's two parsed steps.
+fn answer(
+    args: &[OsString],
+    last: &OsString,
+    version_probe: bool,
+    old_git: bool,
+) -> Option<String> {
+    // The verifying read's two parsed steps answer on stdout, as git does. The URL is a network
+    // one under a reserved example host, so the read proceeds to its advertisement, which names
+    // the all-zero object: present nowhere, so the objects step runs and is recorded too.
+    if version_probe {
+        Some(if old_git {
+            "git version 2.28.0\n".to_owned()
+        } else {
+            "git version 2.99.0.recording\n".to_owned()
+        })
+    } else if args.iter().any(|a| a == "ls-remote") {
+        if args.iter().any(|a| a == "--get-url") {
+            Some(format!(
+                "https://forge.example/{}.git\n",
+                last.to_string_lossy()
+            ))
+        } else {
+            let zero = "0".repeat(40);
+            Some(format!("{zero}\tHEAD\n{zero}\trefs/heads/main\n"))
+        }
+    } else {
+        None
     }
 }

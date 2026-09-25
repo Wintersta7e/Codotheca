@@ -203,7 +203,8 @@ fn the_listing_holds_under_a_hostile_global_config() {
             codotheca_core::mount::StoreClass::Local,
         )
         .unwrap();
-        let exec = codotheca_core::git::GitExec::system(
+        let exec = codotheca_core::git::GitExec::new(
+            support::test_git(),
             codotheca_core::git::ensure_empty_hooks_dir(&dir).unwrap(),
         );
         let git = codotheca_core::git::SystemGit::new(
@@ -243,11 +244,10 @@ fn the_listing_holds_under_a_hostile_global_config() {
         repo.path().to_string_lossy().as_bytes(),
     )
     .unwrap();
-    let global = hostile_read_global(tmp.path());
     run_in_child(
         "the_listing_holds_under_a_hostile_global_config",
         tmp.path(),
-        &[("GIT_CONFIG_GLOBAL".to_owned(), global.into_os_string())],
+        &hostile_read_global(tmp.path()),
     );
 }
 

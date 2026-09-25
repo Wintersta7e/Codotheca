@@ -258,7 +258,7 @@ fn run_stripped(
         kept.push(base[i].clone());
         i += 1;
     }
-    let mut cmd = Command::new("git");
+    let mut cmd = Command::new(support::test_git());
     cmd.args(kept);
     cmd.args(intent.argv());
     neutralise_env(&mut cmd);
@@ -293,10 +293,17 @@ fn run_stripped(
 /// does write the ref, so a fixture that stopped reproducing M3 fails here instead of passing.
 #[test]
 fn a_bundle_uri_in_repo_config_writes_no_bundle_ref_and_no_config_byte() {
+    if !support::git_world::test_git_lists_key("fetch.bundleURI") {
+        eprintln!(
+            "skipped: {} has no fetch.bundleURI, so M3's fetch half cannot occur",
+            support::git_world::test_git_version()
+        );
+        return;
+    }
     let world = BundleWorld::new();
     let hooks = world.root.join("hooks-empty");
     std::fs::create_dir_all(&hooks).expect("hooks dir");
-    let backend = SystemMutatingGit::new(PathBuf::from("git"), hooks.clone());
+    let backend = SystemMutatingGit::new(support::test_git(), hooks.clone());
     let mut cases = 0;
     for (name, uri) in [("plain", &world.bundle), ("token-list", &world.token_list)] {
         let work = world.work_repo(name, uri);
@@ -333,12 +340,19 @@ fn a_bundle_uri_in_repo_config_writes_no_bundle_ref_and_no_config_byte() {
 /// `transfer.bundleURI=true`: the new repository gains no `refs/bundles/*`.
 ///
 /// Rendered from the production `write_base_args` with the transport list widened to `file` for
-/// this local fixture — a local stand-in for the `TransportFixture` Task 6 lands, and the only
+/// this local fixture — what `TransportFixture` does for a `SystemMutatingGit`, and the only
 /// difference from the production child (the production child refuses this transport outright,
 /// which would make the bundle half vacuous). The hazard is proved live the same way: without
 /// `transfer.bundleURI=false` the clone writes the ref.
 #[test]
 fn a_bundle_advertising_origin_gives_a_clone_no_bundle_ref() {
+    if !support::git_world::test_git_lists_key("transfer.bundleURI") {
+        eprintln!(
+            "skipped: {} has no transfer.bundleURI, so M3's clone half cannot occur",
+            support::git_world::test_git_version()
+        );
+        return;
+    }
     let world = BundleWorld::new();
     run_fixture_git(
         &world.src,
@@ -355,20 +369,18 @@ fn a_bundle_advertising_origin_gives_a_clone_no_bundle_ref() {
     let hooks = world.root.join("hooks-empty");
     std::fs::create_dir_all(&hooks).expect("hooks dir");
     let url = RemoteUrl::parse("https://forge.invalid/acme/widget.git").expect("url");
-    let global = world.root.join("user.gitconfig");
     let src_url = format!(
         "file://{}{}",
         if cfg!(windows) { "/" } else { "" },
         world.src.to_string_lossy().replace('\\', "/")
     );
-    std::fs::write(
-        &global,
-        format!(
+    let user = support::git_world::user_global(
+        &world.root,
+        &format!(
             "[transfer]\n\tbundleURI = true\n[url \"{src_url}\"]\n\tinsteadOf = {}\n",
             url.as_str()
         ),
-    )
-    .expect("user config");
+    );
 
     let clone_with = |dest: &Path, strip: &[&str]| {
         let intent = Intent::Clone {
@@ -380,13 +392,14 @@ fn a_bundle_advertising_origin_gives_a_clone_no_bundle_ref() {
             &intent,
             &anonymous_env(&hooks),
             strip,
-            &[
-                ("GIT_CONFIG_GLOBAL", global.clone().into_os_string()),
-                (
+            &user
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.clone()))
+                .chain([(
                     "GIT_ALLOW_PROTOCOL",
                     OsString::from(format!("{}:file", intent.allowed_protocols())),
-                ),
-            ],
+                )])
+                .collect::<Vec<_>>(),
         );
         assert!(
             out.status.success(),
@@ -451,7 +464,7 @@ fn child_install_ends_network() {
             )
             .expect("project");
     }
-    let git = SystemMutatingGit::new(PathBuf::from("git"), hooks);
+    let git = SystemMutatingGit::new(support::test_git(), hooks);
     let probe = FakeGitBackend::new();
     let mounts = FakeMountResolver::new();
     mounts.map(
@@ -537,22 +550,14 @@ fn an_install_rewritten_to_a_path_or_ssh_fails_network_and_runs_no_ssh_command()
     ] {
         let tmp = tempfile::tempdir().expect("tempdir");
         let marker = tmp.path().join("ssh-ran");
-        let global = tmp.path().join("user.gitconfig");
-        std::fs::write(
-            &global,
-            format!("[url \"{target}\"]\n\tinsteadOf = https://forge.invalid/acme/widget.git\n"),
-        )
-        .expect("user config");
-        let ssh = format!("touch '{}' #", marker.to_string_lossy().replace('\\', "/"));
-        support::git_world::run_in_child(
-            INSTALL_TEST,
+        let mut env = support::git_world::user_global(
             tmp.path(),
-            &[
-                ("GIT_CONFIG_GLOBAL".to_owned(), global.into_os_string()),
-                ("GIT_SSH_COMMAND".to_owned(), OsString::from(ssh)),
-                (CASE_VAR.to_owned(), OsString::from(case)),
-            ],
+            &format!("[url \"{target}\"]\n\tinsteadOf = https://forge.invalid/acme/widget.git\n"),
         );
+        let ssh = format!("touch '{}' #", marker.to_string_lossy().replace('\\', "/"));
+        env.push(("GIT_SSH_COMMAND".to_owned(), OsString::from(ssh)));
+        env.push((CASE_VAR.to_owned(), OsString::from(case)));
+        support::git_world::run_in_child(INSTALL_TEST, tmp.path(), &env);
         assert!(
             !marker.exists(),
             "{case}: the ssh program the environment names ran"
@@ -659,7 +664,10 @@ impl OriginWorld {
     fn read_git(&self) -> codotheca_core::git::SystemGit {
         let hooks = codotheca_core::git::ensure_empty_hooks_dir(&self.root).expect("hooks");
         codotheca_core::git::SystemGit::new(
-            std::sync::Arc::new(codotheca_core::git::GitExec::system(hooks)),
+            std::sync::Arc::new(codotheca_core::git::GitExec::new(
+                support::test_git(),
+                hooks,
+            )),
             std::sync::Arc::new(codotheca_core::git::GitSlots::for_machine()),
             std::sync::Arc::new(codotheca_core::clock::SystemClock::new()),
         )
@@ -668,7 +676,7 @@ impl OriginWorld {
     fn write_git(&self) -> SystemMutatingGit {
         let hooks = codotheca_core::git::ensure_empty_hooks_dir(&self.root).expect("hooks");
         SystemMutatingGit::with_transport_fixture(
-            PathBuf::from("git"),
+            support::test_git(),
             hooks,
             codotheca_core::gitw::TransportFixture::new(&self.root),
         )
@@ -701,7 +709,7 @@ fn a_destination_refspec_on_stdin_is_refused_by_the_grammar_and_would_write_a_re
     let world = OriginWorld::new();
     let intent = objects_intent(&world.work);
     let hooks = codotheca_core::git::ensure_empty_hooks_dir(&world.root).expect("hooks");
-    let mut cmd = Command::new("git");
+    let mut cmd = Command::new(support::test_git());
     cmd.args(write_base_args(&intent, &anonymous_env(&hooks)));
     cmd.args(intent.argv());
     neutralise_env(&mut cmd);
@@ -1059,7 +1067,7 @@ fn fixture_write_git(world: &support::git_world::World) -> SystemMutatingGit {
     let hooks =
         codotheca_core::git::ensure_empty_hooks_dir(&world.root.join("app-data")).expect("hooks");
     SystemMutatingGit::with_transport_fixture(
-        PathBuf::from("git"),
+        support::test_git(),
         hooks,
         codotheca_core::gitw::TransportFixture::new(&world.root),
     )
@@ -1144,12 +1152,27 @@ fn every_intent_matches_its_declared_effect_under_every_route() {
         return;
     }
 
+    let version = support::git_world::test_git_version();
     let mut routes = 0;
+    let mut skipped = 0;
     for route in Route::ALL {
         let dir = tempfile::tempdir().expect("tempdir");
         let detached = matches!(route, Route::Include | Route::Count);
         let world = World::build(dir.path(), detached);
         let mut env = world.apply(route);
+        if !world.route_delivers(&env) {
+            assert!(
+                route == Route::Count && !support::git_world::test_git_reads_config_env(),
+                "the {} route did not deliver the hostile profile to {version}",
+                route.slug()
+            );
+            eprintln!(
+                "layer C [count]: skipped: {version} does not read GIT_CONFIG_COUNT, so the \
+                 route cannot occur"
+            );
+            skipped += 1;
+            continue;
+        }
         let hostile = support::git_world::hostile_parent_env(&world.root);
         // The route's own GIT_CONFIG_* win over the hostile parent's, which the product scrubs
         // anyway; the rest of the hostile parent rides along.
@@ -1164,11 +1187,13 @@ fn every_intent_matches_its_declared_effect_under_every_route() {
         routes += 1;
     }
     eprintln!(
-        "layer C: {} kinds x {routes} routes ({} intents each) matched their declared effect",
+        "layer C on {version}: {} kinds x {routes} routes ({} intents each) matched their \
+         declared effect; {skipped} route(s) not run",
         Intent::ALL.len(),
         1 + VerifyStep::ALL.len()
     );
-    assert_eq!(routes, Route::ALL.len());
+    assert!(routes > 0);
+    assert_eq!(routes + skipped, Route::ALL.len());
 }
 
 /// **AC-P4-47-6's second clause.** The `TransportFixture` is the **only** difference between the
@@ -1273,12 +1298,27 @@ fn the_retired_fetch_deletes_refs_where_the_verifying_read_does_not() {
     }
 
     let mut reported = 0;
+    let mut skipped = 0;
     for route in [Route::Count, Route::RepoConfig] {
         // The literal, on its own world, behind the uniform `-c` pins and with the route's config
         // unscrubbed — as it shipped, when nothing removed `GIT_CONFIG_COUNT`.
         let dir = tempfile::tempdir().expect("tempdir");
         let world = World::build(dir.path(), false);
         let env = world.apply(route);
+        if !world.route_delivers(&env) {
+            assert!(
+                route == Route::Count && !support::git_world::test_git_reads_config_env(),
+                "the {} route did not deliver the hostile profile",
+                route.slug()
+            );
+            eprintln!(
+                "M2 [count]: skipped: {} does not read GIT_CONFIG_COUNT, so the env route \
+                 cannot occur",
+                support::git_world::test_git_version()
+            );
+            skipped += 1;
+            continue;
+        }
         let trace = world.root.join("trace.txt");
         let hooks = world.root.join("pins-hooks");
         std::fs::create_dir_all(&hooks).expect("hooks");
@@ -1288,7 +1328,7 @@ fn the_retired_fetch_deletes_refs_where_the_verifying_read_does_not() {
             depth: None,
         };
         let before = world.snapshot(&trace);
-        let mut literal = Command::new("git");
+        let mut literal = Command::new(support::test_git());
         literal
             .current_dir(&world.work)
             .args(write_base_args(&pins_of, &anonymous_env(&hooks)))
@@ -1334,7 +1374,8 @@ fn the_retired_fetch_deletes_refs_where_the_verifying_read_does_not() {
         verify_env.push(("PATH".to_owned(), path_with_helpers(&verify_world)));
         run_in_child(M2_TEST, &verify_world.root, &verify_env);
     }
-    assert_eq!(reported, 2);
+    assert!(reported > 0);
+    assert_eq!(reported + skipped, 2);
 }
 
 const PINS_TEST: &str = "the_production_pins_refuse_a_helper_a_file_remote_and_a_rewrite";
@@ -1362,11 +1403,11 @@ impl MutatingGit for CountingWrite {
 }
 
 /// M4's bite, live: the helper remote's `Advertise` child rendered without
-/// `-c protocol.file.allow=never` and without `GIT_ALLOW_PROTOCOL`, under the user's `global`
-/// config. True when the marker helper ran.
+/// `-c protocol.file.allow=never` and without `GIT_ALLOW_PROTOCOL`, under the user's global
+/// config (`user`, from [`support::git_world::user_global`]). True when the marker helper ran.
 fn helper_runs_without_the_transport_pins(
     world: &support::git_world::World,
-    global: &Path,
+    user: &[(String, OsString)],
 ) -> bool {
     let hooks = world.root.join("bite-hooks");
     std::fs::create_dir_all(&hooks).expect("hooks");
@@ -1392,10 +1433,10 @@ fn helper_runs_without_the_transport_pins(
         stripped.push(base[i].clone());
         i += 1;
     }
-    let mut cmd = Command::new("git");
+    let mut cmd = Command::new(support::test_git());
     cmd.args(stripped).args(intent.argv());
     neutralise_env(&mut cmd);
-    cmd.env("GIT_CONFIG_GLOBAL", global)
+    cmd.envs(user.iter().map(|(key, value)| (key, value)))
         .env("PATH", path_with_helpers(world))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -1418,7 +1459,7 @@ fn the_production_pins_refuse_a_helper_a_file_remote_and_a_rewrite() {
         let world = World::at(&child_dir());
         let hooks = codotheca_core::git::ensure_empty_hooks_dir(&world.root.join("app-data"))
             .expect("hooks");
-        let production = SystemMutatingGit::new(PathBuf::from("git"), hooks.clone());
+        let production = SystemMutatingGit::new(support::test_git(), hooks.clone());
         let advertise = |remote: &str| Intent::VerifyRead {
             repo: world.work.clone(),
             remote: RemoteName::parse(remote).expect("remote"),
@@ -1427,7 +1468,10 @@ fn the_production_pins_refuse_a_helper_a_file_remote_and_a_rewrite() {
         let helper = production.run(&advertise("helper"), &CancelToken::new(), &mut |_| {});
         let file = production.run(&advertise("origin"), &CancelToken::new(), &mut |_| {});
         let read_git = codotheca_core::git::SystemGit::new(
-            std::sync::Arc::new(codotheca_core::git::GitExec::system(hooks)),
+            std::sync::Arc::new(codotheca_core::git::GitExec::new(
+                support::test_git(),
+                hooks,
+            )),
             std::sync::Arc::new(codotheca_core::git::GitSlots::for_machine()),
             std::sync::Arc::new(codotheca_core::clock::SystemClock::new()),
         );
@@ -1485,27 +1529,20 @@ fn the_production_pins_refuse_a_helper_a_file_remote_and_a_rewrite() {
             "https://forge.invalid/acme/rewritten.git",
         ],
     );
-    let global = world.root.join("user.gitconfig");
-    std::fs::write(
-        &global,
-        format!(
+    let user = support::git_world::user_global(
+        &world.root,
+        &format!(
             "[protocol \"file\"]\n\tallow = always\n[protocol \"codotheca\"]\n\tallow = always\n\
              [url \"{}\"]\n\tinsteadOf = https://forge.invalid/acme/rewritten.git\n",
             world.origin.to_string_lossy().replace('\\', "/")
         ),
-    )
-    .expect("user config");
-    let env = vec![
-        (
-            "GIT_CONFIG_GLOBAL".to_owned(),
-            global.clone().into_os_string(),
-        ),
-        ("PATH".to_owned(), path_with_helpers(&world)),
-    ];
+    );
+    let mut env = user.clone();
+    env.push(("PATH".to_owned(), path_with_helpers(&world)));
     run_in_child(PINS_TEST, &world.root, &env);
 
     // The bite, live: the helper child without the two transport pins runs the helper.
-    let ran = helper_runs_without_the_transport_pins(&world, &global);
+    let ran = helper_runs_without_the_transport_pins(&world, &user);
     eprintln!("production pins: without the transport pins the helper ran: {ran}");
     assert!(
         ran,
@@ -1530,7 +1567,8 @@ fn an_unrecognised_audited_key_lets_verify_read_and_clone_run() {
     world.git(&world.work, &["config", "remote.origin.somethingNew", "1"]);
     let write_git = fixture_write_git(&world);
     let read_git = codotheca_core::git::SystemGit::new(
-        std::sync::Arc::new(codotheca_core::git::GitExec::system(
+        std::sync::Arc::new(codotheca_core::git::GitExec::new(
+            support::test_git(),
             codotheca_core::git::ensure_empty_hooks_dir(&world.root.join("read-hooks"))
                 .expect("hooks"),
         )),
@@ -1549,16 +1587,14 @@ fn an_unrecognised_audited_key_lets_verify_read_and_clone_run() {
     assert!(matches!(reading, RemoteReading::Answered { .. }));
 
     // The clone reads the same unknown key from the user's global config.
-    let global = world.root.join("unknown.gitconfig");
-    std::fs::write(
-        &global,
-        format!(
+    let user = support::git_world::user_global(
+        &world.root,
+        &format!(
             "[clone]\n\tinventedByANewerGit = true\n[url \"{}\"]\n\tinsteadOf = {}\n",
             world.origin.to_string_lossy().replace('\\', "/"),
             world.clone_url
         ),
-    )
-    .expect("global");
+    );
     let dest = world.root.join("clone-unknown");
     let intent = Intent::Clone {
         url: RemoteUrl::parse(&world.clone_url).expect("url"),
@@ -1569,10 +1605,11 @@ fn an_unrecognised_audited_key_lets_verify_read_and_clone_run() {
         &intent,
         &anonymous_env(&world.root.join("read-hooks")),
         &[],
-        &[
-            ("GIT_CONFIG_GLOBAL", global.into_os_string()),
-            ("GIT_ALLOW_PROTOCOL", OsString::from("https:file")),
-        ],
+        &user
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.clone()))
+            .chain([("GIT_ALLOW_PROTOCOL", OsString::from("https:file"))])
+            .collect::<Vec<_>>(),
     );
     eprintln!(
         "unknown audited keys: the clone exited {:?}",

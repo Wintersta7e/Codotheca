@@ -10,18 +10,22 @@
 
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{mpsc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use command_group::CommandGroup;
 
 use crate::cancel::CancelToken;
-use crate::git::{classify_spawn, neutralise_env, transport_refused, GitError, GitResult};
+use crate::git::{
+    classify_spawn, neutralise_env, parse_version, transport_refused, GitError, GitResult,
+    GitVersion,
+};
 use crate::gitw::backend::RunOutput;
 use crate::gitw::credential::CredentialChannel;
+use crate::gitw::floor::meets_governed_floor;
 use crate::gitw::intent::{Intent, StdoutUse};
 
 /// The filter drivers configured in the effective config, **and the proof that they were read**.
@@ -125,7 +129,7 @@ pub fn write_base_args(intent: &Intent, env: &WriteEnv) -> Vec<OsString> {
     // verifying read carries its own, so the two cannot disagree about which repository is read.
     if let Some(dir) = intent
         .work_dir()
-        .map(std::path::Path::to_path_buf)
+        .map(Path::to_path_buf)
         .or_else(|| env.work_dir.clone())
     {
         argv.push(OsString::from("-C"));
@@ -202,7 +206,7 @@ impl TransportFixture {
 
     /// Where the fixture's local remotes live.
     #[must_use]
-    pub fn root(&self) -> &std::path::Path {
+    pub fn root(&self) -> &Path {
         &self.root
     }
 
@@ -241,6 +245,9 @@ impl TransportFixture {
 #[derive(Debug, Clone)]
 pub struct WriteExec {
     git: PathBuf,
+    /// `git --version`, probed on the first governed intent and kept (§47.8). Only an answer is
+    /// kept: a failed probe is retried rather than remembered.
+    version: OnceLock<GitVersion>,
     /// Test-only: widens the transport list for local fixtures, and nothing else.
     #[cfg(feature = "testkit")]
     fixture: Option<TransportFixture>,
@@ -265,6 +272,7 @@ impl WriteExec {
     pub const fn new(git: PathBuf) -> Self {
         Self {
             git,
+            version: OnceLock::new(),
             #[cfg(feature = "testkit")]
             fixture: None,
         }
@@ -276,7 +284,46 @@ impl WriteExec {
     pub const fn with_transport_fixture(git: PathBuf, fixture: TransportFixture) -> Self {
         Self {
             git,
+            version: OnceLock::new(),
             fixture: Some(fixture),
+        }
+    }
+
+    /// Refuse a governed intent on a git below [`crate::gitw::GOVERNED_GIT_FLOOR`], **before
+    /// anything is spawned for it** (§47.8). Below the floor a governed act is unknown and runs
+    /// no weaker read (PA1); an intent that is not governed passes without a probe.
+    ///
+    /// The version is probed from here, in the empty hooks directory, so the write path's spawn
+    /// sites stay this file and its sibling (AC-P2-24-3).
+    ///
+    /// # Errors
+    /// `GitError::TooOld` carrying the line git printed when the version is below the floor;
+    /// `Missing` when `git --version` does not answer with a version; the spawn's classification
+    /// when it cannot be run.
+    pub fn refuse_below_governed_floor(&self, intent: &Intent, hooks_dir: &Path) -> GitResult<()> {
+        if !intent.is_governed() {
+            return Ok(());
+        }
+        let version = if let Some(known) = self.version.get() {
+            known.clone()
+        } else {
+            let mut cmd = Command::new(&self.git);
+            cmd.arg("--version");
+            neutralise_env(&mut cmd);
+            cmd.current_dir(hooks_dir)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null());
+            let out = cmd.output().map_err(|e| classify_spawn(&e))?;
+            let probed = parse_version(&out.stdout)
+                .filter(|_| out.status.success())
+                .ok_or(GitError::Missing)?;
+            self.version.get_or_init(|| probed).clone()
+        };
+        if meets_governed_floor(&version) {
+            Ok(())
+        } else {
+            Err(GitError::TooOld { found: version.raw })
         }
     }
 
@@ -341,7 +388,9 @@ impl WriteExec {
     ///
     /// # Errors
     /// `GitError::Cancelled` when `cancel` fires before the spawn or while the child runs;
-    /// `GitError::Budget` when the intent's deadline elapses; the spawn's classification
+    /// `TooOld` (or the version probe's own failure) for a governed intent below the governed
+    /// floor, before anything is spawned for it; `GitError::Budget` when the intent's deadline
+    /// elapses; the spawn's classification
     /// (`Missing`, `PermissionDenied`, `Internal`) when the group cannot be started or waited on;
     /// `TransportRefused` when git refused a transport the intent does not list; and `Internal`
     /// when a pipe is missing, stdin cannot be written, or git exits unsuccessfully otherwise.
@@ -353,6 +402,7 @@ impl WriteExec {
         on_stderr: &mut dyn FnMut(&str),
     ) -> GitResult<RunOutput> {
         cancel.check()?;
+        self.refuse_below_governed_floor(intent, &env.hooks_dir)?;
 
         let mut cmd = Command::new(&self.git);
         cmd.args(write_base_args(intent, env));
