@@ -917,12 +917,14 @@ test('an id naming a phase the register does not hold says so, and says nothing 
   // `P4-28-1` was reported as `criterion id outside 1..67` **and** `spec must cite §16.` — two
   // problems that name the wrong defect and read as malformed phase-1 data. A validator that
   // reports the wrong defect is how the last two widenings were mistaken for bad input.
+  // [p4] R218: moved to phase 5 when the register learned phase 4, never deleted — the refusal
+  // of a phase nobody holds stays tested.
   const problems = validateRegistry({
     version: 1,
-    criteria: [p3Entry({ id: 'P4-28-1', checks: [] })],
+    criteria: [p3Entry({ id: 'P5-50-1', checks: [] })],
   });
   assert.ok(
-    problems.some((p) => p.includes('names phase 4')),
+    problems.some((p) => p.includes('names phase 5')),
     problems.join('\n'),
   );
   assert.ok(!problems.some((p) => p.includes('1..67')), 'it is not a malformed phase-1 criterion');
@@ -1631,4 +1633,68 @@ test('§35 holds its nine criteria, and phase 3 carries a mirror and a scanning 
       .some((k) => k.mirror !== undefined),
     '§35 adds the first new sort key since the cursor pair was written, and asserts it both sides',
   );
+});
+
+// ---------------------------------------------------------------------------------------------
+// [p4] The fourth phase. Same rule as the second and third: the earlier forms above are
+// untouched, and a fourth id form is added beside them rather than replacing any.
+// ---------------------------------------------------------------------------------------------
+
+// `deferred` by default: phase 4 registers ahead of its lanes, so a correct phase-4 entry carries
+// a plan deferral until the lane that lands its test merges.
+const p4Check = (over = {}) => ({
+  id: 'AC-P4-38-1',
+  status: 'deferred',
+  runner: 'cargo',
+  owner: 'p4-38',
+  test: 'acceptance_p4::ac_p4_38_1',
+  assert: 'a'.repeat(12),
+  ...over,
+});
+
+const p4Entry = (over = {}) => ({
+  id: 'P4-38-1',
+  title: 'A phase-4 criterion',
+  group: 'functional',
+  spec: '§38.16',
+  checks: [p4Check()],
+  ...over,
+});
+
+test('criterionOf reads a phase-4 criterion out of a phase-4 check id', () => {
+  assert.equal(criterionOf('AC-P4-38-1'), 'P4-38-1');
+  assert.equal(criterionOf('AC-P4-42-25-nsis'), 'P4-42-25');
+  assert.equal(criterionOf('AC-P4-45-12-win'), 'P4-45-12');
+  assert.equal(criterionOf('AC-P4-48-27'), 'P4-48-27');
+  // §37 is the scope section and §49 the register contract; neither owns a criterion.
+  assert.equal(criterionOf('AC-P4-37-1'), null);
+  assert.equal(criterionOf('AC-P4-49-1'), null);
+  // No letter: phase 4 has none, and one would need a ruling and a widening, as R139 did.
+  assert.equal(criterionOf('AC-P4-38-1a'), null);
+  // The slug begins with a letter, or `AC-P4-40-10-x` is ambiguous with `P4-40-1` and `0-x`.
+  assert.equal(criterionOf('AC-P4-40-1-0x'), null);
+  // The earlier phases are unchanged.
+  assert.equal(criterionOf('AC-14'), '14');
+  assert.equal(criterionOf('AC-P2-24-3'), 'P2-24-3');
+  assert.equal(criterionOf('AC-P3-30-11a'), 'P3-30-11a');
+});
+
+test('a phase-4 criterion cites its own section, never §16', () => {
+  const criteria = [p4Entry({ id: 'P4-45-3', spec: '§16.1', checks: [] })];
+  const problems = validateRegistry({ version: 1, criteria });
+  assert.ok(
+    problems.some((p) => p.includes('spec must cite §45.')),
+    problems.join('\n'),
+  );
+  assert.ok(!problems.some((p) => p.includes('names phase')), 'phase 4 is held');
+});
+
+test('a phase-4 id outside §38–§48 is refused by the id form', () => {
+  for (const id of ['P4-49-1', 'P4-37-2', 'P4-38-1a']) {
+    const problems = validateRegistry({ version: 1, criteria: [p4Entry({ id, checks: [] })] });
+    assert.ok(
+      problems.some((p) => p.includes(`${id}: a phase-4 criterion id is`)),
+      `${id}\n${problems.join('\n')}`,
+    );
+  }
 });

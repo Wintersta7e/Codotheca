@@ -39,6 +39,10 @@ const P2_ID = /^P2-(2[0-5])-(\d{1,2})$/u;
 // a criterion `P3-32-1` carrying a slug `6-caps`.
 const CHECK_ID_P3 = /^AC-(P3-(?:2[89]|3[0-5])-\d{1,2}[a-c]?)(-[a-z][a-z0-9]*)*$/u;
 const P3_ID = /^P3-(2[89]|3[0-5])-(\d{1,2}[a-c]?)$/u;
+// §49.1's `AC-P4-<section>-<n>`. `3[89]|4[0-8]` refuses §37 and §49, which own no criterion, by
+// the id form rather than a reviewer. No letter: phase 4 has none, and one needs a ruling (R139).
+const CHECK_ID_P4 = /^AC-(P4-(?:3[89]|4[0-8])-\d{1,2})(-[a-z][a-z0-9]*)*$/u;
+const P4_ID = /^P4-(3[89]|4[0-8])-(\d{1,2})$/u;
 // R44: a plan number, optionally with the letter suffix of a second half — `13`, `13b`, `13c`
 // — and a phase-2 or phase-3 plan id, `p2-20`, `p3-36a`.
 //
@@ -120,7 +124,9 @@ export function criterionOf(checkId) {
   const p2 = CHECK_ID_P2.exec(id);
   if (p2 !== null) return p2[1];
   const p3 = CHECK_ID_P3.exec(id);
-  return p3 === null ? null : p3[1];
+  if (p3 !== null) return p3[1];
+  const p4 = CHECK_ID_P4.exec(id);
+  return p4 === null ? null : p4[1];
 }
 
 /**
@@ -139,7 +145,9 @@ function sectionOf(criterionId) {
   const p2 = P2_ID.exec(id);
   if (p2 !== null) return p2[1];
   const p3 = P3_ID.exec(id);
-  return p3 === null ? null : p3[1];
+  if (p3 !== null) return p3[1];
+  const p4 = P4_ID.exec(id);
+  return p4 === null ? null : p4[1];
 }
 
 export function rollUp(entry) {
@@ -656,8 +664,10 @@ export function validateRegistry(registry, root = null) {
       else if (/[a-c]$/u.test(id) && !LETTERED_P3.includes(id)) {
         problems.push(`${id}: only ${LETTERED_P3.join(' and ')} carry a letter`);
       }
+    } else if (phase === 4) {
+      if (section === null) problems.push(`${id}: a phase-4 criterion id is P4-<38..48>-<n>`);
     } else {
-      problems.push(`${id}: names phase ${String(phase)}, and the register holds 1, 2 and 3`);
+      problems.push(`${id}: names phase ${String(phase)}, and the register holds 1, 2, 3 and 4`);
     }
     if (!GROUPS.includes(entry.group)) {
       problems.push(`${id}: group is not one of ${GROUPS.join(', ')}`);
