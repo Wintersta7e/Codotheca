@@ -27,12 +27,12 @@ fn running_distro() -> Option<String> {
         .map(|d| d.name)
 }
 
-fn worker_bytes() -> Arc<Vec<u8>> {
+fn worker_bytes() -> Arc<[u8]> {
     // Build it first, on a Linux target:
     //   cargo build --release --manifest-path core/Cargo.toml --bin codotheca-worker
     let path = std::env::var("CODOTHECA_WORKER_ELF")
         .expect("set CODOTHECA_WORKER_ELF to a linux codotheca-worker binary");
-    Arc::new(std::fs::read(path).expect("reads the worker ELF"))
+    Arc::from(std::fs::read(path).expect("reads the worker ELF"))
 }
 
 #[test]

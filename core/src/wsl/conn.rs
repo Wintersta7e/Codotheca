@@ -378,10 +378,7 @@ impl WslWorkerPool {
 /// Installs this build's worker inside a distro and launches it without a shell.
 pub struct WslExeLauncher {
     cli: Arc<dyn WslCli>,
-    // `Arc<[u8]>` is the better type, but `new` takes this one and a Windows-only suite builds
-    // its launchers from an `Arc<Vec<u8>>` it shares between them.
-    #[allow(clippy::rc_buffer)]
-    worker_bytes: Arc<Vec<u8>>,
+    worker_bytes: Arc<[u8]>,
     user: Option<String>,
 }
 
@@ -399,7 +396,7 @@ impl WslExeLauncher {
     /// A launcher that installs `worker_bytes`, this build's worker binary, and runs it as
     /// `user`, or as the distro's default user when that is `None`.
     #[must_use]
-    pub fn new(cli: Arc<dyn WslCli>, worker_bytes: Arc<Vec<u8>>, user: Option<String>) -> Self {
+    pub fn new(cli: Arc<dyn WslCli>, worker_bytes: Arc<[u8]>, user: Option<String>) -> Self {
         Self {
             cli,
             worker_bytes,
@@ -490,7 +487,7 @@ impl WslExeLauncher {
     }
 
     fn install(&self, distro: &str) -> Result<String, WslError> {
-        let fingerprint = worker_fingerprint(self.worker_bytes.as_slice());
+        let fingerprint = worker_fingerprint(&self.worker_bytes);
         let home = String::from_utf8(self.run_output(distro, &home_argv())?)
             .map_err(|err| deploy_error(distro, err.to_string()))?;
         let home = home.trim();
@@ -519,11 +516,7 @@ impl WslExeLauncher {
         let plan = plan_deploy(&paths, exe_present, &siblings);
         if plan.install {
             self.run_output(distro, &mkdir_argv(&paths.version_dir))?;
-            self.run_with_input(
-                distro,
-                &write_argv(&paths.exe),
-                self.worker_bytes.as_slice(),
-            )?;
+            self.run_with_input(distro, &write_argv(&paths.exe), &self.worker_bytes)?;
         }
         // Always, not only after a copy: a deploy killed between the copy and the mode change
         // leaves a complete file the size check accepts and `--exec` still refuses. One extra

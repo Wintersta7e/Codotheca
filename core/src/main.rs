@@ -164,7 +164,7 @@ fn build_wsl_dispatcher(
     };
     let launcher = Arc::new(codotheca_core::wsl::conn::WslExeLauncher::new(
         cli,
-        Arc::new(bytes),
+        Arc::from(bytes),
         None,
     ));
     Some(Arc::new(codotheca_core::wsl::dispatch::WslDispatcher::new(
