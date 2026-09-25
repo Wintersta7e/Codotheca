@@ -100,7 +100,7 @@ describe('the drawer closes without cancelling', () => {
     await waitFor(() => {
       expect(screen.getByText('WXYZ-1234')).toBeTruthy();
     });
-    const shown = screen.getByText(/s left/u).textContent ?? '';
+    const shown = screen.getByText(/s left/u).textContent;
 
     // Close the drawer. This unmounts the panel; it must not end the flow.
     first.unmount();
@@ -113,7 +113,7 @@ describe('the drawer closes without cancelling', () => {
     await waitFor(() => {
       expect(screen.getByText('WXYZ-1234')).toBeTruthy();
     });
-    const again = screen.getByText(/s left/u).textContent ?? '';
+    const again = screen.getByText(/s left/u).textContent;
 
     expect(again).not.toBe(shown);
     expect(Number.parseInt(again, 10)).toBeLessThan(Number.parseInt(shown, 10));
@@ -269,7 +269,7 @@ describe('a grant the store refused', () => {
     });
     expect(screen.queryByText('WXYZ-1234')).toBeNull();
 
-    const line = screen.getByText(/the keychain refused the operation/u).textContent ?? '';
+    const line = screen.getByText(/the keychain refused the operation/u).textContent;
     expect(line, 'the line does not say the provider did its part').toContain(
       'granted the token and this machine could not store it',
     );

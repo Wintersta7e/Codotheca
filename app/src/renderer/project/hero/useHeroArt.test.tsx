@@ -54,7 +54,7 @@ describe('the hero address', () => {
   });
 
   it('holds the answered address while the next hash is being answered', async () => {
-    let release: ((url: string) => void) | null = null;
+    let release = null as ((url: string) => void) | null;
     const request = vi.fn((_name: string, args: { hash: string }) => {
       if (args.hash === 'aa') return Promise.resolve('url-a');
       return new Promise<string>((resolve) => {
@@ -70,7 +70,7 @@ describe('the hero address', () => {
     // The plate must not flash between two ready bitmaps.
     expect(view.result.current).toBe('url-a');
     if (release === null) throw new Error('the second request was never issued');
-    (release as (url: string) => void)('url-b');
+    release('url-b');
     await waitFor(() => {
       expect(view.result.current).toBe('url-b');
     });

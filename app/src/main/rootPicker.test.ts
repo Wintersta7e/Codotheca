@@ -49,7 +49,7 @@ interface Harness {
 function harness(rows: readonly RootSuggestion[]): Harness {
   const addRoot = vi.fn(() => Promise.resolve(ADDED));
   const suggestRoots = vi.fn(() => Promise.resolve(rows));
-  let handler: ((payload: unknown) => Promise<CommitSuggestionReply>) | null = null;
+  let handler = null as ((payload: unknown) => Promise<CommitSuggestionReply>) | null;
   registerSuggestionCommit({
     suggestRoots,
     addRoot,

@@ -59,16 +59,23 @@ export function allowsScheduledFrames(tier: ResolvedTier): boolean {
 
 const REDUCE_QUERY = '(prefers-reduced-motion: reduce)';
 
+/** The media query, where the environment has `matchMedia` at all — jsdom does not. */
+function mediaQuery(query: string): MediaQueryList | undefined {
+  // Typed as optional because the DOM lib declares `matchMedia` on every global, which is not so.
+  const host: { matchMedia?: (query: string) => MediaQueryList } = globalThis;
+  return host.matchMedia?.(query);
+}
+
 export function useResolvedTier(
   stored: EffectsTier,
   softwareCompositing: boolean,
   reducedMotionOverride: boolean,
 ): ResolvedTier {
   const [prefersReducedMotion, setPrefers] = useState(
-    () => globalThis.matchMedia?.(REDUCE_QUERY).matches ?? false,
+    () => mediaQuery(REDUCE_QUERY)?.matches ?? false,
   );
   useEffect(() => {
-    const query = globalThis.matchMedia?.(REDUCE_QUERY);
+    const query = mediaQuery(REDUCE_QUERY);
     if (query === undefined) return undefined;
     const onChange = (): void => {
       setPrefers(query.matches);

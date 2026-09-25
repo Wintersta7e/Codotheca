@@ -107,7 +107,7 @@ describe('§25.4 the CI list renders the record and never judges it', () => {
         observedAt: NOW - 300,
       },
     });
-    const text = screen.getByTestId('cp-remote-ci').textContent ?? '';
+    const text = screen.getByTestId('cp-remote-ci').textContent;
     for (const banned of ['CI GREEN', 'ALL PASSING', 'ALL PASSED', 'HEALTHY', '1 OF 2', '2 RUNS']) {
       expect(text, banned).not.toContain(banned);
     }

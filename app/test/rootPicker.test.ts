@@ -9,7 +9,7 @@ function harness(
   dialog: { canceled: boolean; filePaths: string[] },
   addRoot: (args: { pathBytes: { b64: string }; confirmLarge: boolean }) => Promise<RootAdd>,
 ): (payload: unknown) => Promise<PickRootReply> {
-  let handler: ((payload: unknown) => Promise<PickRootReply>) | null = null;
+  let handler = null as ((payload: unknown) => Promise<PickRootReply>) | null;
   let registrations = 0;
   registerRootPicker({
     showOpenDialog: () => Promise.resolve(dialog),

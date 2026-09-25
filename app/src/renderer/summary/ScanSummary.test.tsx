@@ -164,7 +164,7 @@ describe('the two controls, and the one that does not exist', () => {
   it('offers no merge anywhere — §11.1’s ruling, not an omission', () => {
     const { calls, onOpenProject } = draw(payload([untrusted, ambiguous]));
     for (const button of screen.getAllByRole('button')) {
-      expect(button.textContent ?? '').not.toMatch(/merge|join|combine|forget/i);
+      expect(button.textContent).not.toMatch(/merge|join|combine|forget/i);
     }
     fireEvent.click(screen.getByRole('button', { name: 'OPEN PROJECT' }));
     expect(onOpenProject).toHaveBeenCalledWith(9);
@@ -191,7 +191,7 @@ describe('a run whose banner was dismissed', () => {
 
   it('drops the problem clause, because a count over an empty list is the same contradiction', () => {
     draw(payload([untrusted, ambiguous]), true);
-    const header = screen.getByTestId('sum-header').textContent ?? '';
+    const header = screen.getByTestId('sum-header').textContent;
     expect(header).not.toMatch(/problem/iu);
     // What was actually walked is still true and still shown.
     expect(header).toMatch(/directories walked/u);

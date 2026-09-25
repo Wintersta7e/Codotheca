@@ -79,7 +79,7 @@ describe('remote surfaces: the opener', () => {
   it('AC-P2-25-12 no URL crosses IPC and the shell is the only thing that opens one', async () => {
     const requests: { name: string; args: unknown }[] = [];
     const opened: string[] = [];
-    let handler: ((payload: unknown) => Promise<OpenRemoteLinkReply>) | null = null;
+    let handler = null as ((payload: unknown) => Promise<OpenRemoteLinkReply>) | null;
 
     registerExternalLink({
       handle: (channel, fn) => {
@@ -99,7 +99,7 @@ describe('remote surfaces: the opener', () => {
       },
     });
     if (handler === null) throw new Error('registerExternalLink registered no handler');
-    const invoke = handler as (payload: unknown) => Promise<OpenRemoteLinkReply>;
+    const invoke = handler;
 
     // The renderer's message carries `{ projectId, kind }` only. A `url` field on the payload
     // reaches nothing: the args that leave this process are built from the two read fields.

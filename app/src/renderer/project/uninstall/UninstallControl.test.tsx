@@ -106,7 +106,7 @@ describe('the uninstall control', () => {
       />,
     );
     const blockedState = blocked.querySelector('.cp-uninstall')?.getAttribute('data-state');
-    const blockedText = blocked.textContent ?? '';
+    const blockedText = blocked.textContent;
     cleanup();
 
     const { container: unknown } = render(
@@ -116,7 +116,7 @@ describe('the uninstall control', () => {
       />,
     );
     const unknownState = unknown.querySelector('.cp-uninstall')?.getAttribute('data-state');
-    const unknownText = unknown.textContent ?? '';
+    const unknownText = unknown.textContent;
 
     expect(blockedState).toBe('blocked');
     expect(unknownState).toBe('unknown');
@@ -158,7 +158,7 @@ describe('the uninstall control', () => {
           onUninstall={vi.fn()}
         />,
       );
-      const text = document.body.textContent ?? '';
+      const text = document.body.textContent;
       for (const banned of ['DELETE', 'REMOVE THE', 'RECLAIM SPACE', 'anyway', 'Anyway', 'Force']) {
         expect(text, `${disposition} must not say ${banned}`).not.toContain(banned);
       }

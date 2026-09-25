@@ -42,7 +42,7 @@ const HOSTILE = [
 function textOf(fragment: DocumentFragment): string {
   const host = document.createElement('div');
   host.appendChild(fragment.cloneNode(true));
-  return host.textContent ?? '';
+  return host.textContent;
 }
 
 function elementsOf(fragment: DocumentFragment): Element[] {

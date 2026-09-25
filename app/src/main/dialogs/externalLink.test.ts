@@ -25,7 +25,7 @@ function harness(options: {
   const opened: string[] = [];
   const confirmed: string[] = [];
   const requests: { name: string; args: unknown }[] = [];
-  let handler: Handler | null = null;
+  let handler = null as Handler | null;
 
   registerExternalLink({
     handle: (channel, fn) => {

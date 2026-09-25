@@ -83,7 +83,7 @@ describe('installQuitGate', () => {
 
   it('a second quit while the gate is running is blocked, and the steps run once', async () => {
     let runs = 0;
-    let release: (() => void) | null = null;
+    let release = null as (() => void) | null;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -106,7 +106,7 @@ describe('installQuitGate', () => {
     expect(runs).toBe(1);
     expect(fixture.prevented()).toBe(2);
     if (release === null) throw new Error('the slow step did not start');
-    (release as () => void)();
+    release();
     await flush();
     expect(fixture.quits()).toBe(1);
   });

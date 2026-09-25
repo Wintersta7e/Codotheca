@@ -63,27 +63,30 @@ export function useInstallOffer(projectId: ProjectId | null): InstallOffer {
       return undefined;
     }
     let live = true;
+    // Read through a call: the cleanup clears `live` during an await, and a plain read would stay
+    // narrowed to whatever the first test found.
+    const stillLive = (): boolean => live;
     setPreview(null);
     void (async () => {
       try {
         const settings = await deps.request('settings.get', {});
-        if (!live) return;
+        if (!stillLive()) return;
         const rootId = settings.installRootId;
         setChosen(rootId);
         if (rootId === null) {
           // No destination is stored, so there is nothing to preview yet. §24.3a's chooser is
           // what the surface draws instead, and `install.preview` is not callable without a root.
           const list = await deps.request('roots.list', {});
-          if (live) setRoots(list);
+          if (stillLive()) setRoots(list);
           return;
         }
         setRoots(null);
         const answer = await deps.request('install.preview', { projectId, rootId });
-        if (live) setPreview(answer);
+        if (stillLive()) setPreview(answer);
       } catch {
         // §11.4's failure window owns the copy. An offer this surface cannot compute is not an
         // offer, and a refusal it invented would be a claim about the remote it cannot make.
-        if (live) setPreview(null);
+        if (stillLive()) setPreview(null);
       }
     })();
     return () => {

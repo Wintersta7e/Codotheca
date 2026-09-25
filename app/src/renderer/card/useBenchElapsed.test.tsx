@@ -28,7 +28,7 @@ function Probe(props: {
   return <span data-testid="bench">{text ?? 'no session'}</span>;
 }
 
-const bench = (): string => screen.getByTestId('bench').textContent ?? '';
+const bench = (): string => screen.getByTestId('bench').textContent;
 
 describe('§7.8‘s figure: elapsed wall time, minute resolution', () => {
   it('formats <h>h <mm>m above an hour and <m>m below it', () => {

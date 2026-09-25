@@ -176,7 +176,7 @@ describe('§30.9 the per-check switches', () => {
         .getAttribute('aria-checked'),
     ).toBe('false');
     expect(HEALTH_CHECKS_FOOTNOTE).not.toBe('');
-    expect(group.textContent ?? '').toContain(HEALTH_CHECKS_FOOTNOTE);
+    expect(group.textContent).toContain(HEALTH_CHECKS_FOOTNOTE);
     expect(HEALTH_CHECKS_FOOTNOTE).toMatch(/hides its items/u);
     // §30.9: an item that survived the off period makes the check read open straight away; only
     // with no item left does it wait, unknown, for its next run. Half of that is not the rule.
@@ -197,7 +197,7 @@ describe('§30.9 the per-check switches', () => {
     ).toBe('false');
     // No other check needs that grant, so no other row carries the note.
     const carrying = rowsIn(ungranted).filter((row) =>
-      (row.textContent ?? '').includes(GRANT_MISSING_NOTE),
+      row.textContent.includes(GRANT_MISSING_NOTE),
     );
     expect(carrying.map((row) => row.getAttribute('data-row'))).toEqual([
       'health-check-todo_marker',
@@ -222,7 +222,7 @@ describe('§30.9 the per-check switches', () => {
 
   it('the words clean healthy none and all appear nowhere in the group', async () => {
     const group = await openGroup(deps(settingsWith({ contentScanEnabled: false })).deps);
-    const text = group.textContent ?? '';
+    const text = group.textContent;
     expect(text).not.toBe('');
     const names = [...group.querySelectorAll('*')]
       .map((n) => n.getAttribute('aria-label') ?? '')

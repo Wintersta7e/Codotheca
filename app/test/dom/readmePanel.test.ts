@@ -103,7 +103,7 @@ describe('§25.5 the README panel, as a reader sees it', () => {
     );
     await screen.findByTestId('cp-readme-frame', undefined, SETTLE);
     expect(container.innerHTML).not.toContain('UNKNOWN');
-    expect(container.textContent ?? '').not.toContain('UNKNOWN');
+    expect(container.textContent).not.toContain('UNKNOWN');
   });
 
   it('carries no link affordance in the panel itself', async () => {

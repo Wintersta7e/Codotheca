@@ -215,7 +215,7 @@ describe('App — the composition root', () => {
     });
     // §10.1: the word appears nowhere in first run. Asserted here in jsdom and again against a
     // real render in `app/e2e/mount.spec.ts`.
-    expect((document.body.textContent ?? '').toLowerCase()).not.toContain('setup');
+    expect(document.body.textContent.toLowerCase()).not.toContain('setup');
   });
 
   it('takes the whole screen for a fatal index, over everything behind it', async () => {

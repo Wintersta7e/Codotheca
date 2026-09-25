@@ -28,11 +28,11 @@ function draw(
 }
 
 function pageText(): string {
-  return screen.getByTestId('cp-remote').textContent ?? '';
+  return screen.getByTestId('cp-remote').textContent;
 }
 
 function blockText(label: string): string {
-  return screen.getByTestId(`cp-remote-${label}`).textContent ?? '';
+  return screen.getByTestId(`cp-remote-${label}`).textContent;
 }
 
 describe('§25.1 with no account the forge blocks and the CI list do not render', () => {

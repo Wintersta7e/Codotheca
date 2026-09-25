@@ -97,10 +97,9 @@ export const OpensIn = forwardRef<HTMLButtonElement, OpensInProps>(function Open
           {editors.map((target) => {
             const note = verifyNote(target.verifyState);
             const isResolved = resolved !== null && resolved.target.id === target.id;
-            const parts = [
-              isResolved && resolved !== null ? tierLabel(resolved.tier) : null,
-              note,
-            ].filter((part): part is string => part !== null);
+            const parts = [isResolved ? tierLabel(resolved.tier) : null, note].filter(
+              (part): part is string => part !== null,
+            );
             return (
               <button
                 key={target.id}

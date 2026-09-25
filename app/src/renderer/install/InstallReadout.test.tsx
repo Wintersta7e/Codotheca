@@ -32,7 +32,7 @@ test('no % and no aggregate figure appears anywhere across a whole install', () 
   for (let t = 0; t <= STAGE_FLOOR_MS + 300; t += 17) {
     cleanup();
     render(<InstallReadout observed={TRANSCRIPT} elapsedMs={t} surface="tile" />);
-    const text = document.body.textContent ?? '';
+    const text = document.body.textContent;
     expect(text).not.toContain('%');
     // A percentage need not carry a sign to be one: a bare figure out of a hundred would do.
     expect(text).not.toMatch(/\bof 100\b/u);
@@ -62,7 +62,7 @@ test('no rendered number decreases across the whole sequence', () => {
   for (let t = 0; t <= STAGE_FLOOR_MS; t += 11) {
     cleanup();
     render(<InstallReadout observed={TRANSCRIPT} elapsedMs={t} surface="tile" />);
-    const text = document.body.textContent ?? '';
+    const text = document.body.textContent;
     const match = /([\d,]+) of /u.exec(text);
     if (match === null) continue;
     const value = Number(required(match[1], 'figure').replaceAll(',', ''));

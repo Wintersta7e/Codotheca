@@ -26,7 +26,7 @@ function Probe(props: CardBitmapInput): ReactElement {
   );
 }
 
-const shown = (): string => screen.getByTestId('src').textContent ?? '';
+const shown = (): string => screen.getByTestId('src').textContent;
 const held = (): string | null => screen.getByTestId('src').getAttribute('data-held');
 
 /** Runs `fn` and flushes the decode's microtask inside one `act`, so React sees both. */

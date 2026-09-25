@@ -142,7 +142,7 @@ describe('the control', () => {
   });
 
   it('issues one command per press, not one per click while a press is in flight', async () => {
-    let release: ((value: unknown) => void) | null = null;
+    let release = null as ((value: unknown) => void) | null;
     const request = vi.fn(
       () =>
         new Promise((resolve) => {
@@ -172,7 +172,7 @@ describe('the control', () => {
       expect(request).toHaveBeenCalledTimes(1);
     });
     if (release === null) throw new Error('the request was never issued');
-    (release as (value: unknown) => void)({ offset: 1, rejected: false });
+    release({ offset: 1, rejected: false });
   });
 
   it('is named for what it does, and names no other surface', () => {

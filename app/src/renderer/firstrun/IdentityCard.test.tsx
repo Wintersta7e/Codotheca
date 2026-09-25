@@ -105,7 +105,7 @@ test('the row carries the weight that makes a tick judgeable', () => {
 test('an address that has authored nothing here says so in words', () => {
   renderCard([identity({ commits: 0, projects: 0 })]);
   expect(screen.getByText(new RegExp(copy.IDENTITY_NO_COMMITS))).toBeTruthy();
-  expect(document.body.textContent ?? '').not.toContain('0 COMMITS');
+  expect(document.body.textContent).not.toContain('0 COMMITS');
 });
 
 test('one collapses the plural on the weight', () => {
@@ -197,10 +197,10 @@ test('the card offers no way to add an address', () => {
 // deleted" is the opposite claim and is the one place the word belongs.
 test('nothing here is destructive', () => {
   renderCard([identity()]);
-  const text = document.body.textContent ?? '';
+  const text = document.body.textContent;
   expect(text).not.toMatch(/FORGET/i);
   for (const button of screen.getAllByRole('button')) {
-    expect(button.textContent ?? '').not.toMatch(/FORGET|DELETE|REMOVE|CLEAN/i);
+    expect(button.textContent).not.toMatch(/FORGET|DELETE|REMOVE|CLEAN/i);
   }
   expect(text).toContain('Nothing is deleted.');
 });

@@ -375,7 +375,7 @@ export function applyAssets(fragment: SanitisedFragment, assets: readonly Readme
     }
     const image = placeholder.ownerDocument.createElement('img');
     image.setAttribute('src', asset.dataUri);
-    image.setAttribute('alt', placeholder.textContent ?? '');
+    image.setAttribute('alt', placeholder.textContent);
     image.className = 'cdt-readme-image';
     placeholder.replaceWith(image);
   }

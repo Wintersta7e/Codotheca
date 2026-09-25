@@ -178,7 +178,7 @@ describe('the dead-switch rule, over the whole drawer', () => {
   it('phase 1 has no destructive control, in any spelling, on this surface', async () => {
     const { deps } = harness();
     await open(deps);
-    const text = document.body.textContent ?? '';
+    const text = document.body.textContent;
     // The token appears in no rendered string at all.
     for (const banned of [/\bforget\b/i, /\buninstall\b/i]) expect(text).not.toMatch(banned);
     // And no control offers to destroy anything. `NEVER delete_repo` is a scope this product
@@ -186,7 +186,7 @@ describe('the dead-switch rule, over the whole drawer', () => {
     const controls = [...screen.getAllByRole('button'), ...screen.getAllByRole('switch')];
     expect(controls.length).toBeGreaterThan(4);
     for (const control of controls) {
-      const name = control.getAttribute('aria-label') ?? control.textContent ?? '';
+      const name = control.getAttribute('aria-label') ?? control.textContent;
       for (const banned of [/\bforget\b/i, /\buninstall\b/i, /\bdelete\b/i, /\bremove\b/i]) {
         expect(name).not.toMatch(banned);
       }

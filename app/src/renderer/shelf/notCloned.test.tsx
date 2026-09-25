@@ -131,7 +131,7 @@ describe('the tile claims nothing it has not established', () => {
 
   it('renders no freshness age slot and no stale marker', () => {
     const container = drawCard();
-    const text = container.textContent ?? '';
+    const text = container.textContent;
     expect(text).not.toContain('as of');
     expect(text).not.toContain('stale');
     expect(text).not.toContain('ago');
@@ -149,7 +149,7 @@ describe('the tile claims nothing it has not established', () => {
   });
 
   it('renders no playtime figure', () => {
-    const text = drawCard().textContent ?? '';
+    const text = drawCard().textContent;
     expect(text).not.toContain('PLAYTIME');
     expect(text).not.toMatch(/\b0h\b/);
     expect(text).not.toContain('AT THE BENCH');

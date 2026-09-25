@@ -104,15 +104,18 @@ export function useReadmeDocument({
       return undefined;
     }
     let cancelled = false;
+    // Read through a call: the cleanup sets `cancelled` during an await, and a plain read would
+    // stay narrowed to whatever the first test found.
+    const isCancelled = (): boolean => cancelled;
 
     const run = async (): Promise<void> => {
       const source = await deps.request('projects.readme', { projectId, locationId });
-      if (cancelled) return;
+      if (isCancelled()) return;
       if (source.state !== 'present' || source.text === null || source.text === '') return;
 
       // The one dynamic import. Everything the pipeline needs arrives with it.
       const pipeline = await import('./frame');
-      if (cancelled) return;
+      if (isCancelled()) return;
 
       const rendered = pipeline.renderMarkup(source.text);
       const tokens = pipeline.readFrameTokens(document.documentElement);
@@ -134,7 +137,7 @@ export function useReadmeDocument({
         local,
         remote,
       });
-      if (cancelled) return;
+      if (isCancelled()) return;
       pipeline.applyAssets(rendered.fragment, assets);
       const blockedRemote = assets.filter((asset) => asset.state === 'blocked').length;
       setState((previous) => ({

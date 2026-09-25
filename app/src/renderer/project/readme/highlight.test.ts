@@ -12,7 +12,7 @@ function htmlOf(source: string): string {
 function textOf(source: string): string {
   const host = document.createElement('div');
   host.appendChild(renderMarkup(source).fragment.cloneNode(true));
-  return host.textContent ?? '';
+  return host.textContent;
 }
 
 describe('code fences', () => {

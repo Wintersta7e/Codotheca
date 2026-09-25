@@ -259,7 +259,7 @@ describe('§25.3a Peek on a not-cloned row', () => {
 
   it('names none of the three sentences §25.3a forbids on this row', () => {
     const { container } = render(<PeekPanel peek={notCloned()} now={NOW} tier="full" />);
-    const text = container.textContent ?? '';
+    const text = container.textContent;
     expect(text).not.toContain('No README indexed yet.');
     expect(text).not.toContain('No README in this repository.');
     expect(text).not.toContain('0h');

@@ -19,7 +19,7 @@ function renderCard(): { onAnswer: Mock<(answer: 'startWithTheSystem' | 'leaveIt
 // window lifetime the trade rests on.
 test('the card carries the measured figures', () => {
   renderCard();
-  const text = document.body.textContent ?? '';
+  const text = document.body.textContent;
   for (const figure of ['307 MB', '522 MB', '232 MB', '9 ms', '134', 'thirty minutes']) {
     expect(text).toContain(figure);
   }
@@ -28,7 +28,7 @@ test('the card carries the measured figures', () => {
 // "~30 MB" was false by seventeen times and was once written into consent copy.
 test('the figure that was false by seventeen times appears nowhere', () => {
   renderCard();
-  const text = document.body.textContent ?? '';
+  const text = document.body.textContent;
   expect(text).not.toMatch(/~\s*30\s*MB/i);
   expect(text).not.toMatch(/\b30\s*MB\b/i);
   // The guard above must not be passing because the real figures are absent.

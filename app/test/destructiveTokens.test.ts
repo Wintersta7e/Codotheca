@@ -46,7 +46,8 @@ function parseReport(out: string): { filesScanned: number; violations: unknown[]
 interface Site {
   readonly path: string;
   readonly token: string;
-  readonly why: string;
+  /** `importGate` does not check it, so it stays unknown until the test that does. */
+  readonly why: unknown;
 }
 
 interface Gate {
@@ -225,7 +226,8 @@ describe('the destructive-token gate', () => {
       expect(typeof site.token, 'a site without a token permits every banned word there').toBe(
         'string',
       );
-      expect((site.why ?? '').length, 'a site needs a written reason').toBeGreaterThan(20);
+      const why = typeof site.why === 'string' ? site.why : '';
+      expect(why.length, 'a site needs a written reason').toBeGreaterThan(20);
     }
   });
 

@@ -109,7 +109,7 @@ export function ReadmePanel({
       <div className="cp-readme-body">
         <div className="cp-readme-name">{row.name}</div>
         <div className="cp-readme-stripe" aria-hidden="true" />
-        {framed && srcdoc !== null ? (
+        {framed ? (
           <iframe
             /* Keyed on the document's revision, because Chromium does **not** re-navigate a
                sandboxed frame when `srcdoc` is replaced: the attribute changes and the frame keeps

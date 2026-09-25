@@ -15,6 +15,8 @@ import { SORT_LABELS } from '../src/renderer/shelf/viewState.js';
 const appDir = path.resolve(__dirname, '..');
 const rendererDir = path.join(appDir, 'src/renderer');
 const nodeModules = path.resolve(appDir, '..', 'node_modules');
+// The variants come from the schema on disk, which may name a key the renderer has no label for.
+const SORT_LABEL_BY_KEY: Readonly<Record<string, string>> = SORT_LABELS;
 
 /**
  * §8.0a states the bar's floor is **measured, not asserted** — the width at which the last shed
@@ -302,7 +304,7 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
         (node) => node.getBoundingClientRect().width,
       );
       const key = String(variants[index]);
-      const label = SORT_LABELS[key as keyof typeof SORT_LABELS] ?? key;
+      const label = SORT_LABEL_BY_KEY[key] ?? key;
       // eslint-disable-next-line no-console -- the measurement is the deliverable
       console.log(`sort value width: ${key} (${label}) = ${width.toFixed(2)}px`);
       if (width > best.width) best = { index, width };
@@ -314,7 +316,7 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
   const widestKey = String(variants[widest.index]);
   // eslint-disable-next-line no-console -- the measurement is the deliverable
   console.log(
-    `widest sort label: ${widestKey} (${SORT_LABELS[widestKey as keyof typeof SORT_LABELS] ?? widestKey}) at ${widest.width.toFixed(2)}px`,
+    `widest sort label: ${widestKey} (${SORT_LABEL_BY_KEY[widestKey] ?? widestKey}) at ${widest.width.toFixed(2)}px`,
   );
 
   /** The narrowest width at which this shed level still fits, at the widest label. Bisection,

@@ -271,7 +271,7 @@ describe('§23.4: the palette sub-line claims no interaction it never had', () =
     if (row === null) throw new Error(`no row for ${name}`);
     const sub = row.querySelector('.qs-sub');
     if (sub === null) throw new Error(`no sub-line for ${name}`);
-    return sub.textContent ?? '';
+    return sub.textContent;
   };
 
   it('renders no tail for a not-cloned row, for any value of the clock', () => {

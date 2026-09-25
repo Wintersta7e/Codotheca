@@ -37,7 +37,7 @@ test('a private remote offers the upgrade and never says gone or missing', () =>
       onOpenUpgrade={onOpenUpgrade}
     />,
   );
-  const text = document.body.textContent ?? '';
+  const text = document.body.textContent;
   for (const banned of ['gone', 'missing', 'Gone', 'Missing', 'does not exist', 'not found']) {
     expect(text).not.toContain(banned);
   }

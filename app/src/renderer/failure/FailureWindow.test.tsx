@@ -129,7 +129,7 @@ describe('the corrupt-index ledger', () => {
       'RESTORED FROM THE SIDECAR',
       'LOST IN THE GAP',
     ]);
-    const gap = screen.getByTestId('fw-block-2').textContent ?? '';
+    const gap = screen.getByTestId('fw-block-2').textContent;
     expect(gap).toContain('not known');
     expect(gap).toContain('cannot be counted');
   });

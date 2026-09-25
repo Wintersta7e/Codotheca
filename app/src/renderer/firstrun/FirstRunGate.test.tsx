@@ -460,7 +460,7 @@ test('AC-12 first run asks nothing, shows no percentage, and states its coverage
   await screen.findByText(copy.ROOTS_HEADLINE);
   const seen: string[] = [];
   const sweep = (): void => {
-    seen.push(document.body.textContent ?? '');
+    seen.push(document.body.textContent);
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.queryByRole('radio')).toBeNull();
@@ -529,10 +529,10 @@ test('AC-23 no figure over a partial index is presented bare', async () => {
   const panels = screen.getAllByTestId('fr-panel');
   expect(panels).toHaveLength(6);
   for (const panel of panels) {
-    const label = within(panel).getByTestId('fr-panel-value').textContent ?? '';
+    const label = within(panel).getByTestId('fr-panel-value').textContent;
     const coverage = within(panel).queryByTestId('fr-panel-coverage');
     // PLAYTIME is the only figure complete by construction.
-    if (panel.textContent?.includes('PLAYTIME') === true) expect(coverage).toBeNull();
+    if (panel.textContent.includes('PLAYTIME')) expect(coverage).toBeNull();
     else expect(coverage, label).not.toBeNull();
   }
   // The two history strings are distinguishable: one promises growth, one admits movement.

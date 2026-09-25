@@ -97,7 +97,7 @@ describe('the chart', () => {
    */
   it('renders no commit count and no volume figure anywhere', () => {
     const container = draw();
-    const text = container.textContent ?? '';
+    const text = container.textContent;
     const titles = [...container.querySelectorAll('[title]')]
       .map((n) => n.getAttribute('title'))
       .join(' ');

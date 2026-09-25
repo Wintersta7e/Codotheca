@@ -128,7 +128,7 @@ describe('the shelf with zero accounts', () => {
 
   it('advertises nothing: no section exists whose only content is a connect placeholder', () => {
     const { container } = render(<Shelf {...props()} />);
-    const text = container.textContent ?? '';
+    const text = container.textContent;
     expect(text.length, 'the shelf rendered nothing, so this proved nothing').toBeGreaterThan(0);
     // A section that exists only to advertise a feature is an ad.
     for (const advert of [/connect to see/iu, /not cloned/iu, /wishlist/iu, /sign in/iu]) {
@@ -140,7 +140,7 @@ describe('the shelf with zero accounts', () => {
     const { container } = render(<Shelf {...props()} />);
     const disabled = [...container.querySelectorAll('button')].filter((b) => b.disabled);
     expect(disabled, 'account state disabled a control').toEqual([]);
-    const text = container.textContent ?? '';
+    const text = container.textContent;
     // Play is never delayed or annotated by account state, so no control may say so.
     expect(/requires? (?:a )?(?:github|account|token)/iu.test(text)).toBe(false);
   });

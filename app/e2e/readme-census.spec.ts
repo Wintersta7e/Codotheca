@@ -190,8 +190,8 @@ test('AC-P2-25-18 the request census with consent absent', async () => {
       );
       await expect(settled).toHaveCount(1, { timeout: 60_000 });
       const handle = await settled.elementHandle();
-      const inner = await handle?.contentFrame();
-      if (inner === null || inner === undefined) {
+      const inner = await handle.contentFrame();
+      if (inner === null) {
         throw new Error(`document ${String(revision)} has no content frame`);
       }
       return inner.evaluate(() => ({

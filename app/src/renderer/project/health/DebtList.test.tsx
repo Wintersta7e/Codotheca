@@ -160,7 +160,7 @@ async function debtList(debt: readonly DebtItem[] = DEBT): Promise<HTMLElement> 
 /** The one row whose text carries `text`, which each fixture item has uniquely. */
 const rowWith = (list: HTMLElement, text: string): HTMLElement => {
   const rows = [...list.querySelectorAll<HTMLElement>('.cp-health-debt-item')].filter((row) =>
-    (row.textContent ?? '').includes(text),
+    row.textContent.includes(text),
   );
   expect(rows, text).toHaveLength(1);
   return required(rows[0], 'matching row');
@@ -239,7 +239,7 @@ describe('§33.2 the HEALTH tab lists every item, in text', () => {
     // Absent, not empty: no heading, no list, nothing at all for a layer nothing lit.
     expect(list.querySelector('[data-layer="cobwebs"]')).toBeNull();
     expect(list.querySelector('[data-layer="cracks"]')).toBeNull();
-    expect(list.textContent ?? '').not.toMatch(/COBWEBS|CRACKS/u);
+    expect(list.textContent).not.toMatch(/COBWEBS|CRACKS/u);
 
     for (const entry of DEBT) {
       const group = list.querySelector(`[data-layer="${entry.layer}"]`);
@@ -247,7 +247,7 @@ describe('§33.2 the HEALTH tab lists every item, in text', () => {
       expect(group?.textContent ?? '', entry.fingerprint).toContain(
         SOURCE_LABELS[entry.source].item,
       );
-      expect(list.textContent ?? '', entry.source).not.toContain(entry.source);
+      expect(list.textContent, entry.source).not.toContain(entry.source);
     }
     expect(list.querySelector('h3')?.textContent).toBe(DEBT_LIST_TITLE);
 
@@ -304,9 +304,9 @@ describe('§33.2 the HEALTH tab lists every item, in text', () => {
     const list = await debtList();
     const headings = [...list.querySelectorAll('h3, h4')];
     expect(headings.length).toBeGreaterThan(0);
-    for (const heading of headings) expect(heading.textContent ?? '').not.toMatch(/\d/u);
+    for (const heading of headings) expect(heading.textContent).not.toMatch(/\d/u);
 
-    const text = list.textContent ?? '';
+    const text = list.textContent;
     expect(text).not.toBe('');
     const names = [...list.querySelectorAll('*'), list]
       .map((n) => n.getAttribute('aria-label') ?? '')

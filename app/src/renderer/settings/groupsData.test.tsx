@@ -104,7 +104,7 @@ describe('group 8, DATA', () => {
     // Criterion 44, at the one surface where such a control would most plausibly be added.
     for (const banned of [/\bforget\b/i, /\buninstall\b/i, /\bdelete\b/i, /\bremove\b/i]) {
       for (const control of [...screen.getAllByRole('button'), ...screen.getAllByRole('switch')]) {
-        const name = control.getAttribute('aria-label') ?? control.textContent ?? '';
+        const name = control.getAttribute('aria-label') ?? control.textContent;
         expect(name).not.toMatch(banned);
       }
     }

@@ -93,7 +93,7 @@ describe('§30.4 what the tab may never claim', () => {
     );
     expect(surfaces.length).toBeGreaterThan(0);
     expect(root.querySelector('[data-testid="cp-health-open"]')).toBeNull();
-    expect(root.textContent ?? '').not.toMatch(/\b0 of 0\b/u);
+    expect(root.textContent).not.toMatch(/\b0 of 0\b/u);
     // The basis alone still renders, so the tab is not silent about coverage.
     expect(root.querySelector('[data-testid="cp-health-basis"]')?.textContent ?? '').toMatch(
       /no check has run yet/u,
@@ -111,7 +111,7 @@ describe('§30.4 what the tab may never claim', () => {
 
   it('says nothing open only when unknown is zero', () => {
     const withUnknown = draw(reading({ scoredOpen: 0 }));
-    expect(withUnknown.textContent ?? '').toMatch(/nothing open in the checks that ran/u);
+    expect(withUnknown.textContent).toMatch(/nothing open in the checks that ran/u);
 
     const clean = draw(
       reading({
@@ -134,7 +134,7 @@ describe('§30.4 what the tab may never claim', () => {
         ],
       }),
     );
-    const text = root.textContent ?? '';
+    const text = root.textContent;
     const names = [...root.querySelectorAll('*')]
       .map((n) => n.getAttribute('aria-label') ?? '')
       .join(' ');
@@ -188,7 +188,7 @@ describe('each check row reads as text', () => {
     for (const row of rows) {
       const id = row.getAttribute('data-check') ?? '';
       expect(id, 'the row carries its id for code to find').not.toBe('');
-      expect(row.textContent ?? '', id).not.toContain(id);
+      expect(row.textContent, id).not.toContain(id);
       expect(row.querySelector('.cp-health-check-name')?.textContent).toBe(
         SOURCE_LABELS[id as keyof typeof SOURCE_LABELS].check,
       );
@@ -268,7 +268,7 @@ describe('R142 the in-context grant ask', () => {
       }),
       settings({ healthChecks: [{ check: 'todo_marker', enabled: false }] }),
     );
-    const switchedText = switched.textContent ?? '';
+    const switchedText = switched.textContent;
 
     const ungranted = draw(
       reading({
@@ -279,7 +279,7 @@ describe('R142 the in-context grant ask', () => {
         healthChecks: [{ check: 'todo_marker', enabled: true }],
       }),
     );
-    const ungrantedText = ungranted.textContent ?? '';
+    const ungrantedText = ungranted.textContent;
     // eslint-disable-next-line no-console
     console.log(`switchedOff: ${switchedText}\ngrantMissing: ${ungrantedText}`);
     expect(switchedText).not.toBe(ungrantedText);
@@ -294,7 +294,7 @@ describe('R142 the in-context grant ask', () => {
       }),
     );
     expect(root.querySelector('[data-testid="cp-health-ask"]')).toBeNull();
-    expect(root.textContent ?? '').toMatch(/switched this check off/u);
+    expect(root.textContent).toMatch(/switched this check off/u);
   });
 
   it('an ungranted content scan offers the ask and granting it calls settings.set once', () => {

@@ -106,9 +106,7 @@ export function RemoteBlock({
     >
       <span className="cp-remote-block-label">{label}</span>
       <span className="cp-remote-block-value">{blockValue(state, value)}</span>
-      {note === null || note === undefined ? null : (
-        <span className="cp-remote-block-sub">{note}</span>
-      )}
+      {note === null ? null : <span className="cp-remote-block-sub">{note}</span>}
     </div>
   );
 }

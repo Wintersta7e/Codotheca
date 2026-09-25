@@ -79,13 +79,13 @@ function pairs(window: Page): Promise<readonly Pair[]> {
       if (a !== null && b !== null) out.push({ where, label: box(a), caption: box(b) });
     };
     for (const chip of document.querySelectorAll('.cdt-attention-chip')) {
-      add(`chip ${chip.textContent ?? ''}`, chip, '.cdt-attention-label', '.cdt-attention-sub');
+      add(`chip ${chip.textContent}`, chip, '.cdt-attention-label', '.cdt-attention-sub');
     }
     for (const tail of document.querySelectorAll('.cdt-attention-tail')) {
       add('tail', tail, '.cdt-attention-headline', '.cdt-attention-hint');
     }
     for (const era of document.querySelectorAll('.cdt-era-header')) {
-      add(`era ${era.textContent ?? ''}`, era, '.cdt-era-label', '.cdt-era-summary');
+      add(`era ${era.textContent}`, era, '.cdt-era-label', '.cdt-era-summary');
     }
     return out;
   });

@@ -228,7 +228,7 @@ describe('the label floor', () => {
   it('names no control by a colour', () => {
     render(<TopBar {...props()} />);
     for (const button of screen.getAllByRole('button')) {
-      const name = button.getAttribute('aria-label') ?? button.textContent ?? '';
+      const name = button.getAttribute('aria-label') ?? button.textContent;
       expect(statesAColour(name)).toBe(false);
     }
   });

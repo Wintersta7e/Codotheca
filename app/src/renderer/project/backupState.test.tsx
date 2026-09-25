@@ -12,11 +12,11 @@ function draw(state: BackupState | null, over: Partial<LocationDetail> = {}): vo
 }
 
 function line(): string {
-  return screen.getByTestId('cp-backup-line').textContent ?? '';
+  return screen.getByTestId('cp-backup-line').textContent;
 }
 
 function plate(): string {
-  return screen.getByTestId('cp-backup-plate').textContent ?? '';
+  return screen.getByTestId('cp-backup-plate').textContent;
 }
 
 /**
@@ -84,7 +84,7 @@ describe('§25.3 the backup line states a fact and offers no control', () => {
   it('renders the word clean nowhere, in output or in source', () => {
     for (const state of ['only_copy', 'not_anywhere_else', 'verified'] as const) {
       draw(state, { ahead: 1, stashCount: 1, fetchHeadAt: NOW - 60 });
-      expect(screen.getByTestId('cp-backup').textContent?.toLowerCase()).not.toContain('clean');
+      expect(screen.getByTestId('cp-backup').textContent.toLowerCase()).not.toContain('clean');
       cleanup();
     }
   });

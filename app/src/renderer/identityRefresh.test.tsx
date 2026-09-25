@@ -136,7 +136,7 @@ const reads = (fake: FakeAppDeps): number =>
   fake.calls.filter((call) => call.name === 'identity.list').length;
 
 const sourceLine = async (): Promise<string> =>
-  (await screen.findByText(/^GIT CONFIG ·/u)).textContent ?? '';
+  (await screen.findByText(/^GIT CONFIG ·/u)).textContent;
 
 describe('§1.4 the identity card follows the authorship job', () => {
   it('re-reads the set when authorship settles after the walk ended', async () => {

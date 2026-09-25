@@ -88,7 +88,7 @@ test('the resolved tier reaches the stylesheet under the attribute the sheet rea
 // volume: no commit count, no line count, no percentage.
 test('the turn states no percentage and no volume figure', () => {
   renderTurn();
-  const text = document.body.textContent ?? '';
+  const text = document.body.textContent;
   expect(text).not.toMatch(/%/);
   expect(text).not.toMatch(/commits?\b/i);
   expect(text).not.toMatch(/lines?\s+of\s+code/i);
