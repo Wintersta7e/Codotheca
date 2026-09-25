@@ -93,6 +93,37 @@ test('AC-P4-48-4 the draft job refuses update metadata and uses a written notes 
   assert.match(runOf(list[create]), /--notes-file "[^"]*docs\/release-notes\/\$TAG\.md"/u);
 });
 
+test('AC-P4-48-4 a launch job runs every artifact kind from the uploaded artifact', () => {
+  const launching = jobs.filter(([, job]) =>
+    (job.steps ?? []).some((s) => runOf(s).includes('scripts/launch-artifact.mjs --kind')),
+  );
+  assert.equal(launching.length, 1, 'one job launches the artifacts');
+  const [id, job] = launching[0];
+  assert.ok(transitiveNeeds(id).has('build'), `${id} launches what the build job uploaded`);
+  assert.ok(
+    (job.steps ?? []).some(
+      (s) =>
+        String(s.uses ?? '').startsWith('actions/download-artifact@') &&
+        String(s.with?.name ?? '').startsWith('codotheca-'),
+    ),
+    `${id} downloads the uploaded codotheca-* artifact rather than building one`,
+  );
+  const body = (job.steps ?? []).map(runOf).join('\n');
+  assert.ok(!BUILD_STEP.test(body), `${id} builds nothing of its own`);
+  for (const kind of ['appimage', 'deb', 'nsis', 'portable']) {
+    assert.match(
+      body,
+      new RegExp(`launch-artifact\\.mjs --kind ${kind} `, 'u'),
+      `${kind} is launched`,
+    );
+  }
+  assert.match(body, /launch-artifact\.mjs --count-ledger/u, 'the launches are counted');
+  assert.ok(
+    transitiveNeeds('release').has(id),
+    'the draft is made only from artifacts that launched',
+  );
+});
+
 const guard = join(root, 'scripts', 'check-update-metadata.mjs');
 
 /** @returns {{status: number, stdout: string}} */

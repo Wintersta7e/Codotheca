@@ -167,6 +167,96 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  # Every artifact is executed from the bytes the build uploaded — the bytes the draft releases —
+  # never from a local rebuild: checking that files exist says nothing about whether one starts.
+  # `scripts/launch-artifact.mjs` counts a launch only when the shell logged its artifact line and
+  # the core opened the index, then asks the app to quit. The `.rpm` is launched by hand at the tag.
+  launch:
+    name: launch (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: { os: [ubuntu-latest, windows-latest] }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 22, package-manager-cache: false }
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: { name: 'codotheca-${{ matrix.os }}', path: dist }
+      # The SHA-256 of each file launched, so the record ties to the draft's SHA256SUMS.
+      - name: the downloaded bytes
+        shell: bash
+        run: |
+          find dist -maxdepth 1 -type f \
+            \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0 |
+            sort -z | xargs -0 sha256sum
+      - name: launch the AppImage and the .deb
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          # The runner has no FUSE, so the AppImage runs extracted.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          appimage=$(find dist -maxdepth 1 -type f -name '*.AppImage' -print -quit)
+          deb=$(find dist -maxdepth 1 -type f -name '*.deb' -print -quit)
+          if [ -z "$appimage" ] || [ -z "$deb" ]; then echo 'expected an AppImage and a .deb'; exit 1; fi
+          chmod +x "$appimage"
+          xvfb-run -a node scripts/launch-artifact.mjs --kind appimage --exe "$appimage" \
+            --data-dir "$RUNNER_TEMP/appimage" --ledger "$RUNNER_TEMP/launches.jsonl"
+          sudo apt-get install -y "./$deb"
+          exe=$(dpkg -L codotheca | grep -m1 -E '^/opt/[^/]+/codotheca$' || true)
+          if [ -z "$exe" ]; then echo 'the .deb installed no executable under /opt'; exit 1; fi
+          xvfb-run -a node scripts/launch-artifact.mjs --kind deb --exe "$exe" \
+            --data-dir "$RUNNER_TEMP/deb" --ledger "$RUNNER_TEMP/launches.jsonl"
+          echo '.rpm: not launched here; installed and launched by hand at the tag'
+      # Silent and per-user (`perMachine: false`), with no CODOTHECA_DATA_DIR, so the default data
+      # directory is the one exercised. The uninstall must keep the library
+      # (`deleteAppDataOnUninstall: false`). The portable build then runs against the same default:
+      # the README says the two share one library and that the portable unpacks into %TEMP%, and
+      # both are measured here rather than read from the source.
+      - name: install, launch and uninstall the NSIS build; launch the portable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ledger = Join-Path $env:RUNNER_TEMP 'launches.jsonl'
+          $setup = Get-ChildItem dist -File -Filter '*Setup*.exe' | Select-Object -First 1
+          $portable = Get-ChildItem dist -File -Filter '*.exe' |
+            Where-Object { $_.Name -notlike '*Setup*' } | Select-Object -First 1
+          if (-not $setup -or -not $portable) { throw 'expected an NSIS installer and a portable .exe' }
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\Codotheca'
+          $installed = Join-Path $dir 'Codotheca.exe'
+          if (-not (Test-Path $installed)) { throw "no installed executable at $installed" }
+          node scripts/launch-artifact.mjs --kind nsis --exe $installed --default-data-dir $env:APPDATA --ledger $ledger
+          if ($LASTEXITCODE -ne 0) { throw 'the installed build did not launch' }
+          $nsis = Get-Content $ledger | ConvertFrom-Json | Where-Object { $_.kind -eq 'nsis' } | Select-Object -Last 1
+          Start-Process -FilePath (Join-Path $dir 'Uninstall Codotheca.exe') -ArgumentList '/S' -Wait
+          foreach ($i in 1..60) { if (-not (Test-Path $installed)) { break }; Start-Sleep -Seconds 2 }
+          if (Test-Path $installed) { throw 'the uninstaller left the executable' }
+          if (-not (Test-Path $nsis.indexPath)) { throw "the uninstall took the index: $($nsis.indexPath)" }
+          Write-Output "index kept after uninstall: $($nsis.indexPath)"
+          $before = Get-ChildItem $env:TEMP -Name
+          node scripts/launch-artifact.mjs --kind portable --exe $portable.FullName --default-data-dir $env:APPDATA --ledger $ledger
+          if ($LASTEXITCODE -ne 0) { throw 'the portable build did not launch' }
+          $port = Get-Content $ledger | ConvertFrom-Json | Where-Object { $_.kind -eq 'portable' } | Select-Object -Last 1
+          Write-Output "installed data directory: $($nsis.dataDir)"
+          Write-Output "portable data directory:  $($port.dataDir)"
+          Write-Output "one library: $($nsis.dataDir -eq $port.dataDir)"
+          foreach ($name in (Get-ChildItem $env:TEMP -Name | Where-Object { $before -notcontains $_ })) {
+            $path = Join-Path $env:TEMP $name
+            $bytes = (Get-ChildItem $path -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
+            Write-Output "new in %TEMP%: $name  $bytes bytes"
+          }
+      - name: launches recorded
+        shell: bash
+        run: node scripts/launch-artifact.mjs --count-ledger "$RUNNER_TEMP/launches.jsonl"
+
   # A tag becomes a DRAFT release: the installers, their checksums, and the notes a person wrote
   # for that tag in `docs/release-notes/<tag>.md`. Notes generated from commits cannot carry the
   # known limits a user has to be told, so none are generated. Publishing stays a person's
@@ -174,7 +264,7 @@ jobs:
   release:
     name: draft release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, launch]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions: { contents: write }
