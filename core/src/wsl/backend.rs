@@ -19,17 +19,20 @@ use crate::wsl::proto::{
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+/// A `GitBackend` whose every method runs inside one distro, through that distro's worker.
 #[derive(Debug)]
 pub struct WslGitBackend {
     worker: Arc<WslWorker>,
 }
 
 impl WslGitBackend {
+    /// A backend that sends its git work to `worker`.
     #[must_use]
-    pub fn new(worker: Arc<WslWorker>) -> Self {
+    pub const fn new(worker: Arc<WslWorker>) -> Self {
         Self { worker }
     }
 
+    /// The distro this backend's git runs in.
     #[must_use]
     pub fn distro(&self) -> &str {
         self.worker.distro()
@@ -85,6 +88,8 @@ impl WslGitBackend {
     }
 }
 
+/// The wire form of `repo`. Its store facts stay behind: the worker resolves those from its
+/// own mount table.
 #[must_use]
 pub fn worker_repo(repo: &RepoHandle) -> WorkerRepo {
     WorkerRepo {

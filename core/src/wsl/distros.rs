@@ -7,17 +7,24 @@
 
 use std::ffi::{OsStr, OsString};
 
+/// The Windows executable every WSL call goes through.
 pub const WSL_EXE: &str = "wsl.exe";
 
+/// Whether a distro was running when it was listed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DistroState {
+    /// Named by `--list --running`: attaching to it starts nothing.
     Running,
+    /// Installed and not running: reaching it would start a virtual machine.
     Stopped,
 }
 
+/// One installed distro and its state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistroInfo {
+    /// The name `wsl.exe` lists it under and `-d` takes.
     pub name: String,
+    /// Whether it was running when listed.
     pub state: DistroState,
 }
 
@@ -39,6 +46,8 @@ pub fn decode_utf16le(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// The names in a `--list --quiet` output: one per line, whitespace and NULs trimmed, blank
+/// lines dropped.
 #[must_use]
 pub fn parse_list_quiet(bytes: &[u8]) -> Vec<String> {
     decode_utf16le(bytes)
@@ -94,16 +103,26 @@ pub fn launch_argv(distro: &str, user: Option<&str>, exec: &str, args: &[&str]) 
 
 /// The seam. Tests substitute a recorder; nothing else reaches `wsl.exe` directly.
 pub trait WslCli: Send + Sync + std::fmt::Debug {
+    /// Runs `wsl.exe` with `args` and stdin closed, and collects what it wrote.
+    ///
+    /// # Errors
+    /// Fails when `wsl.exe` cannot be spawned or waited on; on a host without it, `NotFound`.
     fn output(&self, args: &[&OsStr]) -> std::io::Result<std::process::Output>;
+    /// Starts `wsl.exe` with `args` and all three standard streams piped.
+    ///
+    /// # Errors
+    /// Fails when `wsl.exe` cannot be spawned.
     fn spawn_piped(&self, args: &[&OsStr]) -> std::io::Result<std::process::Child>;
 }
 
+/// The production `WslCli`: the real `wsl.exe`, started without a console window on Windows.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SystemWslCli;
 
 impl SystemWslCli {
+    /// The CLI over the real `wsl.exe`.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 
@@ -153,6 +172,7 @@ pub struct SystemDistroProbe {
 }
 
 impl SystemDistroProbe {
+    /// A probe that lists distros through `cli`.
     #[must_use]
     pub fn new(cli: std::sync::Arc<dyn WslCli>) -> Self {
         Self { cli }
@@ -172,6 +192,10 @@ impl crate::firstrun::classify::DistroProbe for SystemDistroProbe {
 }
 
 /// Every installed distro with its state, read without starting any of them.
+///
+/// # Errors
+/// Fails when either listing cannot be run. A listing's exit status is not checked: what it
+/// printed is what is parsed.
 pub fn installed_distros(cli: &dyn WslCli) -> std::io::Result<Vec<DistroInfo>> {
     let all = list_argv(false);
     let all: Vec<&OsStr> = all.iter().map(OsStr::new).collect();

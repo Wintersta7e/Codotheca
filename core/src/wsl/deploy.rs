@@ -9,7 +9,9 @@
 //! wrote, at a path built from a name validated as a fingerprint, using `rmdir` — which refuses
 //! a non-empty directory, so anything the app did not put there survives.
 
+/// The worker executable's file name inside its versioned directory.
 pub const WORKER_FILE_NAME: &str = "codotheca-worker";
+/// Where every build's versioned directory lives, relative to the distro user's home.
 pub const DEPLOY_ROOT_RELATIVE: &str = ".cache/codotheca/worker";
 
 /// The worker creates its empty hooks directory beside itself, and the cleanup below has to
@@ -39,11 +41,16 @@ pub fn is_fingerprint_name(name: &str) -> bool {
     name.len() == 32 && name.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
+/// Every path the install touches, built only from a validated home and fingerprint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeployPaths {
+    /// `DEPLOY_ROOT_RELATIVE` under home: the parent of every build's versioned directory.
     pub root: String,
+    /// This build's directory, named by its fingerprint.
     pub version_dir: String,
+    /// The worker executable inside it.
     pub exe: String,
+    /// The empty hooks directory the worker creates beside itself.
     pub hooks_dir: String,
 }
 
@@ -65,10 +72,14 @@ pub fn deploy_paths(home: &str, fingerprint: &str) -> Option<DeployPaths> {
     })
 }
 
+/// What installing this build requires, given what the distro already holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeployPlan {
+    /// The executable to launch once the plan has run.
     pub exe: String,
+    /// Whether the executable has to be copied in; `false` when a complete copy is there.
     pub install: bool,
+    /// Other builds' versioned directories, each to be cleaned up with `cleanup_argvs`.
     pub stale_dirs: Vec<String>,
 }
 
@@ -107,11 +118,13 @@ pub fn write_argv(dest: &str) -> Vec<String> {
     vec!["tee".to_owned(), dest.to_owned()]
 }
 
+/// Marks the copied worker executable, mode `0755`.
 #[must_use]
 pub fn chmod_argv(dest: &str) -> Vec<String> {
     vec!["chmod".to_owned(), "0755".to_owned(), dest.to_owned()]
 }
 
+/// Lists the entry names directly under `root`, one per line.
 #[must_use]
 pub fn list_root_argv(root: &str) -> Vec<String> {
     vec!["ls".to_owned(), "-1".to_owned(), root.to_owned()]
@@ -148,9 +161,10 @@ pub fn home_argv() -> Vec<String> {
     vec!["printenv".to_owned(), "HOME".to_owned()]
 }
 
-/// The removals for one stale versioned directory, in order. Every directory removal is `rmdir`,
-/// which fails on a non-empty directory: the bound on what can be removed is the tool's, not a
-/// promise in a comment.
+/// The removals for one stale versioned directory, in order.
+///
+/// Every directory removal is `rmdir`, which fails on a non-empty directory: the bound on what
+/// can be removed is the tool's, not a promise in a comment.
 #[must_use]
 pub fn cleanup_argvs(version_dir: &str) -> Vec<Vec<String>> {
     vec![

@@ -30,6 +30,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+/// The crate version the worker was built from, reported in `Hello` and by `--version`.
 pub const WORKER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// stdout is the frame stream. If something else has already claimed it the worker must not
@@ -42,9 +43,13 @@ pub type Emit<'a> = dyn FnMut(&WorkerOutbound) -> std::io::Result<()> + Send + '
 
 /// Everything the worker needs, assembled once at startup.
 pub struct WorkerContext {
+    /// The distro this worker runs in, from `WSL_DISTRO_NAME`; it scopes every store key.
     pub distro: String,
+    /// The in-distro git every `Git` request and the walk's probes run through.
     pub git: Box<dyn GitBackend>,
+    /// The distro's mount table, read once at startup.
     pub mounts: MountTable,
+    /// Whether git was found, as `Hello` reports it.
     pub presence: WorkerGit,
 }
 
@@ -70,6 +75,7 @@ pub fn probe_git(git: &dyn GitBackend) -> WorkerGit {
     }
 }
 
+/// The `Hello` this worker opens its stream with, naming `pid` as its process.
 #[must_use]
 pub fn hello_frame(ctx: &WorkerContext, pid: u32) -> WorkerOutbound {
     WorkerOutbound::Hello {
@@ -156,6 +162,8 @@ fn run_git(
     }
 }
 
+/// The wire form of a walk's `RepoCandidate`, carrying the store facts the mount table gives
+/// its path.
 #[must_use]
 pub fn repo_found_of(ctx: &WorkerContext, candidate: &RepoCandidate) -> WorkerRepoFound {
     let work_dir = candidate.path.to_string_lossy().into_owned();
@@ -175,6 +183,10 @@ pub fn repo_found_of(ctx: &WorkerContext, candidate: &RepoCandidate) -> WorkerRe
 ///
 /// The one behaviour that is not plan 07's: a root standing on a Windows-backed filesystem is
 /// refused by **type** (§4.5) and named, because those bytes belong to the native walk.
+///
+/// # Errors
+/// Fails when an event frame cannot be written: the `SkippedMount` event at once, and any event
+/// inside the walk once the walk returns, so the summary never counts what never arrived.
 pub fn walk(
     ctx: &WorkerContext,
     request: &WalkRequest,
@@ -269,13 +281,18 @@ pub fn walk(
             | WalkEvent::SubmoduleEdge(_)
             | WalkEvent::Walked { .. } => None,
         };
-        let Some(event) = framed else { return };
+        let Some(worker_event) = framed else { return };
         let Ok(mut guard) = out.lock() else {
             failed.fetch_add(1, Ordering::Relaxed);
             return;
         };
         let write: &mut Emit<'_> = &mut *guard;
-        if write(&WorkerOutbound::Event { id, event }).is_err() {
+        if write(&WorkerOutbound::Event {
+            id,
+            event: worker_event,
+        })
+        .is_err()
+        {
             failed.fetch_add(1, Ordering::Relaxed);
         }
     };
@@ -294,6 +311,10 @@ pub fn walk(
 }
 
 /// Answers one call. `Ok(false)` means the loop should stop.
+///
+/// # Errors
+/// Fails only when the `Reply` or `Fail` frame answering the call cannot be written; a request
+/// that fails is answered with `Fail`, not returned.
 pub fn handle(
     ctx: &WorkerContext,
     call: &WorkerCall,
@@ -343,6 +364,11 @@ pub fn handle(
 }
 
 /// Writes `Hello`, then answers frames until stdin closes or a `Shutdown` arrives.
+///
+/// # Errors
+/// Fails when a frame cannot be written, or when reading one fails for any reason other than
+/// the input closing between frames: an oversize length, a payload that is not UTF-8, or an IO
+/// error. A frame that reads but does not parse is reported on stderr and skipped.
 pub fn serve<R: std::io::Read, W: std::io::Write + Send>(
     ctx: &WorkerContext,
     input: &mut R,

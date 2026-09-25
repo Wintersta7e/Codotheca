@@ -17,14 +17,20 @@ use crate::mount::{MountError, MountFacts, MountResolver, StoreClass};
 use crate::scan::wsl::is_drvfs_fstype;
 use crate::wsl::path::{parse_drvfs_source, DrvfsMount};
 
+/// The kernel's mount table for this process, read by `MountTable::read`.
 pub const MOUNTINFO_PATH: &str = "/proc/self/mountinfo";
 
 /// One line of `/proc/self/mountinfo`, reduced to the four fields that matter here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MountEntry {
+    /// The kernel's id for the mount.
     pub mount_id: i64,
+    /// Where it is mounted, unescaped.
     pub mount_point: String,
+    /// The filesystem type, unescaped.
     pub fstype: String,
+    /// The mount source, unescaped: a device node, the Windows root of a `DrvFS` mount, or a
+    /// placeholder.
     pub source: String,
 }
 
@@ -90,21 +96,26 @@ pub fn parse_mountinfo(text: &str) -> Vec<MountEntry> {
 /// Whether the in-distro walk may descend into a path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MountVerdict {
+    /// No Windows volume covers the path, so the walk may descend.
     Walk,
     /// The bytes live on a Windows volume. The native walk already covers them, and reaching
     /// them from inside the distro is §4.5's slow path taken in the other direction.
     SkipWindowsBacked {
+        /// Where the Windows volume is mounted inside the distro.
         mount_point: String,
+        /// Its filesystem type as the kernel reports it.
         fstype: String,
     },
 }
 
+/// A distro's whole mount table, in the order the kernel reports it.
 #[derive(Debug, Clone, Default)]
 pub struct MountTable {
     entries: Vec<MountEntry>,
 }
 
 impl MountTable {
+    /// The table a `mountinfo` text describes.
     #[must_use]
     pub fn from_mountinfo(text: &str) -> Self {
         Self {
@@ -116,12 +127,11 @@ impl MountTable {
     /// `Unknown` — never a fabricated `Local`.
     #[must_use]
     pub fn read() -> Self {
-        match std::fs::read_to_string(MOUNTINFO_PATH) {
-            Ok(text) => Self::from_mountinfo(&text),
-            Err(_) => Self::default(),
-        }
+        std::fs::read_to_string(MOUNTINFO_PATH)
+            .map_or_else(|_| Self::default(), |text| Self::from_mountinfo(&text))
     }
 
+    /// Every mount, in the order the kernel reported it.
     #[must_use]
     pub fn entries(&self) -> &[MountEntry] {
         &self.entries
@@ -145,22 +155,26 @@ impl MountTable {
         best.map(|(_, e)| e)
     }
 
+    /// The store facts for `path` inside `distro`, from the mount covering it. With no covering
+    /// mount the answer is `wsl:<distro>:?`, no volume key and `Unknown`: not determined.
     #[must_use]
     pub fn facts_for(&self, distro: &str, path: &str) -> MountFacts {
-        match self.resolve(path) {
-            Some(entry) => MountFacts {
-                store_key: store_key_for(distro, entry),
-                volume_key: volume_key_for(distro, entry),
-                class: class_for_fstype(&entry.fstype),
-            },
-            None => MountFacts {
+        self.resolve(path).map_or_else(
+            || MountFacts {
                 store_key: format!("wsl:{distro}:?"),
                 volume_key: None,
                 class: StoreClass::Unknown,
             },
-        }
+            |entry| MountFacts {
+                store_key: store_key_for(distro, entry),
+                volume_key: volume_key_for(distro, entry),
+                class: class_for_fstype(&entry.fstype),
+            },
+        )
     }
 
+    /// The `DrvFS` mount covering `path`, when the covering mount is one and its source names a
+    /// Windows root.
     #[must_use]
     pub fn drvfs_at(&self, path: &str) -> Option<DrvfsMount> {
         let entry = self.resolve(path)?;
@@ -173,6 +187,8 @@ impl MountTable {
         })
     }
 
+    /// Whether the in-distro walk may descend into `path`: not when the mount covering it is a
+    /// Windows volume, judged by filesystem type.
     #[must_use]
     pub fn verdict_for(&self, path: &str) -> MountVerdict {
         match self.resolve(path) {
@@ -203,9 +219,11 @@ pub fn store_key_for(distro: &str, entry: &MountEntry) -> String {
     format!("wsl:{distro}:{}", entry.mount_point)
 }
 
-/// §4.7's persistent identity, best effort. A device node is reassigned on every restart, so the
-/// mount point is the stable half and the distro name in front of it is what actually persists.
-/// A filesystem with no persistent identity at all returns `None`, not a fabricated key.
+/// §4.7's persistent identity, best effort.
+///
+/// A device node is reassigned on every restart, so the mount point is the stable half and the
+/// distro name in front of it is what actually persists. A filesystem with no persistent
+/// identity at all returns `None`, not a fabricated key.
 #[must_use]
 pub fn volume_key_for(distro: &str, entry: &MountEntry) -> Option<String> {
     if is_drvfs_fstype(&entry.fstype) || !entry.source.starts_with("/dev/") {
@@ -239,9 +257,10 @@ pub fn class_for_fstype(fstype: &str) -> StoreClass {
     }
 }
 
-/// §4.7's seam, answered from inside the distro. The Windows implementation cannot answer for a
-/// distro at all: it sees one 9p share where the distro sees a VHD, several Windows drives and
-/// whatever else was mounted.
+/// §4.7's seam, answered from inside the distro.
+///
+/// The Windows implementation cannot answer for a distro at all: it sees one 9p share where the
+/// distro sees a VHD, several Windows drives and whatever else was mounted.
 #[derive(Debug)]
 pub struct DistroMountResolver {
     distro: String,
@@ -249,8 +268,9 @@ pub struct DistroMountResolver {
 }
 
 impl DistroMountResolver {
+    /// A resolver answering for `distro` from its mount `table`.
     #[must_use]
-    pub fn new(distro: String, table: MountTable) -> Self {
+    pub const fn new(distro: String, table: MountTable) -> Self {
         Self { distro, table }
     }
 }
@@ -268,8 +288,9 @@ impl MountResolver for DistroMountResolver {
     }
 }
 
+/// The wire slug for a `StoreClass`; `class_from_slug` reads it back.
 #[must_use]
-pub fn class_slug(class: StoreClass) -> &'static str {
+pub const fn class_slug(class: StoreClass) -> &'static str {
     match class {
         StoreClass::Local => "local",
         StoreClass::Removable => "removable",
@@ -280,6 +301,7 @@ pub fn class_slug(class: StoreClass) -> &'static str {
     }
 }
 
+/// The `StoreClass` a slug names; a slug this build does not know is `Unknown`.
 #[must_use]
 pub fn class_from_slug(slug: &str) -> StoreClass {
     match slug {

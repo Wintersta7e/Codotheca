@@ -19,76 +19,119 @@ use std::collections::BTreeMap;
 /// misparse.
 pub const WORKER_PROTOCOL_VERSION: u32 = 1;
 
+/// One request from the core to a worker, tagged with the id its answer will echo.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerCall {
+    /// Chosen by the core per request; every `Event`, `Reply` or `Fail` answering it carries it.
     pub id: RequestId,
+    /// What the worker is asked to do.
     pub request: WorkerRequest,
 }
 
+/// Every command the worker answers. None of them is on the renderer's §2.4 surface.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum WorkerRequest {
+    /// A liveness check, answered with `{"pong": true}`.
     Ping,
+    /// The store facts for one path inside the distro, answered as a `WireMountFacts`.
     Mounts {
+        /// A Linux path inside the distro.
         path: String,
     },
+    /// Plan 07's walk over one root inside the distro: streamed as `WorkerEvent`s, answered
+    /// with a `WalkSummary`.
     Walk(WalkRequest),
+    /// One `GitBackend` method against one in-distro repository, answered with that method's
+    /// result as JSON.
     Git {
+        /// The repository, as the core discovered it.
         repo: WorkerRepo,
+        /// Which `GitBackend` method to run.
         op: WorkerGitOp,
+        /// The scheduling class the core's job runs under.
         job: WorkerJobClass,
         /// §4.1's per-job budget, carried across so a slow in-distro repository is bounded on
         /// the same terms as a slow local one.
         deadline_ms: Option<u64>,
     },
+    /// Answered with `{"bye": true}`, after which the worker stops reading.
     Shutdown,
 }
 
+/// The in-distro walk's root and the `WalkOptions` that cross. The thread count does not: the
+/// worker always walks on one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalkRequest {
+    /// The Linux path the walk starts from.
     pub root: String,
+    /// Whether the walk follows symbolic links (§4.3).
     pub follow_links: bool,
+    /// Whether the walk keeps descending below a directory it found a repository in.
     pub descend_into_repos: bool,
+    /// Whether a directory shaped like a bare repository is probed as one (§4.2).
     pub bare_candidates: bool,
+    /// Entries appended to the default skip list for this walk.
     pub skip_extra: Vec<String>,
 }
 
+/// The wire form of `RepoHandle`, minus the store facts the worker resolves for itself.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerRepo {
+    /// The directory git runs in (`-C`), as a Linux path.
     pub work_dir: String,
+    /// This checkout's git dir.
     pub git_dir: String,
+    /// The shared git dir: refs, packed-refs, config, objects.
     pub common_dir: String,
+    /// True when `location.trusted_at` is non-NULL, which adds `-c safe.directory=<path>`.
     pub trusted: bool,
 }
 
-/// One `GitBackend` method, named. Every method has a variant: a backend that answered nine of
-/// ten would compile only because the tenth was written to fail, which is the shape of a seam
-/// that passes its tests and breaks at assembly.
+/// One `GitBackend` method, named.
+///
+/// Every method has a variant: a backend that answered nine of ten would compile only because
+/// the tenth was written to fail, which is the shape of a seam that passes its tests and breaks
+/// at assembly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum WorkerGitOp {
+    /// `git --version`.
     Version,
+    /// Bare, shallow, git dir, common dir.
     RepoFacts,
+    /// J1: ref state from file reads.
     RefState,
+    /// Ahead/behind, or `None` when there is nothing to compare against.
     Divergence {
+        /// The ref state the comparison is made from.
         state: Box<RefState>,
     },
+    /// J2: one timestamped worktree observation.
     WorktreeStatus {
+        /// `true` is `StatusOptions::full`; `false` is the degraded read that lists no
+        /// untracked files.
         untracked: bool,
     },
+    /// J3: tracked files and HEAD blob bytes.
     TrackedInventory,
     /// §4.4. The paths are raw bytes because a Linux path is not a `String`.
     SubmoduleGitlinks {
+        /// The submodule paths whose gitlink OIDs are wanted.
         paths: Vec<Vec<u8>>,
     },
     /// §1.1's remote evidence. A unit variant: the argv is the core's own builder, run inside
     /// the distro by the worker's `SystemGit`.
     RemoteUrls,
+    /// J4: the root set, with dates.
     RootCommits,
     /// [p2-24b] §24.7A's reachability walk, run inside the distro.
     UnpushedRefs,
+    /// J1.5: the full committer walk.
     Authorship,
+    /// J4: recent subjects, newest first.
     CommitSubjects {
+        /// The most subjects to return.
         limit: u32,
     },
     /// §29.1's HEAD enumeration, run inside the distro.
@@ -97,23 +140,31 @@ pub enum WorkerGitOp {
     /// is recorded at its size with its body discarded, and doing that inside the distro is what
     /// keeps the body off this wire.
     ReadBlobs {
+        /// The blob object ids to read.
         oids: Vec<String>,
+        /// Bytes kept per blob; a larger one is recorded at its size with no body.
         byte_cap: u64,
+        /// Bytes read across the whole batch before it stops.
         budget_bytes: u64,
     },
 }
 
+/// The wire form of `JobClass`, so in-distro git runs under the class the core's job has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkerJobClass {
+    /// `JobClass::Interactive`: a visible tile's request.
     Interactive,
+    /// `JobClass::Background`: ordinary scan work.
     Background,
+    /// `JobClass::History`: J4, the history walk.
     History,
 }
 
 impl WorkerJobClass {
+    /// The in-process `JobClass` this names.
     #[must_use]
-    pub fn to_job_class(self) -> JobClass {
+    pub const fn to_job_class(self) -> JobClass {
         match self {
             Self::Interactive => JobClass::Interactive,
             Self::Background => JobClass::Background,
@@ -121,8 +172,9 @@ impl WorkerJobClass {
         }
     }
 
+    /// The wire form of `job`.
     #[must_use]
-    pub fn from_job_class(job: JobClass) -> Self {
+    pub const fn from_job_class(job: JobClass) -> Self {
         match job {
             JobClass::Interactive => Self::Interactive,
             JobClass::Background => Self::Background,
@@ -131,25 +183,40 @@ impl WorkerJobClass {
     }
 }
 
+/// Every frame the worker writes on its stdout.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum WorkerOutbound {
+    /// The first frame, written before a byte is read.
     Hello {
+        /// The worker's `WORKER_PROTOCOL_VERSION`; the core refuses one that differs.
         protocol_version: u32,
+        /// The crate version the worker was built from.
         worker_version: String,
+        /// Whether the distro has a usable git.
         git: WorkerGit,
+        /// The worker's process id inside the distro.
         pid: u32,
     },
+    /// One result of a request still in flight. Only `Walk` streams these.
     Event {
+        /// The request this event belongs to.
         id: RequestId,
+        /// What the walk reported.
         event: WorkerEvent,
     },
+    /// A request's success, which ends it.
     Reply {
+        /// The request answered.
         id: RequestId,
+        /// The result, as the JSON of the type the request's method returns.
         ok: serde_json::Value,
     },
+    /// A request's failure, which ends it.
     Fail {
+        /// The request answered.
         id: RequestId,
+        /// The error, in its wire form.
         fault: WorkerFault,
     },
 }
@@ -158,56 +225,93 @@ pub enum WorkerOutbound {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "git", rename_all = "snake_case")]
 pub enum WorkerGit {
-    Present { version: String },
-    Missing { detail: String },
+    /// `git --version` answered.
+    Present {
+        /// The version line git printed.
+        version: String,
+    },
+    /// `git --version` failed, so every git request fails as `GitMissing`.
+    Missing {
+        /// Why the probe failed; diagnostic only.
+        detail: String,
+    },
 }
 
+/// One thing the in-distro walk reports while a `Walk` is in flight.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "e", rename_all = "snake_case")]
 pub enum WorkerEvent {
+    /// A repository the walk found.
     Repo(WorkerRepoFound),
+    /// A `ScanProblem` the walk raised.
     Problem {
+        /// The `ScanProblemKind` slug.
         kind: String,
+        /// The path the problem concerns, for display.
         path_display: String,
+        /// Diagnostic detail.
         detail: String,
     },
+    /// The walk's running counts.
     Progress {
+        /// Directories visited so far.
         walked_dirs: u64,
+        /// Repositories found so far.
         found_repos: u64,
     },
     /// §4.5 in the other direction: a Windows volume surfaced inside the distro is the native
     /// walk's territory, and this names the mount that was left alone rather than dropping it.
     SkippedMount {
+        /// Where the Windows-backed filesystem is mounted inside the distro.
         mount_point: String,
+        /// Its filesystem type as the kernel reports it.
         fstype: String,
     },
 }
 
+/// A repository the in-distro walk found, with the store facts the worker resolved for it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerRepoFound {
+    /// The repository's Linux path: the directory git runs in.
     pub work_dir: String,
+    /// This checkout's git dir.
     pub git_dir: String,
+    /// The shared git dir.
     pub common_dir: String,
+    /// The `RepoKind` slug, read back by `RepoKind::from_str`.
     pub kind: String,
+    /// §4.7's runtime identity, `wsl:<distro>:<mount point>`.
     pub store_key: String,
+    /// §4.7's persistent identity, or `None` where the mount has none (R27).
     pub volume_key: Option<String>,
+    /// The `StoreClass` slug, from `class_slug`.
     pub store_class: String,
 }
 
+/// The reply to a `Walk`: its totals.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalkSummary {
+    /// Directories the walk visited.
     pub walked_dirs: u64,
+    /// Repositories it found.
     pub found_repos: u64,
+    /// Whether the walk was cancelled before it finished.
     pub cancelled: bool,
 }
 
+/// The reply to `Mounts`: `MountFacts` with the class as a slug.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WireMountFacts {
+    /// §4.7's runtime identity, `wsl:<distro>:<mount point>`.
     pub store_key: String,
+    /// §4.7's persistent identity, or `None` where the mount has none.
     pub volume_key: Option<String>,
+    /// The `StoreClass` slug, from `class_slug`.
     pub class: String,
 }
 
+/// A `submodule_gitlinks` map in its wire shape: the entries as pairs.
+///
 /// `submodule_gitlinks` returns a map keyed by raw path bytes, and JSON has no such key. The
 /// pairs form is the wire shape; the two converters below are the only place it is built, so a
 /// path that is not UTF-8 crosses intact instead of being lossily stringified.
@@ -216,32 +320,79 @@ pub fn gitlinks_to_wire(map: &BTreeMap<Vec<u8>, String>) -> Vec<(Vec<u8>, String
     map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
 }
 
+/// `gitlinks_to_wire`'s inverse: the pairs folded back into the byte-keyed map.
 #[must_use]
 pub fn gitlinks_from_wire(pairs: Vec<(Vec<u8>, String)>) -> BTreeMap<Vec<u8>, String> {
     pairs.into_iter().collect()
 }
 
-/// The wire mirror of plan 05's `GitError`. It exists so the core rebuilds the *same* error, not
-/// an approximation of it: `GitError::Missing` has to arrive as `GitError::Missing` for §11.5's
-/// `GIT_MISSING` prose to be reachable at all.
+/// The wire mirror of plan 05's `GitError`.
+///
+/// It exists so the core rebuilds the *same* error, not an approximation of it:
+/// `GitError::Missing` has to arrive as `GitError::Missing` for §11.5's `GIT_MISSING` prose to
+/// be reachable at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "fault", rename_all = "snake_case")]
 pub enum WorkerFault {
+    /// `GitError::Missing`: no git binary in the distro.
     GitMissing,
-    GitTooOld { found: String },
-    Untrusted { path: String },
-    PermissionDenied { detail: String },
-    PathGone { detail: String },
-    StoreOffline { detail: String },
-    Unreadable { detail: String },
-    Stale { detail: String },
-    Busy { marker: String },
+    /// `GitError::TooOld`: git is below the floor.
+    GitTooOld {
+        /// The `git --version` line as printed.
+        found: String,
+    },
+    /// `GitError::Untrusted`: git refused the repository for dubious ownership.
+    Untrusted {
+        /// Lossy display form of the path git refused, diagnostic only.
+        path: String,
+    },
+    /// `GitError::PermissionDenied`: the filesystem refused the read.
+    PermissionDenied {
+        /// Diagnostic detail; never rendered raw.
+        detail: String,
+    },
+    /// `GitError::PathGone`: the path is genuinely not there, the only fault implying absence.
+    PathGone {
+        /// Diagnostic detail; never rendered raw.
+        detail: String,
+    },
+    /// `GitError::StoreOffline`: the backing store answered as unmounted or unreachable.
+    StoreOffline {
+        /// Diagnostic detail; never rendered raw.
+        detail: String,
+    },
+    /// `GitError::Unreadable`: it looks like a repository and git could not open it.
+    Unreadable {
+        /// Diagnostic detail; never rendered raw.
+        detail: String,
+    },
+    /// `GitError::Stale`: the read failed in a way that means unknown, never absence.
+    Stale {
+        /// Diagnostic detail; never rendered raw.
+        detail: String,
+    },
+    /// `GitError::Busy`: a lock or operation marker is in the way.
+    Busy {
+        /// The `BusyMarker` as a slug; one this build does not know reads back as `IndexLock`.
+        marker: String,
+    },
+    /// `GitError::TornRead`: the ref state moved during one observation.
     TornRead,
-    Budget { after_ms: u64 },
+    /// `GitError::Budget`: the job's deadline elapsed and the process tree was killed.
+    Budget {
+        /// How long the child ran before it was killed, in milliseconds.
+        after_ms: u64,
+    },
+    /// `GitError::Cancelled`: a cancellation token fired.
     Cancelled,
-    Internal { detail: String },
+    /// `GitError::Internal`: a defect in this program.
+    Internal {
+        /// Diagnostic detail; never rendered raw.
+        detail: String,
+    },
 }
 
+/// The wire form of `err`, variant for variant.
 #[must_use]
 pub fn fault_of(err: &GitError) -> WorkerFault {
     match err {
@@ -279,6 +430,8 @@ pub fn fault_of(err: &GitError) -> WorkerFault {
     }
 }
 
+/// Rebuilds the `GitError` a fault was made from: `fault_of`'s inverse.
+/// Rebuilds the `GitError` a fault was made from: `fault_of`'s inverse.
 #[must_use]
 pub fn git_error_of(fault: WorkerFault) -> GitError {
     match fault {
@@ -324,6 +477,8 @@ fn busy_of(slug: &str) -> BusyMarker {
     }
 }
 
+/// A `FrameError` as the `std::io::Error` the worker's IO paths return: an IO failure as it
+/// was, anything else wrapped with its message.
 #[must_use]
 pub fn frame_io_error(err: FrameError) -> std::io::Error {
     match err {
@@ -338,6 +493,11 @@ fn write_json<W: std::io::Write, T: Serialize>(out: &mut W, value: &T) -> std::i
     out.flush()
 }
 
+/// Writes one worker-to-core frame and flushes it.
+///
+/// # Errors
+/// Fails when `frame` cannot be serialised, when its payload exceeds `MAX_FRAME_BYTES`, or when
+/// writing to or flushing `out` fails.
 pub fn write_worker_frame<W: std::io::Write>(
     out: &mut W,
     frame: &WorkerOutbound,
@@ -345,6 +505,11 @@ pub fn write_worker_frame<W: std::io::Write>(
     write_json(out, frame)
 }
 
+/// Writes one core-to-worker call and flushes it.
+///
+/// # Errors
+/// Fails when `call` cannot be serialised, when its payload exceeds `MAX_FRAME_BYTES`, or when
+/// writing to or flushing `out` fails.
 pub fn write_worker_call<W: std::io::Write>(out: &mut W, call: &WorkerCall) -> std::io::Result<()> {
     write_json(out, call)
 }

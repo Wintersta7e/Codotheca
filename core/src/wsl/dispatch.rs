@@ -46,6 +46,9 @@ pub fn read_consented(conn: &rusqlite::Connection) -> BTreeSet<String> {
 }
 
 /// Replaces the consent set. Takes the transaction from its caller, as every writer here does.
+///
+/// # Errors
+/// Fails when the set cannot be serialised to JSON, or when the upsert into `app_meta` fails.
 pub fn write_consented(
     tx: &rusqlite::Transaction<'_>,
     consented: &BTreeSet<String>,
@@ -62,8 +65,10 @@ pub fn write_consented(
     Ok(())
 }
 
+/// Whether a distro's worker may be reached now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DistroReadiness {
+    /// Running, or stopped and the user has agreed to start it.
     Ready,
     /// Installed and stopped, and the user has not agreed to start it.
     NeedsConsent,
@@ -71,6 +76,8 @@ pub enum DistroReadiness {
     Absent,
 }
 
+/// Where `distro` stands, from the installed list and whether the user `consented` to start it.
+/// A running distro is ready either way: attaching to it starts nothing.
 #[must_use]
 pub fn readiness(installed: &[DistroInfo], distro: &str, consented: bool) -> DistroReadiness {
     match installed.iter().find(|d| d.name == distro) {
@@ -81,24 +88,39 @@ pub fn readiness(installed: &[DistroInfo], distro: &str, consented: bool) -> Dis
     }
 }
 
+/// Why a distro was not read this scan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unavailable {
+    /// Installed and stopped, and the user has not agreed to start it.
     NeedsConsent,
+    /// Not installed.
     Absent,
-    Launch { detail: String },
+    /// Its worker could not be reached, or its walk broke off part-way.
+    Launch {
+        /// What failed; diagnostic only, carried into the scan problem.
+        detail: String,
+    },
 }
 
+/// What dispatching one distro's walk came to.
 #[derive(Debug)]
 pub enum DistroOutcome {
+    /// The distro's walk ran to its reply.
     Scanned {
+        /// The distro walked.
         distro: String,
+        /// The store keys of every repository it reported: the stores seen present.
         store_keys: BTreeSet<String>,
+        /// Repositories handed to the sink as discovered rows.
         repos: u64,
         /// §13: the distro has no git, so its repositories carry an explained error.
         git_missing: bool,
     },
+    /// The distro was not read, or its walk broke off. It contributes no store key.
     Unreachable {
+        /// The distro that was not read.
         distro: String,
+        /// Why not.
         reason: Unavailable,
     },
 }
@@ -135,7 +157,7 @@ pub fn present_store_keys(outcomes: &[DistroOutcome]) -> BTreeSet<String> {
 /// §11.5's `project.error_kind`. Only the git case sets one: an unreachable distro's projects
 /// were never observed this generation, and a never-succeeded error would claim otherwise.
 #[must_use]
-pub fn error_kind_for(outcome: &DistroOutcome) -> Option<&'static str> {
+pub const fn error_kind_for(outcome: &DistroOutcome) -> Option<&'static str> {
     match outcome {
         DistroOutcome::Scanned {
             git_missing: true, ..
@@ -144,8 +166,9 @@ pub fn error_kind_for(outcome: &DistroOutcome) -> Option<&'static str> {
     }
 }
 
-/// The same row shape the native walk produces, so nothing downstream branches on `wsl`. This
-/// function only builds the event; the `location` row is written from it by plan 08's
+/// The same row shape the native walk produces, so nothing downstream branches on `wsl`.
+///
+/// This function only builds the event; the `location` row is written from it by plan 08's
 /// `upsert_location`, reached through plan 07's `ScanStore::upsert_location` inside the same
 /// transaction `resolve_identity` ran in (R1).
 ///
@@ -179,6 +202,7 @@ pub fn discovered_of(found: &WorkerRepoFound, distro: &str, root_id: i64) -> Opt
     })
 }
 
+/// Decides whether a distro may be read and, when it may, walks it through its worker.
 #[derive(Debug)]
 pub struct WslDispatcher {
     pool: Arc<WslWorkerPool>,
@@ -187,8 +211,10 @@ pub struct WslDispatcher {
 }
 
 impl WslDispatcher {
+    /// A dispatcher over `pool`, judging readiness from the `installed` distros and the
+    /// `consented` set as they were read at startup.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         pool: Arc<WslWorkerPool>,
         installed: Vec<DistroInfo>,
         consented: BTreeSet<String>,
@@ -225,11 +251,14 @@ impl WslDispatcher {
         let worker = match self.pool.get(&distro) {
             Ok(worker) => worker,
             Err(err) => {
-                let reason = Unavailable::Launch {
+                let unreachable = Unavailable::Launch {
                     detail: err.to_string(),
                 };
-                sink(WalkEvent::Problem(problem_for(&distro, &reason)));
-                return DistroOutcome::Unreachable { distro, reason };
+                sink(WalkEvent::Problem(problem_for(&distro, &unreachable)));
+                return DistroOutcome::Unreachable {
+                    distro,
+                    reason: unreachable,
+                };
             }
         };
         // §13: no git in the distro is an explained error on its repositories, not a reason to
@@ -299,13 +328,16 @@ impl WslDispatcher {
         });
 
         if let Err(err) = outcome {
-            let reason = Unavailable::Launch {
+            let broken_off = Unavailable::Launch {
                 detail: err.to_string(),
             };
-            sink(WalkEvent::Problem(problem_for(&distro, &reason)));
+            sink(WalkEvent::Problem(problem_for(&distro, &broken_off)));
             // A partial walk's rows stay: they are timestamped observations, which is what §4.8
             // says every partial result is. But the store is not claimed present.
-            return DistroOutcome::Unreachable { distro, reason };
+            return DistroOutcome::Unreachable {
+                distro,
+                reason: broken_off,
+            };
         }
 
         DistroOutcome::Scanned {
@@ -579,10 +611,10 @@ mod tests {
         assert_eq!(read_consented(index.index().conn()), wanted);
 
         // Replacing the set withdraws consent for anything not in it.
-        let only_beta: BTreeSet<String> = ["beta".to_owned()].into_iter().collect();
-        let tx = index.index_mut().conn_mut().transaction().expect("begins");
-        write_consented(&tx, &only_beta).expect("writes");
-        tx.commit().expect("commits");
+        let only_beta: BTreeSet<String> = std::iter::once("beta".to_owned()).collect();
+        let withdrawal = index.index_mut().conn_mut().transaction().expect("begins");
+        write_consented(&withdrawal, &only_beta).expect("writes");
+        withdrawal.commit().expect("commits");
         assert_eq!(read_consented(index.index().conn()), only_beta);
 
         index

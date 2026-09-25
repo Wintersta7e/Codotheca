@@ -11,7 +11,9 @@ pub(crate) const WSL_LOCALHOST: &str = r"\\wsl.localhost\";
 /// A path on the WSL bridge, split into the distro that owns it and the path inside it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgePath {
+    /// The distro the bridge path's first component names, case kept.
     pub distro: String,
+    /// The absolute path inside the distro, `/`-separated.
     pub linux_path: String,
 }
 
@@ -60,13 +62,17 @@ pub fn bridge_path(distro: &str, linux_path: &str) -> String {
 /// A Windows volume surfaced inside the distro, as the mount table reports it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DrvfsMount {
+    /// Where the volume is mounted inside the distro.
     pub mount_point: String,
+    /// The Windows root it exposes: an upper-case drive letter, a colon and a backslash.
     pub windows_root: String,
 }
 
-/// The Windows root a mount source names, when it names one. The mount source for a `DrvFS` mount
-/// is the drive it exposes; for anything else it is a device node, a filesystem name, or a
-/// placeholder, and this returns `None` rather than guessing.
+/// The Windows root a mount source names, when it names one.
+///
+/// The mount source for a `DrvFS` mount is the drive it exposes; for anything else it is a
+/// device node, a filesystem name, or a placeholder, and this returns `None` rather than
+/// guessing.
 #[must_use]
 pub fn parse_drvfs_source(source: &str) -> Option<String> {
     let mut chars = source.chars();

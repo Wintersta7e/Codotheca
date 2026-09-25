@@ -22,20 +22,47 @@ use std::process::{Child, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+/// Why a request to a distro's worker produced no answer.
 #[derive(Debug)]
 pub enum WslError {
-    Launch { distro: String, detail: String },
-    Deploy { distro: String, detail: String },
-    Protocol { detail: String },
-    VersionMismatch { worker: u32, core: u32 },
+    /// The worker could not be started in the distro, or started without its pipes.
+    Launch {
+        /// The distro it was started in.
+        distro: String,
+        /// What `wsl.exe` or the spawn reported; diagnostic only.
+        detail: String,
+    },
+    /// Installing the worker in the distro failed: a deployment command could not run, exited
+    /// non-zero, or printed something that is not a home directory.
+    Deploy {
+        /// The distro it was installed into.
+        distro: String,
+        /// Which command failed and what it printed; diagnostic only.
+        detail: String,
+    },
+    /// The frame stream broke: a frame could not be written, read or parsed, answered another
+    /// request, or the first one was not `Hello`.
+    Protocol {
+        /// What was wrong with the stream; diagnostic only.
+        detail: String,
+    },
+    /// The deployed worker speaks a different `WORKER_PROTOCOL_VERSION` from this build.
+    VersionMismatch {
+        /// The version the worker's `Hello` named.
+        worker: u32,
+        /// This build's `WORKER_PROTOCOL_VERSION`.
+        core: u32,
+    },
+    /// The worker ran the request and it failed.
     Fault(WorkerFault),
+    /// The connection is gone: the worker's output ended, or a lock guarding it was poisoned.
     Closed,
 }
 
 impl WslError {
     /// True when the distro could not be reached at all.
     #[must_use]
-    pub fn is_unavailable(&self) -> bool {
+    pub const fn is_unavailable(&self) -> bool {
         matches!(
             self,
             Self::Launch { .. } | Self::Deploy { .. } | Self::Closed
@@ -67,9 +94,14 @@ impl std::fmt::Display for WslError {
 
 impl std::error::Error for WslError {}
 
+/// A started worker's two pipes, and how to stop it.
 pub struct WorkerIo {
+    /// The worker's stdout: the frame stream it answers on.
     pub reader: Box<dyn std::io::Read + Send>,
+    /// The worker's stdin, which calls are written to.
     pub writer: Box<dyn Write + Send>,
+    /// Stops the worker. Called after a failed handshake, on shutdown and again on drop, so a
+    /// second call must do nothing.
     pub stop: Box<dyn Fn() + Send + Sync>,
 }
 
@@ -79,18 +111,31 @@ impl std::fmt::Debug for WorkerIo {
     }
 }
 
+/// Starts a worker in a distro. `WslExeLauncher` is the production one.
 pub trait WorkerLauncher: Send + Sync + std::fmt::Debug {
+    /// Starts a worker in `distro` and hands back its pipes, before any frame is read.
+    ///
+    /// # Errors
+    /// `WslError::Deploy` when the worker cannot be installed in the distro, and
+    /// `WslError::Launch` when it cannot be started there or starts without its pipes.
     fn launch(&self, distro: &str) -> Result<WorkerIo, WslError>;
 }
 
+/// What a worker's `Hello` said, kept for the life of the connection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkerHello {
+    /// The worker's `WORKER_PROTOCOL_VERSION`, already checked equal to this build's.
     pub protocol_version: u32,
+    /// The crate version the worker was built from.
     pub worker_version: String,
+    /// Whether the distro has a usable git.
     pub git: WorkerGit,
+    /// The worker's process id inside the distro.
     pub pid: u32,
 }
 
+/// A live connection to one distro's worker. Requests are single-flighted: each is written and
+/// read to its reply before the next one starts.
 #[derive(Debug)]
 pub struct WslWorker {
     distro: String,
@@ -101,6 +146,11 @@ pub struct WslWorker {
 
 impl WslWorker {
     /// Reads `Hello` before returning so an incompatible deployed worker fails at connection.
+    ///
+    /// # Errors
+    /// `WslError::Closed` when the stream ends before a frame, `WslError::Protocol` when the
+    /// first frame cannot be read or is not `Hello`, and `WslError::VersionMismatch` when it
+    /// names another protocol version. The worker is stopped before any of them returns.
     pub fn connect(distro: &str, mut io: WorkerIo) -> Result<Self, WslError> {
         let hello = match read_hello(&mut io) {
             Ok(hello) => hello,
@@ -117,25 +167,44 @@ impl WslWorker {
         })
     }
 
+    /// The distro this worker runs in.
     #[must_use]
     pub fn distro(&self) -> &str {
         &self.distro
     }
 
+    /// What the worker said when it connected.
     #[must_use]
-    pub fn hello(&self) -> &WorkerHello {
+    pub const fn hello(&self) -> &WorkerHello {
         &self.hello
     }
 
+    /// Whether the distro has git, as `Hello` reported it.
     #[must_use]
-    pub fn git(&self) -> &WorkerGit {
+    pub const fn git(&self) -> &WorkerGit {
         &self.hello.git
     }
 
+    /// Sends one request and returns its reply, discarding any events it streams.
+    ///
+    /// # Errors
+    /// The same as [`WslWorker::stream`]: `WslError::Fault` when the worker answers `Fail`,
+    /// `WslError::Closed` when the connection is gone, `WslError::Protocol` when the stream
+    /// breaks.
     pub fn call(&self, request: &WorkerRequest) -> Result<serde_json::Value, WslError> {
         self.stream(request, &mut |_| {})
     }
 
+    /// Sends one request, hands each event it streams to `on_event`, and returns its reply.
+    ///
+    /// # Errors
+    /// `WslError::Fault` when the worker answers with `Fail`; `WslError::Closed` when its output
+    /// ends or the connection lock is poisoned; `WslError::Protocol` when the call cannot be
+    /// written, a frame cannot be read or parsed, or a frame answers another request.
+    // The `io` guard is held until the reply is read: that lock is what single-flights
+    // requests, so no other call can write to the worker while this one's frames are arriving.
+    // The lint cannot be allowed on the binding itself, only on the function.
+    #[allow(clippy::significant_drop_tightening)]
     pub fn stream(
         &self,
         request: &WorkerRequest,
@@ -177,6 +246,7 @@ impl WslWorker {
         }
     }
 
+    /// Asks the worker to stop, then stops it whatever it answered.
     pub fn shutdown(&self) {
         let _ = self.call(&WorkerRequest::Shutdown);
         let io = match self.io.lock() {
@@ -245,6 +315,7 @@ pub struct WslWorkerPool {
 }
 
 impl WslWorkerPool {
+    /// An empty pool that starts its workers through `launcher`.
     #[must_use]
     pub fn new(launcher: Arc<dyn WorkerLauncher>) -> Self {
         Self {
@@ -253,6 +324,12 @@ impl WslWorkerPool {
         }
     }
 
+    /// The worker for `distro`, launched and connected on first use. When two first uses race,
+    /// the later connection is shut down and both callers get the one already stored.
+    ///
+    /// # Errors
+    /// `WslError::Closed` when the pool's lock is poisoned; otherwise whatever
+    /// `WorkerLauncher::launch` or `WslWorker::connect` failed with.
     pub fn get(&self, distro: &str) -> Result<Arc<WslWorker>, WslError> {
         {
             let live = self.live.lock().map_err(|_| WslError::Closed)?;
@@ -272,17 +349,19 @@ impl WslWorkerPool {
             return Ok(existing);
         }
         live.insert(distro.to_owned(), Arc::clone(&worker));
+        drop(live);
         Ok(worker)
     }
 
+    /// The distros with a live worker, in name order; empty when the pool's lock is poisoned.
     #[must_use]
     pub fn live_distros(&self) -> Vec<String> {
-        match self.live.lock() {
-            Ok(live) => live.keys().cloned().collect(),
-            Err(_) => Vec::new(),
-        }
+        self.live
+            .lock()
+            .map_or_else(|_| Vec::new(), |live| live.keys().cloned().collect())
     }
 
+    /// Stops every live worker and empties the pool.
     pub fn shutdown_all(&self) {
         let mut live = match self.live.lock() {
             Ok(live) => live,
@@ -299,6 +378,9 @@ impl WslWorkerPool {
 /// Installs this build's worker inside a distro and launches it without a shell.
 pub struct WslExeLauncher {
     cli: Arc<dyn WslCli>,
+    // `Arc<[u8]>` is the better type, but `new` takes this one and a Windows-only suite builds
+    // its launchers from an `Arc<Vec<u8>>` it shares between them.
+    #[allow(clippy::rc_buffer)]
     worker_bytes: Arc<Vec<u8>>,
     user: Option<String>,
 }
@@ -314,6 +396,8 @@ impl std::fmt::Debug for WslExeLauncher {
 }
 
 impl WslExeLauncher {
+    /// A launcher that installs `worker_bytes`, this build's worker binary, and runs it as
+    /// `user`, or as the distro's default user when that is `None`.
     #[must_use]
     pub fn new(cli: Arc<dyn WslCli>, worker_bytes: Arc<Vec<u8>>, user: Option<String>) -> Self {
         Self {
@@ -417,10 +501,9 @@ impl WslExeLauncher {
             )
         })?;
 
-        let siblings = match self.run_output(distro, &list_root_argv(&paths.root)) {
-            Ok(output) => sibling_names(&output),
-            Err(_) => Vec::new(),
-        };
+        let siblings = self
+            .run_output(distro, &list_root_argv(&paths.root))
+            .map_or_else(|_| Vec::new(), |output| sibling_names(&output));
         // Presence is the *whole executable*, not its directory and not merely a file at that
         // path. An install interrupted between the `mkdir` and the copy leaves an empty
         // directory; one interrupted during the copy leaves a short file. Either read as
@@ -484,11 +567,11 @@ impl WorkerLauncher for WslExeLauncher {
             reader: Box::new(reader),
             writer: Box::new(writer),
             stop: Box::new(move || {
-                let Ok(mut child) = stop_handle.lock() else {
+                let Ok(mut slot) = stop_handle.lock() else {
                     return;
                 };
-                if let Some(mut child) = child.take() {
-                    stop_child(&mut child);
+                if let Some(mut running) = slot.take() {
+                    stop_child(&mut running);
                 }
             }),
         })
