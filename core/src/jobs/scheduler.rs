@@ -520,12 +520,15 @@ const fn git_error_kind(e: &crate::git::GitError) -> &'static str {
         GitError::StoreOffline { .. } => "STORE_OFFLINE",
         GitError::PathGone { .. } => "PATH_GONE",
         GitError::Budget { .. } => "BUDGET_EXCEEDED",
+        // `TransportRefused` is a write-path outcome and no job runs a write intent; it lands
+        // with the rest of *could not read* rather than inventing a kind nothing renders.
         GitError::Unreadable { .. }
         | GitError::Stale { .. }
         | GitError::Busy { .. }
         | GitError::TornRead
         | GitError::Cancelled
-        | GitError::Internal { .. } => "REPO_UNREADABLE",
+        | GitError::Internal { .. }
+        | GitError::TransportRefused { .. } => "REPO_UNREADABLE",
     }
 }
 

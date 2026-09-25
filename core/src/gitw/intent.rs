@@ -9,9 +9,19 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 #[cfg(feature = "testkit")]
 use crate::accounts::keychain::SecretToken;
+
+/// §47.3's per-invocation deadline: an intent that runs while a user waits is killed, with its
+/// whole process group, when this elapses.
+///
+/// **A declared value, not a measurement.** It is the 20 s the uninstall pre-flight declared for
+/// its fetch and nothing ever enforced; the Windows-native measurement that confirms or replaces
+/// it is still owed, and until then no latency may be quoted from it. The analyser's reads take
+/// the same value, so one per-invocation deadline governs the whole verdict (§45.6).
+pub const GIT_INVOCATION_DEADLINE: Duration = Duration::from_secs(20);
 
 /// Why a write intent could not be built. A refusal is a reply, not a failure (§24.3d).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,6 +228,34 @@ impl Intent {
         match self {
             Self::Clone { .. } => None,
             Self::Fetch { work_dir, .. } => Some(work_dir.as_path()),
+        }
+    }
+
+    /// How long this intent's child may run before the core kills its process group (§47.3).
+    ///
+    /// `None` for a clone: it reports progress to a user who can cancel it, and a large clone
+    /// legitimately runs for minutes. Every intent that runs while a user waits for a verdict
+    /// carries [`GIT_INVOCATION_DEADLINE`].
+    #[must_use]
+    pub const fn deadline(&self) -> Option<Duration> {
+        match self {
+            Self::Clone { .. } => None,
+            Self::Fetch { .. } => Some(GIT_INVOCATION_DEADLINE),
+        }
+    }
+
+    /// The transports this intent's child may use, as `GIT_ALLOW_PROTOCOL` spells them (§47.2).
+    ///
+    /// **The load-bearing transport pin.** Argv pins lost twice: a user's
+    /// `protocol.<helper>.allow=always` ran a helper past `-c protocol.allow=never`, and a
+    /// user-global `protocol.file.allow=always` opened a file remote past it; the environment
+    /// variable refused both (§47 M4). A clone is https only (§24.1c): a config that rewrites its
+    /// URL to a path or to ssh now fails instead of cloning over that transport.
+    #[must_use]
+    pub const fn allowed_protocols(&self) -> &'static str {
+        match self {
+            Self::Clone { .. } => "https",
+            Self::Fetch { .. } => "https:ssh",
         }
     }
 

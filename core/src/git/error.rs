@@ -89,11 +89,22 @@ pub enum GitError {
         /// Diagnostic detail; never rendered raw.
         detail: String,
     },
+    /// git refused a transport the intent's `GIT_ALLOW_PROTOCOL` does not list — `transport
+    /// '<x>' not allowed`, stable under `LC_ALL=C`. Produced only on the write path, where a
+    /// user's config rewrote a remote off the intent's transports (§47.3, §47.10).
+    TransportRefused {
+        /// The transport git named, e.g. `file` or `ssh`.
+        protocol: String,
+    },
 }
 
 impl GitError {
     /// The closed-enum code from `protocol/schema/protocol.json`, or `None` when the failure is
     /// a scheduler state rather than a project error the shell renders (§11.1).
+    ///
+    /// `TransportRefused` is `None` for a third reason: it arises only on the write path, and
+    /// each caller there maps it into its own reply — Install's `network`, the verifying read's
+    /// *did not answer*. No job renders it.
     #[must_use]
     pub const fn protocol_code(&self) -> Option<&'static str> {
         match self {
@@ -106,7 +117,10 @@ impl GitError {
             Self::Unreadable { .. } | Self::Stale { .. } => Some("REPO_UNREADABLE"),
             Self::Budget { .. } => Some("BUDGET_EXCEEDED"),
             Self::Internal { .. } => Some("INTERNAL"),
-            Self::Busy { .. } | Self::TornRead | Self::Cancelled => None,
+            Self::Busy { .. }
+            | Self::TornRead
+            | Self::Cancelled
+            | Self::TransportRefused { .. } => None,
         }
     }
 
@@ -140,8 +154,23 @@ impl std::fmt::Display for GitError {
             Self::Budget { after_ms } => write!(f, "budget exceeded after {after_ms} ms"),
             Self::Cancelled => write!(f, "cancelled"),
             Self::Internal { detail } => write!(f, "internal: {detail}"),
+            Self::TransportRefused { protocol } => {
+                write!(f, "transport not allowed: {protocol}")
+            }
         }
     }
+}
+
+/// The transport a failed write child's stderr says git refused, if it says so.
+///
+/// git's own words, `fatal: transport '<x>' not allowed`, which `LC_ALL=C` keeps in English.
+#[must_use]
+pub fn transport_refused(stderr_line: &str) -> Option<String> {
+    let (_, rest) = stderr_line.split_once("transport '")?;
+    let (protocol, tail) = rest.split_once('\'')?;
+    tail.trim_start()
+        .starts_with("not allowed")
+        .then(|| protocol.to_owned())
 }
 
 impl std::error::Error for GitError {}

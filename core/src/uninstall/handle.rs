@@ -17,13 +17,12 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
 
 use serde_json::Value;
 
 use crate::git::{GitBackend, JobClass, JobContext, RepoHandle, StoreKey};
 use crate::gitw::backend::MutatingGit;
-use crate::gitw::intent::{Intent, RemoteName};
+use crate::gitw::intent::{Intent, RemoteName, GIT_INVOCATION_DEADLINE};
 use crate::index::Index;
 use crate::mount::StoreClass;
 use crate::proto::dispatch::{parse_args, CommandFailure};
@@ -33,10 +32,6 @@ use crate::protocol::{
 use crate::uninstall::gates::{self, RemoteOutcome};
 use crate::uninstall::preflight::{compute_verdict, LocationSnapshot, VerdictInputs};
 use crate::uninstall::{uninstall_location, unique};
-
-/// §24.7C's fetch runs while a user waits, so it carries a deadline rather than blocking the
-/// core on an unresponsive remote. The analyser's git calls carry the same one.
-const PREFLIGHT_DEADLINE: Duration = Duration::from_secs(20);
 
 /// The remote a fetch verifies against. §24.1a's `RemoteName` refuses anything that is not one
 /// safe segment, so this cannot become a path.
@@ -189,7 +184,11 @@ fn assemble(
     now: i64,
 ) -> VerdictInputs {
     let cancel = crate::cancel::CancelToken::new();
-    let ctx = JobContext::new(JobClass::Interactive, &cancel, Some(PREFLIGHT_DEADLINE));
+    let ctx = JobContext::new(
+        JobClass::Interactive,
+        &cancel,
+        Some(GIT_INVOCATION_DEADLINE),
+    );
 
     // §24.7E begins here: the directory is **re-resolved from disk**, never reconstructed from
     // the row. A handle that could not be resolved is a copy nothing can reason about, and the
@@ -271,7 +270,11 @@ pub fn handle_uninstall_off_lock(
     // remembered. `head_oid` is a tip — a position, not an identity — and a guard over it would
     // refuse a copy the user had merely committed to and admit one rewound onto the same tip.
     let cancel = crate::cancel::CancelToken::new();
-    let ctx = JobContext::new(JobClass::Interactive, &cancel, Some(PREFLIGHT_DEADLINE));
+    let ctx = JobContext::new(
+        JobClass::Interactive,
+        &cancel,
+        Some(GIT_INVOCATION_DEADLINE),
+    );
     let identity_now =
         RepoHandle::resolve(&facts.snapshot.path, facts.store.clone(), StoreClass::Local)
             .ok()

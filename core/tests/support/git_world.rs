@@ -180,25 +180,30 @@ pub(crate) struct ScrubReport {
 }
 
 /// Compare a child's recorded environment (`KEY=VALUE` entries) against `hostile`.
+///
+/// **A leak is the planted VALUE arriving**, not the name: the write path sets its own
+/// `GIT_ALLOW_PROTOCOL` after the scrub (§47.3), so the name is present by design and only the
+/// parent's value reaching the child is the defect.
 pub(crate) fn scrub_report(hostile: &HostileEnv, child_env: &[String]) -> ScrubReport {
-    let reached = |key: &str| {
+    let arrived = |key: &str, value: &OsString| {
+        let value = value.to_string_lossy();
         child_env.iter().any(|entry| {
             entry
                 .split_once('=')
-                .is_some_and(|(k, _)| k.eq_ignore_ascii_case(key))
+                .is_some_and(|(k, v)| k.eq_ignore_ascii_case(key) && v == value)
         })
     };
     let mut report = ScrubReport {
         planted: hostile.scrubbed.len() + hostile.kept.len(),
         ..ScrubReport::default()
     };
-    for (key, _) in &hostile.scrubbed {
-        if reached(key) {
+    for (key, value) in &hostile.scrubbed {
+        if arrived(key, value) {
             report.leaked.push(key.clone());
         }
     }
-    for (key, _) in &hostile.kept {
-        if !reached(key) {
+    for (key, value) in &hostile.kept {
+        if !arrived(key, value) {
             report.lost.push(key.clone());
         }
     }

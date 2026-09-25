@@ -24,7 +24,7 @@ mod tree;
 pub mod version;
 
 pub use backend::{require_floor, GitBackend, JobContext, SystemGit};
-pub use error::{classify, classify_spawn, BusyMarker, GitError, GitResult};
+pub use error::{classify, classify_spawn, transport_refused, BusyMarker, GitError, GitResult};
 pub use exec::{GitExec, GitOutput, RunLimits};
 pub use facts::{repo_facts, RepoFacts};
 pub use history::{

@@ -390,6 +390,12 @@ pub enum WorkerFault {
         /// Diagnostic detail; never rendered raw.
         detail: String,
     },
+    /// `GitError::TransportRefused`: git refused a transport. The worker runs no write intent,
+    /// so it never raises this; the variant keeps the mapping total in both directions.
+    TransportRefused {
+        /// The transport git named.
+        protocol: String,
+    },
 }
 
 /// The wire form of `err`, variant for variant.
@@ -427,6 +433,9 @@ pub fn fault_of(err: &GitError) -> WorkerFault {
         GitError::Internal { detail } => WorkerFault::Internal {
             detail: detail.clone(),
         },
+        GitError::TransportRefused { protocol } => WorkerFault::TransportRefused {
+            protocol: protocol.clone(),
+        },
     }
 }
 
@@ -450,6 +459,7 @@ pub fn git_error_of(fault: WorkerFault) -> GitError {
         WorkerFault::Budget { after_ms } => GitError::Budget { after_ms },
         WorkerFault::Cancelled => GitError::Cancelled,
         WorkerFault::Internal { detail } => GitError::Internal { detail },
+        WorkerFault::TransportRefused { protocol } => GitError::TransportRefused { protocol },
     }
 }
 
@@ -658,6 +668,9 @@ mod tests {
             GitError::Cancelled,
             GitError::Internal {
                 detail: "boom".to_owned(),
+            },
+            GitError::TransportRefused {
+                protocol: "file".to_owned(),
             },
         ];
         for original in cases {

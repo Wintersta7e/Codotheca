@@ -156,9 +156,14 @@ pub fn run_install(
                 publish(ctx, run, entered);
             }
         })
-        .map_err(|_| {
+        .map_err(|error| {
             if ctx.cancel.is_cancelled() {
                 InstallFailure::Cancelled
+            } else if matches!(error, crate::git::GitError::TransportRefused { .. }) {
+                // §47.10 item 3: a config that rewrote the https URL to a path or to ssh reached
+                // a transport §24.1c refuses. The clone never left https, so it is the network
+                // that failed, not git.
+                InstallFailure::Network
             } else {
                 InstallFailure::GitFailed
             }

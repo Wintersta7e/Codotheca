@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use command_group::CommandGroup;
 
 use crate::cancel::CancelToken;
-use crate::git::{classify_spawn, neutralise_env, GitError, GitResult};
+use crate::git::{classify_spawn, neutralise_env, transport_refused, GitError, GitResult};
 use crate::gitw::credential::CredentialChannel;
 use crate::gitw::intent::Intent;
 
@@ -152,6 +152,12 @@ pub fn write_base_args(intent: &Intent, env: &WriteEnv) -> Vec<OsString> {
     cfg(&mut argv, OsString::from("gc.auto=0"));
     cfg(&mut argv, OsString::from("gc.autoDetach=false"));
     cfg(&mut argv, OsString::from("maintenance.auto=false"));
+    // §47.3's two uniform pins, on every intent. A `fetch.bundleURI` in the user's config wrote
+    // `refs/bundles/*`, and a creation-token list wrote `.git/config`, under every other pin —
+    // measured on both platforms, even when the fetch itself was refused (§47 M3). Only the
+    // empty value stopped it; `transfer.bundleURI=false` stops a server-advertised list.
+    cfg(&mut argv, OsString::from("fetch.bundleURI="));
+    cfg(&mut argv, OsString::from("transfer.bundleURI=false"));
     argv.extend(env.credential.helper_args());
     // §3.2's parenthesis — *"clean/smudge filters are not disabled … but phase 1 never checks
     // out"* — becomes load-bearing here, because a clone checks out.
@@ -184,6 +190,8 @@ pub struct WriteExec {
 enum Stop {
     Exited(std::process::ExitStatus),
     Cancelled,
+    /// The intent's deadline elapsed after this many milliseconds and the group was killed.
+    Deadline(u64),
 }
 
 impl WriteExec {
@@ -246,10 +254,19 @@ impl WriteExec {
     /// while stdout is drained on another. Draining both is what stops a chatty child filling a
     /// pipe buffer and blocking forever.
     ///
+    /// **The intent's deadline is enforced here, by the core** (§47.3). On expiry the whole
+    /// process group is killed and waited for — a `git-remote-https` left running would hold the
+    /// connection and the staging directory — and the call returns `Budget`.
+    ///
+    /// `GIT_ALLOW_PROTOCOL` is set to the intent's own list **after** `neutralise_env` has removed
+    /// the parent's, so a user's value can neither widen nor survive it.
+    ///
     /// # Errors
-    /// `GitError::Cancelled` when `cancel` fires before the spawn or while the child runs; the
-    /// spawn's classification (`Missing`, `PermissionDenied`, `Internal`) when the group cannot be
-    /// started or waited on; and `Internal` when a pipe is missing or git exits unsuccessfully.
+    /// `GitError::Cancelled` when `cancel` fires before the spawn or while the child runs;
+    /// `GitError::Budget` when the intent's deadline elapses; the spawn's classification
+    /// (`Missing`, `PermissionDenied`, `Internal`) when the group cannot be started or waited on;
+    /// `TransportRefused` when git refused a transport the intent does not list; and `Internal`
+    /// when a pipe is missing or git exits unsuccessfully otherwise.
     pub fn run(
         &self,
         intent: &Intent,
@@ -263,6 +280,7 @@ impl WriteExec {
         cmd.args(write_base_args(intent, env));
         cmd.args(intent.argv());
         neutralise_env(&mut cmd);
+        cmd.env("GIT_ALLOW_PROTOCOL", intent.allowed_protocols());
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -287,11 +305,22 @@ impl WriteExec {
             }
         });
 
+        // Every stderr line reaches the caller, and the one that names a refused transport is
+        // kept: it is what turns a failed exit into `TransportRefused` rather than `Internal`.
+        let mut refused: Option<String> = None;
+        let mut deliver = |line: &str| {
+            if refused.is_none() {
+                refused = transport_refused(line);
+            }
+            on_stderr(line);
+        };
+
+        let deadline = intent.deadline();
         let started = Instant::now();
         let mut poll = Duration::from_micros(250);
         let stop = loop {
             while let Ok(line) = rx.try_recv() {
-                on_stderr(&line);
+                deliver(&line);
             }
             match child.try_wait() {
                 Ok(Some(status)) => break Stop::Exited(status),
@@ -303,6 +332,16 @@ impl WriteExec {
                 let _ = child.wait();
                 break Stop::Cancelled;
             }
+            if let Some(limit) = deadline {
+                let elapsed = started.elapsed();
+                if elapsed >= limit {
+                    // The group, not the child: a transport helper outliving git would keep the
+                    // connection open and the process tree alive past the answer.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break Stop::Deadline(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX));
+                }
+            }
             thread::sleep(poll);
             poll = (poll * 2).min(Duration::from_millis(10));
         };
@@ -312,19 +351,23 @@ impl WriteExec {
         let _ = lines.join();
         let _ = drain.join();
         while let Ok(line) = rx.try_recv() {
-            on_stderr(&line);
+            deliver(&line);
         }
 
         match stop {
             Stop::Cancelled => Err(GitError::Cancelled),
+            Stop::Deadline(after_ms) => Err(GitError::Budget { after_ms }),
             Stop::Exited(status) if status.success() => Ok(()),
-            Stop::Exited(status) => Err(GitError::Internal {
-                detail: format!(
-                    "git exited with {} after {} ms",
-                    status.code().unwrap_or(-1),
-                    started.elapsed().as_millis()
-                ),
-            }),
+            Stop::Exited(status) => Err(refused.map_or_else(
+                || GitError::Internal {
+                    detail: format!(
+                        "git exited with {} after {} ms",
+                        status.code().unwrap_or(-1),
+                        started.elapsed().as_millis()
+                    ),
+                },
+                |protocol| GitError::TransportRefused { protocol },
+            )),
         }
     }
 }
