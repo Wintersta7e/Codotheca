@@ -14,6 +14,7 @@
 
 mod support;
 
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -1018,4 +1019,569 @@ fn a_verify_read_writes_no_ref_under_a_pruning_refspec() {
         !twin_refs.contains("refs/heads/feature") || !twin_refs.contains("refs/tags/local-tag"),
         "the fixture no longer reproduces M2, so this test proves nothing"
     );
+}
+
+// ---------------------------------------------------------------------------
+// §47.9 C — layer C: every intent's effect under the hostile profile, by four routes.
+// ---------------------------------------------------------------------------
+
+const LAYER_C_TEST: &str = "every_intent_matches_its_declared_effect_under_every_route";
+const ROUTE_VAR: &str = "CODOTHECA_LAYER_C_ROUTE";
+
+/// The intents layer C drives against a world: a clone to a destination that does not exist,
+/// and each step of the verifying read of `origin` in the work repository.
+fn layer_c_intents(world: &support::git_world::World, tag: &str) -> Vec<Intent> {
+    let tips = vec![
+        AdvertisedRef::parse("refs/heads/extra").expect("tip"),
+        AdvertisedRef::parse("refs/heads/main").expect("tip"),
+    ];
+    let mut intents = vec![Intent::Clone {
+        url: RemoteUrl::parse(&world.clone_url).expect("url"),
+        dest: world.root.join(format!("clone-{tag}")),
+        depth: None,
+    }];
+    for step in [
+        VerifyStep::ResolveUrl,
+        VerifyStep::Advertise,
+        VerifyStep::Objects { tips },
+    ] {
+        intents.push(Intent::VerifyRead {
+            repo: world.work.clone(),
+            remote: RemoteName::parse("origin").expect("remote"),
+            step,
+        });
+    }
+    intents
+}
+
+/// The production write path with the one test-only difference, over `world`.
+fn fixture_write_git(world: &support::git_world::World) -> SystemMutatingGit {
+    let hooks =
+        codotheca_core::git::ensure_empty_hooks_dir(&world.root.join("app-data")).expect("hooks");
+    SystemMutatingGit::with_transport_fixture(
+        PathBuf::from("git"),
+        hooks,
+        codotheca_core::gitw::TransportFixture::new(&world.root),
+    )
+}
+
+/// `PATH` with the world's marker helper directory first, so a helper git reached would run.
+fn path_with_helpers(world: &support::git_world::World) -> OsString {
+    let mut dirs = vec![world.helper_dir.clone()];
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    std::env::join_paths(dirs).expect("PATH")
+}
+
+/// **AC-P4-47-6 — layer C.** Every (kind, step) × four routes × the hostile parent environment
+/// writes **exactly** what `effect()` declares: every ref, reflog, `HEAD`, `FETCH_HEAD`,
+/// `packed-refs`, `.git/config`, index and worktree file of the work repository, the origin and
+/// the decoy compared through git and by hash; the object set never shrinks; no marker program
+/// runs and no trace file is written.
+///
+/// Each route runs in a re-executed child carrying its environment — `GIT_CONFIG_GLOBAL`,
+/// `GIT_CONFIG_COUNT` and the hostile parent's scrub variables — so the product inherits them
+/// as it would from a user's shell. `HEAD` is detached for two of the four routes (D10's
+/// detached variant).
+#[test]
+fn every_intent_matches_its_declared_effect_under_every_route() {
+    use support::git_world::{child_dir, effect_violations, is_child, run_in_child, Route, World};
+
+    if is_child() {
+        let world = World::at(&child_dir());
+        let route = std::env::var(ROUTE_VAR).expect("route");
+        let trace = world.root.join("trace.txt");
+        let write_git = fixture_write_git(&world);
+        let mut refs = 0;
+        let mut files = 0;
+        let mut objects = 0;
+        for intent in layer_c_intents(&world, &route) {
+            let before = world.snapshot(&trace);
+            let outcome = write_git.run(&intent, &CancelToken::new(), &mut |_| {});
+            let after = world.snapshot(&trace);
+            let violations = effect_violations(intent.effect(), &before, &after);
+            eprintln!(
+                "layer C [{route}] {:?} {:?}: {} — {} refs lines, {} files hashed, {} objects \
+                 before, {} after, markers {:?}",
+                intent.kind(),
+                intent.step(),
+                if outcome.is_ok() {
+                    "ok"
+                } else {
+                    "refused or failed"
+                },
+                before
+                    .refs
+                    .values()
+                    .map(|r| r.lines().count())
+                    .sum::<usize>(),
+                before.files.len(),
+                before.objects.len(),
+                after.objects.len(),
+                after.markers
+            );
+            assert!(
+                violations.is_empty(),
+                "[{route}] {:?} {:?} wrote beyond {:?}: {violations:?}",
+                intent.kind(),
+                intent.step(),
+                intent.effect()
+            );
+            refs += before
+                .refs
+                .values()
+                .map(|r| r.lines().count())
+                .sum::<usize>();
+            files += before.files.len();
+            objects += after.objects.len();
+        }
+        eprintln!(
+            "layer C [{route}]: {} intents, {refs} refs compared, {files} files hashed, \
+             {objects} objects counted, markers checked",
+            layer_c_intents(&world, &route).len()
+        );
+        return;
+    }
+
+    let mut routes = 0;
+    for route in Route::ALL {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let detached = matches!(route, Route::Include | Route::Count);
+        let world = World::build(dir.path(), detached);
+        let mut env = world.apply(route);
+        let hostile = support::git_world::hostile_parent_env(&world.root);
+        // The route's own GIT_CONFIG_* win over the hostile parent's, which the product scrubs
+        // anyway; the rest of the hostile parent rides along.
+        for (key, value) in hostile.scrubbed {
+            if !env.iter().any(|(k, _)| *k == key) {
+                env.push((key, value));
+            }
+        }
+        env.push((ROUTE_VAR.to_owned(), OsString::from(route.slug())));
+        env.push(("PATH".to_owned(), path_with_helpers(&world)));
+        run_in_child(LAYER_C_TEST, &world.root, &env);
+        routes += 1;
+    }
+    eprintln!(
+        "layer C: {} kinds x {routes} routes ({} intents each) matched their declared effect",
+        Intent::ALL.len(),
+        1 + VerifyStep::ALL.len()
+    );
+    assert_eq!(routes, Route::ALL.len());
+}
+
+/// **AC-P4-47-6's second clause.** The `TransportFixture` is the **only** difference between the
+/// child a test runs and the child production runs: same argv, same environment, except that
+/// `GIT_ALLOW_PROTOCOL` gains `:file`, rendered last.
+#[test]
+fn the_transport_fixture_is_the_only_test_to_production_difference() {
+    let prod_dir = tempfile::tempdir().expect("tempdir");
+    let test_dir = tempfile::tempdir().expect("tempdir");
+    let token = || codotheca_core::accounts::keychain::SecretToken::new("unused".to_owned());
+    let prod_fixture = AuditFixture::new(prod_dir.path(), token()).expect("fixture");
+    let test_fixture = AuditFixture::new(test_dir.path(), token()).expect("fixture");
+    let hooks = prod_dir.path().join("hooks-empty");
+    std::fs::create_dir_all(&hooks).expect("hooks");
+    let env = anonymous_env(&hooks);
+    let production = codotheca_core::gitw::WriteExec::new(recording_git());
+    let with_fixture = codotheca_core::gitw::WriteExec::with_transport_fixture(
+        recording_git(),
+        codotheca_core::gitw::TransportFixture::new(test_dir.path()),
+    );
+    let prod_intents = Intent::all_for_audit(&prod_fixture);
+    let test_intents = Intent::all_for_audit(&test_fixture);
+    for (p, t) in prod_intents.iter().zip(&test_intents) {
+        production
+            .run(p, &env, &CancelToken::new(), &mut |_| {})
+            .expect("stand-in");
+        with_fixture
+            .run(t, &env, &CancelToken::new(), &mut |_| {})
+            .expect("stand-in");
+    }
+    let prod_calls = support::git_world::read_recordings(prod_fixture.dest());
+    let test_calls = support::git_world::read_recordings(test_fixture.dest());
+    assert_eq!(prod_calls.len(), prod_intents.len());
+    assert_eq!(test_calls.len(), test_intents.len());
+    // The two fixtures live in two tempdirs; each child is keyed on its own.
+    let normal = |text: &String| {
+        text.replace(&*test_dir.path().to_string_lossy(), "<root>")
+            .replace(&*prod_dir.path().to_string_lossy(), "<root>")
+    };
+    let mut compared = 0;
+    for ((intent, prod), test) in prod_intents.iter().zip(&prod_calls).zip(&test_calls) {
+        let prod_argv: Vec<String> = prod.argv.iter().map(normal).collect();
+        let test_argv: Vec<String> = test.argv.iter().map(normal).collect();
+        assert_eq!(
+            prod_argv,
+            test_argv,
+            "{:?} {:?}: argv differs",
+            intent.kind(),
+            intent.step()
+        );
+        let prod_env: BTreeSet<String> = prod.env.iter().map(normal).collect();
+        let test_env: BTreeSet<String> = test.env.iter().map(normal).collect();
+        let only_prod: Vec<&String> = prod_env.difference(&test_env).collect();
+        let only_test: Vec<&String> = test_env.difference(&prod_env).collect();
+        let allowed = intent.allowed_protocols();
+        assert_eq!(
+            (only_prod, only_test),
+            (
+                vec![&format!("GIT_ALLOW_PROTOCOL={allowed}")],
+                vec![&format!("GIT_ALLOW_PROTOCOL={allowed}:file")]
+            ),
+            "{:?} {:?}: the fixture must change exactly GIT_ALLOW_PROTOCOL",
+            intent.kind(),
+            intent.step()
+        );
+        compared += 1;
+    }
+    eprintln!("transport fixture: {compared} children compared; the only difference is `:file`");
+    assert!(compared > 0);
+}
+
+const M2_TEST: &str = "the_retired_fetch_deletes_refs_where_the_verifying_read_does_not";
+
+/// **AC-P4-47-7 — the §37.8 defect, proved visible.** The differential harness, driven with the
+/// retired argv `fetch --progress origin` (a literal here: the variant is gone), reports M2's
+/// branch and tag deletions under the environment route and under repository config; the same
+/// harness passes the verifying read.
+#[test]
+fn the_retired_fetch_deletes_refs_where_the_verifying_read_does_not() {
+    use support::git_world::{child_dir, effect_violations, is_child, run_in_child, Route, World};
+
+    if is_child() {
+        let world = World::at(&child_dir());
+        let trace = world.root.join("trace.txt");
+        let objects = Intent::VerifyRead {
+            repo: world.work.clone(),
+            remote: RemoteName::parse("origin").expect("remote"),
+            step: VerifyStep::Objects {
+                tips: vec![AdvertisedRef::parse("refs/heads/main").expect("tip")],
+            },
+        };
+        let before = world.snapshot(&trace);
+        let _ = fixture_write_git(&world).run(&objects, &CancelToken::new(), &mut |_| {});
+        let after = world.snapshot(&trace);
+        let violations = effect_violations(objects.effect(), &before, &after);
+        eprintln!("M2 harness, verifying read: {violations:?}");
+        assert!(
+            violations.is_empty(),
+            "the verifying read failed M2's harness: {violations:?}"
+        );
+        return;
+    }
+
+    let mut reported = 0;
+    for route in [Route::Count, Route::RepoConfig] {
+        // The literal, on its own world, behind the uniform `-c` pins and with the route's config
+        // unscrubbed — as it shipped, when nothing removed `GIT_CONFIG_COUNT`.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let world = World::build(dir.path(), false);
+        let env = world.apply(route);
+        let trace = world.root.join("trace.txt");
+        let hooks = world.root.join("pins-hooks");
+        std::fs::create_dir_all(&hooks).expect("hooks");
+        let pins_of = Intent::Clone {
+            url: RemoteUrl::parse(&world.clone_url).expect("url"),
+            dest: world.root.join("unused"),
+            depth: None,
+        };
+        let before = world.snapshot(&trace);
+        let mut literal = Command::new("git");
+        literal
+            .current_dir(&world.work)
+            .args(write_base_args(&pins_of, &anonymous_env(&hooks)))
+            .args(["fetch", "--progress", "origin"])
+            .env("GIT_CONFIG_NOSYSTEM", "1");
+        for (key, value) in &env {
+            literal.env(key, value);
+        }
+        let fetched = literal.output().expect("the retired fetch");
+        eprintln!(
+            "M2 [{}] exit {:?}: {}",
+            route.slug(),
+            fetched.status.code(),
+            String::from_utf8_lossy(&fetched.stderr).trim()
+        );
+        let after = world.snapshot(&trace);
+        let violations = effect_violations(
+            codotheca_core::gitw::DeclaredEffect::ObjectsOnly,
+            &before,
+            &after,
+        );
+        let refs_line = violations
+            .iter()
+            .find(|v| v.starts_with("work: refs moved"))
+            .cloned()
+            .unwrap_or_default();
+        eprintln!(
+            "M2 harness [{}], `fetch --progress origin`: {refs_line}",
+            route.slug()
+        );
+        assert!(
+            refs_line.contains("refs/heads/feature") && refs_line.contains("refs/tags/local-tag"),
+            "the harness must report the retired fetch deleting the local-only branch and tag \
+             under the {} route: {violations:?}",
+            route.slug()
+        );
+        reported += 1;
+
+        // The verifying read, on a fresh world under the same route, in a child carrying it.
+        let verify_dir = tempfile::tempdir().expect("tempdir");
+        let verify_world = World::build(verify_dir.path(), false);
+        let mut verify_env = verify_world.apply(route);
+        verify_env.push(("PATH".to_owned(), path_with_helpers(&verify_world)));
+        run_in_child(M2_TEST, &verify_world.root, &verify_env);
+    }
+    assert_eq!(reported, 2);
+}
+
+const PINS_TEST: &str = "the_production_pins_refuse_a_helper_a_file_remote_and_a_rewrite";
+
+/// The production write path, recording each step it was asked to spawn.
+#[derive(Debug)]
+struct CountingWrite {
+    inner: SystemMutatingGit,
+    steps: std::sync::Mutex<Vec<String>>,
+}
+
+impl MutatingGit for CountingWrite {
+    fn run(
+        &self,
+        intent: &Intent,
+        cancel: &CancelToken,
+        on_stderr: &mut dyn FnMut(&str),
+    ) -> codotheca_core::git::GitResult<codotheca_core::gitw::RunOutput> {
+        self.steps
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(format!("{:?}", intent.step()));
+        self.inner.run(intent, cancel, on_stderr)
+    }
+}
+
+/// M4's bite, live: the helper remote's `Advertise` child rendered without
+/// `-c protocol.file.allow=never` and without `GIT_ALLOW_PROTOCOL`, under the user's `global`
+/// config. True when the marker helper ran.
+fn helper_runs_without_the_transport_pins(
+    world: &support::git_world::World,
+    global: &Path,
+) -> bool {
+    let hooks = world.root.join("bite-hooks");
+    std::fs::create_dir_all(&hooks).expect("hooks");
+    let intent = Intent::VerifyRead {
+        repo: world.work.clone(),
+        remote: RemoteName::parse("helper").expect("remote"),
+        step: VerifyStep::Advertise,
+    };
+    let mut env_no_pins = anonymous_env(&hooks);
+    env_no_pins.work_dir = Some(world.work.clone());
+    let base = write_base_args(&intent, &env_no_pins);
+    let mut stripped: Vec<OsString> = Vec::new();
+    let mut i = 0;
+    while i < base.len() {
+        if base[i] == "-c"
+            && base
+                .get(i + 1)
+                .is_some_and(|v| v == "protocol.file.allow=never")
+        {
+            i += 2;
+            continue;
+        }
+        stripped.push(base[i].clone());
+        i += 1;
+    }
+    let mut cmd = Command::new("git");
+    cmd.args(stripped).args(intent.argv());
+    neutralise_env(&mut cmd);
+    cmd.env("GIT_CONFIG_GLOBAL", global)
+        .env("PATH", path_with_helpers(world))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let _ = cmd.status().expect("the unpinned child");
+    world.markers.join("helper").exists()
+}
+
+/// **AC-P4-47-9 — transports, with production pins and no `TransportFixture`.** A marker
+/// transport helper the user allowed never runs; a user-global `protocol.file.allow=always`
+/// opens no file remote; an https remote the user's `insteadOf` rewrites to a path is classified
+/// same-machine and never advertised. And, proved live in the same run: the same helper child
+/// rendered without `-c protocol.file.allow=never` and without `GIT_ALLOW_PROTOCOL` runs it.
+#[test]
+fn the_production_pins_refuse_a_helper_a_file_remote_and_a_rewrite() {
+    use codotheca_core::analyser::remote::{GitRemoteVerifier, RemoteReading, RemoteVerifier as _};
+    use support::git_world::{child_dir, is_child, run_in_child, World};
+
+    if is_child() {
+        let world = World::at(&child_dir());
+        let hooks = codotheca_core::git::ensure_empty_hooks_dir(&world.root.join("app-data"))
+            .expect("hooks");
+        let production = SystemMutatingGit::new(PathBuf::from("git"), hooks.clone());
+        let advertise = |remote: &str| Intent::VerifyRead {
+            repo: world.work.clone(),
+            remote: RemoteName::parse(remote).expect("remote"),
+            step: VerifyStep::Advertise,
+        };
+        let helper = production.run(&advertise("helper"), &CancelToken::new(), &mut |_| {});
+        let file = production.run(&advertise("origin"), &CancelToken::new(), &mut |_| {});
+        let read_git = codotheca_core::git::SystemGit::new(
+            std::sync::Arc::new(codotheca_core::git::GitExec::system(hooks)),
+            std::sync::Arc::new(codotheca_core::git::GitSlots::for_machine()),
+            std::sync::Arc::new(codotheca_core::clock::SystemClock::new()),
+        );
+        let counting = CountingWrite {
+            inner: production,
+            steps: std::sync::Mutex::new(Vec::new()),
+        };
+        let verifier = GitRemoteVerifier::new(&counting, &read_git);
+        let cancel = CancelToken::new();
+        let handle = OriginWorld::handle(&world.work);
+        let rewritten = verifier.read(&handle, "rewritten", &ctx(&cancel));
+        let spawned = counting.steps.lock().expect("steps").clone();
+        assert_eq!(
+            spawned,
+            vec![format!(
+                "{:?}",
+                Some(codotheca_core::gitw::VerifyStepKind::ResolveUrl)
+            )],
+            "a same-machine remote is classified after ResolveUrl and never advertised"
+        );
+        let markers: Vec<String> = std::fs::read_dir(&world.markers)
+            .expect("markers")
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        eprintln!(
+            "production pins: helper remote {helper:?}; file remote {file:?}; https->path \
+             rewrite {rewritten:?}; markers {markers:?}"
+        );
+        assert!(
+            helper.is_err(),
+            "a user-allowed helper transport must be refused"
+        );
+        assert!(
+            matches!(
+                file,
+                Err(codotheca_core::git::GitError::TransportRefused { .. })
+            ),
+            "a file remote must be refused even under protocol.file.allow=always: {file:?}"
+        );
+        assert_eq!(rewritten, RemoteReading::SameMachine);
+        assert!(markers.is_empty(), "a marker program ran: {markers:?}");
+        return;
+    }
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let world = World::build(dir.path(), false);
+    world.git(&world.work, &["remote", "add", "helper", "codotheca::x"]);
+    world.git(
+        &world.work,
+        &[
+            "remote",
+            "add",
+            "rewritten",
+            "https://forge.invalid/acme/rewritten.git",
+        ],
+    );
+    let global = world.root.join("user.gitconfig");
+    std::fs::write(
+        &global,
+        format!(
+            "[protocol \"file\"]\n\tallow = always\n[protocol \"codotheca\"]\n\tallow = always\n\
+             [url \"{}\"]\n\tinsteadOf = https://forge.invalid/acme/rewritten.git\n",
+            world.origin.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .expect("user config");
+    let env = vec![
+        (
+            "GIT_CONFIG_GLOBAL".to_owned(),
+            global.clone().into_os_string(),
+        ),
+        ("PATH".to_owned(), path_with_helpers(&world)),
+    ];
+    run_in_child(PINS_TEST, &world.root, &env);
+
+    // The bite, live: the helper child without the two transport pins runs the helper.
+    let ran = helper_runs_without_the_transport_pins(&world, &global);
+    eprintln!("production pins: without the transport pins the helper ran: {ran}");
+    assert!(
+        ran,
+        "the fixture no longer shows M4, so the pins are proving nothing"
+    );
+}
+
+/// **AC-P4-47-12's Lane-0 clause.** A config key git lists in an audited namespace and nobody
+/// has classified does not stop the verifying read or a clone: only `TagArchived`, the one write
+/// into an existing repository, refuses on an unknown key (§47.7).
+#[test]
+fn an_unrecognised_audited_key_lets_verify_read_and_clone_run() {
+    use codotheca_core::analyser::remote::{GitRemoteVerifier, RemoteReading, RemoteVerifier as _};
+    use support::git_world::World;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let world = World::build(dir.path(), false);
+    world.git(
+        &world.work,
+        &["config", "fetch.inventedByANewerGit", "true"],
+    );
+    world.git(&world.work, &["config", "remote.origin.somethingNew", "1"]);
+    let write_git = fixture_write_git(&world);
+    let read_git = codotheca_core::git::SystemGit::new(
+        std::sync::Arc::new(codotheca_core::git::GitExec::system(
+            codotheca_core::git::ensure_empty_hooks_dir(&world.root.join("read-hooks"))
+                .expect("hooks"),
+        )),
+        std::sync::Arc::new(codotheca_core::git::GitSlots::for_machine()),
+        std::sync::Arc::new(codotheca_core::clock::SystemClock::new()),
+    );
+    let verifier = GitRemoteVerifier::with_transport_fixture(
+        &write_git,
+        &read_git,
+        codotheca_core::gitw::TransportFixture::new(&world.root),
+    );
+    let cancel = CancelToken::new();
+    let handle = OriginWorld::handle(&world.work);
+    let reading = verifier.read(&handle, "origin", &ctx(&cancel));
+    eprintln!("unknown audited keys: the verifying read {reading:?}");
+    assert!(matches!(reading, RemoteReading::Answered { .. }));
+
+    // The clone reads the same unknown key from the user's global config.
+    let global = world.root.join("unknown.gitconfig");
+    std::fs::write(
+        &global,
+        format!(
+            "[clone]\n\tinventedByANewerGit = true\n[url \"{}\"]\n\tinsteadOf = {}\n",
+            world.origin.to_string_lossy().replace('\\', "/"),
+            world.clone_url
+        ),
+    )
+    .expect("global");
+    let dest = world.root.join("clone-unknown");
+    let intent = Intent::Clone {
+        url: RemoteUrl::parse(&world.clone_url).expect("url"),
+        dest: dest.clone(),
+        depth: None,
+    };
+    let out = run_stripped(
+        &intent,
+        &anonymous_env(&world.root.join("read-hooks")),
+        &[],
+        &[
+            ("GIT_CONFIG_GLOBAL", global.into_os_string()),
+            ("GIT_ALLOW_PROTOCOL", OsString::from("https:file")),
+        ],
+    );
+    eprintln!(
+        "unknown audited keys: the clone exited {:?}",
+        out.status.code()
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(dest.join(".git").exists());
 }

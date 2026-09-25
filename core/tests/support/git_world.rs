@@ -6,6 +6,7 @@
 //! re-executes its own binary with the variables set on that child alone, and the child runs the
 //! one named test.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -296,4 +297,549 @@ pub(crate) fn system_git(repo: &super::TestRepo) -> codotheca_core::git::SystemG
         std::sync::Arc::new(codotheca_core::git::GitSlots::for_machine()),
         std::sync::Arc::new(codotheca_core::clock::SystemClock::new()),
     )
+}
+
+// ---------------------------------------------------------------------------
+// §47.9 C — D10's fixture world, the hostile write profile, the four routes and the comparator.
+// ---------------------------------------------------------------------------
+
+/// The four routes by which config reaches a git child (§47.9 C).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Route {
+    /// The work repository's own `.git/config`.
+    RepoConfig,
+    /// A `GIT_CONFIG_GLOBAL` file — kept by the scrub, because the user's config is config.
+    Global,
+    /// An `include.path` target named from the repository's config.
+    Include,
+    /// `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n`, `GIT_CONFIG_VALUE_n` in the parent environment.
+    Count,
+}
+
+impl Route {
+    /// Every route, in the order a run reports them.
+    pub(crate) const ALL: [Self; 4] = [Self::RepoConfig, Self::Global, Self::Include, Self::Count];
+
+    /// The route's slug, used in directory names and printed lines.
+    pub(crate) const fn slug(self) -> &'static str {
+        match self {
+            Self::RepoConfig => "repo-config",
+            Self::Global => "global",
+            Self::Include => "include",
+            Self::Count => "count",
+        }
+    }
+}
+
+/// D10's fixture world, rooted in one directory: a work repository dressed with everything a
+/// careless write could damage, a bare origin that has moved on, a bare decoy, a local bundle and
+/// a creation-token list, the marker programs and the directory they write into.
+#[derive(Debug)]
+pub(crate) struct World {
+    /// Everything lives under here.
+    pub(crate) root: PathBuf,
+    /// A clean `HOME` for fixture git.
+    pub(crate) home: PathBuf,
+    /// The work repository — the one every intent but a clone runs in.
+    pub(crate) work: PathBuf,
+    /// A bare origin with a diverged `main` and an extra branch.
+    pub(crate) origin: PathBuf,
+    /// A bare mirror of origin that `url.<decoy>.insteadOf` points reads at.
+    pub(crate) decoy: PathBuf,
+    /// Where every marker program writes; it must stay empty.
+    pub(crate) markers: PathBuf,
+    /// `PATH` entry holding the marker transport helper `git-remote-codotheca`.
+    pub(crate) helper_dir: PathBuf,
+    /// The creation-token bundle list `fetch.bundleURI` points at.
+    pub(crate) token_list: PathBuf,
+    /// Hooks that write markers, for `core.hooksPath`.
+    pub(crate) marker_hooks: PathBuf,
+    /// A template directory holding a marker file, for `init.templateDir`.
+    pub(crate) template_dir: PathBuf,
+    /// The clone URL a user's `insteadOf` rewrites to the origin.
+    pub(crate) clone_url: String,
+}
+
+fn marker_script(path: &Path, marker: &Path) {
+    std::fs::write(
+        path,
+        format!(
+            "#!/bin/sh\ntouch '{}'\nexit 1\n",
+            marker.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .expect("marker script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+}
+
+impl World {
+    /// Fixture git in `cwd`, isolated from the developer's config and from every `GIT_*`
+    /// variable the process inherited — a child carrying a route's `GIT_CONFIG_COUNT` or the
+    /// hostile parent's `GIT_TRACE` must not have the comparator itself obey them.
+    pub(crate) fn git(&self, cwd: &Path, args: &[&str]) -> String {
+        let mut cmd = Command::new("git");
+        for (key, _) in std::env::vars_os() {
+            if key
+                .to_string_lossy()
+                .to_ascii_uppercase()
+                .starts_with("GIT_")
+            {
+                cmd.env_remove(key);
+            }
+        }
+        let out = cmd
+            .current_dir(cwd)
+            .env("HOME", &self.home)
+            .env("XDG_CONFIG_HOME", &self.home)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", self.home.join("empty.gitconfig"))
+            .env("GIT_AUTHOR_NAME", "Fixture")
+            .env("GIT_AUTHOR_EMAIL", "fixture@example.invalid")
+            .env("GIT_COMMITTER_NAME", "Fixture")
+            .env("GIT_COMMITTER_EMAIL", "fixture@example.invalid")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .args(["-c", "commit.gpgsign=false", "-c", "core.autocrlf=false"])
+            .args(args)
+            .output()
+            .expect("fixture git");
+        assert!(
+            out.status.success(),
+            "fixture git {args:?} in {} failed: {}",
+            cwd.display(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    fn commit_file(&self, repo: &Path, name: &str, body: &str, message: &str) -> String {
+        std::fs::write(repo.join(name), body).expect("fixture file");
+        self.git(repo, &["add", name]);
+        self.git(repo, &["commit", "-q", "-m", message]);
+        self.git(repo, &["rev-parse", "HEAD"]).trim().to_owned()
+    }
+
+    /// The paths of a world already built under `root` — how a re-executed child finds it.
+    pub(crate) fn at(root: &Path) -> Self {
+        let root = root.canonicalize().expect("canonical root");
+        Self {
+            home: root.join("home"),
+            work: root.join("work"),
+            origin: root.join("origin.git"),
+            decoy: root.join("decoy.git"),
+            markers: root.join("markers"),
+            helper_dir: root.join("helpers"),
+            token_list: root.join("list.cfg"),
+            marker_hooks: root.join("marker-hooks"),
+            template_dir: root.join("template"),
+            clone_url: "https://forge.invalid/acme/widget.git".to_owned(),
+            root,
+        }
+    }
+
+    /// Marker programs: a transport helper on `PATH`, a gpg, an fsmonitor, every hook, and a
+    /// template file. Each would leave a file in `markers` if it ever ran.
+    fn plant_markers(&self) {
+        marker_script(
+            &self.helper_dir.join("git-remote-codotheca"),
+            &self.markers.join("helper"),
+        );
+        marker_script(&self.root.join("marker-gpg"), &self.markers.join("gpg"));
+        marker_script(
+            &self.root.join("marker-fsmonitor"),
+            &self.markers.join("fsmonitor"),
+        );
+        for hook in [
+            "reference-transaction",
+            "post-checkout",
+            "post-merge",
+            "pre-auto-gc",
+            "post-rewrite",
+            "pre-push",
+            "fsmonitor-watchman",
+        ] {
+            marker_script(
+                &self.marker_hooks.join(hook),
+                &self.markers.join(format!("hook-{hook}")),
+            );
+        }
+        std::fs::write(
+            self.template_dir.join("template-marker"),
+            b"from the template\n",
+        )
+        .expect("template marker");
+    }
+
+    /// Build D10's world under `root`, the work repository's `HEAD` detached when `detached`.
+    pub(crate) fn build(root: &Path, detached: bool) -> Self {
+        let root = root.canonicalize().expect("canonical root");
+        for dir in ["home", "markers", "helpers", "marker-hooks", "template"] {
+            std::fs::create_dir_all(root.join(dir)).expect("fixture dir");
+        }
+        std::fs::write(root.join("home").join("empty.gitconfig"), b"").expect("empty global");
+        let w = Self::at(&root);
+
+        w.plant_markers();
+
+        // A seed, the bare origin cloned from it, and the work clone of the origin.
+        let seed = w.root.join("seed");
+        w.git(
+            &w.root,
+            &["init", "-q", "-b", "main", &seed.to_string_lossy()],
+        );
+        let base = w.commit_file(&seed, "a.txt", "one\n", "one");
+        w.commit_file(&seed, "b.txt", "two\n", "two");
+        w.git(
+            &w.root,
+            &[
+                "clone",
+                "-q",
+                "--bare",
+                &seed.to_string_lossy(),
+                &w.origin.to_string_lossy(),
+            ],
+        );
+        w.git(
+            &w.root,
+            &[
+                "clone",
+                "-q",
+                &w.origin.to_string_lossy(),
+                &w.work.to_string_lossy(),
+            ],
+        );
+
+        // Origin moves on: a diverged `main` and an extra branch the work repository lacks.
+        w.commit_file(&seed, "c.txt", "diverged\n", "diverged on origin");
+        w.git(&seed, &["checkout", "-q", "-b", "extra"]);
+        w.commit_file(&seed, "e.txt", "extra\n", "extra branch");
+        w.git(
+            &seed,
+            &[
+                "push",
+                "-q",
+                "--force",
+                &w.origin.to_string_lossy(),
+                "main",
+                "extra",
+            ],
+        );
+        w.git(
+            &w.root,
+            &[
+                "clone",
+                "-q",
+                "--mirror",
+                &w.origin.to_string_lossy(),
+                &w.decoy.to_string_lossy(),
+            ],
+        );
+        let bundle = w.root.join("all.bundle");
+        w.git(
+            &w.origin,
+            &["bundle", "create", &bundle.to_string_lossy(), "--all"],
+        );
+        std::fs::write(
+            &w.token_list,
+            format!(
+                "[bundle]\n\tversion = 1\n\tmode = all\n\theuristic = creationToken\n\
+                 [bundle \"one\"]\n\turi = {}\n\tcreationToken = 1\n",
+                bundle.to_string_lossy().replace('\\', "/")
+            ),
+        )
+        .expect("token list");
+
+        // The work repository, dressed: a local-only branch checked out, a local-only annotated
+        // tag, a stale tracking ref, three stashes, an ignored non-junk file, a dirty and a staged
+        // file, a graft file and a replace ref.
+        w.git(&w.work, &["checkout", "-q", "-b", "feature"]);
+        let local = w.commit_file(&w.work, "l.txt", "local only\n", "local only");
+        w.git(&w.work, &["tag", "-a", "local-tag", "-m", "local"]);
+        w.git(&w.work, &["update-ref", "refs/remotes/origin/stale", &base]);
+        for n in 1..=3 {
+            std::fs::write(w.work.join("a.txt"), format!("stash {n}\n")).expect("stash edit");
+            w.git(&w.work, &["stash", "push", "-q", "-m", &format!("s{n}")]);
+        }
+        std::fs::write(w.work.join(".gitignore"), b"secret.env\n").expect("ignore");
+        w.git(&w.work, &["add", ".gitignore"]);
+        w.git(&w.work, &["commit", "-q", "-m", "ignore"]);
+        std::fs::write(w.work.join("secret.env"), b"TOKEN=local\n").expect("ignored");
+        std::fs::write(w.work.join("a.txt"), b"dirty\n").expect("dirty");
+        std::fs::write(w.work.join("staged.txt"), b"staged\n").expect("staged");
+        w.git(&w.work, &["add", "staged.txt"]);
+        std::fs::write(w.work.join(".git/info/grafts"), format!("{local}\n")).expect("grafts");
+        w.git(&w.work, &["replace", &base, &local]);
+        if detached {
+            w.git(&w.work, &["checkout", "-q", "--detach"]);
+        }
+        w
+    }
+
+    /// §47.9 C's hostile write profile, as config text: every key at its destructive value.
+    pub(crate) fn hostile_profile(&self) -> String {
+        let p = |path: &Path| path.to_string_lossy().replace('\\', "/");
+        let mut text = String::new();
+        let _ = writeln!(
+            text,
+            "[remote \"origin\"]\n\tfetch = +refs/heads/*:refs/heads/*\n\tprune = true\n\
+             \tpruneTags = true\n\ttagOpt = --tags\n\tfollowRemoteHEAD = always"
+        );
+        let _ = writeln!(
+            text,
+            "[fetch]\n\tprune = true\n\tpruneTags = true\n\trecurseSubmodules = yes\n\
+             \twriteCommitGraph = true\n\tbundleURI = {}",
+            p(&self.token_list)
+        );
+        let _ = writeln!(text, "[submodule]\n\trecurse = true");
+        let _ = writeln!(text, "[transfer]\n\tbundleURI = true");
+        let _ = writeln!(
+            text,
+            "[url \"{}\"]\n\tinsteadOf = {}",
+            p(&self.decoy),
+            p(&self.origin)
+        );
+        let _ = writeln!(
+            text,
+            "[protocol \"file\"]\n\tallow = always\n[protocol \"codotheca\"]\n\tallow = always"
+        );
+        let _ = writeln!(
+            text,
+            "[tag]\n\tgpgSign = true\n\tforceSignAnnotated = true\n[gpg]\n\tprogram = {}",
+            p(&self.root.join("marker-gpg"))
+        );
+        let _ = writeln!(
+            text,
+            "[core]\n\thooksPath = {}\n\tfsmonitor = {}\n\tlogAllRefUpdates = always",
+            p(&self.marker_hooks),
+            p(&self.root.join("marker-fsmonitor"))
+        );
+        let _ = writeln!(text, "[gc]\n\tauto = 1\n[maintenance]\n\tauto = true");
+        let _ = writeln!(
+            text,
+            "[credential]\n\thelper = !touch '{}'\n[credential \"https://forge.invalid\"]\n\
+             \thelper = !touch '{}'",
+            p(&self.markers.join("credential")),
+            p(&self.markers.join("credential-url"))
+        );
+        let _ = writeln!(text, "[init]\n\ttemplateDir = {}", p(&self.template_dir));
+        let _ = writeln!(text, "[remote \"helper\"]\n\turl = codotheca::x");
+        text
+    }
+
+    /// The hostile profile flattened to `(key, value)` pairs, for the `GIT_CONFIG_COUNT` route.
+    pub(crate) fn hostile_pairs(&self) -> Vec<(String, String)> {
+        let mut pairs = Vec::new();
+        let mut section = String::new();
+        for line in self.hostile_profile().lines() {
+            let line = line.trim();
+            if let Some(header) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+                section = header.split_once(' ').map_or_else(
+                    || header.to_owned(),
+                    |(outer, inner)| format!("{outer}.{}", inner.trim_matches('"')),
+                );
+            } else if let Some((key, value)) = line.split_once(" = ") {
+                pairs.push((format!("{section}.{key}"), value.to_owned()));
+            }
+        }
+        pairs
+    }
+
+    /// Apply `route`: write whatever files it needs, and return the environment a child running
+    /// the product must be given. The user-global file always carries the clone URL's rewrite to
+    /// the origin, which is how a user's own config reaches a clone.
+    pub(crate) fn apply(&self, route: Route) -> Vec<(String, OsString)> {
+        let p = |path: &Path| path.to_string_lossy().replace('\\', "/");
+        let profile = self
+            .root
+            .join(format!("hostile-{}.gitconfig", route.slug()));
+        std::fs::write(&profile, self.hostile_profile()).expect("profile");
+        let mut global = format!(
+            "[url \"{}\"]\n\tinsteadOf = {}\n",
+            p(&self.origin),
+            self.clone_url
+        );
+        let mut env: Vec<(String, OsString)> = Vec::new();
+        match route {
+            Route::RepoConfig => {
+                let config = self.work.join(".git/config");
+                let mut text = std::fs::read_to_string(&config).expect("config");
+                text.push_str(&self.hostile_profile());
+                std::fs::write(&config, text).expect("repo config");
+            }
+            Route::Global => global.push_str(&self.hostile_profile()),
+            Route::Include => {
+                let include = format!("[include]\n\tpath = {}\n", p(&profile));
+                let config = self.work.join(".git/config");
+                let mut text = std::fs::read_to_string(&config).expect("config");
+                text.push_str(&include);
+                std::fs::write(&config, text).expect("repo config");
+                global.push_str(&include);
+            }
+            Route::Count => {
+                let pairs = self.hostile_pairs();
+                env.push((
+                    "GIT_CONFIG_COUNT".to_owned(),
+                    pairs.len().to_string().into(),
+                ));
+                for (n, (key, value)) in pairs.into_iter().enumerate() {
+                    env.push((format!("GIT_CONFIG_KEY_{n}"), key.into()));
+                    env.push((format!("GIT_CONFIG_VALUE_{n}"), value.into()));
+                }
+            }
+        }
+        let global_path = self.root.join(format!("global-{}.gitconfig", route.slug()));
+        std::fs::write(&global_path, global).expect("global");
+        env.push(("GIT_CONFIG_GLOBAL".to_owned(), global_path.into_os_string()));
+        env.push(("HOME".to_owned(), self.home.clone().into_os_string()));
+        env
+    }
+
+    /// The comparator's view of the world at one instant.
+    pub(crate) fn snapshot(&self, trace: &Path) -> WorldSnapshot {
+        let mut refs = BTreeMap::new();
+        for (label, repo) in [
+            ("work", &self.work),
+            ("origin", &self.origin),
+            ("decoy", &self.decoy),
+        ] {
+            refs.insert(
+                label.to_owned(),
+                self.git(repo, &["for-each-ref", "--format=%(refname) %(objectname)"]),
+            );
+        }
+        let mut files = BTreeMap::new();
+        for (label, dir) in [
+            ("work", &self.work),
+            ("origin", &self.origin),
+            ("decoy", &self.decoy),
+        ] {
+            hash_tree(dir, dir, label, &mut files);
+        }
+        let objects = self
+            .git(
+                &self.work,
+                &[
+                    "cat-file",
+                    "--batch-all-objects",
+                    "--batch-check=%(objectname)",
+                ],
+            )
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        let mut markers: Vec<String> = std::fs::read_dir(&self.markers)
+            .expect("markers dir")
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        if trace.exists() {
+            markers.push(format!("trace file {}", trace.display()));
+        }
+        markers.sort();
+        WorldSnapshot {
+            refs,
+            files,
+            objects,
+            markers,
+        }
+    }
+}
+
+fn hash_tree(base: &Path, dir: &Path, label: &str, out: &mut BTreeMap<String, String>) {
+    use sha2::Digest as _;
+    for entry in std::fs::read_dir(dir)
+        .expect("readable fixture dir")
+        .flatten()
+    {
+        let path = entry.path();
+        let kind = entry.file_type().expect("kind");
+        if kind.is_dir() {
+            hash_tree(base, &path, label, out);
+        } else {
+            let rel = path
+                .strip_prefix(base)
+                .expect("inside")
+                .to_string_lossy()
+                .replace('\\', "/");
+            let bytes = std::fs::read(&path).unwrap_or_default();
+            out.insert(
+                format!("{label}/{rel}"),
+                format!("{:x}", sha2::Sha256::digest(&bytes)),
+            );
+        }
+    }
+}
+
+/// What the comparator records: refs through git, every file's hash, the work repository's
+/// object set, and every marker a program left.
+#[derive(Debug, Clone)]
+pub(crate) struct WorldSnapshot {
+    /// `for-each-ref` output per repository.
+    pub(crate) refs: BTreeMap<String, String>,
+    /// `<repo>/<path>` to SHA-256, for every file of work, origin and decoy.
+    pub(crate) files: BTreeMap<String, String>,
+    /// The work repository's object ids.
+    pub(crate) objects: BTreeSet<String>,
+    /// Every marker file present, and the trace file if it exists.
+    pub(crate) markers: Vec<String>,
+}
+
+/// §47.9 C's comparison: the difference between two snapshots must be exactly what `effect`
+/// declares. Returns every violation, each named, so a failing run says what moved.
+pub(crate) fn effect_violations(
+    effect: codotheca_core::gitw::DeclaredEffect,
+    before: &WorldSnapshot,
+    after: &WorldSnapshot,
+) -> Vec<String> {
+    use codotheca_core::gitw::DeclaredEffect;
+
+    let mut found = Vec::new();
+    for (repo, refs) in &before.refs {
+        let now = after.refs.get(repo).cloned().unwrap_or_default();
+        if &now != refs {
+            let was: BTreeSet<&str> = refs.lines().collect();
+            let is: BTreeSet<&str> = now.lines().collect();
+            found.push(format!(
+                "{repo}: refs moved — gone {:?}, new {:?}",
+                was.difference(&is).collect::<Vec<_>>(),
+                is.difference(&was).collect::<Vec<_>>()
+            ));
+        }
+    }
+    for (path, hash) in &before.files {
+        match after.files.get(path) {
+            None => found.push(format!("removed {path}")),
+            Some(now) if now != hash => found.push(format!("changed {path}")),
+            Some(_) => {}
+        }
+    }
+    let objects_file = |path: &str| {
+        path.strip_prefix("work/.git/objects/").is_some_and(|rest| {
+            rest.starts_with("pack/")
+                || rest.split_once('/').is_some_and(|(dir, _)| {
+                    dir.len() == 2 && dir.bytes().all(|b| b.is_ascii_hexdigit())
+                })
+        })
+    };
+    for path in after
+        .files
+        .keys()
+        .filter(|p| !before.files.contains_key(*p))
+    {
+        let allowed = matches!(effect, DeclaredEffect::ObjectsOnly) && objects_file(path);
+        if !allowed {
+            found.push(format!("added {path}"));
+        }
+    }
+    let lost: Vec<&String> = before.objects.difference(&after.objects).collect();
+    if !lost.is_empty() {
+        found.push(format!("the object set shrank by {}", lost.len()));
+    }
+    if !after.markers.is_empty() {
+        found.push(format!("markers written: {:?}", after.markers));
+    }
+    found
 }
