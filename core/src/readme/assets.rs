@@ -203,10 +203,16 @@ pub fn resolve_local_asset(root: &Path, reference: &str) -> Result<PathBuf, Read
 /// than a connection, because this code runs **off** the index lock and must not be able to take
 /// it: the borrow checker, not a comment, is what keeps that true.
 pub struct AssetDeps<'a> {
+    /// The location's working directory, the root every local reference must resolve inside.
     pub work_dir: PathBuf,
+    /// When remote images were allowed, or `None` for never granted — then every remote
+    /// reference answers `blocked` without a socket.
     pub consent: Option<i64>,
+    /// The transport remote assets are fetched through.
     pub http: &'a dyn HttpTransport,
+    /// Resolves a remote host so its addresses can be checked before any request.
     pub resolve: HostResolver,
+    /// The caller's clock in unix seconds, stamped as `fetchedAt` on every row that read bytes.
     pub now: i64,
 }
 
@@ -327,8 +333,9 @@ fn read_local(root: &Path, reference: &str) -> Result<(Vec<u8>, &'static str), R
     let file = std::fs::File::open(&path).map_err(|_| ReadmeAssetState::NotAnImage)?;
     let mut bytes = Vec::new();
     // `cap + 1`, so a file over the cap costs one byte over it rather than the whole read, and
-    // is still distinguishable from one that ends exactly at it.
-    file.take(ASSET_BYTE_CAP as u64 + 1)
+    // is still distinguishable from one that ends exactly at it. A `usize` cap always fits a
+    // `u64` on the targets this ships for, so the unlimited fallback is never taken.
+    file.take(u64::try_from(ASSET_BYTE_CAP).map_or(u64::MAX, |cap| cap + 1))
         .read_to_end(&mut bytes)
         .map_err(|_| ReadmeAssetState::NotAnImage)?;
     if bytes.len() > ASSET_BYTE_CAP {

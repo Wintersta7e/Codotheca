@@ -24,8 +24,11 @@ use crate::protocol::ErrorCode;
 /// Everything §25.5's index-only commands need. `now` is unix **seconds**, supplied by the
 /// caller so no handler reads the clock itself.
 pub struct ReadmeCtx<'a> {
+    /// The index holding the project and location rows and the `readme_remote_at` consent.
     pub index: &'a Index,
+    /// Where `projects/readme_remote_changed` is published.
     pub events: &'a dyn EventSink,
+    /// The caller's clock, in unix seconds.
     pub now: i64,
 }
 
@@ -62,6 +65,7 @@ pub enum ReadmeError {
     UnknownSubject,
     /// The location's working directory could not be listed or opened.
     Unreadable(std::io::Error),
+    /// A read or write against the project or location rows failed.
     Sqlite(rusqlite::Error),
 }
 
@@ -86,7 +90,7 @@ impl From<rusqlite::Error> for ReadmeError {
 impl ReadmeError {
     /// The closed code the shell narrows on (§2.4).
     #[must_use]
-    pub fn code(&self) -> ErrorCode {
+    pub const fn code(&self) -> ErrorCode {
         match self {
             Self::UnknownSubject => ErrorCode::Protocol,
             Self::Unreadable(_) => ErrorCode::RepoUnreadable,
@@ -132,6 +136,7 @@ pub fn handle_readme_assets_off_lock(
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let work_dir = source::work_dir_of(guard.conn(), args.project_id, args.location_id)?;
         let consent = consent::readme_remote_at(guard.conn(), args.project_id)?;
+        drop(guard);
         (work_dir, consent)
     };
 

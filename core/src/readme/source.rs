@@ -19,9 +19,10 @@ use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::protocol::{LocationId, ProjectId, ProjectsReadmeArgs, ReadmeSource, ReadmeStateKind};
 use crate::readme::{ReadmeCtx, ReadmeError};
 
-/// Where one location's working copy lives, read the way `read_place` reads it
-/// (`jobs/mod.rs:352-383`): from `path_bytes` through `path_from_bytes`, never from
-/// `path_display`, which §1.10 makes lossy and forbids for opening.
+/// Where one location's working copy lives.
+///
+/// Read the way `read_place` reads it (`jobs/mod.rs:352-383`): from `path_bytes` through
+/// `path_from_bytes`, never from `path_display`, which §1.10 makes lossy and forbids for opening.
 ///
 /// `pub` because `projects.readmeAssets` resolves the same root, off the index guard, and a
 /// second copy of this query would be two answers to *where does this location live*.
@@ -97,8 +98,9 @@ pub fn read_readme_source(
         };
         let mut bytes = Vec::new();
         // `cap + 1`: one byte past the cap is what distinguishes a document that ended from one
-        // that was cut, and it costs one byte rather than the whole file.
-        file.take(J6_BYTE_CAP as u64 + 1)
+        // that was cut, and it costs one byte rather than the whole file. A `usize` cap always
+        // fits a `u64` on the targets this ships for, so the unlimited fallback is never taken.
+        file.take(u64::try_from(J6_BYTE_CAP).map_or(u64::MAX, |cap| cap + 1))
             .read_to_end(&mut bytes)
             .map_err(ReadmeError::Unreadable)?;
         let truncated = bytes.len() > J6_BYTE_CAP;

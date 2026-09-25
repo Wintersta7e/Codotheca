@@ -54,7 +54,7 @@ pub fn population(conn: &rusqlite::Connection) -> Result<Population, IndexError>
     })
 }
 
-fn basis(covered: u32, pop: &Population) -> RevealBasis {
+const fn basis(covered: u32, pop: &Population) -> RevealBasis {
     RevealBasis {
         projects_covered: covered,
         projects_total: pop.total,
@@ -66,8 +66,9 @@ fn basis(covered: u32, pop: &Population) -> RevealBasis {
 ///
 /// `f64` loses integer precision above 2^53; that is 285 million years of playtime and 285
 /// million days of span, so the cast is lossless for every value either figure can hold.
-#[allow(clippy::cast_precision_loss)]
-fn seconds_as_f64(seconds: i64) -> f64 {
+// `i64` to `f64` has no conversion function, so this helper holds the module's one `as`.
+#[allow(clippy::as_conversions, clippy::cast_precision_loss)]
+const fn seconds_as_f64(seconds: i64) -> f64 {
     seconds as f64
 }
 
@@ -178,7 +179,11 @@ pub fn reveal(conn: &rusqlite::Connection, now: i64) -> Result<Reveal, IndexErro
 pub fn span_days(earliest_first_commit_at: Option<i64>, now: i64) -> Option<f64> {
     let earliest = earliest_first_commit_at?;
     let seconds = now.saturating_sub(earliest).max(0);
-    Some(seconds_as_f64(seconds) / 86_400.0)
+    // The figure is fractional by definition (see above), and no integer form yields the same
+    // correctly rounded quotient, so this one division stays in floating point.
+    #[allow(clippy::float_arithmetic)]
+    let days = seconds_as_f64(seconds) / 86_400.0;
+    Some(days)
 }
 
 /// The calendar year in which the most projects had their first commit.
