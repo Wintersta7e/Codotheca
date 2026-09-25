@@ -154,7 +154,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null 
     readRoots();
     shell.indexLocation().then(
       (reply) => {
-        setIndexLocation(unwrapReply<IndexLocation>(reply as BridgeReply));
+        setIndexLocation(unwrapReply(reply as BridgeReply) as IndexLocation);
       },
       () => undefined,
     );

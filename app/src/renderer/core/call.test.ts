@@ -79,7 +79,7 @@ describe('the renderer call wrapper', () => {
   });
 
   it('unwraps a shell channel reply with the same rule as a protocol reply', () => {
-    expect(unwrapReply<number>({ ok: true, value: 7 })).toBe(7);
+    expect(unwrapReply({ ok: true, value: 7 })).toBe(7);
     expect(() =>
       unwrapReply({
         ok: false,

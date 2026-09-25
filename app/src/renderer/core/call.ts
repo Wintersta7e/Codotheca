@@ -45,9 +45,12 @@ export class CallFailure extends Error {
   }
 }
 
-/** The shell's own channels answer the same envelope, so they unwrap the same way. */
-export function unwrapReply<T>(reply: BridgeReply): T {
-  if (reply.ok) return reply.value as T;
+/**
+ * The shell's own channels answer the same envelope, so they unwrap the same way. The value is
+ * returned as it crossed the bridge; the caller names the type it expects.
+ */
+export function unwrapReply(reply: BridgeReply): unknown {
+  if (reply.ok) return reply.value;
   throw new CallFailure('shell', reply.error);
 }
 
