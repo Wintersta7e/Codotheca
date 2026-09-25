@@ -74,6 +74,9 @@ pub fn debt_day_dedupe_key(subject_key: &str, local_date: &str) -> String {
 /// **Only an enrolled project is paid** (§38.8.1 gate 2, §30.5's `is_enrolled`), read at the
 /// closing observation. An unenrolled closure leaves nothing behind that a later call could pay.
 ///
+/// **A Reference project is paid nothing** (R219, §38.3a: it earns nothing new): only a project
+/// whose `is_reference` column is `0` is paid, an unclassified one included.
+///
 /// **A project with no subject is paid nothing** (§38.2): never an empty key, which would make
 /// every such project collide on `debt_day::<date>`. The subject is read here, from the project
 /// row, so no caller can hand the writer a key that is not the project's own.
@@ -101,6 +104,18 @@ pub fn pay_debt_day(
     // *Enrolled*, never *not suppressed* (R217): both suppression predicates also read
     // `is_archived`, and an acknowledged, archived project is enrolled and is paid.
     if !is_enrolled(read_acknowledged_at(tx, project)?) {
+        return Ok(unpaid());
+    }
+    // The column, not `jobs::scheduler::is_reference`: that reader answers `None` for a project
+    // J1.5 has not classified, whose column is `0` and which is paid. No project row pays nothing.
+    let is_reference: Option<i64> = tx
+        .query_row(
+            "SELECT is_reference FROM project WHERE id = ?1",
+            [project.0],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if is_reference != Some(0) {
         return Ok(unpaid());
     }
     let Some(subject) = subject_for_project(tx, project)? else {

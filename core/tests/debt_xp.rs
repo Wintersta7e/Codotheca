@@ -479,6 +479,78 @@ fn two_projects_with_no_lineage_do_not_collide_on_one_date() {
     );
 }
 
+/// **R219 — a Reference project earns nothing new** (§38.3a), and under the raise-only floor an
+/// over-payment would be permanent. The control, on the same project once it is not Reference,
+/// pays — so the refusal is the gate and not a fixture that pays nobody.
+#[test]
+fn a_reference_project_is_paid_nothing() {
+    let (_d, mut conn) = fresh();
+    let p = insert_enrolled_project(&conn, "thing");
+    conn.execute(
+        "UPDATE project SET authored_by_user = 0, is_reference = 1 WHERE id = ?1",
+        [p],
+    )
+    .unwrap();
+
+    let tx = conn.transaction().unwrap();
+    let reference = pay_debt_day(
+        &tx,
+        ProjectId(p),
+        &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
+        NOON,
+        0,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    assert!(!reference.wrote_row, "a Reference project was paid");
+    assert_eq!(xp_count(&conn), 0);
+
+    conn.execute("UPDATE project SET is_reference = 0 WHERE id = ?1", [p])
+        .unwrap();
+    let control_tx = conn.transaction().unwrap();
+    let control = pay_debt_day(
+        &control_tx,
+        ProjectId(p),
+        &closures(1, DebtCloseReason::Fixed, DebtSource::MissingReadme),
+        NOON + 60,
+        0,
+    )
+    .unwrap();
+    control_tx.commit().unwrap();
+    assert!(control.wrote_row, "the control paid nothing");
+    assert_eq!(xp_count(&conn), 1);
+}
+
+/// **The gate reads the column, `is_reference = 0`.** An unclassified project — J1.5 has not
+/// run, `authored_by_user` is NULL — is not Reference and is paid; the scheduler's reader answers
+/// `None` for it and would refuse it.
+#[test]
+fn an_unclassified_project_is_still_paid() {
+    let (_d, mut conn) = fresh();
+    let p = insert_enrolled_project(&conn, "thing");
+    let classified: (Option<i64>, i64) = conn
+        .query_row(
+            "SELECT authored_by_user, is_reference FROM project WHERE id = ?1",
+            [p],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(classified, (None, 0), "the fixture is not unclassified");
+
+    let tx = conn.transaction().unwrap();
+    let paid = pay_debt_day(
+        &tx,
+        ProjectId(p),
+        &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
+        NOON,
+        0,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    assert!(paid.wrote_row, "an unclassified project was not paid");
+    assert_eq!(xp_count(&conn), 1);
+}
+
 /// **§38.2: a project with no subject gets no row — never an empty key.** No lineage and no
 /// location row is the one shape `subject_for_project` answers `None` for; an empty key would
 /// put every such project on `debt_day::<date>`, where the UNIQUE turns the collision into
