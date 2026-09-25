@@ -19,18 +19,26 @@ use crate::art::{ArtError, ART_SCHEMA_VERSION, SCENE_FORMAT_VERSION};
 /// The 2× card space §7.6 fixes at `600×900`. The two smaller figures elsewhere in the spec
 /// descend from a GPU-texture approximation phase 1 no longer allocates.
 pub const SPACE_W: i32 = 600;
+/// The height of the same `600×900` space.
 pub const SPACE_H: i32 = 900;
 
+/// §7.3's `space`: the coordinate system every other number in the document is written in.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Space {
+    /// Width in scene units; `SPACE_W` for every document the generator writes.
     pub w: i32,
+    /// Height in scene units; `SPACE_H` for every document the generator writes.
     pub h: i32,
+    /// Where `(0, 0)` sits: `top-left`.
     pub origin: String,
+    /// Whether y grows downward: `true`.
     pub y_down: bool,
+    /// What one unit is: `px@2x`.
     pub units: String,
 }
 
+/// The one space the generator writes: `600×900` `px@2x`, top-left origin, y down.
 #[must_use]
 pub fn card_space() -> Space {
     Space {
@@ -46,43 +54,59 @@ pub fn card_space() -> Space {
 /// weathering reads; the rasterizer itself draws from `plate` and `jewel`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Palette {
+    /// The plate's `lo` stop as an `oklch()` string.
     pub ground: String,
+    /// The plate's `mid` stop as an `oklch()` string.
     pub panel: String,
+    /// The jewel as an `oklch()` string.
     pub accent: String,
+    /// The jewel ink, the same string as `jewelInk`.
     pub edge: String,
 }
 
+/// One machined module on the plate.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Module {
+    /// `m0`, `m1`, … in stacking order, top first.
     pub id: String,
+    /// The face its archetype gives it.
     pub kind: ModuleKind,
     /// `[x, y, w, h]` in the 2× space.
     pub rect: [i32; 4],
+    /// Whether the face points up — where phase-3 dust settles (§7.3).
     pub face_up: bool,
 }
 
+/// One fastener head, where phase-3 rust streaks originate.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Fastener {
     /// `[x, y]` — the centre.
     pub at: [i32; 2],
+    /// The era's cut, or `plain` while the era is uncomputed.
     pub kind: FastenerKind,
     /// Degrees, `0..90`.
     pub rot: i32,
 }
 
+/// What kind of break a seam is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SeamKind {
+    /// A panel break, and the only kind the generator draws.
     Panel,
 }
 
+/// A seam line, where phase-3 cracks propagate.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Seam {
+    /// The polyline's vertices, `[x, y]` in the 2× space.
     pub path: Vec<[i32; 2]>,
+    /// What kind of break it is.
     pub kind: SeamKind,
 }
 
+/// Which way a vent bank's slats run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VentDir {
@@ -92,6 +116,8 @@ pub enum VentDir {
     V,
 }
 
+/// §7.3's scene document: everything the rasterizer draws from, and the bytes `scene_hash`
+/// addresses.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Scene {
@@ -99,15 +125,25 @@ pub struct Scene {
     pub v: u32,
     /// The renderer schema (ruling 2). Inside the document, so inside the address.
     pub schema: u32,
+    /// The coordinate system every coordinate below is written in.
     pub space: Space,
+    /// The string hashed and its `u32` (§7.3a).
     pub seed: Seed,
+    /// `0.25` for a reference or archived project, else `0` — never a function of time.
     pub fade: f64,
+    /// The identity colour.
     pub jewel: Jewel,
+    /// `oklch(0.87 0.07 <hue>)`, the fade-independent ink (§7.8).
     pub jewel_ink: String,
+    /// The plate's stops, angle and split.
     pub plate: Plate,
+    /// The greebling family, `(h >>> 3) % 4`.
     pub panel_family: u8,
+    /// The livery family, `h % 4`: vertical rhythm and vent direction.
     pub livery_family: u8,
+    /// `<prefix>-<number> / MK-<numeral>`, drawn off the seed hash.
     pub designation: String,
+    /// The designation's two-letter language prefix, `GN` when there is no known language.
     pub lang_prefix: String,
     /// `None` until J4 supplies a first commit date (§7.2).
     pub era: Option<Era>,
@@ -115,17 +151,26 @@ pub struct Scene {
     pub size_bucket: Option<SizeBucket>,
     /// `None` until J3 classifies.
     pub archetype: Option<String>,
+    /// The language mix that sets the vent-bank count.
     pub language_mix: LanguageMix,
+    /// The four summary colours.
     pub palette: Palette,
+    /// The machined modules, top to bottom.
     pub modules: Vec<Module>,
+    /// The fasteners: the first module's four corners, then any on the seam.
     pub fasteners: Vec<Fastener>,
+    /// The seams: the livery seam, then the odd-family cross seam when there is one.
     pub seams: Vec<Seam>,
+    /// The vent banks, top to bottom.
     pub vents: Vec<Vent>,
 }
 
+/// One vent bank of slats.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Vent {
+    /// `[x, y, w, h]` in the 2× space.
     pub rect: [i32; 4],
+    /// Which way its slats run.
     pub dir: VentDir,
 }
 
@@ -134,12 +179,21 @@ pub struct Vent {
 /// Determinism comes from three properties and no others: struct fields serialise in
 /// declaration order, there is no map anywhere in the document, and every float was rounded to
 /// three decimals by `derive::round3` before it got here.
+///
+/// # Errors
+///
+/// [`ArtError::Encode`], carrying `serde_json`'s message, if the document fails to serialise.
 pub fn canonical_json(scene: &Scene) -> Result<Vec<u8>, ArtError> {
     serde_json::to_vec(scene).map_err(|e| ArtError::Encode(e.to_string()))
 }
 
 /// §7.2: `scene_hash` is content-addressed over the scene document. SHA-256, 64 lowercase hex,
 /// untruncated (ruling 3); the first two characters are the on-disk fan-out.
+///
+/// # Errors
+///
+/// [`ArtError::Encode`] when [`canonical_json`] fails, or when a digest byte cannot be written
+/// into the hex string.
 pub fn scene_hash(scene: &Scene) -> Result<String, ArtError> {
     let bytes = canonical_json(scene)?;
     let mut hasher = Sha256::new();

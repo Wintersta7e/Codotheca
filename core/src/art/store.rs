@@ -25,6 +25,12 @@ fn write_temp(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 /// §7.2: written atomically — temp then rename. The temp file is a sibling, so the rename never
 /// crosses a filesystem, and it carries the pid and a counter so two writers cannot collide.
+///
+/// # Errors
+///
+/// [`ArtError::Io`] when `path` has no parent or no file name, or when creating the directory,
+/// writing and syncing the temporary, or renaming it into place fails. A failed write or rename
+/// removes the temporary first.
 pub fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), ArtError> {
     let parent = path
         .parent()
@@ -53,6 +59,12 @@ pub fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), ArtError> {
 /// §23.5: a two-way dispatch over the **same** `Scene` and the same target geometry. The
 /// blueprint is a second render *pass*, not a second scene — so `card` and `card-blueprint`
 /// share a `scene_hash` and differ only in the file the address names.
+///
+/// # Errors
+///
+/// [`ArtError::BadHash`] when `hash` is not a scene hash; [`ArtError::Encode`] when the target
+/// is degenerate, the pixmap cannot be allocated, or the WebP encoder refuses it; and
+/// [`ArtError::Io`] when [`write_atomically`] fails.
 pub fn write_rendition(
     data_dir: &Path,
     hash: &str,
@@ -72,6 +84,7 @@ pub fn write_rendition(
     Ok(path)
 }
 
+/// Whether the rendition's file is on disk. `false` for anything that is not a scene hash.
 #[must_use]
 pub fn rendition_exists(data_dir: &Path, hash: &str, rendition: Rendition) -> bool {
     rendition_path(data_dir, hash, rendition).is_some_and(|p| p.is_file())
@@ -79,6 +92,11 @@ pub fn rendition_exists(data_dir: &Path, hash: &str, rendition: Rendition) -> bo
 
 /// `Ok(false)` when there was nothing to remove. Removing a regenerable cache file is not a §17
 /// destructive operation: §7.5 prices it at the milliseconds to redraw from `scene_json`.
+///
+/// # Errors
+///
+/// [`ArtError::BadHash`] when `hash` is not a scene hash, and [`ArtError::Io`] when the removal
+/// fails for any reason but the file being absent.
 pub fn remove_rendition(
     data_dir: &Path,
     hash: &str,
@@ -96,21 +114,30 @@ pub fn remove_rendition(
     }
 }
 
+/// One `art_scene` row (§1.9), the authoritative record of a project's scene.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtRow {
+    /// The project the row belongs to.
     pub project_id: i64,
+    /// The content address, 64 lowercase hex.
     pub scene_hash: String,
+    /// The canonical scene document the address was taken over.
     pub scene_json: String,
+    /// The `ART_SCHEMA_VERSION` the scene was generated under; a stored value outside `u32`
+    /// reads as `0`.
     pub schema_version: u32,
+    /// Unix seconds when the card was last drawn, `None` if it never was.
     pub rendered_at: Option<i64>,
     /// §7.6: `art_state` and `fail_count` track the **`card`** rendition only. A `hero` nobody
     /// has demanded is not `pending` and its absence is not a failure.
     pub state: ArtState,
+    /// §7.5's count of failed card renders since the last success.
     pub fail_count: u32,
 }
 
+/// The `art_state` column's text for a state.
 #[must_use]
-pub fn state_slug(state: ArtState) -> &'static str {
+pub const fn state_slug(state: ArtState) -> &'static str {
     match state {
         ArtState::Pending => "pending",
         ArtState::Ready => "ready",
@@ -119,6 +146,8 @@ pub fn state_slug(state: ArtState) -> &'static str {
     }
 }
 
+/// The state an `art_state` value names — the inverse of [`state_slug`]. `None` for any other
+/// text.
 #[must_use]
 pub fn state_from_slug(s: &str) -> Option<ArtState> {
     match s {
@@ -130,6 +159,12 @@ pub fn state_from_slug(s: &str) -> Option<ArtState> {
     }
 }
 
+/// The project's `art_scene` row, or `None` when it has none.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the query fails, and [`ArtError::Encode`] when the stored
+/// `art_state` is none of the four slugs.
 pub fn load_row(conn: &rusqlite::Connection, project_id: i64) -> Result<Option<ArtRow>, ArtError> {
     let mut stmt = conn.prepare(
         "SELECT scene_hash, scene_json, schema_version, rendered_at, state, fail_count
@@ -157,6 +192,11 @@ pub fn load_row(conn: &rusqlite::Connection, project_id: i64) -> Result<Option<A
 
 /// Which project a content address belongs to. Used by `art.url` to find the document a missing
 /// file has to be redrawn from.
+///
+/// # Errors
+///
+/// [`ArtError::BadHash`] when `hash` is not a scene hash, and [`ArtError::Sqlite`] when the
+/// lookup fails.
 pub fn find_project_by_hash(
     conn: &rusqlite::Connection,
     hash: &str,
@@ -173,9 +213,17 @@ pub fn find_project_by_hash(
     })
 }
 
-/// One transaction, two cells. `art_scene` is §1.9's authoritative row; `project.art_scene_hash`
-/// and `project.art_state` are §1.2's projection mirror, which §8.3 reads. A writer that moves
-/// only one of them is the drift this function exists to prevent.
+/// One transaction, two cells.
+///
+/// `art_scene` is §1.9's authoritative row; `project.art_scene_hash` and `project.art_state`
+/// are §1.2's projection mirror, which §8.3 reads. A writer that moves only one of them is the
+/// drift this function exists to prevent.
+///
+/// # Errors
+///
+/// [`ArtError::BadHash`] when `hash` is not a scene hash, [`ArtError::Encode`] when the scene
+/// cannot be serialised, and [`ArtError::Sqlite`] when the transaction fails; nothing is written
+/// in any of those cases.
 pub fn put_scene(
     conn: &rusqlite::Connection,
     project_id: i64,
@@ -220,6 +268,11 @@ pub fn put_scene(
     Ok(())
 }
 
+/// Move a project's art state in `art_scene` and in the `project` mirror, in one transaction.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the transaction fails, in which case neither cell moves.
 pub fn set_state(
     conn: &rusqlite::Connection,
     project_id: i64,
@@ -242,6 +295,11 @@ pub fn set_state(
 
 /// §7.5's `fail_count`, incremented per failed attempt and returned. A success clears it, which
 /// `put_scene` does as part of its upsert.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the transaction fails — including when the project has no
+/// `art_scene` row, so there is no count to read back.
 pub fn record_failure(conn: &rusqlite::Connection, project_id: i64) -> Result<u32, ArtError> {
     let guard = TxGuard::enter();
     let tx = conn.unchecked_transaction()?;
@@ -265,6 +323,10 @@ pub fn record_failure(conn: &rusqlite::Connection, project_id: i64) -> Result<u3
 
 /// §7.5: a schema bump marks every row `stale`. It does **not** re-render them — that happens
 /// lazily, shelf-visible first, when a tile comes into view (Task 15's `on_visible` hook).
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the transaction fails, in which case no row moves.
 pub fn mark_stale_on_schema_bump(
     conn: &rusqlite::Connection,
     schema_version: u32,
@@ -290,11 +352,14 @@ pub fn mark_stale_on_schema_bump(
 /// Ruling 10: the hero LRU is a journal file — one 64-hex hash per line, oldest first.
 pub const HERO_LRU_FILE: &str = "hero.lru";
 
+/// `<data_dir>/art/hero.lru`, the journal's one location.
 #[must_use]
 pub fn hero_lru_path(data_dir: &Path) -> PathBuf {
     art_root(data_dir).join(HERO_LRU_FILE)
 }
 
+/// The journal's hashes, oldest first.
+///
 /// Absent, unreadable or corrupt all read as empty: it is a cache index, and losing it costs a
 /// redraw, never a wrong answer. Lines that are not scene hashes are dropped on the way in, so
 /// nothing else can ever be used to build a path.
@@ -321,6 +386,11 @@ fn write_hero_lru(data_dir: &Path, entries: &[String]) -> Result<(), ArtError> {
 
 /// Record an open. Returns the hashes evicted by this open — §7.5's least-recently-opened rule —
 /// whose files have already been removed.
+///
+/// # Errors
+///
+/// [`ArtError::BadHash`] when `hash` is not a scene hash, and [`ArtError::Io`] when an evicted
+/// hero cannot be removed or the journal cannot be rewritten.
 pub fn touch_hero(data_dir: &Path, hash: &str) -> Result<Vec<String>, ArtError> {
     if !is_scene_hash(hash) {
         return Err(ArtError::BadHash(hash.to_owned()));
@@ -342,6 +412,10 @@ pub fn touch_hero(data_dir: &Path, hash: &str) -> Result<Vec<String>, ArtError> 
 }
 
 /// Drop an entry without touching its file — used when the file has already gone.
+///
+/// # Errors
+///
+/// [`ArtError::Io`] when the journal held the entry and cannot be rewritten without it.
 pub fn forget_hero(data_dir: &Path, hash: &str) -> Result<(), ArtError> {
     let mut entries = read_hero_lru(data_dir);
     let before = entries.len();
@@ -352,18 +426,28 @@ pub fn forget_hero(data_dir: &Path, hash: &str) -> Result<(), ArtError> {
     write_hero_lru(data_dir, &entries)
 }
 
+/// What one [`sweep_unreferenced`] pass removed, per rendition.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SweepReport {
+    /// `card` renditions removed.
     pub cards_removed: usize,
+    /// `hero` renditions removed; each one's LRU entry is forgotten too.
     pub heroes_removed: usize,
     /// §23.5's second render pass, both targets. A blueprint is neither a card nor a hero, and
     /// folding it into either counter would make that counter say a number it did not measure.
     pub blueprints_removed: usize,
 }
 
-/// §7.5: superseded files are swept when no `art_scene` row references them. Only files this
-/// module could have written are considered — a `<64 hex>.<card|hero>.webp` under a two-hex
-/// directory. Anything else in the tree is left alone.
+/// §7.5: superseded files are swept when no `art_scene` row references them.
+///
+/// Only files this module could have written are considered — a `<64 hex>.<card|hero>.webp`
+/// under a two-hex directory. Anything else in the tree is left alone.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the live hashes cannot be read, and [`ArtError::Io`] when the hero
+/// journal cannot be rewritten after a swept hero is forgotten. A file that cannot be listed or
+/// removed is skipped, not an error.
 pub fn sweep_unreferenced(
     conn: &rusqlite::Connection,
     data_dir: &Path,

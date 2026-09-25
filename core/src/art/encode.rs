@@ -10,9 +10,15 @@ use tiny_skia::Pixmap;
 
 use crate::art::ArtError;
 
+/// The pixmap as lossless WebP bytes.
+///
 /// tiny-skia stores **premultiplied** RGBA; the encoder is handed straight RGBA. The two are the
 /// same bytes only while every pixel is opaque, which the card always is — so rather than
 /// demultiplying, the precondition is checked and a violation is an error, not a silent shift.
+///
+/// # Errors
+///
+/// [`ArtError::Encode`] when any pixel is not fully opaque, or when the WebP encoder fails.
 pub fn encode_webp(pixmap: &Pixmap) -> Result<Vec<u8>, ArtError> {
     if let Some(pixel) = pixmap.pixels().iter().find(|p| p.alpha() != 255) {
         return Err(ArtError::Encode(format!(

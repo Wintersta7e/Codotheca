@@ -20,6 +20,7 @@ use tiny_skia::{
     RadialGradient, Rect, SpreadMode, Transform,
 };
 
+use crate::art::cast::{f32_to_u8, f64_to_f32, i32_to_f32, u32_to_f32};
 use crate::art::compose::{FastenerKind, ModuleKind};
 use crate::art::derive::{plate_stop, PlateStop};
 use crate::art::oklch::{to_srgb8, Oklch};
@@ -27,9 +28,12 @@ use crate::art::scene::{Scene, VentDir, SPACE_H, SPACE_W};
 use crate::art::ArtError;
 use crate::protocol::Rendition;
 
+/// The pixel size one rendition is rasterized at (§7.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RenderTarget {
+    /// Width in output pixels.
     pub w: u32,
+    /// Height in output pixels.
     pub h: u32,
 }
 
@@ -41,29 +45,34 @@ pub const HERO_TARGET: RenderTarget = RenderTarget { w: 536, h: 804 };
 /// §23.5: the second pass changes the **ink**, never the geometry — a blueprint takes the same
 /// target as the pass it mirrors, so the two renditions of one surface are the same size.
 #[must_use]
-pub fn target_for(rendition: Rendition) -> RenderTarget {
+pub const fn target_for(rendition: Rendition) -> RenderTarget {
     match rendition {
         Rendition::Card | Rendition::CardBlueprint => CARD_TARGET,
         Rendition::Hero | Rendition::HeroBlueprint => HERO_TARGET,
     }
 }
 
+/// A straight (not premultiplied) sRGB colour with a fractional alpha — the prototype's
+/// `rgb(r g b / a)`, which is how every greebling and livery ink is written.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rgba {
+    /// Red channel, `0..=255`.
     pub r: u8,
+    /// Green channel, `0..=255`.
     pub g: u8,
+    /// Blue channel, `0..=255`.
     pub b: u8,
+    /// Opacity in `0.0..=1.0`, rounded to a byte when painted.
     pub a: f32,
 }
 
 impl Rgba {
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn color(self) -> Color {
         Color::from_rgba8(
             self.r,
             self.g,
             self.b,
-            (self.a * 255.0).round().clamp(0.0, 255.0) as u8,
+            f32_to_u8((self.a * 255.0).round().clamp(0.0, 255.0)),
         )
     }
 
@@ -86,6 +95,7 @@ impl Rgba {
     }
 }
 
+/// Which way a greebling stripe set runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StripeDir {
     /// Horizontal bands — CSS `repeating-linear-gradient(0deg, …)`.
@@ -94,30 +104,46 @@ pub enum StripeDir {
     V,
 }
 
+/// One repeating stripe set of a greebling family, in scene units.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Stripe {
+    /// Whether the bands run across or down the plate.
     pub dir: StripeDir,
+    /// How thick each band is.
     pub thickness: i32,
+    /// The distance from one band's start to the next's; a non-positive period paints nothing.
     pub period: i32,
+    /// The band's ink.
     pub color: Rgba,
 }
 
+/// Family 2's radial highlight: a CSS circle gradient from `color` at the centre to transparent.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Highlight {
+    /// The centre's x, as a percentage of the scene width.
     pub cx_percent: i32,
+    /// The centre's y, as a percentage of the scene height.
     pub cy_percent: i32,
+    /// Where the highlight reaches full transparency, as a percentage of the ray to the
+    /// farthest corner — CSS's default sizing for a circle.
     pub extent_percent: i32,
+    /// The ink at the centre; the outer stop is the same colour at zero alpha.
     pub color: Rgba,
 }
 
+/// One of §7.3a's four greebling families, as [`paint_greebling`] draws it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Greebling {
+    /// The stripe sets, painted in order.
     pub stripes: Vec<Stripe>,
+    /// The radial highlight, which only family 2 carries.
     pub highlight: Option<Highlight>,
 }
 
 /// §7.3a's four greebling families, with every CSS length doubled because the scene space is
-/// `px@2x`. `TOKENS.md` labels this set "chosen by `hash % 4`"; that is the **livery** selector.
+/// `px@2x`.
+///
+/// `TOKENS.md` labels this set "chosen by `hash % 4`"; that is the **livery** selector.
 /// The greebling selector is `(h >>> 3) % 4`, and the prototype is authoritative.
 #[must_use]
 pub fn greebling(family: u8) -> Greebling {
@@ -190,17 +216,17 @@ pub fn greebling(family: u8) -> Greebling {
     }
 }
 
-/// The CSS gradient line for `linear-gradient(<angle>deg, …)` over a `w × h` box, in a y-down
-/// coordinate system. `0deg` runs bottom to top; the line is long enough that the perpendicular
-/// through either corner meets it, which is what makes an oblique gradient cover the box.
+/// The CSS gradient line for `linear-gradient(<angle>deg, …)` over a `w × h` box.
+///
+/// In a y-down coordinate system. `0deg` runs bottom to top; the line is long enough that the
+/// perpendicular through either corner meets it, which is what makes an oblique gradient cover
+/// the box.
 #[must_use]
 pub fn css_gradient_line(angle_deg: f64, w: f32, h: f32) -> (Point, Point) {
     let radians = angle_deg.to_radians();
-    #[allow(clippy::cast_possible_truncation)]
-    let (dx, dy) = (radians.sin() as f32, -(radians.cos() as f32));
-    #[allow(clippy::cast_possible_truncation)]
+    let (dx, dy) = (f64_to_f32(radians.sin()), -f64_to_f32(radians.cos()));
     let length =
-        f64::from(h).mul_add(radians.cos().abs(), f64::from(w) * radians.sin().abs()) as f32;
+        f64_to_f32(f64::from(h).mul_add(radians.cos().abs(), f64::from(w) * radians.sin().abs()));
     let (cx, cy) = (w / 2.0, h / 2.0);
     (
         Point::from_xy(cx - dx * length / 2.0, cy - dy * length / 2.0),
@@ -221,8 +247,7 @@ fn oklch_color(color: Oklch) -> Color {
 }
 
 fn scene_rect() -> Option<Rect> {
-    #[allow(clippy::cast_precision_loss)]
-    Rect::from_xywh(0.0, 0.0, SPACE_W as f32, SPACE_H as f32)
+    Rect::from_xywh(0.0, 0.0, i32_to_f32(SPACE_W), i32_to_f32(SPACE_H))
 }
 
 /// The hard two-tone split. Both bands are flat: `hi 0 <split>%` then `midTinted <split>% 100%`.
@@ -232,11 +257,12 @@ pub fn paint_ground(pixmap: &mut Pixmap, scene: &Scene, transform: Transform) {
     let mid = oklch_color(plate_stop(scene.plate, PlateStop::MidTinted));
     // A ground fill first, so a degenerate gradient can never leave a transparent card.
     pixmap.fill(hi);
-    #[allow(clippy::cast_precision_loss)]
-    let (start, end) =
-        css_gradient_line(f64::from(scene.plate.ang), SPACE_W as f32, SPACE_H as f32);
-    #[allow(clippy::cast_precision_loss)]
-    let split = (scene.plate.split.clamp(0, 100) as f32) / 100.0;
+    let (start, end) = css_gradient_line(
+        f64::from(scene.plate.ang),
+        i32_to_f32(SPACE_W),
+        i32_to_f32(SPACE_H),
+    );
+    let split = i32_to_f32(scene.plate.split.clamp(0, 100)) / 100.0;
     // Two stops at (almost) the same offset is how a hard stop is expressed.
     let stops = vec![
         GradientStop::new(0.0, hi),
@@ -270,14 +296,19 @@ pub fn paint_greebling(pixmap: &mut Pixmap, family: u8, transform: Transform) {
             StripeDir::V => SPACE_W,
         };
         while at < limit {
-            #[allow(clippy::cast_precision_loss)]
             let rect = match stripe.dir {
-                StripeDir::H => {
-                    Rect::from_xywh(0.0, at as f32, SPACE_W as f32, stripe.thickness as f32)
-                }
-                StripeDir::V => {
-                    Rect::from_xywh(at as f32, 0.0, stripe.thickness as f32, SPACE_H as f32)
-                }
+                StripeDir::H => Rect::from_xywh(
+                    0.0,
+                    i32_to_f32(at),
+                    i32_to_f32(SPACE_W),
+                    i32_to_f32(stripe.thickness),
+                ),
+                StripeDir::V => Rect::from_xywh(
+                    i32_to_f32(at),
+                    0.0,
+                    i32_to_f32(stripe.thickness),
+                    i32_to_f32(SPACE_H),
+                ),
             };
             if let Some(rect) = rect {
                 pixmap.fill_rect(rect, &paint, transform, None);
@@ -288,21 +319,18 @@ pub fn paint_greebling(pixmap: &mut Pixmap, family: u8, transform: Transform) {
     let (Some(highlight), Some(rect)) = (set.highlight, scene_rect()) else {
         return;
     };
-    #[allow(clippy::cast_precision_loss)]
     let centre = Point::from_xy(
-        SPACE_W as f32 * (highlight.cx_percent as f32 / 100.0),
-        SPACE_H as f32 * (highlight.cy_percent as f32 / 100.0),
+        i32_to_f32(SPACE_W) * (i32_to_f32(highlight.cx_percent) / 100.0),
+        i32_to_f32(SPACE_H) * (i32_to_f32(highlight.cy_percent) / 100.0),
     );
     // CSS sizes a circle radial gradient to the farthest corner by default; the `40%` stop is
     // that fraction of the ray.
-    #[allow(clippy::cast_precision_loss)]
     let farthest = {
-        let dx = (centre.x).max(SPACE_W as f32 - centre.x);
-        let dy = (centre.y).max(SPACE_H as f32 - centre.y);
+        let dx = (centre.x).max(i32_to_f32(SPACE_W) - centre.x);
+        let dy = (centre.y).max(i32_to_f32(SPACE_H) - centre.y);
         dx.hypot(dy)
     };
-    #[allow(clippy::cast_precision_loss)]
-    let radius = farthest * (highlight.extent_percent as f32 / 100.0);
+    let radius = farthest * (i32_to_f32(highlight.extent_percent) / 100.0);
     let inner = highlight.color;
     let mut outer = highlight.color;
     outer.a = 0.0;
@@ -351,18 +379,22 @@ pub fn paint_sheen(pixmap: &mut Pixmap, transform: Transform, w: f32, h: f32) {
     pixmap.fill_rect(rect, &paint, transform, None);
 }
 
+/// The distance from one vent slat's start to the next's, in scene units.
 pub const VENT_SLAT_PITCH: i32 = 18;
+/// A vent slat's dark band, in scene units; a 2-unit bright lip follows each one.
 pub const VENT_SLAT_THICKNESS: i32 = 6;
+/// A fastener head's radius in scene units. The blueprint pass rings each fastener at the same
+/// radius, so the two passes agree on where the hardware is.
 pub const FASTENER_RADIUS: f32 = 7.0;
+/// The width of each module's jewel-coloured leading edge, in scene units.
 pub const MODULE_EDGE_WIDTH: i32 = 4;
 
-#[allow(clippy::cast_precision_loss)]
 fn rect_of(rect: [i32; 4]) -> Option<Rect> {
     let [x, y, w, h] = rect;
     if w <= 0 || h <= 0 {
         return None;
     }
-    Rect::from_xywh(x as f32, y as f32, w as f32, h as f32)
+    Rect::from_xywh(i32_to_f32(x), i32_to_f32(y), i32_to_f32(w), i32_to_f32(h))
 }
 
 fn fill(pixmap: &mut Pixmap, rect: Option<Rect>, color: Rgba, transform: Transform) {
@@ -541,12 +573,10 @@ pub fn paint_seams(pixmap: &mut Pixmap, scene: &Scene, transform: Transform) {
             continue;
         };
         let mut builder = PathBuilder::new();
-        #[allow(clippy::cast_precision_loss)]
-        builder.move_to(first_x as f32, first_y as f32);
+        builder.move_to(i32_to_f32(first_x), i32_to_f32(first_y));
         let mut any = false;
         for &[px, py] in points {
-            #[allow(clippy::cast_precision_loss)]
-            builder.line_to(px as f32, py as f32);
+            builder.line_to(i32_to_f32(px), i32_to_f32(py));
             any = true;
         }
         if !any {
@@ -576,8 +606,7 @@ pub fn paint_seams(pixmap: &mut Pixmap, scene: &Scene, transform: Transform) {
 pub fn paint_fasteners(pixmap: &mut Pixmap, scene: &Scene, transform: Transform) {
     for fastener in &scene.fasteners {
         let [at_x, at_y] = fastener.at;
-        #[allow(clippy::cast_precision_loss)]
-        let (cx, cy) = (at_x as f32, at_y as f32);
+        let (cx, cy) = (i32_to_f32(at_x), i32_to_f32(at_y));
         let Some(head) = PathBuilder::from_circle(cx, cy, FASTENER_RADIUS) else {
             continue;
         };
@@ -608,8 +637,8 @@ pub fn paint_fasteners(pixmap: &mut Pixmap, scene: &Scene, transform: Transform)
             // Era not computed: a plain head with no cut at all, which is a mark no era emits.
             FastenerKind::Plain => &[],
         };
-        #[allow(clippy::cast_precision_loss)]
-        let spin = transform.pre_concat(Transform::from_rotate_at(fastener.rot as f32, cx, cy));
+        let spin =
+            transform.pre_concat(Transform::from_rotate_at(i32_to_f32(fastener.rot), cx, cy));
         for (ox, oy, bar_w, bar_h) in bars.iter().copied() {
             if let Some(rect) = Rect::from_xywh(cx + ox, cy + oy, bar_w, bar_h) {
                 pixmap.fill_rect(rect, &solid(Rgba::black(0.55).color()), spin, None);
@@ -619,6 +648,11 @@ pub fn paint_fasteners(pixmap: &mut Pixmap, scene: &Scene, transform: Transform)
 }
 
 /// Walk the document once, into a pixmap of the requested size.
+///
+/// # Errors
+///
+/// [`ArtError::Encode`] when either side of `target` is zero, or when tiny-skia cannot allocate
+/// a pixmap that size.
 pub fn render(scene: &Scene, target: RenderTarget) -> Result<Pixmap, ArtError> {
     if target.w == 0 || target.h == 0 {
         return Err(ArtError::Encode(format!(
@@ -628,15 +662,18 @@ pub fn render(scene: &Scene, target: RenderTarget) -> Result<Pixmap, ArtError> {
     }
     let mut pixmap = Pixmap::new(target.w, target.h)
         .ok_or_else(|| ArtError::Encode(format!("pixmap {}x{}", target.w, target.h)))?;
-    #[allow(clippy::cast_precision_loss)]
     let transform = Transform::from_scale(
-        target.w as f32 / scene.space.w.max(1) as f32,
-        target.h as f32 / scene.space.h.max(1) as f32,
+        u32_to_f32(target.w) / i32_to_f32(scene.space.w.max(1)),
+        u32_to_f32(target.h) / i32_to_f32(scene.space.h.max(1)),
     );
     paint_ground(&mut pixmap, scene, transform);
     paint_greebling(&mut pixmap, scene.panel_family, transform);
-    #[allow(clippy::cast_precision_loss)]
-    paint_sheen(&mut pixmap, transform, SPACE_W as f32, SPACE_H as f32);
+    paint_sheen(
+        &mut pixmap,
+        transform,
+        i32_to_f32(SPACE_W),
+        i32_to_f32(SPACE_H),
+    );
     paint_modules(&mut pixmap, scene, transform);
     paint_vents(&mut pixmap, scene, transform);
     paint_seams(&mut pixmap, scene, transform);
@@ -714,14 +751,14 @@ mod tests {
         let (start, end) = css_gradient_line(0.0, 600.0, 900.0);
         assert!((start.x - 300.0).abs() < 0.01 && (start.y - 900.0).abs() < 0.01);
         assert!((end.x - 300.0).abs() < 0.01 && (end.y - 0.0).abs() < 0.01);
-        let (start, end) = css_gradient_line(90.0, 600.0, 900.0);
-        assert!((start.x - 0.0).abs() < 0.01 && (start.y - 450.0).abs() < 0.01);
-        assert!((end.x - 600.0).abs() < 0.01);
-        let (start, end) = css_gradient_line(180.0, 600.0, 900.0);
-        assert!((start.y - 0.0).abs() < 0.01 && (end.y - 900.0).abs() < 0.01);
+        let (start_90, end_90) = css_gradient_line(90.0, 600.0, 900.0);
+        assert!((start_90.x - 0.0).abs() < 0.01 && (start_90.y - 450.0).abs() < 0.01);
+        assert!((end_90.x - 600.0).abs() < 0.01);
+        let (start_180, end_180) = css_gradient_line(180.0, 600.0, 900.0);
+        assert!((start_180.y - 0.0).abs() < 0.01 && (end_180.y - 900.0).abs() < 0.01);
         // The line is long enough to cover the box at an oblique angle.
-        let (start, end) = css_gradient_line(148.0, 600.0, 900.0);
-        let length = (end.x - start.x).hypot(end.y - start.y);
+        let (start_148, end_148) = css_gradient_line(148.0, 600.0, 900.0);
+        let length = (end_148.x - start_148.x).hypot(end_148.y - start_148.y);
         assert!(length > 900.0, "{length}");
     }
 
@@ -742,10 +779,10 @@ mod tests {
             "{r},{g},{b} vs {hi:?}"
         );
         assert_eq!(a, 255);
-        let (r, g, b, _) = channels(&pm, 596, 896);
+        let (far_r, far_g, far_b, _) = channels(&pm, 596, 896);
         assert!(
-            close(r, mid.r) && close(g, mid.g) && close(b, mid.b),
-            "{r},{g},{b} vs {mid:?}"
+            close(far_r, mid.r) && close(far_g, mid.g) && close(far_b, mid.b),
+            "{far_r},{far_g},{far_b} vs {mid:?}"
         );
 
         // **The corners alone cannot tell a split from a wash.** They sit at gradient parameter
@@ -823,10 +860,10 @@ mod tests {
         let faded = render(&faded_scene, CARD_TARGET).expect("faded");
         let mean = |pm: &Pixmap| -> f64 {
             let sum: u64 = pm.pixels().iter().map(|p| u64::from(p.red())).sum();
-            #[allow(clippy::cast_precision_loss)]
-            {
-                sum as f64 / pm.pixels().len() as f64
-            }
+            // Both fit a u32 for a 600x900 card, so the two conversions to f64 are exact.
+            let sum = f64::from(u32::try_from(sum).expect("sum fits"));
+            let count = f64::from(u32::try_from(pm.pixels().len()).expect("count fits"));
+            sum / count
         };
         assert!(mean(&faded) < mean(&lit));
     }
@@ -961,18 +998,14 @@ mod tests {
         // The module's jewel edge sits at x = 48 in scene units; scaled, both must be lighter
         // there than four units to its left.
         let sample = |pm: &Pixmap, sx: f64| -> u32 {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let x = 48.0_f64.mul_add(sx, 1.0) as u32;
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let y = (110.0_f64 * sx) as u32;
+            let x = crate::art::cast::f64_to_u32(48.0_f64.mul_add(sx, 1.0));
+            let y = crate::art::cast::f64_to_u32(110.0_f64 * sx);
             let p = pm.pixel(x, y).expect("in bounds");
             u32::from(p.red()) + u32::from(p.green()) + u32::from(p.blue())
         };
         let left = |pm: &Pixmap, sx: f64| -> u32 {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let x = (40.0_f64 * sx) as u32;
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let y = (110.0_f64 * sx) as u32;
+            let x = crate::art::cast::f64_to_u32(40.0_f64 * sx);
+            let y = crate::art::cast::f64_to_u32(110.0_f64 * sx);
             let p = pm.pixel(x, y).expect("in bounds");
             u32::from(p.red()) + u32::from(p.green()) + u32::from(p.blue())
         };

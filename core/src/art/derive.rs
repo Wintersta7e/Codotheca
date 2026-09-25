@@ -14,6 +14,7 @@ use crate::art::seed::draw;
 pub const JEWEL_BINS: [i32; 8] = [26, 58, 96, 148, 188, 232, 284, 328];
 /// The four gradient angles the plate's hard two-tone split can take.
 pub const JEWEL_ANGLES: [i32; 4] = [148, 32, 118, 62];
+/// The numerals a designation's mark draws from, `MK-I` to `MK-X`.
 pub const ROMAN: [&str; 10] = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 /// The plate is blackened steel: one hue family, ±4.
 pub const PLATE_BASE_HUE: i32 = 76;
@@ -39,39 +40,55 @@ pub fn round3(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
 }
 
+/// §7.3's `jewel`: the project's identity colour, a quantised hue bin with a small jitter.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Jewel {
+    /// Hue in degrees: a `JEWEL_BINS` entry moved by `-3..=3`.
     pub hue: i32,
+    /// OKLCH lightness, rounded to three decimals.
     #[serde(rename = "L")]
     pub l: f64,
+    /// OKLCH chroma, rounded to three decimals.
     #[serde(rename = "C")]
     pub c: f64,
 }
 
+/// §7.3's `plate`: the blackened-steel ground, its three stops and its hard two-tone split.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Plate {
+    /// Hue in degrees, `PLATE_BASE_HUE` ± 4.
     pub hue: i32,
+    /// The chroma the stops share, three decimals.
     pub c: f64,
+    /// Lightness of the upper band.
     pub hi: f64,
+    /// Lightness of the lower band.
     pub mid: f64,
+    /// Lightness of the darkest stop, which reaches the document as `palette.ground`.
     pub lo: f64,
+    /// The split's CSS gradient angle, one of `JEWEL_ANGLES`.
     pub ang: i32,
+    /// Where the hard split falls along the gradient line, as a percentage, `38..=61`.
     pub split: i32,
 }
 
+/// Which of the plate's stops [`plate_stop`] resolves to a colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlateStop {
+    /// The upper band: `hi` at the plate's chroma.
     Hi,
+    /// `mid` at the plate's chroma — `palette.panel`.
     Mid,
+    /// The ground: `lo` at `c * 0.8`.
     Lo,
     /// The second stop of the first gradient: `c * 1.06`.
     MidTinted,
 }
 
-// The draws are small moduli against a u32, so every product fits an i32 with room to spare.
-#[allow(clippy::cast_possible_wrap)]
+// Every caller passes a draw taken modulo 24 or less, so the conversion cannot fail and the
+// fallback is never reached.
 fn signed(v: u32) -> i32 {
-    v as i32
+    i32::try_from(v).unwrap_or(i32::MAX)
 }
 
 /// ```text
@@ -81,8 +98,9 @@ fn signed(v: u32) -> i32 {
 /// ```
 #[must_use]
 pub fn derive_jewel(h: u32, fade: f64) -> Jewel {
-    let bin = JEWEL_BINS
-        .get(draw(h, 0, 8) as usize)
+    let bin = usize::try_from(draw(h, 0, 8))
+        .ok()
+        .and_then(|index| JEWEL_BINS.get(index))
         .copied()
         .unwrap_or(JEWEL_BINS[0]);
     let hue = bin + (signed(draw(h, 5, 7)) - 3);
@@ -95,6 +113,7 @@ pub fn derive_jewel(h: u32, fade: f64) -> Jewel {
     }
 }
 
+/// The jewel as a colour, for the rasterizer's leading edges.
 #[must_use]
 pub fn jewel_oklch(j: Jewel) -> Oklch {
     Oklch {
@@ -104,6 +123,7 @@ pub fn jewel_oklch(j: Jewel) -> Oklch {
     }
 }
 
+/// The jewel as §7.3's `oklch()` string — the document's `palette.accent`.
 #[must_use]
 pub fn jewel_css(j: Jewel) -> String {
     css(jewel_oklch(j))
@@ -135,8 +155,9 @@ pub fn derive_plate(h: u32, fade: f64) -> Plate {
     let hue = PLATE_BASE_HUE + (signed(draw(h, 5, 9)) - 4);
     let c = (0.005 + f64::from(draw(h, 9, 3)) * 0.002) * fade.mul_add(-0.5, 1.0);
     let step = f64::from(draw(h, 21, 5)) * 0.011;
-    let ang = JEWEL_ANGLES
-        .get(draw(h, 13, 4) as usize)
+    let ang = usize::try_from(draw(h, 13, 4))
+        .ok()
+        .and_then(|index| JEWEL_ANGLES.get(index))
         .copied()
         .unwrap_or(JEWEL_ANGLES[0]);
     Plate {
@@ -180,20 +201,22 @@ pub fn plate_stop(p: Plate, which: PlateStop) -> Oklch {
 }
 
 /// The greebling selector, `(h >>> 3) % 4`.
-#[allow(clippy::cast_possible_truncation)]
 #[must_use]
 pub fn panel_family(h: u32) -> u8 {
-    draw(h, 3, 4) as u8
+    // A draw modulo 4 always fits, so the fallback is never reached.
+    u8::try_from(draw(h, 3, 4)).unwrap_or(0)
 }
 
 /// The livery selector, `h % 4`. It varies vertical rhythm and vent direction only, never which
 /// side a part sits on.
-#[allow(clippy::cast_possible_truncation)]
 #[must_use]
 pub fn livery_family(h: u32) -> u8 {
-    draw(h, 0, 4) as u8
+    // A draw modulo 4 always fits, so the fallback is never reached.
+    u8::try_from(draw(h, 0, 4)).unwrap_or(0)
 }
 
+/// The designation's two-letter prefix: the language's `LANG_CODES` entry, or `GN` for any
+/// other language and for none.
 #[must_use]
 pub fn lang_prefix(primary_language: Option<&str>) -> &'static str {
     let Some(name) = primary_language else {
@@ -209,8 +232,9 @@ pub fn lang_prefix(primary_language: Option<&str>) -> &'static str {
 #[must_use]
 pub fn designation(h: u32, primary_language: Option<&str>) -> String {
     let number = 10 + draw(h, 11, 100) % 89;
-    let mark = ROMAN
-        .get((draw(h, 3, 100) % 10) as usize)
+    let mark = usize::try_from(draw(h, 3, 100) % 10)
+        .ok()
+        .and_then(|index| ROMAN.get(index))
         .copied()
         .unwrap_or(ROMAN[0]);
     format!("{}-{number} / MK-{mark}", lang_prefix(primary_language))
@@ -312,11 +336,11 @@ mod tests {
             "q",
             "mm",
         ] {
-            let h = seed_hash(name);
-            if panel_family(h) != livery_family(h) {
+            let name_h = seed_hash(name);
+            if panel_family(name_h) != livery_family(name_h) {
                 disagreed += 1;
             }
-            assert!(panel_family(h) < 4 && livery_family(h) < 4);
+            assert!(panel_family(name_h) < 4 && livery_family(name_h) < 4);
         }
         assert!(disagreed > 0, "the two selectors must not be the same draw");
     }

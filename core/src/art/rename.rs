@@ -1,7 +1,9 @@
-//! §7.4's rename rule. Identity is frozen so recognition holds: `seed_basename` is the directory
-//! basename at first index, written once, and the *only* thing that re-seeds it is a rename the
-//! user actually performed. A second location with a different basename does not; a remote name
-//! learned mid-scan does not — that was v1's defect, and it re-rolled art while the user watched.
+//! §7.4's rename rule.
+//!
+//! Identity is frozen so recognition holds: `seed_basename` is the directory basename at first
+//! index, written once, and the *only* thing that re-seeds it is a rename the user actually
+//! performed. A second location with a different basename does not; a remote name learned
+//! mid-scan does not — that was v1's defect, and it re-rolled art while the user watched.
 
 use crate::art::store::state_slug;
 use crate::art::ArtError;
@@ -14,15 +16,21 @@ use crate::scan::presence::Presence;
 /// One of a project's locations, reduced to what the rule reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenameLocation {
+    /// The `location` row's id.
     pub location_id: i64,
+    /// The last component of the location's path, decoded lossily; empty when the path has none.
     pub basename: String,
+    /// The location's presence as the scan last recorded it; an unparseable stored value reads
+    /// as `Unscanned`.
     pub presence: Presence,
 }
 
 /// What a re-seed changed, so a caller can log it and J5 can be believed when it redraws.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reseeded {
+    /// The project whose seed moved.
     pub project_id: i64,
+    /// The new `seed_basename`: the present location's basename.
     pub seed_basename: String,
     /// §7.4: "the walk was a walk over the old basename". Recorded, then discarded.
     pub cleared_offset: u32,
@@ -38,6 +46,8 @@ fn basename_of(path_bytes: &[u8]) -> String {
         .unwrap_or_default()
 }
 
+/// The basename to re-seed to, when the locations show a rename.
+///
 /// §7.4: a rename is one location gone `missing` under the stored basename and exactly one
 /// location `present` under a different one. Anything else — two present copies, an offline
 /// volume, a location not yet scanned, the same name in a new place — is not a rename.
@@ -59,6 +69,11 @@ pub fn rename_target(seed_basename: &str, locations: &[RenameLocation]) -> Optio
     old_is_missing.then(|| candidate.basename.clone())
 }
 
+/// Every location of the project, reduced to its basename and presence.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the `location` rows cannot be read.
 pub fn location_basenames(
     conn: &rusqlite::Connection,
     project_id: i64,
@@ -86,9 +101,16 @@ pub fn location_basenames(
     Ok(out)
 }
 
-/// §7.4: "Reset, then re-render once." `stale` is what makes J5 redraw lazily, shelf-visible
-/// first, rather than 400 renders on the launch after a rename storm. Nothing else moves — not
-/// `name`, not `lineage_key`, not `remote_key`, not `id`.
+/// §7.4: "Reset, then re-render once."
+///
+/// `stale` is what makes J5 redraw lazily, shelf-visible first, rather than 400 renders on the
+/// launch after a rename storm. Nothing else moves — not `name`, not `lineage_key`, not
+/// `remote_key`, not `id`.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the project row cannot be read or either update fails; the
+/// caller's transaction is then left for it to roll back.
 pub fn apply_rename(
     tx: &rusqlite::Transaction<'_>,
     project_id: i64,
@@ -118,9 +140,16 @@ pub fn apply_rename(
     })
 }
 
-/// The whole rule against the database, for one project. **This is the entry point the scan is
-/// missing a call to** — see this task's gap note. It is idempotent: once `seed_basename` matches
-/// the present location, `rename_target` answers `None` and nothing is written.
+/// The whole rule against the database, for one project.
+///
+/// **This is the entry point the scan is missing a call to** — see this task's gap note. It is
+/// idempotent: once `seed_basename` matches the present location, `rename_target` answers `None`
+/// and nothing is written.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the project or its locations cannot be read, or the re-seed
+/// transaction fails, in which case nothing is written.
 pub fn reseed_after_scan(
     index: &Index,
     project_id: i64,

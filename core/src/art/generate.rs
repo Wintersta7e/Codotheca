@@ -1,6 +1,8 @@
-//! §7.1's pure function: `generate` takes scan-time facts and returns a scene document. It
-//! reads no clock, touches no filesystem and issues no query — `load_inputs` does the reading,
-//! separately, so the derivation itself can be exercised with nothing but a struct literal.
+//! §7.1's pure function: `generate` takes scan-time facts and returns a scene document.
+//!
+//! It reads no clock, touches no filesystem and issues no query — `load_inputs` does the
+//! reading, separately, so the derivation itself can be exercised with nothing but a struct
+//! literal.
 //!
 //! §7.2's signature is `generate(basename, archetype, language_mix, size_bucket, reroll_offset)`
 //! and **every input resolves by J3, during the scan.** v2's seed needed J4 outputs that arrive
@@ -21,23 +23,33 @@ use crate::art::scene::{card_space, Palette, Scene};
 use crate::art::seed::seed_of;
 use crate::art::{ArtError, ART_SCHEMA_VERSION, SCENE_FORMAT_VERSION};
 
+/// The scan-time facts [`generate`] reads, one `project` row's worth (§7.2).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SceneInputs {
     /// §7.4: the directory basename recorded at first index. **Never `project.name`.**
     pub seed_basename: String,
+    /// §7.4's reroll offset, suffixed onto the hashed string when non-zero.
     pub reroll_offset: u32,
+    /// A reference project, which takes the flat fade.
     pub is_reference: bool,
+    /// An archived project, which takes the flat fade.
     pub is_archived: bool,
+    /// J3's archetype verdict; `None` until J3 classifies.
     pub archetype: Option<String>,
+    /// J3's primary language, which picks the designation prefix; `None` until J3 names one.
     pub primary_language: Option<String>,
     /// `project.language_bytes`, a JSON object of name → bytes.
     pub language_bytes_json: Option<String>,
+    /// J3's tracked-bytes total, which picks the size bucket; `None` until J3 has run.
     pub size_tracked_bytes: Option<i64>,
     /// The late-bound era input (§7.2). **Not a seed input.**
     pub first_commit_at: Option<i64>,
+    /// The first commit's UTC offset in minutes, so its year is the committer's own.
     pub first_commit_tz_offset_min: Option<i32>,
 }
 
+/// The scene document for one project's inputs — pure, so the same inputs always produce the
+/// same document and therefore the same `scene_hash`.
 #[must_use]
 pub fn generate(input: &SceneInputs) -> Scene {
     let seed = seed_of(&input.seed_basename, input.reroll_offset);
@@ -101,6 +113,11 @@ pub fn generate(input: &SceneInputs) -> Scene {
 }
 
 /// Everything `generate` needs, read in one statement. `None` when the project does not exist.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the statement fails or a column does not hold the type it is read
+/// as.
 pub fn load_inputs(
     conn: &rusqlite::Connection,
     project_id: i64,

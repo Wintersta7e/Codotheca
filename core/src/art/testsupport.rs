@@ -16,11 +16,14 @@ pub struct CollectingSink {
 }
 
 impl CollectingSink {
+    /// Every `(topic, event, payload)` emitted so far, oldest first; empty if the lock is
+    /// poisoned.
     #[must_use]
     pub fn events(&self) -> Vec<(String, String, serde_json::Value)> {
         self.emitted.lock().map(|v| v.clone()).unwrap_or_default()
     }
 
+    /// The payloads of every `topic/event` emission, oldest first.
     #[must_use]
     pub fn named(&self, topic: &str, event: &str) -> Vec<serde_json::Value> {
         self.events()
@@ -30,6 +33,7 @@ impl CollectingSink {
             .collect()
     }
 
+    /// Forget everything recorded so far, so a test can assert on what a later step emits.
     pub fn clear(&self) {
         if let Ok(mut held) = self.emitted.lock() {
             held.clear();

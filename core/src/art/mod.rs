@@ -1,9 +1,17 @@
-//! Card art (§7). The generator is a pure function producing a scene document; the rasterizer
-//! walks that document and nothing else. Nothing in this module reads a clock: `now` arrives as
-//! a parameter and is only ever stamped into `art_scene.rendered_at`, which is why
-//! `scene_hash` cannot become a function of wall-clock time (§7.3a, criterion 62).
+//! Card art (§7).
+//!
+//! The generator is a pure function producing a scene document; the rasterizer walks that
+//! document and nothing else. Nothing in this module reads a clock: `now` arrives as a parameter
+//! and is only ever stamped into `art_scene.rendered_at`, which is why `scene_hash` cannot become
+//! a function of wall-clock time (§7.3a, criterion 62).
+
+// Colour derivation, gamut mapping and raster geometry are floating point by nature, and this
+// module tree is where the crate draws pixels. The lint exists to keep floats out of everything
+// else (byte counts, times, scores), so it is lifted for `art` alone.
+#![allow(clippy::float_arithmetic)]
 
 pub mod blueprint;
+mod cast;
 pub mod commands;
 pub mod compose;
 pub mod derive;
@@ -36,9 +44,11 @@ use crate::protocol::{ErrorCode, Rendition};
 /// of `Scene` itself.
 pub const ART_SCHEMA_VERSION: u32 = 1;
 
-/// §7.3's `"v"`. The *document format*; distinct from `ART_SCHEMA_VERSION`, which is the
-/// *renderer*. Phase 3 reads this document as the geometry sidecar and needs to know which
-/// shape it is reading, independently of which rasterizer drew it.
+/// §7.3's `"v"`, the *document format*.
+///
+/// Distinct from `ART_SCHEMA_VERSION`, which is the *renderer*. Phase 3 reads this document as
+/// the geometry sidecar and needs to know which shape it is reading, independently of which
+/// rasterizer drew it.
 pub const SCENE_FORMAT_VERSION: u32 = 1;
 
 /// §7.5: heroes are evicted least-recently-opened beyond this many renditions.
@@ -47,6 +57,8 @@ pub const HERO_CACHE_MAX: usize = 200;
 /// Ruling 6: art work is scheduled against its own store key.
 pub const ART_STORE_KEY_PREFIX: &str = "art:";
 
+/// The job-slot key J5 is scheduled under for the store `store_key` names. Prefixed, so art work
+/// — which runs no git — never spends that store's own slot (ruling 6).
 #[must_use]
 pub fn art_store_key(store_key: &str) -> String {
     format!("{ART_STORE_KEY_PREFIX}{store_key}")
@@ -55,8 +67,12 @@ pub fn art_store_key(store_key: &str) -> String {
 /// Everything an art command or job needs. `now` is unix **seconds**, supplied by the caller so
 /// nothing under this module reads the clock itself.
 pub struct ArtCtx<'a> {
+    /// The index holding `art_scene` and the `project` mirror, and the data directory the art
+    /// tree lives under.
     pub index: &'a Index,
+    /// Where `projects/art_ready` and `core/error` are published.
     pub events: &'a dyn EventSink,
+    /// The caller's clock, in unix seconds.
     pub now: i64,
 }
 
@@ -68,15 +84,23 @@ impl std::fmt::Debug for ArtCtx<'_> {
     }
 }
 
+/// Every way an art command, J5 or the start-up pass can fail. [`ArtError::code`] narrows it to
+/// the closed wire code.
 #[derive(Debug)]
 pub enum ArtError {
+    /// An `IndexError` carried through `?` from the index layer.
     Index(IndexError),
     /// A stale or tombstoned project id (§1.6). Kept as its own variant so
     /// `ErrorCode::ProjectMerged` reaches the wire: collapsing it into `Internal` would
     /// tell a rail holding a pre-merge id to retry rather than to refresh.
     Identity(crate::identity::IdentityError),
+    /// A statement against `art_scene` or the `project` mirror failed.
     Sqlite(rusqlite::Error),
+    /// A file in the art tree could not be created, written, renamed or removed; the text names
+    /// the step and the OS error.
     Io(String),
+    /// A value could not be encoded or decoded: the scene JSON in either direction, a stored
+    /// `art_state` no slug names, a degenerate or unallocatable pixmap, or the WebP encoder.
     Encode(String),
     /// A hash that is not 64 lowercase hex. Never built from user input without this check.
     BadHash(String),
@@ -122,7 +146,7 @@ impl ArtError {
     /// The core's `message` is diagnostic and never shown raw; this is the closed code the
     /// shell narrows on.
     #[must_use]
-    pub fn code(&self) -> ErrorCode {
+    pub const fn code(&self) -> ErrorCode {
         match self {
             Self::BadHash(_) | Self::NoScene(_) => ErrorCode::Protocol,
             Self::Identity(e) => e.code(),
@@ -131,11 +155,13 @@ impl ArtError {
     }
 }
 
-/// §7.6's path segment, one per rendition. R47: the blueprint pass needs **two** names, because
-/// the address is `codotheca://art/<hash>/<rendition>` — with one, a cached raster of the card
-/// pass would be served for the hero pass at exactly the moment the project changes state.
+/// §7.6's path segment, one per rendition.
+///
+/// R47: the blueprint pass needs **two** names, because the address is
+/// `codotheca://art/<hash>/<rendition>` — with one, a cached raster of the card pass would be
+/// served for the hero pass at exactly the moment the project changes state.
 #[must_use]
-pub fn rendition_slug(r: Rendition) -> &'static str {
+pub const fn rendition_slug(r: Rendition) -> &'static str {
     match r {
         Rendition::Card => "card",
         Rendition::Hero => "hero",
@@ -144,6 +170,8 @@ pub fn rendition_slug(r: Rendition) -> &'static str {
     }
 }
 
+/// The rendition a path segment names — the inverse of [`rendition_slug`]. `None` for anything
+/// that is not one of the four slugs.
 #[must_use]
 pub fn rendition_from_slug(s: &str) -> Option<Rendition> {
     match s {
@@ -164,6 +192,7 @@ pub fn is_scene_hash(s: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// `<data_dir>/art`, the root of §7.2's fan-out and of the hero LRU journal.
 #[must_use]
 pub fn art_root(data_dir: &Path) -> PathBuf {
     data_dir.join("art")
@@ -202,7 +231,7 @@ pub fn art_url(hash: &str, r: Rendition) -> Option<String> {
 /// The commands this module owns, in the order the dispatcher matches them. Exposed so the
 /// dispatch table can be asserted without constructing an `Index`.
 #[must_use]
-pub fn dispatch_art_command_names() -> [&'static str; 2] {
+pub const fn dispatch_art_command_names() -> [&'static str; 2] {
     ["art.url", "art.rerender"]
 }
 
@@ -246,7 +275,10 @@ mod tests {
         ));
         assert!(!is_scene_hash("0123456789abcdef"));
         assert!(!is_scene_hash(&format!("{H}0")));
-        assert!(!is_scene_hash(&format!("{}/x", &H[..62])));
+        assert!(!is_scene_hash(&format!(
+            "{}/x",
+            H.get(..62).expect("ascii")
+        )));
     }
 
     #[test]
@@ -360,18 +392,28 @@ mod tests {
     }
 }
 
+/// What [`startup`] did to the art tree and its rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StartupReport {
+    /// `art_scene` rows marked `stale` because their renderer schema is not
+    /// `ART_SCHEMA_VERSION`.
     pub staled: usize,
+    /// The rendition files removed because no `art_scene` row references their hash.
     pub swept: store::SweepReport,
 }
 
-/// Run once per process, before any command is served: §7.5's schema-bump stale pass and the
-/// sweep of files no `art_scene` row references. Nothing is re-rendered here — that is lazy and
-/// shelf-visible first.
+/// Run once per process, before any command is served.
+///
+/// §7.5's schema-bump stale pass and the sweep of files no `art_scene` row references. Nothing
+/// is re-rendered here — that is lazy and shelf-visible first.
 ///
 /// Wire it into the core's start-up path immediately after the index is opened and before the
 /// transport loop begins.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when either pass's statements fail, and [`ArtError::Io`] when the sweep
+/// cannot rewrite the hero LRU journal after forgetting a swept hero.
 pub fn startup(ctx: &ArtCtx<'_>) -> Result<StartupReport, ArtError> {
     let staled = store::mark_stale_on_schema_bump(ctx.index.conn(), ART_SCHEMA_VERSION)?;
     let swept = store::sweep_unreferenced(ctx.index.conn(), ctx.index.data_dir())?;

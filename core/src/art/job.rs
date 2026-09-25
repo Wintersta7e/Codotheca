@@ -15,14 +15,23 @@ use crate::index::Index;
 use crate::jobs::{JobError, JobOutcome};
 use crate::protocol::{ArtState, Rendition};
 
+/// What one [`render_card`] call left behind.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtRenderOutcome {
+    /// The address of the scene the project now has.
     pub scene_hash: String,
     /// False when the scene and its file were already current, so nothing was written.
     pub rendered: bool,
 }
 
 /// Generate, compare, and draw only if something moved.
+///
+/// # Errors
+///
+/// [`ArtError::NoScene`] when there is no `project` row to read inputs from;
+/// [`ArtError::Sqlite`] when reading the inputs or the row, or writing the scene, fails;
+/// [`ArtError::Encode`] when hashing, drawing or encoding the card fails or the stored
+/// `art_state` is no known slug; and [`ArtError::Io`] when the file cannot be written.
 pub fn render_card(index: &Index, project_id: i64, now: i64) -> Result<ArtRenderOutcome, ArtError> {
     let inputs = load_inputs(index.conn(), project_id)?.ok_or(ArtError::NoScene(project_id))?;
     let scene = generate(&inputs);
@@ -57,6 +66,12 @@ pub fn render_card(index: &Index, project_id: i64, now: i64) -> Result<ArtRender
 
 /// The scheduler's entry point. A failure increments §7.5's per-scene counter and asks for a
 /// retry; the scheduler's own counter decides when to stop asking.
+///
+/// # Errors
+///
+/// None in practice: every render failure is reported as an `Ok` outcome — `HardFail` for a
+/// missing project, `TransientFail` for anything else. The `Result` is the scheduler's job
+/// signature.
 pub fn run_j5(index: &Index, project_id: i64, now: i64) -> Result<JobOutcome, JobError> {
     match render_card(index, project_id, now) {
         Ok(_) => Ok(JobOutcome::Done),
@@ -76,6 +91,11 @@ pub fn run_j5(index: &Index, project_id: i64, now: i64) -> Result<JobOutcome, Jo
 
 /// True when this project's **card** needs drawing on the strength of its row alone: no row, a
 /// row behind the schema, or a state that is not `ready`.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the row cannot be read, and [`ArtError::Encode`] when its stored
+/// `art_state` is no known slug.
 pub fn needs_art(conn: &rusqlite::Connection, project_id: i64) -> Result<bool, ArtError> {
     let Some(row) = load_row(conn, project_id)? else {
         return Ok(true);
@@ -85,6 +105,11 @@ pub fn needs_art(conn: &rusqlite::Connection, project_id: i64) -> Result<bool, A
 
 /// The same question including §7.5's missing-file case — a `ready` row whose bitmap has gone.
 /// This is the form the scheduler's visible-tile hook uses, because it has the data directory.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the row cannot be read, and [`ArtError::Encode`] when its stored
+/// `art_state` is no known slug.
 pub fn needs_art_at(
     conn: &rusqlite::Connection,
     data_dir: &std::path::Path,

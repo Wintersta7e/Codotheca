@@ -27,8 +27,9 @@ pub const FADE_FLAT: f64 = 0.25;
 /// The value every other project takes.
 pub const FADE_NONE: f64 = 0.0;
 
+/// A project's `fade`: `FADE_FLAT` when it is a reference or archived, `FADE_NONE` otherwise.
 #[must_use]
-pub fn fade_for(is_reference: bool, is_archived: bool) -> f64 {
+pub const fn fade_for(is_reference: bool, is_archived: bool) -> f64 {
     if is_reference || is_archived {
         FADE_FLAT
     } else {

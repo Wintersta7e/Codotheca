@@ -1,27 +1,38 @@
-//! OKLCH → sRGB, gamut-mapped the way Chromium maps it (CSS Color 4 §13.2: chroma reduction
-//! until ΔEOK ≤ 0.02). §7.3 pins eight jewel bins to their mapped values and prints the naively
-//! clipped column beside them precisely so the difference is testable: **matching the clipped
-//! column is a bug, not a rounding difference.**
+//! OKLCH → sRGB, gamut-mapped the way Chromium maps it.
+//!
+//! CSS Color 4 §13.2: chroma reduction until ΔEOK ≤ 0.02. §7.3 pins eight jewel bins to their
+//! mapped values and prints the naively clipped column beside them precisely so the difference
+//! is testable: **matching the clipped column is a bug, not a rounding difference.**
 //!
 //! Both producers of the card — this rasterizer and the CSS plate — must land on the same
 //! colour (§7.1a, "one design, two producers"). The browser maps; so does this.
+
+use crate::art::cast::{f64_to_i64, f64_to_u8};
 
 /// CSS Color 4's just-noticeable difference in `OKLab`.
 pub const JND: f64 = 0.02;
 /// The bisection's stopping width, from the same algorithm.
 pub const MAP_EPSILON: f64 = 0.0001;
 
+/// A colour in CSS `oklch()` terms, the form §7.3 writes every jewel and plate stop in.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Oklch {
+    /// Perceptual lightness, `0.0` black to `1.0` white.
     pub l: f64,
+    /// Chroma; `0.0` is grey.
     pub c: f64,
+    /// Hue angle in degrees; any real value, since the conversion wraps it.
     pub h: f64,
 }
 
+/// An 8-bit sRGB triple: the value [`to_srgb8`] produces and both producers must agree on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Srgb8 {
+    /// Gamma-encoded red.
     pub r: u8,
+    /// Gamma-encoded green.
     pub g: u8,
+    /// Gamma-encoded blue.
     pub b: u8,
 }
 
@@ -138,6 +149,9 @@ fn map_to_gamut(color: Oklch) -> (f64, f64, f64) {
     let mut low = 0.0_f64;
     let mut high = color.c;
     let mut low_in_gamut = true;
+    // A bisection over chroma is a loop on a float interval by definition; CSS Color 4 states
+    // its stopping rule as this width, and a step count would be a second, drifting copy of it.
+    #[allow(clippy::while_float)]
     while high - low > MAP_EPSILON {
         let chroma = (low + high) / 2.0;
         let current = oklch_to_oklab(Oklch { c: chroma, ..color });
@@ -169,11 +183,10 @@ fn encode_gamma(channel: f64) -> f64 {
     }
 }
 
-// The value is clamped to 0..=1 before the cast, so the truncation clippy warns about is the
-// rounding we asked for.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+// The value is rounded and clamped to 0..=255 before the conversion, so the truncation it could
+// perform is the rounding we asked for.
 fn to_byte(channel: f64) -> u8 {
-    (encode_gamma(channel) * 255.0).round().clamp(0.0, 255.0) as u8
+    f64_to_u8((encode_gamma(channel) * 255.0).round().clamp(0.0, 255.0))
 }
 
 fn pack(rgb: (f64, f64, f64)) -> Srgb8 {
@@ -207,17 +220,17 @@ pub fn clip_srgb8(color: Oklch) -> Srgb8 {
     pack(clip(oklab_to_linear_srgb(oklch_to_oklab(color))))
 }
 
+/// `#rrggbb`, lowercase — the form §7.3's bin table prints its mapped and clipped columns in.
 #[must_use]
 pub fn hex(c: Srgb8) -> String {
     format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
 }
 
 /// §7.3's serialisation: three decimals for lightness and chroma, an integer hue.
-#[allow(clippy::cast_possible_truncation)]
 #[must_use]
 pub fn css(color: Oklch) -> String {
     let hue = color.h.round();
-    format!("oklch({:.3} {:.3} {})", color.l, color.c, hue as i64)
+    format!("oklch({:.3} {:.3} {})", color.l, color.c, f64_to_i64(hue))
 }
 
 #[cfg(test)]

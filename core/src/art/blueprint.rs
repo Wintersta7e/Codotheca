@@ -17,15 +17,18 @@
 
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
 
+use crate::art::cast::{f32_to_u8, i32_to_f32, u32_to_f32};
 use crate::art::raster::{RenderTarget, FASTENER_RADIUS};
 use crate::art::scene::{Scene, VentDir, SPACE_H, SPACE_W};
 use crate::art::ArtError;
 use crate::protocol::Rendition;
 
-/// §8.7's `--tier-blue`, the blueprint ground. Stated here because the raster needs the value and
-/// the renderer's frame token needs it too; `core/tests/blueprint_renditions.rs` reads
-/// `app/src/renderer/styles/tokens.css` and asserts the two agree, so the mirror has a test
-/// reading the other side rather than two independent copies (R12, R24).
+/// §8.7's `--tier-blue`, the blueprint ground.
+///
+/// Stated here because the raster needs the value and the renderer's frame token needs it too;
+/// `core/tests/blueprint_renditions.rs` reads `app/src/renderer/styles/tokens.css` and asserts
+/// the two agree, so the mirror has a test reading the other side rather than two independent
+/// copies (R12, R24).
 pub const TIER_BLUE: (u8, u8, u8) = (0x2f, 0x4a, 0x5c);
 /// §8.7's `--tier-blue-ink`, the readable variant and the only ink this pass draws in.
 pub const TIER_BLUE_INK: (u8, u8, u8) = (0x9f, 0xc2, 0xd6);
@@ -56,9 +59,8 @@ fn ink(alpha: f32) -> Paint<'static> {
     paint
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn alpha_byte(alpha: f32) -> u8 {
-    (alpha * 255.0).round().clamp(0.0, 255.0) as u8
+    f32_to_u8((alpha * 255.0).round().clamp(0.0, 255.0))
 }
 
 fn hairline(width: f32) -> Stroke {
@@ -68,13 +70,12 @@ fn hairline(width: f32) -> Stroke {
     }
 }
 
-#[allow(clippy::cast_precision_loss)]
 fn rect_of(r: [i32; 4]) -> Option<Rect> {
     Rect::from_xywh(
-        r[0] as f32,
-        r[1] as f32,
-        (r[2]).max(1) as f32,
-        (r[3]).max(1) as f32,
+        i32_to_f32(r[0]),
+        i32_to_f32(r[1]),
+        i32_to_f32((r[2]).max(1)),
+        i32_to_f32((r[3]).max(1)),
     )
 }
 
@@ -88,13 +89,16 @@ fn stroke_rect(pixmap: &mut Pixmap, rect: Rect, paint: &Paint<'_>, stroke: &Stro
 
 /// The plate boundary, inset so the stroke sits inside the raster rather than half outside it.
 fn paint_plate_boundary(pixmap: &mut Pixmap, t: Transform) {
-    #[allow(clippy::cast_precision_loss)]
-    let outer = Rect::from_xywh(6.0, 6.0, (SPACE_W - 12) as f32, (SPACE_H - 12) as f32);
+    let outer = Rect::from_xywh(6.0, 6.0, i32_to_f32(SPACE_W - 12), i32_to_f32(SPACE_H - 12));
     if let Some(rect) = outer {
         stroke_rect(pixmap, rect, &ink(0.55), &hairline(2.0), t);
     }
-    #[allow(clippy::cast_precision_loss)]
-    let inner = Rect::from_xywh(16.0, 16.0, (SPACE_W - 32) as f32, (SPACE_H - 32) as f32);
+    let inner = Rect::from_xywh(
+        16.0,
+        16.0,
+        i32_to_f32(SPACE_W - 32),
+        i32_to_f32(SPACE_H - 32),
+    );
     if let Some(rect) = inner {
         stroke_rect(pixmap, rect, &ink(0.28), &hairline(1.0), t);
     }
@@ -127,6 +131,10 @@ fn paint_vent_slats(pixmap: &mut Pixmap, scene: &Scene, t: Transform) {
             continue;
         };
         let mut builder = PathBuilder::new();
+        // The slats step across tiny-skia's `f32` rect edges. An integer step count would match
+        // this loop only while every edge is an exact `f32` integer, and a scene document read
+        // back from the index carries no such bound, so the float walk stays as drawn.
+        #[allow(clippy::while_float)]
         match vent.dir {
             VentDir::H => {
                 let mut y = rect.y() + PITCH;
@@ -154,8 +162,7 @@ fn paint_vent_slats(pixmap: &mut Pixmap, scene: &Scene, t: Transform) {
 
 fn paint_fastener_rings(pixmap: &mut Pixmap, scene: &Scene, t: Transform) {
     for fastener in &scene.fasteners {
-        #[allow(clippy::cast_precision_loss)]
-        let (cx, cy) = (fastener.at[0] as f32, fastener.at[1] as f32);
+        let (cx, cy) = (i32_to_f32(fastener.at[0]), i32_to_f32(fastener.at[1]));
         if let Some(ring) = PathBuilder::from_circle(cx, cy, FASTENER_RADIUS) {
             pixmap.stroke_path(&ring, &ink(0.8), &hairline(1.5), t, None);
         }
@@ -178,12 +185,10 @@ fn paint_seam_lines(pixmap: &mut Pixmap, scene: &Scene, t: Transform) {
             continue;
         };
         let mut builder = PathBuilder::new();
-        #[allow(clippy::cast_precision_loss)]
-        builder.move_to(first_x as f32, first_y as f32);
+        builder.move_to(i32_to_f32(first_x), i32_to_f32(first_y));
         let mut any = false;
         for &[px, py] in points {
-            #[allow(clippy::cast_precision_loss)]
-            builder.line_to(px as f32, py as f32);
+            builder.line_to(i32_to_f32(px), i32_to_f32(py));
             any = true;
         }
         if !any {
@@ -202,10 +207,8 @@ fn paint_seam_lines(pixmap: &mut Pixmap, scene: &Scene, t: Transform) {
 fn paint_title_block(pixmap: &mut Pixmap, transform: Transform) {
     const W: f32 = 236.0;
     const H: f32 = 84.0;
-    #[allow(clippy::cast_precision_loss)]
-    let left = (SPACE_W - 16) as f32 - W;
-    #[allow(clippy::cast_precision_loss)]
-    let top = (SPACE_H - 16) as f32 - H;
+    let left = i32_to_f32(SPACE_W - 16) - W;
+    let top = i32_to_f32(SPACE_H - 16) - H;
     let Some(frame) = Rect::from_xywh(left, top, W, H) else {
         return;
     };
@@ -235,6 +238,11 @@ fn paint_title_block(pixmap: &mut Pixmap, transform: Transform) {
 
 /// The second pass. **Pure and deterministic**: it reads the scene and nothing else — no clock,
 /// no filesystem, no random source — so two renders of one scene are byte-identical.
+///
+/// # Errors
+///
+/// [`ArtError::Encode`] when either side of `target` is zero, or when tiny-skia cannot allocate
+/// a pixmap that size.
 pub fn render_blueprint(scene: &Scene, target: RenderTarget) -> Result<Pixmap, ArtError> {
     if target.w == 0 || target.h == 0 {
         return Err(ArtError::Encode(format!(
@@ -246,10 +254,9 @@ pub fn render_blueprint(scene: &Scene, target: RenderTarget) -> Result<Pixmap, A
         .ok_or_else(|| ArtError::Encode(format!("pixmap {}x{}", target.w, target.h)))?;
     pixmap.fill(solid_tier_blue());
 
-    #[allow(clippy::cast_precision_loss)]
     let transform = Transform::from_scale(
-        target.w as f32 / scene.space.w.max(1) as f32,
-        target.h as f32 / scene.space.h.max(1) as f32,
+        u32_to_f32(target.w) / i32_to_f32(scene.space.w.max(1)),
+        u32_to_f32(target.h) / i32_to_f32(scene.space.h.max(1)),
     );
     paint_plate_boundary(&mut pixmap, transform);
     paint_module_outlines(&mut pixmap, scene, transform);

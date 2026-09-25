@@ -1,7 +1,8 @@
-//! §7.3a's seed. The hash runs over the **UTF-16 code units** of `seed_basename` — the
-//! directory basename recorded at first index (§7.4) — and never over `project.name`, which
-//! absorbs the remote name and would re-roll a clone in a differently-named folder the moment
-//! T1 learns its remote.
+//! §7.3a's seed.
+//!
+//! The hash runs over the **UTF-16 code units** of `seed_basename` — the directory basename
+//! recorded at first index (§7.4) — and never over `project.name`, which absorbs the remote name
+//! and would re-roll a clone in a differently-named folder the moment T1 learns its remote.
 
 /// §7.4: the offset is a suffix on the **hashed string**, never a rewrite of the stored
 /// basename.
@@ -31,10 +32,13 @@ pub fn seed_hash(s: &str) -> u32 {
 /// §7.3's `seed` field: the exact string hashed, plus its uint32.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Seed {
+    /// The exact string hashed: `seed_basename`, suffixed `#<offset>` once rerolled.
     pub s: String,
+    /// [`seed_hash`] of `s`.
     pub h: u32,
 }
 
+/// The seed for a basename at a reroll offset: the string and its hash, computed together.
 #[must_use]
 pub fn seed_of(seed_basename: &str, reroll_offset: u32) -> Seed {
     let s = seed_string(seed_basename, reroll_offset);
@@ -42,11 +46,13 @@ pub fn seed_of(seed_basename: &str, reroll_offset: u32) -> Seed {
     Seed { s, h }
 }
 
-/// One `(h >>> shift) % modulus` draw. Shifts of 32 or more yield `0`, matching neither
-/// JavaScript's `>>>` (which masks the shift to 5 bits) nor a Rust overflow — the derivation
-/// never uses one, and this makes adding one a visible zero rather than a panic.
+/// One `(h >>> shift) % modulus` draw.
+///
+/// Shifts of 32 or more yield `0`, matching neither JavaScript's `>>>` (which masks the shift to
+/// 5 bits) nor a Rust overflow — the derivation never uses one, and this makes adding one a
+/// visible zero rather than a panic. A zero modulus also yields `0`.
 #[must_use]
-pub fn draw(h: u32, shift: u32, modulus: u32) -> u32 {
+pub const fn draw(h: u32, shift: u32, modulus: u32) -> u32 {
     if modulus == 0 {
         return 0;
     }

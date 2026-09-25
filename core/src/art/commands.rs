@@ -1,8 +1,9 @@
-//! §2.4's two art commands. Everything they do is already implemented under `crate::art`; a
-//! handler here is argument parsing, one guard, and one existing call. Nothing in this file
-//! reads a clock or a path from the wire: `now` arrives on `ArtCtx`, and the only string the
-//! renderer may send is a 64-hex scene hash, which names no file until `rendition_path` builds
-//! one from it.
+//! §2.4's two art commands.
+//!
+//! Everything they do is already implemented under `crate::art`; a handler here is argument
+//! parsing, one guard, and one existing call. Nothing in this file reads a clock or a path from
+//! the wire: `now` arrives on `ArtCtx`, and the only string the renderer may send is a 64-hex
+//! scene hash, which names no file until `rendition_path` builds one from it.
 
 use serde_json::Value;
 
@@ -32,6 +33,12 @@ fn failure(err: &ArtError) -> CommandFailure {
 
 /// §7.6: the address of one rendition of one scene. Answers `""` when there is no address
 /// (ruling 9) and `PROTOCOL` when the hash is not a hash (ruling 1).
+///
+/// # Errors
+///
+/// A `PROTOCOL` failure when the arguments do not parse or the hash is not a scene hash, and
+/// the code [`ArtError::code`] gives for any failure while finding, drawing or journalling the
+/// rendition.
 pub fn handle_url(ctx: &ArtCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
     let args: ArtUrlArgs = parse_args(args)?;
     let hash = args.hash.0.as_str();
@@ -53,9 +60,15 @@ pub fn handle_url(ctx: &ArtCtx<'_>, args: Value) -> Result<Value, CommandFailure
     Ok(Value::String(address))
 }
 
+/// The card's address, or `""` while it is missing.
+///
 /// The card is drawn during the scan, at J3 (§7.6), so by the time anything asks for its address
 /// the file is either there or has been swept from under a live row. The second case is a hole:
 /// mark it `stale` and let J5 redraw, and answer `""` so §7.5's nameplate stands in meanwhile.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when finding the owning project or marking it `stale` fails.
 pub fn card_address(ctx: &ArtCtx<'_>, hash: &str) -> Result<String, ArtError> {
     if rendition_exists(ctx.index.data_dir(), hash, Rendition::Card) {
         // `is_scene_hash` has already passed, so `art_url` is `Some`; `unwrap_or_default` is the
@@ -68,9 +81,17 @@ pub fn card_address(ctx: &ArtCtx<'_>, hash: &str) -> Result<String, ArtError> {
     Ok(String::new())
 }
 
+/// The hero's address, drawing it first if it is not on disk.
+///
 /// Plan 10 ruling 8: the hero renders lazily "on first demand" (§7.2) and the core cannot observe
 /// an open page, so this request is the demand. `touch_hero` owns the journal and the eviction —
 /// it returns the hashes it evicted and has already removed their files.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the owning row cannot be read; [`ArtError::Encode`] when its
+/// `scene_json` does not parse or the hero cannot be drawn; and [`ArtError::Io`] when the file
+/// or the LRU journal cannot be written, or an evicted hero cannot be removed.
 pub fn hero_address(ctx: &ArtCtx<'_>, hash: &str) -> Result<String, ArtError> {
     let data_dir = ctx.index.data_dir();
     if rendition_exists(data_dir, hash, Rendition::Hero) {
@@ -106,6 +127,12 @@ pub fn hero_address(ctx: &ArtCtx<'_>, hash: &str) -> Result<String, ArtError> {
 /// fails to draw must not mark the project's art failed, because the card is what that state
 /// describes. A project with no scene answers `""`, ruling 9's *no address*, and §7.5's
 /// nameplate stands.
+///
+/// # Errors
+///
+/// [`ArtError::Sqlite`] when the owning row cannot be read; [`ArtError::Encode`] when its
+/// `scene_json` does not parse or the blueprint cannot be drawn; and [`ArtError::Io`] when the
+/// file cannot be written.
 pub fn blueprint_address(
     ctx: &ArtCtx<'_>,
     hash: &str,
@@ -134,6 +161,12 @@ pub const MAX_OFFSET_STEP: u32 = 1;
 
 /// §7.4's stepper. The renderer sends the **absolute** target offset it computed, so a retried,
 /// replayed or double-delivered message writes the same integer and lands on the same card.
+///
+/// # Errors
+///
+/// A `PROTOCOL` failure when the arguments do not parse, the code [`ArtError::code`] gives for
+/// any failure inside [`rerender`], and `INTERNAL` if the reply or the rejection event cannot be
+/// serialised. A rejected step is a reply, not an error.
 pub fn handle_rerender(ctx: &ArtCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
     let args: ArtRerenderArgs = parse_args(args)?;
     let reply = rerender(ctx, args.project_id.0, args.offset).map_err(|e| failure(&e))?;
@@ -154,6 +187,13 @@ pub fn handle_rerender(ctx: &ArtCtx<'_>, args: Value) -> Result<Value, CommandFa
 
 /// One project, never a batch (§7.4). Ruling 2: the superseded renditions are left for §7.5's
 /// sweep — two deleters for one file is how a cache grows a dangling journal entry.
+///
+/// # Errors
+///
+/// [`ArtError::Identity`] when `requested` names no project, or a merged one §1.6's single
+/// redirect hop cannot resolve;
+/// [`ArtError::Sqlite`] when the offset cannot be read or written, and whatever redrawing the
+/// card returns ([`render_card`]'s errors).
 pub fn rerender(ctx: &ArtCtx<'_>, requested: i64, offset: u32) -> Result<ArtRerender, ArtError> {
     let conn = ctx.index.conn();
 

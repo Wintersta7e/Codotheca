@@ -19,19 +19,27 @@ pub const MIX_SHARE_FLOOR_PERCENT: u64 = 5;
 /// More than this many and the card would grow a fifth vent bank it has no room for.
 pub const MIX_DISTINCT_CAP: u8 = 4;
 
+/// §7.2's `size_bucket`: tracked bytes (J3) on a log ladder, which sets how many modules the
+/// plate carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SizeBucket {
+    /// Under 64 KiB tracked.
     Tiny,
+    /// 64 KiB up to 1 MiB.
     Small,
+    /// 1 MiB up to 16 MiB.
     Medium,
+    /// 16 MiB up to 256 MiB.
     Large,
+    /// 256 MiB and above.
     Huge,
 }
 
 impl SizeBucket {
+    /// The name this bucket carries in the scene document — the string serde writes.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::Tiny => "tiny",
             Self::Small => "small",
@@ -44,7 +52,7 @@ impl SizeBucket {
     /// How many machined modules the plate carries. Ruling 5: a composition parameter, not a
     /// readout — nothing the bitmap paints states a size.
     #[must_use]
-    pub fn module_count(self) -> usize {
+    pub const fn module_count(self) -> usize {
         match self {
             Self::Tiny | Self::Small => 1,
             Self::Medium | Self::Large => 2,
@@ -70,10 +78,14 @@ pub fn size_bucket_of(size_tracked_bytes: Option<i64>) -> Option<SizeBucket> {
     })
 }
 
+/// §7.2's `language_mix`: how many languages hold a real share, which sets the vent-bank count.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LanguageMix {
+    /// `project.primary_language` as recorded, or `None` when J3 has not named one.
     pub primary: Option<String>,
+    /// Languages at or above `MIX_SHARE_FLOOR_PERCENT` of tracked bytes, capped at
+    /// `MIX_DISTINCT_CAP`; `0` when nothing was measured.
     pub distinct: u8,
     /// False when `language_bytes` is absent, unparsable or sums to zero. The card still draws
     /// one vent bank; the document records that nothing was measured.
@@ -118,17 +130,22 @@ pub fn language_mix_of(
     }
 }
 
+/// The late-bound era of a project's first commit (§7.2), which sets fastener and plate detail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Era {
+    /// A first commit in 2009 or earlier, on the committer's own calendar.
     Early,
+    /// A first commit from 2010 to 2017.
     Middle,
+    /// A first commit in 2018 or later.
     Modern,
 }
 
 impl Era {
+    /// The name this era carries in the scene document — the string serde writes.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::Early => "early",
             Self::Middle => "middle",
@@ -136,8 +153,9 @@ impl Era {
         }
     }
 
+    /// The fastener cut this era draws: slotted, hex, then torx.
     #[must_use]
-    pub fn fastener(self) -> FastenerKind {
+    pub const fn fastener(self) -> FastenerKind {
         match self {
             Self::Early => FastenerKind::Slotted,
             Self::Middle => FastenerKind::Hex,
@@ -146,9 +164,10 @@ impl Era {
     }
 }
 
-/// The proleptic Gregorian year of a unix timestamp at a fixed offset. Hinnant's
-/// `civil_from_days`, kept here rather than taken from a job module so this file has no
-/// cross-plan dependency at all — and so a reviewer can see that no clock is read.
+/// The proleptic Gregorian year of a unix timestamp at a fixed offset.
+///
+/// Hinnant's `civil_from_days`, kept here rather than taken from a job module so this file has
+/// no cross-plan dependency at all — and so a reviewer can see that no clock is read.
 #[must_use]
 pub fn local_year(unix_secs: i64, tz_offset_min: i32) -> i32 {
     let shifted = unix_secs.saturating_add(i64::from(tz_offset_min).saturating_mul(60));
@@ -168,9 +187,10 @@ pub fn local_year(unix_secs: i64, tz_offset_min: i32) -> i32 {
     i32::try_from(year).unwrap_or(i32::MAX)
 }
 
+/// The era band of a first commit: three bands, on the committer's own calendar year.
+///
 /// §7.2: "When J4 later supplies the first commit date, the card re-renders once with
 /// period-appropriate fastener and plate detail — hue, composition and layout are untouched."
-/// Three bands, on the committer's own calendar year.
 #[must_use]
 pub fn era_of(first_commit_at: Option<i64>, tz_offset_min: Option<i32>) -> Option<Era> {
     let at = first_commit_at?;
@@ -182,11 +202,15 @@ pub fn era_of(first_commit_at: Option<i64>, tz_offset_min: Option<i32>) -> Optio
     })
 }
 
+/// The cut a fastener head carries, one per era.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FastenerKind {
+    /// A single slot — the early era.
     Slotted,
+    /// Two crossed bars — the middle era.
     Hex,
+    /// Three bars — the modern era.
     Torx,
     /// Era not computed. A kind no era can produce, so an uncomputed birth year never reads as
     /// the earliest one (ruling 4).
@@ -194,8 +218,9 @@ pub enum FastenerKind {
 }
 
 impl FastenerKind {
+    /// The name this kind carries in the scene document — the string serde writes.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::Slotted => "slotted",
             Self::Hex => "hex",
@@ -205,28 +230,38 @@ impl FastenerKind {
     }
 }
 
+/// The fastener an era draws, and `Plain` — which no era produces — while it is uncomputed.
 #[must_use]
 pub fn fastener_for(era: Option<Era>) -> FastenerKind {
     era.map_or(FastenerKind::Plain, Era::fastener)
 }
 
+/// The face a module takes from the project's archetype (plan 09's classifier).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModuleKind {
+    /// `cli`: a row of three ports.
     Port,
+    /// `library`: a recessed drum face.
     Drum,
+    /// `service`: a grille of horizontal bars.
     Grille,
+    /// `site`: a dark screen with a lit top edge.
     Screen,
+    /// `notebook` and `unclassified`: a plain slab with one lit bar.
     Slab,
+    /// `docs`: a hatch crossed by two bars.
     Hatch,
+    /// `config`: a deliberately empty face.
     Blank,
     /// Archetype not computed — outside the set the classifier can produce.
     Plain,
 }
 
 impl ModuleKind {
+    /// The name this kind carries in the scene document — the string serde writes.
     #[must_use]
-    pub fn slug(self) -> &'static str {
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::Port => "port",
             Self::Drum => "drum",
@@ -241,7 +276,7 @@ impl ModuleKind {
 
     /// §7.3: `faceUp` is what phase-3 dust settles on.
     #[must_use]
-    pub fn face_up(self) -> bool {
+    pub const fn face_up(self) -> bool {
         matches!(self, Self::Screen | Self::Slab | Self::Hatch)
     }
 }
@@ -266,45 +301,69 @@ pub fn module_kind_for(archetype: Option<&str>) -> ModuleKind {
 
 /// The prototype's livery percentages, resolved into the 2× space once.
 pub const MODULE_X: i32 = 48; // modLeft 8%
+/// A module's width.
 pub const MODULE_W: i32 = 228; // modW 38%
+/// A module's height.
 pub const MODULE_H: i32 = 126; // modH 14%
+/// The vertical gap below each module, before the next module or the first vent bank.
 pub const MODULE_GAP: i32 = 18;
 /// `modTop`: `8%` for families 0 and 1, `7%` for 2 and 3.
 pub const MODULE_Y_SHALLOW: i32 = 72;
+/// The `7%` `modTop` of livery families 2 and 3.
 pub const MODULE_Y_DEEP: i32 = 63;
+/// The vent banks' left edge, in line with the modules above them.
 pub const VENT_X: i32 = 48;
+/// A vent bank's width.
 pub const VENT_W: i32 = 216; // ventW 36%
+/// One vent bank's height.
 pub const VENT_BANK_H: i32 = 36;
+/// The vertical gap between vent banks; the odd-family cross seam sits this far above the first.
 pub const VENT_GAP: i32 = 12;
 /// `seamStyle: left:50%; top:0; bottom:33%`.
 pub const SEAM_X: i32 = SPACE_W / 2;
+/// Where the livery seam stops: `bottom: 33%` of the space.
 pub const SEAM_Y_END: i32 = SPACE_H - (SPACE_H * 33 / 100);
+/// How far each corner fastener sits in from its module's edges.
 pub const FASTENER_INSET: i32 = 14;
 
+/// Where [`layout`] put the machined parts, ready to copy into the scene document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Layout {
+    /// The modules, stacked top to bottom.
     pub modules: Vec<Module>,
+    /// The vent banks, stacked below the modules.
     pub vents: Vec<Vent>,
+    /// The livery seam, then the odd-family cross seam when there is one.
     pub seams: Vec<Seam>,
+    /// The first module's four corners, then the two seam fasteners of the deeper rhythm.
     pub fasteners: Vec<Fastener>,
 }
 
+/// Everything [`layout`] varies on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayoutInputs {
+    /// The seed hash the fastener rotations are drawn from.
     pub h: u32,
+    /// Sets the modules' vertical rhythm and the vent direction.
     pub livery_family: u8,
+    /// The greebling family; an odd one adds the cross seam.
     pub panel_family: u8,
+    /// The face every module takes.
     pub module_kind: ModuleKind,
+    /// How many modules to stack; zero lays out none.
     pub module_count: usize,
+    /// How many vent banks to stack below them.
     pub vent_count: usize,
+    /// The cut every fastener takes.
     pub fastener: FastenerKind,
 }
 
-// The draws are `% 90`, so the product always fits.
-#[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+// `index % 8` fits a u32 and the draw is `% 90`, so neither conversion can fail and the
+// fallbacks are never reached. `index % 8` equals the old `index as u32 % 8` for every index,
+// because 8 divides 2^32.
 fn rotation(h: u32, index: usize) -> i32 {
-    let shift = 7 + (index as u32 % 8) * 3;
-    draw(h, shift, 90) as i32
+    let shift = 7 + u32::try_from(index % 8).unwrap_or(0) * 3;
+    i32::try_from(draw(h, shift, 90)).unwrap_or(0)
 }
 
 /// Where the machined parts sit. Pure, and total: a zero count produces an empty vector rather
@@ -377,9 +436,9 @@ pub fn layout(input: &LayoutInputs) -> Layout {
         }
         // The deeper rhythm exposes the seam, so it gets two fasteners of its own.
         if input.livery_family >= 2 {
-            for (index, y) in [120_i32, 480].into_iter().enumerate() {
+            for (index, seam_y) in [120_i32, 480].into_iter().enumerate() {
                 fasteners.push(Fastener {
-                    at: [SEAM_X, y],
+                    at: [SEAM_X, seam_y],
                     kind: input.fastener,
                     rot: rotation(input.h, index + 4),
                 });
