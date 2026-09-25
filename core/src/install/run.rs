@@ -366,7 +366,12 @@ pub fn finish_failed(
         warrant.is_some_and(|warrant| {
             // A staging warrant proves *this process, this session*; §24.7E's root-commit check cannot
             // apply to a partial clone and is not claimed, so no identity is supplied.
-            crate::removal::remove_warranted(&warrant, &crate::removal::HardDelete, None).is_ok()
+            crate::removal::remove_warranted(
+                &warrant,
+                &crate::removal::HardDelete,
+                &crate::analyser::identity::LiveIdentity::Underivable,
+            )
+            .is_ok()
         })
     };
     let _ = removed;

@@ -19,7 +19,7 @@ use std::path::{Component, Path};
 pub use trash::{HardDelete, SystemTrash, Trash, TrashAvailability, TrashRefusal};
 pub use warrant::{SessionNonce, Warrant, WarrantKind, WarrantVariant};
 
-use crate::git::RootCommit;
+use crate::analyser::identity::LiveIdentity;
 use crate::install::staging::STAGING_DIR_NAME;
 
 /// What happened to the bytes, said by whoever removed them.
@@ -33,8 +33,8 @@ pub enum RemovalOutcome {
 
 /// Why a removal did not happen.
 ///
-/// p2-24b adds `IdentityChanged` for §24.7E's root-commit-SHA check, which cannot apply to a
-/// partial clone and is therefore not claimed here.
+/// p2-24b adds `IdentityChanged` for §24.7E's identity check, which cannot apply to a partial
+/// clone and is therefore not claimed here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemovalRefusal {
     /// The warrant's own evidence did not hold. The string names which clause.
@@ -45,11 +45,14 @@ pub enum RemovalRefusal {
     OutsideWarrantedRoot,
     /// The removal was attempted and the platform refused.
     Io(String),
-    /// [p2-24b] §24.7E: the directory is no longer the repository the verdict was computed over.
+    /// [p2-24b] §24.7E: the directory is no longer the repository its row describes.
     IdentityChanged,
 }
 
 /// Remove the one path this warrant authorises.
+///
+/// `identity_now` is the directory's identity re-derived at this moment; a staging warrant
+/// carries no identity guard and its callers pass [`LiveIdentity::Underivable`].
 ///
 /// # Errors
 /// Refuses when the warrant's evidence does not hold, when the target is a symlink, when the
@@ -57,7 +60,7 @@ pub enum RemovalRefusal {
 pub fn remove_warranted(
     warrant: &Warrant,
     destination: &dyn Trash,
-    identity_now: Option<&RootCommit>,
+    identity_now: &LiveIdentity,
 ) -> Result<RemovalOutcome, RemovalRefusal> {
     let path = warrant.path();
     match warrant.kind() {
@@ -88,20 +91,19 @@ pub fn remove_warranted(
         }
         // [p2-24b] §24.7E: identity at the moment of removal, **re-derived, never remembered**.
         //
-        // The root commit and not `head_oid`: a tip moves with every commit, so a guard over it
+        // The lineage and not `head_oid`: a tip moves with every commit, so a guard over it
         // would refuse a working copy the user had merely committed to, and admit one rewound
-        // onto the same tip. The root commit is what makes this repository *this* repository.
+        // onto the same tip. The root set is what makes this repository *this* repository.
         //
         // The re-derivation is the caller's — it needs a git seam this module deliberately does
-        // not hold — so what is checked here is that the two agree. `identity_now` is `None` when
-        // the directory could not be read at all, which is a refusal rather than a match.
+        // not hold — so what is checked here is that it agrees with the **row's** lineage the
+        // warrant carries (§45.6 step 1). An underivable identity is a refusal, never a match.
         WarrantKind::Uninstall {
-            expected_root_commit,
-            ..
+            expected_lineage, ..
         } => match identity_now {
-            Some(actual) if actual.oid == expected_root_commit.oid => {}
-            Some(_) => return Err(RemovalRefusal::IdentityChanged),
-            None => {
+            LiveIdentity::Derived(live) if live == expected_lineage => {}
+            LiveIdentity::Derived(_) => return Err(RemovalRefusal::IdentityChanged),
+            LiveIdentity::Underivable => {
                 return Err(RemovalRefusal::WarrantFailed(
                     "the directory's identity could not be re-derived at removal time",
                 ))

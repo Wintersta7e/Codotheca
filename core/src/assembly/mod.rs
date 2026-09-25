@@ -485,6 +485,7 @@ impl CoreHandler {
                 &self.index,
                 self.git.as_ref(),
                 self.write_git.as_ref(),
+                &crate::removal::SystemTrash,
                 args,
                 now,
             );

@@ -9,10 +9,11 @@
 
 use rusqlite::OptionalExtension;
 
+use crate::analyser::identity::LiveIdentity;
 use crate::debt::store::{DebtStore, SqliteDebtStore};
 use crate::proto::dispatch::CommandFailure;
 use crate::protocol::{LocationId, ProjectId, UninstallDisposition};
-use crate::removal::{remove_warranted, RemovalOutcome, SystemTrash, Warrant};
+use crate::removal::{remove_warranted, RemovalOutcome, Trash, Warrant};
 use crate::uninstall::preflight::{compute_verdict, VerdictInputs};
 
 /// §24.6b's ten columns: they describe a directory that no longer exists.
@@ -51,16 +52,18 @@ pub struct Removed {
 ///
 /// # Errors
 /// Refuses when the freshly computed verdict is not `safe`, when the directory's identity no
-/// longer matches, or when the removal itself fails.
+/// longer matches its row, or when the removal itself fails.
 pub fn uninstall_location(
     tx: &rusqlite::Transaction<'_>,
     inputs: &VerdictInputs,
     warrant: &Warrant,
-    identity_now: Option<&crate::git::RootCommit>,
+    trash: &dyn Trash,
+    identity_now: &LiveIdentity,
 ) -> Result<Removed, CommandFailure> {
     // 2. The same function the pre-flight calls, not a copy. (1 — the row read and the identity
     //    re-derivation — is the caller's, because it needs the git seam this module does not hold;
-    //    its result arrives as `identity_now` and is checked inside `remove_warranted`.)
+    //    its result arrives as `identity_now` and is checked against the warrant's row lineage
+    //    inside `remove_warranted`.)
     let (verdict, _seal) = compute_verdict(inputs)?;
 
     // 3. Not safe ends it. `unknown` ends it too: an absence is not a permission.
@@ -73,7 +76,7 @@ pub fn uninstall_location(
 
     // 4. The one warranted primitive. §24.7F's Recycle Bin, not a hard delete: a working copy is
     //    the user's, and a hard delete is permitted only for bytes this process wrote itself.
-    let outcome = remove_warranted(warrant, &SystemTrash, identity_now)
+    let outcome = remove_warranted(warrant, trash, identity_now)
         .map_err(|refusal| CommandFailure::protocol(format!("uninstall refused: {refusal:?}")))?;
 
     // 5. One transaction: `removed_at` and the ten columns commit together, or neither does. A

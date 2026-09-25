@@ -351,6 +351,32 @@ pub(crate) fn test_git_lists_key(key: &str) -> bool {
         .any(|line| line.trim().eq_ignore_ascii_case(key))
 }
 
+/// `project.lineage_key` for the repository at `at`, as the scan writes it: `probe_identity`
+/// through `evidence_from`. A fixture row seeded with anything else is a different repository to
+/// §45.6 step 1.
+pub(crate) fn scan_lineage(git: &dyn codotheca_core::git::GitBackend, at: &Path) -> Option<String> {
+    let cancel = codotheca_core::cancel::CancelToken::new();
+    let ctx = codotheca_core::git::JobContext::new(
+        codotheca_core::git::JobClass::Interactive,
+        &cancel,
+        None,
+    );
+    let repo = codotheca_core::git::RepoHandle::resolve(
+        at,
+        codotheca_core::git::StoreKey::new("store"),
+        codotheca_core::mount::StoreClass::Local,
+    )
+    .expect("repo");
+    let probe = codotheca_core::identity::probe::probe_identity(
+        git,
+        &repo,
+        codotheca_core::index::path::native_platform(),
+        &ctx,
+    )
+    .expect("probe");
+    codotheca_core::identity::decide::evidence_from(&probe).lineage_key
+}
+
 // ---------------------------------------------------------------------------
 // §47.9 C — D10's fixture world, the hostile write profile, the four routes and the comparator.
 // ---------------------------------------------------------------------------

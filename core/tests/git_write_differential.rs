@@ -854,14 +854,17 @@ fn every_configured_remote_is_read_one_at_a_time() {
     let index = std::sync::Arc::new(std::sync::Mutex::new(
         codotheca_core::index::Index::open_at(dir.path(), 1_750_000_000).expect("index"),
     ));
+    // The row's lineage is the scan's, so §45.6 step 1 matches and the remotes are read.
+    let lineage =
+        support::git_world::scan_lineage(&support::git_world::system_git(&repo), repo.path());
     let location = {
         let mut guard = index.lock().expect("index");
         guard
             .with_tx(|tx| {
                 tx.execute(
-                    "INSERT INTO project (name, seed_basename, created_at, updated_at)
-                     VALUES ('widget', 'widget', 0, 0)",
-                    [],
+                    "INSERT INTO project (name, seed_basename, lineage_key, created_at, updated_at)
+                     VALUES ('widget', 'widget', ?1, 0, 0)",
+                    [&lineage],
                 )?;
                 let project = tx.last_insert_rowid();
                 tx.execute(

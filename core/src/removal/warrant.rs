@@ -12,7 +12,6 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::git::RootCommit;
 use crate::protocol::{InstallRunId, LocationId};
 use crate::uninstall::VerdictSeal;
 
@@ -87,17 +86,22 @@ pub enum WarrantVariant {
 /// checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WarrantKind {
-    /// §24.7E: a working copy, identified at the **moment of removal** and never remembered.
+    /// §24.7E: a working copy, identified at the **moment of removal** against the **row**.
     ///
-    /// **The root commit, not `head_oid`.** A tip moves with every commit; the root commit is
-    /// what makes this repository *this* repository. A guard over the tip would refuse a working
-    /// copy the user had merely committed to, and admit one that had been rewound onto the same
-    /// tip — it is a position, not an identity.
+    /// **The lineage, not `head_oid`.** A tip moves with every commit; the root set is what
+    /// makes this repository *this* repository. A guard over the tip would refuse a working copy
+    /// the user had merely committed to, and admit one that had been rewound onto the same tip —
+    /// it is a position, not an identity.
+    ///
+    /// [p4] **Expected from the row, never from the copy** (§45.6 step 1). Phase 2 re-derived
+    /// the expected identity from the directory it was about to compare, so a replaced directory
+    /// matched itself (§37.8).
     Uninstall {
         /// The row this warrant is for.
         location_id: LocationId,
-        /// §24.7E's expected identity, re-derived from the directory at removal time.
-        expected_root_commit: RootCommit,
+        /// `project.lineage_key` as read from the row in this call. `None` matches only a live
+        /// repository with no commits that is not shallow.
+        expected_lineage: Option<String>,
         /// The verdict this removal was authorised by. **In-core only**: it never crossed a call
         /// boundary to get here, which is what stops a renderer replaying one.
         verdict: VerdictSeal,
@@ -163,18 +167,18 @@ impl Warrant {
 
     /// Build an uninstall warrant. **There is no constructor taking a bare path** (R63): the
     /// path comes from the `location` row this warrant is for, and the caller cannot substitute
-    /// another.
+    /// another. `expected_lineage` is the same row's `project.lineage_key`.
     #[must_use]
     pub(crate) const fn for_uninstall(
         location_id: LocationId,
         path: PathBuf,
-        expected_root_commit: RootCommit,
+        expected_lineage: Option<String>,
         verdict: VerdictSeal,
     ) -> Self {
         Self {
             kind: WarrantKind::Uninstall {
                 location_id,
-                expected_root_commit,
+                expected_lineage,
                 verdict,
             },
             path,
@@ -187,10 +191,10 @@ impl Warrant {
     pub const fn for_uninstall_in_test(
         location_id: LocationId,
         path: PathBuf,
-        expected_root_commit: RootCommit,
+        expected_lineage: Option<String>,
         verdict: VerdictSeal,
     ) -> Self {
-        Self::for_uninstall(location_id, path, expected_root_commit, verdict)
+        Self::for_uninstall(location_id, path, expected_lineage, verdict)
     }
 
     /// `for_staging` for the audit, which lives outside this crate.

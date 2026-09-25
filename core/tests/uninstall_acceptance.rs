@@ -17,11 +17,11 @@
 
 use std::path::{Path, PathBuf};
 
-use codotheca_core::git::RootCommit;
+use codotheca_core::analyser::identity::LiveIdentity;
 use codotheca_core::protocol::{
     BackupState, LocationId, UninstallBlocker, UninstallDisposition, UninstallVerdict,
 };
-use codotheca_core::removal::{Warrant, WarrantVariant};
+use codotheca_core::removal::{SystemTrash, Warrant, WarrantVariant};
 use codotheca_core::uninstall::gates::RemoteOutcome;
 use codotheca_core::uninstall::verdict::VerdictSeal;
 use codotheca_core::uninstall::{
@@ -29,12 +29,9 @@ use codotheca_core::uninstall::{
     StashTruth, VerdictInputs,
 };
 
-fn identity() -> RootCommit {
-    RootCommit {
-        oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
-        committed_at: 0,
-        tz_offset_min: 0,
-    }
+/// The row's lineage every warrant here expects; `LiveIdentity::Derived` of it is a match.
+fn lineage() -> String {
+    "b".repeat(64)
 }
 
 /// A copy that clears every gate. Each test below spoils exactly one thing, so a failure names
@@ -346,7 +343,7 @@ fn an_unknown_verdict_never_reaches_the_filesystem() {
     let warrant = Warrant::for_uninstall_in_test(
         location,
         copy.clone(),
-        identity(),
+        Some(lineage()),
         VerdictSeal::of(&[], UninstallDisposition::Safe),
     );
 
@@ -354,7 +351,14 @@ fn an_unknown_verdict_never_reaches_the_filesystem() {
     let binding = index.index();
     let tx = binding.conn().unchecked_transaction().expect("tx");
     assert!(
-        uninstall_location(&tx, &inputs, &warrant, Some(&identity())).is_err(),
+        uninstall_location(
+            &tx,
+            &inputs,
+            &warrant,
+            &SystemTrash,
+            &LiveIdentity::Derived(Some(lineage()))
+        )
+        .is_err(),
         "a forged seal must not outrank the core's own recomputation"
     );
     assert!(copy.exists(), "the copy is still on disk");

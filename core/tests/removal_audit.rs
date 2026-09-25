@@ -22,6 +22,7 @@
 
 use std::path::{Path, PathBuf};
 
+use codotheca_core::analyser::identity::LiveIdentity;
 use codotheca_core::install::staging::{staging_path_for, staging_warrant_for, STAGING_DIR_NAME};
 use codotheca_core::removal::{
     remove_warranted, HardDelete, RemovalOutcome, RemovalRefusal, SessionNonce, Warrant,
@@ -330,12 +331,12 @@ fn the_warrant_variant_list_is_two_now_that_uninstall_has_landed() {
 
 /// §24.7E, and the reason the two warrants are discriminated rather than merged.
 ///
-/// A working copy whose root commit is not the one the verdict was computed over is **refused**.
-/// The root commit and not `head_oid`: a tip moves with every commit, so a guard over it would
-/// refuse a copy the user had merely committed to, and admit one rewound onto the same tip.
+/// A working copy whose lineage is not the **row's** is **refused**. The lineage and not
+/// `head_oid`: a tip moves with every commit, so a guard over it would refuse a copy the user had
+/// merely committed to, and admit one rewound onto the same tip. [p4] The warrant carries the
+/// row's lineage (§45.6 step 1); the live identity is what `remove_warranted` is handed.
 #[test]
 fn an_uninstall_warrant_whose_identity_changed_is_refused() {
-    use codotheca_core::git::RootCommit;
     use codotheca_core::protocol::{LocationId, UninstallDisposition};
     use codotheca_core::uninstall::VerdictSeal;
 
@@ -343,11 +344,7 @@ fn an_uninstall_warrant_whose_identity_changed_is_refused() {
     let copy = dir.path().join("widget");
     std::fs::create_dir_all(copy.join("src")).expect("mkdir");
 
-    let expected = RootCommit {
-        oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
-        committed_at: 0,
-        tz_offset_min: 0,
-    };
+    let expected = Some("a".repeat(64));
     let warrant = Warrant::for_uninstall_in_test(
         LocationId(1),
         copy.clone(),
@@ -356,19 +353,24 @@ fn an_uninstall_warrant_whose_identity_changed_is_refused() {
     );
 
     // A different repository at the same path.
-    let elsewhere = RootCommit {
-        oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
-        ..expected
-    };
     assert_eq!(
-        remove_warranted(&warrant, &HardDelete, Some(&elsewhere)),
+        remove_warranted(
+            &warrant,
+            &HardDelete,
+            &LiveIdentity::Derived(Some("b".repeat(64)))
+        ),
+        Err(RemovalRefusal::IdentityChanged)
+    );
+    // A repository with no commits is not the row's either: `None` matches only a `None` row.
+    assert_eq!(
+        remove_warranted(&warrant, &HardDelete, &LiveIdentity::Derived(None)),
         Err(RemovalRefusal::IdentityChanged)
     );
     assert!(copy.exists(), "a refused removal removes nothing");
 
     // No identity at all is a refusal, never a match: a directory that could not be read is not
     // a directory that was verified.
-    match remove_warranted(&warrant, &HardDelete, None) {
+    match remove_warranted(&warrant, &HardDelete, &LiveIdentity::Underivable) {
         Err(RemovalRefusal::WarrantFailed(clause)) => {
             assert!(clause.contains("re-derived"), "{clause}");
         }
@@ -378,7 +380,7 @@ fn an_uninstall_warrant_whose_identity_changed_is_refused() {
 
     // And the matching identity removes it.
     assert_eq!(
-        remove_warranted(&warrant, &HardDelete, Some(&expected)),
+        remove_warranted(&warrant, &HardDelete, &LiveIdentity::Derived(expected)),
         Ok(RemovalOutcome::HardDeleted)
     );
     assert!(!copy.exists());
@@ -388,7 +390,6 @@ fn an_uninstall_warrant_whose_identity_changed_is_refused() {
 /// staging warrant gets, because a link at a working copy's path aims somewhere else entirely.
 #[test]
 fn an_uninstall_warrant_on_a_symlink_is_refused_without_following_it() {
-    use codotheca_core::git::RootCommit;
     use codotheca_core::protocol::{LocationId, UninstallDisposition};
     use codotheca_core::uninstall::VerdictSeal;
 
@@ -406,11 +407,7 @@ fn an_uninstall_warrant_on_a_symlink_is_refused_without_following_it() {
         return;
     }
 
-    let identity = RootCommit {
-        oid: "cccccccccccccccccccccccccccccccccccccccc".to_owned(),
-        committed_at: 0,
-        tz_offset_min: 0,
-    };
+    let identity = Some("c".repeat(64));
     let warrant = Warrant::for_uninstall_in_test(
         LocationId(1),
         link,
@@ -418,7 +415,7 @@ fn an_uninstall_warrant_on_a_symlink_is_refused_without_following_it() {
         VerdictSeal::of(&[], UninstallDisposition::Safe),
     );
     assert_eq!(
-        remove_warranted(&warrant, &HardDelete, Some(&identity)),
+        remove_warranted(&warrant, &HardDelete, &LiveIdentity::Derived(identity)),
         Err(RemovalRefusal::SymlinkedPath)
     );
     assert!(
@@ -465,7 +462,7 @@ fn a_path_outside_the_warranted_root_is_refused() {
     // A forged root: the escape a lexical parent comparison would have allowed.
     let forged = Warrant::for_staging_in_test(staging_root, "..", SessionNonce::current());
     assert_eq!(
-        remove_warranted(&forged, &HardDelete, None),
+        remove_warranted(&forged, &HardDelete, &LiveIdentity::Underivable),
         Err(RemovalRefusal::OutsideWarrantedRoot)
     );
     assert!(real.exists(), "the working copy must still be there");
@@ -479,7 +476,7 @@ fn a_root_that_is_not_a_staging_directory_is_refused() {
 
     let warrant =
         Warrant::for_staging_in_test(not_staging.clone(), "widget", SessionNonce::current());
-    match remove_warranted(&warrant, &HardDelete, None) {
+    match remove_warranted(&warrant, &HardDelete, &LiveIdentity::Underivable) {
         Err(RemovalRefusal::WarrantFailed(clause)) => {
             assert!(clause.contains("staging"), "{clause}");
         }
@@ -499,7 +496,7 @@ fn a_warrant_from_another_session_is_refused() {
         "widget",
         SessionNonce::mint_for_test(),
     );
-    match remove_warranted(&stale, &HardDelete, None) {
+    match remove_warranted(&stale, &HardDelete, &LiveIdentity::Underivable) {
         Err(RemovalRefusal::WarrantFailed(clause)) => {
             assert!(clause.contains("run of the core"), "{clause}");
         }
@@ -534,7 +531,7 @@ fn a_symlinked_target_is_refused_without_being_followed() {
 
     let warrant = Warrant::for_staging_in_test(staging_root, "widget", SessionNonce::current());
     assert_eq!(
-        remove_warranted(&warrant, &HardDelete, None),
+        remove_warranted(&warrant, &HardDelete, &LiveIdentity::Underivable),
         Err(RemovalRefusal::SymlinkedPath)
     );
     assert!(
@@ -551,7 +548,7 @@ fn a_warranted_staging_directory_is_hard_deleted() {
 
     let warrant = warrant_for(&staging_root, "widget");
     assert_eq!(
-        remove_warranted(&warrant, &HardDelete, None),
+        remove_warranted(&warrant, &HardDelete, &LiveIdentity::Underivable),
         Ok(RemovalOutcome::HardDeleted),
         "a partial clone is never reported as recoverable"
     );

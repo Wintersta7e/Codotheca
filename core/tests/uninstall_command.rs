@@ -9,20 +9,17 @@
 
 use std::path::{Path, PathBuf};
 
-use codotheca_core::git::RootCommit;
+use codotheca_core::analyser::identity::LiveIdentity;
 use codotheca_core::protocol::{LocationId, UninstallBlocker, UninstallDisposition};
-use codotheca_core::removal::{RemovalOutcome, Warrant};
+use codotheca_core::removal::{RemovalOutcome, SystemTrash, Warrant};
 use codotheca_core::uninstall::command::{cleared_columns, uninstall_location};
 use codotheca_core::uninstall::gates::RemoteOutcome;
 use codotheca_core::uninstall::verdict::VerdictSeal;
 use codotheca_core::uninstall::{compute_verdict, LocationSnapshot, VerdictInputs};
 
-fn identity() -> RootCommit {
-    RootCommit {
-        oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
-        committed_at: 0,
-        tz_offset_min: 0,
-    }
+/// The row's lineage every warrant here expects; `LiveIdentity::Derived` of it is a match.
+fn lineage() -> String {
+    "a".repeat(64)
 }
 
 /// A copy that clears every gate: observed, not shallow, under a root, fully pushed, clean,
@@ -117,13 +114,19 @@ fn a_copy_that_changed_after_the_preflight_is_refused_and_survives() {
     let warrant = Warrant::for_uninstall_in_test(
         LocationId(1),
         copy.clone(),
-        identity(),
+        Some(lineage()),
         VerdictSeal::of(&[], UninstallDisposition::Safe),
     );
 
     let _guard = codotheca_core::proto::txguard::TxGuard::enter();
     let tx = db.conn().unchecked_transaction().expect("tx");
-    let refused = uninstall_location(&tx, &after, &warrant, Some(&identity()));
+    let refused = uninstall_location(
+        &tx,
+        &after,
+        &warrant,
+        &SystemTrash,
+        &LiveIdentity::Derived(Some(lineage())),
+    );
 
     assert!(
         refused.is_err(),
@@ -164,12 +167,19 @@ fn a_successful_removal_keeps_the_row_and_nulls_the_ten_columns() {
     let warrant = Warrant::for_uninstall_in_test(
         location,
         copy,
-        identity(),
+        Some(lineage()),
         VerdictSeal::of(&[], UninstallDisposition::Safe),
     );
 
     let tx = conn.unchecked_transaction().expect("tx");
-    let removed = uninstall_location(&tx, &inputs, &warrant, Some(&identity())).expect("removed");
+    let removed = uninstall_location(
+        &tx,
+        &inputs,
+        &warrant,
+        &SystemTrash,
+        &LiveIdentity::Derived(Some(lineage())),
+    )
+    .expect("removed");
     tx.commit().expect("commit");
 
     assert_eq!(removed.location, location);
@@ -384,7 +394,7 @@ fn debt_warrant(location: LocationId, copy: PathBuf) -> Warrant {
     Warrant::for_uninstall_in_test(
         location,
         copy,
-        identity(),
+        Some(lineage()),
         VerdictSeal::of(&[], UninstallDisposition::Safe),
     )
 }
@@ -412,7 +422,8 @@ fn a_rolled_back_removal_marks_no_debt_item() {
         &tx,
         &inputs,
         &debt_warrant(location, copy),
-        Some(&identity()),
+        &SystemTrash,
+        &LiveIdentity::Derived(Some(lineage())),
     )
     .expect("removed");
     tx.rollback().expect("rollback");
@@ -455,7 +466,8 @@ fn a_removal_marks_the_projects_debt_items_unverified() {
         &tx,
         &inputs,
         &debt_warrant(location, copy),
-        Some(&identity()),
+        &SystemTrash,
+        &LiveIdentity::Derived(Some(lineage())),
     )
     .expect("removed");
     tx.commit().expect("commit");

@@ -20,8 +20,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::Value;
 
+use crate::analyser::identity::{identify, live_identity, IdentityOutcome, LiveIdentity};
 use crate::analyser::remote::{GitRemoteVerifier, RemoteReading, RemoteVerifier as _};
-use crate::git::{GitBackend, JobClass, JobContext, RepoHandle, StoreKey};
+use crate::analyser::{read_location_row, LocationRow};
+use crate::git::{GitBackend, JobClass, JobContext, RepoHandle};
 use crate::gitw::backend::MutatingGit;
 use crate::gitw::intent::GIT_INVOCATION_DEADLINE;
 use crate::index::Index;
@@ -29,65 +31,37 @@ use crate::mount::StoreClass;
 use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::protocol::{
     LocationDetail, LocationId, LocationsUninstallArgs, LocationsUninstallPreflightArgs,
+    UninstallBlocker,
 };
+use crate::removal::Trash;
 use crate::uninstall::gates::{self, RemoteOutcome};
-use crate::uninstall::preflight::{compute_verdict, LocationSnapshot, VerdictInputs};
+use crate::uninstall::preflight::{
+    compute_verdict, stopped_verdict, LocationSnapshot, VerdictInputs,
+};
 use crate::uninstall::{uninstall_location, unique};
 
 fn internal(e: impl std::fmt::Display) -> CommandFailure {
     CommandFailure::internal(e.to_string())
 }
 
-/// One row, named rather than positional. A seven-tuple is `type_complexity` to clippy and seven
-/// positions to keep in order to a reader.
-#[derive(Debug, Clone)]
-struct RowRead {
-    path_bytes: Vec<u8>,
-    refstate_observed_at: Option<i64>,
-    worktree_observed_at: Option<i64>,
-    removed_at: Option<i64>,
-    is_shallow: bool,
-    trusted: bool,
-    store_key: String,
-}
-
 /// Everything read under the guard, so the guard can be dropped before the network.
 #[derive(Debug, Clone)]
 struct RowFacts {
-    snapshot: LocationSnapshot,
+    row: LocationRow,
     roots: Vec<PathBuf>,
     live_session: bool,
-    store: StoreKey,
-    trusted: bool,
 }
 
-/// The one read. **`is_shallow` comes from `project`** — §24.7B's gate is about the graph, and
-/// the graph belongs to the repository rather than to one checkout of it.
+/// The one row read, the scan roots and the live session, in one read transaction.
 // **A read transaction, not a bare connection**: `gate_live_session` takes a `&Transaction`,
 // and every rusqlite transaction in this core opens through `TxGuard`.
 fn read_row(index: &mut Index, id: LocationId) -> Result<RowFacts, CommandFailure> {
     index
         .with_tx(|tx| {
-            // Mapped straight into the snapshot rather than through a seven-tuple, which clippy
-            // reads as `type_complexity` and a reader reads as seven positions to keep in order.
-            let row = tx.query_row(
-                "SELECT l.path_bytes, l.refstate_observed_at, l.worktree_observed_at, l.removed_at,
-                    p.is_shallow, l.trusted_at, l.store_key
-               FROM location l JOIN project p ON p.id = l.project_id
-              WHERE l.id = ?1",
-                [id.0],
-                |r| {
-                    Ok(RowRead {
-                        path_bytes: r.get(0)?,
-                        refstate_observed_at: r.get(1)?,
-                        worktree_observed_at: r.get(2)?,
-                        removed_at: r.get(3)?,
-                        is_shallow: r.get::<_, i64>(4)? != 0,
-                        trusted: r.get::<_, Option<i64>>(5)?.is_some(),
-                        store_key: r.get(6)?,
-                    })
-                },
-            )?;
+            let row = match read_location_row(tx, id) {
+                Ok(row) => row,
+                Err(failure) => return Ok(Err(failure)),
+            };
 
             // Every configured root, enabled or not: §24.7D refuses a path that **is** a scan root or
             // sits outside every one of them, and a disabled root is still a root the user named.
@@ -101,27 +75,25 @@ fn read_row(index: &mut Index, id: LocationId) -> Result<RowFacts, CommandFailur
 
             let live_session = gates::gate_live_session(tx, id)?.is_some();
 
-            Ok(RowFacts {
-                snapshot: LocationSnapshot {
-                    id,
-                    path: crate::paths::path_from_bytes(&row.path_bytes),
-                    refstate_observed_at: row.refstate_observed_at,
-                    worktree_observed_at: row.worktree_observed_at,
-                    is_shallow: row.is_shallow,
-                    removed_at: row.removed_at,
-                },
+            Ok(Ok(RowFacts {
+                row,
                 roots,
                 live_session,
-                store: StoreKey::new(row.store_key),
-                trusted: row.trusted,
-            })
+            }))
         })
-        .map_err(|e| match e {
-            crate::index::IndexError::Sqlite(rusqlite::Error::QueryReturnedNoRows) => {
-                CommandFailure::protocol(format!("no location {}", id.0))
-            }
-            other => internal(other),
-        })
+        .map_err(internal)?
+}
+
+/// The directory, re-resolved from disk (§24.7E) — never reconstructed from the row.
+fn resolve(row: &LocationRow) -> Option<RepoHandle> {
+    let mut repo = RepoHandle::resolve(&row.path, row.store.clone(), StoreClass::Local).ok()?;
+    repo.trusted = row.trusted;
+    Some(repo)
+}
+
+/// A context carrying the per-invocation deadline.
+const fn interactive(cancel: &crate::cancel::CancelToken) -> JobContext<'_> {
+    JobContext::new(JobClass::Interactive, cancel, Some(GIT_INVOCATION_DEADLINE))
 }
 
 /// §47.4: **verified, not believed** — every configured remote, one at a time, through the
@@ -177,49 +149,66 @@ fn verify_remotes(
     }
 }
 
-/// The uniqueness analysis and the remote check, both off the index guard.
+/// What the analysis produced: the inputs to the verdict, or the blocker step 1 stopped at.
+enum Assembled {
+    Inputs(VerdictInputs),
+    Stopped(UninstallBlocker),
+}
+
+/// §45.6 step 1, then the uniqueness analysis and the remote check, all off the index guard.
 fn assemble(
     facts: &RowFacts,
     git: &dyn GitBackend,
     write_git: &dyn MutatingGit,
     now: i64,
-) -> VerdictInputs {
+) -> Assembled {
     let cancel = crate::cancel::CancelToken::new();
-    let ctx = JobContext::new(
-        JobClass::Interactive,
-        &cancel,
-        Some(GIT_INVOCATION_DEADLINE),
-    );
+    let ctx = interactive(&cancel);
+    let row = &facts.row;
+    let mut snapshot = LocationSnapshot {
+        id: row.id,
+        path: row.path.clone(),
+        refstate_observed_at: row.refstate_observed_at,
+        worktree_observed_at: row.worktree_observed_at,
+        is_shallow: false,
+        removed_at: row.removed_at,
+    };
 
-    // §24.7E begins here: the directory is **re-resolved from disk**, never reconstructed from
-    // the row. A handle that could not be resolved is a copy nothing can reason about, and the
+    // A handle that could not be resolved is a copy nothing can reason about, and the
     // analyser's `NeverObserved` is the honest answer rather than an empty blocker list.
-    let Ok(mut repo) =
-        RepoHandle::resolve(&facts.snapshot.path, facts.store.clone(), StoreClass::Local)
-    else {
-        return VerdictInputs {
-            snapshot: facts.snapshot.clone(),
+    let Some(repo) = resolve(row) else {
+        return Assembled::Inputs(VerdictInputs {
+            snapshot,
             roots: facts.roots.clone(),
             remote: RemoteOutcome::Unreachable,
-            unique: vec![crate::protocol::UninstallBlocker::NeverObserved],
+            unique: vec![UninstallBlocker::NeverObserved],
             live_session: facts.live_session,
             now,
-        };
+        });
     };
-    repo.trusted = facts.trusted;
+
+    // §45.6 step 1: the live lineage against the **row's**, read in this call. A mismatch or a
+    // failed derivation stops the analysis here; a live shallow copy continues as
+    // `shallow_clone` (D-2), read live rather than from `project.is_shallow` (§45.7).
+    match identify(git, &repo, row.lineage_key.as_deref(), &ctx) {
+        IdentityOutcome::Match => {}
+        IdentityOutcome::Shallow => snapshot.is_shallow = true,
+        IdentityOutcome::Mismatch => return Assembled::Stopped(UninstallBlocker::RefusedPath),
+        IdentityOutcome::Unreadable => return Assembled::Stopped(UninstallBlocker::RefsUnreadable),
+    }
 
     let mut blockers = unique::analyse_refs(&repo, git, &ctx);
     blockers.extend(unique::analyse_worktree(&repo, git, &ctx));
     blockers.extend(unique::analyse_nested(&repo, git, &ctx, 0));
 
-    VerdictInputs {
-        snapshot: facts.snapshot.clone(),
+    Assembled::Inputs(VerdictInputs {
+        snapshot,
         roots: facts.roots.clone(),
         remote: verify_remotes(&repo, git, write_git, &ctx),
         unique: blockers,
         live_session: facts.live_session,
         now,
-    }
+    })
 }
 
 /// §24.7's pre-flight. **Unprivileged, and not callable on hover** — its only write is objects,
@@ -240,8 +229,10 @@ pub fn handle_preflight_off_lock(
         let mut guard = index.lock().unwrap_or_else(PoisonError::into_inner);
         read_row(&mut guard, a.location_id)?
     };
-    let inputs = assemble(&facts, git, write_git, now);
-    let (verdict, _seal) = compute_verdict(&inputs)?;
+    let (verdict, _seal) = match assemble(&facts, git, write_git, now) {
+        Assembled::Inputs(inputs) => compute_verdict(&inputs)?,
+        Assembled::Stopped(blocker) => stopped_verdict(blocker, &facts.row.path, now),
+    };
     serde_json::to_value(verdict).map_err(internal)
 }
 
@@ -258,6 +249,7 @@ pub fn handle_uninstall_off_lock(
     index: &Arc<Mutex<Index>>,
     git: &dyn GitBackend,
     write_git: &dyn MutatingGit,
+    trash: &dyn Trash,
     args: Value,
     now: i64,
 ) -> Result<Value, CommandFailure> {
@@ -266,40 +258,36 @@ pub fn handle_uninstall_off_lock(
         let mut guard = index.lock().unwrap_or_else(PoisonError::into_inner);
         read_row(&mut guard, a.location_id)?
     };
-    let inputs = assemble(&facts, git, write_git, now);
-
-    // §24.7E: the **root-commit SHA**, re-derived from the directory at removal time and never
-    // remembered. `head_oid` is a tip — a position, not an identity — and a guard over it would
-    // refuse a copy the user had merely committed to and admit one rewound onto the same tip.
-    let cancel = crate::cancel::CancelToken::new();
-    let ctx = JobContext::new(
-        JobClass::Interactive,
-        &cancel,
-        Some(GIT_INVOCATION_DEADLINE),
-    );
-    let identity_now =
-        RepoHandle::resolve(&facts.snapshot.path, facts.store.clone(), StoreClass::Local)
-            .ok()
-            .and_then(|repo| git.root_commits(&repo, &ctx).ok())
-            .and_then(|roots| roots.into_iter().next());
+    let inputs = match assemble(&facts, git, write_git, now) {
+        Assembled::Inputs(inputs) => inputs,
+        Assembled::Stopped(blocker) => {
+            let (verdict, _seal) = stopped_verdict(blocker, &facts.row.path, now);
+            return Err(CommandFailure::protocol(format!(
+                "uninstall refused: {:?} — {:?}",
+                verdict.disposition, verdict.blockers
+            )));
+        }
+    };
 
     // **The seal comes from the same computation the warrant is built on**, and
     // `uninstall_location` recomputes once more as the authority. Three computations at three
     // freshnesses would be the drift this module exists to refuse, so this is the only one here.
     let (_verdict, seal) = compute_verdict(&inputs)?;
-    let expected = identity_now.clone().ok_or_else(|| {
-        // §24.7E: no re-derived identity is nothing to match the row against, and an unmatched
-        // identity is a refusal rather than a removal performed on trust.
-        CommandFailure::protocol(
-            "uninstall refused: the directory's root commit could not be re-derived".to_owned(),
-        )
-    })?;
+
+    // §24.7E against the **row** (§45.6 step 1): the warrant expects the row's
+    // `project.lineage_key`, and the identity re-derived from the directory at removal time is
+    // compared with it inside `remove_warranted`. Phase 2 built `expected` from the directory it
+    // then checked, so a replaced directory matched itself (§37.8).
     let warrant = crate::removal::Warrant::for_uninstall(
         inputs.snapshot.id,
         inputs.snapshot.path.clone(),
-        expected,
+        facts.row.lineage_key.clone(),
         seal,
     );
+    let cancel = crate::cancel::CancelToken::new();
+    let identity_now = resolve(&facts.row).map_or(LiveIdentity::Underivable, |repo| {
+        live_identity(git, &repo, &interactive(&cancel))
+    });
 
     // **The refusal is carried out as a value, not flattened into an `IndexError`.** §2.2's code
     // is the whole answer here — a refused removal is `PROTOCOL`, and a retry is pointless —
@@ -317,7 +305,8 @@ pub fn handle_uninstall_off_lock(
                 tx,
                 &inputs,
                 &warrant,
-                identity_now.as_ref(),
+                trash,
+                &identity_now,
             ))
         })
         .map_err(internal)??;

@@ -4,7 +4,7 @@
 //! freshnesses is the drift defect this project has already paid for four times, and on a safety
 //! verdict it would be the difference between refusing a removal and performing one.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::proto::dispatch::CommandFailure;
 use crate::protocol::{LocationId, TrashRefusalKind, UninstallBlocker, UninstallVerdict};
@@ -79,20 +79,49 @@ pub fn compute_verdict(
     blockers.sort_unstable_by_key(|b| format!("{b:?}"));
     blockers.dedup();
 
+    Ok(verdict_of(
+        blockers,
+        verification.verified_at,
+        &inputs.snapshot.path,
+        inputs.now,
+    ))
+}
+
+/// The verdict when §45.6 step 1 stopped the analysis.
+///
+/// `refused_path` for a directory that is no longer the row's repository, `refs_unreadable` for
+/// one whose identity could not be derived. **Nothing after step 1 ran**, so the one blocker is
+/// the whole list.
+#[must_use]
+pub fn stopped_verdict(
+    blocker: UninstallBlocker,
+    path: &Path,
+    now: i64,
+) -> (UninstallVerdict, VerdictSeal) {
+    verdict_of(vec![blocker], None, path, now)
+}
+
+/// Fold `blockers` into the verdict and its seal.
+fn verdict_of(
+    blockers: Vec<UninstallBlocker>,
+    remote_verified_at: Option<i64>,
+    path: &Path,
+    now: i64,
+) -> (UninstallVerdict, VerdictSeal) {
     let disposition = fold_disposition(&blockers);
     let seal = VerdictSeal::of(&blockers, disposition);
 
     // §24.7F: the copy says what will happen **before the click**. §46.7: the reason and the
     // boolean come from one reading, so `trashAvailable` cannot disagree with `trashRefusal`.
-    let trash_refusal = trash_refusal_of(&SystemTrash.availability(&inputs.snapshot.path));
+    let trash_refusal = trash_refusal_of(&SystemTrash.availability(path));
 
-    Ok((
+    (
         UninstallVerdict {
             disposition,
             blockers,
-            remote_verified_at: verification.verified_at,
+            remote_verified_at,
             trash_available: trash_refusal.is_none(),
-            computed_at: inputs.now,
+            computed_at: now,
             // §45.12's two fields are filled by the analyser's worktree and nested steps. Until
             // those exist nothing is itemised here, and `precious: None` says *not enumerated*,
             // never *none*.
@@ -101,7 +130,7 @@ pub fn compute_verdict(
             trash_refusal,
         },
         seal,
-    ))
+    )
 }
 
 /// §46.7's wire reason for one availability reading.
