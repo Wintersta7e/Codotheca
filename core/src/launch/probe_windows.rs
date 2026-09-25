@@ -289,7 +289,7 @@ mod tests {
         let bytes = shell_link(r"C:\Apps\code.exe");
         assert_eq!(
             parse_shell_link_target(&bytes),
-            Some(std::path::PathBuf::from(r"C:\Apps\code.exe"))
+            Some(PathBuf::from(r"C:\Apps\code.exe"))
         );
     }
 
