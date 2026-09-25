@@ -321,10 +321,7 @@ pub fn settle_advisory_items(
         // at the producer's other callers.
         let before = crate::restoration::LayerValues::read(tx, project).ok();
         let swept = sync_advisory_items(tx, project, None, now, &SqliteDebtStore)?;
-        let subject = crate::index::subject::subject_for_project(tx, project)?
-            .map(|s| s.to_key())
-            .unwrap_or_default();
-        crate::debt::xp::pay_debt_day(tx, project, &subject, &swept.effect, now, tz_offset_min)?;
+        crate::debt::xp::pay_debt_day(tx, project, &swept.effect, now, tz_offset_min)?;
         if let Some(before) = before {
             if let Some(delta) = crate::restoration::record_after_write(
                 tx,

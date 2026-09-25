@@ -17,6 +17,7 @@ use codotheca_core::debt::xp::{debt_day_dedupe_key, pay_debt_day};
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::subject::ProjectSubject;
 use codotheca_core::index::{open_connection, Index};
+use codotheca_core::jobs::j4_history::local_date;
 use codotheca_core::protocol::{DebtScoring, DebtSource, ProjectId};
 
 /// 2026-09-17 12:00:00 UTC — mid-day, so a small offset does not cross a boundary by accident.
@@ -162,7 +163,6 @@ fn ac_p3_28_5_forty_closures_on_an_enrolled_project_in_one_day_pay_once() {
     let first = pay_debt_day(
         &tx,
         ProjectId(p),
-        &subject,
         &closures(40, DebtCloseReason::Fixed, DebtSource::TodoMarker),
         NOON,
         0,
@@ -196,7 +196,6 @@ fn ac_p3_28_5_forty_closures_on_an_enrolled_project_in_one_day_pay_once() {
     let second = pay_debt_day(
         &second_tx,
         ProjectId(p),
-        &subject,
         &closures(2, DebtCloseReason::Fixed, DebtSource::MissingReadme),
         NOON + 3_600,
         0,
@@ -235,13 +234,11 @@ fn ac_p3_28_5_forty_closures_on_an_enrolled_project_in_one_day_pay_once() {
 fn ac_p3_28_15_an_invalidated_closure_on_an_enrolled_project_pays_nothing() {
     let (_d, mut conn) = fresh();
     let p = insert_enrolled_project(&conn, "thing");
-    let subject = lineage_subject().to_key();
 
     let tx = conn.transaction().unwrap();
     let only_withdrawn = pay_debt_day(
         &tx,
         ProjectId(p),
-        &subject,
         &closures(
             3,
             DebtCloseReason::Invalidated,
@@ -266,7 +263,6 @@ fn ac_p3_28_15_an_invalidated_closure_on_an_enrolled_project_pays_nothing() {
     pay_debt_day(
         &fixed_tx,
         ProjectId(p),
-        &subject,
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
         NOON,
         0,
@@ -280,7 +276,6 @@ fn ac_p3_28_15_an_invalidated_closure_on_an_enrolled_project_pays_nothing() {
     pay_debt_day(
         &withdrawn_tx,
         ProjectId(p),
-        &subject,
         &closures(
             5,
             DebtCloseReason::Invalidated,
@@ -304,13 +299,11 @@ fn ac_p3_28_15_an_invalidated_closure_on_an_enrolled_project_pays_nothing() {
 fn a_shown_only_closure_pays_nothing_and_leaves_the_day_to_what_pays() {
     let (_d, mut conn) = fresh();
     let p = insert_enrolled_project(&conn, "thing");
-    let subject = lineage_subject().to_key();
 
     let tx = conn.transaction().unwrap();
     let alone = pay_debt_day(
         &tx,
         ProjectId(p),
-        &subject,
         &SweepEffect {
             closed: vec![closure(
                 0,
@@ -332,7 +325,6 @@ fn a_shown_only_closure_pays_nothing_and_leaves_the_day_to_what_pays() {
     let mixed = pay_debt_day(
         &mixed_tx,
         ProjectId(p),
-        &subject,
         &SweepEffect {
             closed: vec![
                 closure(
@@ -377,13 +369,11 @@ fn a_shown_only_closure_pays_nothing_and_leaves_the_day_to_what_pays() {
 fn an_unenrolled_project_is_paid_nothing_and_nothing_later() {
     let (_d, mut conn) = fresh();
     let p = insert_project_as(&conn, "thing", None, false);
-    let subject = lineage_subject().to_key();
 
     let tx = conn.transaction().unwrap();
     let unenrolled = pay_debt_day(
         &tx,
         ProjectId(p),
-        &subject,
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
         NOON,
         0,
@@ -402,7 +392,6 @@ fn an_unenrolled_project_is_paid_nothing_and_nothing_later() {
     let enrolled = pay_debt_day(
         &enrolled_tx,
         ProjectId(p),
-        &subject,
         &closures(1, DebtCloseReason::Fixed, DebtSource::MissingReadme),
         NOON + 60,
         0,
@@ -434,7 +423,6 @@ fn an_archived_acknowledged_project_is_still_paid() {
     let paid = pay_debt_day(
         &tx,
         ProjectId(p),
-        &lineage_subject().to_key(),
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
         NOON,
         0,
@@ -461,13 +449,24 @@ fn two_projects_with_no_lineage_do_not_collide_on_one_date() {
         let paid = pay_debt_day(
             &tx,
             ProjectId(project),
-            &path_subject(byte).to_key(),
             &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
             NOON,
             0,
         )
         .unwrap();
         assert!(paid.wrote_row, "project {project} was not paid");
+        let key: String = tx
+            .query_row(
+                "SELECT dedupe_key FROM xp_events WHERE project_id = ?1",
+                [project],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            key,
+            debt_day_dedupe_key(&path_subject(byte).to_key(), "2026-09-17"),
+            "an unlineaged project was not keyed on its own path"
+        );
     }
     tx.commit().unwrap();
 
@@ -480,19 +479,103 @@ fn two_projects_with_no_lineage_do_not_collide_on_one_date() {
     );
 }
 
+/// **§38.2: a project with no subject gets no row — never an empty key.** No lineage and no
+/// location row is the one shape `subject_for_project` answers `None` for; an empty key would
+/// put every such project on `debt_day::<date>`, where the UNIQUE turns the collision into
+/// silent non-payment.
+#[test]
+fn a_project_with_no_subject_is_paid_nothing() {
+    let (_d, mut conn) = fresh();
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, acknowledged_at, created_at, updated_at)
+         VALUES ('bare', 'bare', 1, 1, 1)",
+        [],
+    )
+    .unwrap();
+    let p = conn.last_insert_rowid();
+
+    let tx = conn.transaction().unwrap();
+    let paid = pay_debt_day(
+        &tx,
+        ProjectId(p),
+        &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
+        NOON,
+        0,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+
+    let empty_keyed: Vec<String> = {
+        let mut st = conn
+            .prepare("SELECT dedupe_key FROM xp_events WHERE dedupe_key LIKE 'debt\\_day::%' ESCAPE '\\'")
+            .unwrap();
+        st.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert!(
+        empty_keyed.is_empty(),
+        "a subject-less project was keyed on an empty subject: {empty_keyed:?}"
+    );
+    assert!(!paid.wrote_row, "a project with no subject was paid");
+    assert_eq!(xp_count(&conn), 0);
+}
+
+/// **R178's guard.** A later reader finds a day's row by the local date it derives from
+/// `ts + tz_offset_min`. That is right only while every row this writer produces satisfies it:
+/// the date in the key is the date of `ts` in the stored offset.
+#[test]
+fn a_debt_day_rows_local_date_is_its_ts_plus_offset() {
+    // 60 s before local midnight in UTC+13.
+    let before_midnight_780 = NOON - 3_600 - 60;
+    for (now, offset) in [
+        (NOON, 0),
+        (NOON, 780),
+        (NOON, -600),
+        (before_midnight_780, 780),
+    ] {
+        let (_d, mut conn) = fresh();
+        let p = insert_enrolled_project(&conn, "thing");
+        let tx = conn.transaction().unwrap();
+        pay_debt_day(
+            &tx,
+            ProjectId(p),
+            &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
+            now,
+            offset,
+        )
+        .unwrap();
+        tx.commit().unwrap();
+
+        let (ts, stored, key): (i64, i64, String) = conn
+            .query_row(
+                "SELECT ts, tz_offset_min, dedupe_key FROM xp_events",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        let derived = local_date((ts + stored * 60).div_euclid(86_400));
+        let keyed = key.rsplit(':').next().unwrap().to_owned();
+        eprintln!("offset {offset:>4}, ts {ts}: derived {derived}, keyed {keyed}");
+        assert_eq!(
+            derived, keyed,
+            "offset {offset}: the key's date is not ts + offset"
+        );
+    }
+}
+
 /// Two closures either side of the **local** midnight are two days and two rows. The offset is
 /// the one the local date was computed in, so a row is readable in the frame it was earned in.
 #[test]
 fn closures_either_side_of_local_midnight_are_two_days() {
     let (_d, mut conn) = fresh();
     let p = insert_enrolled_project(&conn, "thing");
-    let subject = lineage_subject().to_key();
 
     let tx = conn.transaction().unwrap();
     pay_debt_day(
         &tx,
         ProjectId(p),
-        &subject,
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
         NOON,
         0,
@@ -501,7 +584,6 @@ fn closures_either_side_of_local_midnight_are_two_days() {
     pay_debt_day(
         &tx,
         ProjectId(p),
-        &subject,
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
         NOON + DAY,
         0,
@@ -522,7 +604,6 @@ fn closures_either_side_of_local_midnight_are_two_days() {
     pay_debt_day(
         &other_tx,
         ProjectId(q),
-        &subject,
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
         NOON,
         780,
@@ -546,15 +627,7 @@ fn a_sweep_that_closed_nothing_writes_no_row() {
     let p = insert_enrolled_project(&conn, "thing");
 
     let tx = conn.transaction().unwrap();
-    let paid = pay_debt_day(
-        &tx,
-        ProjectId(p),
-        &lineage_subject().to_key(),
-        &SweepEffect::default(),
-        NOON,
-        0,
-    )
-    .unwrap();
+    let paid = pay_debt_day(&tx, ProjectId(p), &SweepEffect::default(), NOON, 0).unwrap();
     tx.commit().unwrap();
 
     assert!(!paid.wrote_row);

@@ -21,6 +21,7 @@ use super::{enum_from_text, enum_text, DebtError};
 use crate::git::local_day;
 use crate::health::acknowledge::read_acknowledged_at;
 use crate::health::enrolment::is_enrolled;
+use crate::index::subject::subject_for_project;
 use crate::jobs::j4_history::local_date;
 use crate::protocol::{DebtScoring, DebtSource, ProjectId};
 
@@ -73,13 +74,16 @@ pub fn debt_day_dedupe_key(subject_key: &str, local_date: &str) -> String {
 /// **Only an enrolled project is paid** (§38.8.1 gate 2, §30.5's `is_enrolled`), read at the
 /// closing observation. An unenrolled closure leaves nothing behind that a later call could pay.
 ///
+/// **A project with no subject is paid nothing** (§38.2): never an empty key, which would make
+/// every such project collide on `debt_day::<date>`. The subject is read here, from the project
+/// row, so no caller can hand the writer a key that is not the project's own.
+///
 /// # Errors
 /// Fails when SQLite refuses the read or the write, the day's stored `meta` is not JSON, or it
 /// names a source this build's schema does not declare.
 pub fn pay_debt_day(
     tx: &Transaction<'_>,
     project: ProjectId,
-    subject_key: &str,
     effect: &SweepEffect,
     now: i64,
     tz_offset_min: i32,
@@ -99,9 +103,13 @@ pub fn pay_debt_day(
     if !is_enrolled(read_acknowledged_at(tx, project)?) {
         return Ok(unpaid());
     }
+    let Some(subject) = subject_for_project(tx, project)? else {
+        return Ok(unpaid());
+    };
+    let subject_key = subject.to_key();
 
     let date = local_date(local_day(now, tz_offset_min));
-    let dedupe = debt_day_dedupe_key(subject_key, &date);
+    let dedupe = debt_day_dedupe_key(&subject_key, &date);
 
     // The day so far, read back before the merge: `meta` is the day's sentence and a sentence
     // describing only the first closure undercounts the day it claims to describe.

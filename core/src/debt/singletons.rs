@@ -399,8 +399,7 @@ pub fn evaluate_singletons(
 /// exists to prevent.
 ///
 /// # Errors
-/// Fails wherever [`evaluate_singletons`] or [`pay_debt_day`] does, or when the project's
-/// subject cannot be read.
+/// Fails wherever [`evaluate_singletons`] or [`pay_debt_day`] does.
 ///
 /// [`pay_debt_day`]: super::xp::pay_debt_day
 pub fn settle_singletons(
@@ -411,9 +410,6 @@ pub fn settle_singletons(
     store: &dyn DebtStore,
 ) -> Result<SweepEffect, DebtError> {
     let effect = evaluate_singletons(tx, project, now, store)?;
-    let subject_key = crate::index::subject::subject_for_project(tx, project)?
-        .map(|s| s.to_key())
-        .unwrap_or_default();
-    super::xp::pay_debt_day(tx, project, &subject_key, &effect, now, tz_offset_min)?;
+    super::xp::pay_debt_day(tx, project, &effect, now, tz_offset_min)?;
     Ok(effect)
 }

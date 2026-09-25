@@ -527,10 +527,7 @@ fn build_debt_items(
 
     // The ledger row and the item deletions commit together: a tree with the items gone and no
     // payout, or a payout with the items still open, is the state the ordering prevents.
-    let subject = crate::index::subject::subject_for_project(tx, project)?
-        .map(|s| s.to_key())
-        .unwrap_or_default();
-    crate::debt::xp::pay_debt_day(tx, project, &subject, &effect, now, tz_offset_min)
+    crate::debt::xp::pay_debt_day(tx, project, &effect, now, tz_offset_min)
         .map_err(debt_to_index)?;
     crate::restoration::record_after_write(
         tx,
