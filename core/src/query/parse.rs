@@ -208,6 +208,8 @@ const FIELDS: [&str; 9] = [
     "collection",
 ];
 
+/// Parse query text into §8.3's AST. Never fails: a term that does not parse is carried in
+/// `ignored` with its reason, and the rest of the query still runs.
 #[must_use]
 pub fn parse_query(input: &str) -> QueryAst {
     let mut terms = Vec::new();

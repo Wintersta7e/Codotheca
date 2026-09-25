@@ -36,9 +36,12 @@ const DAY: i64 = 86_400;
 pub const BASE_PREDICATE: &str = "A bare query returns no is_reference rows and no is_hidden \
 rows (§8.0b). is:reference and is:hidden opt their own rows back in; a negated term does not.";
 
+/// §8.3's tri-state answer to one term for one row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TermTruth {
+    /// Known to hold: the term matches unless it is negated.
     True,
+    /// Known not to hold: only the negated term matches.
     False,
     /// Never observed, **or outside the term's domain** (§23.6). Matched by no polarity — this
     /// is the invariant the whole module exists for. There is no fourth truth value: one would
@@ -48,6 +51,7 @@ pub enum TermTruth {
 }
 
 impl TermTruth {
+    /// An observed boolean as a truth, and an unobserved one (`None`) as `Unknown`.
     #[must_use]
     pub const fn from_bool(v: Option<bool>) -> Self {
         match v {
@@ -70,14 +74,18 @@ impl TermTruth {
     }
 }
 
+/// What evaluating a query needs beyond the rows themselves.
 #[derive(Debug)]
 pub struct ExecContext<'a> {
     /// unix seconds
     pub now: i64,
+    /// The machine's UTC offset in minutes; `touched:<year>` names a year in local time.
     pub tz_offset_min: i32,
     /// `app_meta.first_run_completed_at`; `None` makes `is:new` unknown, never false (§10.5a).
     pub first_run_completed_at: Option<i64>,
+    /// Every collection's id, keyed by its lower-cased name, for `collection:`.
     pub collection_ids_by_name: &'a BTreeMap<String, i64>,
+    /// Whether a quoted `in:` path prefix compares case-sensitively — true off Windows.
     pub paths_are_case_sensitive: bool,
     /// §8.3's one round-tripping term, filled from `fts_commits` by the caller.
     pub commit_subject_hits: Option<&'a BTreeSet<i64>>,
@@ -121,11 +129,13 @@ fn text_truth(
         TextField::Owner => {
             TermTruth::from_bool(r.owner.as_ref().map(|o| o.eq_ignore_ascii_case(value)))
         }
-        TextField::Collection => match ctx.collection_ids_by_name.get(&value.to_lowercase()) {
-            // An unknown collection name matches nothing; it is not unknown state.
-            None => TermTruth::False,
-            Some(id) => TermTruth::known(r.collection_ids.contains(&CollectionId(*id))),
-        },
+        // An unknown collection name matches nothing; it is not unknown state.
+        TextField::Collection => ctx
+            .collection_ids_by_name
+            .get(&value.to_lowercase())
+            .map_or(TermTruth::False, |id| {
+                TermTruth::known(r.collection_ids.contains(&CollectionId(*id)))
+            }),
         TextField::In => {
             let wanted = value.to_lowercase();
             if wanted == "local" || wanted == "wsl" || wanted.starts_with("wsl:") {
@@ -184,10 +194,11 @@ fn flag_truth(row: &LoadedRow, flag: IsFlag, ctx: &ExecContext<'_>) -> TermTruth
         IsFlag::Wsl => {
             TermTruth::from_bool(row.facts.location_kind.map(|k| k == LocationKind::Wsl))
         }
-        IsFlag::New => match ctx.first_run_completed_at {
-            None => TermTruth::Unknown,
-            Some(stamp) => TermTruth::known(r.acknowledged_at.is_none() && r.created_at > stamp),
-        },
+        IsFlag::New => ctx
+            .first_run_completed_at
+            .map_or(TermTruth::Unknown, |stamp| {
+                TermTruth::known(r.acknowledged_at.is_none() && r.created_at > stamp)
+            }),
         // §23.6: known-true or known-false for every project, never Unknown — whether the index
         // holds a location is a fact the index always has. §23.1's one predicate, and there is no
         // second expression of it.
@@ -197,7 +208,7 @@ fn flag_truth(row: &LoadedRow, flag: IsFlag, ctx: &ExecContext<'_>) -> TermTruth
 
 /// §23.1's predicate, named once so the domain rule below and the flag above read the same fact.
 #[must_use]
-pub fn has_no_working_copy(row: &LoadedRow) -> bool {
+pub const fn has_no_working_copy(row: &LoadedRow) -> bool {
     row.row.primary_location.is_none()
 }
 
@@ -232,7 +243,7 @@ const fn is_about_a_working_copy(flag: IsFlag) -> bool {
 /// `touched:` is included because `last_touched_at` falls back to `created_at` — the moment
 /// Codotheca wrote the row — so answering it for a not-cloned project would date an interaction
 /// that never happened.
-fn is_outside_the_working_copy_domain(term: &QueryTerm) -> bool {
+const fn is_outside_the_working_copy_domain(term: &QueryTerm) -> bool {
     match term {
         QueryTerm::Has { .. } | QueryTerm::TouchedAge { .. } | QueryTerm::TouchedYear { .. } => {
             true
@@ -280,6 +291,7 @@ fn has_truth(row: &LoadedRow, attribute: HasAttribute) -> TermTruth {
     }
 }
 
+/// One term's answer for one row — known true, known false, or unknown — before negation.
 #[must_use]
 pub fn term_truth(row: &LoadedRow, term: &QueryTerm, ctx: &ExecContext<'_>) -> TermTruth {
     // §23.6's domain rule, evaluated **before** any column is read. That ordering is what keeps
@@ -299,16 +311,15 @@ pub fn term_truth(row: &LoadedRow, term: &QueryTerm, ctx: &ExecContext<'_>) -> T
         } => text_truth(row, *field, value, *quoted, ctx),
         QueryTerm::Flag { flag, .. } => flag_truth(row, *flag, ctx),
         QueryTerm::Has { attribute, .. } => has_truth(row, *attribute),
-        QueryTerm::Size { op, bytes, .. } => match r.size_tracked_bytes {
-            None => TermTruth::Unknown,
-            Some(size) => {
+        QueryTerm::Size { op, bytes, .. } => {
+            r.size_tracked_bytes.map_or(TermTruth::Unknown, |size| {
                 let size = u64::try_from(size).unwrap_or(0);
                 TermTruth::known(match op {
                     Cmp::Gt => size > *bytes,
                     Cmp::Lt => size < *bytes,
                 })
-            }
-        },
+            })
+        }
         // Seconds, not a float division: `age_days > days` and `age_secs > days * DAY` agree
         // exactly over integers, and the renderer's float form cuts at the same boundary.
         QueryTerm::TouchedAge { op, days, .. } => {
@@ -327,13 +338,14 @@ pub fn term_truth(row: &LoadedRow, term: &QueryTerm, ctx: &ExecContext<'_>) -> T
         // matches neither `completion:>5` nor `completion:<5`, and is never coerced to `0`
         // anywhere in this path. That is the half of the phase-1 behaviour that survives, and
         // it is an invariant rather than a default.
-        QueryTerm::Completion { op, value, .. } => match r.completion_lit {
-            None => TermTruth::Unknown,
-            Some(lit) => TermTruth::known(match op {
-                Cmp::Gt => lit > *value,
-                Cmp::Lt => lit < *value,
-            }),
-        },
+        QueryTerm::Completion { op, value, .. } => {
+            r.completion_lit.map_or(TermTruth::Unknown, |lit| {
+                TermTruth::known(match op {
+                    Cmp::Gt => lit > *value,
+                    Cmp::Lt => lit < *value,
+                })
+            })
+        }
     }
 }
 
@@ -343,7 +355,7 @@ pub fn term_truth(row: &LoadedRow, term: &QueryTerm, ctx: &ExecContext<'_>) -> T
 /// §29.4 lands their producer — so the removal goes in the same change** (§23.6, R1/R35a/R40/R46).
 /// A project J7 has not scanned still answers `Unknown`, which is what `TermTruth` is for; what
 /// this function decides is whether the term can *ever* be answered, and now it can.
-fn answerable(_term: &QueryTerm) -> bool {
+const fn answerable(_term: &QueryTerm) -> bool {
     true
 }
 
@@ -365,6 +377,8 @@ fn render_term(term: &QueryTerm) -> String {
     }
 }
 
+/// The AST's terms split into those the index can answer and those it cannot, the second set as
+/// `NotComputed` ignored terms.
 #[must_use]
 pub fn partition_answerable(
     ast: &QueryAst,
@@ -405,12 +419,17 @@ pub fn in_base_set(row: &ProjectRow, ast: &QueryAst) -> bool {
     true
 }
 
+/// A query's result: the rows it matched and every term it ran without.
 #[derive(Debug)]
 pub struct Executed<'r> {
+    /// The rows in the §8.0b base set that every answerable term matched, in input order.
     pub rows: Vec<&'r LoadedRow>,
+    /// The parser's ignored terms, then the ones the index cannot answer.
     pub ignored: Vec<IgnoredTerm>,
 }
 
+/// Run a parsed query over the loaded rows: the §8.0b base set first, then every answerable term,
+/// with `Unknown` matching neither polarity.
 #[must_use]
 pub fn evaluate_query<'r>(
     rows: &'r [LoadedRow],
