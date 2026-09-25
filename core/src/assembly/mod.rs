@@ -469,34 +469,30 @@ impl CoreHandler {
         serde_json::to_value(preview).map_err(|error| CommandFailure::internal(error.to_string()))
     }
 
-    /// [p2-24b] §24.7's pre-flight and §24.8's removal.
+    /// [p2-24b] §24.7's pre-flight and §24.8's removal, over §45's analyser.
     ///
-    /// Both take and release the index guard themselves, around §24.7C's fetch and the uniqueness
-    /// analysis — neither may be held across a git invocation, and `SqliteScanStore` takes the
-    /// same non-reentrant mutex.
+    /// Both take and release the index guard themselves, around the analysis and §47.4's
+    /// verifying read — neither may be held across a git invocation, and `SqliteScanStore` takes
+    /// the same non-reentrant mutex.
     fn uninstall_arm(
         &self,
         name: crate::protocol::CommandName,
         args: Value,
         now: i64,
     ) -> Result<Value, CommandFailure> {
-        if name == crate::protocol::CommandName::LocationsUninstall {
-            return crate::uninstall::handle_uninstall_off_lock(
-                &self.index,
-                self.git.as_ref(),
-                self.write_git.as_ref(),
-                &crate::removal::SystemTrash,
-                args,
-                now,
-            );
-        }
-        crate::uninstall::handle_preflight_off_lock(
-            &self.index,
-            self.git.as_ref(),
+        let remotes = crate::analyser::remote::GitRemoteVerifier::new(
             self.write_git.as_ref(),
-            args,
-            now,
-        )
+            self.git.as_ref(),
+        );
+        let seams = crate::analyser::AnalyserSeams {
+            git: self.git.as_ref(),
+            remotes: &remotes,
+            trash: &crate::removal::SystemTrash,
+        };
+        if name == crate::protocol::CommandName::LocationsUninstall {
+            return crate::uninstall::handle_uninstall_off_lock(&self.index, &seams, args, now);
+        }
+        crate::uninstall::handle_preflight_off_lock(&self.index, &seams, args, now)
     }
 
     /// §24.9's `install.start`, answered without holding the guard across the clone.

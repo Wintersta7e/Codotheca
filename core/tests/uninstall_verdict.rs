@@ -7,8 +7,8 @@
 
 //! §24.8's fold, and the seal that never leaves the core.
 
+use codotheca_core::analyser::verdict::{fold_disposition, is_unknown_blocker, VerdictSeal};
 use codotheca_core::protocol::{UninstallBlocker, UninstallDisposition};
-use codotheca_core::uninstall::{fold_disposition, is_unknown_blocker, VerdictSeal};
 
 #[test]
 fn no_blockers_is_safe() {

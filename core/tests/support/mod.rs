@@ -9,6 +9,7 @@
 #![allow(dead_code)]
 //! The fixture builder every git integration test in this plan shares.
 
+pub(crate) mod analyser_world;
 pub(crate) mod git_world;
 
 use std::path::{Path, PathBuf};

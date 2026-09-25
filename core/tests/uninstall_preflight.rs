@@ -5,15 +5,37 @@
     clippy::indexing_slicing
 )]
 
-//! §24.7A's stash truth: the reader a **deletion gate** may trust.
+//! §24.7A's stash truth, and the analyser's other phase-2 reads, on the readers §45.2 owns now.
 //!
-//! Each of the three inputs is absent in a real configuration where a stash exists, so each case
-//! below is a repository that genuinely occurs — not a synthetic corruption.
+//! [p4] The file-reading stash reader is gone: row 3 reads **through git**, `log -g` and never
+//! `git stash`, with an unreadable files-backend reflog answered as `Unreadable` (§45.2). Each
+//! case below is still a repository that genuinely occurs — not a synthetic corruption.
 
 mod support;
 
-use codotheca_core::uninstall::{read_stash_truth, StashTruth};
+use codotheca_core::cancel::CancelToken;
+use codotheca_core::git::{GitBackend as _, JobClass, JobContext, StashEntries};
+use support::git_world::system_git;
 use support::TestRepo;
+
+/// §45.2 row 3, through the production read backend.
+fn stash(repo: &TestRepo) -> StashEntries {
+    let cancel = CancelToken::new();
+    system_git(repo)
+        .stash_entries(
+            &repo.handle(),
+            &JobContext::new(JobClass::Interactive, &cancel, None),
+        )
+        .expect("the stash read answers")
+}
+
+/// The number of stash entries, or `None` when the stash cannot be read.
+fn entries(truth: &StashEntries) -> Option<usize> {
+    match truth {
+        StashEntries::Entries(entries) => Some(entries.len()),
+        StashEntries::Unreadable => None,
+    }
+}
 
 /// A clean repository has no stash, and every input was readable — which is what makes this
 /// `None` rather than `Unreadable`.
@@ -22,10 +44,7 @@ fn a_clean_repository_has_no_stash() {
     let repo = TestRepo::init();
     repo.write("a.txt", b"one\n");
     repo.commit("first");
-    assert_eq!(
-        read_stash_truth(&repo.path().join(".git")),
-        StashTruth::None
-    );
+    assert_eq!(entries(&stash(&repo)), Some(0));
 }
 
 /// The ordinary case: the reflog is there and says how many.
@@ -39,10 +58,7 @@ fn the_reflog_gives_an_exact_count() {
     repo.write("a.txt", b"three\n");
     repo.git(&["stash", "push", "-q", "-m", "two"]);
 
-    assert_eq!(
-        read_stash_truth(&repo.path().join(".git")),
-        StashTruth::Present(2)
-    );
+    assert_eq!(entries(&stash(&repo)), Some(2));
 }
 
 /// **The case `location.stash_count` and the reflog both miss.** A stash reachable only through a
@@ -89,8 +105,8 @@ fn a_stash_reachable_only_through_packed_refs_is_still_a_stash() {
     let _ = std::fs::remove_file(git_dir.join("logs").join("refs").join("stash"));
 
     assert_eq!(
-        read_stash_truth(&git_dir),
-        StashTruth::Present(1),
+        entries(&stash(&repo)),
+        Some(1),
         "a packed stash ref proves a stash exists; the count is a floor, not a guess"
     );
 }
@@ -111,7 +127,7 @@ fn a_loose_stash_ref_with_no_reflog_is_still_a_stash() {
     }
     let _ = std::fs::remove_file(git_dir.join("logs").join("refs").join("stash"));
 
-    assert_eq!(read_stash_truth(&git_dir), StashTruth::Present(1));
+    assert_eq!(entries(&stash(&repo)), Some(1));
 }
 
 /// **Unreadable is unsafe.** An input that could not be read is not an absent stash, and it must
@@ -131,8 +147,8 @@ fn an_unreadable_input_is_unreadable_and_never_none() {
     std::fs::create_dir_all(&reflog).unwrap();
 
     assert_eq!(
-        read_stash_truth(&git_dir),
-        StashTruth::Unreadable,
+        entries(&stash(&repo)),
+        None,
         "an unreadable input is never reported as no stash"
     );
 }
@@ -145,16 +161,20 @@ fn an_unreadable_input_is_unreadable_and_never_none() {
 /// zero.
 #[test]
 fn the_uninstall_module_never_reads_the_cached_stash_column() {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src")
-        .join("uninstall");
+    // [p4] Widened to `core/src/analyser/`, where every blocker is computed now (§45.7).
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut scanned = 0_usize;
     let mut offenders = Vec::new();
-    for entry in std::fs::read_dir(&dir)
-        .expect("core/src/uninstall/ must exist")
-        .flatten()
-    {
-        let path = entry.path();
+    let files: Vec<std::path::PathBuf> = ["uninstall", "analyser"]
+        .iter()
+        .flat_map(|dir| {
+            std::fs::read_dir(src.join(dir))
+                .expect("the module must exist")
+                .flatten()
+                .map(|entry| entry.path())
+        })
+        .collect();
+    for path in files {
         if path.extension().is_none_or(|e| e != "rs") {
             continue;
         }
@@ -186,7 +206,7 @@ fn the_uninstall_module_never_reads_the_cached_stash_column() {
     }
     eprintln!("uninstall_preflight: the cached-column scan read {scanned} file(s)");
     assert!(
-        scanned >= 2,
+        scanned >= 10,
         "the scan read {scanned} file(s); a gate that scans nothing is a failing gate"
     );
     assert!(
@@ -195,35 +215,63 @@ fn the_uninstall_module_never_reads_the_cached_stash_column() {
     );
 }
 
-/// And the reader spawns nothing (A3): no `git stash` subcommand exists anywhere in the module.
+/// **A3's substance, on the reader §45.2 row 3 owns**: the stash is read through `log -g`, and
+/// no `git stash` subcommand is an argv token anywhere in the read path or the analyser. A3's
+/// file mechanism did not survive — it read reftable as *no stash* — and its point does.
 #[test]
-fn the_stash_reader_spawns_no_git() {
-    let source = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("src")
-            .join("uninstall")
-            .join("stash.rs"),
-    )
-    .expect("the stash reader");
+fn the_stash_is_read_through_log_and_never_through_git_stash() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let analyse = std::fs::read_to_string(src.join("git").join("analyse.rs")).expect("analyse.rs");
+    let reader = analyse
+        .split("pub(crate) fn stash_entries(")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}\n").next())
+        .expect("the stash reader");
     assert!(
-        !source.contains("Command::new"),
-        "the reader spawns a process"
+        reader.contains("OsStr::new(\"log\")") && reader.contains("OsStr::new(\"-g\")"),
+        "the stash is read through `log -g`"
     );
-    for line in source.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("//") {
-            continue;
+    let mut scanned = 0_usize;
+    for dir in ["git", "analyser"] {
+        for entry in std::fs::read_dir(src.join(dir)).expect("module").flatten() {
+            let Ok(text) = std::fs::read_to_string(entry.path()) else {
+                continue;
+            };
+            scanned += 1;
+            for line in text.lines() {
+                if line.trim_start().starts_with("//") {
+                    continue;
+                }
+                assert!(
+                    !line.contains("OsStr::new(\"stash\")") && !line.contains("\"stash\","),
+                    "a `git stash` argv token in {}: {line}",
+                    entry.path().display()
+                );
+            }
         }
-        assert!(
-            !line.contains("\"stash\","),
-            "an argv token appeared in a reader that reads files: {line}"
-        );
     }
+    eprintln!("uninstall_preflight: the stash-subcommand scan read {scanned} file(s)");
+    assert!(scanned >= 10, "the scan read {scanned} file(s)");
 }
 
 // ---------------------------------------------------------------------------
 // §24.7A's uniqueness analyser.
 // ---------------------------------------------------------------------------
+
+/// §45.2 row 1's names, through the production read backend the analyser uses.
+fn ref_names(repo: &TestRepo) -> Vec<String> {
+    let cancel = CancelToken::new();
+    system_git(repo)
+        .enumerate_refs(
+            &repo.handle(),
+            &JobContext::new(JobClass::Interactive, &cancel, None),
+        )
+        .expect("the listing")
+        .refs
+        .into_iter()
+        .map(|r| r.name)
+        .collect()
+}
 
 /// **The case a pre-flight that checks only `HEAD` gets wrong, which is the shredder.**
 ///
@@ -231,8 +279,6 @@ fn the_stash_reader_spawns_no_git() {
 /// branch does.
 #[test]
 fn every_local_ref_is_enumerated_and_not_only_the_checked_out_branch() {
-    use codotheca_core::git::local_ref_names;
-
     let repo = TestRepo::init();
     repo.write("a.txt", b"one\n");
     repo.commit("first");
@@ -240,7 +286,7 @@ fn every_local_ref_is_enumerated_and_not_only_the_checked_out_branch() {
     repo.git(&["tag", "v1"]);
     repo.git(&["notes", "add", "-m", "a note"]);
 
-    let names = local_ref_names(&repo.path().join(".git"));
+    let names = ref_names(&repo);
     assert!(
         names.iter().any(|n| n == "refs/heads/main"),
         "the checked-out branch: {names:?}"
@@ -267,8 +313,6 @@ fn every_local_ref_is_enumerated_and_not_only_the_checked_out_branch() {
 /// read only the loose ones would call it empty.
 #[test]
 fn packed_refs_are_enumerated_as_well_as_loose_ones() {
-    use codotheca_core::git::local_ref_names;
-
     let repo = TestRepo::init();
     repo.write("a.txt", b"one\n");
     repo.commit("first");
@@ -276,7 +320,7 @@ fn packed_refs_are_enumerated_as_well_as_loose_ones() {
     repo.git(&["tag", "v1"]);
     repo.git(&["pack-refs", "--all"]);
 
-    let names = local_ref_names(&repo.path().join(".git"));
+    let names = ref_names(&repo);
     assert!(names.iter().any(|n| n == "refs/heads/feature"), "{names:?}");
     assert!(names.iter().any(|n| n == "refs/tags/v1"), "{names:?}");
 }
@@ -287,7 +331,7 @@ fn packed_refs_are_enumerated_as_well_as_loose_ones() {
 /// set and is therefore precious; `node_modules/` matches and is not.
 #[test]
 fn an_ignored_path_is_precious_unless_it_is_known_junk() {
-    use codotheca_core::uninstall::unique::is_junk;
+    use codotheca_core::analyser::junk::is_junk;
     use std::path::Path;
 
     // Precious: nothing in the junk set matches these, and each is real work.
@@ -319,7 +363,7 @@ fn an_ignored_path_is_precious_unless_it_is_known_junk() {
 /// The junk set has **one owner**, and the rule reads off it rather than restating it.
 #[test]
 fn the_junk_set_has_one_owner() {
-    use codotheca_core::uninstall::unique::{is_junk, JUNK_PATTERNS};
+    use codotheca_core::analyser::junk::{is_junk, JUNK_PATTERNS};
     use std::path::Path;
 
     assert!(!JUNK_PATTERNS.is_empty());

@@ -1,4 +1,4 @@
-//! §24.8's mutating call: **recomputed inside, refused if it changed**.
+//! §24.8's mutating call: **it acts only on the analysis computed inside the same call**.
 //!
 //! *A verdict rendered thirty seconds ago is a cache*, and **never claim currency you do not
 //! have** applies to a safety verdict more than to anything else on the shelf. The renderer passes
@@ -10,11 +10,11 @@
 use rusqlite::OptionalExtension;
 
 use crate::analyser::identity::LiveIdentity;
+use crate::analyser::Analysis;
 use crate::debt::store::{DebtStore, SqliteDebtStore};
 use crate::proto::dispatch::CommandFailure;
 use crate::protocol::{LocationId, ProjectId, UninstallDisposition};
-use crate::removal::{remove_warranted, RemovalOutcome, Trash, Warrant};
-use crate::uninstall::preflight::{compute_verdict, VerdictInputs};
+use crate::removal::{remove_warranted, RemovalOutcome, Trash, Warrant, WarrantKind};
 
 /// §24.6b's ten columns: they describe a directory that no longer exists.
 ///
@@ -51,27 +51,47 @@ pub struct Removed {
 /// removal** (AC-P2-24-14). A disposition that is not `safe` ends the call.
 ///
 /// # Errors
-/// Refuses when the freshly computed verdict is not `safe`, when the directory's identity no
-/// longer matches its row, or when the removal itself fails.
+/// Refuses when the analysis is not `safe`, when the warrant is not an uninstall warrant sealed
+/// over this analysis, when the directory's identity no longer matches its row, or when the
+/// removal itself fails.
 pub fn uninstall_location(
     tx: &rusqlite::Transaction<'_>,
-    inputs: &VerdictInputs,
+    analysis: &Analysis,
     warrant: &Warrant,
     trash: &dyn Trash,
     identity_now: &LiveIdentity,
+    now: i64,
 ) -> Result<Removed, CommandFailure> {
-    // 2. The same function the pre-flight calls, not a copy. (1 — the row read and the identity
-    //    re-derivation — is the caller's, because it needs the git seam this module does not hold;
-    //    its result arrives as `identity_now` and is checked against the warrant's row lineage
-    //    inside `remove_warranted`.)
-    let (verdict, _seal) = compute_verdict(inputs)?;
+    // 1–2. The analysis is the caller's, computed in this call off the index lock, because it
+    //    needs the git seams this module does not hold. So is the identity re-derivation, whose
+    //    result arrives as `identity_now` and is checked against the warrant's row lineage inside
+    //    `remove_warranted`.
+    let WarrantKind::Uninstall {
+        location_id,
+        verdict: sealed,
+        ..
+    } = warrant.kind()
+    else {
+        return Err(CommandFailure::protocol(
+            "uninstall refused: not an uninstall warrant".to_owned(),
+        ));
+    };
+    let location_id = *location_id;
 
-    // 3. Not safe ends it. `unknown` ends it too: an absence is not a permission.
+    // 3. Not safe ends it. `unknown` ends it too: an absence is not a permission. A warrant
+    //    sealed over any other answer ends it as well: the seal is what ties the authority to
+    //    this analysis rather than to one a moment earlier.
+    let verdict = &analysis.verdict;
     if verdict.disposition != UninstallDisposition::Safe {
         return Err(CommandFailure::protocol(format!(
             "uninstall refused: {:?} — {:?}",
             verdict.disposition, verdict.blockers
         )));
+    }
+    if *sealed != analysis.seal {
+        return Err(CommandFailure::protocol(
+            "uninstall refused: the warrant was sealed over another analysis".to_owned(),
+        ));
     }
 
     // 4. The one warranted primitive. §24.7F's Recycle Bin, not a hard delete: a working copy is
@@ -91,7 +111,7 @@ pub fn uninstall_location(
     //    can be checked against.
     tx.execute(
         &format!("UPDATE location SET removed_at = ?2, {clears} WHERE id = ?1"),
-        rusqlite::params![inputs.snapshot.id.0, inputs.now],
+        rusqlite::params![location_id.0, now],
     )
     .map_err(|error| CommandFailure::internal(error.to_string()))?;
 
@@ -108,7 +128,7 @@ pub fn uninstall_location(
     let project: Option<i64> = tx
         .query_row(
             "SELECT project_id FROM location WHERE id = ?1",
-            [inputs.snapshot.id.0],
+            [location_id.0],
             |r| r.get(0),
         )
         .optional()
@@ -120,9 +140,9 @@ pub fn uninstall_location(
     }
 
     Ok(Removed {
-        location: inputs.snapshot.id,
+        location: location_id,
         outcome,
-        removed_at: inputs.now,
+        removed_at: now,
     })
 }
 

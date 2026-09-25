@@ -337,8 +337,8 @@ fn the_warrant_variant_list_is_two_now_that_uninstall_has_landed() {
 /// row's lineage (§45.6 step 1); the live identity is what `remove_warranted` is handed.
 #[test]
 fn an_uninstall_warrant_whose_identity_changed_is_refused() {
+    use codotheca_core::analyser::verdict::VerdictSeal;
     use codotheca_core::protocol::{LocationId, UninstallDisposition};
-    use codotheca_core::uninstall::VerdictSeal;
 
     let dir = tempfile::tempdir().expect("tmp");
     let copy = dir.path().join("widget");
@@ -390,8 +390,8 @@ fn an_uninstall_warrant_whose_identity_changed_is_refused() {
 /// staging warrant gets, because a link at a working copy's path aims somewhere else entirely.
 #[test]
 fn an_uninstall_warrant_on_a_symlink_is_refused_without_following_it() {
+    use codotheca_core::analyser::verdict::VerdictSeal;
     use codotheca_core::protocol::{LocationId, UninstallDisposition};
-    use codotheca_core::uninstall::VerdictSeal;
 
     let dir = tempfile::tempdir().expect("tmp");
     let real = dir.path().join("precious");

@@ -1,20 +1,20 @@
 //! §25.3's backup-state producer — **one declaration, two consumers**, and one of them lives in
 //! another process.
 //!
-//! §25.3 requires *one exported producer* that §24's pre-flight **imports**; §24.7 recomputes
-//! that pre-flight inside `locations.uninstall`, in the core. A TypeScript producer could not be
-//! imported by core Rust, so a renderer-side declaration would force p2-24b to write a second
-//! one — R1's recorded shape, a fifth time. This is the declaration; OVERVIEW receives its
-//! verdict as `ProjectDetail.backup` and **holds no first-match table at all**, switching over
-//! three variants and writing the copy, which is that page's standing division.
+//! §25.3 required *one exported producer* in the core, where a TypeScript one could not reach.
+//! [p4] **§45's deletion analyser imports nothing from it** (§45.7, PA15): it is a display of
+//! stored facts, routed to the pre-pass and the card, and a deletion gate reads live.
+//!
+//! This is the declaration; OVERVIEW receives its verdict as `ProjectDetail.backup` and **holds
+//! no first-match table at all**, switching over three variants and writing the copy, which is
+//! that page's standing division.
 //!
 //! **The numbers and the age are not duplicated onto the wire.** The sentence's counts and the
 //! plate's age come from the `LocationDetail` the renderer already holds, so the core carries the
 //! decision and the renderer carries the copy, and neither carries both.
 //!
-//! **p2-24b imports this as its pre-flight's first gate.** It may refuse on this alone and may
-//! never **grant** on it alone, because the live fetch and the every-ref-upstream check are
-//! §24's.
+//! It never grants or refuses a removal: that is the analyser's alone, from reads made in the
+//! same call.
 
 use crate::protocol::BackupState;
 

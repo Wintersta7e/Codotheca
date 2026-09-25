@@ -692,6 +692,59 @@ const fn ctx(cancel: &CancelToken) -> codotheca_core::git::JobContext<'_> {
     codotheca_core::git::JobContext::new(codotheca_core::git::JobClass::Interactive, cancel, None)
 }
 
+/// An index holding `repo` as one observed location under a scan root, its row carrying the
+/// scan's lineage: no local refusal stops the analysis before step 6.
+fn seeded_index(
+    repo: &TestRepo,
+    dir: &Path,
+) -> (
+    std::sync::Arc<std::sync::Mutex<codotheca_core::index::Index>>,
+    i64,
+) {
+    let index = std::sync::Arc::new(std::sync::Mutex::new(
+        codotheca_core::index::Index::open_at(dir, 1_750_000_000).expect("index"),
+    ));
+    // The row's lineage is the scan's, so §45.6 step 1 matches and the remotes are read.
+    let lineage =
+        support::git_world::scan_lineage(&support::git_world::system_git(repo), repo.path());
+    let location = {
+        let mut guard = index.lock().expect("index");
+        guard
+            .with_tx(|tx| {
+                tx.execute(
+                    "INSERT INTO project (name, seed_basename, lineage_key, created_at, updated_at)
+                     VALUES ('widget', 'widget', ?1, 0, 0)",
+                    [&lineage],
+                )?;
+                let project = tx.last_insert_rowid();
+                // Observed, and under a scan root: no local refusal stops the analysis before
+                // step 6, whose order this test reads.
+                let root = repo.path().parent().expect("the repository's parent");
+                tx.execute(
+                    "INSERT INTO scan_root (kind, distro, path_bytes, path_key, path_display,
+                                            added_by, added_at)
+                     VALUES ('linux', '', ?1, ?1, ?2, 'user', 0)",
+                    rusqlite::params![root.to_string_lossy().as_bytes(), root.to_string_lossy()],
+                )?;
+                tx.execute(
+                    "INSERT INTO location
+                       (project_id, kind, distro, path_bytes, path_key, path_display,
+                        store_key, presence, repo_kind, refstate_observed_at,
+                        worktree_observed_at)
+                     VALUES (?1, 'linux', '', ?2, ?2, ?3, 'store', 'present', 'worktree', 1, 1)",
+                    rusqlite::params![
+                        project,
+                        repo.path().to_string_lossy().as_bytes(),
+                        repo.path().to_string_lossy()
+                    ],
+                )?;
+                Ok(tx.last_insert_rowid())
+            })
+            .expect("seeded")
+    };
+    (index, location)
+}
+
 /// **M5 (§47.2 rule 2): stdin is argv by another channel.** A destination on a stdin line wrote
 /// a ref under every other pin. The grammar refuses the line — and fed to a real child carrying
 /// every objects-step pin, the same line does create the ref, so the grammar is what stops it.
@@ -851,44 +904,19 @@ fn every_configured_remote_is_read_one_at_a_time() {
     ]);
 
     let dir = tempfile::tempdir().expect("tempdir");
-    let index = std::sync::Arc::new(std::sync::Mutex::new(
-        codotheca_core::index::Index::open_at(dir.path(), 1_750_000_000).expect("index"),
-    ));
-    // The row's lineage is the scan's, so §45.6 step 1 matches and the remotes are read.
-    let lineage =
-        support::git_world::scan_lineage(&support::git_world::system_git(&repo), repo.path());
-    let location = {
-        let mut guard = index.lock().expect("index");
-        guard
-            .with_tx(|tx| {
-                tx.execute(
-                    "INSERT INTO project (name, seed_basename, lineage_key, created_at, updated_at)
-                     VALUES ('widget', 'widget', ?1, 0, 0)",
-                    [&lineage],
-                )?;
-                let project = tx.last_insert_rowid();
-                tx.execute(
-                    "INSERT INTO location
-                       (project_id, kind, distro, path_bytes, path_key, path_display,
-                        store_key, presence, repo_kind)
-                     VALUES (?1, 'linux', '', ?2, ?2, ?3, 'store', 'present', 'worktree')",
-                    rusqlite::params![
-                        project,
-                        repo.path().to_string_lossy().as_bytes(),
-                        repo.path().to_string_lossy()
-                    ],
-                )?;
-                Ok(tx.last_insert_rowid())
-            })
-            .expect("seeded")
-    };
+    let (index, location) = seeded_index(&repo, dir.path());
     let hooks = codotheca_core::git::ensure_empty_hooks_dir(dir.path()).expect("hooks");
     let write_git = SystemMutatingGit::new(recording_git(), hooks);
     let read_git = support::git_world::system_git(&repo);
+    let remotes = codotheca_core::analyser::remote::GitRemoteVerifier::new(&write_git, &read_git);
+    let trash = codotheca_core::testing::CountingTrash::new();
     let verdict = codotheca_core::uninstall::handle_preflight_off_lock(
         &index,
-        &read_git,
-        &write_git,
+        &codotheca_core::analyser::AnalyserSeams {
+            git: &read_git,
+            remotes: &remotes,
+            trash: &trash,
+        },
         serde_json::json!({ "locationId": location }),
         1_750_000_000,
     )
@@ -1624,4 +1652,70 @@ fn an_unrecognised_audited_key_lets_verify_read_and_clone_run() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(dest.join(".git").exists());
+}
+
+/// **AC-P4-47-20's `VerifyRead` clause — its production caller.** The pre-flight handler, the
+/// real read backend and the production write path with the `TransportFixture`: every step of
+/// the verifying read runs, in order, through `handle_preflight_off_lock`, and the copy the
+/// origin covers is `safe` with the call's own instant.
+#[test]
+fn the_verifying_read_runs_through_the_preflight() {
+    use codotheca_core::analyser::remote::GitRemoteVerifier;
+    use support::analyser_world::{Library, Verdict, NOW};
+
+    let lib = Library::new();
+    let copy = lib.pushed_repo("widget");
+    // A branch the origin holds and the copy has never seen, so the objects step runs too.
+    let other = lib.base.join("other");
+    lib.git(
+        &lib.base,
+        &[
+            "clone",
+            "-q",
+            &lib.net.join("widget.git").to_string_lossy(),
+            &other.to_string_lossy(),
+        ],
+    );
+    lib.git(&other, &["checkout", "-q", "-b", "elsewhere"]);
+    lib.commit(&other, "e.txt", "elsewhere\n");
+    lib.git(&other, &["push", "-q", "origin", "elsewhere"]);
+    let id = lib.register(&copy);
+
+    let counting = CountingWrite {
+        inner: lib.write_git.clone(),
+        steps: std::sync::Mutex::new(Vec::new()),
+    };
+    let remotes = GitRemoteVerifier::with_transport_fixture(
+        &counting,
+        &lib.read_git,
+        codotheca_core::gitw::TransportFixture::new(&lib.net),
+    );
+    let trash = codotheca_core::testing::CountingTrash::new();
+    let value = codotheca_core::uninstall::handle_preflight_off_lock(
+        &lib.index,
+        &codotheca_core::analyser::AnalyserSeams {
+            git: &lib.read_git,
+            remotes: &remotes,
+            trash: &trash,
+        },
+        serde_json::json!({ "locationId": id }),
+        NOW,
+    )
+    .expect("the pre-flight answers");
+    let verdict = Verdict(value);
+    let steps = counting.steps.lock().expect("steps").clone();
+    eprintln!("VerifyRead through the pre-flight: {steps:?}; {verdict}");
+    assert_eq!(
+        steps,
+        [
+            codotheca_core::gitw::VerifyStepKind::ResolveUrl,
+            codotheca_core::gitw::VerifyStepKind::Advertise,
+            codotheca_core::gitw::VerifyStepKind::Objects,
+        ]
+        .iter()
+        .map(|kind| format!("{:?}", Some(*kind)))
+        .collect::<Vec<_>>()
+    );
+    assert_eq!(verdict.disposition(), "safe", "{verdict}");
+    assert_eq!(verdict.0["remoteVerifiedAt"].as_i64(), Some(NOW));
 }

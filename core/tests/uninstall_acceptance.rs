@@ -15,43 +15,25 @@
 //! sentence, including the half a unit test has no reason to state — "**none of the four ever
 //! yields `safe`**" is the half that matters and the half no per-gate test says.
 
+mod support;
+
 use std::path::{Path, PathBuf};
 
 use codotheca_core::analyser::identity::LiveIdentity;
+use codotheca_core::analyser::remote::DidNotAnswer;
+use codotheca_core::analyser::verdict::{fold_disposition, is_unknown_blocker, VerdictSeal};
+use codotheca_core::analyser::Analysis;
 use codotheca_core::protocol::{
-    BackupState, LocationId, UninstallBlocker, UninstallDisposition, UninstallVerdict,
+    BackupState, UninstallBlocker, UninstallDisposition, UninstallVerdict,
 };
 use codotheca_core::removal::{SystemTrash, Warrant, WarrantVariant};
-use codotheca_core::uninstall::gates::RemoteOutcome;
-use codotheca_core::uninstall::verdict::VerdictSeal;
-use codotheca_core::uninstall::{
-    compute_verdict, is_unknown_blocker, read_stash_truth, uninstall_location, LocationSnapshot,
-    StashTruth, VerdictInputs,
-};
+use codotheca_core::testing::FixtureRemoteVerifier;
+use codotheca_core::uninstall::uninstall_location;
+use support::analyser_world::Library;
 
 /// The row's lineage every warrant here expects; `LiveIdentity::Derived` of it is a match.
 fn lineage() -> String {
     "b".repeat(64)
-}
-
-/// A copy that clears every gate. Each test below spoils exactly one thing, so a failure names
-/// the gate that moved rather than the fixture.
-fn clean_inputs(root: &Path, copy: &Path) -> VerdictInputs {
-    VerdictInputs {
-        snapshot: LocationSnapshot {
-            id: LocationId(1),
-            path: copy.to_path_buf(),
-            refstate_observed_at: Some(10),
-            worktree_observed_at: Some(11),
-            is_shallow: false,
-            removed_at: None,
-        },
-        roots: vec![root.to_path_buf()],
-        remote: RemoteOutcome::Reached,
-        unique: Vec::new(),
-        live_session: false,
-        now: 1_700_000_000,
-    }
 }
 
 fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
@@ -63,8 +45,13 @@ fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
     (dir, root, copy)
 }
 
-fn verdict_for(inputs: &VerdictInputs) -> UninstallVerdict {
-    compute_verdict(inputs).expect("computed").0
+/// A pushed copy with one stash entry, registered: the shape both stash criteria start from.
+fn stashed(lib: &Library) -> (PathBuf, codotheca_core::protocol::LocationId) {
+    let copy = lib.pushed_repo("widget");
+    std::fs::write(copy.join("a.txt"), b"stashed work\n").expect("edit");
+    lib.git(&copy, &["stash", "push", "-q", "-m", "work"]);
+    let id = lib.register(&copy);
+    (copy, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -132,57 +119,55 @@ fn ac_p2_24_13_no_verdict_token_crosses_the_wire() {
 fn ac_p2_24_15_an_unreadable_stash_reflog_is_unknown_and_never_safe() {
     use std::os::unix::fs::PermissionsExt;
 
-    let (_dir, root, copy) = fixture();
-    let common = copy.join(".git");
-    let logs = common.join("logs").join("refs");
-    std::fs::create_dir_all(&logs).expect("mkdir");
-    let reflog = logs.join("stash");
-    std::fs::write(&reflog, b"whatever").expect("write");
+    let lib = Library::new();
+    let (copy, id) = stashed(&lib);
+    let reflog = copy.join(".git").join("logs").join("refs").join("stash");
+    assert!(reflog.is_file(), "the fixture's stash has a reflog to deny");
     std::fs::set_permissions(&reflog, std::fs::Permissions::from_mode(0o000)).expect("chmod");
 
     // Running as root defeats the mode bits entirely, and a test that quietly passes because the
     // denial never happened is worse than no test — so the root case fails loudly rather than
     // reading as an absent stash.
-    let truth = read_stash_truth(&common);
-    assert_eq!(
-        truth,
-        StashTruth::Unreadable,
+    assert!(
+        std::fs::read(&reflog).is_err(),
         "chmod 000 did not deny the read — this suite cannot run as root"
     );
 
-    let mut inputs = clean_inputs(&root, &copy);
-    inputs.unique.push(UninstallBlocker::StashUnreadable);
-    let verdict = verdict_for(&inputs);
-
+    let verdict = lib.preflight(id, &lib.verifier());
+    std::fs::set_permissions(&reflog, std::fs::Permissions::from_mode(0o644)).expect("chmod back");
+    eprintln!("an unreadable stash reflog: {verdict}");
     assert_eq!(
-        verdict.disposition,
-        UninstallDisposition::Unknown,
-        "an input nobody could read is not an absent stash"
+        verdict.disposition(),
+        "unknown",
+        "an input nobody could read is not an absent stash: {verdict}"
     );
-    assert!(verdict
-        .blockers
-        .contains(&UninstallBlocker::StashUnreadable));
-    assert_ne!(verdict.disposition, UninstallDisposition::Safe);
+    assert!(verdict.has("stash_unreadable"), "{verdict}");
 }
 
 /// The other half of the same criterion: a stash reachable **only** through a packed `refs/stash`
 /// is a stash. A reader that checked the reflog and the loose ref would answer `None` here.
 #[test]
 fn ac_p2_24_15_a_packed_only_stash_is_a_stash() {
-    let (_dir, _root, copy) = fixture();
+    let lib = Library::new();
+    let (copy, id) = stashed(&lib);
     let common = copy.join(".git");
-    std::fs::write(
-        common.join("packed-refs"),
-        b"# pack-refs with: peeled fully-peeled sorted \n\
-          0123456789abcdef0123456789abcdef01234567 refs/stash\n",
-    )
-    .expect("write");
-
-    assert_eq!(
-        read_stash_truth(&common),
-        StashTruth::Present(1),
-        "one is a floor the ref proves, not a guess at how many"
+    lib.git(&copy, &["pack-refs", "--all"]);
+    let _ = std::fs::remove_file(common.join("refs").join("stash"));
+    let _ = std::fs::remove_file(common.join("logs").join("refs").join("stash"));
+    assert!(
+        std::fs::read_to_string(common.join("packed-refs"))
+            .expect("packed-refs")
+            .contains("refs/stash"),
+        "the fixture's stash is reachable only through packed-refs"
     );
+
+    let verdict = lib.preflight(id, &lib.verifier());
+    eprintln!("a packed-only stash: {verdict}");
+    assert!(
+        verdict.has("stash_present"),
+        "one is a floor the ref proves, not a guess at how many: {verdict}"
+    );
+    assert_eq!(verdict.disposition(), "blocked");
 }
 
 // ---------------------------------------------------------------------------
@@ -193,41 +178,65 @@ fn ac_p2_24_15_a_packed_only_stash_is_a_stash() {
 /// **this proves the disposition**, which is the sentence the product rests on.
 #[test]
 fn ac_p2_24_16_no_remote_or_history_failure_ever_yields_safe() {
-    let (_dir, root, copy) = fixture();
-
-    // 401 / 403 / 404, and an offline machine.
-    for outcome in [RemoteOutcome::Refused, RemoteOutcome::Unreachable] {
-        let mut inputs = clean_inputs(&root, &copy);
-        inputs.remote = outcome;
-        let verdict = verdict_for(&inputs);
+    // 401 / 403 / 404, an offline machine, and the deadline: a remote that did not answer.
+    for why in [
+        DidNotAnswer::Failed,
+        DidNotAnswer::Deadline,
+        DidNotAnswer::Unresolved,
+    ] {
+        let lib = Library::new();
+        let copy = lib.pushed_repo("widget");
+        let id = lib.register(&copy);
+        let silent = FixtureRemoteVerifier::new();
+        silent.silent("origin", why);
+        let verdict = lib.preflight(id, &silent);
         assert_eq!(
-            verdict.disposition,
-            UninstallDisposition::Unknown,
-            "{outcome:?} is *I could not check*, never *I checked and it is fine*"
+            verdict.disposition(),
+            "unknown",
+            "{why:?} is *I could not check*, never *I checked and it is fine*: {verdict}"
         );
-        assert_eq!(
-            verdict.remote_verified_at, None,
-            "{outcome:?} verified nothing"
+        assert!(
+            verdict.0["remoteVerifiedAt"].is_null(),
+            "{why:?} verified nothing"
         );
     }
 
-    // A remote URL that resolves to a path on this machine is not a backup.
-    let mut mirrored = clean_inputs(&root, &copy);
-    mirrored.remote = RemoteOutcome::LocalMirror;
-    let verdict = verdict_for(&mirrored);
-    assert!(verdict
-        .blockers
-        .contains(&UninstallBlocker::RemoteIsLocalMirror));
-    assert_ne!(verdict.disposition, UninstallDisposition::Safe);
+    // A remote URL that resolves to a path on this machine is not a backup — read by the
+    // production verifier, which admits no local transport.
+    {
+        let lib = Library::new();
+        let copy = lib.repo("widget");
+        let mirror = lib.base.join("mirror.git");
+        lib.git(
+            &lib.base,
+            &[
+                "init",
+                "-q",
+                "--bare",
+                "-b",
+                "main",
+                &mirror.to_string_lossy(),
+            ],
+        );
+        lib.push_to(&copy, "origin", &mirror);
+        let id = lib.register(&copy);
+        let production =
+            codotheca_core::analyser::remote::GitRemoteVerifier::new(&lib.write_git, &lib.read_git);
+        let verdict = lib.preflight(id, &production);
+        eprintln!("a same-machine mirror as the only remote: {verdict}");
+        assert!(verdict.has("remote_is_local_mirror"), "{verdict}");
+        assert_ne!(verdict.disposition(), "safe");
+    }
 
     // A shallow clone holds history no remote has, whatever the remote says.
-    let mut shallow = clean_inputs(&root, &copy);
-    shallow.snapshot.is_shallow = true;
-    let shallow_verdict = verdict_for(&shallow);
-    assert!(shallow_verdict
-        .blockers
-        .contains(&UninstallBlocker::ShallowClone));
-    assert_ne!(shallow_verdict.disposition, UninstallDisposition::Safe);
+    {
+        let lib = Library::new();
+        let copy = lib.shallow_repo("widget");
+        let id = lib.register(&copy);
+        let shallow = lib.preflight(id, &lib.verifier());
+        assert!(shallow.has("shallow_clone"), "{shallow}");
+        assert_ne!(shallow.disposition(), "safe");
+    }
 }
 
 /// The fold's totality, stated as the criterion implies it rather than as the enum declares it:
@@ -236,17 +245,16 @@ fn ac_p2_24_16_no_remote_or_history_failure_ever_yields_safe() {
 /// is one value stated twice, and it was wrong the moment §45 added eight.
 #[test]
 fn ac_p2_24_16_every_blocker_alone_keeps_the_answer_away_from_safe() {
-    let (_dir, root, copy) = fixture();
     let all = UninstallBlocker::ALL;
     assert!(!all.is_empty(), "the schema declares zero blockers");
     eprintln!("ac_p2_24_16: {} blockers, each alone", all.len());
 
+    // [p4] The analyser's own fold, over each blocker alone: AC-P4-45-1 (every blocker produced
+    // through production) replaces this loop as the coverage claim.
     for blocker in all {
-        let mut inputs = clean_inputs(&root, &copy);
-        inputs.unique.push(blocker);
-        let verdict = verdict_for(&inputs);
+        let disposition = fold_disposition(&[blocker]);
         assert_ne!(
-            verdict.disposition,
+            disposition,
             UninstallDisposition::Safe,
             "{blocker:?} alone still permitted a removal"
         );
@@ -255,7 +263,7 @@ fn ac_p2_24_16_every_blocker_alone_keeps_the_answer_away_from_safe() {
         } else {
             UninstallDisposition::Blocked
         };
-        assert_eq!(verdict.disposition, expected, "{blocker:?}");
+        assert_eq!(disposition, expected, "{blocker:?}");
     }
 }
 
@@ -326,20 +334,29 @@ fn ac_p2_25_11_unknown_an_unknown_stash_count_produces_no_block() {
 /// the answer the pre-flight reached, and a seal over a non-`safe` answer must not open the door.
 #[test]
 fn an_unknown_verdict_never_reaches_the_filesystem() {
-    let (_dir, root, copy) = fixture();
+    let (_dir, _root, copy) = fixture();
     let index = codotheca_core::testing::TempIndex::new();
     let project = index.insert_project();
     let location = index.insert_location(project, "/r/widget");
 
-    let mut inputs = clean_inputs(&root, &copy);
-    inputs.snapshot.id = location;
-    inputs.remote = RemoteOutcome::Unreachable;
-    assert_eq!(
-        verdict_for(&inputs).disposition,
-        UninstallDisposition::Unknown
-    );
+    let blockers = vec![UninstallBlocker::RemoteUnreachable];
+    let disposition = fold_disposition(&blockers);
+    assert_eq!(disposition, UninstallDisposition::Unknown);
+    let analysis = Analysis {
+        seal: VerdictSeal::of(&blockers, disposition),
+        verdict: UninstallVerdict {
+            disposition,
+            blockers,
+            remote_verified_at: None,
+            trash_available: true,
+            computed_at: 1_700_000_000,
+            nested: Vec::new(),
+            precious: None,
+            trash_refusal: None,
+        },
+    };
 
-    // A warrant that claims `safe` over a tree that is not: the recomputation is what refuses.
+    // A warrant that claims `safe` over a tree that is not: the analysis is what refuses.
     let warrant = Warrant::for_uninstall_in_test(
         location,
         copy.clone(),
@@ -353,13 +370,14 @@ fn an_unknown_verdict_never_reaches_the_filesystem() {
     assert!(
         uninstall_location(
             &tx,
-            &inputs,
+            &analysis,
             &warrant,
             &SystemTrash,
-            &LiveIdentity::Derived(Some(lineage()))
+            &LiveIdentity::Derived(Some(lineage())),
+            1_700_000_000,
         )
         .is_err(),
-        "a forged seal must not outrank the core's own recomputation"
+        "a forged seal must not outrank the core's own analysis"
     );
     assert!(copy.exists(), "the copy is still on disk");
 }

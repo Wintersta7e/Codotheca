@@ -5,15 +5,17 @@
     clippy::indexing_slicing
 )]
 
-//! §24.7B–G. **AC-P2-24-16: none of these ever yields `safe`.**
+//! §24.7B–G, now §45.6 step 2's gates. **AC-P2-24-16: none of these ever yields `safe`.**
+//!
+//! [p4] The remote cases — every failure is unknown, a mirror is named only beside an uncovered
+//! root, a reached remote records when — are §45.3's composition's now, and run through the
+//! handlers in `analyser_remotes.rs`.
 
 use std::path::PathBuf;
 
+use codotheca_core::analyser::gates::{gate_first_day, gate_path, gate_shallow};
+use codotheca_core::analyser::verdict::fold_disposition;
 use codotheca_core::protocol::{UninstallBlocker, UninstallDisposition};
-use codotheca_core::uninstall::fold_disposition;
-use codotheca_core::uninstall::gates::{
-    gate_first_day, gate_path, gate_shallow, is_local_mirror, verify_remote, RemoteOutcome,
-};
 
 /// §24.7B: a shallow clone can never prove every local ref is upstream, so it never clears.
 #[test]
@@ -26,83 +28,6 @@ fn a_shallow_clone_never_clears() {
         "shallow is an unknown, not a known-bad — but neither reaches removal"
     );
     assert_eq!(gate_shallow(false), None);
-}
-
-/// **AC-P2-24-16.** 401, 403, 404 and offline are one claim — *this was not established* — and
-/// **none of them is ever `safe`**.
-///
-/// A 404 against a private repository the caller cannot see is indistinguishable from one that
-/// does not exist. Rendering it as *gone* is the specific mistake that turns this into a shredder.
-#[test]
-fn no_remote_failure_ever_yields_safe() {
-    for outcome in [RemoteOutcome::Refused, RemoteOutcome::Unreachable] {
-        let verification = verify_remote(outcome, 100);
-        assert_eq!(
-            verification.blockers,
-            vec![UninstallBlocker::RemoteUnreachable],
-            "{outcome:?}"
-        );
-        assert_eq!(
-            verification.verified_at, None,
-            "{outcome:?}: nothing was verified, so no instant is claimed"
-        );
-        assert_ne!(
-            fold_disposition(&verification.blockers),
-            UninstallDisposition::Safe,
-            "{outcome:?} must never reach safe"
-        );
-    }
-}
-
-/// A mirror on the same machine is reported honestly and never counted as a backup: one disk
-/// failure takes both copies.
-///
-/// **[p4] §45.9 moved `remote_is_local_mirror` to the unknown class**, so alone it folds to
-/// `unknown` — still never `safe`. The name's *blocked* stops being true here; the test is
-/// renamed with its body when §45.3's composition replaces `verify_remote`.
-#[test]
-fn a_local_mirror_is_blocked_and_not_treated_as_a_backup() {
-    let verification = verify_remote(RemoteOutcome::LocalMirror, 100);
-    assert_eq!(
-        verification.blockers,
-        vec![UninstallBlocker::RemoteIsLocalMirror]
-    );
-    assert_eq!(
-        fold_disposition(&verification.blockers),
-        UninstallDisposition::Unknown,
-        "never counted as a backup, and never a verdict on its own (§45.9)"
-    );
-}
-
-#[test]
-fn a_reached_remote_records_when_it_was_reached() {
-    let verification = verify_remote(RemoteOutcome::Reached, 1_700_000_000);
-    assert!(verification.blockers.is_empty());
-    assert_eq!(
-        verification.verified_at,
-        Some(1_700_000_000),
-        "the label is VERIFIED <age>, never PUSHED — so the instant has to be real"
-    );
-}
-
-#[test]
-fn a_local_path_remote_is_recognised_however_it_is_spelled() {
-    for local in [
-        "file:///srv/mirrors/widget.git",
-        "/srv/mirrors/widget.git",
-        "../widget.git",
-        "~/mirrors/widget.git",
-        "D:\\Mirrors\\widget.git",
-    ] {
-        assert!(is_local_mirror(local), "{local} is on this machine");
-    }
-    for remote in [
-        "https://forge.example/owner/widget",
-        "ssh://git@forge.example/owner/widget.git",
-        "git@forge.example:owner/widget.git",
-    ] {
-        assert!(!is_local_mirror(remote), "{remote} is a real remote");
-    }
 }
 
 /// §24.7G: *never observed* and *stale but once known* are distinct, and the lock fires only on
@@ -191,8 +116,19 @@ fn a_path_whose_git_is_not_a_direct_child_is_refused() {
     let plain = root.join("notes");
     std::fs::create_dir_all(&plain).expect("mkdir");
     assert_eq!(
-        gate_path(&plain, &[root]),
+        gate_path(&plain, std::slice::from_ref(&root)),
         Some(UninstallBlocker::RefusedPath)
+    );
+
+    // [p4] A `.git` **file** — a linked worktree's or a separate git dir's gitfile — is not the
+    // copy's own git directory either (§45.5), and `exists()` used to pass it.
+    let gitfile = root.join("linked");
+    std::fs::create_dir_all(&gitfile).expect("mkdir");
+    std::fs::write(gitfile.join(".git"), b"gitdir: /elsewhere/.git\n").expect("gitfile");
+    assert_eq!(
+        gate_path(&gitfile, &[root]),
+        Some(UninstallBlocker::RefusedPath),
+        "a gitfile names a git dir somewhere else"
     );
 }
 

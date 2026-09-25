@@ -12,8 +12,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::analyser::verdict::VerdictSeal;
 use crate::protocol::{InstallRunId, LocationId};
-use crate::uninstall::VerdictSeal;
 
 /// A per-process random value, minted once at core start.
 ///

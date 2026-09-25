@@ -4655,7 +4655,7 @@
           "status": "automated",
           "runner": "cargo",
           "owner": "p2-24b",
-          "test": "uninstall_gates::a_local_mirror_is_blocked_and_not_treated_as_a_backup",
+          "test": "analyser_remotes::a_local_mirror_is_named_only_beside_an_uncovered_root",
           "assert": "A remote URL resolving to a local path yields remote_is_local_mirror and is never counted as a second copy."
         },
         {

@@ -5,40 +5,44 @@
     clippy::indexing_slicing
 )]
 
-//! §24.8's mutating call, and the verdict it recomputes for itself.
+//! §24.8's mutating call, and the verdict it acts on — computed by §45's analyser inside the same
+//! call. [p4] The phase-2 hand-built `VerdictInputs` are gone: the verdict cases run through the
+//! handlers over a real library, and the transaction cases hand `uninstall_location` the
+//! analysis the handler would.
 
-use std::path::{Path, PathBuf};
+mod support;
+
+use std::path::PathBuf;
 
 use codotheca_core::analyser::identity::LiveIdentity;
-use codotheca_core::protocol::{LocationId, UninstallBlocker, UninstallDisposition};
-use codotheca_core::removal::{RemovalOutcome, SystemTrash, Warrant};
+use codotheca_core::analyser::verdict::VerdictSeal;
+use codotheca_core::analyser::Analysis;
+use codotheca_core::protocol::{LocationId, UninstallDisposition, UninstallVerdict};
+use codotheca_core::removal::{SystemTrash, Warrant};
+use codotheca_core::testing::CountingTrash;
 use codotheca_core::uninstall::command::{cleared_columns, uninstall_location};
-use codotheca_core::uninstall::gates::RemoteOutcome;
-use codotheca_core::uninstall::verdict::VerdictSeal;
-use codotheca_core::uninstall::{compute_verdict, LocationSnapshot, VerdictInputs};
+use support::analyser_world::{Library, NOW};
 
 /// The row's lineage every warrant here expects; `LiveIdentity::Derived` of it is a match.
 fn lineage() -> String {
     "a".repeat(64)
 }
 
-/// A copy that clears every gate: observed, not shallow, under a root, fully pushed, clean,
-/// nothing stashed, no live session, remote reached.
-fn clean_inputs(root: &Path, copy: &Path) -> VerdictInputs {
-    VerdictInputs {
-        snapshot: LocationSnapshot {
-            id: LocationId(1),
-            path: copy.to_path_buf(),
-            refstate_observed_at: Some(10),
-            worktree_observed_at: Some(11),
-            is_shallow: false,
-            removed_at: None,
+/// A `safe` analysis, as the handler hands it to `uninstall_location` for a copy that cleared
+/// every step.
+fn safe_analysis() -> Analysis {
+    Analysis {
+        verdict: UninstallVerdict {
+            disposition: UninstallDisposition::Safe,
+            blockers: Vec::new(),
+            remote_verified_at: Some(1_700_000_000),
+            trash_available: true,
+            computed_at: 1_700_000_000,
+            nested: Vec::new(),
+            precious: None,
+            trash_refusal: None,
         },
-        roots: vec![root.to_path_buf()],
-        remote: RemoteOutcome::Reached,
-        unique: Vec::new(),
-        live_session: false,
-        now: 1_700_000_000,
+        seal: VerdictSeal::of(&[], UninstallDisposition::Safe),
     }
 }
 
@@ -53,142 +57,102 @@ fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
 
 #[test]
 fn a_copy_that_clears_every_gate_is_safe_and_names_no_blocker() {
-    let (_dir, root, copy) = fixture();
-    let (verdict, _seal) = compute_verdict(&clean_inputs(&root, &copy)).expect("computed");
-    assert_eq!(verdict.disposition, UninstallDisposition::Safe);
-    assert!(verdict.blockers.is_empty(), "{:?}", verdict.blockers);
+    let lib = Library::new();
+    let copy = lib.pushed_repo("widget");
+    let id = lib.register(&copy);
+    let verdict = lib.preflight(id, &lib.verifier());
+    assert_eq!(verdict.disposition(), "safe", "{verdict}");
+    assert!(verdict.blockers().is_empty(), "{verdict}");
     assert_eq!(
-        verdict.remote_verified_at,
-        Some(1_700_000_000),
+        verdict.0["remoteVerifiedAt"].as_i64(),
+        Some(NOW),
         "VERIFIED <age>, never PUSHED — so the instant is real"
     );
-    assert_eq!(verdict.computed_at, 1_700_000_000);
+    assert_eq!(verdict.0["computedAt"].as_i64(), Some(NOW));
 }
 
 /// Every blocker found is reported, of both classes — the fold decides a disposition, it never
 /// edits the list. A surface that learned only *blocked* could not say why.
 #[test]
 fn every_blocker_found_is_reported_and_none_is_hidden() {
-    let (_dir, root, copy) = fixture();
-    let mut inputs = clean_inputs(&root, &copy);
-    inputs.is_shallow_and_dirty();
-    let (verdict, _seal) = compute_verdict(&inputs).expect("computed");
-    assert_eq!(verdict.disposition, UninstallDisposition::Blocked);
-    assert!(verdict.blockers.contains(&UninstallBlocker::ShallowClone));
-    assert!(verdict
-        .blockers
-        .contains(&UninstallBlocker::UncommittedChanges));
-}
-
-trait Seeded {
-    fn is_shallow_and_dirty(&mut self);
-}
-
-impl Seeded for VerdictInputs {
-    fn is_shallow_and_dirty(&mut self) {
-        self.snapshot.is_shallow = true;
-        self.unique.push(UninstallBlocker::UncommittedChanges);
-    }
+    let lib = Library::new();
+    let copy = lib.shallow_repo("widget");
+    std::fs::write(copy.join("a.txt"), b"edited\n").expect("dirty");
+    let id = lib.register(&copy);
+    let verdict = lib.preflight(id, &lib.verifier());
+    eprintln!("shallow and dirty: {verdict}");
+    assert_eq!(verdict.disposition(), "blocked");
+    assert!(verdict.has("shallow_clone"), "{verdict}");
+    assert!(verdict.has("uncommitted_changes"), "{verdict}");
 }
 
 /// **AC-P2-24-13, and the assertion the whole boundary rests on.**
 ///
-/// The pre-flight said `safe`; the working copy changed; the mutating call recomputes for itself
+/// The pre-flight said `safe`; the working copy changed; the mutating call computes for itself
 /// and **refuses**, and the directory is still there.
 #[test]
 fn a_copy_that_changed_after_the_preflight_is_refused_and_survives() {
-    let (_dir, root, copy) = fixture();
-    let index = tempfile::tempdir().expect("index");
-    let db = codotheca_core::index::Index::open(&index.path().join("index")).expect("index");
+    let lib = Library::new();
+    let copy = lib.pushed_repo("widget");
+    let id = lib.register(&copy);
+    let verifier = lib.verifier();
 
     // The pre-flight's answer, which the user acted on.
-    let before = clean_inputs(&root, &copy);
-    let (verdict, _seal) = compute_verdict(&before).expect("computed");
-    assert_eq!(verdict.disposition, UninstallDisposition::Safe);
+    assert_eq!(lib.preflight(id, &verifier).disposition(), "safe");
 
     // Between the two calls, the copy gains work. Nothing tells the core; that is the point.
     std::fs::write(copy.join("untracked.txt"), b"unsaved work").expect("write");
-    let mut after = clean_inputs(&root, &copy);
-    after.unique.push(UninstallBlocker::UntrackedPrecious);
-
-    let warrant = Warrant::for_uninstall_in_test(
-        LocationId(1),
-        copy.clone(),
-        Some(lineage()),
-        VerdictSeal::of(&[], UninstallDisposition::Safe),
-    );
-
-    let _guard = codotheca_core::proto::txguard::TxGuard::enter();
-    let tx = db.conn().unchecked_transaction().expect("tx");
-    let refused = uninstall_location(
-        &tx,
-        &after,
-        &warrant,
-        &SystemTrash,
-        &LiveIdentity::Derived(Some(lineage())),
-    );
+    let trash = CountingTrash::new();
+    let refused = lib.uninstall(id, &verifier, &trash);
+    eprintln!("the changed copy: {refused:?}; {} send(s)", trash.sends());
 
     assert!(
         refused.is_err(),
         "the mutating call must recompute and refuse, not trust the pre-flight"
     );
+    assert_eq!(trash.sends(), 0);
     assert!(
         copy.join("untracked.txt").exists(),
         "the directory and its unsaved work are still there"
     );
-    assert!(copy.exists());
 }
 
 /// **AC-P2-24-17.** The row survives, ten columns read NULL and not 0, `head_oid` is retained and
-/// `removed_at` is set — against a real migrated database.
+/// `removed_at` is set — against a real migrated database, through the handler.
 #[test]
 fn a_successful_removal_keeps_the_row_and_nulls_the_ten_columns() {
-    let (_dir, root, copy) = fixture();
-    let index = codotheca_core::testing::TempIndex::new();
-    let project = index.insert_project();
-    let location = index.insert_location(project, "/r/widget");
+    let lib = Library::new();
+    let copy = lib.pushed_repo("widget");
+    let location = lib.register(&copy);
+    {
+        let guard = lib.index.lock().expect("index");
+        // Seed every column the removal must clear, plus the one it must keep. The observation
+        // clocks stay set: they are two of the ten, and the analyser needs them to have looked.
+        guard
+            .conn()
+            .execute(
+                "UPDATE location SET is_dirty = 1, untracked_count = 4, ahead = 2, behind = 1,
+                     stash_count = 3, interrupted_op = 'merge', branch = 'main',
+                     refstate_basis = 'abc', head_oid = 'deadbeef'
+                 WHERE id = ?1",
+                [location.0],
+            )
+            .expect("seed");
+    }
 
-    let _guard = codotheca_core::proto::txguard::TxGuard::enter();
-    let binding = index.index();
-    let conn = binding.conn();
-    // Seed every column the removal must clear, plus the one it must keep.
-    conn.execute(
-        "UPDATE location SET is_dirty = 1, untracked_count = 4, ahead = 2, behind = 1,
-             stash_count = 3, interrupted_op = 'merge', branch = 'main',
-             worktree_observed_at = 5, refstate_observed_at = 6, refstate_basis = 'abc',
-             head_oid = 'deadbeef'
-         WHERE id = ?1",
-        [location.0],
-    )
-    .expect("seed");
-
-    let mut inputs = clean_inputs(&root, &copy);
-    inputs.snapshot.id = location;
-    let warrant = Warrant::for_uninstall_in_test(
-        location,
-        copy,
-        Some(lineage()),
-        VerdictSeal::of(&[], UninstallDisposition::Safe),
-    );
-
-    let tx = conn.unchecked_transaction().expect("tx");
-    let removed = uninstall_location(
-        &tx,
-        &inputs,
-        &warrant,
-        &SystemTrash,
-        &LiveIdentity::Derived(Some(lineage())),
-    )
-    .expect("removed");
-    tx.commit().expect("commit");
-
-    assert_eq!(removed.location, location);
+    let trash = CountingTrash::new();
+    let removed = lib
+        .uninstall(location, &lib.verifier(), &trash)
+        .expect("removed");
     assert_eq!(
-        removed.outcome,
-        RemovalOutcome::Trashed,
-        "a user's working copy goes to the trash, never a hard delete"
+        removed["location"]["id"].as_i64(),
+        Some(location.0),
+        "{removed}"
     );
+    assert_eq!(trash.sends(), 1, "a user's working copy goes to the trash");
 
+    let guard = lib.index.lock().expect("index");
+    let conn = guard.conn();
     // The row survives.
     let rows: i64 = conn
         .query_row(
@@ -221,12 +185,13 @@ fn a_successful_removal_keeps_the_row_and_nulls_the_ten_columns() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .expect("read back");
+    drop(guard);
     assert_eq!(
         head.as_deref(),
         Some("deadbeef"),
         "head_oid is retained: what a re-clone can be checked against"
     );
-    assert_eq!(removed_at, Some(1_700_000_000));
+    assert_eq!(removed_at, Some(NOW));
 }
 
 /// R34 is undisturbed: a removal is not a job, because a job is a retry surface and a removal must
@@ -409,21 +374,19 @@ fn debt_warrant(location: LocationId, copy: PathBuf) -> Warrant {
 /// directory, so a second call against the same copy is refused `RefusedPath`.
 #[test]
 fn a_rolled_back_removal_marks_no_debt_item() {
-    let (_dir, root, copy, index, project, location) = debt_fixture();
+    let (_dir, _root, copy, index, project, location) = debt_fixture();
     let _guard = codotheca_core::proto::txguard::TxGuard::enter();
     let binding = index.index();
     let conn = binding.conn();
 
-    let mut inputs = clean_inputs(&root, &copy);
-    inputs.snapshot.id = location;
-
     let tx = conn.unchecked_transaction().expect("tx");
     uninstall_location(
         &tx,
-        &inputs,
+        &safe_analysis(),
         &debt_warrant(location, copy),
         &SystemTrash,
         &LiveIdentity::Derived(Some(lineage())),
+        1_700_000_000,
     )
     .expect("removed");
     tx.rollback().expect("rollback");
@@ -453,21 +416,19 @@ fn a_rolled_back_removal_marks_no_debt_item() {
 /// **kept**: it is what the reap later compares against.
 #[test]
 fn a_removal_marks_the_projects_debt_items_unverified() {
-    let (_dir, root, copy, index, project, location) = debt_fixture();
+    let (_dir, _root, copy, index, project, location) = debt_fixture();
     let _guard = codotheca_core::proto::txguard::TxGuard::enter();
     let binding = index.index();
     let conn = binding.conn();
 
-    let mut inputs = clean_inputs(&root, &copy);
-    inputs.snapshot.id = location;
-
     let tx = conn.unchecked_transaction().expect("tx");
     uninstall_location(
         &tx,
-        &inputs,
+        &safe_analysis(),
         &debt_warrant(location, copy),
         &SystemTrash,
         &LiveIdentity::Derived(Some(lineage())),
+        1_700_000_000,
     )
     .expect("removed");
     tx.commit().expect("commit");
