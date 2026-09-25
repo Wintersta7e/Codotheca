@@ -122,6 +122,7 @@ type Break = fn(&Library, &Path);
 /// The broken shapes only a permission bit can make: unix only, because an ACL denial needs a
 /// second principal a test cannot rely on.
 fn unreadable_shapes() -> Vec<(&'static str, Break, &'static str)> {
+    // Pushed to only on unix, where a permission bit can make a file unreadable.
     #[allow(unused_mut)]
     let mut cases: Vec<(&'static str, Break, &'static str)> = Vec::new();
     #[cfg(unix)]

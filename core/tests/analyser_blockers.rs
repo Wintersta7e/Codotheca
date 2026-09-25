@@ -168,6 +168,8 @@ fn four_deep() -> Verdict {
 
 /// The fixture built to produce `blocker`. The match is exhaustive over the generated enum, so a
 /// variant with no fixture fails to compile rather than going uncovered.
+// One arm per blocker variant: splitting the match would scatter the one list the exhaustiveness
+// check reads.
 #[allow(clippy::too_many_lines)]
 fn fixture_for(blocker: UninstallBlocker) -> Verdict {
     match blocker {
