@@ -56,6 +56,9 @@ nsis:
   oneClick: false
   perMachine: false # per-user: no UAC prompt and no elevation
   allowToChangeInstallationDirectory: true
+  # No updater, so no differential download map: left on, this target writes
+  # `<installer>.blockmap` even with `publish: null`, and the draft job refuses update metadata.
+  differentialPackage: false
   # §17 permits no destructive operation. The index, the notes and the session ledger are the
   # only content no rescan can re-derive; an uninstall does not take them.
   deleteAppDataOnUninstall: false

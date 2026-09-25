@@ -10,11 +10,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # First, before anything is built: every version declaration the workspace holds agrees, and on
+  # a tag push equals the tag. The declarations are derived from the workspace, never listed, and
+  # the ref is read from the runner's GITHUB_REF_TYPE / GITHUB_REF_NAME, not an expression here.
+  version:
+    name: version check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 22, package-manager-cache: false }
+      - run: node scripts/check-version.mjs
+
   # §13: the Windows installer carries a Linux worker per architecture, for repositories that live
   # inside WSL. `build/worker/` is gitignored, so on a fresh checkout nothing is staged there and
   # the pack would ship without one; it is built here and handed to the Windows pack instead.
   worker:
     name: wsl worker
+    needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -47,7 +62,7 @@ jobs:
 
   build:
     name: package (${{ matrix.os }})
-    needs: worker
+    needs: [version, worker]
     # `id-token` signs the provenance below and `attestations` stores it; nothing else writes.
     permissions: { contents: read, id-token: write, attestations: write }
     runs-on: ${{ matrix.os }}
@@ -95,10 +110,6 @@ jobs:
       # Until it exists, Windows artifacts are unsigned and SmartScreen will warn.
       - name: package
         run: npx electron-builder --publish never
-        # Quoted: a `${{ }}` expression inside a YAML flow mapping makes the `{` an indicator and
-        # the file unparseable. This workflow never ran once before that was fixed.
-        env:
-          CODOTHECA_CHANNEL: "${{ matrix.os == 'ubuntu-latest' && 'appimage' || 'nsis' }}"
 
       # The newest glibc any packed binary needs is the oldest Linux it starts on, and both Rust
       # binaries are linked against whatever this image carries. The Linux pack never holds the
@@ -156,8 +167,10 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  # A tag becomes a DRAFT release: the installers, their checksums, and notes generated from the
-  # commits since the previous tag. Publishing it stays a person's decision, on the release page.
+  # A tag becomes a DRAFT release: the installers, their checksums, and the notes a person wrote
+  # for that tag in `docs/release-notes/<tag>.md`. Notes generated from commits cannot carry the
+  # known limits a user has to be told, so none are generated. Publishing stays a person's
+  # decision, on the release page.
   release:
     name: draft release
     if: startsWith(github.ref, 'refs/tags/v')
@@ -166,8 +179,23 @@ jobs:
     timeout-minutes: 15
     permissions: { contents: write }
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 22, package-manager-cache: false }
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with: { pattern: 'codotheca-*', path: dist, merge-multiple: true }
+      - name: release notes present
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes="docs/release-notes/$TAG.md"
+          test -s "$notes" || { echo "no release notes at $notes: a person writes them before the tag"; exit 1; }
+          echo "release notes: $notes"
+      # No updater exists, so nothing in a release may let one find it: no `latest*.yml` feed and
+      # no `.blockmap`. The packager is configured to write neither; this proves it did not.
+      - name: no update metadata
+        run: node scripts/check-update-metadata.mjs dist
       # GitHub renames a release asset's spaces to dots, so the files are renamed first and the
       # checksums name exactly what a user downloads. The attestations are by digest and do not
       # care what the file is called.
@@ -186,5 +214,5 @@ jobs:
           test "${#files[@]}" -gt 0 || { echo 'no artifact to release'; exit 1; }
           sha256sum -- "${files[@]}" > SHA256SUMS
           cat SHA256SUMS
-          gh release create "$TAG" --draft --verify-tag --generate-notes --title "$TAG" \
-            -- "${files[@]}" SHA256SUMS
+          gh release create "$TAG" --draft --verify-tag --title "$TAG" \
+            --notes-file "../docs/release-notes/$TAG.md" -- "${files[@]}" SHA256SUMS
