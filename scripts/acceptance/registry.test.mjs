@@ -655,14 +655,17 @@ test('the freeze holds the nine phase-1 entries the phase-2 sections govern', ()
 // one phase-1 check phase 3 adds, and criterion 42 gains AC-42-register-audit, the §26.3 audit
 // the node:test capture made visible, registered as an audit of the entry. Any other movement
 // still fails here.
-test('registering later phases leaves phase 1 at 70 and 173', () => {
+// [p4] Phase 1 moves twice more, deliberately: criterion 50 gains AC-50-reduced-motion and
+// criterion 53 gains AC-53-settings-shortcut, the two release records §49.6 could place under no
+// phase-4 id. Any other movement still fails here.
+test('registering later phases leaves phase 1 at 70 and 175', () => {
   const registry = loadRegistry(registryPath);
   assert.deepEqual(validateRegistry(registry, repoRoot), []);
   const phase1 = registry.criteria.filter((c) => phaseOf(c.id) === 1);
   assert.equal(phase1.length, 70);
   assert.equal(
     phase1.reduce((n, c) => n + c.checks.length, 0),
-    173,
+    175,
   );
   // §20 owns thirteen, §21 seventeen, §22 thirteen, §23 twelve, §24 twenty-three and §25
   // twenty-six, which is what
@@ -1949,4 +1952,127 @@ test('an observed live verification names the commit it was observed against', (
     [],
   );
   assert.ok(observed({ recordedAt: '2026-09-25', evidence: 'e'.repeat(30) }).length > 0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// [p4 Task 8] The phase-4 register, section by section. Registered ahead of its lanes, so a check
+// is `deferred` to the lane whose merge makes it passable (R163), `manual` where §49 rules a record,
+// and never yet `automated`.
+// ---------------------------------------------------------------------------------------------
+
+const PHASE4_OWNER = /^p4-(?:\d{2}[ab]?|L0[a-c])$/u;
+const LANE0 = ['p4-L0a', 'p4-L0b', 'p4-L0c'];
+// The gates a phase-4 manual check may name. Closed: a new gate needs a ruling, not a string.
+const PHASE4_GATES = [
+  'UNWIRED-AUDIT',
+  'WINDOWS-NATIVE',
+  'PACKAGED-NOTIFICATION',
+  'TRASH-QUOTA-PROBE',
+  'RELEASE-VERSION-CHECK',
+  'RELEASE-PIPELINE',
+  'RELEASE-LAUNCH',
+  'RELEASE-LAUNCH-HANDS',
+  'RELEASE-GLIBC-FLOOR',
+  'EGRESS-CAPTURE',
+];
+
+function assertRegisteredPhase4Section(section, { spec, group }) {
+  const entries = loadRegistry(registryPath).criteria.filter((c) =>
+    String(c.id).startsWith(`P4-${section}-`),
+  );
+  const held = entries
+    .map((c) => Number.parseInt(c.id.slice(`P4-${section}-`.length), 10))
+    .sort((a, b) => a - b);
+  const range = Array.from({ length: PHASE4_SECTIONS[section] }, (_, i) => i + 1);
+  const missing = range.filter((n) => !held.includes(n));
+  assert.deepEqual(missing, [], `§${String(section)} is missing ${missing.join(', ')}`);
+  assert.deepEqual(held, range, `§${String(section)} holds an id outside its range or twice`);
+  for (const entry of entries) {
+    assert.equal(entry.spec, spec, `${entry.id} cites its section's criteria block`);
+    assert.equal(entry.group, group, `${entry.id} is ${group}`);
+    assert.ok(entry.checks.length > 0, `${entry.id} carries no check`);
+    for (const check of entry.checks) {
+      // R236: every check names the lane that makes it passable, a manual one included.
+      assert.match(String(check.owner), PHASE4_OWNER, `${check.id} names the lane R163 names`);
+      assert.ok(['deferred', 'manual'].includes(check.status), `${check.id} is ${check.status}`);
+      if (check.status === 'deferred') {
+        assert.ok(String(check.test ?? '').length > 0, `${check.id} names the test it will join`);
+      } else {
+        assert.ok('record' in check, `${check.id} carries the record key`);
+        assert.ok(PHASE4_GATES.includes(check.gate), `${check.id}: ${String(check.gate)}`);
+      }
+    }
+  }
+}
+
+test('§38 registers its twenty-four criteria', () => {
+  assertRegisteredPhase4Section(38, { spec: '§38.16', group: 'functional' });
+});
+test('§39 registers its thirteen criteria', () => {
+  assertRegisteredPhase4Section(39, { spec: '§39.16', group: 'functional' });
+});
+test('§40 registers its twenty-two criteria', () => {
+  assertRegisteredPhase4Section(40, { spec: '§40.14', group: 'functional' });
+});
+test('§41 registers its sixteen criteria', () => {
+  assertRegisteredPhase4Section(41, { spec: '§41.15', group: 'functional' });
+});
+test('§42 registers its twenty-five criteria', () => {
+  assertRegisteredPhase4Section(42, { spec: '§42.18', group: 'functional' });
+});
+test('§43 registers its twenty-two criteria, over rendered elements', () => {
+  assertRegisteredPhase4Section(43, { spec: '§43.17', group: 'surfaces' });
+});
+test('§44 registers its thirty criteria, over rendered elements', () => {
+  assertRegisteredPhase4Section(44, { spec: '§44.20', group: 'surfaces' });
+});
+test('§45 registers its twenty-two criteria', () => {
+  assertRegisteredPhase4Section(45, { spec: '§45.14', group: 'functional' });
+});
+test('§46 registers its thirty criteria', () => {
+  assertRegisteredPhase4Section(46, { spec: '§46.17', group: 'functional' });
+});
+test('§47 registers its twenty-two criteria', () => {
+  assertRegisteredPhase4Section(47, { spec: '§47.13', group: 'functional' });
+});
+test('§48 registers its twenty-seven criteria', () => {
+  assertRegisteredPhase4Section(48, { spec: '§48.15', group: 'functional' });
+});
+
+// §49.1a's Bar column, stated once more and made safe by an invariant instead of a literal list:
+// a check gates the first tag exactly when a Lane-0 lane lands it, or it is the README-figure
+// check the register plan lands beside the Lane-0 one (R233, R236).
+test('a phase-4 check carries firstTag exactly when a Lane-0 lane lands it', () => {
+  const checks = loadRegistry(registryPath)
+    .criteria.filter((c) => phaseOf(c.id) === 4)
+    .flatMap((c) => c.checks.map((k) => ({ criterion: c.id, ...k })));
+  assert.ok(checks.length > 0, 'no phase-4 check was read');
+  let firstTag = 0;
+  for (const check of checks) {
+    const gates =
+      LANE0.includes(check.owner) || ['AC-P4-48-11', 'AC-P4-48-11-zero'].includes(check.id);
+    assert.equal(check.firstTag === true, gates, `${check.id} (${String(check.owner)})`);
+    if (gates) firstTag += 1;
+    if (/^P4-(39|4[0-4])-/u.test(check.criterion)) {
+      assert.equal(check.firstTag, undefined, `${check.id}: §39–§44 gate 1.0 only`);
+    }
+  }
+  console.error(`phase-4 checks read: ${String(checks.length)}, firstTag: ${String(firstTag)}`);
+});
+
+test('the two phase-1 manual checks §49.6 could place nowhere else are registered', () => {
+  const checks = loadRegistry(registryPath).criteria.flatMap((c) =>
+    c.checks.map((k) => ({ criterion: c.id, ...k })),
+  );
+  for (const [id, criterion, gate] of [
+    ['AC-50-reduced-motion', '50', 'REDUCED-MOTION-REAL-APP'],
+    ['AC-53-settings-shortcut', '53', 'SETTINGS-SHORTCUT'],
+  ]) {
+    const check = checks.find((k) => k.id === id);
+    assert.ok(check, `${id} is registered`);
+    assert.equal(check.criterion, criterion);
+    assert.equal(check.status, 'manual');
+    assert.equal(check.gate, gate);
+    assert.equal(check.record, null, `${id} is unrecorded until its gate runs`);
+  }
 });

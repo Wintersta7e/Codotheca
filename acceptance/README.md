@@ -20,7 +20,7 @@ and optional elsewhere — a `deferred` check whose deferral needs an argument s
 the disposition table prints every reason it finds. A deferral with no argument is just an owner
 and a date that has not arrived; a deferral that had a reason and lost it reads the same way.
 
-## Three phases, one register
+## Four phases, one register
 
 A phase-1 criterion is a §16 number — `14`, `45b`. A phase-2 criterion is `P2-<section>-<n>`
 over sections 20 to 25, and its checks are `AC-P2-<section>-<n>[-slug]` where a slug segment
@@ -48,6 +48,44 @@ that also exists — `P3-28-18` and `P3-30-11` are criteria of their own, and ne
 the other. Both are present or neither is. They are held apart from the contiguity range for a
 measured reason: `Number.parseInt('18a', 10)` is `18`, so a lettered id folded into that list
 makes its bare twin report a duplicate that exists in no register.
+
+A phase-4 criterion is `P4-<section>-<n>` over sections 38 to 48, and its checks are
+`AC-P4-<section>-<n>[-slug]` under the same slug rule. `P4-37-*` and `P4-49-*` are refused by the
+id form — §37 is the phase's scope and §49 this contract, and neither owns a criterion. **Phase 4
+has no letter suffix**; one would need a ruling and a widening. The phase-2 rules bind — its own
+section, no performance figure, never `external`, complete or silent — with one difference:
+**a phase-4 check may be `deferred` to the plan that lands it.** Phase 4 registers every one of
+its criteria before its lanes merge, so each lane's first test finds its check waiting under the name
+its plan gives it; the release mode refuses every such deferral at the tag. A lane whose test
+lands under a different name corrects the check's `test` in the same commit.
+
+A phase-4 plan id owns a check the way `p2-20` does: `p4-38`, `p4-46b`, and the three Lane-0
+plans `p4-L0a`, `p4-L0b`, `p4-L0c`, whose capital `L` a prefix alone does not admit. **Every
+phase-4 check names its owner, a `manual` one included** — the lane whose merge makes that check
+passable.
+
+Three fields phase 4 adds, declared by the author and never inferred:
+
+| Field | Shape | Means |
+|---|---|---|
+| `firstTag` | `true`, or absent | The check gates the first tag, `v0.9.0`. A phase-4 check carries it exactly when a Lane-0 plan lands it, and on no other phase's check. `--tag ft` reads it |
+| `platforms` | `["linux"]`, `["windows"]` or both; absent means Linux | Which platform's results grade the check. No capture holds a Windows-native result — CI grades acceptance on Ubuntu and the gate copies the WSL cargo run — so **a check naming `windows` is `manual`, gate `WINDOWS-NATIVE`, `platforms: ["windows"]`**, recorded from a Windows-native run, beside the automated Linux check |
+| `record` | `{ "recordedAt": "YYYY-MM-DD", "evidence": "…", "commit": "<full hex>" }` or `null` | A `manual` check's record: all three fields, or `null` until the gate runs. Only a `manual` check carries it, and every phase-4 `manual` check carries the key. An earlier phase's manual gate gains it when it is recorded |
+
+**A record counts only while the tree has moved in the register alone since it was made.**
+Committing a record makes a new commit, so the commit a record names can never be the one being
+graded; the run lists `git diff --name-only <record.commit> <graded commit>`, and the record counts
+when that names only `acceptance/criteria.json` and `acceptance/DISPOSITIONS.md`. A record whose
+commit a shallow clone does not hold cannot be shown to count, and does not. A counting record
+joins as **`recorded`**; a `manual` result is reported and never gated on an ordinary run. A live
+observation's `verification` carries the `commit` it was observed against once it is dated.
+
+The gates a phase-4 `manual` check may name are closed: `WINDOWS-NATIVE` (a clause graded on
+Windows), `UNWIRED-AUDIT` (every producer the phase added has a production caller, audited against
+the tagged commit), `PACKAGED-NOTIFICATION` (one per packaged build), `TRASH-QUOTA-PROBE`,
+`EGRESS-CAPTURE`, and the release job's own steps, `RELEASE-VERSION-CHECK`, `RELEASE-PIPELINE`,
+`RELEASE-LAUNCH`, `RELEASE-LAUNCH-HANDS` and `RELEASE-GLIBC-FLOOR`. No phase-4 check is a
+`live-observation`.
 
 Three optional markings, declared by the author and never inferred:
 
@@ -162,11 +200,13 @@ current roll-up, and read `DISPOSITIONS.md` for the committed one. `DISPOSITIONS
 function of `criteria.json` and is diff-gated, so editing the registry without regenerating it
 fails the build.
 
-The roll-up is per phase, three of them, and each is printed rather than restated here. A passing
+The roll-up is per phase, four of them, and each is printed rather than restated here. A passing
 run's first line is `renderRegistryLine`'s `<n> criteria / <m> checks validated — phase 1 <c>/<k>,
-phase 2 <c>/<k>, phase 3 <c>/<k>`, and `DISPOSITIONS.md` renders one table per phase with its own
-disposition counts. Every phase-3 section, §28 to §35, is registered in full, which
-`validatePhase3Complete` asserts against `PHASE3_SECTIONS`. A criterion's disposition is its
+phase 2 <c>/<k>, phase 3 <c>/<k>, phase 4 <c>/<k>`, and `DISPOSITIONS.md` renders one table per
+phase with its own disposition counts. Every phase-3 section, §28 to §35, is registered in full,
+which `validatePhase3Complete` asserts against `PHASE3_SECTIONS`; every phase-4 section, §38 to
+§48, likewise against `PHASE4_SECTIONS`, most of it deferred to the lanes that land it. A
+criterion's disposition is its
 weakest check's, so an audit of a register entry registered beside a deferred behaviour check —
 `AC-42-register-audit` — leaves the criterion reading `deferred`.
 

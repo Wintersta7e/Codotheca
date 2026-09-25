@@ -4,7 +4,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { joinResults } from './join.mjs';
-import { loadRegistry } from './registry.mjs';
+import { PHASE4_SECTIONS, loadRegistry } from './registry.mjs';
 import {
   countByPhase,
   countByStatus,
@@ -16,6 +16,9 @@ import {
 // `fileURLToPath`, never `.pathname`: a file URL's pathname keeps a leading slash, and on
 // Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
 const registryPath = fileURLToPath(new URL('../../acceptance/criteria.json', import.meta.url));
+
+// [p4] §49.1: phase 4's criterion total lives in two places, and this file is not one of them.
+const PHASE4_CRITERIA = Object.values(PHASE4_SECTIONS).reduce((a, b) => a + b, 0);
 
 test('the committed disposition table matches the registry', () => {
   const registry = loadRegistry(registryPath);
@@ -80,7 +83,9 @@ test('countByPhase splits the register without a second file', () => {
   const counts = countByPhase(registry);
   assert.equal(counts[1].criteria, 70);
   // [p3-36] 171 + AC-22-gpu-residency, the one phase-1 check phase 3 adds, + AC-42-register-audit.
-  assert.equal(counts[1].checks, 173);
+  // [p4] + AC-50-reduced-motion and AC-53-settings-shortcut, the two records §49.6 places on
+  // phase-1 criteria.
+  assert.equal(counts[1].checks, 175);
   // [p3] The third phase is a key with a count in it, not an absent key: `byPhase[3] += 1` on an
   // object without a `3` yields NaN, and the run report prints `Phase 3: NaN checks`. [p3-36] The
   // figure is the register's as registered on this branch, measured rather than predicted.
@@ -95,11 +100,15 @@ test('countByPhase splits the register without a second file', () => {
   // figures are the ones that must not move.
   assert.equal(counts[2].criteria, 104);
   assert.equal(counts[2].checks, 225);
-  // [p4] The fourth phase is a key with a count in it before any criterion exists, for the NaN
-  // reason above.
+  // [p4] The fourth phase is a key with a count in it, for the NaN reason above. Its criteria are
+  // `PHASE4_SECTIONS`' sum; its checks are the register's as registered, measured.
   assert.deepEqual(
     { criteria: counts[4].criteria, checks: counts[4].checks },
-    { criteria: 0, checks: 0 },
+    { criteria: PHASE4_CRITERIA, checks: 578 },
+  );
+  assert.equal(
+    Object.values(counts[4].byStatus).reduce((a, b) => a + b, 0),
+    counts[4].checks,
   );
   assert.equal(
     Object.values(counts[1].byStatus).reduce((a, b) => a + b, 0),
@@ -116,7 +125,8 @@ test('the line a successful run prints states what it validated, per phase', () 
   // about the register, and a run that validated nothing must not read like a clean one.
   assert.equal(
     renderRegistryLine(loadRegistry(registryPath)),
-    '320 criteria / 737 checks validated — phase 1 70/173, phase 2 104/225, phase 3 146/339, phase 4 0/0',
+    `${String(320 + PHASE4_CRITERIA)} criteria / 1317 checks validated — phase 1 70/175, ` +
+      `phase 2 104/225, phase 3 146/339, phase 4 ${String(PHASE4_CRITERIA)}/578`,
   );
   assert.equal(
     renderRegistryLine({ criteria: [] }),
@@ -146,8 +156,7 @@ test('the table names the third phase, renders its criteria, and says nothing is
   assert.match(rendered, /## Phase 3/u);
   const phase3 = rendered.slice(rendered.indexOf('## Phase 3'));
   assert.match(phase3, /\| P3-\d{2}-\d{1,2}[a-c]? \| /u);
-  // [p4] Phases 1–3. Phase 4 has its own heading and says it holds nothing until it does.
-  assert.doesNotMatch(rendered, /no phase-[123] criteria are registered yet/iu);
+  assert.doesNotMatch(rendered, /no phase-\d criteria are registered yet/iu);
   assert.match(
     renderDispositions({ version: 1, criteria: [] }),
     /No phase-3 criteria are registered yet\./u,
@@ -185,22 +194,27 @@ test('the run report splits its check count by phase', () => {
   const registry = loadRegistry(registryPath);
   const join = joinResults(registry, []);
   const rendered = renderRunReport(registry, join, { newFailures: [], stale: [], missing: [] }, []);
-  assert.match(rendered, /Phase 1: 173 checks/u);
+  assert.match(rendered, /Phase 1: 175 checks/u);
   assert.match(rendered, /Phase 2: 225 checks/u);
   assert.match(rendered, /Phase 3: 339 checks/u);
-  assert.match(rendered, /Phase 4: 0 checks/u);
+  assert.match(rendered, /Phase 4: 578 checks/u);
 });
 
-// [p4] §49.5 item 7: a fourth table, and until a phase-4 criterion is registered it says so in its
-// own name rather than rendering an empty table.
-test('the table names the fourth phase and says it holds nothing yet', () => {
+// [p4] §49.5 item 7: a fourth table. [Task 8] Phase 4 is registered, so its heading carries a
+// criterion table and the placeholder is gone — while an empty register still says it, in its name.
+test('the table names the fourth phase and renders its criteria', () => {
   const rendered = renderDispositions(loadRegistry(registryPath));
   assert.match(rendered, /## Phase 4 — §38–§48/u);
   const phase4 = rendered.slice(
     rendered.indexOf('## Phase 4'),
     rendered.indexOf('## Why a check is not automated'),
   );
-  assert.match(phase4, /No phase-4 criteria are registered yet\./u);
+  assert.match(phase4, /\| P4-\d{2}-\d{1,2} \| /u);
+  assert.doesNotMatch(phase4, /No phase-4 criteria are registered yet/u);
+  assert.match(
+    renderDispositions({ version: 1, criteria: [] }),
+    /No phase-4 criteria are registered yet\./u,
+  );
 });
 
 // [p4 Task 6] A recorded check names its date and the commit it counts against, read from the JSON

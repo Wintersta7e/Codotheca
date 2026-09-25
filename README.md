@@ -94,7 +94,7 @@ is no adoption goal and no support guarantee.
 
 About 5,500 automated tests across the core, the shell and the renderer; eight Playwright tests that
 launch the real Electron app, one of them asserting a painted screen; and an acceptance register
-tying 737 checks to 320 written criteria.
+tying 1317 checks to 573 written criteria.
 
 ### Known limits
 
