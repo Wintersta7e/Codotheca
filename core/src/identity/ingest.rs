@@ -17,9 +17,11 @@ use crate::provider::listing::RepoListing;
 /// What one listing entry did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListingIngest {
+    /// What the matcher decided for the entry.
     pub outcome: ListingMatch,
     /// The row this entry reached, `None` for `Ambiguous` and `Suppress`, which reach none.
     pub project_id: Option<i64>,
+    /// True only for `Create` — a new not-cloned project row was inserted.
     pub created: bool,
     /// The listing's own canonical key.
     ///
@@ -33,13 +35,16 @@ pub struct ListingIngest {
 /// One entry that was withheld, and the project that withheld it (R62).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suppression {
+    /// The withheld listing's canonical key.
     pub listing_key: String,
+    /// The project whose copy on another host withheld it.
     pub blocked_by: i64,
 }
 
 /// The per-page tally §21.10's summary is copied from.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ListingIngestReport {
+    /// Every entry pushed, whatever its outcome.
     pub listed: usize,
     /// Entries that reached a row — attached to one or created one.
     pub admitted: usize,
@@ -56,6 +61,7 @@ pub struct ListingIngestReport {
 }
 
 impl ListingIngestReport {
+    /// Tally one entry's outcome into the page's counts and lists.
     pub fn push(&mut self, ingest: ListingIngest) {
         let ListingIngest {
             outcome,
@@ -88,6 +94,10 @@ impl ListingIngestReport {
 /// | `Ambiguous` | `ambiguous_lineage = 1` and `updated_at` on each candidate, **and nothing else**. §22.3's *"attaches nothing, creates nothing"* is kept literally: a flag is neither, and without this write §22.5's state has no producer at all |
 /// | `Suppress` | **nothing.** The blocking project and the listing's key go into the report |
 /// | `Create` | one `project` row, seeded on the listing's **bare** name |
+///
+/// # Errors
+/// Fails with [`IdentityError::ListingNotCanonical`] when the clone URL names no
+/// `<host>/<owner>/<name>`, and [`IdentityError::Sqlite`] when a read or write is refused.
 pub fn ingest_listing(
     tx: &Transaction<'_>,
     listing: &RepoListing,
@@ -127,8 +137,8 @@ pub fn ingest_listing(
             }
             (Some(*project_id), false)
         }
-        ListingMatch::Ambiguous { candidates } => {
-            for id in candidates {
+        ListingMatch::Ambiguous { candidates: tied } => {
+            for id in tied {
                 tx.execute(
                     "UPDATE project SET ambiguous_lineage = 1, updated_at = ?2 WHERE id = ?1",
                     params![id, now],

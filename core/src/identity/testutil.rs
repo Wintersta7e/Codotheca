@@ -96,9 +96,10 @@ pub fn forge_aliases() -> HostAliases {
     HostAliases::from_provider(&DeclaringForge)
 }
 
-/// One local clone, as a **scan** would probe it. No git and no disk: `resolve_identity` takes an
-/// `IdentityProbe`, so a fixture that generated a real corpus would build repositories nothing
-/// under test ever reads.
+/// One local clone, as a **scan** would probe it.
+///
+/// No git and no disk: `resolve_identity` takes an `IdentityProbe`, so a fixture that generated
+/// a real corpus would build repositories nothing under test ever reads.
 #[derive(Debug, Clone, Copy)]
 pub struct LocalClone {
     /// The directory basename a scan would pass as the seed for a *created* row.
@@ -107,6 +108,7 @@ pub struct LocalClone {
     pub url: &'static str,
     /// `None` for a shallow or unborn clone, which is §1.1's no-lineage case.
     pub lineage: Option<&'static str>,
+    /// Whether the probe reports a shallow clone.
     pub is_shallow: bool,
     /// `git rev-parse --git-common-dir`, folded. A rescan of the same path is `AttachDefinitive`
     /// because of this value, which is what makes a scan pass idempotent.
@@ -117,7 +119,9 @@ pub struct LocalClone {
 /// reach.
 #[derive(Debug, Clone)]
 pub struct ListingLibrary {
+    /// The forge listings a sync would ingest.
     pub listings: Vec<RepoListing>,
+    /// The local clones a scan would probe.
     pub clones: Vec<LocalClone>,
     /// The `project` row count both orders settle on.
     pub expected_projects: usize,
@@ -254,9 +258,13 @@ pub fn open_test_index() -> Connection {
 /// The fields an identity test ever varies. Everything else takes the DDL's default.
 #[derive(Debug, Clone, Copy)]
 pub struct NewProject {
+    /// The project's name, also written as its `seed_basename`.
     pub name: &'static str,
+    /// Its lineage, or `None` for a project with no history read.
     pub lineage_key: Option<&'static str>,
+    /// Its canonical remote, or `None` for a remoteless project.
     pub remote_key: Option<&'static str>,
+    /// Its `created_at` and `updated_at`, in Unix seconds — what orders candidates.
     pub created_at: i64,
 }
 

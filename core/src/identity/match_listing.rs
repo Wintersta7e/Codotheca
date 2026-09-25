@@ -24,7 +24,9 @@ use crate::provider::listing::RepoListing;
 /// so a type that admitted them would turn a structural guarantee back into a review finding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListingEvidence {
+    /// The forge the listing came from — half of the `provider_id` basis.
     pub provider: String,
+    /// The forge's own id for the repository — the other half; meaningless without `provider`.
     pub provider_repo_id: String,
     /// `canonical_remote_key(<clone url>)` — the spelling git will actually contact, and what a
     /// created row stores.
@@ -39,23 +41,33 @@ pub struct ListingFacts {
     /// The **bare** repository name — never `owner/name`. It becomes `seed_basename` on a row
     /// created from a listing (§7.4, §22.4).
     pub name: String,
+    /// Whether the forge says the repository is a fork; written, never matched on (§22.8).
     pub is_fork: bool,
     /// §22.8's rendered forge fact, canonicalised by the one canonicaliser. Written to §25.7's
     /// facts row by the plan that owns it; the matcher never reads it.
     pub fork_parent_remote_key: Option<String>,
 }
 
+/// What a listing is to the library (§22.3): one of four outcomes, decided on evidence alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListingMatch {
     /// Exactly one candidate equal on the winning basis.
     Attach {
+        /// The project the listing binds to.
         project_id: i64,
+        /// Which basis decided it: `provider_id` first, `remote_key` only when that found none.
         basis: RemoteLinkBasis,
     },
     /// Two or more equal on the winning basis. Attaches nothing, creates nothing (§22.5).
-    Ambiguous { candidates: Vec<i64> },
+    Ambiguous {
+        /// Every candidate equal on that basis, ordered `(created_at, id)`.
+        candidates: Vec<i64>,
+    },
     /// No equal candidate, and a same-path-component project on another host (§22.6).
-    Suppress { blocked_by: i64 },
+    Suppress {
+        /// The first suppressor, ordered `(created_at, id)`.
+        blocked_by: i64,
+    },
     /// No equal candidate and no suppressor: a not-cloned project (§23).
     Create,
 }
@@ -124,12 +136,11 @@ pub fn match_listing(
         return outcome;
     }
 
-    match suppressors.first() {
-        Some(blocker) => ListingMatch::Suppress {
+    suppressors
+        .first()
+        .map_or(ListingMatch::Create, |blocker| ListingMatch::Suppress {
             blocked_by: blocker.project_id,
-        },
-        None => ListingMatch::Create,
-    }
+        })
 }
 
 /// `Some(true)` this candidate is bound to this forge repository, `Some(false)` it is bound to a

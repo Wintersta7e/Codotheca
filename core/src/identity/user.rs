@@ -59,6 +59,9 @@ impl IdentitySet {
 ///
 /// `identity.is_user` excludes an address recorded for someone else; `identity_alias` carries
 /// §1.4's three alias reasons and every one of them counts.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the read is refused.
 pub fn load_identity_set(conn: &Connection) -> Result<IdentitySet, IdentityError> {
     let mut stmt = conn
         .prepare(

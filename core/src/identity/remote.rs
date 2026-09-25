@@ -6,6 +6,7 @@
 pub struct RemoteKey {
     /// The stored value of `project.remote_key`.
     pub key: String,
+    /// The host, lowercased, with any user and port removed.
     pub host: String,
     /// The first path segment. Two projects on one lineage whose owners differ are a fork
     /// (§1.1), so this is the field that decides it.
@@ -15,8 +16,10 @@ pub struct RemoteKey {
 }
 
 /// `None` means the URL carries no remote identity — a local path, a `file://` URL, or a URL
-/// with fewer than two path segments. It never means "no remote": a project with no remote at
-/// all stores NULL, and NULL is what §1.1's weak row keys on.
+/// with fewer than two path segments.
+///
+/// It never means "no remote": a project with no remote at all stores NULL, and NULL is what
+/// §1.1's weak row keys on.
 #[must_use]
 pub fn canonical_remote_key(url: &str) -> Option<RemoteKey> {
     let trimmed = url.trim();
@@ -89,9 +92,10 @@ fn host_of(authority: &str) -> Option<String> {
     Some(host.to_ascii_lowercase())
 }
 
-/// The argv that lists a repository's remote URLs. `--null` is used because a URL may contain
-/// anything a newline can, and a config key with no matches exits **1 with empty output** —
-/// which is not an error and must not be reported as one.
+/// The argv that lists a repository's remote URLs.
+///
+/// `--null` is used because a URL may contain anything a newline can, and a config key with no
+/// matches exits **1 with empty output** — which is not an error and must not be reported as one.
 #[must_use]
 pub fn remote_urls_argv() -> Vec<&'static str> {
     vec!["config", "--null", "--get-regexp", r"^remote\..*\.url$"]
@@ -115,9 +119,10 @@ pub fn parse_remote_urls(stdout: &[u8]) -> Vec<(String, String)> {
 }
 
 /// §1.1 lists "`origin`+`upstream` forks with no rule for which remote is canonical" among the
-/// combinations the old model mishandled, and supplies no rule. This is it: `origin`, then
-/// `upstream`, then the lexicographically first remote whose URL canonicalises. Deterministic
-/// and independent of the order git happened to print them in.
+/// combinations the old model mishandled, and supplies no rule.
+///
+/// This is it: `origin`, then `upstream`, then the lexicographically first remote whose URL
+/// canonicalises. Deterministic and independent of the order git happened to print them in.
 #[must_use]
 pub fn pick_canonical_remote(remotes: &[(String, String)]) -> Option<RemoteKey> {
     let mut named: Vec<(&str, RemoteKey)> = remotes

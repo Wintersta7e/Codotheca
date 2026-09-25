@@ -44,6 +44,7 @@ use crate::protocol::ErrorCode;
 /// and is never shown raw (§2.4); the user-facing prose belongs to the shell.
 #[derive(Debug)]
 pub enum IdentityError {
+    /// SQLite refused a read or write made directly through the caller's transaction.
     Sqlite(rusqlite::Error),
     /// A read that had to go through `core::index` — §1.10 gives `path_display` exactly one
     /// door, so a surface that renders a path borrows the index's error rather than losing it.
@@ -52,13 +53,17 @@ pub enum IdentityError {
     UnknownProject(i64),
     /// The id resolved to a tombstoned row: the caller holds a stale id and must refresh (§1.6).
     ProjectMerged {
+        /// The stale id the caller asked for.
         requested: i64,
+        /// The surviving project it was merged into.
         into: i64,
     },
     /// A redirect pointed at a row that is itself tombstoned. Redirects resolve one hop (§1.6),
     /// so this is a defect in a writer, not a case to chain through.
     RedirectChain {
+        /// The id the caller asked for.
         requested: i64,
+        /// The tombstoned id its redirect pointed at.
         via: i64,
     },
     /// `merge_projects` was asked to merge a project into itself.
@@ -68,7 +73,9 @@ pub enum IdentityError {
     /// every entry on a page, and an entry that vanished between the page and the tally is the
     /// silent suppression §11.1 forbids.
     ListingNotCanonical {
+        /// The forge the listing came from.
         provider: String,
+        /// The forge's own id for the repository — all that identifies the entry.
         provider_repo_id: String,
     },
     /// §22.4's guard. The not-cloned row this scan would hydrate already carries git-track
@@ -76,7 +83,9 @@ pub enum IdentityError {
     /// repository's ledger. It **fails the transaction**; a guard with no failing case is not a
     /// guard.
     HydrateWouldOrphanXp {
+        /// The not-cloned project the scan would have hydrated.
         project_id: i64,
+        /// How many git-track `xp_events` rows it already carries.
         count: i64,
     },
 }
@@ -88,6 +97,8 @@ impl From<rusqlite::Error> for IdentityError {
 }
 
 impl IdentityError {
+    /// The wire error code: `ProjectMerged` for a stale id the caller can refresh, `Internal`
+    /// for everything else.
     #[must_use]
     pub const fn code(&self) -> ErrorCode {
         match self {
@@ -117,6 +128,7 @@ impl IdentityError {
 pub use crate::protocol::AssociationKind;
 
 impl AssociationKind {
+    /// The TEXT `project.association_kind` and `merge_record.association_kind` store.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

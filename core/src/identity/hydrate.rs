@@ -30,8 +30,11 @@ use super::IdentityError;
 /// row the walk reached first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HydrationTarget {
+    /// No not-cloned project carries the key; the scan creates a row.
     None,
+    /// Exactly one does — the project to hydrate.
     One(i64),
+    /// Two or more do, ordered `(created_at, id)`; the scan creates a row and flags them all.
     Many(Vec<i64>),
 }
 
@@ -55,6 +58,9 @@ pub const HYDRATION_TARGET_SQL: &str = "SELECT id, remote_key, created_at
 /// never a `LIKE` — and the fold is then applied in Rust to both sides, by the one
 /// implementation, so a row a spelling read reached whose folded key does not in fact match is
 /// dropped.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the read is refused.
 pub fn find_hydration_target(
     tx: &Transaction<'_>,
     folded_key: &str,
@@ -123,8 +129,8 @@ pub fn hydrate(
     is_fork: bool,
     now: i64,
 ) -> Result<(), IdentityError> {
-    // §1.7's own discriminator, and the same predicate `merge.rs:277` uses — **not** the count at
-    // `:270`, which has no `project_id` clause and would fire on any git XP anywhere.
+    // §1.7's own discriminator, and the same predicate `merge.rs:339` uses — **not** the count at
+    // `:332`, which has no `project_id` clause and would fire on any git XP anywhere.
     let count: i64 = tx.query_row(
         "SELECT COUNT(*) FROM xp_events WHERE project_id = ?1 AND track = 'git'",
         params![project_id],

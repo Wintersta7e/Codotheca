@@ -58,6 +58,7 @@ impl HostAliases {
                 .any(|alias| alias.eq_ignore_ascii_case(host))
     }
 
+    /// The host every spelling in the set folds to.
     #[must_use]
     pub fn canonical(&self) -> &str {
         &self.canonical

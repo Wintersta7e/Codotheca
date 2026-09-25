@@ -8,6 +8,12 @@ use super::IdentityError;
 ///
 /// Chaining with path compression is machinery for a sub-second race on a single-user local
 /// database; [`write_redirect`] keeps one hop sufficient instead.
+///
+/// # Errors
+/// Fails with [`IdentityError::UnknownProject`] when the id or its redirect target has no row,
+/// [`IdentityError::ProjectMerged`] when it is tombstoned with no redirect,
+/// [`IdentityError::RedirectChain`] when the redirect lands on another tombstone, and
+/// [`IdentityError::Sqlite`] when a read is refused.
 pub fn resolve_project_id(tx: &Transaction<'_>, requested: i64) -> Result<i64, IdentityError> {
     let merged_into: Option<Option<i64>> = tx
         .query_row(
@@ -61,6 +67,9 @@ pub fn resolve_project_id(tx: &Transaction<'_>, requested: i64) -> Result<i64, I
 ///
 /// Without the second statement, `A → B` followed by `B → C` leaves `A → B` pointing at a
 /// tombstone, and a caller holding `A` gets an error where a valid project exists.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when SQLite refuses either write.
 pub fn write_redirect(
     tx: &Transaction<'_>,
     old_project_id: i64,

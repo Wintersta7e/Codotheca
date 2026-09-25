@@ -121,17 +121,12 @@ fn read_unmatched(
     index: &Arc<Mutex<Index>>,
     aliases: &HostAliases,
 ) -> Result<Vec<Unmatched>, IdentityError> {
-    let guard = index.lock().map_err(|_| poisoned())?;
-    let mut st = guard.conn().prepare(
-        "SELECT id, remote_key FROM project
-          WHERE remote_key IS NOT NULL AND provider_repo_id IS NULL AND merged_into IS NULL
-          ORDER BY created_at, id",
-    )?;
-    let rows = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+    // The guard is a temporary of this one statement: held for the read, released before the
+    // host filter below, which touches no row.
+    let rows = unmatched_rows(index.lock().map_err(|_| poisoned())?.conn())?;
 
     let mut out = Vec::new();
-    for row in rows {
-        let (project_id, key) = row?;
+    for (project_id, key) in rows {
         let Some((host, _)) = key.split_once('/') else {
             continue;
         };
@@ -150,6 +145,17 @@ fn read_unmatched(
         });
     }
     Ok(out)
+}
+
+/// `(id, remote_key)` of every non-tombstoned project with a key and no forge id, oldest first.
+fn unmatched_rows(conn: &rusqlite::Connection) -> rusqlite::Result<Vec<(i64, String)>> {
+    let mut st = conn.prepare(
+        "SELECT id, remote_key FROM project
+          WHERE remote_key IS NOT NULL AND provider_repo_id IS NULL AND merged_into IS NULL
+          ORDER BY created_at, id",
+    )?;
+    let rows = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+    rows.collect()
 }
 
 fn poisoned() -> IdentityError {

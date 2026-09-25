@@ -94,10 +94,9 @@ fn section_header(line: &str) -> Option<&str> {
 }
 
 fn strip_comment(value: &str) -> &str {
-    match value.find(['#', ';']) {
-        Some(at) => value.get(..at).unwrap_or(""),
-        None => value,
-    }
+    value
+        .find(['#', ';'])
+        .map_or(value, |at| value.get(..at).unwrap_or(""))
 }
 
 #[cfg(test)]

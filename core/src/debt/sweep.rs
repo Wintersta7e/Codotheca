@@ -47,7 +47,7 @@ pub struct SweepObservation {
 /// disk, and an item present in one and absent from the other has not been fixed.
 ///
 /// The comparison is NULL-safe in both columns — the `IS`-comparison
-/// `core/src/index/subject.rs:144` already uses for `remote_key`, and in Rust that is exactly
+/// `core/src/index/subject.rs:163` already uses for `remote_key`, and in Rust that is exactly
 /// `Option == Option`. **Written as `Some(a) == Some(b)` it would be SQL's `=`**, under which a
 /// NULL-anchored item could never close, because `NULL = NULL` is NULL and not true.
 #[must_use]

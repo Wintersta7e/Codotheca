@@ -19,8 +19,11 @@ use super::{AssociationKind, IdentityError};
 /// no-nesting guarantee `&mut` would have supplied statically. `now` is unix **seconds**,
 /// passed in so nothing here reads the clock.
 pub struct IdentityCtx<'a> {
+    /// The index, shared; each command opens its own transaction on its one connection.
     pub index: &'a Index,
+    /// Where `projects/merged` is emitted after a merge commits.
     pub events: &'a dyn EventSink,
+    /// The command's clock, in Unix seconds.
     pub now: i64,
 }
 
@@ -177,7 +180,7 @@ fn flags(names: &[String]) -> Vec<Flag> {
         .collect()
 }
 
-fn wire_kind(kind: AssociationKind) -> AssociationKind {
+const fn wire_kind(kind: AssociationKind) -> AssociationKind {
     kind
 }
 

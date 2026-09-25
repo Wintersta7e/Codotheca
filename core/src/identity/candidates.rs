@@ -44,6 +44,9 @@ const SUPPRESSORS_SQL: &str = "SELECT id, name, remote_key
 ///
 /// Ordered `(created_at, id)`, and each project appears **once** — a project found by both reads
 /// returned twice would read to the matcher as §22.5's ambiguity.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when either read is refused.
 pub fn load_link_candidates(
     tx: &Transaction<'_>,
     ev: &ListingEvidence,
@@ -69,10 +72,10 @@ pub fn load_link_candidates(
     // The fold is applied to both sides here, by the one implementation, and a row a spelling
     // read reached whose folded key does not in fact match is dropped.
     found.retain(|c| {
-        let by_key = c.folded_key.as_deref() == Some(ev.folded_key.as_str());
-        let by_id = c.provider.as_deref() == Some(ev.provider.as_str())
+        let key_matches = c.folded_key.as_deref() == Some(ev.folded_key.as_str());
+        let id_matches = c.provider.as_deref() == Some(ev.provider.as_str())
             && c.provider_repo_id.as_deref() == Some(ev.provider_repo_id.as_str());
-        by_key || by_id
+        key_matches || id_matches
     });
     found.sort_by_key(|c| (c.created_at, c.project_id));
     Ok(found)
@@ -82,6 +85,9 @@ pub fn load_link_candidates(
 ///
 /// The same folded **path component** — everything after the first `/`, so group paths compare
 /// whole — on a **different** canonical host, with at least one `location` row.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the read is refused.
 pub fn load_suppressors(
     tx: &Transaction<'_>,
     ev: &ListingEvidence,
@@ -155,11 +161,14 @@ struct RawCandidate {
     created_at: i64,
 }
 
-/// A project the listing might be. Narrowed by index before the matcher sees it, and ordered
-/// `(created_at, id)` so the outcome never depends on the order a walk happened to reach a row
-/// in — the same discipline `store::load_candidates` already uses.
+/// A project the listing might be.
+///
+/// Narrowed by index before the matcher sees it, and ordered `(created_at, id)` so the outcome
+/// never depends on the order a walk happened to reach a row in — the same discipline
+/// `store::load_candidates` already uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkCandidate {
+    /// The candidate project.
     pub project_id: i64,
     /// `None` means *not yet resolved*, which is not the same as a different forge.
     pub provider: Option<String>,
@@ -168,6 +177,7 @@ pub struct LinkCandidate {
     pub provider_repo_id: Option<String>,
     /// §22.2's comparison form of `project.remote_key`. `None` for a project with no remote.
     pub folded_key: Option<String>,
+    /// When the project was created, in Unix seconds — the first half of the ordering.
     pub created_at: i64,
 }
 
@@ -178,7 +188,10 @@ pub struct LinkCandidate {
 /// cannot fold into this listing is exactly the doubt that makes that claim unsafe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suppressor {
+    /// The project whose copy withholds the `Create`.
     pub project_id: i64,
+    /// Its `remote_key` in §22.2's comparison form, on the other host.
     pub folded_key: String,
+    /// Its `project.name`, the name the library shows it under.
     pub name: String,
 }

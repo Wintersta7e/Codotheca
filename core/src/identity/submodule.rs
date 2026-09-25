@@ -25,15 +25,19 @@ pub fn gitlink_oid_argv(submodule_path: &[u8]) -> Vec<Vec<u8>> {
     ]
 }
 
-/// One superproject-to-submodule relationship. §1.2 deprecates the singular
-/// `parent_project_id` column in favour of `submodule_edge`, because the same library can be a
-/// submodule of two parents, or appear twice under one — and singular columns lose all but one.
-/// Both are written: the edge is the record, the column is what the project page reads.
+/// One superproject-to-submodule relationship.
+///
+/// §1.2 deprecates the singular `parent_project_id` column in favour of `submodule_edge`,
+/// because the same library can be a submodule of two parents, or appear twice under one — and
+/// singular columns lose all but one. Both are written: the edge is the record, the column is
+/// what the project page reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubmoduleLink {
+    /// The superproject that pins the submodule.
     pub parent_project_id: i64,
     /// Which copy of the parent this gitlink was read at.
     pub parent_location_id: i64,
+    /// The submodule, which is its own project.
     pub child_project_id: i64,
     /// Path within the parent's working tree.
     pub path_bytes: Vec<u8>,
@@ -41,12 +45,17 @@ pub struct SubmoduleLink {
     pub gitlink_oid: Option<String>,
 }
 
-/// Record the relationship. **The parent gains no location**: a submodule is a checkout of a
-/// different repository with its own root commit, so attaching it to the superproject would put
-/// a location whose lineage differs from its project's under one row (§4.4).
+/// Record the relationship. **The parent gains no location.**
+///
+/// A submodule is a checkout of a different repository with its own root commit, so attaching it
+/// to the superproject would put a location whose lineage differs from its project's under one
+/// row (§4.4).
 ///
 /// The edge upserts on its own primary key rather than being deleted and re-inserted, so a
 /// rescan updates the pinned commit in place and no row is ever removed.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the edge upsert or the child's update is refused.
 pub fn link_submodule(
     tx: &Transaction<'_>,
     link: &SubmoduleLink,

@@ -9,7 +9,9 @@ use crate::protocol::IdentityConfirm;
 /// What confirming this set would do, or has just done.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Delta {
+    /// Projects that would become Reference: none of their committers is in the set.
     pub moved_to_reference: u32,
+    /// `commit_day` rows those projects hold, which the recompute would not give back.
     pub commit_days_removed: i64,
     /// The projects whose authorship changes. Their history jobs are re-queued so the
     /// git-derived ledger is rebuilt rather than left missing.
@@ -28,12 +30,12 @@ impl Verdict {
     ///
     /// A project becomes Reference exactly when none of its committers is the user, so the row
     /// changes when its current flag agrees with "the user authored here".
-    fn changes(&self) -> bool {
+    const fn changes(&self) -> bool {
         self.any_mine == self.was_reference
     }
 
     /// True when the change is *into* Reference, which is the only direction that loses days.
-    fn moves_in(&self) -> bool {
+    const fn moves_in(&self) -> bool {
         self.changes() && !self.any_mine
     }
 }
@@ -121,8 +123,8 @@ pub fn apply(
         mine.iter().map(|_| "?").collect::<Vec<_>>().join(",")
     };
     let params: Vec<&dyn rusqlite::ToSql> =
-        mine.iter().map(|e| e as &dyn rusqlite::ToSql).collect();
-    let now_param = &now as &dyn rusqlite::ToSql;
+        mine.iter().map(|e| -> &dyn rusqlite::ToSql { e }).collect();
+    let now_param: &dyn rusqlite::ToSql = &now;
 
     // authored_by_user and is_reference recompute from the join, not from a history walk.
     tx.execute(
@@ -395,13 +397,13 @@ mod tests {
             NOW,
         )
         .unwrap();
-        let floor: String = index
+        let floor_after: String = index
             .conn()
             .query_row("SELECT v FROM app_meta WHERE k = 'level_floor'", [], |r| {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(floor, "3");
+        assert_eq!(floor_after, "3");
     }
 
     #[test]

@@ -60,9 +60,13 @@ pub fn is_noreply(email: &str) -> bool {
 /// How many rows each seeding rule produced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SeedReport {
+    /// New rows from the addresses `git config` names — the user's own.
     pub from_config: u32,
+    /// New rows for committers on a host that issues per-person no-reply addresses.
     pub noreply: u32,
+    /// New rows for committers sharing a local part with one of the user's addresses.
     pub local_part: u32,
+    /// New rows for other committers on a project one of the user's addresses committed to.
     pub coauthor: u32,
 }
 
@@ -226,7 +230,7 @@ pub fn list(conn: &rusqlite::Connection) -> Result<Vec<IdentityRow>, IndexError>
                     "manual" => IdentitySource::Manual,
                     _ => IdentitySource::Inferred,
                 },
-                alias_reason: reason.as_deref().map(|r| match r {
+                alias_reason: reason.as_deref().map(|stored| match stored {
                     "coauthor" => AliasReason::Coauthor,
                     "manual" => AliasReason::Manual,
                     _ => AliasReason::LocalPart,

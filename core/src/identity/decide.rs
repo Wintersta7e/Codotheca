@@ -21,14 +21,20 @@ pub struct IdentityProbe {
 /// The probe reduced to the three facts §1.1's tables are written against.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityEvidence {
+    /// The probe's folded `git-common-dir`, carried unchanged — definitive evidence when another
+    /// location already has it.
     pub common_dir_key: Option<Vec<u8>>,
     /// `None` for a repository with no commits and for a shallow clone (§1.1, and the boundary
     /// argument in `lineage::lineage_key`).
     pub lineage_key: Option<String>,
+    /// The canonical `<host>/<owner>/<name>` of the remote picked from the probe's list, or
+    /// `None` when there is none.
     pub remote_key: Option<String>,
+    /// The `<owner>` part of that remote — what tells a fork from the same project.
     pub remote_owner: Option<String>,
 }
 
+/// Reduce a probe to its evidence: the lineage from the root set, and one canonical remote.
 #[must_use]
 pub fn evidence_from(probe: &IdentityProbe) -> IdentityEvidence {
     let remote = pick_canonical_remote(&probe.remote_urls);
@@ -40,31 +46,52 @@ pub fn evidence_from(probe: &IdentityProbe) -> IdentityEvidence {
     }
 }
 
-/// A project already in the index that shares the probe's `lineage_key`. Tombstoned rows are
-/// never candidates. The caller supplies them ordered by `(created_at, id)`, which is what makes
-/// every decision below independent of the order the scanner happened to walk in.
+/// A project already in the index that shares the probe's `lineage_key`.
+///
+/// Tombstoned rows are never candidates. The caller supplies them ordered by `(created_at, id)`,
+/// which is what makes every decision below independent of the order the scanner happened to
+/// walk in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
+    /// The candidate project.
     pub project_id: i64,
+    /// Its canonical remote, or `None` for a remoteless project.
     pub remote_key: Option<String>,
+    /// When it was created, in Unix seconds — the first half of the ordering.
     pub created_at: i64,
 }
 
+/// Which project a scanned repository belongs to, and on what evidence (§1.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdentityDecision {
     /// Same `git-common-dir` — a linked worktree.
-    AttachDefinitive { project_id: i64 },
+    AttachDefinitive {
+        /// The project that already owns that common dir.
+        project_id: i64,
+    },
     /// Same lineage and the same canonical remote.
-    AttachStrong { project_id: i64 },
+    AttachStrong {
+        /// The first candidate carrying that remote.
+        project_id: i64,
+    },
     /// Same lineage, one side remoteless, exactly one candidate. Recorded as inferred so
     /// §8.5.2 can name the evidence.
-    AttachInferred { project_id: i64 },
+    AttachInferred {
+        /// The one candidate attached to.
+        project_id: i64,
+    },
     /// Same lineage, a different remote owner. Separate projects, linked by `lineage_key` and
     /// surfaced as related; `related` is every project on this lineage under another owner.
-    NewFork { related: Vec<i64> },
+    NewFork {
+        /// Every candidate whose remote has another owner; each is marked a fork too.
+        related: Vec<i64>,
+    },
     /// Same lineage, remoteless, two or more candidates. Its own project, flagged
     /// `ambiguous_lineage`. **Never guess.**
-    NewAmbiguous { candidates: Vec<i64> },
+    NewAmbiguous {
+        /// The candidates that carry a remote — the set §11.1's summary renders.
+        candidates: Vec<i64>,
+    },
     /// Nothing associates it with anything already indexed.
     New,
 }
@@ -87,10 +114,10 @@ pub fn decide(
         return IdentityDecision::New;
     }
 
-    match evidence.remote_key.as_deref() {
-        Some(ours) => decide_with_remote(ours, evidence.remote_owner.as_deref(), candidates),
-        None => decide_without_remote(candidates),
-    }
+    evidence.remote_key.as_deref().map_or_else(
+        || decide_without_remote(candidates),
+        |ours| decide_with_remote(ours, evidence.remote_owner.as_deref(), candidates),
+    )
 }
 
 fn decide_with_remote(
@@ -152,12 +179,11 @@ fn decide_without_remote(candidates: &[Candidate]) -> IdentityDecision {
     }
     // No remoted candidate at all: any remoteless sibling is another copy of the same local
     // repository, and there is no evidence by which they could differ.
-    match candidates.first() {
-        Some(c) => IdentityDecision::AttachInferred {
+    candidates.first().map_or(IdentityDecision::New, |c| {
+        IdentityDecision::AttachInferred {
             project_id: c.project_id,
-        },
-        None => IdentityDecision::New,
-    }
+        }
+    })
 }
 
 #[cfg(test)]

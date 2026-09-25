@@ -7,8 +7,8 @@
 //! **`track = 'session'` is not a compromise and must not be "fixed" to a new value.** `track`
 //! means *recomputable / not recomputable*, and `'session'` is the name that class already
 //! carries. A new value such as `'observed'` would be silently dropped by the sidecar's export
-//! filter (`core/src/index/sidecar.rs:322-327`) and mislabelled by the restore's hard-coded
-//! literal (`:755-758`), so a rebuild-from-sidecar would **take XP away** — the exact promise
+//! filter (`core/src/index/sidecar.rs:464-469`) and mislabelled by the restore's hard-coded
+//! literal (`:926-929`), so a rebuild-from-sidecar would **take XP away** — the exact promise
 //! `level_floor` exists to keep. The accepted cost, stated so nobody removes it: `track` reads
 //! `'session'` for a row whose kind is not a session.
 

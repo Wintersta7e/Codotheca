@@ -46,6 +46,7 @@ use crate::scan::run::platform_of;
 /// made here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocationInput {
+    /// The side the path is on: Windows, Linux or WSL.
     pub kind: LocationKind,
     /// `None` for everything but WSL. The column is `NOT NULL` and holds `''` in that case —
     /// v1 used NULL, and SQLite treats NULLs as distinct in a UNIQUE index, so the
@@ -54,22 +55,30 @@ pub struct LocationInput {
     /// `path_bytes`, `path_key` and `path_display` in one value, keyed for the platform the
     /// path belongs to rather than the host (R2).
     pub path: StoredPath,
+    /// The device or share actually mounted there right now — the scheduler's key, not
+    /// `volume_key` (§4.7).
     pub store_key: String,
     /// `None` where no stable identifier exists — a bind mount, overlayfs, tmpfs. Absent is not
     /// unknown-and-therefore-empty: a location with no volume key can never be recognised
     /// across a remount, and callers must handle that rather than invent one.
     pub volume_key: Option<String>,
+    /// Whether the path is there now; written explicitly because the column has no default.
     pub presence: Presence,
+    /// Which of git's four layouts the repository has — what §1.5 decides lineage on.
     pub repo_kind: RepoKind,
+    /// The git common directory's path as raw bytes, if it was read; its folded key is derived
+    /// on write.
     pub common_dir_bytes: Option<Vec<u8>>,
     /// `location.scan_generation` — the run that last saw this path (§4.6).
     pub generation: i64,
+    /// When the path was last seen, in Unix seconds; `None` writes the upsert's `now`.
     pub last_seen_at: Option<i64>,
 }
 
 /// What `resolve_identity` did, for the caller's event and its own log line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityOutcome {
+    /// The project the repository now belongs to — created, hydrated or attached to.
     pub project_id: i64,
     /// True when a `project` row was inserted, false when an existing one absorbed the location.
     pub created: bool,
@@ -77,10 +86,14 @@ pub struct IdentityOutcome {
     pub association: Option<AssociationKind>,
     /// `project.ambiguous_lineage` as it now stands.
     pub ambiguous: bool,
+    /// `project.is_fork` as it now stands.
     pub is_fork: bool,
 }
 
 /// Every non-tombstoned project on this lineage, ordered so that "earliest" is deterministic.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the read is refused.
 pub fn load_candidates(
     tx: &Transaction<'_>,
     lineage_key: &str,
@@ -106,6 +119,9 @@ pub fn load_candidates(
 }
 
 /// The project that already owns a location with this `git-common-dir` — definitive evidence.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the read is refused.
 pub fn worktree_owner(
     tx: &Transaction<'_>,
     common_dir_key: &[u8],
@@ -140,6 +156,10 @@ pub fn worktree_owner(
 /// `fetch_head_at`, `trusted_at` — are **not** touched here, on insert or on update. They are
 /// NULL until observed, and a rescan that has not re-observed them must not overwrite what a job
 /// wrote: absence of a fact is "not computed", never zero and never stale-as-fresh.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when SQLite refuses the upsert — a CHECK or a foreign
+/// key included.
 pub fn upsert_location(
     tx: &Transaction<'_>,
     project_id: i64,
@@ -201,8 +221,10 @@ pub fn upsert_location(
 }
 
 /// The presence already stored for the row [`upsert_location`] would write, or `None` when no
-/// such row exists yet — read by the same `(kind, distro, path_key)` key the upsert conflicts on,
-/// so the caller learns what the write is about to replace.
+/// such row exists yet.
+///
+/// Read by the same `(kind, distro, path_key)` key the upsert conflicts on, so the caller learns
+/// what the write is about to replace.
 ///
 /// # Errors
 /// Fails when SQLite refuses the read, or the stored value is not one of the four.
@@ -238,6 +260,11 @@ pub fn stored_presence(
 /// **§22.4's amendment: the creating arms route through create-or-hydrate.** A not-cloned project
 /// has a NULL `lineage_key` and is therefore in no candidate set `decide` can see, so without
 /// this the ordinary *connect → sync → clone → rescan* sequence mints a second tile.
+///
+/// # Errors
+/// Fails with [`IdentityError::HydrateWouldOrphanXp`] when the one hydration target already
+/// carries git-track XP, [`IdentityError::UnknownProject`] when a project it attached to or
+/// hydrated has no row, and [`IdentityError::Sqlite`] when any read or write is refused.
 pub fn resolve_identity(
     tx: &Transaction<'_>,
     probe: &IdentityProbe,
@@ -290,7 +317,7 @@ pub fn resolve_identity(
         IdentityDecision::NewAmbiguous { .. } => {
             // **This arm calls `create` directly, and the reason is reachability, not taste.**
             // `NewAmbiguous` is produced only where our own `remote_key` is NULL
-            // (`decide.rs:92`, `:143-147`), and a NULL key folds to nothing and matches nothing —
+            // (`decide.rs:118`, `:170-174`), and a NULL key folds to nothing and matches nothing —
             // so there is no hydration target it could ever have. Do not "unify" the three
             // creating arms.
             let id = create(tx, &evidence, probe.is_shallow, basename, false, true, now)?;
@@ -354,7 +381,7 @@ fn create_or_hydrate(
             if let Some(l) = evidence.lineage_key.as_deref() {
                 flag_remoteless_ambiguity(tx, l, now)?;
             }
-            let (ambiguous, is_fork) = tx
+            let (ambiguous, stored_fork) = tx
                 .query_row(
                     "SELECT ambiguous_lineage, is_fork FROM project WHERE id = ?1",
                     params![project_id],
@@ -366,7 +393,7 @@ fn create_or_hydrate(
                 project_id,
                 created: false,
                 ambiguous,
-                is_fork,
+                is_fork: stored_fork,
             })
         }
         HydrationTarget::None => {
@@ -420,10 +447,10 @@ fn attach(
         )
         .optional()?
         .flatten();
-    let combined = match stored.as_deref().and_then(AssociationKind::parse) {
-        Some(previous) => previous.combine(kind),
-        None => kind,
-    };
+    let combined = stored
+        .as_deref()
+        .and_then(AssociationKind::parse)
+        .map_or(kind, |previous| previous.combine(kind));
     tx.execute(
         "UPDATE project SET association_kind = ?2, updated_at = ?3 WHERE id = ?1",
         params![project_id, combined.as_str(), now],
@@ -482,10 +509,15 @@ fn create(
 }
 
 /// A remoteless project that had one candidate when it was indexed may have two once a fork
-/// appears. Setting the flag adds information and detaches nothing, which is the only direction
-/// phase 1 may move: §8.5.2 rules that nothing undoes an association here.
+/// appears.
+///
+/// Setting the flag adds information and detaches nothing, which is the only direction phase 1
+/// may move: §8.5.2 rules that nothing undoes an association here.
 ///
 /// The flag is never cleared — [`ambiguous_group`] re-evaluates the candidate set on every read.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the count or the update is refused.
 pub fn flag_remoteless_ambiguity(
     tx: &Transaction<'_>,
     lineage_key: &str,
@@ -512,17 +544,22 @@ pub fn flag_remoteless_ambiguity(
 /// One row of §11.1's eighth scan-summary group.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AmbiguousRow {
+    /// The flagged project whose identity is in question.
     pub project_id: i64,
+    /// Its lowest-id copy, or `None` for a project with no copy on disk.
     pub location_id: Option<i64>,
+    /// That copy's display path, for the UI only.
     pub path_display: Option<String>,
     /// At most two, ordered `(created_at, id)`.
     pub candidate_names: Vec<String>,
+    /// How many candidates there are in all, of which `candidate_names` shows the first two.
     pub candidate_total: usize,
 }
 
-/// §11.1's ambiguous-lineage group. **A live query.** The candidate set is not stored and must
-/// not be: it changes as the history job progresses, so a set frozen at flag time is a claim
-/// about a scan that has since moved.
+/// §11.1's ambiguous-lineage group. **A live query.**
+///
+/// The candidate set is not stored and must not be: it changes as the history job progresses,
+/// so a set frozen at flag time is a claim about a scan that has since moved.
 ///
 /// The display path comes back through `index::path::display_paths_for_ui`, the one door §1.10
 /// allows. The plan writes the read inline here instead, which this project's own gate refuses.
@@ -539,6 +576,10 @@ pub struct AmbiguousRow {
 /// empty set to every pre-existing row. It also no longer `continue`s on a NULL `lineage_key` —
 /// a not-cloned project's lineage is NULL by construction (§22.4), so skipping on it made §22.5's
 /// case unrepresentable.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when a read is refused, and [`IdentityError::Index`]
+/// when the display path cannot be read.
 pub fn ambiguous_group(
     tx: &Transaction<'_>,
     aliases: &HostAliases,

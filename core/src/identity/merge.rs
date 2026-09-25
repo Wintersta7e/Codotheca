@@ -15,23 +15,37 @@ pub const NOTE_SEPARATOR: &str = "\n\n---\n\n";
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbsorbedSnapshot {
+    /// The absorbed project's name; the survivor's stands.
     pub name: String,
+    /// Its description, if it had one; the survivor's stands.
     pub description: Option<String>,
+    /// Which rung of §5.2's chain its description came from, as stored.
     pub description_source: Option<String>,
+    /// Its art seed — the directory basename at first index (§7.4); the survivor's stands.
     pub seed_basename: String,
+    /// Its art re-roll count (§7.2); the survivor's stands.
     pub reroll_offset: i64,
+    /// Whether it was pinned; the survivor ends pinned if either was.
     pub is_pinned: bool,
+    /// Whether it was archived; the survivor ends archived if either was.
     pub is_archived: bool,
+    /// Whether it was hidden; the survivor stays hidden only if both were.
     pub is_hidden: bool,
+    /// Whether it was a reference project (§4.1a); the survivor stays one only if both were.
     pub is_reference: bool,
     /// Byte offset in the survivor's merged note at which the absorbed text begins. `None` when
     /// the absorbed row had no note.
     pub notes_offset: Option<i64>,
 }
 
-/// §1.5: the project with the earliest `created_at`, ties on the lowest `id`. Deterministic and
-/// walk-order independent, which is the whole point — the same two projects must merge the same
-/// way whichever the scanner reached first.
+/// §1.5: the project with the earliest `created_at`, ties on the lowest `id`.
+///
+/// Deterministic and walk-order independent, which is the whole point — the same two projects
+/// must merge the same way whichever the scanner reached first. Returns `(survivor, absorbed)`.
+///
+/// # Errors
+/// Fails with [`IdentityError::SameProject`] when `a == b`, [`IdentityError::UnknownProject`]
+/// when either has no `project` row, and [`IdentityError::Sqlite`] when the read is refused.
 pub fn choose_survivor(tx: &Transaction<'_>, a: i64, b: i64) -> Result<(i64, i64), IdentityError> {
     if a == b {
         return Err(IdentityError::SameProject(a));
@@ -61,6 +75,10 @@ pub fn choose_survivor(tx: &Transaction<'_>, a: i64, b: i64) -> Result<(i64, i64
 /// `name`, `description`, `description_source`, `seed_basename` and `reroll_offset` are **not**
 /// in the `UPDATE`: §1.5 says the survivor's values stand, always, and the absorbed ones are
 /// kept in `merge_record`. Not writing them is how that rule is enforced.
+///
+/// # Errors
+/// Fails with [`IdentityError::UnknownProject`] when either project has no row, and
+/// [`IdentityError::Sqlite`] when the read or the survivor's update is refused.
 pub fn reconcile_scalars(
     tx: &Transaction<'_>,
     survivor: i64,
@@ -121,25 +139,36 @@ pub fn reconcile_scalars(
 /// `merge_record.absorbed_json` (§1.9); the rest are what `projects.unmergeHint` reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ReparentCounts {
+    /// Copies moved to the survivor.
     pub location: usize,
+    /// Sessions moved to the survivor; their segments follow them untouched.
     pub session: usize,
+    /// Memberships the survivor gained — the absorbed row's, less any it already held.
     pub collection_member: usize,
+    /// Launch targets moved to the survivor, disabled ones included.
     pub launch_target: usize,
     /// Of `launch_target`, how many lost a `(kind, name)` collision and were kept disabled.
     pub launch_target_disabled: usize,
+    /// `health_delta` rows moved to the survivor.
     pub health_delta: usize,
+    /// Submodule edges whose parent side moved to the survivor; child-side moves are not counted.
     pub submodule_edge: usize,
     /// [p3] §32.16's latched ledger. Counted rather than inferred, so a test can print how many
     /// moved instead of asserting that something did.
     pub advisory_notified: usize,
 }
 
-/// §1.5's reparenting rows. Nothing here is recomputed, because none of it is derivable from
-/// history; and nothing here is deleted, because deleting a user-authored row is a destructive
-/// operation and §17 admits none in phase 1.
+/// §1.5's reparenting rows.
+///
+/// Nothing here is recomputed, because none of it is derivable from history; and nothing here is
+/// deleted, because deleting a user-authored row is a destructive operation and §17 admits none
+/// in phase 1.
 ///
 /// `session_segment` names its `session`, not its project, so it follows without being touched —
 /// which is why it needs no statement of its own beyond this one.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when SQLite refuses any of the updates or deletes.
 pub fn reparent_rows(
     tx: &Transaction<'_>,
     survivor: i64,
@@ -272,10 +301,14 @@ pub const GIT_DERIVED_XP_KINDS: [&str; 5] = [
 /// row is gone, and the art layer sweeps its files (§1.5, §7.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DerivedSweep {
+    /// Git-track `xp_events` rows deleted from both sides, for the history job to recompute.
     pub git_events_deleted: usize,
+    /// Session-track `xp_events` rows moved to the survivor.
     pub xp_events_reparented: usize,
     /// `app_meta.level_floor` as it now stands.
     pub level_floor: i64,
+    /// The absorbed row's art scene hash, whose files the art layer sweeps; `None` if it had no
+    /// scene.
     pub swept_scene_hash: Option<String>,
 }
 
@@ -286,6 +319,10 @@ pub struct DerivedSweep {
 /// level function, so the floor is stored in the only unit phase 1 can compute honestly: the
 /// library-wide count of git-derived events immediately before the delete, `max(existing,
 /// counted)`, monotonic. Any level function monotonic in that count inherits the guarantee.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when SQLite refuses the count, the floor's stamp, or any
+/// delete or update.
 pub fn recompute_derived(
     tx: &Transaction<'_>,
     survivor: i64,
@@ -424,12 +461,17 @@ fn stamp_level_floor(tx: &Transaction<'_>, counted: i64) -> Result<i64, Identity
 /// The result of §1.5's one transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MergeOutcome {
+    /// The project that remains, chosen by [`choose_survivor`].
     pub survivor: i64,
+    /// The project tombstoned into it; its id now redirects to `survivor`.
     pub absorbed: i64,
     /// The survivor's `association_kind` after combination.
     pub association: super::AssociationKind,
+    /// What moved from the absorbed project to the survivor.
     pub reparented: ReparentCounts,
+    /// What was deleted for recompute, and what the art layer must sweep.
     pub derived: DerivedSweep,
+    /// The `merge_record` row this merge wrote.
     pub merge_record_id: i64,
     /// Always true. Git-derived rows were deleted, and recomputing them means walking history —
     /// which §1.10 forbids inside a transaction, so the caller requeues the history job.
@@ -442,6 +484,12 @@ pub struct MergeOutcome {
 /// `a` and `b` may be stale ids: both resolve through `project_redirect` first (§1.6). Neither
 /// argument picks the survivor — [`choose_survivor`] does, so the answer does not depend on
 /// which way round the caller named them.
+///
+/// # Errors
+/// Fails wherever [`resolve_project_id`] or [`choose_survivor`] does — an unknown, stale or
+/// identical pair — or with [`IdentityError::Sqlite`] when any read or write is refused.
+///
+/// [`resolve_project_id`]: super::redirect::resolve_project_id
 pub fn merge_projects(
     tx: &Transaction<'_>,
     a: i64,
@@ -466,10 +514,10 @@ pub fn merge_projects(
         )
         .optional()?
         .flatten();
-    let association = match stored.as_deref().and_then(super::AssociationKind::parse) {
-        Some(previous) => previous.combine(kind),
-        None => kind,
-    };
+    let association = stored
+        .as_deref()
+        .and_then(super::AssociationKind::parse)
+        .map_or(kind, |previous| previous.combine(kind));
     tx.execute(
         "UPDATE project SET association_kind = ?2, updated_at = ?3 WHERE id = ?1",
         params![survivor, association.as_str(), now],
@@ -542,16 +590,24 @@ pub fn merge_projects(
 /// drifting (R31's caution about name collisions: compare shapes, not names).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnmergeHint {
+    /// The `merge_record` row this hint reads.
     pub merge_record_id: i64,
+    /// The tombstoned project a split would bring back.
     pub absorbed_project_id: i64,
+    /// When the merge happened, in Unix seconds.
     pub merged_at: i64,
+    /// The association the merge recorded; an unreadable stored value reads as `manual`.
     pub association_kind: super::AssociationKind,
     /// Verbatim from `merge_record`, so the renderer names the evidence that made the
     /// association rather than re-deriving it against a candidate set that has since moved.
     pub evidence_json: String,
+    /// Whether the absorbed note was appended below a survivor note, so a split must cut it out.
     pub notes_were_concatenated: bool,
+    /// Copies the merge moved to the survivor.
     pub locations: i64,
+    /// Sessions the merge moved to the survivor.
     pub sessions: i64,
+    /// Collection memberships the survivor gained.
     pub collection_members: i64,
     /// Session-derived rows only. Git-derived rows recompute (§1.7) and a split does not have
     /// to divide them.
@@ -567,6 +623,12 @@ pub struct UnmergeHint {
 type MergeRecordRow = (i64, i64, i64, String, String, String);
 
 /// Read-only. Performs no split, writes nothing, takes no confirmation.
+///
+/// # Errors
+/// Fails wherever [`resolve_project_id`] does, or with [`IdentityError::Sqlite`] when the
+/// survivor's flags or its `merge_record` rows cannot be read.
+///
+/// [`resolve_project_id`]: super::redirect::resolve_project_id
 pub fn unmerge_hint(
     tx: &Transaction<'_>,
     project_id: i64,
@@ -744,9 +806,12 @@ mod tests {
 
         let a = p(&conn, "a", 50);
         let b = p(&conn, "b", 50);
-        let tx = conn.transaction().unwrap();
-        assert_eq!(choose_survivor(&tx, b, a).unwrap(), (a.min(b), a.max(b)));
-        tx.commit().unwrap();
+        let tie_tx = conn.transaction().unwrap();
+        assert_eq!(
+            choose_survivor(&tie_tx, b, a).unwrap(),
+            (a.min(b), a.max(b))
+        );
+        tie_tx.commit().unwrap();
     }
 
     #[test]
@@ -1196,16 +1261,16 @@ mod tests {
 
         // A second, smaller merge must not lower it. Nothing earned is ever taken away.
         let b = p(&conn, "b", 300);
-        let tx = conn.transaction().unwrap();
-        let d2 = super::recompute_derived(&tx, s, b).unwrap();
+        let second_tx = conn.transaction().unwrap();
+        let d2 = super::recompute_derived(&second_tx, s, b).unwrap();
         assert_eq!(d2.level_floor, 3);
-        tx.commit().unwrap();
-        let stored: String = conn
+        second_tx.commit().unwrap();
+        let stored_after: String = conn
             .query_row("SELECT v FROM app_meta WHERE k='level_floor'", [], |r| {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(stored, "3");
+        assert_eq!(stored_after, "3");
     }
 
     #[test]
@@ -1502,9 +1567,9 @@ mod tests {
         let before: i64 = conn
             .query_row("SELECT COUNT(*) FROM project", [], |r| r.get(0))
             .unwrap();
-        let tx = conn.transaction().unwrap();
-        let hints = super::unmerge_hint(&tx, s).unwrap();
-        tx.commit().unwrap();
+        let hint_tx = conn.transaction().unwrap();
+        let hints = super::unmerge_hint(&hint_tx, s).unwrap();
+        hint_tx.commit().unwrap();
 
         assert_eq!(hints.len(), 1);
         let h = hints.first().unwrap();

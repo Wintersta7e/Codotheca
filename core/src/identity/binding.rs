@@ -46,7 +46,9 @@ impl RemoteLinkBasis {
 /// Which forge repository a `project` row **is**.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteBinding {
+    /// The forge the project is bound to.
     pub provider: String,
+    /// That forge's own id for the repository; only the pair with `provider` identifies it.
     pub provider_repo_id: String,
     /// Which evidence established the link. `None` on a binding that has not been written yet.
     pub remote_link_basis: Option<RemoteLinkBasis>,
@@ -66,6 +68,9 @@ impl RemoteBinding {
 /// `git config` on every scan and is the git-derived `xp_events` key's component (§1.7, §22.7),
 /// and not `association_kind`, which records how a *location* came to be under a project and has
 /// nothing to say about a forge listing (§22.11).
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the update is refused.
 pub fn write_binding(
     tx: &Transaction<'_>,
     project_id: i64,
@@ -91,6 +96,9 @@ pub fn write_binding(
 ///
 /// `None` when `provider` or `provider_repo_id` is NULL, which is *not yet resolved* and is the
 /// honest value — an empty string would compare equal to every other project that has none.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the read is refused.
 pub fn load_binding(
     tx: &Transaction<'_>,
     project_id: i64,
