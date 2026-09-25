@@ -606,10 +606,8 @@ mod platform {
     /// thread rather than to a caller that may already have returned. It is also unlinked eagerly
     /// on the accepted path — the nonce has been spent by then and the file has no further use.
     #[cfg(unix)]
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "owning the guard IS the consumption: its Drop performs the cleanup"
-    )]
+    // Owning the guard IS the consumption: its Drop performs the cleanup.
+    #[allow(clippy::needless_pass_by_value)]
     fn serve_unix(
         listener: UnixListener,
         cleanup: Cleanup,
