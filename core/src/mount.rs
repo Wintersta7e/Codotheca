@@ -265,7 +265,7 @@ impl MountResolver for SystemMountResolver {
     }
 
     fn is_volume_mounted(&self, volume_key: &str) -> bool {
-        std::path::Path::new(&format!("{volume_key}\\")).exists()
+        Path::new(&format!("{volume_key}\\")).exists()
     }
 }
 

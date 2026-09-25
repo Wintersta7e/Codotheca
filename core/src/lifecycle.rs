@@ -192,6 +192,9 @@ impl OsParentProbe {
     }
 
     #[cfg(not(target_os = "linux"))]
+    // The Linux twin reads `/proc` and cannot be const; a const here would make `new` const on
+    // one platform only.
+    #[allow(clippy::missing_const_for_fn)]
     fn identity(_pid: u32) -> Option<String> {
         None
     }

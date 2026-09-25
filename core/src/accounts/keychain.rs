@@ -18,6 +18,7 @@
 pub const KEYCHAIN_SERVICE: &str = "codotheca";
 
 /// The entry `probe` reads. It is never written, so a probe neither creates nor deletes.
+#[cfg(feature = "keychain")]
 const PROBE_ENTRY: &str = "codotheca-keychain-probe";
 
 /// A token, and the only way to get at one is a method whose name is greppable.
