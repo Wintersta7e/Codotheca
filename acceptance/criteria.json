@@ -5005,7 +5005,7 @@
           "status": "automated",
           "runner": "cargo",
           "owner": "p3-28",
-          "test": "debt_xp::ac_p3_28_5_forty_closures_in_one_day_pay_once",
+          "test": "debt_xp::ac_p3_28_5_forty_closures_on_an_enrolled_project_in_one_day_pay_once",
           "assert": "Forty items closed in one local date write exactly one xp_events row; meta.closed reads 40, and the second closure updates meta and no other column."
         }
       ]
@@ -5227,7 +5227,7 @@
           "status": "automated",
           "runner": "cargo",
           "owner": "p3-28",
-          "test": "debt_xp::ac_p3_28_15_an_invalidated_closure_pays_nothing",
+          "test": "debt_xp::ac_p3_28_15_an_invalidated_closure_on_an_enrolled_project_pays_nothing",
           "assert": "A withdrawn advisory closes as invalidated, pays nothing, and leaves XP already paid for that project untouched."
         }
       ]

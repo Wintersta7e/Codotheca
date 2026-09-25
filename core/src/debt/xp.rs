@@ -19,8 +19,19 @@ use rusqlite::{OptionalExtension as _, Transaction};
 use super::store::{DebtCloseReason, SweepEffect};
 use super::{enum_from_text, enum_text, DebtError};
 use crate::git::local_day;
+use crate::health::acknowledge::read_acknowledged_at;
+use crate::health::enrolment::is_enrolled;
 use crate::jobs::j4_history::local_date;
 use crate::protocol::{DebtScoring, DebtSource, ProjectId};
+
+/// A call that wrote nothing: no paying closure, or a project the gates refuse.
+const fn unpaid() -> DebtDayPayout {
+    DebtDayPayout {
+        wrote_row: false,
+        closed_today: 0,
+        sources: Vec::new(),
+    }
+}
 
 /// What one call did, so the caller can report a day without re-reading it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +70,9 @@ pub fn debt_day_dedupe_key(subject_key: &str, local_date: &str) -> String {
 /// from the count and from `sources` before the row is written, and a day with no paying closure
 /// writes **no row at all**.
 ///
+/// **Only an enrolled project is paid** (§38.8.1 gate 2, §30.5's `is_enrolled`), read at the
+/// closing observation. An unenrolled closure leaves nothing behind that a later call could pay.
+///
 /// # Errors
 /// Fails when SQLite refuses the read or the write, the day's stored `meta` is not JSON, or it
 /// names a source this build's schema does not declare.
@@ -78,11 +92,12 @@ pub fn pay_debt_day(
         .collect();
 
     if paid.is_empty() {
-        return Ok(DebtDayPayout {
-            wrote_row: false,
-            closed_today: 0,
-            sources: Vec::new(),
-        });
+        return Ok(unpaid());
+    }
+    // *Enrolled*, never *not suppressed* (R217): both suppression predicates also read
+    // `is_archived`, and an acknowledged, archived project is enrolled and is paid.
+    if !is_enrolled(read_acknowledged_at(tx, project)?) {
+        return Ok(unpaid());
     }
 
     let date = local_date(local_day(now, tz_offset_min));

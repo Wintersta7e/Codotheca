@@ -30,14 +30,48 @@ fn fresh() -> (tempfile::TempDir, rusqlite::Connection) {
     (dir, conn)
 }
 
-fn insert_project(conn: &rusqlite::Connection, name: &str) -> i64 {
+/// A project with the lineage and remote [`lineage_subject`] spells, enrolled or not, archived or
+/// not. Those are the columns the payout derives its subject from, so the key a test expects is
+/// the key the writer builds.
+fn insert_project_as(
+    conn: &rusqlite::Connection,
+    name: &str,
+    acknowledged_at: Option<i64>,
+    archived: bool,
+) -> i64 {
     conn.execute(
-        "INSERT INTO project (name, seed_basename, created_at, updated_at)
-         VALUES (?1, ?1, 1, 1)",
-        [name],
+        "INSERT INTO project (name, seed_basename, lineage_key, remote_key, acknowledged_at,
+                              is_archived, created_at, updated_at)
+         VALUES (?1, ?1, 'abc123', 'github.com/o/r', ?2, ?3, 1, 1)",
+        rusqlite::params![name, acknowledged_at, i64::from(archived)],
     )
     .unwrap();
     conn.last_insert_rowid()
+}
+
+/// §38.8.1 pays only an enrolled project, so every fixture that expects a row is one.
+fn insert_enrolled_project(conn: &rusqlite::Connection, name: &str) -> i64 {
+    insert_project_as(conn, name, Some(1), false)
+}
+
+/// An enrolled project with **no lineage**, whose one location row is the one [`path_subject`]
+/// spells for `byte`.
+fn insert_enrolled_unlineaged_project(conn: &rusqlite::Connection, name: &str, byte: u8) -> i64 {
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, acknowledged_at, created_at, updated_at)
+         VALUES (?1, ?1, 1, 1, 1)",
+        [name],
+    )
+    .unwrap();
+    let project = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO location (project_id, kind, distro, path_bytes, path_key, path_display,
+                               store_key, presence, repo_kind)
+         VALUES (?1, 'linux', '', ?2, ?2, ?3, 'store', 'present', 'worktree')",
+        rusqlite::params![project, vec![byte], format!("/{byte:02x}")],
+    )
+    .unwrap();
+    project
 }
 
 fn lineage_subject() -> ProjectSubject {
@@ -115,10 +149,13 @@ fn meta(conn: &rusqlite::Connection) -> serde_json::Value {
 /// closure updates `meta` and **no other column** — the payout is the row's existence and that
 /// never changes, while `meta` is the day's sentence and a sentence describing only the first
 /// closure undercounts the day it claims to describe.
+///
+/// The project is enrolled: §38.8.1 pays nothing to one that is not, and on the unenrolled
+/// fixture this test once used the first closure writes no row.
 #[test]
-fn ac_p3_28_5_forty_closures_in_one_day_pay_once() {
+fn ac_p3_28_5_forty_closures_on_an_enrolled_project_in_one_day_pay_once() {
     let (_d, mut conn) = fresh();
-    let p = insert_project(&conn, "thing");
+    let p = insert_enrolled_project(&conn, "thing");
     let subject = lineage_subject().to_key();
 
     let tx = conn.transaction().unwrap();
@@ -191,10 +228,13 @@ fn ac_p3_28_5_forty_closures_in_one_day_pay_once() {
 /// acting, and it **pays nothing**. A day whose only closures are invalidated writes **no row at
 /// all** — and an XP row already written for that project is untouched, because nothing earned is
 /// ever removed.
+///
+/// The project is enrolled, so the enrolment gate cannot be what writes no row: on an unenrolled
+/// fixture the invalidated half passed at the gate without reaching the reason it tests.
 #[test]
-fn ac_p3_28_15_an_invalidated_closure_pays_nothing() {
+fn ac_p3_28_15_an_invalidated_closure_on_an_enrolled_project_pays_nothing() {
     let (_d, mut conn) = fresh();
-    let p = insert_project(&conn, "thing");
+    let p = insert_enrolled_project(&conn, "thing");
     let subject = lineage_subject().to_key();
 
     let tx = conn.transaction().unwrap();
@@ -263,7 +303,7 @@ fn ac_p3_28_15_an_invalidated_closure_pays_nothing() {
 #[test]
 fn a_shown_only_closure_pays_nothing_and_leaves_the_day_to_what_pays() {
     let (_d, mut conn) = fresh();
-    let p = insert_project(&conn, "thing");
+    let p = insert_enrolled_project(&conn, "thing");
     let subject = lineage_subject().to_key();
 
     let tx = conn.transaction().unwrap();
@@ -330,6 +370,81 @@ fn a_shown_only_closure_pays_nothing_and_leaves_the_day_to_what_pays() {
     );
 }
 
+/// **§38.8.1 gate 2 — enrolled (§30.5's `is_enrolled`).** A closure on a project the user never
+/// acknowledged pays nothing, and it is not banked: once the project is enrolled, a later closure
+/// the same day pays a row that counts only itself.
+#[test]
+fn an_unenrolled_project_is_paid_nothing_and_nothing_later() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project_as(&conn, "thing", None, false);
+    let subject = lineage_subject().to_key();
+
+    let tx = conn.transaction().unwrap();
+    let unenrolled = pay_debt_day(
+        &tx,
+        ProjectId(p),
+        &subject,
+        &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
+        NOON,
+        0,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    assert!(!unenrolled.wrote_row, "an unenrolled project was paid");
+    assert_eq!(xp_count(&conn), 0);
+
+    conn.execute(
+        "UPDATE project SET acknowledged_at = ?2 WHERE id = ?1",
+        rusqlite::params![p, NOON + 30],
+    )
+    .unwrap();
+    let enrolled_tx = conn.transaction().unwrap();
+    let enrolled = pay_debt_day(
+        &enrolled_tx,
+        ProjectId(p),
+        &subject,
+        &closures(1, DebtCloseReason::Fixed, DebtSource::MissingReadme),
+        NOON + 60,
+        0,
+    )
+    .unwrap();
+    enrolled_tx.commit().unwrap();
+    assert!(enrolled.wrote_row);
+    assert_eq!(xp_count(&conn), 1);
+    assert_eq!(
+        meta(&conn)["closed"],
+        1,
+        "the unenrolled closure was banked and paid later"
+    );
+    assert_eq!(
+        meta(&conn)["sources"],
+        serde_json::json!(["missing_readme"])
+    );
+}
+
+/// **R217: the gate is enrolment, not suppression.** `compute_suppressed` and
+/// `surface_suppressed` are both `!enrolled || is_archived`; an acknowledged, archived project is
+/// enrolled and is paid.
+#[test]
+fn an_archived_acknowledged_project_is_still_paid() {
+    let (_d, mut conn) = fresh();
+    let p = insert_project_as(&conn, "thing", Some(1), true);
+
+    let tx = conn.transaction().unwrap();
+    let paid = pay_debt_day(
+        &tx,
+        ProjectId(p),
+        &lineage_subject().to_key(),
+        &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
+        NOON,
+        0,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    assert!(paid.wrote_row, "an archived, enrolled project was not paid");
+    assert_eq!(xp_count(&conn), 1);
+}
+
 /// **The key is `<subject_key>` and not §1.7's `<lineage_key>:<remote_key>`.** That shape is safe
 /// for `commit_day` only because a project with no lineage has no commits; a project with no
 /// lineage can absolutely have markers, and every such project would collapse onto
@@ -338,8 +453,8 @@ fn a_shown_only_closure_pays_nothing_and_leaves_the_day_to_what_pays() {
 #[test]
 fn two_projects_with_no_lineage_do_not_collide_on_one_date() {
     let (_d, mut conn) = fresh();
-    let a = insert_project(&conn, "a");
-    let b = insert_project(&conn, "b");
+    let a = insert_enrolled_unlineaged_project(&conn, "a", 0xaa);
+    let b = insert_enrolled_unlineaged_project(&conn, "b", 0xbb);
 
     let tx = conn.transaction().unwrap();
     for (project, byte) in [(a, 0xaa_u8), (b, 0xbb_u8)] {
@@ -370,7 +485,7 @@ fn two_projects_with_no_lineage_do_not_collide_on_one_date() {
 #[test]
 fn closures_either_side_of_local_midnight_are_two_days() {
     let (_d, mut conn) = fresh();
-    let p = insert_project(&conn, "thing");
+    let p = insert_enrolled_project(&conn, "thing");
     let subject = lineage_subject().to_key();
 
     let tx = conn.transaction().unwrap();
@@ -402,7 +517,7 @@ fn closures_either_side_of_local_midnight_are_two_days() {
     // The same two moments in a frame that moves the boundary: 13:00 and 13:00 the next day in
     // UTC+13 are still two local days, and the stored offset says which frame.
     let (_d2, mut other) = fresh();
-    let q = insert_project(&other, "thing");
+    let q = insert_enrolled_project(&other, "thing");
     let other_tx = other.transaction().unwrap();
     pay_debt_day(
         &other_tx,
@@ -428,7 +543,7 @@ fn closures_either_side_of_local_midnight_are_two_days() {
 #[test]
 fn a_sweep_that_closed_nothing_writes_no_row() {
     let (_d, mut conn) = fresh();
-    let p = insert_project(&conn, "thing");
+    let p = insert_enrolled_project(&conn, "thing");
 
     let tx = conn.transaction().unwrap();
     let paid = pay_debt_day(
