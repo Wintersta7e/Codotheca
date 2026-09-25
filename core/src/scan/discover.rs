@@ -146,7 +146,7 @@ impl<'a> ProbeCtx<'a> {
         self.cancel
     }
 
-    fn job(&self) -> JobContext<'_> {
+    const fn job(&self) -> JobContext<'_> {
         JobContext::new(JobClass::Background, self.cancel, Some(GIT_PROBE_TIMEOUT))
     }
 

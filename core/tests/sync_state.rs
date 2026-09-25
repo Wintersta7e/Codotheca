@@ -26,7 +26,7 @@ use codotheca_core::testing::TempIndex;
 
 const NOW: i64 = 1_800_000_000;
 
-fn row() -> SyncTaskStateRow {
+const fn row() -> SyncTaskStateRow {
     SyncTaskStateRow::queued(SyncTaskKind::AccountRepos, Some(1), NOW)
 }
 

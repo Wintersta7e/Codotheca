@@ -89,7 +89,7 @@ impl Rig {
         }
     }
 
-    pub(crate) fn conn(&self) -> &rusqlite::Connection {
+    pub(crate) const fn conn(&self) -> &rusqlite::Connection {
         self.index.conn()
     }
 

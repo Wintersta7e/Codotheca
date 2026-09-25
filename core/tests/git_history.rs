@@ -14,7 +14,7 @@ use codotheca_core::git::{
 };
 use support::TestRepo;
 
-fn limits() -> RunLimits {
+const fn limits() -> RunLimits {
     RunLimits::none()
 }
 

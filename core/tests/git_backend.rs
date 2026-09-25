@@ -28,7 +28,7 @@ fn backend(repo: &TestRepo) -> Arc<dyn GitBackend> {
     ))
 }
 
-fn ctx(cancel: &CancelToken, job: JobClass) -> JobContext<'_> {
+const fn ctx(cancel: &CancelToken, job: JobClass) -> JobContext<'_> {
     JobContext::new(job, cancel, Some(Duration::from_secs(60)))
 }
 
