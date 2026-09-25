@@ -45,7 +45,10 @@ pub enum Written {
     /// `observed_at` is where it was.
     Unchanged,
     /// Ten rows and the projection were replaced.
-    Rewritten { counts: Counts },
+    Rewritten {
+        /// The counts the new rows project onto.
+        counts: Counts,
+    },
 }
 
 /// Recompute one project's ten rows and its projection, in the caller's transaction.

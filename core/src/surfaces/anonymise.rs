@@ -1,9 +1,13 @@
-//! §11.4: "basenames and volume shapes". Paths *are* the product, so a bundle
-//! without them is useless; a bundle with them leaks the whole directory tree.
-//! The shape keeps the basename, the depth and a per-volume pseudonym.
+//! §11.4: "basenames and volume shapes".
+//!
+//! Paths *are* the product, so a bundle without them is useless; a bundle with them leaks
+//! the whole directory tree. The shape keeps the basename, the depth and a per-volume
+//! pseudonym.
 
 use std::collections::BTreeMap;
 
+/// The pseudonym for a location whose volume has no stable identifier.
+///
 /// [R27] `location.volume_key` is nullable, and NULL means *no stable identifier exists* —
 /// a bind mount, overlayfs, tmpfs. Giving those a number would claim they are one volume, so
 /// they get this instead and consume no number.
@@ -16,6 +20,7 @@ pub struct VolumeShapes {
 }
 
 impl VolumeShapes {
+    /// A table with no volume seen yet, so the first key shaped becomes `vol-1`.
     #[must_use]
     pub fn new() -> Self {
         Self::default()

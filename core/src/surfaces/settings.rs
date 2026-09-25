@@ -8,11 +8,17 @@ use crate::proto::txguard::TxGuard;
 use crate::protocol::{EffectsTier, LogLevel, RootId, Settings, SettingsPatch, SettingsSetArgs};
 use crate::surfaces::SurfaceCtx;
 
+/// `app_meta` key for the effects tier, stored as its protocol string.
 pub const KEY_EFFECTS_TIER: &str = "effects_tier";
+/// `app_meta` key for the reduced-motion override, `"1"` for on.
 pub const KEY_REDUCED_MOTION_OVERRIDE: &str = "reduced_motion_override";
+/// `app_meta` key for launching at login, `"1"` for on.
 pub const KEY_AUTOSTART: &str = "autostart";
+/// `app_meta` key for the resident window's global shortcut; empty or absent is no shortcut.
 pub const KEY_RESIDENT_SHORTCUT: &str = "resident_shortcut";
+/// `app_meta` key for roasting inside an opened project card, `"1"` for on; absent is on.
 pub const KEY_ROAST_ENABLED: &str = "roast_enabled";
+/// `app_meta` key for the rolling log's level, stored as its protocol string.
 pub const KEY_LOG_LEVEL: &str = "log_level";
 
 /// §29.8's grant: whole-tree source-file reading, and **J7's alone** (A11.3).
@@ -201,7 +207,7 @@ pub fn write(
     read(conn)
 }
 
-fn bit(on: bool) -> &'static str {
+const fn bit(on: bool) -> &'static str {
     if on {
         "1"
     } else {

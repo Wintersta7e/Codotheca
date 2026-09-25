@@ -43,6 +43,8 @@ pub fn handle_requeue(
     Ok(RequeueResult { jobs_requeued })
 }
 
+/// Stamps `location.trusted_at` with `now`, marking the location trusted.
+///
 /// §3.2 requires trust to be recorded somewhere Codotheca owns; §17 forbids
 /// writing the user's git config. `location.trusted_at` is that record, and the
 /// `-c safe.directory=<exact-path>` argument is assembled core-side from it.

@@ -1,7 +1,9 @@
 //! §11's surfaces: the scan summary, settings, the two repair controls and the
-//! diagnostics bundle. Each command is a plain function over the index; the
-//! dispatcher below is a seam, not an owner — it answers `None` for anything it
-//! does not implement so a later plan can chain its own beside it.
+//! diagnostics bundle.
+//!
+//! Each command is a plain function over the index; the dispatcher below is a seam, not an
+//! owner — it answers `None` for anything it does not implement so a later plan can chain its
+//! own beside it.
 
 pub mod anonymise;
 pub mod diag;
@@ -18,7 +20,9 @@ use crate::protocol::ErrorCode;
 /// caller so no surface reads the clock itself.
 #[derive(Debug)]
 pub struct SurfaceCtx<'a> {
+    /// The index every §11 command reads and writes through.
     pub index: &'a Index,
+    /// The caller's clock reading, in unix seconds.
     pub now: i64,
 }
 
@@ -32,6 +36,8 @@ pub const PROJECT_ERROR_KINDS: [ErrorCode; 6] = [
     ErrorCode::BudgetExceeded,
 ];
 
+/// Whether `code` is one of §11.1's per-project error kinds, the only ones
+/// `project.error_kind` may hold.
 #[must_use]
 pub fn is_project_error_kind(code: ErrorCode) -> bool {
     PROJECT_ERROR_KINDS.contains(&code)

@@ -12,6 +12,8 @@ use crate::protocol::{Bytes, DiagBundle, DiagBundleArgs};
 use crate::surfaces::anonymise::{anonymise_path, VolumeShapes};
 use crate::surfaces::{display_map, settings, SurfaceCtx};
 
+/// The bundle's file name before its timestamp: it is written as `<prefix><now>.json` in the
+/// data directory.
 pub const BUNDLE_FILE_PREFIX: &str = "codotheca-diagnostics-";
 
 /// The name of the rolling log, which the shell owns and this bundle only points at.

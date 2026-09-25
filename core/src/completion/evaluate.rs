@@ -32,8 +32,11 @@ use super::proposal::{proposes_na, suppressed_source};
 /// fails the check whatever the sweep outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SingletonReading {
+    /// The §28 debt source this reading was taken from.
     pub source: DebtSource,
+    /// The source's `debt_sweep` outcome; `None` is no sweep row.
     pub outcome: Option<DebtSweepOutcome>,
+    /// Scored open items for the source. **A count of ITEMS**, read only as `>= 1`.
     pub open_items: u32,
 }
 
@@ -80,10 +83,15 @@ pub struct CompletionInputs {
     /// that file clear of `remote_no_completion_writer`, which bans the snake-case aggregate
     /// spelling from any file naming a remote marker.
     pub readme: SingletonReading,
+    /// `missing_license`, behind `CompletionCheck::License`.
     pub license: SingletonReading,
+    /// `missing_tests`, behind `CompletionCheck::Tests`.
     pub tests: SingletonReading,
+    /// `ci_red`, behind `CompletionCheck::CiGreen`.
     pub ci_red: SingletonReading,
+    /// `unpushed_commits`, behind `CompletionCheck::Pushed`.
     pub pushed: SingletonReading,
+    /// `no_release`, behind `CompletionCheck::Release`.
     pub release: SingletonReading,
 
     /// §29.5's `has_ci` tri-state. `None` is **row-absent** — J7 has never observed this project
@@ -104,8 +112,10 @@ pub struct CompletionInputs {
     /// Read from the forge's own row and **not** from `project.description_source`: a user note
     /// that wins the description chain does not delete the forge's description.
     pub forge_description: Option<String>,
+    /// How many topics the forge row carries; `description` passes only with at least one.
     pub topic_count: u32,
 
+    /// §32's reading for the `deps` check.
     pub deps: DepsReading,
 
     /// J3's archetype. `None` is a NULL column — J3 has not run — and proposes nothing.
@@ -118,19 +128,28 @@ pub struct CompletionInputs {
 /// One evaluated check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CheckRow {
+    /// Which of the ten checks this row is.
     pub key: CompletionCheck,
+    /// The check's evaluated state.
     pub state: CheckState,
+    /// The user's stored N/A ruling for this check, carried through unchanged.
     pub user_na: Option<bool>,
+    /// §31.7a's reason, set exactly when `state` is `unknown`.
     pub unknown_reason: Option<UnknownReason>,
+    /// When this state was last established, in unix seconds (§31.5).
     pub observed_at: i64,
 }
 
 /// §31.1b's four counts, over **checks**.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Counts {
+    /// Checks that pass.
     pub lit: u32,
+    /// Checks that pass or fail: the denominator `lit` is read against.
     pub evaluable: u32,
+    /// Checks whose state is `unknown`.
     pub unknown: u32,
+    /// Checks ruled or proposed not applicable.
     pub na: u32,
 }
 
@@ -178,7 +197,7 @@ const fn unknown(reason: UnknownReason) -> (CheckState, Option<UnknownReason>) {
 ///
 /// **This is §31's alone**, because `ArmReading` and `debt_sweep` carry no `UnknownReason` — §28
 /// answers *observable or not*, and which sentence a user is owed is a §31 question.
-fn reason_for(key: CompletionCheck, account_connected: bool) -> UnknownReason {
+const fn reason_for(key: CompletionCheck, account_connected: bool) -> UnknownReason {
     match key {
         CompletionCheck::Readme | CompletionCheck::License | CompletionCheck::Tests => {
             UnknownReason::NotRead
@@ -199,7 +218,7 @@ fn reason_for(key: CompletionCheck, account_connected: bool) -> UnknownReason {
 /// §28's stored answer, mapped onto a state. **Total**, and it re-derives no predicate.
 /// §31.1b follows §30.3's *an item observed is an item*: a scored open item fails before the
 /// sweep outcome is considered; without one, only a complete outcome can pass.
-fn from_singleton(
+const fn from_singleton(
     key: CompletionCheck,
     reading: SingletonReading,
     account_connected: bool,
@@ -236,7 +255,7 @@ fn from_singleton(
 /// **A budget exceedance is `not_read` and therefore `unknown`, never `absent` and never
 /// `fail`** — the single most likely place this phase renders unknown as zero, because a timeout
 /// looks exactly like a missing file. Row-absent is neither: it is *never observed*.
-fn from_presence(state: Option<PresenceState>) -> (CheckState, Option<UnknownReason>) {
+const fn from_presence(state: Option<PresenceState>) -> (CheckState, Option<UnknownReason>) {
     match state {
         Some(PresenceState::Present) => plain(CheckState::Pass),
         Some(PresenceState::Absent) => plain(CheckState::Fail),
