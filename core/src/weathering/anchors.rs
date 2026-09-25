@@ -63,7 +63,7 @@ pub fn resolve_anchors(scene: &Scene) -> Vec<WeatherLayer> {
 /// Every face-up module rect, then every vent rect; document order within each group.
 ///
 /// **No per-module filter on the individual document.** `face_up` is a function of `module_kind`
-/// alone (`core/src/art/compose.rs:242-246`) and the generator gives every module one kind, so
+/// alone (`core/src/art/compose.rs:277-281`) and the generator gives every module one kind, so
 /// within a scene it is all of them or none. The `filter` below reads the field rather than the
 /// kind because the field is what the document stores, but the branch it expresses cannot vary
 /// inside one scene — and writing a per-module *rule* is how a later reader concludes it does.
@@ -87,7 +87,7 @@ fn dust(scene: &Scene) -> WeatherLayer {
 ///
 /// **The rule stays geometric although it resolves to `modules[0]` on every scene the generator
 /// writes today** — every module is stacked at one `x` and one width with increasing `y`
-/// (`core/src/art/compose.rs:311-318`), so the nearest corner is always the topmost. Writing
+/// (`core/src/art/compose.rs:380-389`), so the nearest corner is always the topmost. Writing
 /// `modules.first()` would be correct against today's livery and silently wrong against the first
 /// one that places two modules side by side.
 fn cobwebs(scene: &Scene) -> WeatherLayer {
