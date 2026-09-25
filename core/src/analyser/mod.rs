@@ -22,6 +22,7 @@ pub mod compose;
 pub mod gates;
 pub mod identity;
 pub mod junk;
+pub mod nested;
 pub mod remote;
 pub mod roots;
 pub mod verdict;
@@ -36,7 +37,10 @@ use crate::gitw::floor::meets_governed_floor;
 use crate::gitw::intent::GIT_INVOCATION_DEADLINE;
 use crate::mount::StoreClass;
 use crate::proto::dispatch::CommandFailure;
-use crate::protocol::{LocationId, TrashRefusalKind, UninstallBlocker, UninstallVerdict};
+use crate::protocol::{
+    LocationId, NestedRepository, PreciousSummary, TrashRefusalKind, UninstallBlocker,
+    UninstallDisposition, UninstallVerdict,
+};
 use crate::removal::{Trash, TrashAvailability, TrashRefusal};
 
 use self::compose::{compose_remote_blockers, is_undischargeable, RemoteSummary};
@@ -263,7 +267,7 @@ pub fn analyse(
     let Some(repo) = resolve(row) else {
         local_gates(row, &mut found);
         found.push(UninstallBlocker::NeverObserved);
-        return finish(found, None, row, seams, now);
+        return finish(Findings::of(found), row, seams, now);
     };
     match identify(git, &repo, row.lineage_key.as_deref(), &budget.ctx(&cancel)) {
         IdentityOutcome::Match => {}
@@ -271,12 +275,16 @@ pub fn analyse(
         // A different repository, or no identity at all: **the analysis stops here**, and the
         // one blocker is the whole answer — nothing after step 1 describes the row's repository.
         IdentityOutcome::Mismatch => {
-            return finish(vec![UninstallBlocker::RefusedPath], None, row, seams, now)
+            return finish(
+                Findings::of(vec![UninstallBlocker::RefusedPath]),
+                row,
+                seams,
+                now,
+            )
         }
         IdentityOutcome::Unreadable => {
             return finish(
-                vec![UninstallBlocker::RefsUnreadable],
-                None,
+                Findings::of(vec![UninstallBlocker::RefsUnreadable]),
                 row,
                 seams,
                 now,
@@ -284,20 +292,56 @@ pub fn analyse(
         }
     }
 
-    // Step 2: every static gate, and git at or above the governed floor — below it the act is
+    // Step 2's location gates, and git at or above the governed floor — below it the act is
     // unknown and runs no weaker read (PA1).
     local_gates(row, &mut found);
     found.extend(gates::gate_gitdir_outside(&repo, &repo.work_dir));
     found.extend(gates::gate_linked_worktree(&repo));
-    found.extend(gates::gate_lfs(&repo));
     match git.version(&budget.ctx(&cancel)) {
         Ok(version) if meets_governed_floor(&version) => {}
         _ => {
             found.push(UninstallBlocker::RefsUnreadable);
-            return finish(found, None, row, seams, now);
+            return finish(Findings::of(found), row, seams, now);
         }
     }
-    match git.interrupted_ops(&repo, &budget.ctx(&cancel)) {
+    let findings = analyse_repo(&repo, act, seams, &budget, 0, found);
+    finish(findings, row, seams, now)
+}
+
+/// What steps 2–8 found over one repository: the location's, or a nested one's.
+#[derive(Debug, Default)]
+struct Findings {
+    blockers: Vec<UninstallBlocker>,
+    nested: Vec<NestedRepository>,
+    precious: Option<PreciousSummary>,
+    verified: bool,
+}
+
+impl Findings {
+    /// An analysis that stopped with `blockers`: nothing enumerated, nothing read remotely.
+    fn of(blockers: Vec<UninstallBlocker>) -> Self {
+        Self {
+            blockers,
+            ..Self::default()
+        }
+    }
+}
+
+/// Steps 2–8 over `repo` at `depth` (the location is 0), after `found`: the repository's own
+/// gates, its roots, its worktree, its nested repositories — each in full, folded — and its own
+/// remotes.
+fn analyse_repo(
+    repo: &RepoHandle,
+    act: GovernedAct,
+    seams: &AnalyserSeams<'_>,
+    budget: &Budget,
+    depth: u32,
+    mut found: Vec<UninstallBlocker>,
+) -> Findings {
+    let cancel = CancelToken::new();
+    let git = seams.git;
+    found.extend(gates::gate_lfs(repo));
+    match git.interrupted_ops(repo, &budget.ctx(&cancel)) {
         Ok(ops) if ops.is_empty() => {}
         Ok(_) => found.push(UninstallBlocker::InterruptedOperation),
         Err(_) => found.push(UninstallBlocker::RefsUnreadable),
@@ -307,9 +351,9 @@ pub fn analyse(
     // no read that step could make would change an answer the stash has already decided.
     if budget.exhausted() {
         found.push(UninstallBlocker::RefsUnreadable);
-        return finish(found, None, row, seams, now);
+        return Findings::of(found);
     }
-    let roots = match roots::read_roots(git, &repo, &budget.ctx(&cancel)) {
+    let roots = match roots::read_roots(git, repo, &budget.ctx(&cancel)) {
         Ok(roots) => {
             if !roots.stash.is_empty() {
                 found.push(UninstallBlocker::StashPresent);
@@ -322,30 +366,98 @@ pub fn analyse(
         }
     };
 
-    // Steps 4 and 5.
+    // Step 4, over a repository that has a worktree; a module git dir has none.
     if budget.exhausted() {
         found.push(UninstallBlocker::NeverObserved);
-        return finish(found, None, row, seams, now);
+        return Findings::of(found);
     }
-    found.extend(worktree::analyse_worktree(&repo, git, &budget.ctx(&cancel)));
-    found.extend(worktree::analyse_nested(
-        &repo,
-        git,
-        &budget.ctx(&cancel),
-        0,
-    ));
+    let tree = if repo.work_dir == repo.git_dir {
+        worktree::WorktreeFindings::default()
+    } else {
+        worktree::analyse_worktree(repo, git, &budget.ctx(&cancel))
+    };
+    found.extend(tree.blockers.iter().copied());
+
+    // Step 5: every nested repository, in full, and the fold. The parent gains
+    // `submodule_unsafe` iff one is `blocked`; one that is only `unknown` passes its
+    // unknown-class blockers up, so an offline submodule remote leaves the parent `unknown`.
+    let mut listed: Vec<NestedRepository> = Vec::new();
+    for candidate in nested::candidates(repo, &tree.gitlinks, &tree.in_tree) {
+        let entries = analyse_nested(&candidate, act, seams, budget, depth + 1);
+        if let Some(child) = entries.first() {
+            match child.disposition {
+                UninstallDisposition::Blocked => found.push(UninstallBlocker::SubmoduleUnsafe),
+                UninstallDisposition::Unknown => found.extend(
+                    child
+                        .blockers
+                        .iter()
+                        .copied()
+                        .filter(|b| verdict::is_unknown_blocker(*b)),
+                ),
+                UninstallDisposition::Safe => {}
+            }
+        }
+        listed.extend(entries);
+    }
 
     // Step 6, only when both hold: roots need an elsewhere, and nothing found so far is
     // undischargeable for this act. A verification write that cannot change the answer is not
     // made.
-    let Some(roots) = roots else {
-        return finish(found, None, row, seams, now);
+    let verified = match roots {
+        Some(roots)
+            if roots.need_elsewhere() && !found.iter().any(|b| is_undischargeable(act, *b)) =>
+        {
+            elsewhere(repo, &roots, seams, budget, &mut found)
+        }
+        _ => false,
     };
-    if !roots.need_elsewhere() || found.iter().any(|b| is_undischargeable(act, *b)) {
-        return finish(found, None, row, seams, now);
+    Findings {
+        blockers: found,
+        nested: listed,
+        precious: tree.precious,
+        verified,
     }
-    let verified_at = elsewhere(&repo, &roots, seams, &budget, &mut found).then_some(now);
-    finish(found, verified_at, row, seams, now)
+}
+
+/// One nested repository, analysed — and every repository nested in it, flattened after it with
+/// its path under this one's.
+fn analyse_nested(
+    candidate: &nested::Candidate,
+    act: GovernedAct,
+    seams: &AnalyserSeams<'_>,
+    budget: &Budget,
+    depth: u32,
+) -> Vec<NestedRepository> {
+    let path_display = candidate.rel.to_string_lossy().replace('\\', "/");
+    let unknown = |blocker| {
+        vec![NestedRepository {
+            path_display: path_display.clone(),
+            kind: candidate.kind,
+            disposition: UninstallDisposition::Unknown,
+            blockers: vec![blocker],
+        }]
+    };
+    if depth > nested::MAX_NESTING {
+        return unknown(UninstallBlocker::NestingTooDeep);
+    }
+    let Some(repo) = &candidate.repo else {
+        return unknown(UninstallBlocker::NeverObserved);
+    };
+    let findings = analyse_repo(repo, act, seams, budget, depth, Vec::new());
+    let mut blockers = findings.blockers;
+    blockers.sort_unstable_by_key(|b| format!("{b:?}"));
+    blockers.dedup();
+    let mut out = vec![NestedRepository {
+        path_display: path_display.clone(),
+        kind: candidate.kind,
+        disposition: fold_disposition(&blockers),
+        blockers,
+    }];
+    out.extend(findings.nested.into_iter().map(|mut deeper| {
+        deeper.path_display = format!("{path_display}/{}", deeper.path_display);
+        deeper
+    }));
+    out
 }
 
 /// Steps 6 to 8's remote half: read every configured remote, walk once against what answered,
@@ -399,13 +511,8 @@ fn elsewhere(
 
 /// Step 8's fold, and the verdict it seals. **Every blocker found is reported** — the fold
 /// decides a disposition, it never edits the list.
-fn finish(
-    mut blockers: Vec<UninstallBlocker>,
-    remote_verified_at: Option<i64>,
-    row: &LocationRow,
-    seams: &AnalyserSeams<'_>,
-    now: i64,
-) -> Analysis {
+fn finish(findings: Findings, row: &LocationRow, seams: &AnalyserSeams<'_>, now: i64) -> Analysis {
+    let mut blockers = findings.blockers;
     // One blocker of a kind is enough; the list is a vocabulary, not a tally.
     blockers.sort_unstable_by_key(|b| format!("{b:?}"));
     blockers.dedup();
@@ -418,14 +525,11 @@ fn finish(
         verdict: UninstallVerdict {
             disposition,
             blockers,
-            remote_verified_at,
+            remote_verified_at: findings.verified.then_some(now),
             trash_available: trash_refusal.is_none(),
             computed_at: now,
-            // §45.12's two fields are filled by the worktree and nested steps. Until those
-            // itemise, nothing is listed, and `precious: None` says *not enumerated*, never
-            // *none*.
-            nested: Vec::new(),
-            precious: None,
+            nested: findings.nested,
+            precious: findings.precious,
             trash_refusal,
         },
         seal,

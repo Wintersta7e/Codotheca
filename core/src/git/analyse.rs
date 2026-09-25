@@ -168,6 +168,20 @@ pub enum InterruptedOperation {
     Bisect,
 }
 
+/// Replace objects and grafts off, for a read that loads commits: the analyser reads the objects
+/// a ref names, never what a replace ref or a graft file substitutes. Two pins, because
+/// `--no-replace-objects` does not disable a graft (measured on git 2.43) — and a graft file
+/// that is read makes git print a deprecation hint, which a strict read refuses.
+fn history_off(exec: &GitExec) -> [(&'static str, OsString); 2] {
+    [
+        ("GIT_NO_REPLACE_OBJECTS", OsString::from("1")),
+        (
+            "GIT_GRAFT_FILE",
+            absent_graft_path(exec.hooks_dir()).into_os_string(),
+        ),
+    ]
+}
+
 /// Is `text` an object id — 40 or 64 lowercase hex characters?
 ///
 /// **One owner** for the shape: the write path's `ObjectId` refuses exactly what this refuses.
@@ -594,7 +608,7 @@ pub(crate) fn stash_entries(
         return Err(unreadable(format!("refs/stash resolved to {tip:?}")));
     }
 
-    let log = exec.run(
+    let log = exec.run_with_stdin(
         repo,
         &[
             OsStr::new("log"),
@@ -604,6 +618,8 @@ pub(crate) fn stash_entries(
             OsStr::new("--no-color"),
             OsStr::new(REFS_STASH),
         ],
+        Vec::new(),
+        &history_off(exec),
         limits,
         cancel,
     )?;
@@ -734,7 +750,8 @@ pub(crate) fn worktree_scan(
     limits: RunLimits,
     cancel: &CancelToken,
 ) -> GitResult<WorktreeScan> {
-    let status = exec.run(
+    // `HEAD`'s own tree, never a replacement's or a graft's — and no graft hint on stderr.
+    let status = exec.run_with_stdin(
         repo,
         &[
             OsStr::new("-c"),
@@ -746,6 +763,8 @@ pub(crate) fn worktree_scan(
             OsStr::new("-unormal"),
             OsStr::new("--ignored=matching"),
         ],
+        Vec::new(),
+        &history_off(exec),
         limits,
         cancel,
     )?;
@@ -833,13 +852,7 @@ pub(crate) fn any_uncovered(
         stdin.extend_from_slice(tip.as_bytes());
         stdin.push(b'\n');
     }
-    let env = [
-        ("GIT_NO_REPLACE_OBJECTS", OsString::from("1")),
-        (
-            "GIT_GRAFT_FILE",
-            absent_graft_path(exec.hooks_dir()).into_os_string(),
-        ),
-    ];
+    let env = history_off(exec);
     let out = exec.run_with_stdin(
         repo,
         &[

@@ -307,8 +307,8 @@ fn ac_p4_45_8() {
 /// the only remote offline, a copy whose commits were pushed yesterday yields
 /// `remote_unreachable` and never `unpushed_commits`.
 ///
-/// [p4] The criterion's third clause — an empty repository with no remote and only junk is
-/// `safe` — reads §45.4's junk rule, and lands with the worktree step that owns it.
+/// An empty repository with no remote and only junk is `safe`: nothing needs an elsewhere, and
+/// junk is not precious (§45.4).
 #[test]
 fn ac_p4_45_11() {
     let none = {
@@ -325,7 +325,24 @@ fn ac_p4_45_11() {
         offline.silent("origin", DidNotAnswer::Failed);
         lib.preflight(id, &offline)
     };
-    eprintln!("no remote: {none}; the only remote offline, pushed yesterday: {yesterday}");
+    let junk_only = {
+        let lib = Library::new();
+        let empty = lib.root.join("widget");
+        lib.git(
+            &lib.base,
+            &["init", "-q", "-b", "main", &empty.to_string_lossy()],
+        );
+        let junk = empty.join("node_modules").join("pkg");
+        std::fs::create_dir_all(&junk).expect("junk");
+        std::fs::write(junk.join("index.js"), b"module.exports = 1;\n").expect("junk file");
+        let id = lib.register(&empty);
+        lib.preflight(id, &lib.verifier())
+    };
+    eprintln!(
+        "no remote: {none}; the only remote offline, pushed yesterday: {yesterday}; an empty \
+         repository with only junk: {junk_only}"
+    );
+    assert_eq!(junk_only.disposition(), "safe", "{junk_only}");
     assert!(none.has("no_remote"), "{none}");
     assert!(!none.has("remote_unreachable"), "{none}");
     assert_eq!(yesterday.blockers(), vec!["remote_unreachable".to_owned()]);
@@ -357,6 +374,18 @@ fn no_verification_read_runs_when_a_local_blocker_is_undischargeable() {
         (lib.preflight(id, &remotes), remotes.calls())
     };
 
+    // An ignored file that is not junk.
+    let (ignored, ignored_calls) = {
+        let lib = Library::new();
+        let copy = lib.pushed_repo("widget");
+        std::fs::write(copy.join(".git/info/exclude"), b".env\n").expect("exclude");
+        std::fs::write(copy.join(".env"), b"TOKEN=local\n").expect(".env");
+        let id = lib.register(&copy);
+        let remotes = FixtureRemoteVerifier::new();
+        remotes.answering("origin", &[head(&lib, &copy)]);
+        (lib.preflight(id, &remotes), remotes.calls())
+    };
+
     // A stash.
     let (stashed, stash_calls) = {
         let lib = Library::new();
@@ -370,10 +399,14 @@ fn no_verification_read_runs_when_a_local_blocker_is_undischargeable() {
     };
 
     eprintln!(
-        "live session: {live}, {} verifier call(s); stash: {stashed}, {} verifier call(s)",
+        "live session: {live}, {} verifier call(s); ignored .env: {ignored}, {} verifier \
+         call(s); stash: {stashed}, {} verifier call(s)",
         live_calls.len(),
+        ignored_calls.len(),
         stash_calls.len()
     );
+    assert!(ignored.has("ignored_precious"), "{ignored}");
+    assert!(ignored_calls.is_empty(), "{ignored_calls:?}");
     assert!(
         live.has("live_session") && live.has("untracked_precious"),
         "{live}"

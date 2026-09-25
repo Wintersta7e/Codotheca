@@ -327,14 +327,15 @@ fn packed_refs_are_enumerated_as_well_as_loose_ones() {
 
 /// **The direction of the ignored rule, which is the one that loses work if inverted.**
 ///
-/// An ignored path is precious **unless** it matches known junk. A `.env` matches nothing in the
-/// set and is therefore precious; `node_modules/` matches and is not.
+/// An ignored path is precious **unless** it is junk. A `.env` matches nothing in the set and is
+/// therefore precious; a path under `node_modules/` is junk.
 #[test]
 fn an_ignored_path_is_precious_unless_it_is_known_junk() {
     use codotheca_core::analyser::junk::is_junk;
     use std::path::Path;
 
-    // Precious: nothing in the junk set matches these, and each is real work.
+    let root = tempfile::tempdir().expect("tempdir");
+    // Precious: nothing in the junk set stands above these, and each is real work.
     for precious in [
         ".env",
         "local.db",
@@ -343,12 +344,12 @@ fn an_ignored_path_is_precious_unless_it_is_known_junk() {
         "TODO.txt",
     ] {
         assert!(
-            !is_junk(Path::new(precious)),
+            !is_junk(root.path(), Path::new(precious), false),
             "{precious} matches no junk pattern and must be treated as precious"
         );
     }
 
-    // Junk: each is a rebuildable cache or output directory.
+    // Junk: each sits under a rebuildable cache or output directory.
     for junk in [
         "node_modules/react/index.js",
         "target/debug/thing",
@@ -356,21 +357,40 @@ fn an_ignored_path_is_precious_unless_it_is_known_junk() {
         "__pycache__/x.pyc",
         ".venv/bin/python",
     ] {
-        assert!(is_junk(Path::new(junk)), "{junk} is rebuildable");
+        assert!(
+            is_junk(root.path(), Path::new(junk), false),
+            "{junk} is rebuildable"
+        );
     }
 }
 
 /// The junk set has **one owner**, and the rule reads off it rather than restating it.
+///
+/// [p4] Renamed with its body (D-12): §45.4 counts only a directory component **strictly above**
+/// a path's own name, so a *file* named `build` is precious (AC-P4-45-9) while the directory
+/// `build/`, and everything under it, is junk. The old body asserted every bare name was junk.
 #[test]
-fn the_junk_set_has_one_owner() {
+fn the_junk_set_has_one_owner_and_a_bare_name_is_not_junk() {
     use codotheca_core::analyser::junk::{is_junk, JUNK_PATTERNS};
     use std::path::Path;
 
+    let root = tempfile::tempdir().expect("tempdir");
     assert!(!JUNK_PATTERNS.is_empty());
     for pattern in JUNK_PATTERNS {
         assert!(
-            is_junk(Path::new(pattern)),
-            "{pattern} is in the set and must be recognised by the predicate that reads it"
+            !is_junk(root.path(), Path::new(pattern), false),
+            "a file named {pattern} is precious: no component stands above it"
+        );
+        assert!(
+            is_junk(root.path(), Path::new(pattern), true),
+            "the directory {pattern}/ is junk"
+        );
+        assert!(
+            is_junk(root.path(), &Path::new(pattern).join("inside"), false),
+            "{pattern}/inside is junk"
         );
     }
+    // A directory holding `.git` is never junk, whatever its name: it is another repository.
+    std::fs::create_dir_all(root.path().join("vendor").join(".git")).expect("nested .git");
+    assert!(!is_junk(root.path(), Path::new("vendor/x.rs"), false));
 }

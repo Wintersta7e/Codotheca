@@ -216,10 +216,6 @@ fn every_floor_feature_runs_on_the_git_under_test() {
         std::sync::Arc::new(codotheca_core::git::GitSlots::for_machine()),
         std::sync::Arc::new(codotheca_core::clock::SystemClock::new()),
     );
-    // D10's graft file makes git print a deprecation hint on every read, and the analyser's
-    // reads refuse on any diagnostic output (§45.2). That refusal is the rule, not this test's
-    // subject, so the reads here run without it.
-    std::fs::remove_file(world.work.join(".git/info/grafts")).expect("grafts");
     let cancel = CancelToken::new();
     let handle =
         RepoHandle::resolve(&world.work, StoreKey::new("s"), StoreClass::Local).expect("resolves");
