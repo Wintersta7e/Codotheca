@@ -1,6 +1,8 @@
 //! §8.2's `projects.list`, §8.4's `projects.peek` and §1.2's three organisation primitives
-//! behind `projects.setFlags` — the three commands R37 found declared in the schema, called by
-//! the renderer, and implemented nowhere.
+//! behind `projects.setFlags`.
+//!
+//! Those are the three commands R37 found declared in the schema, called by the renderer, and
+//! implemented nowhere.
 //!
 //! Nothing under this module reads a clock, a zone or a filesystem path: `now` and
 //! `tz_offset_min` arrive on `ProjectsCtx`, and §2.5's rule means a path leaves here only as
@@ -24,11 +26,15 @@ use crate::protocol::ErrorCode;
 // `use crate::proto::dispatch::parse_args;`, so there is one path to it and not two.
 // R16: `EventSink` is plan 03's trait, declared beside `Publisher`.
 
-/// Everything a §8 command needs. `now` is unix **seconds**; `tz_offset_min` is the machine's
-/// UTC offset in minutes, supplied by the caller because §8.1's bands cut on the **local**
-/// calendar year and a core that read the zone itself could not be tested across a New Year.
+/// Everything a §8 command needs.
+///
+/// `now` is unix **seconds**; `tz_offset_min` is the machine's UTC offset in minutes, supplied by
+/// the caller because §8.1's bands cut on the **local** calendar year and a core that read the
+/// zone itself could not be tested across a New Year.
 pub struct ProjectsCtx<'a> {
+    /// The index, borrowed from the guard the dispatcher holds.
     pub index: &'a Index,
+    /// Where the commands publish their events.
     pub events: &'a dyn EventSink,
     /// §6's freshness request. `projects.peek` asks for a current worktree reading; nothing
     /// else in this module does, because a shelf of a thousand rows would queue a thousand
@@ -41,7 +47,9 @@ pub struct ProjectsCtx<'a> {
     /// deliberately not `projects.list` — a shelf of a thousand rows must not queue a thousand
     /// network tasks.
     pub sync: &'a dyn crate::sync::runner::SyncSink,
+    /// The command's reading of the wall clock, in unix seconds.
     pub now: i64,
+    /// The machine's UTC offset in minutes, for §8.1's local-year bands.
     pub tz_offset_min: i32,
 }
 
@@ -54,15 +62,20 @@ impl std::fmt::Debug for ProjectsCtx<'_> {
     }
 }
 
+/// Why a §8 command could not be answered.
 #[derive(Debug)]
 pub enum ProjectsError {
+    /// An index-level read failed, e.g. the display paths.
     Index(IndexError),
+    /// A statement against the index failed.
     Sqlite(rusqlite::Error),
     /// The caller named a project that is not in the index, or one merged away.
     UnknownProject(i64),
     /// A stored enum string the schema no longer admits. Ours, not the caller's.
     BadColumn {
+        /// The column (or table) that was read, usually spelled `table.column`.
         column: &'static str,
+        /// What it held, as read.
         value: String,
     },
 }
@@ -96,7 +109,7 @@ impl ProjectsError {
     /// The closed code the shell narrows on (§2.4). A caller's mistake is `PROTOCOL`; ours is
     /// `INTERNAL`.
     #[must_use]
-    pub fn code(&self) -> ErrorCode {
+    pub const fn code(&self) -> ErrorCode {
         match self {
             Self::UnknownProject(_) => ErrorCode::Protocol,
             _ => ErrorCode::Internal,
@@ -116,7 +129,7 @@ impl From<ProjectsError> for CommandFailure {
 /// The commands this module owns, in the order the dispatcher matches them. Exposed so the
 /// table can be asserted without constructing an `Index`.
 #[must_use]
-pub fn dispatch_projects_command_names() -> [&'static str; 3] {
+pub const fn dispatch_projects_command_names() -> [&'static str; 3] {
     ["projects.list", "projects.peek", "projects.setFlags"]
 }
 

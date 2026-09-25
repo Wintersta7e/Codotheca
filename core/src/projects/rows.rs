@@ -44,37 +44,52 @@ fn optional_column<T: serde::de::DeserializeOwned>(
     raw: Option<String>,
     name: &'static str,
 ) -> Result<Option<T>, ProjectsError> {
-    match raw {
-        None => Ok(None),
-        Some(text) => column(&text, name).map(Some),
-    }
+    raw.map_or_else(|| Ok(None), |text| column(&text, name).map(Some))
 }
 
+/// One `location` row, mapped once and shared by the shelf row, Peek and `LocationDetail`.
 #[derive(Debug, Clone)]
 pub struct LocationFacts {
+    /// The copy's `location` row id.
     pub id: LocationId,
+    /// The project the copy belongs to.
     pub project_id: ProjectId,
+    /// Which filesystem the copy lives on: Windows, Linux, or a WSL distro.
     pub kind: LocationKind,
+    /// The WSL distro name for a distro copy; empty for any other kind (§1.3).
     pub distro: String,
+    /// The lossy display form of the path, filled only through §1.10's one permitted reader.
     pub path_display: String,
+    /// The last scan's observation of whether the copy is there.
     pub presence: Presence,
+    /// The branch observed checked out; `None` until observed (§6).
     pub branch: Option<String>,
+    /// Whether the worktree had changes when last observed; `None` is not observed, never clean.
     pub is_dirty: Option<bool>,
+    /// Untracked files counted when last observed; `None` until observed, never zero.
     pub untracked_count: Option<i64>,
+    /// Commits ahead of the upstream when last observed; `None` until observed.
     pub ahead: Option<i64>,
+    /// Commits behind the upstream when last observed; `None` until observed.
     pub behind: Option<i64>,
+    /// Stash entries counted when last observed; `None` until observed.
     pub stash_count: Option<i64>,
+    /// An operation left in progress, e.g. a merge or rebase; `None` when none was observed.
     pub interrupted_op: Option<InterruptedOp>,
     /// §8.5.2's per-copy HEAD. The shelf row does not draw it; `LocationDetail` does, and one
     /// location mapping serving both is the point of this struct.
     pub head_oid: Option<String>,
     /// §11.1's TRUST THIS REPOSITORY, scoped to the exact path `safe.directory` takes.
     pub trusted_at: Option<i64>,
+    /// When `FETCH_HEAD` was last written, a content clock; `None` is no fetch recorded (§1.3).
     pub fetch_head_at: Option<i64>,
+    /// When J1 last observed the copy's refs; `None` until it has.
     pub refstate_observed_at: Option<i64>,
+    /// When the worktree state was last observed; `None` until it has been (§6).
     pub worktree_observed_at: Option<i64>,
     /// §5.1's "most recently touched". J3 writes it; `pick_primary` reads it.
     pub worktree_newest_mtime: Option<i64>,
+    /// When a scan last recorded the copy; `None` if none has.
     pub last_seen_at: Option<i64>,
     /// [p2] §24.6a: when this copy was uninstalled. **NULL is *not removed*, never zero and never
     /// an age.** It takes precedence over `presence` on every surface, which is why the producer
@@ -83,14 +98,21 @@ pub struct LocationFacts {
 }
 
 /// What §8.3's grammar filters on and the wire row does not carry yet — the core-side view of
-/// the renderer's `ProjectRowExtras`. Every field is `Option` for **not available**, never a
-/// default: `has:ci` with no column behind it is an ignored term, not a `false`.
+/// the renderer's `ProjectRowExtras`.
+///
+/// Every field is `Option` for **not available**, never a default: `has:ci` with no column
+/// behind it is an ignored term, not a `false`.
 #[derive(Debug, Clone, Default)]
 pub struct RowFacts {
+    /// Whether the user authored the project; `None` until computed.
     pub authored_by_user: Option<bool>,
+    /// The primary copy's kind; `None` when the project has no copy.
     pub location_kind: Option<LocationKind>,
+    /// The primary copy's distro; `None` when the project has no copy.
     pub distro: Option<String>,
+    /// Whether the project has a remote key recorded.
     pub has_remote: bool,
+    /// Whether any submodule edge names this project as its parent.
     pub has_submodules: bool,
     /// `Some` only once J6 has run for the project; `peek_cache.computed_at` is what says so.
     ///
@@ -107,9 +129,12 @@ pub struct RowFacts {
     pub content_presence: Option<PresenceAnswers>,
 }
 
+/// One project as the shelf loads it: the wire row plus the facts the grammar filters on.
 #[derive(Debug, Clone)]
 pub struct LoadedRow {
+    /// The row sent over the protocol.
     pub row: ProjectRow,
+    /// The core-side facts the query grammar reads and the wire row does not carry.
     pub facts: RowFacts,
 }
 
@@ -173,6 +198,10 @@ fn max_present<T: Ord + Copy>(
 
 /// The generation §8.2's response carries. `0` before the first scan — a run counter, not a
 /// measurement, so a zero here claims nothing.
+///
+/// # Errors
+///
+/// `ProjectsError::Sqlite` when `scan_run` cannot be read.
 pub fn scan_generation(conn: &rusqlite::Connection) -> Result<i64, ProjectsError> {
     Ok(conn.query_row(
         "SELECT COALESCE(MAX(generation), 0) FROM scan_run",
@@ -244,6 +273,12 @@ fn fill_display_paths(
 
 /// Every copy of one project, in the same mapping `load_project_rows` uses for all of them.
 /// One mapping, two callers — `projects.peek` needs exactly this for a single project.
+///
+/// # Errors
+///
+/// `ProjectsError::Sqlite` when a read fails, `ProjectsError::BadColumn` when a stored `kind`,
+/// `presence` or `interrupted_op` is outside its enum, and the index's error when the display
+/// paths cannot be read.
 pub fn locations_of(
     conn: &rusqlite::Connection,
     project: ProjectId,
@@ -470,6 +505,12 @@ fn content_presence(r: &rusqlite::Row<'_>) -> rusqlite::Result<Option<PresenceAn
 
 /// Statement three, and the fold. Three statements over the whole library, never N+1: the
 /// per-project work is a `BTreeMap` lookup, not a query.
+///
+/// # Errors
+///
+/// `ProjectsError::Sqlite` when a read fails, `ProjectsError::BadColumn` when a stored enum
+/// column is outside its enum, and `ProjectsError::Index` when the display paths cannot be read;
+/// the health summaries' own failure passes through unchanged.
 pub fn load_project_rows(ctx: &ProjectsCtx<'_>) -> Result<Vec<LoadedRow>, ProjectsError> {
     let conn = ctx.index.conn();
     let mut by_project = locations_by_project(conn)?;

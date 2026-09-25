@@ -1,7 +1,8 @@
-//! §1.2's three organisation primitives, and nothing adjacent to them. Trust is
-//! `locations.setTrusted`; re-queueing is `projects.requeue`; `slow_repo` has no phase-1 writer
-//! at all (§11.1). A taxonomy call that also changed trust or scheduling would be two decisions
-//! behind one command.
+//! §1.2's three organisation primitives, and nothing adjacent to them.
+//!
+//! Trust is `locations.setTrusted`; re-queueing is `projects.requeue`; `slow_repo` has no
+//! phase-1 writer at all (§11.1). A taxonomy call that also changed trust or scheduling would be
+//! two decisions behind one command.
 //!
 //! **Pinning sorts nothing** (§7.8a): no band, no section membership, no order within a section,
 //! no fourth SORT key, no header aggregate, no attention chip. `is:pinned` matching it is the
@@ -14,13 +15,17 @@ use crate::projects::{ProjectsCtx, ProjectsError};
 use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::protocol::{ProjectFlagsChanged, ProjectId, ProjectsSetFlagsArgs};
 
-/// `None` leaves that flag alone. §2 gives this wire no optional properties, so absence is not
-/// expressible and `null` is the only way to say "unchanged" — which is why `COALESCE` below is
-/// the whole of the update rule.
+/// The three flags `projects.setFlags` may change; `None` leaves that flag alone.
+///
+/// §2 gives this wire no optional properties, so absence is not expressible and `null` is the
+/// only way to say "unchanged" — which is why `COALESCE` below is the whole of the update rule.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FlagPatch {
+    /// The new `is_pinned`, or `None` to keep it.
     pub is_pinned: Option<bool>,
+    /// The new `is_archived`, or `None` to keep it.
     pub is_archived: Option<bool>,
+    /// The new `is_hidden`, or `None` to keep it.
     pub is_hidden: Option<bool>,
 }
 

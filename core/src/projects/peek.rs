@@ -83,18 +83,18 @@ pub(crate) fn readme_and_commits(
         ));
     };
 
-    let readme = match excerpt {
-        None => ReadmeState {
+    let readme = excerpt.map_or(
+        ReadmeState {
             state: ReadmeStateKind::Absent,
             text: None,
             read_at: Some(computed_at),
         },
-        Some(text) => ReadmeState {
+        |text| ReadmeState {
             state: ReadmeStateKind::Present,
             text: Some(text),
             read_at: Some(computed_at),
         },
-    };
+    );
 
     // A sidecar this build cannot read is no commits, not a failed peek: the panel still has
     // five facts to report, and the column is J6's cache rather than the source of truth.

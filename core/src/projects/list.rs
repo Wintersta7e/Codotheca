@@ -17,8 +17,11 @@ use crate::query::ast::QueryTerm;
 use crate::query::execute::{evaluate_query, ExecContext};
 use crate::query::{parse_query, QueryAst};
 
+/// A project touched this many whole days ago or fewer files under `era:live` (§8.1).
 pub const ERA_LIVE_DAYS: i64 = 7;
+/// Past `ERA_LIVE_DAYS` and up to this many days, a project files under `era:month`.
 pub const ERA_MONTH_DAYS: i64 = 30;
+/// Past `ERA_MONTH_DAYS` and up to this many days, a project files under `era:q`.
 pub const ERA_QUARTER_DAYS: i64 = 90;
 /// Named year sections run from the cut year down to cut − 10; the tail is cut − 11 and earlier.
 pub const ERA_NAMED_YEARS: i32 = 10;
@@ -92,12 +95,13 @@ fn year_of(id: &str) -> Option<u32> {
     id.strip_prefix("era:").and_then(|y| y.parse::<u32>().ok())
 }
 
-fn add_u32(total: u32, one: u32) -> u32 {
+const fn add_u32(total: u32, one: u32) -> u32 {
     total.saturating_add(one)
 }
 
-/// §8.2: `indexedCount` and `unchecked` are counts of **coverage** and are emitted always. A
-/// fully covered section sends `indexedCount == count` and `unchecked: 0` rather than omitting
+/// §8.2: `indexedCount` and `unchecked` are counts of **coverage** and are emitted always.
+///
+/// A fully covered section sends `indexedCount == count` and `unchecked: 0` rather than omitting
 /// them, because the shell must not infer coverage from a missing field.
 #[must_use]
 pub fn aggregate_era(rows: &[&LoadedRow]) -> EraAggregate {
@@ -152,7 +156,7 @@ pub fn aggregate_era(rows: &[&LoadedRow]) -> EraAggregate {
 /// one mechanism: §30's pipeline decides what the reading is, and this reads it. `is_reference`,
 /// `is_archived`, `lifecycle` and the item list are never consulted.
 #[must_use]
-pub fn rank_of(row: &ProjectRow) -> Option<u32> {
+pub const fn rank_of(row: &ProjectRow) -> Option<u32> {
     match row.health_summary.state {
         HealthState::Live | HealthState::Frozen => row.health_summary.scored_open,
         HealthState::Absent | HealthState::Suppressed => None,
@@ -172,6 +176,7 @@ fn default_order(a: &LoadedRow, b: &LoadedRow) -> std::cmp::Ordering {
         .then(a.row.id.0.cmp(&b.row.id.0))
 }
 
+/// Order the rows in place by §8.0a's `sort` key, every key ending in a total tiebreak.
 pub fn sort_rows(rows: &mut [&LoadedRow], sort: SortKey) {
     match sort {
         SortKey::Name => rows.sort_by(|a, b| {
@@ -223,6 +228,9 @@ pub fn order_key_of(ids: &[i64]) -> String {
     format!("{hash:08x}")
 }
 
+/// §8.2's page: filter by `ast`, order by `sort`, file into era sections, then cut `window`.
+///
+/// The sections and `order_key` cover every matching row; only `rows` is windowed.
 #[must_use]
 pub fn build_project_page(
     ctx: &ProjectsCtx<'_>,
@@ -267,8 +275,12 @@ pub fn build_project_page(
     let asked = window.unwrap_or(Window { from: 0, to: total });
     let from = asked.from.min(total);
     let to = asked.to.clamp(from, total);
-    let slice = stamped
-        .get(from as usize..to as usize)
+    // A `u32` always fits a `usize` on the targets this builds for, so the conversions cannot
+    // fail; if one ever did, the window would be empty rather than wrong.
+    let slice = usize::try_from(from)
+        .ok()
+        .zip(usize::try_from(to).ok())
+        .and_then(|(start, end)| stamped.get(start..end))
         .unwrap_or_default()
         .to_vec();
 
@@ -325,6 +337,13 @@ fn first_run_completed_at(conn: &rusqlite::Connection) -> Option<i64> {
     .and_then(|v| v.parse().ok())
 }
 
+/// Answers `projects.list` with the encoded [`ProjectPage`].
+///
+/// # Errors
+///
+/// A protocol failure when the arguments do not parse; an internal one when the rows, the
+/// collections, the commit-subject hits or the scan generation cannot be read, when a stored
+/// enum is outside its set, or when the page cannot be encoded.
 pub fn handle(
     ctx: &ProjectsCtx<'_>,
     args: serde_json::Value,
