@@ -24,8 +24,11 @@ use crate::protocol::{
 /// `index` is `&mut` because `targets.verify` runs `verify_all`, which opens a transaction from
 /// `&mut Connection`. `now` is unix **seconds**, passed in so nothing here reads the clock (R3).
 pub struct TargetsCtx<'a> {
+    /// The index holding the `launch_target` rows these commands read and write.
     pub index: &'a mut Index,
+    /// Where a `targets.*` command would publish; none of the four emits an event today.
     pub events: &'a dyn EventSink,
+    /// The caller's clock reading, in unix seconds.
     pub now: i64,
 }
 
@@ -53,6 +56,9 @@ struct ListArgs {
 /// `verify_state` is a text column with a closed DDL CHECK. A value outside that set is a
 /// corrupt row, not a state: reporting `unverified` for it would make a broken row look like a
 /// row nobody has checked yet.
+///
+/// # Errors
+/// [`LaunchError::Io`] naming the value when `verify_state` holds a spelling outside its enum.
 pub fn to_target_row(target: &StoredTarget) -> Result<TargetRow, LaunchError> {
     let verify_state = VerifyState::parse(&target.verify_state).ok_or_else(|| {
         LaunchError::Io(format!(
@@ -77,6 +83,9 @@ pub fn to_target_row(target: &StoredTarget) -> Result<TargetRow, LaunchError> {
 
 /// §4bis.2a: NULL until J3 runs, and NULL is *not computed*, never *any*. The caller passes it
 /// straight to `resolve`, which skips tier 3 whole when it is `None`.
+///
+/// # Errors
+/// [`LaunchError::Sqlite`] when the read fails. A project id with no row is `Ok(None)`.
 pub fn primary_language(
     conn: &rusqlite::Connection,
     project: ProjectId,
@@ -90,6 +99,10 @@ pub fn primary_language(
 
 /// §4bis.2a: resolution is computed at request time and never cached on `project`. A project
 /// indexed seconds ago resolves at tier 4 and moves to tier 3 when J3 lands.
+///
+/// # Errors
+/// `PROTOCOL` when the arguments do not parse; `INTERNAL` when the rows cannot be read or one
+/// holds a `verify_state` outside its enum.
 pub fn handle_list(ctx: &mut TargetsCtx<'_>, args: Value) -> Result<TargetList, CommandFailure> {
     let args: ListArgs = parse_args(args)?;
     let conn = ctx.index.conn();
@@ -157,11 +170,15 @@ struct SetDefaultArgs {
 /// §4bis.2a's scope triple. A row has exactly one, and `targets.setDefault` names one.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TargetScope {
+    /// Set for a tier-1 per-project override.
     pub project_id: Option<ProjectId>,
+    /// Set for a tier-2 per-copy override.
     pub location_id: Option<LocationId>,
+    /// Set for a tier-3 per-language default. All three `None` is the global scope.
     pub language: Option<String>,
 }
 
+/// The scope a stored row belongs to, read from its three scope columns.
 #[must_use]
 pub fn scope_of(target: &StoredTarget) -> TargetScope {
     TargetScope {
@@ -224,6 +241,10 @@ fn renumber_head(
 /// every other project, or leave tier 1 unwritable — which is the defect criterion 7 was
 /// amended to close. §4bis.2a: "Within a scope the default is the row with the lowest
 /// `sort_index`... No `is_default` column exists and none is added."
+///
+/// # Errors
+/// [`LaunchError::NoSuchTarget`] when no enabled row has `target_id`, and
+/// [`LaunchError::Sqlite`] when the copy or the renumbering cannot be written.
 pub fn rehead_scope(
     tx: &rusqlite::Transaction<'_>,
     target_id: i64,
@@ -261,6 +282,10 @@ pub fn rehead_scope(
 }
 
 /// §4bis.2a's tier-1 write: `{targetId, projectId}` with the other two null.
+///
+/// # Errors
+/// `PROTOCOL` when the arguments do not parse or no enabled target has the id; the identity
+/// error's code when the project cannot be resolved; `INTERNAL` when the index cannot be written.
 pub fn handle_set_default(ctx: &mut TargetsCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
     let args: SetDefaultArgs = parse_args(args)?;
     let now = ctx.now;
@@ -309,6 +334,8 @@ struct UpsertArgs {
     language: Option<String>,
 }
 
+/// Refuses an executable that a native dialog could not have produced.
+///
 /// §2.4's trust rule, core-side, and the third of its three guards — the schema marks the
 /// command `privileged`, the bridge refuses a privileged command from the renderer, and this
 /// refuses an `execBytes` a native dialog could not have produced.
@@ -318,6 +345,9 @@ struct UpsertArgs {
 /// directory at spawn time, and this process controls neither. `is_absolute` is host-correct on
 /// both targets: a WSL target's program is `wsl.exe`, a Windows path, because §4bis.4 launches
 /// into a distro through it rather than executing a Linux binary directly.
+///
+/// # Errors
+/// `PROTOCOL` when `exec` is not an absolute path.
 pub fn check_dialog_origin(exec: &std::path::Path) -> Result<(), CommandFailure> {
     if exec.is_absolute() {
         return Ok(());
@@ -333,6 +363,11 @@ pub fn check_dialog_origin(exec: &std::path::Path) -> Result<(), CommandFailure>
 /// interpreted**: `name` is a label, and `argv` is arguments to the program named by
 /// `execBytes` and can never itself be a program. There is no shell anywhere on the path from
 /// this row to `std::process::Command`.
+///
+/// # Errors
+/// `PROTOCOL` when the arguments do not parse, the executable is not absolute, the name is blank,
+/// or `targetId` names no row; the identity error's code when the project cannot be resolved;
+/// `INTERNAL` when the index cannot be written or the saved row cannot be read back.
 pub fn handle_upsert(ctx: &mut TargetsCtx<'_>, args: Value) -> Result<TargetRow, CommandFailure> {
     let args: UpsertArgs = parse_args(args)?;
     let exec = crate::paths::path_from_bytes(&args.exec_bytes.0);
@@ -439,6 +474,8 @@ struct VerifyArgs {
     target_id: Option<TargetId>,
 }
 
+/// Projects one verification result onto its wire type.
+///
 /// `TargetVerification.verifiedAt` is a non-optional `Timestamp`: a verification is produced
 /// only by a check that just ran, so the stamp always exists. `TargetRow.verifiedAt` stays
 /// optional, which is correct for a row that has never been verified.
@@ -452,9 +489,15 @@ pub fn to_verification(v: &crate::launch::verify::Verification) -> TargetVerific
     }
 }
 
+/// Checks stored targets' executables and records each result on its row.
+///
 /// §4bis.2a: *"`targets.verify` is per row and language-blind."* No argument verifies every
 /// stored row — override, language and global alike, disabled ones included — which is the
 /// startup sweep; an argument verifies one, which is `projects.launch`'s before-spawn check.
+///
+/// # Errors
+/// `PROTOCOL` when the arguments do not parse or `targetId` names no enabled row; `INTERNAL`
+/// when the rows cannot be read or the results cannot be written.
 pub fn handle_verify(
     ctx: &mut TargetsCtx<'_>,
     args: Value,

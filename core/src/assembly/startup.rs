@@ -16,8 +16,12 @@ use std::sync::PoisonError;
 /// emitted `core/error`; it is never a step that was skipped silently.
 #[derive(Debug, Default)]
 pub struct StartupSummary {
+    /// The git version that met the floor; the same value is written to `app_meta.git_version`
+    /// on a best-effort basis.
     pub git: Option<crate::git::GitVersion>,
+    /// What the art sweep marked stale and what it removed.
     pub art: Option<crate::art::StartupReport>,
+    /// The sessions and segments orphan closure closed, and the seconds it credited.
     pub orphans: Option<crate::session::orphan::OrphanReport>,
     /// What seeding the identity set added. `Some(SeedReport::default())` is a set already in
     /// force — which is the ordinary second launch — and is not the same as a failed seed.
@@ -48,6 +52,10 @@ pub fn open_index(data_dir: &Path, now: i64) -> Result<Index, IndexError> {
                 // A report we cannot write is still a fatal index; the exit code is the part the
                 // shell cannot miss, so a failed write must not turn this into a normal start.
                 let _ = startup_failure::write(data_dir, &failure);
+                // Exits with `EXIT_INDEX_FATAL`, the shell's cue to read the report, while the
+                // caller's `CoreLock` is still alive: this signature cannot hand the code back to
+                // `main`, so the lock's destructor does not run on this path.
+                #[allow(clippy::exit)]
                 std::process::exit(i32::from(startup_failure::EXIT_INDEX_FATAL));
             }
             Err(err)

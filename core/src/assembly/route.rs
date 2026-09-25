@@ -132,6 +132,9 @@ pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
 /// The wire spelling lives in the generated `#[serde(rename = …)]` and nowhere else, so this
 /// goes through serde rather than a second table of forty-two strings — the same technique
 /// `PublisherSink::emit` uses for `Topic`.
+///
+/// # Errors
+/// `PROTOCOL` naming the command when the spelling is not one the schema declares.
 pub fn command_name(command: &str) -> Result<CommandName, CommandFailure> {
     let de: serde::de::value::StrDeserializer<'_, serde::de::value::Error> =
         command.into_deserializer();
@@ -141,7 +144,7 @@ pub fn command_name(command: &str) -> Result<CommandName, CommandFailure> {
 
 /// Total. No wildcard arm — see the module comment.
 #[must_use]
-pub fn route(command: CommandName) -> Route {
+pub const fn route(command: CommandName) -> Route {
     match command {
         CommandName::AppHelloAck | CommandName::AppShutdown => Route::Loop,
 

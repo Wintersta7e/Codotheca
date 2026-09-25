@@ -20,11 +20,18 @@ use crate::session::manager::{LaunchedSession, SessionManager};
 /// on the `Job`. A launch has neither, so it asks the resolver rather than defaulting to
 /// `Local` and letting four git processes onto a network store.
 pub struct LaunchCtx<'a> {
+    /// The index the launch rows are read from and the session ledger is written to.
     pub index: &'a mut Index,
+    /// The sessions this process is timing: a launch opens one, STOP closes one.
     pub sessions: &'a mut SessionManager,
+    /// Starts a target's process from its argv, never through a shell.
     pub spawner: &'a dyn Spawner,
+    /// Where these commands publish `projects/condition_changed`, and `session/ended` for the
+    /// sessions `startup` recovers.
     pub events: &'a dyn EventSink,
+    /// Resolves a location's store class at launch time, for the reason above.
     pub mounts: &'a dyn MountResolver,
+    /// The caller's clock reading, in unix seconds.
     pub now: i64,
 }
 
@@ -57,22 +64,35 @@ struct LaunchArgs {
 /// carries none of these five columns.
 #[derive(Debug, Clone)]
 pub struct LaunchLocation {
+    /// The `location` row this was read from.
     pub id: LocationId,
+    /// The project this copy belongs to.
     pub project_id: ProjectId,
+    /// Which filesystem the path belongs to: Windows, Linux or a WSL distro.
     pub kind: crate::derive::LocationKind,
+    /// The WSL distro name for a `wsl` location; the empty string for every other kind.
     pub distro: String,
+    /// The working directory's path, as the bytes the scan stored.
     pub path_bytes: Vec<u8>,
+    /// Whether the path was present at the last observation; only `Present` may launch.
     pub presence: Presence,
+    /// The mounted device or share the path lives on, the git scheduler's grouping key.
     pub store: crate::git::StoreKey,
+    /// `RepoKind`'s spelling for this copy; `"bare"` has no working tree to resolve.
     pub repo_kind: String,
+    /// The repository's common git directory, when the scan recorded one.
     pub common_dir: Option<std::path::PathBuf>,
     /// §11.1's TRUST THIS REPOSITORY. Without it git refuses to read a repository it considers
     /// to have dubious ownership, which is what `check-ignore` would then hit.
     pub trusted: bool,
 }
 
-/// A row whose `kind` or `presence` column does not parse is [`LaunchError::Io`] with the
-/// column named: a corrupt enum column is a bug, not a state, and it must not become a
+/// Reads one `location` row in the shape a launch needs.
+///
+/// # Errors
+/// [`LaunchError::NoSuchLocation`] when no row has this id, and [`LaunchError::Sqlite`] when the
+/// read fails. A row whose `kind` or `presence` column does not parse is [`LaunchError::Io`]
+/// with the column named: a corrupt enum column is a bug, not a state, and it must not become a
 /// plausible default.
 pub fn load_launch_location(
     conn: &rusqlite::Connection,
@@ -164,6 +184,13 @@ fn parse_presence(text: &str) -> Option<Presence> {
 /// 7. the spawn — argv array, null stdio, **never a shell**.
 /// 8. the ledger, only after the spawn succeeded: a session that never started a process is
 ///    playtime the app did not observe.
+///
+/// # Errors
+/// `PROTOCOL` for arguments that do not parse, a location that is not a copy of the project, or
+/// a target with no invocation for that location; `STORE_OFFLINE` when the location is not
+/// present or its drive is no longer mounted; `PATH_GONE` when the target does not verify. A
+/// failed redirect, index write, row read, repository resolve, spawn or ledger write carries the
+/// code of the error behind it.
 pub fn handle_launch(ctx: &mut LaunchCtx<'_>, args: Value) -> Result<SessionId, CommandFailure> {
     let args: LaunchArgs = parse_args(args)?;
 
@@ -287,6 +314,8 @@ fn repo_handle(
     Ok(handle.with_trust(site_row.trusted))
 }
 
+/// Publishes `projects/condition_changed` for each project the session manager hands over.
+///
 /// §5.1's *last session end* term moves when a session **closes**, and that can move
 /// `condition_signal`. Plan 11b emits the three `session/*` events; this is the fourth, and it
 /// publishes exactly what the manager hands over — never a change the manager did not report.
@@ -321,6 +350,10 @@ struct FocusArgs {
 /// **no row at all** is a renderer bug rather than a race, so only that reports one — which is
 /// why the row is looked up rather than inferred from `SessionManager::stop`, whose own
 /// contract is to succeed for any session it is not holding.
+///
+/// # Errors
+/// `PROTOCOL` for arguments that do not parse; the session error's code when the id names no
+/// session row, or when the row cannot be read or the ledger cannot be closed.
 pub fn handle_stop(ctx: &mut LaunchCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
     let args: StopArgs = parse_args(args)?;
     crate::session::store::session_ref(ctx.index.conn(), args.id)
@@ -337,12 +370,17 @@ pub fn handle_stop(ctx: &mut LaunchCtx<'_>, args: Value) -> Result<Value, Comman
 /// It arrives on every project-page entry and exit, and once per heartbeat while a page is
 /// held. A handler that opened a write transaction would put `TxGuard` contention on a timer,
 /// on the one command whose whole purpose is to be cheap enough to repeat.
+///
+/// # Errors
+/// `PROTOCOL` when the arguments do not parse; nothing else can fail.
 pub fn handle_focus(ctx: &mut LaunchCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
     let args: FocusArgs = parse_args(args)?;
     ctx.sessions.set_focus(args.project_id);
     Ok(serde_json::json!({}))
 }
 
+/// Closes the sessions a previous process left open and publishes `session/ended` for each.
+///
 /// L1: called from the core's assembly **before `run_loop`**, so every open row it finds is by
 /// definition from a previous process. §11.2's core lane and plan 11b Task 7's safety argument
 /// both depend on that ordering, and a `JoinStep` could not provide it — by the time a step
@@ -350,6 +388,10 @@ pub fn handle_focus(ctx: &mut LaunchCtx<'_>, args: Value) -> Result<Value, Comma
 ///
 /// `close_orphans` returns counts and not ids, so the ids are read first. That ordering is the
 /// only way to publish recovery without changing plan 11b's signature.
+///
+/// # Errors
+/// The session error's code when the open sessions cannot be read, the orphans cannot be
+/// closed, or a closed session cannot be read back for its event.
 pub fn startup(
     ctx: &mut LaunchCtx<'_>,
 ) -> Result<crate::session::orphan::OrphanReport, CommandFailure> {
@@ -376,6 +418,9 @@ pub fn startup(
 
 /// Scheduled by the core's assembly every `DEFAULT_TICK_SECS`. Never awaited — a driver that
 /// slept on the clock would spin under a fake one.
+///
+/// # Errors
+/// The session error's code when the manager's §9 pass over the live sessions fails.
 pub fn tick(ctx: &mut LaunchCtx<'_>) -> Result<(), CommandFailure> {
     ctx.sessions
         .tick(ctx.index)

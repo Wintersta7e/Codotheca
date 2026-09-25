@@ -36,11 +36,10 @@ pub fn build_forge(
     Arc<crate::sync::http::ObservingTransport>,
 ) {
     let observing = Arc::new(crate::sync::http::ObservingTransport::new(http, clock));
+    let transport: Arc<dyn crate::http::HttpTransport> =
+        Arc::<crate::sync::http::ObservingTransport>::clone(&observing);
     let provider: Arc<dyn crate::provider::Provider> =
-        Arc::new(crate::provider::GitHubProvider::new(
-            Arc::clone(&observing) as Arc<dyn crate::http::HttpTransport>,
-            host,
-        ));
+        Arc::new(crate::provider::GitHubProvider::new(transport, host));
     (provider, observing)
 }
 
@@ -78,7 +77,7 @@ impl SyncPump {
     /// The pump seen as the two visibility call sites' hand-off point.
     #[must_use]
     pub fn sink(&self) -> Arc<dyn SyncSink> {
-        Arc::clone(&self.runner) as Arc<dyn SyncSink>
+        Arc::<SyncRunner>::clone(&self.runner)
     }
 
     /// The same seam borrowed rather than cloned, for a command context that lives one call.

@@ -31,13 +31,18 @@ pub struct CoreDeps {
     /// process; the mutex is what lets the one connection be reached from the loop thread and
     /// from a worker without a second one existing.
     pub index: Arc<Mutex<Index>>,
+    /// Wall and monotonic time for every command and tick; a fake one drives the tests.
     pub clock: Arc<dyn crate::clock::Clock>,
+    /// The read-only git seam every observation goes through.
     pub git: Arc<dyn crate::git::GitBackend>,
     /// §24.1's write seam. Separate from `git` because the two have different argv prefixes and
     /// different audits — one is proven read-only, the other is the only thing that may write.
     pub write_git: Arc<dyn crate::gitw::backend::MutatingGit>,
+    /// Resolves a path to the store it lives on and that store's class (§3.4).
     pub mount: Arc<dyn crate::mount::MountResolver>,
+    /// Starts a launch target's process for `projects.launch`.
     pub spawner: Box<dyn crate::launch::spawn::Spawner>,
+    /// The play-session ledger's live half (§9), moved into the handler's `Option`.
     pub sessions: SessionManager,
     /// `ScanCtx`'s (plan 07). A supervisor, not a `JobRunner`: `ScanLauncher` is `Send + Sync`
     /// and no `rusqlite::Connection` crosses it.
@@ -45,6 +50,7 @@ pub struct CoreDeps {
     /// `ScanCtx.store`. Built over the same `Arc<Mutex<Index>>` as `index`, so it is the same
     /// connection reached a different way — never a second one.
     pub scan_store: Arc<dyn ScanStore>,
+    /// Everything §10's first-run commands need that is not the database.
     pub firstrun: crate::firstrun::FirstRunEnv,
     /// The job pump (§4.1a). Held here so `shutdown` can stop it **before** the publisher
     /// closes and before the process exits: a worker mid-write to SQLite when `main` returns is
@@ -55,11 +61,13 @@ pub struct CoreDeps {
     /// **before** the publisher closes, so a thread mid-write to SQLite when `main` returns is
     /// not a torn observation.
     pub sync: sync::SyncPump,
+    /// The process's one publisher; every command, tick and pump emits topic events through it.
     pub events: Arc<PublisherSink>,
     /// §20.13's one typed forge seam, and §20.6's keychain. Both arrive as production
     /// implementations from the composition root: a seam whose only implementation is a fake
     /// compiles, passes, and fails at assembly, which has cost this project four rulings.
     pub provider: Arc<dyn crate::provider::Provider>,
+    /// §20.6's keychain, which holds each connected account's token.
     pub tokens: Arc<dyn crate::accounts::keychain::TokenStore>,
     /// The one HTTP client (R66), shared rather than rebuilt: each `reqwest::blocking::Client`
     /// owns a runtime thread and a connection pool, and the Device Flow's pump needs the same
@@ -132,6 +140,7 @@ impl std::fmt::Debug for CoreHandler {
 }
 
 impl CoreHandler {
+    /// Takes ownership of the deps, with an empty install queue and no Device Flow running.
     #[must_use]
     pub fn new(deps: CoreDeps) -> Self {
         let last_tick_ms = deps.clock.monotonic_ms();
@@ -164,7 +173,7 @@ impl CoreHandler {
 
     /// How many ticks have run. The pump's period is otherwise unobservable from outside.
     #[must_use]
-    pub fn ticks(&self) -> u64 {
+    pub const fn ticks(&self) -> u64 {
         self.ticks
     }
 
@@ -173,7 +182,7 @@ impl CoreHandler {
     /// reason `SqliteScanStore` gives — the connection's own state is intact after an unrelated
     /// panic, and refusing every later command would turn one panic into a permanently dead core.
     #[must_use]
-    pub fn index(&self) -> &Arc<Mutex<Index>> {
+    pub const fn index(&self) -> &Arc<Mutex<Index>> {
         &self.index
     }
 
@@ -219,14 +228,16 @@ impl CoreHandler {
                 let grant = pump.grant(now);
                 let refusal = no_flow_reason(&pump);
                 self.connect = Some(pump);
-                match grant {
-                    Some(grant) => serde_json::to_value(grant)
-                        .map_err(|e| CommandFailure::internal(e.to_string())),
+                grant.map_or_else(
                     // §20.2: a flow that cannot start fails **by its own reason**. An
                     // unregistered application and an unreachable forge are different facts and
                     // send the user to different places.
-                    None => Err(CommandFailure::internal(refusal)),
-                }
+                    || Err(CommandFailure::internal(refusal)),
+                    |grant| {
+                        serde_json::to_value(grant)
+                            .map_err(|e| CommandFailure::internal(e.to_string()))
+                    },
+                )
             }
             "accounts.cancelConnect" => {
                 if let Some(pump) = self.connect.as_ref() {
@@ -256,7 +267,7 @@ impl CoreHandler {
     }
 
     /// §20.2's PAT path, answered off the index lock: the verification is a forge round trip.
-    fn connect_pat_arm(&mut self, args: Value, now: i64) -> Result<Value, CommandFailure> {
+    fn connect_pat_arm(&self, args: Value, now: i64) -> Result<Value, CommandFailure> {
         let parsed: crate::protocol::AccountsConnectPatArgs =
             crate::proto::dispatch::parse_args(args)?;
         let token = crate::accounts::keychain::SecretToken::new(parsed.token);
@@ -300,12 +311,12 @@ impl CoreHandler {
         let grant = pump.grant(now);
         let refusal = no_flow_reason(&pump);
         self.connect = Some(pump);
-        match grant {
-            Some(grant) => {
+        grant.map_or_else(
+            || Err(CommandFailure::internal(refusal)),
+            |grant| {
                 serde_json::to_value(grant).map_err(|e| CommandFailure::internal(e.to_string()))
-            }
-            None => Err(CommandFailure::internal(refusal)),
-        }
+            },
+        )
     }
 
     /// Everything the pump needs, assembled from the deps the handler already holds.
@@ -314,10 +325,11 @@ impl CoreHandler {
             Arc::clone(&self.index),
             Arc::clone(&self.provider),
         );
+        let events: Arc<dyn EventSink> = Arc::<PublisherSink>::clone(&self.events);
         crate::accounts::pump::ConnectPumpDeps {
             transport: Arc::clone(&self.http),
             clock: Arc::clone(&self.clock),
-            events: Arc::clone(&self.events) as Arc<dyn EventSink>,
+            events,
             tokens: Arc::clone(&self.tokens),
             sink: Arc::new(sink),
             host: self.provider.canonical_host().to_owned(),
@@ -453,6 +465,7 @@ impl CoreHandler {
         let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
         let preview = crate::install::handle_preview(&ctx, args)?;
+        drop(guard);
         serde_json::to_value(preview).map_err(|error| CommandFailure::internal(error.to_string()))
     }
 
@@ -656,6 +669,7 @@ impl CoreHandler {
                 let git_version = guard.app_meta("git_version").ok()?;
                 let first_run_completed_at =
                     crate::firstrun::first_run_completed_at(guard.conn()).ok()?;
+                drop(guard);
                 Some(serde_json::json!({
                     "gitVersion": git_version,
                     "schemaVersion": schema_version,
@@ -817,6 +831,7 @@ impl CommandHandler for CoreHandler {
                 crate::weathering::dispatch_weathering_command(&ctx, command, args)
             }
         };
+        drop(guard);
 
         claimed.unwrap_or_else(|| Err(Self::declined(command, dest)))
     }

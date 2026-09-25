@@ -36,7 +36,9 @@ use crate::scan::run::{platform_of, Discovered};
 /// The two ids the scheduler needs, and the only thing the hand-off returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Indexed {
+    /// The project identity decided for the repository.
     pub project: ProjectId,
+    /// The `location` row written or updated for the discovered path.
     pub location: LocationId,
 }
 
@@ -47,14 +49,17 @@ pub struct Indexed {
 /// claims a completeness the walk did not have.
 #[derive(Debug, thiserror::Error)]
 pub enum HandoffError {
+    /// The identity probe's git read failed or was cancelled.
     #[error("git: {0}")]
     Git(#[from] GitError),
+    /// Deciding the project or writing the rows failed in the index.
     #[error("identity: {0}")]
     Identity(#[from] IndexError),
     /// A `location.kind` this build does not know — a row from a newer schema. Guessing would
     /// file a Windows path under Linux path rules (R2).
     #[error("unrecognised location kind {0:?}")]
     UnknownKind(String),
+    /// Another thread panicked while holding the index mutex, so nothing was written.
     #[error("the index lock is poisoned")]
     Poisoned,
 }
@@ -72,6 +77,7 @@ pub struct HandoffCtx<'a> {
     pub store_class: StoreClass,
     /// `location.scan_generation`: the run that saw this path (§4.6).
     pub generation: i64,
+    /// The scan's clock reading, in unix seconds; every row this writes is stamped with it.
     pub now: i64,
 }
 

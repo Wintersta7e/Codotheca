@@ -90,7 +90,7 @@ impl JobPump {
     /// The pump seen as the scanner's hand-off point.
     #[must_use]
     pub fn sink(&self) -> Arc<dyn JobSink> {
-        Arc::clone(&self.runner) as Arc<dyn JobSink>
+        Arc::<JobRunner>::clone(&self.runner)
     }
 
     /// The same seam borrowed rather than cloned, for a command context that lives one call.
