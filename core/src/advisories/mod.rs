@@ -49,7 +49,7 @@ pub enum AdvisoryError {
 /// asserted by reading the other side** through serde rather than by restating it (R24), in
 /// `core/tests/advisory_schema.rs`.
 #[must_use]
-pub fn eco_slug(eco: Ecosystem) -> &'static str {
+pub const fn eco_slug(eco: Ecosystem) -> &'static str {
     match eco {
         Ecosystem::Npm => "npm",
         Ecosystem::Rust => "rust",
@@ -59,7 +59,7 @@ pub fn eco_slug(eco: Ecosystem) -> &'static str {
 
 /// The stored form of [`DependencyReadState`], on the same terms.
 #[must_use]
-pub fn read_state_slug(state: DependencyReadState) -> &'static str {
+pub const fn read_state_slug(state: DependencyReadState) -> &'static str {
     match state {
         DependencyReadState::Parsed => "parsed",
         DependencyReadState::NotRead => "notRead",

@@ -69,6 +69,7 @@ pub fn run_advisory_sweep(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.with_tx(|tx| close_sweep(tx, sweep_id, now, "done", true))?;
+        drop(guard);
         // `Done` is what tells the runner to compute every scanned project's items: it holds the
         // event sink their health deltas are announced on, and this function holds none.
         return Ok(SyncOutcome::Done);
@@ -116,6 +117,7 @@ pub fn run_advisory_sweep(
         )
         .map(|_| ())
     })?;
+    drop(guard);
 
     Ok(SyncOutcome::NextPage {
         cursor: more_pages.unwrap_or_else(|| NEXT_BATCH.to_owned()),

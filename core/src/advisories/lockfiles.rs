@@ -93,18 +93,27 @@ const SKIPPED_DIRS: [&str; 2] = [".git", "node_modules"];
 /// One lockfile the walk found. `size_bytes` is diagnostic and is what `AC-P3-32-16` prints.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LockfileHit {
+    /// The file's path below the walked root, with forward slashes.
     pub source_path: String,
+    /// The ecosystem its file name declares.
     pub ecosystem: Ecosystem,
+    /// The file's size on disk; `0` when its metadata could not be read.
     pub size_bytes: u64,
 }
 
-/// What one walk saw. **`complete` is false when [`LOCKFILE_COUNT_CAP`] was reached**, which is a
-/// bound and not a failure — but it is one the verdict has to know about, because a bounded read
-/// of an unbounded tree cannot claim to have seen everything.
+/// What one walk saw.
+///
+/// **`complete` is false when [`LOCKFILE_COUNT_CAP`] was reached**, which is a bound and not a
+/// failure — but it is one the verdict has to know about, because a bounded read of an unbounded
+/// tree cannot claim to have seen everything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LockfileWalk {
+    /// Every lockfile matched, sorted by `source_path`.
     pub files: Vec<LockfileHit>,
+    /// How many directories were actually read.
     pub dirs_entered: usize,
+    /// Whether the walk saw everything it was bounded to: false after the count cap, or after a
+    /// directory, entry or path it could not read.
     pub complete: bool,
     /// How many manifests were seen whose ecosystem produced **no** lockfile — including every
     /// manifest of an ecosystem this build ships no parser for.
@@ -185,9 +194,10 @@ pub fn walk_lockfiles(root: &Path) -> LockfileWalk {
     // unshipped ecosystem has none by construction, so every one of those counts.
     let unresolved_manifests = manifests
         .iter()
-        .filter(|declared| match declared {
-            None => true,
-            Some(eco) => !files.iter().any(|f| f.ecosystem == *eco),
+        .filter(|declared| {
+            declared
+                .as_ref()
+                .map_or(true, |eco| !files.iter().any(|f| f.ecosystem == *eco))
         })
         .count();
     LockfileWalk {
@@ -241,14 +251,11 @@ pub fn read_lockfile_set(root: &Path) -> LockfileReading {
             if hit.size_bytes > LOCKFILE_BYTE_CAP {
                 return LockfileRead::NotRead;
             }
-            match std::fs::read(root.join(&hit.source_path)) {
-                Ok(bytes) => {
-                    let name = hit.source_path.rsplit('/').next().unwrap_or("");
-                    parse_lockfile(name, &bytes)
-                }
-                // Unreadable is **not** evidence of absence.
-                Err(_) => LockfileRead::NotRead,
-            }
+            // Unreadable is **not** evidence of absence.
+            std::fs::read(root.join(&hit.source_path)).map_or(LockfileRead::NotRead, |bytes| {
+                let name = hit.source_path.rsplit('/').next().unwrap_or("");
+                parse_lockfile(name, &bytes)
+            })
         })
         .collect();
     LockfileReading { walk, reads }

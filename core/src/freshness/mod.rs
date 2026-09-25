@@ -129,6 +129,9 @@ fn mtime_nanos(p: &Path) -> Option<i64> {
 /// A linked worktree keeps its refs in the *common* dir, so use
 /// [`collect_basis_inputs_split`] wherever the two can differ — which is everywhere a
 /// `RepoHandle` is in hand.
+///
+/// # Errors
+/// As [`collect_basis_inputs_split`].
 pub fn collect_basis_inputs(git_dir: &Path) -> std::io::Result<BasisInputs> {
     collect_basis_inputs_split(git_dir, git_dir)
 }
@@ -136,6 +139,10 @@ pub fn collect_basis_inputs(git_dir: &Path) -> std::io::Result<BasisInputs> {
 /// Collect the inputs, reading per-checkout state from `git_dir` and shared ref state from
 /// `common_dir`. A linked worktree has its own `HEAD` and its own operation markers, and shares
 /// everything else.
+///
+/// # Errors
+/// Only when `HEAD` opens but reading it fails. Every other missing or unreadable input is
+/// skipped or recorded as absent rather than returned.
 pub fn collect_basis_inputs_split(
     git_dir: &Path,
     common_dir: &Path,
@@ -361,12 +368,13 @@ mod tests {
     #[test]
     fn the_remaining_markers_and_the_stash_are_in_the_basis_too() {
         let before = compute_basis(&base());
-        for mutate in [
-            (|b: &mut BasisInputs| b.cherry_pick_head_present = true) as fn(&mut BasisInputs),
+        let mutations: [fn(&mut BasisInputs); 4] = [
+            |b: &mut BasisInputs| b.cherry_pick_head_present = true,
             |b: &mut BasisInputs| b.revert_head_present = true,
             |b: &mut BasisInputs| b.bisect_log_present = true,
             |b: &mut BasisInputs| b.stash_reflog_mtime = Some(7),
-        ] {
+        ];
+        for mutate in mutations {
             let mut after = base();
             mutate(&mut after);
             assert_ne!(before, compute_basis(&after));

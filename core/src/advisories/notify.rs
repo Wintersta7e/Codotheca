@@ -20,9 +20,11 @@ use crate::advisories::{eco_slug, AdvisoryError};
 use crate::index::IndexError;
 use crate::protocol::{AdvisoryAlert, Ecosystem, ProjectId};
 
-/// The one severity that may interrupt, **compared against the source's own word and never
-/// re-scored** (§32.13). A build that mapped the vocabulary to its own scale would decide for the
-/// source which advisories are critical.
+/// The one severity that may interrupt.
+///
+/// It is **compared against the source's own word and never re-scored** (§32.13). A build that
+/// mapped the vocabulary to its own scale would decide for the source which advisories are
+/// critical.
 pub const NOTIFIABLE_SEVERITY: &str = "critical";
 
 /// One candidate: a project, an advisory, and what the copy would name.
@@ -91,12 +93,12 @@ fn candidates(
         .map_err(IndexError::from)?;
     Ok(rows
         .into_iter()
-        .filter_map(|(project, advisory_id, eco_raw, package_name, cve_id)| {
+        .filter_map(|(project_id, advisory_id, eco_raw, package_name, cve_id)| {
             Ecosystem::ALL
                 .into_iter()
                 .find(|e| eco_slug(*e) == eco_raw)
                 .map(|ecosystem| Candidate {
-                    project: ProjectId(project),
+                    project: ProjectId(project_id),
                     advisory_id,
                     cve_id,
                     package_name,

@@ -30,10 +30,15 @@ use crate::protocol::{
 /// remember.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AdvisoryItemSweep {
+    /// Items opened by this sweep.
     pub opened: usize,
+    /// Items closed `fixed`: no longer observed, and not because their advisory was withdrawn.
     pub closed_fixed: usize,
+    /// Items closed because their advisory was withdrawn; these pay no XP.
     pub closed_invalidated: usize,
+    /// Open items marked `unverified` because the evidence could not be re-read.
     pub unverified: usize,
+    /// §28's effect with the withdrawals reclassified, as described above.
     pub effect: SweepEffect,
 }
 
@@ -194,7 +199,7 @@ pub fn sync_advisory_items(
         };
         let effect = store.observe(tx, &observation, &[])?;
         return Ok(AdvisoryItemSweep {
-            unverified: effect.unverified as usize,
+            unverified: usize::try_from(effect.unverified).unwrap_or(usize::MAX),
             effect,
             ..AdvisoryItemSweep::default()
         });
@@ -255,7 +260,7 @@ pub fn sync_advisory_items(
 
     let mut result = AdvisoryItemSweep {
         opened: effect.opened.len(),
-        unverified: effect.unverified as usize,
+        unverified: usize::try_from(effect.unverified).unwrap_or(usize::MAX),
         ..AdvisoryItemSweep::default()
     };
     for (_, reason) in &effect.closed {
@@ -268,9 +273,10 @@ pub fn sync_advisory_items(
     Ok(result)
 }
 
-/// Sync every scanned project's items and pay its closes, at the close of a sweep that has asked
-/// about every triple. Returns the health deltas to announce **once the caller's transaction has
-/// committed**.
+/// Sync every scanned project's items and pay its closes.
+///
+/// Runs at the close of a sweep that has asked about every triple. Returns the health deltas to
+/// announce **once the caller's transaction has committed**.
 ///
 /// **Before the settle, never at its alert**: §31's `deps` check reads these items, and the
 /// settle runs its completion evaluator before the alert, so a sync placed after it would answer

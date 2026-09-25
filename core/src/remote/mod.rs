@@ -22,7 +22,9 @@ use crate::proto::dispatch::CommandFailure;
 /// handler reads the clock itself.
 #[derive(Debug)]
 pub struct RemoteCtx<'a> {
+    /// The index §25's commands read the `remote_*` tables and account state from.
     pub index: &'a Index,
+    /// The caller's clock reading, in unix seconds.
     pub now: i64,
 }
 

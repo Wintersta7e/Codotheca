@@ -154,7 +154,7 @@ fn count(value: Option<i64>) -> Option<u32> {
 
 /// §25.1's state for one read, given whether an account exists, whether the row permits the
 /// read, and whether that read's own clock has ever moved.
-fn state_of(connected: bool, permitted: bool, observed_at: Option<i64>) -> RemoteFactsState {
+const fn state_of(connected: bool, permitted: bool, observed_at: Option<i64>) -> RemoteFactsState {
     if !connected {
         return RemoteFactsState::NoAccount;
     }
@@ -255,11 +255,14 @@ fn visibility_of(stored: &str) -> Option<RemoteVisibility> {
 /// module reads the forge's tables and hands out values; nothing here judges one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteCompletionInput {
+    /// Whether any account is connected at all.
     pub connected: bool,
+    /// §25.1's state for this project's forge row.
     pub facts_state: RemoteFactsState,
     /// The **forge's own** description, never `project.description_source`: a user note that
     /// wins the description chain does not delete the forge's description.
     pub forge_description: Option<String>,
+    /// How many topics the forge row carries.
     pub topic_count: u32,
 }
 

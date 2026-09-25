@@ -36,7 +36,10 @@ pub const CLEAN_VERDICT_EXPIRY_SECS: i64 = 30 * 24 * 60 * 60;
 /// `observed_at` is the **older** of the two clocks — see [`verdict_for`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DependencyReading {
+    /// §32.8's verdict for the project.
     pub verdict: DependencyVerdict,
+    /// When the facts behind the verdict were observed, in unix seconds. `None` only when no
+    /// `project_dependency_scan` row was read.
     pub observed_at: Option<i64>,
 }
 
@@ -140,10 +143,7 @@ pub fn verdict_for(
             |row| row.get(0),
         )
         .unwrap_or(None);
-    let composite = match sweep_at {
-        Some(at) => at.min(dependency_at),
-        None => dependency_at,
-    };
+    let composite = sweep_at.map_or(dependency_at, |at| at.min(dependency_at));
 
     let matches: i64 = conn.query_row(
         "SELECT count(*) FROM advisory_match m
@@ -179,7 +179,7 @@ pub fn verdict_for(
     })
 }
 
-fn unknown(observed_at: Option<i64>) -> DependencyReading {
+const fn unknown(observed_at: Option<i64>) -> DependencyReading {
     DependencyReading {
         verdict: DependencyVerdict::Unknown,
         observed_at,

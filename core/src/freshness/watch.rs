@@ -1,6 +1,8 @@
-//! §6's bounded worktree watch set. Change notification only — path names and mtimes, never file
-//! contents (§10.1). Its single effect is to invalidate `worktree_observed_at`. It starts no
-//! scan and discovers no repository, so it is not a fifth rescan trigger (§10.6).
+//! §6's bounded worktree watch set.
+//!
+//! Change notification only — path names and mtimes, never file contents (§10.1). Its single
+//! effect is to invalidate `worktree_observed_at`. It starts no scan and discovers no repository,
+//! so it is not a fifth rescan trigger (§10.6).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -95,6 +97,9 @@ pub struct WatchSet {
 
 impl WatchSet {
     /// Start a watcher with nothing watched yet.
+    ///
+    /// # Errors
+    /// [`WatchError::Notify`] when the platform watcher cannot be created.
     pub fn new() -> Result<Self, WatchError> {
         let (tx, rx) = channel::<PathBuf>();
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -114,6 +119,10 @@ impl WatchSet {
     }
 
     /// Make the watched set exactly `wanted`, adding and dropping the difference.
+    ///
+    /// # Errors
+    /// [`WatchError::Notify`] when the platform refuses to watch a new root. The roots dropped and
+    /// added before it stay as they are.
     pub fn retarget(&mut self, wanted: &[WatchTarget]) -> Result<(), WatchError> {
         let wanted_roots: BTreeMap<PathBuf, LocationId> = wanted
             .iter()
@@ -158,7 +167,7 @@ impl WatchSet {
 
     /// What is watched right now, for a test or a diagnostic.
     #[must_use]
-    pub fn watched(&self) -> &BTreeMap<PathBuf, LocationId> {
+    pub const fn watched(&self) -> &BTreeMap<PathBuf, LocationId> {
         &self.roots
     }
 }

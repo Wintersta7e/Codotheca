@@ -17,7 +17,10 @@ use crate::provider::PackageVersion;
 /// What a lockfile read produced. **Two variants, and deliberately no third.**
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LockfileRead {
+    /// The whole region was understood; every `(name, version)` pair it carries.
     Parsed(Vec<PackageVersion>),
+    /// Over the byte cap, unreadable, not UTF-8, or holding a construct the parser does not
+    /// understand. Never a partial result.
     NotRead,
 }
 
