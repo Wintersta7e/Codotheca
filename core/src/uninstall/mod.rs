@@ -7,5 +7,5 @@
 pub mod command;
 pub mod handle;
 
-pub use command::uninstall_location;
+pub use command::commit_removal;
 pub use handle::{handle_preflight_off_lock, handle_uninstall_off_lock};

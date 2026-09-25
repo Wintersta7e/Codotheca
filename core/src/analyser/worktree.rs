@@ -192,7 +192,7 @@ fn size_of(abs: &Path, rel: &Path, nested: &mut Vec<PathBuf>) -> Option<i64> {
 
 /// Walk a junk directory for a nested `.git` **only** — never to size it. False when some part of
 /// it could not be read, so whether it hides a repository is not known.
-fn find_nested(abs: &Path, rel: &Path, nested: &mut Vec<PathBuf>) -> bool {
+pub(crate) fn find_nested(abs: &Path, rel: &Path, nested: &mut Vec<PathBuf>) -> bool {
     let Ok(children) = std::fs::read_dir(abs) else {
         return false;
     };

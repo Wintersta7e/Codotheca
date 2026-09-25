@@ -25,6 +25,7 @@ pub mod junk;
 pub mod nested;
 pub mod remote;
 pub mod roots;
+pub mod snapshot;
 pub mod verdict;
 pub mod worktree;
 
@@ -71,6 +72,9 @@ pub struct AnalyserSeams<'a> {
     pub remotes: &'a dyn RemoteVerifier,
     /// Where an act's bytes would go, for §46.7's availability reading.
     pub trash: &'a dyn Trash,
+    /// Test-only: runs between step 8 and step 9 of an act, where a perturbation must be seen.
+    #[cfg(feature = "testkit")]
+    pub before_act: Option<&'a dyn Fn()>,
 }
 
 impl std::fmt::Debug for AnalyserSeams<'_> {
@@ -87,6 +91,62 @@ pub struct Analysis {
     pub verdict: UninstallVerdict,
     /// Its in-core seal: an act's warrant is sealed over this analysis and no other.
     pub seal: VerdictSeal,
+    /// §45.8's snapshot, taken when the verdict is `safe` — the content step 9 compares against.
+    /// `None` for any other verdict, which no act proceeds on.
+    pub snapshot: Option<snapshot::Snapshot>,
+}
+
+/// Why step 9 refused an act.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActRefusal {
+    /// The directory no longer resolves.
+    Unresolvable,
+    /// It is not the row's repository any more, or its identity cannot be derived.
+    IdentityChanged,
+    /// The analysis took no snapshot, so there is no content to bind.
+    NotSnapshotted,
+    /// The snapshot could not be re-read.
+    SnapshotUnreadable(UninstallBlocker),
+    /// The content changed since the analysis.
+    Changed,
+}
+
+/// §45.6 step 9: **re-read before the act.**
+///
+/// Identity against the row, and the snapshot against the analysis's; any difference refuses. It
+/// runs after the network and before the removal primitive, and nothing runs between it and the
+/// removal but the removal.
+///
+/// # Errors
+/// The [`ActRefusal`] that stops the act.
+pub fn reread_before_act(
+    row: &LocationRow,
+    analysis: &Analysis,
+    seams: &AnalyserSeams<'_>,
+) -> Result<identity::LiveIdentity, ActRefusal> {
+    let recorded = analysis
+        .snapshot
+        .as_ref()
+        .ok_or(ActRefusal::NotSnapshotted)?;
+    let repo = resolve(row).ok_or(ActRefusal::Unresolvable)?;
+    let cancel = CancelToken::new();
+    let ctx = JobContext::new(
+        JobClass::Interactive,
+        &cancel,
+        Some(GIT_INVOCATION_DEADLINE),
+    );
+    match identify(seams.git, &repo, row.lineage_key.as_deref(), &ctx) {
+        IdentityOutcome::Match => {}
+        IdentityOutcome::Mismatch | IdentityOutcome::Shallow | IdentityOutcome::Unreadable => {
+            return Err(ActRefusal::IdentityChanged)
+        }
+    }
+    let live =
+        snapshot::snapshot(&repo, seams.git, &ctx).map_err(ActRefusal::SnapshotUnreadable)?;
+    if live.digest() != recorded.digest() {
+        return Err(ActRefusal::Changed);
+    }
+    Ok(identity::LiveIdentity::Derived(row.lineage_key.clone()))
 }
 
 /// The `location` row and what §45.7 lets the analyser read beside it — nothing else.
@@ -304,8 +364,23 @@ pub fn analyse(
             return finish(Findings::of(found), row, seams, now);
         }
     }
-    let findings = analyse_repo(&repo, act, seams, &budget, 0, found);
-    finish(findings, row, seams, now)
+    let mut findings = analyse_repo(&repo, act, seams, &budget, 0, found);
+    // §45.8's use 1: a `safe` verdict binds the content it was decided over, for step 9. A
+    // snapshot that cannot be read is its input's unknown blocker, and the verdict is not safe.
+    let snapshot = if findings.blockers.is_empty() {
+        match snapshot::snapshot(&repo, git, &budget.ctx(&cancel)) {
+            Ok(taken) => Some(taken),
+            Err(blocker) => {
+                findings.blockers.push(blocker);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let mut analysis = finish(findings, row, seams, now);
+    analysis.snapshot = snapshot;
+    analysis
 }
 
 /// What steps 2–8 found over one repository: the location's, or a nested one's.
@@ -533,6 +608,7 @@ fn finish(findings: Findings, row: &LocationRow, seams: &AnalyserSeams<'_>, now:
             trash_refusal,
         },
         seal,
+        snapshot: None,
     }
 }
 

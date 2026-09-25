@@ -488,6 +488,8 @@ impl CoreHandler {
             git: self.git.as_ref(),
             remotes: &remotes,
             trash: &crate::removal::SystemTrash,
+            #[cfg(feature = "testkit")]
+            before_act: None,
         };
         if name == crate::protocol::CommandName::LocationsUninstall {
             return crate::uninstall::handle_uninstall_off_lock(&self.index, &seams, args, now);

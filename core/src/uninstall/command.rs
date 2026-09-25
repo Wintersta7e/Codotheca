@@ -1,20 +1,16 @@
-//! §24.8's mutating call: **it acts only on the analysis computed inside the same call**.
+//! §24.8's mutating call's **one write**: the row, after the bytes are gone.
 //!
-//! *A verdict rendered thirty seconds ago is a cache*, and **never claim currency you do not
-//! have** applies to a safety verdict more than to anything else on the shelf. The renderer passes
-//! a `LocationId` and nothing else; **no verdict token crosses a call boundary**, so there is
-//! nothing for a caller to replay and nothing to forge.
-//!
-//! The order below is not negotiable.
+//! The act's order is the handler's (`uninstall::handle`): the row read under the lock, §45's
+//! analysis off it, not `safe` ends it, step 9's re-read, the warranted removal — and then, under
+//! the lock again, this, in one transaction. **No git read runs under the lock.** A crash between
+//! the removal and this commit leaves the bytes gone and the row describing them, today's window
+//! (§46.6's journal closes it).
 
 use rusqlite::OptionalExtension;
 
-use crate::analyser::identity::LiveIdentity;
-use crate::analyser::Analysis;
 use crate::debt::store::{DebtStore, SqliteDebtStore};
 use crate::proto::dispatch::CommandFailure;
-use crate::protocol::{LocationId, ProjectId, UninstallDisposition};
-use crate::removal::{remove_warranted, RemovalOutcome, Trash, Warrant, WarrantKind};
+use crate::protocol::{LocationId, ProjectId};
 
 /// §24.6b's ten columns: they describe a directory that no longer exists.
 ///
@@ -34,101 +30,43 @@ const CLEARED_ON_REMOVAL: [&str; 10] = [
     "refstate_basis",
 ];
 
-/// What a completed removal did.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Removed {
-    /// The copy whose bytes were removed; its row is kept.
-    pub location: LocationId,
-    /// Whether the bytes went to the trash or were deleted outright.
-    pub outcome: RemovalOutcome,
-    /// The `location.removed_at` stamp written, in unix seconds.
-    pub removed_at: i64,
-}
-
-/// Perform one removal, or refuse.
-///
-/// **There is no override, no confirmation path and no secondary wording that reaches the
-/// removal** (AC-P2-24-14). A disposition that is not `safe` ends the call.
+/// Record one removal: `removed_at` and the ten NULLs, and §28.3's debt guard, in `tx`.
 ///
 /// # Errors
-/// Refuses when the analysis is not `safe`, when the warrant is not an uninstall warrant sealed
-/// over this analysis, when the directory's identity no longer matches its row, or when the
-/// removal itself fails.
-pub fn uninstall_location(
+/// `INTERNAL` when the row cannot be written.
+pub fn commit_removal(
     tx: &rusqlite::Transaction<'_>,
-    analysis: &Analysis,
-    warrant: &Warrant,
-    trash: &dyn Trash,
-    identity_now: &LiveIdentity,
+    location: LocationId,
     now: i64,
-) -> Result<Removed, CommandFailure> {
-    // 1–2. The analysis is the caller's, computed in this call off the index lock, because it
-    //    needs the git seams this module does not hold. So is the identity re-derivation, whose
-    //    result arrives as `identity_now` and is checked against the warrant's row lineage inside
-    //    `remove_warranted`.
-    let WarrantKind::Uninstall {
-        location_id,
-        verdict: sealed,
-        ..
-    } = warrant.kind()
-    else {
-        return Err(CommandFailure::protocol(
-            "uninstall refused: not an uninstall warrant".to_owned(),
-        ));
-    };
-    let location_id = *location_id;
-
-    // 3. Not safe ends it. `unknown` ends it too: an absence is not a permission. A warrant
-    //    sealed over any other answer ends it as well: the seal is what ties the authority to
-    //    this analysis rather than to one a moment earlier.
-    let verdict = &analysis.verdict;
-    if verdict.disposition != UninstallDisposition::Safe {
-        return Err(CommandFailure::protocol(format!(
-            "uninstall refused: {:?} — {:?}",
-            verdict.disposition, verdict.blockers
-        )));
-    }
-    if *sealed != analysis.seal {
-        return Err(CommandFailure::protocol(
-            "uninstall refused: the warrant was sealed over another analysis".to_owned(),
-        ));
-    }
-
-    // 4. The one warranted primitive. §24.7F's Recycle Bin, not a hard delete: a working copy is
-    //    the user's, and a hard delete is permitted only for bytes this process wrote itself.
-    let outcome = remove_warranted(warrant, trash, identity_now)
-        .map_err(|refusal| CommandFailure::protocol(format!("uninstall refused: {refusal:?}")))?;
-
-    // 5. One transaction: `removed_at` and the ten columns commit together, or neither does. A
-    //    tree with the bytes gone and the columns still describing them is the state this order
-    //    exists to prevent.
+) -> Result<(), CommandFailure> {
+    // `removed_at` and the ten columns commit together, or neither does. A tree with the bytes
+    // gone and the columns still describing them is the state this transaction exists to prevent.
     let clears = CLEARED_ON_REMOVAL
         .iter()
         .map(|column| format!("{column} = NULL"))
         .collect::<Vec<_>>()
         .join(", ");
-    // 6. `head_oid` is **retained**: a durable fact about what was removed, and what a re-clone
-    //    can be checked against.
+    // `head_oid` is **retained**: a durable fact about what was removed, and what a re-clone can
+    // be checked against.
     tx.execute(
         &format!("UPDATE location SET removed_at = ?2, {clears} WHERE id = ?1"),
-        rusqlite::params![location_id.0, now],
+        rusqlite::params![location.0, now],
     )
     .map_err(|error| CommandFailure::internal(error.to_string()))?;
 
-    // 7. **[p3] §28.3's second uninstall guard, in this same transaction.** Removing the bytes
-    //    keeps the row, so `presence` still reads `present` and a naive sweep afterwards finds a
-    //    readable-looking absence, reports `complete` with zero items, **closes every item and
-    //    pays for it**. §28.5's rule 4 is the first guard; this is the second, and both are
-    //    needed.
+    // **[p3] §28.3's second uninstall guard, in this same transaction.** Removing the bytes keeps
+    // the row, so `presence` still reads `present` and a naive sweep afterwards finds a
+    // readable-looking absence, reports `complete` with zero items, **closes every item and pays
+    // for it**. §28.5's rule 4 is the first guard; this is the second, and both are needed.
     //
-    //    **The mark is `state = 'unverified'` and nothing else.** No closure, no XP, no
-    //    `health_delta`, and `last_seen_location_id` is **kept**: it is what the reap later
-    //    compares against, and clearing it would turn a reapable item into a permanently
-    //    stranded one. The rule has one owner, §28's store, and this is its caller.
+    // **The mark is `state = 'unverified'` and nothing else.** No closure, no XP, no
+    // `health_delta`, and `last_seen_location_id` is **kept**: it is what the reap later compares
+    // against, and clearing it would turn a reapable item into a permanently stranded one. The
+    // rule has one owner, §28's store, and this is its caller.
     let project: Option<i64> = tx
         .query_row(
             "SELECT project_id FROM location WHERE id = ?1",
-            [location_id.0],
+            [location.0],
             |r| r.get(0),
         )
         .optional()
@@ -138,12 +76,7 @@ pub fn uninstall_location(
             .mark_unverified(tx, ProjectId(project))
             .map_err(|error| CommandFailure::internal(error.to_string()))?;
     }
-
-    Ok(Removed {
-        location: location_id,
-        outcome,
-        removed_at: now,
-    })
+    Ok(())
 }
 
 /// The ten columns, for the test that asserts they all read NULL afterwards.

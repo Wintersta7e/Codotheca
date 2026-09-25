@@ -19,31 +19,12 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
-use codotheca_core::analyser::identity::LiveIdentity;
 use codotheca_core::analyser::remote::DidNotAnswer;
-use codotheca_core::analyser::verdict::{fold_disposition, is_unknown_blocker, VerdictSeal};
-use codotheca_core::analyser::Analysis;
-use codotheca_core::protocol::{
-    BackupState, UninstallBlocker, UninstallDisposition, UninstallVerdict,
-};
-use codotheca_core::removal::{SystemTrash, Warrant, WarrantVariant};
+use codotheca_core::analyser::verdict::{fold_disposition, is_unknown_blocker};
+use codotheca_core::protocol::{BackupState, UninstallBlocker, UninstallDisposition};
+use codotheca_core::removal::{Warrant, WarrantVariant};
 use codotheca_core::testing::FixtureRemoteVerifier;
-use codotheca_core::uninstall::uninstall_location;
 use support::analyser_world::Library;
-
-/// The row's lineage every warrant here expects; `LiveIdentity::Derived` of it is a match.
-fn lineage() -> String {
-    "b".repeat(64)
-}
-
-fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
-    let dir = tempfile::tempdir().expect("tmp");
-    let root = dir.path().join("library");
-    let copy = root.join("widget");
-    std::fs::create_dir_all(copy.join(".git")).expect("mkdir");
-    std::fs::write(copy.join("a.txt"), b"one").expect("write");
-    (dir, root, copy)
-}
 
 /// A pushed copy with one stash entry, registered: the shape both stash criteria start from.
 fn stashed(lib: &Library) -> (PathBuf, codotheca_core::protocol::LocationId) {
@@ -330,54 +311,24 @@ fn ac_p2_25_11_unknown_an_unknown_stash_count_produces_no_block() {
 // The criterion behind all of them: nothing here removes anything it did not prove safe.
 // ---------------------------------------------------------------------------
 
-/// A verdict of `unknown` is not a weaker `safe`. The mutating call takes a warrant sealed over
-/// the answer the pre-flight reached, and a seal over a non-`safe` answer must not open the door.
+/// A verdict of `unknown` is not a weaker `safe`: the act computes its own verdict, and an
+/// `unknown` one ends the call before anything reaches the filesystem.
 #[test]
 fn an_unknown_verdict_never_reaches_the_filesystem() {
-    let (_dir, _root, copy) = fixture();
-    let index = codotheca_core::testing::TempIndex::new();
-    let project = index.insert_project();
-    let location = index.insert_location(project, "/r/widget");
+    let lib = Library::new();
+    let copy = lib.pushed_repo("widget");
+    let id = lib.register(&copy);
+    let offline = FixtureRemoteVerifier::new();
+    offline.silent("origin", DidNotAnswer::Failed);
+    assert_eq!(lib.preflight(id, &offline).disposition(), "unknown");
 
-    let blockers = vec![UninstallBlocker::RemoteUnreachable];
-    let disposition = fold_disposition(&blockers);
-    assert_eq!(disposition, UninstallDisposition::Unknown);
-    let analysis = Analysis {
-        seal: VerdictSeal::of(&blockers, disposition),
-        verdict: UninstallVerdict {
-            disposition,
-            blockers,
-            remote_verified_at: None,
-            trash_available: true,
-            computed_at: 1_700_000_000,
-            nested: Vec::new(),
-            precious: None,
-            trash_refusal: None,
-        },
-    };
-
-    // A warrant that claims `safe` over a tree that is not: the analysis is what refuses.
-    let warrant = Warrant::for_uninstall_in_test(
-        location,
-        copy.clone(),
-        Some(lineage()),
-        VerdictSeal::of(&[], UninstallDisposition::Safe),
+    let trash = codotheca_core::testing::CountingTrash::new();
+    let refused = lib.uninstall(id, &offline, &trash);
+    eprintln!(
+        "an unknown verdict's act: {refused:?}; {} send(s)",
+        trash.sends()
     );
-
-    let _guard = codotheca_core::proto::txguard::TxGuard::enter();
-    let binding = index.index();
-    let tx = binding.conn().unchecked_transaction().expect("tx");
-    assert!(
-        uninstall_location(
-            &tx,
-            &analysis,
-            &warrant,
-            &SystemTrash,
-            &LiveIdentity::Derived(Some(lineage())),
-            1_700_000_000,
-        )
-        .is_err(),
-        "a forged seal must not outrank the core's own analysis"
-    );
+    assert!(refused.is_err(), "an unknown verdict reached the removal");
+    assert_eq!(trash.sends(), 0);
     assert!(copy.exists(), "the copy is still on disk");
 }

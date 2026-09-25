@@ -7,44 +7,17 @@
 
 //! §24.8's mutating call, and the verdict it acts on — computed by §45's analyser inside the same
 //! call. [p4] The phase-2 hand-built `VerdictInputs` are gone: the verdict cases run through the
-//! handlers over a real library, and the transaction cases hand `uninstall_location` the
-//! analysis the handler would.
+//! handlers over a real library, and the transaction cases drive `commit_removal`, the act's one
+//! write.
 
 mod support;
 
 use std::path::PathBuf;
 
-use codotheca_core::analyser::identity::LiveIdentity;
-use codotheca_core::analyser::verdict::VerdictSeal;
-use codotheca_core::analyser::Analysis;
-use codotheca_core::protocol::{LocationId, UninstallDisposition, UninstallVerdict};
-use codotheca_core::removal::{SystemTrash, Warrant};
+use codotheca_core::protocol::LocationId;
 use codotheca_core::testing::CountingTrash;
-use codotheca_core::uninstall::command::{cleared_columns, uninstall_location};
+use codotheca_core::uninstall::command::{cleared_columns, commit_removal};
 use support::analyser_world::{Library, NOW};
-
-/// The row's lineage every warrant here expects; `LiveIdentity::Derived` of it is a match.
-fn lineage() -> String {
-    "a".repeat(64)
-}
-
-/// A `safe` analysis, as the handler hands it to `uninstall_location` for a copy that cleared
-/// every step.
-fn safe_analysis() -> Analysis {
-    Analysis {
-        verdict: UninstallVerdict {
-            disposition: UninstallDisposition::Safe,
-            blockers: Vec::new(),
-            remote_verified_at: Some(1_700_000_000),
-            trash_available: true,
-            computed_at: 1_700_000_000,
-            nested: Vec::new(),
-            precious: None,
-            trash_refusal: None,
-        },
-        seal: VerdictSeal::of(&[], UninstallDisposition::Safe),
-    }
-}
 
 fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let dir = tempfile::tempdir().expect("tmp");
@@ -355,15 +328,6 @@ fn debt_fixture() -> (
     (dir, root, copy, index, project, location)
 }
 
-fn debt_warrant(location: LocationId, copy: PathBuf) -> Warrant {
-    Warrant::for_uninstall_in_test(
-        location,
-        copy,
-        Some(lineage()),
-        VerdictSeal::of(&[], UninstallDisposition::Safe),
-    )
-}
-
 /// **[p3] `AC-P3-28-8`, the *one transaction* half.**
 ///
 /// A rolled-back removal leaves **neither** change behind. A second transaction after the commit
@@ -374,21 +338,13 @@ fn debt_warrant(location: LocationId, copy: PathBuf) -> Warrant {
 /// directory, so a second call against the same copy is refused `RefusedPath`.
 #[test]
 fn a_rolled_back_removal_marks_no_debt_item() {
-    let (_dir, _root, copy, index, project, location) = debt_fixture();
+    let (_dir, _root, _copy, index, project, location) = debt_fixture();
     let _guard = codotheca_core::proto::txguard::TxGuard::enter();
     let binding = index.index();
     let conn = binding.conn();
 
     let tx = conn.unchecked_transaction().expect("tx");
-    uninstall_location(
-        &tx,
-        &safe_analysis(),
-        &debt_warrant(location, copy),
-        &SystemTrash,
-        &LiveIdentity::Derived(Some(lineage())),
-        1_700_000_000,
-    )
-    .expect("removed");
+    commit_removal(&tx, location, 1_700_000_000).expect("recorded");
     tx.rollback().expect("rollback");
 
     let (state, removed_at): (String, Option<i64>) = conn
@@ -416,21 +372,13 @@ fn a_rolled_back_removal_marks_no_debt_item() {
 /// **kept**: it is what the reap later compares against.
 #[test]
 fn a_removal_marks_the_projects_debt_items_unverified() {
-    let (_dir, _root, copy, index, project, location) = debt_fixture();
+    let (_dir, _root, _copy, index, project, location) = debt_fixture();
     let _guard = codotheca_core::proto::txguard::TxGuard::enter();
     let binding = index.index();
     let conn = binding.conn();
 
     let tx = conn.unchecked_transaction().expect("tx");
-    uninstall_location(
-        &tx,
-        &safe_analysis(),
-        &debt_warrant(location, copy),
-        &SystemTrash,
-        &LiveIdentity::Derived(Some(lineage())),
-        1_700_000_000,
-    )
-    .expect("removed");
+    commit_removal(&tx, location, 1_700_000_000).expect("recorded");
     tx.commit().expect("commit");
 
     let (state, anchor): (String, Option<i64>) = conn

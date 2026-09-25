@@ -345,6 +345,7 @@ fn the_walk_count_is_independent_of_ref_count() {
         git: &recording,
         remotes: &remotes,
         trash: &trash,
+        before_act: None,
     };
     let value = codotheca_core::uninstall::handle_preflight_off_lock(
         &lib.index,

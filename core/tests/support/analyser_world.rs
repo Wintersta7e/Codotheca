@@ -349,6 +349,7 @@ impl Library {
             git: &self.read_git,
             remotes,
             trash,
+            before_act: None,
         }
     }
 
@@ -364,6 +365,25 @@ impl Library {
         .expect("the pre-flight answers");
         assert_eq!(trash.sends(), 0, "a pre-flight sent something to the trash");
         Verdict(value)
+    }
+
+    /// `locations.uninstall` with `hook` run between step 8 and step 9.
+    pub(crate) fn uninstall_with_hook(
+        &self,
+        id: LocationId,
+        remotes: &dyn RemoteVerifier,
+        trash: &dyn Trash,
+        hook: &dyn Fn(),
+    ) -> Result<serde_json::Value, String> {
+        let mut seams = self.seams(remotes, trash);
+        seams.before_act = Some(hook);
+        codotheca_core::uninstall::handle_uninstall_off_lock(
+            &self.index,
+            &seams,
+            serde_json::json!({ "locationId": id }),
+            NOW,
+        )
+        .map_err(|failure| failure.message)
     }
 
     /// `locations.uninstall` over `remotes` and `trash`; the failure's message on a refusal.

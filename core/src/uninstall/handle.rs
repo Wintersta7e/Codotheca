@@ -17,19 +17,16 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::Value;
 
-use crate::analyser::identity::{live_identity, LiveIdentity};
 use crate::analyser::{
-    analyse, read_location_row, resolve, AnalyserSeams, GovernedAct, LocationRow,
+    analyse, read_location_row, reread_before_act, AnalyserSeams, GovernedAct, LocationRow,
 };
-use crate::git::{JobClass, JobContext};
-use crate::gitw::intent::GIT_INVOCATION_DEADLINE;
 use crate::index::Index;
 use crate::proto::dispatch::{parse_args, CommandFailure};
 use crate::protocol::{
     LocationDetail, LocationId, LocationsUninstallArgs, LocationsUninstallPreflightArgs,
     UninstallDisposition,
 };
-use crate::uninstall::uninstall_location;
+use crate::uninstall::commit_removal;
 
 fn internal(e: impl std::fmt::Display) -> CommandFailure {
     CommandFailure::internal(e.to_string())
@@ -88,55 +85,37 @@ pub fn handle_uninstall_off_lock(
         )));
     }
 
-    // §24.7E against the **row** (§45.6 step 1): the warrant expects the row's
-    // `project.lineage_key` and is sealed over this analysis; the identity re-derived from the
-    // directory at removal time is compared with it inside `remove_warranted`. Phase 2 built
+    // Between step 8 and step 9: a test's perturbation lands here, where step 9 must see it.
+    #[cfg(feature = "testkit")]
+    if let Some(hook) = seams.before_act {
+        hook();
+    }
+
+    // §45.6 step 9, off the lock: identity against the row and the snapshot against the
+    // analysis's. **Nothing runs between it and the removal but the removal.**
+    let identity_now = reread_before_act(&row, &analysis, seams)
+        .map_err(|refusal| CommandFailure::protocol(format!("uninstall refused: {refusal:?}")))?;
+
+    // §24.7E against the **row**: the warrant expects the row's `project.lineage_key`, and
+    // `remove_warranted` compares the identity step 9 re-derived with it. Phase 2 built
     // `expected` from the directory it then checked, so a replaced directory matched itself
-    // (§37.8).
+    // (§37.8). §24.7F's Recycle Bin, not a hard delete: a working copy is the user's.
     let warrant = crate::removal::Warrant::for_uninstall(
         row.id,
         row.path.clone(),
         row.lineage_key.clone(),
-        analysis.seal.clone(),
+        analysis.seal,
     );
-    let cancel = crate::cancel::CancelToken::new();
-    let identity_now = resolve(&row).map_or(LiveIdentity::Underivable, |repo| {
-        live_identity(
-            seams.git,
-            &repo,
-            &JobContext::new(
-                JobClass::Interactive,
-                &cancel,
-                Some(GIT_INVOCATION_DEADLINE),
-            ),
-        )
-    });
+    crate::removal::remove_warranted(&warrant, seams.trash, &identity_now)
+        .map_err(|refusal| CommandFailure::protocol(format!("uninstall refused: {refusal:?}")))?;
 
-    // **The refusal is carried out as a value, not flattened into an `IndexError`.** §2.2's code
-    // is the whole answer here — a refused removal is `PROTOCOL`, and a retry is pointless —
-    // whereas an `IndexError` reads as a fault in the index and carries `INTERNAL`.
-    //
-    // Committing an unchanged transaction on that path is safe, and it is safe for a stated
-    // reason rather than by luck: `uninstall_location` writes **once**, in a single `UPDATE`
-    // after the bytes are already gone (`core/src/uninstall/command.rs`), so every refusal
-    // returns before anything is written and there is no partial state to roll back. A second
-    // write added there would break that, which is what this note is for.
+    // The one write, under the lock, in one transaction. No git read runs here.
     let mut guard = index.lock().unwrap_or_else(PoisonError::into_inner);
-    let removed = guard
-        .with_tx(|tx| {
-            Ok(uninstall_location(
-                tx,
-                &analysis,
-                &warrant,
-                seams.trash,
-                &identity_now,
-                now,
-            ))
-        })
+    guard
+        .with_tx(|tx| Ok(commit_removal(tx, row.id, now)))
         .map_err(internal)??;
     // The same projection RELOCATE returns — the one the page already reads, never a second one.
-    let detail: LocationDetail =
-        crate::detail::get::location_detail(guard.conn(), removed.location)?;
+    let detail: LocationDetail = crate::detail::get::location_detail(guard.conn(), row.id)?;
     drop(guard);
     serde_json::to_value(detail).map_err(internal)
 }
