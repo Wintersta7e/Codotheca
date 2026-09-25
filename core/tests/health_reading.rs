@@ -225,7 +225,7 @@ const ON: SwitchState = SwitchState {
     not_applicable: false,
 };
 
-fn swept(outcome: DebtSweepOutcome, scored_open: u32, unverified: u32) -> SweepFacts {
+const fn swept(outcome: DebtSweepOutcome, scored_open: u32, unverified: u32) -> SweepFacts {
     SweepFacts {
         outcome: Some(outcome),
         scored_open,
@@ -234,7 +234,7 @@ fn swept(outcome: DebtSweepOutcome, scored_open: u32, unverified: u32) -> SweepF
     }
 }
 
-fn check(outcome: CheckOutcome, observed_at: Option<i64>) -> CheckObservation {
+const fn check(outcome: CheckOutcome, observed_at: Option<i64>) -> CheckObservation {
     CheckObservation {
         check: HealthCheck {
             id: DebtSource::MissingReadme,
@@ -727,7 +727,7 @@ fn ac_p3_30_16_unknown_reason_exists_once() {
         }
     }
     produced.sort();
-    let mut declared = variants.clone();
+    let mut declared = variants;
     declared.sort();
     assert_eq!(
         produced, declared,
@@ -833,11 +833,7 @@ fn seed_live(conn: &rusqlite::Connection) -> i64 {
 }
 
 fn sweep(conn: &rusqlite::Connection, project: i64, source: &str, outcome: &str, at: i64) {
-    let item_count = if outcome == "complete" || outcome == "partial" {
-        Some(0_i64)
-    } else {
-        None
-    };
+    let item_count = (outcome == "complete" || outcome == "partial").then_some(0_i64);
     conn.execute(
         "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
          VALUES (?1, ?2, ?3, ?4, ?5)",

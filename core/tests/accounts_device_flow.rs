@@ -197,7 +197,7 @@ fn stop_interrupts_the_wait_slice() {
 
     clock.wait_for_sleep();
     let (tx, rx) = std::sync::mpsc::channel();
-    let stopper = pump.clone();
+    let stopper = pump;
     std::thread::spawn(move || {
         stopper.stop();
         tx.send(()).expect("stop result sends");
@@ -485,7 +485,7 @@ struct NotifyingRealClock {
 
 impl NotifyingRealClock {
     #[must_use]
-    fn new(unix_secs: i64) -> Self {
+    const fn new(unix_secs: i64) -> Self {
         Self {
             unix_secs: AtomicI64::new(unix_secs),
             mono_ms: AtomicU64::new(0),
@@ -683,7 +683,7 @@ struct DelayedSuccessTransport {
 
 impl DelayedSuccessTransport {
     #[must_use]
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             sent: Mutex::new(Vec::new()),
             poll_started: Mutex::new(false),
@@ -1029,7 +1029,7 @@ struct RefusingSink {
 
 impl RefusingSink {
     #[must_use]
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             calls: Mutex::new(0),
             called: Condvar::new(),

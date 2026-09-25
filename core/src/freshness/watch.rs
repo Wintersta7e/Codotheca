@@ -95,7 +95,7 @@ pub struct WatchSet {
 
 impl WatchSet {
     /// Start a watcher with nothing watched yet.
-    pub fn new() -> Result<WatchSet, WatchError> {
+    pub fn new() -> Result<Self, WatchError> {
         let (tx, rx) = channel::<PathBuf>();
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(ev) = res {
@@ -106,7 +106,7 @@ impl WatchSet {
             }
         })
         .map_err(|e| WatchError::Notify(e.to_string()))?;
-        Ok(WatchSet {
+        Ok(Self {
             watcher,
             events: rx,
             roots: BTreeMap::new(),

@@ -62,7 +62,7 @@ fn content_scan(conn: &rusqlite::Connection, project: i64, complete: bool) {
              presence_observed_at, enumerated_at, completed_at)
          VALUES (?1, ?2, ?3, 4, 0, 1, 'present', 'present', 'present', 'present', 1, 1, 1)
          ON CONFLICT(project_id) DO UPDATE SET complete_head_oid = excluded.complete_head_oid",
-        rusqlite::params![project, HEAD, if complete { Some(HEAD) } else { None }],
+        rusqlite::params![project, HEAD, complete.then_some(HEAD)],
     )
     .unwrap();
 }
@@ -86,7 +86,7 @@ fn occurrence_in(blob: &str, path: &str, line: u32, salient: &str) -> ContentOcc
     }
 }
 
-fn gates(runs: bool) -> ContentGates {
+const fn gates(runs: bool) -> ContentGates {
     ContentGates {
         is_reference: Some(!runs),
         granted: true,

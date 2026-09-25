@@ -120,13 +120,13 @@ pub struct NotifyActivitySource {
 }
 
 impl NotifyActivitySource {
-    pub fn new() -> Result<NotifyActivitySource, SessionError> {
+    pub fn new() -> Result<Self, SessionError> {
         let (tx, rx) = mpsc::channel();
         let watcher = notify::recommended_watcher(move |event| {
             let _ = tx.send(event);
         })
         .map_err(|err| SessionError::Watch(err.to_string()))?;
-        Ok(NotifyActivitySource {
+        Ok(Self {
             watcher,
             rx,
             pending: Pending::default(),
@@ -171,8 +171,8 @@ pub struct FakeActivitySource {
 #[cfg(feature = "testkit")]
 impl FakeActivitySource {
     #[must_use]
-    pub fn new() -> FakeActivitySource {
-        FakeActivitySource::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Record one relative path against a watched session. A path for a session that is not

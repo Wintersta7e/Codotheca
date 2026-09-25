@@ -69,11 +69,11 @@ struct Rig {
 }
 
 impl Rig {
-    fn new() -> Rig {
+    fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("home")).unwrap();
         let index = Arc::new(Mutex::new(Index::open(&dir.path().join("index")).unwrap()));
-        Rig { dir, index }
+        Self { dir, index }
     }
 
     fn home(&self) -> std::path::PathBuf {
@@ -118,7 +118,7 @@ fn discovered_at(path: &Path) -> Discovered {
             path: path.to_path_buf(),
             kind: RepoKind::WorkTree,
             git_dir: handle.git_dir.clone(),
-            common_dir: handle.common_dir.clone(),
+            common_dir: handle.common_dir,
         },
         root_id: 1,
         kind: "linux".to_owned(),

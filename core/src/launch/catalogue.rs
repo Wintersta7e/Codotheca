@@ -15,19 +15,19 @@ impl TargetKind {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            TargetKind::Editor => "editor",
-            TargetKind::Terminal => "terminal",
-            TargetKind::FileManager => "file_manager",
-            TargetKind::GitClient => "git_client",
+            Self::Editor => "editor",
+            Self::Terminal => "terminal",
+            Self::FileManager => "file_manager",
+            Self::GitClient => "git_client",
         }
     }
     #[must_use]
-    pub fn parse(s: &str) -> Option<TargetKind> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "editor" => Some(TargetKind::Editor),
-            "terminal" => Some(TargetKind::Terminal),
-            "file_manager" => Some(TargetKind::FileManager),
-            "git_client" => Some(TargetKind::GitClient),
+            "editor" => Some(Self::Editor),
+            "terminal" => Some(Self::Terminal),
+            "file_manager" => Some(Self::FileManager),
+            "git_client" => Some(Self::GitClient),
             _ => None,
         }
     }
@@ -37,15 +37,15 @@ impl CwdMode {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            CwdMode::Location => "location",
-            CwdMode::None => "none",
+            Self::Location => "location",
+            Self::None => "none",
         }
     }
     #[must_use]
-    pub fn parse(s: &str) -> Option<CwdMode> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "location" => Some(CwdMode::Location),
-            "none" => Some(CwdMode::None),
+            "location" => Some(Self::Location),
+            "none" => Some(Self::None),
             _ => None,
         }
     }

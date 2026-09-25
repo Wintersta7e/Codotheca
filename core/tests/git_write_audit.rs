@@ -182,7 +182,7 @@ struct Recorded {
 }
 
 impl Recorded {
-    fn read(dest: &Path) -> Recorded {
+    fn read(dest: &Path) -> Self {
         let mut path = dest.to_path_buf();
         let mut name = path
             .file_name()
@@ -193,7 +193,7 @@ impl Recorded {
         Self::read_path(&path)
     }
 
-    fn read_path(path: &Path) -> Recorded {
+    fn read_path(path: &Path) -> Self {
         let blob = std::fs::read(path).unwrap_or_else(|e| {
             panic!(
                 "no recording at {}: the write path never spawned the child ({e})",
@@ -214,7 +214,7 @@ impl Recorded {
             !argv.is_empty(),
             "the recording holds no argv, so every assertion over it would be vacuous"
         );
-        Recorded { argv, env }
+        Self { argv, env }
     }
 
     fn env_value(&self, key: &str) -> Option<&str> {

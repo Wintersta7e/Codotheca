@@ -551,11 +551,9 @@ fn a_cross_host_redirect_receives_no_credential() {
     let response = codotheca_core::http::follow_redirects(
         &bearer_request("https://api.forge.example.invalid/user"),
         |_method, url, headers, _body| {
-            let location = if url.starts_with("https://api.forge.example.invalid") {
-                Some("https://evil.example.invalid/collect")
-            } else {
-                None
-            };
+            let location = url
+                .starts_with("https://api.forge.example.invalid")
+                .then_some("https://evil.example.invalid/collect");
             Ok(recorder.answer(url, headers, location))
         },
     )
@@ -598,11 +596,9 @@ fn a_same_host_redirect_keeps_the_credential() {
     codotheca_core::http::follow_redirects(
         &bearer_request("https://api.forge.example.invalid/user"),
         |_method, url, headers, _body| {
-            let location = if url.ends_with("/user") {
-                Some("https://api.forge.example.invalid/user/moved")
-            } else {
-                None
-            };
+            let location = url
+                .ends_with("/user")
+                .then_some("https://api.forge.example.invalid/user/moved");
             Ok(recorder.answer(url, headers, location))
         },
     )

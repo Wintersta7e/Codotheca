@@ -221,13 +221,13 @@ fn paint_title_block(pixmap: &mut Pixmap, transform: Transform) {
 
     let mut rules = PathBuilder::new();
     for share in [0.34_f32, 0.67] {
-        let rule_y = top + H * share;
+        let rule_y = H.mul_add(share, top);
         rules.move_to(left, rule_y);
         rules.line_to(left + W, rule_y);
     }
     // One vertical division, so the block reads as a title block rather than as a ruled box.
-    rules.move_to(left + W * 0.62, top + H * 0.34);
-    rules.line_to(left + W * 0.62, top + H);
+    rules.move_to(W.mul_add(0.62, left), H.mul_add(0.34, top));
+    rules.line_to(W.mul_add(0.62, left), top + H);
     if let Some(path) = rules.finish() {
         pixmap.stroke_path(&path, &ink(0.7), &hairline(1.0), transform, None);
     }

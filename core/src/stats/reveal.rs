@@ -464,10 +464,7 @@ mod tests {
         history_done(conn, alive);
 
         let out = reveal(conn, NOW).unwrap();
-        assert_eq!(
-            out.oldest_still_alive.project_id,
-            Some(crate::protocol::ProjectId(alive))
-        );
+        assert_eq!(out.oldest_still_alive.project_id, Some(ProjectId(alive)));
         assert_eq!(
             out.oldest_still_alive.first_commit_at,
             Some(NOW - DAY * 2_000)

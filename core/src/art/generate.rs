@@ -295,15 +295,9 @@ mod tests {
     #[test]
     fn the_palette_summary_agrees_with_the_fields_it_summarises() {
         let scene = generate(&base());
-        assert_eq!(
-            scene.palette.accent,
-            crate::art::derive::jewel_css(scene.jewel)
-        );
+        assert_eq!(scene.palette.accent, jewel_css(scene.jewel));
         assert_eq!(scene.palette.edge, scene.jewel_ink);
-        assert_eq!(
-            scene.palette.edge,
-            crate::art::derive::jewel_ink(scene.jewel.hue)
-        );
+        assert_eq!(scene.palette.edge, jewel_ink(scene.jewel.hue));
     }
 
     #[test]

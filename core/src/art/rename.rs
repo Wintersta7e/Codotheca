@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn a_rename_resets_the_offset_and_stales_the_art_and_moves_nothing_else() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let index = crate::index::Index::open(dir.path()).expect("open");
+        let index = Index::open(dir.path()).expect("open");
         index
             .conn()
             .execute(
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn a_rename_stales_both_art_state_mirrors() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let index = crate::index::Index::open(dir.path()).expect("open");
+        let index = Index::open(dir.path()).expect("open");
         index
             .conn()
             .execute(

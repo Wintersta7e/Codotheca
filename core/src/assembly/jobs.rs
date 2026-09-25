@@ -71,7 +71,7 @@ impl JobPump {
         clock: Arc<dyn Clock>,
         events: Arc<dyn EventSink>,
         tz_offset_min: i32,
-    ) -> JobPump {
+    ) -> Self {
         let cancel = CancelToken::new();
         let runner = build_job_runner(
             index,
@@ -84,7 +84,7 @@ impl JobPump {
             events,
         );
         runner.start(job_workers());
-        JobPump { runner, cancel }
+        Self { runner, cancel }
     }
 
     /// The pump seen as the scanner's hand-off point.

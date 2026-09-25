@@ -66,8 +66,8 @@ pub enum CredentialChannel {
 impl CredentialChannel {
     /// A clone that authenticates with nothing.
     #[must_use]
-    pub fn anonymous() -> CredentialChannel {
-        CredentialChannel::Anonymous
+    pub fn anonymous() -> Self {
+        Self::Anonymous
     }
 
     /// Create the one-shot channel that supplies `token` only for `host`.
@@ -75,13 +75,13 @@ impl CredentialChannel {
     /// The token is copied into the server thread's memory. It is never placed in argv, an
     /// environment variable, or a file. The nonce is a different value: it is stored in a private
     /// file, and only that file's path is rendered into the helper command.
-    pub fn one_shot(token: &SecretToken, host: &str) -> io::Result<CredentialChannel> {
+    pub fn one_shot(token: &SecretToken, host: &str) -> io::Result<Self> {
         validate_protocol_value("token", token.expose())?;
         validate_host(host)?;
         let nonce = fresh_nonce();
         let helper_exe = std::env::current_exe()?;
         let helper = platform::start_channel(&helper_exe, &nonce, token.expose(), host)?;
-        Ok(CredentialChannel::Helper(helper))
+        Ok(Self::Helper(helper))
     }
 
     /// The single `-c credential.helper=<value>` pair this channel renders.
@@ -92,10 +92,10 @@ impl CredentialChannel {
     #[must_use]
     pub fn helper_args(&self) -> Vec<OsString> {
         match self {
-            CredentialChannel::Anonymous => {
+            Self::Anonymous => {
                 vec![OsString::from("-c"), OsString::from("credential.helper=")]
             }
-            CredentialChannel::Helper(helper) => {
+            Self::Helper(helper) => {
                 let mut value = OsString::from("credential.helper=");
                 value.push(&helper.0.helper_command);
                 vec![OsString::from("-c"), value]
@@ -490,8 +490,10 @@ mod platform {
         let private_dir = create_private_dir()?;
         let nonce_path = private_dir.join("nonce");
         let socket_path = private_dir.join("channel.sock");
+        #[cfg(test)]
+        let test_private_dir = private_dir.clone();
         let cleanup = Cleanup {
-            private_dir: private_dir.clone(),
+            private_dir,
             nonce_path: nonce_path.clone(),
             socket_path: socket_path.clone(),
         };
@@ -522,7 +524,7 @@ mod platform {
             channel,
             nonce_path,
             #[cfg(test)]
-            private_dir,
+            private_dir: test_private_dir,
             stop,
             worker: Mutex::new(Some(worker)),
         })))

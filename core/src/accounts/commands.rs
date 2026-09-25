@@ -235,7 +235,7 @@ pub fn connect_pat(
     //    read off `Observed`, which is where it lives: a response with no `X-OAuth-Scopes`
     //    header states no grant, and `[]` would claim it granted nothing.
     let observed = verified.granted_scopes;
-    let new = super::store::NewAccount {
+    let new = store::NewAccount {
         provider: GITHUB_PROVIDER_ID.to_owned(),
         host,
         login,
@@ -248,24 +248,24 @@ pub fn connect_pat(
     let mut guard = index
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let _tx_guard = crate::proto::txguard::TxGuard::enter();
+    let _tx_guard = TxGuard::enter();
     let tx = guard
         .conn_mut()
         .transaction()
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
-    let id = super::store::insert_account(&tx, &new, now)
+    let id = store::insert_account(&tx, &new, now)
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
     // `insert_account` leaves `scopes_observed_at` NULL, which is *never observed*. Stamping it
     // is what separates an observed empty grant from a grant the response never stated, and it
     // happens only when the header was actually there.
     if let Some(scopes) = observed.as_deref() {
-        super::store::record_observed_scopes(&tx, id, scopes, now)
+        store::record_observed_scopes(&tx, id, scopes, now)
             .map_err(|error| account_failure(&error))?;
     }
     tx.commit()
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
 
-    super::store::list_accounts(guard.conn())
+    store::list_accounts(guard.conn())
         .map_err(|e| CommandFailure::internal(e.to_string()))?
         .into_iter()
         .find(|a| a.id == id)

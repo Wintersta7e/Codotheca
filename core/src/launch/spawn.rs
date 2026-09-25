@@ -68,18 +68,9 @@ impl Spawner for OsSpawner {
             detail: err.to_string(),
         })?;
         let pid = child.id();
-        let waiter = if inv.wait {
-            Some(std::thread::spawn(move || {
-                child.wait().ok().and_then(|s| s.code())
-            }))
-        } else {
-            // Nothing is killed here, ever (§17). A detached child is left in its own process
-            // group and forgotten. On Unix the `Child` is dropped without a wait, so the kernel
-            // keeps a zombie entry for it until this process exits — it is reparented to init
-            // only then, not at spawn. That is a PID-table entry per detached launch, not a
-            // running process; whoever owns the session manager decides whether to reap.
-            None
-        };
+        let waiter = inv
+            .wait
+            .then(|| std::thread::spawn(move || child.wait().ok().and_then(|s| s.code())));
         Ok(Spawned { pid, waiter })
     }
 }
@@ -95,8 +86,8 @@ pub struct RecordingSpawner {
 #[cfg(feature = "testkit")]
 impl RecordingSpawner {
     #[must_use]
-    pub fn new() -> RecordingSpawner {
-        RecordingSpawner::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
     #[must_use]

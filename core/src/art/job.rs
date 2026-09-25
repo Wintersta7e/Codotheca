@@ -131,9 +131,9 @@ mod tests {
     use crate::art::store::{load_row, rendition_exists};
     use crate::protocol::{ArtState, Rendition};
 
-    fn seeded() -> (tempfile::TempDir, crate::index::Index) {
+    fn seeded() -> (tempfile::TempDir, Index) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let index = crate::index::Index::open(dir.path()).expect("open");
+        let index = Index::open(dir.path()).expect("open");
         index
             .conn()
             .execute(

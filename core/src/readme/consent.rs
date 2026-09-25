@@ -47,7 +47,7 @@ pub fn set_readme_remote(
     project: ProjectId,
     allow: bool,
 ) -> Result<ReadmeRemoteChanged, ReadmeError> {
-    let allowed_at = if allow { Some(ctx.now) } else { None };
+    let allowed_at = allow.then_some(ctx.now);
     let conn = ctx.index.conn();
     let updated = conn.execute(
         "UPDATE project SET readme_remote_at = ?2, updated_at = ?3

@@ -192,8 +192,8 @@ impl WslDispatcher {
         pool: Arc<WslWorkerPool>,
         installed: Vec<DistroInfo>,
         consented: BTreeSet<String>,
-    ) -> WslDispatcher {
-        WslDispatcher {
+    ) -> Self {
+        Self {
             pool,
             installed,
             consented,

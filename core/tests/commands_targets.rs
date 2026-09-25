@@ -29,25 +29,25 @@ struct Scope {
 }
 
 impl Scope {
-    fn global() -> Scope {
-        Scope::default()
+    fn global() -> Self {
+        Self::default()
     }
-    fn project(id: i64) -> Scope {
-        Scope {
+    fn project(id: i64) -> Self {
+        Self {
             project: Some(id),
-            ..Scope::default()
+            ..Self::default()
         }
     }
-    fn location(id: i64) -> Scope {
-        Scope {
+    fn location(id: i64) -> Self {
+        Self {
             location: Some(id),
-            ..Scope::default()
+            ..Self::default()
         }
     }
-    fn language(name: &str) -> Scope {
-        Scope {
+    fn language(name: &str) -> Self {
+        Self {
             language: Some(name.to_owned()),
-            ..Scope::default()
+            ..Self::default()
         }
     }
 }

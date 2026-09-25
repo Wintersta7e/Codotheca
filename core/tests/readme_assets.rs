@@ -58,7 +58,7 @@ fn png(bytes: usize) -> Vec<u8> {
     body
 }
 
-fn ok_response(body: Vec<u8>) -> HttpResponse {
+const fn ok_response(body: Vec<u8>) -> HttpResponse {
     HttpResponse {
         status: 200,
         headers: Vec::new(),

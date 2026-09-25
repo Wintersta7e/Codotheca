@@ -23,8 +23,8 @@ impl std::fmt::Debug for LoopbackLauncher {
 
 impl LoopbackLauncher {
     #[must_use]
-    pub fn new(make: impl Fn(&str) -> WorkerContext + Send + Sync + 'static) -> LoopbackLauncher {
-        LoopbackLauncher {
+    pub fn new(make: impl Fn(&str) -> WorkerContext + Send + Sync + 'static) -> Self {
+        Self {
             make: Arc::new(make),
             launched: Mutex::new(Vec::new()),
         }

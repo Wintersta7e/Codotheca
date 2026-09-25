@@ -63,8 +63,8 @@ pub struct ScopeFilter {
 
 impl ScopeFilter {
     #[must_use]
-    pub fn new(check: Arc<dyn IgnoreCheck>) -> ScopeFilter {
-        ScopeFilter {
+    pub fn new(check: Arc<dyn IgnoreCheck>) -> Self {
+        Self {
             check,
             verdicts: BTreeMap::new(),
         }
@@ -130,8 +130,8 @@ pub struct FakeIgnoreCheck {
 #[cfg(feature = "testkit")]
 impl FakeIgnoreCheck {
     #[must_use]
-    pub fn new(ignored_prefixes: &[&str]) -> FakeIgnoreCheck {
-        FakeIgnoreCheck {
+    pub fn new(ignored_prefixes: &[&str]) -> Self {
+        Self {
             prefixes: ignored_prefixes.iter().map(|p| (*p).to_owned()).collect(),
             calls: std::sync::atomic::AtomicUsize::new(0),
             asked: std::sync::Mutex::new(Vec::new()),

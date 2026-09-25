@@ -89,7 +89,7 @@ struct ConcurrencyProbe {
 
 impl ConcurrencyProbe {
     fn new(inner: Arc<dyn HttpTransport>, dwell: Duration) -> Arc<Self> {
-        Arc::new(ConcurrencyProbe {
+        Arc::new(Self {
             inner,
             live: AtomicUsize::new(0),
             max: AtomicUsize::new(0),
@@ -599,7 +599,7 @@ struct LockProbingTokens {
     calls: AtomicUsize,
 }
 
-impl codotheca_core::accounts::keychain::TokenStore for LockProbingTokens {
+impl TokenStore for LockProbingTokens {
     fn probe(&self) -> Result<(), codotheca_core::accounts::keychain::KeychainError> {
         self.inner.probe()
     }
@@ -662,7 +662,7 @@ fn a_listing_holds_no_index_lock_while_it_reads_the_keychain() {
     });
 
     let mut deps = f.deps;
-    deps.tokens = Arc::clone(&probe) as Arc<dyn codotheca_core::accounts::keychain::TokenStore>;
+    deps.tokens = Arc::clone(&probe) as Arc<dyn TokenStore>;
     let index = Arc::clone(&f.index);
     let account = f.account.0;
     let runner = SyncRunner::new(

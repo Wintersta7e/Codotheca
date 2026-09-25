@@ -180,14 +180,14 @@ mod frames {
     use codotheca_core::proto::frame::{read_frame, write_frame};
     use std::io::Write as _;
 
-    pub fn send(child: &mut std::process::Child, frame: &serde_json::Value) {
+    pub(crate) fn send(child: &mut std::process::Child, frame: &serde_json::Value) {
         let body = serde_json::to_vec(frame).expect("frame");
         let stdin = child.stdin.as_mut().expect("stdin");
         write_frame(stdin, &body).expect("write");
         stdin.flush().expect("flush");
     }
 
-    pub fn recv(child: &mut std::process::Child) -> serde_json::Value {
+    pub(crate) fn recv(child: &mut std::process::Child) -> serde_json::Value {
         let stdout = child.stdout.as_mut().expect("stdout");
         let mut buf = Vec::new();
         read_frame(stdout, &mut buf).expect("read");

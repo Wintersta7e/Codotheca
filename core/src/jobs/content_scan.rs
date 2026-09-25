@@ -32,29 +32,25 @@ pub enum BlobOutcome {
 
 impl BlobOutcome {
     /// Every outcome, so a test can walk the vocabulary without restating it.
-    pub const ALL: [BlobOutcome; 3] = [
-        BlobOutcome::Scanned,
-        BlobOutcome::TooLarge,
-        BlobOutcome::Binary,
-    ];
+    pub const ALL: [Self; 3] = [Self::Scanned, Self::TooLarge, Self::Binary];
 
     /// The stored form.
     #[must_use]
     pub fn slug(self) -> &'static str {
         match self {
-            BlobOutcome::Scanned => "scanned",
-            BlobOutcome::TooLarge => "too_large",
-            BlobOutcome::Binary => "binary",
+            Self::Scanned => "scanned",
+            Self::TooLarge => "too_large",
+            Self::Binary => "binary",
         }
     }
 
     /// `slug`'s inverse. `None` for an outcome a newer build wrote.
     #[must_use]
-    pub fn from_slug(s: &str) -> Option<BlobOutcome> {
+    pub fn from_slug(s: &str) -> Option<Self> {
         match s {
-            "scanned" => Some(BlobOutcome::Scanned),
-            "too_large" => Some(BlobOutcome::TooLarge),
-            "binary" => Some(BlobOutcome::Binary),
+            "scanned" => Some(Self::Scanned),
+            "too_large" => Some(Self::TooLarge),
+            "binary" => Some(Self::Binary),
             _ => None,
         }
     }

@@ -60,13 +60,11 @@ impl LaunchError {
     pub fn code(&self) -> crate::protocol::ErrorCode {
         use crate::protocol::ErrorCode;
         match self {
-            LaunchError::NoSuchTarget(_) | LaunchError::NoSuchLocation(_) => ErrorCode::Protocol,
-            LaunchError::LocationNotPresent(_) => ErrorCode::StoreOffline,
-            LaunchError::NotExecutable { .. } => ErrorCode::PermissionDenied,
-            LaunchError::Spawn { .. } => ErrorCode::PathGone,
-            LaunchError::Sqlite(_) | LaunchError::Index(_) | LaunchError::Io(_) => {
-                ErrorCode::Internal
-            }
+            Self::NoSuchTarget(_) | Self::NoSuchLocation(_) => ErrorCode::Protocol,
+            Self::LocationNotPresent(_) => ErrorCode::StoreOffline,
+            Self::NotExecutable { .. } => ErrorCode::PermissionDenied,
+            Self::Spawn { .. } => ErrorCode::PathGone,
+            Self::Sqlite(_) | Self::Index(_) | Self::Io(_) => ErrorCode::Internal,
         }
     }
 }

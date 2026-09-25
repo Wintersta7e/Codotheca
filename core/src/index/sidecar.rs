@@ -21,7 +21,7 @@ const REBUILD_OWNED_SETTINGS: [&str; 3] = ["schema_version", "sidecar_generation
 
 macro_rules! record {
     ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub struct $name { $(pub $field: $ty),* }
     };
 }
@@ -107,7 +107,7 @@ record!(SidecarMerge {
     absorbed_json: String,
 });
 
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SidecarPayload {
     pub projects: Vec<SidecarProject>,
     pub collections: Vec<SidecarCollection>,
@@ -118,7 +118,7 @@ pub struct SidecarPayload {
     pub view_state: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Sidecar {
     pub format: u32,
     pub generation: u64,

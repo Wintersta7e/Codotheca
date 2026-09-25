@@ -19,19 +19,19 @@ use codotheca_core::mount::StoreClass;
 ///
 /// Fixture git runs with its own `HOME` so the developer's global config never leaks in, and
 /// with fixed identity and dates so history assertions are deterministic.
-pub struct TestRepo {
+pub(crate) struct TestRepo {
     dir: tempfile::TempDir,
     root: PathBuf,
 }
 
 impl TestRepo {
-    pub fn init() -> Self {
+    pub(crate) fn init() -> Self {
         let repo = Self::empty_dir();
         repo.git(&["init", "-q", "--initial-branch=main", "."]);
         repo
     }
 
-    pub fn init_bare() -> Self {
+    pub(crate) fn init_bare() -> Self {
         let repo = Self::empty_dir();
         repo.git(&["init", "-q", "--bare", "--initial-branch=main", "."]);
         repo
@@ -48,29 +48,29 @@ impl TestRepo {
         Self { dir, root }
     }
 
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.root
     }
 
     /// The temp directory the repository sits inside, for fixtures that need a sibling path.
-    pub fn scratch(&self) -> &Path {
+    pub(crate) fn scratch(&self) -> &Path {
         self.dir.path()
     }
 
-    pub fn handle(&self) -> RepoHandle {
+    pub(crate) fn handle(&self) -> RepoHandle {
         RepoHandle::resolve(&self.root, StoreKey::new("test-store"), StoreClass::Local).unwrap()
     }
 
-    pub fn bare_handle(&self) -> RepoHandle {
+    pub(crate) fn bare_handle(&self) -> RepoHandle {
         RepoHandle::bare(&self.root, StoreKey::new("test-store"), StoreClass::Local)
     }
 
-    pub fn exec(&self) -> GitExec {
+    pub(crate) fn exec(&self) -> GitExec {
         let hooks = ensure_empty_hooks_dir(self.dir.path()).unwrap();
         GitExec::system(hooks)
     }
 
-    pub fn write(&self, rel: &str, bytes: &[u8]) {
+    pub(crate) fn write(&self, rel: &str, bytes: &[u8]) {
         let p = self.root.join(rel);
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent).unwrap();
@@ -78,7 +78,7 @@ impl TestRepo {
         std::fs::write(p, bytes).unwrap();
     }
 
-    pub fn git(&self, args: &[&str]) -> String {
+    pub(crate) fn git(&self, args: &[&str]) -> String {
         let out = Command::new("git")
             .current_dir(&self.root)
             .env("HOME", self.dir.path().join("home"))
@@ -104,7 +104,7 @@ impl TestRepo {
 
     /// Like [`TestRepo::git`] but returns whether it succeeded, for the commands a fixture runs
     /// precisely because they are expected to fail — a merge that must conflict.
-    pub fn try_git(&self, args: &[&str]) -> bool {
+    pub(crate) fn try_git(&self, args: &[&str]) -> bool {
         Command::new("git")
             .current_dir(&self.root)
             .env("HOME", self.dir.path().join("home"))
@@ -122,11 +122,11 @@ impl TestRepo {
             .is_ok_and(|out| out.status.success())
     }
 
-    pub fn commit(&self, message: &str) {
+    pub(crate) fn commit(&self, message: &str) {
         self.commit_at(message, "2024-01-02T03:04:05+00:00");
     }
 
-    pub fn commit_at(&self, message: &str, iso_date: &str) {
+    pub(crate) fn commit_at(&self, message: &str, iso_date: &str) {
         self.git(&["add", "-A"]);
         let out = Command::new("git")
             .current_dir(&self.root)

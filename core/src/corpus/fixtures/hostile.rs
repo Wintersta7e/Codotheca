@@ -28,7 +28,7 @@ fn finish(
     Ok(vec![row(name, VOLUME_A, path, expect)])
 }
 
-pub(crate) fn build(ctx: &Ctx<'_>, name: &str) -> Result<Vec<CorpusFixture>, CorpusError> {
+pub(super) fn build(ctx: &Ctx<'_>, name: &str) -> Result<Vec<CorpusFixture>, CorpusError> {
     match name {
         ids::NON_UTF8_PATH => non_utf8(ctx),
         ids::LONG_PATH => long_path(ctx),

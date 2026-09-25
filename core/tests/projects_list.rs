@@ -27,7 +27,7 @@ fn at(secs: i64) -> ProjectRow {
     row
 }
 
-fn loaded(row: ProjectRow) -> LoadedRow {
+const fn loaded(row: ProjectRow) -> LoadedRow {
     LoadedRow {
         row,
         facts: RowFacts {
@@ -59,7 +59,7 @@ fn with_health(id: i64, state: HealthState, scored_open: Option<u32>) -> Project
 }
 
 /// Moves a fixture row back by whole days, so one fixture can span four era sections.
-fn touched(mut row: ProjectRow, days_ago: i64) -> ProjectRow {
+const fn touched(mut row: ProjectRow, days_ago: i64) -> ProjectRow {
     row.last_touched_at = NOW - days_ago * DAY;
     row
 }
@@ -249,7 +249,7 @@ fn ac_p3_35_1_the_exclusion_set_is_applied_once_upstream() {
     // A12b: `scored_open` counts ITEMS and `unknown_checks` counts CHECKS. Neither `unverified`
     // (R128/F10) nor `unknown_checks` is an addend, a weight or a tiebreak, and a comparator that
     // quietly used either is caught here and nowhere else.
-    let mut noisy = rows.clone();
+    let mut noisy = rows;
     for (index, row) in noisy.iter_mut().enumerate() {
         let n = u32::try_from(index).unwrap_or(0);
         row.row.health_summary.unverified = Some(n * 7);

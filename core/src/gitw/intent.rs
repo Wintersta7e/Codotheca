@@ -8,10 +8,7 @@
 //! what the read side's audit could not do (`.dev/decisions/phase2/00-index.md`'s defect 5a).
 
 use std::ffi::OsString;
-use std::path::PathBuf;
-
-#[cfg(feature = "testkit")]
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[cfg(feature = "testkit")]
 use crate::accounts::keychain::SecretToken;
@@ -51,7 +48,7 @@ impl RemoteUrl {
     /// characters, whitespace, and a leading `-`, which `git` reads as an option rather than as a
     /// URL. A URL type would never have been asked that last question.
     /// `core/src/identity/remote.rs` normalises remotes by hand for the same kind of reason.
-    pub fn parse(raw: &str) -> Result<RemoteUrl, IntentRefusal> {
+    pub fn parse(raw: &str) -> Result<Self, IntentRefusal> {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
             return Err(IntentRefusal::MalformedUrl);
@@ -80,7 +77,7 @@ impl RemoteUrl {
         if authority.contains('@') {
             return Err(IntentRefusal::UrlCarriesUserinfo);
         }
-        Ok(RemoteUrl(trimmed.to_owned()))
+        Ok(Self(trimmed.to_owned()))
     }
 
     /// The URL as it is rendered into argv, byte for byte.
@@ -104,7 +101,7 @@ pub struct RemoteName(String);
 
 impl RemoteName {
     /// Parse a remote name, refusing anything that is not a single safe segment.
-    pub fn parse(raw: &str) -> Result<RemoteName, IntentRefusal> {
+    pub fn parse(raw: &str) -> Result<Self, IntentRefusal> {
         let safe = !raw.is_empty()
             && raw != "."
             && raw != ".."
@@ -113,7 +110,7 @@ impl RemoteName {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
         if safe {
-            Ok(RemoteName(raw.to_owned()))
+            Ok(Self(raw.to_owned()))
         } else {
             Err(IntentRefusal::UnsafeRemoteName)
         }
@@ -180,7 +177,7 @@ impl Intent {
     #[must_use]
     pub fn argv(&self) -> Vec<OsString> {
         match self {
-            Intent::Clone { url, dest, depth } => {
+            Self::Clone { url, dest, depth } => {
                 let mut argv = vec![OsString::from("clone"), OsString::from("--progress")];
                 if let Some(depth) = *depth {
                     argv.push(OsString::from("--depth"));
@@ -194,7 +191,7 @@ impl Intent {
             // `write_base_args` before the subcommand, and `git_write_audit.rs` reads `argv[0]`
             // as the subcommand — a `-C` in front of `fetch` would make the audit read a path
             // where it looks for a write-allowed verb.
-            Intent::Fetch { remote, .. } => vec![
+            Self::Fetch { remote, .. } => vec![
                 OsString::from("fetch"),
                 OsString::from("--progress"),
                 OsString::from(remote.as_str()),
@@ -207,10 +204,10 @@ impl Intent {
     /// `None` for a clone: its destination **does not exist yet**, which is §24.1's precondition,
     /// and rendering `-C` for it would name a directory git is about to create.
     #[must_use]
-    pub fn work_dir(&self) -> Option<&std::path::Path> {
+    pub fn work_dir(&self) -> Option<&Path> {
         match self {
-            Intent::Clone { .. } => None,
-            Intent::Fetch { work_dir, .. } => Some(work_dir.as_path()),
+            Self::Clone { .. } => None,
+            Self::Fetch { work_dir, .. } => Some(work_dir.as_path()),
         }
     }
 
@@ -218,8 +215,8 @@ impl Intent {
     #[must_use]
     pub fn kind(&self) -> IntentKind {
         match self {
-            Intent::Clone { .. } => IntentKind::Clone,
-            Intent::Fetch { .. } => IntentKind::Fetch,
+            Self::Clone { .. } => IntentKind::Clone,
+            Self::Fetch { .. } => IntentKind::Fetch,
         }
     }
 
@@ -232,16 +229,16 @@ impl Intent {
     /// build failure nobody can miss.
     #[cfg(feature = "testkit")]
     #[must_use]
-    pub fn all_for_audit(fixture: &AuditFixture) -> Vec<Intent> {
-        Intent::ALL
+    pub fn all_for_audit(fixture: &AuditFixture) -> Vec<Self> {
+        Self::ALL
             .into_iter()
             .map(|kind| match kind {
-                IntentKind::Clone => Intent::Clone {
+                IntentKind::Clone => Self::Clone {
                     url: fixture.url().clone(),
                     dest: fixture.dest().to_path_buf(),
                     depth: Some(1),
                 },
-                IntentKind::Fetch => Intent::Fetch {
+                IntentKind::Fetch => Self::Fetch {
                     work_dir: fixture.dest().to_path_buf(),
                     remote: fixture.remote().clone(),
                 },
@@ -273,8 +270,8 @@ impl AuditFixture {
     ///
     /// The destination is a path under `root` that **does not exist**, which is §24.1's
     /// precondition for `clone` and what assertion 5 checks.
-    pub fn new(root: &Path, token: SecretToken) -> Result<AuditFixture, IntentRefusal> {
-        Ok(AuditFixture {
+    pub fn new(root: &Path, token: SecretToken) -> Result<Self, IntentRefusal> {
+        Ok(Self {
             url: RemoteUrl::parse("https://forge.example/acme/widget.git")?,
             dest: root.join("widget"),
             remote: RemoteName::parse("origin")?,

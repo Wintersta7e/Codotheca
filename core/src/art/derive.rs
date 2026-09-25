@@ -86,8 +86,8 @@ pub fn derive_jewel(h: u32, fade: f64) -> Jewel {
         .copied()
         .unwrap_or(JEWEL_BINS[0]);
     let hue = bin + (signed(draw(h, 5, 7)) - 3);
-    let l = 0.6 - f64::from(draw(h, 9, 3)) * 0.035 - fade * 0.12;
-    let c = (0.175 - f64::from(draw(h, 13, 3)) * 0.02) * (1.0 - fade * 0.5);
+    let l = fade.mul_add(-0.12, 0.6 - f64::from(draw(h, 9, 3)) * 0.035);
+    let c = (0.175 - f64::from(draw(h, 13, 3)) * 0.02) * fade.mul_add(-0.5, 1.0);
     Jewel {
         hue,
         l: round3(l),
@@ -133,7 +133,7 @@ pub fn jewel_ink(hue: i32) -> String {
 #[must_use]
 pub fn derive_plate(h: u32, fade: f64) -> Plate {
     let hue = PLATE_BASE_HUE + (signed(draw(h, 5, 9)) - 4);
-    let c = (0.005 + f64::from(draw(h, 9, 3)) * 0.002) * (1.0 - fade * 0.5);
+    let c = (0.005 + f64::from(draw(h, 9, 3)) * 0.002) * fade.mul_add(-0.5, 1.0);
     let step = f64::from(draw(h, 21, 5)) * 0.011;
     let ang = JEWEL_ANGLES
         .get(draw(h, 13, 4) as usize)
@@ -142,9 +142,9 @@ pub fn derive_plate(h: u32, fade: f64) -> Plate {
     Plate {
         hue,
         c: round3(c),
-        hi: round3(0.185 + step - fade * 0.02),
-        mid: round3(0.145 + step - fade * 0.016),
-        lo: round3(0.085 + step * 0.5 + fade * 0.005),
+        hi: round3(fade.mul_add(-0.02, 0.185 + step)),
+        mid: round3(fade.mul_add(-0.016, 0.145 + step)),
+        lo: round3(fade.mul_add(0.005, 0.085 + step * 0.5)),
         ang,
         split: 38 + signed(draw(h, 17, 24)),
     }
@@ -259,8 +259,8 @@ mod tests {
         let faded = derive_jewel(h, 0.25);
         // §7.3a: L loses `fade * 0.12`, C is scaled by `(1 - fade * 0.5)`.
         assert_eq!(faded.hue, lit.hue, "fade never moves the hue");
-        assert!((faded.l - round3(lit.l - 0.25 * 0.12)).abs() < 1e-9);
-        assert!((faded.c - round3(lit.c * (1.0 - 0.25 * 0.5))).abs() < 1e-9);
+        assert!((faded.l - round3(0.25f64.mul_add(-0.12, lit.l))).abs() < 1e-9);
+        assert!((faded.c - round3(lit.c * 0.25f64.mul_add(-0.5, 1.0))).abs() < 1e-9);
         // The ink is fade-independent — it is what the selection ring is drawn in (§7.8).
         assert_eq!(jewel_ink(faded.hue), jewel_ink(lit.hue));
     }

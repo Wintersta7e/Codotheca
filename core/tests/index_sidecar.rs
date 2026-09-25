@@ -202,7 +202,7 @@ fn due_is_hourly_and_a_never_written_sidecar_is_due_now() {
 #[test]
 fn export_sidecar_bumps_the_generation_and_records_it() {
     let dir = tempfile::tempdir().unwrap();
-    let mut index = codotheca_core::index::Index::open(dir.path()).unwrap();
+    let mut index = Index::open(dir.path()).unwrap();
     index
         .conn_mut()
         .execute(

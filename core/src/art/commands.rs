@@ -324,7 +324,7 @@ mod tests {
         assert!(rendition_exists(index.data_dir(), &hash, Rendition::Hero));
         assert_eq!(
             crate::art::store::read_hero_lru(index.data_dir()),
-            vec![hash.clone()]
+            vec![hash]
         );
         assert_eq!(sink.named("projects", "art_ready").len(), 1);
     }

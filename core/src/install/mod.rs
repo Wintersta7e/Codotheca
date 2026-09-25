@@ -64,21 +64,16 @@ pub enum InstallRunState {
 
 impl InstallRunState {
     /// Every stored state, so the Rust vocabulary can be checked against the database column.
-    pub const ALL: [InstallRunState; 4] = [
-        InstallRunState::Running,
-        InstallRunState::Done,
-        InstallRunState::Failed,
-        InstallRunState::Cancelled,
-    ];
+    pub const ALL: [Self; 4] = [Self::Running, Self::Done, Self::Failed, Self::Cancelled];
 
     /// The value stored in `install_run.state`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            InstallRunState::Running => "running",
-            InstallRunState::Done => "done",
-            InstallRunState::Failed => "failed",
-            InstallRunState::Cancelled => "cancelled",
+            Self::Running => "running",
+            Self::Done => "done",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
         }
     }
 }
@@ -113,7 +108,7 @@ pub fn handle_start(
         .unchecked_transaction()
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
 
-    let destination = match destination::compose_destination(&tx, args.project_id, args.root_id) {
+    let destination = match compose_destination(&tx, args.project_id, args.root_id) {
         Ok(destination) => destination,
         Err(refused) => {
             return Ok(InstallStart {

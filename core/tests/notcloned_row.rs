@@ -65,8 +65,8 @@ struct Deps {
 }
 
 impl Deps {
-    fn new() -> Deps {
-        Deps {
+    fn new() -> Self {
+        Self {
             jobs: codotheca_core::jobs::NullJobSink,
             mounts: codotheca_core::testing::FakeMountResolver::new(),
         }

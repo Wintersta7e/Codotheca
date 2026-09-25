@@ -45,7 +45,7 @@ pub struct ListingSummary {
 
 impl ListingSummary {
     /// Fold one page's tally into the listing's.
-    pub fn merge(&mut self, page: &ListingSummary) {
+    pub fn merge(&mut self, page: &Self) {
         self.listed = self.listed.saturating_add(page.listed);
         self.admitted = self.admitted.saturating_add(page.admitted);
         self.skipped_unknown_permission = self

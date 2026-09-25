@@ -41,7 +41,7 @@ const NOW: i64 = 1_700_000_000;
 /// directories. Declaring `linux` while handing the run `C:\…` paths is not a Windows root: the
 /// Unix key rule leaves the backslashes alone, so `is_under` finds no component boundary and
 /// every location classifies `unscanned` — which is what the Windows gate caught.
-fn host_kind() -> &'static str {
+const fn host_kind() -> &'static str {
     if cfg!(windows) {
         "win"
     } else {

@@ -67,15 +67,15 @@ pub enum JobScope {
 
 impl JobKind {
     /// Every kind, so a test can walk the vocabulary without restating it.
-    pub const ALL: [JobKind; 8] = [
-        JobKind::J1Refstate,
-        JobKind::J15Authorship,
-        JobKind::J2Status,
-        JobKind::J3Inventory,
-        JobKind::J4History,
-        JobKind::J5Art,
-        JobKind::J6Content,
-        JobKind::J7Markers,
+    pub const ALL: [Self; 8] = [
+        Self::J1Refstate,
+        Self::J15Authorship,
+        Self::J2Status,
+        Self::J3Inventory,
+        Self::J4History,
+        Self::J5Art,
+        Self::J6Content,
+        Self::J7Markers,
     ];
 
     /// The stored form. **R34**: this value is written into `project_job_state.job`, carried by
@@ -84,22 +84,22 @@ impl JobKind {
     #[must_use]
     pub fn slug(self) -> &'static str {
         match self {
-            JobKind::J1Refstate => "j1",
-            JobKind::J15Authorship => "j1_5",
-            JobKind::J2Status => "j2",
-            JobKind::J3Inventory => "j3",
-            JobKind::J4History => "j4",
-            JobKind::J5Art => "j5",
-            JobKind::J6Content => "j6",
-            JobKind::J7Markers => "j7",
+            Self::J1Refstate => "j1",
+            Self::J15Authorship => "j1_5",
+            Self::J2Status => "j2",
+            Self::J3Inventory => "j3",
+            Self::J4History => "j4",
+            Self::J5Art => "j5",
+            Self::J6Content => "j6",
+            Self::J7Markers => "j7",
         }
     }
 
     /// `slug`'s inverse. `None` for `j0` and `j5`, which are real schema jobs this scheduler
     /// does not queue, and for anything a newer build wrote.
     #[must_use]
-    pub fn from_slug(s: &str) -> Option<JobKind> {
-        JobKind::ALL.into_iter().find(|k| k.slug() == s)
+    pub fn from_slug(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|k| k.slug() == s)
     }
 
     /// The interval between yield checks, not a deadline to fail against. J4 has none:
@@ -107,44 +107,44 @@ impl JobKind {
     #[must_use]
     pub fn slice_budget(self) -> Option<Duration> {
         match self {
-            JobKind::J1Refstate => Some(Duration::from_millis(50)),
-            JobKind::J2Status => Some(Duration::from_millis(500)),
-            JobKind::J3Inventory => Some(Duration::from_millis(300)),
+            Self::J1Refstate => Some(Duration::from_millis(50)),
+            Self::J2Status => Some(Duration::from_millis(500)),
+            Self::J3Inventory => Some(Duration::from_millis(300)),
             // J1.5 is the gate everything waits on and J6 is byte-capped, not time-capped.
             // §4.1: a CPU job with no deadline table entry. It yields no slices: one scene,
             // one raster, one file. §29.1: J7's budget is a chunk, not a deadline.
-            JobKind::J15Authorship
-            | JobKind::J4History
-            | JobKind::J5Art
-            | JobKind::J6Content
-            | JobKind::J7Markers => None,
+            Self::J15Authorship
+            | Self::J4History
+            | Self::J5Art
+            | Self::J6Content
+            | Self::J7Markers => None,
         }
     }
 
     /// §6: worktree state has no fingerprint and never will. Everything else caches on one.
     #[must_use]
     pub fn is_cacheable(self) -> bool {
-        !matches!(self, JobKind::J2Status)
+        !matches!(self, Self::J2Status)
     }
 
     /// Ruling 1: ref and worktree state are per-copy; history and inventory are the project's.
     #[must_use]
     pub fn scope(self) -> JobScope {
         match self {
-            JobKind::J1Refstate | JobKind::J2Status => JobScope::PerLocation,
-            JobKind::J15Authorship
-            | JobKind::J3Inventory
-            | JobKind::J4History
-            | JobKind::J5Art
-            | JobKind::J6Content
-            | JobKind::J7Markers => JobScope::PrimaryOnly,
+            Self::J1Refstate | Self::J2Status => JobScope::PerLocation,
+            Self::J15Authorship
+            | Self::J3Inventory
+            | Self::J4History
+            | Self::J5Art
+            | Self::J6Content
+            | Self::J7Markers => JobScope::PrimaryOnly,
         }
     }
 
     /// Every job holds one store slot for its whole run; J4 additionally takes a J4 slot.
     #[must_use]
     pub fn takes_j4_slot(self) -> bool {
-        matches!(self, JobKind::J4History)
+        matches!(self, Self::J4History)
     }
 }
 
@@ -235,12 +235,12 @@ pub enum JobState {
 
 impl JobState {
     /// Every state, so a test can walk the vocabulary without restating it.
-    pub const ALL: [JobState; 5] = [
-        JobState::Queued,
-        JobState::Running,
-        JobState::Done,
-        JobState::DeferredSlow,
-        JobState::Failed,
+    pub const ALL: [Self; 5] = [
+        Self::Queued,
+        Self::Running,
+        Self::Done,
+        Self::DeferredSlow,
+        Self::Failed,
     ];
 
     /// The stored form.
@@ -254,23 +254,23 @@ impl JobState {
     #[must_use]
     pub fn slug(self) -> &'static str {
         match self {
-            JobState::Queued => "queued",
-            JobState::Running => "running",
-            JobState::Done => "ok",
-            JobState::DeferredSlow => "deferred_slow",
-            JobState::Failed => "failed",
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Done => "ok",
+            Self::DeferredSlow => "deferred_slow",
+            Self::Failed => "failed",
         }
     }
 
     /// `slug`'s inverse. `None` for a state a newer build wrote.
     #[must_use]
-    pub fn from_slug(s: &str) -> Option<JobState> {
+    pub fn from_slug(s: &str) -> Option<Self> {
         match s {
-            "queued" => Some(JobState::Queued),
-            "running" => Some(JobState::Running),
-            "ok" => Some(JobState::Done),
-            "deferred_slow" => Some(JobState::DeferredSlow),
-            "failed" => Some(JobState::Failed),
+            "queued" => Some(Self::Queued),
+            "running" => Some(Self::Running),
+            "ok" => Some(Self::Done),
+            "deferred_slow" => Some(Self::DeferredSlow),
+            "failed" => Some(Self::Failed),
             _ => None,
         }
     }

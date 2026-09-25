@@ -17,7 +17,7 @@ use std::io::Write as _;
 pub const TOPIC_HIGH_WATER: usize = 256;
 
 /// One frame waiting for the writer.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Queued {
     Delta {
         seq: u64,

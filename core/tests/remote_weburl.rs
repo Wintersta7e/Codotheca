@@ -12,7 +12,7 @@
 use codotheca_core::protocol::RemoteLinkKind;
 use codotheca_core::remote::weburl::{is_allowlisted_host, web_url, ALLOWLIST_BASE};
 
-fn no_enterprise() -> Vec<String> {
+const fn no_enterprise() -> Vec<String> {
     Vec::new()
 }
 

@@ -32,31 +32,67 @@ fn oklch_to_oklab(color: Oklch) -> (f64, f64, f64) {
 
 fn oklab_to_linear_srgb(lab: (f64, f64, f64)) -> (f64, f64, f64) {
     let (lightness, green_red, blue_yellow) = lab;
-    let long = lightness + 0.396_337_777_4 * green_red + 0.215_803_757_3 * blue_yellow;
-    let medium = lightness - 0.105_561_345_8 * green_red - 0.063_854_172_8 * blue_yellow;
-    let short = lightness - 0.089_484_177_5 * green_red - 1.291_485_548_0 * blue_yellow;
+    let long = 0.215_803_757_3f64.mul_add(
+        blue_yellow,
+        0.396_337_777_4f64.mul_add(green_red, lightness),
+    );
+    let medium = 0.063_854_172_8f64.mul_add(
+        -blue_yellow,
+        0.105_561_345_8f64.mul_add(-green_red, lightness),
+    );
+    let short = 1.291_485_548_0f64.mul_add(
+        -blue_yellow,
+        0.089_484_177_5f64.mul_add(-green_red, lightness),
+    );
     let (long, medium, short) = (
         long * long * long,
         medium * medium * medium,
         short * short * short,
     );
     (
-        4.076_741_662_1 * long - 3.307_711_591_3 * medium + 0.230_969_929_2 * short,
-        -1.268_438_004_6 * long + 2.609_757_401_1 * medium - 0.341_319_396_5 * short,
-        -0.004_196_086_3 * long - 0.703_418_614_7 * medium + 1.707_614_701_0 * short,
+        0.230_969_929_2f64.mul_add(
+            short,
+            3.307_711_591_3f64.mul_add(-medium, 4.076_741_662_1 * long),
+        ),
+        0.341_319_396_5f64.mul_add(
+            -short,
+            2.609_757_401_1f64.mul_add(medium, -1.268_438_004_6 * long),
+        ),
+        1.707_614_701_0f64.mul_add(
+            short,
+            0.703_418_614_7f64.mul_add(-medium, -0.004_196_086_3 * long),
+        ),
     )
 }
 
 fn linear_srgb_to_oklab(rgb: (f64, f64, f64)) -> (f64, f64, f64) {
     let (red, green, blue) = rgb;
-    let long = 0.412_221_470_8 * red + 0.536_332_536_3 * green + 0.051_445_992_9 * blue;
-    let medium = 0.211_903_498_2 * red + 0.680_699_545_1 * green + 0.107_396_956_6 * blue;
-    let short = 0.088_302_461_9 * red + 0.281_718_837_6 * green + 0.629_978_700_5 * blue;
+    let long = 0.051_445_992_9f64.mul_add(
+        blue,
+        0.536_332_536_3f64.mul_add(green, 0.412_221_470_8 * red),
+    );
+    let medium = 0.107_396_956_6f64.mul_add(
+        blue,
+        0.680_699_545_1f64.mul_add(green, 0.211_903_498_2 * red),
+    );
+    let short = 0.629_978_700_5f64.mul_add(
+        blue,
+        0.281_718_837_6f64.mul_add(green, 0.088_302_461_9 * red),
+    );
     let (long, medium, short) = (long.cbrt(), medium.cbrt(), short.cbrt());
     (
-        0.210_454_255_3 * long + 0.793_617_785_0 * medium - 0.004_072_046_8 * short,
-        1.977_998_495_1 * long - 2.428_592_205_0 * medium + 0.450_593_709_9 * short,
-        0.025_904_037_1 * long + 0.782_771_766_2 * medium - 0.808_675_766_0 * short,
+        0.004_072_046_8f64.mul_add(
+            -short,
+            0.793_617_785_0f64.mul_add(medium, 0.210_454_255_3 * long),
+        ),
+        0.450_593_709_9f64.mul_add(
+            short,
+            2.428_592_205_0f64.mul_add(-medium, 1.977_998_495_1 * long),
+        ),
+        0.808_675_766_0f64.mul_add(
+            -short,
+            0.782_771_766_2f64.mul_add(medium, 0.025_904_037_1 * long),
+        ),
     )
 }
 
@@ -129,7 +165,7 @@ fn encode_gamma(channel: f64) -> f64 {
     if channel <= 0.003_130_8 {
         12.92 * channel
     } else {
-        1.055 * channel.powf(1.0 / 2.4) - 0.055
+        1.055f64.mul_add(channel.powf(1.0 / 2.4), -0.055)
     }
 }
 

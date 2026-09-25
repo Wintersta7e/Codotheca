@@ -35,7 +35,7 @@ use std::time::{Duration, Instant};
 
 const NOW: i64 = 1_700_000_000;
 
-fn host_kind() -> &'static str {
+const fn host_kind() -> &'static str {
     if cfg!(windows) {
         "win"
     } else {

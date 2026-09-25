@@ -47,9 +47,9 @@ impl SyncOutcome {
     /// Only a `Done` promotes: a 304, a park or a refusal did not deliver a page, so there is no
     /// next one to ask for.
     #[must_use]
-    pub fn with_next_page(self, cursor: Option<String>) -> SyncOutcome {
+    pub fn with_next_page(self, cursor: Option<String>) -> Self {
         match (self, cursor) {
-            (SyncOutcome::Done, Some(cursor)) => SyncOutcome::NextPage { cursor },
+            (Self::Done, Some(cursor)) => Self::NextPage { cursor },
             (other, _) => other,
         }
     }
@@ -59,14 +59,14 @@ impl SyncOutcome {
     pub fn kind(&self) -> crate::protocol::SyncOutcomeKind {
         use crate::protocol::SyncOutcomeKind as K;
         match self {
-            SyncOutcome::Done => K::Done,
-            SyncOutcome::NotModified => K::NotModified,
-            SyncOutcome::NextPage { .. } => K::NextPage,
-            SyncOutcome::Throttled { .. } => K::Throttled,
-            SyncOutcome::Unauthorized { .. } => K::Unauthorized,
-            SyncOutcome::NotFound => K::NotFound,
-            SyncOutcome::Rejected { .. } => K::Rejected,
-            SyncOutcome::TransientFail { .. } => K::TransientFail,
+            Self::Done => K::Done,
+            Self::NotModified => K::NotModified,
+            Self::NextPage { .. } => K::NextPage,
+            Self::Throttled { .. } => K::Throttled,
+            Self::Unauthorized { .. } => K::Unauthorized,
+            Self::NotFound => K::NotFound,
+            Self::Rejected { .. } => K::Rejected,
+            Self::TransientFail { .. } => K::TransientFail,
         }
     }
 }
@@ -101,9 +101,9 @@ impl UnauthorizedReason {
     #[must_use]
     pub fn slug(self) -> &'static str {
         match self {
-            UnauthorizedReason::TokenInvalid => "token_invalid",
-            UnauthorizedReason::SsoRequired => "sso_required",
-            UnauthorizedReason::Forbidden => "forbidden",
+            Self::TokenInvalid => "token_invalid",
+            Self::SsoRequired => "sso_required",
+            Self::Forbidden => "forbidden",
         }
     }
 
@@ -116,12 +116,10 @@ impl UnauthorizedReason {
     #[must_use]
     pub fn error_code(self) -> crate::protocol::ErrorCode {
         match self {
-            UnauthorizedReason::SsoRequired => crate::protocol::ErrorCode::SsoRequired,
+            Self::SsoRequired => crate::protocol::ErrorCode::SsoRequired,
             // p2-20's own ruling: a 403 the SSO check declined is this token's identity being
             // refused for the call, and it is answered on the account surface.
-            UnauthorizedReason::TokenInvalid | UnauthorizedReason::Forbidden => {
-                crate::protocol::ErrorCode::TokenInvalid
-            }
+            Self::TokenInvalid | Self::Forbidden => crate::protocol::ErrorCode::TokenInvalid,
         }
     }
 }

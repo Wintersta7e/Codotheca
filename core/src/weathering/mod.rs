@@ -47,20 +47,16 @@ pub enum WeatheringError {
 impl From<WeatheringError> for CommandFailure {
     fn from(error: WeatheringError) -> Self {
         match error {
-            WeatheringError::NoProject(id) => {
-                CommandFailure::protocol(format!("no project {}", id.0))
-            }
-            WeatheringError::UnreadableScene(id, why) => CommandFailure::internal(format!(
+            WeatheringError::NoProject(id) => Self::protocol(format!("no project {}", id.0)),
+            WeatheringError::UnreadableScene(id, why) => Self::internal(format!(
                 "project {}: art_scene.scene_json is not a scene document: {why}",
                 id.0
             )),
-            WeatheringError::BadSpace(id, w, h) => CommandFailure::internal(format!(
+            WeatheringError::BadSpace(id, w, h) => Self::internal(format!(
                 "project {}: scene space {w}x{h} is not expressible on the wire",
                 id.0
             )),
-            WeatheringError::Store(id, why) => {
-                CommandFailure::internal(format!("project {}: {why}", id.0))
-            }
+            WeatheringError::Store(id, why) => Self::internal(format!("project {}: {why}", id.0)),
         }
     }
 }

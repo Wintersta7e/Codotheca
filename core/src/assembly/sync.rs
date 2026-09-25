@@ -68,11 +68,11 @@ impl SyncPump {
     /// checks is the same one every request under it would see. A second token would stop the
     /// loop and leave the work it started running.
     #[must_use]
-    pub fn start(index: Arc<Mutex<Index>>, deps: SyncDeps, events: Arc<dyn EventSink>) -> SyncPump {
+    pub fn start(index: Arc<Mutex<Index>>, deps: SyncDeps, events: Arc<dyn EventSink>) -> Self {
         let cancel = deps.cancel.clone();
         let runner = SyncRunner::new(index, deps, events);
         runner.start();
-        SyncPump { runner, cancel }
+        Self { runner, cancel }
     }
 
     /// The pump seen as the two visibility call sites' hand-off point.

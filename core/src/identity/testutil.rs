@@ -80,8 +80,7 @@ impl Provider for DeclaringForge {
         _ecosystem: crate::protocol::Ecosystem,
         _affects: &[crate::provider::PackageVersion],
         _cur: Option<&str>,
-    ) -> ProviderResult<Observed<crate::provider::listing::Page<crate::provider::AdvisoryPayload>>>
-    {
+    ) -> ProviderResult<Observed<Page<crate::provider::AdvisoryPayload>>> {
         unreachable!("a fixture forge issues no request")
     }
     fn canonical_host(&self) -> &'static str {

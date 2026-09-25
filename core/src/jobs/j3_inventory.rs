@@ -147,11 +147,7 @@ mod tests {
     use crate::testing::{FakeGitBackend, GitReply};
 
     fn handle() -> RepoHandle {
-        RepoHandle::bare(
-            std::path::Path::new("/w/repo"),
-            StoreKey::new("s"),
-            StoreClass::Local,
-        )
+        RepoHandle::bare(Path::new("/w/repo"), StoreKey::new("s"), StoreClass::Local)
     }
 
     fn inv(ext: &[(&str, u64)], paths: &[&str]) -> TrackedInventory {

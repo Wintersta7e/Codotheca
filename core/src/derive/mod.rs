@@ -54,9 +54,9 @@ impl LocationKind {
     #[must_use]
     pub fn is_native(self) -> bool {
         if cfg!(windows) {
-            matches!(self, LocationKind::Win)
+            matches!(self, Self::Win)
         } else {
-            matches!(self, LocationKind::Linux)
+            matches!(self, Self::Linux)
         }
     }
 }

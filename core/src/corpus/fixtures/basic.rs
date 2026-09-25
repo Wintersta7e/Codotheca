@@ -47,7 +47,7 @@ fn finish(
     Ok(vec![row(name, VOLUME_A, path, expect)])
 }
 
-pub(crate) fn build(ctx: &Ctx<'_>, name: &str) -> Result<Vec<CorpusFixture>, CorpusError> {
+pub(super) fn build(ctx: &Ctx<'_>, name: &str) -> Result<Vec<CorpusFixture>, CorpusError> {
     match name {
         ids::UPSTREAM => upstream(ctx),
         ids::OTHER_UPSTREAM => other_upstream(ctx),

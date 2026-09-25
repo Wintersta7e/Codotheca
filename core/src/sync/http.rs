@@ -87,8 +87,8 @@ pub struct ObservingTransport {
 
 impl ObservingTransport {
     #[must_use]
-    pub fn new(inner: Arc<dyn HttpTransport>, clock: Arc<dyn Clock>) -> ObservingTransport {
-        ObservingTransport {
+    pub fn new(inner: Arc<dyn HttpTransport>, clock: Arc<dyn Clock>) -> Self {
+        Self {
             inner,
             clock,
             seen: Mutex::new(Vec::new()),

@@ -11,7 +11,7 @@ use codotheca_core::index::Index;
 use codotheca_core::protocol::{EffectsTier, LogLevel, RootId, SettingsPatch};
 use codotheca_core::surfaces::settings;
 
-fn empty_patch() -> SettingsPatch {
+const fn empty_patch() -> SettingsPatch {
     SettingsPatch {
         effects_tier: None,
         reduced_motion_override: None,

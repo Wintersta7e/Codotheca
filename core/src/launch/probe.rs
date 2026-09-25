@@ -24,11 +24,11 @@ impl ProbeSource {
     #[must_use]
     pub fn rank(self) -> u8 {
         match self {
-            ProbeSource::Registry | ProbeSource::Desktop => 5,
-            ProbeSource::StartMenu | ProbeSource::Toolbox => 4,
-            ProbeSource::Flatpak | ProbeSource::Snap => 3,
-            ProbeSource::Shim | ProbeSource::OsHandler => 2,
-            ProbeSource::Distro | ProbeSource::Path => 1,
+            Self::Registry | Self::Desktop => 5,
+            Self::StartMenu | Self::Toolbox => 4,
+            Self::Flatpak | Self::Snap => 3,
+            Self::Shim | Self::OsHandler => 2,
+            Self::Distro | Self::Path => 1,
         }
     }
 }
@@ -107,11 +107,11 @@ pub struct FakeProbe {
 #[cfg(feature = "testkit")]
 impl FakeProbe {
     #[must_use]
-    pub fn new() -> FakeProbe {
-        FakeProbe::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub fn app(&mut self, exec: &str, source: ProbeSource) -> &mut FakeProbe {
+    pub fn app(&mut self, exec: &str, source: ProbeSource) -> &mut Self {
         let path = PathBuf::from(exec);
         let stem = path
             .file_stem()
@@ -127,7 +127,7 @@ impl FakeProbe {
         self
     }
 
-    pub fn in_distro(&mut self, exec: &str, distro: &str) -> &mut FakeProbe {
+    pub fn in_distro(&mut self, exec: &str, distro: &str) -> &mut Self {
         self.app(exec, ProbeSource::Distro);
         if let Some(last) = self.facts.apps.last_mut() {
             last.distro = Some(distro.to_owned());
@@ -135,7 +135,7 @@ impl FakeProbe {
         self
     }
 
-    pub fn installed_at(&mut self, exec: &str, at: i64) -> &mut FakeProbe {
+    pub fn installed_at(&mut self, exec: &str, at: i64) -> &mut Self {
         for a in &mut self.facts.apps {
             if a.exec == *exec {
                 a.installed_at = Some(at);
@@ -144,12 +144,12 @@ impl FakeProbe {
         self
     }
 
-    pub fn editor_env(&mut self, value: &str) -> &mut FakeProbe {
+    pub fn editor_env(&mut self, value: &str) -> &mut Self {
         self.facts.editor_env = Some(value.to_owned());
         self
     }
 
-    pub fn folder_handler(&mut self, stem: &str) -> &mut FakeProbe {
+    pub fn folder_handler(&mut self, stem: &str) -> &mut Self {
         self.facts.folder_handler_stem = Some(stem.to_owned());
         self
     }

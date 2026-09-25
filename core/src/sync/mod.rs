@@ -129,7 +129,7 @@ pub fn observe_one<T>(deps: &SyncDeps, answer: &Result<T, ProviderError>) -> Htt
     };
     HttpObservation {
         outcome: SyncOutcome::TransientFail { reason },
-        rate: crate::sync::classify::RateSnapshot::default(),
+        rate: classify::RateSnapshot::default(),
         at: deps.clock.now_unix(),
     }
 }

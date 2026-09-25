@@ -103,8 +103,8 @@ pub struct SystemWslCli;
 
 impl SystemWslCli {
     #[must_use]
-    pub fn new() -> SystemWslCli {
-        SystemWslCli
+    pub fn new() -> Self {
+        Self
     }
 
     fn command(args: &[&OsStr]) -> std::process::Command {
@@ -122,13 +122,13 @@ impl SystemWslCli {
 
 impl WslCli for SystemWslCli {
     fn output(&self, args: &[&OsStr]) -> std::io::Result<std::process::Output> {
-        SystemWslCli::command(args)
+        Self::command(args)
             .stdin(std::process::Stdio::null())
             .output()
     }
 
     fn spawn_piped(&self, args: &[&OsStr]) -> std::io::Result<std::process::Child> {
-        SystemWslCli::command(args)
+        Self::command(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -154,14 +154,14 @@ pub struct SystemDistroProbe {
 
 impl SystemDistroProbe {
     #[must_use]
-    pub fn new(cli: std::sync::Arc<dyn WslCli>) -> SystemDistroProbe {
-        SystemDistroProbe { cli }
+    pub fn new(cli: std::sync::Arc<dyn WslCli>) -> Self {
+        Self { cli }
     }
 
     /// The probe the shipped binary uses.
     #[must_use]
-    pub fn system() -> SystemDistroProbe {
-        SystemDistroProbe::new(std::sync::Arc::new(SystemWslCli::new()))
+    pub fn system() -> Self {
+        Self::new(std::sync::Arc::new(SystemWslCli::new()))
     }
 }
 
@@ -313,8 +313,8 @@ mod tests {
     }
 
     impl RecordingCli {
-        fn with(replies: Vec<Vec<u8>>) -> RecordingCli {
-            RecordingCli {
+        fn with(replies: Vec<Vec<u8>>) -> Self {
+            Self {
                 asked: std::sync::Mutex::new(Vec::new()),
                 replies: std::sync::Mutex::new(replies),
             }

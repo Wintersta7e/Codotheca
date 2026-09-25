@@ -38,8 +38,8 @@ impl ListingProgress {
     /// `total` is what the **response** supplied, and `None` is *not observed* — never a
     /// denominator this process worked out for itself.
     #[must_use]
-    pub fn new(account: AccountId, total: Option<i64>) -> ListingProgress {
-        ListingProgress {
+    pub fn new(account: AccountId, total: Option<i64>) -> Self {
+        Self {
             account,
             listed: 0,
             total,

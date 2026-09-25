@@ -398,7 +398,7 @@ fn the_sync_module_declares_no_writer_of_another_plans_tables() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/sync");
     let mut scanned = 0_usize;
     let mut offenders: Vec<String> = Vec::new();
-    let mut stack = vec![root.clone()];
+    let mut stack = vec![root];
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir).expect("core/src/sync is readable") {
             let path = entry.expect("entry").path();

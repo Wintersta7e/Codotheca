@@ -118,8 +118,8 @@ impl WarrantKind {
     #[must_use]
     pub const fn variant(&self) -> WarrantVariant {
         match self {
-            WarrantKind::Staging { .. } => WarrantVariant::Staging,
-            WarrantKind::Uninstall { .. } => WarrantVariant::Uninstall,
+            Self::Staging { .. } => WarrantVariant::Staging,
+            Self::Uninstall { .. } => WarrantVariant::Uninstall,
         }
     }
 }

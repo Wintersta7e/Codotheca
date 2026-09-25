@@ -21,8 +21,8 @@ pub struct SuggestionCache {
 
 impl SuggestionCache {
     #[must_use]
-    pub fn new() -> SuggestionCache {
-        SuggestionCache::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn remember(&self, keys: impl IntoIterator<Item = Vec<u8>>) {

@@ -116,13 +116,7 @@ fn answer(
              VALUES ('rust', ?1, ?2, ?3, ?4, ?5)
              ON CONFLICT DO UPDATE SET fix_available = excluded.fix_available,
                fixed_version = excluded.fixed_version",
-            rusqlite::params![
-                name,
-                version,
-                id,
-                i64::from(fix),
-                if fix { Some("9.9.9") } else { None }
-            ],
+            rusqlite::params![name, version, id, i64::from(fix), fix.then_some("9.9.9")],
         )
         .unwrap();
     }

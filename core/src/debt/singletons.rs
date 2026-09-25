@@ -367,11 +367,7 @@ pub fn evaluate_singletons(
             location: anchor,
             generation: None,
             basis: row.basis,
-            item_count: if observes {
-                Some(u32::try_from(seen.len()).unwrap_or(u32::MAX))
-            } else {
-                None
-            },
+            item_count: observes.then(|| u32::try_from(seen.len()).unwrap_or(u32::MAX)),
             observed_at: now,
         };
         // Rule 3: the freeze is applied before the diff, never after.

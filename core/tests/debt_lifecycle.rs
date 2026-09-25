@@ -79,7 +79,7 @@ fn item_at(
     }
 }
 
-fn sweep_at(
+const fn sweep_at(
     project: i64,
     source: DebtSource,
     outcome: DebtSweepOutcome,
@@ -306,7 +306,7 @@ fn the_sweep_row_is_upserted_and_absence_is_not_an_outcome() {
         Some(&first),
     );
 
-    let mut second = first.clone();
+    let mut second = first;
     second.outcome = DebtSweepOutcome::Partial;
     second.item_count = Some(3);
     second.observed_at = 20;
@@ -842,7 +842,7 @@ fn ac_p3_28_14_a_shown_only_item_renders_and_pays_nothing() {
     let opened = store
         .observe(&tx, &obs, std::slice::from_ref(&observed))
         .unwrap();
-    assert_eq!(opened.opened, vec![key.clone()]);
+    assert_eq!(opened.opened, vec![key]);
 
     // It closes, and the closure pays nothing because the item was never scored.
     let closed = store.observe(&tx, &obs, &[]).unwrap();

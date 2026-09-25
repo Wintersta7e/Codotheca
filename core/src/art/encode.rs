@@ -44,7 +44,7 @@ mod tests {
     use crate::art::generate::{generate, SceneInputs};
     use crate::art::raster::{render, CARD_TARGET};
 
-    fn card() -> tiny_skia::Pixmap {
+    fn card() -> Pixmap {
         let scene = generate(&SceneInputs {
             seed_basename: "alpha-tool".to_owned(),
             size_tracked_bytes: Some(2_000_000),
@@ -73,7 +73,7 @@ mod tests {
     fn a_transparent_pixel_is_refused_rather_than_silently_premultiplied() {
         // tiny_skia keeps premultiplied bytes; the encoder is handed straight ones. The two
         // agree only while the card is opaque, so a non-opaque pixmap must not be encoded.
-        let mut pm = tiny_skia::Pixmap::new(4, 4).expect("pixmap");
+        let mut pm = Pixmap::new(4, 4).expect("pixmap");
         pm.fill(tiny_skia::Color::from_rgba8(200, 100, 50, 128));
         assert!(encode_webp(&pm).is_err());
     }

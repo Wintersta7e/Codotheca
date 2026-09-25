@@ -153,7 +153,7 @@ fn response(status: u16, headers: Vec<(String, String)>, body: &[u8]) -> HttpRes
     }
 }
 
-fn ctx(index: &Index) -> AccountsCtx<'_> {
+const fn ctx(index: &Index) -> AccountsCtx<'_> {
     AccountsCtx { index }
 }
 
@@ -654,19 +654,15 @@ fn account_sources_do_not_delete_project_rows() {
 // Task 10 — the PAT fallback, Enterprise Server, and the scope upgrade.
 // ---------------------------------------------------------------------------
 
-fn pat_fixture() -> (
-    tempfile::TempDir,
-    Arc<Mutex<codotheca_core::index::Index>>,
-    Arc<FakeTransport>,
-) {
+fn pat_fixture() -> (tempfile::TempDir, Arc<Mutex<Index>>, Arc<FakeTransport>) {
     let dir = tempfile::tempdir().expect("tmp");
     let index = Arc::new(Mutex::new(
-        codotheca_core::index::Index::open_at(dir.path(), 1_000).expect("index opens"),
+        Index::open_at(dir.path(), 1_000).expect("index opens"),
     ));
     (dir, index, Arc::new(FakeTransport::new()))
 }
 
-fn account_rows(index: &Arc<Mutex<codotheca_core::index::Index>>) -> i64 {
+fn account_rows(index: &Arc<Mutex<Index>>) -> i64 {
     let guard = index.lock().unwrap_or_else(PoisonError::into_inner);
     guard
         .conn()
@@ -679,7 +675,7 @@ fn account_rows(index: &Arc<Mutex<codotheca_core::index::Index>>) -> i64 {
 #[test]
 fn a_pat_the_forge_refuses_writes_no_row_and_no_keychain_entry() {
     let (_dir, index, transport) = pat_fixture();
-    transport.push(codotheca_core::http::HttpResponse {
+    transport.push(HttpResponse {
         status: 401,
         headers: Vec::new(),
         body: b"{}".to_vec(),
@@ -688,7 +684,7 @@ fn a_pat_the_forge_refuses_writes_no_row_and_no_keychain_entry() {
 
     let failure = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
         &tokens,
         "forge.example.invalid",
         &SecretToken::new("not-a-real-token".to_owned()),
@@ -696,10 +692,7 @@ fn a_pat_the_forge_refuses_writes_no_row_and_no_keychain_entry() {
     )
     .expect_err("a refused token must fail");
 
-    assert_eq!(
-        failure.code,
-        codotheca_core::protocol::ErrorCode::TokenInvalid
-    );
+    assert_eq!(failure.code, ErrorCode::TokenInvalid);
     assert!(tokens.entry_names().is_empty(), "the keychain was written");
     assert_eq!(
         account_rows(&index),
@@ -722,7 +715,7 @@ fn a_pat_whose_keychain_store_fails_writes_no_row() {
 
     let outcome = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
         &tokens,
         "forge.example.invalid",
         &SecretToken::new("pat-sentinel".to_owned()),
@@ -745,7 +738,7 @@ fn a_successful_pat_writes_one_row_with_the_servers_own_scope_set() {
 
     let account = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
         &tokens,
         "forge.example.invalid",
         &SecretToken::new("pat-sentinel".to_owned()),
@@ -755,7 +748,7 @@ fn a_successful_pat_writes_one_row_with_the_servers_own_scope_set() {
 
     assert_eq!(account_rows(&index), 1);
     assert_eq!(account.login, "octo");
-    assert_eq!(account.auth_kind, codotheca_core::protocol::AuthKind::Pat);
+    assert_eq!(account.auth_kind, AuthKind::Pat);
     assert_eq!(account.host, "forge.example.invalid");
     assert!(
         account
@@ -765,10 +758,7 @@ fn a_successful_pat_writes_one_row_with_the_servers_own_scope_set() {
         account.granted_scopes
     );
     // A PAT without `repo` is the public tier, read back rather than asked for.
-    assert_eq!(
-        account.scope_tier,
-        codotheca_core::protocol::ScopeTier::Public
-    );
+    assert_eq!(account.scope_tier, ScopeTier::Public);
     assert_eq!(
         tokens.entry_names(),
         ["github:forge.example.invalid:octo".to_owned()]
@@ -788,22 +778,16 @@ fn the_tier_is_read_back_from_the_grant_not_assumed() {
     let tokens = FakeTokenStore::available();
     let account = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
         &tokens,
         "",
         &SecretToken::new("pat-sentinel".to_owned()),
         2_000,
     )
     .expect("a verified token connects");
-    assert_eq!(
-        account.scope_tier,
-        codotheca_core::protocol::ScopeTier::Private
-    );
+    assert_eq!(account.scope_tier, ScopeTier::Private);
     // An empty host is the canonical one, not an empty string on the row.
-    assert_eq!(
-        account.host,
-        codotheca_core::provider::listing::GITHUB_CANONICAL_HOST
-    );
+    assert_eq!(account.host, GITHUB_CANONICAL_HOST);
 }
 
 /// On Enterprise the API base is `https://<host>/api/v3`, and the request must actually go
@@ -817,7 +801,7 @@ fn an_enterprise_host_is_reached_at_its_own_api_base() {
     ));
     let _ = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
         &FakeTokenStore::available(),
         "forge.example.invalid",
         &SecretToken::new("pat-sentinel".to_owned()),
@@ -834,13 +818,10 @@ fn an_enterprise_host_is_reached_at_its_own_api_base() {
     );
 }
 
-fn ok_json(
-    body: &serde_json::Value,
-    headers: &[(&str, &str)],
-) -> codotheca_core::http::HttpResponse {
-    codotheca_core::http::HttpResponse {
+fn ok_json(body: &serde_json::Value, headers: &[(&str, &str)]) -> HttpResponse {
+    HttpResponse {
         status: 200,
-        headers: codotheca_core::http::normalise_headers(headers.iter().copied()),
+        headers: normalise_headers(headers.iter().copied()),
         body: serde_json::to_vec(body).expect("json encodes"),
     }
 }
@@ -860,7 +841,7 @@ fn a_grant_the_response_never_stated_is_unknown_not_an_empty_one() {
     ));
     let unstated = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
         &FakeTokenStore::available(),
         "forge.example.invalid",
         &SecretToken::new("pat-sentinel".to_owned()),
@@ -882,7 +863,7 @@ fn a_grant_the_response_never_stated_is_unknown_not_an_empty_one() {
     ));
     let observed = codotheca_core::accounts::commands::connect_pat(
         &index2,
-        &(Arc::clone(&transport2) as Arc<dyn codotheca_core::http::HttpTransport>),
+        &(Arc::clone(&transport2) as Arc<dyn HttpTransport>),
         &FakeTokenStore::available(),
         "forge.example.invalid",
         &SecretToken::new("pat-sentinel".to_owned()),

@@ -724,11 +724,7 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
 impl From<GitHubRepo> for RepoListing {
     fn from(repo: GitHubRepo) -> Self {
         let owner = repo.owner.login;
-        let in_org = if repo.owner.kind == "Organization" {
-            Some(owner.clone())
-        } else {
-            None
-        };
+        let in_org = (repo.owner.kind == "Organization").then(|| owner.clone());
         Self {
             provider: GITHUB_PROVIDER_ID,
             provider_repo_id: repo.id.to_string(),

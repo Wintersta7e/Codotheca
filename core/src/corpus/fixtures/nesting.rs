@@ -28,7 +28,7 @@ fn finish(
     Ok(row(name, VOLUME_A, path, expect))
 }
 
-pub(crate) fn build(ctx: &Ctx<'_>, name: &str) -> Result<Vec<CorpusFixture>, CorpusError> {
+pub(super) fn build(ctx: &Ctx<'_>, name: &str) -> Result<Vec<CorpusFixture>, CorpusError> {
     match name {
         ids::WORKTREE_PARENT => worktree_parent(ctx).map(|f| vec![f]),
         ids::LINKED_WORKTREE => linked_worktree(ctx).map(|f| vec![f]),

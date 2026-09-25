@@ -89,7 +89,7 @@ impl std::fmt::Debug for ConnectPump {
 impl ConnectPump {
     /// Starts one core-side device-flow pump.
     #[must_use]
-    pub fn start(deps: ConnectPumpDeps) -> ConnectPump {
+    pub fn start(deps: ConnectPumpDeps) -> Self {
         let cancel = CancelToken::new();
         let now = deps.clock.now_unix();
         let flow = device::request_device_code(
@@ -104,7 +104,7 @@ impl ConnectPump {
             inner.emit_progress(ConnectStage::Pending, interval_secs);
             inner.spawn_worker();
         }
-        ConnectPump { inner }
+        Self { inner }
     }
 
     /// The live grant, with `expires_in_secs` computed from the absolute deadline.
@@ -592,10 +592,7 @@ impl ConnectSink for IndexConnectSink {
 
         // 3. The row, in one transaction, with the lock taken only now.
         if let Some((account, _)) = self.upgrading {
-            let mut guard = self
-                .index
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
             let _tx_guard = crate::proto::txguard::TxGuard::enter();
             let tx = guard
                 .conn_mut()
@@ -631,12 +628,9 @@ impl ConnectSink for IndexConnectSink {
             scope_tier,
             // Verbatim from the server, never a source literal.
             granted_scopes,
-            token_ref: entry.clone(),
+            token_ref: entry,
         };
-        let mut guard = self
-            .index
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         let _tx_guard = crate::proto::txguard::TxGuard::enter();
         let tx = guard
             .conn_mut()

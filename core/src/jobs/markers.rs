@@ -50,25 +50,25 @@ pub enum Marker {
 
 impl Marker {
     /// Every marker, so a test can walk the vocabulary without restating it.
-    pub const ALL: [Marker; 3] = [Marker::Todo, Marker::Fixme, Marker::Hack];
+    pub const ALL: [Self; 3] = [Self::Todo, Self::Fixme, Self::Hack];
 
     /// The stored form. `blob_finding.marker`'s CHECK mirrors these character for character.
     #[must_use]
     pub fn slug(self) -> &'static str {
         match self {
-            Marker::Todo => "TODO",
-            Marker::Fixme => "FIXME",
-            Marker::Hack => "HACK",
+            Self::Todo => "TODO",
+            Self::Fixme => "FIXME",
+            Self::Hack => "HACK",
         }
     }
 
     /// `slug`'s inverse. `None` for a marker a newer build wrote.
     #[must_use]
-    pub fn from_slug(s: &str) -> Option<Marker> {
+    pub fn from_slug(s: &str) -> Option<Self> {
         match s {
-            "TODO" => Some(Marker::Todo),
-            "FIXME" => Some(Marker::Fixme),
-            "HACK" => Some(Marker::Hack),
+            "TODO" => Some(Self::Todo),
+            "FIXME" => Some(Self::Fixme),
+            "HACK" => Some(Self::Hack),
             _ => None,
         }
     }

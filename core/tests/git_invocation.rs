@@ -61,7 +61,7 @@ fn safe_directory_appears_only_for_a_trusted_location() {
     let untrusted = strings(&base_args(&repo, &hooks));
     assert!(!untrusted.iter().any(|a| a.starts_with("safe.directory=")));
 
-    let trusted = repo.clone().with_trust(true);
+    let trusted = repo.with_trust(true);
     let args = strings(&base_args(&trusted, &hooks));
     assert!(args
         .iter()

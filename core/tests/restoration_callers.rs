@@ -115,7 +115,7 @@ struct J7Rig {
 }
 
 impl J7Rig {
-    fn new() -> J7Rig {
+    fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let mut index = Index::open_at(dir.path(), NOW).unwrap();
         let (project, location) = index
@@ -157,7 +157,7 @@ impl J7Rig {
                 Ok((project, location))
             })
             .unwrap();
-        J7Rig {
+        Self {
             _dir: dir,
             index: Mutex::new(index),
             git: Arc::new(FakeGitBackend::new()),
@@ -277,7 +277,7 @@ struct ReleaseRig {
 }
 
 impl ReleaseRig {
-    fn new() -> ReleaseRig {
+    fn new() -> Self {
         let repo = TestRepo::init();
         // An entry point, so J3 classifies it `cli`. A text-only tree is `docs`, for which
         // `release` is N/A: once J3 ran, the next settle set the item aside instead of closing it.
@@ -318,7 +318,7 @@ impl ReleaseRig {
                 Ok((project, location))
             })
             .unwrap();
-        ReleaseRig {
+        Self {
             repo,
             _dir: dir,
             index: Arc::new(Mutex::new(index)),

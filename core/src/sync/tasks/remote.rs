@@ -88,7 +88,7 @@ pub fn run_project_remote(
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let outcome = facts_observation.outcome.clone();
         let at = facts_observation.at;
-        let rate = facts_observation.rate.clone();
+        let rate = facts_observation.rate;
         let binding = target.binding.clone();
         guard.with_tx(|tx| {
             // §21.6 first, and whatever the outcome: an error response's headers are the ones
@@ -144,7 +144,7 @@ pub fn run_project_remote(
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let outcome = ci_observation.outcome.clone();
         let at = ci_observation.at;
-        let rate = ci_observation.rate.clone();
+        let rate = ci_observation.rate;
         let binding = target.binding.clone();
         guard.with_tx(|tx| {
             mirror(tx, Some(target.account), &rate, at)?;

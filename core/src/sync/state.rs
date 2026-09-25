@@ -112,11 +112,11 @@ impl SyncResetCause {
     #[must_use]
     pub fn slug(self) -> &'static str {
         match self {
-            SyncResetCause::AccountReconnected => "account_reconnected",
-            SyncResetCause::ScopeUpgraded => "scope_upgraded",
-            SyncResetCause::OrgOptInChanged => "org_opt_in_changed",
-            SyncResetCause::AppUpgraded => "app_upgraded",
-            SyncResetCause::UserRequested => "user_requested",
+            Self::AccountReconnected => "account_reconnected",
+            Self::ScopeUpgraded => "scope_upgraded",
+            Self::OrgOptInChanged => "org_opt_in_changed",
+            Self::AppUpgraded => "app_upgraded",
+            Self::UserRequested => "user_requested",
         }
     }
 }
@@ -142,8 +142,8 @@ pub struct SyncTaskStateRow {
 impl SyncTaskStateRow {
     /// A fresh row, runnable now.
     #[must_use]
-    pub fn queued(kind: SyncTaskKind, key: Option<i64>, now: i64) -> SyncTaskStateRow {
-        SyncTaskStateRow {
+    pub fn queued(kind: SyncTaskKind, key: Option<i64>, now: i64) -> Self {
+        Self {
             kind,
             key,
             state: SyncTaskState::Queued,

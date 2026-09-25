@@ -166,9 +166,7 @@ impl OsParentProbe {
     fn identity(pid: u32) -> Option<String> {
         let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
         let tail = stat.rsplit_once(')')?.1;
-        tail.split_whitespace()
-            .nth(19)
-            .map(std::borrow::ToOwned::to_owned)
+        tail.split_whitespace().nth(19).map(ToOwned::to_owned)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -207,7 +205,7 @@ mod tests {
     fn argv_parses_all_three() {
         let a =
             parse_args(argv(&["--data-dir=/x/y", "--epoch=4", "--parent-pid=99"])).expect("parse");
-        assert_eq!(a.data_dir, std::path::PathBuf::from("/x/y"));
+        assert_eq!(a.data_dir, PathBuf::from("/x/y"));
         assert_eq!(a.epoch, 4);
         assert_eq!(a.parent_pid, 99);
     }

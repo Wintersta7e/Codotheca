@@ -138,7 +138,7 @@ mod wire {
     use std::sync::{Arc, Mutex};
 
     #[derive(Clone, Debug, Default)]
-    pub(super) struct CapturingWriter {
+    pub struct CapturingWriter {
         bytes: Arc<Mutex<Vec<u8>>>,
     }
 
@@ -177,7 +177,7 @@ mod wire {
         }
     }
 
-    pub(super) fn inbound(frames: &[serde_json::Value]) -> std::io::Cursor<Vec<u8>> {
+    pub fn inbound(frames: &[serde_json::Value]) -> std::io::Cursor<Vec<u8>> {
         let mut bytes = Vec::new();
         for frame in frames {
             let body = serde_json::to_vec(frame).expect("inbound frame");
@@ -186,7 +186,7 @@ mod wire {
         std::io::Cursor::new(bytes)
     }
 
-    pub(super) fn live_parent() -> OsParentProbe {
+    pub fn live_parent() -> OsParentProbe {
         OsParentProbe::new(std::process::id())
     }
 }

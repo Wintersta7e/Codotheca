@@ -146,7 +146,7 @@ fn two_spellings_of_one_directory_are_not_a_linked_worktree() {
     let facts = codotheca_core::git::RepoFacts {
         is_bare: false,
         is_shallow: false,
-        git_dir: git_dir.clone(),
+        git_dir,
         // The same directory, spelled the way a relative `--git-common-dir` resolves to.
         common_dir: tmp.path().join("sub").join("..").join(".git"),
     };

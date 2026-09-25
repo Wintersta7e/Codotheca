@@ -69,7 +69,7 @@ pub fn summary_for(
     let facts = project_facts(conn, project)?;
     let counts = item_counts_for(conn, project)?;
     let per_project = PerProject {
-        facts: facts.clone(),
+        facts,
         locations: location_presences(conn, project)?,
         sweeps: sweeps_for(conn, project)?,
         counts: counts.clone(),

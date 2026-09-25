@@ -417,7 +417,7 @@ fn disconnectable(now: i64) -> Disconnectable {
                 login: "octo".to_owned(),
                 display_name: None,
                 auth_kind: codotheca_core::protocol::AuthKind::Device,
-                scope_tier: codotheca_core::protocol::ScopeTier::Private,
+                scope_tier: ScopeTier::Private,
                 granted_scopes: vec!["read:user".to_owned()],
                 token_ref: "github:forge.example.invalid:octo".to_owned(),
             },
@@ -653,7 +653,7 @@ fn the_account_referencing_census_is_complete_and_covered() {
 
     // 2. Coverage by mechanism.
     let source = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/accounts/store.rs"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/accounts/store.rs"),
     )
     .expect("store source is readable");
     assert!(!source.is_empty());

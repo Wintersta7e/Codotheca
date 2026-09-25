@@ -33,10 +33,10 @@ impl TargetTier {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            TargetTier::Project => "project",
-            TargetTier::Location => "location",
-            TargetTier::Language => "language",
-            TargetTier::Global => "global",
+            Self::Project => "project",
+            Self::Location => "location",
+            Self::Language => "language",
+            Self::Global => "global",
         }
     }
 }

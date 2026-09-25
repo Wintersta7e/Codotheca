@@ -208,10 +208,7 @@ fn volume_uuid(source: &str) -> Option<String> {
 
 #[cfg(unix)]
 fn block_device_class(source: &str) -> StoreClass {
-    let Some(name) = std::path::Path::new(source)
-        .file_name()
-        .and_then(|n| n.to_str())
-    else {
+    let Some(name) = Path::new(source).file_name().and_then(|n| n.to_str()) else {
         return StoreClass::Unknown;
     };
     // /sys/block holds whole disks; strip a trailing partition number to find the parent.

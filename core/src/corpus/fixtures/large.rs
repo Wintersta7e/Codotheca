@@ -8,7 +8,7 @@ use crate::corpus::{
 /// single year, so no fixture drifts into the future as a side effect of its own depth.
 const STEP_SECONDS: i64 = 600;
 
-pub(crate) fn build(ctx: &Ctx<'_>, name: &str) -> Result<Vec<CorpusFixture>, CorpusError> {
+pub(super) fn build(ctx: &Ctx<'_>, name: &str) -> Result<Vec<CorpusFixture>, CorpusError> {
     match name {
         ids::DEEP_HISTORY => deep_history(ctx),
         other => Err(CorpusError::UnknownFixture(other.to_owned())),

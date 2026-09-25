@@ -83,8 +83,8 @@ fn credit(started_at: i64, ended_at: i64) -> i64 {
 impl SegmentMachine {
     /// §9: a segment opens on launch.
     #[must_use]
-    pub fn open(at: Tick, wait_mode: bool) -> (SegmentMachine, SegmentOutcome) {
-        let machine = SegmentMachine {
+    pub fn open(at: Tick, wait_mode: bool) -> (Self, SegmentOutcome) {
+        let machine = Self {
             phase: Phase::InSegment {
                 started_at: at.unix,
                 last_at: at.unix,

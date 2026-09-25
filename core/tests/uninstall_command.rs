@@ -163,7 +163,7 @@ fn a_successful_removal_keeps_the_row_and_nulls_the_ten_columns() {
     inputs.snapshot.id = location;
     let warrant = Warrant::for_uninstall_in_test(
         location,
-        copy.clone(),
+        copy,
         identity(),
         VerdictSeal::of(&[] as &[UninstallBlocker], UninstallDisposition::Safe),
     );

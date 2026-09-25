@@ -67,8 +67,8 @@ impl BudgetRow {
         limit: Option<i64>,
         reset_at: Option<i64>,
         observed_at: i64,
-    ) -> BudgetRow {
-        BudgetRow {
+    ) -> Self {
+        Self {
             remaining,
             limit,
             reset_at,

@@ -50,10 +50,10 @@ impl SyncTask {
     #[must_use]
     pub fn kind(self) -> SyncTaskKind {
         match self {
-            SyncTask::AccountRepos { .. } => SyncTaskKind::AccountRepos,
-            SyncTask::ProjectRemote { .. } => SyncTaskKind::ProjectRemote,
-            SyncTask::RenameProbe { .. } => SyncTaskKind::RenameProbe,
-            SyncTask::Advisories => SyncTaskKind::Advisories,
+            Self::AccountRepos { .. } => SyncTaskKind::AccountRepos,
+            Self::ProjectRemote { .. } => SyncTaskKind::ProjectRemote,
+            Self::RenameProbe { .. } => SyncTaskKind::RenameProbe,
+            Self::Advisories => SyncTaskKind::Advisories,
         }
     }
 
@@ -73,11 +73,11 @@ impl SyncTask {
     #[must_use]
     pub fn key(self) -> Option<i64> {
         match self {
-            SyncTask::AccountRepos { account_id } | SyncTask::RenameProbe { account_id } => {
+            Self::AccountRepos { account_id } | Self::RenameProbe { account_id } => {
                 Some(account_id.0)
             }
-            SyncTask::ProjectRemote { project_id } => Some(project_id.0),
-            SyncTask::Advisories => None,
+            Self::ProjectRemote { project_id } => Some(project_id.0),
+            Self::Advisories => None,
         }
     }
 }

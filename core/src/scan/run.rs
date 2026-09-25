@@ -533,7 +533,7 @@ impl ScanRunner<'_> {
                     // mount table, and nothing on this host can resolve a path inside a distro.
                     self.index_one(
                         &discovered,
-                        crate::mount::StoreClass::Unknown,
+                        StoreClass::Unknown,
                         generation_for_walk,
                         scan_run_id,
                         sink,

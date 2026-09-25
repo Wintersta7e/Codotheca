@@ -79,7 +79,7 @@ impl serde::Serialize for RefFingerprint {
 impl<'de> serde::Deserialize<'de> for RefFingerprint {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = <String as serde::Deserialize>::deserialize(deserializer)?;
-        RefFingerprint::from_hex(&raw)
+        Self::from_hex(&raw)
             .ok_or_else(|| serde::de::Error::custom("not a hexadecimal fingerprint"))
     }
 }
@@ -219,7 +219,7 @@ fn loose_refs(common_dir: &Path) -> BTreeMap<String, (u128, u64)> {
 /// `packed-refs` as a map. **`pub(crate)` so §24.7A's stash reader uses this parser rather than
 /// a second one** — two parsers for one file is the one-value-twice defect on the file that says
 /// whether a stash exists.
-pub(crate) fn packed_refs(common_dir: &Path) -> BTreeMap<String, String> {
+pub fn packed_refs(common_dir: &Path) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     let Ok(text) = std::fs::read_to_string(common_dir.join("packed-refs")) else {
         return out;

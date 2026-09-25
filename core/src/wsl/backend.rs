@@ -26,8 +26,8 @@ pub struct WslGitBackend {
 
 impl WslGitBackend {
     #[must_use]
-    pub fn new(worker: Arc<WslWorker>) -> WslGitBackend {
-        WslGitBackend { worker }
+    pub fn new(worker: Arc<WslWorker>) -> Self {
+        Self { worker }
     }
 
     #[must_use]

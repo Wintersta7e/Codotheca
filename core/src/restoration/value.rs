@@ -177,7 +177,7 @@ impl LayerValues {
     #[must_use]
     pub fn diff(
         &self,
-        after: &LayerValues,
+        after: &Self,
         closed: &[(DebtKey, DebtCloseReason)],
     ) -> Vec<LayerTransition> {
         let mut out = Vec::new();

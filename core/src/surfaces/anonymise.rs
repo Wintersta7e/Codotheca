@@ -17,8 +17,8 @@ pub struct VolumeShapes {
 
 impl VolumeShapes {
     #[must_use]
-    pub fn new() -> VolumeShapes {
-        VolumeShapes::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// The pseudonym for one volume key, stable for the life of this bundle.

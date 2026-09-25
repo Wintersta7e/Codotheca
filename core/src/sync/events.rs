@@ -25,7 +25,7 @@ use crate::sync::store::load_all;
 /// DDL declares none — so they live here, with the run that observed them, and are empty after a
 /// restart. That emptiness is the truth rather than a shortfall: nothing in *this* process has
 /// observed an outcome yet.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LastSettle {
     pub outcome: SyncOutcomeKind,
     pub summary: Option<SyncListingSummary>,
@@ -36,7 +36,7 @@ pub struct LastSettle {
 /// Empty is *nothing observed in this process*, which is exactly what a fresh start is. There is
 /// no column for any of it and there must not be: a listing's progress is meaningless across a
 /// restart, and a notice restored from a table would claim a failure nothing has re-observed.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SyncLive {
     pub listing: Option<SyncListingProgress>,
     pub notice: Option<SyncNotice>,

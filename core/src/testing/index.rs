@@ -34,10 +34,10 @@ impl TempIndex {
     /// # Panics
     /// If the temporary directory cannot be made or the migrations do not apply.
     #[must_use]
-    pub fn new() -> TempIndex {
+    pub fn new() -> Self {
         let dir = tempfile::tempdir().expect("temp dir");
         let index = Index::open_at(dir.path(), 0).expect("open index");
-        TempIndex { dir, index }
+        Self { dir, index }
     }
 
     /// The index itself.

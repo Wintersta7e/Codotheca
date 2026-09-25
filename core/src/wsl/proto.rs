@@ -115,18 +115,18 @@ impl WorkerJobClass {
     #[must_use]
     pub fn to_job_class(self) -> JobClass {
         match self {
-            WorkerJobClass::Interactive => JobClass::Interactive,
-            WorkerJobClass::Background => JobClass::Background,
-            WorkerJobClass::History => JobClass::History,
+            Self::Interactive => JobClass::Interactive,
+            Self::Background => JobClass::Background,
+            Self::History => JobClass::History,
         }
     }
 
     #[must_use]
-    pub fn from_job_class(job: JobClass) -> WorkerJobClass {
+    pub fn from_job_class(job: JobClass) -> Self {
         match job {
-            JobClass::Interactive => WorkerJobClass::Interactive,
-            JobClass::Background => WorkerJobClass::Background,
-            JobClass::History => WorkerJobClass::History,
+            JobClass::Interactive => Self::Interactive,
+            JobClass::Background => Self::Background,
+            JobClass::History => Self::History,
         }
     }
 }

@@ -125,6 +125,7 @@ pub fn read_content(work_dir: &Path, cap: usize) -> ContentFacts {
 }
 
 /// Write the description chain's answer and the Peek excerpt.
+///
 /// `now` is the caller's, matching every other writer in the tree: the transaction and the
 /// clock both belong to whoever opened them, which is what keeps the `Clock` seam out of here.
 pub fn persist(

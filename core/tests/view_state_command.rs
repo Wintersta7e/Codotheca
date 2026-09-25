@@ -11,7 +11,7 @@ use codotheca_core::index::Index;
 use codotheca_core::protocol::{ProjectId, SortKey, ViewMode, ViewPatch};
 use codotheca_core::view::state;
 
-fn empty_patch() -> ViewPatch {
+const fn empty_patch() -> ViewPatch {
     ViewPatch {
         query: None,
         sort: None,
@@ -203,7 +203,7 @@ fn the_core_stamps_saved_at_and_a_client_cannot_forge_it() {
         index: &index,
         now: 1_700_000_777,
     };
-    let err = codotheca_core::view::state::handle_view_set(
+    let err = state::handle_view_set(
         &ctx,
         serde_json::json!({ "patch": {
             "query": null, "sort": null, "viewMode": null, "density": null,
@@ -215,7 +215,7 @@ fn the_core_stamps_saved_at_and_a_client_cannot_forge_it() {
     assert_eq!(err.code, codotheca_core::protocol::ErrorCode::Protocol);
     assert_eq!(state::load(index.conn()).expect("read").saved_at, None);
 
-    codotheca_core::view::state::handle_view_set(
+    state::handle_view_set(
         &ctx,
         serde_json::json!({ "patch": {
             "query": null, "sort": null, "viewMode": null, "density": null,

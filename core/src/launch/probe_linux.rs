@@ -33,7 +33,7 @@ fn run_capture(program: &str, args: &[&str]) -> Option<String> {
 
 impl LinuxProbe {
     #[must_use]
-    pub fn new() -> LinuxProbe {
+    pub fn new() -> Self {
         let env: BTreeMap<String, String> = std::env::vars().collect();
         let home = env.get("HOME").cloned().unwrap_or_default();
         let mut data = vec![PathBuf::from("/usr/share/applications")];
@@ -46,7 +46,7 @@ impl LinuxProbe {
                 .map(PathBuf::from)
                 .collect()
         });
-        LinuxProbe {
+        Self {
             xdg_data_dirs: data,
             path_dirs,
             env,
@@ -294,7 +294,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("kitty");
         std::fs::write(&bin, b"#!/bin/sh\n").unwrap();
-        let mut env = std::collections::BTreeMap::new();
+        let mut env = BTreeMap::new();
         env.insert("VISUAL".to_owned(), "/usr/bin/nvim".to_owned());
         let probe = LinuxProbe {
             xdg_data_dirs: vec![],

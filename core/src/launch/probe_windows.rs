@@ -86,8 +86,8 @@ pub struct WindowsProbe;
 
 impl WindowsProbe {
     #[must_use]
-    pub fn new() -> WindowsProbe {
-        WindowsProbe
+    pub fn new() -> Self {
+        Self
     }
 }
 

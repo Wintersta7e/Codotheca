@@ -64,9 +64,9 @@ fn a_privileged_command_is_the_only_shape_carrying_bytes_inbound() {
     // privileged commands. The generated Command enum is what makes that checkable at all.
     let frame =
         r#"{"command":"roots.add","args":{"pathBytes":{"b64":"L3RtcA=="},"confirmLarge":false}}"#;
-    let c: codotheca_core::protocol::Command = serde_json::from_str(frame).expect("deserialise");
+    let c: Command = serde_json::from_str(frame).expect("deserialise");
     match c {
-        codotheca_core::protocol::Command::RootsAdd(a) => {
+        Command::RootsAdd(a) => {
             assert_eq!(a.path_bytes.0, b"/tmp");
             assert!(!a.confirm_large);
         }

@@ -11,7 +11,7 @@ use crate::wsl::distros::DistroState; // R9: plan 18 owns the distro facts.
 
 /// A suggested row, with the path kept core-side. §2.5: the renderer receives `path_display`
 /// and never a path.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggested {
     pub path: PathBuf,
     pub row: RootSuggestion,
@@ -359,7 +359,7 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].row.provenance, RootProvenance::Distro);
         assert_eq!(rows[0].row.distro, "alpha");
-        assert_eq!(rows[0].row.kind, crate::protocol::LocationKind::Wsl);
+        assert_eq!(rows[0].row.kind, LocationKind::Wsl);
         // R9: the display string is derived, and §8.5's Linux form carries no distro name.
         assert_eq!(rows[0].row.path_display, DISTRO_HOME_DISPLAY);
         assert_eq!(rows[0].row.provenance_detail.as_deref(), Some("stopped"));

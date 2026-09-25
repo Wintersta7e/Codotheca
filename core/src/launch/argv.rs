@@ -176,13 +176,10 @@ mod tests {
             CwdMode::Location,
         );
         let inv = build(&t, &site(LocationKind::Linux, "", "/code/one")).unwrap();
-        assert_eq!(inv.program, std::path::PathBuf::from("/usr/bin/code"));
+        assert_eq!(inv.program, PathBuf::from("/usr/bin/code"));
         assert_eq!(
             inv.argv,
-            vec![
-                std::ffi::OsString::from("--wait"),
-                std::ffi::OsString::from("/code/one")
-            ]
+            vec![OsString::from("--wait"), OsString::from("/code/one")]
         );
         assert_eq!(inv.cwd.as_deref(), Some(std::path::Path::new("/code/one")));
         assert!(inv.wait);

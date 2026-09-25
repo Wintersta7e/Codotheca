@@ -40,11 +40,11 @@ impl ResetCause {
     #[must_use]
     pub fn slug(self) -> &'static str {
         match self {
-            ResetCause::FingerprintChanged => "fingerprint_changed",
-            ResetCause::StoreReturned => "store_returned",
-            ResetCause::GitUpgraded => "git_upgraded",
-            ResetCause::AppUpgraded => "app_upgraded",
-            ResetCause::UserRequested => "user_requested",
+            Self::FingerprintChanged => "fingerprint_changed",
+            Self::StoreReturned => "store_returned",
+            Self::GitUpgraded => "git_upgraded",
+            Self::AppUpgraded => "app_upgraded",
+            Self::UserRequested => "user_requested",
         }
     }
 }
@@ -171,8 +171,8 @@ pub struct JobStateRow {
 impl JobStateRow {
     /// A row with no history behind it.
     #[must_use]
-    pub fn fresh(job: JobKind, state: JobState, at: i64) -> JobStateRow {
-        JobStateRow {
+    pub fn fresh(job: JobKind, state: JobState, at: i64) -> Self {
+        Self {
             job,
             state,
             fail_count: 0,

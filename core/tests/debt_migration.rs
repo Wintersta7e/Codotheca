@@ -481,11 +481,7 @@ fn ac_p3_28_10_every_declared_variant_is_accepted_by_its_column() {
     for (i, outcome) in outcomes.iter().enumerate() {
         let p = insert_project(&conn, &format!("sweep-{i}"));
         // The honesty CHECK: `complete` and `partial` carry a count and nothing else may.
-        let count: Option<i64> = if outcome == "complete" || outcome == "partial" {
-            Some(0)
-        } else {
-            None
-        };
+        let count: Option<i64> = (outcome == "complete" || outcome == "partial").then_some(0);
         conn.execute(
             "INSERT INTO debt_sweep (project_id, source, outcome, location_id, generation, basis,
                                      item_count, observed_at)

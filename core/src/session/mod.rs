@@ -129,11 +129,11 @@ impl SessionError {
         match self {
             // A caller naming a session that is not there, or a column outside its own enum,
             // is a contract breach rather than an environment failure.
-            SessionError::NoSuchSession(_) | SessionError::BadColumn { .. } => ErrorCode::Protocol,
+            Self::NoSuchSession(_) | Self::BadColumn { .. } => ErrorCode::Protocol,
             // `protocol_code` returns the schema's spelling; there is no generated parser for
             // `ErrorCode`, so the arms are written out. `None` is a scheduler state (busy, torn
             // read, cancelled), which is not a project error the shell renders.
-            SessionError::Git(err) => match err.protocol_code() {
+            Self::Git(err) => match err.protocol_code() {
                 Some("GIT_MISSING") => ErrorCode::GitMissing,
                 Some("GIT_TOO_OLD") => ErrorCode::GitTooOld,
                 Some("UNTRUSTED_REPO") => ErrorCode::UntrustedRepo,
@@ -144,9 +144,7 @@ impl SessionError {
                 Some("BUDGET_EXCEEDED") => ErrorCode::BudgetExceeded,
                 _ => ErrorCode::Internal,
             },
-            SessionError::Sqlite(_) | SessionError::Index(_) | SessionError::Watch(_) => {
-                ErrorCode::Internal
-            }
+            Self::Sqlite(_) | Self::Index(_) | Self::Watch(_) => ErrorCode::Internal,
         }
     }
 }

@@ -47,8 +47,8 @@ impl FilterDrivers {
     /// The only constructor, named for what it proves. An empty list here is a real answer: the
     /// effective config was read and declares no filter driver.
     #[must_use]
-    pub fn enumerated(names: Vec<String>) -> FilterDrivers {
-        FilterDrivers { names }
+    pub fn enumerated(names: Vec<String>) -> Self {
+        Self { names }
     }
 
     /// The driver names, in the order the enumeration returned them.
@@ -189,8 +189,8 @@ enum Stop {
 impl WriteExec {
     /// Point the write path at a git binary.
     #[must_use]
-    pub fn new(git: PathBuf) -> WriteExec {
-        WriteExec { git }
+    pub fn new(git: PathBuf) -> Self {
+        Self { git }
     }
 
     /// Enumerate the filter drivers the effective config declares.

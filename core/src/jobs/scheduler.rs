@@ -135,7 +135,7 @@ impl JobRunner {
     /// Assemble a runner. No thread is started until [`JobRunner::start`].
     #[must_use]
     pub fn new(index: Arc<Mutex<Index>>, deps: JobDeps, events: Arc<dyn EventSink>) -> Arc<Self> {
-        Arc::new(JobRunner {
+        Arc::new(Self {
             index,
             deps,
             events,

@@ -298,10 +298,10 @@ mod tests {
                 app_data: None,
                 xdg_config: None,
             },
-            classifier: std::sync::Arc::new(classify::FixedClassifier::new(vec![])),
-            distros: std::sync::Arc::new(classify::NoDistros),
-            platform: crate::index::path::PathPlatform::Unix,
-            skip: crate::scan::skiplist::SkipList::default(),
+            classifier: Arc::new(classify::FixedClassifier::new(vec![])),
+            distros: Arc::new(classify::NoDistros),
+            platform: PathPlatform::Unix,
+            skip: SkipList::default(),
             cache: roots::SuggestionCache::new(),
         }
     }
@@ -336,7 +336,7 @@ mod tests {
         assert!(!rows.is_empty());
         assert!(e.cache.contains(&crate::paths::path_key(
             &home.path().join("src"),
-            crate::index::path::PathPlatform::Unix
+            PathPlatform::Unix
         )));
     }
 
@@ -373,10 +373,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(
-            out.get("applied").and_then(serde_json::Value::as_bool),
-            Some(false)
-        );
+        assert_eq!(out.get("applied").and_then(Value::as_bool), Some(false));
         let confirmed: Option<i64> = index
             .conn()
             .query_row("SELECT confirmed_at FROM identity", [], |r| r.get(0))

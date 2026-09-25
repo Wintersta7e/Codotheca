@@ -40,8 +40,8 @@ pub struct SingletonReading {
 impl SingletonReading {
     /// A source that has never been swept.
     #[must_use]
-    pub const fn never_observed(source: DebtSource) -> SingletonReading {
-        SingletonReading {
+    pub const fn never_observed(source: DebtSource) -> Self {
+        Self {
             source,
             outcome: None,
             open_items: 0,
@@ -138,8 +138,8 @@ impl Counts {
     /// # Panics
     /// If the four counts do not sum to ten, which would mean a state outside the four.
     #[must_use]
-    pub fn of(rows: &[CheckRow; 10]) -> Counts {
-        let mut counts = Counts {
+    pub fn of(rows: &[CheckRow; 10]) -> Self {
+        let mut counts = Self {
             lit: 0,
             evaluable: 0,
             unknown: 0,

@@ -401,7 +401,7 @@ fn main() -> ExitCode {
         )),
         scan_store: Arc::clone(&scan_store),
         firstrun: first_run_env(&args.data_dir),
-        jobs: jobs.clone(),
+        jobs,
         events: Arc::clone(&events),
         // §8.1's era bands cut on the local calendar year, so this is a correctness input.
         tz_offset_min: local_utc_offset_min(),

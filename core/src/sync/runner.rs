@@ -157,12 +157,8 @@ impl std::fmt::Debug for SyncRunner {
 
 impl SyncRunner {
     #[must_use]
-    pub fn new(
-        index: Arc<Mutex<Index>>,
-        deps: SyncDeps,
-        events: Arc<dyn EventSink>,
-    ) -> Arc<SyncRunner> {
-        Arc::new(SyncRunner {
+    pub fn new(index: Arc<Mutex<Index>>, deps: SyncDeps, events: Arc<dyn EventSink>) -> Arc<Self> {
+        Arc::new(Self {
             index,
             deps,
             events,
@@ -897,7 +893,7 @@ impl SyncRunner {
         }
     }
 
-    fn read_budgets(&self) -> Result<Vec<crate::protocol::SyncBudget>, crate::index::IndexError> {
+    fn read_budgets(&self) -> Result<Vec<crate::protocol::SyncBudget>, IndexError> {
         let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         crate::sync::events::budgets(guard.conn())
     }
@@ -988,7 +984,7 @@ fn sweep_schedule(tx: &rusqlite::Transaction<'_>, now: i64) -> Result<usize, Ind
 ///
 /// # Errors
 /// Fails when SQLite cannot be read.
-pub fn any_outstanding(tx: &rusqlite::Transaction<'_>) -> Result<bool, crate::index::IndexError> {
+pub fn any_outstanding(tx: &rusqlite::Transaction<'_>) -> Result<bool, IndexError> {
     Ok(load_all(tx)?.iter().any(|row| {
         matches!(
             row.state,

@@ -434,7 +434,7 @@ pub fn handle_project_get(
             ctx.mount,
             ctx.jobs,
             ProjectId(id),
-            crate::protocol::LocationId(location),
+            LocationId(location),
             true,
         );
     }

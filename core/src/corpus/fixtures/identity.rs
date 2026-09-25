@@ -19,7 +19,7 @@ fn finish(
     Ok(vec![row(name, volume, path, expect)])
 }
 
-pub(crate) fn build(ctx: &Ctx<'_>, name: &str) -> Result<Vec<CorpusFixture>, CorpusError> {
+pub(super) fn build(ctx: &Ctx<'_>, name: &str) -> Result<Vec<CorpusFixture>, CorpusError> {
     match name {
         ids::FORK => fork(ctx),
         ids::COPY_ONE => copy(ctx, ids::COPY_ONE, VOLUME_A, ctx.vol_a),

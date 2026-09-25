@@ -279,7 +279,7 @@ struct GitRig {
 }
 
 impl GitRig {
-    fn new(repo: &TestRepo) -> GitRig {
+    fn new(repo: &TestRepo) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let index = Index::open(&dir.path().join("index")).unwrap();
         let path = repo.path().to_string_lossy().into_owned();
@@ -309,7 +309,7 @@ impl GitRig {
             .unwrap();
             (ProjectId(project), LocationId(conn.last_insert_rowid()))
         };
-        GitRig {
+        Self {
             _dir: dir,
             index: Mutex::new(index),
             deps: system_deps(repo),
@@ -623,7 +623,7 @@ fn fake_repo() -> RepoHandle {
     RepoHandle::bare(
         std::path::Path::new("/does/not/matter"),
         codotheca_core::git::StoreKey::new("test-store"),
-        codotheca_core::mount::StoreClass::Local,
+        StoreClass::Local,
     )
 }
 
@@ -692,7 +692,7 @@ fn ac_p3_29_25_too_large_and_binary_are_recorded_not_dropped() {
     binary_bytes.resize(64, b'\0');
     git.script_blob(&big, &oversized);
     git.script_blob(&binary, &binary_bytes);
-    let oids = vec![big.clone(), binary.clone()];
+    let oids = vec![big, binary];
 
     let first = scan_through_cache(&mut conn, &git, &repo, &oids);
     assert_eq!(first.len(), 2);
@@ -745,7 +745,7 @@ fn ac_p3_29_8_the_cache_is_content_addressed_and_library_wide() {
     let second_repo = RepoHandle::bare(
         std::path::Path::new("/another/project"),
         codotheca_core::git::StoreKey::new("other-store"),
-        codotheca_core::mount::StoreClass::Local,
+        StoreClass::Local,
     );
     let missed = scan_through_cache(&mut conn, &git, &second_repo, &oids);
     eprintln!(
@@ -803,15 +803,15 @@ fn ac_p3_29_9_a_scanner_version_bump_is_a_miss_not_a_hit() {
 /// A project, its location and a fake git carrying a scripted tree, ready for `run_j7`.
 struct Rig {
     _dir: tempfile::TempDir,
-    index: std::sync::Mutex<Index>,
-    git: std::sync::Arc<FakeGitBackend>,
+    index: Mutex<Index>,
+    git: Arc<FakeGitBackend>,
     project: ProjectId,
     location: LocationId,
     repo: RepoHandle,
 }
 
 impl Rig {
-    fn new(head_oid: &str) -> Rig {
+    fn new(head_oid: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let index = Index::open(&dir.path().join("index")).unwrap();
         let (project, location) = {
@@ -850,10 +850,10 @@ impl Rig {
             .unwrap();
             (ProjectId(project), LocationId(conn.last_insert_rowid()))
         };
-        Rig {
+        Self {
             _dir: dir,
-            index: std::sync::Mutex::new(index),
-            git: std::sync::Arc::new(FakeGitBackend::new()),
+            index: Mutex::new(index),
+            git: Arc::new(FakeGitBackend::new()),
             project,
             location,
             repo: fake_repo(),
@@ -1521,7 +1521,7 @@ fn row_with(presence: Option<PresenceAnswers>) -> LoadedRow {
     }
 }
 
-fn exec_ctx(names: &std::collections::BTreeMap<String, i64>) -> ExecContext<'_> {
+const fn exec_ctx(names: &std::collections::BTreeMap<String, i64>) -> ExecContext<'_> {
     ExecContext {
         now: 1_781_000_000,
         tz_offset_min: 0,
@@ -1637,25 +1637,18 @@ fn ac_p3_29_27_the_readme_readers_keep_their_two_bases() {
 /// Records which project was reported visible, and whether that caller asked for the scan.
 #[derive(Debug, Default)]
 struct VisibilityRecorder {
-    asks: std::sync::Mutex<Vec<(i64, bool)>>,
+    asks: Mutex<Vec<(i64, bool)>>,
 }
 
-impl codotheca_core::jobs::JobSink for VisibilityRecorder {
-    fn on_location_indexed(
-        &self,
-        _: ProjectId,
-        _: LocationId,
-        _: &str,
-        _: codotheca_core::mount::StoreClass,
-    ) {
-    }
+impl JobSink for VisibilityRecorder {
+    fn on_location_indexed(&self, _: ProjectId, _: LocationId, _: &str, _: StoreClass) {}
 
     fn on_visible(
         &self,
         project: ProjectId,
         _: LocationId,
         _: &str,
-        _: codotheca_core::mount::StoreClass,
+        _: StoreClass,
         _: bool,
         wants_content: bool,
     ) {

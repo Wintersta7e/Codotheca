@@ -24,21 +24,21 @@ impl ConditionSignal {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
-            ConditionSignal::Live => "live",
-            ConditionSignal::Idle => "idle",
-            ConditionSignal::Dormant => "dormant",
-            ConditionSignal::Neglected => "neglected",
-            ConditionSignal::Abandoned => "abandoned",
-            ConditionSignal::Offline => "offline",
-            ConditionSignal::Empty => "empty",
+            Self::Live => "live",
+            Self::Idle => "idle",
+            Self::Dormant => "dormant",
+            Self::Neglected => "neglected",
+            Self::Abandoned => "abandoned",
+            Self::Offline => "offline",
+            Self::Empty => "empty",
         }
     }
 
     /// `slug`'s inverse. `None` for anything the CHECK would reject — including the design's
     /// three band words, which is criterion 58 held mechanically.
     #[must_use]
-    pub fn from_slug(s: &str) -> Option<ConditionSignal> {
-        ConditionSignal::ALL.into_iter().find(|c| c.slug() == s)
+    pub fn from_slug(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.slug() == s)
     }
 }
 

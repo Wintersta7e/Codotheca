@@ -133,9 +133,9 @@ impl std::fmt::Debug for CoreHandler {
 
 impl CoreHandler {
     #[must_use]
-    pub fn new(deps: CoreDeps) -> CoreHandler {
+    pub fn new(deps: CoreDeps) -> Self {
         let last_tick_ms = deps.clock.monotonic_ms();
-        CoreHandler {
+        Self {
             index: deps.index,
             clock: deps.clock,
             git: deps.git,
@@ -279,10 +279,7 @@ impl CoreHandler {
         let parsed: crate::protocol::AccountsUpgradeScopeArgs =
             crate::proto::dispatch::parse_args(args)?;
         let identity = {
-            let guard = self
-                .index
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
             crate::accounts::store::account_identity(guard.conn(), parsed.account_id)
                 .map_err(|e| CommandFailure::internal(e.to_string()))?
         };

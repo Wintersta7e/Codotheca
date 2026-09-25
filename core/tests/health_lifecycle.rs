@@ -15,7 +15,7 @@ use codotheca_core::protocol::{
 
 const NOW: i64 = 1_781_179_200;
 
-fn basis(ran: u32, unknown: u32) -> HealthBasis {
+const fn basis(ran: u32, unknown: u32) -> HealthBasis {
     HealthBasis {
         ran,
         eligible: ran + unknown,

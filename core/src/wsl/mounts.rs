@@ -106,8 +106,8 @@ pub struct MountTable {
 
 impl MountTable {
     #[must_use]
-    pub fn from_mountinfo(text: &str) -> MountTable {
-        MountTable {
+    pub fn from_mountinfo(text: &str) -> Self {
+        Self {
             entries: parse_mountinfo(text),
         }
     }
@@ -115,10 +115,10 @@ impl MountTable {
     /// The live mount table. An unreadable `mountinfo` yields an empty table, whose facts are
     /// `Unknown` — never a fabricated `Local`.
     #[must_use]
-    pub fn read() -> MountTable {
+    pub fn read() -> Self {
         match std::fs::read_to_string(MOUNTINFO_PATH) {
-            Ok(text) => MountTable::from_mountinfo(&text),
-            Err(_) => MountTable::default(),
+            Ok(text) => Self::from_mountinfo(&text),
+            Err(_) => Self::default(),
         }
     }
 
@@ -250,8 +250,8 @@ pub struct DistroMountResolver {
 
 impl DistroMountResolver {
     #[must_use]
-    pub fn new(distro: String, table: MountTable) -> DistroMountResolver {
-        DistroMountResolver { distro, table }
+    pub fn new(distro: String, table: MountTable) -> Self {
+        Self { distro, table }
     }
 }
 

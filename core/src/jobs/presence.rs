@@ -32,29 +32,25 @@ pub enum PresenceState {
 
 impl PresenceState {
     /// Every state, so a test can walk the vocabulary without restating it.
-    pub const ALL: [PresenceState; 3] = [
-        PresenceState::Present,
-        PresenceState::Absent,
-        PresenceState::NotRead,
-    ];
+    pub const ALL: [Self; 3] = [Self::Present, Self::Absent, Self::NotRead];
 
     /// The stored form.
     #[must_use]
     pub fn slug(self) -> &'static str {
         match self {
-            PresenceState::Present => "present",
-            PresenceState::Absent => "absent",
-            PresenceState::NotRead => "not_read",
+            Self::Present => "present",
+            Self::Absent => "absent",
+            Self::NotRead => "not_read",
         }
     }
 
     /// `slug`'s inverse. `None` for a value a newer build wrote.
     #[must_use]
-    pub fn from_slug(s: &str) -> Option<PresenceState> {
+    pub fn from_slug(s: &str) -> Option<Self> {
         match s {
-            "present" => Some(PresenceState::Present),
-            "absent" => Some(PresenceState::Absent),
-            "not_read" => Some(PresenceState::NotRead),
+            "present" => Some(Self::Present),
+            "absent" => Some(Self::Absent),
+            "not_read" => Some(Self::NotRead),
             _ => None,
         }
     }

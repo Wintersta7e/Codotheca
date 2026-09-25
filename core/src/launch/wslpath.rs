@@ -23,11 +23,7 @@ pub fn is_wsl_unc(win: &str) -> Option<(String, String)> {
 #[must_use]
 pub fn windows_to_wsl(win: &str, distro: &str, drvfs_root: &str) -> Option<String> {
     if let Some((found, linux)) = is_wsl_unc(win) {
-        return if found.eq_ignore_ascii_case(distro) {
-            Some(linux)
-        } else {
-            None
-        };
+        return found.eq_ignore_ascii_case(distro).then_some(linux);
     }
     if win.starts_with(r"\\") {
         return None; // an ordinary UNC share is not reachable from inside the distro

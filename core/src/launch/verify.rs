@@ -21,19 +21,19 @@ impl VerifyState {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            VerifyState::Unverified => "unverified",
-            VerifyState::Ok => "ok",
-            VerifyState::Missing => "missing",
-            VerifyState::NotExecutable => "not_executable",
+            Self::Unverified => "unverified",
+            Self::Ok => "ok",
+            Self::Missing => "missing",
+            Self::NotExecutable => "not_executable",
         }
     }
     #[must_use]
-    pub fn parse(s: &str) -> Option<VerifyState> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "unverified" => Some(VerifyState::Unverified),
-            "ok" => Some(VerifyState::Ok),
-            "missing" => Some(VerifyState::Missing),
-            "not_executable" => Some(VerifyState::NotExecutable),
+            "unverified" => Some(Self::Unverified),
+            "ok" => Some(Self::Ok),
+            "missing" => Some(Self::Missing),
+            "not_executable" => Some(Self::NotExecutable),
             _ => None,
         }
     }

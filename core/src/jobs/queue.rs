@@ -43,8 +43,8 @@ pub struct SlotState {
 impl SlotState {
     /// A fresh table under `global_cap` concurrent jobs.
     #[must_use]
-    pub fn new(global_cap: usize) -> SlotState {
-        SlotState {
+    pub fn new(global_cap: usize) -> Self {
+        Self {
             global_cap: global_cap.max(1),
             // §4.1a: J4 <= 25% of global slots.
             j4_cap: (global_cap / 4).max(1),
@@ -133,8 +133,8 @@ pub struct JobQueue {
 impl JobQueue {
     /// An empty queue.
     #[must_use]
-    pub fn new() -> JobQueue {
-        JobQueue::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Returns false when an equal-or-better entry for the same `(kind, location)` is already

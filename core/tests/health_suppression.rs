@@ -37,7 +37,7 @@ struct Rig {
 }
 
 impl Rig {
-    fn new() -> Rig {
+    fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let index = Index::open(&dir.path().join("index")).unwrap();
         let (project, location) = {
@@ -67,7 +67,7 @@ impl Rig {
             .unwrap();
             (ProjectId(project), LocationId(conn.last_insert_rowid()))
         };
-        let rig = Rig {
+        let rig = Self {
             _dir: dir,
             index: std::sync::Mutex::new(index),
             git: std::sync::Arc::new(FakeGitBackend::new()),

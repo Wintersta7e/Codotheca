@@ -199,7 +199,8 @@ pub fn css_gradient_line(angle_deg: f64, w: f32, h: f32) -> (Point, Point) {
     #[allow(clippy::cast_possible_truncation)]
     let (dx, dy) = (radians.sin() as f32, -(radians.cos() as f32));
     #[allow(clippy::cast_possible_truncation)]
-    let length = (f64::from(w) * radians.sin().abs() + f64::from(h) * radians.cos().abs()) as f32;
+    let length =
+        f64::from(h).mul_add(radians.cos().abs(), f64::from(w) * radians.sin().abs()) as f32;
     let (cx, cy) = (w / 2.0, h / 2.0);
     (
         Point::from_xy(cx - dx * length / 2.0, cy - dy * length / 2.0),
@@ -298,7 +299,7 @@ pub fn paint_greebling(pixmap: &mut Pixmap, family: u8, transform: Transform) {
     let farthest = {
         let dx = (centre.x).max(SPACE_W as f32 - centre.x);
         let dy = (centre.y).max(SPACE_H as f32 - centre.y);
-        (dx * dx + dy * dy).sqrt()
+        dx.hypot(dy)
     };
     #[allow(clippy::cast_precision_loss)]
     let radius = farthest * (highlight.extent_percent as f32 / 100.0);
@@ -655,7 +656,7 @@ mod tests {
     use crate::art::generate::{generate, SceneInputs};
     use crate::protocol::Rendition;
 
-    fn scene() -> crate::art::scene::Scene {
+    fn scene() -> Scene {
         generate(&SceneInputs {
             seed_basename: "alpha-tool".to_owned(),
             archetype: Some("library".to_owned()),
@@ -667,7 +668,7 @@ mod tests {
         })
     }
 
-    fn channels(pm: &tiny_skia::Pixmap, x: u32, y: u32) -> (u8, u8, u8, u8) {
+    fn channels(pm: &Pixmap, x: u32, y: u32) -> (u8, u8, u8, u8) {
         let p = pm.pixel(x, y).expect("in bounds");
         (p.red(), p.green(), p.blue(), p.alpha())
     }
@@ -720,7 +721,7 @@ mod tests {
         assert!((start.y - 0.0).abs() < 0.01 && (end.y - 900.0).abs() < 0.01);
         // The line is long enough to cover the box at an oblique angle.
         let (start, end) = css_gradient_line(148.0, 600.0, 900.0);
-        let length = ((end.x - start.x).powi(2) + (end.y - start.y).powi(2)).sqrt();
+        let length = (end.x - start.x).hypot(end.y - start.y);
         assert!(length > 900.0, "{length}");
     }
 
@@ -729,8 +730,8 @@ mod tests {
         // §7.3a: "a hard two-tone split so every plate has a composition rather than a single
         // wash". Sample well inside each band, before greebling and sheen.
         let scene = scene();
-        let mut pm = tiny_skia::Pixmap::new(600, 900).expect("pixmap");
-        paint_ground(&mut pm, &scene, tiny_skia::Transform::identity());
+        let mut pm = Pixmap::new(600, 900).expect("pixmap");
+        paint_ground(&mut pm, &scene, Transform::identity());
         let hi = to_srgb8(plate_stop(scene.plate, PlateStop::Hi));
         let mid = to_srgb8(plate_stop(scene.plate, PlateStop::MidTinted));
         assert_ne!(hi, mid, "the two stops must actually differ");
@@ -783,7 +784,7 @@ mod tests {
             }
         }
         // An unknown family index must not panic; it falls to family 0's table.
-        let mut odd = base.clone();
+        let mut odd = base;
         odd.panel_family = 9;
         assert_eq!(greebling(9).stripes.len(), greebling(0).stripes.len());
         let _ = render(&odd, CARD_TARGET).expect("render");
@@ -801,10 +802,10 @@ mod tests {
     fn the_sheen_lightens_the_top_left_and_leaves_the_bottom_right_alone() {
         // The static sheen is `linear-gradient(157deg, rgb(255 255 255 / .09), transparent 44%)`.
         let scene = scene();
-        let mut without = tiny_skia::Pixmap::new(600, 900).expect("pixmap");
-        paint_ground(&mut without, &scene, tiny_skia::Transform::identity());
+        let mut without = Pixmap::new(600, 900).expect("pixmap");
+        paint_ground(&mut without, &scene, Transform::identity());
         let mut with = without.clone();
-        paint_sheen(&mut with, tiny_skia::Transform::identity(), 600.0, 900.0);
+        paint_sheen(&mut with, Transform::identity(), 600.0, 900.0);
         let (r0, _, _, _) = channels(&without, 20, 20);
         let (r1, _, _, _) = channels(&with, 20, 20);
         assert!(r1 > r0, "the sheen must lighten the top-left: {r0} -> {r1}");
@@ -820,7 +821,7 @@ mod tests {
         faded_scene.plate = crate::art::derive::derive_plate(faded_scene.seed.h, 0.25);
         faded_scene.fade = 0.25;
         let faded = render(&faded_scene, CARD_TARGET).expect("faded");
-        let mean = |pm: &tiny_skia::Pixmap| -> f64 {
+        let mean = |pm: &Pixmap| -> f64 {
             let sum: u64 = pm.pixels().iter().map(|p| u64::from(p.red())).sum();
             #[allow(clippy::cast_precision_loss)]
             {
@@ -877,7 +878,7 @@ mod tests {
         for f in &mut plain.fasteners {
             f.kind = FastenerKind::Plain;
         }
-        let mut earliest = base.clone();
+        let mut earliest = base;
         for m in &mut earliest.modules {
             m.kind = ModuleKind::Port;
         }
@@ -959,15 +960,15 @@ mod tests {
         let hero = render(&s, HERO_TARGET).expect("hero");
         // The module's jewel edge sits at x = 48 in scene units; scaled, both must be lighter
         // there than four units to its left.
-        let sample = |pm: &tiny_skia::Pixmap, sx: f64| -> u32 {
+        let sample = |pm: &Pixmap, sx: f64| -> u32 {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let x = (48.0_f64 * sx + 1.0) as u32;
+            let x = 48.0_f64.mul_add(sx, 1.0) as u32;
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let y = (110.0_f64 * sx) as u32;
             let p = pm.pixel(x, y).expect("in bounds");
             u32::from(p.red()) + u32::from(p.green()) + u32::from(p.blue())
         };
-        let left = |pm: &tiny_skia::Pixmap, sx: f64| -> u32 {
+        let left = |pm: &Pixmap, sx: f64| -> u32 {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let x = (40.0_f64 * sx) as u32;
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]

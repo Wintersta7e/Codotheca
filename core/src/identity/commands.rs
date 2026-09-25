@@ -177,13 +177,8 @@ fn flags(names: &[String]) -> Vec<Flag> {
         .collect()
 }
 
-fn wire_kind(kind: AssociationKind) -> crate::protocol::AssociationKind {
-    match kind {
-        AssociationKind::Definitive => crate::protocol::AssociationKind::Definitive,
-        AssociationKind::Strong => crate::protocol::AssociationKind::Strong,
-        AssociationKind::Inferred => crate::protocol::AssociationKind::Inferred,
-        AssociationKind::Manual => crate::protocol::AssociationKind::Manual,
-    }
+fn wire_kind(kind: AssociationKind) -> AssociationKind {
+    kind
 }
 
 /// `merge_record_id` and `evidence_json` stay core-side: §8.5.2 renders the counts and the

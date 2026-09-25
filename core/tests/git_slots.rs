@@ -38,7 +38,7 @@ fn a_slow_store_admits_one_and_a_fast_store_admits_four() {
         )
         .unwrap();
     let blocked = s.clone();
-    let key = slow.clone();
+    let key = slow;
     let cancel = CancelToken::new();
     let waiter = cancel.clone();
     let t = std::thread::spawn(move || {
@@ -62,8 +62,8 @@ fn a_slow_store_admits_one_and_a_fast_store_admits_four() {
             .unwrap(),
         );
     }
-    let fifth = s.clone();
-    let key = fast.clone();
+    let fifth = s;
+    let key = fast;
     let cancel = CancelToken::new();
     let waiter = cancel.clone();
     let t = std::thread::spawn(move || {
@@ -93,7 +93,7 @@ fn the_global_cap_holds_across_stores() {
             &CancelToken::new(),
         )
         .unwrap();
-    let third = s.clone();
+    let third = s;
     let cancel = CancelToken::new();
     let waiter = cancel.clone();
     let t = std::thread::spawn(move || {
@@ -127,7 +127,7 @@ fn history_takes_at_most_a_quarter_of_the_slots_and_one_per_store() {
 
     // A second history job on the SAME store is refused even though the store cap is 4.
     let same = s.clone();
-    let key = fast.clone();
+    let key = fast;
     let cancel = CancelToken::new();
     let waiter = cancel.clone();
     let t = std::thread::spawn(move || {
@@ -146,7 +146,7 @@ fn history_takes_at_most_a_quarter_of_the_slots_and_one_per_store() {
             &CancelToken::new(),
         )
         .unwrap();
-    let third = s.clone();
+    let third = s;
     let cancel = CancelToken::new();
     let waiter = cancel.clone();
     let t = std::thread::spawn(move || {
@@ -190,7 +190,7 @@ fn an_interactive_waiter_is_served_before_a_background_one() {
         drop(g);
     });
     std::thread::sleep(Duration::from_millis(100));
-    let it = s.clone();
+    let it = s;
     let it_thread = std::thread::spawn(move || {
         let g = it
             .acquire(
@@ -235,8 +235,8 @@ fn a_settings_override_replaces_a_store_cap() {
             .unwrap(),
         );
     }
-    let fourth = s.clone();
-    let key = store.clone();
+    let fourth = s;
+    let key = store;
     let cancel = CancelToken::new();
     let waiter = cancel.clone();
     let t = std::thread::spawn(move || {

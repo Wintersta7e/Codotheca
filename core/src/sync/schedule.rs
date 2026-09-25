@@ -33,11 +33,11 @@ impl SyncTrigger {
     #[must_use]
     pub fn slug(self) -> &'static str {
         match self {
-            SyncTrigger::Connect => "connect",
-            SyncTrigger::ScopeUpgrade => "scope_upgrade",
-            SyncTrigger::OrgOptInChange => "org_opt_in_change",
-            SyncTrigger::Startup => "startup",
-            SyncTrigger::Interval => "interval",
+            Self::Connect => "connect",
+            Self::ScopeUpgrade => "scope_upgrade",
+            Self::OrgOptInChange => "org_opt_in_change",
+            Self::Startup => "startup",
+            Self::Interval => "interval",
         }
     }
 }

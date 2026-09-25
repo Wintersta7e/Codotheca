@@ -188,7 +188,7 @@ impl Fixture {
     }
 }
 
-fn native_kind() -> &'static str {
+const fn native_kind() -> &'static str {
     if cfg!(windows) {
         "win"
     } else {

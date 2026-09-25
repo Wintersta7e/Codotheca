@@ -275,7 +275,7 @@ fn a_submodule_under_a_repository_root_is_reached_without_descending() {
     });
     let mut repos = repos.into_inner().unwrap();
     repos.sort();
-    assert_eq!(repos, vec![parent.clone(), child.clone()]);
+    assert_eq!(repos, vec![parent, child.clone()]);
     let edges = edges.into_inner().unwrap();
     assert_eq!(edges.len(), 1);
     assert_eq!(edges[0].child_worktree, child);

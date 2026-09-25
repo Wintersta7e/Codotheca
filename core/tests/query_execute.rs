@@ -27,7 +27,7 @@ fn blank(id: i64) -> LoadedRow {
     }
 }
 
-fn ctx(names: &BTreeMap<String, i64>) -> ExecContext<'_> {
+const fn ctx(names: &BTreeMap<String, i64>) -> ExecContext<'_> {
     ExecContext {
         now: NOW,
         tz_offset_min: 0,

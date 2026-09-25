@@ -27,8 +27,8 @@ impl LaunchDecision {
     #[must_use]
     pub fn mode(self) -> ScanMode {
         match self {
-            LaunchDecision::FullWalk => ScanMode::Full,
-            LaunchDecision::Incremental => ScanMode::Incremental,
+            Self::FullWalk => ScanMode::Full,
+            Self::Incremental => ScanMode::Incremental,
         }
     }
 }
@@ -81,7 +81,7 @@ pub enum RootWatchError {
 impl std::fmt::Display for RootWatchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RootWatchError::Notify(detail) => write!(f, "watch failed: {detail}"),
+            Self::Notify(detail) => write!(f, "watch failed: {detail}"),
         }
     }
 }
@@ -98,7 +98,7 @@ pub struct RootWatch {
 impl RootWatch {
     /// # Errors
     /// Returns [`RootWatchError`] when the platform watcher cannot be created.
-    pub fn new() -> Result<RootWatch, RootWatchError> {
+    pub fn new() -> Result<Self, RootWatchError> {
         let (tx, rx) = channel::<PathBuf>();
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(event) = res {
@@ -113,7 +113,7 @@ impl RootWatch {
             }
         })
         .map_err(|e| RootWatchError::Notify(e.to_string()))?;
-        Ok(RootWatch {
+        Ok(Self {
             watcher,
             events: rx,
             watched: Vec::new(),
@@ -182,8 +182,8 @@ mod tests {
 
     const NOW: i64 = 1_760_000_000;
 
-    fn root(id: i64, path: &str, enabled: bool) -> crate::scan::presence::ScanRootRow {
-        crate::scan::presence::ScanRootRow {
+    fn root(id: i64, path: &str, enabled: bool) -> ScanRootRow {
+        ScanRootRow {
             root_id: id,
             kind: "linux".to_owned(),
             distro: String::new(),

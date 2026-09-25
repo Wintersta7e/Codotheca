@@ -69,7 +69,7 @@ impl std::error::Error for WslError {}
 
 pub struct WorkerIo {
     pub reader: Box<dyn std::io::Read + Send>,
-    pub writer: Box<dyn std::io::Write + Send>,
+    pub writer: Box<dyn Write + Send>,
     pub stop: Box<dyn Fn() + Send + Sync>,
 }
 
@@ -101,7 +101,7 @@ pub struct WslWorker {
 
 impl WslWorker {
     /// Reads `Hello` before returning so an incompatible deployed worker fails at connection.
-    pub fn connect(distro: &str, mut io: WorkerIo) -> Result<WslWorker, WslError> {
+    pub fn connect(distro: &str, mut io: WorkerIo) -> Result<Self, WslError> {
         let hello = match read_hello(&mut io) {
             Ok(hello) => hello,
             Err(err) => {
@@ -109,7 +109,7 @@ impl WslWorker {
                 return Err(err);
             }
         };
-        Ok(WslWorker {
+        Ok(Self {
             distro: distro.to_owned(),
             hello,
             io: Mutex::new(io),
@@ -246,8 +246,8 @@ pub struct WslWorkerPool {
 
 impl WslWorkerPool {
     #[must_use]
-    pub fn new(launcher: Arc<dyn WorkerLauncher>) -> WslWorkerPool {
-        WslWorkerPool {
+    pub fn new(launcher: Arc<dyn WorkerLauncher>) -> Self {
+        Self {
             launcher,
             live: Mutex::new(BTreeMap::new()),
         }
@@ -315,12 +315,8 @@ impl std::fmt::Debug for WslExeLauncher {
 
 impl WslExeLauncher {
     #[must_use]
-    pub fn new(
-        cli: Arc<dyn WslCli>,
-        worker_bytes: Arc<Vec<u8>>,
-        user: Option<String>,
-    ) -> WslExeLauncher {
-        WslExeLauncher {
+    pub fn new(cli: Arc<dyn WslCli>, worker_bytes: Arc<Vec<u8>>, user: Option<String>) -> Self {
+        Self {
             cli,
             worker_bytes,
             user,

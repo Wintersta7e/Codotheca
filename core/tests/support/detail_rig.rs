@@ -64,7 +64,7 @@ pub struct Rig {
 }
 
 impl Rig {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
         let index = Index::open(dir.path()).expect("open");
         Self {
@@ -77,7 +77,7 @@ impl Rig {
         }
     }
 
-    pub fn ctx(&self) -> DetailCtx<'_> {
+    pub(crate) fn ctx(&self) -> DetailCtx<'_> {
         DetailCtx {
             index: &self.index,
             git: &self.git,
@@ -89,13 +89,13 @@ impl Rig {
         }
     }
 
-    pub fn conn(&self) -> &rusqlite::Connection {
+    pub(crate) fn conn(&self) -> &rusqlite::Connection {
         self.index.conn()
     }
 
     /// One project whose every derived column is NULL — the phase-1 default, because nothing
     /// has computed them yet.
-    pub fn project(&self, id: i64, name: &str) {
+    pub(crate) fn project(&self, id: i64, name: &str) {
         self.conn()
             .execute(
                 "INSERT INTO project (id, name, seed_basename, created_at, updated_at,
@@ -109,7 +109,7 @@ impl Rig {
     /// A location row. `presence` and the observed facts are the caller's, because every one of
     /// them is a fact this test suite is checking the handler does not invent.
     #[allow(clippy::too_many_arguments)]
-    pub fn location(
+    pub(crate) fn location(
         &self,
         id: i64,
         project_id: i64,
@@ -145,7 +145,7 @@ impl Rig {
             .expect("seed location");
     }
 
-    pub fn peek_cache(&self, project_id: i64, excerpt: Option<&str>, computed_at: i64) {
+    pub(crate) fn peek_cache(&self, project_id: i64, excerpt: Option<&str>, computed_at: i64) {
         self.conn()
             .execute(
                 "INSERT OR REPLACE INTO peek_cache (project_id, readme_excerpt, computed_at)
@@ -155,7 +155,7 @@ impl Rig {
             .expect("seed peek_cache");
     }
 
-    pub fn notes(&self, project_id: i64) -> Option<String> {
+    pub(crate) fn notes(&self, project_id: i64) -> Option<String> {
         self.conn()
             .query_row(
                 "SELECT notes FROM project WHERE id = ?1",
@@ -167,7 +167,7 @@ impl Rig {
 
     /// Every column of every row of one table, in rowid order — the before/after comparison
     /// §17's "no destructive operation" claim is actually checked with.
-    pub fn fingerprint(&self, table: &str) -> String {
+    pub(crate) fn fingerprint(&self, table: &str) -> String {
         let conn = self.conn();
         let cols: Vec<String> = {
             let mut stmt = conn
@@ -188,7 +188,7 @@ impl Rig {
     }
 
     /// A real on-disk repository directory, because `RepoHandle::resolve` stats `.git`.
-    pub fn make_repo_dir(&self, name: &str) -> std::path::PathBuf {
+    pub(crate) fn make_repo_dir(&self, name: &str) -> std::path::PathBuf {
         let path = self.dir.path().join(name);
         std::fs::create_dir_all(path.join(".git")).expect("mkdir");
         self.mount.map(
@@ -203,7 +203,7 @@ impl Rig {
     }
 
     /// The tagged-bytes shape §2.5 gives a path, which is the only shape one enters the core in.
-    pub fn dialog_bytes(path: &std::path::Path) -> serde_json::Value {
+    pub(crate) fn dialog_bytes(path: &std::path::Path) -> serde_json::Value {
         use base64::Engine as _;
         serde_json::json!({
             "b64": base64::engine::general_purpose::STANDARD.encode(path.to_string_lossy().as_bytes())
@@ -216,7 +216,7 @@ impl Rig {
     /// It walks the **location's** tree, not the temp directory: the index database lives beside
     /// it and its WAL grows on any write, which would make this compare the storage engine
     /// rather than the repository.
-    pub fn hash_tree(root: &std::path::Path) -> Vec<(String, u64)> {
+    pub(crate) fn hash_tree(root: &std::path::Path) -> Vec<(String, u64)> {
         let mut out = Vec::new();
         walk_tree(root, root, &mut out);
         out.sort();

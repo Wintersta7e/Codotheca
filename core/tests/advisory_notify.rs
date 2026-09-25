@@ -44,7 +44,7 @@ fn project(conn: &rusqlite::Connection, name: &str, presence: &str, removed: boo
             name.as_bytes(),
             name,
             presence,
-            if removed { Some(NOW) } else { None }
+            removed.then_some(NOW)
         ],
     )
     .unwrap();
@@ -113,7 +113,7 @@ fn vulnerable(conn: &rusqlite::Connection, project: ProjectId, package: &str, ad
             package,
             adv.id,
             i64::from(adv.fix),
-            if adv.fix { Some("2.0.0") } else { None }
+            adv.fix.then_some("2.0.0")
         ],
     )
     .unwrap();
@@ -127,7 +127,7 @@ fn fire(conn: &mut rusqlite::Connection) -> Option<AdvisoryAlert> {
     alert
 }
 
-fn critical(id: &str) -> Advisory<'_> {
+const fn critical(id: &str) -> Advisory<'_> {
     Advisory {
         id,
         severity: "critical",

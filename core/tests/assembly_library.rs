@@ -46,7 +46,7 @@ struct Core {
 }
 
 impl Core {
-    fn spawn(dir: &Path) -> Core {
+    fn spawn(dir: &Path) -> Self {
         let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_codotheca-core"))
             .arg(format!("--data-dir={}", dir.display()))
             .arg("--epoch=11")
@@ -59,7 +59,7 @@ impl Core {
 
         let hello = read_json(&mut child);
         assert_eq!(hello["t"], "hello", "{hello}");
-        let mut core = Core { child, next_id: 1 };
+        let mut core = Self { child, next_id: 1 };
         core.request("app.hello_ack", &serde_json::json!({}));
         core
     }

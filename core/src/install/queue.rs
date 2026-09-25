@@ -19,7 +19,7 @@ use crate::cancel::CancelToken;
 use crate::protocol::{InstallDestination, InstallRunId, ProjectId, RootId};
 
 /// One accepted install, composed by Task 10 and never by the renderer.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallRequest {
     /// The project being cloned.
     pub project: ProjectId,

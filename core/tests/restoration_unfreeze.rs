@@ -54,7 +54,7 @@ const STORE: &str = "store-a";
 
 /// The host's own location kind. The fixture's paths are real temp directories, so a `linux`
 /// key over a `C:\` path puts the repository under no root and the store never goes offline.
-fn native_kind() -> &'static str {
+const fn native_kind() -> &'static str {
     if cfg!(windows) {
         "win"
     } else {
@@ -101,7 +101,7 @@ struct Rig {
 }
 
 impl Rig {
-    fn new(switched_off: &[DebtSource], grant: bool) -> Rig {
+    fn new(switched_off: &[DebtSource], grant: bool) -> Self {
         let repo = TestRepo::init();
         repo.write("src/a.rs", markers(5).as_bytes());
         repo.commit("first");
@@ -113,7 +113,7 @@ impl Rig {
             Arc::new(GitSlots::new(4)),
             Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
         ));
-        let mut rig = Rig {
+        let mut rig = Self {
             repo,
             _dir: dir,
             index,
@@ -167,7 +167,7 @@ impl Rig {
                 path: path.to_path_buf(),
                 kind: RepoKind::WorkTree,
                 git_dir: handle.git_dir.clone(),
-                common_dir: handle.common_dir.clone(),
+                common_dir: handle.common_dir,
             },
             root_id: 1,
             kind: native_kind().to_owned(),

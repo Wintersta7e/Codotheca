@@ -41,7 +41,7 @@ pub enum GitReply<T> {
     /// for a 500 ms budget must not take 500 ms.
     Slow {
         delay_ms: u64,
-        then: Box<GitReply<T>>,
+        then: Box<Self>,
     },
 }
 

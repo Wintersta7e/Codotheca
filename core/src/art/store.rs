@@ -443,7 +443,7 @@ mod tests {
 
     const H: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-    fn scene() -> crate::art::scene::Scene {
+    fn scene() -> Scene {
         generate(&SceneInputs {
             seed_basename: "alpha-tool".to_owned(),
             ..SceneInputs::default()
@@ -457,7 +457,7 @@ mod tests {
         assert!(path.exists());
         assert_eq!(
             path,
-            crate::art::rendition_path(dir.path(), H, Rendition::Card).expect("path")
+            rendition_path(dir.path(), H, Rendition::Card).expect("path")
         );
         assert!(path.to_string_lossy().contains("art"));
         assert!(rendition_exists(dir.path(), H, Rendition::Card));
@@ -469,8 +469,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         write_rendition(dir.path(), H, Rendition::Card, &scene()).expect("card");
         write_rendition(dir.path(), H, Rendition::Hero, &scene()).expect("hero");
-        let card = crate::art::rendition_path(dir.path(), H, Rendition::Card).expect("p");
-        let hero = crate::art::rendition_path(dir.path(), H, Rendition::Hero).expect("p");
+        let card = rendition_path(dir.path(), H, Rendition::Card).expect("p");
+        let hero = rendition_path(dir.path(), H, Rendition::Hero).expect("p");
         assert_ne!(card, hero);
         let card_bytes = std::fs::read(&card).expect("read");
         let hero_bytes = std::fs::read(&hero).expect("read");
@@ -498,7 +498,7 @@ mod tests {
     fn the_bytes_are_only_ever_visible_complete() {
         // §7.2: written atomically, temp + rename. The temp file must not be at the final path.
         let dir = tempfile::tempdir().expect("tempdir");
-        let final_path = crate::art::rendition_path(dir.path(), H, Rendition::Card).expect("p");
+        let final_path = rendition_path(dir.path(), H, Rendition::Card).expect("p");
         std::fs::create_dir_all(final_path.parent().expect("parent")).expect("mkdir");
         write_atomically(&final_path, b"complete").expect("write");
         assert_eq!(std::fs::read(&final_path).expect("read"), b"complete");
@@ -574,8 +574,7 @@ mod tests {
         let hash = crate::art::scene::scene_hash(&scene).expect("hash");
         put_scene(index.conn(), 7, &hash, &scene, ArtState::Ready, Some(1)).expect("put");
         let row = load_row(index.conn(), 7).expect("load").expect("row");
-        let parsed: crate::art::scene::Scene =
-            serde_json::from_str(&row.scene_json).expect("parse");
+        let parsed: Scene = serde_json::from_str(&row.scene_json).expect("parse");
         assert_eq!(crate::art::scene::scene_hash(&parsed).expect("hash"), hash);
     }
 
@@ -734,20 +733,20 @@ mod tests {
         // address exercises the identical `remove_rendition` call.
         let dir = tempfile::tempdir().expect("tempdir");
         let place = |hash: &str| {
-            let path = crate::art::rendition_path(dir.path(), hash, Rendition::Hero).expect("p");
+            let path = rendition_path(dir.path(), hash, Rendition::Hero).expect("p");
             write_atomically(&path, b"hero").expect("write");
         };
-        for n in 0..u32::try_from(crate::art::HERO_CACHE_MAX).expect("cap") {
+        for n in 0..u32::try_from(HERO_CACHE_MAX).expect("cap") {
             let hash = hash_n(n);
             place(&hash);
             assert!(touch_hero(dir.path(), &hash).expect("touch").is_empty());
         }
-        assert_eq!(read_hero_lru(dir.path()).len(), crate::art::HERO_CACHE_MAX);
+        assert_eq!(read_hero_lru(dir.path()).len(), HERO_CACHE_MAX);
         let overflow = hash_n(9999);
         place(&overflow);
         let evicted = touch_hero(dir.path(), &overflow).expect("touch");
         assert_eq!(evicted, vec![hash_n(0)]);
-        assert_eq!(read_hero_lru(dir.path()).len(), crate::art::HERO_CACHE_MAX);
+        assert_eq!(read_hero_lru(dir.path()).len(), HERO_CACHE_MAX);
         assert!(!rendition_exists(dir.path(), &hash_n(0), Rendition::Hero));
         assert!(rendition_exists(dir.path(), &hash_n(1), Rendition::Hero));
         assert!(rendition_exists(dir.path(), &overflow, Rendition::Hero));
@@ -757,7 +756,7 @@ mod tests {
     fn a_corrupt_or_absent_journal_reads_as_empty_rather_than_failing() {
         let dir = tempfile::tempdir().expect("tempdir");
         assert!(read_hero_lru(dir.path()).is_empty());
-        std::fs::create_dir_all(crate::art::art_root(dir.path())).expect("mkdir");
+        std::fs::create_dir_all(art_root(dir.path())).expect("mkdir");
         std::fs::write(hero_lru_path(dir.path()), "not a hash\n\n../escape\n").expect("write");
         assert!(
             read_hero_lru(dir.path()).is_empty(),
@@ -796,7 +795,7 @@ mod tests {
         // A stray file in the art tree is not ours to delete — §17's posture applies to
         // everything except the regenerable renditions this module wrote.
         let (dir, index) = seeded();
-        let root = crate::art::art_root(dir.path()).join("zz");
+        let root = art_root(dir.path()).join("zz");
         std::fs::create_dir_all(&root).expect("mkdir");
         let stray = root.join("notes.txt");
         std::fs::write(&stray, b"hands off").expect("write");

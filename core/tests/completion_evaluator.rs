@@ -411,7 +411,7 @@ fn the_na_gate_runs_before_every_read() {
 
     // The user overrides the proposal for `ci`, and the check is evaluated again — as is
     // `ciGreen`, which was only N/A derivatively.
-    let mut overridden = docs.clone();
+    let mut overridden = docs;
     overridden.user_na[ci_index] = Some(false);
     let rows = checked(&overridden);
     assert_eq!(state(&rows, CompletionCheck::Ci), CheckState::Pass);

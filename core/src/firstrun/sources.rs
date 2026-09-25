@@ -17,9 +17,9 @@ impl SourceKind {
     #[must_use]
     pub fn detail(self) -> &'static str {
         match self {
-            SourceKind::GitConfig => "includeif",
-            SourceKind::VsCode => "vscode",
-            SourceKind::JetBrains => "jetbrains",
+            Self::GitConfig => "includeif",
+            Self::VsCode => "vscode",
+            Self::JetBrains => "jetbrains",
         }
     }
 }
@@ -263,7 +263,7 @@ pub fn candidate_files(env: &SourceEnv) -> Vec<(SourceKind, PathBuf)> {
 /// The recent-workspace list out of the editor's key-value store. Opened **read-only**; a store
 /// the editor is holding is skipped rather than waited on.
 #[must_use]
-pub fn read_workspace_store_db(db: &std::path::Path) -> Vec<PathBuf> {
+pub fn read_workspace_store_db(db: &Path) -> Vec<PathBuf> {
     let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI;
     let Ok(conn) = rusqlite::Connection::open_with_flags(db, flags) else {
         return Vec::new();
@@ -333,11 +333,11 @@ pub fn collect_hits(env: &SourceEnv) -> Vec<SourceHit> {
 }
 
 /// Resolve the one wildcard level in a recent-project file pattern. Nothing recurses.
-fn recent_project_files(pattern: &std::path::Path) -> Vec<PathBuf> {
+fn recent_project_files(pattern: &Path) -> Vec<PathBuf> {
     let Some(parent) = pattern
         .parent()
-        .and_then(std::path::Path::parent)
-        .and_then(std::path::Path::parent)
+        .and_then(Path::parent)
+        .and_then(Path::parent)
     else {
         return Vec::new();
     };

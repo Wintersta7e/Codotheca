@@ -49,7 +49,7 @@ impl EventSink for Quiet {
 fn rust_sources() -> Vec<(std::path::PathBuf, String)> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut out = Vec::new();
-    let mut stack = vec![root.clone()];
+    let mut stack = vec![root];
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir).expect("core/src is readable") {
             let path = entry.expect("entry").path();

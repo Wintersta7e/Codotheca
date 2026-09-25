@@ -61,19 +61,19 @@ fn ok_with_headers(headers: Vec<(String, String)>, body: &[u8]) -> HttpResponse 
     }
 }
 
-fn user_body() -> &'static [u8] {
+const fn user_body() -> &'static [u8] {
     br#"{"login":"fixture-login","name":"Fixture Login"}"#
 }
 
 /// One repository object, as §22.7's lookup reads it back.
-fn repo_body() -> &'static [u8] {
+const fn repo_body() -> &'static [u8] {
     br#"{"id":909,"clone_url":"https://github.com/acme/widget.git",
          "owner":{"login":"acme","type":"User"},"name":"widget",
          "fork":false,"archived":false,"private":false}"#
 }
 
 /// One Actions listing page, as §25.1 reads it back.
-fn runs_body() -> &'static [u8] {
+const fn runs_body() -> &'static [u8] {
     br#"{"total_count":2,"workflow_runs":[
           {"id":11,"name":"ci","conclusion":"success","head_branch":"main",
            "run_number":41,"run_started_at":"2026-09-01T10:00:00Z"},

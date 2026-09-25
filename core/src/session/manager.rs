@@ -81,8 +81,8 @@ impl SessionManager {
         events: Arc<dyn crate::proto::EventSink>,
         activity: Box<dyn ActivitySource>,
         ignore: Arc<dyn IgnoreCheck>,
-    ) -> SessionManager {
-        SessionManager {
+    ) -> Self {
+        Self {
             clock,
             events,
             activity,

@@ -115,7 +115,7 @@ fn selection(
     let alive: i64 = conn.query_row("SELECT COUNT(*) FROM project WHERE id = ?1", [id.0], |r| {
         r.get(0)
     })?;
-    Ok(if alive == 1 { Some(id) } else { None })
+    Ok((alive == 1).then_some(id))
 }
 
 /// # Errors

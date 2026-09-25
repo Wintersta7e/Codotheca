@@ -21,7 +21,7 @@ pub struct Epoch(pub u64);
 #[serde(transparent)]
 pub struct RequestId(pub u64);
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum Outbound {
     Hello {
@@ -60,7 +60,7 @@ pub enum Outbound {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum Inbound {
     Request {

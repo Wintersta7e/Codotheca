@@ -377,7 +377,7 @@ fn a_clone_publishes_its_stages_and_the_snapshot_matches_the_last_one() {
     };
     let facts = RootFacts {
         root_id: 1,
-        path: root.clone(),
+        path: root,
         kind: "linux".to_owned(),
         distro: String::new(),
     };

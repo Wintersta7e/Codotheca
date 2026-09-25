@@ -53,7 +53,7 @@ struct Ids {
 }
 
 impl Db {
-    fn ids(&self) -> Ids {
+    const fn ids(&self) -> Ids {
         Ids {
             project: self.project,
             location: self.location,

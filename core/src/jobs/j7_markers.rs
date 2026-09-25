@@ -499,11 +499,11 @@ pub fn run_j7(
 /// items open and close here, so the before-snapshot, the item write and the row all share this
 /// transaction. It returns the event to announce once the caller's transaction has committed.
 fn build_debt_items(
-    tx: &rusqlite::Transaction<'_>,
+    tx: &Transaction<'_>,
     run: &ScanRun<'_>,
     gates: ContentGates,
     filtered: &[TreeEntry],
-) -> Result<Option<crate::protocol::ProjectHealthDelta>, crate::index::IndexError> {
+) -> Result<Option<crate::protocol::ProjectHealthDelta>, IndexError> {
     let ScanRun {
         project,
         location,
@@ -554,13 +554,13 @@ fn hand_out(
     }
 }
 
-fn debt_to_index(error: crate::debt::DebtError) -> crate::index::IndexError {
+fn debt_to_index(error: crate::debt::DebtError) -> IndexError {
     match error {
         crate::debt::DebtError::Index(inner) => inner,
         // A stored value this build's schema does not declare. `InvalidQuery` is the closest
         // `rusqlite` shape that carries no column of its own; the detail is what a reader needs.
         crate::debt::DebtError::Codec(detail) => {
-            crate::index::IndexError::Sqlite(rusqlite::Error::InvalidParameterName(detail))
+            IndexError::Sqlite(rusqlite::Error::InvalidParameterName(detail))
         }
     }
 }

@@ -47,12 +47,12 @@ const BASELINE: &[RemovalAllowance] = &[
     },
     RemovalAllowance {
         file: "lifecycle.rs",
-        line: 262,
+        line: 260,
         reason: "a crashed run's own state directory under the app data root",
     },
     RemovalAllowance {
         file: "lifecycle.rs",
-        line: 283,
+        line: 281,
         reason: "the same state directory on the ordinary shutdown path",
     },
     RemovalAllowance {
@@ -358,7 +358,7 @@ fn an_uninstall_warrant_whose_identity_changed_is_refused() {
     // A different repository at the same path.
     let elsewhere = RootCommit {
         oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
-        ..expected.clone()
+        ..expected
     };
     assert_eq!(
         remove_warranted(&warrant, &HardDelete, Some(&elsewhere)),
@@ -451,11 +451,7 @@ fn the_authorised_path_is_not_a_parameter() {
 fn warrant_for(staging_root: &Path, seed: &str) -> Warrant {
     // Not a public constructor: the test reaches the same builder the sweep does, through the
     // durable row, in `staging_warrant_for`'s own test below. This one exercises the shape.
-    codotheca_core::removal::warrant::Warrant::for_staging_in_test(
-        staging_root.to_path_buf(),
-        seed,
-        SessionNonce::current(),
-    )
+    Warrant::for_staging_in_test(staging_root.to_path_buf(), seed, SessionNonce::current())
 }
 
 #[test]
@@ -467,11 +463,7 @@ fn a_path_outside_the_warranted_root_is_refused() {
     std::fs::create_dir_all(&real).expect("mkdir");
 
     // A forged root: the escape a lexical parent comparison would have allowed.
-    let forged = codotheca_core::removal::warrant::Warrant::for_staging_in_test(
-        staging_root.clone(),
-        "..",
-        SessionNonce::current(),
-    );
+    let forged = Warrant::for_staging_in_test(staging_root, "..", SessionNonce::current());
     assert_eq!(
         remove_warranted(&forged, &HardDelete, None),
         Err(RemovalRefusal::OutsideWarrantedRoot)
@@ -485,11 +477,8 @@ fn a_root_that_is_not_a_staging_directory_is_refused() {
     let not_staging = dir.path().join("Projects");
     std::fs::create_dir_all(not_staging.join("widget")).expect("mkdir");
 
-    let warrant = codotheca_core::removal::warrant::Warrant::for_staging_in_test(
-        not_staging.clone(),
-        "widget",
-        SessionNonce::current(),
-    );
+    let warrant =
+        Warrant::for_staging_in_test(not_staging.clone(), "widget", SessionNonce::current());
     match remove_warranted(&warrant, &HardDelete, None) {
         Err(RemovalRefusal::WarrantFailed(clause)) => {
             assert!(clause.contains("staging"), "{clause}");
@@ -505,7 +494,7 @@ fn a_warrant_from_another_session_is_refused() {
     let staging_root = dir.path().join(STAGING_DIR_NAME);
     std::fs::create_dir_all(staging_root.join("widget")).expect("mkdir");
 
-    let stale = codotheca_core::removal::warrant::Warrant::for_staging_in_test(
+    let stale = Warrant::for_staging_in_test(
         staging_root.clone(),
         "widget",
         SessionNonce::mint_for_test(),
@@ -543,11 +532,7 @@ fn a_symlinked_target_is_refused_without_being_followed() {
         return;
     }
 
-    let warrant = codotheca_core::removal::warrant::Warrant::for_staging_in_test(
-        staging_root,
-        "widget",
-        SessionNonce::current(),
-    );
+    let warrant = Warrant::for_staging_in_test(staging_root, "widget", SessionNonce::current());
     assert_eq!(
         remove_warranted(&warrant, &HardDelete, None),
         Err(RemovalRefusal::SymlinkedPath)

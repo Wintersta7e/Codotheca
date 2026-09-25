@@ -72,8 +72,8 @@ pub struct NativeRootClassifier {
 
 impl NativeRootClassifier {
     #[must_use]
-    pub fn new(mounts: Arc<dyn MountResolver>) -> NativeRootClassifier {
-        NativeRootClassifier { mounts }
+    pub fn new(mounts: Arc<dyn MountResolver>) -> Self {
+        Self { mounts }
     }
 }
 
@@ -114,9 +114,9 @@ pub struct FixedClassifier {
 
 impl FixedClassifier {
     #[must_use]
-    pub fn new(mut map: Vec<(PathBuf, RootTrait)>) -> FixedClassifier {
+    pub fn new(mut map: Vec<(PathBuf, RootTrait)>) -> Self {
         map.sort_by_key(|(p, _)| std::cmp::Reverse(p.components().count()));
-        FixedClassifier { map }
+        Self { map }
     }
 }
 

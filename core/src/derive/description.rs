@@ -13,11 +13,11 @@ impl DescriptionSource {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
-            DescriptionSource::Manifest => "manifest",
-            DescriptionSource::Readme => "readme",
-            DescriptionSource::Note => "note",
-            DescriptionSource::Detected => "detected",
-            DescriptionSource::Remote => "remote",
+            Self::Manifest => "manifest",
+            Self::Readme => "readme",
+            Self::Note => "note",
+            Self::Detected => "detected",
+            Self::Remote => "remote",
         }
     }
 }

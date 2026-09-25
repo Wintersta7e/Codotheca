@@ -172,11 +172,7 @@ pub fn upsert(
     }
 
     // §1.9's CHECK: a manual row holds neither a query nor a grammar version.
-    let version: Option<u32> = if is_query {
-        Some(args.query_grammar_version)
-    } else {
-        None
-    };
+    let version: Option<u32> = is_query.then_some(args.query_grammar_version);
     let _guard = TxGuard::enter();
     let tx = conn.unchecked_transaction()?;
     let id = if let Some(id) = args.id {

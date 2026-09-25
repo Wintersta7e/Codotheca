@@ -1223,7 +1223,7 @@ mod tests {
         let orphan = resolve_identity(&tx, &probe(&["r1"], &[], None), "local", 102).unwrap();
         super::super::testutil::insert_location(&tx, orphan.project_id, "/w/local", None);
 
-        let group = super::ambiguous_group(&tx, &super::super::testutil::forge_aliases()).unwrap();
+        let group = super::ambiguous_group(&tx, &forge_aliases()).unwrap();
         assert_eq!(group.len(), 1);
         let row = group.first().unwrap();
         assert_eq!(row.project_id, orphan.project_id);
@@ -1241,11 +1241,9 @@ mod tests {
             rusqlite::params![orphan.project_id, mine.project_id],
         )
         .unwrap();
-        assert!(
-            super::ambiguous_group(&tx, &super::super::testutil::forge_aliases())
-                .unwrap()
-                .is_empty()
-        );
+        assert!(super::ambiguous_group(&tx, &forge_aliases())
+            .unwrap()
+            .is_empty());
         assert_eq!(
             tx.query_row(
                 "SELECT ambiguous_lineage FROM project WHERE id=?1",
