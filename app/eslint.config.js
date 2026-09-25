@@ -19,6 +19,8 @@ module.exports = [
     rules: {
       ...ts.configs.recommended.rules,
       ...ts.configs["recommended-type-checked"].rules,
+      ...ts.configs["strict-type-checked"].rules,
+      ...ts.configs["stylistic-type-checked"].rules,
       // The renderer must never originate a filesystem path or an executable.
       // These make an accidental `any` or a floating promise a build failure rather than a
       // runtime surprise in a process that spawns children.
