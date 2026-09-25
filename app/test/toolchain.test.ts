@@ -87,6 +87,15 @@ describe('the app TypeScript projects', () => {
     expect(compilerOptions('tsconfig.node.json')['lib']).not.toContain('DOM');
   });
 
+  it('type-checks library declarations everywhere but the node project', () => {
+    // The node project alone skips them: electron's declarations name DOM types the rule above
+    // withholds, and adding the DOM lib to make them pass would undo that rule.
+    expect(compilerOptions('tsconfig.base.json')['skipLibCheck']).toBe(false);
+    for (const name of ['tsconfig.web.json', 'tsconfig.e2e.json']) {
+      expect(compilerOptions(name)['skipLibCheck'], `${name} must not skip them`).toBeUndefined();
+    }
+  });
+
   it('keeps Node types out of the renderer project', () => {
     // The renderer is sandboxed and may never originate a filesystem path or an executable.
     // Withholding @types/node makes that a compile error rather than a review comment.
