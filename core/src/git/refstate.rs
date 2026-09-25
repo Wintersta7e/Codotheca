@@ -219,9 +219,6 @@ fn loose_refs(common_dir: &Path) -> BTreeMap<String, (u128, u64)> {
 /// `packed-refs` as a map. **`pub(crate)` so §24.7A's stash reader uses this parser rather than
 /// a second one** — two parsers for one file is the one-value-twice defect on the file that says
 /// whether a stash exists.
-// `unreachable_pub` rejects a bare `pub` here, because this module is crate-private, and this
-// lint rejects the `pub(crate)` that answers it; the stash reader outside `git` needs one of them.
-#[allow(clippy::redundant_pub_crate)]
 pub(crate) fn packed_refs(common_dir: &Path) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     let Ok(text) = std::fs::read_to_string(common_dir.join("packed-refs")) else {
