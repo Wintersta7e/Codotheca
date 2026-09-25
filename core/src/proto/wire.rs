@@ -21,60 +21,97 @@ pub struct Epoch(pub u64);
 #[serde(transparent)]
 pub struct RequestId(pub u64);
 
+/// Every frame the core writes to the shell.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum Outbound {
+    /// The first frame on stdout (§2.2). The shell acks it, or refuses on a version mismatch.
     Hello {
+        /// This build's `PROTOCOL_VERSION`, which the shell compares with its own.
         protocol_version: u32,
+        /// The core's crate version.
         core_version: String,
+        /// The epoch the shell passed in argv; it scopes every frame after this one.
         epoch: Epoch,
+        /// The core's process id.
         pid: u32,
     },
+    /// A command's success.
     Response {
+        /// The epoch the request was made in.
         epoch: Epoch,
+        /// The request answered.
         id: RequestId,
+        /// The command's result.
         ok: Value,
     },
     /// `outcome: None` is §2.2's "definitely did not take effect, safe to retry";
     /// `Some(Outcome::Unknown)` is "may have completed" and is never auto-replayed.
     /// The field is always serialized, `null` included, so both languages round-trip it.
     Error {
+        /// The epoch the request was made in.
         epoch: Epoch,
+        /// The request answered.
         id: RequestId,
+        /// What went wrong, as the code the shell chooses its words from.
         code: ErrorCode,
+        /// Diagnostic text for the log; never shown to the user.
         message: String,
+        /// Whether the command may have taken effect, as above.
         outcome: Option<Outcome>,
     },
+    /// One delta on a subscribed topic.
     Event {
+        /// The epoch it was published in.
         epoch: Epoch,
+        /// The topic it belongs to.
         topic: Topic,
+        /// The event's name within the topic.
         event: String,
+        /// Its place in the topic's sequence; a gap tells the consumer to resync.
         seq: u64,
+        /// The event's payload.
         data: Value,
     },
+    /// A topic's whole state, standing in for every delta up to `through_seq` (§2.3).
     Snapshot {
+        /// The epoch it was published in.
         epoch: Epoch,
+        /// The topic it describes.
         topic: Topic,
+        /// The last sequence number it covers; only deltas after it may follow.
         through_seq: u64,
+        /// The topic's state, from the handler's `snapshot`.
         data: Value,
     },
 }
 
+/// Every frame the shell writes to the core.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum Inbound {
+    /// One command.
     Request {
+        /// Assigned by the shell and echoed on the answer.
         id: RequestId,
+        /// The command's name, one of §2.4's surface.
         command: String,
+        /// The command's arguments, deserialised by its handler.
         args: Value,
     },
+    /// Start a topic: a snapshot now, its deltas after.
     Subscribe {
+        /// The topic to start.
         topic: Topic,
     },
+    /// Stop a topic; whatever it still had queued is dropped.
     Unsubscribe {
+        /// The topic to stop.
         topic: Topic,
     },
+    /// The consumer saw a gap in a topic's sequence and wants a fresh snapshot.
     Resync {
+        /// The topic to snapshot again.
         topic: Topic,
     },
 }

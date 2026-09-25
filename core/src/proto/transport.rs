@@ -27,6 +27,7 @@ pub fn claim_stdout() -> Option<std::io::Stdout> {
     }
 }
 
+/// Why a frame was not handed to the writer.
 #[derive(Debug)]
 pub enum SendError {
     /// A database transaction is open on this thread. Awaiting a pipe write here is the
@@ -36,9 +37,12 @@ pub enum SendError {
     Full,
     /// The writer thread is gone.
     Closed,
+    /// The encoded frame exceeds `MAX_FRAME_BYTES`.
     TooLarge {
+        /// Its encoded length in bytes.
         len: usize,
     },
+    /// The frame could not be serialised.
     Encode(serde_json::Error),
 }
 
@@ -72,6 +76,10 @@ impl FrameSink {
     }
 
     /// Blocks when the writer queue is full. Refuses outright inside a transaction.
+    ///
+    /// # Errors
+    /// `InTransaction` while a `TxGuard` is alive on this thread, `Encode` or `TooLarge` when
+    /// the frame cannot be encoded within the cap, and `Closed` when the writer thread is gone.
     pub fn send(&self, frame: &Outbound) -> Result<(), SendError> {
         if txguard::in_transaction() {
             return Err(SendError::InTransaction);
@@ -81,6 +89,9 @@ impl FrameSink {
     }
 
     /// Never blocks. Backpressure decisions are made from its `Full`.
+    ///
+    /// # Errors
+    /// Those of [`FrameSink::send`], plus `Full` when the writer queue has no room.
     pub fn try_send(&self, frame: &Outbound) -> Result<(), SendError> {
         if txguard::in_transaction() {
             return Err(SendError::InTransaction);
@@ -96,7 +107,10 @@ impl FrameSink {
 /// Both halves of the pipe, each on its own thread.
 #[derive(Debug)]
 pub struct Transport {
+    /// Every frame the shell sent, in order. Disconnects once the input ends or carries a frame
+    /// that does not decode.
     pub inbound: Receiver<Inbound>,
+    /// The writer's queue. Clones share it; `join` waits until every one is dropped.
     pub sink: FrameSink,
     writer: JoinHandle<Result<(), FrameError>>,
 }
@@ -104,6 +118,9 @@ pub struct Transport {
 impl Transport {
     /// `capacity` bounds the writer queue; the inbound channel is unbounded so the reader
     /// never blocks and the pipe never fills from our side.
+    ///
+    /// # Errors
+    /// Fails when the reader or the writer thread cannot be spawned.
     pub fn start<R, W>(mut input: R, mut output: W, capacity: usize) -> std::io::Result<Self>
     where
         R: Read + Send + 'static,

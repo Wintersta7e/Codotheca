@@ -13,14 +13,17 @@ pub enum FrameError {
     /// The declared length exceeds `MAX_FRAME_BYTES`. The body is never read and never
     /// allocated; the connection is killed.
     Oversize {
+        /// The length the header declared, in bytes.
         declared: u32,
     },
     /// The payload was not valid UTF-8.
     NotUtf8,
     /// The payload the caller asked to send exceeds `MAX_FRAME_BYTES`.
     PayloadTooLarge {
+        /// The payload's length in bytes.
         len: usize,
     },
+    /// Reading or writing the pipe failed, including a body cut short.
     Io(std::io::Error),
 }
 
@@ -56,6 +59,11 @@ impl From<std::io::Error> for FrameError {
 
 /// Reads one frame into `buf`, replacing its contents. `buf` is reused across calls so a
 /// steady stream of frames does not allocate per frame.
+///
+/// # Errors
+/// `Eof` when the input ends before a complete header; `Oversize` when the declared length
+/// exceeds `MAX_FRAME_BYTES` or cannot be allocated; `Io` when a read fails or the body is cut
+/// short; `NotUtf8` when the payload is not UTF-8.
 pub fn read_frame<R: Read>(reader: &mut R, buf: &mut Vec<u8>) -> Result<(), FrameError> {
     let mut header = [0_u8; 4];
     match reader.read_exact(&mut header) {
@@ -80,6 +88,10 @@ pub fn read_frame<R: Read>(reader: &mut R, buf: &mut Vec<u8>) -> Result<(), Fram
 }
 
 /// Writes one frame. The caller's payload must already be UTF-8 JSON.
+///
+/// # Errors
+/// `PayloadTooLarge` when `payload` exceeds `MAX_FRAME_BYTES`, before anything is written;
+/// `Io` when writing or flushing fails.
 pub fn write_frame<W: Write>(writer: &mut W, payload: &[u8]) -> Result<(), FrameError> {
     let len = payload.len();
     if len > MAX_FRAME_BYTES {

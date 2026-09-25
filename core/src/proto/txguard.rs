@@ -15,6 +15,8 @@ thread_local! {
 pub struct TxGuard(());
 
 impl TxGuard {
+    /// Marks a transaction open on this thread until the guard drops. Guards count, so one
+    /// opened inside another leaves the thread marked until both have dropped.
     #[must_use]
     pub fn enter() -> Self {
         TX_DEPTH.with(|d| d.set(d.get().saturating_add(1)));

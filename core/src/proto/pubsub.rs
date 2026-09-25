@@ -19,13 +19,20 @@ pub const TOPIC_HIGH_WATER: usize = 256;
 /// One frame waiting for the writer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Queued {
+    /// An `Outbound::Event` waiting to be written.
     Delta {
+        /// Its sequence number in the topic.
         seq: u64,
+        /// The event's name.
         event: String,
+        /// Its payload.
         data: Value,
     },
+    /// An `Outbound::Snapshot` that replaced everything queued before it.
     Snapshot {
+        /// The last sequence number it covers.
         through_seq: u64,
+        /// The topic's state.
         data: Value,
     },
 }
@@ -39,8 +46,10 @@ pub struct TopicQueue {
 }
 
 impl TopicQueue {
+    /// An empty queue that passes its mark once more than `high_water` frames wait. Its first
+    /// delta is numbered 1.
     #[must_use]
-    pub fn new(high_water: usize) -> Self {
+    pub const fn new(high_water: usize) -> Self {
         Self {
             high_water,
             next_seq: 1,
@@ -60,6 +69,7 @@ impl TopicQueue {
         seq
     }
 
+    /// Whether more frames wait than the high-water mark allows.
     #[must_use]
     pub fn over_high_water(&self) -> bool {
         self.pending.len() > self.high_water
@@ -73,25 +83,30 @@ impl TopicQueue {
             .push_back(Queued::Snapshot { through_seq, data });
     }
 
+    /// The last sequence number handed out; `0` before the first delta.
     #[must_use]
-    pub fn through_seq(&self) -> u64 {
+    pub const fn through_seq(&self) -> u64 {
         self.next_seq.saturating_sub(1)
     }
 
+    /// The next frame to write, left in place.
     #[must_use]
     pub fn peek(&self) -> Option<&Queued> {
         self.pending.front()
     }
 
+    /// Takes the next frame to write.
     pub fn pop(&mut self) -> Option<Queued> {
         self.pending.pop_front()
     }
 
+    /// How many frames wait.
     #[must_use]
     pub fn len(&self) -> usize {
         self.pending.len()
     }
 
+    /// Whether no frame waits.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
@@ -101,12 +116,15 @@ impl TopicQueue {
 /// What `publish` wants the caller to do next.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Published {
+    /// The delta was queued, and written at once if the writer had room.
     Sent {
+        /// The sequence number it was given.
         seq: u64,
     },
     /// The queue passed its high-water mark. Compute a snapshot — outside any transaction —
     /// and hand it back with `supply_snapshot`.
     NeedsSnapshot {
+        /// The sequence number of the delta that passed the mark.
         through_seq: u64,
     },
     /// Nobody is subscribed to this topic.
@@ -129,8 +147,10 @@ pub struct Publisher {
 }
 
 impl Publisher {
+    /// A publisher writing to `sink` in `epoch`, whose topics each ask for a snapshot once more
+    /// than `high_water` frames wait.
     #[must_use]
-    pub fn new(sink: FrameSink, epoch: Epoch, high_water: usize) -> Self {
+    pub const fn new(sink: FrameSink, epoch: Epoch, high_water: usize) -> Self {
         Self {
             sink: Some(sink),
             epoch,
@@ -146,7 +166,7 @@ impl Publisher {
     /// production; a test that only wants a `CoreHandler` should not have to stand up a pipe.
     #[cfg(feature = "testkit")]
     #[must_use]
-    pub fn detached() -> Self {
+    pub const fn detached() -> Self {
         Self {
             sink: None,
             epoch: Epoch(0),
@@ -155,6 +175,7 @@ impl Publisher {
         }
     }
 
+    /// Starts queueing `topic`. Subscribing again keeps the queue it already has.
     pub fn subscribe(&mut self, topic: Topic) {
         if !self.topics.iter().any(|t| t.topic == topic) {
             self.topics.push(TopicState {
@@ -164,6 +185,7 @@ impl Publisher {
         }
     }
 
+    /// Stops queueing `topic` and drops whatever it still had queued.
     pub fn unsubscribe(&mut self, topic: Topic) {
         self.topics.retain(|t| t.topic != topic);
     }
@@ -172,6 +194,8 @@ impl Publisher {
         self.topics.iter_mut().find(|t| t.topic == topic)
     }
 
+    /// Queues one delta on `topic`, then writes whatever of that topic's queue the writer will
+    /// take without blocking.
     pub fn publish(&mut self, topic: Topic, event: &str, data: Value) -> Published {
         let epoch = self.epoch;
         let Some(state) = self.state(topic) else {
@@ -259,6 +283,8 @@ impl Publisher {
 /// the generated `Topic` enum nor a `&mut Publisher`. `&self`, because holders share it as
 /// `Arc<dyn EventSink>`.
 pub trait EventSink: Send + Sync {
+    /// Publishes `payload` as `event` on the topic named `topic`. Nothing is returned: whether
+    /// it reached the pipe is the publisher's business, not the emitter's.
     fn emit(&self, topic: &str, event: &str, payload: Value);
 }
 
@@ -273,8 +299,9 @@ pub struct PublisherSink {
 }
 
 impl PublisherSink {
+    /// The sink that owns the process's one `publisher`.
     #[must_use]
-    pub fn new(publisher: Publisher) -> Self {
+    pub const fn new(publisher: Publisher) -> Self {
         Self {
             inner: std::sync::Mutex::new(publisher),
             wants_snapshot: std::sync::Mutex::new(Vec::new()),
@@ -308,7 +335,7 @@ impl EventSink for PublisherSink {
         // place the four topic names are written down.
         let de: serde::de::value::StrDeserializer<'_, serde::de::value::Error> =
             topic.into_deserializer();
-        let Ok(topic) = Topic::deserialize(de) else {
+        let Ok(known) = Topic::deserialize(de) else {
             let _ = writeln!(
                 std::io::stderr(),
                 "codotheca-core: dropped {event} on unknown topic {topic:?}"
@@ -316,8 +343,8 @@ impl EventSink for PublisherSink {
             return;
         };
         let mut publisher = Self::lock(&self.inner);
-        if let Published::NeedsSnapshot { .. } = publisher.publish(topic, event, payload) {
-            Self::lock(&self.wants_snapshot).push(topic);
+        if let Published::NeedsSnapshot { .. } = publisher.publish(known, event, payload) {
+            Self::lock(&self.wants_snapshot).push(known);
         }
     }
 }

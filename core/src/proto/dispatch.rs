@@ -11,7 +11,9 @@ use serde_json::Value;
 /// shown to the user: the shell owns every user-facing string.
 #[derive(Debug)]
 pub struct CommandFailure {
+    /// What went wrong, as the code the shell chooses its words from.
     pub code: ErrorCode,
+    /// Diagnostic text for the log.
     pub message: String,
     /// `None` — the command definitely did not take effect. `Some(Outcome::Unknown)` — it may
     /// have, and §2.2 forbids auto-replaying it. There is no `failed` value on the wire.
@@ -19,6 +21,7 @@ pub struct CommandFailure {
 }
 
 impl CommandFailure {
+    /// A `PROTOCOL` refusal: the request itself was malformed, so it did not take effect.
     #[must_use]
     pub fn protocol(message: impl Into<String>) -> Self {
         Self {
@@ -28,6 +31,7 @@ impl CommandFailure {
         }
     }
 
+    /// An `INTERNAL` refusal: a defect in the core, reported as not having taken effect.
     #[must_use]
     pub fn internal(message: impl Into<String>) -> Self {
         Self {
@@ -43,6 +47,9 @@ impl CommandFailure {
 /// It lives here because `CommandFailure` does. Not to be confused with
 /// `crate::lifecycle::parse_args`, which parses **argv** into `CoreArgs` — a different function
 /// with a different job that happens to share a name across two modules.
+///
+/// # Errors
+/// A `PROTOCOL` failure when `args` does not deserialise as a `T`.
 pub fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, CommandFailure> {
     serde_json::from_value(args).map_err(|e| CommandFailure::protocol(e.to_string()))
 }
@@ -55,6 +62,10 @@ pub fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, Comm
 /// deadlock the loop against a handler that emits while it runs.
 pub trait CommandHandler {
     /// Executes one command.
+    ///
+    /// # Errors
+    /// A `CommandFailure` when the command is unknown, its arguments are malformed, or it is
+    /// refused; its `outcome` says whether it may have taken effect.
     fn handle(&mut self, command: &str, args: Value) -> Result<Value, CommandFailure>;
 
     /// The current state of one topic, for a snapshot. Must not be called with a transaction
@@ -87,15 +98,24 @@ impl CommandHandler for RefusingHandler {
     }
 }
 
+/// Why `run_loop` stopped.
 #[derive(Debug, PartialEq, Eq)]
 pub enum LoopExit {
+    /// The inbound channel disconnected: stdin ended or carried a frame that did not decode.
     StdinEof,
+    /// The shell sent `app.shutdown`.
     Shutdown,
+    /// The parent process is provably gone, or its pid now belongs to another process.
     ParentGone,
+    /// The writer thread is gone. Nothing constructs this: the loop does not watch the writer.
     WriterGone,
 }
 
 /// The first frame on stdout, always.
+///
+/// # Errors
+/// Those of `FrameSink::send`: `Closed` when the writer thread is already gone, and
+/// `InTransaction` if called with a transaction open on this thread.
 pub fn send_hello(sink: &FrameSink, epoch: Epoch) -> Result<(), SendError> {
     sink.send(&Outbound::Hello {
         protocol_version: PROTOCOL_VERSION,
