@@ -239,6 +239,7 @@ fn main() -> ExitCode {
         epoch,
         TOPIC_HIGH_WATER,
     )));
+    let event_sink: Arc<dyn EventSink> = events.clone();
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
     // A recognised fatal already exited inside `open_index`, with §11.2a's report written for
@@ -296,7 +297,7 @@ fn main() -> ExitCode {
         Arc::clone(&index),
         Arc::clone(&git),
         Arc::clone(&clock),
-        Arc::clone(&events) as Arc<dyn EventSink>,
+        Arc::clone(&event_sink),
         local_utc_offset_min(),
     );
 
@@ -315,7 +316,7 @@ fn main() -> ExitCode {
     // than the core failing to start.
     let http_transport: Arc<dyn codotheca_core::http::HttpTransport> =
         match codotheca_core::http::ReqwestTransport::new() {
-            Ok(transport) => Arc::new(transport),
+            Ok(client) => Arc::new(client),
             Err(error) => {
                 note(&format!(
                     "codotheca-core: no HTTP transport ({error}); account commands will refuse"
@@ -351,7 +352,7 @@ fn main() -> ExitCode {
             cancel: codotheca_core::cancel::CancelToken::new(),
             tz_offset_min: local_utc_offset_min(),
         },
-        Arc::clone(&events) as Arc<dyn EventSink>,
+        Arc::clone(&event_sink),
     );
 
     let deps = CoreDeps {
@@ -373,7 +374,7 @@ fn main() -> ExitCode {
         spawner: Box::new(codotheca_core::launch::spawn::OsSpawner),
         sessions: SessionManager::new(
             Arc::clone(&clock),
-            Arc::clone(&events) as Arc<dyn EventSink>,
+            Arc::clone(&event_sink),
             activity,
             Arc::new(codotheca_core::session::activity::GitIgnoreCheck {
                 exec: Arc::clone(&git_exec),
@@ -395,7 +396,7 @@ fn main() -> ExitCode {
                     // The real queue. `NullJobSink` is the absence of a scheduler, not a fake of
                     // one, and installing it here is what left every discovery uncomputed.
                     jobs: jobs.sink(),
-                    events: Arc::clone(&events) as Arc<dyn EventSink>,
+                    events: Arc::clone(&event_sink),
                 },
             ),
         )),

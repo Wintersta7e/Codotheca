@@ -20,10 +20,14 @@ pub const CORE_LOCK_FILE: &str = "core.lock";
 /// the core is alive. This is the file `probeCoreLock` reads.
 pub const CORE_OWNER_FILE: &str = "core.owner.json";
 
+/// What the shell passed in argv.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreArgs {
+    /// The app data directory the shell decided (§2.1): database, lock and owner file.
     pub data_dir: PathBuf,
+    /// The epoch this run belongs to (§2.2), which scopes request ids and event sequences.
     pub epoch: u64,
+    /// The shell's process id, watched by `OsParentProbe`.
     pub parent_pid: u32,
     /// §13's in-distro worker, on disk, or `None` where this build has none.
     ///
@@ -35,9 +39,12 @@ pub struct CoreArgs {
     pub worker: Option<PathBuf>,
 }
 
+/// Why argv was refused. Each variant names the flag.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ArgError {
+    /// A required flag was not given.
     Missing(&'static str),
+    /// A flag's value did not parse, or was empty where empty is malformed.
     Bad(&'static str),
 }
 
@@ -53,6 +60,10 @@ impl std::fmt::Display for ArgError {
 impl std::error::Error for ArgError {}
 
 /// `--data-dir=<path> --epoch=<u64> --parent-pid=<u32>`, all three required.
+///
+/// # Errors
+/// `ArgError::Missing` when any of the three is absent; `ArgError::Bad` when `--epoch` or
+/// `--parent-pid` does not parse, or when `--worker` is given empty.
 pub fn parse_args<I: IntoIterator<Item = String>>(argv: I) -> Result<CoreArgs, ArgError> {
     let mut data_dir: Option<PathBuf> = None;
     let mut epoch: Option<u64> = None;
@@ -82,9 +93,12 @@ pub fn parse_args<I: IntoIterator<Item = String>>(argv: I) -> Result<CoreArgs, A
     })
 }
 
+/// Why the advisory lock was not taken.
 #[derive(Debug)]
 pub enum LockError {
+    /// The lock file could not be locked: another core holds it.
     Held,
+    /// The data directory, the lock file or the owner file could not be created or written.
     Io(std::io::Error),
 }
 
@@ -107,6 +121,12 @@ pub struct CoreLock {
 }
 
 impl CoreLock {
+    /// Takes the lock in `data_dir`, creating the directory if needed, then writes the owner
+    /// file beside it.
+    ///
+    /// # Errors
+    /// `LockError::Held` when the lock call fails, whatever the reason; `LockError::Io` when the
+    /// directory, the lock file or the owner file cannot be created or written.
     pub fn acquire(data_dir: &Path) -> Result<Self, LockError> {
         std::fs::create_dir_all(data_dir).map_err(LockError::Io)?;
         let file = std::fs::OpenOptions::new()
@@ -151,6 +171,8 @@ pub struct OsParentProbe {
 }
 
 impl OsParentProbe {
+    /// A probe for the parent `pid`, recording its identity now so a later process that reuses
+    /// the pid is not mistaken for it.
     #[must_use]
     pub fn new(pid: u32) -> Self {
         Self {
@@ -178,10 +200,9 @@ impl OsParentProbe {
     /// reusing its pid. Unknown is never reported as gone.
     #[must_use]
     pub fn parent_gone(&self) -> bool {
-        match &self.token {
-            None => false,
-            Some(known) => Self::identity(self.pid).as_ref() != Some(known),
-        }
+        self.token
+            .as_ref()
+            .is_some_and(|known| Self::identity(self.pid).as_ref() != Some(known))
     }
 }
 

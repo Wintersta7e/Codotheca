@@ -45,6 +45,9 @@ impl CancelToken {
     }
 
     /// `Err(Cancelled)` once it has fired.
+    ///
+    /// # Errors
+    /// `Cancelled` when the token has fired.
     pub fn check(&self) -> Result<(), Cancelled> {
         if self.is_cancelled() {
             Err(Cancelled)

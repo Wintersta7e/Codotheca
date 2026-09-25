@@ -14,11 +14,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StoreClass {
+    /// Fixed, non-rotational local storage.
     Local,
+    /// A drive the OS reports as removable, or a filesystem such a volume arrives with.
     Removable,
+    /// A network share, or a Windows volume reached across the WSL bridge.
     Network,
+    /// A FUSE filesystem, as slow as whatever daemon serves it.
     Fuse,
+    /// A rotational disk.
     Hdd,
+    /// Not determined. Scheduled like `Local`.
     Unknown,
 }
 
@@ -27,7 +33,7 @@ impl StoreClass {
     /// four for everything else, fixed — a storage-speed measurement subsystem to choose
     /// between four and eight is machinery for an unobservable difference at this scale.
     #[must_use]
-    pub fn per_store_cap(self) -> u32 {
+    pub const fn per_store_cap(self) -> u32 {
         match self {
             Self::Removable | Self::Network | Self::Fuse | Self::Hdd => 1,
             Self::Local | Self::Unknown => 4,
@@ -43,14 +49,17 @@ impl StoreClass {
 /// value spelled two ways.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MountFacts {
+    /// The scheduling key: the device or share the path lives on right now.
     pub store_key: String,
     /// `None` where no stable identifier exists — a bind mount, overlayfs, tmpfs. Absent is
     /// not the same as unknown-and-therefore-zero: a location with no volume key can never be
     /// recognised across a remount, and callers must handle that rather than invent one.
     pub volume_key: Option<String>,
+    /// How fast that store is, which sets its §3.4 per-store cap.
     pub class: StoreClass,
 }
 
+/// Why a resolver could not answer for a path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MountError {
     /// The store this path belongs to is not mounted right now (§4.6: the location is
@@ -58,6 +67,7 @@ pub enum MountError {
     NotMounted,
     /// No mapping exists. The caller must not substitute a default.
     Unsupported(String),
+    /// Reading the mount information or the path failed; the OS error's text.
     Io(String),
 }
 
@@ -73,8 +83,15 @@ impl fmt::Display for MountError {
 
 impl std::error::Error for MountError {}
 
+/// Which store a path lives on. `SystemMountResolver` asks the host; `DistroMountResolver`
+/// answers from inside a distro.
 pub trait MountResolver: Send + Sync + fmt::Debug {
     /// Facts about the store under `path`. Returns `NotMounted` when the store is absent.
+    ///
+    /// # Errors
+    /// `MountError::NotMounted` when the store is absent, `MountError::Unsupported` when
+    /// nothing maps the path to a store, and `MountError::Io` when the mount information or
+    /// the path cannot be read.
     fn resolve(&self, path: &Path) -> Result<MountFacts, MountError>;
     /// Whether a previously recorded `volume_key` is mounted now. This is what turns an
     /// `offline` location back into a `present` one without a full walk.
@@ -86,8 +103,9 @@ pub trait MountResolver: Send + Sync + fmt::Debug {
 pub struct SystemMountResolver;
 
 impl SystemMountResolver {
+    /// The resolver over this host's own mount information.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 }
@@ -129,10 +147,9 @@ pub(crate) fn parse_mountinfo(contents: &str, path: &Path) -> Option<MountEntry>
         if !path.starts_with(&mount_point) {
             continue;
         }
-        let deeper = match best.as_ref() {
-            None => true,
-            Some(b) => mount_point.components().count() > b.mount_point.components().count(),
-        };
+        let deeper = best.as_ref().map_or(true, |b| {
+            mount_point.components().count() > b.mount_point.components().count()
+        });
         if deeper {
             best = Some(MountEntry {
                 mount_point,

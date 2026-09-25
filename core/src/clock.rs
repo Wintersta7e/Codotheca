@@ -28,6 +28,7 @@ pub struct SystemClock {
 }
 
 impl SystemClock {
+    /// A clock whose `monotonic_ms` counts from this call.
     #[must_use]
     pub fn new() -> Self {
         Self {

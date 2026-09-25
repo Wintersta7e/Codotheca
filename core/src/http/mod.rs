@@ -33,9 +33,14 @@ use std::time::Duration;
 /// constant whose values would then have to suit all of them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RequestLimits {
+    /// Seconds allowed to connect. `ReqwestTransport` refuses any value but
+    /// `CONNECT_TIMEOUT_SECS`, because its one client fixes it.
     pub connect_secs: u64,
+    /// Seconds allowed for one hop, from connecting until its body has been read.
     pub total_secs: u64,
+    /// The longest body read; `read_capped` refuses a longer one.
     pub max_body_bytes: usize,
+    /// The most redirects followed before the request fails.
     pub redirect_limit: u8,
     /// A redirect that changes scheme is a downgrade to plaintext. Never allowed by §20's calls.
     pub allow_scheme_change: bool,
@@ -54,13 +59,18 @@ pub const ACCOUNT_LIMITS: RequestLimits = RequestLimits {
     allow_scheme_change: false,
 };
 
+/// One request, carrying everything that goes on the wire.
 #[derive(Clone, PartialEq, Eq)]
 pub struct HttpRequest {
+    /// The HTTP method of the first hop; a redirect other than `307` or `308` continues as `GET`.
     pub method: &'static str,
+    /// The absolute URL. Anything but `https` is refused before a socket opens.
     pub url: String,
     /// Every header that reaches the wire. The transport adds none.
     pub headers: Vec<(String, String)>,
+    /// The request body, if it has one.
     pub body: Option<Vec<u8>>,
+    /// This request's bounds.
     pub limits: RequestLimits,
 }
 
@@ -105,8 +115,11 @@ impl std::fmt::Debug for HttpRequest {
 /// the information a doubled `retry-after` carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpResponse {
+    /// The HTTP status code, whatever it is.
     pub status: u16,
+    /// Every header line, names lowercased, in arrival order.
     pub headers: Vec<(String, String)>,
+    /// The body; `ReqwestTransport` refuses one longer than the request's `max_body_bytes`.
     pub body: Vec<u8>,
 }
 
@@ -137,15 +150,31 @@ impl HttpResponse {
 /// The three failures that carry no response at all, and therefore no headers to mirror.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TransportError {
+    /// The request ran past its time limit.
     #[error("the request timed out")]
     Timeout,
+    /// No connection was made or allowed: the host could not be reached, the URL or a redirect
+    /// was not `https`, or this machine has no client.
     #[error("could not connect: {detail}")]
-    Connect { detail: String },
+    Connect {
+        /// What failed; diagnostic only.
+        detail: String,
+    },
+    /// Anything else that ended the request without a response: a failed read, an over-cap
+    /// body, an unparseable URL, too many redirects, a bound the client cannot honour.
     #[error("transport failure: {detail}")]
-    Io { detail: String },
+    Io {
+        /// What failed; `body_cap_detail` exactly for an over-cap body.
+        detail: String,
+    },
 }
 
+/// The untyped seam every HTTP consumer sends through. `ReqwestTransport` is the production one.
 pub trait HttpTransport: Send + Sync + std::fmt::Debug {
+    /// Sends `req`, following its redirects, and returns the last response whatever its status.
+    ///
+    /// # Errors
+    /// A `TransportError` only when no response came back; a non-2xx status is `Ok`.
     fn send(&self, req: &HttpRequest) -> Result<HttpResponse, TransportError>;
 }
 
@@ -168,10 +197,16 @@ where
 /// It reads **`max + 1`** bytes at the very most, so a body ten times the cap costs one byte
 /// over the cap rather than the whole transfer — the refusal is a bound on what is read, not a
 /// check applied after reading everything.
+///
+/// # Errors
+/// `TransportError::Io` when a read fails, and with [`body_cap_detail`]'s words when the body
+/// is longer than `max`.
 pub fn read_capped<R: std::io::Read>(reader: R, max: usize) -> Result<Vec<u8>, TransportError> {
     let mut body = Vec::new();
+    // `usize` is at most 64 bits on every target this builds for, so the fallback never runs.
+    let limit = u64::try_from(max).unwrap_or(u64::MAX);
     let read = reader
-        .take(max as u64 + 1)
+        .take(limit + 1)
         .read_to_end(&mut body)
         .map_err(|e| TransportError::Io {
             detail: e.to_string(),
@@ -198,6 +233,9 @@ pub fn body_cap_detail(max: usize) -> String {
 
 /// `https` and nothing else. A plaintext URL carrying a bearer token is the failure this refuses
 /// before a socket is opened.
+///
+/// # Errors
+/// `TransportError::Connect` for any URL that does not start with `https://`.
 pub fn require_https(url: &str) -> Result<(), TransportError> {
     if url.starts_with("https://") {
         return Ok(());
@@ -352,6 +390,10 @@ impl ReqwestTransport {
     /// `Policy::none()`: redirects are followed by [`ReqwestTransport::send`] itself, so
     /// `redirect_limit` and `allow_scheme_change` are honoured **per request**. A client-level
     /// policy would apply one consumer's limit to every other's.
+    ///
+    /// # Errors
+    /// `TransportError::Io` when `reqwest` cannot build the client, such as when its TLS
+    /// backend fails to initialise.
     pub fn new() -> Result<Self, TransportError> {
         let client = reqwest::blocking::Client::builder()
             .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
@@ -387,17 +429,17 @@ impl ReqwestTransport {
         // budget reads. Returning it as an error would drop exactly those headers.
         let response = builder.send().map_err(|e| classify(&e))?;
         let status = response.status().as_u16();
-        let headers = normalise_headers(
+        let response_headers = normalise_headers(
             response
                 .headers()
                 .iter()
                 .filter_map(|(k, v)| v.to_str().ok().map(|value| (k.as_str(), value))),
         );
-        let body = read_capped(response, limits.max_body_bytes)?;
+        let response_body = read_capped(response, limits.max_body_bytes)?;
         Ok(HttpResponse {
             status,
-            headers,
-            body,
+            headers: response_headers,
+            body: response_body,
         })
     }
 }
@@ -407,7 +449,7 @@ impl ReqwestTransport {
 /// 303 and the two legacy codes become a bodyless GET; 307 and 308 exist precisely to preserve
 /// the method, and collapsing them would turn a POST into a GET without saying so.
 #[must_use]
-pub fn redirect_keeps_method(status: u16) -> Option<bool> {
+pub const fn redirect_keeps_method(status: u16) -> Option<bool> {
     match status {
         301..=303 => Some(false),
         307 | 308 => Some(true),
