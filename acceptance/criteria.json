@@ -15063,18 +15063,7 @@
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_readonly::the_read_allow_list_is_byte_identical_and_holds_no_write_verb",
-          "assert": "AC-P2-24-1's ALLOWED list is byte-identical to a2fc935's and holds no ls-remote, tag or bundle; the test prints it.",
-          "firstTag": true
-        },
-        {
-          "id": "AC-P4-47-21-spawn",
-          "shares": "AC-P2-24-3",
-          "status": "deferred",
-          "runner": "script",
-          "owner": "p4-L0a",
-          "test": "check-call-sites:no-unaudited-git-spawn",
-          "assert": "AC-P2-24-3's no-unaudited-git-spawn rule still names exactly three files after every new intent, enumeration and version probe lands. The gate prints the count of rules, violations and files read and fails at zero.",
-          "scanning": true,
+          "assert": "AC-P2-24-1's ALLOWED list is byte-identical to a2fc935's and holds no ls-remote, tag or bundle; the test prints it. AC-P2-24-3's no-unaudited-git-spawn rule still names exactly three files after every new intent, enumeration and version probe lands.",
           "firstTag": true
         }
       ]

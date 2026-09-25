@@ -368,7 +368,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | Disposition | Criteria | Checks |
 |---|---|---|
 | automated | 1 | 4 |
-| deferred | 230 | 548 |
+| deferred | 230 | 547 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -599,7 +599,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-47-18 | deferred | `CloneBundle`'s source | `AC-P4-47-18` deferred, plan p4-46b — `restore::ac_p4_47_18_bundle_path_is_built_only_from_staging_and_parcel_rows` |
 | P4-47-19 | deferred | layer E | `AC-P4-47-19` deferred, plan p4-L0a — `provider_seam::every_provider_request_method_issues_get_only`<br>`AC-P4-47-19-literals` deferred, plan p4-L0a — `provider_seam::no_non_get_method_literal_outside_the_device_endpoint` |
 | P4-47-20 | deferred | production callers | `AC-P4-47-20` deferred, plan p4-L0a — `git_write_differential::the_verifying_read_runs_through_the_preflight`<br>`AC-P4-47-20-tag` deferred, plan p4-44 — `git_tag_archived::ac_p4_47_20_tag_archived_through_its_production_caller`<br>`AC-P4-47-20-bundle` deferred, plan p4-46b — `preserve_create::ac_p4_47_20_bundle_intents_run_through_preserve_create`<br>`AC-P4-47-20-restore` deferred, plan p4-46b — `restore::ac_p4_47_20_clone_bundle_runs_through_restore` |
-| P4-47-21 | deferred | what does not move | `AC-P4-47-21` deferred, plan p4-L0a — `git_readonly::the_read_allow_list_is_byte_identical_and_holds_no_write_verb`<br>`AC-P4-47-21-spawn` deferred, plan p4-L0a — `check-call-sites:no-unaudited-git-spawn` |
+| P4-47-21 | deferred | what does not move | `AC-P4-47-21` deferred, plan p4-L0a — `git_readonly::the_read_allow_list_is_byte_identical_and_holds_no_write_verb` |
 | P4-47-22 | deferred | the read's scope | `AC-P4-47-22` deferred, plan p4-L0a — `git_write_differential::the_objects_step_carries_only_branch_and_tag_tips` |
 | P4-48-1 | manual | one version | `AC-P4-48-1` deferred, plan p4-L0c — `scripts/check-version.test.mjs::AC-P4-48-1 a v0.9.0 tag over a tree declaring 1.0.0 fails and names every site`<br>`AC-P4-48-1-lock` deferred, plan p4-L0c — `scripts/check-version.test.mjs::AC-P4-48-1 one disagreeing lock site fails and is named`<br>`AC-P4-48-1-zero` deferred, plan p4-L0c — `scripts/check-version.test.mjs::AC-P4-48-1 zero sites read fails`<br>`AC-P4-48-1-prerelease` deferred, plan p4-L0c — `scripts/check-version.test.mjs::AC-P4-48-1 a prerelease-shaped tag fails`<br>`AC-P4-48-1-notag` deferred, plan p4-L0c — `scripts/check-version.test.mjs::AC-P4-48-1 no tag passes and says it compared none`<br>`AC-P4-48-1-derived` deferred, plan p4-L0c — `scripts/check-version.test.mjs::AC-P4-48-1 the tracked tree's sites are derived, not listed`<br>`AC-P4-48-1-release` manual, gate `RELEASE-VERSION-CHECK` |
 | P4-48-2 | manual | the pipeline has run | `AC-P4-48-2` manual, gate `RELEASE-PIPELINE`<br>`AC-P4-48-2-verifies` deferred, plan p4-L0c — `scripts/verify-release.test.mjs::AC-P4-48-2 a matching draft verifies every file`<br>`AC-P4-48-2-byte` deferred, plan p4-L0c — `scripts/verify-release.test.mjs::AC-P4-48-2 one changed byte fails, naming the file`<br>`AC-P4-48-2-sums` deferred, plan p4-L0c — `scripts/verify-release.test.mjs::AC-P4-48-2 no SHA256SUMS fails`<br>`AC-P4-48-2-zero` deferred, plan p4-L0c — `scripts/verify-release.test.mjs::AC-P4-48-2 zero files fails`<br>`AC-P4-48-2-attestation` deferred, plan p4-L0c — `scripts/verify-release.test.mjs::AC-P4-48-2 a failed attestation fails` |

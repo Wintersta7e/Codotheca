@@ -104,7 +104,7 @@ test('countByPhase splits the register without a second file', () => {
   // `PHASE4_SECTIONS`' sum; its checks are the register's as registered, measured.
   assert.deepEqual(
     { criteria: counts[4].criteria, checks: counts[4].checks },
-    { criteria: PHASE4_CRITERIA, checks: 578 },
+    { criteria: PHASE4_CRITERIA, checks: 577 },
   );
   assert.equal(
     Object.values(counts[4].byStatus).reduce((a, b) => a + b, 0),
@@ -125,8 +125,8 @@ test('the line a successful run prints states what it validated, per phase', () 
   // about the register, and a run that validated nothing must not read like a clean one.
   assert.equal(
     renderRegistryLine(loadRegistry(registryPath)),
-    `${String(320 + PHASE4_CRITERIA)} criteria / 1317 checks validated — phase 1 70/175, ` +
-      `phase 2 104/225, phase 3 146/339, phase 4 ${String(PHASE4_CRITERIA)}/578`,
+    `${String(320 + PHASE4_CRITERIA)} criteria / 1316 checks validated — phase 1 70/175, ` +
+      `phase 2 104/225, phase 3 146/339, phase 4 ${String(PHASE4_CRITERIA)}/577`,
   );
   assert.equal(
     renderRegistryLine({ criteria: [] }),
@@ -197,7 +197,7 @@ test('the run report splits its check count by phase', () => {
   assert.match(rendered, /Phase 1: 175 checks/u);
   assert.match(rendered, /Phase 2: 225 checks/u);
   assert.match(rendered, /Phase 3: 339 checks/u);
-  assert.match(rendered, /Phase 4: 578 checks/u);
+  assert.match(rendered, /Phase 4: 577 checks/u);
 });
 
 // [p4] §49.5 item 7: a fourth table. [Task 8] Phase 4 is registered, so its heading carries a
