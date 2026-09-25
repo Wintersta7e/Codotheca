@@ -170,7 +170,7 @@ impl Harness {
         }
     }
 
-    fn conn(&self) -> &rusqlite::Connection {
+    const fn conn(&self) -> &rusqlite::Connection {
         self.index.index().conn()
     }
 
