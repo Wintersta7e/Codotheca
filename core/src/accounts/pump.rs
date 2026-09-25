@@ -1,3 +1,8 @@
+//! §20.2's device-flow pump: one worker thread per connect.
+//!
+//! The worker polls the forge and publishes `accounts/connect_progress` until the flow is
+//! granted, denied, expired, cancelled or not stored.
+
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -12,14 +17,23 @@ use crate::protocol::{ConnectProgress, ConnectStage, DeviceGrant};
 
 const WAIT_SLICE_MS: u64 = 250;
 
+/// Everything one device-flow pump needs from the composition root.
 pub struct ConnectPumpDeps {
+    /// The HTTP transport every device-flow request goes through.
     pub transport: Arc<dyn HttpTransport>,
+    /// The clock the poll interval is slept on and the deadline is read from.
     pub clock: Arc<dyn Clock>,
+    /// Where `accounts/connect_progress` events are published.
     pub events: Arc<dyn EventSink>,
+    /// The keychain the granted token is stored in.
     pub tokens: Arc<dyn TokenStore>,
+    /// What records the completed connection once a token is granted.
     pub sink: Arc<dyn ConnectSink>,
+    /// The forge host the flow runs against.
     pub host: String,
+    /// The public OAuth client id; empty means no flow can start.
     pub client_id: String,
+    /// The scopes requested, from the provider's fixed scope sets.
     pub scopes: &'static [&'static str],
 }
 
@@ -33,24 +47,38 @@ impl std::fmt::Debug for ConnectPumpDeps {
     }
 }
 
+/// A token the forge granted at the end of a device flow, handed to the [`ConnectSink`].
 #[derive(Debug)]
 pub struct GrantedToken {
+    /// The forge host the flow ran against.
     pub host: String,
+    /// The granted access token.
     pub token: SecretToken,
     /// The grant the token response named, or `None` when it named none — which is unknown.
     pub scopes: Option<Vec<String>>,
+    /// Unix seconds at which the grant arrived.
     pub granted_at: i64,
 }
 
+/// Why a granted token could not be recorded; the pump reports it as R78's `not_stored`.
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectSinkError {
+    /// The keychain refused to store the token.
     #[error("the token store refused the grant: {reason}")]
-    TokenStore { reason: String },
+    TokenStore {
+        /// The keychain error's text.
+        reason: String,
+    },
+    /// The viewer read or the account row write failed.
     #[error("the account sink refused the grant: {reason}")]
-    Refused { reason: String },
+    Refused {
+        /// The provider's or the store's error text.
+        reason: String,
+    },
 }
 
 impl ConnectSinkError {
+    /// The keychain's refusal, carried by its text.
     #[must_use]
     pub fn token_store(error: &KeychainError) -> Self {
         Self::TokenStore {
@@ -75,6 +103,7 @@ pub trait ConnectSink: Send + Sync + std::fmt::Debug {
     ) -> Result<(), ConnectSinkError>;
 }
 
+/// A handle on one live device flow and the worker polling it; clones share the same flow.
 #[derive(Clone)]
 pub struct ConnectPump {
     inner: Arc<ConnectPumpInner>,
@@ -296,23 +325,17 @@ impl ConnectPumpInner {
     }
 
     fn grant(&self, now: i64) -> Option<DeviceGrant> {
-        let mut expired_interval = None;
-        let grant = {
-            let state = lock(&self.state);
-            let flow = state.flow.as_ref()?;
-            if now >= flow.expires_at {
-                expired_interval = Some(flow.interval_secs);
-                None
-            } else {
-                Some(DeviceGrant {
-                    user_code: flow.user_code.clone(),
-                    verification_uri: flow.verification_uri.clone(),
-                    expires_in_secs: remaining_secs(flow.expires_at, now),
-                    interval_secs: flow.interval_secs,
-                })
-            }
-        };
-        if expired_interval.is_some() {
+        // One statement, so the state lock is released before `finish` takes it again. The outer
+        // `None` is no flow at all; the inner one is a flow past its deadline.
+        let grant = lock(&self.state).flow.as_ref().map(|flow| {
+            (now < flow.expires_at).then(|| DeviceGrant {
+                user_code: flow.user_code.clone(),
+                verification_uri: flow.verification_uri.clone(),
+                expires_in_secs: remaining_secs(flow.expires_at, now),
+                interval_secs: flow.interval_secs,
+            })
+        })?;
+        if grant.is_none() {
             self.finish(ConnectStage::Expired);
         }
         grant
@@ -340,12 +363,9 @@ impl ConnectPumpInner {
 
     /// `finish`, with R78's reason. Every stage but `NotStored` passes `None`.
     fn finish_with(&self, stage: ConnectStage, reason: Option<String>) {
-        let interval_secs = {
-            let mut pump_state = lock(&self.state);
-            let Some(flow) = pump_state.flow.take() else {
-                return;
-            };
-            flow.interval_secs
+        let Some(interval_secs) = lock(&self.state).flow.take().map(|flow| flow.interval_secs)
+        else {
+            return;
         };
         self.emit_stage(stage, interval_secs, reason);
     }
@@ -427,16 +447,20 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// One grant as [`RecordingConnectSink`] saw it, without the token.
 #[cfg(feature = "testkit")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordedConnectGrant {
+    /// The forge host the flow ran against.
     pub host: String,
     /// `None` when the token response named no `scope` field — recorded as it arrived, so a test
     /// can tell an unstated grant from an empty one.
     pub scopes: Option<Vec<String>>,
+    /// Unix seconds at which the grant arrived.
     pub granted_at: i64,
 }
 
+/// A [`ConnectSink`] that records each grant, and stores the token when built by `storing`.
 #[cfg(feature = "testkit")]
 #[derive(Debug, Default)]
 pub struct RecordingConnectSink {
@@ -446,19 +470,22 @@ pub struct RecordingConnectSink {
 
 #[cfg(feature = "testkit")]
 impl RecordingConnectSink {
+    /// A sink that records grants and stores no token.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// A sink that also stores each granted token under `token_ref`.
     #[must_use]
-    pub fn storing(token_ref: String) -> Self {
+    pub const fn storing(token_ref: String) -> Self {
         Self {
             token_ref: Some(token_ref),
             grants: Mutex::new(Vec::new()),
         }
     }
 
+    /// Every grant recorded so far, in arrival order.
     #[must_use]
     pub fn grants(&self) -> Vec<RecordedConnectGrant> {
         lock(&self.grants).clone()
@@ -523,6 +550,7 @@ impl std::fmt::Debug for IndexConnectSink {
 }
 
 impl IndexConnectSink {
+    /// The sink for a new connection: it inserts a fresh `account` row.
     #[must_use]
     pub fn new(
         index: Arc<Mutex<crate::index::Index>>,
@@ -610,9 +638,12 @@ impl ConnectSink for IndexConnectSink {
             .map_err(|error| ConnectSinkError::Refused {
                 reason: error.to_string(),
             })?;
-            return tx.commit().map_err(|error| ConnectSinkError::Refused {
+            let committed = tx.commit().map_err(|error| ConnectSinkError::Refused {
                 reason: error.to_string(),
             });
+            // `tx` borrowed this guard's connection, so the commit is the earliest release.
+            drop(guard);
+            return committed;
         }
 
         let new = super::store::NewAccount {
@@ -646,6 +677,8 @@ impl ConnectSink for IndexConnectSink {
         tx.commit().map_err(|error| ConnectSinkError::Refused {
             reason: error.to_string(),
         })?;
+        // `tx` borrowed this guard's connection, so the commit is the earliest release.
+        drop(guard);
         Ok(())
     }
 }

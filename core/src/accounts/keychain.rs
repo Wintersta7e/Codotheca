@@ -31,8 +31,9 @@ const PROBE_ENTRY: &str = "codotheca-keychain-probe";
 pub struct SecretToken(String);
 
 impl SecretToken {
+    /// Wrap a token so that nothing but [`Self::expose`] can read it back.
     #[must_use]
-    pub fn new(value: String) -> Self {
+    pub const fn new(value: String) -> Self {
         Self(value)
     }
 
@@ -56,10 +57,13 @@ impl std::fmt::Debug for SecretToken {
 /// §20.10's redaction audit has to clear.
 #[derive(Debug, thiserror::Error)]
 pub enum KeychainError {
+    /// The machine has no reachable keychain, e.g. a headless session with no Secret Service.
     #[error("no system keychain is available")]
     Unavailable,
+    /// The keychain works and holds nothing under that entry name.
     #[error("no such keychain entry")]
     NotFound,
+    /// The keychain refused for another reason; the text is the backend's, never a secret.
     #[error("the keychain refused the operation: {0}")]
     Backend(String),
 }
@@ -67,9 +71,32 @@ pub enum KeychainError {
 /// The keychain seam. One production implementation, and one fake under `testkit`.
 pub trait TokenStore: Send + Sync + std::fmt::Debug {
     /// Whether a keychain exists at all. Reads; never writes, so a probe leaves no entry behind.
+    ///
+    /// # Errors
+    ///
+    /// `KeychainError::Unavailable` when there is no keychain, `KeychainError::Backend` when it
+    /// refuses the read. An absent probe entry is success.
     fn probe(&self) -> Result<(), KeychainError>;
+    /// Put `token` under `entry`, replacing whatever was there.
+    ///
+    /// # Errors
+    ///
+    /// `KeychainError::Unavailable` when there is no keychain, `KeychainError::Backend` when it
+    /// refuses the write.
     fn store(&self, entry: &str, token: &SecretToken) -> Result<(), KeychainError>;
+    /// The token stored under `entry`.
+    ///
+    /// # Errors
+    ///
+    /// `KeychainError::NotFound` when nothing is stored there, `KeychainError::Unavailable` when
+    /// there is no keychain, `KeychainError::Backend` when it refuses the read.
     fn read(&self, entry: &str) -> Result<SecretToken, KeychainError>;
+    /// Remove the token stored under `entry`.
+    ///
+    /// # Errors
+    ///
+    /// `KeychainError::NotFound` when nothing is stored there, `KeychainError::Unavailable` when
+    /// there is no keychain, `KeychainError::Backend` when it refuses the delete.
     fn delete(&self, entry: &str) -> Result<(), KeychainError>;
 }
 
@@ -92,8 +119,9 @@ pub struct KeyringTokenStore;
 
 #[cfg(feature = "keychain")]
 impl KeyringTokenStore {
+    /// The store over the OS keychain's `codotheca` service; it holds no state of its own.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 

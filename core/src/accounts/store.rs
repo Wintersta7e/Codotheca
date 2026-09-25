@@ -15,28 +15,42 @@ use crate::provider::listing::OrgListing;
 /// `token_ref` stored in SQLite.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewAccount {
+    /// The forge adapter id stored in `account.provider`, e.g. `github`.
     pub provider: String,
+    /// The forge host the account authenticates against.
     pub host: String,
+    /// The account's login on that forge.
     pub login: String,
+    /// The forge's display name for the account, when it has one.
     pub display_name: Option<String>,
+    /// How the token was obtained: the device flow or a pasted PAT.
     pub auth_kind: AuthKind,
+    /// The tier derived from what the server granted, never from what was asked for.
     pub scope_tier: ScopeTier,
+    /// The granted scopes verbatim from the server; empty also when the grant was not stated.
     pub granted_scopes: Vec<String>,
+    /// The keychain entry name, `<provider>:<host>:<login>`, under which the token is stored.
     pub token_ref: String,
 }
 
 /// Failures from the account store.
 #[derive(Debug, thiserror::Error)]
 pub enum AccountError {
+    /// A statement against the account tables failed.
     #[error("account store query failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    /// A value would not serialise to, or parse from, its JSON column form.
     #[error("account store JSON value failed: {0}")]
     Json(#[from] serde_json::Error),
+    /// A value did not fit its type, or a delete was refused as unsafe; the text says which.
     #[error("account store value could not be decoded: {0}")]
     Codec(String),
+    /// No account row has that id, or the account has no org by that login.
     #[error("account {account:?} or org {org:?} was not found")]
     NotFound {
+        /// The account that was looked up.
         account: AccountId,
+        /// The org login looked up under it; `None` when only the account was.
         org: Option<String>,
     },
 }
@@ -489,10 +503,15 @@ fn bit(value: bool) -> i64 {
 /// The fields a caller needs to act on an existing account without re-reading the whole row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountIdentity {
+    /// The forge adapter id stored in `account.provider`.
     pub provider: String,
+    /// The forge host the account authenticates against.
     pub host: String,
+    /// The account's login on that forge.
     pub login: String,
+    /// The keychain entry name the account's token is stored under.
     pub token_ref: String,
+    /// The tier the account's current grant places it in.
     pub scope_tier: ScopeTier,
 }
 
@@ -532,9 +551,11 @@ pub fn account_identity(conn: &Connection, id: AccountId) -> Result<AccountIdent
     )
 }
 
-/// §20's upgrade: the tier, the grant and its observation time are rewritten **together**, from
-/// the server, and the `token_ref` is deliberately untouched — the new token replaces the old in
-/// the **same** keychain entry, so nothing else has to be told the name changed.
+/// §20's upgrade: the tier, the grant and its observation time are rewritten **together**.
+///
+/// They come from the server, and the `token_ref` is deliberately untouched — the new token
+/// replaces the old in the **same** keychain entry, so nothing else has to be told the name
+/// changed.
 ///
 /// # Errors
 /// Fails when the row does not exist or the write does.

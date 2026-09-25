@@ -86,6 +86,8 @@ pub fn set_org_enabled_off_lock(
                 )
                 .map_err(|e| account_failure(&e))?;
                 tx.commit().map_err(internal)?;
+                // `tx` borrowed this guard's connection, so the commit is the earliest release.
+                drop(guard);
                 return Err(coded_failure(ErrorCode::SsoRequired, error.to_string()));
             }
             Err(error) => return Err(provider_failure(&error)),
@@ -107,6 +109,8 @@ pub fn set_org_enabled_off_lock(
     let org = store::set_org_enabled(&tx, args.account_id, &args.org_login, args.enabled)
         .map_err(|error| account_failure(&error))?;
     tx.commit().map_err(internal)?;
+    // `tx` borrowed this guard's connection, so the commit is the earliest release.
+    drop(guard);
     Ok(org)
 }
 
@@ -166,7 +170,7 @@ fn account_failure(error: &AccountError) -> CommandFailure {
     }
 }
 
-fn coded_failure(code: ErrorCode, message: String) -> CommandFailure {
+const fn coded_failure(code: ErrorCode, message: String) -> CommandFailure {
     CommandFailure {
         code,
         message,
@@ -345,7 +349,10 @@ pub fn disconnect_off_lock(
     let _tx_guard = TxGuard::enter();
     let tx = guard.conn().unchecked_transaction().map_err(internal)?;
     store::delete_account(&tx, id).map_err(|e| account_failure(&e))?;
-    tx.commit().map_err(internal)
+    let committed = tx.commit().map_err(internal);
+    // `tx` borrowed this guard's connection, so the commit is the earliest release.
+    drop(guard);
+    committed
 }
 
 /// Handles `accounts.disconnect`.

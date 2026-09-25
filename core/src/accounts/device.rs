@@ -21,18 +21,24 @@ pub const GITHUB_CLIENT_ID: &str = "";
 /// The default poll interval when the server names none. Seconds, per the Device Flow spec.
 const DEFAULT_INTERVAL_SECS: u32 = 5;
 
-/// A live flow. **`expires_at` is an absolute deadline, not a duration**: a re-entry has to
-/// report the time that is actually left, and a countdown that restarts on drawer reopen is the
-/// surface lying about the deadline.
+/// A live flow.
+///
+/// **`expires_at` is an absolute deadline, not a duration**: a re-entry has to report the time
+/// that is actually left, and a countdown that restarts on drawer reopen is the surface lying
+/// about the deadline.
 #[derive(Debug, Clone)]
 pub struct DeviceFlow {
+    /// The code each poll presents to the forge; single-use once granted, never on the protocol.
     pub device_code: SecretToken,
     /// Carried **byte-identical** from the server. Never reformatted, never masked, never
     /// padded: the "eight-character code" describes what the provider returns today, it is not
     /// a validator, and a surface that hard-codes the shape breaks silently when it changes.
     pub user_code: String,
+    /// The forge page where the user enters `user_code`, as the server named it.
     pub verification_uri: String,
+    /// Unix seconds after which the forge will no longer redeem this flow.
     pub expires_at: i64,
+    /// Seconds to wait between polls; a `slow_down` answer replaces it.
     pub interval_secs: u32,
 }
 
@@ -42,10 +48,12 @@ pub struct DeviceFlow {
 /// this codebase wants to make easy. A test matches on the variant.
 #[derive(Debug, Clone)]
 pub enum PollOutcome {
+    /// `authorization_pending`: the user has not yet answered; poll again after the interval.
     Pending,
     /// **The interval in this response replaces the previous one.** Not the old one plus a
     /// constant, and not the old one kept.
     SlowDown {
+        /// The new poll interval in seconds.
         interval_secs: u32,
     },
     /// The token, and the scope set **the response actually named**.
@@ -54,15 +62,19 @@ pub enum PollOutcome {
     /// field that was present and empty. Flattening the two writes an empty grant for an account
     /// whose grant was never stated, which renders as "no scopes at all".
     Granted(SecretToken, Option<Vec<String>>),
+    /// `access_denied`: the user refused the authorisation.
     Denied,
+    /// `expired_token`: the device code outlived its deadline before the user answered.
     Expired,
 }
 
+/// Why a device flow could not be requested or polled.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ConnectError {
     /// No application is registered, so no flow can start. Named rather than attempted.
     #[error("no OAuth client id is compiled into this build")]
     NoClientId,
+    /// The request never got an answer: the transport's own failure, as text.
     #[error("the forge could not be reached: {0}")]
     Transport(String),
     /// The provider answered, and its own `error` slug is the whole message.
@@ -74,6 +86,7 @@ pub enum ConnectError {
     /// reported without its text rather than not reported at all.
     #[error("the forge refused the device flow: {0}")]
     Refused(String),
+    /// The answer was not JSON, or lacked a field the flow needs; the text names which.
     #[error("the forge's answer could not be read: {0}")]
     Decode(String),
 }

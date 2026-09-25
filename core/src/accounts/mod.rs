@@ -34,6 +34,7 @@ pub const ACCOUNT_COMMANDS: [&str; 8] = [
 /// and were an invitation to do it a third time; R75 is structural rather than a convention.
 #[derive(Debug)]
 pub struct AccountsCtx<'a> {
+    /// The index, borrowed from the guard the caller already holds.
     pub index: &'a Index,
 }
 
