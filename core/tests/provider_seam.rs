@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! The `Provider` seam: its request methods, the one production impl, and the requests it sends.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -167,7 +168,9 @@ fn provider_trait_request_method_names() -> Vec<String> {
     let end = trait_body
         .find(" }")
         .expect("the Provider trait body has a closing brace");
-    let trait_body = &trait_body[..end];
+    let trait_body = trait_body
+        .get(..end)
+        .expect("the closing brace was found inside the trait body");
     let mut names = Vec::new();
     for segment in trait_body.split("fn ").skip(1) {
         let signature = segment
@@ -282,42 +285,46 @@ fn helpers_issue_no_requests_and_request_methods_issue_one_each() {
     assert!(provider.host_aliases().contains(&GITHUB_CANONICAL_HOST));
     assert_eq!(transport.request_count(), 0);
 
-    assert_one_request_for(|provider, secret| {
-        provider.viewer(secret).unwrap();
+    assert_one_request_for(|viewer_provider, secret| {
+        viewer_provider.viewer(secret).unwrap();
     });
 
-    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
-    transport.push(ok(b"[]"));
-    provider.list_orgs(&token(), None).unwrap();
-    assert_eq!(transport.request_count(), 1);
+    let (orgs_transport, orgs_provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    orgs_transport.push(ok(b"[]"));
+    orgs_provider.list_orgs(&token(), None).unwrap();
+    assert_eq!(orgs_transport.request_count(), 1);
 
-    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
-    transport.push(ok(b"[]"));
-    provider.list_repos(&token(), None).unwrap();
-    assert_eq!(transport.request_count(), 1);
+    let (repos_transport, repos_provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    repos_transport.push(ok(b"[]"));
+    repos_provider.list_repos(&token(), None).unwrap();
+    assert_eq!(repos_transport.request_count(), 1);
 
-    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
-    transport.push(ok(repo_body()));
-    provider.lookup_repo(&token(), "acme", "widget").unwrap();
-    assert_eq!(transport.request_count(), 1);
+    let (lookup_transport, lookup_provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    lookup_transport.push(ok(repo_body()));
+    lookup_provider
+        .lookup_repo(&token(), "acme", "widget")
+        .unwrap();
+    assert_eq!(lookup_transport.request_count(), 1);
     assert_eq!(
-        transport.requests()[0].url,
+        lookup_transport.requests()[0].url,
         "https://api.github.com/repos/acme/widget"
     );
 
-    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
-    transport.push(ok(repo_body()));
-    provider
+    let (facts_transport, facts_provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    facts_transport.push(ok(repo_body()));
+    facts_provider
         .repo_facts(&token(), "acme", "widget", None)
         .unwrap();
-    assert_eq!(transport.request_count(), 1);
+    assert_eq!(facts_transport.request_count(), 1);
 
-    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
-    transport.push(ok(runs_body()));
-    provider.ci_runs(&token(), "acme", "widget", None).unwrap();
-    assert_eq!(transport.request_count(), 1);
+    let (runs_transport, runs_provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    runs_transport.push(ok(runs_body()));
+    runs_provider
+        .ci_runs(&token(), "acme", "widget", None)
+        .unwrap();
+    assert_eq!(runs_transport.request_count(), 1);
     assert_eq!(
-        transport.requests()[0].url,
+        runs_transport.requests()[0].url,
         "https://api.github.com/repos/acme/widget/actions/runs?per_page=5"
     );
 }
@@ -338,13 +345,15 @@ fn a_lookup_that_finds_nothing_is_unknown_and_not_a_failure() {
     assert_eq!(observed.value, None);
 
     // A 403 is still an error the caller classifies; it is not folded into "not found".
-    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
-    transport.push(HttpResponse {
+    let (forbidden_transport, forbidden_provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    forbidden_transport.push(HttpResponse {
         status: 403,
         headers: Vec::new(),
         body: Vec::new(),
     });
-    assert!(provider.lookup_repo(&token(), "acme", "widget").is_err());
+    assert!(forbidden_provider
+        .lookup_repo(&token(), "acme", "widget")
+        .is_err());
 }
 
 #[test]
@@ -441,14 +450,15 @@ fn http_status_errors_keep_status_and_headers() {
         other => panic!("expected an HTTP error, got {other:?}"),
     }
 
-    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
-    transport.push(HttpResponse {
+    let (unauthorised_transport, unauthorised_provider) =
+        provider_with_transport(GITHUB_CANONICAL_HOST);
+    unauthorised_transport.push(HttpResponse {
         status: 401,
         headers: Vec::new(),
         body: b"{}".to_vec(),
     });
     assert!(matches!(
-        provider.viewer(&token()).unwrap_err(),
+        unauthorised_provider.viewer(&token()).unwrap_err(),
         ProviderError::Http { status: 401, .. }
     ));
 }
@@ -524,10 +534,11 @@ fn github_provider_uses_the_expected_api_base_for_each_host() {
         .url
         .starts_with("https://api.github.com"));
 
-    let (transport, provider) = provider_with_transport("forge.example.invalid");
-    transport.push(ok(user_body()));
-    provider.viewer(&token()).unwrap();
-    assert!(transport.requests()[0]
+    let (enterprise_transport, enterprise_provider) =
+        provider_with_transport("forge.example.invalid");
+    enterprise_transport.push(ok(user_body()));
+    enterprise_provider.viewer(&token()).unwrap();
+    assert!(enterprise_transport.requests()[0]
         .url
         .starts_with("https://forge.example.invalid/api/v3"));
 }
@@ -683,14 +694,14 @@ fn a_cross_host_next_link_is_not_followed() {
     );
 
     // The same header on the same host is still a next page — this bounds, it does not disable.
-    let (transport, provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
+    let (same_host_transport, same_host_provider) = provider_with_transport(GITHUB_CANONICAL_HOST);
     let same = "https://api.github.com/user/repos?page=2";
-    transport.push(ok_with_headers(
+    same_host_transport.push(ok_with_headers(
         normalise_headers([("Link", format!("<{same}>; rel=\"next\"").as_str())]),
         b"[]",
     ));
     assert_eq!(
-        provider
+        same_host_provider
             .list_repos(&token(), None)
             .unwrap()
             .value

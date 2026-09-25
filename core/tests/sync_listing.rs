@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use codotheca_core::accounts::keychain::{token_ref, SecretToken, TokenStore};
 use codotheca_core::accounts::store::{insert_account, upsert_orgs, NewAccount};
-use codotheca_core::http::{HttpResponse, HttpTransport, TransportError};
+use codotheca_core::http::{HttpResponse, TransportError};
 use codotheca_core::index::Index;
 use codotheca_core::protocol::{AccountId, AuthKind, ScopeTier, SyncTaskKind};
 use codotheca_core::provider::listing::OrgListing;
@@ -50,11 +50,11 @@ struct Fixture {
 
 /// One repository as the forge's listing endpoint renders it.
 fn repo_json(id: u64, owner: &str, name: &str, push: Option<bool>) -> String {
-    let permissions = match push {
-        Some(push) => format!(r#","permissions":{{"push":{push}}}"#),
-        // **No permission object at all** — §20's rule is that this is *unknown*, never false.
-        None => String::new(),
-    };
+    // `None` writes **no permission object at all** — §20's rule is that this is *unknown*, never
+    // false.
+    let permissions = push.map_or_else(String::new, |can_push| {
+        format!(r#","permissions":{{"push":{can_push}}}"#)
+    });
     format!(
         r#"{{"id":{id},"clone_url":"https://{HOST}/{owner}/{name}.git",
             "owner":{{"login":"{owner}","type":"User"}},"name":"{name}",
@@ -115,10 +115,7 @@ fn fixture() -> Fixture {
 
     let transport = Arc::new(FakeTransport::new());
     let clock = Arc::new(FakeClock::new(NOW));
-    let observing = Arc::new(ObservingTransport::new(
-        Arc::clone(&transport) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
-    ));
+    let observing = Arc::new(ObservingTransport::new(transport.clone(), clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     tokens
         .store(
@@ -126,10 +123,7 @@ fn fixture() -> Fixture {
             &SecretToken::new("t".to_owned()),
         )
         .expect("token stored");
-    let provider = Arc::new(GitHubProvider::new(
-        Arc::clone(&observing) as Arc<dyn HttpTransport>,
-        HOST.to_owned(),
-    ));
+    let provider = Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned()));
 
     Fixture {
         index: Arc::new(Mutex::new(index)),
@@ -192,6 +186,7 @@ fn an_entry_with_no_permission_object_is_counted_and_admitted_nowhere() {
         .expect("query")
         .map(Result::unwrap)
         .collect();
+    drop(guard);
     assert_eq!(projects, ["alpha"], "beta and gamma reached no row");
 }
 
@@ -221,6 +216,7 @@ fn a_page_commits_before_the_next_is_requested_and_a_later_failure_keeps_it() {
             .conn()
             .query_row("SELECT count(*) FROM project", [], |r| r.get(0))
             .expect("counted");
+        drop(guard);
         assert_eq!(rows, 1, "page 1 committed before page 2 was asked for");
     }
 
@@ -240,6 +236,7 @@ fn a_page_commits_before_the_next_is_requested_and_a_later_failure_keeps_it() {
         .conn()
         .query_row("SELECT max(updated_at) FROM project", [], |r| r.get(0))
         .expect("read");
+    drop(guard);
     assert_eq!(touched, Some(NOW), "and page 1's clock committed with them");
 }
 
@@ -253,9 +250,9 @@ fn a_settle_that_is_not_a_next_page_clears_the_cursor() {
     };
     let (after, _) = apply_outcome(&row, &SyncOutcome::Done, NOW);
     assert_eq!(after.cursor, None);
-    let (after, _) = apply_outcome(&row, &SyncOutcome::NotModified, NOW);
-    assert_eq!(after.cursor, None);
-    let (after, _) = apply_outcome(
+    let (after_not_modified, _) = apply_outcome(&row, &SyncOutcome::NotModified, NOW);
+    assert_eq!(after_not_modified.cursor, None);
+    let (after_next_page, _) = apply_outcome(
         &row,
         &SyncOutcome::NextPage {
             cursor: "page-3".to_owned(),
@@ -263,7 +260,7 @@ fn a_settle_that_is_not_a_next_page_clears_the_cursor() {
         NOW,
     );
     assert_eq!(
-        after.cursor.as_deref(),
+        after_next_page.cursor.as_deref(),
         Some("page-3"),
         "the one that keeps it"
     );
@@ -428,6 +425,7 @@ fn a_throttled_listing_writes_no_row_and_still_mirrors_its_budget() {
             |r| r.get(0),
         )
         .expect("the budget row exists");
+    drop(guard);
     assert_eq!(remaining, Some(0), "the 403's headers reached the mirror");
 }
 
@@ -452,7 +450,9 @@ fn the_renderers_staleness_threshold_still_cites_this_cadence() {
         .find(marker)
         .expect("REMOTE_STALE_AFTER_SECS has exactly one declaration, and this is it")
         + marker.len();
-    let literal: String = source[start..]
+    let literal: String = source
+        .get(start..)
+        .expect("the marker ends inside the source")
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == '_')
         .filter(|c| *c != '_')
@@ -515,6 +515,7 @@ fn a_rename_probe_writes_the_stable_id_and_settles_the_basis() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .expect("row");
+    drop(guard);
     assert_eq!(id.as_deref(), Some("4242"), "the stable id, not the path");
     assert_eq!(basis.as_deref(), Some("provider_id"), "basis (a), forever");
 }
@@ -565,6 +566,7 @@ fn a_probe_that_answers_not_found_deletes_nothing_and_does_not_block() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .expect("row");
+    drop(guard);
     assert_eq!(rows, 1, "no row is deleted by a probe");
     assert_eq!(
         description.as_deref(),

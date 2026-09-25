@@ -97,13 +97,16 @@ fn an_unobserved_budget_is_unknown_and_a_task_holding_one_proceeds() {
             Ok(())
         })
         .expect("transaction");
-    let row = read_budget(fixture.index().conn(), Some(account), "core")
+    let observed = read_budget(fixture.index().conn(), Some(account), "core")
         .expect("read")
         .expect("a row exists");
-    assert_eq!(row.remaining(), None, "never 0 for an unsent header");
-    assert_eq!(row.limit(), None, "and never the limit");
-    assert_eq!(row.observed_at(), NOW);
-    assert_eq!(may_spend(Some(&row), false, NOW), BudgetVerdict::Unknown);
+    assert_eq!(observed.remaining(), None, "never 0 for an unsent header");
+    assert_eq!(observed.limit(), None, "and never the limit");
+    assert_eq!(observed.observed_at(), NOW);
+    assert_eq!(
+        may_spend(Some(&observed), false, NOW),
+        BudgetVerdict::Unknown
+    );
 }
 
 /// §21.6: a response whose rate headers arrive **without** `x-ratelimit-resource` cannot be keyed,
@@ -426,10 +429,7 @@ fn the_decorators_observation_is_what_reaches_the_row() {
         ]),
         body: Vec::new(),
     });
-    let observing = ObservingTransport::new(
-        Arc::clone(&inner) as Arc<dyn HttpTransport>,
-        Arc::new(FakeClock::new(NOW)),
-    );
+    let observing = ObservingTransport::new(inner, Arc::new(FakeClock::new(NOW)));
     let _ = observing.send(&codotheca_core::http::HttpRequest {
         method: "GET",
         url: "https://forge.example.invalid/search".to_owned(),
@@ -521,8 +521,8 @@ fn lane() -> Lane {
     let scripted = Arc::new(codotheca_core::testing::FakeTransport::new());
     let clock = Arc::new(codotheca_core::testing::FakeClock::new(NOW));
     let observing = Arc::new(codotheca_core::sync::http::ObservingTransport::new(
-        Arc::clone(&scripted) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        scripted.clone(),
+        clock.clone(),
     ));
     let tokens = Arc::new(codotheca_core::testing::FakeTokenStore::available());
     tokens
@@ -532,7 +532,7 @@ fn lane() -> Lane {
         )
         .expect("token");
     let provider = Arc::new(codotheca_core::provider::GitHubProvider::new(
-        Arc::clone(&observing) as Arc<dyn HttpTransport>,
+        observing.clone(),
         HOST.to_owned(),
     ));
     let index = Arc::new(std::sync::Mutex::new(index));
@@ -542,12 +542,12 @@ fn lane() -> Lane {
             provider,
             transport: observing,
             tokens,
-            clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock,
             cancel: codotheca_core::cancel::CancelToken::new(),
             // UTC in a test, so a local date never depends on the machine running it.
             tz_offset_min: 0,
         },
-        Arc::new(Quiet) as Arc<dyn codotheca_core::proto::EventSink>,
+        Arc::new(Quiet),
     );
 
     Lane {
@@ -597,7 +597,7 @@ fn drain_queue(lane: &Lane, expected: i64) {
         let (rows, pending): (i64, i64) = {
             let guard = lane.index.lock().expect("index");
             let conn = guard.conn();
-            (
+            let counts = (
                 conn.query_row("SELECT count(*) FROM sync_task_state", [], |r| r.get(0))
                     .unwrap_or(0),
                 conn.query_row(
@@ -606,7 +606,9 @@ fn drain_queue(lane: &Lane, expected: i64) {
                     |r| r.get(0),
                 )
                 .unwrap_or(1),
-            )
+            );
+            drop(guard);
+            counts
         };
         if rows >= expected && pending == 0 {
             break;
@@ -687,6 +689,7 @@ fn a_scarce_budget_yields_the_listing_and_spends_on_the_opened_page() {
     )
     .expect("read")
     .expect("row");
+    drop(guard);
     assert_eq!(
         listing.state,
         codotheca_core::protocol::SyncTaskState::Parked

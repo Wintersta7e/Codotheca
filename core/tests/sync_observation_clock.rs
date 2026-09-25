@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 
 use codotheca_core::accounts::keychain::{token_ref, SecretToken, TokenStore};
 use codotheca_core::accounts::store::{insert_account, NewAccount};
-use codotheca_core::http::{HttpResponse, HttpTransport};
+use codotheca_core::http::HttpResponse;
 use codotheca_core::index::Index;
 use codotheca_core::protocol::{AuthKind, ProjectId, ScopeTier};
 use codotheca_core::provider::GitHubProvider;
@@ -88,6 +88,7 @@ fn read_row(index: &Mutex<Index>) -> Row {
         .expect("query")
         .map(Result::unwrap)
         .collect();
+    drop(guard);
     Row { topics, ..row }
 }
 
@@ -126,10 +127,7 @@ fn fixture() -> Fixture {
 
     let transport = Arc::new(FakeTransport::new());
     let clock = Arc::new(FakeClock::new(NOW));
-    let observing = Arc::new(ObservingTransport::new(
-        Arc::clone(&transport) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
-    ));
+    let observing = Arc::new(ObservingTransport::new(transport.clone(), clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     tokens
         .store(
@@ -137,10 +135,7 @@ fn fixture() -> Fixture {
             &SecretToken::new("t".to_owned()),
         )
         .expect("token");
-    let provider = Arc::new(GitHubProvider::new(
-        Arc::clone(&observing) as Arc<dyn HttpTransport>,
-        HOST.to_owned(),
-    ));
+    let provider = Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned()));
 
     Fixture {
         index: Arc::new(Mutex::new(index)),
@@ -152,7 +147,7 @@ fn fixture() -> Fixture {
             tokens,
             // **The same clock the decorator holds.** Two would let the observation and the write
             // disagree about when they happened, which is the one thing this file is about.
-            clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock,
             cancel: codotheca_core::cancel::CancelToken::new(),
             // UTC in a test, so a local date never depends on the machine running it.
             tz_offset_min: 0,

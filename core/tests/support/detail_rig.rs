@@ -1,6 +1,9 @@
 //! Fixtures for the project page's core half. Not API — a rig, kept out of the two test files
 //! so both can share one seeding vocabulary instead of drifting into two.
 #![allow(dead_code)]
+// Each suite that includes this rig uses it from its root, and rustc's `unreachable_pub` rejects
+// `pub` on an item no public path reaches: `pub(crate)` is the only visibility left.
+#![allow(clippy::redundant_pub_crate)]
 
 use codotheca_core::art::testsupport::CollectingSink;
 use codotheca_core::detail::DetailCtx;
@@ -9,11 +12,11 @@ use codotheca_core::index::Index;
 use codotheca_core::mount::{MountFacts, StoreClass};
 use codotheca_core::testing::{FakeGitBackend, FakeMountResolver};
 
-pub const NOW: i64 = 1_781_179_200;
+pub(crate) const NOW: i64 = 1_781_179_200;
 
 /// Every §6 freshness request the page made, so "asks once" is a count and not a hope.
 #[derive(Debug, Default)]
-pub struct RecordingJobs {
+pub(crate) struct RecordingJobs {
     pub indexed: std::sync::Mutex<Vec<(i64, i64)>>,
     pub visible: std::sync::Mutex<Vec<(i64, i64)>>,
     /// §29.7: which command asked, and whether it asked for the content scan.
@@ -53,7 +56,7 @@ impl codotheca_core::jobs::JobSink for RecordingJobs {
     }
 }
 
-pub struct Rig {
+pub(crate) struct Rig {
     pub dir: tempfile::TempDir,
     pub index: Index,
     pub git: FakeGitBackend,

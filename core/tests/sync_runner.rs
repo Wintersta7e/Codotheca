@@ -164,15 +164,9 @@ fn fixture_over(dwell: Duration, forge: Option<Arc<dyn HttpTransport>>) -> Fixtu
         .expect("seed");
 
     let scripted = Arc::new(FakeTransport::new());
-    let probe = ConcurrencyProbe::new(
-        forge.unwrap_or_else(|| Arc::clone(&scripted) as Arc<dyn HttpTransport>),
-        dwell,
-    );
+    let probe = ConcurrencyProbe::new(forge.unwrap_or_else(|| scripted.clone()), dwell);
     let clock = Arc::new(FakeClock::new(NOW));
-    let observing = Arc::new(ObservingTransport::new(
-        Arc::clone(&probe) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
-    ));
+    let observing = Arc::new(ObservingTransport::new(probe.clone(), clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     tokens
         .store(
@@ -180,10 +174,7 @@ fn fixture_over(dwell: Duration, forge: Option<Arc<dyn HttpTransport>>) -> Fixtu
             &SecretToken::new("t".to_owned()),
         )
         .expect("token");
-    let provider = Arc::new(GitHubProvider::new(
-        Arc::clone(&observing) as Arc<dyn HttpTransport>,
-        HOST.to_owned(),
-    ));
+    let provider = Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned()));
 
     Fixture {
         index: Arc::new(Mutex::new(index)),
@@ -195,7 +186,7 @@ fn fixture_over(dwell: Duration, forge: Option<Arc<dyn HttpTransport>>) -> Fixtu
             provider,
             transport: observing,
             tokens,
-            clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock,
             cancel: codotheca_core::cancel::CancelToken::new(),
             // UTC in a test, so a local date never depends on the machine running it.
             tz_offset_min: 0,
@@ -253,6 +244,7 @@ fn the_startup_sweep_requeues_a_running_row_and_moves_neither_counter() {
         let moved = guard
             .with_tx(|tx| codotheca_core::sync::store::requeue_running(tx, NOW))
             .expect("swept");
+        drop(guard);
         eprintln!("sync_runner: the sweep re-queued {moved} row(s)");
         assert_eq!(moved, 1, "a sweep that swept nothing cannot report success");
     }
@@ -283,11 +275,7 @@ fn an_interrupted_task_is_never_surfaced_as_a_failure() {
     let index = Arc::clone(&f.index);
     let events = Arc::clone(&f.events);
     let account = f.account.0;
-    let pump = SyncPump::start(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let pump = SyncPump::start(Arc::clone(&f.index), f.deps, f.events.clone());
     until("the crashed row to settle", || {
         state_of(&index, SyncTaskKind::RenameProbe, account)
             .is_some_and(|row| row.state == SyncTaskState::Ok)
@@ -315,11 +303,7 @@ fn at_most_one_request_is_in_flight_and_at_most_one_row_is_running() {
     for _ in 0..6 {
         f.scripted.push(ok_page("[]"));
     }
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.enqueue(SyncTask::AccountRepos {
         account_id: f.account,
     });
@@ -372,6 +356,7 @@ fn at_most_one_request_is_in_flight_and_at_most_one_row_is_running() {
                 |r| r.get(0),
             )
             .unwrap_or(1);
+        drop(guard);
         rows >= 3 && pending == 0
     });
     runner.request_stop();
@@ -403,11 +388,7 @@ fn stop_is_bounded_and_a_second_stop_is_harmless() {
     for _ in 0..4 {
         f.scripted.push(ok_page("[]"));
     }
-    let pump = SyncPump::start(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let pump = SyncPump::start(Arc::clone(&f.index), f.deps, f.events.clone());
     // Force the condition rather than wait for it: enqueue, then spin until a request is actually
     // in flight, so `stop()` is provably called against a dwelling transport.
     pump.sink_ref().on_project_visible(f.project);
@@ -441,11 +422,7 @@ fn a_park_whose_clock_has_come_is_picked_up_with_no_external_trigger() {
 
     let index = Arc::clone(&f.index);
     let account = f.account.0;
-    let pump = SyncPump::start(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let pump = SyncPump::start(Arc::clone(&f.index), f.deps, f.events.clone());
     // It must **not** run while the clock says not yet.
     std::thread::sleep(Duration::from_millis(30));
     assert_eq!(
@@ -482,11 +459,7 @@ fn an_on_demand_task_queued_behind_a_scheduled_one_runs_first() {
     for _ in 0..4 {
         f.scripted.push(ok_page("[]"));
     }
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.enqueue(SyncTask::AccountRepos {
         account_id: f.account,
     });
@@ -535,11 +508,7 @@ fn listing_progress_never_retreats_and_never_invents_a_denominator() {
 
     // Queued through `enqueue`, which is the production path: writing the row with `put` behind
     // the runner's back would assert against a door the product does not use.
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.enqueue(SyncTask::AccountRepos {
         account_id: f.account,
     });
@@ -662,14 +631,10 @@ fn a_listing_holds_no_index_lock_while_it_reads_the_keychain() {
     });
 
     let mut deps = f.deps;
-    deps.tokens = Arc::clone(&probe) as Arc<dyn TokenStore>;
+    deps.tokens = probe.clone();
     let index = Arc::clone(&f.index);
     let account = f.account.0;
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), deps, f.events.clone());
     runner.enqueue(SyncTask::AccountRepos {
         account_id: f.account,
     });
@@ -730,17 +695,10 @@ fn a_throttle_naming_no_instant_parks_once_instead_of_retrying() {
         },
         calls: AtomicUsize::new(0),
     });
-    let f = fixture_over(
-        Duration::ZERO,
-        Some(Arc::clone(&forge) as Arc<dyn HttpTransport>),
-    );
+    let f = fixture_over(Duration::ZERO, Some(forge.clone()));
     let index = Arc::clone(&f.index);
     let account = f.account.0;
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.enqueue(SyncTask::AccountRepos {
         account_id: f.account,
     });
@@ -816,11 +774,7 @@ fn a_reserve_with_no_observed_reset_parks_once_instead_of_cycling() {
     let index = Arc::clone(&f.index);
     let account = f.account.0;
     let events = Arc::clone(&f.events);
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.enqueue(SyncTask::AccountRepos {
         account_id: f.account,
     });
@@ -882,11 +836,7 @@ fn a_connected_account_is_listed_with_nothing_enqueueing_it() {
     }
     let index = Arc::clone(&f.index);
     let account = f.account.0;
-    let pump = SyncPump::start(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let pump = SyncPump::start(Arc::clone(&f.index), f.deps, f.events.clone());
     until("the listing nothing asked for to settle", || {
         state_of(&index, SyncTaskKind::AccountRepos, account)
             .is_some_and(|row| row.state == SyncTaskState::Ok)
@@ -931,11 +881,7 @@ fn a_clean_settle_publishes_the_status_that_carries_the_cleared_banner() {
     }
 
     let events = Arc::clone(&f.events);
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.enqueue(SyncTask::AccountRepos {
         account_id: f.account,
     });
@@ -1016,11 +962,7 @@ fn a_response_another_thread_observed_is_mirrored_against_the_per_ip_pool() {
 
     let index = Arc::clone(&f.index);
     let account = f.account.0;
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.enqueue(SyncTask::AccountRepos {
         account_id: f.account,
     });
@@ -1036,6 +978,7 @@ fn a_response_another_thread_observed_is_mirrored_against_the_per_ip_pool() {
     let pool = codotheca_core::sync::budget::read_budget(guard.conn(), None, "core")
         .expect("read")
         .expect("the per-IP pool was never mirrored");
+    drop(guard);
     eprintln!(
         "sync_runner: per-IP pool remaining {:?} of {:?}",
         pool.remaining(),
@@ -1058,11 +1001,7 @@ fn a_response_another_thread_observed_is_mirrored_against_the_per_ip_pool() {
 fn cancelling_the_deps_token_stops_the_loop_without_a_request_stop() {
     let f = fixture(Duration::ZERO);
     let cancel = f.deps.cancel.clone();
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.start();
 
     let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -1119,11 +1058,7 @@ fn a_project_remote_sync_settle_opens_ci_red_with_no_job_involved() {
             .expect("seed");
     }
 
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.enqueue(SyncTask::ProjectRemote {
         project_id: f.project,
     });
@@ -1139,6 +1074,7 @@ fn a_project_remote_sync_settle_opens_ci_red_with_no_job_involved() {
                 |r| r.get(0),
             )
             .unwrap_or(0);
+        drop(guard);
         n == 1
     });
 }
@@ -1208,11 +1144,7 @@ fn a_project_remote_sync_settle_writes_the_ten_completion_rows_with_no_job_invol
         "the evaluator has not run, so there is nothing to read"
     );
 
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.enqueue(SyncTask::ProjectRemote {
         project_id: f.project,
     });
@@ -1228,6 +1160,7 @@ fn a_project_remote_sync_settle_writes_the_ten_completion_rows_with_no_job_invol
                 |r| r.get(0),
             )
             .unwrap_or(0);
+        drop(guard);
         n == 10
     });
 
@@ -1240,6 +1173,7 @@ fn a_project_remote_sync_settle_writes_the_ten_completion_rows_with_no_job_invol
             |r| r.get(0),
         )
         .expect("the description row");
+    drop(guard);
     assert_eq!(
         state, "pass",
         "a forge description and a topic, read at the settle that could have changed them"
@@ -1288,11 +1222,7 @@ fn ac_p3_34_8_a_project_remote_sync_settle_writes_a_background_delta() {
             .expect("seed");
     }
 
-    let runner = SyncRunner::new(
-        Arc::clone(&f.index),
-        f.deps,
-        Arc::clone(&f.events) as Arc<dyn EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&f.index), f.deps, f.events.clone());
     runner.enqueue(SyncTask::ProjectRemote {
         project_id: f.project,
     });

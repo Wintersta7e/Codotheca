@@ -20,7 +20,7 @@
 use std::sync::Arc;
 
 use codotheca_core::accounts::keychain::SecretToken;
-use codotheca_core::http::{HttpResponse, HttpTransport};
+use codotheca_core::http::HttpResponse;
 use codotheca_core::testing::{FakeClock, FakeTransport};
 
 const NOW: i64 = 1_800_000_000;
@@ -145,7 +145,7 @@ fn a_request_through_the_production_wiring_produces_an_observation() {
         body: br#"{"login":"someone"}"#.to_vec(),
     });
     let (provider, observing) = codotheca_core::assembly::sync::build_forge(
-        Arc::clone(&inner) as Arc<dyn HttpTransport>,
+        inner,
         Arc::new(FakeClock::new(NOW)),
         "forge.example.invalid".to_owned(),
     );
@@ -176,6 +176,9 @@ fn a_request_through_the_production_wiring_produces_an_observation() {
 /// `sync_assembly::…` reads as *did not run*. Flat, it records as
 /// `sync_assembly::the_real_binary_answers_sync_status_and_exits`, like every other cargo id in
 /// the register.
+// The crate root uses these, so they cannot be private, and rustc's `unreachable_pub` rejects
+// `pub` on an item no public path reaches: `pub(crate)` is the only visibility left.
+#[allow(clippy::redundant_pub_crate)]
 mod frames {
     use codotheca_core::proto::frame::{read_frame, write_frame};
     use std::io::Write as _;
@@ -237,6 +240,6 @@ fn the_real_binary_answers_sync_status_and_exits() {
         &mut child,
         &serde_json::json!({"t": "request", "id": 3, "command": "app.shutdown", "args": {}}),
     );
-    let status = child.wait().expect("exits");
-    assert!(status.success(), "{status:?}");
+    let exit_status = child.wait().expect("exits");
+    assert!(exit_status.success(), "{exit_status:?}");
 }

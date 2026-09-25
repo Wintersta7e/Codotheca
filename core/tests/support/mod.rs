@@ -19,6 +19,9 @@ use codotheca_core::mount::StoreClass;
 ///
 /// Fixture git runs with its own `HOME` so the developer's global config never leaks in, and
 /// with fixed identity and dates so history assertions are deterministic.
+// Every suite that declares `mod support` uses this from its root, and rustc's `unreachable_pub`
+// rejects `pub` on an item no public path reaches: `pub(crate)` is the only visibility left.
+#[allow(clippy::redundant_pub_crate)]
 pub(crate) struct TestRepo {
     dir: tempfile::TempDir,
     root: PathBuf,

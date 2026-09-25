@@ -4,6 +4,8 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! §20's account criteria: listing admission by push permission, and a disconnect that deletes
+//! no project row.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

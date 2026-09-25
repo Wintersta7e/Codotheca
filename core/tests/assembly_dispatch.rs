@@ -132,13 +132,16 @@ fn every_loop_iteration_pumps_the_handler_once() {
     assert_eq!(handler.pumped, 3);
 }
 
+// The crate root uses these, so they cannot be private, and rustc's `unreachable_pub` rejects
+// `pub` on an item no public path reaches: `pub(super)` is the only visibility left.
+#[allow(clippy::redundant_pub_crate)]
 mod wire {
     use codotheca_core::lifecycle::OsParentProbe;
     use codotheca_core::proto::frame::{read_frame, write_frame, FrameError};
     use std::sync::{Arc, Mutex};
 
     #[derive(Clone, Debug, Default)]
-    pub struct CapturingWriter {
+    pub(super) struct CapturingWriter {
         bytes: Arc<Mutex<Vec<u8>>>,
     }
 
@@ -167,7 +170,7 @@ mod wire {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
             self.bytes
                 .lock()
-                .expect("capture lock")
+                .map_err(|_| std::io::Error::other("capture lock poisoned"))?
                 .extend_from_slice(bytes);
             Ok(bytes.len())
         }
@@ -177,7 +180,7 @@ mod wire {
         }
     }
 
-    pub fn inbound(frames: &[serde_json::Value]) -> std::io::Cursor<Vec<u8>> {
+    pub(super) fn inbound(frames: &[serde_json::Value]) -> std::io::Cursor<Vec<u8>> {
         let mut bytes = Vec::new();
         for frame in frames {
             let body = serde_json::to_vec(frame).expect("inbound frame");
@@ -186,7 +189,7 @@ mod wire {
         std::io::Cursor::new(bytes)
     }
 
-    pub fn live_parent() -> OsParentProbe {
+    pub(super) fn live_parent() -> OsParentProbe {
         OsParentProbe::new(std::process::id())
     }
 }
@@ -253,10 +256,9 @@ mod corehandler {
         let events = Arc::clone(events);
         let sync_observing = Arc::new(codotheca_core::sync::http::ObservingTransport::new(
             Arc::clone(&http),
-            Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock.clone(),
         ));
-        let sync_http: Arc<dyn codotheca_core::http::HttpTransport> =
-            Arc::clone(&sync_observing) as Arc<dyn codotheca_core::http::HttpTransport>;
+        let sync_http: Arc<dyn codotheca_core::http::HttpTransport> = sync_observing.clone();
         CoreHandler::new(CoreDeps {
             index: Arc::clone(&index),
             // The seam and a fake of it. `FakeTransport` answers nothing here: every accounts
@@ -278,8 +280,8 @@ mod corehandler {
             mount: Arc::new(codotheca_core::testing::FakeMountResolver::default()),
             spawner: Box::new(codotheca_core::launch::spawn::RecordingSpawner::new()),
             sessions: codotheca_core::session::manager::SessionManager::new(
-                Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
-                Arc::clone(&events) as Arc<dyn EventSink>,
+                clock.clone(),
+                events.clone(),
                 Box::new(codotheca_core::session::watch::FakeActivitySource::new()),
                 Arc::new(codotheca_core::session::activity::FakeIgnoreCheck::new(&[])),
             ),
@@ -293,8 +295,8 @@ mod corehandler {
             jobs: codotheca_core::assembly::jobs::JobPump::start(
                 Arc::clone(&index),
                 Arc::new(codotheca_core::testing::FakeGitBackend::new()),
-                Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
-                Arc::clone(&events) as Arc<dyn EventSink>,
+                clock.clone(),
+                events.clone(),
                 // UTC, so a test's local date never depends on the machine running it.
                 0,
             ),
@@ -310,12 +312,12 @@ mod corehandler {
                     )),
                     transport: Arc::clone(&sync_observing),
                     tokens: Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
-                    clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+                    clock,
                     cancel: codotheca_core::cancel::CancelToken::new(),
                     // UTC in a test, so a local date never depends on the machine running it.
                     tz_offset_min: 0,
                 },
-                Arc::clone(&events) as Arc<dyn EventSink>,
+                events.clone(),
             ),
             events: Arc::clone(&events),
             tz_offset_min: 0,
@@ -467,6 +469,7 @@ mod corehandler {
             )
             .expect("the account inserts");
             tx.commit().expect("the insert commits");
+            drop(guard);
             id
         };
 
@@ -483,7 +486,7 @@ mod corehandler {
             &events,
             &clock,
             Arc::new(codotheca_core::testing::FakeTransport::new()),
-            Arc::clone(&probe) as Arc<dyn codotheca_core::accounts::keychain::TokenStore>,
+            probe.clone(),
         );
 
         h.handle(
@@ -558,7 +561,7 @@ mod corehandler {
             &index,
             &events,
             &clock,
-            Arc::clone(&probe) as Arc<dyn codotheca_core::http::HttpTransport>,
+            probe.clone(),
             Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
         );
 
@@ -611,6 +614,7 @@ mod corehandler {
             )
             .expect("account inserts");
             tx.commit().expect("commit");
+            drop(guard);
         }
 
         let events = Arc::new(PublisherSink::new(Publisher::detached()));
@@ -625,7 +629,7 @@ mod corehandler {
             &index,
             &events,
             &clock,
-            Arc::clone(&probe) as Arc<dyn codotheca_core::http::HttpTransport>,
+            probe.clone(),
             // A keychain that answers, so the preflight reaches the transport rather than
             // stopping at the token read — the test's own guard caught that first.
             {

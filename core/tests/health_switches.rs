@@ -209,8 +209,8 @@ fn ac_p3_30_12_switching_a_check_back_on_is_unknown_not_ok_and_not_zero_and_the_
     let project = insert_project(&conn);
     seed_sweep_and_item(&conn, project, "missing_tests");
 
-    let identity = |conn: &rusqlite::Connection| -> Vec<(i64, String, String, i64)> {
-        let mut st = conn
+    let identity = |db: &rusqlite::Connection| -> Vec<(i64, String, String, i64)> {
+        let mut st = db
             .prepare("SELECT id, source, fingerprint, first_seen_at FROM debt_item ORDER BY id")
             .unwrap();
         let mapped = st
@@ -539,8 +539,8 @@ fn a_switched_off_source_is_not_swept_and_reads_not_run_yet_once_back_on() {
         rusqlite::params![p, NOW, path.as_bytes(), path],
     )
     .unwrap();
-    let toggle = |conn: &rusqlite::Connection, enabled: bool| {
-        let tx = conn.unchecked_transaction().unwrap();
+    let toggle = |db: &rusqlite::Connection, enabled: bool| {
+        let tx = db.unchecked_transaction().unwrap();
         write_switches(
             &tx,
             &[HealthCheckSwitch {
@@ -620,19 +620,19 @@ fn a_switched_off_source_is_not_swept_and_reads_not_run_yet_once_back_on() {
     // is `failed` without waiting on a sweep. `failed` is neither the `ok` nor the `0` §30.9
     // guards against; `notRunYet` is the case above, where no item survived.
     toggle(&conn, true);
-    let (reading, _) = read_for_project(&conn, ProjectId(p)).unwrap();
-    let check = reading
+    let (item_reading, _) = read_for_project(&conn, ProjectId(p)).unwrap();
+    let item_check = item_reading
         .checks
         .iter()
         .find(|c| c.id == DebtSource::MissingTests)
         .expect("a declared source");
     eprintln!(
         "item case, switched back on: {:?} {:?}, sweep row {:?}",
-        check.outcome,
-        check.unknown_reason,
+        item_check.outcome,
+        item_check.unknown_reason,
         tests_sweep(&conn, p)
     );
     assert_eq!(tests_sweep(&conn, p), None, "nothing has swept it yet");
-    assert_eq!(check.outcome, CheckOutcome::Failed);
-    assert_eq!(check.unknown_reason, None);
+    assert_eq!(item_check.outcome, CheckOutcome::Failed);
+    assert_eq!(item_check.unknown_reason, None);
 }

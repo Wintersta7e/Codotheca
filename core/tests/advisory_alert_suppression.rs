@@ -40,18 +40,15 @@ impl codotheca_core::proto::EventSink for Recorder {
 fn deps() -> SyncDeps {
     let clock = Arc::new(FakeClock::new(NOW));
     let observing = Arc::new(ObservingTransport::new(
-        Arc::new(FakeTransport::new()) as Arc<dyn codotheca_core::http::HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        Arc::new(FakeTransport::new()),
+        clock.clone(),
     ));
-    let provider = Arc::new(GitHubProvider::new(
-        Arc::clone(&observing) as Arc<dyn codotheca_core::http::HttpTransport>,
-        HOST.to_owned(),
-    ));
+    let provider = Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned()));
     SyncDeps {
         provider,
         transport: observing,
         tokens: Arc::new(FakeTokenStore::available()),
-        clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        clock,
         cancel: codotheca_core::cancel::CancelToken::new(),
         tz_offset_min: 0,
     }
@@ -141,11 +138,7 @@ fn a_surface_suppressed_project_never_fires_through_the_runner() {
     let index = Arc::new(Mutex::new(index));
     let events = Arc::new(Recorder::default());
 
-    let runner = SyncRunner::new(
-        Arc::clone(&index),
-        deps(),
-        Arc::clone(&events) as Arc<dyn codotheca_core::proto::EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&index), deps(), events.clone());
     runner.start();
     let deadline = Instant::now() + DEADLINE;
     loop {
@@ -181,10 +174,14 @@ fn a_surface_suppressed_project_never_fires_through_the_runner() {
             .conn()
             .prepare("SELECT project_id FROM advisory_notified ORDER BY project_id")
             .unwrap();
-        stmt.query_map([], |r| r.get(0))
+        let ids = stmt
+            .query_map([], |r| r.get(0))
             .unwrap()
             .collect::<Result<_, _>>()
-            .unwrap()
+            .unwrap();
+        drop(stmt);
+        drop(guard);
+        ids
     };
     eprintln!("advisory_alert_suppression: alerts {alerts:?}, ledger {notified:?}");
 

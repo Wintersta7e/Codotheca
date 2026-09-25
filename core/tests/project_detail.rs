@@ -187,16 +187,19 @@ fn one_copy_compares_no_heads_and_two_that_agree_do() {
         .execute("UPDATE location SET head_oid = 'abc'", [])
         .expect("observe both heads");
     let two = handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("get");
-    let v = serde_json::to_value(&two).expect("encode");
-    assert_eq!(v["locations"][0]["headComparison"], json!("same_commit"));
+    let two_v = serde_json::to_value(&two).expect("encode");
+    assert_eq!(
+        two_v["locations"][0]["headComparison"],
+        json!("same_commit")
+    );
 
     rig.conn()
         .execute("UPDATE location SET head_oid = 'def' WHERE id = 2", [])
         .expect("diverge");
     let apart = handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("get");
-    let v = serde_json::to_value(&apart).expect("encode");
+    let apart_v = serde_json::to_value(&apart).expect("encode");
     assert_eq!(
-        v["locations"][0]["headComparison"],
+        apart_v["locations"][0]["headComparison"],
         json!("different_commit")
     );
 }

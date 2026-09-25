@@ -540,12 +540,16 @@ fn ac_p3_31_10_budget_exceeded_is_unknown_but_absent_is_fail() {
         tx.commit().unwrap();
 
         for key in ["license", "tests", "ci"] {
-            let expected = if exists {
+            let expected_state = if exists {
                 ("unknown".to_owned(), Some("notRead".to_owned()))
             } else {
                 ("fail".to_owned(), None)
             };
-            assert_eq!(check_state(&conn, p, key), expected, "{reported}: {key}");
+            assert_eq!(
+                check_state(&conn, p, key),
+                expected_state,
+                "{reported}: {key}"
+            );
         }
         for source in ["missing_license", "missing_tests"] {
             assert_eq!(open_items(&conn, p, source), i64::from(!exists), "{source}");
@@ -933,8 +937,8 @@ fn a_no_change_recompute_leaves_observed_at_where_it_was() {
         Written::Rewritten { .. }
     ));
 
-    let stamps = |conn: &rusqlite::Connection| -> Vec<i64> {
-        let mut st = conn
+    let stamps = |db: &rusqlite::Connection| -> Vec<i64> {
+        let mut st = db
             .prepare(
                 "SELECT observed_at FROM project_check WHERE project_id = ?1 ORDER BY check_key",
             )
@@ -986,8 +990,8 @@ fn ac_p3_31_17_a_user_ruling_survives_a_reclassification() {
     .unwrap();
     recompute(&mut conn, p, 1_000);
 
-    let row = |conn: &rusqlite::Connection, key: &str| -> (String, Option<i64>) {
-        conn.query_row(
+    let row = |db: &rusqlite::Connection, key: &str| -> (String, Option<i64>) {
+        db.query_row(
             "SELECT state, user_na FROM project_check WHERE project_id = ?1 AND check_key = ?2",
             rusqlite::params![p, key],
             |r| Ok((r.get(0)?, r.get(1)?)),
@@ -997,8 +1001,8 @@ fn ac_p3_31_17_a_user_ruling_survives_a_reclassification() {
     assert_eq!(row(&conn, "tests").0, "pass", "a library evaluates `tests`");
 
     // The user rules `tests` not applicable.
-    let set = |conn: &mut rusqlite::Connection, key: CompletionCheck, na: Option<bool>| {
-        let tx = conn.transaction().unwrap();
+    let set = |db: &mut rusqlite::Connection, key: CompletionCheck, na: Option<bool>| {
+        let tx = db.transaction().unwrap();
         set_check_na(&tx, ProjectId(p), key, na, 2_000).unwrap();
         tx.commit().unwrap();
     };
@@ -1151,7 +1155,9 @@ fn ac_p3_31_15_project_check_is_derived_and_is_not_reparented() {
         .filter_map(|marker| reparent.find(marker))
         .min()
         .unwrap_or(reparent.len());
-    let reparent_body = &reparent[..end];
+    let reparent_body = reparent
+        .get(..end)
+        .expect("the bound is a marker offset or the length");
     assert!(
         !reparent_body.contains("project_check"),
         "project_check is reparented as well as deleted, which is two classes at once"
@@ -1427,6 +1433,7 @@ fn seed_demotable(index: &std::sync::Mutex<Index>, repo: &TestRepo) -> (i64, Loc
     .unwrap();
     let location = LocationId(conn.last_insert_rowid());
     content_scan(conn, project, "present");
+    drop(guard);
     (project, location)
 }
 
@@ -1444,17 +1451,13 @@ fn real_runner(
         git: Arc::new(SystemGit::new(
             Arc::new(repo.exec()),
             Arc::new(GitSlots::new(4)),
-            Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock.clone(),
         )),
-        clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        clock,
         cancel: CancelToken::new(),
         tz_offset_min: 0,
     };
-    codotheca_core::jobs::scheduler::JobRunner::new(
-        Arc::clone(index),
-        deps,
-        Arc::clone(sink) as Arc<dyn codotheca_core::proto::EventSink>,
-    )
+    codotheca_core::jobs::scheduler::JobRunner::new(Arc::clone(index), deps, sink.clone())
 }
 
 /// **`AC-P3-31-14`, through the real settle.** A demotion driven by a real `JobRunner` job — the
@@ -1481,9 +1484,8 @@ fn ac_p3_31_14_a_demotion_through_a_real_settle_emits_no_notification() {
     let dir = tempfile::tempdir().unwrap();
     let index = Arc::new(Mutex::new(Index::open_at(dir.path(), 0).unwrap()));
     let (project, location) = seed_demotable(&index, &repo);
-    let projected = |index: &Mutex<Index>| projection(index.lock().unwrap().conn(), project);
-    let deltas =
-        |index: &Mutex<Index>| count_for(index.lock().unwrap().conn(), "health_delta", project);
+    let projected = |db: &Mutex<Index>| projection(db.lock().unwrap().conn(), project);
+    let deltas = |db: &Mutex<Index>| count_for(db.lock().unwrap().conn(), "health_delta", project);
 
     let sink = Arc::new(RecordingSink::default());
     let runner = real_runner(&index, &repo, &sink);

@@ -5,6 +5,7 @@
     clippy::indexing_slicing
 )]
 #![cfg(feature = "testkit")]
+//! The account store and its commands: org gates, observed scopes, SSO refusals and the PAT path.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -547,6 +548,7 @@ fn enabling_an_org_records_observed_scopes_from_the_provider_response() {
     assert!(result.enabled);
     let guard = index.lock().unwrap_or_else(PoisonError::into_inner);
     let rows = list_accounts(guard.conn()).expect("list accounts");
+    drop(guard);
     assert_eq!(
         rows[0].granted_scopes,
         vec![
@@ -681,10 +683,11 @@ fn a_pat_the_forge_refuses_writes_no_row_and_no_keychain_entry() {
         body: b"{}".to_vec(),
     });
     let tokens = FakeTokenStore::available();
+    let http: Arc<dyn HttpTransport> = transport;
 
     let failure = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
+        &http,
         &tokens,
         "forge.example.invalid",
         &SecretToken::new("not-a-real-token".to_owned()),
@@ -712,10 +715,11 @@ fn a_pat_whose_keychain_store_fails_writes_no_row() {
         &[("X-OAuth-Scopes", "read:user")],
     ));
     let tokens = FakeTokenStore::refusing_store();
+    let http: Arc<dyn HttpTransport> = transport;
 
     let outcome = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
+        &http,
         &tokens,
         "forge.example.invalid",
         &SecretToken::new("pat-sentinel".to_owned()),
@@ -735,10 +739,11 @@ fn a_successful_pat_writes_one_row_with_the_servers_own_scope_set() {
         &[("X-OAuth-Scopes", "read:user, an:invented:scope")],
     ));
     let tokens = FakeTokenStore::available();
+    let http: Arc<dyn HttpTransport> = transport;
 
     let account = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
+        &http,
         &tokens,
         "forge.example.invalid",
         &SecretToken::new("pat-sentinel".to_owned()),
@@ -776,9 +781,10 @@ fn the_tier_is_read_back_from_the_grant_not_assumed() {
         &[("X-OAuth-Scopes", "read:user, user:email, repo, read:org")],
     ));
     let tokens = FakeTokenStore::available();
+    let http: Arc<dyn HttpTransport> = transport;
     let account = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
+        &http,
         &tokens,
         "",
         &SecretToken::new("pat-sentinel".to_owned()),
@@ -799,9 +805,10 @@ fn an_enterprise_host_is_reached_at_its_own_api_base() {
         &serde_json::json!({ "login": "octo", "name": null }),
         &[("X-OAuth-Scopes", "read:user")],
     ));
+    let http: Arc<dyn HttpTransport> = transport.clone();
     let _ = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
+        &http,
         &FakeTokenStore::available(),
         "forge.example.invalid",
         &SecretToken::new("pat-sentinel".to_owned()),
@@ -839,9 +846,10 @@ fn a_grant_the_response_never_stated_is_unknown_not_an_empty_one() {
         &serde_json::json!({ "login": "octo", "name": null }),
         &[],
     ));
+    let http: Arc<dyn HttpTransport> = transport;
     let unstated = codotheca_core::accounts::commands::connect_pat(
         &index,
-        &(Arc::clone(&transport) as Arc<dyn HttpTransport>),
+        &http,
         &FakeTokenStore::available(),
         "forge.example.invalid",
         &SecretToken::new("pat-sentinel".to_owned()),
@@ -861,9 +869,10 @@ fn a_grant_the_response_never_stated_is_unknown_not_an_empty_one() {
         &serde_json::json!({ "login": "octo", "name": null }),
         &[("X-OAuth-Scopes", "")],
     ));
+    let http2: Arc<dyn HttpTransport> = transport2;
     let observed = codotheca_core::accounts::commands::connect_pat(
         &index2,
-        &(Arc::clone(&transport2) as Arc<dyn HttpTransport>),
+        &http2,
         &FakeTokenStore::available(),
         "forge.example.invalid",
         &SecretToken::new("pat-sentinel".to_owned()),

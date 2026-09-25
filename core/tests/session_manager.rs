@@ -62,7 +62,10 @@ impl SharedActivity {
 
 impl ActivitySource for SharedActivity {
     fn watch(&mut self, session: SessionId, root: &std::path::Path) -> Result<(), SessionError> {
-        self.0.lock().unwrap().watch(session, root)
+        self.0
+            .lock()
+            .map_err(|_| SessionError::Watch("the shared activity lock is poisoned".to_owned()))?
+            .watch(session, root)
     }
     fn unwatch(&mut self, session: SessionId) {
         self.0.lock().unwrap().unwatch(session);
@@ -113,8 +116,8 @@ fn harness() -> Harness {
     // A build directory is ignored; everything else is in scope.
     let ignore = Arc::new(FakeIgnoreCheck::new(&["dist/"]));
     let manager = SessionManager::new(
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
-        Arc::clone(&events) as Arc<dyn EventSink>,
+        clock.clone(),
+        events.clone(),
         Box::new(activity.clone()),
         ignore,
     );
@@ -396,9 +399,9 @@ fn closing_a_session_reports_the_project_whose_condition_moved() {
 
     h.index
         .mark_job_done(h.alpha, codotheca_core::jobs::JobKind::J4History);
-    let s = h.launch(h.alpha, h.loc, None);
+    let computed = h.launch(h.alpha, h.loc, None);
     h.clock.advance(600);
-    h.manager.stop(h.index.index_mut(), s).unwrap();
+    h.manager.stop(h.index.index_mut(), computed).unwrap();
     assert_eq!(h.manager.take_condition_changes(), vec![h.alpha]);
     assert!(
         h.manager.take_condition_changes().is_empty(),
@@ -444,8 +447,8 @@ fn a_session_with_no_watcher_still_credits_its_window() {
 
     let mut h = harness();
     h.manager = SessionManager::new(
-        Arc::clone(&h.clock) as Arc<dyn codotheca_core::clock::Clock>,
-        Arc::clone(&h.events) as Arc<dyn EventSink>,
+        h.clock.clone(),
+        h.events.clone(),
         Box::new(RefusingWatcher),
         Arc::new(FakeIgnoreCheck::new(&[])),
     );

@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+//! The device-flow connect pump and the production sink it hands a granted token to.
 
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -50,14 +51,14 @@ fn the_poll_is_core_side_and_the_code_is_verbatim() {
     })));
 
     let clock = Arc::new(StepClock::new(1_000));
-    let events = Arc::new(RecordingEvents::new(Arc::clone(&clock) as Arc<dyn Clock>));
+    let events = Arc::new(RecordingEvents::new(clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     let sink = Arc::new(StoreGrantSink::new(TOKEN_REF));
     let pump = ConnectPump::start(deps(
-        Arc::clone(&transport) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::clone(&events) as Arc<dyn EventSink>,
-        Arc::clone(&tokens) as Arc<dyn TokenStore>,
+        transport.clone(),
+        clock.clone(),
+        events.clone(),
+        tokens.clone(),
         sink,
     ));
 
@@ -127,14 +128,14 @@ fn terminal_oauth_errors_emit_their_reason() {
 fn cancel_prevents_a_late_success_token_from_being_stored() {
     let transport = Arc::new(DelayedSuccessTransport::new());
     let clock = Arc::new(StepClock::new(2_000));
-    let events = Arc::new(RecordingEvents::new(Arc::clone(&clock) as Arc<dyn Clock>));
+    let events = Arc::new(RecordingEvents::new(clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     let sink = Arc::new(StoreGrantSink::new(TOKEN_REF));
     let pump = ConnectPump::start(deps(
-        Arc::clone(&transport) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::clone(&events) as Arc<dyn EventSink>,
-        Arc::clone(&tokens) as Arc<dyn TokenStore>,
+        transport.clone(),
+        clock.clone(),
+        events.clone(),
+        tokens.clone(),
         sink,
     ));
 
@@ -185,13 +186,13 @@ fn stop_interrupts_the_wait_slice() {
         "interval": 5
     })));
     let clock = Arc::new(NotifyingRealClock::new(3_000));
-    let events = Arc::new(RecordingEvents::new(Arc::clone(&clock) as Arc<dyn Clock>));
+    let events = Arc::new(RecordingEvents::new(clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     let pump = ConnectPump::start(deps(
-        Arc::clone(&transport) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::clone(&events) as Arc<dyn EventSink>,
-        Arc::clone(&tokens) as Arc<dyn TokenStore>,
+        transport,
+        clock.clone(),
+        events,
+        tokens,
         Arc::new(RecordingConnectSink::new()),
     ));
 
@@ -224,13 +225,13 @@ fn secrets_never_enter_errors_or_events() {
         "scope": "one,two three"
     })));
     let clock = Arc::new(FakeClock::new(4_000));
-    let events = Arc::new(RecordingEvents::new(Arc::clone(&clock) as Arc<dyn Clock>));
+    let events = Arc::new(RecordingEvents::new(clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     let pump = ConnectPump::start(deps(
-        Arc::clone(&transport) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::clone(&events) as Arc<dyn EventSink>,
-        Arc::clone(&tokens) as Arc<dyn TokenStore>,
+        transport,
+        clock,
+        events.clone(),
+        tokens,
         Arc::new(StoreGrantSink::new(TOKEN_REF)),
     ));
     events.wait_for_stage(ConnectStage::Granted, 1);
@@ -303,12 +304,12 @@ fn run_one_terminal_error(error: &str) -> Arc<RecordingEvents> {
     })));
     transport.push(response(&json!({"error": error})));
     let clock = Arc::new(FakeClock::new(1_000));
-    let events = Arc::new(RecordingEvents::new(Arc::clone(&clock) as Arc<dyn Clock>));
+    let events = Arc::new(RecordingEvents::new(clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     let pump = ConnectPump::start(deps(
         transport,
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::clone(&events) as Arc<dyn EventSink>,
+        clock,
+        events.clone(),
         tokens,
         Arc::new(RecordingConnectSink::new()),
     ));
@@ -444,11 +445,13 @@ impl StepClock {
                 .expect("sleep condvar waits")
                 .0;
         }
+        drop(state);
     }
 
     fn permit_sleeps(&self, count: usize) {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.permits = state.permits.saturating_add(count);
+        drop(state);
         self.permits.notify_all();
     }
 }
@@ -507,6 +510,7 @@ impl NotifyingRealClock {
                 .expect("sleep condvar waits")
                 .0;
         }
+        drop(sleeps);
     }
 }
 
@@ -573,6 +577,7 @@ impl RecordingEvents {
                 .expect("event condvar waits")
                 .0;
         }
+        drop(events);
     }
 
     #[must_use]
@@ -709,6 +714,7 @@ impl DelayedSuccessTransport {
                 .expect("poll condvar waits")
                 .0;
         }
+        drop(started);
     }
 
     fn release_success(&self) {
@@ -740,8 +746,12 @@ impl HttpTransport for DelayedSuccessTransport {
         self.poll_started_cv.notify_all();
         let mut release = self.release.lock().unwrap_or_else(PoisonError::into_inner);
         while !*release {
-            release = self.release_cv.wait(release).expect("release waits");
+            release = self
+                .release_cv
+                .wait(release)
+                .unwrap_or_else(PoisonError::into_inner);
         }
+        drop(release);
         Ok(response(&json!({
             "access_token": ACCESS_SENTINEL,
             "scope": "one two"
@@ -770,7 +780,7 @@ fn the_production_sink_writes_the_keychain_before_the_row() {
     ));
     let provider: Arc<dyn codotheca_core::provider::Provider> =
         Arc::new(codotheca_core::provider::GitHubProvider::new(
-            Arc::clone(&transport) as Arc<dyn HttpTransport>,
+            transport,
             codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
         ));
     let sink = codotheca_core::accounts::pump::IndexConnectSink::new(Arc::clone(&index), provider);
@@ -800,6 +810,7 @@ fn the_production_sink_writes_the_keychain_before_the_row() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .expect("exactly one account row");
+    drop(guard);
     assert_eq!(login, "octo");
     assert_eq!(
         token_ref, entry,
@@ -824,7 +835,7 @@ fn a_failed_keychain_store_writes_no_account_row() {
     transport.push(response(&json!({ "login": "octo", "name": null })));
     let provider: Arc<dyn codotheca_core::provider::Provider> =
         Arc::new(codotheca_core::provider::GitHubProvider::new(
-            Arc::clone(&transport) as Arc<dyn HttpTransport>,
+            transport,
             codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
         ));
     let sink = codotheca_core::accounts::pump::IndexConnectSink::new(Arc::clone(&index), provider);
@@ -846,6 +857,7 @@ fn a_failed_keychain_store_writes_no_account_row() {
         .conn()
         .query_row("SELECT count(*) FROM account", [], |row| row.get(0))
         .expect("countable");
+    drop(guard);
     assert_eq!(rows, 0, "the row was written before the keychain succeeded");
 }
 
@@ -871,15 +883,15 @@ fn a_refused_sink_ends_the_flow_instead_of_polling_a_redeemed_code() {
         "token_type": "bearer"
     })));
     let clock = Arc::new(FakeClock::new(1_000));
-    let events = Arc::new(RecordingEvents::new(Arc::clone(&clock) as Arc<dyn Clock>));
+    let events = Arc::new(RecordingEvents::new(clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     let sink = Arc::new(RefusingSink::new());
     let pump = ConnectPump::start(deps(
-        Arc::clone(&transport) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::clone(&events) as Arc<dyn EventSink>,
-        Arc::clone(&tokens) as Arc<dyn TokenStore>,
-        Arc::clone(&sink) as Arc<dyn ConnectSink>,
+        transport.clone(),
+        clock.clone(),
+        events.clone(),
+        tokens.clone(),
+        sink.clone(),
     ));
 
     sink.wait_for_call();
@@ -937,6 +949,7 @@ fn the_recorded_tier_comes_from_the_grant_and_not_from_the_request() {
         )
         .expect("the account inserts");
         tx.commit().expect("the insert commits");
+        drop(guard);
         id
     };
 
@@ -944,7 +957,7 @@ fn the_recorded_tier_comes_from_the_grant_and_not_from_the_request() {
     transport.push(response(&json!({ "login": "octo", "name": null })));
     let provider: Arc<dyn codotheca_core::provider::Provider> =
         Arc::new(codotheca_core::provider::GitHubProvider::new(
-            Arc::clone(&transport) as Arc<dyn HttpTransport>,
+            transport,
             codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
         ));
     let sink = codotheca_core::accounts::pump::IndexConnectSink::upgrading(
@@ -972,6 +985,7 @@ fn the_recorded_tier_comes_from_the_grant_and_not_from_the_request() {
         .conn()
         .query_row("SELECT scope_tier FROM account", [], |row| row.get(0))
         .expect("exactly one account row");
+    drop(guard);
     assert_eq!(
         tier, "public",
         "a narrower grant was recorded as the tier that was requested"
@@ -1048,6 +1062,7 @@ impl RefusingSink {
                 .unwrap_or_else(PoisonError::into_inner);
             calls = next;
         }
+        drop(calls);
     }
 }
 
@@ -1059,6 +1074,7 @@ impl ConnectSink for RefusingSink {
     ) -> Result<(), codotheca_core::accounts::pump::ConnectSinkError> {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         *calls += 1;
+        drop(calls);
         self.called.notify_all();
         Err(codotheca_core::accounts::pump::ConnectSinkError::Refused {
             reason: "the fixture refuses every grant".to_owned(),
@@ -1108,9 +1124,9 @@ fn an_unrecognised_error_field_is_not_quoted() {
     );
 
     // The ordinary case still names the reason, or this would trade a leak for a silence.
-    let transport = FakeTransport::new();
-    transport.push(response(&json!({ "error": "device_flow_disabled" })));
-    let named = request_device_code(&transport, HOST, CLIENT_ID, SCOPES_PUBLIC, 1_000)
+    let slug_transport = FakeTransport::new();
+    slug_transport.push(response(&json!({ "error": "device_flow_disabled" })));
+    let named = request_device_code(&slug_transport, HOST, CLIENT_ID, SCOPES_PUBLIC, 1_000)
         .expect_err("a refusal is a refusal")
         .to_string();
     assert!(
@@ -1142,16 +1158,10 @@ fn a_grant_the_store_refused_reports_not_stored_and_says_why() {
         "token_type": "bearer"
     })));
     let clock = Arc::new(FakeClock::new(1_000));
-    let events = Arc::new(RecordingEvents::new(Arc::clone(&clock) as Arc<dyn Clock>));
+    let events = Arc::new(RecordingEvents::new(clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     let sink = Arc::new(RefusingSink::new());
-    let pump = ConnectPump::start(deps(
-        Arc::clone(&transport) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::clone(&events) as Arc<dyn EventSink>,
-        Arc::clone(&tokens) as Arc<dyn TokenStore>,
-        Arc::clone(&sink) as Arc<dyn ConnectSink>,
-    ));
+    let pump = ConnectPump::start(deps(transport, clock, events.clone(), tokens, sink.clone()));
 
     sink.wait_for_call();
     events.wait_for_stage(ConnectStage::NotStored, 1);

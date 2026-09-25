@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use codotheca_core::cancel::CancelToken;
-use codotheca_core::clock::{Clock, SystemClock};
+use codotheca_core::clock::SystemClock;
 use codotheca_core::git::{
     ensure_empty_hooks_dir, require_floor, GitBackend, GitError, GitExec, GitSlots, JobClass,
     JobContext, RepoHandle, StatusOptions, StoreKey, SystemGit,
@@ -24,7 +24,7 @@ fn backend(repo: &TestRepo) -> Arc<dyn GitBackend> {
     Arc::new(SystemGit::new(
         Arc::new(repo.exec()),
         Arc::new(GitSlots::for_machine()),
-        Arc::new(SystemClock::new()) as Arc<dyn Clock>,
+        Arc::new(SystemClock::new()),
     ))
 }
 
@@ -152,7 +152,7 @@ fn a_zero_budget_refuses_before_it_spawns_anything() {
     let git: Arc<dyn GitBackend> = Arc::new(SystemGit::new(
         Arc::new(GitExec::new(dir.path().join("no-such-git"), hooks)),
         Arc::new(GitSlots::for_machine()),
-        Arc::new(SystemClock::new()) as Arc<dyn Clock>,
+        Arc::new(SystemClock::new()),
     ));
     let cancel = CancelToken::new();
     let handle = RepoHandle::bare(dir.path(), StoreKey::new("test-store"), StoreClass::Local);

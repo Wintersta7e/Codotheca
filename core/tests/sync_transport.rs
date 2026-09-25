@@ -58,7 +58,7 @@ fn the_decorator_adds_no_header_the_caller_did_not_write() {
     let inner = Arc::new(FakeTransport::new());
     inner.push(response(200, &[], b"{}"));
     inner.push(response(200, &[], b"{}"));
-    let observing = ObservingTransport::new(Arc::clone(&inner) as Arc<dyn HttpTransport>, clock());
+    let observing = ObservingTransport::new(inner.clone(), clock());
 
     observing.send(&request(Vec::new())).expect("sent");
     observing
@@ -92,14 +92,8 @@ fn the_decorator_adds_no_header_the_caller_did_not_write() {
 fn a_decorated_provider_call_carries_only_the_headers_the_provider_wrote() {
     let inner = Arc::new(FakeTransport::new());
     inner.push(response(200, &[], br#"{"login":"someone"}"#));
-    let observing = Arc::new(ObservingTransport::new(
-        Arc::clone(&inner) as Arc<dyn HttpTransport>,
-        clock(),
-    ));
-    let provider = GitHubProvider::new(
-        Arc::clone(&observing) as Arc<dyn HttpTransport>,
-        "forge.example.invalid".to_owned(),
-    );
+    let observing = Arc::new(ObservingTransport::new(inner.clone(), clock()));
+    let provider = GitHubProvider::new(observing, "forge.example.invalid".to_owned());
     provider
         .viewer(&SecretToken::new("t".to_owned()))
         .expect("viewer");
@@ -146,7 +140,7 @@ fn every_response_produces_exactly_one_observation() {
     inner.push(response(429, &[], b""));
     inner.push(response(404, &[], b""));
     inner.push_err(TransportError::Timeout);
-    let observing = ObservingTransport::new(Arc::clone(&inner) as Arc<dyn HttpTransport>, clock());
+    let observing = ObservingTransport::new(inner.clone(), clock());
 
     for _ in 0..6 {
         let _ = observing.send(&request(Vec::new()));
@@ -189,7 +183,7 @@ fn an_error_responses_rate_headers_reach_the_observation_exactly_as_a_200s_do() 
     inner.push(response(200, &rate, b"{}"));
     inner.push(response(403, &rate, b""));
     inner.push(response(429, &rate, b""));
-    let observing = ObservingTransport::new(Arc::clone(&inner) as Arc<dyn HttpTransport>, clock());
+    let observing = ObservingTransport::new(inner, clock());
     for _ in 0..3 {
         let _ = observing.send(&request(Vec::new()));
     }
@@ -216,7 +210,7 @@ fn the_inner_response_is_returned_untouched() {
     );
     let inner = Arc::new(FakeTransport::new());
     inner.push(original.clone());
-    let observing = ObservingTransport::new(Arc::clone(&inner) as Arc<dyn HttpTransport>, clock());
+    let observing = ObservingTransport::new(inner, clock());
     let got = observing.send(&request(Vec::new())).expect("a 403 is Ok");
     assert_eq!(got, original);
 }
@@ -229,7 +223,7 @@ fn a_transport_failure_is_recorded_and_re_raised() {
     inner.push_err(TransportError::Connect {
         detail: "refused".to_owned(),
     });
-    let observing = ObservingTransport::new(Arc::clone(&inner) as Arc<dyn HttpTransport>, clock());
+    let observing = ObservingTransport::new(inner, clock());
     let error = observing.send(&request(Vec::new())).expect_err("must fail");
     assert!(matches!(error, TransportError::Connect { .. }));
     assert_eq!(observing.drain().len(), 1);
@@ -248,10 +242,7 @@ fn a_drain_takes_this_threads_responses_and_leaves_another_threads() {
     for _ in 0..3 {
         inner.push(response(200, &[("x-ratelimit-resource", "core")], b"{}"));
     }
-    let observing = Arc::new(ObservingTransport::new(
-        Arc::clone(&inner) as Arc<dyn HttpTransport>,
-        clock(),
-    ));
+    let observing = Arc::new(ObservingTransport::new(inner, clock()));
 
     // Another thread's request, standing in for the Device Flow poll.
     {
@@ -281,7 +272,7 @@ fn draining_empties_the_channel() {
     let inner = Arc::new(FakeTransport::new());
     inner.push(response(200, &[], b"{}"));
     inner.push(response(200, &[], b"{}"));
-    let observing = ObservingTransport::new(Arc::clone(&inner) as Arc<dyn HttpTransport>, clock());
+    let observing = ObservingTransport::new(inner, clock());
 
     observing.send(&request(Vec::new())).expect("sent");
     assert_eq!(observing.drain().len(), 1);

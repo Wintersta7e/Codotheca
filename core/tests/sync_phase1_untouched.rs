@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use codotheca_core::accounts::keychain::{token_ref, SecretToken, TokenStore};
 use codotheca_core::accounts::store::{insert_account, NewAccount};
-use codotheca_core::http::{HttpResponse, HttpTransport};
+use codotheca_core::http::HttpResponse;
 use codotheca_core::index::Index;
 use codotheca_core::jobs::JobKind;
 use codotheca_core::protocol::{AuthKind, ProjectId, ScopeTier, SyncTaskKind};
@@ -115,10 +115,7 @@ fn seeded_lane() -> (
         });
     }
     let clock = Arc::new(FakeClock::new(NOW));
-    let observing = Arc::new(ObservingTransport::new(
-        Arc::clone(&scripted) as Arc<dyn HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
-    ));
+    let observing = Arc::new(ObservingTransport::new(scripted, clock.clone()));
     let tokens = Arc::new(FakeTokenStore::available());
     tokens
         .store(
@@ -129,18 +126,15 @@ fn seeded_lane() -> (
     let runner = SyncRunner::new(
         Arc::clone(&index),
         SyncDeps {
-            provider: Arc::new(GitHubProvider::new(
-                Arc::clone(&observing) as Arc<dyn HttpTransport>,
-                HOST.to_owned(),
-            )),
+            provider: Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned())),
             transport: observing,
             tokens,
-            clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+            clock,
             cancel: codotheca_core::cancel::CancelToken::new(),
             // UTC in a test, so a local date never depends on the machine running it.
             tz_offset_min: 0,
         },
-        Arc::new(Quiet) as Arc<dyn codotheca_core::proto::EventSink>,
+        Arc::new(Quiet),
     );
     (index, runner, account, dir)
 }
@@ -175,7 +169,7 @@ fn a_full_sync_run_writes_no_job_row() {
         let (rows, pending): (i64, i64) = {
             let guard = index.lock().expect("index");
             let conn = guard.conn();
-            (
+            let counts = (
                 conn.query_row("SELECT count(*) FROM sync_task_state", [], |r| r.get(0))
                     .unwrap_or(0),
                 conn.query_row(
@@ -184,7 +178,9 @@ fn a_full_sync_run_writes_no_job_row() {
                     |r| r.get(0),
                 )
                 .unwrap_or(1),
-            )
+            );
+            drop(guard);
+            counts
         };
         if rows >= 3 && pending == 0 {
             break;
@@ -203,6 +199,7 @@ fn a_full_sync_run_writes_no_job_row() {
         .conn()
         .query_row("SELECT count(*) FROM sync_task_state", [], |r| r.get(0))
         .expect("counted");
+    drop(guard);
     eprintln!(
         "sync_phase1_untouched: {settled} sync row(s), project_job_state {before} -> {after}"
     );

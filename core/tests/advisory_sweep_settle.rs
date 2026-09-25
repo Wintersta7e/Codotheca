@@ -117,6 +117,7 @@ fn copy_keyed(index: &Mutex<Index>, name: &str, lineage: Option<&str>) -> Copy {
             Ok(project)
         })
         .unwrap();
+    drop(guard);
     Copy { project, work }
 }
 
@@ -178,27 +179,20 @@ fn sweep(world: &World, at: i64, response: Option<&str>) -> Vec<Emitted> {
 
     let clock = Arc::new(FakeClock::new(at));
     let observing = Arc::new(ObservingTransport::new(
-        Arc::clone(&world.transport) as Arc<dyn codotheca_core::http::HttpTransport>,
-        Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        world.transport.clone(),
+        clock.clone(),
     ));
-    let provider = Arc::new(GitHubProvider::new(
-        Arc::clone(&observing) as Arc<dyn codotheca_core::http::HttpTransport>,
-        HOST.to_owned(),
-    ));
+    let provider = Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned()));
     let deps = SyncDeps {
         provider,
         transport: observing,
         tokens: Arc::new(FakeTokenStore::available()),
-        clock: Arc::clone(&clock) as Arc<dyn codotheca_core::clock::Clock>,
+        clock,
         cancel: codotheca_core::cancel::CancelToken::new(),
         tz_offset_min: 0,
     };
     let events = Arc::new(Recorder::default());
-    let runner = SyncRunner::new(
-        Arc::clone(&world.index),
-        deps,
-        Arc::clone(&events) as Arc<dyn codotheca_core::proto::EventSink>,
-    );
+    let runner = SyncRunner::new(Arc::clone(&world.index), deps, events.clone());
     runner.start();
     let deadline = Instant::now() + DEADLINE;
     loop {
@@ -234,10 +228,14 @@ fn items(world: &World) -> Vec<(String, String, String)> {
               WHERE source = 'dependency_advisory' ORDER BY fingerprint",
         )
         .unwrap();
-    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .unwrap()
         .collect::<Result<_, _>>()
-        .unwrap()
+        .unwrap();
+    drop(stmt);
+    drop(guard);
+    rows
 }
 
 /// The XP ledger **by identity**, never by count.
@@ -247,10 +245,14 @@ fn ledger(world: &World) -> BTreeSet<String> {
         .conn()
         .prepare("SELECT dedupe_key FROM xp_events")
         .unwrap();
-    stmt.query_map([], |r| r.get(0))
+    let keys = stmt
+        .query_map([], |r| r.get(0))
         .unwrap()
         .collect::<Result<_, _>>()
-        .unwrap()
+        .unwrap();
+    drop(stmt);
+    drop(guard);
+    keys
 }
 
 /// The notified ledger: `(project_id, advisory_id, seeded)`.
@@ -263,10 +265,14 @@ fn notified(world: &World) -> Vec<(i64, String, i64)> {
               ORDER BY project_id, advisory_id",
         )
         .unwrap();
-    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .unwrap()
         .collect::<Result<_, _>>()
-        .unwrap()
+        .unwrap();
+    drop(stmt);
+    drop(guard);
+    rows
 }
 
 /// A matching advisory **opens** a scored item at the sweep's close, and an upgrade that removes
@@ -496,10 +502,14 @@ fn an_unobservable_advisory_read_marks_only_advisory_items() {
             .conn()
             .prepare("SELECT source, state FROM debt_item WHERE project_id = ?1 ORDER BY source")
             .unwrap();
-        stmt.query_map([alpha.0], |r| Ok((r.get(0)?, r.get(1)?)))
+        let rows = stmt
+            .query_map([alpha.0], |r| Ok((r.get(0)?, r.get(1)?)))
             .unwrap()
             .collect::<Result<_, _>>()
-            .unwrap()
+            .unwrap();
+        drop(stmt);
+        drop(guard);
+        rows
     };
     eprintln!("advisory_sweep_settle: after an unobservable read {states:?}");
     assert_eq!(
@@ -519,10 +529,14 @@ fn delta_rows(world: &World) -> Vec<(String, f64, f64, String)> {
         .conn()
         .prepare("SELECT layer, from_value, to_value, detected_in FROM health_delta ORDER BY id")
         .unwrap();
-    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
         .unwrap()
         .collect::<Result<_, _>>()
-        .unwrap()
+        .unwrap();
+    drop(stmt);
+    drop(guard);
+    rows
 }
 
 /// **A15 for the advisory items.** A fixed advisory's close writes one `rust` decrease, observed
@@ -733,10 +747,14 @@ fn a_project_with_no_lineage_or_remote_is_computed_seeded_once_and_alerted() {
                   WHERE s.source = 'dependency_advisory' ORDER BY s.project_id",
             )
             .unwrap();
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
             .unwrap()
             .collect::<Result<_, _>>()
-            .unwrap()
+            .unwrap();
+        drop(stmt);
+        drop(guard);
+        rows
     };
     eprintln!(
         "advisory_sweep_settle: first sweep alerts {first:?}, computed {computed:?}, ledger {:?}",
