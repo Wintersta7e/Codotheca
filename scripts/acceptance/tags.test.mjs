@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { TAG, TAG_P2, TAG_P3, tagsIn } from './tags.mjs';
+import { TAG, TAG_P2, TAG_P3, TAG_P4, tagsIn } from './tags.mjs';
 
 test('a phase-2 test name carries its criterion tag in either spelling', () => {
   // Rust identifiers cannot hold a hyphen, so the underscore form is the same tag.
@@ -67,4 +67,41 @@ test('neither earlier grammar can see a phase-3 name, and TAG_P3 sees only its o
   assert.equal(new RegExp(TAG_P2.source, 'u').test('AC-P3-28-1'), false);
   assert.equal(new RegExp(TAG_P3.source, 'u').test('AC-14'), false);
   assert.equal(new RegExp(TAG_P3.source, 'u').test('AC-P2-24-3'), false);
+});
+
+// [p4] The fourth grammar. Without it a phase-4 test name yields zero tags and the untagged net is
+// blind to the whole phase, the blindness this file already records twice.
+test('a phase-4 test name carries its criterion tag in either spelling', () => {
+  assert.deepEqual(tagsIn('ac_p4_38_1_kinds'), ['P4-38-1']);
+  // The trailing guard keeps a two-digit number from reading as its one-digit prefix.
+  assert.deepEqual(tagsIn('ac_p4_38_10_x'), ['P4-38-10']);
+  assert.ok(!tagsIn('ac_p4_38_10_x').includes('P4-38-1'));
+  assert.deepEqual(tagsIn('AC-P4-42-25 the portable build'), ['P4-42-25']);
+  // A node join key: the file part carries no tag, the test name does.
+  assert.deepEqual(tagsIn('scripts/acceptance/release.test.mjs::ac_p4_48_27 x'), ['P4-48-27']);
+});
+
+test('§37 and §49 own no criterion and phase 4 has no letter, so none mints a tag', () => {
+  assert.deepEqual(tagsIn('ac_p4_49_1'), []);
+  assert.deepEqual(tagsIn('ac_p4_37_2'), []);
+  assert.deepEqual(tagsIn('ac_p4_38_1a'), []);
+});
+
+test('a name carrying all four phases carries all four tags, in order', () => {
+  assert.deepEqual(tagsIn('AC-14 and AC-P2-24-3 and AC-P3-28-1 and AC-P4-45-1'), [
+    '14',
+    'P2-24-3',
+    'P3-28-1',
+    'P4-45-1',
+  ]);
+});
+
+test('no earlier grammar can see a phase-4 name, and TAG_P4 sees only its own', () => {
+  for (const grammar of [TAG, TAG_P2, TAG_P3]) {
+    assert.equal(new RegExp(grammar.source, 'u').test('AC-P4-45-1'), false, grammar.source);
+    assert.equal(new RegExp(grammar.source, 'u').test('ac_p4_45_1'), false, grammar.source);
+  }
+  for (const name of ['AC-14', 'AC-P2-24-3', 'AC-P3-28-1']) {
+    assert.equal(new RegExp(TAG_P4.source, 'u').test(name), false, name);
+  }
 });

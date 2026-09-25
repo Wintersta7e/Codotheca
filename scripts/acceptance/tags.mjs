@@ -5,12 +5,12 @@
  *
  * The trailing guard is what keeps `ac_12balance` from reading as criterion 12b.
  *
- * Three grammars, one per phase, and they stay three. `TAG` cannot reach past `p2`, so before
+ * Four grammars, one per phase, and they stay four. `TAG` cannot reach past `p2`, so before
  * `TAG_P2` existed a phase-2 test name produced **zero** tags — and `joinResults` reports a
  * result as untagged only when it carries at least one, so the net that catches a renamed test
  * was blind to the entire phase. It went blind the same way to all 146 phase-3 criteria until
- * `TAG_P3`, while the run reported `0 problems`. `tags.test.mjs` asserts each blindness so nobody
- * folds them back into one.
+ * `TAG_P3`, while the run reported `0 problems`, and `TAG_P4` exists before the first phase-4
+ * test does. `tags.test.mjs` asserts each blindness so nobody folds them back into one.
  */
 export const TAG = /\bac[-_ ]?(\d{1,2}[a-c]?)(?=$|[^0-9a-z])/giu;
 
@@ -31,6 +31,12 @@ export const TAG_P2 = /\bac[-_ ]?p2[-_ ](2[0-5])[-_ ](\d{1,2})(?=$|[^0-9a-z])/gi
  */
 export const TAG_P3 = /\bac[-_ ]?p3[-_ ](2[89]|3[0-5])[-_ ](\d{1,2}[a-c]?)(?=$|[^0-9a-z])/giu;
 
+/**
+ * §49.1's `AC-P4-<section>-<n>`. `3[89]|4[0-8]` because §37 is the scope section and §49 the
+ * register contract, neither owning a criterion; no letter, because phase 4 has none.
+ */
+export const TAG_P4 = /\bac[-_ ]?p4[-_ ](3[89]|4[0-8])[-_ ](\d{1,2})(?=$|[^0-9a-z])/giu;
+
 export function tagsIn(name) {
   const text = String(name);
   const found = [];
@@ -44,6 +50,10 @@ export function tagsIn(name) {
   }
   for (const match of text.matchAll(TAG_P3)) {
     const tag = `P3-${match[1]}-${match[2].toLowerCase()}`;
+    if (!found.includes(tag)) found.push(tag);
+  }
+  for (const match of text.matchAll(TAG_P4)) {
+    const tag = `P4-${match[1]}-${match[2]}`;
     if (!found.includes(tag)) found.push(tag);
   }
   return found;
