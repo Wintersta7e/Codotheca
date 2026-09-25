@@ -37,11 +37,7 @@ function fakeCore(): FakeCore {
   let remaining = 890;
   let rows: readonly Account[] = [];
   const handlers = new Set<(event: RendererEvent) => void>();
-  const request = <K extends CommandName>(
-    name: K,
-    args: CommandArgs[K],
-  ): Promise<CommandResult[K]> => {
-    void args;
+  const request = <K extends CommandName>(name: K): Promise<CommandResult[K]> => {
     calls.push(name);
     if (name === 'accounts.list') return Promise.resolve(rows as unknown as CommandResult[K]);
     if (name === 'accounts.orgs') return Promise.resolve(null as unknown as CommandResult[K]);

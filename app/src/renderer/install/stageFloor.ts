@@ -67,6 +67,6 @@ export function stageFigure(stage: InstallStage): string | null {
 export function stageBytes(stage: InstallStage): string | null {
   if (stage.bytes === null) return null;
   const mib = stage.bytes / (1024 * 1024);
-  if (mib >= 0.1) return `${Math.round(mib * 10) / 10} MB`;
-  return `${Math.round(stage.bytes / 1024)} KB`;
+  if (mib >= 0.1) return `${String(Math.round(mib * 10) / 10)} MB`;
+  return `${String(Math.round(stage.bytes / 1024))} KB`;
 }

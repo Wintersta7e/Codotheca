@@ -15,7 +15,7 @@ const pid = (n: number): ProjectId => n as ProjectId;
 function row(id: number, over: Partial<ProjectRow> = {}): ProjectRow {
   return {
     id,
-    name: `p${id}`,
+    name: `p${String(id)}`,
     owner: null,
     description: null,
     descriptionSource: null,

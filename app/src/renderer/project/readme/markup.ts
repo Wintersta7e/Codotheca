@@ -350,7 +350,7 @@ export function renderMarkup(source: string): RenderedMarkup {
 
 /** Whether a value is a `data:` URI naming one of the five media types, and nothing else. */
 function isAllowedAssetUri(value: string | null): value is string {
-  if (value === null || !value.startsWith('data:')) return false;
+  if (!value?.startsWith('data:')) return false;
   const media = value.slice('data:'.length).split(';')[0]?.split(',')[0] ?? '';
   return ALLOWED_ASSET_MEDIA_TYPES.includes(media.toLowerCase());
 }

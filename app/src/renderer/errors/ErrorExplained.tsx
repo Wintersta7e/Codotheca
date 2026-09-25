@@ -124,12 +124,24 @@ export function ErrorExplained(props: ErrorExplainedProps): ReactElement | null 
       ) : null}
       <div style={{ display: 'flex', gap: 8 }}>
         {showAction && action === 'trust' ? (
-          <button type="button" style={outlineButton} onClick={() => trust(locationId)}>
+          <button
+            type="button"
+            style={outlineButton}
+            onClick={() => {
+              trust(locationId);
+            }}
+          >
             {ERROR_ACTION_LABEL.trust}
           </button>
         ) : null}
         {showAction && action === 'relocate' ? (
-          <button type="button" style={outlineButton} onClick={() => onRelocate(locationId)}>
+          <button
+            type="button"
+            style={outlineButton}
+            onClick={() => {
+              onRelocate(locationId);
+            }}
+          >
             {ERROR_ACTION_LABEL.relocate}
           </button>
         ) : null}

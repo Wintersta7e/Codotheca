@@ -26,7 +26,7 @@ const DAY = 86_400;
 const LOCATION_KEYWORDS = new Set(['local', 'wsl']);
 
 function boolTruth(value: boolean | null | undefined): Truth {
-  return value === null || value === undefined ? null : value;
+  return value ?? null;
 }
 
 function countTruth(value: number | null | undefined): Truth {
@@ -89,7 +89,7 @@ export function termTruth(row: ShelfRow, term: QueryTerm, ctx: QueryContext): Tr
         row.lastCommitSubject,
       ];
       if (fields.some((field) => fold(needle, field, false))) return true;
-      if (ctx.commitSubjectHits !== null && ctx.commitSubjectHits.has(row.id)) return true;
+      if (ctx.commitSubjectHits?.has(row.id)) return true;
       return false;
     }
     case 'text':
@@ -272,7 +272,7 @@ export function evaluateQuery(
     return runnable.every((term) => {
       const truth = termTruth(row, term, ctx);
       if (truth === null) return false;
-      return term.negated ? truth === false : truth === true;
+      return term.negated ? !truth : truth;
     });
   });
   return { rows: matched, ignored: [...ast.ignored, ...ignored] };

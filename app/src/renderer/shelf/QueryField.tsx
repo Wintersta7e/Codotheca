@@ -98,7 +98,7 @@ export function fieldModel(
   const tokens = tokenizeQuery(text);
   const last = tokens.at(-1);
   // A token that ends where the text ends is still being typed: no space has terminated it.
-  const typing = last !== undefined && last.end === text.length;
+  const typing = last?.end === text.length;
 
   const pairs = pillTokens(tokens, ast, extraIgnored);
   const allPills = pillsOf(ast, extraIgnored);

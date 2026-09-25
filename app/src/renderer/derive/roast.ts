@@ -111,12 +111,12 @@ export function roastLine(input: RoastInput): string | null {
   ) {
     const newest = formatAge(now - shown.lastCommitAt);
     const fetched = formatAge(now - shown.fetchHeadAt);
-    return `${shown.ahead} commits ahead of its upstream, the newest ${newest} old. Last fetch ${fetched} ago.`;
+    return `${String(shown.ahead)} commits ahead of its upstream, the newest ${newest} old. Last fetch ${fetched} ago.`;
   }
 
   // 4. A stash is parked by construction, so it ranks below a branch that is not.
   if (shown.stashCount !== null && shown.stashCount > 0) {
-    return `${shown.stashCount} stashes here. Nothing pushes a stash.`;
+    return `${String(shown.stashCount)} stashes here. Nothing pushes a stash.`;
   }
 
   // 5. Last on principle: two working copies are a deliberate arrangement, not a fault.

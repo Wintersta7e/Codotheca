@@ -34,7 +34,7 @@ export function paletteMatches(row: ProjectRow, needle: string): boolean {
   if (n === '') return true;
   if (row.name.toLowerCase().includes(n)) return true;
   const lang = row.primaryLanguage;
-  return lang !== null && lang.toLowerCase().includes(n);
+  return lang?.toLowerCase().includes(n) ?? false;
 }
 
 export interface PaletteSelection {

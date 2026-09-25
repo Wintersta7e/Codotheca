@@ -29,7 +29,7 @@ function sources(): { name: string; code: string }[] {
     if (!entry.isFile()) continue;
     if (!/\.(?:ts|tsx|css)$/u.test(entry.name)) continue;
     // The bar documents the ban; a test file naming it must not trip the rule it documents.
-    if (/\.test\./u.test(entry.name)) continue;
+    if (entry.name.includes('.test.')) continue;
     const code = readFileSync(join(FIRSTRUN, entry.name), 'utf8')
       .split('\n')
       .filter(

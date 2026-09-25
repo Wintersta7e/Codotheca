@@ -130,7 +130,7 @@ describe('one never-succeeded predicate in the tree', () => {
 
 describe('§17: no destructive token reaches a rendered string', () => {
   it('does not appear in any module of these four surfaces', () => {
-    const offenders = surfaces.filter((s) => /FORGET/.test(s.code)).map((s) => rel(s.path));
+    const offenders = surfaces.filter((s) => s.code.includes('FORGET')).map((s) => rel(s.path));
     expect(offenders).toEqual([]);
   });
 });

@@ -268,7 +268,7 @@ export function ProjectPageView({
       ref={rootRef}
       className={PROJECT_PAGE_ROOT_CLASS}
       data-testid="cp-page"
-      data-gesture={racking === true ? 'rackout' : undefined}
+      data-gesture={racking ? 'rackout' : undefined}
       tabIndex={-1}
       onKeyDown={onKeyDown}
     >

@@ -100,5 +100,5 @@ export function glowStrength(input: ConditionInput & { hasOpenSession: boolean }
 export function glowShadow(strength: number): string {
   const blur = Math.round(10 + strength * 22);
   const spread = Math.round(-8 - strength * 2);
-  return `0 0 ${blur}px ${spread}px var(--sig)`;
+  return `0 0 ${String(blur)}px ${String(spread)}px var(--sig)`;
 }

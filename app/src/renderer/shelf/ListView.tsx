@@ -76,8 +76,12 @@ export function ListView(props: ListViewProps): ReactElement {
             className="cdt-list-row"
             aria-selected={selectedId === id}
             aria-label={[row.name, listChipsLabel(chips)].filter(Boolean).join(' — ')}
-            onDoubleClick={() => onActivate(id)}
-            onClick={() => onOpen(id)}
+            onDoubleClick={() => {
+              onActivate(id);
+            }}
+            onClick={() => {
+              onOpen(id);
+            }}
           >
             <span className="cdt-list-c1">
               {dot === null ? null : (

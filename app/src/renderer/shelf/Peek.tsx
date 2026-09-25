@@ -30,12 +30,13 @@ export function PeekPanel({ peek, now, tier, completion }: PeekPanelProps): Reac
   const className = `cdt-peek${allowsTransforms(tier) ? ` ${PEEK_ENTER_CLASS}` : ''}`;
   // [p2] §25.3a: **absent**, and not filled with the remote key. A path slot holding a URL
   // invites the one gesture the row cannot serve.
+  const peekLocation = peek?.location ?? null;
   const header = (
     <div className="cdt-peek-head">
       <span>PEEK</span>
       <span className="cdt-peek-rule" aria-hidden="true" />
-      {peek === null || peek.location === null ? null : (
-        <span className="cdt-peek-path">{peek.location.pathDisplay}</span>
+      {peekLocation === null ? null : (
+        <span className="cdt-peek-path">{peekLocation.pathDisplay}</span>
       )}
     </div>
   );

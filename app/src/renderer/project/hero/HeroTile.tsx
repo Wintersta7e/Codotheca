@@ -118,7 +118,7 @@ function HeroSurge(props: {
   const weathering = useWeathering(props.projectId, props.decodedSceneHash);
   const fixed = useRef<{ selection: Selection; origin: Origin | null } | null>(null);
   const { selection, end } = props.request;
-  if (fixed.current === null || fixed.current.selection !== selection) {
+  if (fixed.current?.selection !== selection) {
     fixed.current = {
       selection,
       origin: selection.kind === 'layer' ? originFor(weathering, selection.layer) : null,

@@ -61,7 +61,7 @@ test('cancelling the dialog calls nothing and says so', async () => {
 });
 
 test('a chosen folder reaches roots.add exactly once, with the confirmation flag', async () => {
-  const seen: Array<{ pathBytes: { b64: string }; confirmLarge: boolean }> = [];
+  const seen: { pathBytes: { b64: string }; confirmLarge: boolean }[] = [];
   const handler = harness({ canceled: false, filePaths: ['/somewhere/dev'] }, (args) => {
     seen.push(args);
     return Promise.resolve(added);

@@ -192,7 +192,7 @@ describe('AC-P2-24-20: locations.relocate is byte-identical to phase 1 and gains
 
     // eslint-disable-next-line no-console -- a gate that cannot say what it scanned proves nothing.
     console.log(
-      `AC-P2-24-20: ${sources.length} app sources scanned, ${sites.length} relocate call sites`,
+      `AC-P2-24-20: ${String(sources.length)} app sources scanned, ${String(sites.length)} relocate call sites`,
     );
 
     expect(sites, 'relocate is not widened and is not spread').toEqual([
@@ -249,7 +249,9 @@ describe('AC-P2-24-14: no path past a non-safe disposition exists in the sources
     }
 
     // eslint-disable-next-line no-console -- print the count so a zero-file scan cannot read green.
-    console.log(`AC-P2-24-14: ${sources.length} app sources scanned, ${hits.length} override hits`);
+    console.log(
+      `AC-P2-24-14: ${String(sources.length)} app sources scanned, ${String(hits.length)} override hits`,
+    );
     expect(hits, 'phase 2 ships no override of any kind').toEqual([]);
   });
 

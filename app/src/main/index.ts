@@ -193,8 +193,12 @@ const boot = bootstrap({
   argv: process.argv,
   env: process.env,
   userDataDir: app.getPath('userData'),
-  registerSchemesAsPrivileged: (schemes) => protocol.registerSchemesAsPrivileged(schemes),
-  disableHardwareAcceleration: () => app.disableHardwareAcceleration(),
+  registerSchemesAsPrivileged: (schemes) => {
+    protocol.registerSchemesAsPrivileged(schemes);
+  },
+  disableHardwareAcceleration: () => {
+    app.disableHardwareAcceleration();
+  },
   readBoot: readBootFile,
   writeBoot: writeBootFile,
 });

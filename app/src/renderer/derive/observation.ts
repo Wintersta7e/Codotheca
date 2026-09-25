@@ -42,10 +42,10 @@ export function formatClock(epochSecs: number): string {
 export function formatAge(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h`;
-  if (s < 365 * 86_400) return `${Math.floor(s / 86_400)}d`;
-  return `${Math.floor(s / (365 * 86_400))}y`;
+  if (s < 3600) return `${String(Math.floor(s / 60))}m`;
+  if (s < 86_400) return `${String(Math.floor(s / 3600))}h`;
+  if (s < 365 * 86_400) return `${String(Math.floor(s / 86_400))}d`;
+  return `${String(Math.floor(s / (365 * 86_400)))}y`;
 }
 
 /** `as of 14:02`, or `as of 14:02 — observed 3h ago` once it is stale. */

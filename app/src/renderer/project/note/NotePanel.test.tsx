@@ -65,13 +65,15 @@ describe('writing', () => {
     const field = screen.getByTestId('cp-note-field');
     fireEvent.change(field, { target: { value: 'pick up the parser' } });
     fireEvent.blur(field);
-    await waitFor(() =>
+    await waitFor(() => {
       expect(request).toHaveBeenCalledWith('projects.setNote', {
         id: 7,
         note: 'pick up the parser',
-      }),
-    );
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+      });
+    });
+    await waitFor(() => {
+      expect(onChanged).toHaveBeenCalled();
+    });
   });
 
   it('clears to NULL and never to an empty string', async () => {
@@ -83,16 +85,18 @@ describe('writing', () => {
     const field = screen.getByTestId('cp-note-field');
     fireEvent.change(field, { target: { value: '' } });
     fireEvent.blur(field);
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith('projects.setNote', { id: 7, note: null }),
-    );
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith('projects.setNote', { id: 7, note: null });
+    });
   });
 
   it('writes nothing when the text has not changed', async () => {
     const { request } = draw('unchanged');
     fireEvent.click(screen.getByTestId('cp-note-text'));
     fireEvent.blur(screen.getByTestId('cp-note-field'));
-    await waitFor(() => expect(request).not.toHaveBeenCalled());
+    await waitFor(() => {
+      expect(request).not.toHaveBeenCalled();
+    });
   });
 
   it('reverts on Escape and keeps the key away from the page', () => {

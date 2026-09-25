@@ -31,7 +31,7 @@ const rendererSrc = join(appDir, 'src/renderer');
  * `HeroTile` is the one surface that supplies one. **Every other file is a surface**, and a
  * surface naming `DecayStack` or passing `decay=` is a second one.
  */
-const ALLOWED: ReadonlyArray<readonly [string, string]> = [
+const ALLOWED: readonly (readonly [string, string])[] = [
   ['src/renderer/card/CardPlate.tsx', 'declares the slot and renders whatever it is handed'],
   ['src/renderer/card/Card.tsx', 'passes it through; no band gains an element'],
   ['src/renderer/card/HeroFrame.tsx', 'hands the decoded scene hash to the callers callback'],

@@ -65,7 +65,7 @@ describe('the token block', () => {
    */
   it('declares the five §33.9 layer tokens in both files', () => {
     const css = declarationsInStylesheet();
-    const layers: ReadonlyArray<readonly [string, string]> = [
+    const layers: readonly (readonly [string, string])[] = [
       ['dust', '#8e97a0'],
       ['silver', '#b9c4cc'],
       ['rust', '#96522a'],

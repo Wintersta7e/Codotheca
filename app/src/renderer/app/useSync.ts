@@ -37,7 +37,7 @@ export interface SyncState {
  */
 export function formatListingProgress(progress: SyncListingProgress): string {
   const listed = String(progress.listed);
-  return progress.total === null ? listed : `${listed} of ${progress.total}`;
+  return progress.total === null ? listed : `${listed} of ${String(progress.total)}`;
 }
 
 /**

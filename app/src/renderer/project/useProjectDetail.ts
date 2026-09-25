@@ -63,7 +63,7 @@ export function heroHashFrom(event: RendererEvent, projectId: ProjectId): SceneH
   if (event.topic !== 'projects' || event.event !== 'art_ready') return null;
   if (numberField(event.data, 'projectId') !== (projectId as unknown as number)) return null;
   const data = fields(event.data);
-  if (data === null || data['rendition'] !== 'hero') return null;
+  if (data?.['rendition'] !== 'hero') return null;
   const hash = data['sceneHash'];
   return typeof hash === 'string' ? (hash as SceneHash) : null;
 }

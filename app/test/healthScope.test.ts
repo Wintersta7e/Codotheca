@@ -72,7 +72,7 @@ describe('§30.13 audit 1 — two units, never one', () => {
   it('AC-P3-30-2 no surface combines a check count and an item count into one value', () => {
     // eslint-disable-next-line no-console
     console.log(
-      `AC-P3-30-2 scanned ${rendererFiles.length} renderer file(s) and ${coreFiles.length} core file(s)`,
+      `AC-P3-30-2 scanned ${String(rendererFiles.length)} renderer file(s) and ${String(coreFiles.length)} core file(s)`,
     );
     expect(rendererFiles.length).toBeGreaterThan(0);
     expect(coreFiles.length).toBeGreaterThan(0);
@@ -88,7 +88,7 @@ describe('§30.13 audit 1 — two units, never one', () => {
         if (!/scoredOpen|scored_open/u.test(code)) continue;
         if (!/[+\-*/%]/u.test(code)) continue;
         if (!basisTerms.some((term) => new RegExp(`\\b${term}\\b`, 'u').test(code))) continue;
-        offenders.push(`${rel(path)}:${i + 1}`);
+        offenders.push(`${rel(path)}:${String(i + 1)}`);
       }
     }
     expect(offenders).toEqual([]);
@@ -120,7 +120,7 @@ describe('§30.13 audit 2 — no second freeze gate', () => {
    */
   it('AC-P3-30-11a no renderer consumer re-derives the freeze or the exclusions', () => {
     // eslint-disable-next-line no-console
-    console.log(`AC-P3-30-11a scanned ${rendererFiles.length} renderer file(s)`);
+    console.log(`AC-P3-30-11a scanned ${String(rendererFiles.length)} renderer file(s)`);
     expect(rendererFiles.length).toBeGreaterThan(0);
 
     // Three surfaces are permitted to read the state, and none re-derives what it means:
@@ -150,16 +150,16 @@ describe('§30.13 audit 2 — no second freeze gate', () => {
         const code = line.trim();
         if (code.startsWith('//') || code.startsWith('*')) continue;
         if (/['"`](suppressed|frozen)['"`]/u.test(code)) {
-          offenders.push(`${name}:${i + 1}`);
+          offenders.push(`${name}:${String(i + 1)}`);
           continue;
         }
         if (importsHealth && /\.state\s*[=!]==/u.test(code)) {
-          offenders.push(`${name}:${i + 1}`);
+          offenders.push(`${name}:${String(i + 1)}`);
           continue;
         }
         // Reference exclusion re-derived beside the reading is the same defect one field along.
-        if (/isReference/u.test(code) && /health/iu.test(code)) {
-          offenders.push(`${name}:${i + 1}`);
+        if (code.includes('isReference') && /health/iu.test(code)) {
+          offenders.push(`${name}:${String(i + 1)}`);
         }
       }
     }
@@ -197,12 +197,12 @@ describe('§30.13 audit 3 — the staleness sites', () => {
         if (!/\b(stale|staleness|age|ages|older|fresh|freshness|threshold)\b/iu.test(words)) {
           continue;
         }
-        sites.push(`${rel(path)}:${i + 1}`);
+        sites.push(`${rel(path)}:${String(i + 1)}`);
       }
     }
     // eslint-disable-next-line no-console
     console.log(
-      `AC-P3-30-15 scanned ${scanned.length} file(s); staleness sites naming 900: ${JSON.stringify(sites)}`,
+      `AC-P3-30-15 scanned ${String(scanned.length)} file(s); staleness sites naming 900: ${JSON.stringify(sites)}`,
     );
     expect(scanned.length).toBeGreaterThan(0);
     expect(sites.map((s) => s.split(':')[0])).toEqual(['app/src/renderer/derive/observation.ts']);
@@ -232,7 +232,7 @@ describe('§30.13 audit 4 — the word ban, scoped to renderings', () => {
   it('AC-P3-30-2 the words clean healthy none and all reach no rendered string in this feature', () => {
     const feature = rendererFiles.filter(([path]) => rel(path).includes('/project/health/'));
     // eslint-disable-next-line no-console
-    console.log(`the word ban scanned ${feature.length} file(s) under project/health/`);
+    console.log(`the word ban scanned ${String(feature.length)} file(s) under project/health/`);
     expect(feature.length).toBeGreaterThan(0);
 
     const offenders: string[] = [];
@@ -244,7 +244,7 @@ describe('§30.13 audit 4 — the word ban, scoped to renderings', () => {
         if (code.startsWith('//') || code.startsWith('*') || code.startsWith('///')) continue;
         for (const literal of code.match(/'[^']*'|"[^"]*"|`[^`]*`/gu) ?? []) {
           if (/\b(clean|healthy|none|all)\b/iu.test(literal)) {
-            offenders.push(`${rel(path)}:${i + 1} ${literal}`);
+            offenders.push(`${rel(path)}:${String(i + 1)} ${literal}`);
           }
         }
       }
@@ -263,7 +263,7 @@ describe('§29.8 the in-context ask is not a modal and not a first-run row', () 
   it('the grant control reaches no first-run surface', () => {
     const firstRun = rendererFiles.filter(([path]) => rel(path).includes('/renderer/firstrun/'));
     // eslint-disable-next-line no-console
-    console.log(`the first-run guard scanned ${firstRun.length} file(s)`);
+    console.log(`the first-run guard scanned ${String(firstRun.length)} file(s)`);
     expect(firstRun.length).toBeGreaterThan(0);
 
     for (const [path, text] of firstRun) {

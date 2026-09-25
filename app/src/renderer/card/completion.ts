@@ -240,5 +240,5 @@ export function rungFor(input: RungInput): RungPaint | null {
  */
 export function scoreText(lit: number | null, evaluable: number | null): string | null {
   if (lit === null || evaluable === null || evaluable <= 0) return null;
-  return `${lit}/${evaluable}`;
+  return `${String(lit)}/${String(evaluable)}`;
 }

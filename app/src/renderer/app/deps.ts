@@ -124,7 +124,7 @@ export function createDefaultAppDeps(): AppDeps {
     onShortcutState: createValueFanout<ShortcutState>((cb) => {
       bridge.onShortcutState(cb);
     }),
-    onOpenPalette: createValueFanout<void>((cb) => {
+    onOpenPalette: createValueFanout<undefined>((cb) => {
       bridge.onOpenPalette(() => {
         cb(undefined);
       });

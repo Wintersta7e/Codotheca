@@ -49,7 +49,7 @@ function ageLine(observedAt: number, now: number, frozen: boolean): string | nul
   if (!frozen && age < WORKTREE_STALE_AFTER_SECS) return null;
   const minutes = Math.max(1, Math.round(age / 60));
   const suffix = frozen ? ' · under glass while the store is away' : '';
-  return `as of ${minutes} min ago${suffix}`;
+  return `as of ${String(minutes)} min ago${suffix}`;
 }
 
 export function HealthTab({

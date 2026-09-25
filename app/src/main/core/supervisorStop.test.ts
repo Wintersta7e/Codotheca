@@ -50,13 +50,17 @@ function stubbornRig(): StubbornRig {
   });
   return {
     sup,
-    exit: (code) => onExit(code, null),
+    exit: (code) => {
+      onExit(code, null);
+    },
     killed: () => kills,
     fire: () => {
       const next = timers.shift();
       next?.();
     },
-    stderr: (text) => onStderr(text),
+    stderr: (text) => {
+      onStderr(text);
+    },
   };
 }
 

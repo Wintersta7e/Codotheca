@@ -23,7 +23,7 @@ function directives(policy: string): Map<string, string[]> {
 }
 
 /** Phase 1's policy, byte for byte, with §25.5's one change. */
-const EXPECTED: ReadonlyArray<readonly [string, readonly string[]]> = [
+const EXPECTED: readonly (readonly [string, readonly string[]])[] = [
   ['default-src', ["'none'"]],
   ['script-src', ["'self'"]],
   ['style-src', ["'self'", "'unsafe-inline'"]],

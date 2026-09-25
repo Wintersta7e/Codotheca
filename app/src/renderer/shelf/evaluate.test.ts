@@ -17,7 +17,7 @@ const DAY = 86_400;
 function base(id: number, over: Record<string, unknown> = {}): ShelfRow {
   return toShelfRow({
     id,
-    name: `p${id}`,
+    name: `p${String(id)}`,
     owner: null,
     description: null,
     descriptionSource: null,
@@ -113,8 +113,8 @@ describe('termTruth is three-valued', () => {
   });
   it('answers a touched year against the local calendar year of lastTouchedAt', () => {
     const year = new Date(NOW * 1000).getFullYear();
-    expect(termTruth(base(1), only(`touched:${year}`), ctx)).toBe(true);
-    expect(termTruth(base(1), only(`touched:${year - 1}`), ctx)).toBe(false);
+    expect(termTruth(base(1), only(`touched:${String(year)}`), ctx)).toBe(true);
+    expect(termTruth(base(1), only(`touched:${String(year - 1)}`), ctx)).toBe(false);
   });
   it('answers is:unpushed from ahead, and is null when ahead is unknown', () => {
     expect(termTruth(base(1, { ahead: 2 }), only('is:unpushed'), ctx)).toBe(true);

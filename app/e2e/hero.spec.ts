@@ -68,9 +68,9 @@ function launch(home: string, userData: string): Promise<ElectronApplication> {
  * the visible text and the shell's log are kept beside the test's output, which CI uploads.
  */
 async function keepEvidence(window: Page, userData: string): Promise<void> {
-  await window
-    .screenshot({ path: test.info().outputPath('stall.png') })
-    .catch((e: unknown) => console.warn(`no stall screenshot: ${String(e)}`));
+  await window.screenshot({ path: test.info().outputPath('stall.png') }).catch((e: unknown) => {
+    console.warn(`no stall screenshot: ${String(e)}`);
+  });
   const text = await window
     .evaluate(() => document.body.innerText)
     .catch((e: unknown) => `no body text: ${String(e)}`);

@@ -86,7 +86,7 @@ describe('§30.4 what the tab may never claim', () => {
     ];
     // eslint-disable-next-line no-console
     console.log(
-      `AC-P3-30-17 surfaces inspected: ${surfaces.length}; texts: ${JSON.stringify(
+      `AC-P3-30-17 surfaces inspected: ${String(surfaces.length)}; texts: ${JSON.stringify(
         surfaces.map((n) => n?.textContent ?? null),
       )}`,
     );

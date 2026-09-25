@@ -148,12 +148,24 @@ function GroupRows(props: {
               </span>
             ) : null}
             {group.kind === 'untrusted_repo' && locationId !== null ? (
-              <button type="button" style={outlineButton} onClick={() => trust(locationId)}>
+              <button
+                type="button"
+                style={outlineButton}
+                onClick={() => {
+                  trust(locationId);
+                }}
+              >
                 {ERROR_ACTION_LABEL.trust}
               </button>
             ) : null}
             {group.kind === 'ambiguous_lineage' && projectId !== null ? (
-              <button type="button" style={outlineButton} onClick={() => onOpenProject(projectId)}>
+              <button
+                type="button"
+                style={outlineButton}
+                onClick={() => {
+                  onOpenProject(projectId);
+                }}
+              >
                 {OPEN_PROJECT_LABEL}
               </button>
             ) : null}

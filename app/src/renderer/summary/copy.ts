@@ -110,7 +110,7 @@ export function candidateLine(item: ProblemItem): string | null {
   if (first === undefined || second === undefined) return null;
   const rest = item.candidateProjectIds.length - names.length;
   return rest > 0
-    ? `Same history as ${first}, ${second} and ${rest} more.`
+    ? `Same history as ${first}, ${second} and ${String(rest)} more.`
     : `Same history as ${first} and ${second}.`;
 }
 

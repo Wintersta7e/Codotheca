@@ -61,7 +61,7 @@ function withDeps(children: ReactNode, calls: string[]): ReactElement {
 }
 
 describe('the pipeline is not loaded for a README there is nothing to render', () => {
-  const cases: ReadonlyArray<readonly [string, ReadmeState, LocationId | null]> = [
+  const cases: readonly (readonly [string, ReadmeState, LocationId | null])[] = [
     ['absent', { state: 'absent', text: null, readAt: NOW - 3600 }, LOCATION],
     ['not_indexed', { state: 'not_indexed', text: null, readAt: null }, LOCATION],
     // §23's zero-location project: there is no working copy to read a document from, and asking

@@ -110,7 +110,17 @@ export function trayMenu(
   deps: TrayDeps,
 ): readonly { readonly label: string; readonly click: () => void }[] {
   return [
-    { label: 'SHOW CODOTHECA', click: (): void => deps.onActivate() },
-    { label: 'QUIT', click: (): void => deps.onQuit() },
+    {
+      label: 'SHOW CODOTHECA',
+      click: (): void => {
+        deps.onActivate();
+      },
+    },
+    {
+      label: 'QUIT',
+      click: (): void => {
+        deps.onQuit();
+      },
+    },
   ];
 }

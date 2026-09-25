@@ -37,13 +37,13 @@ describe('the primary control', () => {
     const detail = detailFixture();
     const { request } = draw(detail);
     fireEvent.click(screen.getByTestId('cp-cta'));
-    await waitFor(() =>
+    await waitFor(() => {
       expect(request).toHaveBeenCalledWith('projects.launch', {
         projectId: detail.row.id,
         locationId: detail.locations[0]?.location.id,
         targetId: detail.resolvedTarget?.target.id,
-      }),
-    );
+      });
+    });
   });
 
   it('issues exactly one launch however fast the button is pressed twice', async () => {
@@ -51,7 +51,9 @@ describe('the primary control', () => {
     const cta = screen.getByTestId('cp-cta');
     fireEvent.click(cta);
     fireEvent.click(cta);
-    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('is a statement, not a disabled button, when no copy is reachable', () => {
@@ -96,13 +98,13 @@ describe('TERMINAL', () => {
     const detail = detailFixture();
     const { request } = draw(detail);
     fireEvent.click(screen.getByTestId('cp-terminal'));
-    await waitFor(() =>
+    await waitFor(() => {
       expect(request).toHaveBeenCalledWith('projects.launch', {
         projectId: detail.row.id,
         locationId: detail.locations[0]?.location.id,
         targetId: terminalTarget(detail.targets)?.id,
-      }),
-    );
+      });
+    });
   });
 });
 

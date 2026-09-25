@@ -59,7 +59,9 @@ function lineAt(path: string, line: number): string {
 describe('the call-site gate', () => {
   it('reports a non-empty clean scan', () => {
     const result = spawnSync(process.execPath, [SCRIPT], { cwd: REPO, encoding: 'utf8' });
-    const output = String(result.stdout) + String(result.stderr);
+    // A spawn that never starts leaves both streams null whatever the types say; a template
+    // still stringifies them where `+` would add them.
+    const output = `${result.stdout}${result.stderr}`;
     expect(result.status, output).toBe(0);
     const match = /check-call-sites: \d+ rules, 0 violated, (\d+) file reads/.exec(output);
     expect(match, output).not.toBeNull();
@@ -102,7 +104,7 @@ describe('the call-site gate', () => {
       const hit = allowLines.find((source) => new RegExp(source, 'u').test(text));
       expect(
         hit,
-        `${path}:${line} (${program}) is matched by no allowLines entry: ${text}`,
+        `${path}:${String(line)} (${program}) is matched by no allowLines entry: ${text}`,
       ).toBeDefined();
       if (hit !== undefined) unmatched.delete(hit);
     }

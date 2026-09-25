@@ -96,7 +96,7 @@ export function QuickSwitchHost(props: QuickSwitchHostProps): ReactElement | nul
     wasOpen.current = false;
     const target = restoreTo.current;
     restoreTo.current = null;
-    if (target !== null && target.isConnected) target.focus();
+    if (target?.isConnected) target.focus();
   }, [state.open]);
 
   const handle = useCallback(

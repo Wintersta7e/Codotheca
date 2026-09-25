@@ -35,7 +35,9 @@ export function RootChooser({
           className="cdt-root-chooser__root"
           aria-pressed={root.id === selected}
           // The id, never the path. `pathDisplay` is §1.10's lossy form and is shown, not sent.
-          onClick={() => onSelect(root.id)}
+          onClick={() => {
+            onSelect(root.id);
+          }}
         >
           {root.pathDisplay}
         </button>

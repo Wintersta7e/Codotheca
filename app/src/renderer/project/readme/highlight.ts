@@ -44,7 +44,7 @@ import katex from 'katex';
 /** KaTeX's macro-expansion budget. A `\def` bomb is an infinite loop on the paint thread. */
 export const KATEX_MAX_EXPAND = 1000;
 
-const GRAMMARS: ReadonlyArray<readonly [string, Parameters<typeof hljs.registerLanguage>[1]]> = [
+const GRAMMARS: readonly (readonly [string, Parameters<typeof hljs.registerLanguage>[1]])[] = [
   ['bash', bash],
   ['c', c],
   ['cpp', cpp],

@@ -138,19 +138,19 @@ describe('the actions', () => {
     const detail = twoCopies();
     const { request } = draw(detail);
     fireEvent.click(screen.getAllByRole('button', { name: 'OPEN' })[0] as HTMLElement);
-    await waitFor(() =>
+    await waitFor(() => {
       expect(request).toHaveBeenCalledWith('targets.list', {
         projectId: detail.row.id,
         locationId: detail.locations[0]?.location.id,
-      }),
-    );
-    await waitFor(() =>
+      });
+    });
+    await waitFor(() => {
       expect(request).toHaveBeenCalledWith('projects.launch', {
         projectId: detail.row.id,
         locationId: detail.locations[0]?.location.id,
         targetId: detail.resolvedTarget?.target.id,
-      }),
-    );
+      });
+    });
   });
 
   it('picks the file manager by kind for REVEAL, and hides it when none is known', () => {
@@ -169,7 +169,9 @@ describe('the actions', () => {
     const row = screen.getAllByTestId('cp-loc-row')[1] as HTMLElement;
     expect(row.textContent).not.toContain('OPEN');
     fireEvent.click(screen.getByRole('button', { name: 'RELOCATE' }));
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(onChanged).toHaveBeenCalled();
+    });
     // The renderer originates no path: the id is the whole of what crosses the channel.
     expect(relocate).toHaveBeenCalledWith(detail.locations[1]?.location.id);
     expect(relocate.mock.calls[0]).toHaveLength(1);
@@ -184,9 +186,9 @@ describe('the actions', () => {
     });
     const { request } = draw(detail);
     fireEvent.click(screen.getByRole('button', { name: 'ENABLE ROOT' }));
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith('roots.setEnabled', { id: 3, enabled: true }),
-    );
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith('roots.setEnabled', { id: 3, enabled: true });
+    });
     const [, args] = (request.mock.calls.find((c) => c[0] === 'roots.setEnabled') ?? []) as [
       string,
       Record<string, unknown>,

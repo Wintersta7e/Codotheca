@@ -60,8 +60,8 @@ export function shelfCounts(rows: readonly ShelfRow[], matchedCount: number): Sh
 export function headlineText(counts: ShelfCounts, sortLabel: string): string {
   const complete =
     counts.classificationKnown && counts.classified === counts.total + counts.reference;
-  const qualifier = complete ? '' : ` (OF ${counts.classified} CLASSIFIED)`;
-  return `${counts.matched} OF ${counts.total} · ${sortLabel} · ${counts.reference} REFERENCE EXCLUDED${qualifier}`;
+  const qualifier = complete ? '' : ` (OF ${String(counts.classified)} CLASSIFIED)`;
+  return `${String(counts.matched)} OF ${String(counts.total)} · ${sortLabel} · ${String(counts.reference)} REFERENCE EXCLUDED${qualifier}`;
 }
 
 export function attentionCounts(

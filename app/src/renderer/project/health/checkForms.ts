@@ -146,13 +146,14 @@ export function basisLine(
   if (basis === null) return null;
   if (state !== 'live' && state !== 'frozen') return null;
   const parts: string[] = [];
-  if (basis.ran > 0) parts.push(`${basis.ran} of ${basis.eligible} checks ran`);
-  else parts.push(`no check has run yet, of ${basis.eligible} that could`);
-  if (basis.unknown > 0) parts.push(`${basis.unknown} could not be evaluated`);
+  if (basis.ran > 0) parts.push(`${String(basis.ran)} of ${String(basis.eligible)} checks ran`);
+  else parts.push(`no check has run yet, of ${String(basis.eligible)} that could`);
+  if (basis.unknown > 0) parts.push(`${String(basis.unknown)} could not be evaluated`);
   const switchedOff = basis.off - needsGrant;
-  if (switchedOff > 0) parts.push(`${switchedOff} switched off`);
-  if (needsGrant > 0) parts.push(`${needsGrant} ${needsGrant === 1 ? 'needs' : 'need'} a grant`);
-  if (basis.notApplicable > 0) parts.push(`${basis.notApplicable} do not apply here`);
+  if (switchedOff > 0) parts.push(`${String(switchedOff)} switched off`);
+  if (needsGrant > 0)
+    parts.push(`${String(needsGrant)} ${needsGrant === 1 ? 'needs' : 'need'} a grant`);
+  if (basis.notApplicable > 0) parts.push(`${String(basis.notApplicable)} do not apply here`);
   return parts.join(' · ');
 }
 
@@ -172,6 +173,6 @@ export function grantMissingCount(checks: readonly HealthCheck[], settings: Sett
 export function openLine(scoredOpen: number | null, basis: HealthBasis | null): string | null {
   if (scoredOpen === null || basis === null) return null;
   if (basis.ran === 0) return null;
-  if (scoredOpen > 0) return `${scoredOpen} open`;
+  if (scoredOpen > 0) return `${String(scoredOpen)} open`;
   return basis.unknown === 0 ? 'nothing open' : 'nothing open in the checks that ran';
 }

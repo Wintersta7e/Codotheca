@@ -23,7 +23,7 @@ export function gridRunsOf(indices: readonly number[], columns: number): readonl
   for (const index of [...indices].sort((a, b) => a - b)) {
     const rowIndex = Math.floor(index / columns);
     const last = runs.at(-1);
-    if (last && last.rowIndex === rowIndex) last.indices.push(index);
+    if (last?.rowIndex === rowIndex) last.indices.push(index);
     else runs.push({ rowIndex, indices: [index] });
   }
   return runs;

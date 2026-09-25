@@ -55,7 +55,9 @@ describe('the fatal-index report', () => {
 
   it('clears without throwing when there is nothing to clear', () => {
     const d = dir();
-    expect(() => clearStartupFailure(d)).not.toThrow();
+    expect(() => {
+      clearStartupFailure(d);
+    }).not.toThrow();
   });
 });
 

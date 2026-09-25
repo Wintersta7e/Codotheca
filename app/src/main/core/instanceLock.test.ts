@@ -33,7 +33,11 @@ describe('core lock probe', () => {
     writeLock(dir, pid);
     expect(probeCoreLock(dir).held).toBe(true);
     child.kill('SIGKILL');
-    await new Promise<void>((r) => child.on('exit', () => r()));
+    await new Promise<void>((r) =>
+      child.on('exit', () => {
+        r();
+      }),
+    );
     expect(probeCoreLock(dir)).toEqual({ held: false, pid });
     fs.rmSync(dir, { recursive: true, force: true });
   });

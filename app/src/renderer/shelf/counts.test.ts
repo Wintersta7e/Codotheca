@@ -16,7 +16,7 @@ const DAY = 86_400;
 function base(id: number, over: Record<string, unknown> = {}): ShelfRow {
   return toShelfRow({
     id,
-    name: `p${id}`,
+    name: `p${String(id)}`,
     owner: null,
     description: null,
     descriptionSource: null,

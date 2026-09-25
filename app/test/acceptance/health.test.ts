@@ -90,10 +90,12 @@ describe('health', () => {
       expect(litCounts(items).size).toBe(0);
       inspected += 1;
       // eslint-disable-next-line no-console
-      console.log(`AC-P3-30-1 project ${project}: tabs ${JSON.stringify(tabs)}, tab strings []`);
+      console.log(
+        `AC-P3-30-1 project ${String(project)}: tabs ${JSON.stringify(tabs)}, tab strings []`,
+      );
     }
     // eslint-disable-next-line no-console
-    console.log(`AC-P3-30-1 surfaces inspected: ${inspected}`);
+    console.log(`AC-P3-30-1 surfaces inspected: ${String(inspected)}`);
     expect(inspected).toBe(projects.length * 4);
     expect(inspected).toBeGreaterThan(0);
 

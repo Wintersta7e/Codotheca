@@ -78,7 +78,7 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
     onShortcutState: createValueFanout<ShortcutState>((cb) => {
       pushShortcut = cb;
     }),
-    onOpenPalette: createValueFanout<void>((cb) => {
+    onOpenPalette: createValueFanout<undefined>((cb) => {
       pushPalette = () => {
         cb(undefined);
       };

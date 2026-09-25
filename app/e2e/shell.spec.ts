@@ -41,7 +41,9 @@ function processListing(): string {
 async function closeWithin(app: ElectronApplication, userData: string): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   const expired = new Promise<'expired'>((resolve) => {
-    timer = setTimeout(() => resolve('expired'), CLOSE_BOUND_MS);
+    timer = setTimeout(() => {
+      resolve('expired');
+    }, CLOSE_BOUND_MS);
   });
   const outcome = await Promise.race([app.close().then(() => 'closed' as const), expired]);
   clearTimeout(timer);

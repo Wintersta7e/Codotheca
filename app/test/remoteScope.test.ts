@@ -96,7 +96,9 @@ describe('§25.8: the shell is `remote.webUrl`s only caller', () => {
   it('names it in no renderer module at all', () => {
     const renderer = files.filter(([path]) => path.startsWith('src/renderer/'));
     expect(renderer.length, 'the renderer half of the walk found nothing').toBeGreaterThan(20);
-    expect(renderer.filter(([, text]) => /remote\.webUrl/u.test(text)).map(([p]) => p)).toEqual([]);
+    expect(renderer.filter(([, text]) => text.includes('remote.webUrl')).map(([p]) => p)).toEqual(
+      [],
+    );
   });
 
   it('calls shell.openExternal from the main process only', () => {

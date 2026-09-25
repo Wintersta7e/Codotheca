@@ -31,7 +31,7 @@ export const CONSENT_PARAGRAPH =
   "Codotheca reads your repositories' git metadata, the names and timestamps of files in your " +
   'working trees, and a small named set of files — README, LICENSE, and package manifests at the ' +
   'repository root, up to 256 KB each. It also reads your lock files — ' +
-  `${LOCKFILE_NAMES.slice(0, -1).join(', ')} and ${LOCKFILE_NAMES[LOCKFILE_NAMES.length - 1]} — ` +
+  `${LOCKFILE_NAMES.slice(0, -1).join(', ')} and ${String(LOCKFILE_NAMES[LOCKFILE_NAMES.length - 1])} — ` +
   `up to ${LOCKFILE_DEPTH_TEXT} and up to ${LOCKFILE_CAP_TEXT}, to check your dependencies ` +
   'against published advisories. It does not read the text of your source files unless you turn ' +
   'that on in settings, and it is off until you do. Nothing is uploaded. There is no account.';
@@ -116,7 +116,8 @@ export const ROOTS_SUFFIX = 'ROOTS';
 /** §10.3a: mandatory at every coverage, never suppressed. */
 export const SO_FAR_QUALIFIER = 'SO FAR';
 
-export const REVEAL_EYEBROW = (projects: number): string => `THE DIG · ${projects} PROJECTS`;
+export const REVEAL_EYEBROW = (projects: number): string =>
+  `THE DIG · ${String(projects)} PROJECTS`;
 export const GO_ON_LABEL = 'GO ON';
 export const EVIDENCE_FOOTER = 'EVERY FIGURE OPENS ITS EVIDENCE';
 export const SHOW_WORKING_LABEL = 'SHOW WORKING';
@@ -131,12 +132,12 @@ export function revealHeadline(spanYears: number | null, complete: boolean): str
   if (spanYears === null) return 'HISTORY IS STILL ARRIVING';
   const unit = spanYears === 1 ? 'YEAR' : 'YEARS';
   return complete
-    ? `YOU HAVE BEEN AT THIS FOR ${spanYears} ${unit}`
-    : `YOU HAVE BEEN AT THIS FOR AT LEAST ${spanYears} ${unit}`;
+    ? `YOU HAVE BEEN AT THIS FOR ${String(spanYears)} ${unit}`
+    : `YOU HAVE BEEN AT THIS FOR AT LEAST ${String(spanYears)} ${unit}`;
 }
 
 export const COVERAGE_PARTIAL = (covered: number): string =>
-  `across the ${covered} projects indexed so far`;
+  `across the ${String(covered)} projects indexed so far`;
 export const COVERAGE_HISTORY_GROWS = 'history still indexing — this can only grow';
 export const COVERAGE_HISTORY_MOVES = 'history still indexing — this can move, not just grow';
 export const UNCOMPUTED_NOTE = 'NOT COMPUTED YET · HISTORY HAS NOT RETURNED';

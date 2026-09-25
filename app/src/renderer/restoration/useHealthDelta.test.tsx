@@ -166,14 +166,9 @@ beforeEach(() => {
   vi.stubGlobal('Image', DecodingImage);
   notifications = 0;
   // A renderer that raised one would construct this; nothing in the product may.
-  vi.stubGlobal(
-    'Notification',
-    class {
-      constructor() {
-        notifications += 1;
-      }
-    },
-  );
+  vi.stubGlobal('Notification', function Notification() {
+    notifications += 1;
+  });
   setVisibility('visible');
 });
 

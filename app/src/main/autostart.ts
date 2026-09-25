@@ -54,5 +54,10 @@ export function autostartFor(deps: AutostartDeps): AutostartPort {
       },
     };
   }
-  return { get: () => deps.loginItem.get(), set: (on) => deps.loginItem.set(on) };
+  return {
+    get: () => deps.loginItem.get(),
+    set: (on) => {
+      deps.loginItem.set(on);
+    },
+  };
 }

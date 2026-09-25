@@ -51,14 +51,14 @@ test('InstallControl is mounted in exactly two places and no third', () => {
   const importers = sources
     // Forward slashes before any path test: on Windows the walk yields `install\InstallControl`.
     .map((source) => ({ ...source, path: source.path.replaceAll('\\', '/') }))
-    .filter(({ path }) => !path.includes(`${'install'}${'/'}InstallControl`))
+    .filter(({ path }) => !path.includes('install/InstallControl'))
     .filter(({ path }) => !path.endsWith('.test.ts') && !path.endsWith('.test.tsx'))
     .filter(({ text }) => /\bInstallControl\b/u.test(text))
     .map(({ path }) => path.slice(RENDERER.length + 1));
 
   expect(
     importers.sort(),
-    `Install is offered in exactly two places; found ${importers.length}`,
+    `Install is offered in exactly two places; found ${String(importers.length)}`,
   ).toEqual(['card/ProjectCard.tsx', 'project/rail/Rail.tsx']);
 });
 
@@ -77,13 +77,13 @@ test('UninstallControl is mounted in exactly one place and no second', () => {
 
   const importers = sources
     .map((source) => ({ ...source, path: source.path.replaceAll('\\', '/') }))
-    .filter(({ path }) => !path.includes(`${'uninstall'}${'/'}UninstallControl`))
+    .filter(({ path }) => !path.includes('uninstall/UninstallControl'))
     .filter(({ path }) => !path.endsWith('.test.ts') && !path.endsWith('.test.tsx'))
     .filter(({ text }) => /\bUninstallControl\b/u.test(text))
     .map(({ path }) => path.slice(RENDERER.length + 1));
 
   expect(
     importers.sort(),
-    `Uninstall is offered in exactly one place; found ${importers.length}`,
+    `Uninstall is offered in exactly one place; found ${String(importers.length)}`,
   ).toEqual(['project/rail/Rail.tsx']);
 });

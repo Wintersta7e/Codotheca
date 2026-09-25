@@ -106,7 +106,7 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
     ...(hasWorkingCopy ? {} : { src: demanded }),
   });
   const bench = useBenchElapsed(
-    props.session === null || props.session.endedAt !== null ? null : props.session.startedAt,
+    props.session?.endedAt !== null ? null : props.session.startedAt,
     () => props.now,
   );
 

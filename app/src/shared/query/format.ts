@@ -10,7 +10,7 @@ function quoteIfNeeded(value: string, quoted: boolean): string {
 function scaleDown(total: number, table: Readonly<Record<string, number>>): string {
   const units = Object.entries(table).sort((a, b) => b[1] - a[1]);
   for (const [unit, size] of units) {
-    if (total % size === 0) return `${total / size}${unit}`;
+    if (total % size === 0) return `${String(total / size)}${unit}`;
   }
   return String(total);
 }
@@ -31,7 +31,7 @@ export function renderTerm(term: QueryTerm): string {
     case 'touchedAge':
       return `${dash}touched:${term.op === 'gt' ? '>' : '<'}${scaleDown(term.days, TOUCHED_UNIT_DAYS)}`;
     case 'touchedYear':
-      return `${dash}touched:${term.year}`;
+      return `${dash}touched:${String(term.year)}`;
     // [p3] §31.1: a bare count, with no unit to scale down — the quantity is a number of checks.
     case 'completion':
       return `${dash}completion:${term.op === 'gt' ? '>' : '<'}${String(term.value)}`;
@@ -75,7 +75,7 @@ export function pillsOf(ast: QueryAst, extraIgnored: readonly IgnoredTerm[]): re
   ast.terms.forEach((term, index) => {
     if (term.kind === 'bare') return;
     pills.push({
-      key: `t${index}`,
+      key: `t${String(index)}`,
       label: renderTerm(term),
       state: term.negated ? 'negated' : 'accepted',
       reason: null,
@@ -83,7 +83,7 @@ export function pillsOf(ast: QueryAst, extraIgnored: readonly IgnoredTerm[]): re
   });
   ast.ignored.forEach((entry, index) => {
     pills.push({
-      key: `i${index}`,
+      key: `i${String(index)}`,
       label: entry.text,
       state: 'error',
       reason: ignoredReasonLabel(entry.reason),
@@ -91,7 +91,7 @@ export function pillsOf(ast: QueryAst, extraIgnored: readonly IgnoredTerm[]): re
   });
   extraIgnored.forEach((entry, index) => {
     pills.push({
-      key: `x${index}`,
+      key: `x${String(index)}`,
       label: entry.text,
       state: 'error',
       reason: ignoredReasonLabel(entry.reason),
@@ -102,5 +102,5 @@ export function pillsOf(ast: QueryAst, extraIgnored: readonly IgnoredTerm[]): re
 
 export function ignoredClause(ignored: readonly IgnoredTerm[]): string {
   if (ignored.length === 0) return '';
-  return ` · ${ignored.length} ignored: ${ignored.map((i) => i.text).join(', ')}`;
+  return ` · ${String(ignored.length)} ignored: ${ignored.map((i) => i.text).join(', ')}`;
 }

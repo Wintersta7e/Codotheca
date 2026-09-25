@@ -123,7 +123,7 @@ describe('remote surfaces: the opener', () => {
     expect(files.length, 'the renderer walk read no file, so it proved nothing').toBeGreaterThan(
       20,
     );
-    expect(files.filter((f) => /openExternal/u.test(f.code)).map((f) => f.path)).toEqual([]);
+    expect(files.filter((f) => f.code.includes('openExternal')).map((f) => f.path)).toEqual([]);
   });
 
   it('AC-P2-25-13 denyPermissionRequest refuses every permission, openExternal included', () => {

@@ -91,7 +91,7 @@ export const SD: Readonly<Record<SettingsStyleKey, CSSProperties>> = {
     background: BACKDROP_SCRIM,
   },
   panel: {
-    width: `${DRAWER_WIDTH_PX}px`,
+    width: `${String(DRAWER_WIDTH_PX)}px`,
     maxWidth: '100%',
     height: '100%',
     overflowY: 'auto',

@@ -4,13 +4,13 @@ import { createFocusReporter, type FocusReporter } from './focusReporter';
 
 interface Harness {
   reporter: FocusReporter;
-  sent: Array<number | null>;
+  sent: (number | null)[];
   fire: () => void;
   pending: () => { fn: () => void; ms: number } | null;
 }
 
 function harness(): Harness {
-  const sent: Array<number | null> = [];
+  const sent: (number | null)[] = [];
   let pending: { fn: () => void; ms: number } | null = null;
   let next = 1;
   const reporter = createFocusReporter({
