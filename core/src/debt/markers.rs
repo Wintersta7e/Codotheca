@@ -119,6 +119,11 @@ fn basis_of(raw: &str) -> ObservationBasis {
 /// **Nor when `todo_marker` is off** (§30.9, R128/F8) — switched off, or `gates.granted` false. An
 /// ungranted run reads no blob, so its empty occurrence list is not an observation of an empty
 /// set, and sweeping it would close every item as fixed.
+///
+/// # Errors
+/// Fails when SQLite refuses a read or write — the switches, the content-scan state, the
+/// project's subject, the anchor's root, or the store's own diff — or a stored enum is not a
+/// value this build's schema declares.
 pub fn build_items(
     tx: &Transaction<'_>,
     project: ProjectId,

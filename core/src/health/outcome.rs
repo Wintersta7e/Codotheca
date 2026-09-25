@@ -76,9 +76,11 @@ pub fn outcome_for(facts: &SweepFacts, switch: &SwitchState) -> CheckOutcome {
     CheckOutcome::Unknown
 }
 
-/// §30.3's *In `eligible`?* column: `ok`, `failed` and `unknown` are in it; `off` and
-/// `notApplicable` are not. **The one expression of that column** — the basis counts over it and
-/// the producer's `eligible = 0` gate reads it, so the two cannot disagree about a check.
+/// §30.3's *In `eligible`?* column: `ok`, `failed` and `unknown` are in it.
+///
+/// `off` and `notApplicable` are not. **The one expression of that column** — the basis counts
+/// over it and the producer's `eligible = 0` gate reads it, so the two cannot disagree about a
+/// check.
 #[must_use]
 pub const fn in_eligible(outcome: CheckOutcome) -> bool {
     // Exhaustive, with no `_ =>` arm: a sixth outcome fails to compile here rather than landing
@@ -92,6 +94,7 @@ pub const fn in_eligible(outcome: CheckOutcome) -> bool {
 /// One check as the basis counts it: the outcome, and when the evidence behind it was read.
 #[derive(Debug, Clone)]
 pub struct CheckObservation {
+    /// The check's wire row: its source, its outcome, and why it is `unknown` when it is.
     pub check: HealthCheck,
     /// `None` when this check has no sweep row — never a zero, which would date a reading from
     /// the epoch.

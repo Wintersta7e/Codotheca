@@ -5,14 +5,18 @@
 //! never used to open, launch or compare (§1.10) — `index_paths.rs` scans the source to keep
 //! that true rather than trusting this sentence.
 
+/// Which rules fold a path into its `path_key`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathPlatform {
+    /// `\` is a separator and ASCII case is folded — a `win` location or root.
     Windows,
+    /// Only `/` is a separator and case is kept — a `linux` or `wsl` location or root.
     Unix,
 }
 
+/// The platform this build of the core runs on.
 #[must_use]
-pub fn native_platform() -> PathPlatform {
+pub const fn native_platform() -> PathPlatform {
     if cfg!(windows) {
         PathPlatform::Windows
     } else {
@@ -20,6 +24,7 @@ pub fn native_platform() -> PathPlatform {
     }
 }
 
+/// One path as §1.3's three columns: the OS bytes, the comparison key, and the lossy display.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredPath {
     bytes: Vec<u8>,
@@ -28,6 +33,7 @@ pub struct StoredPath {
 }
 
 impl StoredPath {
+    /// Build all three columns from raw OS bytes, folding the key by `platform`'s rules.
     #[must_use]
     pub fn from_bytes(bytes: Vec<u8>, platform: PathPlatform) -> Self {
         let key = canonical_key(&bytes, platform);
@@ -39,16 +45,20 @@ impl StoredPath {
         }
     }
 
+    /// Build all three columns from an OS string; on a Windows host its bytes are the lossy
+    /// UTF-8 of the UTF-16 it holds.
     #[must_use]
     pub fn from_os(path: &std::ffi::OsStr, platform: PathPlatform) -> Self {
         Self::from_bytes(os_bytes(path), platform)
     }
 
+    /// `path_bytes`: the operational bytes anything opening or launching the path takes.
     #[must_use]
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
 
+    /// `path_key`: the canonical form two paths are compared by.
     #[must_use]
     pub fn key(&self) -> &[u8] {
         &self.key
@@ -112,8 +122,11 @@ fn canonical_key(bytes: &[u8], platform: PathPlatform) -> Vec<u8> {
 /// paths; §8.5.2 renders `location` paths.
 #[derive(Debug, Clone, Copy)]
 pub enum DisplayPathTable {
+    /// A project's copy on disk, drawn on the project page (§8.5.2).
     Location,
+    /// A directory the user or a suggestion added for scanning (§11.1).
     ScanRoot,
+    /// A path a scan recorded a problem at — denied, untrusted, unreadable and the rest (§11.1).
     ScanProblem,
     /// [p3] §28.9's `DebtItem.pathDisplay`. The item's own `path_bytes` is what anything would
     /// open or compare with; this is the lossy string the list draws, and it goes through the one
@@ -136,6 +149,9 @@ impl DisplayPathTable {
 ///
 /// `index_paths.rs` scans the source to keep that true. Anything that needs a path to open,
 /// launch or compare takes `path_bytes` instead — that is the whole of §1.10's rule.
+///
+/// # Errors
+/// Fails when SQLite refuses the read.
 pub fn display_paths_for_ui(
     conn: &rusqlite::Connection,
     table: DisplayPathTable,

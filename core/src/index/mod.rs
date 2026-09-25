@@ -23,26 +23,32 @@ pub struct Index {
 }
 
 impl Index {
+    /// Where the database file lives inside `data_dir`.
     #[must_use]
     pub fn db_path(data_dir: &Path) -> PathBuf {
         data_dir.join("index.db")
     }
 
+    /// Where §1.12's sidecar — the non-derivable set a rebuild restores from — lives inside
+    /// `data_dir`.
     #[must_use]
     pub fn sidecar_path(data_dir: &Path) -> PathBuf {
         data_dir.join("index-sidecar.json")
     }
 
+    /// The directory the pre-migration backups are written to inside `data_dir`.
     #[must_use]
     pub fn backup_dir(data_dir: &Path) -> PathBuf {
         data_dir.join("backups")
     }
 
+    /// The one connection, for a caller that reads without [`Index::read`]'s closure.
     #[must_use]
-    pub fn conn(&self) -> &Connection {
+    pub const fn conn(&self) -> &Connection {
         &self.conn
     }
 
+    /// The one connection, mutably — what a caller opening its own transaction needs.
     pub fn conn_mut(&mut self) -> &mut Connection {
         &mut self.conn
     }
@@ -51,6 +57,9 @@ impl Index {
     ///
     /// A read opens no transaction, so it needs no `TxGuard`: the interlock exists to stop a
     /// pipe write while a *write* lock is held (§2.2), and a bare `SELECT` holds none.
+    ///
+    /// # Errors
+    /// Returns whatever `f` returns; the borrow itself cannot fail.
     pub fn read<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, IndexError>,
@@ -67,6 +76,10 @@ impl Index {
     /// Takes `&mut self` because `rusqlite::Connection::transaction` does. Callers holding the
     /// index behind a `Mutex` lock it mutably for the write and release it immediately — see
     /// `core::jobs::run_one`, which never holds the lock across a git invocation.
+    ///
+    /// # Errors
+    /// Fails when SQLite cannot begin or commit the transaction, or with `f`'s own error, in
+    /// which case nothing `f` wrote is kept.
     pub fn with_tx<T>(
         &mut self,
         f: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, IndexError>,
@@ -80,6 +93,9 @@ impl Index {
 
     /// §11.2 step 2 and §1.12, in one door. Uses the wall clock for backup names and the
     /// restore time; `open_at` is the same path with the clock supplied.
+    ///
+    /// # Errors
+    /// Fails wherever [`Index::open_at`] does.
     pub fn open(data_dir: &Path) -> Result<Self, IndexError> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -87,10 +103,19 @@ impl Index {
         Self::open_at(data_dir, now)
     }
 
+    /// Open the index in `data_dir` and bring it to the shipped schema, with `now` (Unix
+    /// seconds) naming any backup and dating any restore.
+    ///
+    /// # Errors
+    /// Fails wherever [`open_with_migrations`] does.
     pub fn open_at(data_dir: &Path, now: i64) -> Result<Self, IndexError> {
         open_with_migrations(data_dir, migrate::MIGRATIONS, now)
     }
 
+    /// The schema version the database is at, from `PRAGMA user_version`.
+    ///
+    /// # Errors
+    /// Fails when SQLite refuses the pragma read.
     pub fn schema_version(&self) -> Result<u32, IndexError> {
         migrate::schema_version(&self.conn)
     }
@@ -99,6 +124,9 @@ impl Index {
     ///
     /// `optional()` rather than `.ok()`: rusqlite reports "no row" as an error, and swallowing
     /// every error would read a locked or corrupt database as "the key was never written".
+    ///
+    /// # Errors
+    /// Fails when SQLite refuses the read.
     pub fn app_meta(&self, key: &str) -> Result<Option<String>, IndexError> {
         use rusqlite::OptionalExtension as _;
         Ok(self
@@ -112,6 +140,9 @@ impl Index {
     }
 
     /// Writes one `app_meta` value, replacing any previous one.
+    ///
+    /// # Errors
+    /// Fails when SQLite refuses the write.
     pub fn set_app_meta(&self, key: &str, value: &str) -> Result<(), IndexError> {
         self.conn.execute(
             "INSERT INTO app_meta (k, v) VALUES (?1, ?2)
@@ -122,12 +153,17 @@ impl Index {
     }
 
     /// The one place an `Index` is constructed from an already-open connection.
-    fn from_parts(conn: Connection, data_dir: PathBuf) -> Self {
+    const fn from_parts(conn: Connection, data_dir: PathBuf) -> Self {
         Self { conn, data_dir }
     }
 
     /// §1.12's `REBUILD`: quarantine the unreadable files, open a fresh database, and put the
     /// sidecar's global half back so the user is not asked for consent and roots again.
+    ///
+    /// # Errors
+    /// Fails when there is no database file to quarantine or a move fails, the fresh database
+    /// cannot be opened or migrated, the sidecar cannot be read or parsed, or SQLite refuses a
+    /// restore write.
     pub fn rebuild(
         data_dir: &Path,
         now: i64,
@@ -181,6 +217,10 @@ impl Index {
 
     /// Export the non-derivable set and write it atomically. §1.12: hourly and on clean
     /// shutdown, never on every change.
+    ///
+    /// # Errors
+    /// Fails when SQLite refuses a read of the exported set or a write of the new generation and
+    /// time, the payload does not serialise, or the file cannot be written and renamed into place.
     pub fn export_sidecar(&self, now: i64) -> Result<sidecar::SidecarWriteReport, IndexError> {
         let generation = self.meta_u64("sidecar_generation")?.saturating_add(1);
         let doc = sidecar::export(&self.conn, generation, now)?;
@@ -204,6 +244,10 @@ impl Index {
         })
     }
 
+    /// Whether an hour has passed since the last sidecar write, or none was ever recorded.
+    ///
+    /// # Errors
+    /// Fails when SQLite refuses the `app_meta` read.
     pub fn sidecar_due(&self, now: i64) -> Result<bool, IndexError> {
         let last = self.meta_i64("sidecar_written_at")?;
         Ok(sidecar::is_due(last, now))
@@ -222,6 +266,7 @@ impl Index {
         Ok(raw.and_then(|s| s.parse::<i64>().ok()))
     }
 
+    /// The directory holding the database, its sidecar and its backups.
     #[must_use]
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
@@ -230,6 +275,12 @@ impl Index {
 
 /// Open the one connection, apply the required pragmas, and take its lock eagerly.
 /// The open path, with the migration set injectable so the failure branch is testable.
+///
+/// # Errors
+/// Fails wherever [`open_connection`] does; with [`IndexError::SchemaFromFuture`] for a database
+/// from a newer build; with [`IndexError::MigrationFailed`] after restoring the backup when a
+/// migration fails; with [`IndexError::VersionMirrorMismatch`] when `app_meta`'s mirror
+/// disagrees with the pragma; or when the backup, its restore, or a SQLite read or write fails.
 pub fn open_with_migrations(
     data_dir: &Path,
     migrations: &[migrate::Migration],
@@ -313,6 +364,12 @@ pub fn open_with_migrations(
     Ok(Index::from_parts(conn, data_dir.to_path_buf()))
 }
 
+/// Open `db` in WAL mode with foreign keys on, and take its exclusive lock before returning.
+///
+/// # Errors
+/// Fails with [`IndexError::AlreadyOpen`] when another process holds the lock or WAL mode does
+/// not take, [`IndexError::Corrupt`] when the file is not a readable database, and
+/// [`IndexError::Io`] or [`IndexError::Sqlite`] when the directory, the open or a pragma fails.
 pub fn open_connection(db: &Path) -> Result<Connection, IndexError> {
     if let Some(parent) = db.parent() {
         std::fs::create_dir_all(parent)?;

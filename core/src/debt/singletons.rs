@@ -48,6 +48,7 @@ pub enum ArmReading {
 /// Declared **with all its production implementations in the same change** — R1, and five
 /// recorded instances of the opposite, each of which compiled and passed against a fake.
 pub trait SingletonArm: Sync {
+    /// The one singleton source this arm decides, which picks its registry row and sweep row.
     fn source(&self) -> DebtSource;
 
     /// # Errors
@@ -315,6 +316,11 @@ pub const SINGLETON_ARMS: [&dyn SingletonArm; 7] = [
 ///
 /// It emits no event: **R121** gives the `projects.upserted` emit to §30, which also owns the
 /// volume question.
+///
+/// # Errors
+/// Fails when SQLite refuses a read or write — the subject, the switches, the N/A set, an arm's
+/// own reading, an anchor's root, or the store's diff — or a stored enum is not a value this
+/// build's schema declares.
 pub fn evaluate_singletons(
     tx: &Transaction<'_>,
     project: ProjectId,
@@ -391,6 +397,12 @@ pub fn evaluate_singletons(
 /// forgotten at the other. The ledger row and the item deletions commit together: a tree with the
 /// items gone and no payout, or a payout with the items still open, is the state the ordering
 /// exists to prevent.
+///
+/// # Errors
+/// Fails wherever [`evaluate_singletons`] or [`pay_debt_day`] does, or when the project's
+/// subject cannot be read.
+///
+/// [`pay_debt_day`]: super::xp::pay_debt_day
 pub fn settle_singletons(
     tx: &Transaction<'_>,
     project: ProjectId,

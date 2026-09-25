@@ -80,9 +80,11 @@ pub const fn needs_grant(source: DebtSource) -> bool {
 }
 
 /// The sources that are **off** for every project: switched off, or needing a grant that is not
-/// given (R128/F8). The one statement of *off* the producers read: an off source is not swept at
-/// all — no sweep row, no item opened or closed — so a check switched back on is `unknown` until
-/// it next runs, whatever settled while it was off.
+/// given (R128/F8).
+///
+/// The one statement of *off* the producers read: an off source is not swept at all — no sweep
+/// row, no item opened or closed — so a check switched back on is `unknown` until it next runs,
+/// whatever settled while it was off.
 #[must_use]
 pub fn off_sources(switches: &[HealthCheckSwitch], granted: bool) -> Vec<DebtSource> {
     switches

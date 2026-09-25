@@ -11,6 +11,10 @@ use rusqlite::Connection;
 use super::IndexError;
 
 /// A self-contained, fully checkpointed copy of the live database.
+///
+/// # Errors
+/// Fails when the destination's directory cannot be created or an old file there removed, or
+/// SQLite refuses the `VACUUM INTO`.
 pub fn vacuum_into(conn: &Connection, dest: &Path) -> Result<(), IndexError> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
@@ -24,6 +28,9 @@ pub fn vacuum_into(conn: &Connection, dest: &Path) -> Result<(), IndexError> {
 }
 
 /// `<data_dir>/backups/index-pre-<from_version>-<now>.db`.
+///
+/// # Errors
+/// Fails wherever [`vacuum_into`] does.
 pub fn backup_before_migrating(
     conn: &Connection,
     data_dir: &Path,
@@ -40,6 +47,9 @@ pub fn backup_before_migrating(
 ///
 /// The `-wal` and `-shm` beside the database belong to the schema that just failed, and the
 /// backup is a checkpointed database that needs neither, so both are removed.
+///
+/// # Errors
+/// Fails when the copy over the database or the removal of a `-wal` or `-shm` fails.
 pub fn restore_over(backup: &Path, db: &Path) -> Result<(), IndexError> {
     std::fs::copy(backup, db)?;
     for suffix in ["-wal", "-shm"] {

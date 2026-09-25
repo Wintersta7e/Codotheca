@@ -22,15 +22,24 @@ pub fn classify(err: rusqlite::Error) -> IndexError {
     }
 }
 
+/// Where an unreadable database's files were moved, so the user can still find them.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct QuarantinedFiles {
+    /// The moved database file — always present, because a quarantine with none fails instead.
     pub db: PathBuf,
+    /// The moved `-wal`, or `None` when there was none beside the database.
     pub wal: Option<PathBuf>,
+    /// The moved `-shm`, or `None` when there was none beside the database.
     pub shm: Option<PathBuf>,
+    /// The quarantine time in Unix seconds, and the suffix every moved name carries.
     pub at: i64,
 }
 
 /// Move `index.db`, `index.db-wal` and `index.db-shm` to `<name>.corrupt-<now>` siblings.
+///
+/// # Errors
+/// Fails with [`IndexError::Corrupt`] when the database file does not exist, and with
+/// [`IndexError::Io`] when a rename fails.
 pub fn quarantine(db: &Path, now: i64) -> Result<QuarantinedFiles, IndexError> {
     let moved_db = move_aside(db, now)?.ok_or_else(|| IndexError::Corrupt {
         detail: format!("{} does not exist", db.display()),
@@ -63,6 +72,7 @@ fn move_aside(path: &Path, now: i64) -> Result<Option<PathBuf>, IndexError> {
 /// What a rebuild did, in the three blocks §11.2a's ledger draws.
 #[derive(Debug, Clone)]
 pub struct RebuildReport {
+    /// Where the unreadable files went.
     pub quarantined: QuarantinedFiles,
     /// Restored from the sidecar, now.
     pub restored: super::sidecar::RestoreCounts,

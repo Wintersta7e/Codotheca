@@ -8,10 +8,14 @@ use rusqlite::{Connection, Transaction};
 use super::IndexError;
 use crate::proto::txguard::TxGuard;
 
+/// One numbered file in `core/migrations/`, as the runner applies it.
 #[derive(Debug, Clone, Copy)]
 pub struct Migration {
+    /// The schema version the file brings the database to, stamped into `PRAGMA user_version`.
     pub version: u32,
+    /// The file's name without its number, reported when the migration fails.
     pub name: &'static str,
+    /// The file's SQL, run as one batch inside one transaction.
     pub sql: &'static str,
     /// This file performs a create-copy-drop-rename, so the **runner** disables foreign keys
     /// around it (R59). The file itself carries no pragma, and that is not a style choice:
@@ -145,18 +149,23 @@ pub const MIGRATIONS: &[Migration] = &[
 /// sync with the last entry in [`MIGRATIONS`].
 pub const SUPPORTED_SCHEMA_VERSION: u32 = 16;
 
+/// The version `PRAGMA user_version` holds; a value that does not fit a `u32` reads as `0`.
+///
+/// # Errors
+/// Fails when SQLite refuses the pragma read.
 pub fn schema_version(conn: &Connection) -> Result<u32, IndexError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     Ok(u32::try_from(version).unwrap_or(0))
 }
 
-/// Apply every migration above the current version, each in its own transaction.
-///
-/// Applying an already-applied set is successful and returns the version already reached.
 /// §1.12: a database written by a newer build is refused, never opened-and-written.
 ///
 /// The error carries `on_disk` and `supported` as numbers rather than a formatted string
 /// because §11.2a's window prints them itself; "please update" without them is unactionable.
+///
+/// # Errors
+/// Fails with [`IndexError::SchemaFromFuture`] when the version on disk is above `supported`,
+/// or when SQLite refuses the pragma read.
 pub fn guard_not_from_the_future(conn: &Connection, supported: u32) -> Result<(), IndexError> {
     let on_disk = schema_version(conn)?;
     if on_disk > supported {
@@ -175,6 +184,10 @@ pub fn guard_not_from_the_future(conn: &Connection, supported: u32) -> Result<()
 ///
 /// It is `pub` so a test can feed it a holed list without building a database, and it refuses an
 /// empty slice because `apply_all(&[])` returns `Ok(0)` today having asserted nothing at all.
+///
+/// # Errors
+/// Fails with [`IndexError::MigrationChainEmpty`] for an empty slice, and with
+/// [`IndexError::MigrationChainBroken`] at the first entry whose version is not the next.
 pub fn guard_contiguous(migrations: &[Migration]) -> Result<u32, IndexError> {
     if migrations.is_empty() {
         return Err(IndexError::MigrationChainEmpty);
@@ -193,6 +206,14 @@ pub fn guard_contiguous(migrations: &[Migration]) -> Result<u32, IndexError> {
     Ok(checked)
 }
 
+/// Apply every migration above the current version, each in its own transaction.
+///
+/// Applying an already-applied set is successful and returns the version already reached.
+///
+/// # Errors
+/// Fails when the chain is empty or not contiguous, the database is from a newer build, SQLite
+/// refuses a file's SQL or the version stamp, or a rebuilding migration cannot switch foreign
+/// keys off and back or leaves a violation. Files before the failing one stay applied.
 pub fn apply_all(conn: &mut Connection, migrations: &[Migration]) -> Result<u32, IndexError> {
     guard_contiguous(migrations)?;
     let ceiling = migrations.last().map_or(0, |m| m.version);

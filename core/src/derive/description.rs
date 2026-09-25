@@ -144,13 +144,10 @@ pub fn describe(
             source: Some(DescriptionSource::Note),
         };
     }
-    match synthesise(primary_language, archetype) {
-        Some(text) => Described {
-            text: Some(text),
-            source: Some(DescriptionSource::Detected),
-        },
-        None => Described::default(),
-    }
+    synthesise(primary_language, archetype).map_or_else(Described::default, |text| Described {
+        text: Some(text),
+        source: Some(DescriptionSource::Detected),
+    })
 }
 
 #[cfg(test)]

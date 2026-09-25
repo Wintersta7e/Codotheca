@@ -25,6 +25,7 @@ impl LocationKind {
     // hand-written copy that stood here carried a count a human maintained for a type the schema
     // already declares; every call site is unchanged.
 
+    /// The TEXT `location.kind` stores for this side.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -52,7 +53,7 @@ use crate::protocol::{LocationId, Presence};
 impl LocationKind {
     /// "Native side preferred" (§5.1): the side this build of the app runs on.
     #[must_use]
-    pub fn is_native(self) -> bool {
+    pub const fn is_native(self) -> bool {
         if cfg!(windows) {
             matches!(self, Self::Win)
         } else {

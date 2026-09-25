@@ -11,20 +11,31 @@ use rusqlite::OptionalExtension as _;
 use super::IndexError;
 use crate::protocol::ProjectId;
 
+/// What recognises a project across a rebuild, which reassigns every id (§1.1, §1.12).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectSubject {
+    /// A project with history: its lineage plus its canonical remote, both recomputed from the
+    /// repository.
     Lineage {
+        /// SHA-256 of the sorted root commit OIDs; shared by a fork and its upstream.
         lineage_key: String,
+        /// The canonical `<host>/<owner>/<name>`, or `None` for a project with no remote.
         remote_key: Option<String>,
     },
+    /// A project with no commits, recognised by its lowest-id location alone.
     Path {
+        /// That location's side: `win`, `linux` or `wsl`.
         kind: String,
+        /// The WSL distribution, or empty for any other kind.
         distro: String,
+        /// That location's `path_key` bytes.
         path_key: Vec<u8>,
     },
 }
 
 impl ProjectSubject {
+    /// The string the sidecar and `xp_events.subject_key` hold for this subject;
+    /// [`ProjectSubject::parse`] reads it back.
     #[must_use]
     pub fn to_key(&self) -> String {
         match self {
@@ -43,6 +54,8 @@ impl ProjectSubject {
         }
     }
 
+    /// [`ProjectSubject::to_key`]'s inverse; `None` for a string in neither shape or with a path
+    /// key that is not hex.
     #[must_use]
     pub fn parse(key: &str) -> Option<Self> {
         if let Some(rest) = key.strip_prefix("lineage:") {
@@ -92,6 +105,9 @@ fn from_hex(hex: &str) -> Option<Vec<u8>> {
 
 /// The subject a project would be exported under, or `None` if the project does not exist and
 /// has no location either.
+///
+/// # Errors
+/// Fails when SQLite refuses the read of the `project` or `location` row.
 pub fn subject_for_project(
     conn: &rusqlite::Connection,
     project: ProjectId,
@@ -130,6 +146,9 @@ pub fn subject_for_project(
 }
 
 /// The project a subject names now, or `None` if nothing matches. Never a nearest match.
+///
+/// # Errors
+/// Fails when SQLite refuses the read.
 pub fn resolve_subject(
     conn: &rusqlite::Connection,
     subject: &ProjectSubject,

@@ -68,6 +68,7 @@ pub fn normalise_salient(raw: &[u8]) -> String {
 pub struct DebtKey {
     /// The logical subject, shared with the §1.12 sidecar and with `xp_events.subject_key`.
     pub subject_key: String,
+    /// The producer that found the item; its registry row fixes the fingerprint's shape.
     pub source: DebtSource,
     /// `''` for a singleton — never NULL, because SQLite treats NULLs as distinct inside a UNIQUE
     /// index and a nullable fingerprint would silently permit duplicate singletons.

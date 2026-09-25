@@ -13,147 +13,284 @@ use super::subject::subject_for_project;
 use super::IndexError;
 use crate::protocol::ProjectId;
 
+/// The document shape this build writes, and the only one it reads.
 pub const SIDECAR_FORMAT: u32 = 1;
+/// How long after the last write, in seconds, a sidecar is due again: hourly (§1.12).
 pub const SIDECAR_INTERVAL_SECS: i64 = 3600;
 
 /// `app_meta` keys the new database owns rather than restores.
 const REBUILD_OWNED_SETTINGS: [&str; 3] = ["schema_version", "sidecar_generation", "git_version"];
 
 macro_rules! record {
-    ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
+    (
+        $(#[$meta:meta])*
+        $name:ident { $($(#[$field_meta:meta])* $field:ident : $ty:ty),* $(,)? }
+    ) => {
+        $(#[$meta])*
         #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub struct $name { $(pub $field: $ty),* }
+        pub struct $name { $($(#[$field_meta])* pub $field: $ty),* }
     };
 }
 
-record!(SidecarSegment {
-    started_at: i64,
-    ended_at: Option<i64>,
-    credited_seconds: i64,
-    closed_by: Option<String>,
-});
-record!(SidecarSession {
-    started_at: i64,
-    ended_at: Option<i64>,
-    credited_seconds: i64,
-    close_reason: Option<String>,
-    segments: Vec<SidecarSegment>,
-});
-record!(SidecarXpEvent {
-    ts: i64,
-    tz_offset_min: Option<i64>,
-    kind: String,
-    dedupe_key: String,
-    meta: Option<String>,
-});
-record!(SidecarLaunchTarget {
-    kind: String,
-    name: String,
-    exec_hex: String,
-    args_json: String,
-    cwd_mode: String,
-    env_json: String,
-    sort_index: i64,
-    language: Option<String>,
-});
-record!(SidecarProject {
-    subject: String,
-    notes: Option<String>,
-    is_pinned: bool,
-    is_archived: bool,
-    is_hidden: bool,
-    acknowledged_at: Option<i64>,
-    seed_basename: String,
-    reroll_offset: i64,
-    sessions: Vec<SidecarSession>,
-    xp_events: Vec<SidecarXpEvent>,
-    launch_targets: Vec<SidecarLaunchTarget>,
-});
-record!(SidecarCollection {
-    name: String,
-    kind: String,
-    query_text: Option<String>,
-    query_grammar_version: Option<i64>,
-    sort_index: i64,
-    members: Vec<String>,
-});
-record!(SidecarRoot {
-    kind: String,
-    distro: String,
-    path_hex: String,
-    enabled: bool,
-    added_by: String,
-    descend_into_repos: bool,
-    added_at: i64,
-});
-record!(SidecarAlias {
-    email: String,
-    reason: String,
-});
-record!(SidecarIdentity {
-    email: String,
-    name: Option<String>,
-    is_user: bool,
-    source: String,
-    confirmed_at: Option<i64>,
-    aliases: Vec<SidecarAlias>,
-});
-record!(SidecarMerge {
-    survivor: String,
-    absorbed: String,
-    merged_at: i64,
-    association_kind: String,
-    evidence_json: String,
-    absorbed_json: String,
-});
+record!(
+    /// One `session_segment` row.
+    SidecarSegment {
+        /// When the segment began, in Unix seconds.
+        started_at: i64,
+        /// When it ended, in Unix seconds; `None` while it was still open.
+        ended_at: Option<i64>,
+        /// The seconds it credited to its session (§9).
+        credited_seconds: i64,
+        /// What ended it — `idle`, `session_end`, `app_exit` or `crash`; `None` exactly when
+        /// `ended_at` is.
+        closed_by: Option<String>,
+    }
+);
+record!(
+    /// One `session` row, with its segments.
+    SidecarSession {
+        /// When the session began, in Unix seconds.
+        started_at: i64,
+        /// When it ended, in Unix seconds; `None` while it was still open.
+        ended_at: Option<i64>,
+        /// The session's credit — always the sum of its segments' (§9).
+        credited_seconds: i64,
+        /// What ended it — `stop`, `idle`, `process_exit`, `app_exit`, `crash` or `orphaned`;
+        /// `None` exactly when `ended_at` is.
+        close_reason: Option<String>,
+        /// Its segments, oldest first.
+        segments: Vec<SidecarSegment>,
+    }
+);
+record!(
+    /// One session-track `xp_events` row. The git track is not exported: §1.7 makes it a pure
+    /// function of history, which a rebuild re-derives.
+    SidecarXpEvent {
+        /// When the event happened, in Unix seconds.
+        ts: i64,
+        /// The machine's offset from UTC at the time, in minutes east; `None` when not recorded.
+        tz_offset_min: Option<i64>,
+        /// The event kind — on this track `session`, `focus` or `debt_day`.
+        kind: String,
+        /// The row's unique key; restoring a key that already exists writes nothing.
+        dedupe_key: String,
+        /// The kind's JSON detail, if it carries any.
+        meta: Option<String>,
+    }
+);
+record!(
+    /// One launch target the user made. Detected targets are not exported; they are re-detected.
+    SidecarLaunchTarget {
+        /// What it opens the project in — `editor`, `terminal`, `file_manager` or `git_client`.
+        kind: String,
+        /// Its display name.
+        name: String,
+        /// The executable path's bytes, hex-encoded, because a path is bytes and not text.
+        exec_hex: String,
+        /// Its argument list, as the JSON text `launch_target.args_json` holds.
+        args_json: String,
+        /// `location` to start it in the project's copy, `none` to set no working directory.
+        cwd_mode: String,
+        /// Its extra environment, as the JSON text `launch_target.env_json` holds.
+        env_json: String,
+        /// Its position within its scope; the lowest is the default.
+        sort_index: i64,
+        /// The language it applies to; `None` means any language, never an unknown one.
+        language: Option<String>,
+    }
+);
+record!(
+    /// One unmerged project's non-derivable state, keyed on its subject.
+    SidecarProject {
+        /// The project's [`ProjectSubject`] key — never an id, which a rebuild reassigns.
+        ///
+        /// [`ProjectSubject`]: super::subject::ProjectSubject
+        subject: String,
+        /// The user's note on the project, if any.
+        notes: Option<String>,
+        /// Whether the user pinned it.
+        is_pinned: bool,
+        /// Whether the user archived it.
+        is_archived: bool,
+        /// Whether the user hid it.
+        is_hidden: bool,
+        /// When it was first opened or launched, in Unix seconds (§10.5); `None` if never.
+        acknowledged_at: Option<i64>,
+        /// The directory basename at first index, which every art value derives from (§7.4).
+        seed_basename: String,
+        /// How many times `art.rerender` re-rolled its art (§7.2).
+        reroll_offset: i64,
+        /// Its sessions, oldest first.
+        sessions: Vec<SidecarSession>,
+        /// Its session-track XP rows, oldest first.
+        xp_events: Vec<SidecarXpEvent>,
+        /// Its user-made launch targets, in `sort_index` order.
+        launch_targets: Vec<SidecarLaunchTarget>,
+    }
+);
+record!(
+    /// One collection definition, with its members as subject keys.
+    SidecarCollection {
+        /// The collection's name, unique regardless of case.
+        name: String,
+        /// `manual` for a hand-picked list, `query` for a saved query.
+        kind: String,
+        /// The query a `query` collection runs; `None` for a `manual` one.
+        query_text: Option<String>,
+        /// The grammar version `query_text` is written in; `None` for a `manual` collection.
+        query_grammar_version: Option<i64>,
+        /// Its position in the collection list.
+        sort_index: i64,
+        /// Subject keys of its member projects; a member with no subject is left out.
+        members: Vec<String>,
+    }
+);
+record!(
+    /// One `scan_root` row.
+    SidecarRoot {
+        /// The side the root is on: `win`, `linux` or `wsl`.
+        kind: String,
+        /// The WSL distribution, or empty for any other kind.
+        distro: String,
+        /// The root's path bytes, hex-encoded; its `path_key` is recomputed on restore.
+        path_hex: String,
+        /// Whether the scan walks it.
+        enabled: bool,
+        /// Who added it: `suggested` or `user`.
+        added_by: String,
+        /// Whether the walk continues below a repository root (§4.2).
+        descend_into_repos: bool,
+        /// When it was added, in Unix seconds.
+        added_at: i64,
+    }
+);
+record!(
+    /// One further address recognised as the same identity (§1.4).
+    SidecarAlias {
+        /// The alias address.
+        email: String,
+        /// Why it is an alias: `local_part`, `coauthor` or `manual`.
+        reason: String,
+    }
+);
+record!(
+    /// One `identity` row, with its aliases (§1.4).
+    SidecarIdentity {
+        /// The address, unique regardless of case.
+        email: String,
+        /// The name recorded with it, if any.
+        name: Option<String>,
+        /// Whether the address is the user's own rather than one recorded for someone else.
+        is_user: bool,
+        /// Where the address came from: `gitconfig`, `noreply`, `inferred` or `manual`.
+        source: String,
+        /// When the user confirmed the set, in Unix seconds; `None` is seeded and never confirmed.
+        confirmed_at: Option<i64>,
+        /// Its aliases.
+        aliases: Vec<SidecarAlias>,
+    }
+);
+record!(
+    /// One `merge_record` row, both sides keyed on their subjects (§1.9).
+    SidecarMerge {
+        /// Subject key of the project that absorbed the other.
+        survivor: String,
+        /// Subject key of the project merged into it.
+        absorbed: String,
+        /// When the merge happened, in Unix seconds.
+        merged_at: i64,
+        /// How the two were associated: `definitive`, `strong`, `inferred` or `manual`.
+        association_kind: String,
+        /// The evidence the merge was decided on, as JSON text.
+        evidence_json: String,
+        /// The absorbed row as it stood before the merge, as JSON text — what a split restores.
+        absorbed_json: String,
+    }
+);
 
+/// Everything a sidecar carries: the non-derivable set, with no row keyed on an id.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SidecarPayload {
+    /// Every unmerged project that has a subject, with what hangs off it.
     pub projects: Vec<SidecarProject>,
+    /// Every collection.
     pub collections: Vec<SidecarCollection>,
+    /// Every scan root.
     pub roots: Vec<SidecarRoot>,
+    /// Every identity, with its aliases.
     pub identities: Vec<SidecarIdentity>,
+    /// Every merge record whose two sides both have a subject.
     pub merges: Vec<SidecarMerge>,
+    /// `app_meta`, less the keys the new database owns.
     pub settings: BTreeMap<String, String>,
+    /// Every `view_state` row.
     pub view_state: BTreeMap<String, String>,
 }
 
+/// The sidecar document as written to `index-sidecar.json`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Sidecar {
+    /// The document shape; [`read`] refuses anything but [`SIDECAR_FORMAT`].
     pub format: u32,
+    /// Which write this is; each export adds one to `app_meta.sidecar_generation`.
     pub generation: u64,
+    /// When it was written, in Unix seconds — where a rebuild's gap starts.
     pub written_at: i64,
+    /// `fnv1a64:<hex>` over the serialised payload; [`read`] refuses a mismatch.
     pub checksum: String,
+    /// The records themselves.
     pub payload: SidecarPayload,
 }
 
+/// How many of each record a sidecar holds.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct SidecarCounts {
+    /// Project records.
     pub projects: u64,
+    /// Project records carrying a note.
     pub notes: u64,
+    /// Sessions, across every project.
     pub sessions: u64,
+    /// Session segments, across every session.
     pub session_segments: u64,
+    /// Session-track XP rows, across every project.
     pub xp_events: u64,
+    /// User-made launch targets, across every project.
     pub launch_targets: u64,
+    /// Collection definitions.
     pub collections: u64,
+    /// Collection memberships, across every collection.
     pub collection_members: u64,
+    /// Scan roots.
     pub roots: u64,
+    /// Identities.
     pub identities: u64,
+    /// Merge records.
     pub merges: u64,
+    /// `app_meta` entries.
     pub settings: u64,
+    /// `view_state` entries.
     pub view_state: u64,
 }
 
+/// What [`Index::export_sidecar`] wrote.
+///
+/// [`Index::export_sidecar`]: super::Index::export_sidecar
 #[derive(Debug, Clone)]
 pub struct SidecarWriteReport {
+    /// Where the sidecar was written.
     pub path: PathBuf,
+    /// The generation it carries.
     pub generation: u64,
+    /// When it was written, in Unix seconds.
     pub written_at: i64,
+    /// How many of each record it holds.
     pub counts: SidecarCounts,
 }
 
+/// Whether a sidecar is due: none was ever written, or [`SIDECAR_INTERVAL_SECS`] have passed.
 #[must_use]
-pub fn is_due(last_written_at: Option<i64>, now: i64) -> bool {
+pub const fn is_due(last_written_at: Option<i64>, now: i64) -> bool {
     match last_written_at {
         None => true,
         Some(last) => now.saturating_sub(last) >= SIDECAR_INTERVAL_SECS,
@@ -164,6 +301,7 @@ fn len_u64<T>(v: &[T]) -> u64 {
     u64::try_from(v.len()).unwrap_or(u64::MAX)
 }
 
+/// Count each kind of record `s` holds.
 #[must_use]
 pub fn counts(s: &Sidecar) -> SidecarCounts {
     let p = &s.payload;
@@ -194,6 +332,10 @@ pub fn counts(s: &Sidecar) -> SidecarCounts {
     c
 }
 
+/// Read the non-derivable set out of the database as a checksummed sidecar document.
+///
+/// # Errors
+/// Fails when SQLite refuses a read, or the payload does not serialise for its checksum.
 pub fn export(conn: &Connection, generation: u64, now: i64) -> Result<Sidecar, IndexError> {
     let payload = SidecarPayload {
         projects: export_projects(conn)?,
@@ -478,6 +620,10 @@ fn export_merges(conn: &Connection) -> Result<Vec<SidecarMerge>, IndexError> {
 
 /// Temp file, `sync_all`, then rename — atomic on both targets. `sync_all` runs before the
 /// rename so a power cut cannot leave a renamed-but-empty file.
+///
+/// # Errors
+/// Fails when the document does not serialise, or the directory or temp file cannot be
+/// created, written, synced or renamed into place.
 pub fn write_atomically(sidecar: &Sidecar, path: &Path) -> Result<(), IndexError> {
     use std::io::Write as _;
 
@@ -500,6 +646,10 @@ pub fn write_atomically(sidecar: &Sidecar, path: &Path) -> Result<(), IndexError
 }
 
 /// Read a sidecar, refusing an unknown format or a checksum that does not match the payload.
+///
+/// # Errors
+/// Fails when the file cannot be read or is not a sidecar document, its format is not
+/// [`SIDECAR_FORMAT`], or its checksum does not match its payload.
 pub fn read(path: &Path) -> Result<Sidecar, IndexError> {
     let bytes = std::fs::read(path)?;
     let doc: Sidecar =
@@ -519,20 +669,34 @@ pub fn read(path: &Path) -> Result<Sidecar, IndexError> {
     Ok(doc)
 }
 
+/// Rows a restore wrote, per kind. An insert skipped because its row already exists counts zero.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct RestoreCounts {
+    /// Scan roots inserted.
     pub roots: u64,
+    /// Identities inserted.
     pub identities: u64,
+    /// Identity aliases inserted.
     pub aliases: u64,
+    /// `app_meta` entries written.
     pub settings: u64,
+    /// `view_state` entries written.
     pub view_state: u64,
+    /// Collection definitions inserted.
     pub collections: u64,
+    /// Collection memberships inserted for the restored project.
     pub collection_members: u64,
+    /// `1` when the sidecar held a record for the subject's project, else `0`.
     pub projects: u64,
+    /// `1` when that record carried a note, else `0`.
     pub notes: u64,
+    /// Sessions inserted.
     pub sessions: u64,
+    /// Session segments inserted.
     pub session_segments: u64,
+    /// Session-track XP rows inserted.
     pub xp_events: u64,
+    /// User-made launch targets inserted.
     pub launch_targets: u64,
 }
 
@@ -555,9 +719,13 @@ fn unhex(s: &str) -> Result<Vec<u8>, IndexError> {
 }
 
 /// Everything that attaches to no project: roots, identities, settings, view state and
-/// collection definitions. Safe to run twice — every insert is `ON CONFLICT DO NOTHING`
-/// against the natural key the DDL already declares. Deleting first would discard rows the
-/// user made after the rebuild.
+/// collection definitions.
+///
+/// Safe to run twice — every insert is `ON CONFLICT DO NOTHING` against the natural key the DDL
+/// already declares. Deleting first would discard rows the user made after the rebuild.
+///
+/// # Errors
+/// Fails when a root's `path_hex` is not hex or SQLite refuses an insert.
 pub fn restore_global(conn: &Connection, doc: &Sidecar) -> Result<RestoreCounts, IndexError> {
     let mut c = RestoreCounts::default();
 
@@ -649,6 +817,9 @@ pub fn restore_global(conn: &Connection, doc: &Sidecar) -> Result<RestoreCounts,
 }
 
 /// The project-scoped half, applied when the scan re-discovers a subject.
+///
+/// # Errors
+/// Fails when SQLite refuses a read or write, or a launch target's `exec_hex` is not hex.
 pub fn restore_for_subject(
     conn: &Connection,
     doc: &Sidecar,

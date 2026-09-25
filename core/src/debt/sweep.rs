@@ -18,8 +18,11 @@ use crate::protocol::{DebtSource, DebtSweepOutcome, LocationId, ObservationBasis
 /// One source, looked at once, and what it saw.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SweepObservation {
+    /// The project whose items this sweep looked for.
     pub project: ProjectId,
+    /// The one producer that swept; the row is keyed by `(project, source)`.
     pub source: DebtSource,
+    /// Whether the sweep saw everything, some of it, or nothing — only `complete` may close.
     pub outcome: DebtSweepOutcome,
     /// The anchor. `None` is a sweep with no location — `abandoned_with_debt` derives from other
     /// stored observations and observes no root at all.
@@ -27,9 +30,12 @@ pub struct SweepObservation {
     /// Diagnostic only: `location.scan_generation` as it stood. Read by no surface and by no
     /// closure rule.
     pub generation: Option<i64>,
+    /// Which state of the repository the sweep read (A9); `None` only for a source the registry
+    /// gives no basis, `abandoned_with_debt`.
     pub basis: Option<ObservationBasis>,
     /// `Some` only for `complete` and `partial`; the DDL refuses any other pairing.
     pub item_count: Option<u32>,
+    /// When the sweep ran, in Unix seconds.
     pub observed_at: i64,
 }
 
@@ -45,6 +51,9 @@ pub struct SweepObservation {
 /// `Option == Option`. **Written as `Some(a) == Some(b)` it would be SQL's `=`**, under which a
 /// NULL-anchored item could never close, because `NULL = NULL` is NULL and not true.
 #[must_use]
+// The two anchors are the same fact under two names: an item's anchor is the location it was
+// last seen at, a sweep's is the location it read. `SweepObservation` has no other location field.
+#[allow(clippy::suspicious_operation_groupings)]
 pub fn comparable(item: &StoredItem, obs: &SweepObservation) -> bool {
     item.last_seen_location_id == obs.location && item.basis == obs.basis
 }
@@ -67,6 +76,9 @@ pub fn may_close(item: &StoredItem, obs: &SweepObservation) -> bool {
 /// `locations.uninstall` removes the bytes and **keeps the row**, so a naive sweep afterwards
 /// finds a readable-looking absence, reports `complete` with zero items, closes every item and
 /// pays for it.
+///
+/// # Errors
+/// Fails when SQLite refuses the read of the `location` row.
 pub fn root_is_observable(
     conn: &rusqlite::Connection,
     location: LocationId,
@@ -89,6 +101,9 @@ pub fn root_is_observable(
 /// Zero items at a present root is `complete` with `item_count = 0`; a root that is not there is
 /// `unobservable`, whatever the producer proposed. A sweep with no anchor at all is left alone:
 /// `abandoned_with_debt` observes no root and has none to freeze against.
+///
+/// # Errors
+/// Fails when SQLite refuses the read of the anchor's `location` row.
 pub fn outcome_at_root(
     tx: &Transaction<'_>,
     location: Option<LocationId>,
@@ -131,6 +146,10 @@ pub fn stored_outcome(
 ///
 /// The DDL's own CHECK refuses an `item_count` on an outcome that did not observe, so a caller
 /// that forgets to clear it fails here rather than shipping a count nobody measured.
+///
+/// # Errors
+/// Fails when SQLite refuses the write — including that CHECK — or a generated enum does not
+/// serialise to the text its column stores.
 pub fn upsert_sweep(tx: &Transaction<'_>, obs: &SweepObservation) -> Result<(), DebtError> {
     tx.execute(
         "INSERT INTO debt_sweep
@@ -161,6 +180,10 @@ pub fn upsert_sweep(tx: &Transaction<'_>, obs: &SweepObservation) -> Result<(), 
 ///
 /// `None` is not an outcome. It is what makes a project with no row render as *not computed*
 /// rather than as zero.
+///
+/// # Errors
+/// Fails when SQLite refuses the read, or the stored `outcome` or `basis` is not a value this
+/// build's schema declares.
 pub fn latest_sweep(
     tx: &Transaction<'_>,
     project: ProjectId,

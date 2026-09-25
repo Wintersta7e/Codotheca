@@ -36,6 +36,7 @@ pub struct StateInputs {
     pub locations: Vec<Presence>,
     /// §30.5's predicate, from `super::enrolment::is_enrolled`.
     pub enrolled: bool,
+    /// Whether the user archived the project; an archived project is suppressed at gate 5 (§30.5).
     pub is_archived: bool,
     /// Whether a reading was ever computed for this project. **A freeze may never manufacture a
     /// zero**, so with no prior reading an offline project is `absent`, not `frozen`.

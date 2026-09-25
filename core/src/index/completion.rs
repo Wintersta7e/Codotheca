@@ -12,14 +12,25 @@ use rusqlite::Connection;
 use super::IndexError;
 use crate::protocol::ProjectId;
 
+/// A project's completion as the two `project` columns hold it — computed, or explicitly not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Completion {
     /// No tick row is drawn. Not "0 of 0", and not "0 of 10".
     NotComputed,
     /// `lit` of `applicable` checks are lit. `applicable` is always at least 1.
-    Computed { lit: u32, applicable: u32 },
+    Computed {
+        /// How many applicable checks are lit; never more than `applicable`.
+        lit: u32,
+        /// How many checks apply to the project; at least 1.
+        applicable: u32,
+    },
 }
 
+/// Write a project's completion; `NotComputed` writes NULL to both columns, never 0.
+///
+/// # Errors
+/// Fails with [`IndexError::CompletionNotComputable`] for a computed value with zero applicable
+/// checks or more lit than applicable, or when SQLite refuses the update.
 pub fn set_completion(
     conn: &Connection,
     project: ProjectId,
@@ -45,6 +56,11 @@ pub fn set_completion(
     Ok(())
 }
 
+/// Read a project's completion back; anything but two non-NULL columns with `applicable > 0` is
+/// `NotComputed`.
+///
+/// # Errors
+/// Fails when the project has no row or SQLite refuses the read.
 pub fn get_completion(conn: &Connection, project: ProjectId) -> Result<Completion, IndexError> {
     let (lit, applicable): (Option<i64>, Option<i64>) = conn.query_row(
         "SELECT completion_lit, completion_applicable FROM project WHERE id = ?1",

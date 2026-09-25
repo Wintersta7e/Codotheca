@@ -42,6 +42,9 @@ fn presence_of(s: &str) -> Presence {
 }
 
 /// Read every copy of one project.
+///
+/// # Errors
+/// Fails when SQLite refuses the read of the project's `location` rows.
 pub fn load_location_facts(
     conn: &Connection,
     project: ProjectId,
@@ -77,6 +80,10 @@ pub fn load_location_facts(
 }
 
 /// Recompute and write §5's derived values for one project.
+///
+/// # Errors
+/// Fails when the project has no row, or SQLite refuses a read of its locations, sessions or job
+/// states, or the `project` update.
 pub fn recompute(
     tx: &Transaction<'_>,
     project: ProjectId,

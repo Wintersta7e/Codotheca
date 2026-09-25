@@ -85,7 +85,9 @@ pub enum IdentityShape {
 /// §28.2's registry row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceRow {
+    /// The source this row describes; exactly one row per `DebtSource` variant.
     pub source: DebtSource,
+    /// How an item of this source is fingerprinted, which fixes what counts as the same item.
     pub shape: IdentityShape,
     /// §33 owns every rule over the layer; this is the join, and the only place a source's layer
     /// is stated. It is deliberately **not** a `debt_item` column — a stored copy could disagree
@@ -186,7 +188,7 @@ pub const SOURCE_REGISTRY: [SourceRow; 9] = [
 /// Total over the closed enum, with **no `_ =>` arm**: a tenth variant added to the schema fails
 /// to compile here rather than falling through to a wrong row at run time.
 #[must_use]
-pub fn registry_for(source: DebtSource) -> &'static SourceRow {
+pub const fn registry_for(source: DebtSource) -> &'static SourceRow {
     match source {
         DebtSource::TodoMarker => &TODO_MARKER,
         DebtSource::MissingReadme => &MISSING_README,

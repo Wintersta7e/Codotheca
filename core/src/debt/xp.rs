@@ -55,6 +55,10 @@ pub fn debt_day_dedupe_key(subject_key: &str, local_date: &str) -> String {
 ///
 /// **`Invalidated` closures are excluded from the count and from `sources` before the row is
 /// written**, and a day whose only closures are invalidated writes **no row at all**.
+///
+/// # Errors
+/// Fails when SQLite refuses the read or the write, the day's stored `meta` is not JSON, or it
+/// names a source this build's schema does not declare.
 pub fn pay_debt_day(
     tx: &Transaction<'_>,
     project: ProjectId,
@@ -109,8 +113,8 @@ pub fn pay_debt_day(
             .and_then(serde_json::Value::as_array)
         {
             for value in list {
-                if let Some(raw) = value.as_str() {
-                    source_text.insert(raw.to_owned());
+                if let Some(spelling) = value.as_str() {
+                    source_text.insert(spelling.to_owned());
                 }
             }
         }

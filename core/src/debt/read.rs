@@ -39,6 +39,10 @@ const fn layer_order(layer: DecayLayer) -> u8 {
 ///
 /// Ordered `(layer, source, pathDisplay, line)` so the rendered list is stable across reads and a
 /// re-sort in the renderer is never needed to make it so.
+///
+/// # Errors
+/// Fails when SQLite refuses a read, a stored `source`, `state`, `scoring` or `basis` is not a
+/// value this build's schema declares, or an advisory item's detail cannot be read or parsed.
 pub fn load_debt(conn: &Connection, project: ProjectId) -> Result<Vec<DebtItem>, DebtError> {
     // §1.10: `path_display` is **write-once** and `display_paths_for_ui` is the only function in
     // the core permitted to read one back. `core/tests/index_paths.rs` scans the source to keep
@@ -144,8 +148,8 @@ pub fn load_debt(conn: &Connection, project: ProjectId) -> Result<Vec<DebtItem>,
             .then_with(|| a.2.line.cmp(&b.2.line))
             .then_with(|| a.2.fingerprint.cmp(&b.2.fingerprint))
     });
-    let out: Vec<DebtItem> = keyed.into_iter().map(|(_, _, item)| item).collect();
-    Ok(out)
+    let sorted: Vec<DebtItem> = keyed.into_iter().map(|(_, _, item)| item).collect();
+    Ok(sorted)
 }
 
 /// One project's sweeps — **what makes an empty item list readable as itself.**
@@ -153,6 +157,10 @@ pub fn load_debt(conn: &Connection, project: ProjectId) -> Result<Vec<DebtItem>,
 /// A source with **no row** was never observed and is absent from this list; a source with a
 /// `complete` sweep and `itemCount: 0` was looked at and had nothing. `AC-P3-28-11` requires the
 /// two to differ **on the wire**, not only in the store.
+///
+/// # Errors
+/// Fails when SQLite refuses the read, or a stored `source`, `outcome` or `basis` is not a value
+/// this build's schema declares.
 pub fn load_debt_sweeps(
     conn: &Connection,
     project: ProjectId,
