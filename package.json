@@ -44,6 +44,7 @@
     "package:win": "node scripts/package.mjs --win",
     "package:linux": "node scripts/package.mjs --linux",
     "check:packaging": "node scripts/check-packaging.mjs",
+    "check:version": "node scripts/check-version.mjs",
     "dist": "node scripts/build-dist.mjs",
     "prepare:win": "node scripts/win-prepare.mjs",
     "test:harness": "node --test \"scripts/acceptance/*.test.mjs\" \"scripts/*.test.mjs\"",
