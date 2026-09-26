@@ -13305,7 +13305,7 @@
           "runner": "manual",
           "owner": "p4-L0a",
           "gate": "WINDOWS-NATIVE",
-          "assert": "Run Windows-native with git at or above \u00a747's floor: a --ref-format=reftable fixture with a local-only branch, two stashes and a local annotated tag yields unpushed_commits, stash_present and unpushed_tag through the production handlers and never safe, and the snapshot lists both stash entries. Below the floor the same fixture yields refs_unreadable with zero VerifyRead invocations. On a2fc935 a reftable repository reads as holding no refs and no stashes.",
+          "assert": "Run Windows-native with git at or above \u00a747's floor, over two --ref-format=reftable copies: one with a local-only branch and a local annotated tag yields unpushed_commits and unpushed_tag through the production handlers and never safe; one with two stashes yields stash_present and never safe, and its snapshot lists both stash entries. They are two copies because beside a stash no VerifyRead runs (AC-P4-45-16), so the unpushed blockers cannot compose with it. Below the floor the branch-and-tag copy yields refs_unreadable with zero VerifyRead invocations. On a2fc935 a reftable repository reads as holding no refs and no stashes.",
           "reason": "Reftable was measured on Windows git only, and the git the Linux capture runs cannot write a reftable fixture, so this criterion is graded from a recorded Windows-native run against the tagged commit (R207); a runtime skip counts as not run.",
           "firstTag": true,
           "platforms": ["windows"],
