@@ -635,7 +635,7 @@ struct OriginWorld {
 impl OriginWorld {
     fn new() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
-        let root = dir.path().canonicalize().expect("canonical fixture root");
+        let root = support::canonical(dir.path());
         let home = root.join("home");
         std::fs::create_dir_all(&home).expect("home");
         let seed = root.join("seed");

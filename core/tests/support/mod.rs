@@ -25,6 +25,22 @@ pub(crate) fn test_git() -> PathBuf {
     std::env::var_os("CODOTHECA_TEST_GIT").map_or_else(|| PathBuf::from("git"), PathBuf::from)
 }
 
+/// `path` canonicalised, without Windows' verbatim prefix. `canonicalize` returns `\\?\C:\…` on
+/// Windows, which git for Windows refuses as a directory (*"cannot mkdir … Invalid argument"*)
+/// and as a config file path (*"unknown error occurred while reading the configuration files"*):
+/// every fixture built on one failed at its first `git init` there, while WSL was green. The
+/// prefix only lifts the 260-character limit and is not part of the path; a `\\?\UNC\` path keeps
+/// it, because stripping would leave `UNC\server\…`.
+pub(crate) fn canonical(path: &Path) -> PathBuf {
+    let canonical = path.canonicalize().expect("canonical fixture path");
+    let stripped = canonical
+        .to_str()
+        .and_then(|text| text.strip_prefix(r"\\?\"))
+        .filter(|rest| !rest.starts_with(r"UNC\"))
+        .map(PathBuf::from);
+    stripped.unwrap_or(canonical)
+}
+
 /// A throwaway repository built with real git plumbing.
 ///
 /// Fixture git runs with its own `HOME` so the developer's global config never leaks in, and

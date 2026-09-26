@@ -263,7 +263,7 @@ fn under_test(cwd: &Path, args: &[&str]) -> std::process::Output {
 #[test]
 fn a_reftable_repository_reads_correctly_or_yields_unknown() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let root = temp.path().canonicalize().expect("canonical");
+    let root = support::canonical(temp.path());
     let repo = root.join("reftable");
     let version = test_git_version();
     let init = under_test(

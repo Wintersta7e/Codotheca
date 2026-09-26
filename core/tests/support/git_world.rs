@@ -502,7 +502,7 @@ impl World {
 
     /// The paths of a world already built under `root` — how a re-executed child finds it.
     pub(crate) fn at(root: &Path) -> Self {
-        let root = root.canonicalize().expect("canonical root");
+        let root = super::canonical(root);
         Self {
             home: root.join("home"),
             work: root.join("work"),
@@ -553,7 +553,7 @@ impl World {
 
     /// Build D10's world under `root`, the work repository's `HEAD` detached when `detached`.
     pub(crate) fn build(root: &Path, detached: bool) -> Self {
-        let root = root.canonicalize().expect("canonical root");
+        let root = super::canonical(root);
         for dir in ["home", "markers", "helpers", "marker-hooks", "template"] {
             std::fs::create_dir_all(root.join(dir)).expect("fixture dir");
         }

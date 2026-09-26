@@ -50,7 +50,7 @@ impl Library {
     /// An empty library: one scan root, no locations.
     pub(crate) fn new() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
-        let base = dir.path().canonicalize().expect("canonical");
+        let base = super::canonical(dir.path());
         let home = base.join("home");
         let root = base.join("root");
         let net = base.join("net");
