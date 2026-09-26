@@ -4224,6 +4224,7 @@
         },
         {
           "id": "AC-P2-24-2-floor",
+          "shares": "AC-P4-47-1",
           "status": "automated",
           "runner": "cargo",
           "owner": "p2-24",
@@ -4840,6 +4841,7 @@
         },
         {
           "id": "AC-P2-24-21-fetch",
+          "shares": "AC-P4-47-4-sentinel",
           "status": "automated",
           "runner": "cargo",
           "owner": "p2-24",
