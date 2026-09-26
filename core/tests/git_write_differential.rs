@@ -418,6 +418,54 @@ fn a_bundle_advertising_origin_gives_a_clone_no_bundle_ref() {
     );
 }
 
+/// **A feature the git under test has is never skipped (R246).**
+///
+/// Every not-run above is keyed on a probe, so a probe wrongly answering *absent* would print a
+/// skip over a live hazard. Each probe is checked against a witness that does not go through it:
+/// the listing must name `fetch.prune`, which every supported git has; M3's unpinned control runs
+/// whatever the listing says, and a bundle ref it writes means `fetch.bundleURI` is present; and
+/// the Count route delivering the hostile profile means `GIT_CONFIG_COUNT` is read.
+#[test]
+fn a_feature_probe_never_reads_a_present_feature_as_absent() {
+    let version = support::git_world::test_git_version();
+    assert!(
+        support::git_world::test_git_lists_key("fetch.prune"),
+        "{version}: `git help --config` does not list fetch.prune, so every absent it answers is \
+         unproven"
+    );
+
+    let world = BundleWorld::new();
+    let hooks = world.root.join("hooks-empty");
+    std::fs::create_dir_all(&hooks).expect("hooks dir");
+    let control = world.work_repo("control", &world.bundle);
+    let mut env = anonymous_env(&hooks);
+    env.work_dir = Some(control.clone());
+    let _ = run_stripped(&objects_intent(&control), &env, &["fetch.bundleURI="], &[]);
+    let bundle_written = !bundle_refs(&control).is_empty();
+    let bundle_listed = support::git_world::test_git_lists_key("fetch.bundleURI");
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let layer_c = support::git_world::World::build(dir.path(), true);
+    let count_env = layer_c.apply(support::git_world::Route::Count);
+    let count_delivered = layer_c.route_delivers(&count_env);
+    let count_probed = support::git_world::test_git_reads_config_env();
+
+    eprintln!(
+        "{version}: fetch.bundleURI written {bundle_written}, listed {bundle_listed}; \
+         GIT_CONFIG_COUNT delivered {count_delivered}, probed {count_probed}"
+    );
+    assert!(
+        !bundle_written || bundle_listed,
+        "the unpinned fetch wrote a bundle ref, yet the listing says {version} has no \
+         fetch.bundleURI"
+    );
+    assert!(
+        !count_delivered || count_probed,
+        "the Count route delivered the profile, yet the probe says {version} does not read \
+         GIT_CONFIG_COUNT"
+    );
+}
+
 /// An event sink that drops everything: the install's stage stream is not this test's subject.
 #[derive(Debug)]
 struct DropEvents;
