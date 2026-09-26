@@ -117,9 +117,10 @@ fn reftable_copy(lib: &Library) -> Option<std::path::PathBuf> {
     Some(copy)
 }
 
-/// **AC-P4-45-3.**
+/// AC-P4-45-3's shape on the git under test. Untagged: the criterion is graded from the
+/// Windows-native record alone (R207), so this run is not its coverage.
 #[test]
-fn ac_p4_45_3() {
+fn reftable_refs_and_stashes_are_read_through_git() {
     // A local-only branch and a local annotated tag.
     let lib = Library::new();
     let Some(copy) = reftable_copy(&lib) else {
