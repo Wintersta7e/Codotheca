@@ -240,6 +240,8 @@ fn every_broken_shape_is_refs_unreadable_and_never_safe() {
 }
 
 /// Give every directory and file back its owner's read bit, so the tempdir can be removed.
+// Const only on Windows, where the body is empty; `const` would not compile on unix.
+#[allow(clippy::missing_const_for_fn)]
 fn restore_modes(dir: &Path) {
     #[cfg(unix)]
     {
