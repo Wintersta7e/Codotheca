@@ -215,3 +215,32 @@ fn ac_p4_45_12() {
     eprintln!("refusals: {refused} of 8 yielded their blocker");
     assert_eq!(refused, 8);
 }
+
+/// A lender whose row spells its path through a symlink is still borrowed. The alternates side
+/// is canonicalised, so the row side must be too — the same one-sided compare that, on Windows,
+/// matched no plain `C:\…` path against the verbatim `\\?\C:\…` form and read the lender `safe`.
+#[cfg(unix)]
+#[test]
+fn a_lender_registered_through_a_symlink_is_still_borrowed() {
+    let lib = Library::new();
+    let lender = lib.pushed_repo("widget");
+    let borrower = lib.root.join("borrower");
+    lib.git(
+        &lib.base,
+        &[
+            "clone",
+            "-q",
+            "--shared",
+            &lender.to_string_lossy(),
+            &borrower.to_string_lossy(),
+        ],
+    );
+    let link = lib.base.join("link");
+    std::os::unix::fs::symlink(&lib.root, &link).expect("symlink");
+    lib.register(&borrower);
+    let id = lib.register(&link.join("widget"));
+    let verdict = lib.preflight(id, &lib.verifier());
+    eprintln!("a lender registered through a symlink: {verdict}");
+    assert!(verdict.has("borrowed_by_another_repository"), "{verdict}");
+    assert_ne!(verdict.disposition(), "safe", "{verdict}");
+}

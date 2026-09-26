@@ -143,6 +143,10 @@ pub fn gate_linked_worktree(repo: &RepoHandle) -> Option<UninstallBlocker> {
 /// here is not known.
 #[must_use]
 pub fn gate_borrowed(path: &Path, others: &[OtherLocation]) -> Option<UninstallBlocker> {
+    // A lender is compared canonically on BOTH sides: `canonicalize` yields the verbatim
+    // `\\?\C:\…` form on Windows, which `starts_with` never matches against a plain `C:\…`, so a
+    // one-sided compare read every copy another repository borrows from as safe there.
+    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let mut unreadable = false;
     for other in others {
         // A location this path contains is `refused_path`'s, not a borrower.
@@ -165,7 +169,7 @@ pub fn gate_borrowed(path: &Path, others: &[OtherLocation]) -> Option<UninstallB
                     // A relative entry is relative to the borrower's own objects directory.
                     let lender = objects.join(line);
                     let lender = lender.canonicalize().unwrap_or(lender);
-                    if lender.starts_with(path) {
+                    if lender.starts_with(&canonical_path) {
                         return Some(UninstallBlocker::BorrowedByAnotherRepository);
                     }
                 }
