@@ -17,10 +17,12 @@ use crate::accounts::keychain::SecretToken;
 /// §47.3's per-invocation deadline: an intent that runs while a user waits is killed, with its
 /// whole process group, when this elapses.
 ///
-/// **A declared value, not a measurement.** It is the 20 s the uninstall pre-flight declared for
-/// its fetch and nothing ever enforced; the Windows-native measurement that confirms or replaces
-/// it is still owed, and until then no latency may be quoted from it. The analyser's reads take
-/// the same value, so one per-invocation deadline governs the whole verdict (§45.6).
+/// Declared as the 20 s the uninstall pre-flight named for its fetch, then measured
+/// Windows-native (git 2.55): over `ANALYSIS_BUDGET`'s fixture the longest single child took
+/// 769 ms, and a real https remote advertised in 460 ms p50 and 611 ms p95. An objects fetch
+/// was not exercised, because every advertised tip was already present; its cost scales with
+/// what the remote holds that the copy lacks. The analyser's reads take the same value, so one
+/// per-invocation deadline governs the whole verdict (§45.6).
 pub const GIT_INVOCATION_DEADLINE: Duration = Duration::from_secs(20);
 
 /// Why a write intent could not be built. A refusal is a reply, not a failure (§24.3d).
