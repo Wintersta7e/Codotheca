@@ -221,7 +221,7 @@ describe('AC-P2-24-20: locations.relocate is byte-identical to phase 1 and gains
 
 describe('AC-P2-24-14: no path past a non-safe disposition exists in the sources', () => {
   /**
-   * `UninstallControl.test.tsx` renders every one of the fourteen blockers and asks the **DOM**
+   * `UninstallControl.test.tsx` renders every blocker the schema declares and asks the **DOM**
    * whether anything at all could reach the removal — that is the behavioural half, and it is
    * where the criterion's *"disabled with its reasons named"* and *"`unknown` renders distinctly
    * from `blocked`"* are proved.

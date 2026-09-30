@@ -6,8 +6,6 @@ import {
   GIT_FLOOR_DISPLAY,
   problemsNotice,
   remoteSyncNotice,
-  residencyNotice,
-  RESIDENCY_MEASUREMENTS,
   spawnFailureNotice,
   staleTargetsNotice,
 } from './copy';
@@ -142,29 +140,6 @@ describe('priority 4: a launch target no longer resolves', () => {
   it('treats unverified as unknown, never as broken', () => {
     expect(staleTargetsNotice([target({ verifyState: 'unverified' })])).toBeNull();
     expect(staleTargetsNotice([target({ verifyState: 'ok' })])).toBeNull();
-  });
-});
-
-describe('priority 5: the residency ask', () => {
-  it('carries the measured numbers and not the figure that was false by 17x', () => {
-    expect(RESIDENCY_MEASUREMENTS).toBe(
-      '307 MB EMPTY · 522 MB WITH A FULL SHELF · 232 MB WITH THE WINDOW DESTROYED',
-    );
-    const n = residencyNotice();
-    expect(n.note).toBe(RESIDENCY_MEASUREMENTS);
-    expect(`${n.title} ${n.body}`).not.toContain('30 MB');
-    expect(n.primary).toBeTruthy();
-    expect(n.secondary).toBeTruthy();
-  });
-
-  // §11.3: the residency ask is "asked once, after value has been demonstrated, and never
-  // again". §1.4 rules on the same shape for the identity card: a secondary that promises a
-  // later ask "is a lie told in two words". The row stays reachable in settings, and the body
-  // says so — the notice itself does not come back.
-  it('does not promise a later ask it will never make', () => {
-    const n = residencyNotice();
-    expect(n.secondary).not.toMatch(/not now|later|remind/i);
-    expect(n.body).toMatch(/settings/i);
   });
 });
 

@@ -137,6 +137,7 @@ function applied(current: Settings, patch: SettingsPatch): Settings {
   return {
     ...current,
     autostart: patch.autostart ?? current.autostart,
+    reducedMotionOverride: patch.reducedMotionOverride ?? current.reducedMotionOverride,
     contentScanEnabled: patch.contentScanEnabled ?? current.contentScanEnabled,
     healthChecks: current.healthChecks.map(
       (entry) => patch.healthChecks?.find((p) => p.check === entry.check) ?? entry,
@@ -268,11 +269,13 @@ describe('§30.9 a switch reaches the readings already on screen', () => {
     await pageBehindDrawer(fake);
     const listsBefore = count(fake, 'projects.list');
 
-    const autostart = screen.getByRole('switch', { name: 'Start with the system' });
-    fireEvent.click(autostart);
+    const reduced = screen.getByRole('switch', {
+      name: 'Respect the system reduced-motion setting',
+    });
+    fireEvent.click(reduced);
     // The drawer takes the core's answer, so the switch moving is the write having landed.
     await waitFor(() => {
-      expect(autostart.getAttribute('aria-checked')).toBe('true');
+      expect(reduced.getAttribute('aria-checked')).toBe('true');
     });
     expect(count(fake, 'projects.get')).toBe(1);
     expect(count(fake, 'projects.list')).toBe(listsBefore);

@@ -39,7 +39,10 @@ test('the consent paragraph is what phase 1 actually reads', () => {
   // An unqualified *never* would be false for exactly the user who said yes.
   expect(copy.CONSENT_PARAGRAPH).toContain('does not read the text of your source files unless');
   expect(copy.CONSENT_PARAGRAPH).toContain('off until you do');
-  expect(copy.CONSENT_PARAGRAPH).toContain('Nothing is uploaded');
+  // [p4] §48.3 row 2: the advisory lookup sends package names and versions, so *nothing is
+  // uploaded* holds only of source and files — and that promise is what stays pinned.
+  expect(copy.CONSENT_PARAGRAPH).toContain('Your source and your files are never uploaded');
+  expect(copy.CONSENT_PARAGRAPH).not.toContain('Nothing is uploaded');
   expect(copy.CONSENT_PARAGRAPH).toContain('no account');
 });
 
@@ -62,7 +65,9 @@ test('consent row 1 names the root files and the lock files as well as .git', ()
 test('two of the three consent rows are statements and not controls', () => {
   expect(copy.CONSENT_ROWS).toHaveLength(3);
   expect(copy.CONSENT_ROWS.filter((r) => r.kind === 'control')).toHaveLength(1);
-  expect(copy.CONSENT_ROWS[2]?.body).toContain('commit-days, releases and revivals');
+  expect(copy.CONSENT_ROWS[2]?.body).toContain(
+    'the days you commit and the days you pay down debt',
+  );
 });
 
 // §10.1a: this sentence does more trust work than any privacy paragraph.

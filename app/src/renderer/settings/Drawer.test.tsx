@@ -106,11 +106,15 @@ describe('the settings drawer', () => {
     const d = deps();
     render(<SettingsDrawer open onClose={vi.fn()} deps={d} slots={{}} />);
     // No switch from a group that reads `Settings` exists before the answer arrives.
-    expect(screen.queryByRole('switch', { name: 'Start with the system' })).toBeNull();
+    expect(
+      screen.queryByRole('switch', { name: 'Respect the system reduced-motion setting' }),
+    ).toBeNull();
     await waitFor(() => {
       expect(d.call).toHaveBeenCalledWith('settings.get', {});
     });
-    expect(await screen.findByRole('switch', { name: 'Start with the system' })).toBeTruthy();
+    expect(
+      await screen.findByRole('switch', { name: 'Respect the system reduced-motion setting' }),
+    ).toBeTruthy();
   });
 
   it('takes the position a write returns, not the one it optimistically set', async () => {

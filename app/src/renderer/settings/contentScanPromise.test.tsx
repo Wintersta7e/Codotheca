@@ -81,5 +81,7 @@ it('AC-P3-29-19 the group-4 row carries the grant, with its consequence line', (
 it('AC-P3-29-19 the paragraph says the grant exists and says it is off', () => {
   expect(CONSENT_PARAGRAPH).not.toBe('');
   expect(CONSENT_PARAGRAPH).toMatch(/off until you do/);
-  expect(CONSENT_PARAGRAPH).toMatch(/Nothing is uploaded/);
+  // [p4] §48.3 row 2: package names and versions reach the advisory database, so the promise is
+  // that source and files are never uploaded — §29's grant reads source, and it stays local.
+  expect(CONSENT_PARAGRAPH).toMatch(/Your source and your files are never uploaded/);
 });

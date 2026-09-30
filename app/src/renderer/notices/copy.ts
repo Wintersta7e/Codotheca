@@ -1,5 +1,7 @@
 /**
- * The four notice bodies §11 sources for §8.0's single slot — priorities 1, 3, 4 and 5.
+ * The notice bodies §11 sources for §8.0's single slot — priorities 1, 3 and 4. Priority 5, the
+ * residency ask, is not written here: this build has no residency to ask about (§48.3 row 13),
+ * and its words arrive with residency itself (§42.12).
  *
  * This module says *what* a notice says. §8.0 owns where it goes, how big it is, which one of
  * the six wins, and how it is dismissed; none of that is restated here, which is what stops six
@@ -166,28 +168,6 @@ export function staleTargetsNotice(rows: readonly TargetVerification[]): NoticeC
     note: null,
     primary: 'RE-DETECT',
     secondary: null,
-  };
-}
-
-/** Measured (§11.3). v2's "~30 MB" was false by 17×; this string is the correction. */
-export const RESIDENCY_MEASUREMENTS =
-  '307 MB EMPTY · 522 MB WITH A FULL SHELF · 232 MB WITH THE WINDOW DESTROYED';
-
-/**
- * §11.3 asks this once, after value has been demonstrated, and never again. The secondary is
- * therefore not `NOT NOW`: §1.4 rules on the same shape for the identity card — a label that
- * promises a later ask is a lie told in two words. The switch stays reachable in settings, and
- * the body says so, which is the true version of the same reassurance.
- */
-export function residencyNotice(): NoticeCopy {
-  return {
-    title: 'START CODOTHECA WITH THE SYSTEM?',
-    body:
-      'The window stays alive for thirty minutes after you last use it, then closes itself and ' +
-      'keeps only a tray icon. Off by default, and changeable in settings at any time.',
-    note: RESIDENCY_MEASUREMENTS,
-    primary: 'START WITH THE SYSTEM',
-    secondary: 'LEAVE IT OFF',
   };
 }
 

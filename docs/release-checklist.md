@@ -5,7 +5,21 @@ and, where it matters, why the obvious shortcut is wrong.
 
 ---
 
-## 1. Building the artifacts
+## 1. Before the tag
+
+- [ ] **Write the release notes** at `docs/release-notes/<tag>.md` and commit them before tagging.
+      The draft job refuses a tag without them: generated notes cannot carry the limits a person
+      has to state (section 3).
+- [ ] **Run the version check against the tag you are about to push:**
+      `npm run check:version -- --tag <tag>`. It prints every version declaration the workspace
+      holds and fails unless all of them equal the tag without its `v`. Quote its output.
+- [ ] **Run the egress census:** `npm run check:egress`. It prints every network destination the
+      code can reach and fails unless `README.md` and `SECURITY.md` name exactly those. Quote its
+      output.
+- [ ] **Re-run gitleaks and quote its own count:** `gitleaks detect --source .` — the commits it
+      scanned and the leaks it found, as it printed them, not as a summary of them.
+
+## 2. Building the artifacts
 
 - [ ] **Build on the platform you are shipping for.** `scripts/build-dist.mjs` refuses to
       cross-compile and says so: an artifact is built on the platform it runs on, or it ships
@@ -17,7 +31,7 @@ and, where it matters, why the obvious shortcut is wrong.
       should not be attached to a bug report.
 - [ ] Confirm the tag is on the exact commit the artifacts were built from.
 
-## 2. What the release notes must say
+## 3. What the release notes must say
 
 - [ ] **The artifacts are unsigned.** There is no code-signing certificate; the packager reports
       `signing=none` rather than implying otherwise. Say so in the notes rather than letting a
@@ -29,37 +43,44 @@ and, where it matters, why the obvious shortcut is wrong.
 - [ ] **State where the portable executable keeps its data.** The `portable` target unpacks to a
       temporary directory on each run, and the application's data directory is Electron's
       `userData` — the same per-user location the installer build uses — unless
-      `CODOTHECA_DATA_DIR` overrides it. **Verify this on a real Windows machine before writing
-      it down**: it is `resolveDataDir`'s behaviour read from the source, not a measurement, and
-      the portable build has not been run.
+      `CODOTHECA_DATA_DIR` overrides it. **Write down what the release run's `launch` job
+      printed**, not what the source says: it launches the installed build and the portable one
+      with the default data directory and prints the directory each wrote and whether they match.
 - [ ] **State that there is no updater.** No update channel, no update server, no background
       network traffic. A fix arrives when the user downloads the next release. `SECURITY.md`
       says the same thing about supported versions; keep the two consistent.
+- [ ] **Say how to verify a download:** the `SHA256SUMS` file beside the artifacts, and
+      `gh attestation verify <file> --repo <this repository>`.
 - [ ] Link `SECURITY.md` for how to report a vulnerability privately.
 
-## 3. Checksums
+## 4. The tag's release run, and the draft it made
 
-- [ ] **Publish SHA-256 sums beside the artifacts**, and take them from **the files you actually
-      uploaded** — not from the build log, and not from a local copy you rebuilt afterwards. A
-      rebuild is not byte-identical, and a sum that does not match what a user downloads is worse
-      than no sum, because it reads as tampering.
-      The order that gets this right: upload, download your own upload, hash that, publish those
-      sums.
-- [ ] `scripts/build-dist.mjs` prints a sha256 per artifact at the end of a build. Use it to
-      check the upload round-tripped, not as the published value.
+- [ ] **Read every job's log, head first.** A green run is not the record: the run id, the
+      tagged commit and the lines below are.
+- [ ] The `version` job printed every declaration and `tag: <tag> — matches`. Quote it.
+- [ ] The Linux build job's floor step printed each packed binary with its `GLIBC` need and what
+      sits above the baseline. Quote the figures; a figure that differs from the notes is
+      recorded as measured and the notes are corrected, never the other way round.
+- [ ] The `launch` job printed each artifact it ran, with its SHA-256, and how it quit. Quote
+      each line.
+- [ ] **Download the draft — never rebuild it — and verify it:**
+      `gh release download <tag> --dir <dir>`, then
+      `node scripts/verify-release.mjs --dir <dir> --repo <owner>/<name>`. It prints one line per
+      file and `files verified: <n>`, and exits non-zero on a missing `SHA256SUMS`, a file whose
+      bytes do not match it, a file it does not list, or a failed attestation. A rebuild is not
+      byte-identical, so a sum taken from one proves nothing about what a user downloads.
+- [ ] **Launch what no runner launches, from the downloaded bytes,** and record the commit and
+      what you saw: the `.rpm` installed and launched on an rpm-based system, and, while the
+      floor step runs in report mode, the AppImage on a system at the glibc floor.
 
-## 4. Before the repository is public
+## 5. Repository settings to keep on
 
-- [ ] **Enable private vulnerability reporting** — Settings → Code security → Private
-      vulnerability reporting. `SECURITY.md` sends people to the Security tab, and if that
-      button is off it sends them nowhere.
-- [ ] **Delete every merged branch.** `git branch --merged main`. A stale branch is history you
-      are about to publish.
-- [ ] Confirm the repository has never been pushed with anything in it you would not publish.
-      Before the first push a mistake is removable; after it, a leaked credential is rotated
-      rather than removed.
+- [ ] **Private vulnerability reporting** — Settings → Code security → Private vulnerability
+      reporting. `SECURITY.md` sends people to the Security tab, and if that button is off it
+      sends them nowhere.
+- [ ] **Delete a branch as soon as it is merged.**
 
-## 5. After publishing
+## 6. After publishing
 
 - [ ] Record the release's dependency posture with the release. A vulnerability database is a
       moving target, so "no known advisories" is a **dated** claim, not a permanent one.

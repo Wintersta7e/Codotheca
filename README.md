@@ -11,7 +11,7 @@ light, ignorable layer that makes upkeep visible. Local-first, no account, no te
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Rust](https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
-![Status](https://img.shields.io/badge/status-public%20beta-brightgreen)
+![Status](https://img.shields.io/badge/status-pre--release-brightgreen)
 
 ![The shelf: twelve projects with generated cover art, their status badges and the attention row](docs/screenshots/shelf.png)
 
@@ -44,7 +44,7 @@ Every repository in these screenshots is invented; they were taken from the real
 
 ## Status
 
-**v1.0.0 — public beta.** Three of the six planned phases are complete — the shelf, remote
+**v0.9.0 — pre-release, built from source.** Three of the six planned phases are complete — the shelf, remote
 repositories with the quick-switch palette, and upkeep — and the app runs on Windows and Linux. It
 is a personal tool built for one person's library; you are welcome to clone and build it, but there
 is no adoption goal and no support guarantee.
@@ -60,10 +60,10 @@ is no adoption goal and no support guarantee.
   rebases, tracked bytes, commit-days. Never cached across a change it could not observe.
 - **Launch and playtime** — a Play button that opens the project in your editor, with sessions
   counted the way a game launcher counts them.
-- **The shelf** — era sections, a virtualised grid holding 60 fps at 1,000 cards, a list view, an
-  attention row, and a query language: `is:dirty`, `is:shallow`, `has:readme`, `lang:rust`,
-  `touched:<30d`, `in:wsl`, saved as collections.
-- **Quick switch** — `Alt+Space` from anywhere, 9 ms to visible when the window is alive.
+- **The shelf** — era sections, a virtualised grid, a list view, an attention row, and a query
+  language: `is:dirty`, `is:shallow`, `has:readme`, `lang:rust`, `touched:<30d`, `in:wsl`, saved
+  as collections.
+- **Quick switch** — `Alt+Space` from anywhere.
 - **Project page** — overview, locations, README, a note, and an activity tab with two ledgers drawn
   side by side and never summed.
 - **First run** — consent, root suggestion, a scan you can watch, and six reveal figures each
@@ -75,8 +75,10 @@ is no adoption goal and no support guarantee.
   images blocked per project until you allow them.
 - **Install and Uninstall** — Install clones a blueprint into place. Uninstall removes a working
   copy only after a pre-flight proves nothing in it exists nowhere else, and is disabled, never
-  confirmed through, when that is not proven. Git itself never removes anything: its only writes
-  are `clone` and `fetch`, and `fetch` never prunes.
+  confirmed through, when that is not proven. Git itself never removes anything. <!-- git-writes:start -->It
+  writes in exactly two ways — a clone into a new folder, and the Uninstall check's read, which
+  adds objects and moves no ref — and an audit of every git call's arguments, config and
+  environment holds it to that. There is no push and no commit.<!-- git-writes:end -->
 - **Health** — nine checks per project: a missing README, licence or tests, no release, unpushed
   commits, red CI, known-vulnerable dependencies, `TODO` markers in the source, and a project
   abandoned while it still carries debt. Each check can be switched off, and one that cannot see
@@ -92,9 +94,9 @@ is no adoption goal and no support guarantee.
   shelf can sort by what needs attention; it is a sort, not a feed.
 - **Packaging** — portable `.exe`, NSIS installer, AppImage, `.deb` and `.rpm`.
 
-About 5,500 automated tests across the core, the shell and the renderer; eight Playwright tests that
+About 5,700 automated tests across the core, the shell and the renderer; ten Playwright tests that
 launch the real Electron app, one of them asserting a painted screen; and an acceptance register
-tying 1316 checks to 573 written criteria.
+tying 1318 checks to 573 written criteria.
 
 ### Known limits
 
@@ -102,20 +104,20 @@ tying 1316 checks to 573 written criteria.
   certificate, by decision.
 - **"Portable" means no installer, not portable data.** The portable `.exe` and the installed build
   share one per-user library, so two copies in two folders are not two libraries. It also unpacks
-  ~377 MB into `%TEMP%`, cached across launches. `CODOTHECA_DATA_DIR` overrides the location.
+  into `%TEMP%`, cached across launches. `CODOTHECA_DATA_DIR` overrides the location.
 - **No performance figures are published.** Every performance criterion is recorded as unmeasured
   rather than given a plausible budget, because a plausible number will be met. Real figures need
   hardware this has not been run on.
-- **Linux GPU and compositor behaviour is tested on a single configuration.** The driver and
-  compositor matrix is the main thing a beta is expected to surface.
+- **Linux GPU and compositor behaviour is tested on a single configuration.**
 - **Repositories inside WSL work through a second Linux binary** the Windows build carries. The path
   is tested on both sides but has not been driven end to end against a live distro.
 
 ### Not yet
 
 - **Phase 4, motivation and the Amnesty** — rings, level, badges, recaps and quests, and the Amnesty:
-  a safe way to retire a project, with its full recovery model. `push`, `checkout` and
-  `worktree add` arrive with it, because that model is their undo.
+  a safe way to retire a project, with its full recovery model. The app will not push: publishing
+  a copy stays your own act in your own client. `checkout` and `worktree add` are not planned
+  before 1.0.
 - **Phase 5, the watchlist** — starred repositories as a wishlist, and a release feed.
 - **Phase 6, polish** — cosmetics, custom art, a table view, and config sync.
 - **Not in v1** — forges other than GitHub; and failing tests or compiler warnings as debt, because
@@ -123,16 +125,18 @@ tying 1316 checks to 573 written criteria.
 
 ### Explicitly declined
 
-- **No account, and no telemetry.** There is no Codotheca account and nothing reports on you. The
-  network is reached for three things only: GitHub, once you connect it; the dependency-advisory
-  lookup, covered by the file-reading consent on the first-run screen; and a README's remote
-  images, per project, once you allow them.
+- **No account, and no telemetry.** There is no Codotheca account and nothing reports on you. <!-- egress-census:start -->The
+  network is reached for five things only: **GitHub**, once you connect it — its API and its
+  sign-in; **the dependency-advisory lookup**, which sends package names and versions and is
+  covered by the file-reading consent on the first-run screen; **a README's remote images**, per
+  project, once you allow them; **Install's clone** of a repository you chose; and **the Uninstall
+  check**, which reads every https or ssh remote of the copy it checks.<!-- egress-census:end -->
 - **No currency, ever.** If XP could buy anything, every honest XP source becomes a farm.
 - **Not Tauri.** A system webview means Windows and Linux render through different engines, so a
   bug reproducible on one target need not exist on the other and CI cannot cover both.
 - **Not libgit2.** Native `git` is shelled out to, config-neutralised, argv only, never a shell — CLI
   compatibility beats the process-spawn saving, and the performance answer is scheduling.
-- **No canvas or WebGL.** Measured: pure DOM holds 60 fps at 1,000 virtualised cards, 4.2 ms p50.
+- **No canvas or WebGL.**
 - **macOS is deferred** until it can be tested on real hardware.
 
 ## Keyboard
@@ -160,7 +164,8 @@ shelf and cycle tabs on the project page, and only one of those contexts is ever
 
 ## Quick start
 
-Requires Rust (stable), Node `>=22.12.0`, and `git` 2.22 or newer on `PATH`.
+Requires Rust (stable), Node `>=22.12.0`, and `git` 2.22 or newer on `PATH`. Uninstall needs git
+2.29.0 or newer; below it, Uninstall reads unknown and stays disabled.
 
 On Linux the core also needs the D-Bus development headers, because the keychain reaches the
 Secret Service over D-Bus. Without them the build fails inside a build script, naming

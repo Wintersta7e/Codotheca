@@ -20,10 +20,6 @@ export const EFFECTS_TIER_LABELS = ['AUTO', 'FULL', 'REDUCED', 'OFF'] as const;
 export const EFFECTS_NOTE = 'FULL · REDUCED AND OFF EACH KEEP A STATIC EQUIVALENT';
 export const REDUCED_OVERRIDE_NOTE = 'CLAMPS THE TIER TO AT MOST REDUCED';
 export const DENSITY_STATEMENT_NOTE = 'SET IN THE TOP BAR · COMPACT · DEFAULT · LARGE';
-export const RESIDENCY_STATEMENT_NOTE =
-  '9 MS TO SHOW WHILE THE WINDOW LIVES · 134 MS AFTER IT IS DESTROYED';
-export const AUTOSTART_NOTE =
-  '307 MB EMPTY · 522 MB WITH A FULL SHELF · 232 MB WITH THE WINDOW DESTROYED';
 export const ROAST_NOTE = 'NEVER ON THE SHELF · NEVER DURING TRIAGE';
 export const SHORTCUT_LABEL = 'Show Codotheca from anywhere';
 export const REBIND_LABEL = 'REBIND';
@@ -50,20 +46,9 @@ export const MOTION_GROUP_ROWS: readonly SettingsRowSpec[] = [
     note: DENSITY_STATEMENT_NOTE,
     backing: { kind: 'statement' },
   },
-  {
-    id: 'residency-hybrid',
-    group: 'residency',
-    label: 'The window is destroyed 30 minutes after last use',
-    note: RESIDENCY_STATEMENT_NOTE,
-    backing: { kind: 'statement' },
-  },
-  {
-    id: 'residency-autostart',
-    group: 'residency',
-    label: 'Start with the system',
-    note: AUTOSTART_NOTE,
-    backing: { kind: 'command', command: 'settings.set' },
-  },
+  // §48.3 rows 12–14: this build quits when its window closes, keeps no tray icon and registers
+  // no login item, so the 30-minute window, `Start with the system` and their measured figures
+  // are not drawn. They return when residency does (§42.12).
   {
     id: 'residency-chord',
     group: 'residency',
@@ -166,14 +151,6 @@ export function MotionGroups(props: MotionGroupsProps): ReactElement {
       </SettingsGroup>
 
       <SettingsGroup id="residency" title="RESIDENCY">
-        <SwitchRow spec={spec('residency-hybrid')} on />
-        <SwitchRow
-          spec={spec('residency-autostart')}
-          checked={props.settings.autostart}
-          onChange={(next) => {
-            props.onPatch({ autostart: next });
-          }}
-        />
         <SettingsRow
           spec={{ ...spec('residency-chord'), note: warning }}
           value={props.recording ? CHORD_PROMPT : status}

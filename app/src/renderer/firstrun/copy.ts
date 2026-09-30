@@ -33,14 +33,16 @@ export const CONSENT_PARAGRAPH =
   'repository root, up to 256 KB each. It also reads your lock files — ' +
   `${LOCKFILE_NAMES.slice(0, -1).join(', ')} and ${String(LOCKFILE_NAMES[LOCKFILE_NAMES.length - 1])} — ` +
   `up to ${LOCKFILE_DEPTH_TEXT} and up to ${LOCKFILE_CAP_TEXT}, to check your dependencies ` +
-  'against published advisories. It does not read the text of your source files unless you turn ' +
-  'that on in settings, and it is off until you do. Nothing is uploaded. There is no account.';
+  'against published advisories: package names and versions, never your source, go to a public ' +
+  'advisory database, with no account. It does not read the text of your source files unless ' +
+  'you turn that on in settings, and it is off until you do. Your source and your files are ' +
+  'never uploaded.';
 
 export const ROOTS_EYEBROW = 'CODOTHECA';
 export const ROOTS_HEADLINE = "LET'S SEE WHAT YOU HAVE WRITTEN";
 export const ROOTS_STANDFIRST =
-  'These are the places your git config and your editors already point at. Nothing is read ' +
-  'until you say so, and nothing leaves this machine.';
+  'These are the places your git config and your editors already point at, and nothing is ' +
+  'read until you say so.';
 
 /**
  * §10.1a. This sentence does more trust work than any privacy paragraph, because it says
@@ -83,7 +85,9 @@ export const CONSENT_ROWS: readonly ConsentRow[] = [
   },
   {
     kind: 'statement',
-    body: 'A ledger of commit-days, releases and revivals is written from the first scan.',
+    // [p4] §48.3 row 19 (R158): only kinds a production writer stores. `release` rows arrive with
+    // the ledger's later kinds, and a revival is derived, never written.
+    body: 'A ledger of the days you commit and the days you pay down debt is kept from the first scan.',
     note: 'RECORDED FROM DAY ONE · NOTHING RENDERS IT YET',
   },
 ];
@@ -152,7 +156,7 @@ export const NOT_NOW_LABEL = 'NOT NOW';
 
 /** §10.4a's fetch qualifier, under the turn's line. */
 export const FETCH_QUALIFIER =
-  'AHEAD IS MEASURED AGAINST YOUR LAST FETCH · CODOTHECA NEVER FETCHES';
+  'AHEAD IS MEASURED AGAINST YOUR LAST FETCH · CODOTHECA MOVES NO REMOTE-TRACKING REF';
 export const OBSERVED_QUALIFIER = (clock: string): string =>
   `AS OBSERVED AT ${clock} · WORKTREE STATE IS NEVER CACHED`;
 

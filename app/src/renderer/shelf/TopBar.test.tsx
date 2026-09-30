@@ -62,7 +62,7 @@ describe('the seven slots', () => {
     expect(screen.getByRole('searchbox')).toBeTruthy();
   });
 
-  it('cycles exactly three sort keys, with Completion absent', () => {
+  it('offers its sort keys with Completion absent', () => {
     const { container } = render(<TopBar {...props()} />);
     expect(container.textContent).toContain('LAST TOUCHED');
     expect(container.textContent).not.toMatch(/completion/i);

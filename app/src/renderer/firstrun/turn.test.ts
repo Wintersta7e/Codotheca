@@ -46,14 +46,18 @@ test('one collapses the plural on every rung', () => {
   expect(turnLine(4, 1)).toBe('1 project, most recently touched first.');
 });
 
-// §10.4a: `ahead` is measured against the last fetch and phase 1 never fetches. Bare, rung 1 is
-// the most prominent unverifiable claim in the product. R12: the string is `copy.ts`'s and this
-// module states it nowhere — the test reads the owner so a second spelling cannot creep in.
-test('rung 1 states that the app never fetches', () => {
+// §10.4a: `ahead` is measured against the last fetch. Bare, rung 1 is the most prominent
+// unverifiable claim in the product. R12: the string is `copy.ts`'s and this module states it
+// nowhere — the test reads the owner so a second spelling cannot creep in.
+test('rung 1 carries the fetch qualifier', () => {
   expect(turnModel(counts({ unpushed: 2, total: 9 }), OBSERVED).qualifier).toBe(FETCH_QUALIFIER);
-  expect(FETCH_QUALIFIER).toBe(
-    'AHEAD IS MEASURED AGAINST YOUR LAST FETCH · CODOTHECA NEVER FETCHES',
-  );
+  expect(FETCH_QUALIFIER).toMatch(/^AHEAD IS MEASURED AGAINST YOUR LAST FETCH · /);
+});
+
+// [p4] §48.1: the Uninstall check's verifying read is a `git fetch` of objects (§47.4), so a
+// qualifier saying the app never fetches is false of the build it ships in.
+test('the fetch qualifier never claims the app never fetches', () => {
+  expect(FETCH_QUALIFIER).not.toMatch(/never fetch/i);
 });
 
 // Criterion 23: no value is presented as current without its observation time.

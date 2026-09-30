@@ -124,6 +124,13 @@ test('WHAT EXACTLY holds the consent paragraph, verbatim', () => {
   expect(screen.getByText(copy.CONSENT_PARAGRAPH)).toBeTruthy();
 });
 
+// §10.1a: the standfirst is the screen's first claim, drawn directly under the headline.
+test('the standfirst is drawn under the headline, verbatim', () => {
+  draw();
+  const standfirst = screen.getByRole('heading', { level: 1 }).nextElementSibling;
+  expect(standfirst?.textContent).toBe(copy.ROOTS_STANDFIRST);
+});
+
 // §10.1b: three rows of chips fit and the remainder go behind a `+ n MORE` chip expanding in
 // place, which is what §10.1's "expandable" means.
 test('the exclusion list is drawn in full behind one chip, in the core list order', () => {

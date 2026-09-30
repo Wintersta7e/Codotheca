@@ -992,6 +992,7 @@
         },
         {
           "id": "AC-28-anonymise",
+          "shares": "AC-P4-48-8",
           "status": "automated",
           "runner": "cargo",
           "test": "diag_anonymise::ac_p4_48_8_the_default_bundle_carries_no_name_no_note_and_no_full_path_and_the_reveal_restores_them",
@@ -1009,7 +1010,7 @@
           "id": "AC-29-linux-gpu",
           "status": "external",
           "runner": "none",
-          "reason": "Neither the maintainer nor CI can exercise it: development is on Windows with WSL, WSLg is unrepresentative, and CI runners are headless. Criteria 15 and 21 are measured on A and on WSLg only; the Linux figures come from external users during the public beta. This is a known, accepted gap and it is the reason phase 1 ships publicly as a beta.",
+          "reason": "Neither the maintainer nor CI can exercise it: development is on Windows with WSL, WSLg is unrepresentative, and CI runners are headless. Criteria 15 and 21 are measured on A and on WSLg only. The 0.9.x releases stay private drafts until 1.0 by the project's decision of 2026-09-24, so no external user reports Linux figures before then: the driver and compositor matrix is a known, accepted gap, stated in the README's known limits rather than left for a beta to surface.",
           "assert": "Not verified here. The harness reports it as external and refuses any other status."
         }
       ]
@@ -15288,6 +15289,15 @@
           "test": "scripts/launch-artifact.test.mjs::AC-P4-48-3 a ledger with zero launches fails the count step",
           "assert": "A launch ledger holding zero launches fails the count step rather than passing on nothing.",
           "firstTag": true
+        },
+        {
+          "id": "AC-P4-48-3-default-dir",
+          "status": "deferred",
+          "runner": "node",
+          "owner": "p4-L0c",
+          "test": "scripts/launch-artifact.test.mjs::AC-P4-48-3 with no data directory given, the one the app wrote is found",
+          "assert": "Launched with no data directory, as the Windows installed and portable builds are, the launch script finds the directory the app itself wrote rather than one it was told, so the installed and portable builds' directories can be compared.",
+          "firstTag": true
         }
       ]
     },
@@ -15889,7 +15899,7 @@
           "status": "deferred",
           "runner": "vitest",
           "owner": "p4-L0c",
-          "test": "AC-P4-48-25 the drawer renders the stamped version and artifact kind",
+          "test": "the drawer footer AC-P4-48-25 the drawer renders the stamped version and artifact kind",
           "assert": "The drawer renders the version and the artifact kind from the shell's existing stamp, carried across the preload bridge with no protocol change.",
           "firstTag": true
         },
@@ -15898,7 +15908,7 @@
           "status": "deferred",
           "runner": "vitest",
           "owner": "p4-L0c",
-          "test": "AC-P4-48-25 the stamped version equals the root package.json",
+          "test": "the version line AC-P4-48-25 the stamped version equals the root package.json",
           "assert": "The stamped version the drawer renders equals the root package.json's version, read from disk as the other side of the mirror.",
           "mirror": {
             "other": "package.json"
@@ -15920,6 +15930,15 @@
           "owner": "p4-L0c",
           "test": "scripts/check-release-workflow.test.mjs::AC-P4-48-26 no updater: the metadata guard fails a draft carrying latest*.yml or a blockmap",
           "assert": "No release carries update metadata: the draft job's guard fails over a directory holding a latest*.yml or a .blockmap, printing how many update metadata files it found, and passes over an empty one.",
+          "firstTag": true
+        },
+        {
+          "id": "AC-P4-48-26-nsis",
+          "status": "deferred",
+          "runner": "node",
+          "owner": "p4-L0c",
+          "test": "scripts/check-release-workflow.test.mjs::AC-P4-48-26 no updater: the NSIS target is built without a blockmap",
+          "assert": "The packager is configured to write no update metadata at all: no publish target, and the NSIS target's differential package off, so a packed installer carries no .blockmap for the draft job's guard to refuse.",
           "firstTag": true
         },
         {

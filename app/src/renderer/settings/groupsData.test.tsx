@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { IdentityId, IdentityRow } from '../../generated/protocol.js';
+import { ADVISORY_NOTICE_TITLE } from '../../shared/notificationCopy.js';
 import {
   BUNDLE_STATE,
   DATA_GROUP_ROWS,
@@ -174,15 +175,21 @@ describe('group 9, GITHUB, and the notification block', () => {
     expect(container.querySelector('[data-row="github-statement"]')).toBeTruthy();
   });
 
-  it('marks all three notifications NOT IN THIS BUILD and draws none as a control', () => {
+  // [p3] §11.3a: the marker is struck for the advisory line only — this build posts that one.
+  it('marks the Sunday and wrap lines NOT IN THIS BUILD, not the advisory line, and draws none as a control', () => {
     const { container } = render(<DataGroups {...props} />);
-    expect(screen.getAllByText(new RegExp(NOT_IN_THIS_BUILD))).toHaveLength(3);
+    expect(screen.getAllByText(new RegExp(NOT_IN_THIS_BUILD))).toHaveLength(2);
     const rows = DATA_GROUP_ROWS.filter((r) => r.group === 'notifications');
     expect(rows).toHaveLength(3);
+    expect(rows.filter((r) => r.label === ADVISORY_NOTICE_TITLE)).toHaveLength(1);
     expect(rows.every((r) => r.backing.kind === 'statement')).toBe(true);
     for (const row of rows) {
       const drawn = container.querySelector(`[data-row="${row.id}"]`);
+      expect(drawn, row.id).not.toBeNull();
       expect(drawn?.querySelector('button, [role="switch"], [tabindex]')).toBeNull();
+      expect(drawn?.textContent.includes(NOT_IN_THIS_BUILD), row.id).toBe(
+        row.label !== ADVISORY_NOTICE_TITLE,
+      );
     }
   });
 

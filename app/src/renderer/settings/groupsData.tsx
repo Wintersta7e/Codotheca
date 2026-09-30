@@ -23,7 +23,7 @@ import {
   type SettingsSlots,
 } from './rows.js';
 import { SD } from './styles.js';
-import { NOTIFICATION_LINES } from '../../shared/notificationCopy';
+import { ADVISORY_NOTICE_TITLE, NOTIFICATION_LINES } from '../../shared/notificationCopy';
 
 export const EXPORT_NOTE = 'One JSON file · every project, session and note';
 export const HIDE_NOTE = 'Keeps it off the shelf and out of every count. Nothing is removed.';
@@ -121,7 +121,11 @@ export const DATA_GROUP_ROWS: readonly SettingsRowSpec[] = [
     id: `notification-${String(index)}`,
     group: 'notifications' as const,
     label: notification.label,
-    note: `${notification.note} · ${NOT_IN_THIS_BUILD}`,
+    // [p3] §11.3a: struck for the advisory line only — this build posts that one (§32.12).
+    note:
+      notification.label === ADVISORY_NOTICE_TITLE
+        ? notification.note
+        : `${notification.note} · ${NOT_IN_THIS_BUILD}`,
     backing: { kind: 'statement' as const },
   })),
 ];

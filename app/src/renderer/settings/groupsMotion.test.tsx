@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Settings } from '../../generated/protocol.js';
 import { MOTION_GROUP_ROWS, MotionGroups, effectiveTierNote } from './groupsMotion.js';
@@ -70,24 +70,14 @@ describe('group 5, MOTION', () => {
 });
 
 describe('group 6, RESIDENCY', () => {
-  it('the hybrid is a statement and only two rows in the group are controls', () => {
+  it('holds the chord recorder and no residency switch or figure this build cannot honour', () => {
     render(<MotionGroups {...props} />);
     const residency = MOTION_GROUP_ROWS.filter((r) => r.group === 'residency');
-    const controls = residency.filter((r) => r.backing.kind !== 'statement');
-    expect(controls.map((r) => r.id)).toEqual(['residency-autostart', 'residency-chord']);
-    expect(
-      screen.getByRole('switch', { name: 'Start with the system' }).getAttribute('aria-checked'),
-    ).toBe('false');
-  });
-
-  it('carries the measured numbers, not the 30 MB the consent copy once claimed', () => {
-    render(<MotionGroups {...props} />);
-    expect(
-      screen.getByText(
-        '307 MB EMPTY · 522 MB WITH A FULL SHELF · 232 MB WITH THE WINDOW DESTROYED',
-      ),
-    ).toBeTruthy();
-    expect(screen.queryByText(/30 MB/)).toBeNull();
+    expect(residency.map((r) => r.id)).toEqual(['residency-chord']);
+    // §48.3 rows 12–14: closing the window quits, and nothing registers a login item.
+    const group = screen.getByRole('group', { name: 'RESIDENCY' });
+    expect(within(group).queryAllByRole('switch')).toEqual([]);
+    expect(group.textContent).not.toMatch(/MB|30 minutes|Start with the system/iu);
   });
 
   it('ships the chord unbound and never pre-fills one', () => {

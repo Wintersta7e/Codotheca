@@ -22,9 +22,9 @@ no paid triage rota and no bounty.
 
 ## Supported versions
 
-**Phase 1 is a public beta.** Only the most recent release is supported. There is no update
-channel, no auto-updater and no update server: a release is a page you download from by hand,
-and a fix reaches you when you download the next one. Nothing older than the current release
+**0.9.x is a pre-release; no build is published yet.** Only the most recent release is
+supported. There is no update channel, no auto-updater and no update server: a release is a page
+you download from by hand, and a fix reaches you when you download the next one. Nothing older than the current release
 gets a backport.
 
 | Version | Supported |
@@ -41,8 +41,11 @@ because what ships is what matters: `npm run lint:updater`, `npm run check:bundl
 `core/tests/git_readonly.rs`, and the end-to-end spec that opens a real window and checks
 the renderer can see no Node.
 
-- **No account, no telemetry, no analytics.** The application makes no network request of its
-  own. The Content-Security-Policy starts from `default-src 'none'` and names no remote origin.
+- **No account, no telemetry, no analytics.** <!-- egress-census:start -->The application reaches
+  the network for exactly the five things the README lists — GitHub once connected, the advisory
+  lookup, README images once allowed, Install's clone, and the Uninstall check's read of each
+  network remote — and for nothing else.<!-- egress-census:end --> The Content-Security-Policy
+  starts from `default-src 'none'` and names no remote origin.
 - **The renderer is sandboxed.** `sandbox` and `contextIsolation` are on, `nodeIntegration` is
   off, navigation away from the app is blocked, new windows are denied, and every permission
   request is refused. The preload exposes exactly one bridge key and requires nothing but
@@ -51,8 +54,10 @@ the renderer can see no Node.
   through a native dialog the shell owns.
 - **No update channel is shipped.** `electron-updater` is not a dependency and a gate asserts
   its absence from the built shell.
-- **Every git invocation is read-only.** Phase 1 has no delete, uninstall, clean, push or
-  checkout.
+- **Git writes in exactly two ways:** <!-- git-writes:start -->a clone into a new folder, and the
+  Uninstall check's read, which adds objects and moves no ref. An audit covers every invocation's
+  arguments, the config it runs under and its environment. There is no push and no
+  commit.<!-- git-writes:end -->
 - **One writer.** The core owns the only database connection; the renderer cannot open it.
 
 ## Releases are unsigned
@@ -60,7 +65,10 @@ the renderer can see no Node.
 There is no code-signing certificate. The Windows installer and the portable executable are
 **unsigned**, and SmartScreen will warn about them. Verify a download against the SHA-256 sums
 published beside it on the release page rather than against a signature that does not exist.
-The packager reports `signing=none` rather than implying otherwise.
+Each release also carries build-provenance attestations.
+`gh attestation verify <file> --repo <this repository>` proves the file was built by this
+repository's release workflow from the tagged commit; it says nothing about whether the code is
+safe. The packager reports `signing=none` rather than implying otherwise.
 
 ## Scope
 
@@ -75,7 +83,7 @@ A scanned repository is nonetheless treated as untrusted data. Every `git` invoc
 as an argv vector with no shell anywhere, and each one carries
 `-c core.hooksPath=<an empty directory the app owns>`, `-c core.fsmonitor=false`,
 `-c protocol.ext.allow=never`, `-c diff.external=`, `-c core.askPass=` and
-`-c credential.helper=`, with `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0` and thirteen
+`-c credential.helper=`, with `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0` and twenty-one
 other `GIT_*` variables removed from the child's environment. `safe.directory` is added for one
 exact path and only after you have marked that location trusted. Those are the settings a
 repository's own configuration would otherwise use to run a program, so a report that gets past
