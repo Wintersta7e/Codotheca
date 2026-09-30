@@ -581,6 +581,11 @@ async function main(): Promise<void> {
     paintUiLane: async () => {
       const w = createWindow();
       win = w;
+      // A destroyed window throws on every property read, and the quit steps still reach `win`
+      // after the user closes it — the shortcut's release publishes its state through `send`.
+      w.once('closed', () => {
+        win = null;
+      });
       // §9: the shell releases a focus claim and never makes one. Destroy matters most — the
       // renderer's heartbeat dies with the window, so without it the core would believe the
       // last claim for a further FOCUS_STALE_SECS.

@@ -64,6 +64,25 @@ test('AC-P4-48-4 the version check precedes every build step', () => {
   }
 });
 
+// core/src/protocol.rs is generated and gitignored, so a job that compiles the core before
+// generating it cannot build — the first workflow_dispatch of this workflow failed on exactly that.
+test('every job that compiles the core generates the protocol first', () => {
+  let compiling = 0;
+  for (const [id, job] of jobs) {
+    const list = job.steps ?? [];
+    const cargo = list.findIndex((s) => /\bcargo (build|test|clippy|check)\b/u.test(runOf(s)));
+    if (cargo === -1) continue;
+    compiling += 1;
+    const gen = list.findIndex((s) => /\bnpm run gen\b/u.test(runOf(s)));
+    assert.ok(
+      gen !== -1 && gen < cargo,
+      `job ${id} compiles the core before generating core/src/protocol.rs`,
+    );
+  }
+  process.stdout.write(`jobs that compile the core: ${String(compiling)}\n`);
+  assert.ok(compiling > 0, 'no job compiles the core, so nothing was checked');
+});
+
 test('AC-P4-48-4 the floor step follows packaging', () => {
   const packaging = jobs.filter(([, job]) =>
     (job.steps ?? []).some((s) => runOf(s).includes('electron-builder')),

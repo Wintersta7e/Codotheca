@@ -37,6 +37,14 @@ jobs:
         with: { persist-credentials: false }
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with: { toolchain: stable }
+      # core/src/protocol.rs is generated and gitignored, as in `ci.yml`'s core job: without it the
+      # worker cannot compile (the first dispatch of this workflow failed on exactly that).
+      # No package-manager cache, like every job here: a release build restores no cache.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 22, package-manager-cache: false }
+      - run: npm ci
+      - name: generate protocol
+        run: npm run gen
       # The same two builds as `ci.yml`'s worker step, in release mode. `--no-default-features`
       # drops §20.6's keychain: the worker stores no credentials, and the keychain's Linux backend
       # is a system-header dependency with no arm64 sysroot on this image.

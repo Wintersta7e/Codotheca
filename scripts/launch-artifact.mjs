@@ -9,16 +9,16 @@
  * `StdinEof`. It then waits a settle period and reads the log again, because a core that dies at
  * once crash-loops a moment after the shell's first line, behind a window that looks alive.
  *
- * Then the app is asked to quit — SIGTERM to its process group on Linux; `taskkill /T` without
- * `/F` on Windows, which closes the window, and closing the window quits — and the exit is
- * awaited. A process tree still alive after the grace period is killed and reported as `killed`,
+ * Then the app is asked to quit — SIGTERM to its process group on Linux; on Windows `taskkill`
+ * without `/F` or `/T` to the process that owns the window, which closes it, and closing the
+ * window quits — and the exit is awaited. A process tree still alive after the grace period is killed and reported as `killed`,
  * never hidden.
  *
  * With no data directory given, the app's default one is found under `--default-data-dir`: the
  * child directory whose log this run wrote. That is how an installed and a portable build are
  * compared — each launch records the directory it actually wrote.
  */
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -70,12 +70,65 @@ function alive(pid, group) {
   }
 }
 
+/**
+ * The processes in `root`'s Windows tree that own a visible window, from one listing. A process
+ * created before the one it names as its parent is not its child: that parent exited and its id
+ * was reused.
+ */
+function windowOwners(root) {
+  const listing = spawnSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-Command',
+      '$shown = @{}; Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object { $shown[$_.Id] = 1 }; ' +
+        'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.CreationDate.Ticks) $([int]$shown.ContainsKey([int]$_.ProcessId))" }',
+    ],
+    { encoding: 'utf8' },
+  ).stdout;
+  const rows = String(listing ?? '')
+    .split('\n')
+    .map((line) => line.trim().split(' '))
+    .filter((row) => row.length === 4 && row.every((field) => /^\d+$/u.test(field)))
+    .map(([pid, parent, ticks, shown]) => ({
+      pid: Number(pid),
+      parent: Number(parent),
+      at: BigInt(ticks),
+      shown: shown === '1',
+    }));
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
+  const tree = [byPid.get(root)].filter((row) => row !== undefined);
+  for (let i = 0; i < tree.length; i += 1) {
+    const parent = tree[i];
+    for (const row of rows) {
+      if (row.parent === parent.pid && row.at >= parent.at && !tree.includes(row)) tree.push(row);
+    }
+  }
+  return tree.filter((row) => row.shown).map((row) => row.pid);
+}
+
+/**
+ * Ask a Windows app to quit the way a user does: close the window they see. `taskkill` without
+ * `/F` posts a close to the windows a process owns. NEVER add `/T`: it asks the children first —
+ * Chromium's GPU and renderer processes and the core own no window and refuse — and then refuses
+ * the parent because they are still running, so the app's window is never asked at all. And never
+ * ask only the launched process: the portable build's launcher owns a hidden window, accepts the
+ * close and ignores it while its child runs on. Both measured; the app quit 319 ms after a plain
+ * request to the process that showed the window.
+ */
+function askWindowsToClose(root) {
+  const owners = windowOwners(root);
+  for (const pid of owners.length > 0 ? owners : [root]) {
+    spawnSync('taskkill', ['/PID', String(pid)]);
+  }
+}
+
 function killTree(child, signal) {
   if (child.pid === undefined) return;
   if (process.platform === 'win32') {
-    const args = ['/PID', String(child.pid), '/T'];
-    if (signal === 'SIGKILL') args.push('/F');
-    execFile('taskkill', args, () => undefined);
+    if (signal === 'SIGKILL')
+      execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], () => undefined);
+    else askWindowsToClose(child.pid);
     return;
   }
   try {
