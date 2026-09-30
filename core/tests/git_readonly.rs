@@ -143,6 +143,12 @@ const NON_LITERAL_OS_STR_ALLOWLIST: &[NonLiteralOsStrAllowance] = &[
                  (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`) after `rev-parse --verify \
                  --quiet` — §45.5 resolves an interrupted operation through git",
     },
+    NonLiteralOsStrAllowance {
+        file: "lazy_fetch.rs",
+        call: "OsStr::new(ABSENT_OID)",
+        reason: "[p4] R249: the constant object id no repository holds, after `cat-file -p` in \
+                 the lazy-fetch probe's own file-built repository — an object, not a subcommand",
+    },
 ];
 
 /// Collect `OsStr::new(...)` calls whose argument is not exactly one string literal.

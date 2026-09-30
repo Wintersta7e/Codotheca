@@ -17,7 +17,11 @@ use std::collections::BTreeMap;
 /// Bumped when the frames below change shape. The core refuses a worker that does not match,
 /// which is what makes a stale copy inside a distro a diagnosable failure instead of a silent
 /// misparse.
-pub const WORKER_PROTOCOL_VERSION: u32 = 1;
+///
+/// 2 (R249): `WorkerFault::LazyFetchUnguarded`, and a worker whose reads pin `GIT_NO_LAZY_FETCH`.
+/// The bump is load-bearing: a version-1 worker left in a distro reads without the pin, and a
+/// partial clone there would fetch from its promisor remote.
+pub const WORKER_PROTOCOL_VERSION: u32 = 2;
 
 /// One request from the core to a worker, tagged with the id its answer will echo.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -396,6 +400,8 @@ pub enum WorkerFault {
         /// The transport git named.
         protocol: String,
     },
+    /// `GitError::LazyFetchUnguarded`: a partial clone the distro's git cannot read unfetched.
+    LazyFetchUnguarded,
 }
 
 /// The wire form of `err`, variant for variant.
@@ -436,6 +442,7 @@ pub fn fault_of(err: &GitError) -> WorkerFault {
         GitError::TransportRefused { protocol } => WorkerFault::TransportRefused {
             protocol: protocol.clone(),
         },
+        GitError::LazyFetchUnguarded => WorkerFault::LazyFetchUnguarded,
     }
 }
 
@@ -460,6 +467,7 @@ pub fn git_error_of(fault: WorkerFault) -> GitError {
         WorkerFault::Cancelled => GitError::Cancelled,
         WorkerFault::Internal { detail } => GitError::Internal { detail },
         WorkerFault::TransportRefused { protocol } => GitError::TransportRefused { protocol },
+        WorkerFault::LazyFetchUnguarded => GitError::LazyFetchUnguarded,
     }
 }
 
@@ -672,6 +680,7 @@ mod tests {
             GitError::TransportRefused {
                 protocol: "file".to_owned(),
             },
+            GitError::LazyFetchUnguarded,
         ];
         for original in cases {
             let fault = fault_of(&original);

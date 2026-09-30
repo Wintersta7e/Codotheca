@@ -16,6 +16,7 @@ mod history;
 mod ignore;
 mod inventory;
 mod invocation;
+mod lazy_fetch;
 mod observe;
 pub(crate) mod refstate;
 mod repo;
@@ -42,9 +43,10 @@ pub use inventory::{
     TrackedInventory,
 };
 pub use invocation::{
-    absent_graft_path, base_args, ensure_empty_hooks_dir, neutralise_env, ABSENT_GRAFT_FILE,
-    EMPTY_HOOKS_DIR_NAME,
+    absent_graft_path, base_args, ensure_empty_hooks_dir, neutralise_env, pin_no_lazy_fetch,
+    ABSENT_GRAFT_FILE, EMPTY_HOOKS_DIR_NAME, NO_LAZY_FETCH,
 };
+pub use lazy_fetch::{LazyFetch, LAZY_FETCH_PROBE_DIR_NAME};
 pub use observe::{busy_marker, defer_while_locked, observe_stable, Backoff, Observation};
 pub use refstate::{
     divergence, local_ref_names, observation_fingerprint, read_ref_state, ref_fingerprint,

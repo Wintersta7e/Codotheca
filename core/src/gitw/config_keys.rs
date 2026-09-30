@@ -181,6 +181,15 @@ pub const CONFIG_KEY_CLASSES: &[(&str, KeyClass)] = &[
         },
     ),
     ("fetch.bundleURI", KeyClass::Pinned { by: "-c fetch.bundleURI=" }),
+    (
+        // The global default `remote.<name>.followRemoteHEAD` overrides, read only when a remote
+        // is fetched with its default refspec. Measured on git 2.56: set to `always`, the objects
+        // step left `refs/remotes/origin/HEAD` where it was, and a plain `fetch` moved it.
+        "fetch.followRemoteHEAD",
+        KeyClass::Pinned {
+            by: "--refmap= on the objects step: no tracking ref moves, remote HEAD included (§47 M1)",
+        },
+    ),
     ("fetch.fsck.<msg-id>", REFUSES_ONLY),
     ("fetch.fsck.skipList", REFUSES_ONLY),
     ("fetch.fsckObjects", REFUSES_ONLY),
@@ -344,6 +353,13 @@ pub const CONFIG_KEY_CLASSES: &[(&str, KeyClass)] = &[
         },
     ),
     ("protocol.version", TRANSPORT_TUNING),
+    (
+        "remote.<name>.advertisedAs",
+        KeyClass::Inert {
+            why: "records the name a server advertised a promisor remote under, for information \
+                  and tracing only (git's own documentation); no fetch reads it",
+        },
+    ),
     (
         "remote.<name>.fetch",
         KeyClass::Pinned {

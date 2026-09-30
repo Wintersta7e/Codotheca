@@ -120,6 +120,20 @@ pub fn neutralise_env(cmd: &mut Command) {
     }
 }
 
+/// The variable that stops a read from fetching an absent object from a promisor remote (R249).
+pub const NO_LAZY_FETCH: &str = "GIT_NO_LAZY_FETCH";
+
+/// R249: pin a **read** child against lazy fetching.
+///
+/// A read of a partial clone asks its promisor remote for any object it lacks — a network write
+/// from the read path, over whatever transport the remote names (measured on 2.29, 2.43, 2.55).
+/// Read children only: [`neutralise_env`] is shared with the write path, whose `fetch` must still
+/// complete, so the pin lives here and only the read seam calls it. The floor, 2.29, ignores the
+/// variable; the read seam refuses there instead (`GitError::LazyFetchUnguarded`).
+pub fn pin_no_lazy_fetch(cmd: &mut Command) {
+    cmd.env(NO_LAZY_FETCH, "1");
+}
+
 /// The leaf name, inside the empty hooks directory, that `GIT_GRAFT_FILE` is pointed at.
 ///
 /// `--no-replace-objects` does not disable grafts (measured on git 2.43, §45.3(a)); only a graft

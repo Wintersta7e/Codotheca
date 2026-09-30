@@ -96,6 +96,10 @@ pub enum GitError {
         /// The transport git named, e.g. `file` or `ssh`.
         protocol: String,
     },
+    /// R249: the repository has a promisor remote and this git ignores `GIT_NO_LAZY_FETCH`, so a
+    /// read could fetch an absent object from that remote. Refused before any child starts; the
+    /// answer is *unknown*, never absence.
+    LazyFetchUnguarded,
 }
 
 impl GitError {
@@ -114,7 +118,9 @@ impl GitError {
             Self::PermissionDenied { .. } => Some("PERMISSION_DENIED"),
             Self::PathGone { .. } => Some("PATH_GONE"),
             Self::StoreOffline { .. } => Some("STORE_OFFLINE"),
-            Self::Unreadable { .. } | Self::Stale { .. } => Some("REPO_UNREADABLE"),
+            Self::Unreadable { .. } | Self::Stale { .. } | Self::LazyFetchUnguarded => {
+                Some("REPO_UNREADABLE")
+            }
             Self::Budget { .. } => Some("BUDGET_EXCEEDED"),
             Self::Internal { .. } => Some("INTERNAL"),
             Self::Busy { .. }
@@ -157,6 +163,10 @@ impl std::fmt::Display for GitError {
             Self::TransportRefused { protocol } => {
                 write!(f, "transport not allowed: {protocol}")
             }
+            Self::LazyFetchUnguarded => write!(
+                f,
+                "partial clone: this git cannot be stopped from fetching an absent object"
+            ),
         }
     }
 }

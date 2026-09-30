@@ -14,6 +14,7 @@ use std::ffi::{OsStr, OsString};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,7 +23,8 @@ use command_group::CommandGroup;
 use crate::cancel::CancelToken;
 
 use super::error::{classify, classify_spawn, GitError, GitResult};
-use super::invocation::{base_args, neutralise_env};
+use super::invocation::{base_args, neutralise_env, pin_no_lazy_fetch};
+use super::lazy_fetch::{self, LazyFetch};
 use super::repo::RepoHandle;
 
 /// The per-invocation budget. `None` is J4's no-deadline case (§4.1).
@@ -83,6 +85,9 @@ pub struct GitOutput {
 pub struct GitExec {
     git: PathBuf,
     hooks_dir: PathBuf,
+    /// R249's probe answer for this binary, shared by every clone, taken the first time a read
+    /// meets a promisor remote.
+    lazy: Arc<OnceLock<LazyFetch>>,
 }
 
 /// Why the wait loop stopped watching the child.
@@ -95,8 +100,59 @@ enum Stop {
 impl GitExec {
     /// Use an explicit binary — the WSL worker (§13) passes its in-distro path.
     #[must_use]
-    pub const fn new(git: PathBuf, hooks_dir: PathBuf) -> Self {
-        Self { git, hooks_dir }
+    pub fn new(git: PathBuf, hooks_dir: PathBuf) -> Self {
+        Self {
+            git,
+            hooks_dir,
+            lazy: Arc::new(OnceLock::new()),
+        }
+    }
+
+    /// Whether this git honours `GIT_NO_LAZY_FETCH` (R249), probed once and then remembered.
+    ///
+    /// The read seam asks only when a read meets a promisor remote; a test asks to choose which
+    /// answer it asserts, and prints it (R246).
+    #[must_use]
+    pub fn lazy_fetch(&self) -> LazyFetch {
+        *self.lazy.get_or_init(|| lazy_fetch::probe(self))
+    }
+
+    /// R249: refuse a read that could fetch — a repository with a promisor remote, under a git
+    /// that ignores the pin. The promisor check reads config files and runs first, so the probe
+    /// runs only when a partial clone is actually met.
+    fn refuse_unguarded(&self, repo: &RepoHandle) -> GitResult<()> {
+        if lazy_fetch::has_promisor(repo) && self.lazy_fetch() == LazyFetch::Unguarded {
+            return Err(GitError::LazyFetchUnguarded);
+        }
+        Ok(())
+    }
+
+    /// The probe's own read. It skips [`Self::refuse_unguarded`], whose answer it is computing,
+    /// and nothing else: it carries every pin a read carries, the lazy-fetch pin included.
+    pub(crate) fn run_probe(
+        &self,
+        repo: &RepoHandle,
+        args: &[&OsStr],
+        env: &[(&str, OsString)],
+        limits: RunLimits,
+        cancel: &CancelToken,
+    ) -> GitResult<GitOutput> {
+        let (stdout, stderr) = self.run_inner(
+            repo,
+            args,
+            env,
+            limits,
+            cancel,
+            (
+                |sink: &mut dyn Write| sink.flush(),
+                |out: &mut dyn BufRead| {
+                    let mut buf = Vec::new();
+                    out.read_to_end(&mut buf)?;
+                    Ok(buf)
+                },
+            ),
+        )?;
+        Ok(GitOutput { stdout, stderr })
     }
 
     /// Use `git` from `PATH`.
@@ -145,6 +201,7 @@ impl GitExec {
         limits: RunLimits,
         cancel: &CancelToken,
     ) -> GitResult<GitOutput> {
+        self.refuse_unguarded(repo)?;
         let (stdout, stderr) = self.run_inner(
             repo,
             args,
@@ -177,7 +234,9 @@ impl GitExec {
     /// `GitError::Cancelled` when `cancel` fires before or during the run; `GitError::Budget`
     /// when the deadline is zero or elapses; `GitError::Missing`, `PermissionDenied` or `Internal`
     /// when the spawn fails; the [`classify`]d failure when git exits non-zero with a code
-    /// `limits` does not tolerate; `GitError::Internal` when writing stdin or reading stdout fails.
+    /// `limits` does not tolerate; `GitError::Internal` when writing stdin or reading stdout fails;
+    /// `GitError::LazyFetchUnguarded`, before any child starts, when the repository has a promisor
+    /// remote and this git ignores `GIT_NO_LAZY_FETCH` (R249).
     pub fn run_piped<W, R, T>(
         &self,
         repo: &RepoHandle,
@@ -192,6 +251,7 @@ impl GitExec {
         R: FnOnce(&mut dyn BufRead) -> std::io::Result<T> + Send + 'static,
         T: Send + 'static,
     {
+        self.refuse_unguarded(repo)?;
         self.run_inner(repo, args, &[], limits, cancel, (write_stdin, read_stdout))
             .map(|(value, _stderr)| value)
     }
@@ -241,6 +301,9 @@ impl GitExec {
         cmd.args(base_args(repo, &self.hooks_dir));
         cmd.args(args);
         neutralise_env(&mut cmd);
+        // R249: this is the read seam, so every child here is pinned against lazy fetching. The
+        // write seam shares `neutralise_env` and must not be pinned — its `fetch` has to complete.
+        pin_no_lazy_fetch(&mut cmd);
         // Per-call pins go on **after** the scrub, which would otherwise remove the very
         // variables they set (§47.3: `GIT_GRAFT_FILE` is scrubbed and then pinned absent).
         for (key, value) in env {

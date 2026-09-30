@@ -13,7 +13,8 @@ use std::path::Path;
 use std::process::Command;
 
 use codotheca_core::git::{
-    base_args, ensure_empty_hooks_dir, neutralise_env, RepoHandle, StoreKey,
+    base_args, ensure_empty_hooks_dir, neutralise_env, pin_no_lazy_fetch, RepoHandle, StoreKey,
+    NO_LAZY_FETCH,
 };
 use codotheca_core::mount::StoreClass;
 
@@ -97,6 +98,30 @@ fn the_environment_is_neutralised() {
     ] {
         assert_eq!(get(k), Some(None), "{k} should be removed");
     }
+}
+
+/// R249: the lazy-fetch pin is the read seam's alone. The scrub is shared with the write seam,
+/// whose `fetch` must complete, so the scrub may not set it; the read pin must.
+#[test]
+fn only_the_read_pin_stops_lazy_fetching_and_the_shared_scrub_does_not() {
+    let pinned = |cmd: &Command| {
+        cmd.get_envs()
+            .find(|(k, _)| *k == NO_LAZY_FETCH)
+            .map(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+    };
+
+    let mut scrubbed = Command::new("git");
+    neutralise_env(&mut scrubbed);
+    assert_eq!(
+        pinned(&scrubbed),
+        None,
+        "the scrub is shared with the write seam and must leave lazy fetching alone"
+    );
+
+    let mut read = Command::new("git");
+    neutralise_env(&mut read);
+    pin_no_lazy_fetch(&mut read);
+    assert_eq!(pinned(&read), Some(Some("1".into())));
 }
 
 #[test]
@@ -229,6 +254,16 @@ fn no_scrub_variable_reaches_a_read_child_under_a_hostile_parent() {
         report.lost.is_empty(),
         "the user's own config route must be kept: {:?}",
         report.lost
+    );
+    // R249: the read seam itself carries the pin. The partial-clone test cannot see a pin dropped
+    // from the seam — the probe then answers `Unguarded` and the refusal keeps the clone safe but
+    // unreadable on every git — so the child's own environment is the only place it shows.
+    assert!(
+        recorded
+            .env
+            .iter()
+            .any(|entry| *entry == format!("{NO_LAZY_FETCH}=1")),
+        "the read child was not pinned against lazy fetching"
     );
 }
 

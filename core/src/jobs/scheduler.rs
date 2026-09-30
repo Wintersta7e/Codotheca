@@ -528,7 +528,9 @@ const fn git_error_kind(e: &crate::git::GitError) -> &'static str {
         | GitError::TornRead
         | GitError::Cancelled
         | GitError::Internal { .. }
-        | GitError::TransportRefused { .. } => "REPO_UNREADABLE",
+        | GitError::TransportRefused { .. }
+        // R249: a partial clone this git would fetch from is refused, never read — *unknown*.
+        | GitError::LazyFetchUnguarded => "REPO_UNREADABLE",
     }
 }
 
