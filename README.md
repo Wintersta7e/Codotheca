@@ -104,7 +104,7 @@ tying 1318 checks to 573 written criteria.
   certificate, by decision.
 - **"Portable" means no installer, not portable data.** The portable `.exe` and the installed build
   share one per-user library, so two copies in two folders are not two libraries. It also unpacks
-  into `%TEMP%`, cached across launches. `CODOTHECA_DATA_DIR` overrides the location.
+  into `%TEMP%`. `CODOTHECA_DATA_DIR` overrides the location.
 - **No performance figures are published.** Every performance criterion is recorded as unmeasured
   rather than given a plausible budget, because a plausible number will be met. Real figures need
   hardware this has not been run on.
