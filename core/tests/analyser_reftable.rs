@@ -206,3 +206,43 @@ fn reftable_refs_and_stashes_are_read_through_git() {
     assert_ne!(stash_verdict.disposition(), "safe");
     assert_eq!(stash_entries, 2);
 }
+
+/// **AC-P4-45-12-win's shape** (`manual`, R207: graded from the Windows-native record alone). An
+/// interrupted cherry-pick in a reftable copy leaves no `CHERRY_PICK_HEAD` file for a file read to
+/// find, so only git can say it is there: the production pre-flight must still answer
+/// `interrupted_operation`, and never `safe`. Untagged, like its neighbour.
+#[test]
+fn a_reftable_interrupted_cherry_pick_is_read_through_git() {
+    let lib = Library::new();
+    let Some(copy) = reftable_copy(&lib) else {
+        return;
+    };
+    ok(&lib, &copy, &["checkout", "-q", "-b", "side"]);
+    std::fs::write(copy.join("a.txt"), b"side\n").expect("file");
+    ok(&lib, &copy, &["commit", "-q", "-am", "side"]);
+    let pick = ok(&lib, &copy, &["rev-parse", "HEAD"]).trim().to_owned();
+    ok(&lib, &copy, &["checkout", "-q", "main"]);
+    std::fs::write(copy.join("a.txt"), b"main\n").expect("file");
+    ok(&lib, &copy, &["commit", "-q", "-am", "main"]);
+    ok(&lib, &copy, &["push", "-q", "origin", "main"]);
+    assert!(
+        !under_test(&lib, &copy, &["cherry-pick", &pick])
+            .status
+            .success(),
+        "the fixture's cherry-pick must conflict"
+    );
+    let pseudoref_file = copy.join(".git").join("CHERRY_PICK_HEAD").exists();
+    let id = lib.register(&copy);
+    let verdict = lib.preflight(id, &lib.verifier());
+    eprintln!(
+        "reftable on {}: an interrupted cherry-pick {verdict}; a CHERRY_PICK_HEAD file: \
+         {pseudoref_file}",
+        support::git_world::test_git_version()
+    );
+    assert!(
+        !pseudoref_file,
+        "a file read could see this one; it proves nothing about git"
+    );
+    assert!(verdict.has("interrupted_operation"), "{verdict}");
+    assert_ne!(verdict.disposition(), "safe");
+}

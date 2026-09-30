@@ -1280,7 +1280,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-forbidden:c40-commit-counts",
-          "assert": "The superseded legend naming commits by the user appears nowhere; nothing in the schema stores a commit count and never-reward-volume forbids acquiring one."
+          "assert": "The superseded legend naming commits by the user appears nowhere. A committer count is stored and shown \u2014 project_committer.commits, the identity card's authorship evidence \u2014 and nothing rewards one."
         }
       ]
     },
@@ -1381,7 +1381,7 @@
           "status": "automated",
           "runner": "script",
           "test": "check-call-sites:no-destructive-git",
-          "assert": "No destructive git subcommand appears as an argv literal anywhere in the core \u2014 push, clean, checkout, reset, fetch, pull, gc, prune and restore, fetch included because a directional claim would need one."
+          "assert": "No destructive git subcommand \u2014 push, clean, checkout, reset, fetch, pull, gc, prune, restore \u2014 appears as an argv literal in the core outside the paths the rule allows and justifies; fetch ships only as VerifyRead's pinned objects step in core/src/gitw/, which git_write_audit.rs holds."
         }
       ]
     },
@@ -4155,7 +4155,7 @@
           "runner": "cargo",
           "owner": "p2-24",
           "test": "git_readonly::every_subcommand_literal_is_on_the_read_only_allow_list",
-          "assert": "Every subcommand literal in core/src/git/ is on the phase-1 ALLOWED list, so a write subcommand added to the read-only module fails here and not in review."
+          "assert": "Every subcommand literal in core/src/git/ is on the ALLOWED list core/tests/git_readonly.rs holds, so a write subcommand added to the read-only module fails here and not in review."
         },
         {
           "id": "AC-P2-24-1-destructive",
@@ -4212,7 +4212,7 @@
           "runner": "cargo",
           "owner": "p2-24",
           "test": "git_write_audit::every_rendered_subcommand_is_on_its_intents_row",
-          "assert": "Every Intent::ALL variant renders a subcommand in clone or fetch and nothing else \u2014 git is additive-only in phase 2."
+          "assert": "Every Intent::ALL variant renders only the subcommands its own row of SUBCOMMANDS_BY_INTENT names, and nothing else \u2014 git stays additive-only."
         },
         {
           "id": "AC-P2-24-2-flags",
@@ -4220,7 +4220,7 @@
           "runner": "cargo",
           "owner": "p2-24",
           "test": "git_write_audit::no_rendered_argv_contains_a_forbidden_flag",
-          "assert": "No rendered argv carries any token from the eight-entry FLAG_FORBIDDEN set."
+          "assert": "No rendered argv carries any token from FLAG_FORBIDDEN, the denylist core/tests/git_write_audit.rs owns."
         },
         {
           "id": "AC-P2-24-2-floor",
@@ -4576,7 +4576,7 @@
           "runner": "vitest",
           "owner": "p2-24b",
           "test": "the uninstall control names every blocker the schema declares when it is blocked",
-          "assert": "The control is disabled with its reasons named, for every one of the fourteen blockers rather than the first."
+          "assert": "The control is disabled with its reasons named, for every blocker the schema's UninstallBlocker declares rather than the first."
         },
         {
           "id": "AC-P2-24-14-sources",
@@ -4657,7 +4657,7 @@
           "runner": "cargo",
           "owner": "p2-24b",
           "test": "analyser_remotes::a_local_mirror_is_named_only_beside_an_uncovered_root",
-          "assert": "A remote URL resolving to a local path yields remote_is_local_mirror and is never counted as a second copy."
+          "assert": "A remote URL resolving to a local path is never counted as a second copy, and yields remote_is_local_mirror only beside an uncovered root."
         },
         {
           "id": "AC-P2-24-16-shallow",
@@ -4846,7 +4846,7 @@
           "runner": "cargo",
           "owner": "p2-24",
           "test": "git_write_audit::the_sentinel_reaches_no_verify_read_child",
-          "assert": "The same holds for the fetch intent, asserted although fetch never spawns, so the guarantee does not rest on which variants happen to run."
+          "assert": "The same holds for every VerifyRead step's spawned child, its fetch included \u2014 read from what each child received, not a rendered argv."
         }
       ]
     },
@@ -5650,7 +5650,7 @@
           "runner": "vitest",
           "owner": "p3-29",
           "test": "AC-P3-29-19 the paragraph says the grant exists and says it is off",
-          "assert": "\u00a710.1's paragraph is non-empty and says the grant exists, is off until the user turns it on, and uploads nothing."
+          "assert": "\u00a710.1's paragraph is non-empty and says the grant exists, is off until the user turns it on, and that your source and your files are never uploaded."
         }
       ]
     },
@@ -9241,7 +9241,7 @@
       "checks": [
         {
           "id": "AC-P4-38-13",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0b",
           "test": "identity_confirm_history::ac_p4_38_13_a_confirm_keeps_the_git_rows_of_a_history_it_cannot_reread",
@@ -9258,7 +9258,7 @@
       "checks": [
         {
           "id": "AC-P4-38-14",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0b",
           "test": "debt_day_gates::ac_p4_38_14_every_payout_site_pays_only_scored_closures_of_enrolled_projects",
@@ -9267,7 +9267,7 @@
         },
         {
           "id": "AC-P4-38-14-reference",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0b",
           "test": "debt_xp::a_reference_project_is_paid_nothing",
@@ -9390,7 +9390,7 @@
       "checks": [
         {
           "id": "AC-P4-38-21",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0b",
           "test": "identity_confirm_history::ac_p4_38_21_a_confirm_leaves_the_classified_count_unchanged",
@@ -9399,7 +9399,7 @@
         },
         {
           "id": "AC-P4-38-21-headline",
-          "status": "deferred",
+          "status": "automated",
           "runner": "e2e",
           "owner": "p4-L0b",
           "test": "AC-P4-38-21 the headline's classified figure is unchanged by the identity confirmation",
@@ -13266,7 +13266,7 @@
       "checks": [
         {
           "id": "AC-P4-45-1",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_blockers::every_blocker_is_produced_through_the_production_path",
@@ -13284,7 +13284,7 @@
       "checks": [
         {
           "id": "AC-P4-45-2",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "uninstall_identity::a_replaced_directory_is_refused_through_the_handler",
@@ -13321,7 +13321,7 @@
       "checks": [
         {
           "id": "AC-P4-45-4",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_roots::every_root_namespace_blocks_alone",
@@ -13338,7 +13338,7 @@
       "checks": [
         {
           "id": "AC-P4-45-5",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_roots::every_broken_shape_is_refs_unreadable_and_never_safe",
@@ -13356,7 +13356,7 @@
       "checks": [
         {
           "id": "AC-P4-45-6",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_remotes::ac_p4_45_6",
@@ -13373,7 +13373,7 @@
       "checks": [
         {
           "id": "AC-P4-45-7",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_roots::a_local_annotated_tag_blocks_and_a_lightweight_one_does_not",
@@ -13414,7 +13414,7 @@
       "checks": [
         {
           "id": "AC-P4-45-8",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_remotes::ac_p4_45_8",
@@ -13431,7 +13431,7 @@
       "checks": [
         {
           "id": "AC-P4-45-9",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_worktree::ac_p4_45_9",
@@ -13448,7 +13448,7 @@
       "checks": [
         {
           "id": "AC-P4-45-10",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_worktree::ac_p4_45_10",
@@ -13465,7 +13465,7 @@
       "checks": [
         {
           "id": "AC-P4-45-11",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_remotes::ac_p4_45_11",
@@ -13482,7 +13482,7 @@
       "checks": [
         {
           "id": "AC-P4-45-12",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_refusals::ac_p4_45_12",
@@ -13519,7 +13519,7 @@
       "checks": [
         {
           "id": "AC-P4-45-13",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_worktree::ac_p4_45_13",
@@ -13536,7 +13536,7 @@
       "checks": [
         {
           "id": "AC-P4-45-14",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_roots::a_graft_and_a_replace_ref_do_not_cover_a_local_commit",
@@ -13553,7 +13553,7 @@
       "checks": [
         {
           "id": "AC-P4-45-15",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_roots::the_walk_count_is_independent_of_ref_count",
@@ -13570,7 +13570,7 @@
       "checks": [
         {
           "id": "AC-P4-45-16",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_remotes::no_verification_read_runs_when_a_local_blocker_is_undischargeable",
@@ -13595,7 +13595,7 @@
       "checks": [
         {
           "id": "AC-P4-45-17",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_snapshot::ac_p4_45_17",
@@ -13622,7 +13622,7 @@
       "checks": [
         {
           "id": "AC-P4-45-18",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_blockers::the_verdict_is_identical_under_lying_cached_columns",
@@ -13640,7 +13640,7 @@
       "checks": [
         {
           "id": "AC-P4-45-19",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_snapshot::ac_p4_45_19",
@@ -13700,7 +13700,7 @@
       "checks": [
         {
           "id": "AC-P4-45-22",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "analyser_blockers::one_analyser_constructs_every_blocker",
@@ -13949,7 +13949,7 @@
       "checks": [
         {
           "id": "AC-P4-46-13",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "trash_refusals::ac_p4_46_13",
@@ -13959,7 +13959,7 @@
         },
         {
           "id": "AC-P4-46-13-control",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-L0a",
           "test": "AC-P4-46-13-control",
@@ -13995,7 +13995,6 @@
           "gate": "TRASH-QUOTA-PROBE",
           "assert": "\u00a746.7's four cases \u2014 a volume capacity far below the tree's size, remove-files-immediately set, a nearly full bin, and the same settings forced by policy \u2014 each send a tree through SystemTrash::send from a windowless child, recorded with the Windows build, the OS-trash dependency's version, the settings keys the shell honoured and each outcome. Until it is recorded, oversized_folder is a first-tag blocker (\u00a746.7).",
           "reason": "Each case changes a volume's recycle-bin settings or policy and may raise a modal dialog from a windowless process, so it runs only on a disposable Windows virtual machine, never a developer's machine or CI; it is discharged by the recorded run (R200).",
-          "firstTag": true,
           "record": null
         }
       ]
@@ -14414,7 +14413,7 @@
       "checks": [
         {
           "id": "AC-P4-47-1",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_audit::the_exhaustive_intent_list_matches_its_floor",
@@ -14441,7 +14440,7 @@
       "checks": [
         {
           "id": "AC-P4-47-2",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_audit::ac_p4_47_2",
@@ -14468,7 +14467,7 @@
       "checks": [
         {
           "id": "AC-P4-47-3",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_audit::ac_p4_47_3",
@@ -14478,7 +14477,7 @@
         },
         {
           "id": "AC-P4-47-3-refspec",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::a_destination_refspec_on_stdin_is_refused_by_the_grammar_and_would_write_a_ref",
@@ -14495,7 +14494,7 @@
       "checks": [
         {
           "id": "AC-P4-47-4",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_audit::ac_p4_47_4",
@@ -14505,7 +14504,7 @@
         },
         {
           "id": "AC-P4-47-4-bundleuri",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::every_intent_renders_the_bundle_uri_pins_once",
@@ -14515,7 +14514,7 @@
         },
         {
           "id": "AC-P4-47-4-scrub",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_audit::no_scrub_variable_reaches_a_write_child_under_a_hostile_parent",
@@ -14525,7 +14524,7 @@
         },
         {
           "id": "AC-P4-47-4-read",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_invocation::no_scrub_variable_reaches_a_read_child_under_a_hostile_parent",
@@ -14535,7 +14534,7 @@
         },
         {
           "id": "AC-P4-47-4-sentinel",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_audit::the_sentinel_reaches_no_verify_read_child",
@@ -14560,7 +14559,7 @@
       "checks": [
         {
           "id": "AC-P4-47-5",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_config_tripwire::ac_p4_47_5",
@@ -14590,7 +14589,7 @@
       "checks": [
         {
           "id": "AC-P4-47-6",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::ac_p4_47_6",
@@ -14620,7 +14619,7 @@
       "checks": [
         {
           "id": "AC-P4-47-7",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::ac_p4_47_7",
@@ -14629,7 +14628,7 @@
         },
         {
           "id": "AC-P4-47-7-prune",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::a_verify_read_writes_no_ref_under_a_pruning_refspec",
@@ -14658,7 +14657,7 @@
       "checks": [
         {
           "id": "AC-P4-47-8",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::a_bundle_uri_in_repo_config_writes_no_bundle_ref_and_no_config_byte",
@@ -14675,7 +14674,7 @@
       "checks": [
         {
           "id": "AC-P4-47-9",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::ac_p4_47_9",
@@ -14684,7 +14683,7 @@
         },
         {
           "id": "AC-P4-47-9-install",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::an_install_rewritten_to_a_path_or_ssh_fails_network_and_runs_no_ssh_command",
@@ -14701,7 +14700,7 @@
       "checks": [
         {
           "id": "AC-P4-47-10",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_deadline::a_stalled_child_is_killed_at_its_deadline_and_leaves_no_survivor",
@@ -14738,7 +14737,7 @@
       "checks": [
         {
           "id": "AC-P4-47-11",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_governed_floor::ac_p4_47_11",
@@ -14783,7 +14782,7 @@
       "checks": [
         {
           "id": "AC-P4-47-12",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::ac_p4_47_12",
@@ -14991,7 +14990,7 @@
       "checks": [
         {
           "id": "AC-P4-47-19",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "provider_seam::every_provider_request_method_issues_get_only",
@@ -15002,7 +15001,7 @@
         },
         {
           "id": "AC-P4-47-19-literals",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "provider_seam::no_non_get_method_literal_outside_the_device_endpoint",
@@ -15020,7 +15019,7 @@
       "checks": [
         {
           "id": "AC-P4-47-20",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::the_verifying_read_runs_through_the_preflight",
@@ -15061,7 +15060,7 @@
       "checks": [
         {
           "id": "AC-P4-47-21",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_readonly::the_read_allow_list_is_byte_identical_and_holds_no_write_verb",
@@ -15078,7 +15077,7 @@
       "checks": [
         {
           "id": "AC-P4-47-22",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_write_differential::the_objects_step_carries_only_branch_and_tag_tips",
@@ -15095,7 +15094,7 @@
       "checks": [
         {
           "id": "AC-P4-48-1",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-version.test.mjs::AC-P4-48-1 a v0.9.0 tag over a tree declaring 1.0.0 fails and names every site",
@@ -15105,7 +15104,7 @@
         },
         {
           "id": "AC-P4-48-1-lock",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-version.test.mjs::AC-P4-48-1 one disagreeing lock site fails and is named",
@@ -15114,7 +15113,7 @@
         },
         {
           "id": "AC-P4-48-1-zero",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-version.test.mjs::AC-P4-48-1 zero sites read fails",
@@ -15123,7 +15122,7 @@
         },
         {
           "id": "AC-P4-48-1-prerelease",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-version.test.mjs::AC-P4-48-1 a prerelease-shaped tag fails",
@@ -15132,7 +15131,7 @@
         },
         {
           "id": "AC-P4-48-1-notag",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-version.test.mjs::AC-P4-48-1 no tag passes and says it compared none",
@@ -15141,7 +15140,7 @@
         },
         {
           "id": "AC-P4-48-1-derived",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-version.test.mjs::AC-P4-48-1 the tracked tree's sites are derived, not listed",
@@ -15181,7 +15180,7 @@
         },
         {
           "id": "AC-P4-48-2-verifies",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/verify-release.test.mjs::AC-P4-48-2 a matching draft verifies every file",
@@ -15190,7 +15189,7 @@
         },
         {
           "id": "AC-P4-48-2-byte",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/verify-release.test.mjs::AC-P4-48-2 one changed byte fails, naming the file",
@@ -15199,7 +15198,7 @@
         },
         {
           "id": "AC-P4-48-2-sums",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/verify-release.test.mjs::AC-P4-48-2 no SHA256SUMS fails",
@@ -15208,7 +15207,7 @@
         },
         {
           "id": "AC-P4-48-2-zero",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/verify-release.test.mjs::AC-P4-48-2 zero files fails",
@@ -15217,7 +15216,7 @@
         },
         {
           "id": "AC-P4-48-2-attestation",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/verify-release.test.mjs::AC-P4-48-2 a failed attestation fails",
@@ -15256,7 +15255,7 @@
         },
         {
           "id": "AC-P4-48-3-launched",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/launch-artifact.test.mjs::AC-P4-48-3 a launch that writes the log line and the index is reported launched",
@@ -15265,7 +15264,7 @@
         },
         {
           "id": "AC-P4-48-3-early-exit",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/launch-artifact.test.mjs::AC-P4-48-3 an app that exits before its log line fails, naming the exit code",
@@ -15274,7 +15273,7 @@
         },
         {
           "id": "AC-P4-48-3-crash-loop",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/launch-artifact.test.mjs::AC-P4-48-3 a log naming crash_loop fails",
@@ -15283,7 +15282,7 @@
         },
         {
           "id": "AC-P4-48-3-zero",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/launch-artifact.test.mjs::AC-P4-48-3 a ledger with zero launches fails the count step",
@@ -15292,7 +15291,7 @@
         },
         {
           "id": "AC-P4-48-3-default-dir",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/launch-artifact.test.mjs::AC-P4-48-3 with no data directory given, the one the app wrote is found",
@@ -15309,7 +15308,7 @@
       "checks": [
         {
           "id": "AC-P4-48-4",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-release-workflow.test.mjs::AC-P4-48-4 release.yml names no CODOTHECA_CHANNEL and generates no notes",
@@ -15319,7 +15318,7 @@
         },
         {
           "id": "AC-P4-48-4-version-first",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-release-workflow.test.mjs::AC-P4-48-4 the version check precedes every build step",
@@ -15328,7 +15327,7 @@
         },
         {
           "id": "AC-P4-48-4-floor-step",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-release-workflow.test.mjs::AC-P4-48-4 the floor step follows packaging",
@@ -15337,7 +15336,7 @@
         },
         {
           "id": "AC-P4-48-4-draft",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-release-workflow.test.mjs::AC-P4-48-4 the draft job refuses update metadata and uses a written notes file",
@@ -15346,7 +15345,7 @@
         },
         {
           "id": "AC-P4-48-4-launch-job",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-release-workflow.test.mjs::AC-P4-48-4 a launch job runs every artifact kind from the uploaded artifact",
@@ -15363,7 +15362,7 @@
       "checks": [
         {
           "id": "AC-P4-48-5",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-L0c",
           "test": "AC-P4-48-5 the rendered standfirst and consent paragraph claim nothing never leaves and name the unauthenticated lookup",
@@ -15376,7 +15375,7 @@
         },
         {
           "id": "AC-P4-48-5-ledger-row",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-L0c",
           "test": "AC-P4-48-5 consent row 3 names only kinds a production writer stores",
@@ -15394,7 +15393,7 @@
       "checks": [
         {
           "id": "AC-P4-48-6",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-egress-census.test.mjs::AC-P4-48-6 the census is derived, printed, and named by the README and SECURITY.md",
@@ -15407,7 +15406,7 @@
         },
         {
           "id": "AC-P4-48-6-preflight",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-egress-census.test.mjs::AC-P4-48-6 a README paragraph that omits the pre-flight's remote read fails",
@@ -15416,7 +15415,7 @@
         },
         {
           "id": "AC-P4-48-6-method",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-egress-census.test.mjs::AC-P4-48-6 an unclassified provider method fails",
@@ -15425,7 +15424,7 @@
         },
         {
           "id": "AC-P4-48-6-token",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-egress-census.test.mjs::AC-P4-48-6 a method classified 'none' that sends a token fails",
@@ -15434,7 +15433,7 @@
         },
         {
           "id": "AC-P4-48-6-http-site",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-egress-census.test.mjs::AC-P4-48-6 an HttpRequest in an unclassified file fails",
@@ -15443,7 +15442,7 @@
         },
         {
           "id": "AC-P4-48-6-empty",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-egress-census.test.mjs::AC-P4-48-6 an empty tree fails",
@@ -15471,7 +15470,7 @@
       "checks": [
         {
           "id": "AC-P4-48-7",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0c",
           "test": "published_claims::ac_p4_48_7_readme_and_security_name_exactly_the_git_write_intents",
@@ -15489,7 +15488,7 @@
       "checks": [
         {
           "id": "AC-P4-48-8",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-L0c",
           "test": "diag_anonymise::ac_p4_48_8_the_default_bundle_carries_no_name_no_note_and_no_full_path_and_the_reveal_restores_them",
@@ -15507,7 +15506,7 @@
       "checks": [
         {
           "id": "AC-P4-48-9",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-L0c",
           "test": "AC-P4-48-9 no residency claim the drawer or a notice renders is unqualified",
@@ -15544,7 +15543,7 @@
         },
         {
           "id": "AC-P4-48-10-weak",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-glibc-floor.test.mjs::AC-P4-48-10 the highest non-weak GLIBC need is reported and a weak one is ignored",
@@ -15553,7 +15552,7 @@
         },
         {
           "id": "AC-P4-48-10-zero",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-glibc-floor.test.mjs::AC-P4-48-10 zero binaries read fails",
@@ -15562,7 +15561,7 @@
         },
         {
           "id": "AC-P4-48-10-modes",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-glibc-floor.test.mjs::AC-P4-48-10 enforce mode fails above the baseline; report mode prints and passes",
@@ -15571,7 +15570,7 @@
         },
         {
           "id": "AC-P4-48-10-real-elf",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-glibc-floor.test.mjs::AC-P4-48-10 a real ELF is read",
@@ -15596,7 +15595,7 @@
       "checks": [
         {
           "id": "AC-P4-48-11",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/readme-figures.test.mjs::AC-P4-48-11 the register figures the README quotes are the register's",
@@ -15896,7 +15895,7 @@
       "checks": [
         {
           "id": "AC-P4-48-25",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-L0c",
           "test": "the drawer footer AC-P4-48-25 the drawer renders the stamped version and artifact kind",
@@ -15905,7 +15904,7 @@
         },
         {
           "id": "AC-P4-48-25-package",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-L0c",
           "test": "the version line AC-P4-48-25 the stamped version equals the root package.json",
@@ -15925,7 +15924,7 @@
       "checks": [
         {
           "id": "AC-P4-48-26",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-release-workflow.test.mjs::AC-P4-48-26 no updater: the metadata guard fails a draft carrying latest*.yml or a blockmap",
@@ -15934,7 +15933,7 @@
         },
         {
           "id": "AC-P4-48-26-nsis",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-release-workflow.test.mjs::AC-P4-48-26 no updater: the NSIS target is built without a blockmap",
@@ -15943,7 +15942,7 @@
         },
         {
           "id": "AC-P4-48-26-shell",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-L0c",
           "test": "scripts/check-no-updater.test.mjs::ac_p4_48_26_shell",

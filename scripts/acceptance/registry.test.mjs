@@ -11,6 +11,7 @@ import {
   PHASE2_SECTIONS,
   PHASE3_SECTIONS,
   PHASE4_SECTIONS,
+  PHASE4_TEXT_ONLY,
   criterionOf,
   loadRegistry,
   phaseOf,
@@ -1265,14 +1266,16 @@ test('the freeze holds the fourteen entries the phase-3 sections govern', () => 
 
 // [p4] The record of what §49.3 moves, taken from the phase-4 base rather than the working tree, so
 // it is right whichever lane merges first. `phase3-frozen.json` is not extended: it is a record of a
-// different set at a different tree. Fifty-six entries: §49.3's fifty-two rows, R157's `P3-28-5`
-// and `-15`, R222's `P3-34-11` and R243's `P2-24-19`, whose pre-flight check a Lane-0 rename moves.
+// different set at a different tree. Fifty-seven entries: §49.3's fifty-two rows, R157's `P3-28-5`
+// and `-15`, R222's `P3-34-11`, R243's `P2-24-19`, whose pre-flight check a Lane-0 rename moves,
+// and R253.6's `23`, whose reveal check a phase-4 lane moves to eight panels.
 const PHASE4_FROZEN_IDS = [
   '3',
   '8',
   '9',
   '14',
   '21',
+  '23',
   '25',
   '26',
   '27',
@@ -1339,7 +1342,7 @@ test('phase4-frozen.json holds §49.3’s entries and every one is registered', 
   assert.equal(frozen.version, 1);
   assert.equal(frozen.frozenFrom, 'acceptance/criteria.json');
   assert.match(frozen.takenOn, /^[0-9a-f]{40}$/u);
-  assert.equal(PHASE4_FROZEN_IDS.length, 56);
+  assert.equal(PHASE4_FROZEN_IDS.length, 57);
   assert.deepEqual(frozen.criteria.map((c) => c.id).sort(), [...PHASE4_FROZEN_IDS].sort());
   const live = new Set(loadRegistry(registryPath).criteria.map((c) => String(c.id)));
   for (const entry of frozen.criteria) {
@@ -1382,7 +1385,6 @@ test('phase4-frozen.json is the base commit’s register, entry for entry', (t) 
 // unchanged. The moved rows are asserted against the same file when every lane has landed, never
 // here, or the first Lane-0 merge that moves its row as §49.3 requires would redden this.
 const PHASE4_UNCHANGED = [
-  'AC-P2-24-1',
   'AC-P2-24-1-destructive',
   'AC-P2-24-1-justified',
   'AC-P2-24-1-fixture',
@@ -1404,11 +1406,13 @@ const PHASE4_UNCHANGED = [
   'AC-P3-34-15',
   'AC-44-token',
   'AC-44-readonly-argv',
-  'AC-44-no-destructive-git',
 ];
 // §49.3: these pass over five sort keys "with no edit to their assertions"; the rest of the check
 // may move with the lane that re-measures them.
 const PHASE4_ASSERT_UNCHANGED = ['AC-P3-35-4', 'AC-P3-35-5', 'AC-P3-35-6', 'AC-P3-35-9'];
+// R253.9's `PHASE4_TEXT_ONLY` (registry.mjs): their checks stand — AC-P4-47-21 still holds ALLOWED
+// byte-identical — and only their text moved, false since ls-tree joined ALLOWED and VerifyRead's
+// fetch shipped in core/src/gitw/. Every key but `assert` is still the frozen copy's.
 
 test('what §49.3 leaves unchanged stays byte-identical to the frozen copy', () => {
   const checksOf = (criteria) =>
@@ -1424,6 +1428,17 @@ test('what §49.3 leaves unchanged stays byte-identical to the frozen copy', () 
   for (const id of PHASE4_ASSERT_UNCHANGED) {
     assert.ok(frozen.has(id), `${id} is not in the frozen copy`);
     assert.equal(live.get(id)?.assert, frozen.get(id).assert, `${id}'s assert has been edited`);
+    compared += 1;
+  }
+  for (const id of PHASE4_TEXT_ONLY) {
+    assert.ok(frozen.has(id), `${id} is not in the frozen copy`);
+    const checkOnly = (k) =>
+      Object.fromEntries(Object.entries(k ?? {}).filter(([key]) => key !== 'assert'));
+    assert.deepEqual(
+      checkOnly(live.get(id)),
+      checkOnly(frozen.get(id)),
+      `${id}'s check has moved; only its text may (R253.9)`,
+    );
     compared += 1;
   }
   console.error(`phase4-frozen: ${String(compared)} unchanged checks compared`);
@@ -2052,8 +2067,10 @@ test('a phase-4 check carries firstTag exactly when a Lane-0 lane lands it', () 
   assert.ok(checks.length > 0, 'no phase-4 check was read');
   let firstTag = 0;
   for (const check of checks) {
+    // U12: the recycle-bin probe is Lane 0's check and gates 1.0, not the first tag.
     const gates =
-      LANE0.includes(check.owner) || ['AC-P4-48-11', 'AC-P4-48-11-zero'].includes(check.id);
+      (LANE0.includes(check.owner) && !['AC-P4-46-14'].includes(check.id)) ||
+      ['AC-P4-48-11', 'AC-P4-48-11-zero'].includes(check.id);
     assert.equal(check.firstTag === true, gates, `${check.id} (${String(check.owner)})`);
     if (gates) firstTag += 1;
     if (/^P4-(39|4[0-4])-/u.test(check.criterion)) {
@@ -2061,6 +2078,41 @@ test('a phase-4 check carries firstTag exactly when a Lane-0 lane lands it', () 
     }
   }
   console.error(`phase-4 checks read: ${String(checks.length)}, firstTag: ${String(firstTag)}`);
+});
+
+// [p4-49 Task 10] Stage B runs with Lane 0 merged, so every first-tag check it landed has run. A
+// deferred one would gate the tag on a test the register never grades.
+test('no firstTag check is deferred', () => {
+  const firstTag = loadRegistry(registryPath)
+    .criteria.flatMap((c) => c.checks)
+    .filter((k) => k.firstTag === true);
+  console.error(`firstTag checks read: ${String(firstTag.length)}`);
+  assert.ok(firstTag.length > 0, 'a run that read no firstTag check proves nothing');
+  const deferred = firstTag.filter((k) => k.status === 'deferred').map((k) => k.id);
+  assert.deepEqual(deferred, [], `firstTag checks still deferred: ${deferred.join(', ')}`);
+});
+
+// [p4-49 Task 10] Phase 3's rule, for phase 4: a join key one character off reads as "not run" only
+// against a capture, so the automated cargo checks are read against the tree instead.
+test('every phase-4 cargo check names a function its test file declares', () => {
+  const core = fileURLToPath(new URL('../../core/tests/', import.meta.url));
+  const checks = loadRegistry(registryPath)
+    .criteria.filter((c) => phaseOf(c.id) === 4)
+    .flatMap((c) => c.checks)
+    .filter(
+      (k) =>
+        k.status === 'automated' && k.runner === 'cargo' && String(k.test).split('::').length === 2,
+    );
+  console.error(`phase-4 cargo checks read against the tree: ${String(checks.length)}`);
+  assert.ok(checks.length > 0, 'a run that read no check against the tree proves nothing');
+  for (const check of checks) {
+    const [binary, fn] = String(check.test).split('::');
+    const source = readFileSync(`${core}${binary}.rs`, 'utf8');
+    assert.ok(
+      new RegExp(`^\\s*(async )?fn ${fn}\\(`, 'mu').test(source),
+      `${check.id}: core/tests/${binary}.rs declares no fn ${fn}`,
+    );
+  }
 });
 
 test('the two phase-1 manual checks §49.6 could place nowhere else are registered', () => {

@@ -106,6 +106,13 @@ export const PHASE4_SECTIONS = {
 };
 
 /**
+ * R253.9: the earlier checks whose **text** phase 4 restated while their check stood — every key
+ * but `assert` is still the frozen record's. Stated once, because two freezes read it: phase 4's
+ * (`phase4-frozen.json`) and §26.3's phase-2 hold on criterion 44 (`phase1-frozen.json`).
+ */
+export const PHASE4_TEXT_ONLY = ['AC-P2-24-1', 'AC-44-no-destructive-git'];
+
+/**
  * R207: no capture reads a Windows-native result — CI grades acceptance on Ubuntu and the gate
  * copies the WSL cargo run — so a check naming Windows is a recorded manual gate, never an
  * automated claim a Linux run would grade without executing it.

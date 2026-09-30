@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "why": "The fifty-six entries phase 4 moves or holds unchanged, copied out of criteria.json at the phase-4 base before any phase-4 lane could touch them: the fifty-two rows of the section that rules which earlier criteria phase 4 moves, the two further phase-3 checks the ledger fixes move, the cascade-children check the removal substrate rewrites, and the pre-flight check whose join key a Lane-0 rename moves. You cannot verify that something moved correctly without a record of what it was. phase3-frozen.json is not extended: it is a record of a different set at a different tree.",
+  "why": "The fifty-seven entries phase 4 moves or holds unchanged, copied out of criteria.json at the phase-4 base before any phase-4 lane could touch them: the fifty-two rows of the section that rules which earlier criteria phase 4 moves, the two further phase-3 checks the ledger fixes move, the cascade-children check the removal substrate rewrites, the pre-flight check whose join key a Lane-0 rename moves, and the reveal check a phase-4 lane moves to eight panels. You cannot verify that something moved correctly without a record of what it was. phase3-frozen.json is not extended: it is a record of a different set at a different tree.",
   "frozenFrom": "acceptance/criteria.json",
   "takenOn": "a2fc9355ccd282ae2e1380a1330b72c95106a496",
   "criteria": [
@@ -160,7 +160,47 @@
         }
       ]
     },
-    {
+{
+      "id": "23",
+      "title": "No value is presented as current without its observation time",
+      "group": "honesty",
+      "spec": "\u00a716.23",
+      "checks": [
+        {
+          "id": "AC-23-audit",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-23 auditObservationTimes finds a fact rendered without its observation time",
+          "assert": "The audit primitives themselves: a fact node without its observation-time attribute is a violation, a coverage figure without its coverage attribute is a violation, and the word clean in a worktree readout is a violation.",
+          "reason": "The DOM convention the audit would read does not exist. No data-observed-at and no data-coverage attribute appears anywhere in the renderer today; the observation clause is composed in a formatter and rendered as text. An audit written against that convention now would select nothing on every possible tree and report clean \u2014 which is the same shape as the dead in-sync CI step. The convention has to land with the shelf first. The one clause that is gated today is the vocabulary: the destructive-token gate already fails the build on the word clean in a rendered string."
+        },
+        {
+          "id": "AC-23-shelf",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "13c",
+          "test": "AC-23 the shelf renders no current value without its observation time",
+          "assert": "The audit run over the rendered shelf at every card state returns no violations; absence of dirty reads 'no changes as of T', never 'clean'."
+        },
+        {
+          "id": "AC-23-reveal",
+          "status": "automated",
+          "runner": "vitest",
+          "test": "AC-23 no figure over a partial index is presented bare",
+          "assert": "Every reveal figure renders with its basis rather than bare \u2014 the projects it was computed over and whether history is complete."
+        },
+        {
+          "id": "AC-23-shallow",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "09",
+          "test": "acceptance_jobs::ac_23_shallow_excluded_and_counted",
+          "assert": "The shallow fixture is excluded from history statistics and counted in the coverage line; its Activity lanes report shallow_excluded rather than measured."
+        }
+      ]
+    },
+        {
       "id": "25",
       "title": "Every promised problem is reachable; every never-indexed repository carries an explained error",
       "group": "honesty",

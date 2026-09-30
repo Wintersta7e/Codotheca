@@ -133,7 +133,7 @@
       "id": "c40-commit-counts",
       "kind": "regex",
       "spec": "§16.40, §8.5.5",
-      "why": "Never reward volume. J4 produces commit-days; nothing in the schema stores a count, and the superseded legend naming commits by the user is the string that would make one worth acquiring.",
+      "why": "Never reward volume. J4 produces commit-days. A committer count is stored and shown \u2014 project_committer.commits, authorship evidence \u2014 and nothing rewards one; the superseded legend naming commits by the user is the string that would make one worth acquiring.",
       "targets": [
         "renderer",
         "schema",

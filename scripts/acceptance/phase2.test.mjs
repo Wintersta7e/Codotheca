@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 import { readScannedFile } from '../lib/read-scanned.mjs';
 import { withoutComments } from '../lib/without-comments.mjs';
-import { loadRegistry } from './registry.mjs';
+import { PHASE4_TEXT_ONLY, loadRegistry } from './registry.mjs';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const at = (relative) => fileURLToPath(new URL(`../../${relative}`, import.meta.url));
@@ -157,11 +157,28 @@ test('§26.3/45c: scoped means the register does not change', () => {
 test('§26.3/2 and 44: referenced and unchanged, including every test id', () => {
   const reg = registry();
   const record = frozen();
+  // R253.9: phase 4 restated one of criterion 44's checks' text, and only its text; every other
+  // byte of both entries, every test id included, is still phase 1's.
+  const textOnly = (entry) =>
+    entry === undefined
+      ? entry
+      : {
+          ...entry,
+          checks: entry.checks.map((k) =>
+            PHASE4_TEXT_ONLY.includes(k.id)
+              ? Object.fromEntries(Object.entries(k).filter(([key]) => key !== 'assert'))
+              : k,
+          ),
+        };
   for (const id of ['2', '44']) {
     const before = record.criteria.find((c) => c.id === id);
     // §24.10: the `test` field is the join key with no name table, so a rename reads as *not
     // run*. Byte-identity is asserted over the whole entry, which includes every one of them.
-    assert.deepEqual(criterion(reg, id), before, `criterion ${id} was referenced, not amended`);
+    assert.deepEqual(
+      textOnly(criterion(reg, id)),
+      textOnly(before),
+      `criterion ${id} was referenced, not amended`,
+    );
   }
 });
 

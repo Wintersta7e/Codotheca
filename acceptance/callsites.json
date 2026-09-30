@@ -4,7 +4,7 @@
     {
       "id": "projects-merge",
       "spec": "\u00a716.2 amendment, \u00a711.1",
-      "why": "projects.merge ships, has no phase-1 caller and is exercised by tests only: criterion 3 drives it directly against the command surface. Its inverse, the split, is deferred to phase 4, so a control wired to it is an irreversible join with no undo \u2014 the \u00a717 breach \u00a711.1 forbids by name. \u00a722.4's hydration was considered and excluded: it is a third thing, not a merge \u2014 one project row existed for the repository throughout, so nothing is absorbed and nothing is tombstoned, and a build in which it called merge_projects would tombstone a row that never existed and let the earliest created_at win, so a blueprint synced on Monday would absorb a local project cloned on Tuesday.",
+      "why": "projects.merge ships, has no phase-1 caller and is exercised by tests only: criterion 3 drives it directly against the command surface. Its inverse, the split, is deferred past 1.0, so a control wired to it is an irreversible join with no undo \u2014 the \u00a717 breach \u00a711.1 forbids by name. \u00a722.4's hydration was considered and excluded: it is a third thing, not a merge \u2014 one project row existed for the repository throughout, so nothing is absorbed and nothing is tombstoned, and a build in which it called merge_projects would tombstone a row that never existed and let the earliest created_at win, so a blueprint synced on Monday would absorb a local project cloned on Tuesday.",
       "roots": [
         "app/src",
         "core/src"
@@ -124,7 +124,7 @@
     {
       "id": "no-destructive-git",
       "spec": "\u00a716.44, \u00a717",
-      "why": "Every git invocation in phase 1 is read-only and argv-only. These subcommands as quoted argv literals are the whole destructive surface, fetch included: a directional claim needs a merge-base across two object stores, which needs a fetch, which \u00a717 forbids. Quoted rather than bare words on purpose \u2014 fetch_head_at and reset_at are legitimate column names and a bare-word pattern would fail every correct build.",
+      "why": "Every product git invocation outside core/src/gitw is read-only and argv-only, and core/src/gitw renders only the subcommands SUBCOMMANDS_BY_INTENT allows. These subcommands as quoted argv literals are the whole destructive surface, fetch included: anywhere but core/src/gitw a fetch runs without the pins that keep it to objects. Quoted rather than bare words on purpose \u2014 fetch_head_at and reset_at are legitimate column names and a bare-word pattern would fail every correct build.",
       "roots": [
         "core/src"
       ],
@@ -150,7 +150,7 @@
         "core/src/protocol.rs"
       ],
       "allowLines": [],
-      "allowWhy": "core/src/git is excluded because core/tests/git_readonly.rs already audits it properly \u2014 an allow list plus a deny list over its argv literals, with its own scanned-nothing guard \u2014 and a second, weaker grep over the same directory would be the copy that drifts. core/src/gitw is excluded for the same reason and not a weaker one: core/tests/git_write_audit.rs audits it by ENUMERATING Intent::ALL and rendering every variant, which is strictly stronger than this grep \u2014 it also asserts the eight-entry flag denylist that no text search over quoted literals can express, because this rule matches subcommand vocabulary and the difference between an additive fetch and a destructive one is a flag. This rule covers what neither audit reaches: argv assembled elsewhere in the core. The corpus generator and the seam fakes build fixture repositories behind the testkit feature."
+      "allowWhy": "core/src/git is excluded because core/tests/git_readonly.rs already audits it properly \u2014 an allow list plus a deny list over its argv literals, with its own scanned-nothing guard \u2014 and a second, weaker grep over the same directory would be the copy that drifts. core/src/gitw is excluded for the same reason and not a weaker one: core/tests/git_write_audit.rs audits it by ENUMERATING Intent::ALL and rendering every variant, which is strictly stronger than this grep \u2014 it also asserts FLAG_FORBIDDEN, the flag denylist that no text search over quoted literals can express, because this rule matches subcommand vocabulary and the difference between an additive fetch and a destructive one is a flag. This rule covers what neither audit reaches: argv assembled elsewhere in the core. The corpus generator and the seam fakes build fixture repositories behind the testkit feature."
     },
     {
       "id": "no-unwarranted-removal",
