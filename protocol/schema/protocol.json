@@ -637,6 +637,37 @@
       ]
     },
 
+    "ParcelState": {
+      "kind": "enum",
+      "$comment": "§46.15: parcel.state. The table's CHECK spells these four, and a sealed or purged parcel must carry its seal (digest, manifest hash, directory name, sealed time).",
+      "variants": ["preserving", "sealed", "abandoned", "purged"]
+    },
+    "ParcelCheck": {
+      "kind": "enum",
+      "$comment": "§46.15: parcel.check_result. `unchecked` is the column's default, so the column is never null and a parcel nobody has checked never reads as `ok`.",
+      "variants": ["unchecked", "ok", "missing", "altered", "unrestorable", "unreachable"]
+    },
+    "RemovalKind": {
+      "kind": "enum",
+      "$comment": "§46.15: removal_record.kind, the act that journaled the record.",
+      "variants": ["uninstall", "remove"]
+    },
+    "RemovalState": {
+      "kind": "enum",
+      "$comment": "§46.15: removal_record.state. `journaled`, `disposing` and `interrupted` are open, and a location holds at most one open record.",
+      "variants": ["journaled", "disposing", "done", "abandoned", "refused", "interrupted"]
+    },
+    "RemovalDisposal": {
+      "kind": "enum",
+      "$comment": "§46.15: removal_record.disposal, null until the bytes are gone. `gone_unconfirmed` records a path found gone that this app cannot attribute, never `trashed`.",
+      "variants": ["trashed", "hard_deleted", "gone_unconfirmed"]
+    },
+    "RemovalRecovery": {
+      "kind": "enum",
+      "$comment": "§46.15: removal_record.recovery, how the copy comes back. It is `parcel` exactly when the record names a parcel.",
+      "variants": ["remote", "parcel"]
+    },
+
     "UninstallVerdict": {
       "kind": "struct",
       "$comment": "§24.8's per-item value. `blockers` always carries EVERY blocker found, of both classes, so the fold never hides one. No token crosses this boundary: the seal `locations.uninstall` compares against is in-core only. §45.12: `nested` is empty when there is none, and a null `precious` means not enumerated, never none. §46.7: `trashAvailable` is derived from `trashRefusal` by the same function — true exactly when it is null.",

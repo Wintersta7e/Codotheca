@@ -1081,6 +1081,42 @@ test('§24.8: the verdict carries every blocker and no token', () => {
   }
 });
 
+/**
+ * [p4] §46.15's six vocabularies land before the tables whose CHECKs spell them, so the core's
+ * mirror tests read them from here. The order is §46.15's, which is the DDL's.
+ */
+test('§46 declares the six vocabularies the removal tables store', () => {
+  assert.deepEqual(schema.types.ParcelState.variants, [
+    'preserving',
+    'sealed',
+    'abandoned',
+    'purged',
+  ]);
+  assert.deepEqual(schema.types.ParcelCheck.variants, [
+    'unchecked',
+    'ok',
+    'missing',
+    'altered',
+    'unrestorable',
+    'unreachable',
+  ]);
+  assert.deepEqual(schema.types.RemovalKind.variants, ['uninstall', 'remove']);
+  assert.deepEqual(schema.types.RemovalState.variants, [
+    'journaled',
+    'disposing',
+    'done',
+    'abandoned',
+    'refused',
+    'interrupted',
+  ]);
+  assert.deepEqual(schema.types.RemovalDisposal.variants, [
+    'trashed',
+    'hard_deleted',
+    'gone_unconfirmed',
+  ]);
+  assert.deepEqual(schema.types.RemovalRecovery.variants, ['remote', 'parcel']);
+});
+
 test('§24.6a: a location can say when it was removed, and NULL is not removed', () => {
   assert.equal(schema.types.LocationDetail.fields.removedAt, 'Timestamp?');
 });
@@ -1198,11 +1234,15 @@ test('the four totals agree with the phase-2 delta table', () => {
    * [p4] §48.13 moves it by **−2**: `LedgerCounts` and `CorruptIndexLedger`, which no command,
    * event or other type referenced and which never described the startup-failure file — that
    * file keeps its hand-written shape on both sides.
+   *
+   * [p4] §46.15 moves it by **+6**: the six vocabularies the removal tables' CHECKs spell
+   * (`ParcelState`, `ParcelCheck`, `RemovalKind`, `RemovalState`, `RemovalDisposal`,
+   * `RemovalRecovery`). §46's other types land with the writers that put them on the wire.
    */
   assert.equal(
     types,
-    197,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2; found ${types}`,
+    203,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6; found ${types}`,
   );
 });
 
