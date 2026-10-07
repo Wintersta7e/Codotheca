@@ -12,11 +12,15 @@
 import { useMemo } from 'react';
 
 import type { DegradedReason, Problems, SyncNotice } from '../../generated/protocol.js';
+import type { RebuildReport } from '../../shared/rebuildReport.js';
 import type { NoticeCopy, SpawnFailureFacts } from '../notices/copy.js';
 import { IDENTITY_BODY_1, IDENTITY_TITLE } from '../firstrun/copy.js';
 import {
+  REBUILD_ACKNOWLEDGE,
+  REVEAL_INDEX,
   degradedNotice,
   problemsNotice,
+  rebuildOutcomeNotice,
   remoteSyncNotice,
   spawnFailureNotice,
 } from '../notices/copy.js';
@@ -48,8 +52,14 @@ export interface NoticeInput {
    * §8.0 admits one banner and one banner is what the lane is about.
    */
   readonly sync: SyncNotice | null;
+  /** [p4] §48.7.1 step 5: the last rebuild's report, until the user acknowledges it. */
+  readonly rebuildReport: RebuildReport | null;
   readonly onOpenLog: () => void;
   readonly onOpenScanSummary: () => void;
+  /** The rebuild outcome's own action, and its only dismissal. */
+  readonly onAckRebuildReport: () => void;
+  /** Reveals the folder holding the index and the files set aside beside it. */
+  readonly onRevealIndex: () => void;
 }
 
 /**
@@ -101,8 +111,11 @@ export function useNotices(input: NoticeInput): readonly Notice[] {
     problems,
     identityToConfirm,
     sync,
+    rebuildReport,
     onOpenLog,
     onOpenScanSummary,
+    onAckRebuildReport,
+    onRevealIndex,
   } = input;
 
   return useMemo(() => {
@@ -110,7 +123,14 @@ export function useNotices(input: NoticeInput): readonly Notice[] {
     const runners: Record<string, (() => void) | undefined> = {
       'OPEN THE LOG': onOpenLog,
       'SEE THE SUMMARY': onOpenScanSummary,
+      [REBUILD_ACKNOWLEDGE]: onAckRebuildReport,
+      [REVEAL_INDEX]: onRevealIndex,
     };
+
+    if (rebuildReport !== null) {
+      // Unscoped and undismissable: the acknowledgement removes the report, and with it this.
+      out.push(toNotice('rebuildOutcome', null, rebuildOutcomeNotice(rebuildReport), runners));
+    }
 
     const lane =
       spawnFailure !== null
@@ -154,7 +174,10 @@ export function useNotices(input: NoticeInput): readonly Notice[] {
     problems,
     identityToConfirm,
     sync,
+    rebuildReport,
     onOpenLog,
     onOpenScanSummary,
+    onAckRebuildReport,
+    onRevealIndex,
   ]);
 }

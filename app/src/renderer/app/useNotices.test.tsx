@@ -2,6 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Problems, ScanRunId } from '../../generated/protocol';
+import type { RebuildReport } from '../../shared/rebuildReport';
 import { noticeDismissKey, selectNotice, type Notice } from '../shelf/notice';
 import { useNotices, type NoticeInput } from './useNotices';
 
@@ -26,8 +27,11 @@ function input(over: Partial<NoticeInput> = {}): NoticeInput {
     problems: null,
     identityToConfirm: false,
     sync: null,
+    rebuildReport: null,
     onOpenLog: vi.fn(),
     onOpenScanSummary: vi.fn(),
+    onAckRebuildReport: vi.fn(),
+    onRevealIndex: vi.fn(),
     ...over,
   };
 }
@@ -139,5 +143,57 @@ describe("§21.10's sync candidate", () => {
     const notices = renderHook(() => useNotices(input({ sync: 'offline', problems: problems(4) })))
       .result.current;
     expect(selectNotice(notices, [])?.kind).toBe('problems');
+  });
+});
+
+/** §48.7.1 step 5: a rebuild's outcome, one notice that stands until the user acknowledges it. */
+describe("§48.7's rebuild outcome", () => {
+  const REPORT: RebuildReport = {
+    quarantinedAt: 1_787_126_520,
+    quarantineFiles: [
+      '<data>/index.db.corrupt-1787126520',
+      '<data>\\sidecar.json.corrupt-1787126520',
+    ],
+    restored: { projects: 3, notes: 0 },
+    pending: 4,
+    gapStartedAt: null,
+  };
+
+  const outcome = (over: Partial<NoticeInput> = {}): Notice | undefined =>
+    notices({ rebuildReport: REPORT, ...over }).find((n) => n.kind === 'rebuildOutcome');
+
+  it('raises one while the report is present, above a failing core, whatever is dismissed', () => {
+    expect(notices().filter((n) => n.kind === 'rebuildOutcome')).toHaveLength(0);
+    const raised = notices({ rebuildReport: REPORT, degraded: 'git_missing' });
+    expect(raised.filter((n) => n.kind === 'rebuildOutcome')).toHaveLength(1);
+    expect(selectNotice(raised, [])?.kind).toBe('rebuildOutcome');
+    // Its own action is its only dismissal, so no key in view state hides it.
+    const dismissed = [noticeDismissKey('rebuildOutcome', null)];
+    expect(selectNotice(raised, dismissed)?.kind).toBe('rebuildOutcome');
+  });
+
+  // §48.7.1 step 5: it prints no figure the report does not carry, and a count of none is no line.
+  it('carries no figure the report lacks, and names each set-aside file by its name', () => {
+    const raised = outcome();
+    const text = `${raised?.title ?? ''} ${raised?.body ?? ''}`;
+    const runs = text.match(/\d+/gu) ?? [];
+    expect(runs.length).toBeGreaterThan(0);
+    for (const run of runs) expect(['3', '4', '1787126520'], run).toContain(run);
+    expect(text).toContain('index.db.corrupt-1787126520');
+    expect(text).toContain('sidecar.json.corrupt-1787126520');
+    expect(text).not.toContain('<data>');
+  });
+
+  it('acknowledges through its own action and reveals the folder through the other', () => {
+    const onAckRebuildReport = vi.fn();
+    const onRevealIndex = vi.fn();
+    const actions = outcome({ onAckRebuildReport, onRevealIndex })?.actions ?? [];
+    expect(actions.map((action) => action.kind)).toEqual(['primary', 'secondary']);
+    actions[0]?.run();
+    expect(onAckRebuildReport).toHaveBeenCalledTimes(1);
+    expect(onRevealIndex).not.toHaveBeenCalled();
+    actions[1]?.run();
+    expect(onRevealIndex).toHaveBeenCalledTimes(1);
+    expect(onAckRebuildReport).toHaveBeenCalledTimes(1);
   });
 });

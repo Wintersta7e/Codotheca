@@ -17,6 +17,13 @@ export const IPC_CORE_STATUS_NOW = 'codotheca:core-status-now';
  * No payload, and no protocol command: the core that would answer one cannot open its index.
  */
 export const IPC_REBUILD = 'codotheca:rebuild';
+/**
+ * §48.7.1 step 5: the last rebuild's report, or `null` when there is none. The shell reads the
+ * file; the renderer never names it.
+ */
+export const IPC_REBUILD_REPORT = 'codotheca:rebuild-report';
+/** §48.7.1 step 5: the user acknowledged the outcome, so the shell removes the report. */
+export const IPC_REBUILD_REPORT_ACK = 'codotheca:rebuild-report-ack';
 export const IPC_EVENTS = 'codotheca:events';
 
 /**

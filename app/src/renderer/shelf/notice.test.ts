@@ -16,24 +16,28 @@ const notice = (kind: NoticeKind, scope: string | null = null): Notice => ({
   actions: [],
 });
 
+// [p2] §20.11 appends `connect` last. The transcription moves with the array rather than the
+// array being trimmed to keep this literal: a count that disagrees with the table moves the
+// failure instead of fixing it.
+const TRANSCRIBED_ORDER: readonly NoticeKind[] = [
+  // [p4] §48.7.1 step 5: a rebuild's outcome is the highest priority there is.
+  'rebuildOutcome',
+  'coreFailure',
+  'scanResumed',
+  'problems',
+  'targetUnresolved',
+  // [p2] §21.10's banner. **Below `problems`**, because letting an offline forge outrank a
+  // local unreadable repository inverts §19.3's *"GitHub is additive, never a gate"*.
+  'remoteSync',
+  'identity',
+  'residency',
+  'newArrivals',
+  'connect',
+];
+
 describe('the priority order', () => {
-  // [p2] §20.11 appends `connect` last. The transcription moves with the array rather than the
-  // array being trimmed to keep this literal: a count that disagrees with the table moves the
-  // failure instead of fixing it.
-  it("is §8.0's table, in order, plus §20.11's offer last", () => {
-    expect(NOTICE_PRIORITY).toEqual([
-      'coreFailure',
-      'scanResumed',
-      'problems',
-      'targetUnresolved',
-      // [p2] §21.10's banner. **Below `problems`**, because letting an offline forge outrank a
-      // local unreadable repository inverts §19.3's *"GitHub is additive, never a gate"*.
-      'remoteSync',
-      'identity',
-      'residency',
-      'newArrivals',
-      'connect',
-    ]);
+  it("is §48.7's rebuild outcome first, then §8.0's table in order, then §20.11's offer last", () => {
+    expect(NOTICE_PRIORITY).toEqual(TRANSCRIBED_ORDER);
   });
   it('carries no destructive kind', () => {
     // Phase 1 has no destructive operation at all.
@@ -101,7 +105,9 @@ describe('noticeAccent', () => {
   it('gives priority 1 the hot border and everything else the accent', () => {
     // Only the left border varies.
     expect(noticeAccent('coreFailure')).toBe('fail-hot');
-    for (const kind of NOTICE_PRIORITY.slice(1)) expect(noticeAccent(kind)).toBe('sig');
+    for (const kind of NOTICE_PRIORITY.filter((k) => k !== 'coreFailure')) {
+      expect(noticeAccent(kind)).toBe('sig');
+    }
   });
 });
 
@@ -125,7 +131,7 @@ describe('[p2] §20.11 — the connect offer, exactly one and lowest', () => {
 
   it('AC-P2-20-9 sorts last, and its length grew rather than a row being replaced', () => {
     expect(NOTICE_PRIORITY.at(-1)).toBe('connect');
-    expect(NOTICE_PRIORITY).toHaveLength(9);
+    expect(NOTICE_PRIORITY).toHaveLength(TRANSCRIBED_ORDER.length);
     expect(new Set(NOTICE_PRIORITY).size).toBe(NOTICE_PRIORITY.length);
   });
 

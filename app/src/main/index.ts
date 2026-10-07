@@ -26,11 +26,12 @@ import {
   type RootSuggestion,
   type Topic,
 } from '../generated/protocol';
-import { IPC_REBUILD } from '../shared/channels';
+import { IPC_REBUILD, IPC_REBUILD_REPORT, IPC_REBUILD_REPORT_ACK } from '../shared/channels';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
 import { buildStampArgument, logPathArgument } from '../shared/windowArgs';
 import { startShortcutService } from './paletteShortcut';
 import { registerShellServices } from './shellServices';
+import { ackRebuildReport, readRebuildReport } from './rebuildReport';
 import { readStartupFailure } from './startupFailure';
 import { onStoredSettings } from './storedSettings';
 import { registerArtProtocol, readRenditionFromDisk } from './art/artProtocol';
@@ -454,6 +455,11 @@ async function main(): Promise<void> {
   // §48.7.1 step 3: REBUILD respawns the core once in its rebuild mode. It is not a protocol
   // command, because the core that would answer one cannot open its index.
   ipcMain.handle(IPC_REBUILD, () => supervisor.rebuild());
+  // §48.7.1 step 5: the outcome stands until the user acknowledges it, and only then is it gone.
+  ipcMain.handle(IPC_REBUILD_REPORT, () => readRebuildReport(dataDir));
+  ipcMain.handle(IPC_REBUILD_REPORT_ACK, () => {
+    ackRebuildReport(dataDir);
+  });
 
   // §2.4: `locations.relocate` is privileged, so the bridge above refuses it by design. It
   // travels its own channel, where the path is whatever this process's dialog returns and never

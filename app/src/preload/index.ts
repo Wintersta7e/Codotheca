@@ -21,6 +21,8 @@ import {
   IPC_PICK_EXECUTABLE,
   IPC_PICK_ROOT,
   IPC_REBUILD,
+  IPC_REBUILD_REPORT,
+  IPC_REBUILD_REPORT_ACK,
   IPC_RELOCATE,
   IPC_REQUEST,
   IPC_REVEAL,
@@ -88,6 +90,8 @@ const bridge: CodothecaBridge = {
   },
   coreStatusNow: (): Promise<unknown> => ipcRenderer.invoke(IPC_CORE_STATUS_NOW),
   rebuild: (): Promise<unknown> => ipcRenderer.invoke(IPC_REBUILD),
+  rebuildReport: (): Promise<unknown> => ipcRenderer.invoke(IPC_REBUILD_REPORT),
+  ackRebuildReport: (): Promise<unknown> => ipcRenderer.invoke(IPC_REBUILD_REPORT_ACK),
   onCoreEvents: (cb: (batch: unknown) => void): void => {
     ipcRenderer.on(IPC_EVENTS, (_event, batch: unknown) => {
       cb(batch);

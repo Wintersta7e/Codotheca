@@ -15,6 +15,8 @@ import type {
   TargetVerification,
 } from '../../generated/protocol';
 import { GIT_FLOOR } from '../../shared/gitFloor';
+import type { RebuildReport } from '../../shared/rebuildReport';
+import { countLine, gapStartLine } from '../failure/copy';
 
 export interface NoticeCopy {
   readonly title: string;
@@ -184,6 +186,40 @@ export function staleTargetsNotice(rows: readonly TargetVerification[]): NoticeC
  * `tsc` here rather than falling through to a sentence written for something else, which is the
  * failure a `default` arm would hide.
  */
+/** §48.7.1 step 5: the outcome notice's only dismissal, which removes the report. */
+// ‹COPY› interim — the user's words replace this before v1.0.0
+export const REBUILD_ACKNOWLEDGE = '‹COPY: acknowledges the rebuild›';
+
+/** The settings drawer's label for the same act: the shell reveals the index's folder. */
+export const REVEAL_INDEX = 'REVEAL';
+
+/**
+ * §48.7.1 step 5: the first surface that claims a quarantine, and it claims one only because one
+ * happened. It names each set-aside file by its name — the folder holding them is one `REVEAL`
+ * away, so no path is drawn — then the counts that came back, the records still waiting and the
+ * gap's start. Every figure is the report's, and a count of none is no line.
+ */
+export function rebuildOutcomeNotice(report: RebuildReport): NoticeCopy {
+  const names = report.quarantineFiles.map((file) => file.split(/[\\/]/u).at(-1) ?? file);
+  const restored = Object.entries(report.restored)
+    .filter(([, n]) => n > 0)
+    .map(([key, n]) => countLine(key, n));
+  return {
+    // ‹COPY› interim — the user's words replace this before v1.0.0
+    title:
+      "‹COPY: names where the set-aside files are; states restored counts and the gap's start›",
+    body: [
+      `‹COPY: set aside› ${names.join(', ')}`,
+      `‹COPY: restored› ${restored.length > 0 ? restored.join(', ') : 'Nothing.'}`,
+      ...(report.pending > 0 ? [countLine('pending', report.pending)] : []),
+      gapStartLine(report.gapStartedAt),
+    ].join(' · '),
+    note: null,
+    primary: REBUILD_ACKNOWLEDGE,
+    secondary: REVEAL_INDEX,
+  };
+}
+
 export function remoteSyncNotice(kind: SyncNotice): NoticeCopy {
   switch (kind) {
     case 'throttled':

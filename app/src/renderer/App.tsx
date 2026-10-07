@@ -20,6 +20,7 @@ import { useLibrary } from './app/useLibrary';
 import { useMotionSettings } from './app/useMotionSettings';
 import { useNotices } from './app/useNotices';
 import { useProblems } from './app/useProblems';
+import { useRebuildReport } from './app/useRebuildReport';
 import { useScanStatus } from './app/useScanStatus';
 import { useSessions } from './app/useSessions';
 import { useSync } from './app/useSync';
@@ -97,6 +98,11 @@ export function App(props: AppProps = {}): ReactElement {
   const openLog = useCallback(() => {
     void deps.reveal('log');
   }, [deps]);
+  // §48.7.1 step 5: the set-aside files sit beside the index, so its folder is where they are.
+  const revealIndex = useCallback(() => {
+    void deps.reveal('index');
+  }, [deps]);
+  const rebuildOutcome = useRebuildReport(deps);
 
   const notices = useNotices({
     degraded: core.degraded,
@@ -108,8 +114,11 @@ export function App(props: AppProps = {}): ReactElement {
     identityToConfirm: identityNeedsConfirming(identity.rows),
     // [p2] §21.10's banner, from the `sync` topic. `null` is *no sync failure*.
     sync: sync.notice,
+    rebuildReport: rebuildOutcome.report,
     onOpenLog: openLog,
     onOpenScanSummary: openScanSummary,
+    onAckRebuildReport: rebuildOutcome.acknowledge,
+    onRevealIndex: revealIndex,
   });
 
   // §11.1: dismissing the banner clears this run's problem list from the summary too. Scoped to

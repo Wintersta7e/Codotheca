@@ -6,6 +6,8 @@
  *  nothing translates in between, so `identity` is spelled the way §8.0 row 4a and
  *  §1.4 spell it in the column itself. */
 export type NoticeKind =
+  // [p4] §48.7.1 step 5: a rebuild's outcome, stated until the user acknowledges it.
+  | 'rebuildOutcome'
   | 'coreFailure'
   | 'scanResumed'
   | 'problems'
@@ -32,6 +34,9 @@ export type NoticeKind =
  * the array to length 7 and delete a notice.
  */
 export const NOTICE_PRIORITY: readonly NoticeKind[] = [
+  // [p4] §48.7.1 step 5: the highest priority there is. It answers the user's own REBUILD, and a
+  // quarantine it does not state is one the user never learns happened.
+  'rebuildOutcome',
   'coreFailure',
   'scanResumed',
   // [p2] §21.10's banner sorts BELOW `problems` and above `identity`. Letting an offline forge
@@ -47,8 +52,9 @@ export const NOTICE_PRIORITY: readonly NoticeKind[] = [
 ];
 
 /** Priority 1 stands until the condition clears; every other row has a dismissal, whether it is
- *  written by the DISMISS control or by answering the ask. */
-export const UNDISMISSABLE: readonly NoticeKind[] = ['coreFailure'];
+ *  written by the DISMISS control or by answering the ask. [p4] A rebuild's outcome stands until
+ *  its own action acknowledges it, which removes the report; nothing records it in `view_state`. */
+export const UNDISMISSABLE: readonly NoticeKind[] = ['rebuildOutcome', 'coreFailure'];
 
 export interface NoticeAction {
   readonly label: string;

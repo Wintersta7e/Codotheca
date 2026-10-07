@@ -14,6 +14,7 @@ import { createContext, useContext } from 'react';
 import type { CommitSuggestionReply, RevealTarget, ShortcutState } from '../../shared/channels';
 import { type CoreStatus, isCoreStatus } from '../../shared/coreStatus';
 import type { EffectsTier, EffectsTierSource } from '../../shared/effectsTier';
+import { isRebuildReport, type RebuildReport } from '../../shared/rebuildReport';
 import { call } from '../core/call';
 import { createEventFanout, type ProjectPageDeps } from '../project/deps';
 
@@ -77,6 +78,10 @@ export interface AppDeps extends ProjectPageDeps {
   readonly coreStatusNow: () => Promise<CoreStatus | null>;
   /** §48.7.1 step 3: REBUILD. The status that follows, not this promise, says how it went. */
   readonly rebuild: () => Promise<void>;
+  /** §48.7.1 step 5: the last rebuild's report as the shell read it; `null` when there is none. */
+  readonly rebuildReport: () => Promise<RebuildReport | null>;
+  /** §48.7.1 step 5: the user's acknowledgement, which removes the report. */
+  readonly ackRebuildReport: () => Promise<void>;
   readonly onShortcutState: (cb: (state: ShortcutState) => void) => () => void;
   readonly onOpenPalette: (cb: () => void) => () => void;
   readonly effectsTier: EffectsTier;
@@ -137,6 +142,13 @@ export function createDefaultAppDeps(): AppDeps {
     },
     rebuild: async () => {
       await bridge.rebuild();
+    },
+    rebuildReport: async () => {
+      const report: unknown = await bridge.rebuildReport();
+      return isRebuildReport(report) ? report : null;
+    },
+    ackRebuildReport: async () => {
+      await bridge.ackRebuildReport();
     },
     onShortcutState: createValueFanout<ShortcutState>((cb) => {
       bridge.onShortcutState(cb);

@@ -114,6 +114,10 @@ export interface CodothecaBridge {
    * from a failed lane; the answer is whether it did. The status that follows says how it went.
    */
   rebuild(): Promise<unknown>;
+  /** §48.7.1 step 5: the last rebuild's report, or `null`; the shell reads the file. */
+  rebuildReport(): Promise<unknown>;
+  /** §48.7.1 step 5: the user's acknowledgement, after which the report is gone. */
+  ackRebuildReport(): Promise<unknown>;
   /** One batch per frame, never one message per event. */
   onCoreEvents(cb: (batch: unknown) => void): void;
   /**

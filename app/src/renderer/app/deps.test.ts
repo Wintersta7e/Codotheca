@@ -34,6 +34,8 @@ function stubBridge(): StubBridge {
     onCoreStatus: () => undefined,
     coreStatusNow: () => Promise.resolve({ ok: true, value: { kind: 'starting' } }),
     rebuild: () => Promise.resolve(true),
+    rebuildReport: () => Promise.resolve(null),
+    ackRebuildReport: () => Promise.resolve(undefined),
     onCoreEvents: (cb) => {
       registrations.push(cb);
     },

@@ -175,13 +175,29 @@ function ledgerLines(
   if (counts === null) {
     return [`How much ${subject} is not known: the index did not open far enough to count it.`];
   }
-  const lines = Object.entries(SIDECAR_COUNT_NOUNS)
-    .filter(([key]) => !NOT_RESTORED.has(key))
-    .flatMap(([key, [one, many]]) => {
+  const lines = Object.keys(SIDECAR_COUNT_NOUNS)
+    .filter((key) => !NOT_RESTORED.has(key))
+    .flatMap((key) => {
       const n = counts[key] ?? 0;
-      return n > 0 ? [`${String(n)} ${n === 1 ? one : many}`] : [];
+      return n > 0 ? [countLine(key, n)] : [];
     });
   return lines.length > 0 ? lines : ['Nothing.'];
+}
+
+/**
+ * One count under its noun: `1 project`, `212 projects`. A key with no noun here — the rebuild
+ * report also counts the locations it re-created — prints under an interim one.
+ */
+export function countLine(key: string, n: number): string {
+  const [one, many] = SIDECAR_COUNT_NOUNS[key] ?? interimNoun(key);
+  return `${String(n)} ${n === 1 ? one : many}`;
+}
+
+/** Where the gap opens: the sidecar's last write. `null` is a start nothing recorded. */
+export function gapStartLine(writtenAt: number | null): string {
+  return writtenAt === null
+    ? 'The start of the gap is not known.'
+    : `The gap starts at ${failureTimestamp(writtenAt)}.`;
 }
 
 /**
@@ -195,11 +211,7 @@ export function corruptLedger(
   fact: Extract<StartupFailure, { kind: 'corrupt_index' }>,
 ): readonly LedgerBlock[] {
   // The gap opens where the sidecar was last written; before a rebuild it is never counted.
-  const writtenAt = fact.sidecar.writtenAt;
-  const when =
-    writtenAt === null
-      ? 'The start of the gap is not known.'
-      : `The gap starts at ${failureTimestamp(writtenAt)}.`;
+  const when = gapStartLine(fact.sidecar.writtenAt);
   return [
     {
       // §48.7.2: unknown until the scan runs, so named and never counted.
