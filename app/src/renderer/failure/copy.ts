@@ -158,6 +158,9 @@ export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, stri
   view_state: interimNoun('view_state'),
   pending: interimNoun('pending'),
   no_scan_projects: interimNoun('no_scan_projects'),
+  check_na: interimNoun('check_na'),
+  location_trust: interimNoun('location_trust'),
+  accounts: interimNoun('accounts'),
 };
 
 /** §48.8.3: merges ride the sidecar and are never replayed, so a rebuild restores none. */

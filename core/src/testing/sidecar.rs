@@ -5,9 +5,13 @@ use std::path::Path;
 
 use rusqlite::Transaction;
 
+use crate::completion::evaluate::CheckRow;
 use crate::index::migrate::SUPPORTED_SCHEMA_VERSION;
 use crate::index::{open_connection, Index, IndexError};
-use crate::protocol::{LocationId, ProjectId};
+use crate::protocol::{
+    AuthKind, CheckState, CompletionCheck, LocationId, ProjectId, ScopeTier, UnknownReason,
+};
+use crate::provider::listing::OrgListing;
 
 /// The rows a fixture library already holds, for a section fixture to plant its own against.
 #[derive(Debug, Clone, Default)]
@@ -23,8 +27,96 @@ pub type SectionFixture = fn(&Transaction<'_>, &FixtureIds) -> Result<(), IndexE
 
 /// One fixture per registered section, by section name. A section registers its fixture in the
 /// change that registers the section; `sidecar_registry` holds the two lists equal.
-pub const SECTION_FIXTURES: &[(&str, SectionFixture)] =
-    &[("no_scan_projects", uninstalled_project)];
+pub const SECTION_FIXTURES: &[(&str, SectionFixture)] = &[
+    ("no_scan_projects", uninstalled_project),
+    ("check_na", ruled_check),
+    ("location_trust", trusted_copy),
+    ("accounts", connected_account),
+];
+
+/// A project with one present copy, for a fixture that rules on a project or trusts a copy.
+fn present_project(
+    tx: &Transaction<'_>,
+    name: &str,
+) -> Result<(ProjectId, LocationId), IndexError> {
+    tx.execute(
+        "INSERT INTO project (name, seed_basename, lineage_key, created_at, updated_at)
+         VALUES (?1, ?1, ?2, 1, 1)",
+        rusqlite::params![name, format!("{name}-lineage")],
+    )?;
+    let project = tx.last_insert_rowid();
+    let path = format!("/fixture/{name}");
+    tx.execute(
+        "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display, store_key,
+                               presence, repo_kind)
+         VALUES (?1, 'linux', ?2, ?2, ?3, 'fixture', 'present', 'worktree')",
+        rusqlite::params![project, path.as_bytes(), path],
+    )?;
+    Ok((ProjectId(project), LocationId(tx.last_insert_rowid())))
+}
+
+/// A project whose ten check rows the evaluator wrote, with the user's N/A ruling on `tests`.
+fn ruled_check(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexError> {
+    let (project, _) = present_project(tx, "ruled")?;
+    let rows = CompletionCheck::ALL.map(|key| {
+        let ruled = key == CompletionCheck::Tests;
+        CheckRow {
+            key,
+            state: if ruled {
+                CheckState::Na
+            } else {
+                CheckState::Unknown
+            },
+            user_na: ruled.then_some(true),
+            unknown_reason: (!ruled).then_some(UnknownReason::NotRunYet),
+            observed_at: 1,
+        }
+    });
+    crate::completion::store::write_all_ten(tx, project, &rows)
+}
+
+/// A copy the user trusted.
+fn trusted_copy(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexError> {
+    let (_, location) = present_project(tx, "trusted")?;
+    crate::surfaces::repair::set_trusted(tx, location, 20)?;
+    Ok(())
+}
+
+/// A connected account with two organisations, one of them switched on.
+fn connected_account(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexError> {
+    let store = |e: crate::accounts::store::AccountError| IndexError::Sidecar(e.to_string());
+    let account = crate::accounts::store::insert_account(
+        tx,
+        &crate::accounts::store::NewAccount {
+            provider: "github".to_owned(),
+            host: "github.com".to_owned(),
+            login: "fixture-user".to_owned(),
+            display_name: None,
+            auth_kind: AuthKind::Pat,
+            scope_tier: ScopeTier::Private,
+            granted_scopes: crate::provider::scopes::SCOPES_PRIVATE
+                .iter()
+                .map(|scope| (*scope).to_owned())
+                .collect(),
+            token_ref: "github:github.com:fixture-user".to_owned(),
+        },
+        30,
+    )
+    .map_err(store)?;
+    let orgs = [
+        OrgListing {
+            login: "org-on".to_owned(),
+            repo_count_seen: Some(2),
+        },
+        OrgListing {
+            login: "org-off".to_owned(),
+            repo_count_seen: None,
+        },
+    ];
+    crate::accounts::store::upsert_orgs(tx, account, &orgs, 31).map_err(store)?;
+    crate::accounts::store::set_org_enabled(tx, account, "org-on", true).map_err(store)?;
+    Ok(())
+}
 
 /// An uninstalled project — both its copies removed — with a note and one session.
 fn uninstalled_project(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexError> {

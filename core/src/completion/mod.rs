@@ -67,6 +67,9 @@ pub enum Written {
 /// **established**, which is the conservative direction, because an older timestamp never
 /// over-claims currency.
 ///
+/// **A project's first write also applies what a rebuild staged for it** (§48.8.4): a ruling
+/// restores onto its check's row, so it cannot land before that row exists.
+///
 /// # Errors
 /// Fails when SQLite cannot be read or refuses a write.
 pub fn evaluate_and_write(
@@ -99,6 +102,13 @@ pub fn evaluate_and_write(
         }
     };
     set_completion(tx, project, value)?;
+
+    // A rebuilt index restores the user's N/A rulings onto these rows, which exist only from a
+    // project's first write. After the projection, which the restore rewrites through
+    // `set_check_na`; never on a later write, which that call is.
+    if stored.is_empty() {
+        crate::index::pending::match_pending(tx, project, now)?;
+    }
 
     Ok(Written::Rewritten {
         counts: Counts::of(&rows),

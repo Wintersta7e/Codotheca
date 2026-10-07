@@ -151,9 +151,10 @@ pub enum RestoreRule {
 pub enum RestoreOutcome {
     /// The row was written: this many rows went into the index.
     Applied(u64),
-    /// Nothing was written, because a location the row names resolves to no location yet; the
-    /// matcher keeps the pending record for the hand-off that brings the location back. Only a
-    /// `Subject` restore may answer this.
+    /// Nothing was written, because a location the row names resolves to no location yet, or the
+    /// row it restores onto has not been written yet; the matcher keeps the pending record for a
+    /// later match — the hand-off that finds the location, or the write that creates the row.
+    /// Only a `Subject` restore may answer this.
     Pending,
 }
 
@@ -217,9 +218,11 @@ pub struct SectionSpec {
 ///    `export`, `restore`. **`restore` calls the owner's one writer** (§48.8.3); a raise-only
 ///    value restores as `max(present, restored)`, a latch and a write-once value only if absent.
 ///    **`restore` answers `Result<RestoreOutcome, IndexError>`**: `Applied(n)` once written, or
-///    `Pending` — having written nothing — when a row's location key resolves to no location;
+///    `Pending` — having written nothing — when a row's location key resolves to no location, or
+///    the owner's row it writes onto does not exist yet;
 ///    **the matcher deletes only an `Applied` record**, so a `Pending` one waits for the scan that
-///    brings the location back (§48.8.4). Only a `Subject` restore may answer `Pending`. **Keep
+///    brings the location back, or for the owner's first write of the row, which calls the
+///    matcher (§48.8.4). Only a `Subject` restore may answer `Pending`. **Keep
 ///    your typed export/restore functions; register adapters with `SectionSpec`'s exact
 ///    signatures**, declared beside the typed functions, which they call.
 /// 3. **Subject rows carry `location_keys`** whenever they reference a `location`: the matcher
@@ -243,15 +246,44 @@ pub struct SectionSpec {
 ///     transaction. **A restore or re-resolution that maps a subject to a project calls
 ///     `pending::resolve_subject_unique`** — `Some` only when exactly one live project holds it —
 ///     never `subject::resolve_subject`, which answers the lowest id.
-pub const SECTIONS: &[SectionSpec] = &[SectionSpec {
-    name: "no_scan_projects",
-    owner: "§48",
-    scope: Scope::NoScan,
-    rule: RestoreRule::Replace,
-    preserves_ids: &["project", "location"],
-    export: super::noscan::export_rows,
-    restore: super::noscan::restore_row,
-}];
+pub const SECTIONS: &[SectionSpec] = &[
+    SectionSpec {
+        name: "no_scan_projects",
+        owner: "§48",
+        scope: Scope::NoScan,
+        rule: RestoreRule::Replace,
+        preserves_ids: &["project", "location"],
+        export: super::noscan::export_rows,
+        restore: super::noscan::restore_row,
+    },
+    SectionSpec {
+        name: "check_na",
+        owner: "§31",
+        scope: Scope::Subject,
+        rule: RestoreRule::Replace,
+        preserves_ids: &[],
+        export: super::sections::export_check_na,
+        restore: super::sections::restore_check_na,
+    },
+    SectionSpec {
+        name: "location_trust",
+        owner: "§11.1",
+        scope: Scope::Subject,
+        rule: RestoreRule::WriteOnce,
+        preserves_ids: &[],
+        export: super::sections::export_location_trust,
+        restore: super::sections::restore_location_trust,
+    },
+    SectionSpec {
+        name: "accounts",
+        owner: "§20",
+        scope: Scope::Global,
+        rule: RestoreRule::WriteOnce,
+        preserves_ids: &[],
+        export: super::sections::export_accounts,
+        restore: super::sections::restore_accounts,
+    },
+];
 
 /// The count keys every document has, before one key per registered section.
 pub const BASE_COUNT_KEYS: [&str; 14] = [
@@ -772,7 +804,7 @@ pub(crate) fn location_key_of_row(row: &SidecarRow) -> Result<SidecarLocationKey
 }
 
 /// The key of the location `id` names, or `None` when it names none.
-fn location_key(
+pub(crate) fn location_key(
     conn: &Connection,
     id: Option<i64>,
 ) -> Result<Option<SidecarLocationKey>, IndexError> {

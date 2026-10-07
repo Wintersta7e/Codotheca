@@ -9,6 +9,7 @@ pub mod path;
 pub mod pending;
 pub mod rebuild;
 pub mod recovery;
+pub mod sections;
 pub mod sidecar;
 pub mod subject;
 
