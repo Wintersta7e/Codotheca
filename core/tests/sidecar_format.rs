@@ -19,12 +19,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
+use codotheca_core::index::pending::match_pending;
+use codotheca_core::index::rebuild::{rebuild_in_place, RebuildOutcome};
 use codotheca_core::index::sidecar::{
     dump_row, export, insert_row, inspect, restore_global, write_atomically, Sidecar, SidecarRow,
     SidecarState, SidecarValue, REBUILD_OWNED_SETTINGS, RETIRED_SETTINGS,
 };
+use codotheca_core::index::subject::ProjectSubject;
 use codotheca_core::index::{open_connection, Index};
-use rusqlite::Connection;
+use codotheca_core::protocol::ProjectId;
+use rusqlite::{Connection, Transaction};
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sidecar-format1.json")
@@ -267,4 +271,161 @@ fn a_dumped_row_loads_back_with_every_storage_class() {
     eprintln!("columns round-tripped: {}", back.len());
     assert_eq!(back.len(), 5);
     assert_eq!(back, original);
+}
+
+/// The rows a hand-off writes for a repository whose subject is `subject`: a project carrying its
+/// lineage, or — for a repository with no commits — a project and the copy its path names.
+fn bring_back(tx: &Transaction<'_>, subject: &str) -> ProjectId {
+    match ProjectSubject::parse(subject).unwrap() {
+        ProjectSubject::Lineage {
+            lineage_key,
+            remote_key,
+        } => {
+            tx.execute(
+                "INSERT INTO project (name, seed_basename, lineage_key, remote_key, created_at,
+                                      updated_at)
+                 VALUES ('back', 'back', ?1, ?2, 1, 1)",
+                rusqlite::params![lineage_key, remote_key],
+            )
+            .unwrap();
+            ProjectId(tx.last_insert_rowid())
+        }
+        ProjectSubject::Path {
+            kind,
+            distro,
+            path_key,
+        } => {
+            tx.execute(
+                "INSERT INTO project (name, seed_basename, created_at, updated_at)
+                 VALUES ('back', 'back', 1, 1)",
+                [],
+            )
+            .unwrap();
+            let project = tx.last_insert_rowid();
+            tx.execute(
+                "INSERT INTO location (project_id, kind, distro, path_bytes, path_key,
+                                       path_display, store_key, presence, repo_kind)
+                 VALUES (?1, ?2, ?3, ?4, ?4, 'back', 's', 'present', 'worktree')",
+                rusqlite::params![project, kind, distro, path_key],
+            )
+            .unwrap();
+            ProjectId(project)
+        }
+    }
+}
+
+/// How many rows `table_and_filter` selects.
+fn count(conn: &Connection, table_and_filter: &str) -> usize {
+    let sql = format!("SELECT count(*) FROM {table_and_filter}");
+    usize::try_from(conn.query_row(&sql, [], |r| r.get::<_, i64>(0)).unwrap()).unwrap()
+}
+
+/// Each of a format-1 document's seven collections: how many it carries, and how many the
+/// restored index holds. A project lands when its pending record is consumed; a setting, when it
+/// travels and the index holds its value.
+fn seven_collections(conn: &Connection, doc: &Sidecar) -> [(&'static str, usize, usize); 7] {
+    let p = &doc.payload;
+    let meta = app_meta(conn);
+    let settings: Vec<&String> = p
+        .settings
+        .keys()
+        .filter(|k| {
+            !REBUILD_OWNED_SETTINGS.contains(&k.as_str()) && !RETIRED_SETTINGS.contains(&k.as_str())
+        })
+        .collect();
+    let settled = settings
+        .iter()
+        .filter(|k| meta.get(k.as_str()) == p.settings.get(k.as_str()))
+        .count();
+    [
+        (
+            "projects",
+            p.projects.len(),
+            p.projects.len() - count(conn, "sidecar_pending"),
+        ),
+        (
+            "collections",
+            p.collections.len(),
+            count(conn, "collection"),
+        ),
+        ("roots", p.roots.len(), count(conn, "scan_root")),
+        ("identities", p.identities.len(), count(conn, "identity")),
+        ("merges", p.merges.len(), count(conn, "merge_record")),
+        ("settings", settings.len(), settled),
+        ("view_state", p.view_state.len(), count(conn, "view_state")),
+    ]
+}
+
+/// AC-P4-48-17: the format-1 document, restored through the production rebuild, lands each of
+/// its seven collections and drops the legacy `level_floor` key. Its projects wait in the pending
+/// table for the scan that brings each subject back; here the rows that scan's hand-off writes
+/// bring each back, and the matcher applies its record.
+#[test]
+fn ac_p4_48_17_a_format_1_sidecar_restores() {
+    let SidecarState::Present(doc) = inspect(&fixture(), SUPPORTED_SCHEMA_VERSION) else {
+        panic!("the format-1 fixture did not read");
+    };
+    assert!(
+        doc.payload.settings.contains_key("level_floor"),
+        "the fixture must carry the legacy key for its drop to mean anything"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::copy(fixture(), Index::sidecar_path(dir.path())).unwrap();
+    std::fs::write(Index::db_path(dir.path()), b"this is not a database").unwrap();
+    let report = match rebuild_in_place(dir.path(), 9_000) {
+        Ok(RebuildOutcome::Rebuilt(report)) => report,
+        other => panic!("the format-1 rebuild answered {other:?}"),
+    };
+    eprintln!(
+        "rebuilt: restored {:?}, {} pending",
+        report.restored, report.pending
+    );
+
+    let mut index = Index::open_at(dir.path(), 9_001).unwrap();
+    for project in &doc.payload.projects {
+        index
+            .with_tx(|tx| {
+                let id = bring_back(tx, &project.subject);
+                let matched = match_pending(tx, id, 9_002)?;
+                eprintln!("{}: {:?}", project.subject, matched.applied);
+                Ok(())
+            })
+            .unwrap();
+    }
+    let conn = index.conn();
+    let meta = app_meta(conn);
+    let mut total = 0;
+    for (collection, carried, restored) in seven_collections(conn, &doc) {
+        eprintln!("{collection}: {restored} restored of {carried} carried");
+        assert_eq!(restored, carried, "{collection}");
+        if carried == 0 {
+            // The fixture is the format-1 exporter's own output, and its library had no merge.
+            eprintln!("{collection}: the format-1 fixture carries none");
+        }
+        total += restored;
+    }
+    for (what, n) in [
+        ("sessions", count(conn, "session")),
+        ("segments", count(conn, "session_segment")),
+        (
+            "session-track XP rows",
+            count(conn, "xp_events WHERE track = 'session'"),
+        ),
+        (
+            "launch targets the user made",
+            count(conn, "launch_target WHERE detected = 0"),
+        ),
+        ("collection members", count(conn, "collection_member")),
+        ("aliases", count(conn, "identity_alias")),
+    ] {
+        eprintln!("{what} restored: {n}");
+        assert_ne!(n, 0, "no {what} restored");
+    }
+    eprintln!("rows restored across the seven: {total}");
+    assert_ne!(total, 0);
+    assert_eq!(
+        meta.get("level_floor"),
+        None,
+        "the legacy level_floor key was restored"
+    );
 }
