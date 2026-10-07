@@ -6,6 +6,7 @@
  */
 import { PROTOCOL_VERSION } from '../../generated/protocol';
 import type { CoreFailureReason, CoreStatus } from '../../shared/coreStatus';
+import { EXIT_INDEX_FATAL } from '../startupFailure';
 import { FrameDecoder, encodeFrame } from './frame';
 import { type RollingLog, drainStderr } from './log';
 import type { CoreChild, SpawnCore } from './spawn';
@@ -129,6 +130,13 @@ export class CoreSupervisor {
     });
 
     child.onError((err) => {
+      // A write to a core that has already exited fails with EPIPE before its exit is seen —
+      // measured on every fatal-index start, where the hello ack lands after the core is gone.
+      // The exit that follows says why it stopped; failing here would report it as a spawn.
+      if ((err as NodeJS.ErrnoException).code === 'EPIPE') {
+        this.deps.log.write('warn', 'shell', `core stdin closed: ${err.message}`);
+        return;
+      }
       this.fail('spawn', err.message);
     });
     child.onExit((code, signal) => {
@@ -233,6 +241,12 @@ export class CoreSupervisor {
       'shell',
       `core exited code=${String(code)} signal=${String(signal)}`,
     );
+    // §48.7.1 step 2: the core could not open its index and wrote the report saying why. A
+    // restart opens the same index and writes the same report, so the first exit is the answer.
+    if (code === EXIT_INDEX_FATAL) {
+      this.fail('index_fatal', `core exited ${String(code)}: the index would not open`);
+      return;
+    }
     const at = this.deps.now();
     const previous = this.lastCrashAt;
     this.lastCrashAt = at;

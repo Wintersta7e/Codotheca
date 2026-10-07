@@ -2,6 +2,7 @@ import { act, render } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 
+import type { CoreStatus } from '../../shared/coreStatus';
 import type { AppDeps } from './deps';
 import { fakeAppDeps, type FakeAppDeps } from './testDeps';
 import { useCoreStatus, type CoreStatusState } from './useCoreStatus';
@@ -70,6 +71,52 @@ describe('useCoreStatus', () => {
     expect(view.last().lane.kind).toBe('failed');
     // §11.2's five spawn sentences are the main process's; this hook does not author one.
     expect(view.last().startupFailure).toBeNull();
+  });
+
+  // §48.7.1 step 2. A fatal index fails the lane within a millisecond of the window existing and
+  // before its page has loaded; a push sent then reaches nobody, and a window still at `starting`
+  // is a black one. The shell's current status is asked for on mount.
+  it('a status sent before mount is applied from coreStatusNow', async () => {
+    const failed: CoreStatus = {
+      kind: 'failed',
+      reason: 'index_fatal',
+      detail: 'exit 4',
+      logPath: '/var/log/codotheca.log',
+      startupFailure: { kind: 'schema_from_future', onDisk: 9, supported: 5 },
+    };
+    const fake = fakeAppDeps({}, { coreStatusNow: () => Promise.resolve(failed) });
+    const view = mount(fake);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(view.last().lane).toEqual(failed);
+    expect(view.last().startupFailure).toEqual({
+      kind: 'schema_from_future',
+      onDisk: 9,
+      supported: 5,
+    });
+  });
+
+  it('never lets the answer on mount overwrite a status pushed before it arrived', async () => {
+    let answer: (status: CoreStatus | null) => void = () => undefined;
+    const fake = fakeAppDeps(
+      {},
+      {
+        coreStatusNow: () =>
+          new Promise<CoreStatus | null>((resolve) => {
+            answer = resolve;
+          }),
+      },
+    );
+    const view = mount(fake);
+    act(() => {
+      fake.setCoreStatus({ kind: 'restarting', epoch: 2, delayMs: 2000 });
+    });
+    await act(async () => {
+      answer({ kind: 'starting' });
+      await Promise.resolve();
+    });
+    expect(view.last().lane.kind).toBe('restarting');
   });
 
   it('registers on the status channel once, however often it re-renders', () => {

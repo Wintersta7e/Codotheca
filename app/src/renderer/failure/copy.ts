@@ -75,9 +75,9 @@ export function failureCopy(fact: FailureFact): FailureCopy {
         eyebrow: 'INDEX',
         headline: 'THE INDEX WOULD NOT OPEN',
         body: [
-          'The database was unreadable and has been set aside at ' +
-            `${failureTimestamp(fact.quarantinedAt)}. A rebuild reads your folders again and ` +
-            'restores what the sidecar held.',
+          // §48.7.2: nothing has been moved before REBUILD, so no sentence may say it was.
+          'The database was unreadable. A rebuild reads your folders again and restores what ' +
+            'the sidecar held.',
           'What comes back and what does not is below, in three parts.',
         ],
         primary: 'REBUILD',
@@ -133,6 +133,24 @@ function ledgerLines(counts: LedgerCounts | null, subject: string): readonly str
 }
 
 /**
+ * The sidecar's counts under the ledger's names: it keys them as the core does, `xp_events` for
+ * `xpEvents`. A count it does not carry is no line at all, never a `0`.
+ */
+function sidecarLedger(counts: Readonly<Record<string, number>> | null): LedgerCounts | null {
+  if (counts === null) return null;
+  const read = (key: string): number => counts[key] ?? 0;
+  return {
+    projects: read('projects'),
+    notes: read('notes'),
+    sessions: read('sessions'),
+    collections: read('collections'),
+    roots: read('roots'),
+    xpEvents: read('xp_events'),
+    launchTargets: read('launch_targets'),
+  };
+}
+
+/**
  * The three blocks. The third is the one §1.12 implies and never states: the sidecar is written
  * at shutdown and hourly, so everything decided since the last write is gone.
  *
@@ -142,27 +160,27 @@ function ledgerLines(counts: LedgerCounts | null, subject: string): readonly str
 export function corruptLedger(
   fact: Extract<StartupFailure, { kind: 'corrupt_index' }>,
 ): readonly LedgerBlock[] {
+  // The gap opens where the sidecar was last written; before a rebuild it is never counted.
+  const writtenAt = fact.sidecar.writtenAt;
   const when =
-    fact.gapStartedAt === null
+    writtenAt === null
       ? 'The start of the gap is not known.'
-      : `The gap starts at ${failureTimestamp(fact.gapStartedAt)}.`;
-  const counted = fact.gapCountsRecoverable
-    ? 'Everything decided after that point is gone.'
-    : 'Everything decided after that point is gone, and it cannot be counted.';
+      : `The gap starts at ${failureTimestamp(writtenAt)}.`;
   return [
     {
+      // §48.7.2: unknown until the scan runs, so named and never counted.
       label: 'RE-DERIVED FROM DISK',
-      lines: ledgerLines(fact.reDerivable, 'can be read back from your folders'),
+      lines: ledgerLines(null, 'can be read back from your folders'),
     },
     {
       label: 'RESTORED FROM THE SIDECAR',
-      lines: ledgerLines(fact.restorable, 'the sidecar still holds'),
+      lines: ledgerLines(sidecarLedger(fact.sidecar.counts), 'the sidecar still holds'),
     },
     {
       label: 'LOST IN THE GAP',
       lines: [
         when,
-        counted,
+        'Everything decided after that point is gone, and it cannot be counted.',
         'Notes, flags, collections, sessions, XP events, scan roots, consent, identity ' +
           'confirmations, custom launch targets, settings, view state, art rerolls and merge ' +
           'decisions all live there.',

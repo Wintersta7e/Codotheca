@@ -31,14 +31,39 @@ export type StartupFailure =
     }
   | {
       readonly kind: 'corrupt_index';
-      readonly quarantinedAt: number;
-      readonly gapStartedAt: number | null;
-      readonly gapCountsRecoverable: boolean;
-      /**
-       * `null` until a rebuild has run. The window draws no figure at all for a null block —
-       * `0 projects restorable` would be a claim about what was lost, on the one screen where
-       * unknown-as-zero does the most damage.
-       */
-      readonly reDerivable: LedgerCounts | null;
-      readonly restorable: LedgerCounts | null;
+      readonly sidecar: SidecarReport;
+      /** Why the last REBUILD did not complete; `null` when none has been tried. */
+      readonly rebuildFailed: string | null;
+      /** §48.7.2: what was decided after the sidecar's write cannot be counted before a rebuild. */
+      readonly gapCountsRecoverable: false;
     };
+
+/**
+ * The `corrupt_index` report's fields besides its `kind`, as the core serialises them. The shell
+ * reads a report whose keys are exactly these and refuses any other.
+ */
+export const CORRUPT_INDEX_FIELDS = ['sidecar', 'rebuildFailed', 'gapCountsRecoverable'] as const;
+
+/** `SidecarReport`'s fields, as the core serialises them. */
+export const SIDECAR_REPORT_FIELDS = [
+  'state',
+  'writtenAt',
+  'generation',
+  'counts',
+  'reason',
+] as const;
+
+/** What the sidecar beside a corrupt index is, read before any rebuild (§48.7.1 step 2). */
+export const SIDECAR_STATES = ['present', 'absent', 'unreadable', 'newer'] as const;
+
+/**
+ * The sidecar a REBUILD would restore from. `writtenAt`, `generation` and `counts` are known only
+ * for a `present` sidecar and `null` otherwise; `reason` says why one is `unreadable` or `newer`.
+ */
+export interface SidecarReport {
+  readonly state: (typeof SIDECAR_STATES)[number];
+  readonly writtenAt: number | null;
+  readonly generation: number | null;
+  readonly counts: Readonly<Record<string, number>> | null;
+  readonly reason: string | null;
+}

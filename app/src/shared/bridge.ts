@@ -107,6 +107,8 @@ export interface CodothecaBridge {
   /** [p2] §24.3c: names a run and nothing else. Privileged for the reason the start is. */
   installCancel(runId: number): Promise<InstallCancelReply>;
   onCoreStatus(cb: (status: unknown) => void): void;
+  /** The status `onCoreStatus` would have pushed, for a window that mounted after the push. */
+  coreStatusNow(): Promise<unknown>;
   /** One batch per frame, never one message per event. */
   onCoreEvents(cb: (batch: unknown) => void): void;
   /**

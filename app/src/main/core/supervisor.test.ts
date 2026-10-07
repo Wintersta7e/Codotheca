@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { PROTOCOL_VERSION } from '../../generated/protocol';
+import { EXIT_INDEX_FATAL } from '../startupFailure';
 import { encodeFrame } from './frame';
 import { type RollingLog, openRollingLog } from './log';
 import type { CoreChild } from './spawn';
@@ -30,14 +31,18 @@ class FakeChild implements CoreChild {
   readonly stderr = new PassThrough();
   killed = false;
   private exitCb: ((c: number | null, s: NodeJS.Signals | null) => void) | null = null;
+  private errorCb: ((err: Error) => void) | null = null;
   kill(): void {
     this.killed = true;
   }
   onExit(cb: (c: number | null, s: NodeJS.Signals | null) => void): void {
     this.exitCb = cb;
   }
-  onError(): void {
-    /* unused in these tests */
+  onError(cb: (err: Error) => void): void {
+    this.errorCb = cb;
+  }
+  fault(err: Error): void {
+    this.errorCb?.(err);
   }
   greet(protocolVersion: number): void {
     this.stdout.write(
@@ -52,8 +57,8 @@ class FakeChild implements CoreChild {
       ),
     );
   }
-  die(): void {
-    this.exitCb?.(101, null);
+  die(code = 101): void {
+    this.exitCb?.(code, null);
   }
 }
 
@@ -152,6 +157,48 @@ describe('core supervisor', () => {
     expect(last?.kind === 'failed' ? last.reason : null).toBe('crash_loop');
     expect(last?.kind === 'failed' && last.logPath.endsWith('codotheca.log')).toBe(true);
     expect(h.timers.length).toBe(1);
+    h.cleanup();
+  });
+
+  // §48.7.1 step 2: the core exits EXIT_INDEX_FATAL having written its report. Restarting it
+  // only writes the same report again, and the restart's `starting` is what the window shows.
+  it('fails once with index_fatal on exit 4 and never restarts', async () => {
+    const h = harness();
+    h.sup.start();
+    h.children[0]?.greet(PROTOCOL_VERSION);
+    await settle();
+    h.children[0]?.die(EXIT_INDEX_FATAL);
+    await settle();
+    const reasons = h.statuses.flatMap((s) => (s.kind === 'failed' ? [s.reason] : []));
+    expect(reasons).toEqual(['index_fatal']);
+    expect(h.statuses.map((s) => s.kind)).not.toContain('restarting');
+    expect(h.timers).toEqual([]);
+    expect(h.children.length).toBe(1);
+    h.cleanup();
+  });
+
+  // Measured against the release core: the ack is written to a core that has already exited,
+  // so the stdin EPIPE reaches the error sink before the exit does, and failing on it reported
+  // a fatal index as a spawn failure. The exit code is what says why the core stopped.
+  it('leaves a stdin EPIPE to the exit that follows it', async () => {
+    const h = harness();
+    h.sup.start();
+    h.children[0]?.greet(PROTOCOL_VERSION);
+    await settle();
+    h.children[0]?.fault(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+    h.children[0]?.die(EXIT_INDEX_FATAL);
+    await settle();
+    const reasons = h.statuses.flatMap((s) => (s.kind === 'failed' ? [s.reason] : []));
+    expect(reasons).toEqual(['index_fatal']);
+    h.cleanup();
+  });
+
+  it('still fails spawn on an error that is not a closed pipe', () => {
+    const h = harness();
+    h.sup.start();
+    h.children[0]?.fault(Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }));
+    const last = h.statuses.at(-1);
+    expect(last?.kind === 'failed' ? last.reason : null).toBe('spawn');
     h.cleanup();
   });
 });

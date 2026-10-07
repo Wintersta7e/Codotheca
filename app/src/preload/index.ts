@@ -11,6 +11,7 @@ import type { RemoteLinkKind } from '../generated/protocol';
 import {
   IPC_CLEAR_PAINT_FAILURE,
   IPC_CORE_STATUS,
+  IPC_CORE_STATUS_NOW,
   IPC_EVENTS,
   IPC_INDEX_LOCATION,
   IPC_INSTALL_CANCEL,
@@ -84,6 +85,7 @@ const bridge: CodothecaBridge = {
       cb(status);
     });
   },
+  coreStatusNow: (): Promise<unknown> => ipcRenderer.invoke(IPC_CORE_STATUS_NOW),
   onCoreEvents: (cb: (batch: unknown) => void): void => {
     ipcRenderer.on(IPC_EVENTS, (_event, batch: unknown) => {
       cb(batch);

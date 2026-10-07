@@ -10,6 +10,7 @@ import {
   type BridgeCall,
   type BridgeReply,
   IPC_CORE_STATUS,
+  IPC_CORE_STATUS_NOW,
   IPC_EVENTS,
   IPC_REQUEST,
   type RendererEvent,
@@ -29,6 +30,8 @@ export interface BridgeDeps {
   /** Returns its own cancel function; see `createCoalescer`. */
   schedule: (fn: () => void, ms: number) => () => void;
   onStatus: (fn: (s: CoreStatus) => void) => void;
+  /** The status as `onStatus` would deliver it now, for a renderer that mounted late. */
+  statusNow: () => CoreStatus;
   handle: (channel: string, fn: (payload: unknown) => Promise<BridgeReply>) => void;
   sendToRenderer: (channel: string, payload: unknown) => void;
   knownCommands: readonly string[];
@@ -69,6 +72,7 @@ export function registerBridge(deps: BridgeDeps): void {
   deps.onStatus((s) => {
     deps.sendToRenderer(IPC_CORE_STATUS, s);
   });
+  deps.handle(IPC_CORE_STATUS_NOW, () => Promise.resolve({ ok: true, value: deps.statusNow() }));
 
   // One IPC message per frame, never one per event: a scan emitting thousands of individual
   // messages janks Electron regardless of encoding.

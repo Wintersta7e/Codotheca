@@ -32,6 +32,7 @@ function stubBridge(): StubBridge {
     installStart: () => Promise.resolve({ kind: 'started' as const, start: null }),
     installCancel: () => Promise.resolve({ kind: 'cancelled' as const }),
     onCoreStatus: () => undefined,
+    coreStatusNow: () => Promise.resolve({ ok: true, value: { kind: 'starting' } }),
     onCoreEvents: (cb) => {
       registrations.push(cb);
     },
@@ -142,5 +143,29 @@ describe('AppDeps', () => {
     openPalette[0]?.();
     expect(a).toBe(1);
     expect(b).toBe(2);
+  });
+
+  // The shell answers in its reply envelope; a window must neither apply the envelope as a
+  // status nor apply anything that is not one.
+  it('unwraps the status the shell answers now, and refuses anything else', async () => {
+    const failed = {
+      kind: 'failed',
+      reason: 'index_fatal',
+      detail: 'exit 4',
+      logPath: '/tmp/codotheca/logs/codotheca.log',
+      startupFailure: null,
+    };
+    const answers: unknown[] = [
+      { ok: true, value: failed },
+      { ok: true, value: { kind: 'meteor' } },
+      { ok: false, error: { code: 'INTERNAL', message: 'x', outcome: null, retryable: false } },
+      failed,
+      null,
+    ];
+    const stub = stubBridge();
+    install({ ...stub.bridge, coreStatusNow: () => Promise.resolve(answers.shift()) });
+    const deps = createDefaultAppDeps();
+    expect(await deps.coreStatusNow()).toEqual(failed);
+    for (let i = 0; i < 4; i += 1) expect(await deps.coreStatusNow()).toBeNull();
   });
 });

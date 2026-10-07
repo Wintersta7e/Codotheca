@@ -6,6 +6,12 @@ import type { ErrorCode, Outcome, RemoteLinkKind, RootAdd, Topic } from '../gene
 
 export const IPC_REQUEST = 'codotheca:request';
 export const IPC_CORE_STATUS = 'codotheca:core-status';
+/**
+ * §48.7.1 step 2: the supervisor's status as it stands now. `IPC_CORE_STATUS` pushes each change
+ * once, and a push sent before the page loaded reaches nobody — a fatal index fails the lane
+ * within a millisecond of the window existing.
+ */
+export const IPC_CORE_STATUS_NOW = 'codotheca:core-status-now';
 export const IPC_EVENTS = 'codotheca:events';
 
 /**

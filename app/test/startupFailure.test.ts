@@ -9,6 +9,11 @@ import {
   clearStartupFailure,
   readStartupFailure,
 } from '../src/main/startupFailure';
+import {
+  CORRUPT_INDEX_FIELDS,
+  SIDECAR_REPORT_FIELDS,
+  SIDECAR_STATES,
+} from '../src/shared/startupFailure';
 
 function dir(): string {
   return mkdtempSync(join(tmpdir(), 'codotheca-'));
@@ -34,23 +39,45 @@ describe('the fatal-index report', () => {
     expect(readStartupFailure(d)).toBeNull();
   });
 
-  it('reads a corrupt-index report whose ledger has no figures yet', () => {
+  // The bytes the release core writes for a corrupt index with no sidecar beside it.
+  const CORRUPT = {
+    kind: 'corrupt_index',
+    sidecar: { state: 'absent', writtenAt: null, generation: null, counts: null, reason: null },
+    rebuildFailed: null,
+    gapCountsRecoverable: false,
+  };
+
+  it('reads the corrupt-index report the core writes', () => {
     const d = dir();
-    writeFileSync(
-      join(d, STARTUP_FAILURE_FILE),
-      JSON.stringify({
+    writeFileSync(join(d, STARTUP_FAILURE_FILE), JSON.stringify(CORRUPT));
+    expect(readStartupFailure(d)).toEqual(CORRUPT);
+  });
+
+  // §48.7.1: the report before a rebuild names the sidecar's state and no quarantine. A report
+  // in any other shape is from another build, and a window drawn from it would read fields that
+  // are not there.
+  it("refuses a corrupt-index report whose keys are not exactly the core's", () => {
+    const d = dir();
+    const refused = [
+      {
         kind: 'corrupt_index',
         quarantinedAt: 900,
         gapStartedAt: null,
         gapCountsRecoverable: false,
         reDerivable: null,
         restorable: null,
-      }),
-    );
-    const failure = readStartupFailure(d);
-    // `null` is "no rebuild has run", which the window renders as no figure at all. An empty
-    // LedgerCounts here would print `0 projects restorable`, which is a claim, not an absence.
-    expect(failure).toMatchObject({ kind: 'corrupt_index', reDerivable: null, restorable: null });
+      },
+      { ...CORRUPT, quarantinedAt: 900 },
+      { kind: 'corrupt_index', sidecar: CORRUPT.sidecar, rebuildFailed: null },
+      { ...CORRUPT, sidecar: { ...CORRUPT.sidecar, quarantined: true } },
+      { ...CORRUPT, sidecar: { state: 'absent' } },
+      { ...CORRUPT, sidecar: { ...CORRUPT.sidecar, state: 'moved' } },
+      { ...CORRUPT, sidecar: null },
+    ];
+    for (const report of refused) {
+      writeFileSync(join(d, STARTUP_FAILURE_FILE), JSON.stringify(report));
+      expect(readStartupFailure(d), JSON.stringify(report)).toBeNull();
+    }
   });
 
   it('clears without throwing when there is nothing to clear', () => {
@@ -84,6 +111,38 @@ describe('the mirrored halves of the report', () => {
       'the core no longer declares STARTUP_FAILURE_FILE in the expected form',
     ).not.toBeNull();
     expect(STARTUP_FAILURE_FILE).toBe(m?.[1]);
+  });
+
+  // §48.13's mirror: the reader refuses any corrupt-index report whose keys differ from these
+  // constants, so a field the core gains or loses would make every report unreadable and the
+  // window would never be drawn.
+  it('names every corrupt-index field, sidecar field and sidecar state the core serialises', () => {
+    const block = (open: string, close: string): string => {
+      const at = RUST.indexOf(open);
+      expect(at, `the core no longer declares \`${open.trim()}\``).toBeGreaterThanOrEqual(0);
+      return RUST.slice(at + open.length, RUST.indexOf(close, at));
+    };
+    // `rename_all = "camelCase"` on both, `rename_all = "snake_case"` on the state.
+    const camel = (name: string): string =>
+      name.replace(/_([a-z])/gu, (_m, c: string) => c.toUpperCase());
+    const snake = (name: string): string => name.replace(/([a-z])([A-Z])/gu, '$1_$2').toLowerCase();
+    const fields = (body: string): string[] =>
+      [...body.matchAll(/^\s+(?:pub )?([a-z][a-z0-9_]*):/gmu)].map((m) => camel(m[1] ?? ''));
+
+    const corrupt = fields(block('    CorruptIndex {', '\n    },'));
+    const sidecar = fields(block('pub struct SidecarReport {', '\n}'));
+    const states = [
+      ...block('pub enum SidecarReportState {', '\n}').matchAll(/^\s+([A-Z][A-Za-z0-9]*),$/gmu),
+    ].map((m) => snake(m[1] ?? ''));
+    // eslint-disable-next-line no-console -- the count compared is the evidence
+    console.log(
+      `startup report mirror: ${String(corrupt.length)} corrupt-index fields, ` +
+        `${String(sidecar.length)} sidecar fields, ${String(states.length)} sidecar states`,
+    );
+    for (const read of [corrupt, sidecar, states]) expect(read.length).toBeGreaterThan(0);
+    expect(corrupt).toEqual([...CORRUPT_INDEX_FIELDS]);
+    expect(sidecar).toEqual([...SIDECAR_REPORT_FIELDS]);
+    expect(states).toEqual([...SIDECAR_STATES]);
   });
 
   it('switches on the three tags the core can serialise', () => {

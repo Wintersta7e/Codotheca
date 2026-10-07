@@ -7,9 +7,14 @@ import { join } from 'node:path';
 // opens with `node:fs`, and `tsconfig.web.json` carries no Node types, so importing the types
 // from here fails the renderer's typecheck with `Cannot find module 'node:fs'`. Re-exported so
 // every existing caller of this module is unchanged.
-import type { StartupFailure } from '../shared/startupFailure';
+import {
+  CORRUPT_INDEX_FIELDS,
+  SIDECAR_REPORT_FIELDS,
+  SIDECAR_STATES,
+  type StartupFailure,
+} from '../shared/startupFailure';
 
-export type { LedgerCounts, StartupFailure } from '../shared/startupFailure';
+export type { LedgerCounts, SidecarReport, StartupFailure } from '../shared/startupFailure';
 
 export const STARTUP_FAILURE_FILE = 'startup-failure.json';
 export const EXIT_INDEX_FATAL = 4;
@@ -33,7 +38,24 @@ export function readStartupFailure(dataDir: string): StartupFailure | null {
   if (typeof parsed !== 'object' || parsed === null) return null;
   const kind = (parsed as { kind?: unknown }).kind;
   if (typeof kind !== 'string' || !KINDS.includes(kind as (typeof KINDS)[number])) return null;
+  if (kind === 'corrupt_index' && !isCorruptIndex(parsed)) return null;
   return parsed as StartupFailure;
+}
+
+function hasExactly(value: object, keys: readonly string[]): boolean {
+  const own = Object.keys(value).sort();
+  const want = [...keys].sort();
+  return own.length === want.length && own.every((key, i) => key === want[i]);
+}
+
+/** A report in another build's shape would draw a window from fields that are not there. */
+function isCorruptIndex(value: object): boolean {
+  if (!hasExactly(value, ['kind', ...CORRUPT_INDEX_FIELDS])) return false;
+  const sidecar: unknown = (value as { sidecar?: unknown }).sidecar;
+  if (typeof sidecar !== 'object' || sidecar === null) return false;
+  if (!hasExactly(sidecar, SIDECAR_REPORT_FIELDS)) return false;
+  const state: unknown = (sidecar as { state?: unknown }).state;
+  return typeof state === 'string' && (SIDECAR_STATES as readonly string[]).includes(state);
 }
 
 export function clearStartupFailure(dataDir: string): void {

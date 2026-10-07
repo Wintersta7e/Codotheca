@@ -12,27 +12,15 @@ afterEach(() => {
 const SCHEMA: FailureFact = { kind: 'schema_from_future', onDisk: 9, supported: 5 };
 const CORRUPT: FailureFact = {
   kind: 'corrupt_index',
-  quarantinedAt: 1_700_000_000,
-  gapStartedAt: null,
+  sidecar: {
+    state: 'unreadable',
+    writtenAt: null,
+    generation: null,
+    counts: null,
+    reason: 'expected value at line 1 column 1',
+  },
+  rebuildFailed: null,
   gapCountsRecoverable: false,
-  reDerivable: {
-    projects: 212,
-    notes: 0,
-    sessions: 0,
-    collections: 0,
-    roots: 2,
-    xpEvents: 0,
-    launchTargets: 0,
-  },
-  restorable: {
-    projects: 0,
-    notes: 14,
-    sessions: 96,
-    collections: 3,
-    roots: 0,
-    xpEvents: 410,
-    launchTargets: 6,
-  },
 };
 
 interface Drawn {

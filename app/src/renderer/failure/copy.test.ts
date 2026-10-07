@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LedgerCounts, StartupFailure } from '../../shared/startupFailure';
+import type { SidecarReport, StartupFailure } from '../../shared/startupFailure';
 import {
   corruptLedger,
   failureCopy,
@@ -10,23 +10,36 @@ import {
   type FailureFact,
 } from './copy';
 
-const COUNTS: LedgerCounts = {
+// The sidecar keys its counts as the core does.
+const COUNTS = {
   projects: 212,
   notes: 14,
   sessions: 96,
   collections: 3,
   roots: 2,
-  xpEvents: 410,
-  launchTargets: 6,
+  xp_events: 410,
+  launch_targets: 6,
 };
 
 const corrupt: Extract<StartupFailure, { kind: 'corrupt_index' }> = {
   kind: 'corrupt_index',
-  quarantinedAt: 1_700_000_000,
-  gapStartedAt: 1_699_996_400,
-  gapCountsRecoverable: true,
-  reDerivable: COUNTS,
-  restorable: COUNTS,
+  sidecar: {
+    state: 'present',
+    writtenAt: 1_699_996_400,
+    generation: 7,
+    counts: COUNTS,
+    reason: null,
+  },
+  rebuildFailed: null,
+  gapCountsRecoverable: false,
+};
+
+const ABSENT: SidecarReport = {
+  state: 'absent',
+  writtenAt: null,
+  generation: null,
+  counts: null,
+  reason: null,
 };
 
 describe('the schema-from-the-future window', () => {
@@ -73,9 +86,17 @@ describe('the corrupt-index window', () => {
     ]);
   });
 
-  it('counts every ledger §11.2a enumerates, in both recoverable blocks', () => {
+  // §48.7.2: nothing has been moved before REBUILD.
+  it('claims no file was set aside', () => {
+    expect(failureCopy(corrupt).body.join(' ')).not.toContain('set aside');
+  });
+
+  // §48.7.2: the sidecar's counts are what a rebuild will restore; what the scan re-derives is
+  // unknown until it runs, so that block is named and never counted.
+  it('counts the sidecar in the restored block and never the re-derived one', () => {
     const [reDerived, restored] = corruptLedger(corrupt);
-    expect(reDerived?.lines.join(' ')).toContain('212 projects');
+    expect(reDerived?.lines.join(' ')).not.toMatch(/\d/);
+    expect(restored?.lines.join(' ')).toContain('212 projects');
     expect(restored?.lines.join(' ')).toContain('410 XP events');
     expect(restored?.lines.join(' ')).toContain('14 notes');
   });
@@ -86,24 +107,23 @@ describe('the corrupt-index window', () => {
   });
 
   it('says the gap start is unknown rather than printing a zero or a date', () => {
-    const gap = corruptLedger({ ...corrupt, gapStartedAt: null })[2];
+    const gap = corruptLedger({ ...corrupt, sidecar: { ...corrupt.sidecar, writtenAt: null } })[2];
     const text = gap?.lines.join(' ') ?? '';
     expect(text).toContain('not known');
     expect(text).not.toMatch(/1970|\b0\b/);
   });
 
   it('prints no figure at all when the gap cannot be counted', () => {
-    const gap = corruptLedger({ ...corrupt, gapCountsRecoverable: false })[2];
+    const gap = corruptLedger(corrupt)[2];
     const text = gap?.lines.join(' ') ?? '';
     expect(text).toContain('cannot be counted');
     expect(text).not.toMatch(/\b\d+\s+(notes|sessions|projects)\b/);
   });
 
-  // Plan 17 deviation D4: `from_index_error` genuinely cannot know either ledger, so both
-  // blocks are nullable on the wire. `0 projects` there is a claim about what was lost, made
-  // on the one screen where unknown-as-zero costs the most.
+  // With no sidecar there is nothing to count. `0 projects` there is a claim about what was
+  // lost, made on the one screen where unknown-as-zero costs the most.
   it('prints no figure for a block the report could not count, and says so', () => {
-    const blocks = corruptLedger({ ...corrupt, reDerivable: null, restorable: null });
+    const blocks = corruptLedger({ ...corrupt, sidecar: ABSENT });
     for (const block of [blocks[0], blocks[1]]) {
       const text = block?.lines.join(' ') ?? '';
       expect(text).toContain('not known');
@@ -112,16 +132,9 @@ describe('the corrupt-index window', () => {
   });
 
   it('states a measured empty ledger as nothing, and still prints no zeroed nouns', () => {
-    const empty: LedgerCounts = {
-      projects: 0,
-      notes: 0,
-      sessions: 0,
-      collections: 0,
-      roots: 0,
-      xpEvents: 0,
-      launchTargets: 0,
-    };
-    const text = corruptLedger({ ...corrupt, restorable: empty })[1]?.lines.join(' ') ?? '';
+    const empty = Object.fromEntries(Object.keys(COUNTS).map((key) => [key, 0]));
+    const sidecar = { ...corrupt.sidecar, counts: empty };
+    const text = corruptLedger({ ...corrupt, sidecar })[1]?.lines.join(' ') ?? '';
     expect(text).not.toMatch(/\b0\s/);
     expect(text.length).toBeGreaterThan(0);
   });

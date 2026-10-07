@@ -12,7 +12,7 @@
 import { createContext, useContext } from 'react';
 
 import type { CommitSuggestionReply, RevealTarget, ShortcutState } from '../../shared/channels';
-import type { CoreStatus } from '../../shared/coreStatus';
+import { type CoreStatus, isCoreStatus } from '../../shared/coreStatus';
 import type { EffectsTier, EffectsTierSource } from '../../shared/effectsTier';
 import { call } from '../core/call';
 import { createEventFanout, type ProjectPageDeps } from '../project/deps';
@@ -73,6 +73,8 @@ export interface AppDeps extends ProjectPageDeps {
   readonly indexLocation: () => Promise<unknown>;
   readonly clearPaintFailure: () => Promise<unknown>;
   readonly onCoreStatus: (cb: (status: CoreStatus) => void) => () => void;
+  /** The shell's status now, for a window that mounted after it was pushed; `null` if unreadable. */
+  readonly coreStatusNow: () => Promise<CoreStatus | null>;
   readonly onShortcutState: (cb: (state: ShortcutState) => void) => () => void;
   readonly onOpenPalette: (cb: () => void) => () => void;
   readonly effectsTier: EffectsTier;
@@ -123,6 +125,14 @@ export function createDefaultAppDeps(): AppDeps {
     onCoreStatus: createValueFanout<CoreStatus>((cb) => {
       bridge.onCoreStatus(cb as (status: unknown) => void);
     }),
+    coreStatusNow: async () => {
+      const reply: unknown = await bridge.coreStatusNow();
+      const value =
+        typeof reply === 'object' && reply !== null && (reply as { ok?: unknown }).ok === true
+          ? (reply as { value?: unknown }).value
+          : null;
+      return isCoreStatus(value) ? value : null;
+    },
     onShortcutState: createValueFanout<ShortcutState>((cb) => {
       bridge.onShortcutState(cb);
     }),

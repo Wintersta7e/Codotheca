@@ -44,9 +44,29 @@ export function useCoreStatus(deps: AppDeps): CoreStatusState {
   const [firstRunCompletedAt, setFirstRunCompletedAt] = useState<number | null>(null);
   const [gitVersion, setGitVersion] = useState<string | null>(null);
 
-  const { onCoreStatus, subscribe, logPath } = deps;
+  const { onCoreStatus, coreStatusNow, subscribe, logPath } = deps;
 
-  useEffect(() => onCoreStatus(setLane), [onCoreStatus]);
+  // §48.7.1 step 2: a status pushed before this window loaded reached nobody, so the shell is
+  // asked for its current one — which never overwrites a push that arrived in the meantime.
+  useEffect(() => {
+    let pushed = false;
+    let live = true;
+    const off = onCoreStatus((status) => {
+      pushed = true;
+      setLane(status);
+    });
+    void coreStatusNow().then(
+      (status) => {
+        if (live && !pushed && status !== null) setLane(status);
+      },
+      // The pushes still arrive; a failed question leaves the lane where they put it.
+      () => undefined,
+    );
+    return () => {
+      live = false;
+      off();
+    };
+  }, [onCoreStatus, coreStatusNow]);
 
   useEffect(
     () =>

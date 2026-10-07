@@ -34,6 +34,13 @@ name = "codotheca-recording-git"
 path = "src/bin/recording_git.rs"
 required-features = ["testkit"]
 
+# Plants an index the core cannot open, so the end-to-end suite can paint each startup report
+# window against the release core. Testkit-only, so no release build contains it.
+[[bin]]
+name = "codotheca-sidecar-fixture"
+path = "src/bin/sidecar_fixture.rs"
+required-features = ["testkit"]
+
 # §13: the WSL worker. One per supported architecture, built alongside the Windows core and
 # shipped inside the Windows installer (plan 19 stages it).
 [[bin]]

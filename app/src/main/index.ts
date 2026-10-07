@@ -46,7 +46,7 @@ import { CoreClient } from './core/client';
 import { FORCE_OFFERED_AFTER_MS, LOCK_WAIT_POLL_MS, waitForCoreLock } from './core/instanceLock';
 import { openRollingLog } from './core/log';
 import { spawnCoreChild } from './core/spawn';
-import { CoreSupervisor } from './core/supervisor';
+import { type CoreStatus, CoreSupervisor } from './core/supervisor';
 import { resolveCoreBinary, resolveDataDir, resolveWorkerBinary, WORKER_ARCHES } from './paths';
 import { installQuitGate } from './quitGate';
 import { formatArtifactStamp, readArtifactStamp } from './update/artifact';
@@ -414,6 +414,12 @@ async function main(): Promise<void> {
     },
   });
 
+  // §11.2a's report is re-read rather than carried on the window's argv: the core writes it
+  // *after* the window exists, so an argv copy is null the first time a fault happens and stale
+  // after a repair. The moment the lane is declared failed, or asked about, is when it is true.
+  const withStartupFailure = (status: CoreStatus): CoreStatus =>
+    status.kind === 'failed' ? { ...status, startupFailure: readStartupFailure(dataDir) } : status;
+
   registerBridge({
     request,
     subscribe: (topic, onEvent) =>
@@ -425,18 +431,12 @@ async function main(): Promise<void> {
         clearTimeout(t);
       };
     },
-    // §11.2a's report is re-read here rather than carried on the window's argv: the core writes
-    // it *after* the window exists, so an argv copy is null the first time a fault happens and
-    // stale after a repair. The moment the lane is declared failed is when it is true.
     onStatus: (fn) => {
       supervisor.onStatus((status) => {
-        fn(
-          status.kind === 'failed'
-            ? { ...status, startupFailure: readStartupFailure(dataDir) }
-            : status,
-        );
+        fn(withStartupFailure(status));
       });
     },
+    statusNow: () => withStartupFailure(supervisor.status),
     handle: (channel, fn) => {
       ipcMain.handle(channel, (_event, payload: unknown) => fn(payload));
     },

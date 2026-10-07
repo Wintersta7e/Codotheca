@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PRIVILEGED_COMMANDS } from '../../generated/protocol';
-import { type BridgeReply, IPC_REQUEST } from '../../shared/channels';
+import { type BridgeReply, IPC_CORE_STATUS_NOW, IPC_REQUEST } from '../../shared/channels';
+import type { CoreStatus } from '../../shared/coreStatus';
 import { type BridgeDeps, isRendererCallable, registerBridge } from './bridge';
 import { CoreRequestError } from './client';
 
@@ -13,7 +14,7 @@ interface Rig {
   sent: { channel: string; payload: unknown }[];
 }
 
-function rig(request: BridgeDeps['request']): Rig {
+function rig(request: BridgeDeps['request'], status: CoreStatus = { kind: 'starting' }): Rig {
   const called: string[] = [];
   const handlers = new Map<string, (p: unknown) => Promise<BridgeReply>>();
   const sent: { channel: string; payload: unknown }[] = [];
@@ -26,6 +27,7 @@ function rig(request: BridgeDeps['request']): Rig {
     topics: [],
     schedule: () => () => undefined,
     onStatus: () => undefined,
+    statusNow: () => status,
     handle: (c, fn) => {
       handlers.set(c, fn);
     },
@@ -114,5 +116,21 @@ describe('renderer bridge', () => {
     });
     expect(reply).toEqual({ ok: true, value: { total: 2 } });
     expect(r.called).toEqual(['projects.list']);
+  });
+
+  // §48.7.1 step 2: a status pushed before the window loaded reached nobody; the window asks.
+  it('answers the status as it stands now, without asking the core', async () => {
+    const failed: CoreStatus = {
+      kind: 'failed',
+      reason: 'index_fatal',
+      detail: 'exit 4',
+      logPath: '/var/log/codotheca.log',
+      startupFailure: null,
+    };
+    const r = rig(async () => Promise.resolve({}), failed);
+    registerBridge(r.deps);
+    const reply = await r.handlers.get(IPC_CORE_STATUS_NOW)?.(null);
+    expect(reply).toEqual({ ok: true, value: failed });
+    expect(r.called).toEqual([]);
   });
 });

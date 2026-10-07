@@ -11,7 +11,8 @@
 
 import type { StartupFailure } from './startupFailure';
 
-export type CoreFailureReason = 'spawn' | 'protocol_version' | 'crash_loop';
+/** `index_fatal`: the core exited `EXIT_INDEX_FATAL` having written §11.2a's report. */
+export type CoreFailureReason = 'spawn' | 'protocol_version' | 'crash_loop' | 'index_fatal';
 
 /**
  * `logPath` rides on `failed` because that is the one state where the shell has a path the user
