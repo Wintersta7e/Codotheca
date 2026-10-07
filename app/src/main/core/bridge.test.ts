@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import coreSnapshot from '../../../test/fixtures/coreSnapshot.json';
 import { PRIVILEGED_COMMANDS } from '../../generated/protocol';
-import { type BridgeReply, IPC_CORE_STATUS_NOW, IPC_REQUEST } from '../../shared/channels';
+import {
+  type BridgeReply,
+  IPC_CORE_STATUS_NOW,
+  IPC_EVENTS,
+  IPC_REQUEST,
+} from '../../shared/channels';
 import type { CoreStatus } from '../../shared/coreStatus';
 import { type BridgeDeps, isRendererCallable, registerBridge } from './bridge';
-import { CoreRequestError } from './client';
+import { CoreClient, CoreRequestError, type SupervisorLike } from './client';
+import { type Outbound, parseOutbound } from './wire';
 
 const KNOWN = ['projects.list', 'projects.launch', 'roots.add'];
 
@@ -132,5 +139,42 @@ describe('renderer bridge', () => {
     const reply = await r.handlers.get(IPC_CORE_STATUS_NOW)?.(null);
     expect(reply).toEqual({ ok: true, value: failed });
     expect(r.called).toEqual([]);
+  });
+
+  // The core's snapshot is how first run's stamp, git's version and the end of a rebuild reach
+  // the renderer. Its frame text travels the real client and the real bridge here, and must leave
+  // as the batch `test/dom/coreSnapshot.test.ts` hands the renderer's hooks.
+  it('forwards the core snapshot frame to the renderer as its snapshot event', () => {
+    const frameSinks: ((f: Outbound) => void)[] = [];
+    const sup: SupervisorLike = {
+      status: { kind: 'ready', epoch: 1, coreVersion: '0', protocolVersion: 1, pid: 2 },
+      currentEpoch: 1,
+      onStatus: () => undefined,
+      onFrame: (fn) => {
+        frameSinks.push(fn);
+      },
+      onEpochEnd: () => undefined,
+      send: () => true,
+    };
+    const client = new CoreClient(sup);
+    const flushes: (() => void)[] = [];
+    const r = rig(async () => Promise.resolve({}));
+    registerBridge({
+      ...r.deps,
+      subscribe: (topic, handler) => client.subscribe(topic, handler),
+      topics: ['core'],
+      schedule: (fn) => {
+        flushes.push(fn);
+        return () => undefined;
+      },
+    });
+
+    const frame = parseOutbound(coreSnapshot.frame);
+    if (frame === null) throw new Error('the fixture frame does not parse');
+    for (const sink of frameSinks) sink(frame);
+    for (const flush of flushes) flush();
+
+    const batches = r.sent.filter((s) => s.channel === IPC_EVENTS).map((s) => s.payload);
+    expect(batches).toEqual([coreSnapshot.batch]);
   });
 });

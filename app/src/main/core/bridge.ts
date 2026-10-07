@@ -15,7 +15,7 @@ import {
   IPC_REQUEST,
   type RendererEvent,
 } from '../../shared/channels';
-import { CoreRequestError } from './client';
+import { CoreRequestError, type TopicHandler } from './client';
 import { COALESCE_WINDOW_MS, createCoalescer } from './coalesce';
 import type { CoreStatus } from './supervisor';
 
@@ -25,7 +25,7 @@ export type BridgeRequest = (name: CommandName, args: unknown) => Promise<unknow
 
 export interface BridgeDeps {
   request: BridgeRequest;
-  subscribe: (topic: Topic, onEvent: (event: string, data: unknown) => void) => () => void;
+  subscribe: (topic: Topic, handler: TopicHandler) => () => void;
   topics: Topic[];
   /** Returns its own cancel function; see `createCoalescer`. */
   schedule: (fn: () => void, ms: number) => () => void;
@@ -84,8 +84,20 @@ export function registerBridge(deps: BridgeDeps): void {
     schedule: deps.schedule,
   });
   for (const topic of deps.topics) {
-    deps.subscribe(topic, (event, data) => {
-      coalescer.push({ topic, event, data });
+    deps.subscribe(topic, {
+      onEvent: (event, data) => {
+        coalescer.push({ topic, event, data });
+      },
+      // The core's snapshot is the only place the renderer learns first run's stamp and git's
+      // version, and it answers the subscription once startup — a rebuild included — is over. It
+      // crosses as the `core/snapshot` event the schema declares, its position folded in.
+      onSnapshot:
+        topic === 'core'
+          ? (data, at) => {
+              const state = typeof data === 'object' && data !== null ? data : {};
+              coalescer.push({ topic, event: 'snapshot', data: { ...state, ...at } });
+            }
+          : () => undefined,
     });
   }
 }

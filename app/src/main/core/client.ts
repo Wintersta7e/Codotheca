@@ -48,9 +48,15 @@ interface Pending {
   reject: (e: CoreRequestError) => void;
 }
 
+/** Where a snapshot stands in its stream: the epoch it was published in, the last delta it covers. */
+export interface SnapshotPosition {
+  readonly epoch: number;
+  readonly throughSeq: number;
+}
+
 export interface TopicHandler {
   onEvent: (event: string, data: unknown) => void;
-  onSnapshot: (data: unknown) => void;
+  onSnapshot: (data: unknown, at: SnapshotPosition) => void;
 }
 
 export class CoreClient {
@@ -129,7 +135,8 @@ export class CoreClient {
     }
     if (result.kind === 'stale') return;
     if (result.kind === 'snapshot') {
-      for (const h of set) h.onSnapshot(f.data);
+      const at = { epoch: f.epoch, throughSeq: result.throughSeq };
+      for (const h of set) h.onSnapshot(f.data, at);
       return;
     }
     if (f.t === 'event') for (const h of set) h.onEvent(f.event, f.data);

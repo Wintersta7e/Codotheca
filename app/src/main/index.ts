@@ -428,8 +428,7 @@ async function main(): Promise<void> {
 
   registerBridge({
     request,
-    subscribe: (topic, onEvent) =>
-      client.subscribe(topic, { onEvent, onSnapshot: () => undefined }),
+    subscribe: (topic, handler) => client.subscribe(topic, handler),
     topics: TOPICS,
     schedule: (fn, ms) => {
       const t = setTimeout(fn, ms);

@@ -1,0 +1,30 @@
+{
+  "frame": "{\"t\":\"snapshot\",\"epoch\":1,\"topic\":\"core\",\"through_seq\":3,\"data\":{\"firstRunCompletedAt\":1700000000,\"gitVersion\":\"2.43.0\",\"scan\":{\"ambiguousLineageCount\":0,\"cancelled\":false,\"endedAt\":1700000100,\"foundRepos\":2,\"generation\":1,\"indexedProjects\":2,\"mode\":\"full\",\"problemCount\":0,\"runId\":1,\"running\":false,\"startedAt\":1700000050,\"walkedDirs\":40},\"schemaVersion\":17}}",
+  "batch": [
+    {
+      "topic": "core",
+      "event": "snapshot",
+      "data": {
+        "firstRunCompletedAt": 1700000000,
+        "gitVersion": "2.43.0",
+        "scan": {
+          "ambiguousLineageCount": 0,
+          "cancelled": false,
+          "endedAt": 1700000100,
+          "foundRepos": 2,
+          "generation": 1,
+          "indexedProjects": 2,
+          "mode": "full",
+          "problemCount": 0,
+          "runId": 1,
+          "running": false,
+          "startedAt": 1700000050,
+          "walkedDirs": 40
+        },
+        "schemaVersion": 17,
+        "epoch": 1,
+        "throughSeq": 3
+      }
+    }
+  ]
+}
