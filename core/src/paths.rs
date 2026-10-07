@@ -69,8 +69,8 @@ fn has_drive_letter(raw: &str) -> bool {
 
 /// Lossy, for the UI only. Never used to open, launch or compare (§1.3).
 ///
-/// **One separator per path, chosen by the path.** A scan root stored as `C:/P` and joined with a
-/// child rendered as `C:/P\0` on screen — two separators in one string, which reads as a corrupt
+/// **One separator per path, chosen by the path.** A scan root stored as `D:/Repo` and joined with
+/// a child rendered as `D:/Repo\0` on screen — two separators in one string, which reads as a corrupt
 /// value rather than a location, and was reported as a defect against a path that was perfectly
 /// valid. `Path::join` appends the *host's* separator regardless of how the root was spelled, so
 /// the mix is produced at display time and has to be resolved there.

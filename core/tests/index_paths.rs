@@ -65,11 +65,11 @@ fn keys_collapse_repeated_separators_and_drop_a_trailing_one() {
 
 #[test]
 fn as_params_yields_the_three_columns_in_ddl_order() {
-    let p = StoredPath::from_bytes(br"C:\P\Thing".to_vec(), PathPlatform::Windows);
+    let p = StoredPath::from_bytes(br"D:\Repo\Thing".to_vec(), PathPlatform::Windows);
     let (bytes, key, display) = p.as_params();
-    assert_eq!(bytes, br"C:\P\Thing");
-    assert_eq!(key, b"c:/p/thing");
-    assert_eq!(display, r"C:\P\Thing");
+    assert_eq!(bytes, br"D:\Repo\Thing");
+    assert_eq!(key, b"d:/repo/thing");
+    assert_eq!(display, r"D:\Repo\Thing");
 }
 
 /// Every string literal in a Rust source file, plain and raw, with comments skipped.
