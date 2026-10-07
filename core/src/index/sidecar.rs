@@ -243,7 +243,15 @@ pub struct SectionSpec {
 ///     transaction. **A restore or re-resolution that maps a subject to a project calls
 ///     `pending::resolve_subject_unique`** — `Some` only when exactly one live project holds it —
 ///     never `subject::resolve_subject`, which answers the lowest id.
-pub const SECTIONS: &[SectionSpec] = &[];
+pub const SECTIONS: &[SectionSpec] = &[SectionSpec {
+    name: "no_scan_projects",
+    owner: "§48",
+    scope: Scope::NoScan,
+    rule: RestoreRule::Replace,
+    preserves_ids: &["project", "location"],
+    export: super::noscan::export_rows,
+    restore: super::noscan::restore_row,
+}];
 
 /// The count keys every document has, before one key per registered section.
 pub const BASE_COUNT_KEYS: [&str; 14] = [
@@ -704,6 +712,29 @@ fn export_removed_locations(
     ids.into_iter()
         .map(|location| dump_row(conn, "location", location))
         .collect()
+}
+
+/// The key of a dumped `location` row: its `kind`, `distro` and `path_key`.
+///
+/// # Errors
+/// Fails when the row lacks one of the three, or holds one in another storage class.
+pub(crate) fn location_key_of_row(row: &SidecarRow) -> Result<SidecarLocationKey, IndexError> {
+    let text = |column: &str| match row.get(column) {
+        Some(SidecarValue::Text(value)) => Ok(value.clone()),
+        _ => Err(IndexError::Sidecar(format!(
+            "a location row carries no {column}"
+        ))),
+    };
+    let Some(SidecarValue::Blob(path_key)) = row.get("path_key") else {
+        return Err(IndexError::Sidecar(
+            "a location row carries no path_key".to_owned(),
+        ));
+    };
+    Ok(SidecarLocationKey {
+        kind: text("kind")?,
+        distro: text("distro")?,
+        path_key: path_key.clone(),
+    })
 }
 
 /// The key of the location `id` names, or `None` when it names none.

@@ -16,6 +16,7 @@ use super::migrate::{self, Migration};
 use super::recovery::{self, sibling, QuarantinedFiles, Undo};
 use super::sidecar::{self, RestoreCtx, RestoreOutcome, Scope, Sidecar, SidecarState, SECTIONS};
 use super::{open_connection, pending, Index, IndexError};
+use crate::protocol::ProjectId;
 
 /// The rebuild report's file name inside the data directory, beside the index it describes.
 pub const REBUILD_REPORT_FILE: &str = "rebuild-report.json";
@@ -365,8 +366,9 @@ fn rebuild_beside(
     Ok(report)
 }
 
-/// The one restore transaction: the global half, every `Global` section, the per-subject records
-/// staged for the hand-off, and the generation the document continues from (§48.8.1).
+/// The one restore transaction: the global half, every `Global` section, every `NoScan`
+/// section's projects with their own records applied, the per-subject records staged for the
+/// hand-off, and the generation the document continues from (§48.8.1).
 ///
 /// An id a section preserves needs no sequence fix-up here: SQLite raises an `AUTOINCREMENT`
 /// table's sequence to every id inserted explicitly, so the next new row is past the highest one
@@ -396,12 +398,16 @@ fn restore(
         locations: &[],
         source_generation: doc.generation,
     };
-    for section in SECTIONS.iter().filter(|s| s.scope == Scope::Global) {
+    let sections = [Scope::Global, Scope::NoScan]
+        .into_iter()
+        .flat_map(|scope| SECTIONS.iter().filter(move |s| s.scope == scope));
+    for section in sections {
         let mut applied = 0;
         for row in doc.payload.sections.get(section.name).into_iter().flatten() {
             match (section.restore)(&tx, row, &ctx)? {
                 RestoreOutcome::Applied(n) => applied += n,
-                // No later scan matches a global row, so dropping it would lose it silently.
+                // No later scan matches a global or no-scan row, so dropping it would lose it
+                // silently.
                 RestoreOutcome::Pending => {
                     return Err(IndexError::Sidecar(format!(
                         "section {} left a row pending that nothing will match",
@@ -412,23 +418,23 @@ fn restore(
         }
         restored.insert(section.name.to_owned(), applied);
     }
-    // A `NoScan` row needs the project no scan re-creates; until that restore exists, refuse
-    // rather than drop one.
-    if let Some(section) = SECTIONS.iter().find(|s| {
-        s.scope == Scope::NoScan
-            && doc
-                .payload
-                .sections
-                .get(s.name)
-                .is_some_and(|rows| !rows.is_empty())
-    }) {
-        return Err(IndexError::Sidecar(format!(
-            "section {} restores projects no scan finds, which this build cannot restore",
-            section.name
-        )));
-    }
 
-    let pending = pending::stage_pending(&tx, doc, now)?;
+    pending::stage_pending(&tx, doc, now)?;
+    // Every project in the fresh index is one a `NoScan` section just re-created. No scan will
+    // hand it off, so its records apply here (§48.8.3).
+    let recreated: Vec<i64> = tx
+        .prepare("SELECT id FROM project ORDER BY id")?
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    for project in recreated {
+        let matched = pending::match_pending(&tx, ProjectId(project), now)?;
+        for (kind, n) in matched.applied {
+            *restored.entry(kind).or_default() += n;
+        }
+    }
+    let waiting: i64 = tx.query_row("SELECT count(*) FROM sidecar_pending", [], |r| r.get(0))?;
+    let pending = u64::try_from(waiting)
+        .map_err(|e| IndexError::Sidecar(format!("pending count {waiting}: {e}")))?;
     tx.execute(
         "INSERT INTO app_meta (k, v) VALUES ('sidecar_generation', ?1)
          ON CONFLICT(k) DO UPDATE SET v = excluded.v",

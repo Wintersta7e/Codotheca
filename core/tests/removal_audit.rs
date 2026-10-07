@@ -157,13 +157,13 @@ const BASELINE: &[RemovalAllowance] = &[
     },
     RemovalAllowance {
         file: "index/rebuild.rs",
-        line: 221,
+        line: 222,
         reason: "the probe's copy of a corrupt index and its journal, in a private directory it \
                  made moments before in the system temp directory",
     },
     RemovalAllowance {
         file: "index/rebuild.rs",
-        line: 224,
+        line: 225,
         reason: "that directory, once the copy in it is gone",
     },
 ];

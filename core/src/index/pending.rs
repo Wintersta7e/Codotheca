@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use rusqlite::{Connection, OptionalExtension as _, Transaction};
 
 use super::sidecar::{
-    insert_row, rows, unhex, RestoreCtx, RestoreOutcome, Scope, SectionRow, Sidecar,
-    SidecarLocationKey, SidecarProject, SidecarRow, SidecarValue, SECTIONS,
+    insert_row, location_key_of_row, rows, unhex, RestoreCtx, RestoreOutcome, Scope, SectionRow,
+    Sidecar, SidecarLocationKey, SidecarProject, SidecarRow, SidecarValue, SECTIONS,
 };
 use super::subject::{subject_for_project, ProjectSubject};
 use super::IndexError;
@@ -436,23 +436,7 @@ fn recreate_location(
     project: ProjectId,
     row: &SidecarRow,
 ) -> Result<u64, IndexError> {
-    let text = |column: &str| match row.get(column) {
-        Some(SidecarValue::Text(value)) => Ok(value.clone()),
-        _ => Err(IndexError::Sidecar(format!(
-            "a removed location carries no {column}"
-        ))),
-    };
-    let Some(SidecarValue::Blob(path_key)) = row.get("path_key") else {
-        return Err(IndexError::Sidecar(
-            "a removed location carries no path_key".to_owned(),
-        ));
-    };
-    let key = SidecarLocationKey {
-        kind: text("kind")?,
-        distro: text("distro")?,
-        path_key: path_key.clone(),
-    };
-    if location_at(tx, &key)?.is_some() {
+    if location_at(tx, &location_key_of_row(row)?)?.is_some() {
         return Ok(0);
     }
     let mut row = row.clone();

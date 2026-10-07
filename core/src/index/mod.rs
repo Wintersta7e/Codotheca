@@ -4,6 +4,7 @@ pub mod backup;
 pub mod completion;
 pub mod error;
 pub mod migrate;
+pub mod noscan;
 pub mod path;
 pub mod pending;
 pub mod rebuild;
