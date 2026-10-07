@@ -189,10 +189,15 @@ const hasInstanceLock = app.requestSingleInstanceLock();
 // electron-vite sets this while `electron-vite dev` is running, and never in a packaged app.
 const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
 
+// Decided once, before `bootstrap` reads `boot.json`: every file the shell keeps lives here. A
+// `CODOTHECA_DATA_DIR` that moved the library but not `boot.json` counted paint failures in one
+// directory and cleared them in another.
+const dataDir = resolveDataDir({ userDataPath: app.getPath('userData'), env: process.env });
+
 const boot = bootstrap({
   argv: process.argv,
   env: process.env,
-  userDataDir: app.getPath('userData'),
+  userDataDir: dataDir,
   registerSchemesAsPrivileged: (schemes) => {
     protocol.registerSchemesAsPrivileged(schemes);
   },
@@ -270,7 +275,7 @@ function createWindow(): BrowserWindow {
     // Electron's first-composited-frame signal. If the GPU wedged, it never fires and the
     // counter bootstrap incremented survives into the next launch — which is the mechanism.
     clearPaintFailure({
-      userDataDir: app.getPath('userData'),
+      userDataDir: dataDir,
       readBoot: readBootFile,
       writeBoot: writeBootFile,
     });
@@ -315,7 +320,6 @@ async function main(): Promise<void> {
 
   process.stderr.write(`codotheca shell, protocol v${String(PROTOCOL_VERSION)}\n`);
 
-  const dataDir = resolveDataDir({ userDataPath: app.getPath('userData'), env: process.env });
   const log = openRollingLog({
     dir: path.join(dataDir, 'logs'),
     maxBytes: 4 * 1024 * 1024,
@@ -388,7 +392,7 @@ async function main(): Promise<void> {
   // §11.2a's mirror, where `bootstrap` reads it. Run at join and after every stored write, so the
   // next launch paints its first frame at the tier the user last chose.
   const mirrorTier = tierMirror(
-    { dataDir: app.getPath('userData'), readBoot: readBootFile, writeBoot: writeBootFile },
+    { dataDir, readBoot: readBootFile, writeBoot: writeBootFile },
     (error) => {
       log.write('warn', 'shell', `boot.json mirror failed: ${String(error)}`);
     },
