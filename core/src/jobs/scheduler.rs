@@ -236,14 +236,28 @@ impl JobRunner {
 
     fn worker_loop(self: Arc<Self>) {
         while let Some(job) = self.take_next() {
-            let started = std::time::Instant::now();
-            let outcome = self.execute(&job);
-            self.settle(&job, &outcome, started.elapsed());
+            if self.dispatchable(&job) {
+                let started = std::time::Instant::now();
+                let outcome = self.execute(&job);
+                self.settle(&job, &outcome, started.elapsed());
+            }
             if let Ok(mut shared) = self.shared.lock() {
                 shared.slots.release(&job);
             }
             self.wake.notify_all();
         }
+    }
+
+    /// §46.9: whether `job` may run now. Checked when the job is taken, not when it is queued, so
+    /// one queued before its copy was removed does not run after; a removed copy's path may since
+    /// hold another repository. Fails closed: an unreadable index runs nothing. J5 is exempt — it
+    /// reads no repository, and a removed project keeps its art.
+    fn dispatchable(&self, job: &Job) -> bool {
+        if job.kind == JobKind::J5Art {
+            return true;
+        }
+        self.with_index(|conn| crate::projects::current::location_is_current(conn, job.location_id))
+            .unwrap_or(false)
     }
 
     /// Dispatch, and turn a failure into the outcome vocabulary the retry rules read.

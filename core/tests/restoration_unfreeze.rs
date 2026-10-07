@@ -698,6 +698,9 @@ fn a_returned_copy_is_re_observed_when_its_page_opens() {
 /// copy there is, and a rescan of a root that is gone reads nothing: it would store `not_read`
 /// over the four presence answers the last complete scan established, fail, and retry. The
 /// withdrawn sweep waits for the copy to be back.
+///
+/// An unplugged copy is not removed, so J7 still runs for it and must read nothing — unlike the
+/// uninstalled copy below, for which no job runs at all.
 #[test]
 fn a_copy_that_left_again_before_its_rescan_is_not_read() {
     let (rig, scanned) = returned_unscanned();
@@ -706,14 +709,34 @@ fn a_copy_that_left_again_before_its_rescan_is_not_read() {
     assert_page_reads_nothing(&rig, &scanned);
 }
 
+/// Open the page an hour on and assert nothing ran for a removed copy: J7's stored row, the
+/// content row and the withdrawn sweep are all as they were before the page opened.
+/// `a_returned_copy_is_re_observed_when_its_page_opens` is the control — the same page path runs
+/// J7 on a copy that is still installed — so the absence here is the dispatcher's, not the rig's.
+fn assert_page_runs_nothing(rig: &Rig, scanned: &(Option<String>, i64, [String; 4])) {
+    let j7_before = rig.j7_state();
+    rig.clock.advance(3_600);
+    rig.open_page();
+    let after = rig.content_row();
+    let j7_after = rig.j7_state();
+    eprintln!(
+        "page opened on a removed copy: scan before {scanned:?}, after {after:?}; \
+         j7 before {j7_before:?}, after {j7_after:?}"
+    );
+    assert_eq!(j7_after, j7_before, "a J7 ran for a removed copy");
+    assert_eq!(&after, scanned, "J7 re-read a copy that is not there");
+    assert_eq!(rig.todo_sweep(), "unobservable");
+    assert_eq!(rig.rows(), 0);
+}
+
 /// The same for a copy uninstalled before its rescan: `presence` still reads `present` and only
-/// `removed_at` says the bytes are gone.
+/// `removed_at` says the bytes are gone. A removed copy is never dispatched, so J7 does not run.
 #[test]
 fn an_uninstalled_copy_is_not_read_when_its_page_opens() {
     let (rig, scanned) = returned_unscanned();
     rig.uninstall();
     rig.unplug();
-    assert_page_reads_nothing(&rig, &scanned);
+    assert_page_runs_nothing(&rig, &scanned);
 }
 
 /// **A withdrawal is dated when it happened.** The return is the moment the stored evidence stopped

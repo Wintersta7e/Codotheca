@@ -9,6 +9,7 @@
 //! `LocationRef { id, path_display }`. Nothing here is destructive — §17 gives phase 1 no
 //! delete, clean, push or checkout, and `setFlags` writes three integer columns.
 
+pub mod current;
 pub mod flags;
 pub mod list;
 pub mod peek;
