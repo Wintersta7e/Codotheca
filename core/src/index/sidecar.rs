@@ -1185,28 +1185,16 @@ pub struct RestoreCounts {
     pub view_state: u64,
     /// Collection definitions inserted.
     pub collections: u64,
-    /// Collection memberships inserted for the restored project.
-    pub collection_members: u64,
-    /// `1` when the sidecar held a record for the subject's project, else `0`.
-    pub projects: u64,
-    /// `1` when that record carried a note, else `0`.
-    pub notes: u64,
-    /// Sessions inserted.
-    pub sessions: u64,
-    /// Session segments inserted.
-    pub session_segments: u64,
-    /// Session-track XP rows inserted.
-    pub xp_events: u64,
-    /// User-made launch targets inserted.
-    pub launch_targets: u64,
 }
 
 /// Rows affected, as a count. `Connection::execute` returns `usize`.
-fn rows(n: usize) -> u64 {
+pub(crate) fn rows(n: usize) -> u64 {
     u64::try_from(n).unwrap_or(0)
 }
 
-fn unhex(s: &str) -> Result<Vec<u8>, IndexError> {
+/// Bytes back from the hex a blob or path key travels in; fails on an odd length or a non-hex
+/// digit.
+pub(crate) fn unhex(s: &str) -> Result<Vec<u8>, IndexError> {
     let raw = s.as_bytes();
     if raw.len() % 2 != 0 {
         return Err(IndexError::Sidecar(format!("not hex: {s}")));
@@ -1318,179 +1306,4 @@ pub fn restore_global(conn: &Connection, doc: &Sidecar) -> Result<RestoreCounts,
         )?);
     }
     Ok(c)
-}
-
-/// The project-scoped half, applied when the scan re-discovers a subject.
-///
-/// # Errors
-/// Fails when SQLite refuses a read or write, or a launch target's `exec_hex` is not hex.
-pub fn restore_for_subject(
-    conn: &Connection,
-    doc: &Sidecar,
-    project: ProjectId,
-) -> Result<RestoreCounts, IndexError> {
-    let mut c = RestoreCounts::default();
-    let Some(subject) = subject_for_project(conn, project)? else {
-        return Ok(c);
-    };
-    let key = subject.to_key();
-    let Some(p) = doc.payload.projects.iter().find(|p| p.subject == key) else {
-        return Ok(c);
-    };
-    c.projects = 1;
-
-    restore_project_row(conn, project, p)?;
-    if p.notes.is_some() {
-        c.notes = 1;
-    }
-    let (sessions, segments) = restore_sessions(conn, project, p)?;
-    c.sessions = sessions;
-    c.session_segments = segments;
-    c.xp_events = restore_xp_events(conn, project, &key, p)?;
-    c.launch_targets = restore_targets(conn, project, p)?;
-    c.collection_members = restore_memberships(conn, project, doc, &key)?;
-    Ok(c)
-}
-
-fn restore_project_row(
-    conn: &Connection,
-    project: ProjectId,
-    p: &SidecarProject,
-) -> Result<(), IndexError> {
-    conn.execute(
-        "UPDATE project
-            SET notes = COALESCE(?2, notes),
-                is_pinned = ?3, is_archived = ?4, is_hidden = ?5,
-                acknowledged_at = COALESCE(?6, acknowledged_at),
-                reroll_offset = ?7
-          WHERE id = ?1",
-        rusqlite::params![
-            project.0,
-            p.notes,
-            i64::from(p.is_pinned),
-            i64::from(p.is_archived),
-            i64::from(p.is_hidden),
-            p.acknowledged_at,
-            p.reroll_offset,
-        ],
-    )?;
-    Ok(())
-}
-
-/// Returns `(sessions, segments)`.
-fn restore_sessions(
-    conn: &Connection,
-    project: ProjectId,
-    p: &SidecarProject,
-) -> Result<(u64, u64), IndexError> {
-    let (mut sessions, mut segments) = (0, 0);
-    for s in &p.sessions {
-        conn.execute(
-            "INSERT INTO session
-               (project_id, started_at, ended_at, credited_seconds, close_reason)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![
-                project.0,
-                s.started_at,
-                s.ended_at,
-                s.credited_seconds,
-                s.close_reason
-            ],
-        )?;
-        sessions += 1;
-        let session_id = conn.last_insert_rowid();
-        for seg in &s.segments {
-            conn.execute(
-                "INSERT INTO session_segment
-                   (session_id, started_at, ended_at, credited_seconds, closed_by)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![
-                    session_id,
-                    seg.started_at,
-                    seg.ended_at,
-                    seg.credited_seconds,
-                    seg.closed_by
-                ],
-            )?;
-            segments += 1;
-        }
-    }
-    Ok((sessions, segments))
-}
-
-fn restore_xp_events(
-    conn: &Connection,
-    project: ProjectId,
-    key: &str,
-    p: &SidecarProject,
-) -> Result<u64, IndexError> {
-    let mut n = 0;
-    for e in &p.xp_events {
-        n += rows(conn.execute(
-            "INSERT INTO xp_events
-               (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key, track, meta)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'session', ?7)
-             ON CONFLICT (dedupe_key) DO NOTHING",
-            rusqlite::params![
-                e.ts,
-                e.tz_offset_min,
-                project.0,
-                key,
-                e.kind,
-                e.dedupe_key,
-                e.meta
-            ],
-        )?);
-    }
-    Ok(n)
-}
-
-fn restore_targets(
-    conn: &Connection,
-    project: ProjectId,
-    p: &SidecarProject,
-) -> Result<u64, IndexError> {
-    let mut n = 0;
-    for t in &p.launch_targets {
-        let exec = unhex(&t.exec_hex)?;
-        conn.execute(
-            "INSERT INTO launch_target
-               (project_id, language, kind, name, exec_bytes, args_json, cwd_mode, env_json,
-                sort_index, detected)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0)",
-            rusqlite::params![
-                project.0,
-                t.language,
-                t.kind,
-                t.name,
-                exec,
-                t.args_json,
-                t.cwd_mode,
-                t.env_json,
-                t.sort_index
-            ],
-        )?;
-        n += 1;
-    }
-    Ok(n)
-}
-
-fn restore_memberships(
-    conn: &Connection,
-    project: ProjectId,
-    doc: &Sidecar,
-    key: &str,
-) -> Result<u64, IndexError> {
-    let mut n = 0;
-    for collection in &doc.payload.collections {
-        if collection.members.iter().any(|m| m == key) {
-            n += rows(conn.execute(
-                "INSERT INTO collection_member (collection_id, project_id)
-                 SELECT id, ?2 FROM collection WHERE name = ?1 AND kind = 'manual'
-                 ON CONFLICT (collection_id, project_id) DO NOTHING",
-                rusqlite::params![collection.name, project.0],
-            )?);
-        }
-    }
-    Ok(n)
 }

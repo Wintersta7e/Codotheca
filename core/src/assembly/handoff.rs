@@ -26,6 +26,7 @@ use crate::identity::probe::probe_identity;
 use crate::identity::store::{resolve_identity, stored_presence, upsert_location, LocationInput};
 use crate::identity::IdentityError;
 use crate::index::path::StoredPath;
+use crate::index::pending::match_pending;
 use crate::index::{Index, IndexError};
 use crate::mount::StoreClass;
 use crate::paths::path_bytes;
@@ -168,6 +169,10 @@ pub fn hand_off_discovered(
                 .mark_root_unobserved(tx, LocationId(location), now)
                 .map_err(debt_error)?;
         }
+        // §48.8.4: create, hydrate, attach and move all compute the project's subject key here,
+        // so a record a rebuild staged applies in the transaction that makes it matchable —
+        // committed before any job for the copy is enqueued.
+        match_pending(tx, ProjectId(outcome.project_id), now)?;
         Ok(Indexed {
             project: ProjectId(outcome.project_id),
             location: LocationId(location),

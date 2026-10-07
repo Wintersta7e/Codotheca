@@ -241,7 +241,7 @@ fn health_delta_is_reparented_by_another_function_entirely() {
 ///
 /// **The sidecar needs no change, and that is the point.** A `debt_day` row exports on the
 /// `track = 'session'` filter and restores under the hard-coded `'session'` literal, with
-/// `subject_key` rebuilt from `to_key()`.
+/// `subject_key` rebuilt from `to_key()` — staged as a rebuild stages it, then matched.
 #[test]
 fn ac_p3_28_7_a_debt_day_round_trips_through_the_sidecar() {
     let (_d, conn) = fresh();
@@ -258,16 +258,22 @@ fn ac_p3_28_7_a_debt_day_round_trips_through_the_sidecar() {
     let doc = codotheca_core::index::sidecar::export(&conn, 1, 1).unwrap();
 
     // A fresh library, restored from the sidecar: the row comes back on the same subject, which
-    // is what `restore_xp_events` rebuilding it from `to_key()` buys.
-    let (_d2, other) = fresh();
-    let restored_into = insert_project(&other, "a", "l1");
-    let counts = codotheca_core::index::sidecar::restore_for_subject(
-        &other,
-        &doc,
+    // is what the matcher rebuilding it from `to_key()` buys.
+    let (_d2, mut other) = fresh();
+    let tx = other.transaction().unwrap();
+    codotheca_core::index::pending::stage_pending(&tx, &doc, 1).unwrap();
+    let restored_into = insert_project(&tx, "a", "l1");
+    let report = codotheca_core::index::pending::match_pending(
+        &tx,
         codotheca_core::protocol::ProjectId(restored_into),
+        1,
     )
     .unwrap();
-    assert!(counts.xp_events > 0, "the sidecar carried no xp_events row");
+    tx.commit().unwrap();
+    assert!(
+        report.applied.get("xp_events").copied().unwrap_or(0) > 0,
+        "the sidecar carried no xp_events row"
+    );
 
     let after: String = other
         .query_row(

@@ -110,14 +110,12 @@ fn quarantine_tolerates_a_database_with_no_wal_or_shm() {
 }
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
-use codotheca_core::index::pending::PendingRecord;
+use codotheca_core::index::pending::{match_pending, resolve_subject_unique, PendingRecord};
 use codotheca_core::index::rebuild::{
     rebuild_in_place, RebuildError, RebuildOutcome, RebuildReportFile,
 };
-use codotheca_core::index::sidecar::{
-    export, restore_for_subject, restore_global, write_atomically,
-};
-use codotheca_core::index::subject::{resolve_subject, ProjectSubject};
+use codotheca_core::index::sidecar::{export, restore_global, write_atomically};
+use codotheca_core::index::subject::ProjectSubject;
 use codotheca_core::protocol::ProjectId;
 
 fn seed_and_export(dir: &std::path::Path) {
@@ -215,11 +213,10 @@ fn rebuild_quarantines_restores_the_global_half_and_dates_the_gap() {
 fn the_project_half_restores_when_the_scan_rediscovers_the_subject() {
     let dir = tempfile::tempdir().unwrap();
     seed_and_export(dir.path());
-    let doc = codotheca_core::index::sidecar::read(&Index::sidecar_path(dir.path())).unwrap();
 
     std::fs::write(Index::db_path(dir.path()), b"not a database at all").unwrap();
     rebuilt(rebuild_in_place(dir.path(), 5_000));
-    let index = Index::open_at(dir.path(), 5_000).unwrap();
+    let mut index = Index::open_at(dir.path(), 5_000).unwrap();
 
     // The scan re-derives the project, and gets a different id than it had before.
     index
@@ -234,15 +231,17 @@ fn the_project_half_restores_when_the_scan_rediscovers_the_subject() {
         lineage_key: "lineage-1".into(),
         remote_key: Some("h/o/n".into()),
     };
-    let id = resolve_subject(index.conn(), &subject).unwrap().unwrap();
+    let id = resolve_subject_unique(index.conn(), &subject)
+        .unwrap()
+        .unwrap();
     assert_eq!(id, ProjectId(77));
 
-    let counts = restore_for_subject(index.conn(), &doc, id).unwrap();
-    assert_eq!(counts.projects, 1);
-    assert_eq!(counts.notes, 1);
-    assert_eq!(counts.sessions, 1);
-    assert_eq!(counts.session_segments, 1);
-    assert_eq!(counts.collection_members, 1);
+    let report = index.with_tx(|tx| match_pending(tx, id, 5_000)).unwrap();
+    assert_eq!(report.applied["projects"], 1);
+    assert_eq!(report.applied["notes"], 1);
+    assert_eq!(report.applied["sessions"], 1);
+    assert_eq!(report.applied["session_segments"], 1);
+    assert_eq!(report.applied["collection_members"], 1);
 
     let (notes, pinned, reroll): (String, i64, i64) = index
         .conn()
