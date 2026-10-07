@@ -22,8 +22,11 @@ use crate::cancel::CancelToken;
 use crate::debt::store::{DebtStore as _, SqliteDebtStore};
 use crate::derive::LocationKind;
 use crate::git::{GitBackend, GitError, JobClass, JobContext, RepoHandle, StoreKey};
+use crate::identity::lineage::lineage_key;
 use crate::identity::probe::probe_identity;
-use crate::identity::store::{resolve_identity, stored_presence, upsert_location, LocationInput};
+use crate::identity::store::{
+    claim_removed_row, resolve_identity, stored_presence, upsert_location, LocationInput,
+};
 use crate::identity::IdentityError;
 use crate::index::path::StoredPath;
 use crate::index::pending::match_pending;
@@ -142,6 +145,9 @@ pub fn hand_off_discovered(
         // fewer place to disagree.
         last_seen_at: None,
     };
+    // The found repository's lineage, from the function every `project.lineage_key` was written
+    // with, so a removed copy's row is recognised as this repository's own by one rule.
+    let found_lineage = lineage_key(&probe.root_oids, probe.is_shallow);
     let basename = basename_of(discovered);
     let now = ctx.now;
     let aliases = crate::provider::declared_host_aliases();
@@ -155,6 +161,11 @@ pub fn hand_off_discovered(
         // not an account — a scan holds none.
         let outcome =
             resolve_identity(tx, &probe, &basename, &aliases, now).map_err(as_index_error)?;
+        // §46.9: a removed copy's row at this path keeps its project and its references unless
+        // the repository found here is that copy's own. Released before the presence read, so a
+        // repository that was never here does not read as one coming back.
+        claim_removed_row(tx, outcome.project_id, found_lineage.as_deref(), &input)
+            .map_err(as_index_error)?;
         // [p3] §30.1's unfreeze, recorded where it is first known: this write is what turns a
         // copy that was away — offline, missing, unscanned — back into `present`. Everything
         // observed there before it left is withdrawn in the same transaction, so the first sweep

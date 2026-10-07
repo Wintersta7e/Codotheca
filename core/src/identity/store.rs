@@ -257,6 +257,73 @@ pub fn stored_presence(
     .transpose()
 }
 
+/// What [`claim_removed_row`] did with a removed copy's row at the path just found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemovedRowClaim {
+    /// Nothing was released: no removed copy's row holds the found key, or the one that does is
+    /// the found repository's own.
+    NoRemovedRow,
+    /// The removed copy's row at the found key belonged to another repository. It keeps its path,
+    /// its project and every reference to it, under a key no path can produce, and the found
+    /// repository gets a new row.
+    Released {
+        /// The removed copy's row, now under its released key.
+        location_id: i64,
+    },
+}
+
+/// §46.9's path release: a removed copy's row is never handed to another repository.
+///
+/// [`upsert_location`] conflicts on `(kind, distro, path_key)` and re-points the row it meets,
+/// which for a removed copy would move its sessions and every reference to it onto whatever was
+/// found at its path next. Unless the found repository is that copy's own — its lineage is known,
+/// equals the row's project's, and identity resolved `project_id` to that same project — the row's
+/// `path_key` gains a NUL byte and the row's id in decimal digits. No path contains a NUL, so no
+/// find can meet the released key again, and the uniqueness holds without rebuilding `location`.
+/// The key is built here rather than in SQL, where the concatenation would pass through text.
+///
+/// Call it before [`stored_presence`], so a released key reads as a row that does not exist yet.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the read or the release is refused.
+pub fn claim_removed_row(
+    tx: &Transaction<'_>,
+    project_id: i64,
+    found_lineage: Option<&str>,
+    loc: &LocationInput,
+) -> Result<RemovedRowClaim, IdentityError> {
+    let (_, path_key, _) = loc.path.as_params();
+    let removed: Option<(i64, i64, Vec<u8>, Option<String>)> = tx
+        .query_row(
+            "SELECT l.id, l.project_id, l.path_key, p.lineage_key
+               FROM location l JOIN project p ON p.id = l.project_id
+              WHERE l.kind = ?1 AND l.distro = ?2 AND l.path_key = ?3
+                AND l.removed_at IS NOT NULL",
+            params![
+                loc.kind.as_str(),
+                loc.distro.as_deref().unwrap_or(""),
+                path_key
+            ],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()?;
+    let Some((location_id, owner, key, lineage)) = removed else {
+        return Ok(RemovedRowClaim::NoRemovedRow);
+    };
+    let own = owner == project_id && found_lineage.is_some_and(|l| lineage.as_deref() == Some(l));
+    if own {
+        return Ok(RemovedRowClaim::NoRemovedRow);
+    }
+    let mut released = key;
+    released.push(0);
+    released.extend_from_slice(location_id.to_string().as_bytes());
+    tx.execute(
+        "UPDATE location SET path_key = ?2 WHERE id = ?1",
+        params![location_id, released],
+    )?;
+    Ok(RemovedRowClaim::Released { location_id })
+}
+
 /// Assign this repository its project (§1.1). Writes `project` only; the `location` row for the
 /// path goes through [`upsert_location`] under the returned id, in this same transaction.
 ///
