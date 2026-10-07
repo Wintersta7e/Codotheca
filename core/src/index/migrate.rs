@@ -141,13 +141,21 @@ pub const MIGRATIONS: &[Migration] = &[
         // cascade ride one create-copy-drop-rename — the only rebuild the table may have.
         rebuilds_a_table: true,
     },
+    Migration {
+        version: 17,
+        name: "sidecar_pending",
+        sql: include_str!("../../migrations/0017_sidecar_pending.sql"),
+        // §48.8.4: one new table and its index, referencing nothing — nothing is copied,
+        // dropped or renamed.
+        rebuilds_a_table: false,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 16;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 17;
 
 /// The version `PRAGMA user_version` holds; a value that does not fit a `u32` reads as `0`.
 ///

@@ -13,7 +13,7 @@
 
 use std::collections::BTreeSet;
 
-use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
+use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
 use codotheca_core::index::{open_connection, Index};
 use rusqlite::{params, Connection};
 
@@ -107,7 +107,7 @@ fn ac_p3_34_11_rebuild_preserves_columns_and_adds_index_and_cascade() {
     let version: u32 = after
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 16);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
     let old_columns = columns(&before);
     let new_columns = columns(&after);
     eprintln!("health_delta columns compared: {}", old_columns.len());
@@ -220,7 +220,7 @@ fn ac_p3_34_11_deleted_rows_keep_the_sequence_high_water_mark() {
     let version: u32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 16);
+    assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
     let sequence: i64 = conn
         .query_row(
             "SELECT seq FROM sqlite_sequence WHERE name = 'health_delta'",
