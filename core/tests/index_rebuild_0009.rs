@@ -488,7 +488,14 @@ const ADDED_COLUMNS: &[&str] = &[
 fn the_column_set_is_the_old_set_plus_exactly_four() {
     let (_dir, mut conn) = migrated_to(8);
     let before = columns(&conn, "project");
-    apply_all(&mut conn, MIGRATIONS).unwrap();
+    // The chain runs through `0009` and stops there, found by name as the foreign-key test below
+    // does: this test's subject is that rebuild, and a later migration that adds a `project`
+    // column — `0018`'s `removed_at` does — is not a defect of it.
+    let rebuild_at = MIGRATIONS
+        .iter()
+        .position(|m| m.name == "remote_identity_and_facts")
+        .expect("0009 is the project rebuild this test is about");
+    apply_all(&mut conn, &MIGRATIONS[..=rebuild_at]).unwrap();
     let after = columns(&conn, "project");
 
     // As one set difference over the whole list. Never four separate equalities: a per-column

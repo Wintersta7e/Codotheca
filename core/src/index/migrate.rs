@@ -149,13 +149,21 @@ pub const MIGRATIONS: &[Migration] = &[
         // dropped or renamed.
         rebuilds_a_table: false,
     },
+    Migration {
+        version: 18,
+        name: "recovering_half",
+        sql: include_str!("../../migrations/0018_recovering_half.sql"),
+        // §46.15: `project.removed_at` is an `ALTER` on a table that is never rebuilt, and the
+        // four removal tables are new — nothing is copied, dropped or renamed.
+        rebuilds_a_table: false,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 17;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 18;
 
 /// The version `PRAGMA user_version` holds; a value that does not fit a `u32` reads as `0`.
 ///
