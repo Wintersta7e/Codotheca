@@ -33,6 +33,28 @@ pub fn readme_remote_at(conn: &Connection, project: ProjectId) -> Result<Option<
     stored.ok_or(ReadmeError::UnknownSubject)
 }
 
+/// The one writer of `project.readme_remote_at`, which publishes nothing.
+///
+/// Stores `allowed_at` — a grant's own time, or `None` for revoked — on a live project and stamps
+/// `updated_at` with `now`. The command publishes; a rebuild's restore must not (§48.8.3). Answers
+/// whether a live project's row was written — a missing id is reported, never inserted.
+///
+/// # Errors
+/// Fails when the index cannot be written.
+pub fn write_readme_remote(
+    conn: &Connection,
+    project: ProjectId,
+    allowed_at: Option<i64>,
+    now: i64,
+) -> Result<bool, rusqlite::Error> {
+    let updated = conn.execute(
+        "UPDATE project SET readme_remote_at = ?2, updated_at = ?3
+          WHERE id = ?1 AND merged_into IS NULL",
+        rusqlite::params![project.0, allowed_at, now],
+    )?;
+    Ok(updated == 1)
+}
+
 /// Grant or revoke, and publish what the row now holds.
 ///
 /// `allow: true` writes `ctx.now`; `allow: false` writes NULL. The event carries the stored
@@ -47,14 +69,8 @@ pub fn set_readme_remote(
     project: ProjectId,
     allow: bool,
 ) -> Result<ReadmeRemoteChanged, ReadmeError> {
-    let allowed_at = allow.then_some(ctx.now);
     let conn = ctx.index.conn();
-    let updated = conn.execute(
-        "UPDATE project SET readme_remote_at = ?2, updated_at = ?3
-          WHERE id = ?1 AND merged_into IS NULL",
-        rusqlite::params![project.0, allowed_at, ctx.now],
-    )?;
-    if updated == 0 {
+    if !write_readme_remote(conn, project, allow.then_some(ctx.now), ctx.now)? {
         return Err(ReadmeError::UnknownSubject);
     }
 

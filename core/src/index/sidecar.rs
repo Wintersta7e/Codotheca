@@ -275,6 +275,15 @@ pub const SECTIONS: &[SectionSpec] = &[
         restore: super::sections::restore_location_trust,
     },
     SectionSpec {
+        name: "readme_consent",
+        owner: "§25.5",
+        scope: Scope::Subject,
+        rule: RestoreRule::WriteOnce,
+        preserves_ids: &[],
+        export: super::sections::export_readme_consent,
+        restore: super::sections::restore_readme_consent,
+    },
+    SectionSpec {
         name: "accounts",
         owner: "§20",
         scope: Scope::Global,

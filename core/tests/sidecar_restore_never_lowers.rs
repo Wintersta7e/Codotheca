@@ -9,9 +9,11 @@
     clippy::indexing_slicing
 )]
 
+use codotheca_core::index::pending::resolve_subject_unique;
 use codotheca_core::index::sidecar::{
     RestoreCtx, RestoreRule, SectionSpec, SidecarLocationKey, SECTIONS,
 };
+use codotheca_core::index::subject::ProjectSubject;
 use codotheca_core::index::Index;
 use codotheca_core::protocol::{LocationId, ProjectId};
 use codotheca_core::testing::sidecar::{FixtureIds, SECTION_FIXTURES};
@@ -33,6 +35,12 @@ const CASES: &[Case] = &[
         section: "location_trust",
         differ: "UPDATE location SET trusted_at = trusted_at + 1000 WHERE trusted_at IS NOT NULL",
         tables: &["location"],
+    },
+    Case {
+        section: "readme_consent",
+        differ: "UPDATE project SET readme_remote_at = readme_remote_at + 1000
+                 WHERE readme_remote_at IS NOT NULL",
+        tables: &["project"],
     },
     Case {
         section: "accounts",
@@ -122,9 +130,18 @@ fn restore_over_present(case: &Case) -> Vec<(Rows, Rows)> {
                     .iter()
                     .map(|(key, (location, _))| (key.clone(), *location))
                     .collect();
+                // A row naming no location reaches its project through its subject alone.
+                let by_subject = row
+                    .subject
+                    .as_deref()
+                    .and_then(ProjectSubject::parse)
+                    .and_then(|subject| resolve_subject_unique(tx, &subject).unwrap());
                 let ctx = RestoreCtx {
                     now: NOW,
-                    project: resolved.first().map(|(_, (_, project))| *project),
+                    project: resolved
+                        .first()
+                        .map(|(_, (_, project))| *project)
+                        .or(by_subject),
                     locations: &locations,
                     source_generation: 1,
                 };

@@ -1,5 +1,6 @@
-//! Three user decisions from phases 1–3 the sidecar never carried survive a rebuild: a check's
-//! N/A ruling, a copy's trust, and a connected account with its organisation switches.
+//! Four user decisions from phases 1–3 the sidecar never carried survive a rebuild: a check's
+//! N/A ruling, a copy's trust, a README's remote-image consent, and a connected account with its
+//! organisation switches.
 
 #![allow(
     clippy::unwrap_used,
@@ -27,6 +28,7 @@ use codotheca_core::mount::StoreClass;
 use codotheca_core::paths::{path_bytes, path_display, path_key};
 use codotheca_core::protocol::{AuthKind, CompletionCheck, LocationId, ProjectId, ScopeTier};
 use codotheca_core::provider::listing::OrgListing;
+use codotheca_core::readme::consent::{readme_remote_at, write_readme_remote};
 use codotheca_core::scan::discover::{RepoCandidate, RepoKind};
 use codotheca_core::scan::run::{platform_of, Discovered};
 use codotheca_core::surfaces::repair::set_trusted;
@@ -310,6 +312,25 @@ fn a_trusted_copy_stays_trusted() {
     let rebuilt = lib.open();
     let restored = lib.hand_off(&rebuilt, &repo).location;
     assert_eq!(trusted_at(&rebuilt, restored), Some(TRUSTED_AT));
+    assert_eq!(pending(&rebuilt), 0);
+}
+
+/// §25.5's consent to remote README images is the user's act on one project, dated when it was
+/// given; the rebuilt index holds the same grant from the same moment rather than revoking it.
+#[test]
+fn a_readme_image_consent_keeps_its_own_time() {
+    let lib = Library::new();
+    let repo = lib.repo("widget");
+    let index = lib.open();
+    let project = lib.hand_off(&index, &repo).project;
+    let granted = write_readme_remote(index.lock().unwrap().conn(), project, Some(TRUSTED_AT), NOW);
+    assert!(granted.unwrap());
+
+    lib.export_corrupt_and_rebuild(index);
+    let rebuilt = lib.open();
+    let restored = lib.hand_off(&rebuilt, &repo).project;
+    let consent = readme_remote_at(rebuilt.lock().unwrap().conn(), restored).unwrap();
+    assert_eq!(consent, Some(TRUSTED_AT));
     assert_eq!(pending(&rebuilt), 0);
 }
 

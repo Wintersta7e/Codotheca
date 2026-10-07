@@ -1,10 +1,13 @@
-//! Three user decisions from phases 1–3 that a rebuild cannot re-derive (§48.8.3): a check's N/A
-//! ruling, a copy's trust, and a connected account with its organisation switches.
+//! Four user decisions from phases 1–3 that a rebuild cannot re-derive (§48.8.3).
+//!
+//! They are a check's N/A ruling, a copy's trust, a project's consent to remote README images, and
+//! a connected account with its organisation switches.
 //!
 //! Each section reads its rows here and restores through its owner's writer: `check_na` through
-//! `completion::set_check_na`, `location_trust` through `surfaces::repair::set_trusted`, and
-//! `accounts` through the account store. The sidecar never holds a token — an account carries
-//! the keychain entry's name, and the keychain keeps the secret.
+//! `completion::set_check_na`, `location_trust` through `surfaces::repair::set_trusted`,
+//! `readme_consent` through `readme::consent::write_readme_remote`, and `accounts` through the
+//! account store. The sidecar never holds a token — an account carries the keychain entry's name,
+//! and the keychain keeps the secret.
 
 use rusqlite::{Connection, OptionalExtension as _, Transaction};
 
@@ -161,6 +164,66 @@ pub(crate) fn restore_location_trust(
         return Ok(RestoreOutcome::Applied(0));
     }
     let written = crate::surfaces::repair::set_trusted(tx, location, trust.trusted_at)?;
+    Ok(RestoreOutcome::Applied(u64::from(written)))
+}
+
+/// One `readme_consent` row: when the user allowed remote README images for the project (§25.5).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ReadmeConsent {
+    readme_remote_at: i64,
+}
+
+/// The `readme_consent` section's export: one row per project, not merged into another, that the
+/// user allowed remote README images for.
+pub(crate) fn export_readme_consent(conn: &Connection) -> Result<Vec<SectionRow>, IndexError> {
+    let granted: Vec<(i64, i64)> = conn
+        .prepare(
+            "SELECT id, readme_remote_at FROM project
+             WHERE readme_remote_at IS NOT NULL AND merged_into IS NULL ORDER BY id",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut out = Vec::new();
+    for (project, readme_remote_at) in granted {
+        let Some(subject) = subject_key(conn, project)? else {
+            continue;
+        };
+        out.push(SectionRow {
+            subject: Some(subject),
+            location_keys: Vec::new(),
+            data: to_data("readme_consent", &ReadmeConsent { readme_remote_at })?,
+        });
+    }
+    Ok(out)
+}
+
+/// The `readme_consent` section's restore, write-once: a project that already holds a grant keeps
+/// its own. The grant is written with the time it was given, through the column's one writer and
+/// not the command, which stamps the present time and publishes the change.
+pub(crate) fn restore_readme_consent(
+    tx: &Transaction<'_>,
+    row: &SectionRow,
+    ctx: &RestoreCtx<'_>,
+) -> Result<RestoreOutcome, IndexError> {
+    let consent: ReadmeConsent =
+        serde_json::from_value(row.data.clone()).map_err(|e| row_error("readme_consent", e))?;
+    let project = ctx
+        .project
+        .ok_or_else(|| row_error("readme_consent", "restored without a project"))?;
+    let present: Option<i64> = tx.query_row(
+        "SELECT readme_remote_at FROM project WHERE id = ?1",
+        [project.0],
+        |r| r.get(0),
+    )?;
+    if present.is_some() {
+        return Ok(RestoreOutcome::Applied(0));
+    }
+    let written = crate::readme::consent::write_readme_remote(
+        tx,
+        project,
+        Some(consent.readme_remote_at),
+        ctx.now,
+    )?;
     Ok(RestoreOutcome::Applied(u64::from(written)))
 }
 

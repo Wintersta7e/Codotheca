@@ -51,6 +51,7 @@ pub const SECTION_FIXTURES: &[(&str, SectionFixture)] = &[
     ("no_scan_projects", uninstalled_project),
     ("check_na", ruled_check),
     ("location_trust", trusted_copy),
+    ("readme_consent", consented_readme),
     ("accounts", connected_account),
 ];
 
@@ -106,6 +107,17 @@ fn trusted_copy(tx: &Transaction<'_>, ids: &FixtureIds) -> Result<(), IndexError
         None => present_project(tx, "trusted")?.1,
     };
     crate::surfaces::repair::set_trusted(tx, location, 20)?;
+    Ok(())
+}
+
+/// A project the user allowed remote README images for: the library's first, or one of its own
+/// in a library that has none.
+fn consented_readme(tx: &Transaction<'_>, ids: &FixtureIds) -> Result<(), IndexError> {
+    let project = match ids.projects.first() {
+        Some(project) => *project,
+        None => present_project(tx, "consented")?.0,
+    };
+    crate::readme::consent::write_readme_remote(tx, project, Some(30), 30)?;
     Ok(())
 }
 

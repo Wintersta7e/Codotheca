@@ -160,6 +160,7 @@ export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, stri
   no_scan_projects: interimNoun('no_scan_projects'),
   check_na: interimNoun('check_na'),
   location_trust: interimNoun('location_trust'),
+  readme_consent: interimNoun('readme_consent'),
   accounts: interimNoun('accounts'),
 };
 
