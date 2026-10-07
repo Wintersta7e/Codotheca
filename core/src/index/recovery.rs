@@ -77,7 +77,7 @@ pub struct RebuildReport {
     /// Restored from the sidecar, now.
     pub restored: super::sidecar::RestoreCounts,
     /// In the sidecar and waiting for the scan to re-discover each subject.
-    pub deferred: super::sidecar::SidecarCounts,
+    pub deferred: std::collections::BTreeMap<String, u64>,
     /// When the gap starts: the sidecar's own `written_at`. `None` if there was no sidecar.
     pub gap_started_at: Option<i64>,
     /// Always `false`. What was made after `gap_started_at` was recorded only in the database

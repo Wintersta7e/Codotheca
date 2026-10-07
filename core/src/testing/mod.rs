@@ -10,6 +10,7 @@ mod index;
 mod mount;
 mod remote;
 mod scan;
+pub mod sidecar;
 mod tokens;
 pub mod wsl;
 

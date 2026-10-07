@@ -107,10 +107,7 @@ fn ac_14_corrupt_database_quarantines_and_rebuilds() {
         report.restored,
         codotheca_core::index::sidecar::RestoreCounts::default()
     );
-    assert_eq!(
-        report.deferred,
-        codotheca_core::index::sidecar::SidecarCounts::default()
-    );
+    assert!(report.deferred.is_empty());
     assert_eq!(
         report.gap_started_at, None,
         "no sidecar means no gap start is knowable, which is not the same as a gap of zero"

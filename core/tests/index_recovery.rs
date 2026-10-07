@@ -110,7 +110,7 @@ fn quarantine_tolerates_a_database_with_no_wal_or_shm() {
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::sidecar::{
-    export, restore_for_subject, restore_global, write_atomically, RestoreCounts, SidecarCounts,
+    export, restore_for_subject, restore_global, write_atomically, RestoreCounts,
 };
 use codotheca_core::index::subject::{resolve_subject, ProjectSubject};
 use codotheca_core::protocol::ProjectId;
@@ -161,9 +161,9 @@ fn rebuild_quarantines_restores_the_global_half_and_dates_the_gap() {
         "a rebuilt database has no projects yet; those records wait for the scan"
     );
 
-    assert_eq!(report.deferred.projects, 1);
-    assert_eq!(report.deferred.sessions, 1);
-    assert_eq!(report.deferred.notes, 1);
+    assert_eq!(report.deferred["projects"], 1);
+    assert_eq!(report.deferred["sessions"], 1);
+    assert_eq!(report.deferred["notes"], 1);
 
     assert_eq!(report.gap_started_at, Some(900));
     assert!(
@@ -245,7 +245,7 @@ fn a_rebuild_with_no_sidecar_reports_no_gap_and_restores_nothing() {
     let (_index, report) = Index::rebuild(dir.path(), 5_000).unwrap();
     assert_eq!(report.gap_started_at, None);
     assert_eq!(report.restored, RestoreCounts::default());
-    assert_eq!(report.deferred, SidecarCounts::default());
+    assert!(report.deferred.is_empty());
 }
 
 #[test]

@@ -178,16 +178,17 @@ impl Index {
         let (restored, deferred, gap_started_at) = if sidecar_path.exists() {
             let doc = sidecar::read(&sidecar_path)?;
             let restored = sidecar::restore_global(&conn, &doc)?;
-            let all = sidecar::counts(&doc);
+            let mut deferred = sidecar::counts(&doc);
             // The global half has landed; what is left is the project-scoped remainder.
-            let deferred = sidecar::SidecarCounts {
-                roots: 0,
-                identities: 0,
-                settings: 0,
-                view_state: 0,
-                collections: 0,
-                ..all
-            };
+            for global in [
+                "roots",
+                "identities",
+                "settings",
+                "view_state",
+                "collections",
+            ] {
+                deferred.insert(global.to_owned(), 0);
+            }
             conn.execute(
                 "INSERT INTO app_meta (k, v) VALUES ('restore_pending_generation', ?1)
                  ON CONFLICT(k) DO UPDATE SET v = excluded.v",
@@ -197,7 +198,7 @@ impl Index {
         } else {
             (
                 sidecar::RestoreCounts::default(),
-                sidecar::SidecarCounts::default(),
+                std::collections::BTreeMap::new(),
                 None,
             )
         };

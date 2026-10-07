@@ -9,7 +9,7 @@
 //! opening the database.
 
 use codotheca_core::index::recovery::RebuildReport;
-use codotheca_core::index::sidecar::{RestoreCounts, SidecarCounts};
+use codotheca_core::index::sidecar::RestoreCounts;
 use codotheca_core::index::IndexError;
 use codotheca_core::surfaces::startup_failure::{self, StartupFailure};
 
@@ -106,10 +106,7 @@ fn a_rebuild_report_is_what_puts_real_figures_in_the_ledger() {
             launch_targets: 5,
             ..RestoreCounts::default()
         },
-        deferred: SidecarCounts {
-            projects: 4,
-            ..SidecarCounts::default()
-        },
+        deferred: std::collections::BTreeMap::from([("projects".to_owned(), 4)]),
         gap_started_at: Some(555),
         gap_counts_recoverable: false,
     };

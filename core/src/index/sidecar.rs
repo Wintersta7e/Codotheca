@@ -15,7 +15,7 @@ use rusqlite::{Connection, Transaction};
 
 use super::subject::subject_for_project;
 use super::IndexError;
-use crate::protocol::ProjectId;
+use crate::protocol::{LocationId, ProjectId};
 
 /// The document shape this build writes. It also reads format 1 (§48.8.2).
 pub const SIDECAR_FORMAT: u32 = 2;
@@ -122,6 +122,147 @@ record!(
         queued_at: i64,
     }
 );
+/// When a section's rows come back after a rebuild (§48.8.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    /// In the rebuild transaction, before any scan.
+    Global,
+    /// When the scan rediscovers the row's subject, through the pending table (§48.8.4).
+    Subject,
+    /// In the rebuild transaction, for a project no scan can ever rediscover.
+    NoScan,
+}
+
+/// How a restored value meets one already present (§48.8.3): never lowering an earned value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestoreRule {
+    /// The restored row is written as it was exported.
+    Replace,
+    /// The value restores as `max(present, restored)`.
+    RaiseOnly,
+    /// The value restores only if none is present.
+    WriteOnce,
+    /// The latch restores only if it is not already set.
+    Latch,
+}
+
+/// What one section restore did with one row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestoreOutcome {
+    /// The row was written: this many rows went into the index.
+    Applied(u64),
+    /// Nothing was written, because a location the row names resolves to no location yet; the
+    /// matcher keeps the pending record for the hand-off that brings the location back. Only a
+    /// `Subject` restore may answer this.
+    Pending,
+}
+
+/// What a section restore is handed besides its row.
+#[derive(Debug, Clone, Copy)]
+pub struct RestoreCtx<'a> {
+    /// The restore's time, in Unix seconds.
+    pub now: i64,
+    /// The project the row was matched to; `None` for a `Global` or `NoScan` row of no project.
+    pub project: Option<ProjectId>,
+    /// Each of the row's location keys resolved to the location it names now, after removed
+    /// copies were re-created; a key missing here resolved to nothing.
+    pub locations: &'a [(SidecarLocationKey, LocationId)],
+    /// The generation of the sidecar the row came from.
+    pub source_generation: u64,
+}
+
+impl RestoreCtx<'_> {
+    /// The location `key` names now, or `None` when it resolved to none.
+    #[must_use]
+    pub fn location_for(&self, key: &SidecarLocationKey) -> Option<LocationId> {
+        self.locations
+            .iter()
+            .find(|(candidate, _)| candidate == key)
+            .map(|(_, id)| *id)
+    }
+}
+
+/// One registered section: a non-derivable table, its owner, and how it travels.
+#[derive(Debug, Clone, Copy)]
+pub struct SectionSpec {
+    /// The section's key in the document's `sections` map.
+    pub name: &'static str,
+    /// The spec section that owns the data, as `§NN`.
+    pub owner: &'static str,
+    /// When its rows come back.
+    pub scope: Scope,
+    /// How a restored value meets a present one.
+    pub rule: RestoreRule,
+    /// Every `AUTOINCREMENT` table whose ids name something outside the index; the rebuild
+    /// raises each one's sequence past the highest id restored.
+    pub preserves_ids: &'static [&'static str],
+    /// Reads every row the section carries.
+    pub export: fn(&Connection) -> Result<Vec<SectionRow>, IndexError>,
+    /// Writes one row back through the owner's one writer.
+    pub restore:
+        fn(&Transaction<'_>, &SectionRow, &RestoreCtx<'_>) -> Result<RestoreOutcome, IndexError>,
+}
+
+/// The one section registry, which the export, the reader and the rebuild all read.
+///
+/// A change that lands a table, a `project`/`location` column, or an `app_meta` key does all of
+/// the following in that same change:
+///
+/// 1. **Classify every new table and every new `project`/`location` column** in the registry's
+///    classification list: derivable, naming the producer that re-derives it, or a section. The
+///    registration gate fails on anything unclassified.
+/// 2. **A non-derivable table registers a [`SectionSpec`]** here: `name`, `owner` (`§NN`),
+///    `scope` (`Global | Subject | NoScan`), `rule` (`Replace | RaiseOnly | WriteOnce | Latch`),
+///    `preserves_ids` (every `AUTOINCREMENT` table whose ids name something outside the index),
+///    `export`, `restore`. **`restore` calls the owner's one writer** (§48.8.3); a raise-only
+///    value restores as `max(present, restored)`, a latch and a write-once value only if absent.
+///    **`restore` answers `Result<RestoreOutcome, IndexError>`**: `Applied(n)` once written, or
+///    `Pending` — having written nothing — when a row's location key resolves to no location;
+///    **the matcher deletes only an `Applied` record**, so a `Pending` one waits for the scan that
+///    brings the location back (§48.8.4). Only a `Subject` restore may answer `Pending`. **Keep
+///    your typed export/restore functions; register adapters with `SectionSpec`'s exact
+///    signatures**, declared beside the typed functions, which they call.
+/// 3. **Subject rows carry `location_keys`** whenever they reference a `location`: the matcher
+///    hands `restore` a resolved `LocationId` per key, after re-creating removed locations; a key
+///    [`RestoreCtx::location_for`] cannot resolve is the restore's `Pending`.
+/// 4. **A field added to a format-1 record** is declared
+///    `#[serde(default, skip_serializing_if = "Option::is_none")]`, so a format-1 document's
+///    checksum still verifies. **No bump.** The format number is 2 for the rest of phase 4.
+/// 5. **An `app_meta` key** rides `settings` unless it describes the database or the sidecar's
+///    own bookkeeping; then it joins [`REBUILD_OWNED_SETTINGS`].
+/// 6. **Add the section's noun** to `SIDECAR_COUNT_NOUNS` in
+///    `app/src/renderer/failure/copy.ts`; the mirror test reads the section names from this file.
+/// 7. **Add a fixture** to `testing::sidecar::SECTION_FIXTURES`; the registry test asserts every
+///    registered section has one.
+/// 8. **`rule` other than `Replace`** adds its case to
+///    `core/tests/sidecar_restore_never_lowers.rs`.
+/// 9. **An act that orphans bytes outside the index** (§48.8.6) adds an `ExportAct` variant,
+///    calls `export_after_act` after its commit, and adds its case to
+///    `core/tests/sidecar_act_exports.rs`.
+/// 10. **A write that computes or changes a subject key** calls `pending::match_pending` in its
+///     transaction. **A restore or re-resolution that maps a subject to a project calls
+///     `pending::resolve_subject_unique`** — `Some` only when exactly one live project holds it —
+///     never `subject::resolve_subject`, which answers the lowest id.
+pub const SECTIONS: &[SectionSpec] = &[];
+
+/// The count keys every document has, before one key per registered section.
+pub const BASE_COUNT_KEYS: [&str; 14] = [
+    "projects",
+    "notes",
+    "sessions",
+    "session_segments",
+    "xp_events",
+    "launch_targets",
+    "collections",
+    "collection_members",
+    "roots",
+    "identities",
+    "merges",
+    "settings",
+    "view_state",
+    "pending",
+];
+
 record!(
     /// One `session_segment` row.
     SidecarSegment {
@@ -352,37 +493,6 @@ pub struct Sidecar {
     pub payload: SidecarPayload,
 }
 
-/// How many of each record a sidecar holds.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
-pub struct SidecarCounts {
-    /// Project records.
-    pub projects: u64,
-    /// Project records carrying a note.
-    pub notes: u64,
-    /// Sessions, across every project.
-    pub sessions: u64,
-    /// Session segments, across every session.
-    pub session_segments: u64,
-    /// Session-track XP rows, across every project.
-    pub xp_events: u64,
-    /// User-made launch targets, across every project.
-    pub launch_targets: u64,
-    /// Collection definitions.
-    pub collections: u64,
-    /// Collection memberships, across every collection.
-    pub collection_members: u64,
-    /// Scan roots.
-    pub roots: u64,
-    /// Identities.
-    pub identities: u64,
-    /// Merge records.
-    pub merges: u64,
-    /// `app_meta` entries.
-    pub settings: u64,
-    /// `view_state` entries.
-    pub view_state: u64,
-}
-
 /// What [`Index::export_sidecar`] wrote.
 ///
 /// [`Index::export_sidecar`]: super::Index::export_sidecar
@@ -394,8 +504,8 @@ pub struct SidecarWriteReport {
     pub generation: u64,
     /// When it was written, in Unix seconds.
     pub written_at: i64,
-    /// How many of each record it holds.
-    pub counts: SidecarCounts,
+    /// How many of each record it holds, by [`counts`]' keys.
+    pub counts: BTreeMap<String, u64>,
 }
 
 /// Whether a sidecar is due: none was ever written, or [`SIDECAR_INTERVAL_SECS`] have passed.
@@ -411,35 +521,54 @@ fn len_u64<T>(v: &[T]) -> u64 {
     u64::try_from(v.len()).unwrap_or(u64::MAX)
 }
 
-/// Count each kind of record `s` holds.
+/// Count each kind of record `s` holds: every [`BASE_COUNT_KEYS`] entry, then one key per section
+/// the document carries.
 #[must_use]
-pub fn counts(s: &Sidecar) -> SidecarCounts {
+pub fn counts(s: &Sidecar) -> BTreeMap<String, u64> {
     let p = &s.payload;
-    let mut c = SidecarCounts {
-        projects: len_u64(&p.projects),
-        collections: len_u64(&p.collections),
-        roots: len_u64(&p.roots),
-        identities: len_u64(&p.identities),
-        merges: len_u64(&p.merges),
-        settings: u64::try_from(p.settings.len()).unwrap_or(u64::MAX),
-        view_state: u64::try_from(p.view_state.len()).unwrap_or(u64::MAX),
-        ..SidecarCounts::default()
-    };
+    let (mut notes, mut sessions, mut segments, mut xp_events, mut targets) = (0, 0, 0, 0, 0);
     for project in &p.projects {
         if project.notes.is_some() {
-            c.notes += 1;
+            notes += 1;
         }
-        c.sessions += len_u64(&project.sessions);
+        sessions += len_u64(&project.sessions);
         for session in &project.sessions {
-            c.session_segments += len_u64(&session.segments);
+            segments += len_u64(&session.segments);
         }
-        c.xp_events += len_u64(&project.xp_events);
-        c.launch_targets += len_u64(&project.launch_targets);
+        xp_events += len_u64(&project.xp_events);
+        targets += len_u64(&project.launch_targets);
     }
-    for collection in &p.collections {
-        c.collection_members += len_u64(&collection.members);
+    let members = p.collections.iter().map(|c| len_u64(&c.members)).sum();
+    let base: [(&str, u64); 14] = [
+        ("projects", len_u64(&p.projects)),
+        ("notes", notes),
+        ("sessions", sessions),
+        ("session_segments", segments),
+        ("xp_events", xp_events),
+        ("launch_targets", targets),
+        ("collections", len_u64(&p.collections)),
+        ("collection_members", members),
+        ("roots", len_u64(&p.roots)),
+        ("identities", len_u64(&p.identities)),
+        ("merges", len_u64(&p.merges)),
+        (
+            "settings",
+            u64::try_from(p.settings.len()).unwrap_or(u64::MAX),
+        ),
+        (
+            "view_state",
+            u64::try_from(p.view_state.len()).unwrap_or(u64::MAX),
+        ),
+        ("pending", len_u64(&p.pending)),
+    ];
+    let mut out: BTreeMap<String, u64> = base
+        .into_iter()
+        .map(|(key, n)| (key.to_owned(), n))
+        .collect();
+    for (name, rows) in &p.sections {
+        out.insert(name.clone(), len_u64(rows));
     }
-    c
+    out
 }
 
 /// Read the non-derivable set out of the database as a checksummed sidecar document.
@@ -455,15 +584,15 @@ pub fn export(conn: &Connection, generation: u64, now: i64) -> Result<Sidecar, I
         merges: export_merges(conn)?,
         settings: export_kv(conn, "app_meta", never_travels)?,
         view_state: export_kv(conn, "view_state", |_| false)?,
-        sections: BTreeMap::new(),
-        pending: Vec::new(),
+        sections: export_sections(conn)?,
+        pending: export_pending(conn)?,
     };
     let checksum = checksum_of(&payload)?;
     Ok(Sidecar {
         format: SIDECAR_FORMAT,
         generation,
         written_at: now,
-        schema_version: None,
+        schema_version: Some(super::migrate::schema_version(conn)?),
         checksum,
         payload,
     })
@@ -534,17 +663,105 @@ fn export_projects(conn: &Connection) -> Result<Vec<SidecarProject>, IndexError>
             sessions: export_sessions(conn, id)?,
             xp_events: export_xp_events(conn, id)?,
             launch_targets: export_targets(conn, id)?,
-            location_keys: Vec::new(),
-            removed_locations: Vec::new(),
+            location_keys: export_location_keys(conn, id)?,
+            removed_locations: export_removed_locations(conn, id)?,
         });
     }
     Ok(out)
 }
 
+/// Every location's key, removed ones included: what a later record names a copy by.
+fn export_location_keys(
+    conn: &Connection,
+    id: ProjectId,
+) -> Result<Vec<SidecarLocationKey>, IndexError> {
+    let mut stmt = conn
+        .prepare("SELECT kind, distro, path_key FROM location WHERE project_id = ?1 ORDER BY id")?;
+    let mut rows = stmt.query([id.0])?;
+    let mut out = Vec::new();
+    while let Some(r) = rows.next()? {
+        let path_key: Vec<u8> = r.get(2)?;
+        out.push(SidecarLocationKey {
+            kind: r.get(0)?,
+            distro: r.get(1)?,
+            path_key: hex(&path_key),
+        });
+    }
+    Ok(out)
+}
+
+/// Every column of each location this app removed — no disk remains to re-derive one.
+fn export_removed_locations(
+    conn: &Connection,
+    id: ProjectId,
+) -> Result<Vec<SidecarRow>, IndexError> {
+    let ids: Vec<i64> = conn
+        .prepare(
+            "SELECT id FROM location WHERE project_id = ?1 AND removed_at IS NOT NULL ORDER BY id",
+        )?
+        .query_map([id.0], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    ids.into_iter()
+        .map(|location| dump_row(conn, "location", location))
+        .collect()
+}
+
+/// The key of the location `id` names, or `None` when it names none.
+fn location_key(
+    conn: &Connection,
+    id: Option<i64>,
+) -> Result<Option<SidecarLocationKey>, IndexError> {
+    use rusqlite::OptionalExtension as _;
+    let Some(id) = id else {
+        return Ok(None);
+    };
+    let row: Option<(String, String, Vec<u8>)> = conn
+        .query_row(
+            "SELECT kind, distro, path_key FROM location WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    Ok(row.map(|(kind, distro, path_key)| SidecarLocationKey {
+        kind,
+        distro,
+        path_key: hex(&path_key),
+    }))
+}
+
+/// Each registered section's rows, under its name.
+fn export_sections(conn: &Connection) -> Result<BTreeMap<String, Vec<SectionRow>>, IndexError> {
+    let mut out = BTreeMap::new();
+    for section in SECTIONS {
+        out.insert(section.name.to_owned(), (section.export)(conn)?);
+    }
+    Ok(out)
+}
+
+/// Every `sidecar_pending` row, verbatim, oldest generation first.
+fn export_pending(conn: &Connection) -> Result<Vec<PendingRow>, IndexError> {
+    let mut stmt = conn.prepare(
+        "SELECT source_generation, subject_key, location_keys, record, queued_at
+         FROM sidecar_pending ORDER BY source_generation, id",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(PendingRow {
+                source_generation: r.get(0)?,
+                subject_key: r.get(1)?,
+                location_keys: r.get(2)?,
+                record: r.get(3)?,
+                queued_at: r.get(4)?,
+            })
+        })?
+        .collect::<Result<_, _>>()?;
+    Ok(rows)
+}
+
 fn export_sessions(conn: &Connection, id: ProjectId) -> Result<Vec<SidecarSession>, IndexError> {
     let mut sessions = Vec::new();
     let mut stmt = conn.prepare(
-        "SELECT id, started_at, ended_at, credited_seconds, close_reason
+        "SELECT id, started_at, ended_at, credited_seconds, close_reason, location_id
          FROM session WHERE project_id = ?1 ORDER BY started_at, id",
     )?;
     let mut rows = stmt.query([id.0])?;
@@ -570,7 +787,7 @@ fn export_sessions(conn: &Connection, id: ProjectId) -> Result<Vec<SidecarSessio
             credited_seconds: row.get(3)?,
             close_reason: row.get(4)?,
             segments,
-            location_key: None,
+            location_key: location_key(conn, row.get(5)?)?,
         });
     }
     Ok(sessions)
@@ -906,7 +1123,12 @@ pub fn inspect(path: &Path, supported: u32) -> SidecarState {
             reason: format!("sidecar schema {version} is above this build's {supported}"),
         };
     }
-    if let Some(name) = header.payload.sections.keys().next() {
+    if let Some(name) = header
+        .payload
+        .sections
+        .keys()
+        .find(|name| !SECTIONS.iter().any(|s| s.name == name.as_str()))
+    {
         return SidecarState::Newer {
             reason: format!("sidecar section {name} is not registered in this build"),
         };

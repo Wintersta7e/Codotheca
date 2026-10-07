@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use crate::index::recovery::RebuildReport;
-use crate::index::sidecar::{RestoreCounts, SidecarCounts};
+use crate::index::sidecar::RestoreCounts;
 use crate::index::IndexError;
 
 /// The report's file name inside the data directory, beside the database it describes.
@@ -126,12 +126,12 @@ pub fn from_index_error(err: &IndexError, now: i64) -> Option<StartupFailure> {
 /// only in the database that was destroyed.
 /// Takes no `now`: the quarantine already happened, and `QuarantinedFiles.at` is when.
 #[must_use]
-pub const fn corrupt_from_report(report: &RebuildReport) -> StartupFailure {
+pub fn corrupt_from_report(report: &RebuildReport) -> StartupFailure {
     StartupFailure::CorruptIndex {
         quarantined_at: report.quarantined.at,
         gap_started_at: report.gap_started_at,
         gap_counts_recoverable: report.gap_counts_recoverable,
-        re_derivable: Some(from_sidecar_counts(report.deferred)),
+        re_derivable: Some(from_sidecar_counts(&report.deferred)),
         restorable: Some(from_restore_counts(report.restored)),
     }
 }
@@ -148,15 +148,15 @@ const fn from_restore_counts(c: RestoreCounts) -> LedgerCounts {
     }
 }
 
-const fn from_sidecar_counts(c: SidecarCounts) -> LedgerCounts {
+fn from_sidecar_counts(c: &std::collections::BTreeMap<String, u64>) -> LedgerCounts {
     LedgerCounts {
-        projects: c.projects,
-        notes: c.notes,
-        sessions: c.sessions,
-        collections: c.collections,
-        roots: c.roots,
-        xp_events: c.xp_events,
-        launch_targets: c.launch_targets,
+        projects: c.get("projects").copied().unwrap_or(0),
+        notes: c.get("notes").copied().unwrap_or(0),
+        sessions: c.get("sessions").copied().unwrap_or(0),
+        collections: c.get("collections").copied().unwrap_or(0),
+        roots: c.get("roots").copied().unwrap_or(0),
+        xp_events: c.get("xp_events").copied().unwrap_or(0),
+        launch_targets: c.get("launch_targets").copied().unwrap_or(0),
     }
 }
 

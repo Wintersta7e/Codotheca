@@ -141,16 +141,16 @@ fn the_rest_of_the_non_derivable_set_is_present() {
     assert_eq!(s.payload.identities[0].aliases.len(), 1);
 
     let c = counts(&s);
-    assert_eq!(c.projects, 1);
-    assert_eq!(c.notes, 1);
-    assert_eq!(c.sessions, 1);
-    assert_eq!(c.session_segments, 1);
-    assert_eq!(c.xp_events, 1);
-    assert_eq!(c.launch_targets, 1);
-    assert_eq!(c.collections, 1);
-    assert_eq!(c.collection_members, 1);
-    assert_eq!(c.roots, 1);
-    assert_eq!(c.identities, 1);
+    assert_eq!(c["projects"], 1);
+    assert_eq!(c["notes"], 1);
+    assert_eq!(c["sessions"], 1);
+    assert_eq!(c["session_segments"], 1);
+    assert_eq!(c["xp_events"], 1);
+    assert_eq!(c["launch_targets"], 1);
+    assert_eq!(c["collections"], 1);
+    assert_eq!(c["collection_members"], 1);
+    assert_eq!(c["roots"], 1);
+    assert_eq!(c["identities"], 1);
 }
 
 #[test]
