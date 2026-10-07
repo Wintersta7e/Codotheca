@@ -1,0 +1,139 @@
+{
+  "format": 1,
+  "generation": 5,
+  "written_at": 1700005000,
+  "checksum": "fnv1a64:82f23d33b5a8f92e",
+  "payload": {
+    "projects": [
+      {
+        "subject": "lineage:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1|remote:example.invalid/owner/alpha",
+        "notes": "a kept note",
+        "is_pinned": true,
+        "is_archived": true,
+        "is_hidden": false,
+        "acknowledged_at": 1700000100,
+        "seed_basename": "alpha",
+        "reroll_offset": 2,
+        "sessions": [
+          {
+            "started_at": 1700001000,
+            "ended_at": 1700004000,
+            "credited_seconds": 2400,
+            "close_reason": "stop",
+            "segments": [
+              {
+                "started_at": 1700001000,
+                "ended_at": 1700002200,
+                "credited_seconds": 1200,
+                "closed_by": "idle"
+              },
+              {
+                "started_at": 1700002800,
+                "ended_at": 1700004000,
+                "credited_seconds": 1200,
+                "closed_by": "session_end"
+              }
+            ]
+          }
+        ],
+        "xp_events": [
+          {
+            "ts": 1700004000,
+            "tz_offset_min": 60,
+            "kind": "session",
+            "dedupe_key": "session:fixture-1",
+            "meta": null
+          }
+        ],
+        "launch_targets": [
+          {
+            "kind": "editor",
+            "name": "fixture editor",
+            "exec_hex": "2f6f70742f656469746f72",
+            "args_json": "[]",
+            "cwd_mode": "location",
+            "env_json": "{}",
+            "sort_index": 0,
+            "language": null
+          }
+        ]
+      },
+      {
+        "subject": "lineage:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2|remote:",
+        "notes": null,
+        "is_pinned": false,
+        "is_archived": false,
+        "is_hidden": false,
+        "acknowledged_at": null,
+        "seed_basename": "beta",
+        "reroll_offset": 0,
+        "sessions": [],
+        "xp_events": [],
+        "launch_targets": []
+      },
+      {
+        "subject": "path:linux::2f666978747572652f7265706f732f67616d6d61",
+        "notes": null,
+        "is_pinned": false,
+        "is_archived": false,
+        "is_hidden": false,
+        "acknowledged_at": null,
+        "seed_basename": "gamma",
+        "reroll_offset": 0,
+        "sessions": [],
+        "xp_events": [],
+        "launch_targets": []
+      }
+    ],
+    "collections": [
+      {
+        "name": "Fixture shelf",
+        "kind": "manual",
+        "query_text": null,
+        "query_grammar_version": null,
+        "sort_index": 0,
+        "members": [
+          "lineage:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1|remote:example.invalid/owner/alpha",
+          "lineage:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2|remote:"
+        ]
+      }
+    ],
+    "roots": [
+      {
+        "kind": "linux",
+        "distro": "",
+        "path_hex": "2f666978747572652f7265706f73",
+        "enabled": true,
+        "added_by": "user",
+        "descend_into_repos": false,
+        "added_at": 1700000000
+      }
+    ],
+    "identities": [
+      {
+        "email": "someone@example.invalid",
+        "name": "Someone",
+        "is_user": true,
+        "source": "gitconfig",
+        "confirmed_at": 1700000050,
+        "aliases": [
+          {
+            "email": "someone+alt@example.invalid",
+            "reason": "local_part"
+          }
+        ]
+      }
+    ],
+    "merges": [],
+    "settings": {
+      "first_run_completed_at": "1700000200",
+      "level_floor": "3",
+      "restore_pending_generation": "4",
+      "sidecar_written_at": "1700000300",
+      "wsl_consented_distros": "[\"fixture-distro\"]"
+    },
+    "view_state": {
+      "shelf.sort": "touched"
+    }
+  }
+}

@@ -6,9 +6,10 @@
 )]
 //! The sidecar export: keyed on a subject, what it leaves out, and how it is written and checked.
 
-use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
+use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
 use codotheca_core::index::sidecar::{
-    counts, export, is_due, read, write_atomically, SIDECAR_FORMAT, SIDECAR_INTERVAL_SECS,
+    counts, export, inspect, is_due, read, write_atomically, SidecarState, REBUILD_OWNED_SETTINGS,
+    SIDECAR_FORMAT, SIDECAR_INTERVAL_SECS,
 };
 use codotheca_core::index::{open_connection, Index};
 
@@ -112,7 +113,7 @@ fn the_rebuild_owned_settings_keys_are_not_exported() {
         s.payload.settings.get("effects_tier").map(String::as_str),
         Some("reduced")
     );
-    for owned in ["schema_version", "sidecar_generation", "git_version"] {
+    for owned in REBUILD_OWNED_SETTINGS {
         assert!(
             !s.payload.settings.contains_key(owned),
             "{owned} belongs to the new database, not to the export"
@@ -188,7 +189,10 @@ fn a_tampered_sidecar_is_refused_rather_than_restored() {
     std::fs::write(&path, tampered).unwrap();
 
     assert!(
-        read(&path).is_err(),
+        matches!(
+            inspect(&path, SUPPORTED_SCHEMA_VERSION),
+            SidecarState::Unreadable { .. }
+        ),
         "the checksum exists to catch exactly this"
     );
 }

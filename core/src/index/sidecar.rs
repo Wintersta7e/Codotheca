@@ -3,23 +3,47 @@
 //! Every record is keyed on a `ProjectSubject`, never an id, because a rebuild reassigns ids
 //! and an id-keyed restore puts one project's notes on another. Written atomically, hourly and
 //! on clean shutdown, with a generation number and a checksum.
+//!
+//! Format 2 (§48.8) adds registered sections, every location's key and the pending records;
+//! the reader still accepts format 1, which reads as format 2 with none of them.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
+use rusqlite::types::{Value, ValueRef};
+use rusqlite::{Connection, Transaction};
 
 use super::subject::subject_for_project;
 use super::IndexError;
 use crate::protocol::ProjectId;
 
-/// The document shape this build writes, and the only one it reads.
-pub const SIDECAR_FORMAT: u32 = 1;
+/// The document shape this build writes. It also reads format 1 (§48.8.2).
+pub const SIDECAR_FORMAT: u32 = 2;
 /// How long after the last write, in seconds, a sidecar is due again: hourly (§1.12).
 pub const SIDECAR_INTERVAL_SECS: i64 = 3600;
 
-/// `app_meta` keys the new database owns rather than restores.
-const REBUILD_OWNED_SETTINGS: [&str; 3] = ["schema_version", "sidecar_generation", "git_version"];
+/// `app_meta` keys that describe the database or the sidecar's own bookkeeping.
+///
+/// The new database owns them, so they are neither exported nor restored — the restore skips
+/// them too, so a key joining this list takes effect against a document written before it joined.
+pub const REBUILD_OWNED_SETTINGS: [&str; 4] = [
+    "schema_version",
+    "sidecar_generation",
+    "git_version",
+    "sidecar_written_at",
+];
+
+/// `app_meta` keys no build reads any more, dropped on export and on restore.
+///
+/// This is the one place a retired key is dropped. `level_floor` is the legacy floor count, never
+/// read as a level;
+/// `restore_pending_generation` was written by a rebuild nothing called and read by nothing.
+pub const RETIRED_SETTINGS: [&str; 2] = ["level_floor", "restore_pending_generation"];
+
+/// Whether `key` stays out of the sidecar in both directions.
+fn never_travels(key: &str) -> bool {
+    REBUILD_OWNED_SETTINGS.contains(&key) || RETIRED_SETTINGS.contains(&key)
+}
 
 macro_rules! record {
     (
@@ -32,6 +56,72 @@ macro_rules! record {
     };
 }
 
+record!(
+    /// A `location` row's natural key — what names a copy across a rebuild, which reassigns
+    /// every location id.
+    SidecarLocationKey {
+        /// The side the copy is on: `win`, `linux` or `wsl`.
+        kind: String,
+        /// The WSL distribution, or empty for any other kind.
+        distro: String,
+        /// The location's `path_key` bytes, hex-encoded.
+        path_key: String,
+    }
+);
+
+/// One column's value, tagged with its SQLite storage class so a dumped row loads back as the
+/// same value. A blob is hex, because a JSON string cannot carry arbitrary bytes.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "t", content = "v")]
+pub enum SidecarValue {
+    /// SQL `NULL`.
+    Null,
+    /// An `INTEGER`.
+    Integer(i64),
+    /// A `REAL`.
+    Real(f64),
+    /// A `TEXT`.
+    Text(String),
+    /// A `BLOB`, hex-encoded.
+    Blob(String),
+}
+
+// SQLite stores no NaN (it writes NULL instead) and JSON cannot carry one, so no value this type
+// holds is unequal to itself.
+impl Eq for SidecarValue {}
+
+/// A whole table row, column name to value: what a record carries when no disk remains to
+/// re-derive any column of it.
+pub type SidecarRow = BTreeMap<String, SidecarValue>;
+
+record!(
+    /// One row of a registered section (§48.8.3): the subject it belongs to, the locations it
+    /// names, and the section's own data.
+    SectionRow {
+        /// The subject key of the project the row belongs to; `None` for a row of no project.
+        subject: Option<String>,
+        /// The keys of every location the row references, resolved again on restore.
+        location_keys: Vec<SidecarLocationKey>,
+        /// The section's data, in the shape its owner's export writes and its restore reads.
+        data: serde_json::Value,
+    }
+);
+record!(
+    /// One `sidecar_pending` row, carried verbatim (§48.8.4): a record staged by a rebuild and
+    /// not yet matched to a project. Its id stays behind — it is local to one database.
+    PendingRow {
+        /// The generation of the sidecar the record was staged from.
+        source_generation: i64,
+        /// The subject key the record waits for.
+        subject_key: String,
+        /// The JSON text of the record's location keys, as the column holds it.
+        location_keys: String,
+        /// The JSON text of the record itself, as the column holds it.
+        record: String,
+        /// When it was staged, in Unix seconds.
+        queued_at: i64,
+    }
+);
 record!(
     /// One `session_segment` row.
     SidecarSegment {
@@ -60,6 +150,9 @@ record!(
         close_reason: Option<String>,
         /// Its segments, oldest first.
         segments: Vec<SidecarSegment>,
+        /// The copy it ran in; `None` in format 1 and for a session that recorded none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        location_key: Option<SidecarLocationKey>,
     }
 );
 record!(
@@ -126,6 +219,12 @@ record!(
         xp_events: Vec<SidecarXpEvent>,
         /// Its user-made launch targets, in `sort_index` order.
         launch_targets: Vec<SidecarLaunchTarget>,
+        /// The key of every location the project has, removed ones included; empty in format 1.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        location_keys: Vec<SidecarLocationKey>,
+        /// Every column of each removed location, which no scan can re-derive; empty in format 1.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        removed_locations: Vec<SidecarRow>,
     }
 );
 record!(
@@ -225,18 +324,29 @@ pub struct SidecarPayload {
     pub settings: BTreeMap<String, String>,
     /// Every `view_state` row.
     pub view_state: BTreeMap<String, String>,
+    /// Each registered section's rows, by section name; empty in format 1.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sections: BTreeMap<String, Vec<SectionRow>>,
+    /// Every unconsumed `sidecar_pending` row, so a second corruption loses none of the first's;
+    /// empty in format 1.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending: Vec<PendingRow>,
 }
 
 /// The sidecar document as written to `index-sidecar.json`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Sidecar {
-    /// The document shape; [`read`] refuses anything but [`SIDECAR_FORMAT`].
+    /// The document shape: 1 or [`SIDECAR_FORMAT`]; [`inspect`] calls any other newer.
     pub format: u32,
     /// Which write this is; each export adds one to `app_meta.sidecar_generation`.
     pub generation: u64,
     /// When it was written, in Unix seconds — where a rebuild's gap starts.
     pub written_at: i64,
-    /// `fnv1a64:<hex>` over the serialised payload; [`read`] refuses a mismatch.
+    /// The writing index's `user_version`; `None` in format 1. Outside the payload, so the
+    /// checksum does not cover it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
+    /// `fnv1a64:<hex>` over the serialised payload; [`inspect`] calls a mismatch unreadable.
     pub checksum: String,
     /// The records themselves.
     pub payload: SidecarPayload,
@@ -343,14 +453,17 @@ pub fn export(conn: &Connection, generation: u64, now: i64) -> Result<Sidecar, I
         roots: export_roots(conn)?,
         identities: export_identities(conn)?,
         merges: export_merges(conn)?,
-        settings: export_kv(conn, "app_meta", &REBUILD_OWNED_SETTINGS)?,
-        view_state: export_kv(conn, "view_state", &[])?,
+        settings: export_kv(conn, "app_meta", never_travels)?,
+        view_state: export_kv(conn, "view_state", |_| false)?,
+        sections: BTreeMap::new(),
+        pending: Vec::new(),
     };
     let checksum = checksum_of(&payload)?;
     Ok(Sidecar {
         format: SIDECAR_FORMAT,
         generation,
         written_at: now,
+        schema_version: None,
         checksum,
         payload,
     })
@@ -380,14 +493,14 @@ fn hex(bytes: &[u8]) -> String {
 fn export_kv(
     conn: &Connection,
     table: &str,
-    skip: &[&str],
+    skip: fn(&str) -> bool,
 ) -> Result<BTreeMap<String, String>, IndexError> {
     let mut out = BTreeMap::new();
     let mut stmt = conn.prepare(&format!("SELECT k, v FROM {table} ORDER BY k"))?;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
         let k: String = row.get(0)?;
-        if skip.contains(&k.as_str()) {
+        if skip(&k) {
             continue;
         }
         out.insert(k, row.get(1)?);
@@ -421,6 +534,8 @@ fn export_projects(conn: &Connection) -> Result<Vec<SidecarProject>, IndexError>
             sessions: export_sessions(conn, id)?,
             xp_events: export_xp_events(conn, id)?,
             launch_targets: export_targets(conn, id)?,
+            location_keys: Vec::new(),
+            removed_locations: Vec::new(),
         });
     }
     Ok(out)
@@ -455,6 +570,7 @@ fn export_sessions(conn: &Connection, id: ProjectId) -> Result<Vec<SidecarSessio
             credited_seconds: row.get(3)?,
             close_reason: row.get(4)?,
             segments,
+            location_key: None,
         });
     }
     Ok(sessions)
@@ -618,6 +734,75 @@ fn export_merges(conn: &Connection) -> Result<Vec<SidecarMerge>, IndexError> {
     Ok(out)
 }
 
+/// Every column of one row of `table`, read by `rowid`: the one dumper, so a record that must
+/// carry a whole row carries every column the table has, including one added after this code.
+///
+/// # Errors
+/// Fails when SQLite refuses the read, no row has that `rowid`, or a `TEXT` value is not UTF-8.
+pub fn dump_row(conn: &Connection, table: &str, rowid: i64) -> Result<SidecarRow, IndexError> {
+    let mut stmt = conn.prepare(&format!("SELECT * FROM {table} WHERE rowid = ?1"))?;
+    let names: Vec<String> = stmt.column_names().into_iter().map(str::to_owned).collect();
+    let row = stmt.query_row([rowid], |r| {
+        let mut row = SidecarRow::new();
+        for (i, name) in names.iter().enumerate() {
+            let value = match r.get_ref(i)? {
+                ValueRef::Null => SidecarValue::Null,
+                ValueRef::Integer(n) => SidecarValue::Integer(n),
+                ValueRef::Real(x) => SidecarValue::Real(x),
+                ValueRef::Text(_) => SidecarValue::Text(r.get(i)?),
+                ValueRef::Blob(bytes) => SidecarValue::Blob(hex(bytes)),
+            };
+            row.insert(name.clone(), value);
+        }
+        Ok(row)
+    })?;
+    Ok(row)
+}
+
+/// Insert a dumped row into `table`: the one loader.
+///
+/// Names only the columns `table` has and `skip` does not list, so a column the row carries and
+/// the table lost is dropped rather than refused, and a skipped `id` takes the table's next.
+///
+/// # Errors
+/// Fails when SQLite refuses the column read or the insert, or a blob's hex is malformed.
+pub fn insert_row(
+    tx: &Transaction<'_>,
+    table: &str,
+    row: &SidecarRow,
+    skip: &[&str],
+) -> Result<(), IndexError> {
+    let columns: std::collections::BTreeSet<String> = tx
+        .prepare("SELECT name FROM pragma_table_info(?1)")?
+        .query_map([table], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    let mut names = Vec::new();
+    let mut values = Vec::new();
+    for (name, value) in row {
+        if skip.contains(&name.as_str()) || !columns.contains(name) {
+            continue;
+        }
+        names.push(format!("\"{name}\""));
+        values.push(match value {
+            SidecarValue::Null => Value::Null,
+            SidecarValue::Integer(n) => Value::Integer(*n),
+            SidecarValue::Real(x) => Value::Real(*x),
+            SidecarValue::Text(t) => Value::Text(t.clone()),
+            SidecarValue::Blob(h) => Value::Blob(unhex(h)?),
+        });
+    }
+    let placeholders: Vec<String> = (1..=names.len()).map(|i| format!("?{i}")).collect();
+    tx.execute(
+        &format!(
+            "INSERT INTO {table} ({}) VALUES ({})",
+            names.join(", "),
+            placeholders.join(", ")
+        ),
+        rusqlite::params_from_iter(values),
+    )?;
+    Ok(())
+}
+
 /// Temp file, `sync_all`, then rename — atomic on both targets. `sync_all` runs before the
 /// rename so a power cut cannot leave a renamed-but-empty file.
 ///
@@ -645,28 +830,122 @@ pub fn write_atomically(sidecar: &Sidecar, path: &Path) -> Result<(), IndexError
     Ok(())
 }
 
-/// Read a sidecar, refusing an unknown format or a checksum that does not match the payload.
+/// What a sidecar file is, as §48.8.2's reader finds it. Never an error: each state is an
+/// answer a rebuild and the pre-rebuild window both act on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SidecarState {
+    /// No file exists at the path — `NotFound` and nothing else.
+    Absent,
+    /// A file exists and cannot be used: any other I/O error, a parse failure or a checksum
+    /// mismatch. Nothing is restored from it, and the file is kept.
+    Unreadable {
+        /// Why, in the reader's words.
+        reason: String,
+    },
+    /// Written by a newer build: an unknown format, a schema above the reader's, or a section
+    /// this build does not register. A rebuild restores nothing rather than part of it.
+    Newer {
+        /// Which of the three, with the value found.
+        reason: String,
+    },
+    /// A document this build reads in full, checksum verified.
+    Present(Box<Sidecar>),
+}
+
+/// The fields a newer document is recognised by, read before the full parse: a newer writer's
+/// records need not parse as this build's.
+#[derive(serde::Deserialize)]
+struct Header {
+    format: u32,
+    #[serde(default)]
+    schema_version: Option<u32>,
+    #[serde(default)]
+    payload: HeaderPayload,
+}
+
+#[derive(Default, serde::Deserialize)]
+struct HeaderPayload {
+    #[serde(default)]
+    sections: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Read the sidecar at `path` into one of its four states, against `supported`, the highest
+/// schema version this build migrates to.
+///
+/// The `newer` checks run before the checksum: a newer writer's payload is not one this build
+/// can re-serialise to check, and calling it unreadable would offer a rebuild that drops it.
+#[must_use]
+pub fn inspect(path: &Path, supported: u32) -> SidecarState {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return SidecarState::Absent,
+        Err(e) => {
+            return SidecarState::Unreadable {
+                reason: e.to_string(),
+            }
+        }
+    };
+    let header: Header = match serde_json::from_slice(&bytes) {
+        Ok(header) => header,
+        Err(e) => {
+            return SidecarState::Unreadable {
+                reason: e.to_string(),
+            }
+        }
+    };
+    if header.format != 1 && header.format != SIDECAR_FORMAT {
+        return SidecarState::Newer {
+            reason: format!(
+                "sidecar format {} is not one this build reads",
+                header.format
+            ),
+        };
+    }
+    if let Some(version) = header.schema_version.filter(|v| *v > supported) {
+        return SidecarState::Newer {
+            reason: format!("sidecar schema {version} is above this build's {supported}"),
+        };
+    }
+    if let Some(name) = header.payload.sections.keys().next() {
+        return SidecarState::Newer {
+            reason: format!("sidecar section {name} is not registered in this build"),
+        };
+    }
+    let doc: Sidecar = match serde_json::from_slice(&bytes) {
+        Ok(doc) => doc,
+        Err(e) => {
+            return SidecarState::Unreadable {
+                reason: e.to_string(),
+            }
+        }
+    };
+    match checksum_of(&doc.payload) {
+        Ok(expected) if expected == doc.checksum => SidecarState::Present(Box::new(doc)),
+        Ok(_) => SidecarState::Unreadable {
+            reason: "sidecar checksum does not match its payload".to_owned(),
+        },
+        Err(e) => SidecarState::Unreadable {
+            reason: e.to_string(),
+        },
+    }
+}
+
+/// [`inspect`] for a caller that wants the document or a reason: the document when it is
+/// present, otherwise the state as an error.
 ///
 /// # Errors
-/// Fails when the file cannot be read or is not a sidecar document, its format is not
-/// [`SIDECAR_FORMAT`], or its checksum does not match its payload.
+/// Fails with [`IndexError::Sidecar`] when the sidecar is absent, unreadable or newer.
 pub fn read(path: &Path) -> Result<Sidecar, IndexError> {
-    let bytes = std::fs::read(path)?;
-    let doc: Sidecar =
-        serde_json::from_slice(&bytes).map_err(|e| IndexError::Sidecar(e.to_string()))?;
-    if doc.format != SIDECAR_FORMAT {
-        return Err(IndexError::Sidecar(format!(
-            "sidecar format {} is not {SIDECAR_FORMAT}",
-            doc.format
-        )));
+    match inspect(path, super::migrate::SUPPORTED_SCHEMA_VERSION) {
+        SidecarState::Present(doc) => Ok(*doc),
+        SidecarState::Absent => Err(IndexError::Sidecar(format!(
+            "no sidecar at {}",
+            path.display()
+        ))),
+        SidecarState::Unreadable { reason } | SidecarState::Newer { reason } => {
+            Err(IndexError::Sidecar(reason))
+        }
     }
-    let expected = checksum_of(&doc.payload)?;
-    if expected != doc.checksum {
-        return Err(IndexError::Sidecar(
-            "sidecar checksum does not match its payload".to_owned(),
-        ));
-    }
-    Ok(doc)
 }
 
 /// Rows a restore wrote, per kind. An insert skipped because its row already exists counts zero.
@@ -785,6 +1064,9 @@ pub fn restore_global(conn: &Connection, doc: &Sidecar) -> Result<RestoreCounts,
     }
 
     for (k, v) in &doc.payload.settings {
+        if never_travels(k) {
+            continue;
+        }
         c.settings += rows(conn.execute(
             "INSERT INTO app_meta (k, v) VALUES (?1, ?2)
              ON CONFLICT(k) DO UPDATE SET v = excluded.v",
