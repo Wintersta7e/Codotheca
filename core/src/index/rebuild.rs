@@ -47,7 +47,8 @@ pub enum RebuildOutcome {
     Rebuilt(RebuildReportFile),
 }
 
-/// Why a rebuild did not happen. Every variant leaves the data directory as it was found.
+/// Why a rebuild did not happen. Every variant leaves the data directory as it was found, except
+/// a `Failed` whose undo could not finish, which names what stayed.
 #[derive(Debug, thiserror::Error)]
 pub enum RebuildError {
     /// The database failed to open for a reason other than corruption.
@@ -59,11 +60,14 @@ pub enum RebuildError {
         /// The reader's reason.
         reason: String,
     },
-    /// An act failed and every act before it was undone.
-    #[error("the rebuild failed and changed nothing: {reason}")]
+    /// An act failed, and every act before it was undone unless `undone` says otherwise.
+    #[error("the rebuild failed{}: {reason}", if *.undone { " and changed nothing" } else { "" })]
     Failed {
         /// What failed, and anything that could not be undone.
         reason: String,
+        /// Whether every act before the failure was undone, so the data directory is as it was
+        /// found. Only then does the line say the rebuild changed nothing.
+        undone: bool,
     },
 }
 
@@ -291,7 +295,7 @@ pub fn rebuild_in_place(data_dir: &Path, now: i64) -> Result<RebuildOutcome, Reb
 /// # Errors
 /// [`RebuildError::NotCorrupt`] when the probe fails for any reason but corruption;
 /// [`RebuildError::SidecarNewer`] when a newer build wrote the sidecar, before anything moves;
-/// [`RebuildError::Failed`] when any later act or `step` fails, after every act was undone.
+/// [`RebuildError::Failed`] when any later act or `step` fails, after undoing every act it can.
 pub fn rebuild_in_place_with(
     data_dir: &Path,
     now: i64,
@@ -312,8 +316,9 @@ pub fn rebuild_in_place_with(
     let mut undo = Undo::default();
     rebuild_beside(data_dir, doc.as_ref(), now, migrations, step, &mut undo)
         .map(RebuildOutcome::Rebuilt)
-        .map_err(|e| RebuildError::Failed {
-            reason: undo.after(e).to_string(),
+        .map_err(|e| {
+            let (reason, undone) = undo.after(&e);
+            RebuildError::Failed { reason, undone }
         })
 }
 
@@ -351,7 +356,7 @@ fn rebuild_beside(
     step(RebuildStep::Checkpointed)?;
 
     let quarantined =
-        recovery::quarantine_set_with(&db, &Index::sidecar_path(data_dir), now, step, undo)?;
+        recovery::quarantine_set(&db, &Index::sidecar_path(data_dir), now, step, undo)?;
     undo.rename(&side, &db)?;
     step(RebuildStep::Swapped)?;
 

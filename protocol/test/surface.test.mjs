@@ -616,48 +616,6 @@ test('art.rerender is idempotent by construction', () => {
   assert.notEqual(c.idempotent, false);
 });
 
-// §11.2a: the corrupt-index window draws three blocks and §1.12 gives them figures. v2.2 shipped
-// the boolean and no numbers, so the window named what a gap contains and printed nothing.
-test('the corrupt-index ledger carries a figure set for each of its three blocks', () => {
-  const f = schema.types.CorruptIndexLedger.fields;
-  assert.equal(f.quarantinedAt, 'Timestamp');
-  assert.equal(f.gapStartedAt, 'Timestamp?');
-  assert.equal(f.reDerivable, 'LedgerCounts');
-  assert.equal(f.restorable, 'LedgerCounts');
-  assert.equal(f.deferred, 'LedgerCounts');
-});
-
-// The boolean stays, and stays load-bearing: false means the gap block says so in words and
-// prints no figure at all. §1.10 on the screen where an invented zero costs the most.
-test('whether the gap could be counted is carried apart from the counts', () => {
-  assert.equal(schema.types.CorruptIndexLedger.fields.gapCountsRecoverable, 'bool');
-});
-
-// §1.10 one level down: a block sourced from a struct with no column for a row kind must say
-// nothing about that kind. Nullable is the only encoding left — convention 1 of this plan.
-test('every ledger count is nullable, and the set is the one plan 04 computes', () => {
-  const fields = schema.types.LedgerCounts.fields;
-  for (const [name, expr] of Object.entries(fields)) {
-    assert.equal(expr, 'i64?', `LedgerCounts.${name} must be nullable`);
-  }
-  assert.deepEqual(Object.keys(fields).sort(), [
-    'aliases',
-    'collectionMembers',
-    'collections',
-    'identities',
-    'launchTargets',
-    'merges',
-    'notes',
-    'projects',
-    'roots',
-    'sessionSegments',
-    'sessions',
-    'settings',
-    'viewState',
-    'xpEvents',
-  ]);
-});
-
 // §10.5a: the NEW predicate lives once, in `isNewArrival`. ProjectRow carries its per-project
 // inputs; without this field the run-wide one is missing and the chip cannot ship.
 test('the core snapshot names when first run ended', () => {
@@ -1236,11 +1194,15 @@ test('the four totals agree with the phase-2 delta table', () => {
    * [p4] Lane 0 moves the base first (R147): §45.12's **+4** — `NestedRepository`, `NestedKind`,
    * `PreciousSummary`, `PreciousEntry` — and §46.7's **+1**, `TrashRefusalKind`. The figure is
    * the generator's (`protocol/generated.lock`), never a sum carried from another branch.
+   *
+   * [p4] §48.13 moves it by **−2**: `LedgerCounts` and `CorruptIndexLedger`, which no command,
+   * event or other type referenced and which never described the startup-failure file — that
+   * file keeps its hand-written shape on both sides.
    */
   assert.equal(
     types,
-    199,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1; found ${types}`,
+    197,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2; found ${types}`,
   );
 });
 

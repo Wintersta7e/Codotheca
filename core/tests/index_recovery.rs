@@ -8,7 +8,6 @@
 
 use std::io::Write as _;
 
-use codotheca_core::index::recovery::{quarantine, QuarantinedFiles};
 use codotheca_core::index::{open_connection, Index, IndexError};
 
 #[test]
@@ -60,53 +59,6 @@ fn a_file_that_is_not_a_database_is_reported_as_corrupt() {
         Err(IndexError::Corrupt { detail }) => assert_ne!(detail, ""),
         other => panic!("expected Corrupt, got {other:?}"),
     }
-}
-
-#[test]
-fn quarantine_moves_the_database_wal_and_shm_together() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Index::db_path(dir.path());
-    std::fs::create_dir_all(dir.path()).unwrap();
-    for suffix in ["", "-wal", "-shm"] {
-        let mut p = db.as_os_str().to_os_string();
-        p.push(suffix);
-        std::fs::write(std::path::PathBuf::from(p), b"x").unwrap();
-    }
-
-    let QuarantinedFiles {
-        db: moved_db,
-        wal,
-        shm,
-        at,
-        ..
-    } = quarantine(&db, 1_787_126_520).unwrap();
-    assert_eq!(at, 1_787_126_520);
-    assert!(
-        !db.exists(),
-        "the corrupt database must not be left in place"
-    );
-    assert!(moved_db.exists());
-    assert_eq!(
-        moved_db.file_name().unwrap().to_string_lossy(),
-        "index.db.corrupt-1787126520"
-    );
-    assert!(
-        wal.unwrap().exists(),
-        "a stale WAL left behind would be replayed into the rebuild"
-    );
-    assert!(shm.unwrap().exists());
-}
-
-#[test]
-fn quarantine_tolerates_a_database_with_no_wal_or_shm() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Index::db_path(dir.path());
-    std::fs::create_dir_all(dir.path()).unwrap();
-    std::fs::write(&db, b"x").unwrap();
-
-    let q = quarantine(&db, 7).unwrap();
-    assert!(q.wal.is_none());
-    assert!(q.shm.is_none());
 }
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};

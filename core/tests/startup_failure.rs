@@ -8,8 +8,12 @@
 //! §11.2a's three database windows, reported through a file the shell reads without ever
 //! opening the database.
 
+use std::path::Path;
+
 use codotheca_core::index::IndexError;
-use codotheca_core::surfaces::startup_failure::{self, StartupFailure};
+use codotheca_core::surfaces::startup_failure::{
+    self, SidecarReport, SidecarReportState, StartupFailure,
+};
 
 #[test]
 fn a_future_schema_becomes_a_report_naming_both_numbers() {
@@ -17,7 +21,7 @@ fn a_future_schema_becomes_a_report_naming_both_numbers() {
         on_disk: 9,
         supported: 5,
     };
-    let failure = startup_failure::from_index_error(&err, 100).expect("recognised");
+    let failure = startup_failure::from_index_error(&err, Path::new("unused")).expect("recognised");
     assert!(matches!(
         failure,
         StartupFailure::SchemaFromFuture {
@@ -36,7 +40,7 @@ fn a_failed_migration_keeps_the_schema_it_was_restored_to_and_when() {
         restored_at: 777,
         detail: "constraint".into(),
     };
-    let failure = startup_failure::from_index_error(&err, 100).expect("recognised");
+    let failure = startup_failure::from_index_error(&err, Path::new("unused")).expect("recognised");
     match failure {
         StartupFailure::MigrationFailed {
             version,
@@ -54,35 +58,74 @@ fn a_failed_migration_keeps_the_schema_it_was_restored_to_and_when() {
 #[test]
 fn an_error_the_shell_has_no_window_for_produces_no_report() {
     let err = IndexError::CompletionNotComputable;
-    assert!(startup_failure::from_index_error(&err, 100).is_none());
+    assert!(startup_failure::from_index_error(&err, Path::new("unused")).is_none());
 }
 
+/// §48.7.1 step 1: the report states the sidecar as the rebuild would find it and claims no
+/// quarantine. A corrupt index met with no sidecar beside it reports `absent` and no figure.
 #[test]
-fn a_corrupt_index_with_no_rebuild_yet_reports_no_counts_rather_than_zeroes() {
+fn a_corrupt_index_reports_the_sidecar_state_and_no_quarantine() {
+    let dir = tempfile::tempdir().expect("tempdir");
     let err = IndexError::Corrupt {
         detail: "file is not a database".into(),
     };
-    let failure = startup_failure::from_index_error(&err, 100).expect("recognised");
+    let failure = startup_failure::from_index_error(&err, dir.path()).expect("recognised");
     match failure {
         StartupFailure::CorruptIndex {
-            quarantined_at,
-            gap_started_at,
+            sidecar,
+            rebuild_failed,
             gap_counts_recoverable,
-            re_derivable,
-            restorable,
         } => {
-            assert_eq!(quarantined_at, 100);
-            assert_eq!(gap_started_at, None);
-            assert!(!gap_counts_recoverable);
             assert_eq!(
-                (re_derivable, restorable),
-                (None, None),
-                "no rebuild has run, so the ledger has no figures — and `0 projects restorable` \
-                 would be a claim, on the screen where unknown-as-zero matters most"
+                sidecar,
+                SidecarReport {
+                    state: SidecarReportState::Absent,
+                    written_at: None,
+                    generation: None,
+                    counts: None,
+                    reason: None,
+                },
+                "no sidecar, so no figure — `0 projects restorable` would be a claim, on the \
+                 screen where unknown-as-zero matters most"
             );
+            assert_eq!(rebuild_failed, None);
+            assert!(!gap_counts_recoverable);
         }
         other => panic!("wrong variant: {other:?}"),
     }
+}
+
+/// The corrupt-index report on disk carries exactly these keys, camelCase, with every absent
+/// value written as `null` rather than left out — the shell's reader refuses any other set.
+#[test]
+fn the_corrupt_index_report_serialises_every_key() {
+    let failure = StartupFailure::CorruptIndex {
+        sidecar: SidecarReport {
+            state: SidecarReportState::Unreadable,
+            written_at: None,
+            generation: None,
+            counts: None,
+            reason: Some("checksum".to_owned()),
+        },
+        rebuild_failed: Some("the side index exists".to_owned()),
+        gap_counts_recoverable: false,
+    };
+    let doc = serde_json::to_value(&failure).expect("json");
+    assert_eq!(
+        doc,
+        serde_json::json!({
+            "kind": "corrupt_index",
+            "sidecar": {
+                "state": "unreadable",
+                "writtenAt": null,
+                "generation": null,
+                "counts": null,
+                "reason": "checksum",
+            },
+            "rebuildFailed": "the side index exists",
+            "gapCountsRecoverable": false,
+        })
+    );
 }
 
 #[test]

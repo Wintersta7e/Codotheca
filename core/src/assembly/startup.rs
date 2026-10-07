@@ -6,9 +6,12 @@
 //! a dead application.
 
 use crate::assembly::CoreHandler;
+use crate::index::rebuild::{
+    probe_open, rebuild_in_place, Probe, RebuildError, RebuildOutcome, RebuildReportFile,
+};
 use crate::index::{Index, IndexError};
 use crate::proto::pubsub::EventSink;
-use crate::surfaces::startup_failure;
+use crate::surfaces::startup_failure::{self, StartupFailure};
 use std::path::Path;
 use std::sync::PoisonError;
 
@@ -36,31 +39,76 @@ pub struct StartupSummary {
 /// An **unrecognised** `IndexError` is not swallowed: it is returned, and `main` exits non-zero
 /// with the reason on stderr.
 ///
+/// A corrupt database is met by the read-only probe before any ordinary open, which would unlink
+/// its journal: §48.7.1 step 1 writes nothing into the data directory but the report.
+///
 /// A clean open clears a stale report, so yesterday's failure does not draw over today's
 /// working app.
 ///
 /// # Errors
 /// The `IndexError` itself, when it is not one §11.2a recognises.
 pub fn open_index(data_dir: &Path, now: i64) -> Result<Index, IndexError> {
+    if let Probe::Corrupt { .. } = probe_open(&Index::db_path(data_dir)) {
+        exit_fatal(data_dir, &startup_failure::corrupt_index(data_dir, None));
+    }
     match Index::open_at(data_dir, now) {
         Ok(index) => {
             startup_failure::clear(data_dir);
             Ok(index)
         }
         Err(err) => {
-            if let Some(failure) = startup_failure::from_index_error(&err, now) {
-                // A report we cannot write is still a fatal index; the exit code is the part the
-                // shell cannot miss, so a failed write must not turn this into a normal start.
-                let _ = startup_failure::write(data_dir, &failure);
-                // Exits with `EXIT_INDEX_FATAL`, the shell's cue to read the report, while the
-                // caller's `CoreLock` is still alive: this signature cannot hand the code back to
-                // `main`, so the lock's destructor does not run on this path.
-                #[allow(clippy::exit)]
-                std::process::exit(i32::from(startup_failure::EXIT_INDEX_FATAL));
+            if let Some(failure) = startup_failure::from_index_error(&err, data_dir) {
+                exit_fatal(data_dir, &failure);
             }
             Err(err)
         }
     }
+}
+
+/// The startup mode `--rebuild` selects (§48.7.1 step 4).
+///
+/// Rebuild a corrupt index beside it, then open the result as an ordinary start, which clears the
+/// report. A database that opens is never rebuilt and opens as itself. Returns the rebuild's
+/// report when one ran.
+///
+/// A rebuild that fails undoes what it did, writes the `corrupt_index` report naming why and
+/// anything it could not undo, and exits `EXIT_INDEX_FATAL`; REBUILD may be asked for again.
+///
+/// # Errors
+/// The `IndexError` itself, when it is not one §11.2a recognises.
+pub fn rebuild_index(
+    data_dir: &Path,
+    now: i64,
+) -> Result<(Index, Option<RebuildReportFile>), IndexError> {
+    let report = match rebuild_in_place(data_dir, now) {
+        Ok(RebuildOutcome::Opened) => None,
+        Ok(RebuildOutcome::Rebuilt(report)) => Some(report),
+        Err(RebuildError::NotCorrupt(err)) => {
+            if let Some(failure) = startup_failure::from_index_error(&err, data_dir) {
+                exit_fatal(data_dir, &failure);
+            }
+            return Err(err);
+        }
+        Err(failed @ (RebuildError::SidecarNewer { .. } | RebuildError::Failed { .. })) => {
+            exit_fatal(
+                data_dir,
+                &startup_failure::corrupt_index(data_dir, Some(failed.to_string())),
+            )
+        }
+    };
+    Ok((open_index(data_dir, now)?, report))
+}
+
+/// Write `failure` and exit with `EXIT_INDEX_FATAL`, the shell's cue to read it.
+///
+/// Exits while the caller's `CoreLock` is still alive: neither caller's signature can hand the
+/// code back to `main`, so the lock's destructor does not run on this path.
+fn exit_fatal(data_dir: &Path, failure: &StartupFailure) -> ! {
+    // A report we cannot write is still a fatal index; the exit code is the part the shell
+    // cannot miss, so a failed write must not turn this into a normal start.
+    let _ = startup_failure::write(data_dir, failure);
+    #[allow(clippy::exit)]
+    std::process::exit(i32::from(startup_failure::EXIT_INDEX_FATAL));
 }
 
 /// The four calls that must happen before `run_loop`, in the order their side effects require.

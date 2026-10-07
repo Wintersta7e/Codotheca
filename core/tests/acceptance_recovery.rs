@@ -8,10 +8,10 @@
 //! Criterion 14's core half: a schema from the future refuses to open and touches nothing; a
 //! corrupt database quarantines with its sidecar files and rebuilds into an honest report.
 //!
-//! The criterion, not the mechanism. `index_recovery.rs` covers classification, quarantine and
-//! the sidecar restore; this file asserts the two clauses §16.14 states — **both** numbers in
-//! the error, the file byte-identical after the refusal, and a report that names exactly what
-//! was not derivable rather than a zero that reads as "nothing was lost".
+//! The criterion, not the mechanism. `index_recovery.rs` and `sidecar_rebuild.rs` cover
+//! classification, the rebuild and its report; this file asserts the two clauses §16.14 states —
+//! **both** numbers in the error, the file byte-identical after the refusal, and the corrupt files
+//! set aside by the binary the shell runs, never by a library call production does not make.
 //!
 //! The names carry the `ac_14_` tag, so the acceptance harness joins them to criterion 14's two
 //! automated checks by the id `acceptance_recovery::<fn>`. `index_recovery.rs`'s tests carry no
@@ -19,12 +19,13 @@
 
 use std::fs;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use codotheca_core::index::migrate::SUPPORTED_SCHEMA_VERSION;
-use codotheca_core::index::rebuild::{
-    rebuild_in_place, RebuildError, RebuildOutcome, RebuildReportFile,
-};
+use codotheca_core::index::rebuild::{RebuildReportFile, REBUILD_REPORT_FILE};
 use codotheca_core::index::{open_connection, Index, IndexError};
+use codotheca_core::proto::frame::{read_frame, write_frame};
+use codotheca_core::surfaces::startup_failure::EXIT_INDEX_FATAL;
 
 /// The whole file's bytes. The criterion says the file is left untouched, which is a statement
 /// about content — an mtime comparison would pass over a rewrite that produced the same length.
@@ -32,11 +33,17 @@ fn fingerprint(path: &Path) -> Vec<u8> {
     fs::read(path).unwrap()
 }
 
-fn rebuilt(outcome: Result<RebuildOutcome, RebuildError>) -> RebuildReportFile {
-    match outcome {
-        Ok(RebuildOutcome::Rebuilt(report)) => report,
-        other => panic!("expected a rebuild, got {other:?}"),
+/// The real binary against `dir`, as the shell starts it — with `--rebuild` when REBUILD asked.
+fn core(dir: &Path, rebuild: bool) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_codotheca-core"));
+    cmd.arg(format!("--data-dir={}", dir.display()))
+        .arg("--epoch=1")
+        .arg(format!("--parent-pid={}", std::process::id()))
+        .stdin(Stdio::null());
+    if rebuild {
+        cmd.arg("--rebuild");
     }
+    cmd
 }
 
 #[test]
@@ -79,80 +86,103 @@ fn ac_14_schema_from_the_future_refuses_to_open() {
     assert_eq!(fingerprint(&db), before);
 }
 
+/// The database, its journal files and the sidecar, by name, as planted.
+fn planted(dir: &Path) -> Vec<(&'static str, Vec<u8>)> {
+    [
+        "index.db",
+        "index.db-wal",
+        "index.db-shm",
+        "index-sidecar.json",
+    ]
+    .into_iter()
+    .map(|name| (name, fs::read(dir.join(name)).unwrap()))
+    .collect()
+}
+
+/// Criterion 14's quarantine clause, through the production chain. The binary meets a corrupt
+/// database, reports and exits having moved nothing; started again with `--rebuild`, it sets the
+/// database, its `-wal` and `-shm` aside and copies the sidecar beside them as `*.corrupt-<t>`
+/// siblings, and the rebuild report names each one.
 #[test]
-fn ac_14_corrupt_database_quarantines_and_rebuilds() {
-    // Scenario 1: the path a running core actually takes — open, classify, rebuild.
+fn ac_14_the_production_chain_quarantines_the_three_files_with_a_sidecar_copy() {
     let dir = tempfile::tempdir().unwrap();
-    let db = Index::db_path(dir.path());
-    let wal = db.with_file_name("index.db-wal");
-    let shm = db.with_file_name("index.db-shm");
-    fs::write(&db, b"this is not a database").unwrap();
-    fs::write(&wal, b"stale wal").unwrap();
-    fs::write(&shm, b"stale shm").unwrap();
-
-    match Index::open(dir.path()) {
-        Err(IndexError::Corrupt { .. }) => {}
-        Err(other) => panic!("expected Corrupt, got {other:?}"),
-        Ok(_) => panic!("a corrupt file must not open"),
+    {
+        let index = Index::open_at(dir.path(), 1_700_000_000).unwrap();
+        index.export_sidecar(1_700_000_000).unwrap();
     }
+    let db = Index::db_path(dir.path());
+    fs::write(&db, b"this is not a database").unwrap();
+    fs::write(db.with_file_name("index.db-wal"), b"stale wal").unwrap();
+    fs::write(db.with_file_name("index.db-shm"), b"stale shm").unwrap();
+    let before = planted(dir.path());
 
-    // Measured, not assumed: SQLite unlinks both sidecar files itself when it decides the main
-    // file is not a database, so by the time the recovery path runs there is nothing left to
-    // move. The clause about the wal and the shm travelling with the database is therefore
-    // asserted below, against `rebuild` on a tree that still has them — not here, where a
-    // passing assertion would be describing SQLite's cleanup rather than ours.
-    assert!(
-        !wal.exists() && !shm.exists(),
-        "a failed open leaves the sidecars behind; the quarantine assertion below is then \
-         asserting the wrong subject and this test must be re-read"
-    );
-
-    let report = rebuilt(rebuild_in_place(dir.path(), 1_700_000_000));
-    let moved_db = db.with_file_name("index.db.corrupt-1700000000");
-    assert!(moved_db.exists());
-    assert!(report
-        .quarantine_files
-        .contains(&moved_db.display().to_string()));
-    assert_eq!(report.quarantined_at, 1_700_000_000);
-
-    // With no sidecar there was nothing to restore, and the report says so rather than
-    // reporting a zero that could be read as "nothing was lost".
-    assert!(report.restored.is_empty());
-    assert_eq!(report.pending, 0);
+    let detect = core(dir.path(), false).output().unwrap();
     assert_eq!(
-        report.gap_started_at, None,
-        "no sidecar means no gap start is knowable, which is not the same as a gap of zero"
+        detect.status.code(),
+        Some(i32::from(EXIT_INDEX_FATAL)),
+        "{}",
+        String::from_utf8_lossy(&detect.stderr)
     );
-
-    // The rebuilt database is usable and is at the version this build speaks.
-    let index = Index::open(dir.path()).unwrap();
-    assert_eq!(index.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
-
-    // Scenario 2: the wal and the shm travel with the database. A rebuild that moved only the
-    // main file would open onto a stale journal, so this is asserted where the files still
-    // exist — a caller holding a Corrupt error from somewhere other than a fresh open.
-    let kept = tempfile::tempdir().unwrap();
-    let kept_db = Index::db_path(kept.path());
-    fs::write(&kept_db, b"this is not a database").unwrap();
-    fs::write(kept_db.with_file_name("index.db-wal"), b"stale wal").unwrap();
-    fs::write(kept_db.with_file_name("index.db-shm"), b"stale shm").unwrap();
-
-    let moved = rebuilt(rebuild_in_place(kept.path(), 1_700_000_001));
-    let set_aside = |name: &str| kept.path().join(format!("{name}.corrupt-1700000001"));
-    for name in ["index.db", "index.db-wal", "index.db-shm"] {
-        assert!(
-            moved
-                .quarantine_files
-                .contains(&set_aside(name).display().to_string()),
-            "{name} is not in the quarantine set"
+    for (name, bytes) in &before {
+        assert_eq!(
+            &fs::read(dir.path().join(name)).unwrap(),
+            bytes,
+            "{name} changed before any rebuild was asked for"
         );
     }
-    // The quarantined files carry the *stale* bytes: "the old one is gone" is not the assertion
-    // to make; "the old one was preserved elsewhere" is.
-    assert_eq!(fs::read(set_aside("index.db-wal")).unwrap(), b"stale wal");
-    assert_eq!(fs::read(set_aside("index.db-shm")).unwrap(), b"stale shm");
+
+    let mut rebuild = core(dir.path(), true)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut buf = Vec::new();
+    read_frame(rebuild.stdout.as_mut().unwrap(), &mut buf).unwrap();
+    let hello: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+    assert_eq!(hello["t"], "hello", "{hello}");
+    let ack = serde_json::json!({"t": "request", "id": 1, "command": "app.hello_ack", "args": {}});
+    write_frame(
+        rebuild.stdin.as_mut().unwrap(),
+        &serde_json::to_vec(&ack).unwrap(),
+    )
+    .unwrap();
+    buf.clear();
+    read_frame(rebuild.stdout.as_mut().unwrap(), &mut buf).unwrap();
+    // Closing stdin ends the loop: the core exits as the shell going away makes it.
+    drop(rebuild.stdin.take());
+    let out = rebuild.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{:?}: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let report: RebuildReportFile =
+        serde_json::from_slice(&fs::read(dir.path().join(REBUILD_REPORT_FILE)).unwrap()).unwrap();
+    eprintln!("quarantine set: {:?}", report.quarantine_files);
+    assert_eq!(report.quarantine_files.len(), before.len());
+    for (name, bytes) in &before {
+        let moved = dir
+            .path()
+            .join(format!("{name}.corrupt-{}", report.quarantined_at));
+        assert!(
+            report
+                .quarantine_files
+                .contains(&moved.display().to_string()),
+            "{name} is not in the report's quarantine set"
+        );
+        assert!(moved.exists(), "{name} was not set aside");
+        // "The old one was preserved elsewhere", not "the old one is gone".
+        assert_eq!(&fs::read(&moved).unwrap(), bytes, "{name}'s bytes moved");
+    }
+    assert!(
+        dir.path().join("index-sidecar.json").exists(),
+        "the sidecar is copied, never moved"
+    );
     assert_eq!(
-        fs::read(set_aside("index.db")).unwrap(),
-        b"this is not a database"
+        Index::open(dir.path()).unwrap().schema_version().unwrap(),
+        SUPPORTED_SCHEMA_VERSION
     );
 }

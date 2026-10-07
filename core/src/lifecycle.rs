@@ -37,6 +37,10 @@ pub struct CoreArgs {
     /// because the shell already computes it (`resolveWorkerBinary`), and a second convention
     /// in Rust is one value spelled twice.
     pub worker: Option<PathBuf>,
+    /// `--rebuild`: REBUILD asked for this start, so a corrupt index is rebuilt from the sidecar
+    /// before the ordinary open (§48.7.1 step 3). Off, a corrupt index is reported and nothing
+    /// moves.
+    pub rebuild: bool,
 }
 
 /// Why argv was refused. Each variant names the flag.
@@ -59,7 +63,8 @@ impl std::fmt::Display for ArgError {
 
 impl std::error::Error for ArgError {}
 
-/// `--data-dir=<path> --epoch=<u64> --parent-pid=<u32>`, all three required.
+/// `--data-dir=<path> --epoch=<u64> --parent-pid=<u32>`, all three required; `--worker=<path>`
+/// and `--rebuild` optional.
 ///
 /// # Errors
 /// `ArgError::Missing` when any of the three is absent; `ArgError::Bad` when `--epoch` or
@@ -69,6 +74,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(argv: I) -> Result<CoreArgs, A
     let mut epoch: Option<u64> = None;
     let mut parent_pid: Option<u32> = None;
     let mut worker: Option<PathBuf> = None;
+    let mut rebuild = false;
     for arg in argv {
         if let Some(v) = arg.strip_prefix("--data-dir=") {
             data_dir = Some(PathBuf::from(v));
@@ -83,6 +89,8 @@ pub fn parse_args<I: IntoIterator<Item = String>>(argv: I) -> Result<CoreArgs, A
                 return Err(ArgError::Bad("--worker"));
             }
             worker = Some(PathBuf::from(v));
+        } else if arg == "--rebuild" {
+            rebuild = true;
         }
     }
     Ok(CoreArgs {
@@ -90,6 +98,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(argv: I) -> Result<CoreArgs, A
         epoch: epoch.ok_or(ArgError::Missing("--epoch"))?,
         parent_pid: parent_pid.ok_or(ArgError::Missing("--parent-pid"))?,
         worker,
+        rebuild,
     })
 }
 
@@ -264,6 +273,22 @@ mod tests {
         ]))
         .expect_err("must refuse");
         assert_eq!(empty, ArgError::Bad("--worker"));
+    }
+
+    /// A start rebuilds only when REBUILD asked for it.
+    #[test]
+    fn rebuild_is_off_unless_the_flag_is_given() {
+        let plain =
+            parse_args(argv(&["--data-dir=/x", "--epoch=1", "--parent-pid=2"])).expect("ok");
+        assert!(!plain.rebuild);
+        let asked = parse_args(argv(&[
+            "--data-dir=/x",
+            "--epoch=1",
+            "--parent-pid=2",
+            "--rebuild",
+        ]))
+        .expect("ok");
+        assert!(asked.rebuild);
     }
 
     #[test]

@@ -397,8 +397,8 @@
           "id": "AC-14-quarantine",
           "status": "automated",
           "runner": "cargo",
-          "test": "acceptance_recovery::ac_14_corrupt_database_quarantines_and_rebuilds",
-          "assert": "A corrupt file is quarantined with its wal and shm, rebuild returns a RebuildReport, and the report names exactly what was not derivable."
+          "test": "acceptance_recovery::ac_14_the_production_chain_quarantines_the_three_files_with_a_sidecar_copy",
+          "assert": "The core binary, started on a corrupt index, exits EXIT_INDEX_FATAL with the database, its wal and shm and the sidecar byte-identical; started with --rebuild, it sets the database, wal and shm aside and copies the sidecar as *.corrupt-<t> siblings, and rebuild-report.json names each one."
         },
         {
           "id": "AC-14-message",

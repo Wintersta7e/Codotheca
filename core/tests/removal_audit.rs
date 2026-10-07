@@ -46,17 +46,17 @@ struct RemovalAllowance {
 const BASELINE: &[RemovalAllowance] = &[
     RemovalAllowance {
         file: "lifecycle.rs",
-        line: 158,
+        line: 167,
         reason: "the single-instance lock file this process itself created",
     },
     RemovalAllowance {
         file: "lifecycle.rs",
-        line: 284,
+        line: 309,
         reason: "a crashed run's own state directory under the app data root",
     },
     RemovalAllowance {
         file: "lifecycle.rs",
-        line: 305,
+        line: 330,
         reason: "the same state directory on the ordinary shutdown path",
     },
     RemovalAllowance {
@@ -146,24 +146,24 @@ const BASELINE: &[RemovalAllowance] = &[
     },
     RemovalAllowance {
         file: "surfaces/startup_failure.rs",
-        line: 135,
+        line: 201,
         reason: "the startup-failure breadcrumb this process wrote on its last run",
     },
     RemovalAllowance {
         file: "index/recovery.rs",
-        line: 157,
+        line: 130,
         reason: "a failed rebuild undoing itself: the side index, its journal, the report's temp \
                  file and the sidecar copy it created moments before",
     },
     RemovalAllowance {
         file: "index/rebuild.rs",
-        line: 222,
+        line: 226,
         reason: "the probe's copy of a corrupt index and its journal, in a private directory it \
                  made moments before in the system temp directory",
     },
     RemovalAllowance {
         file: "index/rebuild.rs",
-        line: 225,
+        line: 229,
         reason: "that directory, once the copy in it is gone",
     },
 ];

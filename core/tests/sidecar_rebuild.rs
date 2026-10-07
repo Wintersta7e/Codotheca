@@ -378,8 +378,9 @@ fn ac_p4_48_14_a_failed_rebuild_changes_nothing() {
             }
         });
         match outcome {
-            Err(RebuildError::Failed { reason }) => {
+            Err(RebuildError::Failed { reason, undone }) => {
                 assert!(reason.contains("planted"), "{failing:?}: {reason}");
+                assert!(undone, "{failing:?}: {reason}");
             }
             other => panic!("a failure after {failing:?} answered {other:?}"),
         }
@@ -399,6 +400,43 @@ fn ac_p4_48_14_a_failed_rebuild_changes_nothing() {
         serde_json::from_slice(&std::fs::read(dir.path().join(REBUILD_REPORT_FILE)).unwrap())
             .unwrap();
     assert_eq!(written, report, "the report on disk is the one returned");
+}
+
+/// The failure line says the rebuild changed nothing only when that is true: an undo that could
+/// not put a file back names it and claims nothing.
+#[test]
+fn a_failure_claims_it_changed_nothing_only_when_everything_was_undone() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path());
+    corrupt(dir.path());
+    let db = Index::db_path(dir.path());
+    let fail = |block_the_undo: bool| {
+        let outcome = rebuild_in_place_with(dir.path(), NOW, MIGRATIONS, &|step| {
+            if step != RebuildStep::QuarantinedDb {
+                return Ok(());
+            }
+            if block_the_undo {
+                // A directory where the database was, so renaming it back fails.
+                std::fs::create_dir(&db).unwrap();
+            }
+            Err(IndexError::Sidecar(
+                "a failure planted after the database moved".to_owned(),
+            ))
+        });
+        match outcome {
+            Err(failed @ RebuildError::Failed { .. }) => failed.to_string(),
+            other => panic!("a planted failure answered {other:?}"),
+        }
+    };
+
+    let undone = fail(false);
+    eprintln!("undone: {undone}");
+    assert!(undone.contains("changed nothing"), "{undone}");
+
+    let stuck = fail(true);
+    eprintln!("left partly undone: {stuck}");
+    assert!(stuck.contains("could not undo"), "{stuck}");
+    assert!(!stuck.contains("changed nothing"), "{stuck}");
 }
 
 /// A crash leaves no undo behind it. Until the restore has committed, the corrupt files and the

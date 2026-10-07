@@ -10,7 +10,7 @@
 
 #![forbid(unsafe_code)]
 
-use codotheca_core::assembly::startup::{open_index, run_startup};
+use codotheca_core::assembly::startup::{open_index, rebuild_index, run_startup};
 use codotheca_core::assembly::{CoreDeps, CoreHandler};
 use codotheca_core::clock::{local_utc_offset_min, Clock, SystemClock};
 use codotheca_core::git::{GitBackend, GitExec, GitSlots, SystemGit, EMPTY_HOOKS_DIR_NAME};
@@ -242,10 +242,16 @@ fn main() -> ExitCode {
     let event_sink: Arc<dyn EventSink> = events.clone();
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
-    // A recognised fatal already exited inside `open_index`, with §11.2a's report written for
-    // the shell to draw. Reaching this arm means the error was not one of the three.
-    let index = match open_index(&args.data_dir, clock.now_unix()) {
-        Ok(index) => index,
+    // A recognised fatal already exited inside `open_index` or `rebuild_index`, with §11.2a's
+    // report written for the shell to draw. Reaching this arm means the error was not one of the
+    // three.
+    let opened = if args.rebuild {
+        rebuild_index(&args.data_dir, clock.now_unix())
+    } else {
+        open_index(&args.data_dir, clock.now_unix()).map(|index| (index, None))
+    };
+    let (index, rebuilt) = match opened {
+        Ok(opened) => opened,
         Err(e) => {
             note(&format!("codotheca-core: index: {e}"));
             return ExitCode::FAILURE;
@@ -419,6 +425,14 @@ fn main() -> ExitCode {
     let mut handler = CoreHandler::new(deps);
     let summary = run_startup(&mut handler);
     note(&format!("codotheca-core: startup {summary:?}"));
+    // §48.7.1 4(d): the scan re-derives what the sidecar does not carry. With no root restored
+    // there is nothing to scan, and first run starts over.
+    if let Some(report) = rebuilt {
+        note(&format!("codotheca-core: rebuilt {report:?}"));
+        if report.restored.get("roots").is_some_and(|roots| *roots > 0) {
+            handler.rescan_after_rebuild(clock.now_unix());
+        }
+    }
 
     let parent = OsParentProbe::new(args.parent_pid);
     let exit = run_loop(transport, &events, &mut handler, epoch, &parent);

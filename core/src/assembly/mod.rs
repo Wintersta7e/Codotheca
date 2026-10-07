@@ -191,6 +191,30 @@ impl CoreHandler {
         &self.index
     }
 
+    /// §48.7.1 4(d): after a rebuild that restored scan roots, start the full scan `scan.start`
+    /// would, so the projects only a scan finds — and the records waiting for them — come back
+    /// without the shell asking. A scan that cannot start is a `core/error` event, never a
+    /// refusal to run: the restored index is already usable.
+    pub fn rescan_after_rebuild(&self, now: i64) {
+        let ctx = ScanCtx {
+            store: self.scan_store.as_ref(),
+            events: self.events.as_ref(),
+            scans: &self.scans,
+            now,
+        };
+        if let Err(e) = crate::scan::commands::handle_start(&ctx, serde_json::json!({"full": true}))
+        {
+            self.events.emit(
+                "core",
+                "error",
+                serde_json::json!({
+                    "code": "INTERNAL",
+                    "message": format!("rebuild: scan: {}", e.message),
+                }),
+            );
+        }
+    }
+
     /// §7's arm. Extracted for the same reason as the accounts one below, and it keeps the
     /// no-index-lock rule visible: this context takes a `&dyn ScanStore`, never an `&Index`.
     fn scan_arm(

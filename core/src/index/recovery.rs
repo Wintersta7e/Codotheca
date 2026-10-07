@@ -38,43 +38,15 @@ pub struct QuarantinedFiles {
     pub at: i64,
 }
 
-/// Move `index.db`, `index.db-wal` and `index.db-shm` to `<name>.corrupt-<now>` siblings.
-///
-/// # Errors
-/// Fails with [`IndexError::Corrupt`] when the database file does not exist, and with
-/// [`IndexError::Io`] when a rename fails.
-pub fn quarantine(db: &Path, now: i64) -> Result<QuarantinedFiles, IndexError> {
-    let moved_db = move_aside(db, now)?.ok_or_else(|| IndexError::Corrupt {
-        detail: format!("{} does not exist", db.display()),
-    })?;
-    Ok(QuarantinedFiles {
-        db: moved_db,
-        wal: move_aside(&sibling(db, "-wal"), now)?,
-        shm: move_aside(&sibling(db, "-shm"), now)?,
-        sidecar_copy: None,
-        at: now,
-    })
-}
-
 /// §48.7.1 4(c): move `index.db`, `-wal` and `-shm` to `<name>.corrupt-<now>` siblings and
-/// **copy** the sidecar beside them as `<name>.corrupt-<now>`.
+/// **copy** the sidecar beside them as `<name>.corrupt-<now>`, with `step` run after each act and
+/// every act recorded in `undo`, so the rebuild can fail between any two and take the set back
+/// along with its own acts.
 ///
 /// The sidecar is copied whether it read or not — an unreadable one is kept too — and the
-/// original stays where it was. Each act already done is undone when a later one fails, and a
-/// destination that already exists fails the set rather than being replaced: the product never
-/// deletes a quarantined file.
-///
-/// # Errors
-/// Fails with [`IndexError::Corrupt`] when the database file does not exist, and with
-/// [`IndexError::Io`] when a destination exists or a rename or the copy fails.
-pub fn quarantine_set(db: &Path, sidecar: &Path, now: i64) -> Result<QuarantinedFiles, IndexError> {
-    let mut undo = Undo::default();
-    quarantine_set_with(db, sidecar, now, &|_| Ok(()), &mut undo).map_err(|e| undo.after(e))
-}
-
-/// [`quarantine_set`] with `step` run after each act and every act recorded in `undo`, so the
-/// rebuild can fail between any two and take the set back along with its own acts.
-pub(crate) fn quarantine_set_with(
+/// original stays where it was. A destination that already exists fails the set rather than
+/// being replaced: the product never deletes a quarantined file.
+pub(crate) fn quarantine_set(
     db: &Path,
     sidecar: &Path,
     now: i64,
@@ -144,8 +116,9 @@ impl Undo {
     }
 
     /// Reverse every rename, newest first, then remove every file this process recorded as
-    /// created, and return `error` naming any act that could not be undone.
-    pub(crate) fn after(self, error: IndexError) -> IndexError {
+    /// created, and describe `error` followed by any act that could not be undone — with whether
+    /// every act was.
+    pub(crate) fn after(self, error: &IndexError) -> (String, bool) {
         let mut failed = Vec::new();
         for (from, to) in self.renamed.iter().rev() {
             if let Err(e) = std::fs::rename(to, from) {
@@ -162,12 +135,10 @@ impl Undo {
             }
         }
         if failed.is_empty() {
-            error
+            (error.to_string(), true)
         } else {
-            IndexError::Io(std::io::Error::other(format!(
-                "{error}; and could not undo {}",
-                failed.join("; ")
-            )))
+            let reason = format!("{error}; and could not undo {}", failed.join("; "));
+            (reason, false)
         }
     }
 }
@@ -194,11 +165,82 @@ fn corrupt_name(path: &Path, now: i64) -> PathBuf {
     sibling(path, &format!(".corrupt-{now}"))
 }
 
-fn move_aside(path: &Path, now: i64) -> Result<Option<PathBuf>, IndexError> {
-    if !path.exists() {
-        return Ok(None);
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use super::{quarantine_set, sibling, IndexError, QuarantinedFiles, Undo};
+    use crate::index::Index;
+    use std::path::Path;
+
+    /// A failure left partly undone is described once: the cause in its own words, then what
+    /// stayed. Wrapping the cause in a second error printed its category twice.
+    #[test]
+    fn a_failure_left_partly_undone_names_its_cause_once() {
+        let dir = tempfile::tempdir().unwrap();
+        // Recorded as created but a directory, so removing it as a file fails.
+        let stuck = dir.path().join("stuck");
+        std::fs::create_dir(&stuck).unwrap();
+        let mut undo = Undo::default();
+        undo.created(stuck);
+
+        let (reason, undone) = undo.after(&IndexError::Io(std::io::Error::other("planted")));
+        assert_eq!(reason.matches("io:").count(), 1, "{reason}");
+        assert!(reason.contains("could not undo"), "{reason}");
+        assert!(!undone, "{reason}");
     }
-    let dest = corrupt_name(path, now);
-    std::fs::rename(path, &dest)?;
-    Ok(Some(dest))
+
+    /// The set with no sidecar beside it and a hook that never fails.
+    fn set_aside(db: &Path, now: i64) -> QuarantinedFiles {
+        let sidecar = db.with_file_name("index-sidecar.json");
+        quarantine_set(db, &sidecar, now, &|_| Ok(()), &mut Undo::default()).unwrap()
+    }
+
+    #[test]
+    fn quarantine_moves_the_database_wal_and_shm_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Index::db_path(dir.path());
+        for suffix in ["", "-wal", "-shm"] {
+            std::fs::write(sibling(&db, suffix), b"x").unwrap();
+        }
+
+        let QuarantinedFiles {
+            db: moved_db,
+            wal,
+            shm,
+            at,
+            sidecar_copy,
+        } = set_aside(&db, 1_787_126_520);
+        assert_eq!(at, 1_787_126_520);
+        assert!(
+            !db.exists(),
+            "the corrupt database must not be left in place"
+        );
+        assert!(moved_db.exists());
+        assert_eq!(
+            moved_db.file_name().unwrap().to_string_lossy(),
+            "index.db.corrupt-1787126520"
+        );
+        assert!(
+            wal.unwrap().exists(),
+            "a stale WAL left behind would be replayed into the rebuild"
+        );
+        assert!(shm.unwrap().exists());
+        assert_eq!(sidecar_copy, None, "no sidecar existed to copy");
+    }
+
+    #[test]
+    fn quarantine_tolerates_a_database_with_no_wal_or_shm() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Index::db_path(dir.path());
+        std::fs::write(&db, b"x").unwrap();
+
+        let set = set_aside(&db, 7);
+        assert_eq!((set.wal, set.shm), (None, None));
+    }
 }
