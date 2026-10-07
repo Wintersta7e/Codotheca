@@ -1,5 +1,6 @@
 //! The format-2 export (§48.8.1): its schema version, every location's key, a removed location's
-//! whole row, each session's copy, the pending rows verbatim, and the section registry.
+//! whole row, each session's copy, the pending rows verbatim, the section registry, and the
+//! registration gate that holds every table to a classification (§48.8.5).
 
 #![allow(
     clippy::unwrap_used,
@@ -11,10 +12,10 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
+use codotheca_core::index::migrate::{apply_all, Migration, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
 use codotheca_core::index::sidecar::{
-    counts, export, inspect, write_atomically, SidecarLocationKey, SidecarState, SidecarValue,
-    SECTIONS, SIDECAR_FORMAT,
+    counts, export, inspect, unclassified, unclassified_in, write_atomically, Classification,
+    Entry, SidecarLocationKey, SidecarState, SidecarValue, CLASSIFIED, SECTIONS, SIDECAR_FORMAT,
 };
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::testing::sidecar::SECTION_FIXTURES;
@@ -191,4 +192,84 @@ fn every_registered_section_has_a_fixture() {
         "a section registered twice"
     );
     assert_eq!(registered, fixtured);
+}
+
+/// AC-P4-48-15: every table the schema holds and every `project` and `location` column is
+/// classified, and every classification names something the schema holds.
+#[test]
+fn ac_p4_48_15_every_table_and_column_is_classified() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = migrated(dir.path());
+    let report = unclassified(&conn).unwrap_or_else(|findings| panic!("{findings:#?}"));
+    eprintln!(
+        "classified {} tables and {} columns",
+        report.tables, report.columns
+    );
+    assert_ne!(report.tables, 0, "the gate saw no table");
+    assert_ne!(report.columns, 0, "the gate saw no column");
+}
+
+/// A table that lands without a classification fails the gate, by name.
+#[test]
+fn an_unclassified_scratch_table_fails_the_gate() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut conn = open_connection(&Index::db_path(dir.path())).unwrap();
+    let mut migrations = MIGRATIONS.to_vec();
+    migrations.push(Migration {
+        version: SUPPORTED_SCHEMA_VERSION + 1,
+        name: "scratch_unclassified",
+        sql: "CREATE TABLE scratch_unclassified (x INTEGER) STRICT;",
+        rebuilds_a_table: false,
+    });
+    apply_all(&mut conn, &migrations).unwrap();
+    let findings = unclassified(&conn).unwrap_err();
+    eprintln!("{findings:#?}");
+    assert_eq!(findings, ["scratch_unclassified: classified by no entry"]);
+}
+
+/// An entry for a table the schema no longer holds fails the gate: a stale list is a lying one.
+#[test]
+fn a_stale_entry_fails_the_gate() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = migrated(dir.path());
+    conn.execute_batch("DROP TABLE health_delta;").unwrap();
+    let findings = unclassified(&conn).unwrap_err();
+    eprintln!("{findings:#?}");
+    assert_eq!(
+        findings,
+        ["health_delta: classified, but the schema holds no such table"]
+    );
+}
+
+/// A section the registry does not hold, a registered section no entry names, and one entry
+/// classified the same way twice each fail the gate.
+#[test]
+fn a_misnamed_unnamed_or_repeated_section_fails_the_gate() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = migrated(dir.path());
+    let consent = Classification::Section("readme_consent");
+    let mut list: Vec<(Entry, Classification)> = CLASSIFIED
+        .iter()
+        .copied()
+        .filter(|(_, class)| *class != consent)
+        .collect();
+    list.push((
+        Entry::Column("project", "readme_remote_at"),
+        Classification::Section("readme_grant"),
+    ));
+    list.push((
+        Entry::Table("project"),
+        Classification::Section("no_scan_projects"),
+    ));
+    let findings = unclassified_in(&conn, &list).unwrap_err();
+    eprintln!("{findings:#?}");
+    assert_eq!(
+        findings,
+        [
+            "project.readme_remote_at: classified under section `readme_grant`, which is not \
+             registered",
+            "project: classified as Section(\"no_scan_projects\") twice",
+            "section `readme_consent`: registered, but no entry is classified under it",
+        ]
+    );
 }

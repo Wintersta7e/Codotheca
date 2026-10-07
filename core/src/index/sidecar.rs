@@ -209,9 +209,9 @@ pub struct SectionSpec {
 /// A change that lands a table, a `project`/`location` column, or an `app_meta` key does all of
 /// the following in that same change:
 ///
-/// 1. **Classify every new table and every new `project`/`location` column** in the registry's
-///    classification list: derivable, naming the producer that re-derives it, or a section. The
-///    registration gate fails on anything unclassified.
+/// 1. **Classify every new table and every new `project`/`location` column** in [`CLASSIFIED`]:
+///    derivable, naming the producer that re-derives it, or a section. The registration gate,
+///    [`unclassified`], fails on anything unclassified.
 /// 2. **A non-derivable table registers a [`SectionSpec`]** here: `name`, `owner` (`§NN`),
 ///    `scope` (`Global | Subject | NoScan`), `rule` (`Replace | RaiseOnly | WriteOnce | Latch`),
 ///    `preserves_ids` (every `AUTOINCREMENT` table whose ids name something outside the index),
@@ -293,6 +293,510 @@ pub const SECTIONS: &[SectionSpec] = &[
         restore: super::sections::restore_accounts,
     },
 ];
+
+/// Something the schema holds that a rebuild could lose: a whole table, or one column of one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Entry {
+    /// A table, by name.
+    Table(&'static str),
+    /// One column, as `(table, column)`.
+    Column(&'static str, &'static str),
+}
+
+/// The export's format-1 collection an entry travels in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaseCollection {
+    /// `projects`: each project's own columns, its copies' keys, sessions, XP rows and targets.
+    Projects,
+    /// `collections` and their members.
+    Collections,
+    /// `roots`: the scan roots.
+    Roots,
+    /// `identities` and their addresses.
+    Identities,
+    /// `merges`: each merge's record, carried and never replayed (§48.8.3).
+    Merges,
+    /// `settings`: the `app_meta` keys the rebuilt database does not own.
+    Settings,
+    /// `view_state`.
+    ViewState,
+}
+
+/// How an entry comes back after a rebuild (§48.8.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Classification {
+    /// Written again after the rebuild, with no user decision lost.
+    Derivable {
+        /// What writes it again, and anything that restarts rather than returns.
+        basis: &'static str,
+    },
+    /// Carried by one of the export's base collections.
+    Collection(BaseCollection),
+    /// Carried by the registered section of this name.
+    Section(&'static str),
+    /// The pending records, which every export carries as they stand (§48.8.4).
+    Pending,
+}
+
+/// What the registration gate found classified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GateReport {
+    /// The tables the schema holds.
+    pub tables: usize,
+    /// The `project` and `location` columns.
+    pub columns: usize,
+}
+
+const fn derivable(basis: &'static str) -> Classification {
+    Classification::Derivable { basis }
+}
+
+const PROJECTS: Classification = Classification::Collection(BaseCollection::Projects);
+const BY_INGEST: Classification =
+    derivable("written by the scan's ingest from the copy it finds (identity::store)");
+const BY_SUBMODULES: Classification =
+    derivable("the scan's submodule pass reads each gitlink again (identity::submodule)");
+const BY_BINDING: Classification =
+    derivable("bound again from the copy's remote (identity::binding)");
+const BY_REFSTATE: Classification = derivable("J1 reads the copy's refs again (jobs::j1_refstate)");
+const BY_STATUS: Classification =
+    derivable("J2 reads the copy's working tree again (jobs::j2_status)");
+const BY_INVENTORY: Classification =
+    derivable("J3 inventories the tree again (jobs::j3_inventory)");
+const BY_HISTORY: Classification = derivable("J4 walks the history again (jobs::j4_history)");
+const BY_README: Classification = derivable("J6 reads the README again (jobs::j6_content)");
+const BY_AUTHORSHIP: Classification =
+    derivable("J15 decides authorship again against the carried identities (jobs::j15_authorship)");
+const BY_DERIVE: Classification =
+    derivable("recomputed from the project's facts after each job (derive::persist)");
+const BY_COMPLETION: Classification =
+    derivable("the completion evaluation writes them again (index::completion)");
+const BY_ART: Classification =
+    derivable("the art job renders again from the carried seed and offset (art::store)");
+const BY_LOCKFILES: Classification =
+    derivable("the lockfile read walks the worktree again (advisories::lockfiles)");
+const BY_ADVISORY_SWEEP: Classification =
+    derivable("the advisory sweep asks the advisory database again (advisories::sweep)");
+const BY_REMOTE_SYNC: Classification =
+    derivable("the remote sync fetches each linked repository again (sync::tasks::remote)");
+const BY_CONTENT_SCAN: Classification =
+    derivable("the content scan reads each blob again (jobs::content_scan)");
+const BY_SCAN: Classification = derivable(
+    "the rebuild's own scan writes its run and its problems (scan::store); earlier runs are gone",
+);
+const NO_WRITER: Classification =
+    derivable("no writer sets it, so every row holds the schema's default");
+const CLEARED_ONLY: Classification =
+    derivable("no writer sets it; the repair only clears it (surfaces::repair)");
+
+/// The one classification list (§48.8.5), which [`unclassified`] holds to the schema.
+///
+/// Every table and every `project` and `location` column, each with how it comes back after a
+/// rebuild. An entry may carry more than one classification, never the same one twice.
+pub const CLASSIFIED: &[(Entry, Classification)] = &[
+    // The library itself; `project` and `location` are classified column by column below too.
+    (Entry::Table("project"), PROJECTS),
+    (
+        Entry::Table("project"),
+        Classification::Section("no_scan_projects"),
+    ),
+    (Entry::Table("location"), PROJECTS),
+    (
+        Entry::Table("location"),
+        Classification::Section("no_scan_projects"),
+    ),
+    (Entry::Table("session"), PROJECTS),
+    (Entry::Table("session_segment"), PROJECTS),
+    // The session track; J4 writes the git track again (§1.7).
+    (Entry::Table("xp_events"), PROJECTS),
+    // The user's own targets; a detected one is detected again.
+    (Entry::Table("launch_target"), PROJECTS),
+    (
+        Entry::Table("collection"),
+        Classification::Collection(BaseCollection::Collections),
+    ),
+    (
+        Entry::Table("collection_member"),
+        Classification::Collection(BaseCollection::Collections),
+    ),
+    (
+        Entry::Table("scan_root"),
+        Classification::Collection(BaseCollection::Roots),
+    ),
+    (
+        Entry::Table("identity"),
+        Classification::Collection(BaseCollection::Identities),
+    ),
+    (
+        Entry::Table("identity_alias"),
+        Classification::Collection(BaseCollection::Identities),
+    ),
+    (
+        Entry::Table("merge_record"),
+        Classification::Collection(BaseCollection::Merges),
+    ),
+    // A redirect is its merge's and, like the merge, never replayed (§48.8.3).
+    (
+        Entry::Table("project_redirect"),
+        Classification::Collection(BaseCollection::Merges),
+    ),
+    (
+        Entry::Table("app_meta"),
+        Classification::Collection(BaseCollection::Settings),
+    ),
+    (
+        Entry::Table("view_state"),
+        Classification::Collection(BaseCollection::ViewState),
+    ),
+    (
+        Entry::Table("project_check"),
+        Classification::Section("check_na"),
+    ),
+    (Entry::Table("account"), Classification::Section("accounts")),
+    (
+        Entry::Table("account_org"),
+        Classification::Section("accounts"),
+    ),
+    (Entry::Table("sidecar_pending"), Classification::Pending),
+    (
+        Entry::Table("art_scene"),
+        derivable("the art job renders each scene again (art::store)"),
+    ),
+    (Entry::Table("blob_finding"), BY_CONTENT_SCAN),
+    (Entry::Table("blob_scan"), BY_CONTENT_SCAN),
+    (Entry::Table("fts_commits"), BY_HISTORY),
+    (
+        Entry::Table("peek_cache"),
+        derivable("J6 reads the README and the recent commits again (jobs::j6_content)"),
+    ),
+    (
+        Entry::Table("project_committer"),
+        derivable("J15 counts each project's committers again (jobs::j15_authorship)"),
+    ),
+    (
+        Entry::Table("project_content_scan"),
+        derivable(
+            "the marker and content scans read the tree again (jobs::j7_markers, \
+             jobs::content_scan)",
+        ),
+    ),
+    (Entry::Table("project_dependency"), BY_LOCKFILES),
+    (Entry::Table("project_dependency_scan"), BY_LOCKFILES),
+    (Entry::Table("project_lockfile"), BY_LOCKFILES),
+    (
+        Entry::Table("project_job_state"),
+        derivable("every job of a project the scan finds is queued from the start (jobs::state)"),
+    ),
+    (Entry::Table("submodule_edge"), BY_SUBMODULES),
+    (Entry::Table("scan_problem"), BY_SCAN),
+    (Entry::Table("scan_run"), BY_SCAN),
+    (
+        Entry::Table("debt_item"),
+        derivable(
+            "the debt sweep finds each item again (debt::store); `first_seen_at` restarts at the \
+             rebuild",
+        ),
+    ),
+    (
+        Entry::Table("debt_sweep"),
+        derivable("the next debt sweep writes its record again (debt::sweep)"),
+    ),
+    (
+        Entry::Table("health_delta"),
+        derivable(
+            "written again from the next reading on (restoration::delta); the history before the \
+             rebuild restarts",
+        ),
+    ),
+    (Entry::Table("advisory"), BY_ADVISORY_SWEEP),
+    (Entry::Table("advisory_cve"), BY_ADVISORY_SWEEP),
+    (Entry::Table("advisory_match"), BY_ADVISORY_SWEEP),
+    (Entry::Table("advisory_sweep"), BY_ADVISORY_SWEEP),
+    (
+        Entry::Table("advisory_triple"),
+        derivable(
+            "the lockfile read records each triple again and the advisory sweep answers it \
+             (advisories::lockfiles, advisories::sweep)",
+        ),
+    ),
+    (
+        Entry::Table("advisory_notified"),
+        derivable(
+            "a rebuilt index's first computation seeds every pair without notifying \
+             (advisories::notify)",
+        ),
+    ),
+    (Entry::Table("remote_ci_run"), BY_REMOTE_SYNC),
+    (Entry::Table("remote_repo"), BY_REMOTE_SYNC),
+    (Entry::Table("remote_topic"), BY_REMOTE_SYNC),
+    (
+        Entry::Table("project_account"),
+        derivable("nothing in this build writes the table, and the remote sync reads none of it"),
+    ),
+    (
+        Entry::Table("sync_budget"),
+        derivable("mirrored again from the next response's rate-limit headers (sync::budget)"),
+    ),
+    (
+        Entry::Table("sync_task_state"),
+        derivable("the sync scheduler plans every task again (sync::store)"),
+    ),
+    (
+        Entry::Table("install_run"),
+        derivable(
+            "each install writes its own row (install::queue); lost: an install abandoned before \
+             the rebuild leaves its staging directory on disk, unremoved and unnamed, which fails \
+             safe",
+        ),
+    ),
+    // `project`, column by column.
+    (
+        Entry::Column("project", "id"),
+        derivable("allocated by the ingest; a record names its project by subject"),
+    ),
+    (Entry::Column("project", "lineage_key"), PROJECTS),
+    (Entry::Column("project", "remote_key"), PROJECTS),
+    (Entry::Column("project", "ambiguous_lineage"), BY_INGEST),
+    (
+        Entry::Column("project", "association_kind"),
+        derivable(
+            "the ingest records how each copy joins its project (identity::store); a merge's \
+             kind travels in its merge record",
+        ),
+    ),
+    (Entry::Column("project", "parent_project_id"), BY_SUBMODULES),
+    (Entry::Column("project", "submodule_path"), BY_SUBMODULES),
+    (Entry::Column("project", "name"), BY_INGEST),
+    (Entry::Column("project", "owner"), NO_WRITER),
+    (Entry::Column("project", "description"), BY_README),
+    (Entry::Column("project", "description_source"), BY_README),
+    (Entry::Column("project", "primary_language"), BY_INVENTORY),
+    (Entry::Column("project", "language_bytes"), BY_INVENTORY),
+    (Entry::Column("project", "archetype"), BY_INVENTORY),
+    (Entry::Column("project", "first_commit_at"), BY_HISTORY),
+    (
+        Entry::Column("project", "first_commit_tz_offset_min"),
+        BY_HISTORY,
+    ),
+    (Entry::Column("project", "first_commit_sha"), BY_HISTORY),
+    (Entry::Column("project", "last_commit_at"), BY_HISTORY),
+    (Entry::Column("project", "last_commit_subject"), BY_HISTORY),
+    (Entry::Column("project", "last_user_commit_at"), BY_HISTORY),
+    (Entry::Column("project", "last_interaction_at"), BY_DERIVE),
+    (Entry::Column("project", "last_touched_at"), BY_DERIVE),
+    (Entry::Column("project", "condition_signal"), BY_DERIVE),
+    (Entry::Column("project", "condition_material"), BY_DERIVE),
+    (Entry::Column("project", "is_shallow"), BY_INGEST),
+    (Entry::Column("project", "is_fork"), BY_INGEST),
+    (Entry::Column("project", "is_bare"), NO_WRITER),
+    (Entry::Column("project", "authored_by_user"), BY_AUTHORSHIP),
+    (Entry::Column("project", "is_reference"), BY_AUTHORSHIP),
+    (Entry::Column("project", "is_pinned"), PROJECTS),
+    (Entry::Column("project", "is_archived"), PROJECTS),
+    (Entry::Column("project", "is_hidden"), PROJECTS),
+    (Entry::Column("project", "completion_lit"), BY_COMPLETION),
+    (
+        Entry::Column("project", "completion_applicable"),
+        BY_COMPLETION,
+    ),
+    (Entry::Column("project", "size_tracked_bytes"), BY_INVENTORY),
+    (Entry::Column("project", "size_worktree_bytes"), NO_WRITER),
+    (Entry::Column("project", "tracked_files"), BY_INVENTORY),
+    (Entry::Column("project", "art_scene_hash"), BY_ART),
+    (Entry::Column("project", "art_state"), BY_ART),
+    (Entry::Column("project", "seed_basename"), PROJECTS),
+    (Entry::Column("project", "reroll_offset"), PROJECTS),
+    (Entry::Column("project", "slow_repo"), NO_WRITER),
+    (Entry::Column("project", "error_kind"), CLEARED_ONLY),
+    (Entry::Column("project", "error_detail"), CLEARED_ONLY),
+    (Entry::Column("project", "error_at"), CLEARED_ONLY),
+    (Entry::Column("project", "acknowledged_at"), PROJECTS),
+    (Entry::Column("project", "notes"), PROJECTS),
+    (
+        Entry::Column("project", "merged_into"),
+        Classification::Collection(BaseCollection::Merges),
+    ),
+    (Entry::Column("project", "created_at"), PROJECTS),
+    (
+        Entry::Column("project", "updated_at"),
+        derivable("stamped by whichever writer touches the row next"),
+    ),
+    (Entry::Column("project", "provider"), BY_BINDING),
+    (Entry::Column("project", "provider_repo_id"), BY_BINDING),
+    (Entry::Column("project", "remote_link_basis"), BY_BINDING),
+    (
+        Entry::Column("project", "readme_remote_at"),
+        Classification::Section("readme_consent"),
+    ),
+    // `location`, column by column: the keys travel, and a removed copy travels whole (§48.8.1).
+    (
+        Entry::Column("location", "id"),
+        derivable("allocated by the ingest; a record names a copy by its key"),
+    ),
+    (Entry::Column("location", "project_id"), BY_INGEST),
+    (Entry::Column("location", "kind"), PROJECTS),
+    (Entry::Column("location", "distro"), PROJECTS),
+    (Entry::Column("location", "path_bytes"), PROJECTS),
+    (Entry::Column("location", "path_key"), PROJECTS),
+    (Entry::Column("location", "path_display"), PROJECTS),
+    (Entry::Column("location", "removed_at"), PROJECTS),
+    (Entry::Column("location", "volume_key"), BY_INGEST),
+    (Entry::Column("location", "store_key"), BY_INGEST),
+    (Entry::Column("location", "repo_kind"), BY_INGEST),
+    (Entry::Column("location", "common_dir_bytes"), BY_INGEST),
+    (Entry::Column("location", "common_dir_key"), BY_INGEST),
+    (Entry::Column("location", "scan_generation"), BY_INGEST),
+    (Entry::Column("location", "last_seen_at"), BY_INGEST),
+    (
+        Entry::Column("location", "presence"),
+        derivable("the scan marks each copy found or missing (scan::store)"),
+    ),
+    (Entry::Column("location", "branch"), BY_REFSTATE),
+    (Entry::Column("location", "ahead"), BY_REFSTATE),
+    (Entry::Column("location", "behind"), BY_REFSTATE),
+    (Entry::Column("location", "stash_count"), BY_REFSTATE),
+    (Entry::Column("location", "tag_count"), BY_REFSTATE),
+    (Entry::Column("location", "interrupted_op"), BY_REFSTATE),
+    (Entry::Column("location", "head_oid"), BY_REFSTATE),
+    (
+        Entry::Column("location", "refstate_observed_at"),
+        BY_REFSTATE,
+    ),
+    (Entry::Column("location", "refstate_basis"), BY_REFSTATE),
+    (Entry::Column("location", "fetch_head_at"), BY_REFSTATE),
+    (Entry::Column("location", "reflog_tail_at"), BY_REFSTATE),
+    (Entry::Column("location", "is_dirty"), BY_STATUS),
+    (Entry::Column("location", "untracked_count"), BY_STATUS),
+    (Entry::Column("location", "worktree_observed_at"), BY_STATUS),
+    (
+        Entry::Column("location", "worktree_newest_mtime"),
+        BY_INVENTORY,
+    ),
+    (
+        Entry::Column("location", "trusted_at"),
+        Classification::Section("location_trust"),
+    ),
+];
+
+/// §48.8.5's registration gate: [`CLASSIFIED`] against the schema `conn` holds.
+///
+/// # Errors
+/// Every finding [`unclassified_in`] names.
+pub fn unclassified(conn: &Connection) -> Result<GateReport, Vec<String>> {
+    unclassified_in(conn, CLASSIFIED)
+}
+
+/// The registration gate against `classified`: every table but SQLite's own and a full-text
+/// index's shadow tables, and every `project` and `location` column, must be classified.
+///
+/// # Errors
+/// Every finding, each naming its entry: a table or column nothing classifies; an entry naming
+/// something the schema lacks, because a stale list is a lying one; a section [`SECTIONS`] does
+/// not register; a registered section no entry names; an entry classified the same way twice.
+/// A schema that cannot be read is a finding of its own.
+pub fn unclassified_in(
+    conn: &Connection,
+    classified: &[(Entry, Classification)],
+) -> Result<GateReport, Vec<String>> {
+    let schema = schema_entries(conn).map_err(|e| vec![format!("the schema: {e}")])?;
+    let mut findings = Vec::new();
+    for (table, column) in &schema {
+        let column = column.as_deref();
+        if !classified
+            .iter()
+            .any(|(entry, _)| names(*entry, table, column))
+        {
+            findings.push(format!("{}: classified by no entry", label(table, column)));
+        }
+    }
+    for (i, (entry, class)) in classified.iter().enumerate() {
+        let (table, column) = parts(*entry);
+        if !schema.iter().any(|(t, c)| names(*entry, t, c.as_deref())) {
+            findings.push(format!(
+                "{}: classified, but the schema holds no such {}",
+                label(table, column),
+                if column.is_some() { "column" } else { "table" }
+            ));
+        }
+        if let Classification::Section(name) = class {
+            if !SECTIONS.iter().any(|s| s.name == *name) {
+                findings.push(format!(
+                    "{}: classified under section `{name}`, which is not registered",
+                    label(table, column)
+                ));
+            }
+        }
+        if classified
+            .iter()
+            .take(i)
+            .any(|earlier| earlier == &(*entry, *class))
+        {
+            findings.push(format!(
+                "{}: classified as {class:?} twice",
+                label(table, column)
+            ));
+        }
+    }
+    for section in SECTIONS {
+        if !classified
+            .iter()
+            .any(|(_, class)| *class == Classification::Section(section.name))
+        {
+            findings.push(format!(
+                "section `{}`: registered, but no entry is classified under it",
+                section.name
+            ));
+        }
+    }
+    if !findings.is_empty() {
+        return Err(findings);
+    }
+    Ok(GateReport {
+        tables: schema.iter().filter(|(_, c)| c.is_none()).count(),
+        columns: schema.iter().filter(|(_, c)| c.is_some()).count(),
+    })
+}
+
+/// Every table the gate classifies, then every `project` and `location` column, as
+/// `(table, column)` with no column for a whole table.
+fn schema_entries(conn: &Connection) -> rusqlite::Result<Vec<(String, Option<String>)>> {
+    // `pragma_table_list` types a full-text index's shadow tables `shadow`, so only the virtual
+    // table itself is listed.
+    let mut tables = conn.prepare(
+        "SELECT name FROM pragma_table_list
+          WHERE schema = 'main' AND type IN ('table', 'virtual') AND name NOT GLOB 'sqlite_*'
+          ORDER BY name",
+    )?;
+    let mut out = tables
+        .query_map([], |r| Ok((r.get(0)?, None)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut columns = conn.prepare("SELECT name FROM pragma_table_info(?1) ORDER BY cid")?;
+    for table in ["project", "location"] {
+        for column in columns.query_map([table], |r| r.get::<_, String>(0))? {
+            out.push((table.to_owned(), Some(column?)));
+        }
+    }
+    Ok(out)
+}
+
+/// Whether `entry` is the schema's `table`, or its `table.column`.
+fn names(entry: Entry, table: &str, column: Option<&str>) -> bool {
+    match entry {
+        Entry::Table(t) => column.is_none() && t == table,
+        Entry::Column(t, c) => column == Some(c) && t == table,
+    }
+}
+
+const fn parts(entry: Entry) -> (&'static str, Option<&'static str>) {
+    match entry {
+        Entry::Table(t) => (t, None),
+        Entry::Column(t, c) => (t, Some(c)),
+    }
+}
+
+fn label(table: &str, column: Option<&str>) -> String {
+    column.map_or_else(|| table.to_owned(), |c| format!("{table}.{c}"))
+}
 
 /// The count keys every document has, before one key per registered section.
 pub const BASE_COUNT_KEYS: [&str; 14] = [

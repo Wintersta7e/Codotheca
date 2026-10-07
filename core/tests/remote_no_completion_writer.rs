@@ -38,7 +38,42 @@ const REMOTE_MARKERS: &[&str] = &[
 /// the module that writes them takes its remote inputs as **already-shaped values** and names no
 /// remote table, so no file is ever on both sides of this line. Only the phase claim moved; no
 /// assertion, no marker and no banned string was edited.
+///
+/// **[p4] R264: one file is now on both sides, by name and as data only.** §48.8.5's
+/// registration list in `index/sidecar.rs` classifies every table and every `project` column, so
+/// it spells the remote tables and both columns; it reads and writes none of them. The check now
+/// strips the two exact spans [`COMPLETION_SITES`] grants before it matches that file, and any
+/// other spelling of either column there still fails. No marker and no banned string moved.
 const COMPLETION_COLUMNS: &[&str] = &["completion_lit", "completion_applicable"];
+
+/// Why the registration list may spell a completion column beside the remote tables.
+const CLASSIFIED_WHY: &str = "[p4] §48.8.5: the registration list names every column as data, \
+                              and reads or writes none";
+
+/// Where a completion column may be spelled in a file that names a remote fact: per path and
+/// per EXACT text, with the reason. The check removes each granted span from that file's text
+/// before matching, so only that spelling is permitted — SQL, a field or a comment naming the
+/// column still fails.
+const COMPLETION_SITES: &[(&str, &str, &str)] = &[
+    (
+        "index/sidecar.rs",
+        "Entry::Column(\"project\", \"completion_lit\")",
+        CLASSIFIED_WHY,
+    ),
+    (
+        "index/sidecar.rs",
+        "Entry::Column(\"project\", \"completion_applicable\")",
+        CLASSIFIED_WHY,
+    ),
+];
+
+/// `text` with every span [`COMPLETION_SITES`] grants to `file` removed, and nothing else.
+fn without_completion_grants(file: &str, text: &str) -> String {
+    COMPLETION_SITES
+        .iter()
+        .filter(|(path, _, _)| file.ends_with(path))
+        .fold(text.to_owned(), |rest, (_, span, _)| rest.replace(span, ""))
+}
 
 /// Where a banned identifier is permitted, per path **and per token**, with the reason.
 ///
@@ -130,6 +165,7 @@ fn ac_p2_25_7_rust_no_remote_path_writes_a_completion_column() {
 
     let mut offenders = Vec::new();
     for (name, text) in &remote_files {
+        let text = without_completion_grants(name, text);
         for column in COMPLETION_COLUMNS {
             if text.contains(column) {
                 offenders.push(format!("{name} names {column}"));
