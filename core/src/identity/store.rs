@@ -120,6 +120,9 @@ pub fn load_candidates(
 
 /// The project that already owns a location with this `git-common-dir` — definitive evidence.
 ///
+/// A copy this app removed is evidence of nothing on disk now (§46.9): its row keeps the common
+/// dir it had, and matching it would attach any repository later found at its path to its project.
+///
 /// # Errors
 /// Fails with [`IdentityError::Sqlite`] when the read is refused.
 pub fn worktree_owner(
@@ -129,7 +132,7 @@ pub fn worktree_owner(
     let found = tx
         .query_row(
             "SELECT project_id FROM location
-              WHERE common_dir_key = ?1 ORDER BY id LIMIT 1",
+              WHERE common_dir_key = ?1 AND removed_at IS NULL ORDER BY id LIMIT 1",
             params![common_dir_key],
             |r| r.get::<_, i64>(0),
         )
@@ -1170,6 +1173,23 @@ mod tests {
             .key()
             .to_vec();
         assert_eq!(super::worktree_owner(&tx, &key).unwrap(), Some(p));
+        tx.commit().unwrap();
+    }
+
+    #[test]
+    fn a_removed_copys_common_dir_is_not_definitive_evidence() {
+        // §46.9: a copy whose bytes this app removed says nothing about what is at its path now,
+        // so its common dir must not attach whatever is found there next to its project.
+        let mut conn = open_test_index();
+        let tx = conn.transaction().unwrap();
+        let p = project_for(&tx, &["r1"], 100);
+        let l = super::super::testutil::insert_location(&tx, p, "/w/a", Some(b"/w/a/.git"));
+        tx.execute("UPDATE location SET removed_at = 200 WHERE id = ?1", [l])
+            .unwrap();
+        assert_eq!(super::worktree_owner(&tx, b"/w/a/.git").unwrap(), None);
+        tx.execute("UPDATE location SET removed_at = NULL WHERE id = ?1", [l])
+            .unwrap();
+        assert_eq!(super::worktree_owner(&tx, b"/w/a/.git").unwrap(), Some(p));
         tx.commit().unwrap();
     }
 
