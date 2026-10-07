@@ -18,26 +18,6 @@ pub const STARTUP_FAILURE_FILE: &str = "startup-failure.json";
 /// The process exit code after a report is written, so the shell knows to go and read it.
 pub const EXIT_INDEX_FATAL: u8 = 4;
 
-/// One block of §11.2a's ledger. Only the rows §11.2a names, not the sidecar's full set.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LedgerCounts {
-    /// Project rows in this block.
-    pub projects: u64,
-    /// Projects in this block carrying a note.
-    pub notes: u64,
-    /// Launched play sessions in this block.
-    pub sessions: u64,
-    /// Collections in this block.
-    pub collections: u64,
-    /// Scan roots in this block.
-    pub roots: u64,
-    /// XP ledger events in this block.
-    pub xp_events: u64,
-    /// Configured launch targets in this block.
-    pub launch_targets: u64,
-}
-
 /// Which of §11.2a's three database windows the shell must draw, with what it states.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

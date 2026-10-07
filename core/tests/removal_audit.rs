@@ -146,7 +146,7 @@ const BASELINE: &[RemovalAllowance] = &[
     },
     RemovalAllowance {
         file: "surfaces/startup_failure.rs",
-        line: 201,
+        line: 181,
         reason: "the startup-failure breadcrumb this process wrote on its last run",
     },
     RemovalAllowance {

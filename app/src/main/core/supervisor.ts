@@ -86,6 +86,22 @@ export class CoreSupervisor {
   }
 
   start(): void {
+    this.launch(false);
+  }
+
+  /**
+   * §48.7.1 step 3: REBUILD. Legal only from `failed`; spawns once with the rebuild flag and
+   * with the crash window cleared, since the press is the user's act and not a crash. A restart
+   * after it spawns without the flag. `false` is "not failed, nothing done".
+   */
+  rebuild(): boolean {
+    if (this.state.kind !== 'failed') return false;
+    this.lastCrashAt = null;
+    this.launch(true);
+    return true;
+  }
+
+  private launch(rebuild: boolean): void {
     this.epoch += 1;
     this.setStatus({ kind: 'starting' });
     let child: CoreChild;
@@ -96,6 +112,7 @@ export class CoreSupervisor {
         dataDir: this.deps.dataDir,
         epoch: this.epoch,
         parentPid: process.pid,
+        rebuild,
       });
     } catch (e: unknown) {
       this.fail('spawn', String(e));

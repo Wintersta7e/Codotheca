@@ -22,6 +22,18 @@ const CORRUPT: FailureFact = {
   rebuildFailed: null,
   gapCountsRecoverable: false,
 };
+const NEWER: FailureFact = {
+  kind: 'corrupt_index',
+  sidecar: {
+    state: 'newer',
+    writtenAt: null,
+    generation: null,
+    counts: null,
+    reason: 'schema 99 is newer than 21',
+  },
+  rebuildFailed: null,
+  gapCountsRecoverable: false,
+};
 
 interface Drawn {
   readonly onPrimary: ReturnType<typeof vi.fn>;
@@ -125,6 +137,20 @@ describe('the corrupt-index ledger', () => {
   it('never sums the two ledgers into one figure (two ledgers, never merged)', () => {
     draw(CORRUPT);
     expect(screen.queryByTestId('fw-block-total')).toBeNull();
+  });
+
+  // §48.7.2: REBUILD stays for a sidecar it cannot read, since the rebuild still starts over.
+  it('keeps REBUILD, then QUIT, beside an unreadable sidecar', () => {
+    draw(CORRUPT);
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['REBUILD', 'QUIT']);
+  });
+
+  // §48.7.2: a sidecar a newer build wrote refuses the rebuild, so the window offers QUIT alone.
+  it('offers QUIT alone when a newer build wrote the sidecar', () => {
+    const { onPrimary } = draw(NEWER);
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['QUIT']);
+    fireEvent.click(screen.getByRole('button', { name: 'QUIT' }));
+    expect(onPrimary).toHaveBeenCalledTimes(1);
   });
 });
 

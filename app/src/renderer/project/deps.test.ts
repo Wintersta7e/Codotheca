@@ -124,6 +124,7 @@ describe('createDefaultDeps', () => {
       installCancel: () => Promise.resolve({ kind: 'cancelled' as const }),
       onCoreStatus: () => undefined,
       coreStatusNow: () => Promise.resolve({ ok: true, value: { kind: 'starting' } }),
+      rebuild: () => Promise.resolve(true),
       onCoreEvents: () => undefined,
       // Plan 15 added this to the bridge on another branch. The fake must carry the whole
       // interface or it stops being evidence about the shape the product actually has.

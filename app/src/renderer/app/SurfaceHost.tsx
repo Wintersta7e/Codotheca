@@ -14,7 +14,7 @@ import type {
   ProjectRow,
   Settings,
 } from '../../generated/protocol.js';
-import type { FailureFact } from '../failure/copy.js';
+import { type FailureFact, offersRebuild } from '../failure/copy.js';
 import { FailureWindow } from '../failure/FailureWindow.js';
 import type { ResolvedTier } from '../motion/tier.js';
 import { QuickSwitchHost } from '../palette/QuickSwitchHost.js';
@@ -136,14 +136,12 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
            * §11.2a's QUIT. Closing the window ends the process — `window-all-closed` quits —
            * and the renderer needs no privileged verb for it.
            *
-           * `corrupt_index`'s primary reads REBUILD and does the same thing, which is the one
-           * label here that is not literally true: no command in the schema's forty-two runs a
-           * rebuild, nothing calls `Index::rebuild`, and the renderer cannot relaunch. The
-           * quarantine has already happened by the time this window is drawn, so the next
-           * launch does rebuild — but this button does not. Recorded rather than dressed up.
+           * §48.7.1 step 3: REBUILD asks the shell to respawn the core in its rebuild mode. The
+           * status that follows replaces this window, or a failed rebuild redraws it.
            */
           onPrimary={() => {
-            window.close();
+            if (offersRebuild(failure)) void deps.rebuild();
+            else window.close();
           }}
           onSecondary={() => {
             window.close();

@@ -75,6 +75,8 @@ export interface AppDeps extends ProjectPageDeps {
   readonly onCoreStatus: (cb: (status: CoreStatus) => void) => () => void;
   /** The shell's status now, for a window that mounted after it was pushed; `null` if unreadable. */
   readonly coreStatusNow: () => Promise<CoreStatus | null>;
+  /** §48.7.1 step 3: REBUILD. The status that follows, not this promise, says how it went. */
+  readonly rebuild: () => Promise<void>;
   readonly onShortcutState: (cb: (state: ShortcutState) => void) => () => void;
   readonly onOpenPalette: (cb: () => void) => () => void;
   readonly effectsTier: EffectsTier;
@@ -132,6 +134,9 @@ export function createDefaultAppDeps(): AppDeps {
           ? (reply as { value?: unknown }).value
           : null;
       return isCoreStatus(value) ? value : null;
+    },
+    rebuild: async () => {
+      await bridge.rebuild();
     },
     onShortcutState: createValueFanout<ShortcutState>((cb) => {
       bridge.onShortcutState(cb);

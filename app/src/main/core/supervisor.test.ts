@@ -7,7 +7,7 @@ import { PROTOCOL_VERSION } from '../../generated/protocol';
 import { EXIT_INDEX_FATAL } from '../startupFailure';
 import { encodeFrame } from './frame';
 import { type RollingLog, openRollingLog } from './log';
-import type { CoreChild } from './spawn';
+import type { CoreArgv, CoreChild } from './spawn';
 import {
   CRASH_LOOP_WINDOW_MS,
   CoreSupervisor,
@@ -19,6 +19,8 @@ interface Harness {
   readonly sup: CoreSupervisor;
   readonly statuses: CoreStatus[];
   readonly children: FakeChild[];
+  /** The argv of every spawn, in order. */
+  readonly argvs: CoreArgv[];
   readonly timers: { fn: () => void; ms: number }[];
   clock: number;
   cleanup(): void;
@@ -66,6 +68,7 @@ function harness(): Harness {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codotheca-sup-'));
   const log: RollingLog = openRollingLog({ dir, maxBytes: 1_000_000, keep: 1, level: 'debug' });
   const children: FakeChild[] = [];
+  const argvs: CoreArgv[] = [];
   const timers: { fn: () => void; ms: number }[] = [];
   const state = { clock: 0 };
   const sup = new CoreSupervisor({
@@ -73,7 +76,8 @@ function harness(): Harness {
     workerPath: null,
     dataDir: dir,
     log,
-    spawn: () => {
+    spawn: (argv) => {
+      argvs.push(argv);
       const c = new FakeChild();
       children.push(c);
       return c;
@@ -89,6 +93,7 @@ function harness(): Harness {
     sup,
     statuses,
     children,
+    argvs,
     timers,
     get clock(): number {
       return state.clock;
@@ -199,6 +204,57 @@ describe('core supervisor', () => {
     h.children[0]?.fault(Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }));
     const last = h.statuses.at(-1);
     expect(last?.kind === 'failed' ? last.reason : null).toBe('spawn');
+    h.cleanup();
+  });
+
+  // §48.7.1 step 3: REBUILD is a startup mode. The flag says "this index is corrupt, rebuild
+  // it", which only the user's press asserts, so a later automatic restart spawns without it.
+  it('rebuild() spawns once with the flag, and the next restart does not', async () => {
+    const h = harness();
+    h.sup.start();
+    h.children[0]?.die(EXIT_INDEX_FATAL);
+    await settle();
+    expect(h.sup.rebuild()).toBe(true);
+    // A second press while the rebuild starts is not a second rebuild.
+    expect(h.sup.rebuild()).toBe(false);
+    expect(h.children.length).toBe(2);
+    expect(h.statuses.at(-1)?.kind).toBe('starting');
+    h.children[1]?.greet(PROTOCOL_VERSION);
+    await settle();
+    expect(h.statuses.at(-1)?.kind).toBe('ready');
+    h.children[1]?.die();
+    await settle();
+    h.timers[0]?.fn();
+    expect(h.argvs.map((a) => a.rebuild)).toEqual([false, true, false]);
+    h.cleanup();
+  });
+
+  it('refuses a rebuild unless the lane has failed', async () => {
+    const h = harness();
+    h.sup.start();
+    expect(h.sup.rebuild()).toBe(false);
+    h.children[0]?.greet(PROTOCOL_VERSION);
+    await settle();
+    expect(h.sup.rebuild()).toBe(false);
+    expect(h.children.length).toBe(1);
+    h.cleanup();
+  });
+
+  // The press is the user's act, not a crash: a crash before it must not count against the core
+  // it starts, or that core's first crash inside the window would read as a loop and end it.
+  it('rebuild() resets the crash window', async () => {
+    const h = harness();
+    h.sup.start();
+    h.children[0]?.die();
+    await settle();
+    h.timers[0]?.fn();
+    h.children[1]?.die(EXIT_INDEX_FATAL);
+    await settle();
+    expect(h.sup.rebuild()).toBe(true);
+    h.clock = 1_000;
+    h.children[2]?.die();
+    await settle();
+    expect(h.statuses.at(-1)?.kind).toBe('restarting');
     h.cleanup();
   });
 });

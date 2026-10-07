@@ -2,10 +2,27 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ProjectId, Problems, ScanRunId, Settings } from '../../generated/protocol';
+import type { FailureFact } from '../failure/copy';
 import { SETTINGS_ROWS } from '../settings/Drawer';
 import { makeProjectRow } from '../testing/projectRow';
+import type { AppDeps } from './deps';
 import { SurfaceHost, type SurfaceHostProps } from './SurfaceHost';
 import { fakeAppDeps, type FakeReplies } from './testDeps';
+
+function corruptIndex(state: 'present' | 'newer'): FailureFact {
+  return {
+    kind: 'corrupt_index',
+    sidecar: {
+      state,
+      writtenAt: state === 'present' ? 1_699_996_400 : null,
+      generation: state === 'present' ? 7 : null,
+      counts: state === 'present' ? { projects: 3 } : null,
+      reason: state === 'present' ? null : 'schema 99 is newer than 21',
+    },
+    rebuildFailed: null,
+    gapCountsRecoverable: false,
+  };
+}
 
 afterEach(() => {
   cleanup();
@@ -40,8 +57,12 @@ const DRAWER_REPLIES: FakeReplies = {
   'accounts.orgs': () => null,
 };
 
-function mount(over: Partial<SurfaceHostProps> = {}, replies: FakeReplies = DRAWER_REPLIES): void {
-  const fake = fakeAppDeps(replies);
+function mount(
+  over: Partial<SurfaceHostProps> = {},
+  replies: FakeReplies = DRAWER_REPLIES,
+  deps: Partial<AppDeps> = {},
+): void {
+  const fake = fakeAppDeps(replies, deps);
   render(
     <SurfaceHost
       deps={fake.deps}
@@ -119,6 +140,34 @@ describe('SurfaceHost', () => {
 
     mount({ failure: { kind: 'schema_from_future', onDisk: 9, supported: 5 } });
     expect(screen.getByText('THIS LIBRARY WAS WRITTEN BY A NEWER CODOTHECA')).toBeTruthy();
+  });
+
+  // §48.7.1 step 3: REBUILD asks the shell for the core's startup mode. Closing the window
+  // instead quits the app, which is what REBUILD used to do while its label said otherwise.
+  it('sends REBUILD to the shell and QUIT to the window', () => {
+    const rebuild = vi.fn(() => Promise.resolve());
+    const close = vi.spyOn(window, 'close').mockImplementation(() => undefined);
+    mount({ failure: corruptIndex('present') }, DRAWER_REPLIES, { rebuild });
+
+    fireEvent.click(screen.getByRole('button', { name: 'REBUILD' }));
+    expect(rebuild).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'QUIT' }));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(rebuild).toHaveBeenCalledTimes(1);
+    close.mockRestore();
+  });
+
+  it('quits and never rebuilds when a newer build wrote the sidecar', () => {
+    const rebuild = vi.fn(() => Promise.resolve());
+    const close = vi.spyOn(window, 'close').mockImplementation(() => undefined);
+    mount({ failure: corruptIndex('newer') }, DRAWER_REPLIES, { rebuild });
+
+    fireEvent.click(screen.getByRole('button', { name: 'QUIT' }));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(rebuild).not.toHaveBeenCalled();
+    close.mockRestore();
   });
 
   it('names the log the shell passed rather than a path it invented', () => {

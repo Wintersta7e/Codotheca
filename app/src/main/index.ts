@@ -26,6 +26,7 @@ import {
   type RootSuggestion,
   type Topic,
 } from '../generated/protocol';
+import { IPC_REBUILD } from '../shared/channels';
 import { CONTENT_SECURITY_POLICY, developmentContentSecurityPolicy } from '../shared/csp';
 import { buildStampArgument, logPathArgument } from '../shared/windowArgs';
 import { startShortcutService } from './paletteShortcut';
@@ -449,6 +450,10 @@ async function main(): Promise<void> {
     },
     knownCommands: KNOWN_COMMANDS,
   });
+
+  // §48.7.1 step 3: REBUILD respawns the core once in its rebuild mode. It is not a protocol
+  // command, because the core that would answer one cannot open its index.
+  ipcMain.handle(IPC_REBUILD, () => supervisor.rebuild());
 
   // §2.4: `locations.relocate` is privileged, so the bridge above refuses it by design. It
   // travels its own channel, where the path is whatever this process's dialog returns and never

@@ -109,6 +109,11 @@ export interface CodothecaBridge {
   onCoreStatus(cb: (status: unknown) => void): void;
   /** The status `onCoreStatus` would have pushed, for a window that mounted after the push. */
   coreStatusNow(): Promise<unknown>;
+  /**
+   * §48.7.1 step 3: REBUILD. The shell respawns the core once with its rebuild flag, and only
+   * from a failed lane; the answer is whether it did. The status that follows says how it went.
+   */
+  rebuild(): Promise<unknown>;
   /** One batch per frame, never one message per event. */
   onCoreEvents(cb: (batch: unknown) => void): void;
   /**

@@ -9,17 +9,6 @@
  * same reason, as `EffectsTierSource`.
  */
 
-/** One block of §11.2a's ledger. */
-export interface LedgerCounts {
-  readonly projects: number;
-  readonly notes: number;
-  readonly sessions: number;
-  readonly collections: number;
-  readonly roots: number;
-  readonly xpEvents: number;
-  readonly launchTargets: number;
-}
-
 export type StartupFailure =
   | { readonly kind: 'schema_from_future'; readonly onDisk: number; readonly supported: number }
   | {

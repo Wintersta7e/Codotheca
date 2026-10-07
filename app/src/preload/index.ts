@@ -20,6 +20,7 @@ import {
   IPC_OPEN_REMOTE_LINK,
   IPC_PICK_EXECUTABLE,
   IPC_PICK_ROOT,
+  IPC_REBUILD,
   IPC_RELOCATE,
   IPC_REQUEST,
   IPC_REVEAL,
@@ -86,6 +87,7 @@ const bridge: CodothecaBridge = {
     });
   },
   coreStatusNow: (): Promise<unknown> => ipcRenderer.invoke(IPC_CORE_STATUS_NOW),
+  rebuild: (): Promise<unknown> => ipcRenderer.invoke(IPC_REBUILD),
   onCoreEvents: (cb: (batch: unknown) => void): void => {
     ipcRenderer.on(IPC_EVENTS, (_event, batch: unknown) => {
       cb(batch);

@@ -14,7 +14,7 @@ import {
   type StartupFailure,
 } from '../shared/startupFailure';
 
-export type { LedgerCounts, SidecarReport, StartupFailure } from '../shared/startupFailure';
+export type { SidecarReport, StartupFailure } from '../shared/startupFailure';
 
 export const STARTUP_FAILURE_FILE = 'startup-failure.json';
 export const EXIT_INDEX_FATAL = 4;

@@ -33,6 +33,7 @@ function stubBridge(): StubBridge {
     installCancel: () => Promise.resolve({ kind: 'cancelled' as const }),
     onCoreStatus: () => undefined,
     coreStatusNow: () => Promise.resolve({ ok: true, value: { kind: 'starting' } }),
+    rebuild: () => Promise.resolve(true),
     onCoreEvents: (cb) => {
       registrations.push(cb);
     },

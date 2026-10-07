@@ -77,6 +77,7 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
     }),
     // A shell with nothing to report yet: the lane stays where the pushes put it.
     coreStatusNow: () => Promise.resolve(null),
+    rebuild: () => Promise.resolve(),
     onShortcutState: createValueFanout<ShortcutState>((cb) => {
       pushShortcut = cb;
     }),

@@ -12,6 +12,11 @@ export const IPC_CORE_STATUS = 'codotheca:core-status';
  * within a millisecond of the window existing.
  */
 export const IPC_CORE_STATUS_NOW = 'codotheca:core-status-now';
+/**
+ * §48.7.1 step 3: REBUILD, asked of the shell, which respawns the core once in its rebuild mode.
+ * No payload, and no protocol command: the core that would answer one cannot open its index.
+ */
+export const IPC_REBUILD = 'codotheca:rebuild';
 export const IPC_EVENTS = 'codotheca:events';
 
 /**

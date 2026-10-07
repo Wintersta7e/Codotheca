@@ -11,7 +11,7 @@
  * gap start, a ledger the report could not count — the block **says so in words and prints no
  * figure**, which is "never render unknown as zero" on the screen where it costs the most.
  */
-import type { LedgerCounts, StartupFailure } from '../../shared/startupFailure';
+import type { SidecarReport, StartupFailure } from '../../shared/startupFailure';
 
 export interface StillShuttingDown {
   readonly kind: 'still_shutting_down';
@@ -43,6 +43,26 @@ export function failureTimestamp(epochSecs: number): string {
   });
 }
 
+/**
+ * §48.7.2: whether the window's primary is REBUILD. A sidecar a newer build wrote refuses the
+ * rebuild before anything moves, so that window offers QUIT alone.
+ */
+export function offersRebuild(fact: FailureFact): boolean {
+  return fact.kind === 'corrupt_index' && fact.sidecar.state !== 'newer';
+}
+
+/**
+ * §48.7.2: what REBUILD will do, by the sidecar beside the index. With none to read, absent or
+ * unreadable alike, the rebuild restores nothing and first run starts over.
+ */
+// ‹COPY› interim — the user's words replace this before v1.0.0
+const REBUILD_WILL: Readonly<Record<SidecarReport['state'], string>> = {
+  present: '‹COPY: says what REBUILD will do›',
+  absent: '‹COPY: says REBUILD restores nothing and first run starts over›',
+  unreadable: '‹COPY: says REBUILD restores nothing and first run starts over›',
+  newer: '‹COPY: says a newer build wrote the sidecar, so this build will not rebuild›',
+};
+
 export function failureCopy(fact: FailureFact): FailureCopy {
   switch (fact.kind) {
     case 'schema_from_future':
@@ -70,19 +90,24 @@ export function failureCopy(fact: FailureFact): FailureCopy {
         primary: 'QUIT',
         secondary: null,
       };
-    case 'corrupt_index':
+    case 'corrupt_index': {
+      const rebuild = offersRebuild(fact);
       return {
         eyebrow: 'INDEX',
         headline: 'THE INDEX WOULD NOT OPEN',
+        // §48.7.2: nothing has been moved before REBUILD, so no sentence may say it was.
         body: [
-          // §48.7.2: nothing has been moved before REBUILD, so no sentence may say it was.
-          'The database was unreadable. A rebuild reads your folders again and restores what ' +
-            'the sidecar held.',
+          // ‹COPY› interim — the user's words replace this before v1.0.0
+          ...(fact.rebuildFailed === null
+            ? []
+            : [`‹COPY: names the failure› ${fact.rebuildFailed}`]),
+          REBUILD_WILL[fact.sidecar.state],
           'What comes back and what does not is below, in three parts.',
         ],
-        primary: 'REBUILD',
-        secondary: 'QUIT',
+        primary: rebuild ? 'REBUILD' : 'QUIT',
+        secondary: rebuild ? 'QUIT' : null,
       };
+    }
     case 'still_shutting_down':
       return {
         eyebrow: 'ANOTHER INSTANCE',
@@ -106,48 +131,57 @@ export interface LedgerBlock {
   readonly lines: readonly string[];
 }
 
-/** §11.2a's enumeration, in the order the counts are declared. */
-const LEDGER_NOUN: readonly (readonly [keyof LedgerCounts, string, string])[] = [
-  ['projects', 'project', 'projects'],
-  ['notes', 'note', 'notes'],
-  ['sessions', 'session', 'sessions'],
-  ['collections', 'collection', 'collections'],
-  ['roots', 'scan root', 'scan roots'],
-  ['launchTargets', 'launch target', 'launch targets'],
-  ['xpEvents', 'XP event', 'XP events'],
-];
+// ‹COPY› interim — the user's words replace this before v1.0.0
+function interimNoun(key: string): readonly [string, string] {
+  return [`‹COPY: ${key}›`, `‹COPY: ${key}›`];
+}
+
+/**
+ * Every count the sidecar carries, keyed as the core keys it, with the singular and plural the
+ * window prints: one per `BASE_COUNT_KEYS` entry and one per section in
+ * `core/src/index/sidecar.rs`, which `app/test/sidecarNouns.test.ts` reads so a key added there
+ * cannot go unnamed here. The first seven are §11.2a's enumeration, in its order.
+ */
+export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, string]>> = {
+  projects: ['project', 'projects'],
+  notes: ['note', 'notes'],
+  sessions: ['session', 'sessions'],
+  collections: ['collection', 'collections'],
+  roots: ['scan root', 'scan roots'],
+  launch_targets: ['launch target', 'launch targets'],
+  xp_events: ['XP event', 'XP events'],
+  session_segments: interimNoun('session_segments'),
+  collection_members: interimNoun('collection_members'),
+  identities: interimNoun('identities'),
+  merges: interimNoun('merges'),
+  settings: interimNoun('settings'),
+  view_state: interimNoun('view_state'),
+  pending: interimNoun('pending'),
+  no_scan_projects: interimNoun('no_scan_projects'),
+};
+
+/** §48.8.3: merges ride the sidecar and are never replayed, so a rebuild restores none. */
+const NOT_RESTORED: ReadonlySet<string> = new Set(['merges']);
 
 /**
  * `null` is *the report could not count this*, and `0` is *counted, and there were none*. They
  * are different sentences here, and neither is a zeroed noun: `0 projects` in this ledger reads
- * as a measurement of what was lost.
+ * as a measurement of what was lost. A count the sidecar does not carry is no line at all.
  */
-function ledgerLines(counts: LedgerCounts | null, subject: string): readonly string[] {
+function ledgerLines(
+  counts: Readonly<Record<string, number>> | null,
+  subject: string,
+): readonly string[] {
   if (counts === null) {
     return [`How much ${subject} is not known: the index did not open far enough to count it.`];
   }
-  const lines = LEDGER_NOUN.filter(([key]) => counts[key] > 0).map(
-    ([key, one, many]) => `${String(counts[key])} ${counts[key] === 1 ? one : many}`,
-  );
+  const lines = Object.entries(SIDECAR_COUNT_NOUNS)
+    .filter(([key]) => !NOT_RESTORED.has(key))
+    .flatMap(([key, [one, many]]) => {
+      const n = counts[key] ?? 0;
+      return n > 0 ? [`${String(n)} ${n === 1 ? one : many}`] : [];
+    });
   return lines.length > 0 ? lines : ['Nothing.'];
-}
-
-/**
- * The sidecar's counts under the ledger's names: it keys them as the core does, `xp_events` for
- * `xpEvents`. A count it does not carry is no line at all, never a `0`.
- */
-function sidecarLedger(counts: Readonly<Record<string, number>> | null): LedgerCounts | null {
-  if (counts === null) return null;
-  const read = (key: string): number => counts[key] ?? 0;
-  return {
-    projects: read('projects'),
-    notes: read('notes'),
-    sessions: read('sessions'),
-    collections: read('collections'),
-    roots: read('roots'),
-    xpEvents: read('xp_events'),
-    launchTargets: read('launch_targets'),
-  };
 }
 
 /**
@@ -173,8 +207,12 @@ export function corruptLedger(
       lines: ledgerLines(null, 'can be read back from your folders'),
     },
     {
+      // §48.7.2: what a rebuild will restore. Only a sidecar this build can read restores any.
       label: 'RESTORED FROM THE SIDECAR',
-      lines: ledgerLines(sidecarLedger(fact.sidecar.counts), 'the sidecar still holds'),
+      lines:
+        fact.sidecar.state === 'present'
+          ? ledgerLines(fact.sidecar.counts, 'the sidecar still holds')
+          : ['Nothing.'],
     },
     {
       label: 'LOST IN THE GAP',

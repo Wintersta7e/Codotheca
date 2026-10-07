@@ -18,6 +18,8 @@ export interface CoreArgv {
    * scanned — and the core says so rather than reporting an empty distro.
    */
   workerPath: string | null;
+  /** §48.7.1 step 3: this spawn is the one the user's REBUILD asked for. */
+  rebuild: boolean;
 }
 
 export interface CoreChild {
@@ -51,6 +53,9 @@ export function coreArguments(argv: CoreArgv): string[] {
   // empty one would mean the shell thought it had a path and did not.
   if (argv.workerPath !== null) {
     args.push(`--worker=${argv.workerPath}`);
+  }
+  if (argv.rebuild) {
+    args.push('--rebuild');
   }
   return args;
 }

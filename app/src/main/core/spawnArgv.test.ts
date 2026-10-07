@@ -7,7 +7,13 @@ import { type CoreArgv, coreArguments } from './spawn';
  * languages is one value that drifts.
  */
 describe('the core argv', () => {
-  const base = { binaryPath: '/c/core', dataDir: '/c/data', epoch: 3, parentPid: 42 };
+  const base = {
+    binaryPath: '/c/core',
+    dataDir: '/c/data',
+    epoch: 3,
+    parentPid: 42,
+    rebuild: false,
+  };
 
   it('omits the worker flag entirely when this build staged none', () => {
     const args = coreArguments({ ...base, workerPath: null } satisfies CoreArgv);
@@ -22,5 +28,13 @@ describe('the core argv', () => {
     expect(coreArguments({ ...base, workerPath: worker } satisfies CoreArgv)).toContain(
       `--worker=${worker}`,
     );
+  });
+
+  // §48.7.1 step 3: REBUILD is a startup mode, so the flag rides one spawn and no other.
+  it('passes --rebuild exactly when a rebuild was asked for', () => {
+    const asked = coreArguments({ ...base, workerPath: null, rebuild: true } satisfies CoreArgv);
+    expect(asked.filter((a) => a === '--rebuild')).toEqual(['--rebuild']);
+    const plain = coreArguments({ ...base, workerPath: null } satisfies CoreArgv);
+    expect(plain.filter((a) => a.startsWith('--rebuild'))).toEqual([]);
   });
 });
