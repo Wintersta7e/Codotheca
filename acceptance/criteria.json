@@ -13309,7 +13309,11 @@
           "reason": "Reftable was measured on Windows git only, and the git the Linux capture runs cannot write a reftable fixture, so this criterion is graded from a recorded Windows-native run against the tagged commit (R207); a runtime skip counts as not run.",
           "firstTag": true,
           "platforms": ["windows"],
-          "record": null
+          "record": {
+            "recordedAt": "2026-09-30",
+            "evidence": "Windows-native on the tagged commit, git 2.56.0.windows.1, core/tests/analyser_reftable.rs reftable_refs_and_stashes_are_read_through_git passed: the reftable copy with a local-only branch and a local annotated tag blocked [unpushed_commits, unpushed_tag] and never read safe; below the floor it read unknown [refs_unreadable] with 0 verifier calls; the second reftable copy, holding two stashes, blocked [stash_present] with 2 stashes in the snapshot.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         }
       ]
     },
@@ -13499,7 +13503,11 @@
           "reason": "The reftable clause needs a git that writes reftable, which the Linux capture's git does not, and the pseudoref behaviour was measured on Windows git only, so it is graded from a recorded Windows-native run against the tagged commit (R207).",
           "firstTag": true,
           "platforms": ["windows"],
-          "record": null
+          "record": {
+            "recordedAt": "2026-09-30",
+            "evidence": "Windows-native on the tagged commit, git 2.56.0.windows.1, core/tests/analyser_reftable.rs a_reftable_interrupted_cherry_pick_is_read_through_git passed: on a reftable fixture whose gitdir held no CHERRY_PICK_HEAD file (printed false), the interrupted cherry-pick blocked [interrupted_operation, uncommitted_changes] through the production handler, read through git.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         },
         {
           "id": "AC-P4-45-12-parcel",
@@ -13977,7 +13985,11 @@
           "reason": "SystemBinSettings reads the volume's recycle-bin settings from the Windows registry and bin; only a Windows-native run exercises that reader, and no capture the register reads comes from one (R207).",
           "firstTag": true,
           "platforms": ["windows"],
-          "record": null
+          "record": {
+            "recordedAt": "2026-09-30",
+            "evidence": "Windows-native on the tagged commit, core/tests/trash_refusals.rs 2 of 2 passed: the Windows-only settings reader, run against a temporary directory on the system volume of the recording machine (Windows 11), returned Unreadable, which core/src/removal/bins.rs maps to capacity_unknown, never a default; ac_p4_46_13 drove both refusals, each printing trashAvailable false and the act refused with 0 sends (trashRefusal unsupported, then capacity_unknown).",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         }
       ]
     },
@@ -14577,7 +14589,11 @@
           "reason": "The Windows-native git lists config keys the WSL and CI gits do not, and no capture this register reads runs Windows git, so the clause is discharged by a recorded Windows-native run (R207).",
           "firstTag": true,
           "platforms": ["windows"],
-          "record": null
+          "record": {
+            "recordedAt": "2026-09-30",
+            "evidence": "Windows-native on the tagged commit, core/tests/git_config_tripwire.rs ac_p4_47_5 passed on git 2.56.0.windows.1: 1022 keys listed, 191 audited, 191 classified in the table, with the per-namespace counts printed (http 46, remote 23, gc 22, fetch 16, maintenance 14, submodule 13, among others).",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         }
       ]
     },
@@ -14607,7 +14623,11 @@
           "reason": "Layer C must hold on Windows git over NTFS as well as on WSL, and no capture this register reads runs Windows-native, so the Windows half is a recorded Windows-native run (R207).",
           "firstTag": true,
           "platforms": ["windows"],
-          "record": null
+          "record": {
+            "recordedAt": "2026-09-30",
+            "evidence": "Windows-native on the tagged commit, git 2.56.0.windows.1, core/tests/git_write_differential.rs ac_p4_47_6 passed: under the hostile parent environment, each of the four routes (count, global, include, repo-config) ran Clone and VerifyRead's three steps and every one matched its declared effect, printing per route 4 intents, 48 refs compared, 520 files hashed, 102 objects counted, markers checked; only the Objects step added objects (24 to 30); 0 routes not run.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         }
       ]
     },
@@ -14645,7 +14665,11 @@
           "reason": "The defect was measured on both platforms with different git versions deleting different refs, and no capture this register reads runs Windows git, so the Windows half is a recorded Windows-native run (R207).",
           "firstTag": true,
           "platforms": ["windows"],
-          "record": null
+          "record": {
+            "recordedAt": "2026-09-30",
+            "evidence": "Windows-native on the tagged commit, git 2.56.0.windows.1, core/tests/git_write_differential.rs ac_p4_47_7 passed: the harness driving the shipped fetch --progress origin reported M2's deletions (a local branch, a stale remote-tracking ref and a local tag deleted) under the environment route and under repo config, and the verifying read printed no change on both.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         }
       ]
     },
@@ -14725,7 +14749,11 @@
           "reason": "The group kill is a Job Object on Windows and a process group on Linux, two different mechanisms, and no capture this register reads runs Windows-native, so the Windows half is a recorded run (R207).",
           "firstTag": true,
           "platforms": ["windows"],
-          "record": null
+          "record": {
+            "recordedAt": "2026-09-30",
+            "evidence": "Windows-native on the tagged commit, core/tests/git_write_deadline.rs a_stalled_child_is_killed_at_its_deadline_and_leaves_no_survivor passed: against a never-answering endpoint the read returned the budget error after 20004 ms (20.14 s wall), inside the 20 s deadline plus the 5 s slack, and the test found no surviving process of the group.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         }
       ]
     },
@@ -14770,7 +14798,11 @@
           "reason": "Reftable was measured on Windows git only and the WSL gate's git cannot create a reftable repository, so this clause is discharged by a recorded Windows-native run (R207).",
           "firstTag": true,
           "platforms": ["windows"],
-          "record": null
+          "record": {
+            "recordedAt": "2026-10-07",
+            "evidence": "Windows-native on the tagged commit, git 2.56.0.windows.1, core/tests/git_governed_floor.rs 5 of 5 passed: a_reftable_repository_reads_correctly_or_yields_unknown created its --ref-format=reftable fixture and ran rather than skipped, printing that the reftable read correctly with 3 refs, 3 checked; ac_p4_47_11 refused every VerifyRead step below the floor (2.28.0) after recording only --version.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         }
       ]
     },
@@ -15157,7 +15189,11 @@
           "assert": "On the tag, the release workflow's first step \u2014 before any build step \u2014 prints every derived declaration site with its value, finds them all equal, and finds them equal to the tag with its v stripped.",
           "reason": "The version check runs as the release workflow's first step on the pushed tag itself, in a hosted run whose output no local capture reaches. It is recorded per tag with the version job's run id and the tagged commit (\u00a749.6).",
           "firstTag": true,
-          "record": null
+          "record": {
+            "recordedAt": "2026-10-07",
+            "evidence": "Release run 37633036624 on the v0.9.0 tag: the version job, which every other job needs before it starts, ran scripts/check-version.mjs first and printed all 9 declaration sites (the three package.json versions, four package-lock.json entries, core/Cargo.toml and core/Cargo.lock), each = 0.9.0, then 'version sites: 9' and 'tag: v0.9.0 \u2014 matches'.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         }
       ]
     },
@@ -15176,7 +15212,11 @@
           "assert": "A recorded green workflow_dispatch run of the release workflow; then the v0.9.0 draft downloaded, SHA256SUMS checked against the downloaded bytes and every file passing the forge's attestation verification, printed per file. Zero files verified fails.",
           "reason": "The pipeline's first runs happen on the forge's hosted runners, against a pushed commit and then a pushed tag; no local capture can hold either run. Recorded with the run ids and the commit (\u00a749.6).",
           "firstTag": true,
-          "record": null
+          "record": {
+            "recordedAt": "2026-10-07",
+            "evidence": "Workflow-dispatch run 36728790988 was green on the pre-squash commit carrying this product tree without the notes and one README line; the tag run 37633036624 on this commit was green in every job and drafted v0.9.0. The draft's five files were downloaded and scripts/verify-release.mjs printed 'sha256 ok  attestation ok' for each of the AppImage, portable .exe, Setup .exe, .rpm and .deb, then 'files verified: 5', exit 0.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         },
         {
           "id": "AC-P4-48-2-verifies",
@@ -15240,7 +15280,11 @@
           "assert": "The release workflow's launch step executes every artifact from the uploaded bytes, never a local rebuild \u2014 the installer installed, launched, quit and uninstalled with the data directory kept; the portable build launched; the AppImage and the .deb launched under a virtual display \u2014 prints each artifact it ran, and fails at zero.",
           "reason": "The launch job runs in the tag's hosted release run over the uploaded artifacts, which no local capture reaches. It is recorded per tag with the launch jobs' run id and the tagged commit (\u00a749.6).",
           "firstTag": true,
-          "record": null
+          "record": {
+            "recordedAt": "2026-10-07",
+            "evidence": "Tag run 37633036624's launch jobs ran the downloaded artifacts and printed each SHA-256 first. Windows: the NSIS build installed silently, launched (pid 8412, 6 log lines, index created), quit clean, uninstalled, and the step printed 'index kept after uninstall'; the portable launched (pid 6136), quit clean, 'one library: True'. Linux, under a virtual display: the AppImage (pid 2608) and the .deb from its installed path (pid 3025) each launched and quit clean.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         },
         {
           "id": "AC-P4-48-3-hands",
@@ -15251,7 +15295,11 @@
           "assert": "Every launch no runner makes is done by hand from the uploaded bytes and recorded: the .rpm installed and launched on an rpm system, and, while the floor step runs in report mode, the AppImage launched on a system at the floor.",
           "reason": "No hosted runner in the release workflow installs an rpm package, and while the floor step runs in report mode none runs a system at the glibc floor, so a person makes those launches on a real system and records the commit and what was seen (\u00a748.9).",
           "firstTag": true,
-          "record": null
+          "record": {
+            "recordedAt": "2026-10-07",
+            "evidence": "By hand from the downloaded draft, each file's SHA-256 matched SHA256SUMS. The .rpm on an rpm distribution (glibc 2.43, container): installed exit 0, launched as a normal user under a virtual display with --no-sandbox, as the container forbids the sandbox's namespaces; 5 log lines, index created, quit clean. While the floor step runs in report mode, the AppImage launched on a glibc 2.35 system (container, extract-and-run as it has no FUSE): 6 log lines, index created, quit clean.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         },
         {
           "id": "AC-P4-48-3-launched",
@@ -15539,7 +15587,11 @@
           "assert": "The release-job floor step reads the version-need entries of every packed ELF \u2014 the core, both worker architectures and every ELF the shell packs \u2014 prints each binary with its figure, and fails at zero binaries read; in report mode at the first tag, and failing above the baseline at 1.0.",
           "reason": "The floor step runs in the tag's hosted release run over the packed artifacts, which no local capture reaches. It is recorded per tag with the build job's run id and the tagged commit (\u00a749.6).",
           "firstTag": true,
-          "record": null
+          "record": {
+            "recordedAt": "2026-10-07",
+            "evidence": "Tag run 37633036624's floor step (scripts/check-glibc-floor.mjs, baseline 2.35, report mode) read the packed ELFs and printed each figure: core 2.35, x64 worker 2.34, arm64 worker 2.39, the shell 2.25, chrome-sandbox 2.4, and the crash handler and three libraries 2.16 to 2.17. It printed 'ELF binaries read: 9', 'highest GLIBC need: 2.39' and 'above it: worker/linux-arm64/codotheca-worker (2.39)'.",
+            "commit": "18191ee947ce34850357fc0b25184485e019aac0"
+          }
         },
         {
           "id": "AC-P4-48-10-weak",
