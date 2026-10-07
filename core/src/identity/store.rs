@@ -260,8 +260,7 @@ pub fn stored_presence(
 /// What [`claim_removed_row`] did with a removed copy's row at the path just found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemovedRowClaim {
-    /// Nothing was released: no removed copy's row holds the found key, or the one that does is
-    /// the found repository's own.
+    /// No removed copy's row holds the found key.
     NoRemovedRow,
     /// The removed copy's row at the found key belonged to another repository. It keeps its path,
     /// its project and every reference to it, under a key no path can produce, and the found
@@ -270,22 +269,30 @@ pub enum RemovedRowClaim {
         /// The removed copy's row, now under its released key.
         location_id: i64,
     },
+    /// The removed copy's row at the found key is the found repository's own. Its `removed_at`
+    /// is cleared, and the upsert takes the row back with its sessions and references.
+    Reclaimed {
+        /// The copy's row, no longer removed.
+        location_id: i64,
+    },
 }
 
-/// §46.9's path release: a removed copy's row is never handed to another repository.
+/// §46.9's path release and §24.6a's reclaim: a removed copy's row at the found path goes back
+/// to its own repository and never to another.
 ///
 /// [`upsert_location`] conflicts on `(kind, distro, path_key)` and re-points the row it meets,
 /// which for a removed copy would move its sessions and every reference to it onto whatever was
-/// found at its path next. Unless the found repository is that copy's own — its lineage is known,
-/// equals the row's project's, and identity resolved `project_id` to that same project — the row's
-/// `path_key` gains a NUL byte and the row's id in decimal digits. No path contains a NUL, so no
-/// find can meet the released key again, and the uniqueness holds without rebuilding `location`.
-/// The key is built here rather than in SQL, where the concatenation would pass through text.
+/// found at its path next. The row is the found repository's own when its lineage is known,
+/// equals the row's project's, and identity resolved `project_id` to that same project: then the
+/// row's `removed_at` is cleared. Otherwise the row's `path_key` gains a NUL byte and the row's id
+/// in decimal digits. No path contains a NUL, so no find can meet the released key again, and the
+/// uniqueness holds without rebuilding `location`. The key is built here rather than in SQL, where
+/// the concatenation would pass through text. A repository with no lineage never reclaims.
 ///
 /// Call it before [`stored_presence`], so a released key reads as a row that does not exist yet.
 ///
 /// # Errors
-/// Fails with [`IdentityError::Sqlite`] when the read or the release is refused.
+/// Fails with [`IdentityError::Sqlite`] when the read, the reclaim or the release is refused.
 pub fn claim_removed_row(
     tx: &Transaction<'_>,
     project_id: i64,
@@ -312,7 +319,11 @@ pub fn claim_removed_row(
     };
     let own = owner == project_id && found_lineage.is_some_and(|l| lineage.as_deref() == Some(l));
     if own {
-        return Ok(RemovedRowClaim::NoRemovedRow);
+        tx.execute(
+            "UPDATE location SET removed_at = NULL WHERE id = ?1",
+            params![location_id],
+        )?;
+        return Ok(RemovedRowClaim::Reclaimed { location_id });
     }
     let mut released = key;
     released.push(0);
@@ -322,6 +333,32 @@ pub fn claim_removed_row(
         params![location_id, released],
     )?;
     Ok(RemovedRowClaim::Released { location_id })
+}
+
+/// §46.9's revival: a removed project whose repository is found again is no longer removed.
+///
+/// Clears `project.removed_at` when the found repository's lineage equals the project's; a
+/// repository with no lineage revives nothing. The hand-off calls it only when it reclaimed a
+/// removed copy's row or wrote a new one. A copy that was only offline and comes back does
+/// neither, so the user's declaration stands until they take it back. Returns whether it cleared.
+///
+/// # Errors
+/// Fails with [`IdentityError::Sqlite`] when the write is refused.
+pub fn clear_removed_on_find(
+    tx: &Transaction<'_>,
+    project_id: i64,
+    found_lineage: Option<&str>,
+    now: i64,
+) -> Result<bool, IdentityError> {
+    let Some(lineage) = found_lineage else {
+        return Ok(false);
+    };
+    let cleared = tx.execute(
+        "UPDATE project SET removed_at = NULL, updated_at = ?3
+          WHERE id = ?1 AND removed_at IS NOT NULL AND lineage_key = ?2",
+        params![project_id, lineage, now],
+    )?;
+    Ok(cleared > 0)
 }
 
 /// Assign this repository its project (§1.1). Writes `project` only; the `location` row for the

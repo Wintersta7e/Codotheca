@@ -116,6 +116,12 @@ impl Rig {
 
     /// `locations.uninstall`'s own row write for `location`, then the bytes leave the disk.
     pub(crate) fn uninstall(&self, location: LocationId, path: &Path) {
+        self.remove_row(location);
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    /// `locations.uninstall`'s own row write for `location`, and nothing on disk.
+    pub(crate) fn remove_row(&self, location: LocationId) {
         let mut guard = self.index.lock().unwrap();
         guard
             .with_tx(|tx| {
@@ -124,7 +130,6 @@ impl Rig {
             })
             .unwrap();
         drop(guard);
-        std::fs::remove_dir_all(path).unwrap();
     }
 
     /// One read against the index, under its lock.

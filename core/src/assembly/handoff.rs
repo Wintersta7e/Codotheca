@@ -25,7 +25,8 @@ use crate::git::{GitBackend, GitError, JobClass, JobContext, RepoHandle, StoreKe
 use crate::identity::lineage::lineage_key;
 use crate::identity::probe::probe_identity;
 use crate::identity::store::{
-    claim_removed_row, resolve_identity, stored_presence, upsert_location, LocationInput,
+    claim_removed_row, clear_removed_on_find, resolve_identity, stored_presence, upsert_location,
+    LocationInput, RemovedRowClaim,
 };
 use crate::identity::IdentityError;
 use crate::index::path::StoredPath;
@@ -161,20 +162,29 @@ pub fn hand_off_discovered(
         // not an account — a scan holds none.
         let outcome =
             resolve_identity(tx, &probe, &basename, &aliases, now).map_err(as_index_error)?;
-        // §46.9: a removed copy's row at this path keeps its project and its references unless
-        // the repository found here is that copy's own. Released before the presence read, so a
-        // repository that was never here does not read as one coming back.
-        claim_removed_row(tx, outcome.project_id, found_lineage.as_deref(), &input)
-            .map_err(as_index_error)?;
+        // §46.9: a removed copy's row at this path goes back to the repository found here when it
+        // is that copy's own, and otherwise keeps its project and its references. Claimed before
+        // the presence read, so a repository that was never here does not read as one coming back.
+        let reclaimed = matches!(
+            claim_removed_row(tx, outcome.project_id, found_lineage.as_deref(), &input)
+                .map_err(as_index_error)?,
+            RemovedRowClaim::Reclaimed { .. }
+        );
         // [p3] §30.1's unfreeze, recorded where it is first known: this write is what turns a
         // copy that was away — offline, missing, unscanned — back into `present`. Everything
         // observed there before it left is withdrawn in the same transaction, so the first sweep
-        // after the return is diffed against nothing from before it (§34.2).
-        let returning = stored_presence(tx, &input)
-            .map_err(as_index_error)?
-            .is_some_and(|before| before != Presence::Present);
+        // after the return is diffed against nothing from before it (§34.2). A reclaimed copy was
+        // away too: its removal left `presence` as it was, and its sweeps still read as observed.
+        let stored = stored_presence(tx, &input).map_err(as_index_error)?;
+        let returning = reclaimed || stored.is_some_and(|before| before != Presence::Present);
         let location =
             upsert_location(tx, outcome.project_id, &input, now).map_err(as_index_error)?;
+        // §46.9's revival: a reclaimed row or a new one is the removed project's repository found
+        // again. A copy that was only offline coming back is neither, and revives nothing.
+        if reclaimed || stored.is_none() {
+            clear_removed_on_find(tx, outcome.project_id, found_lineage.as_deref(), now)
+                .map_err(as_index_error)?;
+        }
         if returning {
             SqliteDebtStore
                 .mark_root_unobserved(tx, LocationId(location), now)
