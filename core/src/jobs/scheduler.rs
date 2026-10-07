@@ -690,7 +690,7 @@ mod tests {
         let next = next_jobs_after(JobKind::J3Inventory, Some(false));
         assert!(next.contains(&(JobKind::J5Art, Priority::Deferred)));
         // Art chains from nothing else, and chains nothing further.
-        assert!(next_jobs_after(JobKind::J5Art, Some(false)).is_empty());
+        assert_eq!(next_jobs_after(JobKind::J5Art, Some(false)), []);
         assert!(!next_jobs_after(JobKind::J1Refstate, None)
             .iter()
             .any(|(k, _)| *k == JobKind::J5Art));
@@ -705,9 +705,9 @@ mod tests {
 
     #[test]
     fn a_finished_job_chains_nothing_further_from_status_or_content() {
-        assert!(next_jobs_after(JobKind::J2Status, Some(false)).is_empty());
-        assert!(next_jobs_after(JobKind::J6Content, Some(false)).is_empty());
-        assert!(next_jobs_after(JobKind::J4History, Some(false)).is_empty());
+        assert_eq!(next_jobs_after(JobKind::J2Status, Some(false)), []);
+        assert_eq!(next_jobs_after(JobKind::J6Content, Some(false)), []);
+        assert_eq!(next_jobs_after(JobKind::J4History, Some(false)), []);
     }
 
     /// **R39, held mechanically.** The whole ruling is that `Arc<Index>` is not `Send`, so a

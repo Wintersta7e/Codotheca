@@ -658,7 +658,7 @@ fn the_account_referencing_census_is_complete_and_covered() {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("src/accounts/store.rs"),
     )
     .expect("store source is readable");
-    assert!(!source.is_empty());
+    assert_ne!(source, "");
     let mut by_cascade = 0_usize;
     let mut explicit = 0_usize;
     let mut handled = 0_usize;

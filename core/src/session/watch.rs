@@ -268,8 +268,8 @@ mod tests {
         src.watch(SessionId(1), Path::new("/a")).unwrap();
         src.push(SessionId(1), "a.rs");
         src.unwatch(SessionId(1));
-        assert!(src.drain().is_empty());
-        assert!(src.watched().is_empty());
+        assert_eq!(src.drain(), []);
+        assert_eq!(src.watched(), []);
     }
 
     #[test]

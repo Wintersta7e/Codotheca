@@ -502,7 +502,7 @@ mod tests {
         let t = Transport::start(std::io::empty(), std::io::sink(), 8).expect("transport");
         let sink = PublisherSink::new(Publisher::new(t.sink.clone(), Epoch(1), 4));
         sink.emit("nonesuch", "progress", json!({}));
-        assert!(sink.take_snapshot_requests().is_empty());
+        assert_eq!(sink.take_snapshot_requests(), []);
         drop(sink);
         t.join();
     }

@@ -148,7 +148,7 @@ mod tests {
 
         let probe = probe_identity(&git, &handle("/home/u/empty"), PathPlatform::Unix, &ctx)
             .expect("an empty repository is a repository");
-        assert!(probe.root_oids.is_empty());
+        assert_eq!(probe.root_oids, Vec::<String>::new());
         assert_eq!(evidence_from(&probe).lineage_key, None);
     }
 }

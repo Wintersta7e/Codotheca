@@ -104,8 +104,8 @@ pub fn derive_jewel(h: u32, fade: f64) -> Jewel {
         .copied()
         .unwrap_or(JEWEL_BINS[0]);
     let hue = bin + (signed(draw(h, 5, 7)) - 3);
-    let l = fade.mul_add(-0.12, 0.6 - f64::from(draw(h, 9, 3)) * 0.035);
-    let c = (0.175 - f64::from(draw(h, 13, 3)) * 0.02) * fade.mul_add(-0.5, 1.0);
+    let l = fade.mul_add(-0.12, f64::from(draw(h, 9, 3)).mul_add(-0.035, 0.6));
+    let c = f64::from(draw(h, 13, 3)).mul_add(-0.02, 0.175) * fade.mul_add(-0.5, 1.0);
     Jewel {
         hue,
         l: round3(l),
@@ -153,7 +153,7 @@ pub fn jewel_ink(hue: i32) -> String {
 #[must_use]
 pub fn derive_plate(h: u32, fade: f64) -> Plate {
     let hue = PLATE_BASE_HUE + (signed(draw(h, 5, 9)) - 4);
-    let c = (0.005 + f64::from(draw(h, 9, 3)) * 0.002) * fade.mul_add(-0.5, 1.0);
+    let c = f64::from(draw(h, 9, 3)).mul_add(0.002, 0.005) * fade.mul_add(-0.5, 1.0);
     let step = f64::from(draw(h, 21, 5)) * 0.011;
     let ang = usize::try_from(draw(h, 13, 4))
         .ok()
@@ -165,7 +165,7 @@ pub fn derive_plate(h: u32, fade: f64) -> Plate {
         c: round3(c),
         hi: round3(fade.mul_add(-0.02, 0.185 + step)),
         mid: round3(fade.mul_add(-0.016, 0.145 + step)),
-        lo: round3(fade.mul_add(0.005, 0.085 + step * 0.5)),
+        lo: round3(fade.mul_add(0.005, step.mul_add(0.5, 0.085))),
         ang,
         split: 38 + signed(draw(h, 17, 24)),
     }

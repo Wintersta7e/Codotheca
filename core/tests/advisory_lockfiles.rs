@@ -166,7 +166,7 @@ fn ac_p3_32_16_a_file_over_the_cap_is_not_read() {
         read_state(&conn, project, "package-lock.json").as_deref(),
         Some("notRead")
     );
-    assert!(triples(&conn, project).is_empty());
+    assert_eq!(triples(&conn, project), []);
     // The scan **ran**, which is what makes this `unknown` rather than `has not run`.
     let scanned: i64 = conn
         .query_row(

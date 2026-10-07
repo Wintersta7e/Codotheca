@@ -342,7 +342,7 @@ fn a_root_whose_mount_cannot_be_resolved_is_reported_and_not_walked() {
             }
         })
         .unwrap();
-    assert!(seen.into_inner().unwrap().is_empty());
+    assert_eq!(seen.into_inner().unwrap(), []);
     assert_eq!(outcome.walked_dirs, 0);
     assert!(outcome.present_stores.is_empty());
     assert_eq!(r.store.recorded_problems(), 1);
@@ -614,7 +614,7 @@ fn every_shape_appears_exactly_once_with_the_kind_that_identifies_it() {
 
     assert_eq!(outcome.found_repos, 4);
     assert!(!outcome.cancelled);
-    assert!(outcome.isolated_roots.is_empty());
+    assert_eq!(outcome.isolated_roots, Vec::<i64>::new());
     // The excluded tree was never read, so its `.git` never became a repository.
     assert!(found
         .iter()

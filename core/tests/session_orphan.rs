@@ -268,9 +268,7 @@ fn every_orphaned_session_is_closed_not_only_the_first() {
             "session {session:?} was left open"
         );
     }
-    assert!(store::open_sessions(h.index.index().conn())
-        .unwrap()
-        .is_empty());
+    assert_eq!(store::open_sessions(h.index.index().conn()).unwrap(), []);
 }
 
 #[test]

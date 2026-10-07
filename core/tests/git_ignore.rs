@@ -107,5 +107,5 @@ fn a_batch_larger_than_one_argv_call_is_answered_in_order() {
 #[test]
 fn an_empty_input_asks_git_nothing() {
     let repo = TestRepo::init();
-    assert!(verdicts(&repo, &[]).is_empty());
+    assert_eq!(verdicts(&repo, &[]), Vec::<bool>::new());
 }

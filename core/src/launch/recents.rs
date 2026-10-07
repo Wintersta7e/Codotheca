@@ -202,8 +202,11 @@ mod tests {
             parse_json_list(json, "/folder_history"),
             vec![PathBuf::from("/a"), PathBuf::from("/b")]
         );
-        assert!(parse_json_list(json, "/absent").is_empty());
-        assert!(parse_json_list("not json", "/folder_history").is_empty());
+        assert_eq!(parse_json_list(json, "/absent"), Vec::<PathBuf>::new());
+        assert_eq!(
+            parse_json_list("not json", "/folder_history"),
+            Vec::<PathBuf>::new()
+        );
     }
 
     #[test]

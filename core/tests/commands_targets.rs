@@ -193,7 +193,7 @@ fn no_row_in_any_scope_is_the_ask_tier_and_is_a_null_resolution() {
     let project = h.project;
     let list = handle_list(&mut h.ctx(), json_args(project, None)).unwrap();
     assert!(list.resolved.is_none());
-    assert!(list.rows.is_empty());
+    assert_eq!(list.rows, []);
 }
 
 #[test]

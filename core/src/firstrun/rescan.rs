@@ -248,7 +248,10 @@ mod tests {
     #[test]
     fn a_disabled_root_is_not_watched() {
         let children = |_: &Path| Vec::new();
-        assert!(watch_targets(&[root(1, "/home/u/dev", false)], &children).is_empty());
+        assert_eq!(
+            watch_targets(&[root(1, "/home/u/dev", false)], &children),
+            Vec::<PathBuf>::new()
+        );
     }
 
     #[test]

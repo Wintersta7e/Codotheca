@@ -384,7 +384,7 @@ mod tests {
         )
         .expect("ok");
         // §7.1a: nothing changes appearance, so nothing is announced.
-        assert!(sink.named("projects", "art_ready").is_empty());
+        assert_eq!(sink.named("projects", "art_ready"), Vec::<Value>::new());
         assert_eq!(
             crate::art::store::read_hero_lru(index.data_dir()),
             vec![hash]

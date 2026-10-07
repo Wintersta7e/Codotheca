@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn the_default_distro_probe_finds_none_so_no_distro_row_is_invented() {
-        assert!(NoDistros.distros().is_empty());
+        assert_eq!(NoDistros.distros(), []);
     }
 
     // R9: the display string is derived here rather than carried in plan 18's facts struct.

@@ -153,7 +153,7 @@ fn an_available_keychain_round_trips_and_deletes() {
     assert_eq!(store.read(&entry).unwrap().expose(), "sentinel-0000");
 
     store.delete(&entry).unwrap();
-    assert!(store.entry_names().is_empty());
+    assert_eq!(store.entry_names(), Vec::<String>::new());
     assert!(matches!(store.read(&entry), Err(KeychainError::NotFound)));
     assert!(matches!(store.delete(&entry), Err(KeychainError::NotFound)));
 }

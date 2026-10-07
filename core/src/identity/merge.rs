@@ -1581,7 +1581,7 @@ mod tests {
         // The absorbed row was not pinned; the survivor is, because is_pinned is OR'd.
         assert_eq!(h.flags_lost_by_or, vec!["is_pinned".to_owned()]);
         // Both were hidden and the survivor still is, so nothing was AND'd away.
-        assert!(h.flags_lost_by_and.is_empty());
+        assert_eq!(h.flags_lost_by_and, Vec::<String>::new());
 
         let after: i64 = conn
             .query_row("SELECT COUNT(*) FROM project", [], |r| r.get(0))
@@ -1594,7 +1594,7 @@ mod tests {
         let mut conn = open_test_index();
         let s = p(&conn, "s", 100);
         let tx = conn.transaction().unwrap();
-        assert!(super::unmerge_hint(&tx, s).unwrap().is_empty());
+        assert_eq!(super::unmerge_hint(&tx, s).unwrap(), []);
         tx.commit().unwrap();
     }
 }

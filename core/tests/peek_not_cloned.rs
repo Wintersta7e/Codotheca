@@ -84,7 +84,7 @@ fn ac_p2_25_23_core_a_not_cloned_row_carries_no_location_and_no_history() {
     let (_dir, index) = not_cloned();
     let peek = peek_of(&index, 1);
     assert!(peek.location.is_none(), "there is no path and no copy");
-    assert!(peek.commits.is_empty());
+    assert_eq!(peek.commits, []);
     assert_eq!(peek.birth_year, None);
     assert_eq!(peek.size_tracked_bytes, None);
     assert_eq!(peek.last_commit_at, None);

@@ -177,6 +177,6 @@ fn missing_argv_exits_with_the_args_code_and_says_why_on_stderr() {
         out.status.code(),
         Some(i32::from(codotheca_core::lifecycle::EXIT_BAD_ARGS))
     );
-    assert!(out.stdout.is_empty());
+    assert_eq!(out.stdout, b"");
     assert!(String::from_utf8_lossy(&out.stderr).contains("--data-dir"));
 }

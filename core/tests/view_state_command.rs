@@ -50,7 +50,7 @@ fn a_fresh_install_is_distinguishable_from_a_client_that_saved_an_empty_view() {
     assert_eq!(fresh.sort, SortKey::LastTouched);
     assert_eq!(fresh.view_mode, ViewMode::Grid);
     assert_eq!(fresh.density, state::DEFAULT_DENSITY);
-    assert!(fresh.collapsed_sections.is_empty());
+    assert_eq!(fresh.collapsed_sections, Vec::<String>::new());
     assert_eq!(fresh.window_geometry, None);
 
     // The same visible fields, deliberately saved. Everything on screen matches the line above;

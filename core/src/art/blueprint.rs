@@ -116,8 +116,8 @@ fn paint_module_outlines(pixmap: &mut Pixmap, scene: &Scene, t: Transform) {
         if let Some(inner) = Rect::from_xywh(
             rect.x() + inset,
             rect.y() + inset,
-            (rect.width() - inset * 2.0).max(1.0),
-            (rect.height() - inset * 2.0).max(1.0),
+            inset.mul_add(-2.0, rect.width()).max(1.0),
+            inset.mul_add(-2.0, rect.height()).max(1.0),
         ) {
             stroke_rect(pixmap, inner, &ink(0.35), &hairline(1.0), t);
         }

@@ -627,7 +627,7 @@ fn an_alias_host_folds_to_the_canonical_one() {
 fn an_enterprise_host_keeps_its_name_and_declares_no_aliases() {
     let (_transport, provider) = provider_with_transport("forge.example.invalid");
     assert_eq!(provider.canonical_host(), "forge.example.invalid");
-    assert!(provider.host_aliases().is_empty());
+    assert_eq!(provider.host_aliases(), Vec::<&str>::new());
 }
 
 /// A `permissions` object that carries no `push` key is **unknown**, not `false`, and not a

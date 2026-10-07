@@ -142,7 +142,7 @@ fn an_unknown_job_slug_is_skipped_rather_than_guessed() {
     conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
         .unwrap();
     assert_eq!(JobKind::from_slug("j9"), None);
-    assert!(load(&conn, project).unwrap().is_empty());
+    assert_eq!(load(&conn, project).unwrap(), []);
 }
 
 /// The other half, and the one plan 10 makes newly true: every slug the column permits is a

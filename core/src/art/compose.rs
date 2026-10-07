@@ -590,9 +590,9 @@ mod tests {
     fn a_layout_with_no_modules_still_produces_a_valid_document() {
         // module_count is never zero in practice, but a zero must not panic or index off the end.
         let l = layout(&inputs(0, 0, 0, 0));
-        assert!(l.modules.is_empty());
-        assert!(l.vents.is_empty());
-        assert!(l.fasteners.is_empty());
+        assert_eq!(l.modules, []);
+        assert_eq!(l.vents, []);
+        assert_eq!(l.fasteners, []);
         assert_eq!(l.seams.len(), 1);
     }
 

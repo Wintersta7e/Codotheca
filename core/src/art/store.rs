@@ -823,7 +823,10 @@ mod tests {
         for n in 0..u32::try_from(HERO_CACHE_MAX).expect("cap") {
             let hash = hash_n(n);
             place(&hash);
-            assert!(touch_hero(dir.path(), &hash).expect("touch").is_empty());
+            assert_eq!(
+                touch_hero(dir.path(), &hash).expect("touch"),
+                Vec::<String>::new()
+            );
         }
         assert_eq!(read_hero_lru(dir.path()).len(), HERO_CACHE_MAX);
         let overflow = hash_n(9999);
@@ -839,7 +842,7 @@ mod tests {
     #[test]
     fn a_corrupt_or_absent_journal_reads_as_empty_rather_than_failing() {
         let dir = tempfile::tempdir().expect("tempdir");
-        assert!(read_hero_lru(dir.path()).is_empty());
+        assert_eq!(read_hero_lru(dir.path()), Vec::<String>::new());
         std::fs::create_dir_all(art_root(dir.path())).expect("mkdir");
         std::fs::write(hero_lru_path(dir.path()), "not a hash\n\n../escape\n").expect("write");
         assert!(

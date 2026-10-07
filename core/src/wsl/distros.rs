@@ -440,7 +440,7 @@ mod tests {
             }
         }
         let probe = super::SystemDistroProbe::new(std::sync::Arc::new(NoWslExe));
-        assert!(probe.distros().is_empty());
+        assert_eq!(probe.distros(), []);
     }
 
     #[test]

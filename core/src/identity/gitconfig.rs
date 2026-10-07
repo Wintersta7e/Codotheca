@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn a_subsection_is_not_the_user_section() {
         let text = "[user \"work\"]\n\temail = work@example.invalid\n";
-        assert!(parse_user_emails(text).is_empty());
+        assert_eq!(parse_user_emails(text), Vec::<String>::new());
     }
 
     #[test]
@@ -170,6 +170,6 @@ mod tests {
     #[test]
     fn a_home_with_no_git_configuration_answers_nothing_rather_than_failing() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(user_emails(dir.path(), None).is_empty());
+        assert_eq!(user_emails(dir.path(), None), Vec::<String>::new());
     }
 }

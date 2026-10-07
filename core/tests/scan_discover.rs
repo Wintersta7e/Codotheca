@@ -80,7 +80,7 @@ fn a_plain_directory_is_nothing() {
     let git = FakeGitBackend::new();
     let cancel = CancelToken::new();
     assert!(classify_dir(base.path(), &opts(), &probe(&git, &cancel), &|_| {}).is_none());
-    assert!(git.calls().is_empty());
+    assert_eq!(git.calls(), []);
 }
 
 #[test]
@@ -213,7 +213,7 @@ fn an_oversized_dot_git_file_is_reported_and_not_indexed() {
     });
     assert!(found.is_none());
     assert_eq!(problems.into_inner().unwrap().len(), 1);
-    assert!(git.calls().is_empty());
+    assert_eq!(git.calls(), []);
 }
 
 #[test]
@@ -231,7 +231,7 @@ fn a_dot_git_file_with_no_gitdir_line_is_reported_and_not_indexed() {
     })
     .is_none());
     assert_eq!(problems.into_inner().unwrap().len(), 1);
-    assert!(git.calls().is_empty());
+    assert_eq!(git.calls(), []);
 }
 
 // ---- Task 6: bare repositories ------------------------------------------------------------
@@ -277,7 +277,7 @@ fn an_incomplete_triple_never_reaches_git() {
     git.always_repo_facts(GitReply::Ok(facts(true, "/x", "/x")));
     let cancel = CancelToken::new();
     assert!(classify_dir(dir, &bare_opts(), &probe(&git, &cancel), &|_| {}).is_none());
-    assert!(git.calls().is_empty());
+    assert_eq!(git.calls(), []);
 }
 
 #[test]
@@ -289,7 +289,7 @@ fn candidates_are_not_tested_where_the_root_did_not_enable_them() {
     git.always_repo_facts(GitReply::Ok(facts(true, "/x", "/x")));
     let cancel = CancelToken::new();
     assert!(classify_dir(dir, &opts(), &probe(&git, &cancel), &|_| {}).is_none());
-    assert!(git.calls().is_empty());
+    assert_eq!(git.calls(), []);
 }
 
 /// The hazard, not the fix: every `.git` directory has the bare shape, so the only thing keeping

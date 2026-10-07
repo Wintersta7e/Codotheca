@@ -111,7 +111,7 @@ fn ac_p3_34_11_rebuild_preserves_columns_and_adds_index_and_cascade() {
     let old_columns = columns(&before);
     let new_columns = columns(&after);
     eprintln!("health_delta columns compared: {}", old_columns.len());
-    assert!(!old_columns.is_empty());
+    assert_ne!(old_columns, []);
     assert_eq!(old_columns, new_columns);
 
     let indexes: Vec<String> = after
@@ -265,7 +265,7 @@ fn ac_p3_34_11_existing_rows_survive_the_copy() {
     apply_all(&mut conn, MIGRATIONS).unwrap();
     let after = snapshot(&conn);
     eprintln!("health_delta rows compared: {}", before.len());
-    assert!(!before.is_empty());
+    assert_ne!(before, Vec::<serde_json::Value>::new());
     assert_eq!(before, after);
     insert_delta(&conn, project, "dust").unwrap();
     assert!(conn.last_insert_rowid() > id);
@@ -309,7 +309,7 @@ fn ac_p3_34_11_migration_leaves_pragma_to_the_runner() {
         MIGRATION.len(),
         statements.len()
     );
-    assert!(!statements.trim().is_empty());
+    assert_ne!(statements.trim(), "");
     assert!(!statements
         .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
         .any(|token| token.eq_ignore_ascii_case("pragma")));
@@ -337,7 +337,7 @@ fn ac_p3_34_11_cascade_comment_matches_the_live_set() {
         "tables scanned for cascading project references: {}",
         tables.len()
     );
-    assert!(!tables.is_empty());
+    assert_ne!(tables, Vec::<String>::new());
     let mut live = BTreeSet::new();
     for table in tables {
         let mut statement = conn

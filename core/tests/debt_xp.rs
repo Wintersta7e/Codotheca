@@ -252,7 +252,7 @@ fn ac_p3_28_15_an_invalidated_closure_on_an_enrolled_project_pays_nothing() {
 
     assert!(!only_withdrawn.wrote_row);
     assert_eq!(only_withdrawn.closed_today, 0);
-    assert!(only_withdrawn.sources.is_empty());
+    assert_eq!(only_withdrawn.sources, []);
     let rows: i64 = conn
         .query_row("SELECT count(*) FROM xp_events", [], |r| r.get(0))
         .unwrap();

@@ -333,7 +333,7 @@ mod tests {
             .unwrap()
             .unwrap();
         let rows = out.as_array().unwrap();
-        assert!(!rows.is_empty());
+        assert_ne!(rows.as_slice(), Vec::<Value>::new());
         assert!(e.cache.contains(&crate::paths::path_key(
             &home.path().join("src"),
             PathPlatform::Unix

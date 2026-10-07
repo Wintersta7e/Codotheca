@@ -122,7 +122,7 @@ fn every_call_is_recorded_with_its_operation_and_repository() {
         Some(std::path::Path::new("/c/bare"))
     );
     git.clear();
-    assert!(git.calls().is_empty());
+    assert_eq!(git.calls(), []);
 }
 
 #[test]

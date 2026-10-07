@@ -32,7 +32,7 @@ fn an_empty_corpus_still_declares_its_volumes_and_round_trips() {
         "got {}",
         manifest.git_version
     );
-    assert!(manifest.fixtures.is_empty());
+    assert_eq!(manifest.fixtures, []);
     assert_eq!(manifest.volumes.len(), 2);
 
     let a = manifest.volume(VOLUME_A).unwrap();

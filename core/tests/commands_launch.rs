@@ -377,7 +377,7 @@ fn an_offline_location_refuses_rather_than_opening_a_path_on_an_unmounted_drive(
     let args = h.launch_args();
     let err = handle_launch(&mut h.ctx(), args).unwrap_err();
     assert_eq!(err.code, ErrorCode::StoreOffline);
-    assert!(h.spawner.calls().is_empty());
+    assert_eq!(h.spawner.calls(), []);
 }
 
 #[test]
@@ -388,7 +388,7 @@ fn an_unscanned_location_is_not_treated_as_present() {
     let args = h.launch_args();
     let err = handle_launch(&mut h.ctx(), args).unwrap_err();
     assert_eq!(err.code, ErrorCode::StoreOffline);
-    assert!(h.spawner.calls().is_empty());
+    assert_eq!(h.spawner.calls(), []);
 }
 
 #[test]
@@ -401,7 +401,7 @@ fn a_location_belonging_to_another_project_is_refused() {
         handle_launch(&mut h.ctx(), args).unwrap_err().code,
         ErrorCode::Protocol
     );
-    assert!(h.spawner.calls().is_empty());
+    assert_eq!(h.spawner.calls(), []);
 }
 
 #[test]
@@ -425,7 +425,7 @@ fn a_fourth_argument_key_is_refused() {
         handle_launch(&mut h.ctx(), args).unwrap_err().code,
         ErrorCode::Protocol
     );
-    assert!(h.spawner.calls().is_empty());
+    assert_eq!(h.spawner.calls(), []);
 }
 
 #[test]
@@ -434,7 +434,7 @@ fn a_failed_spawn_opens_no_session_and_leaves_the_ledger_empty() {
     h.spawner.fail_next("permission denied");
     let args = h.launch_args();
     assert!(handle_launch(&mut h.ctx(), args).is_err());
-    assert!(h.sessions.live().is_empty());
+    assert_eq!(h.sessions.live(), []);
     assert_eq!(h.table_rows("session"), 0);
     assert_eq!(h.table_rows("session_segment"), 0);
 }
@@ -479,7 +479,10 @@ fn opening_a_session_publishes_started_and_no_condition_change() {
     let args = h.launch_args();
     handle_launch(&mut h.ctx(), args).unwrap();
     assert_eq!(h.events.of("session", "started").len(), 1);
-    assert!(h.events.of("projects", "condition_changed").is_empty());
+    assert_eq!(
+        h.events.of("projects", "condition_changed"),
+        Vec::<Value>::new()
+    );
 }
 
 #[test]
@@ -499,7 +502,7 @@ fn an_unknown_target_is_refused_before_anything_is_spawned() {
         handle_launch(&mut h.ctx(), args).unwrap_err().code,
         ErrorCode::Protocol
     );
-    assert!(h.spawner.calls().is_empty());
+    assert_eq!(h.spawner.calls(), []);
 }
 
 #[test]

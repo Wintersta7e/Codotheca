@@ -462,7 +462,7 @@ fn a_tombstoned_project_is_never_a_candidate() {
         found.iter().map(|c| c.project_id).collect::<Vec<_>>(),
         vec![survivor]
     );
-    assert!(suppressors.is_empty());
+    assert_eq!(suppressors, []);
 }
 
 #[test]

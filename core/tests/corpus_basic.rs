@@ -25,7 +25,7 @@ fn a_zero_commit_repository_has_a_git_directory_and_no_head() {
     let f = m.require(ids::ZERO_COMMIT).unwrap();
     assert!(f.path.join(".git").is_dir());
     assert_eq!(f.expect.head_oid, None);
-    assert!(f.expect.root_oids.is_empty());
+    assert_eq!(f.expect.root_oids, Vec::<String>::new());
 }
 
 #[test]

@@ -375,7 +375,7 @@ fn the_junk_set_has_one_owner_and_a_bare_name_is_not_junk() {
     use std::path::Path;
 
     let root = tempfile::tempdir().expect("tempdir");
-    assert!(!JUNK_PATTERNS.is_empty());
+    assert_ne!(JUNK_PATTERNS.as_slice(), Vec::<&str>::new());
     for pattern in JUNK_PATTERNS {
         assert!(
             !is_junk(root.path(), Path::new(pattern), false),

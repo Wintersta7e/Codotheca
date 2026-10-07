@@ -916,7 +916,7 @@ fn a_refused_sink_ends_the_flow_instead_of_polling_a_redeemed_code() {
         !events.saw_stage(ConnectStage::Expired),
         "the flow ended because the store refused it, not because the code expired"
     );
-    assert!(tokens.entry_names().is_empty());
+    assert_eq!(tokens.entry_names(), Vec::<String>::new());
 }
 
 /// **The tier is the one the server granted, never the one the request asked for.**

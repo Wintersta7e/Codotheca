@@ -57,7 +57,7 @@ fn a_file_that_is_not_a_database_is_reported_as_corrupt() {
     drop(f);
 
     match open_connection(&db) {
-        Err(IndexError::Corrupt { detail }) => assert!(!detail.is_empty()),
+        Err(IndexError::Corrupt { detail }) => assert_ne!(detail, ""),
         other => panic!("expected Corrupt, got {other:?}"),
     }
 }

@@ -351,7 +351,7 @@ fn startup_on_a_clean_database_closes_nothing_and_emits_nothing() {
     let mut h = fixture();
     let report = startup(&mut h.ctx()).unwrap();
     assert_eq!((report.sessions_closed, report.segments_closed), (0, 0));
-    assert!(h.events.of("session", "ended").is_empty());
+    assert_eq!(h.events.of("session", "ended"), Vec::<Value>::new());
 }
 
 #[test]

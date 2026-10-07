@@ -251,7 +251,7 @@ mod tests {
         let fp = worker_fingerprint(b"x");
         let plan = plan_deploy(&paths(&fp), true, std::slice::from_ref(&fp));
         assert!(!plan.install);
-        assert!(plan.stale_dirs.is_empty());
+        assert_eq!(plan.stale_dirs, Vec::<String>::new());
     }
 
     #[test]

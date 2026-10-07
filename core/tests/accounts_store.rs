@@ -861,7 +861,7 @@ fn a_grant_the_response_never_stated_is_unknown_not_an_empty_one() {
         unstated.scopes_observed_at, None,
         "an absent header was recorded as an observation"
     );
-    assert!(unstated.granted_scopes.is_empty());
+    assert_eq!(unstated.granted_scopes, Vec::<String>::new());
 
     // The other half of the pair: a header that is present and empty **is** an observation.
     let (_dir2, index2, transport2) = pat_fixture();
@@ -885,5 +885,5 @@ fn a_grant_the_response_never_stated_is_unknown_not_an_empty_one() {
         Some(2_000),
         "a present but empty header is an observed empty grant"
     );
-    assert!(observed.granted_scopes.is_empty());
+    assert_eq!(observed.granted_scopes, Vec::<String>::new());
 }

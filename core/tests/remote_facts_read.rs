@@ -110,7 +110,7 @@ fn an_account_with_no_facts_row_reads_not_observed() {
     assert_eq!(facts.observed_at, None);
     assert_eq!(facts.stars, None, "unobserved is never zero");
     assert_eq!(facts.ci.state, RemoteFactsState::NotObserved);
-    assert!(facts.ci.runs.is_empty());
+    assert_eq!(facts.ci.runs, []);
 }
 
 /// A binding is what the facts row is keyed on. A project with a key and no binding has no row

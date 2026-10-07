@@ -347,7 +347,7 @@ fn app_exit_closes_every_live_session_as_app_exit() {
         assert_eq!(h.close_reason(s), Some(CloseReason::AppExit));
         assert_eq!(h.credited(s), 600);
     }
-    assert!(h.manager.live().is_empty());
+    assert_eq!(h.manager.live(), []);
 }
 
 #[test]

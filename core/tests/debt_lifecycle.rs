@@ -379,7 +379,7 @@ fn a_marker_gone_from_a_readable_root_closes_fixed() {
         .observe(&tx, &obs, &[seen(key.clone(), Some(loc), "a.rs", 4)])
         .unwrap();
     assert_eq!(first.opened, vec![key.clone()]);
-    assert!(first.closed.is_empty());
+    assert_eq!(first.closed, []);
 
     // The same sweep, with the marker gone.
     let second = store.observe(&tx, &obs, &[]).unwrap();
@@ -391,7 +391,7 @@ fn a_marker_gone_from_a_readable_root_closes_fixed() {
             scoring: DebtScoring::Scored,
         }]
     );
-    assert!(second.opened.is_empty());
+    assert_eq!(second.opened, []);
     tx.commit().unwrap();
 
     assert!(open_keys(&conn, p).is_empty(), "closed is a deletion");
@@ -440,7 +440,7 @@ fn a_closure_carries_the_scoring_its_item_held_when_it_closed() {
         )
         .unwrap();
     assert_eq!(second.refreshed, 2);
-    assert!(second.closed.is_empty());
+    assert_eq!(second.closed, []);
 
     let third = store.observe(&tx, &obs, &[]).unwrap();
     tx.commit().unwrap();
@@ -590,7 +590,7 @@ fn a_skipped_reference_sweep_marks_unverified() {
     let effect = store.observe(&tx, &skipped, &[]).unwrap();
     tx.commit().unwrap();
 
-    assert!(effect.closed.is_empty());
+    assert_eq!(effect.closed, []);
     assert_eq!(effect.unverified, 1);
 
     let stored: (String, String) = conn
@@ -664,7 +664,7 @@ fn ac_p3_28_17_a_reap_writes_no_closure_and_no_xp() {
     fresh_tx.commit().unwrap();
 
     assert_eq!(reaped, 1, "the stranded item was not reaped");
-    assert!(open_keys(&conn, p).is_empty());
+    assert_eq!(open_keys(&conn, p), []);
 
     let xp: i64 = conn
         .query_row("SELECT count(*) FROM xp_events", [], |r| r.get(0))

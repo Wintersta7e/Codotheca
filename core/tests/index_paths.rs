@@ -253,5 +253,5 @@ fn the_one_door_returns_the_display_string_for_the_ui() {
 
     // An id that is not there yields no row rather than an empty string.
     let none = display_paths_for_ui(&conn, DisplayPathTable::Location, &[id + 99]).unwrap();
-    assert!(none.is_empty());
+    assert_eq!(none, []);
 }

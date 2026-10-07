@@ -884,7 +884,7 @@ fn the_writer_never_writes_zero_for_unknown() {
         reading.checks.is_empty(),
         "an empty checks array is the state saying nothing was computed"
     );
-    assert!(items.is_empty());
+    assert_eq!(items, []);
 
     // `suppressed`: enrolled, but archived.
     let suppressed = seed_live(&conn);
@@ -898,8 +898,8 @@ fn the_writer_never_writes_zero_for_unknown() {
     assert_eq!(suppressed_reading.state, HealthState::Suppressed);
     assert_eq!(suppressed_reading.scored_open, None);
     assert!(suppressed_reading.basis.is_none());
-    assert!(suppressed_reading.checks.is_empty());
-    assert!(suppressed_items.is_empty());
+    assert_eq!(suppressed_reading.checks, []);
+    assert_eq!(suppressed_items, []);
 }
 
 /// §30.2's closing rule — **the freeze is applied once, upstream.** A `frozen` project is handed
@@ -1269,11 +1269,11 @@ fn every_check_off_or_not_applicable_is_absent() {
         DebtSource::ALL.len() - covered.len(),
         reading.state
     );
-    assert!(!covered.is_empty());
+    assert_ne!(covered, []);
     assert_eq!(reading.state, HealthState::Absent);
     assert_eq!(reading.scored_open, None);
     assert!(reading.basis.is_none());
-    assert!(reading.checks.is_empty());
+    assert_eq!(reading.checks, []);
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -226,6 +226,6 @@ mod tests {
             commit: false,
             tag: false,
         };
-        assert!(compose_remote_blockers(&summary, none).is_empty());
+        assert_eq!(compose_remote_blockers(&summary, none), []);
     }
 }

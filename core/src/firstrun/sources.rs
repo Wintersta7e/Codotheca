@@ -483,9 +483,15 @@ mod tests {
 
     #[test]
     fn malformed_input_yields_nothing_rather_than_an_error() {
-        assert!(parse_recent_workspaces_json(b"not json").is_empty());
-        assert!(parse_recent_projects_xml("<unclosed", Path::new("/home/u")).is_empty());
-        assert!(parse_gitconfig_gitdirs("").is_empty());
+        assert_eq!(
+            parse_recent_workspaces_json(b"not json"),
+            Vec::<PathBuf>::new()
+        );
+        assert_eq!(
+            parse_recent_projects_xml("<unclosed", Path::new("/home/u")),
+            Vec::<PathBuf>::new()
+        );
+        assert_eq!(parse_gitconfig_gitdirs(""), Vec::<String>::new());
     }
 
     #[test]
@@ -533,8 +539,8 @@ mod tests {
             app_data: None,
             xdg_config: None,
         };
-        assert!(!candidate_files(&env).is_empty());
-        assert!(collect_hits(&env).is_empty());
+        assert_ne!(candidate_files(&env), []);
+        assert_eq!(collect_hits(&env), []);
     }
 
     #[test]

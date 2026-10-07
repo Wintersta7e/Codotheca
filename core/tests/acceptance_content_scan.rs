@@ -719,7 +719,7 @@ fn ac_p3_29_25_too_large_and_binary_are_recorded_not_dropped() {
     git.clear();
     let second = scan_through_cache(&mut conn, &git, &repo, &oids);
     assert!(second.is_empty(), "a recorded non-outcome was read again");
-    assert!(git.blob_requests().is_empty());
+    assert_eq!(git.blob_requests(), Vec::<String>::new());
 }
 
 /// **AC-P3-29-8.** The cache is content-addressed and library-wide.
@@ -753,7 +753,7 @@ fn ac_p3_29_8_the_cache_is_content_addressed_and_library_wide() {
         missed.len(),
         git.blob_requests()
     );
-    assert!(missed.is_empty());
+    assert_eq!(missed, Vec::<String>::new());
     assert!(
         git.blob_requests().is_empty(),
         "the second project read bytes"
@@ -1377,7 +1377,7 @@ fn suppression_gates_the_blob_read_and_not_the_enumeration() {
     eprintln!("blob_scan rows: {scans}, presence {presence:?}");
     assert_eq!(scans, 0, "the blob read ran behind a closed gate");
     assert_eq!(presence.readme, PresenceState::Absent);
-    assert!(rig.git.blob_requests().is_empty());
+    assert_eq!(rig.git.blob_requests(), Vec::<String>::new());
 }
 
 /// **AC-P3-29-1.** Nothing is read while the grant is off.
@@ -1706,9 +1706,9 @@ fn ac_p3_29_3_a_reference_project_is_never_enumerated() {
     );
 
     // J7 is a leaf: nothing chains off a content scan.
-    assert!(
-        codotheca_core::jobs::scheduler::next_jobs_after(JobKind::J7Markers, Some(false))
-            .is_empty()
+    assert_eq!(
+        codotheca_core::jobs::scheduler::next_jobs_after(JobKind::J7Markers, Some(false)),
+        []
     );
 }
 

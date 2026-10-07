@@ -79,7 +79,7 @@ fn a_term_whose_producer_has_not_run_is_unknown_rather_than_ignored() {
     }
     // `has:remote` and `has:submodules` read different columns and are unaffected.
     let answered = evaluate_query(&rows, &parse_query("has:remote"), &ctx);
-    assert!(answered.ignored.is_empty());
+    assert_eq!(answered.ignored, []);
     assert!(answered.rows.is_empty());
 }
 
@@ -90,7 +90,7 @@ fn a_term_whose_producer_has_not_run_is_unknown_rather_than_ignored() {
 fn completion_reaches_the_executor_now_that_something_computes_it() {
     let ast = parse_query("completion:>5");
     assert_eq!(ast.terms.len(), 1);
-    assert!(ast.ignored.is_empty());
+    assert_eq!(ast.ignored, []);
 }
 
 #[test]

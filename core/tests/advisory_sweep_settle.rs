@@ -559,7 +559,10 @@ fn a_fixed_advisory_writes_one_rust_decrease_and_announces_it() {
         delta_rows(&world).is_empty(),
         "a first observation wrote a row"
     );
-    assert!(payloads(&opened, "projects", "health_delta").is_empty());
+    assert_eq!(
+        payloads(&opened, "projects", "health_delta"),
+        Vec::<serde_json::Value>::new()
+    );
 
     lock(&world, &world.alpha, "2.0.0", NOW + DAY);
     let closed = sweep(&world, NOW + DAY, Some("[]"));

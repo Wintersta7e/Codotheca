@@ -192,7 +192,7 @@ mod tests {
         // Reference would exclude a brand-new repository from every statistic on day one.
         let facts = tally(std::iter::empty(), &ids(&["me@x"]));
         assert_eq!(facts.authored_by_user, None);
-        assert!(facts.committers.is_empty());
+        assert_eq!(facts.committers, []);
     }
 
     /// An unseeded identity set must not classify every repository as somebody else's. The
@@ -211,6 +211,6 @@ mod tests {
             &IdentitySet::from_emails([String::new()]),
         );
         assert_eq!(facts.authored_by_user, None);
-        assert!(facts.committers.is_empty());
+        assert_eq!(facts.committers, []);
     }
 }

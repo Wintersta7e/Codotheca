@@ -150,7 +150,10 @@ fn ac_62_scene_hash_is_not_a_function_of_wall_clock() {
         // §7.1a / plan 10 ruling 7: nothing moved, so nothing was re-rendered and nothing emitted.
         assert!(!outcome.rendered);
     }
-    assert!(sink.named("projects", "art_ready").is_empty());
+    assert_eq!(
+        sink.named("projects", "art_ready"),
+        Vec::<serde_json::Value>::new()
+    );
     assert!(rendition_path(index.data_dir(), &hash, Rendition::Card)
         .expect("path")
         .exists());

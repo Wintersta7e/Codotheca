@@ -149,7 +149,7 @@ fn an_uninitialised_submodule_produces_no_edge_and_no_repository() {
         true,
         &|_| {},
     );
-    assert!(edges.is_empty());
+    assert_eq!(edges, []);
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn an_oversized_gitmodules_is_reported_and_not_read() {
             }
         },
     );
-    assert!(edges.is_empty());
+    assert_eq!(edges, []);
     let problems = problems.into_inner().unwrap();
     assert_eq!(problems.len(), 1);
     assert_eq!(
@@ -235,9 +235,9 @@ fn a_repository_with_no_gitmodules_enumerates_nothing_quietly() {
             }
         },
     );
-    assert!(edges.is_empty());
-    assert!(problems.into_inner().unwrap().is_empty());
-    assert!(git.calls().is_empty());
+    assert_eq!(edges, []);
+    assert_eq!(problems.into_inner().unwrap(), []);
+    assert_eq!(git.calls(), []);
 }
 
 /// §4.4: a submodule is a repository in its own right, so a bare-shaped probe has no place here
@@ -270,7 +270,7 @@ fn a_submodule_path_is_never_probed_as_a_bare_candidate() {
         true,
         &|_| {},
     );
-    assert!(edges.is_empty());
+    assert_eq!(edges, []);
     assert!(
         !git.calls().iter().any(|c| c.op == "repo_facts"),
         "no bare probe may run for a declared submodule path"

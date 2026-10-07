@@ -232,7 +232,7 @@ fn an_unauthenticated_read_observes_no_grant_rather_than_an_empty_one() {
         .advisories(Ecosystem::Rust, &[pkg("serde", "1.0.0")], None)
         .expect("answers");
     assert_eq!(observed.granted_scopes, None);
-    assert!(observed.value.items.is_empty());
+    assert_eq!(observed.value.items, []);
     assert_eq!(observed.value.next_cursor, None);
 }
 

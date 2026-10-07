@@ -690,7 +690,7 @@ mod tests {
             vec!["alpha".to_owned(), "beta".to_owned()]
         );
         pool.shutdown_all();
-        assert!(pool.live_distros().is_empty());
+        assert_eq!(pool.live_distros(), Vec::<String>::new());
     }
 
     #[test]
@@ -753,6 +753,6 @@ mod tests {
         let pool = WslWorkerPool::new(Arc::new(Refusing));
         let err = pool.get("alpha").expect_err("refuses");
         assert!(err.is_unavailable());
-        assert!(pool.live_distros().is_empty());
+        assert_eq!(pool.live_distros(), Vec::<String>::new());
     }
 }

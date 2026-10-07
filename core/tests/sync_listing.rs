@@ -380,7 +380,7 @@ fn a_listing_with_no_suppression_settles_with_an_empty_list_and_a_zero() {
     ));
     let (_, summary) = run_account_repos(&f.deps, &f.index, f.account, None).expect("listed");
     assert_eq!(summary.suppressed, 0);
-    assert!(summary.suppressed_by.is_empty());
+    assert_eq!(summary.suppressed_by, []);
     assert_eq!(
         i64::try_from(summary.suppressed_by.len()).expect("small"),
         summary.suppressed

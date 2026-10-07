@@ -523,7 +523,7 @@ mod tests {
         seed_found_project(conn, "/home/u/dev/p");
 
         assert!(remove_root(conn, id).unwrap());
-        assert!(list_roots(conn).unwrap().is_empty());
+        assert_eq!(list_roots(conn).unwrap(), []);
         // The project and its location survive: they were found, and finding is not undone.
         let projects: i64 = conn
             .query_row("SELECT COUNT(*) FROM project", [], |r| r.get(0))

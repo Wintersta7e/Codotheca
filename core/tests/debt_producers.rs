@@ -339,7 +339,7 @@ fn ac_p3_28_11_never_observed_writes_no_sweep_row() {
         .query_row("SELECT count(*) FROM debt_sweep", [], |r| r.get(0))
         .unwrap();
     assert_eq!(sweeps, 0, "a never-observed project wrote a sweep row");
-    assert!(items(&conn, p).is_empty());
+    assert_eq!(items(&conn, p), []);
 }
 
 /// A `Reference` project's sweep is `skipped_reference` and carries no count: a gate that
@@ -468,7 +468,7 @@ fn a_not_read_presence_writes_unobservable_and_opens_nothing() {
     let effect = evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
 
-    assert!(effect.opened.is_empty());
+    assert_eq!(effect.opened, []);
     for source in ["missing_readme", "missing_license", "missing_tests"] {
         assert_eq!(
             items_of(&conn, p, source),
@@ -730,7 +730,7 @@ fn a_second_settle_with_no_change_writes_no_row() {
         second.opened.is_empty(),
         "a second settle opened a duplicate"
     );
-    assert!(second.closed.is_empty());
+    assert_eq!(second.closed, []);
     let after: i64 = conn
         .query_row("SELECT count(*) FROM debt_item", [], |r| r.get(0))
         .unwrap();

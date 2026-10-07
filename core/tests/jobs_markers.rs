@@ -31,7 +31,7 @@ fn a_leading_boundary_rejects_notodo_and_a_trailing_one_would_reject_todos() {
     let at_start = scan_blob(b"TODO: first byte\n");
     assert_eq!(at_start.len(), 1);
     // An underscore is a word byte, so it is not a boundary either.
-    assert!(scan_blob(b"x_TODO here\n").is_empty());
+    assert_eq!(scan_blob(b"x_TODO here\n"), []);
 }
 
 /// The cap is applied **at the largest UTF-8 character boundary at or below 200 bytes**: a byte
@@ -98,9 +98,9 @@ fn ordinals_ascend_on_line_then_column() {
 #[test]
 fn three_markers_case_sensitive_and_no_language_is_parsed() {
     eprintln!("MARKERS holds {}: {MARKERS:?}", MARKERS.len());
-    assert!(!MARKERS.is_empty());
-    assert!(scan_blob(b"// todo lower case\n").is_empty());
-    assert!(scan_blob(b"// XXX not a marker\n").is_empty());
+    assert_ne!(MARKERS.as_slice(), Vec::<&str>::new());
+    assert_eq!(scan_blob(b"// todo lower case\n"), []);
+    assert_eq!(scan_blob(b"// XXX not a marker\n"), []);
     let in_a_literal = scan_blob(b"let s = \"TODO inside a string\";\n");
     assert_eq!(in_a_literal.len(), 1);
     assert_eq!(

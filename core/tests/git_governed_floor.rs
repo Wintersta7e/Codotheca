@@ -225,7 +225,7 @@ fn every_floor_feature_runs_on_the_git_under_test() {
     let scan = read_git
         .worktree_scan(&handle, &ctx(&cancel))
         .expect("status");
-    assert!(!scan.entries.is_empty());
+    assert_ne!(scan.entries, []);
     features.push("status --ignored=matching".to_owned());
     eprintln!("{version}: floor features exercised: {features:?}");
     assert_eq!(features.len(), 5);

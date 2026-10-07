@@ -1282,9 +1282,7 @@ mod tests {
             rusqlite::params![orphan.project_id, mine.project_id],
         )
         .unwrap();
-        assert!(super::ambiguous_group(&tx, &forge_aliases())
-            .unwrap()
-            .is_empty());
+        assert_eq!(super::ambiguous_group(&tx, &forge_aliases()).unwrap(), []);
         assert_eq!(
             tx.query_row(
                 "SELECT ambiguous_lineage FROM project WHERE id=?1",

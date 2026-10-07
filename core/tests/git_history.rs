@@ -79,9 +79,9 @@ fn a_multi_root_history_reports_every_root() {
 fn a_zero_commit_repository_has_no_roots_and_no_authorship() {
     let repo = TestRepo::init();
     let roots = root_commits(&repo.exec(), &repo.handle(), limits(), &CancelToken::new()).unwrap();
-    assert!(roots.is_empty());
+    assert_eq!(roots, []);
     let a = authorship(&repo.exec(), &repo.handle(), limits(), &CancelToken::new()).unwrap();
-    assert!(a.committers.is_empty());
+    assert_eq!(a.committers, []);
     let s = commit_subjects(
         &repo.exec(),
         &repo.handle(),
@@ -90,7 +90,7 @@ fn a_zero_commit_repository_has_no_roots_and_no_authorship() {
         &CancelToken::new(),
     )
     .unwrap();
-    assert!(s.is_empty());
+    assert_eq!(s, []);
 }
 
 #[test]

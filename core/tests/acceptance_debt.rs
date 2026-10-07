@@ -59,7 +59,7 @@ fn ac_p3_28_11_never_observed_and_zero_differ_on_the_wire() {
 
     let never_items = load_debt(&conn, ProjectId(never)).unwrap();
     let looked_items = load_debt(&conn, ProjectId(looked)).unwrap();
-    assert!(never_items.is_empty());
+    assert_eq!(never_items, []);
     assert!(
         looked_items.is_empty(),
         "the item lists must be identical, or this criterion is testing the wrong thing"

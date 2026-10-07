@@ -430,7 +430,7 @@ fn a_park_whose_clock_has_come_is_picked_up_with_no_external_trigger() {
         Some(SyncTaskState::Parked),
         "a park released early is a park that means nothing"
     );
-    assert!(f.events.events("started").is_empty());
+    assert_eq!(f.events.events("started"), Vec::<serde_json::Value>::new());
 
     // The clock comes round, and nothing else happens: no enqueue, no signal.
     f.clock.set_unix(NOW + 601);
