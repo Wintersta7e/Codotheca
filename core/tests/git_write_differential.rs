@@ -471,7 +471,9 @@ fn a_feature_probe_never_reads_a_present_feature_as_absent() {
 struct DropEvents;
 
 impl codotheca_core::proto::pubsub::EventSink for DropEvents {
-    fn emit(&self, _topic: &str, _event: &str, _payload: serde_json::Value) {}
+    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
+    }
 }
 
 /// The case the re-executed child runs, for its printed line.

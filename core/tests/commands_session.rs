@@ -40,6 +40,7 @@ struct RecordingSink {
 
 impl codotheca_core::proto::EventSink for RecordingSink {
     fn emit(&self, topic: &str, event: &str, payload: Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
         self.events
             .lock()
             .unwrap()

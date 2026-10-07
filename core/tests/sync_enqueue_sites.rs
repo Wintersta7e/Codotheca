@@ -40,7 +40,9 @@ impl SyncSink for RecordingSink {
 struct Quiet;
 
 impl EventSink for Quiet {
-    fn emit(&self, _topic: &str, _event: &str, _payload: serde_json::Value) {}
+    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
+    }
 }
 
 /// Every `.rs` under `core/src/`, with its text. **Panics on an empty walk**: every assertion

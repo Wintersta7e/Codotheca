@@ -68,7 +68,8 @@ struct RecordingSink {
 }
 
 impl EventSink for RecordingSink {
-    fn emit(&self, topic: &str, event: &str, _payload: serde_json::Value) {
+    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
         self.events
             .lock()
             .unwrap()

@@ -105,6 +105,25 @@ test('every public item derives Debug, for missing_debug_implementations', () =>
   assert.ok(derives.length >= items.length, `${derives.length} derives for ${items.length} items`);
 });
 
+// §48.11: the validator is what a test sink checks every emitted payload against, so an event it
+// has no arm for is an event no test can check. The count is read from the schema, never written.
+test('the event validator has one arm per declared event and refuses any other pair', () => {
+  assert.match(
+    out,
+    / {8}\("projects", "upserted"\) => conforms::<Row>\(payload\),\n {8}_ => Err\(/,
+  );
+  const real = JSON.parse(
+    readFileSync(new URL('../schema/protocol.json', import.meta.url), 'utf8'),
+  );
+  const declared = Object.values(real.topics).reduce(
+    (sum, events) => sum + Object.keys(events).length,
+    0,
+  );
+  assert.ok(declared > 0, 'a schema with no events proves nothing');
+  const arms = emitRust(real).match(/^ {8}\("[a-z_]+", "[a-z_]+"\) => conforms::</gm) ?? [];
+  assert.equal(arms.length, declared);
+});
+
 test('Bytes carries the b64 codec, not a raw Vec on the wire', () => {
   assert.match(out, /pub struct Bytes\(pub Vec<u8>\);/);
   assert.match(out, /"b64"/);

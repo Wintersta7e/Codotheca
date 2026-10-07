@@ -319,5 +319,34 @@ ${names}
 `);
   }
 
+  // §48.11: the core emits events as untyped JSON through `EventSink`, so nothing at compile time
+  // ties a payload to its declared type. One arm per declared event, decoding into that type, whose
+  // `deny_unknown_fields` is what refuses an extra key.
+  const eventArms = topics.flatMap((t) =>
+    Object.entries(schema.topics[t]).map(
+      ([e, expr]) => `        ("${t}", "${e}") => conforms::<${rsRef(expr)}>(payload),`,
+    ),
+  );
+  L.push(`/// Whether \`payload\` is the type the schema declares for \`event\` on \`topic\`.
+///
+/// # Errors
+/// Names the pair when the schema declares no such event, or says why the payload is not that
+/// type: a missing or extra key, or a value of the wrong shape.
+pub fn validate_event_payload(
+    topic: &str,
+    event: &str,
+    payload: &serde_json::Value,
+) -> Result<(), String> {
+    match (topic, event) {
+${eventArms.join('\n')}
+        _ => Err(format!("{topic}/{event} is not an event the schema declares")),
+    }
+}
+
+fn conforms<T: serde::de::DeserializeOwned>(payload: &serde_json::Value) -> Result<(), String> {
+    T::deserialize(payload).map(drop).map_err(|e| e.to_string())
+}
+`);
+
   return L.join('\n');
 }

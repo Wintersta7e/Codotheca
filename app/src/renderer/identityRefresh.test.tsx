@@ -11,6 +11,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type {
   IdentityId,
   IdentityRow,
+  Job,
+  JobDone,
   ProjectId,
   ScanStatus,
   Settings,
@@ -126,10 +128,17 @@ function mount(first: IdentityRow): Mounted {
   };
 }
 
-const jobDone = (job: string, projectId: number): RendererEvent => ({
+const jobDone = (job: Job, projectId: number): RendererEvent => ({
   topic: 'scan',
   event: 'job_done',
-  data: { projectId, locationId: projectId, job, state: 'ok' },
+  data: {
+    runId: null,
+    projectId: projectId as ProjectId,
+    job,
+    ok: true,
+    elapsedMs: 0,
+    deferred: false,
+  } satisfies JobDone,
 });
 
 const reads = (fake: FakeAppDeps): number =>

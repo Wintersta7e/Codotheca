@@ -43,6 +43,7 @@ impl CollectingSink {
 
 impl crate::proto::EventSink for CollectingSink {
     fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        crate::testing::events::validated(topic, event, &payload);
         if let Ok(mut held) = self.emitted.lock() {
             held.push((topic.to_owned(), event.to_owned(), payload));
         }

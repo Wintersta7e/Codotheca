@@ -32,7 +32,8 @@ const DEADLINE: Duration = Duration::from_secs(10);
 struct Recorder(Mutex<Vec<(String, serde_json::Value)>>);
 
 impl codotheca_core::proto::EventSink for Recorder {
-    fn emit(&self, _topic: &str, event: &str, payload: serde_json::Value) {
+    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
         self.0.lock().unwrap().push((event.to_owned(), payload));
     }
 }

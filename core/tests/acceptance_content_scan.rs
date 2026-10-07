@@ -1661,7 +1661,9 @@ impl JobSink for VisibilityRecorder {
 struct Silent;
 
 impl codotheca_core::proto::EventSink for Silent {
-    fn emit(&self, _topic: &str, _event: &str, _payload: serde_json::Value) {}
+    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
+    }
 }
 
 #[derive(Debug, Default)]

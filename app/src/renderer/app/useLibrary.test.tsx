@@ -2,7 +2,7 @@ import { act, render, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import type { ProjectId, ProjectPage, ProjectRow } from '../../generated/protocol';
+import type { Job, JobDone, ProjectId, ProjectPage, ProjectRow } from '../../generated/protocol';
 import type { RendererEvent } from '../../shared/channels';
 import { makeProjectRow } from '../testing/projectRow';
 import type { AppDeps } from './deps';
@@ -41,10 +41,17 @@ function mount(fake: FakeAppDeps): { seen: LibraryState[]; last: () => LibrarySt
 const row = (id: number, over: Partial<ProjectRow> = {}): ProjectRow =>
   makeProjectRow({ id: id as ProjectId, name: `p${String(id)}`, ...over });
 
-const jobDone = (job: string, projectId: number): RendererEvent => ({
+const jobDone = (job: Job, projectId: number): RendererEvent => ({
   topic: 'scan',
   event: 'job_done',
-  data: { projectId, locationId: projectId, job, state: 'ok' },
+  data: {
+    runId: null,
+    projectId: projectId as ProjectId,
+    job,
+    ok: true,
+    elapsedMs: 0,
+    deferred: false,
+  } satisfies JobDone,
 });
 
 const lists = (fake: FakeAppDeps): number =>

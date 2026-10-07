@@ -57,7 +57,9 @@ impl Scope {
 struct RecordingSink;
 
 impl codotheca_core::proto::EventSink for RecordingSink {
-    fn emit(&self, _topic: &str, _event: &str, _payload: Value) {}
+    fn emit(&self, topic: &str, event: &str, payload: Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
+    }
 }
 
 struct Fixture {

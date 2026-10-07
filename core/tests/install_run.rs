@@ -47,6 +47,7 @@ impl RecordingEvents {
 
 impl EventSink for RecordingEvents {
     fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
         self.emitted
             .lock()
             .expect("lock")

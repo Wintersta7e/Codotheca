@@ -1198,7 +1198,7 @@
     "JobDone": {
       "kind": "struct",
       "fields": {
-        "runId": "ScanRunId",
+        "runId": "ScanRunId?",
         "projectId": "ProjectId",
         "job": "Job",
         "ok": "bool",

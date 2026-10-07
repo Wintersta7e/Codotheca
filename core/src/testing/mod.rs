@@ -3,6 +3,7 @@
 
 mod bins;
 mod clock;
+pub mod events;
 mod git;
 mod gitw;
 mod http;

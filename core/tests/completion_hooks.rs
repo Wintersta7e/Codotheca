@@ -40,7 +40,9 @@ const T0: i64 = 1_700_000_000;
 struct SilentSink;
 
 impl EventSink for SilentSink {
-    fn emit(&self, _topic: &str, _event: &str, _payload: serde_json::Value) {}
+    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
+    }
 }
 
 fn core_src() -> PathBuf {

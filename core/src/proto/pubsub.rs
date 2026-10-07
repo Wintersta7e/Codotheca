@@ -342,6 +342,10 @@ impl EventSink for PublisherSink {
             );
             return;
         };
+        // A test build refuses a payload that is not its schema type (§48.11), so a spawned core
+        // under test fails on drift. After the topic resolves: an unknown topic is dropped above.
+        #[cfg(feature = "testkit")]
+        crate::testing::events::validated(topic, event, &payload);
         let mut publisher = Self::lock(&self.inner);
         if let Published::NeedsSnapshot { .. } = publisher.publish(known, event, payload) {
             Self::lock(&self.wants_snapshot).push(known);
@@ -473,7 +477,13 @@ mod tests {
         let sink: std::sync::Arc<dyn EventSink> = std::sync::Arc::new(PublisherSink::new(p));
         let worker = {
             let sink = std::sync::Arc::clone(&sink);
-            std::thread::spawn(move || sink.emit("scan", "progress", json!({ "done": 1 })))
+            std::thread::spawn(move || {
+                sink.emit(
+                    "scan",
+                    "progress",
+                    json!({ "runId": 1, "walkedDirs": 1, "foundRepos": 0, "indexedProjects": 0 }),
+                );
+            })
         };
         worker.join().expect("worker");
         let _header = rx.recv().expect("header");

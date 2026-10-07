@@ -42,6 +42,7 @@ struct Recorder(Mutex<Vec<Emitted>>);
 
 impl codotheca_core::proto::EventSink for Recorder {
     fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
         self.0
             .lock()
             .unwrap()

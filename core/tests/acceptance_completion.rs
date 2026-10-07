@@ -1374,7 +1374,8 @@ fn ac_p3_31_14_a_demotion_writes_no_health_delta_row() {
 struct RecordingSink(std::sync::Mutex<Vec<(String, String)>>);
 
 impl codotheca_core::proto::EventSink for RecordingSink {
-    fn emit(&self, topic: &str, event: &str, _payload: serde_json::Value) {
+    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
         self.0
             .lock()
             .unwrap()

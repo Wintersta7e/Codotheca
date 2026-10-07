@@ -1201,7 +1201,9 @@ mod tests {
     #[derive(Debug)]
     struct NullEvents;
     impl EventSink for NullEvents {
-        fn emit(&self, _topic: &str, _event: &str, _payload: serde_json::Value) {}
+        fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+            crate::testing::events::validated(topic, event, &payload);
+        }
     }
 
     fn test_deps() -> SyncDeps {

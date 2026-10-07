@@ -31,7 +31,9 @@ INSERT INTO location (id, project_id, kind, distro, path_bytes, path_key, path_d
 struct SilentSink;
 
 impl codotheca_core::proto::EventSink for SilentSink {
-    fn emit(&self, _topic: &str, _event: &str, _payload: Value) {}
+    fn emit(&self, topic: &str, event: &str, payload: Value) {
+        codotheca_core::testing::events::validated(topic, event, &payload);
+    }
 }
 
 struct Fixture {

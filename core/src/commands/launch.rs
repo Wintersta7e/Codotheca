@@ -321,10 +321,19 @@ fn repo_handle(
 /// publishes exactly what the manager hands over — never a change the manager did not report.
 pub fn publish_condition_changes(ctx: &mut LaunchCtx<'_>) {
     for project in ctx.sessions.take_condition_changes() {
+        // The signal the close wrote. A missing one would read on the shelf as *not computed*,
+        // so a project whose row cannot be read is not announced at all.
+        let Ok(signal) = ctx.index.conn().query_row(
+            "SELECT condition_signal FROM project WHERE id = ?1",
+            [project.0],
+            |r| r.get::<_, Option<String>>(0),
+        ) else {
+            continue;
+        };
         ctx.events.emit(
             "projects",
             "condition_changed",
-            serde_json::json!({ "projectId": project }),
+            serde_json::json!({ "id": project, "conditionSignal": signal }),
         );
     }
 }

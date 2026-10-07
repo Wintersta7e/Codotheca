@@ -222,6 +222,7 @@ mod tests {
 
     impl crate::proto::EventSink for RecordingSink {
         fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+            crate::testing::events::validated(topic, event, &payload);
             if let Ok(mut v) = self.0.lock() {
                 v.push((topic.to_owned(), event.to_owned(), payload));
             }

@@ -236,8 +236,9 @@ impl JobRunner {
 
     fn worker_loop(self: Arc<Self>) {
         while let Some(job) = self.take_next() {
+            let started = std::time::Instant::now();
             let outcome = self.execute(&job);
-            self.settle(&job, &outcome);
+            self.settle(&job, &outcome, started.elapsed());
             if let Ok(mut shared) = self.shared.lock() {
                 shared.slots.release(&job);
             }
@@ -290,7 +291,7 @@ impl JobRunner {
         }
     }
 
-    fn settle(&self, job: &Job, outcome: &JobOutcome) {
+    fn settle(&self, job: &Job, outcome: &JobOutcome, elapsed: std::time::Duration) {
         let now = self.deps.clock.now_unix();
         let previous = self
             .with_index(|index| super::state::load(index, job.project_id))
@@ -345,7 +346,7 @@ impl JobRunner {
                     "projects",
                     "condition_changed",
                     serde_json::json!({
-                        "projectId": job.project_id.0,
+                        "id": job.project_id.0,
                         "conditionSignal": r
                             .condition_signal
                             .map(crate::derive::condition::ConditionSignal::slug),
@@ -361,14 +362,18 @@ impl JobRunner {
             crate::restoration::emit_health_delta(self.events.as_ref(), delta);
         }
 
+        // A job is not run by a scan — the hand-off, a visible tile or a backoff queues it — so it
+        // names no run.
         self.events.emit(
             "scan",
             "job_done",
             serde_json::json!({
+                "runId": null,
                 "projectId": job.project_id.0,
-                "locationId": job.location_id.0,
                 "job": job.kind.slug(),
-                "state": row.state.slug(),
+                "ok": row.state == JobState::Done,
+                "elapsedMs": u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX),
+                "deferred": row.state == JobState::DeferredSlow,
             }),
         );
 

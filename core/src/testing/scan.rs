@@ -304,6 +304,7 @@ impl ScanEventFake {
 
 impl crate::proto::EventSink for ScanEventFake {
     fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
+        crate::testing::events::validated(topic, event, &payload);
         self.emitted
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
