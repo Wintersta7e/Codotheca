@@ -25,6 +25,9 @@ use super::JobSink;
 /// to tell them apart, and the reason `projects.get` asks and `projects.peek` does not is which
 /// command it is, not which lock is held. The *"where the index is already open"* justification
 /// belongs to `needs_art` below and does not transfer.
+///
+/// A removed copy, or any copy of a removed project, asks for nothing (§46.9): the page still
+/// answers from what is stored, and the primary of a project with no live copy is a removed one.
 pub fn notify_visible(
     index: &crate::index::Index,
     mounts: &dyn MountResolver,
@@ -34,6 +37,12 @@ pub fn notify_visible(
     wants_content: bool,
 ) {
     let conn = index.conn();
+    // §46.9: a removed copy's path may hold another repository by now, so a reading asked for it
+    // would be of the wrong bytes. The dispatcher drops such a job anyway; this stops the ask. A
+    // read that fails asks for nothing, as the dispatcher's own gate would.
+    if !crate::projects::current::location_is_current(conn, location).unwrap_or(false) {
+        return;
+    }
     let Ok((store_key, path_bytes)) = conn.query_row(
         "SELECT store_key, path_bytes FROM location WHERE id = ?1",
         [location.0],

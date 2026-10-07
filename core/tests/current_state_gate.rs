@@ -5,6 +5,9 @@
 //!
 //! Every test also runs a job for a live copy of another project in the same runner, so the
 //! harness demonstrably sees a run and the absence of one means something.
+//!
+//! The page and the Peek of a removed copy, or of a removed project, answer from what is stored
+//! and ask for no reading at all; a live copy's page in the same rig asks once.
 
 #![cfg(feature = "testkit")]
 #![allow(
@@ -16,18 +19,25 @@
 
 mod support;
 
+#[path = "support/detail_rig.rs"]
+mod detail_rig;
+
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::SystemClock;
+use codotheca_core::detail::get::handle_project_get;
 use codotheca_core::git::{GitSlots, SystemGit};
 use codotheca_core::index::Index;
 use codotheca_core::jobs::scheduler::JobRunner;
 use codotheca_core::jobs::{Job, JobDeps, JobKind, JobOrigin, Priority};
 use codotheca_core::mount::StoreClass;
+use codotheca_core::projects::{dispatch_projects_command, ProjectsCtx};
 use codotheca_core::proto::EventSink;
 use codotheca_core::protocol::{LocationId, ProjectId};
+use codotheca_core::sync::runner::NullSyncSink;
+use serde_json::json;
 use support::TestRepo;
 
 /// Records every event the runner publishes, so `scan/job_done` is read rather than assumed.
@@ -142,20 +152,22 @@ fn job(copy: &Copy, kind: JobKind) -> Job {
 
 /// `locations.uninstall`'s own row write: `removed_at` and the columns it clears. `presence`
 /// stays `present`, which is the shape the removal leaves.
-fn uninstall(rig: &Rig, location: LocationId) {
+fn uninstall_row(conn: &rusqlite::Connection, location: LocationId) {
     let clears = codotheca_core::uninstall::command::cleared_columns()
         .iter()
         .map(|column| format!("{column} = NULL"))
         .collect::<Vec<_>>()
         .join(", ");
+    conn.execute(
+        &format!("UPDATE location SET removed_at = 5, {clears} WHERE id = ?1"),
+        [location.0],
+    )
+    .unwrap();
+}
+
+fn uninstall(rig: &Rig, location: LocationId) {
     let guard = rig.index.lock().unwrap();
-    guard
-        .conn()
-        .execute(
-            &format!("UPDATE location SET removed_at = 5, {clears} WHERE id = ?1"),
-            [location.0],
-        )
-        .unwrap();
+    uninstall_row(guard.conn(), location);
     drop(guard);
 }
 
@@ -296,4 +308,84 @@ fn ac_p4_46_20_j5_art_still_runs_for_a_removed_project() {
     let done = done_for(&rig, rig.gone.project);
     eprintln!("job_done frames for the removed project: {done:?}");
     assert_eq!(done, ["j5"], "J5 alone runs for a removed project");
+}
+
+/// A page rig: project 1's only copy is the one each test removes, or whose project it removes;
+/// project 2's copy is live and is the control.
+fn page_rig() -> detail_rig::Rig {
+    let rig = detail_rig::Rig::new();
+    rig.project(1, "gone");
+    rig.location(1, 1, "/srv/work/gone", "present", Some("main"), None, None);
+    rig.project(2, "live");
+    rig.location(2, 2, "/srv/work/live", "present", Some("main"), None, None);
+    rig
+}
+
+/// Every §6 reading the rig's commands asked for, as `(project, location)`.
+fn asked(rig: &detail_rig::Rig) -> Vec<(i64, i64)> {
+    rig.jobs.visible.lock().unwrap().clone()
+}
+
+/// A project whose only copy is removed still names that copy as its primary, so its page shows
+/// it. The page answers from what is stored and asks for no reading of it.
+#[test]
+fn ac_p4_46_20_a_gone_copys_page_queues_no_job() {
+    let rig = page_rig();
+    uninstall_row(rig.conn(), LocationId(1));
+
+    let detail = handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("the page answers");
+    let shown = serde_json::to_value(&detail).unwrap();
+    eprintln!(
+        "removed copy's page: row {}, asked {:?}",
+        shown["row"]["id"],
+        asked(&rig)
+    );
+    assert_eq!(shown["row"]["id"], 1);
+    assert_eq!(
+        asked(&rig),
+        [],
+        "the page asked a reading of a removed copy"
+    );
+
+    handle_project_get(&rig.ctx(), json!({ "id": 2 })).expect("the live page answers");
+    assert_eq!(asked(&rig), [(2, 2)], "the live copy's page asks once");
+}
+
+/// A removed project's copy is not removed, and is still not read: the Peek answers and asks for
+/// nothing. The live project's Peek, in the same rig, asks once.
+#[test]
+fn ac_p4_46_20_a_removed_projects_peek_queues_no_job() {
+    let rig = page_rig();
+    rig.conn()
+        .execute("UPDATE project SET removed_at = 5 WHERE id = 1", [])
+        .unwrap();
+    let ctx = ProjectsCtx {
+        index: &rig.index,
+        events: &rig.sink,
+        jobs: &rig.jobs,
+        mounts: &rig.mount,
+        sync: &NullSyncSink,
+        now: detail_rig::NOW,
+        tz_offset_min: 0,
+    };
+
+    let peek = dispatch_projects_command(&ctx, "projects.peek", json!({ "id": 1 }))
+        .expect("owned")
+        .expect("the Peek answers");
+    eprintln!(
+        "removed project's Peek: id {}, asked {:?}",
+        peek["id"],
+        asked(&rig)
+    );
+    assert_eq!(peek["id"], 1);
+    assert_eq!(
+        asked(&rig),
+        [],
+        "the Peek asked a reading for a removed project"
+    );
+
+    dispatch_projects_command(&ctx, "projects.peek", json!({ "id": 2 }))
+        .expect("owned")
+        .expect("the live Peek answers");
+    assert_eq!(asked(&rig), [(2, 2)], "the live project's Peek asks once");
 }

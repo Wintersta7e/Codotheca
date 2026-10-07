@@ -88,6 +88,47 @@ impl RecordingSink {
     }
 }
 
+/// Hands every request on to the real runner and records each reading asked for. Whether a page
+/// asked is read here: a job the dispatcher drops leaves no stored row to tell the two apart.
+#[derive(Debug)]
+struct Asking<'a> {
+    runner: &'a JobRunner,
+    asked: Mutex<Vec<(i64, i64)>>,
+}
+
+impl JobSink for Asking<'_> {
+    fn on_location_indexed(
+        &self,
+        project: ProjectId,
+        location: LocationId,
+        store_key: &str,
+        store_kind: StoreClass,
+    ) {
+        self.runner
+            .on_location_indexed(project, location, store_key, store_kind);
+    }
+
+    fn on_visible(
+        &self,
+        project: ProjectId,
+        location: LocationId,
+        store_key: &str,
+        store_kind: StoreClass,
+        needs_art: bool,
+        wants_content: bool,
+    ) {
+        self.asked.lock().unwrap().push((project.0, location.0));
+        self.runner.on_visible(
+            project,
+            location,
+            store_key,
+            store_kind,
+            needs_art,
+            wants_content,
+        );
+    }
+}
+
 /// One real repository, indexed through the walk's hand-off, enrolled, authored, granted, with
 /// `overgrowth` fed by `todo_marker` alone so the layer moves exactly when J7's item set does.
 struct Rig {
@@ -294,10 +335,16 @@ impl Rig {
     }
 
     /// The user opens the project's page, and the jobs it asks for run on the real runner.
-    fn open_page(&self) {
+    /// Returns every reading the page asked for, as `(project, location)`.
+    fn open_page(&self) -> Vec<(i64, i64)> {
         let (runner, _events) = self.runner();
-        self.page(runner.as_ref());
+        let asking = Asking {
+            runner: &runner,
+            asked: Mutex::default(),
+        };
+        self.page(&asking);
         drain(&runner);
+        asking.asked.into_inner().unwrap()
     }
 
     /// The bytes leave with the drive: the working copy is no longer on disk at its path.
@@ -683,11 +730,16 @@ fn assert_page_reads_nothing(rig: &Rig, scanned: &(Option<String>, i64, [String;
 fn a_returned_copy_is_re_observed_when_its_page_opens() {
     let (rig, _) = returned_unscanned();
     rig.clock.advance(3_600);
-    rig.open_page();
+    let asked = rig.open_page();
     eprintln!(
-        "page opened on a present copy: sweep {}, {} open",
+        "page opened on a present copy: asked {asked:?}, sweep {}, {} open",
         rig.todo_sweep(),
         rig.open_todos()
+    );
+    assert_eq!(
+        asked,
+        [(rig.project.0, rig.location.0)],
+        "the page asks once"
     );
     assert_eq!(rig.todo_sweep(), "complete");
     assert_eq!(rig.open_todos(), 5);
@@ -709,20 +761,23 @@ fn a_copy_that_left_again_before_its_rescan_is_not_read() {
     assert_page_reads_nothing(&rig, &scanned);
 }
 
-/// Open the page an hour on and assert nothing ran for a removed copy: J7's stored row, the
-/// content row and the withdrawn sweep are all as they were before the page opened.
-/// `a_returned_copy_is_re_observed_when_its_page_opens` is the control — the same page path runs
-/// J7 on a copy that is still installed — so the absence here is the dispatcher's, not the rig's.
+/// Open the page an hour on and assert the page asked for no reading of a removed copy and nothing
+/// ran for it: J7's stored row, the content row and the withdrawn sweep are all as they were
+/// before the page opened. The ask is read at the sink, because the dispatcher drops a removed
+/// copy's job either way and J7's row cannot tell an ask it dropped from no ask.
+/// `a_returned_copy_is_re_observed_when_its_page_opens` is the control — the same page path asks
+/// once and runs J7 on a copy that is still installed — so the absence here is not the rig's.
 fn assert_page_runs_nothing(rig: &Rig, scanned: &(Option<String>, i64, [String; 4])) {
     let j7_before = rig.j7_state();
     rig.clock.advance(3_600);
-    rig.open_page();
+    let asked = rig.open_page();
     let after = rig.content_row();
     let j7_after = rig.j7_state();
     eprintln!(
-        "page opened on a removed copy: scan before {scanned:?}, after {after:?}; \
-         j7 before {j7_before:?}, after {j7_after:?}"
+        "page opened on a removed copy: asked {asked:?}; scan before {scanned:?}, after \
+         {after:?}; j7 before {j7_before:?}, after {j7_after:?}"
     );
+    assert_eq!(asked, [], "the page asked a reading of a removed copy");
     assert_eq!(j7_after, j7_before, "a J7 ran for a removed copy");
     assert_eq!(&after, scanned, "J7 re-read a copy that is not there");
     assert_eq!(rig.todo_sweep(), "unobservable");
