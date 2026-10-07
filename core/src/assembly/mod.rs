@@ -521,7 +521,26 @@ impl CoreHandler {
             before_act: None,
         };
         if name == crate::protocol::CommandName::LocationsUninstall {
-            return crate::uninstall::handle_uninstall_off_lock(&self.index, &seams, args, now);
+            let answer =
+                crate::uninstall::handle_uninstall_off_lock(&self.index, &seams, args, now)?;
+            // §48.8.6: after the act's commit and outside it. A failed export is reported and
+            // never fails the act, whose files are already in the bin.
+            let exported = crate::index::sidecar::export_after_act(
+                &self.index.lock().unwrap_or_else(PoisonError::into_inner),
+                crate::index::sidecar::ExportAct::Uninstall,
+                now,
+            );
+            if let Err(e) = exported {
+                self.events.emit(
+                    "core",
+                    "error",
+                    serde_json::json!({
+                        "code": "INTERNAL",
+                        "message": format!("uninstall: sidecar export: {e}"),
+                    }),
+                );
+            }
+            return Ok(answer);
         }
         crate::uninstall::handle_preflight_off_lock(&self.index, &seams, args, now)
     }
@@ -924,8 +943,8 @@ impl CommandHandler for CoreHandler {
         }
     }
 
-    /// Stops the job pump, ends every live session with `app_exit`, then **drops the session
-    /// manager**.
+    /// Stops the job pump, ends every live session with `app_exit`, **drops the session
+    /// manager**, then exports the sidecar.
     ///
     /// The pump goes first, and without the index lock held: its workers need that lock to
     /// settle whatever they are running, and a worker still writing when `main` returns is a
@@ -958,6 +977,16 @@ impl CommandHandler for CoreHandler {
             }
         }
         drop(sessions);
+        // §1.12's clean-shutdown export comes last, so the close reasons written above are in the
+        // file. A second shutdown returned before the sessions and writes no second generation.
+        let exported = self
+            .index
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .export_sidecar(self.clock.now_unix());
+        if let Err(e) = exported {
+            self.emit_tick_error("shutdown sidecar export", &e.to_string());
+        }
     }
 }
 

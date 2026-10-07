@@ -525,6 +525,40 @@ pub const fn is_due(last_written_at: Option<i64>, now: i64) -> bool {
     }
 }
 
+/// An act that changes what exists outside the index (§48.8.6).
+///
+/// A rebuild restores from the last sidecar, so one written before such an act brings back a
+/// library the disk no longer matches; each act therefore exports through [`export_after_act`]
+/// once it has committed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportAct {
+    /// `locations.uninstall`: a copy's files went to the bin and its row was marked removed.
+    Uninstall,
+}
+
+impl ExportAct {
+    /// Every act, for the test that drives each one through its production arm.
+    pub const ALL: &'static [Self] = &[Self::Uninstall];
+}
+
+/// Export the sidecar after `act` has committed — never inside its transaction, so an export
+/// that fails cannot roll the act back.
+///
+/// # Errors
+/// [`Index::export_sidecar`]'s: SQLite refuses a read or a write, or the file cannot be written
+/// and renamed into place.
+///
+/// [`Index::export_sidecar`]: super::Index::export_sidecar
+pub fn export_after_act(
+    index: &super::Index,
+    act: ExportAct,
+    now: i64,
+) -> Result<SidecarWriteReport, IndexError> {
+    match act {
+        ExportAct::Uninstall => index.export_sidecar(now),
+    }
+}
+
 fn len_u64<T>(v: &[T]) -> u64 {
     u64::try_from(v.len()).unwrap_or(u64::MAX)
 }
