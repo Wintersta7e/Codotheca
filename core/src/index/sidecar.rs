@@ -403,6 +403,10 @@ record!(
         seed_basename: String,
         /// How many times `art.rerender` re-rolled its art (§7.2).
         reroll_offset: i64,
+        /// When it was first indexed, in Unix seconds, which a rediscovery would make the rebuild's
+        /// moment and so a new arrival (§10.5a); `None` in format 1.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        created_at: Option<i64>,
         /// Its sessions, oldest first.
         sessions: Vec<SidecarSession>,
         /// Its session-track XP rows, oldest first.
@@ -724,7 +728,7 @@ fn export_projects(conn: &Connection) -> Result<Vec<SidecarProject>, IndexError>
     let mut out = Vec::new();
     let mut stmt = conn.prepare(
         "SELECT id, notes, is_pinned, is_archived, is_hidden, acknowledged_at,
-                seed_basename, reroll_offset
+                seed_basename, reroll_offset, created_at
          FROM project WHERE merged_into IS NULL ORDER BY id",
     )?;
     let mut rows = stmt.query([])?;
@@ -743,6 +747,7 @@ fn export_projects(conn: &Connection) -> Result<Vec<SidecarProject>, IndexError>
             acknowledged_at: row.get(5)?,
             seed_basename: row.get(6)?,
             reroll_offset: row.get(7)?,
+            created_at: Some(row.get(8)?),
             sessions: export_sessions(conn, id)?,
             xp_events: export_xp_events(conn, id)?,
             launch_targets: export_targets(conn, id)?,

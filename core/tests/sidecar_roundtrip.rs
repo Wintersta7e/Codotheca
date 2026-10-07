@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 use codotheca_core::clock::Clock;
 use codotheca_core::completion::evaluate_and_write;
+use codotheca_core::firstrun::stamp_first_run_completed;
 use codotheca_core::git::{ensure_empty_hooks_dir, GitBackend, GitExec, GitSlots, SystemGit};
 use codotheca_core::index::migrate::SUPPORTED_SCHEMA_VERSION;
 use codotheca_core::index::rebuild::{rebuild_in_place, RebuildError, RebuildOutcome};
@@ -23,11 +24,13 @@ use codotheca_core::index::sidecar::{counts, read, Sidecar, BASE_COUNT_KEYS, SEC
 use codotheca_core::index::Index;
 use codotheca_core::jobs::NullJobSink;
 use codotheca_core::mount::SystemMountResolver;
+use codotheca_core::projects::{list, ProjectsCtx};
 use codotheca_core::protocol::{ProjectId, ScanMode};
 use codotheca_core::scan::launcher::{ScanLauncherDeps, ThreadScanLauncher};
 use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::store::SqliteScanStore;
 use codotheca_core::scan::ScanSupervisor;
+use codotheca_core::sync::runner::NullSyncSink;
 use codotheca_core::testing::events::ValidatingSink;
 use codotheca_core::testing::sidecar::build_library;
 use codotheca_core::testing::FakeClock;
@@ -47,7 +50,13 @@ struct RoundTrip {
     events: Arc<ValidatingSink>,
     /// The session-track XP rows in the rebuilt index, by `dedupe_key`.
     session_xp: BTreeSet<String>,
+    /// The project ids `projects.list` answers each of [`ARRIVAL_QUERIES`] with, rebuilt.
+    answers: BTreeMap<&'static str, Vec<i64>>,
 }
+
+/// The bare query and a new arrival asked for both ways: an `is:new` that answered unknown would
+/// list a project under neither.
+const ARRIVAL_QUERIES: [&str; 3] = ["", "is:new", "-is:new"];
 
 /// Build, export (E1), corrupt, rebuild, rediscover through a real scan, evaluate each project
 /// the scan found as its settle hook would, and export again (E2).
@@ -55,6 +64,8 @@ fn round_trip() -> RoundTrip {
     let data = tempfile::tempdir().unwrap();
     let repos = tempfile::tempdir().unwrap();
     let library = build_library(data.path(), repos.path(), NOW).unwrap();
+    // First run ends once the library is indexed, so the rediscovery below comes after it.
+    stamp_first_run_completed(library.index.conn(), NOW + 5).unwrap();
     let exported = library.index.export_sidecar(NOW + 10).unwrap();
     let before = read(&exported.path).unwrap();
     drop(library);
@@ -98,6 +109,10 @@ fn round_trip() -> RoundTrip {
     }
 
     let guard = index.lock().unwrap();
+    let answers = ARRIVAL_QUERIES
+        .into_iter()
+        .map(|query| (query, listed(&guard, query)))
+        .collect();
     let after = read(&guard.export_sidecar(NOW + 50).unwrap().path).unwrap();
     let session_xp = guard
         .conn()
@@ -113,7 +128,28 @@ fn round_trip() -> RoundTrip {
         after,
         events,
         session_xp,
+        answers,
     }
+}
+
+/// The ids of the projects `projects.list` answers `query` with, in the shelf's order.
+fn listed(index: &Index, query: &str) -> Vec<i64> {
+    let ctx = ProjectsCtx {
+        index,
+        events: &ValidatingSink::default(),
+        jobs: &NullJobSink,
+        mounts: &SystemMountResolver::new(),
+        sync: &NullSyncSink,
+        now: NOW + 60,
+        tz_offset_min: 0,
+    };
+    let page = list::handle(&ctx, serde_json::json!({ "query": query })).unwrap();
+    page["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["id"].as_i64().unwrap())
+        .collect()
 }
 
 /// A full scan of the restored root, its events into `events` and its jobs into nothing: the
@@ -305,6 +341,22 @@ fn ac_p4_48_19_a_restore_writes_no_unexported_row_and_announces_nothing() {
         "the sink heard nothing, so it proves nothing"
     );
     assert_eq!(elsewhere, Vec::<String>::new());
+}
+
+/// §10.5a across a rebuild: the rediscovery comes after first run ended, yet no project the
+/// library held is a new arrival, because each keeps the moment it was first indexed. `-is:new`
+/// listing every project is what shows `is:new` answered false rather than unknown.
+#[test]
+fn a_rebuild_makes_no_project_a_new_arrival() {
+    let trip = round_trip();
+    let every = &trip.answers[""];
+    eprintln!(
+        "listed after the rebuild: {every:?}, is:new {:?}, -is:new {:?}",
+        trip.answers["is:new"], trip.answers["-is:new"]
+    );
+    assert_ne!(every.len(), 0, "the rebuilt index lists nothing");
+    assert_eq!(trip.answers["is:new"], Vec::<i64>::new());
+    assert_eq!(&trip.answers["-is:new"], every);
 }
 
 /// Every file under `dir`, by its path below it, with its bytes; a directory with none.

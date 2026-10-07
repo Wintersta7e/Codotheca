@@ -261,12 +261,17 @@ fn remoteless(conn: &Connection, l: &str, path: &str) -> (i64, i64) {
 
 /// A pending project record on `subject` naming the copy at `/r/<path>`, carrying one session.
 fn pend(conn: &Connection, subject: &str, path: &str) {
+    pend_at(conn, subject, path, None);
+}
+
+/// [`pend`], the record carrying `created_at` when one is given.
+fn pend_at(conn: &Connection, subject: &str, path: &str, created_at: Option<i64>) {
     let key = serde_json::json!([{
         "kind": "linux",
         "distro": "",
         "path_key": hex(format!("/r/{path}").as_bytes()),
     }]);
-    let record = serde_json::json!({
+    let mut record = serde_json::json!({
         "kind": "project",
         "record": {
             "subject": subject,
@@ -287,6 +292,9 @@ fn pend(conn: &Connection, subject: &str, path: &str) {
         },
         "member_of": [],
     });
+    if let Some(at) = created_at {
+        record["record"]["created_at"] = at.into();
+    }
     conn.execute(
         "INSERT INTO sidecar_pending (source_generation, subject_key, location_keys, record,
                                       queued_at)
@@ -458,6 +466,46 @@ fn a_subject_computed_later_receives_its_record() {
     );
     assert_eq!(read(&rebuilt, counts_by_subject), expected);
     assert_eq!(read(&rebuilt, pending_rows), 0);
+}
+
+/// A restore only ever moves `created_at` earlier: a record whose time is later than the row's
+/// leaves the row's, so a restore never makes a project a new arrival; an earlier one moves it.
+#[test]
+fn a_restore_never_makes_a_project_newer() {
+    let (_d, mut conn) = fresh();
+    let subject = |lineage: &str| {
+        ProjectSubject::Lineage {
+            lineage_key: lineage.to_owned(),
+            remote_key: None,
+        }
+        .to_key()
+    };
+    let (kept, _) = remoteless(&conn, "kept-lineage", "kept");
+    let (moved, _) = remoteless(&conn, "moved-lineage", "moved");
+    conn.execute("UPDATE project SET created_at = 900 WHERE id = ?1", [moved])
+        .unwrap();
+    pend_at(&conn, &subject("kept-lineage"), "kept", Some(500));
+    pend_at(&conn, &subject("moved-lineage"), "moved", Some(300));
+    matched(&mut conn, kept);
+    matched(&mut conn, moved);
+
+    let created = |id: i64| -> i64 {
+        conn.query_row("SELECT created_at FROM project WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    };
+    assert_eq!(pending_rows(&conn), 0, "both records applied");
+    assert_eq!(
+        created(kept),
+        1,
+        "a later sidecar time made the project newer"
+    );
+    assert_eq!(
+        created(moved),
+        300,
+        "an earlier sidecar time was not restored"
+    );
 }
 
 /// The hand-off commits the match before it returns, and the hand-off runs no job: a restored

@@ -398,7 +398,7 @@ fn apply_project(
 }
 
 /// The project row's own non-derivable columns: flags, note, `acknowledged_at`,
-/// `reroll_offset` and `seed_basename`.
+/// `reroll_offset`, `seed_basename` and `created_at`, which a restore only ever moves earlier.
 ///
 /// The one place a restored record writes `is_archived`; §44's Seal replaces that write with its
 /// own writer here.
@@ -407,13 +407,16 @@ fn apply_project_row(
     project: ProjectId,
     p: &SidecarProject,
 ) -> Result<(), IndexError> {
+    // SQLite's two-argument MIN answers NULL when either is, so a record without the time keeps
+    // the row's.
     tx.execute(
         "UPDATE project
             SET notes = COALESCE(?2, notes),
                 is_pinned = ?3, is_archived = ?4, is_hidden = ?5,
                 acknowledged_at = COALESCE(?6, acknowledged_at),
                 reroll_offset = ?7,
-                seed_basename = ?8
+                seed_basename = ?8,
+                created_at = MIN(created_at, COALESCE(?9, created_at))
           WHERE id = ?1",
         rusqlite::params![
             project.0,
@@ -424,6 +427,7 @@ fn apply_project_row(
             p.acknowledged_at,
             p.reroll_offset,
             p.seed_basename,
+            p.created_at,
         ],
     )?;
     Ok(())
