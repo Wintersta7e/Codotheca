@@ -1,0 +1,25 @@
+# The tables whose foreign key into `project` is ON DELETE CASCADE, one name per line — the only
+# statement of this list. `core/tests/health_delta_migration.rs` compares it against the migrated
+# schema's own cascading children, so a migration that adds one without appending its line here, in
+# the same change, fails there.
+#
+# Direct children of `project` only. A table that cascades from one of these, never from `project`
+# itself, is not listed: the comparison reads foreign keys into `project` and nothing else.
+#
+# Lines starting with `#` and blank lines are skipped. Concurrent additions merge by union.
+project_committer
+fts_commits
+collection_member
+project_job_state
+art_scene
+peek_cache
+project_account
+project_content_scan
+debt_item
+debt_sweep
+project_dependency_scan
+project_lockfile
+project_dependency
+advisory_notified
+project_check
+health_delta

@@ -23,6 +23,9 @@ const SCHEMA: &str = include_str!("../../protocol/schema/protocol.json");
 /// The migration's own text, compiled in: what it states is what the chain ran.
 const MIGRATION: &str = include_str!("../migrations/0016_health_delta.sql");
 
+/// The `project` children that cascade, one per line: the only statement of the list.
+const CASCADE_CHILDREN: &str = include_str!("fixtures/cascade_children.txt");
+
 /// A database at exactly `version` files applied, through the shipped set.
 fn migrated_to(version: usize) -> (tempfile::TempDir, Connection) {
     let dir = tempfile::tempdir().unwrap();
@@ -315,15 +318,24 @@ fn ac_p3_34_11_migration_leaves_pragma_to_the_runner() {
         .any(|token| token.eq_ignore_ascii_case("pragma")));
 }
 
-/// §28.8's enumeration is stated once, in this migration, **and this is what keeps it true**: the
-/// names the comment lists are compared against the migrated schema's own cascading children. A
-/// later migration that adds one without updating the list fails here rather than leaving a
-/// comment nobody reads.
+/// §28.8's enumeration is stated once, in `fixtures/cascade_children.txt`, **and this is what keeps
+/// it true**: the names the file lists are compared against the migrated schema's own cascading
+/// children. A later migration that adds one without appending it fails here rather than leaving a
+/// list nobody reads. The list left `0016`'s comment because phase 4 adds children in several
+/// migrations, and `0016` must not state a second copy that would drift from this one.
 #[test]
-fn ac_p3_34_11_cascade_comment_matches_the_live_set() {
-    let documented: BTreeSet<String> = MIGRATION
+fn ac_p3_34_11_cascade_list_matches_the_live_set() {
+    let stated_in_0016 = MIGRATION
         .lines()
-        .filter_map(|line| line.strip_prefix("-- cascade-child: ").map(str::to_owned))
+        .filter(|line| line.trim_start().starts_with("-- cascade-child:"))
+        .count();
+    eprintln!("cascade-child lines left in 0016: {stated_in_0016}");
+    assert_eq!(stated_in_0016, 0, "0016 states a second copy of the list");
+    let documented: BTreeSet<String> = CASCADE_CHILDREN
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(str::to_owned)
         .collect();
     let (_dir, conn) = fresh();
     let tables: Vec<String> = conn
@@ -355,8 +367,12 @@ fn ac_p3_34_11_cascade_comment_matches_the_live_set() {
             }
         }
     }
-    eprintln!("documented cascades: {documented:?}\nlive cascades: {live:?}");
-    assert!(!documented.is_empty());
-    assert!(!live.is_empty());
+    eprintln!(
+        "documented cascades ({}): {documented:?}\nlive cascades ({}): {live:?}",
+        documented.len(),
+        live.len()
+    );
+    assert_ne!(documented, BTreeSet::new(), "the list names no table");
+    assert_ne!(live, BTreeSet::new(), "the schema has no cascading child");
     assert_eq!(documented, live);
 }

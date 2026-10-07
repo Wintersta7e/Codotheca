@@ -24,26 +24,8 @@
 -- in the runner, outside the transaction, driven by `Migration.rebuilds_a_table`. Nothing
 -- references `health_delta.id`, so the drop below cascades to nothing either way.
 --
--- The `project` children that cascade once this file has run — §28.8's enumeration, stated in
--- the last phase-3 migration and nowhere else, derived from `core/migrations/` rather than from a
--- document. `core/tests/health_delta_migration.rs` compares this list against the migrated schema,
--- so a later migration that adds a child without updating it fails there.
--- cascade-child: project_committer
--- cascade-child: fts_commits
--- cascade-child: collection_member
--- cascade-child: project_job_state
--- cascade-child: art_scene
--- cascade-child: peek_cache
--- cascade-child: project_account
--- cascade-child: project_content_scan
--- cascade-child: debt_item
--- cascade-child: debt_sweep
--- cascade-child: project_dependency_scan
--- cascade-child: project_lockfile
--- cascade-child: project_dependency
--- cascade-child: advisory_notified
--- cascade-child: project_check
--- cascade-child: health_delta
+-- The `project` children that cascade (§28.8's enumeration) are listed in
+-- `core/tests/fixtures/cascade_children.txt`, checked by `core/tests/health_delta_migration.rs`.
 
 -- `id` is AUTOINCREMENT, so the high-water mark lives in `sqlite_sequence` and nothing in the
 -- create-copy-drop-rename procedure carries it across: `DROP TABLE` deletes the row and the copy

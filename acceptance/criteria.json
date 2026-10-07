@@ -8222,8 +8222,8 @@
           "status": "automated",
           "runner": "cargo",
           "owner": "p3-34",
-          "test": "health_delta_migration::ac_p3_34_11_cascade_comment_matches_the_live_set",
-          "assert": "The cascade-child enumeration 0016 states is compared against the migrated schema's own cascading children of project, so a later migration adding one without the list fails here."
+          "test": "health_delta_migration::ac_p3_34_11_cascade_list_matches_the_live_set",
+          "assert": "The cascade-child list in core/tests/fixtures/cascade_children.txt is compared against the migrated schema's own cascading children of project, and 0016 states no second copy, so a migration adding one without appending it fails here."
         }
       ]
     },
