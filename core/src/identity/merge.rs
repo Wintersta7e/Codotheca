@@ -156,6 +156,10 @@ pub struct ReparentCounts {
     /// [p3] §32.16's latched ledger. Counted rather than inferred, so a test can print how many
     /// moved instead of asserting that something did.
     pub advisory_notified: usize,
+    /// Parcels moved to the survivor (§46.9); their refs name the parcel and follow untouched.
+    pub parcel: usize,
+    /// Removal records moved to the survivor (§46.9); their logs follow them untouched.
+    pub removal_record: usize,
 }
 
 /// §1.5's reparenting rows.
@@ -178,6 +182,8 @@ pub fn reparent_rows(
         "UPDATE location SET project_id = ?1 WHERE project_id = ?2",
         params![survivor, absorbed],
     )?;
+    // After the `location` reparent, so the absorbed side's copies already count as the survivor's.
+    let (parcel, removal_record) = reparent_removals(tx, survivor, absorbed)?;
     let session = tx.execute(
         "UPDATE session SET project_id = ?1 WHERE project_id = ?2",
         params![survivor, absorbed],
@@ -280,7 +286,42 @@ pub fn reparent_rows(
         health_delta,
         submodule_edge,
         advisory_notified: advisory_notified_reparented,
+        parcel,
+        removal_record,
     })
+}
+
+/// §46.9's rows, as `(parcel, removal_record)` moved: a removal follows its project and is never
+/// recomputed, because what it records has left the disk. `parcel_ref` and `removal_log` name
+/// these rows, not a project, so they follow untouched.
+///
+/// The merged project stays removed only when both sides were declared removed and neither holds
+/// a live copy. SQLite's `max` is NULL when either side is, so a side never declared removed keeps
+/// the merged project.
+fn reparent_removals(
+    tx: &Transaction<'_>,
+    survivor: i64,
+    absorbed: i64,
+) -> Result<(usize, usize), IdentityError> {
+    let parcel = tx.execute(
+        "UPDATE parcel SET project_id = ?1 WHERE project_id = ?2",
+        params![survivor, absorbed],
+    )?;
+    let removal_record = tx.execute(
+        "UPDATE removal_record SET project_id = ?1 WHERE project_id = ?2",
+        params![survivor, absorbed],
+    )?;
+    tx.execute(
+        "UPDATE project
+            SET removed_at = CASE
+                  WHEN EXISTS (SELECT 1 FROM location l
+                                WHERE l.project_id = ?1 AND l.removed_at IS NULL) THEN NULL
+                  ELSE max(removed_at, (SELECT a.removed_at FROM project a WHERE a.id = ?2))
+                END
+          WHERE id = ?1",
+        params![survivor, absorbed],
+    )?;
+    Ok((parcel, removal_record))
 }
 
 /// §1.7's git-derived event kinds — a pure function of history, so never migrated.
@@ -551,6 +592,8 @@ pub fn merge_projects(
             "launch_target": reparented.launch_target,
             "launch_target_disabled": reparented.launch_target_disabled,
             "submodule_edge": reparented.submodule_edge,
+            "parcel": reparented.parcel,
+            "removal_record": reparented.removal_record,
         },
         "swept_scene_hash": derived.swept_scene_hash,
     });
@@ -1351,7 +1394,8 @@ mod tests {
         let mut conn = open_test_index();
         let s = p(&conn, "s", 100);
         let a = p(&conn, "a", 200);
-        super::super::testutil::insert_location(&conn, a, "/w/a", None);
+        let copy = super::super::testutil::insert_location(&conn, a, "/w/a", None);
+        removal_rows(&conn, a, copy);
         xp(&conn, a, "commit_day", "k1");
         xp(&conn, a, "session", "s1");
         conn.execute(
@@ -1395,6 +1439,8 @@ mod tests {
             ("xp_events", "project_id"),
             ("collection_member", "project_id"),
             ("launch_target", "project_id"),
+            ("parcel", "project_id"),
+            ("removal_record", "project_id"),
         ] {
             let n: i64 = conn
                 .query_row(
@@ -1437,6 +1483,142 @@ mod tests {
             )
             .unwrap();
         assert_eq!(footer.as_deref(), Some("manual"));
+    }
+
+    /// One parcel and one finished uninstall's record for `copy`, both naming `project`.
+    fn removal_rows(conn: &rusqlite::Connection, project: i64, copy: i64) {
+        conn.execute(
+            "INSERT INTO parcel (project_id, location_id, state, folder_bytes, staging_bytes,
+                                 lineage_key, session_nonce, created_at)
+             VALUES (?1, ?2, 'preserving', X'2F70', X'2F73', 'L', X'00', 1)",
+            rusqlite::params![project, copy],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO removal_record (project_id, location_id, kind, state, path_bytes,
+                                         planned, lineage_key, state_digest, recovery,
+                                         session_nonce, started_at, ended_at)
+             VALUES (?1, ?2, 'uninstall', 'done', X'2F77', 'trash', 'L', 'digest', 'remote',
+                     X'00', 1, 2)",
+            rusqlite::params![project, copy],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn parcels_and_removal_records_follow_the_survivor() {
+        let mut conn = open_test_index();
+        let s = p(&conn, "s", 100);
+        let a = p(&conn, "a", 200);
+        let copy = super::super::testutil::insert_location(&conn, a, "/w/a", None);
+        removal_rows(&conn, a, copy);
+
+        let tx = conn.transaction().unwrap();
+        let out = super::merge_projects(
+            &tx,
+            a,
+            s,
+            super::super::AssociationKind::Manual,
+            &serde_json::json!({"rule": "manual"}),
+            300,
+        )
+        .unwrap();
+        assert_eq!(
+            (out.reparented.parcel, out.reparented.removal_record),
+            (1, 1)
+        );
+        for table in ["parcel", "removal_record"] {
+            let named = |id| {
+                count(
+                    &tx,
+                    &format!("SELECT COUNT(*) FROM {table} WHERE project_id=?1"),
+                    id,
+                )
+            };
+            assert_eq!(named(a), 0, "{table} still names the absorbed project");
+            assert_eq!(named(s), 1, "{table} does not name the survivor");
+        }
+        let absorbed_json: String = tx
+            .query_row(
+                "SELECT absorbed_json FROM merge_record WHERE id=?1",
+                rusqlite::params![out.merge_record_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        tx.commit().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&absorbed_json).unwrap();
+        assert_eq!(parsed["reparented"]["parcel"], 1);
+        assert_eq!(parsed["reparented"]["removal_record"], 1);
+    }
+
+    /// The merged project's `removed_at` when the survivor and the absorbed side each hold one
+    /// copy: each side is its own `removed_at` and whether its copy is live.
+    fn merged_removed_at(
+        survivor: (Option<i64>, bool),
+        absorbed: (Option<i64>, bool),
+    ) -> Option<i64> {
+        let mut conn = open_test_index();
+        let s = p(&conn, "s", 100);
+        let a = p(&conn, "a", 200);
+        for (project, path, (removed_at, live)) in [(s, "/w/s", survivor), (a, "/w/a", absorbed)] {
+            let copy = super::super::testutil::insert_location(&conn, project, path, None);
+            conn.execute(
+                "UPDATE project SET removed_at = ?2 WHERE id = ?1",
+                rusqlite::params![project, removed_at],
+            )
+            .unwrap();
+            if !live {
+                conn.execute(
+                    "UPDATE location SET removed_at = 50 WHERE id = ?1",
+                    rusqlite::params![copy],
+                )
+                .unwrap();
+            }
+        }
+
+        let tx = conn.transaction().unwrap();
+        let out = super::merge_projects(
+            &tx,
+            a,
+            s,
+            super::super::AssociationKind::Manual,
+            &serde_json::json!({"rule": "manual"}),
+            300,
+        )
+        .unwrap();
+        assert_eq!(out.survivor, s);
+        let removed_at = field(&tx, s, "removed_at");
+        tx.commit().unwrap();
+        removed_at
+    }
+
+    #[test]
+    fn removed_at_survives_a_merge_only_when_both_sides_declared_it() {
+        assert_eq!(
+            merged_removed_at((Some(500), true), (Some(600), false)),
+            None,
+            "a live copy on the survivor's side keeps the merged project"
+        );
+        assert_eq!(
+            merged_removed_at((Some(500), false), (Some(600), true)),
+            None,
+            "a live copy on the absorbed side keeps the merged project"
+        );
+        assert_eq!(
+            merged_removed_at((Some(500), false), (Some(600), false)),
+            Some(600),
+            "two declared sides with no live copy take the later time"
+        );
+        assert_eq!(
+            merged_removed_at((Some(600), false), (Some(500), false)),
+            Some(600),
+            "the later time wins whichever side holds it"
+        );
+        assert_eq!(
+            merged_removed_at((Some(500), false), (None, false)),
+            None,
+            "a side never declared removed keeps the merged project"
+        );
     }
 
     #[test]
