@@ -8,17 +8,20 @@
 //! §24.6's audit: every filesystem removal in `core/src` is either inside the single warranted
 //! primitive or is a **reasoned, per-line** entry in the phase-1 baseline.
 //!
-//! **The baseline is 21 sites outside `core/src/removal/`, not the 17 both plans state.**
+//! **Phase 2 measured the baseline at 21 sites outside `core/src/removal/`, not the 17 both
+//! plans state.**
 //! p2-24's Task 11 and p2-24b's Task 1 were written before this lane's own Task 4 landed the
 //! credential helper, which removes its one-shot socket, its nonce file and its private
 //! directory on teardown — four sites in `core/src/gitw/credential.rs`. The 17 phase-1 sites are
 //! otherwise exactly p2-24b's per-file breakdown: `lifecycle.rs` 3, `art/store.rs` 4,
 //! `art/job.rs` 1, `art/commands.rs` 1, `corpus/mod.rs` 5, `index/backup.rs` 2,
-//! `surfaces/startup_failure.rs` 1. **p2-24b asserts this list is unchanged and must assert 21.**
+//! `surfaces/startup_failure.rs` 1. **21 is a floor, not the count**: a change that lands an
+//! app-owned removal adds its entry, and the lock in
+//! `every_removal_is_warranted_or_a_reasoned_baseline_entry` holds the exact length.
 //!
-//! Every one of the 21 removes **app-owned** bytes: a lock file, a temporary raster, a fixture
-//! corpus, a database backup, a credential socket. None can reach a user's working copy, which
-//! is what `remove_warranted` exists to be the only route to.
+//! Every entry removes **app-owned** bytes: a lock file, a temporary raster, a fixture corpus, a
+//! database backup, a credential socket, a failed rebuild's own files. None can reach a user's
+//! working copy, which is what `remove_warranted` exists to be the only route to.
 
 use std::path::{Path, PathBuf};
 
@@ -143,8 +146,25 @@ const BASELINE: &[RemovalAllowance] = &[
     },
     RemovalAllowance {
         file: "surfaces/startup_failure.rs",
-        line: 179,
+        line: 135,
         reason: "the startup-failure breadcrumb this process wrote on its last run",
+    },
+    RemovalAllowance {
+        file: "index/recovery.rs",
+        line: 157,
+        reason: "a failed rebuild undoing itself: the side index, its journal, the report's temp \
+                 file and the sidecar copy it created moments before",
+    },
+    RemovalAllowance {
+        file: "index/rebuild.rs",
+        line: 221,
+        reason: "the probe's copy of a corrupt index and its journal, in a private directory it \
+                 made moments before in the system temp directory",
+    },
+    RemovalAllowance {
+        file: "index/rebuild.rs",
+        line: 224,
+        reason: "that directory, once the copy in it is gone",
     },
 ];
 
@@ -253,11 +273,17 @@ fn every_removal_is_warranted_or_a_reasoned_baseline_entry() {
     );
 }
 
-/// The measured number, stated once so a future reader does not re-derive it from the plans,
-/// which say 17 and were written before this lane's Task 4.
+/// Phase 2's measured number, stated once so a future reader does not re-derive it from the
+/// plans, which say 17 and were written before this lane's Task 4. It is a floor: each change
+/// that lands an app-owned removal adds an entry, and the exact length is the lock in
+/// `every_removal_is_warranted_or_a_reasoned_baseline_entry`.
 #[test]
-fn the_baseline_is_twenty_one_sites_not_the_plans_seventeen() {
-    assert_eq!(BASELINE.len(), 21);
+fn the_baseline_is_at_least_twenty_one_sites_not_the_plans_seventeen() {
+    eprintln!("removal baseline: {} entries", BASELINE.len());
+    assert!(
+        BASELINE.len() >= 21,
+        "the baseline fell below phase 2's measured 21"
+    );
     let credential = BASELINE
         .iter()
         .filter(|e| e.file == "gitw/credential.rs")

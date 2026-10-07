@@ -21,12 +21,22 @@ use std::fs;
 use std::path::Path;
 
 use codotheca_core::index::migrate::SUPPORTED_SCHEMA_VERSION;
+use codotheca_core::index::rebuild::{
+    rebuild_in_place, RebuildError, RebuildOutcome, RebuildReportFile,
+};
 use codotheca_core::index::{open_connection, Index, IndexError};
 
 /// The whole file's bytes. The criterion says the file is left untouched, which is a statement
 /// about content — an mtime comparison would pass over a rewrite that produced the same length.
 fn fingerprint(path: &Path) -> Vec<u8> {
     fs::read(path).unwrap()
+}
+
+fn rebuilt(outcome: Result<RebuildOutcome, RebuildError>) -> RebuildReportFile {
+    match outcome {
+        Ok(RebuildOutcome::Rebuilt(report)) => report,
+        other => panic!("expected a rebuild, got {other:?}"),
+    }
 }
 
 #[test]
@@ -97,27 +107,25 @@ fn ac_14_corrupt_database_quarantines_and_rebuilds() {
          asserting the wrong subject and this test must be re-read"
     );
 
-    let (index, report) = Index::rebuild(dir.path(), 1_700_000_000).unwrap();
-    assert!(report.quarantined.db.exists());
-    assert_eq!(report.quarantined.at, 1_700_000_000);
+    let report = rebuilt(rebuild_in_place(dir.path(), 1_700_000_000));
+    let moved_db = db.with_file_name("index.db.corrupt-1700000000");
+    assert!(moved_db.exists());
+    assert!(report
+        .quarantine_files
+        .contains(&moved_db.display().to_string()));
+    assert_eq!(report.quarantined_at, 1_700_000_000);
 
     // With no sidecar there was nothing to restore, and the report says so rather than
     // reporting a zero that could be read as "nothing was lost".
-    assert_eq!(
-        report.restored,
-        codotheca_core::index::sidecar::RestoreCounts::default()
-    );
-    assert!(report.deferred.is_empty());
+    assert!(report.restored.is_empty());
+    assert_eq!(report.pending, 0);
     assert_eq!(
         report.gap_started_at, None,
         "no sidecar means no gap start is knowable, which is not the same as a gap of zero"
     );
-    assert!(
-        !report.gap_counts_recoverable,
-        "the counts are recoverable only from a sidecar; claiming otherwise invents them"
-    );
 
     // The rebuilt database is usable and is at the version this build speaks.
+    let index = Index::open(dir.path()).unwrap();
     assert_eq!(index.schema_version().unwrap(), SUPPORTED_SCHEMA_VERSION);
 
     // Scenario 2: the wal and the shm travel with the database. A rebuild that moved only the
@@ -129,23 +137,22 @@ fn ac_14_corrupt_database_quarantines_and_rebuilds() {
     fs::write(kept_db.with_file_name("index.db-wal"), b"stale wal").unwrap();
     fs::write(kept_db.with_file_name("index.db-shm"), b"stale shm").unwrap();
 
-    let (_kept_index, moved) = Index::rebuild(kept.path(), 1_700_000_001).unwrap();
-    assert!(moved.quarantined.db.exists());
-    assert!(moved.quarantined.wal.as_ref().is_some_and(|p| p.exists()));
-    assert!(moved.quarantined.shm.as_ref().is_some_and(|p| p.exists()));
-    // The quarantined files carry the *stale* bytes. A fresh wal exists again by now — the
-    // rebuild opened a new database — so "the old one is gone" is not the assertion to make;
-    // "the old one was preserved elsewhere" is.
+    let moved = rebuilt(rebuild_in_place(kept.path(), 1_700_000_001));
+    let set_aside = |name: &str| kept.path().join(format!("{name}.corrupt-1700000001"));
+    for name in ["index.db", "index.db-wal", "index.db-shm"] {
+        assert!(
+            moved
+                .quarantine_files
+                .contains(&set_aside(name).display().to_string()),
+            "{name} is not in the quarantine set"
+        );
+    }
+    // The quarantined files carry the *stale* bytes: "the old one is gone" is not the assertion
+    // to make; "the old one was preserved elsewhere" is.
+    assert_eq!(fs::read(set_aside("index.db-wal")).unwrap(), b"stale wal");
+    assert_eq!(fs::read(set_aside("index.db-shm")).unwrap(), b"stale shm");
     assert_eq!(
-        fs::read(moved.quarantined.wal.as_ref().unwrap()).unwrap(),
-        b"stale wal"
-    );
-    assert_eq!(
-        fs::read(moved.quarantined.shm.as_ref().unwrap()).unwrap(),
-        b"stale shm"
-    );
-    assert_eq!(
-        fs::read(&moved.quarantined.db).unwrap(),
+        fs::read(set_aside("index.db")).unwrap(),
         b"this is not a database"
     );
 }

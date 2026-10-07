@@ -78,6 +78,7 @@ fn quarantine_moves_the_database_wal_and_shm_together() {
         wal,
         shm,
         at,
+        ..
     } = quarantine(&db, 1_787_126_520).unwrap();
     assert_eq!(at, 1_787_126_520);
     assert!(
@@ -109,8 +110,12 @@ fn quarantine_tolerates_a_database_with_no_wal_or_shm() {
 }
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
+use codotheca_core::index::pending::PendingRecord;
+use codotheca_core::index::rebuild::{
+    rebuild_in_place, RebuildError, RebuildOutcome, RebuildReportFile,
+};
 use codotheca_core::index::sidecar::{
-    export, restore_for_subject, restore_global, write_atomically, RestoreCounts,
+    export, restore_for_subject, restore_global, write_atomically,
 };
 use codotheca_core::index::subject::{resolve_subject, ProjectSubject};
 use codotheca_core::protocol::ProjectId;
@@ -140,6 +145,13 @@ fn seed_and_export(dir: &std::path::Path) {
     write_atomically(&doc, &Index::sidecar_path(dir)).unwrap();
 }
 
+fn rebuilt(outcome: Result<RebuildOutcome, RebuildError>) -> RebuildReportFile {
+    match outcome {
+        Ok(RebuildOutcome::Rebuilt(report)) => report,
+        other => panic!("expected a rebuild, got {other:?}"),
+    }
+}
+
 #[test]
 fn rebuild_quarantines_restores_the_global_half_and_dates_the_gap() {
     let dir = tempfile::tempdir().unwrap();
@@ -148,28 +160,39 @@ fn rebuild_quarantines_restores_the_global_half_and_dates_the_gap() {
     // Corrupt the database under the sidecar.
     std::fs::write(Index::db_path(dir.path()), b"not a database at all").unwrap();
 
-    let (index, report) = Index::rebuild(dir.path(), 5_000).unwrap();
-    assert!(report.quarantined.db.exists());
+    let report = rebuilt(rebuild_in_place(dir.path(), 5_000));
+    let moved_db = dir.path().join("index.db.corrupt-5000");
+    assert!(moved_db.exists());
+    assert!(report
+        .quarantine_files
+        .contains(&moved_db.display().to_string()));
 
-    assert_eq!(report.restored.roots, 1);
-    assert_eq!(report.restored.identities, 1);
-    assert_eq!(report.restored.collections, 1);
-    assert_eq!(report.restored.view_state, 1);
-    assert!(report.restored.settings >= 1);
+    assert_eq!(report.restored["roots"], 1);
+    assert_eq!(report.restored["identities"], 1);
+    assert_eq!(report.restored["collections"], 1);
+    assert_eq!(report.restored["view_state"], 1);
+    assert!(report.restored["settings"] >= 1);
     assert_eq!(
-        report.restored.projects, 0,
+        report.restored.get("projects"),
+        None,
         "a rebuilt database has no projects yet; those records wait for the scan"
     );
 
-    assert_eq!(report.deferred["projects"], 1);
-    assert_eq!(report.deferred["sessions"], 1);
-    assert_eq!(report.deferred["notes"], 1);
+    assert_eq!(report.pending, 1, "the one project's record waits");
+    let index = Index::open_at(dir.path(), 5_000).unwrap();
+    let record: String = index
+        .conn()
+        .query_row("SELECT record FROM sidecar_pending", [], |r| r.get(0))
+        .unwrap();
+    match serde_json::from_str::<PendingRecord>(&record).unwrap() {
+        PendingRecord::Project { record, .. } => {
+            assert_eq!(record.sessions.len(), 1);
+            assert_eq!(record.notes.as_deref(), Some("a note"));
+        }
+        other @ PendingRecord::Section { .. } => panic!("the project was staged as {other:?}"),
+    }
 
     assert_eq!(report.gap_started_at, Some(900));
-    assert!(
-        !report.gap_counts_recoverable,
-        "the counts were in the database that was destroyed; a 0 here would be a lie"
-    );
 
     let roots: i64 = index
         .conn()
@@ -195,7 +218,8 @@ fn the_project_half_restores_when_the_scan_rediscovers_the_subject() {
     let doc = codotheca_core::index::sidecar::read(&Index::sidecar_path(dir.path())).unwrap();
 
     std::fs::write(Index::db_path(dir.path()), b"not a database at all").unwrap();
-    let (index, _) = Index::rebuild(dir.path(), 5_000).unwrap();
+    rebuilt(rebuild_in_place(dir.path(), 5_000));
+    let index = Index::open_at(dir.path(), 5_000).unwrap();
 
     // The scan re-derives the project, and gets a different id than it had before.
     index
@@ -242,10 +266,10 @@ fn a_rebuild_with_no_sidecar_reports_no_gap_and_restores_nothing() {
     std::fs::create_dir_all(dir.path()).unwrap();
     std::fs::write(Index::db_path(dir.path()), b"not a database at all").unwrap();
 
-    let (_index, report) = Index::rebuild(dir.path(), 5_000).unwrap();
+    let report = rebuilt(rebuild_in_place(dir.path(), 5_000));
     assert_eq!(report.gap_started_at, None);
-    assert_eq!(report.restored, RestoreCounts::default());
-    assert!(report.deferred.is_empty());
+    assert!(report.restored.is_empty());
+    assert_eq!(report.pending, 0);
 }
 
 #[test]

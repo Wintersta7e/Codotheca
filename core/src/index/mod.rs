@@ -5,6 +5,8 @@ pub mod completion;
 pub mod error;
 pub mod migrate;
 pub mod path;
+pub mod pending;
+pub mod rebuild;
 pub mod recovery;
 pub mod sidecar;
 pub mod subject;
@@ -157,65 +159,6 @@ impl Index {
         Self { conn, data_dir }
     }
 
-    /// §1.12's `REBUILD`: quarantine the unreadable files, open a fresh database, and put the
-    /// sidecar's global half back so the user is not asked for consent and roots again.
-    ///
-    /// # Errors
-    /// Fails when there is no database file to quarantine or a move fails, the fresh database
-    /// cannot be opened or migrated, the sidecar cannot be read or parsed, or SQLite refuses a
-    /// restore write.
-    pub fn rebuild(
-        data_dir: &Path,
-        now: i64,
-    ) -> Result<(Self, recovery::RebuildReport), IndexError> {
-        let db = Self::db_path(data_dir);
-        let quarantined = recovery::quarantine(&db, now)?;
-
-        let mut conn = open_connection(&db)?;
-        migrate::apply_all(&mut conn, migrate::MIGRATIONS)?;
-
-        let sidecar_path = Self::sidecar_path(data_dir);
-        let (restored, deferred, gap_started_at) = if sidecar_path.exists() {
-            let doc = sidecar::read(&sidecar_path)?;
-            let restored = sidecar::restore_global(&conn, &doc)?;
-            let mut deferred = sidecar::counts(&doc);
-            // The global half has landed; what is left is the project-scoped remainder.
-            for global in [
-                "roots",
-                "identities",
-                "settings",
-                "view_state",
-                "collections",
-            ] {
-                deferred.insert(global.to_owned(), 0);
-            }
-            conn.execute(
-                "INSERT INTO app_meta (k, v) VALUES ('restore_pending_generation', ?1)
-                 ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-                [doc.generation.to_string()],
-            )?;
-            (restored, deferred, Some(doc.written_at))
-        } else {
-            (
-                sidecar::RestoreCounts::default(),
-                std::collections::BTreeMap::new(),
-                None,
-            )
-        };
-
-        let index = Self::from_parts(conn, data_dir.to_path_buf());
-        Ok((
-            index,
-            recovery::RebuildReport {
-                quarantined,
-                restored,
-                deferred,
-                gap_started_at,
-                gap_counts_recoverable: false,
-            },
-        ))
-    }
-
     /// Export the non-derivable set and write it atomically. §1.12: hourly and on clean
     /// shutdown, never on every change.
     ///
@@ -342,7 +285,6 @@ pub fn open_with_migrations(
     // a phase-2 migration. It survived both waves' gates because every migration test starts from
     // an empty database, where the mirror is absent and gets written at the end: the upgrade path
     // is the only one that fails, and it was the one path no test walked.
-    let reached = migrate::schema_version(&conn)?;
     let mirror: Option<u32> = {
         use rusqlite::OptionalExtension as _;
         conn.query_row("SELECT v FROM app_meta WHERE k='schema_version'", [], |r| {
@@ -356,13 +298,20 @@ pub fn open_with_migrations(
             return Err(IndexError::VersionMirrorMismatch { pragma: from, meta });
         }
     }
+    stamp_schema_mirror(&conn)?;
+
+    Ok(Index::from_parts(conn, data_dir.to_path_buf()))
+}
+
+/// Write `app_meta`'s mirror of the schema version the database is at, which the next open
+/// compares against the pragma.
+pub(crate) fn stamp_schema_mirror(conn: &Connection) -> Result<(), IndexError> {
     conn.execute(
         "INSERT INTO app_meta (k, v) VALUES ('schema_version', ?1)
          ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-        [reached.to_string()],
+        [migrate::schema_version(conn)?.to_string()],
     )?;
-
-    Ok(Index::from_parts(conn, data_dir.to_path_buf()))
+    Ok(())
 }
 
 /// Open `db` in WAL mode with foreign keys on, and take its exclusive lock before returning.

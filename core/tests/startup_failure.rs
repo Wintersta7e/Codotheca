@@ -8,8 +8,6 @@
 //! §11.2a's three database windows, reported through a file the shell reads without ever
 //! opening the database.
 
-use codotheca_core::index::recovery::RebuildReport;
-use codotheca_core::index::sidecar::RestoreCounts;
 use codotheca_core::index::IndexError;
 use codotheca_core::surfaces::startup_failure::{self, StartupFailure};
 
@@ -81,57 +79,6 @@ fn a_corrupt_index_with_no_rebuild_yet_reports_no_counts_rather_than_zeroes() {
                 (None, None),
                 "no rebuild has run, so the ledger has no figures — and `0 projects restorable` \
                  would be a claim, on the screen where unknown-as-zero matters most"
-            );
-        }
-        other => panic!("wrong variant: {other:?}"),
-    }
-}
-
-#[test]
-fn a_rebuild_report_is_what_puts_real_figures_in_the_ledger() {
-    let report = RebuildReport {
-        quarantined: codotheca_core::index::recovery::QuarantinedFiles {
-            db: std::path::PathBuf::from("index.db.corrupt-900"),
-            wal: None,
-            shm: None,
-            at: 900,
-        },
-        restored: RestoreCounts {
-            projects: 12,
-            notes: 3,
-            sessions: 40,
-            collections: 2,
-            roots: 1,
-            xp_events: 7,
-            launch_targets: 5,
-            ..RestoreCounts::default()
-        },
-        deferred: std::collections::BTreeMap::from([("projects".to_owned(), 4)]),
-        gap_started_at: Some(555),
-        gap_counts_recoverable: false,
-    };
-    let failure = startup_failure::corrupt_from_report(&report);
-    match failure {
-        StartupFailure::CorruptIndex {
-            quarantined_at,
-            gap_started_at,
-            re_derivable,
-            restorable,
-            ..
-        } => {
-            assert_eq!(
-                quarantined_at, 900,
-                "the quarantine already happened; its own timestamp is when"
-            );
-            assert_eq!(gap_started_at, Some(555));
-            let restorable = restorable.expect("a rebuild ran, so this block has figures");
-            assert_eq!(restorable.projects, 12);
-            assert_eq!(restorable.sessions, 40);
-            assert_eq!(
-                re_derivable
-                    .expect("deferred rows are the re-derivable block")
-                    .projects,
-                4
             );
         }
         other => panic!("wrong variant: {other:?}"),
