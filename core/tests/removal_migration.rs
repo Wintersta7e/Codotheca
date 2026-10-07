@@ -1,6 +1,9 @@
 //! `0018_recovering_half.sql` — `project.removed_at` and the four removal tables (§46.15), read off
 //! a real migrated database. No writer lands with them; these tests hold the shape later writers
 //! rely on.
+//!
+//! **Each CHECK is a cross-language mirror, so it is tested by reading the other side**: the
+//! variants come out of `protocol/schema/protocol.json`, never out of a literal here.
 
 #![allow(
     clippy::unwrap_used,
@@ -16,6 +19,9 @@ use rusqlite::{params_from_iter, Connection};
 
 /// The migration's own text, compiled in: what it states is what the chain ran.
 const MIGRATION: &str = include_str!("../migrations/0018_recovering_half.sql");
+
+/// The committed contract, compiled in rather than re-found at runtime.
+const SCHEMA: &str = include_str!("../../protocol/schema/protocol.json");
 
 /// A database at exactly `version` files applied, through the shipped set.
 fn migrated_to(version: usize) -> (tempfile::TempDir, Connection) {
@@ -706,4 +712,246 @@ fn the_migration_leaves_pragma_to_the_runner() {
     assert!(!statements
         .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
         .any(|token| token.eq_ignore_ascii_case("pragma")));
+}
+
+/// Every variant the schema declares for `name`, in declaration order.
+///
+/// Panics rather than returning an empty vector for an absent type: a missing enum must fail the
+/// test, not silently reduce it to a loop over nothing.
+fn schema_variants(name: &str) -> Vec<String> {
+    let schema: serde_json::Value = serde_json::from_str(SCHEMA).unwrap();
+    let declaration = schema["types"]
+        .get(name)
+        .unwrap_or_else(|| panic!("{name} is not declared in protocol.json"));
+    assert_eq!(declaration["kind"], "enum", "{name} is not an enum");
+    let variants: Vec<String> = declaration["variants"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{name} declares no variants"))
+        .iter()
+        .map(|variant| variant.as_str().unwrap().to_owned())
+        .collect();
+    assert_ne!(
+        variants,
+        Vec::<String>::new(),
+        "{name} declares no variants"
+    );
+    variants
+}
+
+/// The value list `CHECK (<column> IN (…))` spells in `table`'s DDL, as the migrated database
+/// holds it.
+///
+/// Inserting every schema variant proves the CHECK accepts them all; it cannot see a value the
+/// CHECK accepts and the schema dropped. Reading the list back closes that direction.
+fn check_values(conn: &Connection, table: &str, column: &str) -> Vec<String> {
+    let sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let opener = format!("CHECK ({column} IN (");
+    assert_eq!(
+        sql.matches(&opener).count(),
+        1,
+        "{table} must state exactly one `{opener}`"
+    );
+    let (_, rest) = sql.split_once(&opener).unwrap();
+    let (list, _) = rest.split_once(')').unwrap();
+    list.split(',')
+        .map(|value| value.trim().trim_matches('\'').to_owned())
+        .collect()
+}
+
+/// One mirror: the CHECK's list equals the schema's, every variant is accepted by a real
+/// migrated column — counted and printed, so a loop over nothing fails — and one near miss is
+/// refused.
+fn mirror(
+    conn: &Connection,
+    name: &str,
+    (table, column): (&str, &str),
+    near_miss: &str,
+    mut insert_one: impl FnMut(&str) -> rusqlite::Result<i64>,
+) {
+    let variants = schema_variants(name);
+    assert_eq!(
+        check_values(conn, table, column),
+        variants,
+        "{table}.{column}'s CHECK and {name} disagree"
+    );
+    let mut inserted = 0_usize;
+    for variant in &variants {
+        insert_one(variant).unwrap_or_else(|e| panic!("{variant} was refused: {e}"));
+        inserted += 1;
+    }
+    eprintln!("{name} variants inserted: {inserted}");
+    assert!(
+        inserted > 0,
+        "a mirror that inserted nothing proved nothing"
+    );
+    assert_eq!(inserted, variants.len());
+    assert!(
+        insert_one(near_miss).is_err(),
+        "{table}.{column} accepted {near_miss}"
+    );
+}
+
+/// A fresh database holding one project with one copy.
+fn one_copy() -> (tempfile::TempDir, Connection, i64, i64) {
+    let (dir, conn) = fresh();
+    let project = insert_project(&conn);
+    let location = insert_location(&conn, project, "/copies/sample");
+    (dir, conn, project, location)
+}
+
+#[test]
+fn every_parcel_state_variant_is_accepted_by_the_column() {
+    let (_dir, conn, project, location) = one_copy();
+    let defaults = parcel_defaults(project, location);
+    mirror(
+        &conn,
+        "ParcelState",
+        ("parcel", "state"),
+        "archived",
+        |state| {
+            // The seal is filled for every state, so the seal CHECK never decides.
+            let mut row = seal();
+            row.push(("state", text(state)));
+            insert(&conn, "parcel", &defaults, &row)
+        },
+    );
+}
+
+#[test]
+fn every_parcel_check_variant_is_accepted_by_the_column() {
+    let (_dir, conn, project, location) = one_copy();
+    let defaults = parcel_defaults(project, location);
+    mirror(
+        &conn,
+        "ParcelCheck",
+        ("parcel", "check_result"),
+        "UNCHECKED",
+        |check| insert(&conn, "parcel", &defaults, &[("check_result", text(check))]),
+    );
+}
+
+#[test]
+fn every_removal_kind_variant_is_accepted_by_the_column() {
+    let (_dir, conn, project, location) = one_copy();
+    let defaults = record_defaults(project, location);
+    mirror(
+        &conn,
+        "RemovalKind",
+        ("removal_record", "kind"),
+        "removed",
+        |kind| insert(&conn, "removal_record", &defaults, &[("kind", text(kind))]),
+    );
+}
+
+#[test]
+fn every_removal_state_variant_is_accepted_by_the_column() {
+    let (_dir, conn) = fresh();
+    let project = insert_project(&conn);
+    let mut copies = 0_u32;
+    mirror(
+        &conn,
+        "RemovalState",
+        ("removal_record", "state"),
+        "gone",
+        |state| {
+            // One location per variant, so the one-open index never decides.
+            copies += 1;
+            let location = insert_location(&conn, project, &format!("/copies/{copies}"));
+            insert(
+                &conn,
+                "removal_record",
+                &record_defaults(project, location),
+                &[("state", text(state))],
+            )
+        },
+    );
+}
+
+#[test]
+fn every_removal_disposal_variant_is_accepted_by_the_column() {
+    let (_dir, conn, project, location) = one_copy();
+    let defaults = record_defaults(project, location);
+    mirror(
+        &conn,
+        "RemovalDisposal",
+        ("removal_record", "disposal"),
+        "hard-deleted",
+        |disposal| {
+            insert(
+                &conn,
+                "removal_record",
+                &defaults,
+                &[("disposal", text(disposal))],
+            )
+        },
+    );
+}
+
+#[test]
+fn every_removal_recovery_variant_is_accepted_by_the_column() {
+    let (_dir, conn, project, location) = one_copy();
+    let parcel = insert(&conn, "parcel", &parcel_defaults(project, location), &[]).unwrap();
+    let defaults = record_defaults(project, location);
+    mirror(
+        &conn,
+        "RemovalRecovery",
+        ("removal_record", "recovery"),
+        "bundle",
+        |recovery| {
+            // `parcel_id` is set exactly for `parcel`, so the pairing CHECK never decides.
+            let parcel_id = if recovery == "parcel" {
+                Value::Integer(parcel)
+            } else {
+                Value::Null
+            };
+            insert(
+                &conn,
+                "removal_record",
+                &defaults,
+                &[("recovery", text(recovery)), ("parcel_id", parcel_id)],
+            )
+        },
+    );
+}
+
+/// **`planned` has no generated enum**: it is core-internal and never crosses the wire, so its
+/// two values are listed here, and the Rust type that later carries it mirrors this migration's
+/// text on its own side.
+#[test]
+fn planned_accepts_trash_and_hard_delete_only() {
+    const PLANNED: [&str; 2] = ["trash", "hard_delete"];
+    let (_dir, conn, project, location) = one_copy();
+    assert_eq!(check_values(&conn, "removal_record", "planned"), PLANNED);
+    let defaults = record_defaults(project, location);
+    let mut inserted = 0_usize;
+    for planned in PLANNED {
+        insert(
+            &conn,
+            "removal_record",
+            &defaults,
+            &[("planned", text(planned))],
+        )
+        .unwrap_or_else(|e| panic!("{planned} was refused: {e}"));
+        inserted += 1;
+    }
+    eprintln!("planned values inserted: {inserted}");
+    assert_eq!(inserted, PLANNED.len());
+    for near_miss in ["hard-delete", "delete"] {
+        assert!(
+            insert(
+                &conn,
+                "removal_record",
+                &defaults,
+                &[("planned", text(near_miss))]
+            )
+            .is_err(),
+            "removal_record.planned accepted {near_miss}"
+        );
+    }
 }
