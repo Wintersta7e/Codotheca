@@ -10,7 +10,12 @@ use std::sync::{Arc, Mutex};
 use codotheca_core::assembly::handoff::{hand_off_discovered, HandoffCtx, Indexed};
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::SystemClock;
-use codotheca_core::git::{GitBackend, GitExec, GitSlots, RepoHandle, StoreKey, SystemGit};
+use codotheca_core::git::{
+    GitBackend, GitExec, GitSlots, JobClass, JobContext, RepoHandle, StoreKey, SystemGit,
+};
+use codotheca_core::identity::decide::{decide, evidence_from, IdentityDecision};
+use codotheca_core::identity::probe::probe_identity;
+use codotheca_core::identity::store::{load_candidates, worktree_owner};
 use codotheca_core::index::Index;
 use codotheca_core::mount::StoreClass;
 use codotheca_core::paths::{path_bytes, path_display, path_key};
@@ -112,6 +117,34 @@ impl Rig {
             now: NOW,
         };
         hand_off_discovered(&self.index, &ctx, &discovered_at(path)).unwrap()
+    }
+
+    /// The identity decision a hand-off of `path` would take now: the same probe, the same
+    /// definitive-evidence read and the same lineage candidates, in `resolve_identity`'s order.
+    pub(crate) fn decision(&self, path: &Path) -> IdentityDecision {
+        let found = discovered_at(path);
+        let handle =
+            RepoHandle::resolve(path, StoreKey::new(found.store_key), StoreClass::Local).unwrap();
+        let job = JobContext::new(JobClass::Background, &self.cancel, None);
+        let probe =
+            probe_identity(self.git.as_ref(), &handle, platform_of(&found.kind), &job).unwrap();
+        let evidence = evidence_from(&probe);
+        let mut guard = self.index.lock().unwrap();
+        let decision = guard
+            .with_tx(|tx| {
+                let owner = evidence
+                    .common_dir_key
+                    .as_deref()
+                    .and_then(|key| worktree_owner(tx, key).unwrap());
+                let candidates = evidence
+                    .lineage_key
+                    .as_deref()
+                    .map_or_else(Vec::new, |lineage| load_candidates(tx, lineage).unwrap());
+                Ok(decide(&evidence, owner, &candidates))
+            })
+            .unwrap();
+        drop(guard);
+        decision
     }
 
     /// `locations.uninstall`'s own row write for `location`, then the bytes leave the disk.

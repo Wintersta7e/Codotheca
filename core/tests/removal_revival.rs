@@ -16,12 +16,13 @@
 #[path = "support/handoff_rig.rs"]
 mod handoff_rig;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use codotheca_core::art::testsupport::CollectingSink;
 use codotheca_core::assembly::handoff::{hand_off_discovered, HandoffCtx, Indexed};
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::git::{RepoFacts, RootCommit};
+use codotheca_core::identity::decide::IdentityDecision;
 use codotheca_core::install::queue::InstallRequest;
 use codotheca_core::install::run::{paths_for, run_install, InstallCtx, RootFacts};
 use codotheca_core::install::state::InstallStateStore;
@@ -34,7 +35,7 @@ use codotheca_core::scan::run::{platform_of, Discovered};
 use codotheca_core::testing::{
     CloneBehaviour, FakeGitBackend, FakeMountResolver, FakeMutatingGit, GitReply,
 };
-use handoff_rig::{Rig, NOW};
+use handoff_rig::{git_at, Rig, NOW};
 
 /// A location row's `(removed_at, presence)`.
 fn location_state(rig: &Rig, location: i64) -> (Option<i64>, String) {
@@ -185,6 +186,99 @@ fn ac_p4_46_18_a_removed_project_found_at_a_new_path_is_revived() {
         "the repository is not its project's"
     );
     assert_ne!(found.location, a.location);
+    assert_eq!(
+        project, None,
+        "the project is still removed after its repository came back"
+    );
+    assert_eq!(old.0, Some(NOW), "the removed copy's row came back with it");
+    assert_eq!(xp(&rig), paid, "the revival paid");
+}
+
+/// The URL every clone below names. A local path canonicalises to no remote at all, so a clone
+/// made from one would carry no remote; this one canonicalises like a hosted repository's.
+const REMOTE_URL: &str = "https://example.invalid/fixture/project.git";
+
+/// A bare repository holding one commit, at the path `REMOTE_URL` is rewritten to.
+fn fixture_remote(rig: &Rig) {
+    let seed = rig.repo("seed", "first");
+    let bare = rig.path("remotes").join("fixture").join("project.git");
+    git_at(
+        rig.dir.path(),
+        &rig.path("home"),
+        &[
+            "clone",
+            "--bare",
+            seed.to_str().unwrap(),
+            bare.to_str().unwrap(),
+        ],
+    );
+}
+
+/// `git clone REMOTE_URL <tmp>/<name>`, rewritten on this one command line to the bare fixture:
+/// the clone records the URL as its `origin`, and nothing leaves the machine.
+fn clone_at(rig: &Rig, name: &str) -> PathBuf {
+    let dest = rig.path(name);
+    let rewrite = format!(
+        "url.{}/.insteadOf=https://example.invalid/",
+        rig.path("remotes").display()
+    );
+    git_at(
+        rig.dir.path(),
+        &rig.path("home"),
+        &["-c", &rewrite, "clone", REMOTE_URL, dest.to_str().unwrap()],
+    );
+    dest
+}
+
+fn association_kind(rig: &Rig, project: i64) -> Option<String> {
+    rig.read(|conn| {
+        conn.query_row(
+            "SELECT association_kind FROM project WHERE id = ?1",
+            [project],
+            |r| r.get(0),
+        )
+        .unwrap()
+    })
+}
+
+/// What Restore does: the removed project is cloned again from its own remote, at another path.
+/// The clone joins the project by that remote — the removed copy's row is evidence of nothing —
+/// on a new row, and the project is no longer removed.
+#[test]
+fn a_removed_project_with_a_remote_cloned_to_a_new_path_is_revived() {
+    let rig = Rig::new();
+    fixture_remote(&rig);
+    let path = clone_at(&rig, "x");
+    let a = rig.hand_off(&path);
+    let paid = xp(&rig);
+    let kind_before = association_kind(&rig, a.project.0);
+    rig.uninstall(a.location, &path);
+    remove_project(&rig, a.project.0);
+
+    let elsewhere = clone_at(&rig, "y");
+    let decision = rig.decision(&elsewhere);
+    let found = rig.hand_off(&elsewhere);
+    let old = location_state(&rig, a.location.0);
+    let project = project_removed_at(&rig, a.project.0);
+    let kind_after = association_kind(&rig, a.project.0);
+    eprintln!(
+        "indexed {a:?}; decision for the clone at a new path: {decision:?}; found {found:?}; \
+         L1 {old:?}, project removed_at {project:?}, association {kind_before:?} -> \
+         {kind_after:?}, {} location rows, xp {:?}",
+        rig.count("location"),
+        xp(&rig)
+    );
+    assert_eq!(
+        decision,
+        IdentityDecision::AttachStrong {
+            project_id: a.project.0
+        },
+        "the clone did not join its project by its remote"
+    );
+    assert_eq!(found.project, a.project, "the clone is not its project's");
+    assert_ne!(found.location, a.location, "the clone took the removed row");
+    assert_eq!(rig.count("location"), 2);
+    assert_eq!(kind_after.as_deref(), Some("strong"));
     assert_eq!(
         project, None,
         "the project is still removed after its repository came back"

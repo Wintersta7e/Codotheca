@@ -135,8 +135,10 @@ pub fn reconcile_scalars(
     })
 }
 
-/// How many rows of each not-derivable table moved. Four of these go into
-/// `merge_record.absorbed_json` (§1.9); the rest are what `projects.unmergeHint` reports.
+/// How many rows of each not-derivable table moved.
+///
+/// The `reparented` object of `merge_record.absorbed_json` (§1.9) stores the counts that
+/// [`merge_projects`]' `json!` builder names, and `projects.unmergeHint` reads them back from there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ReparentCounts {
     /// Copies moved to the survivor.
