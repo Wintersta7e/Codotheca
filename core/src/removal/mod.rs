@@ -12,6 +12,7 @@
 //! eighteenth cannot appear silently inside an already-listed file.
 
 pub mod bins;
+pub mod sidecar;
 pub mod trash;
 pub mod warrant;
 
