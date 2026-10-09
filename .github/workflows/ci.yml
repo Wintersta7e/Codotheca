@@ -216,9 +216,10 @@ jobs:
           sudo apt-get install -y libdbus-1-dev pkg-config
       - name: build the release core
         run: cargo build --locked --release --manifest-path core/Cargo.toml --bin codotheca-core
-      # recovery.spec.ts plants each index the core cannot open with this testkit binary. The spec
-      # builds it when stale; building it here keeps a cold compile out of the spec's timeout.
-      - name: build the startup-report fixture
+      # recovery.spec.ts plants each index the core cannot open with this testkit binary, and reads
+      # back what a rebuild left with it. The spec builds it when stale; building it here keeps a
+      # cold compile out of the spec's timeout.
+      - name: build the sidecar fixture
         run: >-
           cargo build --locked --manifest-path core/Cargo.toml --features testkit
           --bin codotheca-sidecar-fixture

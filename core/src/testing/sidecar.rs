@@ -1,19 +1,22 @@
 //! Fixtures for the sidecar's registered sections: one per section, so every registered section
 //! can be populated by a test — and the indexes the core cannot open, one per startup report.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use rusqlite::Transaction;
+use serde_json::Value;
 
 use crate::assembly::handoff::{hand_off_discovered, HandoffCtx, Indexed};
 use crate::cancel::CancelToken;
 use crate::clock::SystemClock;
 use crate::completion::evaluate::CheckRow;
-use crate::corpus::{write_file, CorpusGit};
+use crate::corpus::{write_file, CorpusGit, CORPUS_EMAIL};
 use crate::git::{ensure_empty_hooks_dir, GitBackend, GitExec, GitSlots, SystemGit};
 use crate::index::migrate::SUPPORTED_SCHEMA_VERSION;
+use crate::index::sidecar::Sidecar;
 use crate::index::subject::subject_for_project;
 use crate::index::{open_connection, Index, IndexError};
 use crate::jobs::NullJobSink;
@@ -498,10 +501,10 @@ fn plant_base(tx: &Transaction<'_>, ids: &FixtureIds, now: i64) -> Result<(), In
          VALUES ('fixture@example.invalid', 'Fixture', 'gitconfig', ?1)",
         [now - 400],
     )?;
+    // The address the library's commits carry, so the authorship job finds them the user's.
     tx.execute(
-        "INSERT INTO identity_alias (identity_id, email, reason)
-         VALUES (?1, 'fixture@users.example.invalid', 'manual')",
-        [tx.last_insert_rowid()],
+        "INSERT INTO identity_alias (identity_id, email, reason) VALUES (?1, ?2, 'manual')",
+        rusqlite::params![tx.last_insert_rowid(), CORPUS_EMAIL],
     )?;
     tx.execute(
         "INSERT INTO app_meta (k, v) VALUES ('effects_tier', 'reduced')
@@ -514,6 +517,122 @@ fn plant_base(tx: &Transaction<'_>, ids: &FixtureIds, now: i64) -> Result<(), In
         [],
     )?;
     Ok(())
+}
+
+/// How a sidecar compares with one exported after a rebuild, key by key.
+#[derive(Debug, Default)]
+pub struct Comparison {
+    /// How many of the first document's rows each key held: each top-level key of the payload,
+    /// and `sections.<name>` for each section.
+    pub compared: BTreeMap<String, usize>,
+    /// Every row or field that changed, named by key and, where the row has one, by subject.
+    pub differences: Vec<String>,
+}
+
+/// Compares `before`'s payload with `after`'s: the whole document but `generation`, `written_at`,
+/// the schema version and the checksum.
+///
+/// The export lists rows in id order and a rebuild assigns ids anew, so order is not compared.
+/// Rows that name a subject are paired by it and named by field, so a value the restore dropped is
+/// named rather than buried in a row.
+///
+/// # Errors
+/// A payload that does not serialise to an object.
+pub fn compare_documents(before: &Sidecar, after: &Sidecar) -> Result<Comparison, IndexError> {
+    let (was, now) = (by_key(before)?, by_key(after)?);
+    let mut out = Comparison::default();
+    for key in was
+        .keys()
+        .chain(now.keys().filter(|key| !was.contains_key(*key)))
+    {
+        let held = was.get(key).map_or(&[][..], Vec::as_slice);
+        out.compared.insert(key.clone(), held.len());
+        out.differences.extend(differences(
+            key,
+            held,
+            now.get(key).map_or(&[][..], Vec::as_slice),
+        ));
+    }
+    Ok(out)
+}
+
+/// `value` with every list sorted by its rows' text.
+fn canonical(value: Value) -> Value {
+    match value {
+        Value::Array(rows) => {
+            let mut rows: Vec<_> = rows.into_iter().map(canonical).collect();
+            rows.sort_by_cached_key(ToString::to_string);
+            Value::Array(rows)
+        }
+        Value::Object(map) => {
+            Value::Object(map.into_iter().map(|(k, v)| (k, canonical(v))).collect())
+        }
+        other => other,
+    }
+}
+
+/// Each top-level key of the payload, and each section on its own, as canonical rows; a map's
+/// entries are rows of their own.
+fn by_key(doc: &Sidecar) -> Result<BTreeMap<String, Vec<Value>>, IndexError> {
+    let payload = canonical(serde_json::to_value(&doc.payload).map_err(other)?);
+    let Value::Object(keys) = payload else {
+        return Err(other("a sidecar payload that is not an object"));
+    };
+    let mut out = BTreeMap::new();
+    for (key, value) in keys {
+        match value {
+            Value::Object(sections) if key == "sections" => {
+                for (section, rows) in sections {
+                    out.insert(format!("sections.{section}"), rows_of(rows));
+                }
+            }
+            held => {
+                out.insert(key, rows_of(held));
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn rows_of(value: Value) -> Vec<Value> {
+    match value {
+        Value::Array(rows) => rows,
+        Value::Object(map) => map
+            .into_iter()
+            .map(|(k, v)| serde_json::json!({ "key": k, "value": v }))
+            .collect(),
+        other => vec![other],
+    }
+}
+
+/// How `before`'s rows and `after`'s differ under `key`.
+fn differences(key: &str, before: &[Value], after: &[Value]) -> Vec<String> {
+    let lost: Vec<_> = before.iter().filter(|row| !after.contains(row)).collect();
+    let gained: Vec<_> = after.iter().filter(|row| !before.contains(row)).collect();
+    let paired =
+        |a: &Value, b: &Value| a.get("subject").is_some() && a.get("subject") == b.get("subject");
+    let mut out = Vec::new();
+    for row in &lost {
+        let twin = gained.iter().find(|other| paired(row, other));
+        match (row.as_object(), twin.and_then(|t| t.as_object())) {
+            (Some(was), Some(now)) => {
+                let subject = row.get("subject").unwrap_or(&Value::Null);
+                for (field, value) in was {
+                    if now.get(field) != Some(value) {
+                        let became = now.get(field).unwrap_or(&Value::Null);
+                        out.push(format!("{key}[{subject}].{field}: {value} became {became}"));
+                    }
+                }
+            }
+            _ => out.push(format!("{key}: lost {row}")),
+        }
+    }
+    for row in gained {
+        if !lost.iter().any(|was| paired(was, row)) {
+            out.push(format!("{key}: gained {row}"));
+        }
+    }
+    out
 }
 
 /// An index the core cannot open, one per startup report window the shell paints (§11.2a).

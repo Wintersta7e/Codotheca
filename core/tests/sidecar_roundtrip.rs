@@ -32,7 +32,7 @@ use codotheca_core::scan::store::SqliteScanStore;
 use codotheca_core::scan::ScanSupervisor;
 use codotheca_core::sync::runner::NullSyncSink;
 use codotheca_core::testing::events::ValidatingSink;
-use codotheca_core::testing::sidecar::build_library;
+use codotheca_core::testing::sidecar::{build_library, compare_documents};
 use codotheca_core::testing::FakeClock;
 
 const NOW: i64 = 1_760_000_000;
@@ -180,90 +180,6 @@ fn rediscover(index: &Arc<Mutex<Index>>, events: &Arc<ValidatingSink>, data: &Pa
     }
 }
 
-/// `value` with every list sorted by its rows' text. The export lists rows in id order, and a
-/// rebuild assigns ids anew, so order is not part of what a round trip keeps.
-fn canonical(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::Array(rows) => {
-            let mut rows: Vec<_> = rows.into_iter().map(canonical).collect();
-            rows.sort_by_cached_key(ToString::to_string);
-            serde_json::Value::Array(rows)
-        }
-        serde_json::Value::Object(map) => {
-            serde_json::Value::Object(map.into_iter().map(|(k, v)| (k, canonical(v))).collect())
-        }
-        other => other,
-    }
-}
-
-/// Each top-level key of the payload, and each section on its own, as canonical rows; a map's
-/// entries are rows of their own.
-fn by_key(doc: &Sidecar) -> BTreeMap<String, Vec<serde_json::Value>> {
-    let payload = canonical(serde_json::to_value(&doc.payload).unwrap());
-    let mut out = BTreeMap::new();
-    for (key, value) in payload.as_object().unwrap() {
-        let mut put = |name: String, held: &serde_json::Value| {
-            let rows = match held {
-                serde_json::Value::Array(rows) => rows.clone(),
-                serde_json::Value::Object(map) => map
-                    .iter()
-                    .map(|(k, v)| serde_json::json!({ "key": k, "value": v }))
-                    .collect(),
-                other => vec![other.clone()],
-            };
-            out.insert(name, rows);
-        };
-        if key == "sections" {
-            for (section, rows) in value.as_object().unwrap() {
-                put(format!("sections.{section}"), rows);
-            }
-        } else {
-            put(key.clone(), value);
-        }
-    }
-    out
-}
-
-/// How `before`'s rows and `after`'s differ under `key`. Rows that name a subject are paired by
-/// it and named by field, so a value the restore dropped is named rather than buried in a row.
-fn differences(
-    key: &str,
-    before: &[serde_json::Value],
-    after: &[serde_json::Value],
-) -> Vec<String> {
-    let lost: Vec<_> = before.iter().filter(|row| !after.contains(row)).collect();
-    let gained: Vec<_> = after.iter().filter(|row| !before.contains(row)).collect();
-    let mut out = Vec::new();
-    for row in &lost {
-        let twin = gained.iter().find(|other| {
-            row.get("subject").is_some() && other.get("subject") == row.get("subject")
-        });
-        match (row.as_object(), twin.and_then(|t| t.as_object())) {
-            (Some(was), Some(now)) => {
-                for (field, value) in was {
-                    if now.get(field) != Some(value) {
-                        out.push(format!(
-                            "{key}[{}].{field}: {value} became {}",
-                            row["subject"],
-                            now.get(field).unwrap_or(&serde_json::Value::Null)
-                        ));
-                    }
-                }
-            }
-            _ => out.push(format!("{key}: lost {row}")),
-        }
-    }
-    for row in gained {
-        if !lost
-            .iter()
-            .any(|was| was.get("subject").is_some() && was.get("subject") == row.get("subject"))
-        {
-            out.push(format!("{key}: gained {row}"));
-        }
-    }
-    out
-}
-
 /// AC-P4-48-16: every key of the sidecar, every registered section among them, survives the
 /// export, the rebuild and the rediscovery unchanged, but for `generation` and `written_at`.
 #[test]
@@ -281,25 +197,21 @@ fn ac_p4_48_16_sections_round_trip() {
         assert_ne!(populated[*key], 0, "the library populates no {key}");
     }
 
-    let (before, after) = (by_key(&trip.before), by_key(&trip.after));
-    let keys: BTreeSet<&String> = before.keys().chain(after.keys()).collect();
-    let mut compared = 0;
-    let mut differ = Vec::new();
-    for key in keys {
-        let (b, a) = (
-            before.get(key).cloned().unwrap_or_default(),
-            after.get(key).cloned().unwrap_or_default(),
-        );
-        eprintln!("{key}: {} compared", b.len());
-        compared += b.len();
-        differ.extend(differences(key, &b, &a));
+    let comparison = compare_documents(&trip.before, &trip.after).unwrap();
+    for (key, n) in &comparison.compared {
+        eprintln!("{key}: {n} compared");
     }
-    for line in &differ {
+    for line in &comparison.differences {
         eprintln!("{line}");
     }
+    let compared: usize = comparison.compared.values().sum();
     eprintln!("rows compared: {compared}");
     assert_ne!(compared, 0, "a round trip of nothing proves nothing");
-    assert_eq!(differ, Vec::<String>::new(), "the round trip changed");
+    assert_eq!(
+        comparison.differences,
+        Vec::<String>::new(),
+        "the round trip changed"
+    );
 }
 
 /// AC-P4-48-19, its ledger half: the rebuilt index holds exactly the session-track XP rows the
