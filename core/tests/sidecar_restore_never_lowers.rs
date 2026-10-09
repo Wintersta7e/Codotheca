@@ -48,6 +48,18 @@ const CASES: &[Case] = &[
                  UPDATE account_org SET is_enabled = 1 - is_enabled",
         tables: &["account", "account_org"],
     },
+    Case {
+        section: "parcels",
+        differ: "UPDATE parcel SET check_result = 'missing', checked_at = 999;
+                 UPDATE parcel_ref SET oid = 'present'",
+        tables: &["parcel", "parcel_ref"],
+    },
+    Case {
+        section: "removal_records",
+        differ: "UPDATE removal_record SET ended_at = 999, disposal = 'gone_unconfirmed';
+                 UPDATE removal_log SET log = 'present'",
+        tables: &["removal_record", "removal_log"],
+    },
 ];
 
 fn section(name: &str) -> &'static SectionSpec {

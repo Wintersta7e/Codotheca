@@ -13,7 +13,11 @@
 
 use rusqlite::{params, Connection, OptionalExtension as _, Transaction};
 
-use crate::index::sidecar::{hex, unhex, SidecarLocationKey};
+use crate::index::pending::PendingRecord;
+use crate::index::sidecar::{
+    hex, unhex, RestoreCtx, RestoreOutcome, SectionRow, Sidecar, SidecarLocationKey,
+};
+use crate::index::subject::subject_for_project;
 use crate::index::IndexError;
 use crate::protocol::ProjectId;
 
@@ -470,6 +474,156 @@ pub fn restore_removal_record(
         )?;
     }
     Ok(true)
+}
+
+fn row_error(section: &str, error: impl std::fmt::Display) -> IndexError {
+    IndexError::Sidecar(format!("a {section} row: {error}"))
+}
+
+/// One section row per item `export` reads, for every project holding a row of `table`: under
+/// the project's subject, naming the one copy the item hangs off.
+fn section_rows<T: serde::Serialize>(
+    conn: &Connection,
+    section: &str,
+    table: &str,
+    export: fn(&Connection, ProjectId) -> Result<Vec<T>, IndexError>,
+    location: fn(&T) -> &SidecarLocationKey,
+) -> Result<Vec<SectionRow>, IndexError> {
+    let projects: Vec<i64> = conn
+        .prepare(&format!(
+            "SELECT DISTINCT project_id FROM {table} ORDER BY project_id"
+        ))?
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    let mut out = Vec::new();
+    for project in projects.into_iter().map(ProjectId) {
+        let subject = subject_for_project(conn, project)?.map(|s| s.to_key());
+        for item in export(conn, project)? {
+            out.push(SectionRow {
+                subject: subject.clone(),
+                location_keys: vec![location(&item).clone()],
+                data: serde_json::to_value(&item).map_err(|e| row_error(section, e))?,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// `row` decoded and handed to `restore` for the project it was matched to. A row that must wait
+/// answers `Pending`, never `Applied(0)`: the matcher deletes only an applied record, so one
+/// whose copy or parcel is not back yet stays for the write that brings it.
+fn restore_section<T: serde::de::DeserializeOwned>(
+    tx: &Transaction<'_>,
+    row: &SectionRow,
+    ctx: &RestoreCtx<'_>,
+    section: &str,
+    restore: fn(&Transaction<'_>, ProjectId, &T) -> Result<bool, IndexError>,
+) -> Result<RestoreOutcome, IndexError> {
+    let Some(project) = ctx.project else {
+        return Ok(RestoreOutcome::Pending);
+    };
+    let item: T = serde_json::from_value(row.data.clone()).map_err(|e| row_error(section, e))?;
+    Ok(if restore(tx, project, &item)? {
+        RestoreOutcome::Applied(1)
+    } else {
+        RestoreOutcome::Pending
+    })
+}
+
+/// The `parcels` section's export: one row per parcel, through [`export_parcels`].
+///
+/// # Errors
+/// [`IndexError::Sqlite`] when a read fails; [`IndexError::Sidecar`] when a parcel does not
+/// serialise.
+pub fn export_parcels_section(conn: &Connection) -> Result<Vec<SectionRow>, IndexError> {
+    section_rows(conn, PARCELS_SECTION, "parcel", export_parcels, |p| {
+        &p.location
+    })
+}
+
+/// The `parcels` section's restore, through [`restore_parcel`].
+///
+/// `Applied(1)` once written, and `Pending` — the matcher deletes only an applied record — when
+/// no project was matched or the parcel must wait.
+///
+/// # Errors
+/// [`IndexError::Sidecar`] when the row does not decode or a hex field is malformed;
+/// [`IndexError::Sqlite`] when a read or an insert fails.
+pub fn restore_parcels_section(
+    tx: &Transaction<'_>,
+    row: &SectionRow,
+    ctx: &RestoreCtx<'_>,
+) -> Result<RestoreOutcome, IndexError> {
+    restore_section(tx, row, ctx, PARCELS_SECTION, restore_parcel)
+}
+
+/// The `removal_records` section's export: one row per record, through
+/// [`export_removal_records`].
+///
+/// # Errors
+/// [`IndexError::Sqlite`] when a read fails; [`IndexError::Sidecar`] when a record does not
+/// serialise.
+pub fn export_removal_records_section(conn: &Connection) -> Result<Vec<SectionRow>, IndexError> {
+    section_rows(
+        conn,
+        REMOVAL_RECORDS_SECTION,
+        "removal_record",
+        export_removal_records,
+        |r| &r.location,
+    )
+}
+
+/// The `removal_records` section's restore, through [`restore_removal_record`].
+///
+/// `Applied(1)` once written, and `Pending` — the matcher deletes only an applied record — when
+/// no project was matched or the record must wait.
+///
+/// # Errors
+/// [`IndexError::Sidecar`] when the row does not decode or a hex field is malformed;
+/// [`IndexError::Sqlite`] when a read or an insert fails.
+pub fn restore_removal_records_section(
+    tx: &Transaction<'_>,
+    row: &SectionRow,
+    ctx: &RestoreCtx<'_>,
+) -> Result<RestoreOutcome, IndexError> {
+    restore_section(
+        tx,
+        row,
+        ctx,
+        REMOVAL_RECORDS_SECTION,
+        restore_removal_record,
+    )
+}
+
+/// The highest parcel id and the highest removal-record id `doc` carries, for [`reserve_ids`]:
+/// in its two sections, and in the pending rows of theirs an earlier rebuild left waiting.
+#[must_use]
+pub fn highest_ids(doc: &Sidecar) -> (Option<i64>, Option<i64>) {
+    let carried: Vec<(String, SectionRow)> = doc
+        .payload
+        .pending
+        .iter()
+        .filter_map(|p| match serde_json::from_str(&p.record) {
+            Ok(PendingRecord::Section { name, row }) => Some((name, row)),
+            _ => None,
+        })
+        .collect();
+    let highest = |section: &str| {
+        doc.payload
+            .sections
+            .get(section)
+            .into_iter()
+            .flatten()
+            .chain(
+                carried
+                    .iter()
+                    .filter(|(name, _)| name == section)
+                    .map(|(_, row)| row),
+            )
+            .filter_map(|row| row.data.get("id").and_then(serde_json::Value::as_i64))
+            .max()
+    };
+    (highest(PARCELS_SECTION), highest(REMOVAL_RECORDS_SECTION))
 }
 
 /// Raise the `parcel` and `removal_record` sequences to at least the highest id a waiting record

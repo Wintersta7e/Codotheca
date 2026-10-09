@@ -9,10 +9,19 @@ use rusqlite::{Connection, OptionalExtension as _};
 use crate::index::IndexError;
 use crate::protocol::{LocationId, ProjectId};
 
+/// The text of [`IS_CURRENT_SQL`], for a constant that splices the predicate at compile time:
+/// `concat!` takes literals only.
+macro_rules! is_current_sql {
+    () => {
+        "(p.removed_at IS NULL AND EXISTS (SELECT 1 FROM location cur_l \
+         WHERE cur_l.project_id = p.id AND cur_l.removed_at IS NULL))"
+    };
+}
+pub(crate) use is_current_sql;
+
 /// The predicate as a SQL boolean over a `project` row aliased `p`, so a list query filters on
 /// exactly what [`is_current`] answers rather than a second spelling of it.
-pub const IS_CURRENT_SQL: &str = "(p.removed_at IS NULL AND EXISTS (SELECT 1 FROM location cur_l \
-     WHERE cur_l.project_id = p.id AND cur_l.removed_at IS NULL))";
+pub const IS_CURRENT_SQL: &str = is_current_sql!();
 
 /// Whether `project` is current. A project the index does not hold is not.
 ///

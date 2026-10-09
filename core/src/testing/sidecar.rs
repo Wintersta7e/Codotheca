@@ -56,6 +56,8 @@ pub const SECTION_FIXTURES: &[(&str, SectionFixture)] = &[
     ("location_trust", trusted_copy),
     ("readme_consent", consented_readme),
     ("accounts", connected_account),
+    ("parcels", plant_parcels),
+    ("removal_records", plant_removal_records),
 ];
 
 /// A project with one present copy, for a fixture that rules on a project or trusts a copy.
@@ -185,6 +187,113 @@ fn uninstalled_project(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), In
          VALUES (?1, ?2, 100, 160, 60, 'stop')",
         [project, tx.last_insert_rowid()],
     )?;
+    Ok(())
+}
+
+/// A copy of `project` at `path` that this app removed. Answers its id.
+fn removed_copy(tx: &Transaction<'_>, project: ProjectId, path: &str) -> Result<i64, IndexError> {
+    tx.execute(
+        "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display, store_key,
+                               presence, repo_kind, removed_at)
+         VALUES (?1, 'linux', ?2, ?2, ?3, 'fixture', 'missing', 'worktree', 40)",
+        rusqlite::params![project.0, path.as_bytes(), path],
+    )?;
+    Ok(tx.last_insert_rowid())
+}
+
+/// A sealed parcel of `location`'s copy with two refs: one in the top-level repository and one
+/// in a nested repository whose path no UTF-8 decoder accepts.
+fn sealed_parcel(
+    tx: &Transaction<'_>,
+    project: ProjectId,
+    location: i64,
+) -> Result<(), IndexError> {
+    tx.execute(
+        "INSERT INTO parcel (project_id, location_id, state, folder_bytes, dir_name, staging_bytes,
+                             volume_key, store_class, lineage_key, state_digest, manifest_sha256,
+                             total_bytes, git_version, tar_version, session_nonce, created_at,
+                             sealed_at, check_result)
+         VALUES (?1, ?2, 'sealed', x'2f6b6565702fff', 'fixture-parcel',
+                 x'2f6b6565702f2e7374616765', 'vol-1', 'local', 'fixture-lineage', 'digest-a',
+                 'manifest-a', 4096, '2.43.0', '1.34', x'00ff10', 41, 42, 'ok')",
+        rusqlite::params![project.0, location],
+    )?;
+    let parcel = tx.last_insert_rowid();
+    for (repo_path, ref_name, oid) in [
+        (
+            &b""[..],
+            "refs/heads/main",
+            "1111111111111111111111111111111111111111",
+        ),
+        (
+            &b"vendor/\xff\xfe-lib"[..],
+            "refs/tags/v1",
+            "2222222222222222222222222222222222222222",
+        ),
+    ] {
+        tx.execute(
+            "INSERT INTO parcel_ref (parcel_id, repo_path, ref_name, oid) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![parcel, repo_path, ref_name, oid],
+        )?;
+    }
+    Ok(())
+}
+
+/// Two sealed parcels, each on a copy this app removed: one of a live project — the library's
+/// first, or one of its own in a library that has none — and one of a project the user removed.
+fn plant_parcels(tx: &Transaction<'_>, ids: &FixtureIds) -> Result<(), IndexError> {
+    let live = match ids.projects.first() {
+        Some(project) => *project,
+        None => present_project(tx, "parcelled")?.0,
+    };
+    let uninstalled = removed_copy(tx, live, "/fixture/parcelled-copy")?;
+    sealed_parcel(tx, live, uninstalled)?;
+    tx.execute(
+        "INSERT INTO project (name, seed_basename, lineage_key, removed_at, created_at, updated_at)
+         VALUES ('removed', 'removed', 'removed-lineage', 50, 1, 1)",
+        [],
+    )?;
+    let removed = ProjectId(tx.last_insert_rowid());
+    let copy = removed_copy(tx, removed, "/fixture/removed-copy")?;
+    sealed_parcel(tx, removed, copy)
+}
+
+/// A parcel already planted: its id, its project, its copy and the copy's path bytes.
+type PlantedParcel = (i64, i64, i64, Vec<u8>);
+
+fn planted_parcels(tx: &Transaction<'_>) -> Result<Vec<PlantedParcel>, IndexError> {
+    Ok(tx
+        .prepare(
+            "SELECT p.id, p.project_id, p.location_id, l.path_bytes
+               FROM parcel p JOIN location l ON l.id = p.location_id ORDER BY p.id",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<Result<_, _>>()?)
+}
+
+/// A finished removal of each parcel's copy, recovered through that parcel, with its log. A
+/// library with no parcel gets [`plant_parcels`]' first, since a record names its parcel.
+fn plant_removal_records(tx: &Transaction<'_>, ids: &FixtureIds) -> Result<(), IndexError> {
+    let mut planted = planted_parcels(tx)?;
+    if planted.is_empty() {
+        plant_parcels(tx, ids)?;
+        planted = planted_parcels(tx)?;
+    }
+    for (parcel, project, location, path) in planted {
+        tx.execute(
+            "INSERT INTO removal_record (project_id, location_id, kind, state, path_bytes, planned,
+                                         lineage_key, state_digest, recovery, parcel_id,
+                                         disposal, readme_name, readme_text, readme_truncated,
+                                         session_nonce, started_at, ended_at)
+             VALUES (?1, ?2, 'uninstall', 'done', ?3, 'trash', 'fixture-lineage', 'digest-a',
+                     'parcel', ?4, 'trashed', 'README.md', 'what it was', 0, x'00ff10', 40, 44)",
+            rusqlite::params![project, location, path, parcel],
+        )?;
+        tx.execute(
+            "INSERT INTO removal_log (removal_id, format, log) VALUES (?1, 1, 'abc first commit')",
+            [tx.last_insert_rowid()],
+        )?;
+    }
     Ok(())
 }
 
@@ -571,10 +680,32 @@ fn canonical(value: Value) -> Value {
     }
 }
 
+/// `payload` without the two columns of a live project's removed copy that a rebuild allocates
+/// anew. The matcher re-creates the copy under the project the scan found, at the next id, and
+/// the registry classifies `location.id` and `location.project_id` as derivable for that reason:
+/// the record names the copy by its key. Every other column of the row is compared.
+fn without_allocated_ids(mut payload: Value) -> Value {
+    let projects = payload.get_mut("projects").and_then(Value::as_array_mut);
+    for project in projects.into_iter().flatten() {
+        let removed = project
+            .get_mut("removed_locations")
+            .and_then(Value::as_array_mut);
+        for row in removed.into_iter().flatten() {
+            if let Some(columns) = row.as_object_mut() {
+                columns.remove("id");
+                columns.remove("project_id");
+            }
+        }
+    }
+    payload
+}
+
 /// Each top-level key of the payload, and each section on its own, as canonical rows; a map's
 /// entries are rows of their own.
 fn by_key(doc: &Sidecar) -> Result<BTreeMap<String, Vec<Value>>, IndexError> {
-    let payload = canonical(serde_json::to_value(&doc.payload).map_err(other)?);
+    let payload = canonical(without_allocated_ids(
+        serde_json::to_value(&doc.payload).map_err(other)?,
+    ));
     let Value::Object(keys) = payload else {
         return Err(other("a sidecar payload that is not an object"));
     };

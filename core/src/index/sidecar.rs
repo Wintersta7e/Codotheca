@@ -292,6 +292,26 @@ pub const SECTIONS: &[SectionSpec] = &[
         export: super::sections::export_accounts,
         restore: super::sections::restore_accounts,
     },
+    // §46.14: parcels before records, because a record may name a parcel. The ids name
+    // directories on disk, so a restore keeps them and never overwrites one already held.
+    SectionSpec {
+        name: "parcels",
+        owner: "§46",
+        scope: Scope::Subject,
+        rule: RestoreRule::WriteOnce,
+        preserves_ids: &["parcel"],
+        export: crate::removal::sidecar::export_parcels_section,
+        restore: crate::removal::sidecar::restore_parcels_section,
+    },
+    SectionSpec {
+        name: "removal_records",
+        owner: "§46",
+        scope: Scope::Subject,
+        rule: RestoreRule::WriteOnce,
+        preserves_ids: &["removal_record"],
+        export: crate::removal::sidecar::export_removal_records_section,
+        restore: crate::removal::sidecar::restore_removal_records_section,
+    },
 ];
 
 /// Something the schema holds that a rebuild could lose: a whole table, or one column of one.
@@ -456,6 +476,20 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     (
         Entry::Table("account_org"),
         Classification::Section("accounts"),
+    ),
+    // §46.14: a parcel travels with its refs, a removal record with its log.
+    (Entry::Table("parcel"), Classification::Section("parcels")),
+    (
+        Entry::Table("parcel_ref"),
+        Classification::Section("parcels"),
+    ),
+    (
+        Entry::Table("removal_record"),
+        Classification::Section("removal_records"),
+    ),
+    (
+        Entry::Table("removal_log"),
+        Classification::Section("removal_records"),
     ),
     (Entry::Table("sidecar_pending"), Classification::Pending),
     (
@@ -627,6 +661,11 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     (
         Entry::Column("project", "readme_remote_at"),
         Classification::Section("readme_consent"),
+    ),
+    // §46.14: a project with it set is never current, so it is `no_scan` and travels whole.
+    (
+        Entry::Column("project", "removed_at"),
+        Classification::Section("no_scan_projects"),
     ),
     // `location`, column by column: the keys travel, and a removed copy travels whole (§48.8.1).
     (

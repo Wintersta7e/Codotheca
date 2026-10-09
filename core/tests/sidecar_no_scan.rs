@@ -318,3 +318,74 @@ fn a_zero_location_project_is_not_no_scan() {
     eprintln!("no_scan cases: {cases}");
     assert_eq!(cases, 4);
 }
+
+/// AC-P4-48-21, the tombstone half: a project the user removed is never current, so no scan hands
+/// it off even when its only copy was never removed — here one that is offline. The rebuild alone
+/// re-creates it, every `project` and `location` column as exported and its ids kept. A removed
+/// project with no copy at all is still not `no_scan`: it never had a copy to find.
+#[test]
+fn ac_p4_48_21_tombstone() {
+    let dir = tempfile::tempdir().unwrap();
+    let original = Index::open_at(dir.path(), NOW).unwrap();
+    let conn = original.conn();
+    conn.execute(
+        "INSERT INTO project (id, name, seed_basename, lineage_key, notes, removed_at, created_at,
+                              updated_at)
+         VALUES (12, 'removed', 'removed-dir', 'removed-lineage', 'a kept note', 950, 11, 22)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO location (id, project_id, kind, path_bytes, path_key, path_display, store_key,
+                               presence, repo_kind, branch)
+         VALUES (31, 12, 'linux', x'2f722f6f66666c696e65', x'2f722f6f66666c696e65', '/r/offline',
+                 's', 'missing', 'worktree', 'main')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO project (id, name, seed_basename, remote_key, removed_at, created_at,
+                              updated_at)
+         VALUES (13, 'never-cloned', 'never-cloned', 'example.invalid/owner/never-cloned', 960, 1,
+                 1)",
+        [],
+    )
+    .unwrap();
+    let tombstone = is_no_scan(conn, ProjectId(12)).unwrap();
+    let no_location = is_no_scan(conn, ProjectId(13)).unwrap();
+    eprintln!("removed with a live copy: {tombstone}; removed with no copy: {no_location}");
+    assert!(
+        tombstone,
+        "a removed project waits for a scan that never comes"
+    );
+    assert!(
+        !no_location,
+        "a removed project with no copy is not no_scan"
+    );
+    let before = [dump(conn, "project", 12), dump(conn, "location", 31)];
+
+    let report = export_corrupt_and_rebuild(dir.path(), original);
+    eprintln!(
+        "restored: {:?}, pending: {}",
+        report.restored, report.pending
+    );
+    assert_eq!(report.restored.get("no_scan_projects"), Some(&1));
+
+    let rebuilt = Index::open_at(dir.path(), NOW + 2).unwrap();
+    let back = rebuilt.conn();
+    assert_eq!(
+        count(back, "SELECT count(*) FROM scan_run WHERE id >= ?1", 0),
+        0,
+        "a scan ran"
+    );
+    let after = [dump(back, "project", 12), dump(back, "location", 31)];
+    let mut compared = 0_u32;
+    for (old, new) in before.iter().zip(&after) {
+        for (column, value) in old {
+            assert_eq!(&new[column], value, "column {column}");
+            compared += 1;
+        }
+    }
+    eprintln!("project and location columns compared: {compared}");
+    assert_ne!(compared, 0);
+}

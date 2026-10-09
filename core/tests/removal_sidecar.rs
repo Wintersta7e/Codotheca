@@ -8,11 +8,16 @@
     clippy::indexing_slicing
 )]
 
-use codotheca_core::index::Index;
-use codotheca_core::protocol::ProjectId;
+use codotheca_core::index::pending::{match_pending, stage_pending, PendingRecord};
+use codotheca_core::index::rebuild::{rebuild_in_place, RebuildOutcome};
+use codotheca_core::index::sidecar::{export, RestoreCtx, RestoreOutcome, SectionRow};
+use codotheca_core::index::subject::subject_for_project;
+use codotheca_core::index::{Index, IndexError};
+use codotheca_core::protocol::{LocationId, ProjectId};
 use codotheca_core::removal::sidecar::{
-    export_parcels, export_removal_records, reserve_ids, restore_parcel, restore_removal_record,
-    SidecarParcel, SidecarRemovalRecord,
+    export_parcels, export_parcels_section, export_removal_records, export_removal_records_section,
+    reserve_ids, restore_parcel, restore_parcels_section, restore_removal_record,
+    restore_removal_records_section, SidecarParcel, SidecarRemovalRecord,
 };
 use rusqlite::types::Value;
 use rusqlite::{params, Connection, OptionalExtension as _};
@@ -531,4 +536,380 @@ fn a_released_location_key_round_trips() {
         export_removal_records(b.conn(), ProjectId(b_kept)).unwrap(),
         records
     );
+}
+
+/// A project the user removed comes back from the rebuild's restore transaction, since no scan
+/// will ever hand it off; its parcel and record come back with it, under their own ids, and
+/// nothing is left waiting.
+#[test]
+fn a_rebuild_restores_a_removed_projects_parcels_and_records_with_no_scan() {
+    let (dir, index) = open();
+    {
+        let conn = index.conn();
+        let removed = project(conn, "removed");
+        conn.execute(
+            "UPDATE project SET removed_at = 95 WHERE id = ?1",
+            [removed],
+        )
+        .unwrap();
+        let gone = copy(conn, removed, "/r/removed-old", Some(90));
+        sealed_parcel(conn, Some(PARCEL), removed, gone);
+        done_record(conn, Some(RECORD), removed, gone, PARCEL);
+    }
+    let was = removal_rows(index.conn());
+    index.export_sidecar(NOW).unwrap();
+    drop(index);
+    std::fs::write(Index::db_path(dir.path()), b"this is not a database").unwrap();
+    let report = match rebuild_in_place(dir.path(), NOW + 1) {
+        Ok(RebuildOutcome::Rebuilt(report)) => report,
+        other => panic!("expected a rebuild, got {other:?}"),
+    };
+    eprintln!(
+        "restored: {:?}, pending: {}",
+        report.restored, report.pending
+    );
+
+    let rebuilt = Index::open_at(dir.path(), NOW + 2).unwrap();
+    let conn = rebuilt.conn();
+    let scans: i64 = conn
+        .query_row("SELECT count(*) FROM scan_run", [], |r| r.get(0))
+        .unwrap();
+    let waiting: i64 = conn
+        .query_row("SELECT count(*) FROM sidecar_pending", [], |r| r.get(0))
+        .unwrap();
+    let now = removal_rows(conn);
+    eprintln!(
+        "rows back: {}, scans run: {scans}, waiting: {waiting}",
+        now.iter().map(Vec::len).sum::<usize>()
+    );
+    assert_eq!(now, was, "the removal rows came back changed");
+    assert_eq!(report.restored.get("parcels"), Some(&1));
+    assert_eq!(report.restored.get("removal_records"), Some(&1));
+    assert_eq!(scans, 0, "a scan ran");
+    assert_eq!((report.pending, waiting), (0, 0), "a record still waits");
+}
+
+/// A section's restore, as the registry holds it.
+type Restore = fn(
+    &rusqlite::Transaction<'_>,
+    &SectionRow,
+    &RestoreCtx<'_>,
+) -> Result<RestoreOutcome, IndexError>;
+
+fn unhex(text: &str) -> Vec<u8> {
+    text.as_bytes()
+        .chunks(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+        .collect()
+}
+
+/// `row` through `restore` as the matcher hands it over: matched to `project`, each of its keys
+/// resolved to that project's copy there, if it has one.
+fn restore_row(
+    index: &mut Index,
+    project: Option<i64>,
+    row: &SectionRow,
+    restore: Restore,
+) -> RestoreOutcome {
+    index
+        .with_tx(|tx| {
+            let mut locations = Vec::new();
+            for key in &row.location_keys {
+                let found: Option<i64> = tx
+                    .query_row(
+                        "SELECT id FROM location
+                          WHERE project_id = ?1 AND kind = ?2 AND distro = ?3 AND path_key = ?4",
+                        params![project, key.kind, key.distro, unhex(&key.path_key)],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if let Some(id) = found {
+                    locations.push((key.clone(), LocationId(id)));
+                }
+            }
+            let ctx = RestoreCtx {
+                now: NOW,
+                project: project.map(ProjectId),
+                locations: &locations,
+                source_generation: 1,
+            };
+            restore(tx, row, &ctx)
+        })
+        .unwrap()
+}
+
+fn written(index: &Index) -> usize {
+    removal_rows(index.conn()).iter().map(Vec::len).sum()
+}
+
+#[test]
+fn adapters_round_trip_through_section_rows() {
+    let (_a_dir, a) = open();
+    let (kept, _) = exported_side(&a);
+    let parcels = export_parcels_section(a.conn()).unwrap();
+    let records = export_removal_records_section(a.conn()).unwrap();
+    eprintln!(
+        "section rows: {} parcels, {} records",
+        parcels.len(),
+        records.len()
+    );
+    assert_eq!((parcels.len(), records.len()), (1, 1));
+    let subject = subject_for_project(a.conn(), ProjectId(kept))
+        .unwrap()
+        .unwrap()
+        .to_key();
+    let typed = (
+        export_parcels(a.conn(), ProjectId(kept)).unwrap(),
+        export_removal_records(a.conn(), ProjectId(kept)).unwrap(),
+    );
+    for (row, key) in [
+        (&parcels[0], &typed.0[0].location),
+        (&records[0], &typed.1[0].location),
+    ] {
+        assert_eq!(row.subject.as_deref(), Some(subject.as_str()));
+        assert_eq!(
+            row.location_keys,
+            std::slice::from_ref(key),
+            "a row names its own copy"
+        );
+    }
+
+    let (_b_dir, mut b) = open();
+    let b_kept = {
+        let conn = b.conn();
+        let unrelated = project(conn, "unrelated");
+        copy(conn, unrelated, "/r/unrelated", None);
+        let b_kept = project(conn, "kept");
+        copy(conn, b_kept, "/r/kept", None);
+        copy(conn, b_kept, "/r/kept-old", Some(90));
+        b_kept
+    };
+    let outcomes = [
+        restore_row(&mut b, Some(b_kept), &parcels[0], restore_parcels_section),
+        restore_row(
+            &mut b,
+            Some(b_kept),
+            &records[0],
+            restore_removal_records_section,
+        ),
+    ];
+    eprintln!("restored through the adapters: {outcomes:?}");
+    assert_eq!(outcomes, [RestoreOutcome::Applied(1); 2]);
+    assert_eq!(
+        export_parcels(b.conn(), ProjectId(b_kept)).unwrap(),
+        typed.0
+    );
+    assert_eq!(
+        export_removal_records(b.conn(), ProjectId(b_kept)).unwrap(),
+        typed.1
+    );
+}
+
+#[test]
+fn adapters_map_a_row_left_pending_to_pending() {
+    let (_a_dir, a) = open();
+    exported_side(&a);
+    let parcel = export_parcels_section(a.conn()).unwrap().remove(0);
+    let record = export_removal_records_section(a.conn()).unwrap().remove(0);
+
+    // The project has no copy at the rows' key.
+    let (_b_dir, mut b) = open();
+    let b_kept = {
+        let conn = b.conn();
+        let b_kept = project(conn, "kept");
+        copy(conn, b_kept, "/r/kept", None);
+        b_kept
+    };
+    let no_copy = [
+        restore_row(&mut b, Some(b_kept), &parcel, restore_parcels_section),
+        restore_row(
+            &mut b,
+            Some(b_kept),
+            &record,
+            restore_removal_records_section,
+        ),
+    ];
+    eprintln!(
+        "no copy at the key: {no_copy:?}, rows written {}",
+        written(&b)
+    );
+    assert_eq!(no_copy, [RestoreOutcome::Pending; 2]);
+    assert_eq!(written(&b), 0);
+
+    // No project matched yet.
+    let (_c_dir, mut c) = open();
+    let c_kept = {
+        let conn = c.conn();
+        let c_kept = project(conn, "kept");
+        copy(conn, c_kept, "/r/kept-old", Some(90));
+        c_kept
+    };
+    let no_project = [
+        restore_row(&mut c, None, &parcel, restore_parcels_section),
+        restore_row(&mut c, None, &record, restore_removal_records_section),
+    ];
+    eprintln!("no project: {no_project:?}, rows written {}", written(&c));
+    assert_eq!(no_project, [RestoreOutcome::Pending; 2]);
+    assert_eq!(written(&c), 0);
+
+    // A record before its parcel waits, and applies once the parcel is in.
+    let early = restore_row(
+        &mut c,
+        Some(c_kept),
+        &record,
+        restore_removal_records_section,
+    );
+    eprintln!(
+        "the record before its parcel: {early:?}, rows written {}",
+        written(&c)
+    );
+    assert_eq!(early, RestoreOutcome::Pending);
+    assert_eq!(written(&c), 0);
+    let then = [
+        restore_row(&mut c, Some(c_kept), &parcel, restore_parcels_section),
+        restore_row(
+            &mut c,
+            Some(c_kept),
+            &record,
+            restore_removal_records_section,
+        ),
+    ];
+    eprintln!("then the parcel and the record: {then:?}");
+    assert_eq!(then, [RestoreOutcome::Applied(1); 2]);
+
+    // Their ids are now held: a second restore writes nothing.
+    let present = removal_rows(c.conn());
+    let again = [
+        restore_row(&mut c, Some(c_kept), &parcel, restore_parcels_section),
+        restore_row(
+            &mut c,
+            Some(c_kept),
+            &record,
+            restore_removal_records_section,
+        ),
+    ];
+    eprintln!("over held ids: {again:?}");
+    assert_eq!(again, [RestoreOutcome::Pending; 2]);
+    assert_eq!(removal_rows(c.conn()), present);
+}
+
+#[test]
+fn adapters_a_pending_row_survives_the_matcher() {
+    // Two removed copies with a parcel each; the index the document is staged into has only the
+    // first of them.
+    let (_a_dir, a) = open();
+    let (kept, _) = exported_side(&a);
+    let elsewhere = copy(a.conn(), kept, "/r/kept-elsewhere", Some(91));
+    sealed_parcel(a.conn(), Some(PARCEL + 1), kept, elsewhere);
+    let mut doc = export(a.conn(), 1, NOW).unwrap();
+    // The project's own record would re-create every removed copy, so the document carries the
+    // parcels alone.
+    doc.payload.projects.clear();
+    doc.payload.sections.retain(|name, _| name == "parcels");
+    let rows = doc.payload.sections.get("parcels").map_or(0, Vec::len);
+    eprintln!("parcels rows in the document: {rows}");
+    assert_eq!(rows, 2);
+
+    let (_b_dir, mut b) = open();
+    let b_kept = {
+        let conn = b.conn();
+        let b_kept = project(conn, "kept");
+        copy(conn, b_kept, "/r/kept", None);
+        copy(conn, b_kept, "/r/kept-old", Some(90));
+        b_kept
+    };
+    let report = b
+        .with_tx(|tx| {
+            stage_pending(tx, &doc, NOW)?;
+            match_pending(tx, ProjectId(b_kept), NOW)
+        })
+        .unwrap();
+    let held: Vec<i64> = b
+        .conn()
+        .prepare("SELECT id FROM parcel ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let waiting: Vec<i64> = b
+        .conn()
+        .prepare("SELECT record FROM sidecar_pending ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .map(
+            |record| match serde_json::from_str(&record.unwrap()).unwrap() {
+                PendingRecord::Section { row, .. } => {
+                    serde_json::from_value::<SidecarParcel>(row.data)
+                        .unwrap()
+                        .id
+                }
+                PendingRecord::Project { .. } => panic!("a project record was staged"),
+            },
+        )
+        .collect();
+    eprintln!(
+        "applied {:?}; parcels held {held:?}; parcels waiting {waiting:?}",
+        report.applied
+    );
+    assert_eq!(report.applied.get("parcels"), Some(&1));
+    assert_eq!(held, [PARCEL]);
+    assert_eq!(waiting, [PARCEL + 1], "the unresolved row was dropped");
+}
+
+/// Export, close, overwrite the index with bytes SQLite reads as no database, and rebuild.
+fn export_corrupt_and_rebuild(dir: &std::path::Path, index: Index, at: i64) {
+    index.export_sidecar(at).unwrap();
+    drop(index);
+    std::fs::write(Index::db_path(dir), b"this is not a database").unwrap();
+    match rebuild_in_place(dir, at + 1) {
+        Ok(RebuildOutcome::Rebuilt(report)) => eprintln!(
+            "rebuilt: restored {:?}, {} pending",
+            report.restored, report.pending
+        ),
+        other => panic!("expected a rebuild, got {other:?}"),
+    }
+}
+
+/// A live project's parcel and record wait for the scan that brings its copy back. Until then
+/// their ids are reserved — through a second rebuild too, when they travel only as pending rows —
+/// so a parcel or record made first can never take one.
+#[test]
+fn a_rebuild_reserves_the_ids_of_parcels_and_records_still_waiting() {
+    let (dir, index) = open();
+    exported_side(&index);
+    export_corrupt_and_rebuild(dir.path(), index, NOW);
+    let first = Index::open_at(dir.path(), NOW + 2).unwrap();
+    let after_one = (
+        sequence(first.conn(), "parcel"),
+        sequence(first.conn(), "removal_record"),
+    );
+    eprintln!("sequences after one rebuild: {after_one:?}");
+
+    export_corrupt_and_rebuild(dir.path(), first, NOW + 10);
+    let second = Index::open_at(dir.path(), NOW + 12).unwrap();
+    let waiting: i64 = second
+        .conn()
+        .query_row("SELECT count(*) FROM sidecar_pending", [], |r| r.get(0))
+        .unwrap();
+    let after_two = (
+        sequence(second.conn(), "parcel"),
+        sequence(second.conn(), "removal_record"),
+    );
+    let (parcel, record) = {
+        let conn = second.conn();
+        let made = project(conn, "made-first");
+        let at = copy(conn, made, "/r/made-first-old", Some(90));
+        let parcel = sealed_parcel(conn, None, made, at);
+        (parcel, done_record(conn, None, made, at, parcel))
+    };
+    eprintln!(
+        "after a second rebuild: sequences {after_two:?}, {waiting} waiting; made first: parcel \
+         {parcel}, record {record}"
+    );
+    assert_eq!(after_one, (Some(PARCEL), Some(RECORD)));
+    assert_eq!(after_two, (Some(PARCEL), Some(RECORD)));
+    assert!(parcel > PARCEL, "parcel {parcel} takes a waiting id");
+    assert!(record > RECORD, "record {record} takes a waiting id");
 }

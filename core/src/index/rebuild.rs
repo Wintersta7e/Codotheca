@@ -375,9 +375,10 @@ fn rebuild_beside(
 /// section's projects with their own records applied, the per-subject records staged for the
 /// hand-off, and the generation the document continues from (§48.8.1).
 ///
-/// An id a section preserves needs no sequence fix-up here: SQLite raises an `AUTOINCREMENT`
-/// table's sequence to every id inserted explicitly, so the next new row is past the highest one
-/// restored.
+/// An id a section preserves needs no sequence fix-up once restored: SQLite raises an
+/// `AUTOINCREMENT` table's sequence to every id inserted explicitly, so the next new row is past
+/// the highest one restored. A parcel or removal record still waiting for its copy has inserted
+/// nothing yet, so its id is reserved before anything is staged (§46.14).
 fn restore(
     conn: &mut Connection,
     doc: &Sidecar,
@@ -424,6 +425,10 @@ fn restore(
         restored.insert(section.name.to_owned(), applied);
     }
 
+    // §46.14: a parcel's directory name ends in its id, so no row made before its record matches
+    // may take it.
+    let (parcels, records) = crate::removal::sidecar::highest_ids(doc);
+    crate::removal::sidecar::reserve_ids(&tx, parcels, records)?;
     pending::stage_pending(&tx, doc, now)?;
     // Every project in the fresh index is one a `NoScan` section just re-created. No scan will
     // hand it off, so its records apply here (§48.8.3).

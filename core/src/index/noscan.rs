@@ -12,15 +12,18 @@ use super::sidecar::{
 };
 use super::subject::subject_for_project;
 use super::IndexError;
+use crate::projects::current::is_current_sql;
 use crate::protocol::ProjectId;
 
 /// The `WHERE` fragment over `project p` selecting a project no scan can rediscover.
 ///
-/// One with at least one location and none this app has not removed. A project with no location
-/// at all is a not-cloned one — it has no subject, and sync lists it again — so it is not one.
-pub const NO_SCAN_PREDICATE_SQL: &str =
-    "EXISTS (SELECT 1 FROM location l WHERE l.project_id = p.id)
-     AND NOT EXISTS (SELECT 1 FROM location l WHERE l.project_id = p.id AND l.removed_at IS NULL)";
+/// One with at least one location that is not current (§46.14): the user removed it, or this app
+/// removed every copy of it. A project with no location at all is a not-cloned one — it has no
+/// subject, and sync lists it again — so it is not one, removed or not.
+pub const NO_SCAN_PREDICATE_SQL: &str = concat!(
+    "EXISTS (SELECT 1 FROM location l WHERE l.project_id = p.id) AND NOT ",
+    is_current_sql!()
+);
 
 /// Whether no scan can ever rediscover `project`, so only the sidecar can bring it back.
 ///
