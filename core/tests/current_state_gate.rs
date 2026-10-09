@@ -8,6 +8,9 @@
 //!
 //! The page and the Peek of a removed copy, or of a removed project, answer from what is stored
 //! and ask for no reading at all; a live copy's page in the same rig asks once.
+//!
+//! §46.20's source audit: `project.removed_at` is read in `projects/current.rs` alone, and every
+//! other statement naming it is a listed writer.
 
 #![cfg(feature = "testkit")]
 #![allow(
@@ -22,6 +25,8 @@ mod support;
 #[path = "support/detail_rig.rs"]
 mod detail_rig;
 
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -388,4 +393,517 @@ fn ac_p4_46_20_a_removed_projects_peek_queues_no_job() {
         .expect("owned")
         .expect("the live Peek answers");
     assert_eq!(asked(&rig), [(2, 2)], "the live project's Peek asks once");
+}
+
+/// The sites outside `projects/current.rs` whose statements name `project.removed_at`, each
+/// `(path under core/src, flagged literals, why)`. Every one is a writer. A later writer of the
+/// column appends its own entry, and a count that no longer matches the tree fails: a stale list
+/// is a false claim.
+const PROJECT_REMOVED_AT_SITES: &[(&str, usize, &str)] = &[
+    (
+        "identity/store.rs",
+        1,
+        "`clear_removed_on_find` takes the removal back when a copy of the same lineage is found",
+    ),
+    (
+        "identity/merge.rs",
+        1,
+        "§1.5's merge rule: the survivor stays removed only while it has no live copy",
+    ),
+    (
+        "testing/sidecar.rs",
+        1,
+        "a testkit fixture plants a removed project for the sidecar's round trip",
+    ),
+];
+
+/// The names a reader of the current state goes through.
+const CONSUMERS: [&str; 4] = [
+    "IS_CURRENT_SQL",
+    "is_current_sql!(",
+    "is_current(",
+    "location_is_current(",
+];
+
+/// What one pass of the audit read and found.
+struct Audit {
+    files: usize,
+    literals: usize,
+    /// `(path under the root, literal)` for every literal that reads `project.removed_at`.
+    flagged: Vec<(String, String)>,
+    /// `(path under the root, occurrences)` of the current-state names, per file that has any.
+    consumers: Vec<(String, usize)>,
+}
+
+fn is_ident(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Whether `pattern` starts at `chars[i]`.
+fn starts_at(chars: &[char], i: usize, pattern: &str) -> bool {
+    pattern
+        .chars()
+        .enumerate()
+        .all(|(k, c)| chars.get(i + k) == Some(&c))
+}
+
+/// Where a raw string starting at `chars[i]` opens: its `#` count and the index of its `"`. An `r`
+/// opens one only at the start of a token, or after a `b` that is.
+fn raw_string_at(chars: &[char], i: usize) -> Option<(usize, usize)> {
+    if chars.get(i) != Some(&'r') {
+        return None;
+    }
+    let before = |back: usize| i.checked_sub(back).and_then(|j| chars.get(j)).copied();
+    let token_start = match before(1) {
+        Some('b') => !matches!(before(2), Some(c) if is_ident(c)),
+        Some(c) => !is_ident(c),
+        None => true,
+    };
+    if !token_start {
+        return None;
+    }
+    let mut open = i + 1;
+    while chars.get(open) == Some(&'#') {
+        open += 1;
+    }
+    (chars.get(open) == Some(&'"')).then_some((open - i - 1, open))
+}
+
+/// A `"…"` literal's text from just past its opening quote, and the index after its closing one.
+fn quoted(chars: &[char], start: usize) -> (String, usize) {
+    let mut text = String::new();
+    let mut i = start;
+    while let Some(&c) = chars.get(i) {
+        i += 1;
+        match c {
+            '"' => break,
+            '\\' => match chars.get(i) {
+                // A line continuation drops the line break and the next line's indent.
+                Some('\n' | '\r') => {
+                    while chars.get(i).is_some_and(|next| next.is_whitespace()) {
+                        i += 1;
+                    }
+                }
+                Some('n' | 'r' | 't') => {
+                    text.push(' ');
+                    i += 1;
+                }
+                Some(&escaped) => {
+                    text.push(escaped);
+                    i += 1;
+                }
+                None => {}
+            },
+            _ => text.push(c),
+        }
+    }
+    (text, i)
+}
+
+/// Whether the word at `chars[i]` is `word`, not the start of a longer identifier.
+fn word_at(chars: &[char], i: usize, word: &str) -> bool {
+    starts_at(chars, i, word) && !chars.get(i + word.len()).is_some_and(|&c| is_ident(c))
+}
+
+/// Whether the `#[cfg(test)]` ending at `chars[i]` gates a `mod`: past whitespace, any further
+/// outer attributes and a `pub` or `pub(…)`, the next word is `mod`.
+fn gates_mod(chars: &[char], mut i: usize) -> bool {
+    loop {
+        while chars.get(i).is_some_and(|c| c.is_whitespace()) {
+            i += 1;
+        }
+        if !starts_at(chars, i, "#[") {
+            break;
+        }
+        // An attribute ends where its brackets balance.
+        let mut depth = 0_usize;
+        while let Some(&c) = chars.get(i) {
+            i += 1;
+            if c == '[' {
+                depth += 1;
+            } else if c == ']' {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+        }
+    }
+    if word_at(chars, i, "pub") {
+        i += 3;
+        while chars.get(i).is_some_and(|c| c.is_whitespace()) {
+            i += 1;
+        }
+        if chars.get(i) == Some(&'(') {
+            i = (i..chars.len())
+                .find(|&j| chars[j] == ')')
+                .map_or(chars.len(), |j| j + 1);
+        }
+        while chars.get(i).is_some_and(|c| c.is_whitespace()) {
+            i += 1;
+        }
+    }
+    word_at(chars, i, "mod")
+}
+
+/// One file's code and string literals: comments dropped, each literal's text taken out of the
+/// code, and the file cut at its first `#[cfg(test)]` that gates a `mod`, where its tests begin.
+/// One gating anything else, a statement or a single item, cuts nothing.
+fn split_source(source: &str) -> (String, Vec<String>) {
+    let chars: Vec<char> = source.chars().collect();
+    let mut code = String::new();
+    let mut literals = Vec::new();
+    let mut i = 0;
+    while let Some(&c) = chars.get(i) {
+        if starts_at(&chars, i, "#[cfg(test)]") && gates_mod(&chars, i + "#[cfg(test)]".len()) {
+            break;
+        }
+        if starts_at(&chars, i, "//") {
+            while chars.get(i).is_some_and(|&next| next != '\n') {
+                i += 1;
+            }
+        } else if starts_at(&chars, i, "/*") {
+            // A block comment may hold another, and ends only where the outer one closes.
+            let mut depth = 0_usize;
+            while i < chars.len() {
+                if starts_at(&chars, i, "/*") {
+                    depth += 1;
+                    i += 2;
+                } else if starts_at(&chars, i, "*/") {
+                    depth -= 1;
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+        } else if let Some((hashes, open)) = raw_string_at(&chars, i) {
+            let close = (open + 1..chars.len())
+                .find(|&j| chars[j] == '"' && (1..=hashes).all(|k| chars.get(j + k) == Some(&'#')))
+                .unwrap_or(chars.len());
+            literals.push(chars[open + 1..close].iter().collect());
+            code.push_str("\"\"");
+            i = close + 1 + hashes;
+        } else if c == '"' {
+            let (literal, next) = quoted(&chars, i + 1);
+            literals.push(literal);
+            code.push_str("\"\"");
+            i = next;
+        } else {
+            // `'x'` and `'\…'` are characters, so `'"'` opens no string; a `'` with no closing
+            // quote two along is a lifetime or a label.
+            let char_end = if c != '\'' {
+                None
+            } else if chars.get(i + 1) == Some(&'\\') {
+                (i + 3..chars.len()).find(|&j| chars[j] == '\'')
+            } else {
+                (chars.get(i + 2) == Some(&'\'')).then_some(i + 2)
+            };
+            if let Some(end) = char_end {
+                i = end + 1;
+                continue;
+            }
+            code.push(c);
+            i += 1;
+        }
+    }
+    (code, literals)
+}
+
+/// A literal as SQL words and single punctuation marks, lower-cased, whitespace dropped.
+fn sql_tokens(literal: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut word = String::new();
+    for c in literal.chars().flat_map(char::to_lowercase) {
+        if is_ident(c) {
+            word.push(c);
+            continue;
+        }
+        if !word.is_empty() {
+            tokens.push(std::mem::take(&mut word));
+        }
+        if !c.is_whitespace() {
+            tokens.push(c.to_string());
+        }
+    }
+    if !word.is_empty() {
+        tokens.push(word);
+    }
+    tokens
+}
+
+/// Whether a literal reads `project.removed_at`: it names the `project` table, and a `removed_at`
+/// in it is not qualified by a name the same literal binds to `location`. `project_dependency` is
+/// one word, so it never names `project`.
+fn reads_project_removed_at(literal: &str) -> bool {
+    let tokens = sql_tokens(literal);
+    let word = |i: usize| tokens.get(i).map_or("", String::as_str);
+    let names_project = (0..tokens.len())
+        .any(|i| ["from", "join", "update", "into"].contains(&word(i)) && word(i + 1) == "project");
+    if !names_project {
+        return false;
+    }
+    // `FROM location l`, `JOIN location AS l`, and the table's own name.
+    let mut location = Vec::new();
+    for i in 0..tokens.len() {
+        if ["from", "join"].contains(&word(i)) && word(i + 1) == "location" {
+            let alias = if word(i + 2) == "as" {
+                word(i + 3)
+            } else {
+                word(i + 2)
+            };
+            location.extend(["location", alias]);
+        }
+    }
+    (0..tokens.len()).any(|i| {
+        word(i) == "removed_at"
+            && !(i >= 2 && word(i - 1) == "." && location.contains(&word(i - 2)))
+    })
+}
+
+/// Occurrences of `name` in `code` that do not continue an identifier.
+fn count_name(code: &str, name: &str) -> usize {
+    code.match_indices(name)
+        .filter(|&(at, _)| {
+            let before = code.get(..at).and_then(|head| head.chars().next_back());
+            !matches!(before, Some(c) if is_ident(c))
+        })
+        .count()
+}
+
+fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+    for entry in std::fs::read_dir(dir).expect("the tree reads").flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk(&path, out);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
+}
+
+/// The audit over every `.rs` under `root` but `projects/current.rs`, where the predicate is
+/// written.
+fn audit(root: &Path) -> Audit {
+    let mut files = Vec::new();
+    walk(root, &mut files);
+    files.sort();
+    let mut found = Audit {
+        files: 0,
+        literals: 0,
+        flagged: Vec::new(),
+        consumers: Vec::new(),
+    };
+    for file in files {
+        let path = file
+            .strip_prefix(root)
+            .expect("under the root")
+            .to_string_lossy()
+            .replace('\\', "/");
+        if path == "projects/current.rs" {
+            continue;
+        }
+        let source = std::fs::read_to_string(&file).expect("a source file reads");
+        let (code, literals) = split_source(&source);
+        found.files += 1;
+        found.literals += literals.len();
+        found.flagged.extend(
+            literals
+                .into_iter()
+                .filter(|literal| reads_project_removed_at(literal))
+                .map(|literal| (path.clone(), literal)),
+        );
+        let consumers: usize = CONSUMERS.iter().map(|name| count_name(&code, name)).sum();
+        if consumers > 0 {
+            found.consumers.push((path, consumers));
+        }
+    }
+    found
+}
+
+/// Planted sources, `(file, flagged, text)`: each one shape the audit must read right.
+const PLANTED: [(&str, bool, &str); 11] = [
+    (
+        "alias_read.rs",
+        true,
+        r#"fn f() { let _ = "SELECT id FROM project p WHERE p.removed_at IS NULL"; }"#,
+    ),
+    (
+        "raw_unqualified.rs",
+        true,
+        r##"fn f() { let _ = r#"SELECT id FROM project WHERE removed_at IS NULL"#; }"##,
+    ),
+    (
+        // A `"` in a character, and escaped quotes inside the literal, keep it one literal.
+        "escaped_quotes.rs",
+        true,
+        r#"fn f<'a>(_: &'a str) {
+    let _q = '"';
+    let _ = "SELECT id FROM project WHERE note = \"x\" AND removed_at IS NULL";
+}"#,
+    ),
+    (
+        "location_read.rs",
+        false,
+        r#"fn f() {
+    let _ = "SELECT l.id FROM location l JOIN project p ON p.id = l.project_id
+              WHERE l.removed_at IS NULL";
+}"#,
+    ),
+    (
+        "line_comment.rs",
+        false,
+        r#"// let _ = "SELECT id FROM project p WHERE p.removed_at IS NULL";
+fn f() {}"#,
+    ),
+    (
+        "nested_comment.rs",
+        false,
+        r#"/* outer /* inner */ "SELECT id FROM project p WHERE p.removed_at IS NULL" */
+fn f() {}"#,
+    ),
+    (
+        "after_cfg_test.rs",
+        false,
+        r#"fn f() {}
+#[cfg(test)]
+mod tests {
+    fn g() { let _ = "SELECT id FROM project p WHERE p.removed_at IS NULL"; }
+}"#,
+    ),
+    (
+        "after_attributed_pub_mod.rs",
+        false,
+        r#"fn f() {}
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+pub(crate) mod tests {
+    fn g() { let _ = "SELECT id FROM project p WHERE p.removed_at IS NULL"; }
+}"#,
+    ),
+    (
+        // A `#[cfg(test)]` on one statement leaves the production code after it in scope.
+        "statement_cfg_test.rs",
+        true,
+        r#"fn f() {
+    #[cfg(test)]
+    let _probe = 1;
+    let _ = "SELECT id FROM project p WHERE p.removed_at IS NULL";
+}"#,
+    ),
+    (
+        "dependency.rs",
+        false,
+        r#"fn f() { let _ = "SELECT d.id FROM project_dependency d WHERE d.removed_at IS NULL"; }"#,
+    ),
+    (
+        "consumers.rs",
+        false,
+        r#"fn f(conn: &Connection) {
+    let _ = crate::projects::current::location_is_current(conn, 1);
+    let _ = crate::projects::current::is_current(conn, 2);
+    let _ = crate::projects::current::IS_CURRENT_SQL;
+    // crate::projects::current::is_current(conn, 3) in a comment is no consumer
+    let _ = "is_current(";
+}"#,
+    ),
+];
+
+#[test]
+fn the_audit_flags_a_planted_hand_write_and_passes_a_location_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let planted = PLANTED;
+    for (name, _, source) in &planted {
+        std::fs::write(dir.path().join(name), source).unwrap();
+    }
+
+    let found = audit(dir.path());
+    let mut flagged: Vec<&str> = found
+        .flagged
+        .iter()
+        .map(|(path, _)| path.as_str())
+        .collect();
+    for (name, _, _) in &planted {
+        let verdict = if flagged.contains(name) {
+            "flagged"
+        } else {
+            "passed"
+        };
+        eprintln!("{name}: {verdict}");
+    }
+    eprintln!(
+        "files scanned: {}, literals scanned: {}, consumers: {:?}",
+        found.files, found.literals, found.consumers
+    );
+    let mut expected: Vec<&str> = planted
+        .iter()
+        .filter(|(_, flag, _)| *flag)
+        .map(|(name, _, _)| *name)
+        .collect();
+    flagged.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(flagged, expected);
+    assert_eq!(found.files, planted.len());
+    assert_eq!(found.consumers, [("consumers.rs".to_owned(), 3)]);
+}
+
+#[test]
+fn ac_p4_46_20_the_predicate_is_written_in_one_place() {
+    let found = audit(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
+    let consumers: usize = found.consumers.iter().map(|(_, n)| n).sum();
+    let mut sites: BTreeMap<&str, usize> = BTreeMap::new();
+    for (path, literal) in &found.flagged {
+        let one_line = literal.split_whitespace().collect::<Vec<_>>().join(" ");
+        eprintln!("flagged: {path}: {one_line}");
+        *sites.entry(path.as_str()).or_default() += 1;
+    }
+    eprintln!(
+        "files scanned: {}, literals scanned: {}, flagged literals: {}, permitted sites: {}, \
+         consumers: {consumers} {:?}",
+        found.files,
+        found.literals,
+        found.flagged.len(),
+        PROJECT_REMOVED_AT_SITES.len(),
+        found.consumers
+    );
+    // A gate whose passing run scans nothing is a failing gate.
+    assert!(found.files > 0, "no source file was scanned");
+    assert!(found.literals > 0, "no string literal was scanned");
+    assert!(
+        consumers > 0,
+        "nothing reads the current state through its helper"
+    );
+
+    let unlisted: Vec<&str> = sites
+        .keys()
+        .copied()
+        .filter(|path| {
+            !PROJECT_REMOVED_AT_SITES
+                .iter()
+                .any(|(site, _, _)| site == path)
+        })
+        .collect();
+    assert_eq!(
+        unlisted,
+        Vec::<&str>::new(),
+        "project.removed_at is written by hand outside projects/current.rs"
+    );
+    let stale: Vec<(&str, usize, usize)> = PROJECT_REMOVED_AT_SITES
+        .iter()
+        .map(|&(site, listed, _)| (site, listed, sites.get(site).copied().unwrap_or(0)))
+        .filter(|(_, listed, measured)| listed != measured)
+        .collect();
+    assert_eq!(
+        stale,
+        [],
+        "a listed site's count no longer matches the tree"
+    );
+    let unreasoned: Vec<&str> = PROJECT_REMOVED_AT_SITES
+        .iter()
+        .filter(|(_, _, why)| why.trim().is_empty())
+        .map(|(site, _, _)| *site)
+        .collect();
+    assert_eq!(unreasoned, Vec::<&str>::new(), "a site carries no reason");
 }
