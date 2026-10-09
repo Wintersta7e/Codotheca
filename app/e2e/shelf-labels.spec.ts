@@ -5,6 +5,8 @@ import * as path from 'node:path';
 
 import { _electron as electron, expect, test, type Page } from '@playwright/test';
 
+import { homeEnv } from './isolatedHome.js';
+
 // Playwright transpiles specs to CommonJS, so `__dirname` is correct here and `import.meta` is
 // not — the opposite of every vitest file in this repo.
 const appDir = path.resolve(__dirname, '..');
@@ -103,7 +105,7 @@ test('the shelf’s labels stand apart from the captions beside them', async () 
   const app = await electron.launch({
     args: ['.', `--user-data-dir=${userData}`],
     cwd: appDir,
-    env: { ...process.env, HOME: home, USERPROFILE: home, CODOTHECA_DATA_DIR: userData },
+    env: { ...process.env, ...homeEnv(home), CODOTHECA_DATA_DIR: userData },
   });
   try {
     const window = await app.firstWindow();

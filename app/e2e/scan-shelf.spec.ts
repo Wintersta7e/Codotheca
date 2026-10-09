@@ -5,6 +5,8 @@ import * as path from 'node:path';
 
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 
+import { homeEnv } from './isolatedHome.js';
+
 // Playwright transpiles specs to CommonJS, so `__dirname` is correct here and `import.meta` is
 // not — the opposite of every vitest file in this repo.
 const appDir = path.resolve(__dirname, '..');
@@ -77,7 +79,7 @@ function launch(home: string): Promise<ElectronApplication> {
     cwd: appDir,
     // `HOME` is what the core reads for §10.1a's conventional locations and for `user.email`, so
     // both the row offered and the identity seeded are this test's, never the developer's own.
-    env: { ...process.env, HOME: home, USERPROFILE: home, CODOTHECA_DATA_DIR: userData },
+    env: { ...process.env, ...homeEnv(home), CODOTHECA_DATA_DIR: userData },
   });
 }
 

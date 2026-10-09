@@ -12,6 +12,8 @@ import {
   type TestInfo,
 } from '@playwright/test';
 
+import { homeEnv } from './isolatedHome.js';
+
 // Playwright transpiles specs to CommonJS, so `__dirname` is correct here and `import.meta` is
 // not — the opposite of every vitest file in this repo.
 const appDir = path.resolve(__dirname, '..');
@@ -96,7 +98,7 @@ test.beforeAll(() => {
  * machine's would add an address the planted library never held.
  */
 async function launch(dataDir: string, home?: string): Promise<ElectronApplication> {
-  const isolated = home === undefined ? {} : { HOME: home, XDG_CONFIG_HOME: home };
+  const isolated = home === undefined ? {} : homeEnv(home);
   return electron.launch({
     args: ['.', `--user-data-dir=${dataDir}`],
     cwd: appDir,

@@ -209,9 +209,13 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
 
   const dir = mkdtempSync(path.join(tmpdir(), 'cdt-topbar-'));
   writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'h', main: 'main.cjs' }));
+  // The constants are measured at a device scale factor of 1. Text lays out up to 3px narrower
+  // on a scaled desktop: 125–200% measured floors of 523–526, never wider, so the widest
+  // measurement is the one the constants hold, and it is the one every hosted runner takes.
   writeFileSync(
     path.join(dir, 'main.cjs'),
     `const { app, BrowserWindow } = require('electron');
+     app.commandLine.appendSwitch('force-device-scale-factor', '1');
      app.whenReady().then(() => {
        new BrowserWindow({ width: 1600, height: 300, show: false, useContentSize: true })
          .loadURL('about:blank');
