@@ -75,10 +75,12 @@ describe('the README pipeline', () => {
       .filter((el) => el.hasAttribute('href'))
       .map((el) => el.getAttribute('href') ?? '');
     expect(hrefs.length, 'the document carries at least one anchor to judge').toBeGreaterThan(0);
+    // An allowlist read by the URL parser, the reader a click uses: a prefix check misses any
+    // scheme it does not name, and `java\tscript:` or a leading space. A relative href resolves
+    // against the https base and passes.
     for (const href of hrefs) {
-      expect(href, href).toMatch(/^(?:https?:|mailto:|#|\/|[^a-z+.-]|[a-z+.-]+[^a-z+.-:])/iu);
-      expect(href.toLowerCase().startsWith('javascript:')).toBe(false);
-      expect(href.toLowerCase().startsWith('data:')).toBe(false);
+      const { protocol } = new URL(href, 'https://base.test/');
+      expect(['http:', 'https:', 'mailto:'], href).toContain(protocol);
     }
 
     // 4. Every image is a placeholder with no `src` attribute at all, so the first frame
