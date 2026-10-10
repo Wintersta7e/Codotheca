@@ -264,7 +264,7 @@ impl Rig {
             git: Arc::clone(&self.git),
             clock: self.clock.clone(),
             cancel: CancelToken::new(),
-            tz_offset_min: 0,
+            zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         }
     }
 

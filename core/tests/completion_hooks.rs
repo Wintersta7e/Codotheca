@@ -199,7 +199,7 @@ fn a_job_settle_leaves_ten_rows_and_a_moved_projection() {
         )),
         clock,
         cancel: CancelToken::new(),
-        tz_offset_min: 0,
+        zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     };
     let runner = JobRunner::new(Arc::clone(&index), deps, Arc::new(SilentSink));
     assert!(runner.enqueue(Job {

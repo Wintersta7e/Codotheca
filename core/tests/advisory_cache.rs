@@ -58,7 +58,7 @@ fn rig() -> Rig {
             tokens: Arc::new(FakeTokenStore::available()),
             clock,
             cancel: codotheca_core::cancel::CancelToken::new(),
-            tz_offset_min: 0,
+            zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         },
         _dir: dir,
     }

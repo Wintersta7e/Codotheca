@@ -24,6 +24,26 @@ use codotheca_core::protocol::{DebtScoring, DebtSource, ProjectId};
 const NOON: i64 = 1_789_646_400;
 const DAY: i64 = 86_400;
 
+/// [`pay_debt_day`] at `now` framed in `offset_min` — the frame a production caller takes from its
+/// zone at the closing instant. These tests fix the offset to state the date they expect.
+fn pay_at(
+    tx: &rusqlite::Transaction<'_>,
+    project: ProjectId,
+    effect: &SweepEffect,
+    now: i64,
+    offset_min: i32,
+) -> Result<codotheca_core::debt::xp::DebtDayPayout, codotheca_core::debt::DebtError> {
+    pay_debt_day(
+        tx,
+        project,
+        effect,
+        codotheca_core::clock::LocalInstant {
+            unix: now,
+            offset_min,
+        },
+    )
+}
+
 fn fresh() -> (tempfile::TempDir, rusqlite::Connection) {
     let dir = tempfile::tempdir().unwrap();
     let mut conn = open_connection(&Index::db_path(dir.path())).unwrap();
@@ -160,7 +180,7 @@ fn ac_p3_28_5_forty_closures_on_an_enrolled_project_in_one_day_pay_once() {
     let subject = lineage_subject().to_key();
 
     let tx = conn.transaction().unwrap();
-    let first = pay_debt_day(
+    let first = pay_at(
         &tx,
         ProjectId(p),
         &closures(40, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -193,7 +213,7 @@ fn ac_p3_28_5_forty_closures_on_an_enrolled_project_in_one_day_pay_once() {
 
     // A second closure, later the same local day, from a different source.
     let second_tx = conn.transaction().unwrap();
-    let second = pay_debt_day(
+    let second = pay_at(
         &second_tx,
         ProjectId(p),
         &closures(2, DebtCloseReason::Fixed, DebtSource::MissingReadme),
@@ -236,7 +256,7 @@ fn ac_p3_28_15_an_invalidated_closure_on_an_enrolled_project_pays_nothing() {
     let p = insert_enrolled_project(&conn, "thing");
 
     let tx = conn.transaction().unwrap();
-    let only_withdrawn = pay_debt_day(
+    let only_withdrawn = pay_at(
         &tx,
         ProjectId(p),
         &closures(
@@ -260,7 +280,7 @@ fn ac_p3_28_15_an_invalidated_closure_on_an_enrolled_project_pays_nothing() {
 
     // A real closure the same day pays, and a withdrawal afterwards leaves it alone.
     let fixed_tx = conn.transaction().unwrap();
-    pay_debt_day(
+    pay_at(
         &fixed_tx,
         ProjectId(p),
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -273,7 +293,7 @@ fn ac_p3_28_15_an_invalidated_closure_on_an_enrolled_project_pays_nothing() {
     assert_eq!(meta(&conn)["closed"], 1);
 
     let withdrawn_tx = conn.transaction().unwrap();
-    pay_debt_day(
+    pay_at(
         &withdrawn_tx,
         ProjectId(p),
         &closures(
@@ -301,7 +321,7 @@ fn a_shown_only_closure_pays_nothing_and_leaves_the_day_to_what_pays() {
     let p = insert_enrolled_project(&conn, "thing");
 
     let tx = conn.transaction().unwrap();
-    let alone = pay_debt_day(
+    let alone = pay_at(
         &tx,
         ProjectId(p),
         &SweepEffect {
@@ -322,7 +342,7 @@ fn a_shown_only_closure_pays_nothing_and_leaves_the_day_to_what_pays() {
     assert_eq!(xp_count(&conn), 0);
 
     let mixed_tx = conn.transaction().unwrap();
-    let mixed = pay_debt_day(
+    let mixed = pay_at(
         &mixed_tx,
         ProjectId(p),
         &SweepEffect {
@@ -371,7 +391,7 @@ fn an_unenrolled_project_is_paid_nothing_and_nothing_later() {
     let p = insert_project_as(&conn, "thing", None, false);
 
     let tx = conn.transaction().unwrap();
-    let unenrolled = pay_debt_day(
+    let unenrolled = pay_at(
         &tx,
         ProjectId(p),
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -389,7 +409,7 @@ fn an_unenrolled_project_is_paid_nothing_and_nothing_later() {
     )
     .unwrap();
     let enrolled_tx = conn.transaction().unwrap();
-    let enrolled = pay_debt_day(
+    let enrolled = pay_at(
         &enrolled_tx,
         ProjectId(p),
         &closures(1, DebtCloseReason::Fixed, DebtSource::MissingReadme),
@@ -420,7 +440,7 @@ fn an_archived_acknowledged_project_is_still_paid() {
     let p = insert_project_as(&conn, "thing", Some(1), true);
 
     let tx = conn.transaction().unwrap();
-    let paid = pay_debt_day(
+    let paid = pay_at(
         &tx,
         ProjectId(p),
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -446,7 +466,7 @@ fn two_projects_with_no_lineage_do_not_collide_on_one_date() {
 
     let tx = conn.transaction().unwrap();
     for (project, byte) in [(a, 0xaa_u8), (b, 0xbb_u8)] {
-        let paid = pay_debt_day(
+        let paid = pay_at(
             &tx,
             ProjectId(project),
             &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -493,7 +513,7 @@ fn a_reference_project_is_paid_nothing() {
     .unwrap();
 
     let tx = conn.transaction().unwrap();
-    let reference = pay_debt_day(
+    let reference = pay_at(
         &tx,
         ProjectId(p),
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -508,7 +528,7 @@ fn a_reference_project_is_paid_nothing() {
     conn.execute("UPDATE project SET is_reference = 0 WHERE id = ?1", [p])
         .unwrap();
     let control_tx = conn.transaction().unwrap();
-    let control = pay_debt_day(
+    let control = pay_at(
         &control_tx,
         ProjectId(p),
         &closures(1, DebtCloseReason::Fixed, DebtSource::MissingReadme),
@@ -538,7 +558,7 @@ fn an_unclassified_project_is_still_paid() {
     assert_eq!(classified, (None, 0), "the fixture is not unclassified");
 
     let tx = conn.transaction().unwrap();
-    let paid = pay_debt_day(
+    let paid = pay_at(
         &tx,
         ProjectId(p),
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -567,7 +587,7 @@ fn a_project_with_no_subject_is_paid_nothing() {
     let p = conn.last_insert_rowid();
 
     let tx = conn.transaction().unwrap();
-    let paid = pay_debt_day(
+    let paid = pay_at(
         &tx,
         ProjectId(p),
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -610,7 +630,7 @@ fn a_debt_day_rows_local_date_is_its_ts_plus_offset() {
         let (_d, mut conn) = fresh();
         let p = insert_enrolled_project(&conn, "thing");
         let tx = conn.transaction().unwrap();
-        pay_debt_day(
+        pay_at(
             &tx,
             ProjectId(p),
             &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -645,7 +665,7 @@ fn closures_either_side_of_local_midnight_are_two_days() {
     let p = insert_enrolled_project(&conn, "thing");
 
     let tx = conn.transaction().unwrap();
-    pay_debt_day(
+    pay_at(
         &tx,
         ProjectId(p),
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -653,7 +673,7 @@ fn closures_either_side_of_local_midnight_are_two_days() {
         0,
     )
     .unwrap();
-    pay_debt_day(
+    pay_at(
         &tx,
         ProjectId(p),
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -673,7 +693,7 @@ fn closures_either_side_of_local_midnight_are_two_days() {
     let (_d2, mut other) = fresh();
     let q = insert_enrolled_project(&other, "thing");
     let other_tx = other.transaction().unwrap();
-    pay_debt_day(
+    pay_at(
         &other_tx,
         ProjectId(q),
         &closures(1, DebtCloseReason::Fixed, DebtSource::TodoMarker),
@@ -699,7 +719,7 @@ fn a_sweep_that_closed_nothing_writes_no_row() {
     let p = insert_enrolled_project(&conn, "thing");
 
     let tx = conn.transaction().unwrap();
-    let paid = pay_debt_day(&tx, ProjectId(p), &SweepEffect::default(), NOON, 0).unwrap();
+    let paid = pay_at(&tx, ProjectId(p), &SweepEffect::default(), NOON, 0).unwrap();
     tx.commit().unwrap();
 
     assert!(!paid.wrote_row);

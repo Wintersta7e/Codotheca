@@ -195,7 +195,7 @@ impl ReleaseRig {
             )),
             clock,
             cancel: CancelToken::new(),
-            tz_offset_min: 0,
+            zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         };
         let runner = JobRunner::new(Arc::clone(&self.index), deps, Arc::new(NullSink));
         assert!(runner.enqueue(Job {
@@ -377,8 +377,10 @@ impl J7Rig {
                 project: self.project,
                 location: self.location,
                 cursor: None,
-                now,
-                tz_offset_min: 0,
+                at: codotheca_core::clock::LocalInstant {
+                    unix: now,
+                    offset_min: 0,
+                },
                 detected_in: HealthDetectedIn::Background,
                 announce: None,
             },
@@ -584,7 +586,7 @@ impl AdvisoryRig {
             tokens: Arc::new(FakeTokenStore::available()),
             clock,
             cancel: CancelToken::new(),
-            tz_offset_min: 0,
+            zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         };
         let runner = SyncRunner::new(Arc::clone(&self.index), deps, Arc::new(NullSink));
         runner.start();

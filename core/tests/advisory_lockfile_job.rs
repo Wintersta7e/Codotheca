@@ -95,7 +95,7 @@ fn run_j6_as(
         )),
         clock,
         cancel: CancelToken::new(),
-        tz_offset_min: 0,
+        zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     };
     let runner = JobRunner::new(Arc::clone(&index), deps, Arc::new(SilentSink));
     assert!(runner.enqueue(Job {

@@ -58,8 +58,10 @@ fn settle(rig: &Rig, project: i64, now: i64) {
     codotheca_core::debt::singletons::settle_singletons(
         &tx,
         ProjectId(project),
-        now,
-        0,
+        codotheca_core::clock::LocalInstant {
+            unix: now,
+            offset_min: 0,
+        },
         &SqliteDebtStore,
     )
     .unwrap();

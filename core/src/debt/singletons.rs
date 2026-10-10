@@ -405,11 +405,10 @@ pub fn evaluate_singletons(
 pub fn settle_singletons(
     tx: &Transaction<'_>,
     project: ProjectId,
-    now: i64,
-    tz_offset_min: i32,
+    at: crate::clock::LocalInstant,
     store: &dyn DebtStore,
 ) -> Result<SweepEffect, DebtError> {
-    let effect = evaluate_singletons(tx, project, now, store)?;
-    super::xp::pay_debt_day(tx, project, &effect, now, tz_offset_min)?;
+    let effect = evaluate_singletons(tx, project, at.unix, store)?;
+    super::xp::pay_debt_day(tx, project, &effect, at)?;
     Ok(effect)
 }

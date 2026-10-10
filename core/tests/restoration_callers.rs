@@ -209,8 +209,10 @@ impl J7Rig {
                 project: self.project,
                 location: self.location,
                 cursor: None,
-                now: NOW,
-                tz_offset_min: 0,
+                at: codotheca_core::clock::LocalInstant {
+                    unix: NOW,
+                    offset_min: 0,
+                },
                 detected_in,
                 announce: Some(&announce),
             },
@@ -339,7 +341,7 @@ impl ReleaseRig {
             )),
             clock,
             cancel: CancelToken::new(),
-            tz_offset_min: 0,
+            zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         };
         let runner = JobRunner::new(Arc::clone(&self.index), deps, events);
         assert!(runner.enqueue(Job {

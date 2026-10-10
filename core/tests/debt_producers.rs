@@ -1136,7 +1136,11 @@ fn a_check_that_is_not_applicable_opens_nothing_and_closes_nothing() {
     };
     let xp_before = xp(&conn);
     let settle_tx = conn.transaction().unwrap();
-    let effect = settle_singletons(&settle_tx, ProjectId(lib), 20, 0, &SqliteDebtStore).unwrap();
+    let at = codotheca_core::clock::LocalInstant {
+        unix: 20,
+        offset_min: 0,
+    };
+    let effect = settle_singletons(&settle_tx, ProjectId(lib), at, &SqliteDebtStore).unwrap();
     settle_tx.commit().unwrap();
     eprintln!(
         "lib project after an N/A ruling: missing_tests items {}, closed {:?}, xp_events {} -> {}",

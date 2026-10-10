@@ -101,7 +101,7 @@ fn rig(repo: &TestRepo) -> Rig {
         clock: Arc::new(SystemClock::new()),
         cancel: CancelToken::new(),
         // UTC, so a test's local date never depends on the machine running it.
-        tz_offset_min: 0,
+        zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     };
     let runner = JobRunner::new(Arc::clone(&index), deps, events.clone());
 
@@ -341,7 +341,7 @@ fn the_pump_the_composition_root_builds_drains_a_handed_off_location() {
         )),
         Arc::new(SystemClock::new()),
         events.clone(),
-        0,
+        Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     );
 
     pump.sink()
@@ -437,7 +437,7 @@ fn the_visible_sink_answers_while_the_index_guard_is_held() {
         )),
         Arc::new(SystemClock::new()),
         events,
-        0,
+        Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     );
 
     let (done_tx, done_rx) = std::sync::mpsc::channel();

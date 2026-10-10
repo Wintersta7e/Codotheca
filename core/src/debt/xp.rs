@@ -18,11 +18,10 @@ use rusqlite::{OptionalExtension as _, Transaction};
 
 use super::store::{DebtCloseReason, SweepEffect};
 use super::{enum_from_text, enum_text, DebtError};
-use crate::git::local_day;
+use crate::clock::LocalInstant;
 use crate::health::acknowledge::read_acknowledged_at;
 use crate::health::enrolment::is_enrolled;
 use crate::index::subject::subject_for_project;
-use crate::jobs::j4_history::local_date;
 use crate::protocol::{DebtScoring, DebtSource, ProjectId};
 
 /// A call that wrote nothing: no paying closure, or a project the gates refuse.
@@ -81,6 +80,9 @@ pub fn debt_day_dedupe_key(subject_key: &str, local_date: &str) -> String {
 /// every such project collide on `debt_day::<date>`. The subject is read here, from the project
 /// row, so no caller can hand the writer a key that is not the project's own.
 ///
+/// **The day is `at`'s own local date** (§39.2 rule 5): the caller frames its closing instant in
+/// the zone in force at it, and the row stores that instant and that offset.
+///
 /// # Errors
 /// Fails when SQLite refuses the read or the write, the day's stored `meta` is not JSON, or it
 /// names a source this build's schema does not declare.
@@ -88,8 +90,7 @@ pub fn pay_debt_day(
     tx: &Transaction<'_>,
     project: ProjectId,
     effect: &SweepEffect,
-    now: i64,
-    tz_offset_min: i32,
+    at: LocalInstant,
 ) -> Result<DebtDayPayout, DebtError> {
     let paid: Vec<DebtSource> = effect
         .closed
@@ -123,8 +124,7 @@ pub fn pay_debt_day(
     };
     let subject_key = subject.to_key();
 
-    let date = local_date(local_day(now, tz_offset_min));
-    let dedupe = debt_day_dedupe_key(&subject_key, &date);
+    let dedupe = debt_day_dedupe_key(&subject_key, &at.date());
 
     // The day so far, read back before the merge: `meta` is the day's sentence and a sentence
     // describing only the first closure undercounts the day it claims to describe.
@@ -183,7 +183,7 @@ pub fn pay_debt_day(
             (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key, track, meta)
          VALUES (?1, ?2, ?3, ?4, 'debt_day', ?5, 'session', ?6)
          ON CONFLICT(dedupe_key) DO UPDATE SET meta = excluded.meta",
-        rusqlite::params![now, tz_offset_min, project.0, subject_key, dedupe, meta],
+        rusqlite::params![at.unix, at.offset_min, project.0, subject_key, dedupe, meta],
     )?;
 
     Ok(DebtDayPayout {

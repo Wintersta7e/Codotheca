@@ -346,11 +346,10 @@ pub struct ScanRun<'a> {
     pub location: LocationId,
     /// `project_job_state.cursor`, an ordinal into the filtered enumeration.
     pub cursor: Option<&'a str>,
-    /// The caller's clock, like every other writer in this tree.
-    pub now: i64,
-    /// The machine's offset, from `JobDeps`. §28.4's `debt_day` key is a **local** date and the
-    /// item build runs from here, so the run carries it rather than reading a zone.
-    pub tz_offset_min: i32,
+    /// The caller's clock reading, framed in the zone at that instant (`JobDeps.zone`). §28.4's
+    /// `debt_day` key is a **local** date and the item build runs from here, so the run carries
+    /// the frame rather than reading a zone; `at.unix` is the `now` every other row stores.
+    pub at: crate::clock::LocalInstant,
     /// [p3] §34.2's provenance of the job running this scan, recorded on any `health_delta` row
     /// the item build writes.
     pub detected_in: crate::protocol::HealthDetectedIn,
@@ -374,10 +373,11 @@ pub fn run_j7(
         project,
         location,
         cursor,
-        now,
+        at,
         announce,
         ..
     } = run;
+    let now = at.unix;
     let gates = super::read(index, |conn| gates_for(conn, project))?;
     // Predicate 1 stays in the job as defence-in-depth: `next_jobs_after` skips Reference, and
     // `projects.get` and `projects.requeue` are two entry points that do not go through it.
@@ -506,8 +506,7 @@ fn build_debt_items(
     let ScanRun {
         project,
         location,
-        now,
-        tz_offset_min,
+        at,
         detected_in,
         ..
     } = *run;
@@ -520,22 +519,21 @@ fn build_debt_items(
         Some(location),
         gates,
         &occurrences,
-        now,
+        at.unix,
         &store,
     )
     .map_err(debt_to_index)?;
 
     // The ledger row and the item deletions commit together: a tree with the items gone and no
     // payout, or a payout with the items still open, is the state the ordering prevents.
-    crate::debt::xp::pay_debt_day(tx, project, &effect, now, tz_offset_min)
-        .map_err(debt_to_index)?;
+    crate::debt::xp::pay_debt_day(tx, project, &effect, at).map_err(debt_to_index)?;
     crate::restoration::record_after_write(
         tx,
         project,
         &layers_before,
         &effect.closed,
         detected_in,
-        now,
+        at.unix,
     )
 }
 

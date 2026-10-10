@@ -86,15 +86,13 @@ pub fn next_jobs_after(done: JobKind, is_reference: Option<bool>) -> Vec<(JobKin
 fn settle_debt(
     tx: &rusqlite::Transaction<'_>,
     job: &Job,
-    now: i64,
-    tz_offset_min: i32,
+    at: crate::clock::LocalInstant,
 ) -> Result<Option<crate::protocol::ProjectHealthDelta>, crate::index::IndexError> {
     let layers_before = crate::restoration::LayerValues::read(tx, job.project_id)?;
     let effect = crate::debt::singletons::settle_singletons(
         tx,
         job.project_id,
-        now,
-        tz_offset_min,
+        at,
         &crate::debt::store::SqliteDebtStore,
     )
     .map_err(debt_to_index)?;
@@ -104,7 +102,7 @@ fn settle_debt(
         &layers_before,
         &effect.closed,
         crate::restoration::detected_in_for(job.origin),
-        now,
+        at.unix,
     )
 }
 
@@ -329,13 +327,14 @@ impl JobRunner {
         // The job row and the recompute land in one transaction: a settled job whose derived
         // values were not rewritten is a project the shelf sections into the wrong era.
         let (row, requeue_at) = apply_outcome(&previous, outcome, now);
-        let tz_offset_min = self.deps.tz_offset_min;
+        // §39.2 rule 5: the payout is dated in the offset in force at this settle's own instant.
+        let at = self.deps.zone.at(now);
         let recomputed = self.write_index(|tx| {
             put(tx, job.project_id, &row)?;
             // §28.2's singleton evaluator, and §34's producer around it. It runs **before** §31's
             // completion evaluator, or every Group-A check answers from the previous settle; do
             // not reorder them.
-            let announce = settle_debt(tx, job, now, tz_offset_min)?;
+            let announce = settle_debt(tx, job, at)?;
             let recomputed = crate::derive::persist::recompute(tx, job.project_id, now)?;
             // [p3] §31.5's evaluator — **hook site 1 of exactly two** (R123). None of §31.5's
             // three triggers is observable: `coverage_for` returns two booleans and

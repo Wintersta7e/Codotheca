@@ -926,7 +926,11 @@ fn ac_p3_28_14_a_shown_only_closure_through_the_singleton_settle_pays_nothing() 
     .unwrap();
 
     let tx = conn.transaction().unwrap();
-    settle_singletons(&tx, ProjectId(p), 1_789_646_400, 0, &SqliteDebtStore).unwrap();
+    let at = |unix| codotheca_core::clock::LocalInstant {
+        unix,
+        offset_min: 0,
+    };
+    settle_singletons(&tx, ProjectId(p), at(1_789_646_400), &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     let stored: Vec<String> = {
         let mut st = conn
@@ -952,8 +956,7 @@ fn ac_p3_28_14_a_shown_only_closure_through_the_singleton_settle_pays_nothing() 
     let closed = settle_singletons(
         &idle_tx,
         ProjectId(p),
-        1_789_646_400 + 60,
-        0,
+        at(1_789_646_400 + 60),
         &SqliteDebtStore,
     )
     .unwrap();

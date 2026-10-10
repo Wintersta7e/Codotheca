@@ -190,7 +190,7 @@ fn fixture_over(dwell: Duration, forge: Option<Arc<dyn HttpTransport>>) -> Fixtu
             clock,
             cancel: codotheca_core::cancel::CancelToken::new(),
             // UTC in a test, so a local date never depends on the machine running it.
-            tz_offset_min: 0,
+            zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         },
         account,
         project,

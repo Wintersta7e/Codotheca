@@ -1456,7 +1456,7 @@ fn real_runner(
         )),
         clock,
         cancel: CancelToken::new(),
-        tz_offset_min: 0,
+        zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     };
     codotheca_core::jobs::scheduler::JobRunner::new(Arc::clone(index), deps, sink.clone())
 }

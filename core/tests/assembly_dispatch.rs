@@ -296,7 +296,7 @@ mod corehandler {
                 clock.clone(),
                 events.clone(),
                 // UTC, so a test's local date never depends on the machine running it.
-                0,
+                Arc::new(codotheca_core::testing::zone::FixedZone(0)),
             ),
             // [p2] §21.1's runner, real and started, for the same reason the job pump above is:
             // `shutdown` stops it, and a handler built with one that never started would not
@@ -313,7 +313,7 @@ mod corehandler {
                     clock,
                     cancel: codotheca_core::cancel::CancelToken::new(),
                     // UTC in a test, so a local date never depends on the machine running it.
-                    tz_offset_min: 0,
+                    zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
                 },
                 events.clone(),
             ),

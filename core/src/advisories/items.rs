@@ -297,9 +297,9 @@ pub fn sync_advisory_items(
 /// Fails when the index refuses a read or a write.
 pub fn settle_advisory_items(
     tx: &Transaction<'_>,
-    now: i64,
-    tz_offset_min: i32,
+    at: crate::clock::LocalInstant,
 ) -> Result<Vec<ProjectHealthDelta>, AdvisoryError> {
+    let now = at.unix;
     // §32.12 rule 3: a project's first computation is seeded before the sync marks it computed,
     // so no later settle can decide on a pair it never seeded.
     crate::advisories::notify::seed_first_computations(tx, now)?;
@@ -321,7 +321,7 @@ pub fn settle_advisory_items(
         // at the producer's other callers.
         let before = crate::restoration::LayerValues::read(tx, project).ok();
         let swept = sync_advisory_items(tx, project, None, now, &SqliteDebtStore)?;
-        crate::debt::xp::pay_debt_day(tx, project, &swept.effect, now, tz_offset_min)?;
+        crate::debt::xp::pay_debt_day(tx, project, &swept.effect, at)?;
         if let Some(before) = before {
             if let Some(delta) = crate::restoration::record_after_write(
                 tx,

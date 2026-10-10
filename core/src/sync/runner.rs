@@ -537,17 +537,14 @@ impl SyncRunner {
     /// A transaction of its own, so an item fault cannot keep the sweep open for ever: it is
     /// logged, and the next sweep computes the items again.
     fn settle_advisory_debt(&self) {
-        let now = self.deps.clock.now_unix();
-        let tz_offset_min = self.deps.tz_offset_min;
+        let at = self.deps.zone.at(self.deps.clock.now_unix());
         let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         let deltas = guard.with_tx(|tx| {
-            crate::advisories::items::settle_advisory_items(tx, now, tz_offset_min).map_err(|e| {
-                match e {
-                    crate::advisories::AdvisoryError::Index(inner) => inner,
-                    other => IndexError::Corrupt {
-                        detail: other.to_string(),
-                    },
-                }
+            crate::advisories::items::settle_advisory_items(tx, at).map_err(|e| match e {
+                crate::advisories::AdvisoryError::Index(inner) => inner,
+                other => IndexError::Corrupt {
+                    detail: other.to_string(),
+                },
             })
         });
         drop(guard);
@@ -594,7 +591,7 @@ impl SyncRunner {
     /// cannot be read records no delta and costs the singleton write nothing — the write was
     /// never gated on it before the producer existed.
     fn settle_project_debt(&self, project_id: ProjectId, now: i64) {
-        let tz_offset_min = self.deps.tz_offset_min;
+        let at = self.deps.zone.at(now);
         let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         let announce = guard
             .with_tx(|tx| {
@@ -602,8 +599,7 @@ impl SyncRunner {
                 let Ok(effect) = crate::debt::singletons::settle_singletons(
                     tx,
                     project_id,
-                    now,
-                    tz_offset_min,
+                    at,
                     &crate::debt::store::SqliteDebtStore,
                 ) else {
                     return Ok(None);
@@ -1224,7 +1220,7 @@ mod tests {
             tokens: Arc::new(crate::testing::FakeTokenStore::available()),
             clock,
             cancel: crate::cancel::CancelToken::new(),
-            tz_offset_min: 0,
+            zone: Arc::new(crate::testing::zone::FixedZone(0)),
         }
     }
 }

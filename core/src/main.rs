@@ -12,7 +12,7 @@
 
 use codotheca_core::assembly::startup::{open_index, rebuild_index, run_startup};
 use codotheca_core::assembly::{CoreDeps, CoreHandler};
-use codotheca_core::clock::{local_utc_offset_min, Clock, SystemClock};
+use codotheca_core::clock::{local_utc_offset_min, Clock, LocalZone, SystemClock, SystemZone};
 use codotheca_core::git::{GitBackend, GitExec, GitSlots, SystemGit, EMPTY_HOOKS_DIR_NAME};
 use codotheca_core::gitw::credential::{
     configure_data_dir, run_credential_helper, CREDENTIAL_MODE_FLAG,
@@ -242,6 +242,9 @@ fn main() -> ExitCode {
     let event_sink: Arc<dyn EventSink> = events.clone();
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
+    // §39.2 rule 1: the one zone, read per instant by every writer that persists a local date.
+    // Only the era bands' start-up offset below stays a number (§39.2 rule 7).
+    let zone: Arc<dyn LocalZone> = Arc::new(SystemZone);
     // A recognised fatal already exited inside `open_index` or `rebuild_index`, with §11.2a's
     // report written for the shell to draw. Reaching this arm means the error was not one of the
     // three.
@@ -307,7 +310,7 @@ fn main() -> ExitCode {
         Arc::clone(&git),
         Arc::clone(&clock),
         Arc::clone(&event_sink),
-        local_utc_offset_min(),
+        Arc::clone(&zone),
     );
 
     // The same `Arc<Mutex<Index>>` reached a different way, never a second connection. The
@@ -359,7 +362,7 @@ fn main() -> ExitCode {
             tokens: Arc::clone(&tokens),
             clock: Arc::clone(&clock),
             cancel: codotheca_core::cancel::CancelToken::new(),
-            tz_offset_min: local_utc_offset_min(),
+            zone: Arc::clone(&zone),
         },
         Arc::clone(&event_sink),
     );

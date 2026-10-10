@@ -150,7 +150,7 @@ fn fixture() -> Fixture {
             clock,
             cancel: codotheca_core::cancel::CancelToken::new(),
             // UTC in a test, so a local date never depends on the machine running it.
-            tz_offset_min: 0,
+            zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         },
         project,
         _dir: dir,

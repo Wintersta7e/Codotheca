@@ -14,6 +14,7 @@ mod scan;
 pub mod sidecar;
 mod tokens;
 pub mod wsl;
+pub mod zone;
 
 pub use bins::{CountingTrash, FixedBinSettings};
 pub use clock::FakeClock;

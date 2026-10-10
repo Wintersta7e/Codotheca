@@ -86,7 +86,7 @@ fn handler_over(lib: &Library) -> CoreHandler {
             Arc::new(codotheca_core::testing::FakeGitBackend::new()),
             clock.clone(),
             events.clone(),
-            0,
+            Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         ),
         sync: codotheca_core::assembly::sync::SyncPump::start(
             Arc::clone(&lib.index),
@@ -99,7 +99,7 @@ fn handler_over(lib: &Library) -> CoreHandler {
                 tokens: Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
                 clock,
                 cancel: codotheca_core::cancel::CancelToken::new(),
-                tz_offset_min: 0,
+                zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
             },
             events.clone(),
         ),

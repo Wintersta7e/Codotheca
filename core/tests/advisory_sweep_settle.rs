@@ -190,7 +190,7 @@ fn sweep(world: &World, at: i64, response: Option<&str>) -> Vec<Emitted> {
         tokens: Arc::new(FakeTokenStore::available()),
         clock,
         cancel: codotheca_core::cancel::CancelToken::new(),
-        tz_offset_min: 0,
+        zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     };
     let events = Arc::new(Recorder::default());
     let runner = SyncRunner::new(Arc::clone(&world.index), deps, events.clone());

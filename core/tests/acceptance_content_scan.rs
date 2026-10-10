@@ -355,8 +355,10 @@ impl GitRig {
                 project: self.project,
                 location: self.location,
                 cursor: None,
-                now: 1_700_000_000,
-                tz_offset_min: 0,
+                at: codotheca_core::clock::LocalInstant {
+                    unix: 1_700_000_000,
+                    offset_min: 0,
+                },
                 detected_in: codotheca_core::protocol::HealthDetectedIn::Background,
                 announce: None,
             },
@@ -449,7 +451,7 @@ fn system_deps(repo: &TestRepo) -> JobDeps {
         )),
         clock,
         cancel: CancelToken::new(),
-        tz_offset_min: 0,
+        zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     }
 }
 
@@ -912,9 +914,11 @@ impl Rig {
                 project: self.project,
                 location: self.location,
                 cursor,
-                now: 1_700_000_000,
                 // UTC, so a test's local date never depends on the machine running it.
-                tz_offset_min: 0,
+                at: codotheca_core::clock::LocalInstant {
+                    unix: 1_700_000_000,
+                    offset_min: 0,
+                },
                 detected_in: codotheca_core::protocol::HealthDetectedIn::Background,
                 announce: None,
             },

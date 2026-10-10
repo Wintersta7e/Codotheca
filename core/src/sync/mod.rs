@@ -75,11 +75,10 @@ pub struct SyncDeps {
     /// The loop's stop token: once `SyncPump::stop` cancels it the loop takes no further task,
     /// while a request already in flight runs to its own time bound.
     pub cancel: CancelToken,
-    /// **A property of the machine, read ONCE by the composition root and passed down as data**
-    /// — `ProjectsCtx.tz_offset_min`'s twin (`core/src/clock.rs:66-68`). §28.4's `debt_day` key
-    /// is a **local** date and §28's singleton evaluator settles from here, so nothing below the
-    /// root reaches for a zone of its own.
-    pub tz_offset_min: i32,
+    /// The machine's zone, built once by the composition root (§39.2 rule 1). §28.4's `debt_day`
+    /// key is a **local** date and §28's singleton evaluator settles from here, so each payout
+    /// reads the offset at its own instant and never a number captured at start-up.
+    pub zone: Arc<dyn crate::clock::LocalZone>,
 }
 
 impl std::fmt::Debug for SyncDeps {

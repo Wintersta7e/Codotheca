@@ -11,7 +11,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::cancel::CancelToken;
-use crate::clock::Clock;
+use crate::clock::{Clock, LocalZone};
 use crate::git::GitBackend;
 use crate::index::Index;
 use crate::jobs::queue::global_cap;
@@ -64,13 +64,16 @@ impl std::fmt::Debug for JobPump {
 
 impl JobPump {
     /// Build the runner and spawn its pool.
+    ///
+    /// `zone` is the machine's zone, handed down whole: each settle reads the offset at its own
+    /// instant (§39.2 rule 1), so nothing here may capture one number from it.
     #[must_use]
     pub fn start(
         index: Arc<Mutex<Index>>,
         git: Arc<dyn GitBackend>,
         clock: Arc<dyn Clock>,
         events: Arc<dyn EventSink>,
-        tz_offset_min: i32,
+        zone: Arc<dyn LocalZone>,
     ) -> Self {
         let cancel = CancelToken::new();
         let runner = build_job_runner(
@@ -79,7 +82,7 @@ impl JobPump {
                 git,
                 clock,
                 cancel: cancel.clone(),
-                tz_offset_min,
+                zone,
             },
             events,
         );

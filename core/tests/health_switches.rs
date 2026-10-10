@@ -490,8 +490,10 @@ fn settle(conn: &mut rusqlite::Connection, project: i64, at: i64) {
     codotheca_core::debt::singletons::settle_singletons(
         &tx,
         codotheca_core::protocol::ProjectId(project),
-        at,
-        0,
+        codotheca_core::clock::LocalInstant {
+            unix: at,
+            offset_min: 0,
+        },
         &codotheca_core::debt::store::SqliteDebtStore,
     )
     .unwrap();

@@ -61,11 +61,105 @@ impl Clock for SystemClock {
     }
 }
 
-/// The machine's local offset from UTC, in minutes east of Greenwich.
+/// The machine's zone as a **function of the instant** (§39.2 rule 1): the offset in force at
+/// `t`, read per instant and never cached.
 ///
-/// Not a `Clock` method: the trait is time a test injects, and this is a property of the machine
-/// the composition root reads **once** and passes down as data — `ProjectsCtx.tz_offset_min`.
-/// Every consumer takes it as an argument, so nothing below the root reads a zone.
+/// Not a `Clock` method: the clock is time a test injects, and the zone is a property of the
+/// machine. The composition root builds one and passes it down, so nothing below the root reads
+/// a zone of its own. A number captured at start-up is the defect this replaces — a resident core
+/// dated every closure an hour off after a DST change.
+pub trait LocalZone: Send + Sync + fmt::Debug {
+    /// Minutes east of UTC in force at `unix` (epoch seconds).
+    fn offset_min_at(&self, unix: i64) -> i32;
+
+    /// `unix` framed in the offset in force at it — the one frame every date-persisting writer
+    /// stores, so no date is re-framed on read (§39.2 rules 3 and 5).
+    fn at(&self, unix: i64) -> LocalInstant {
+        LocalInstant {
+            unix,
+            offset_min: self.offset_min_at(unix),
+        }
+    }
+}
+
+/// The production zone: the operating system's, through `chrono::Local`, at each instant.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SystemZone;
+
+impl LocalZone for SystemZone {
+    fn offset_min_at(&self, unix: i64) -> i32 {
+        use chrono::TimeZone as _;
+        // A UTC instant is never ambiguous or skipped in a local zone, so `single` answers for
+        // every instant chrono can represent; one hundreds of millennia away is read as UTC.
+        // Every real zone is a whole number of minutes, so the division is exact.
+        chrono::Local
+            .timestamp_opt(unix, 0)
+            .single()
+            .map_or(0, |t| t.offset().local_minus_utc() / 60)
+    }
+}
+
+/// An instant and the offset in force at it: the frame a local date is read in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalInstant {
+    /// Epoch seconds.
+    pub unix: i64,
+    /// Minutes east of UTC at `unix` — what a writer stores as `tz_offset_min`.
+    pub offset_min: i32,
+}
+
+impl LocalInstant {
+    /// The local day number: days since 1970-01-01 in this instant's own offset.
+    #[must_use]
+    pub fn day(self) -> i64 {
+        crate::git::local_day(self.unix, self.offset_min)
+    }
+
+    /// The local calendar date, `YYYY-MM-DD` — the date a `debt_day` key carries.
+    #[must_use]
+    pub fn date(self) -> String {
+        crate::jobs::j4_history::local_date(self.day())
+    }
+}
+
+/// The half-open instant range `[start, end)` whose local day is `day` (§39.2 rule 2).
+///
+/// 23 or 25 hours long across a transition, by construction: each end is found by asking the
+/// zone, never by adding 86 400 s. Each end is the first instant whose local day reaches the day,
+/// so where local time steps back over midnight the repeated hour belongs to the later day.
+#[must_use]
+pub fn day_bounds(zone: &dyn LocalZone, day: i64) -> (i64, i64) {
+    (
+        first_instant_of(zone, day),
+        first_instant_of(zone, day.saturating_add(1)),
+    )
+}
+
+/// The earliest instant whose local day is `day` or later.
+fn first_instant_of(zone: &dyn LocalZone, day: i64) -> i64 {
+    const SECS_PER_DAY: i64 = 86_400;
+    // Every offset is under a day either way, so a day before UTC midnight is still the day
+    // before locally and a day after it is already this day: the answer lies between them.
+    let midnight = day.saturating_mul(SECS_PER_DAY);
+    let mut before = midnight.saturating_sub(SECS_PER_DAY);
+    let mut reached = midnight.saturating_add(SECS_PER_DAY);
+    while reached - before > 1 {
+        let mid = before + (reached - before) / 2;
+        if zone.at(mid).day() >= day {
+            reached = mid;
+        } else {
+            before = mid;
+        }
+    }
+    reached
+}
+
+/// The machine's local offset from UTC **now**, in minutes east of Greenwich, read once by the
+/// composition root — `ProjectsCtx.tz_offset_min` and `CoreHandler.tz_offset_min`.
+///
+/// **It serves only the readers that are not ring or day boundaries** (§39.2 rule 7): §8.1's era
+/// bands, the art pipeline, the Activity windows and the stats. Every writer that persists a
+/// local date takes [`LocalZone`] instead and reads the offset at its own instant.
 ///
 /// §8.1's era bands cut on the **local calendar year**, which makes this a correctness input
 /// rather than a display detail: an offset that is wrong by a few hours moves a project into the
