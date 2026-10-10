@@ -37,6 +37,7 @@ pub mod index;
 pub mod install;
 pub mod jobs;
 pub mod launch;
+pub mod ledger;
 pub mod lifecycle;
 pub mod mount;
 pub mod paths;

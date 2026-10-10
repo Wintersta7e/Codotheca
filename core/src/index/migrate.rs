@@ -157,13 +157,21 @@ pub const MIGRATIONS: &[Migration] = &[
         // four removal tables are new — nothing is copied, dropped or renamed.
         rebuilds_a_table: false,
     },
+    Migration {
+        version: 19,
+        name: "ledger",
+        sql: include_str!("../../migrations/0019_ledger.sql"),
+        // §38.13: `xp_events` is STRICT, so narrowing `kind`'s CHECK to the seven ledger kinds and
+        // re-keying the track equivalence to the retained ones is a create-copy-drop-rename.
+        rebuilds_a_table: true,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 18;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 19;
 
 /// The version `PRAGMA user_version` holds; a value that does not fit a `u32` reads as `0`.
 ///

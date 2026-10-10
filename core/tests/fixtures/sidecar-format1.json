@@ -2,7 +2,7 @@
   "format": 1,
   "generation": 5,
   "written_at": 1700005000,
-  "checksum": "fnv1a64:82f23d33b5a8f92e",
+  "checksum": "fnv1a64:4c2ba81c01b66496",
   "payload": {
     "projects": [
       {
@@ -40,8 +40,8 @@
           {
             "ts": 1700004000,
             "tz_offset_min": 60,
-            "kind": "session",
-            "dedupe_key": "session:fixture-1",
+            "kind": "focus",
+            "dedupe_key": "focus:fixture-1",
             "meta": null
           }
         ],

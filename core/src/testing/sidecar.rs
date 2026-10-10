@@ -581,13 +581,8 @@ fn plant_base(tx: &Transaction<'_>, ids: &FixtureIds, now: i64) -> Result<(), In
     tx.execute(
         "INSERT INTO xp_events (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key,
                                 track, meta)
-         VALUES (?1, 0, ?2, ?3, 'session', ?4, 'session', NULL)",
-        rusqlite::params![
-            now - 7_080,
-            first.0,
-            subject,
-            format!("session:{subject}:0")
-        ],
+         VALUES (?1, 0, ?2, ?3, 'focus', ?4, 'session', NULL)",
+        rusqlite::params![now - 7_080, first.0, subject, format!("focus:{subject}:0")],
     )?;
     tx.execute(
         "INSERT INTO launch_target (project_id, kind, name, exec_bytes, sort_index, detected)

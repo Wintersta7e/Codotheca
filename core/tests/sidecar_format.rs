@@ -7,6 +7,11 @@
 //! collection holding both lineage projects, one root at `/fixture/repos` (hex), an identity with
 //! an alias, `app_meta` `level_floor = '3'`, `first_run_completed_at`, `wsl_consented_distros`,
 //! `sidecar_written_at` and `restore_pending_generation`, and one `view_state` row.
+//!
+//! Two values have changed by hand since, and only these: §38 removed the `session` kind, so the
+//! XP row's `kind` and `dedupe_key` moved to `focus` on the same track, and `checksum` was
+//! recomputed as the exporter computes it (FNV-1a/64 over the compact payload). The exporter writes
+//! a session-track row's kind verbatim, so it would have written these bytes for a `focus` row.
 
 #![allow(
     clippy::unwrap_used,

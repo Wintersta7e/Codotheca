@@ -525,7 +525,7 @@ fn xp_event_track_and_kind_cannot_disagree() {
     .unwrap();
     conn.execute(
         "INSERT INTO xp_events (ts, project_id, subject_key, kind, dedupe_key, track)
-         VALUES (2, ?1, 'lineage:abc|remote:h/o/n', 'session', 'session:7', 'session')",
+         VALUES (2, ?1, 'lineage:abc|remote:h/o/n', 'focus', 'focus:7', 'session')",
         [p],
     )
     .unwrap();

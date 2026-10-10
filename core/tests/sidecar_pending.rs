@@ -170,13 +170,8 @@ fn plant(conn: &Connection, project: ProjectId, location: LocationId) {
         conn.execute(
             "INSERT INTO xp_events (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key,
                                     track, meta)
-             VALUES (?1, 0, ?2, ?3, 'session', ?4, 'session', NULL)",
-            params![
-                100 + i,
-                project.0,
-                subject,
-                format!("session:{subject}:{i}")
-            ],
+             VALUES (?1, 0, ?2, ?3, 'focus', ?4, 'session', NULL)",
+            params![100 + i, project.0, subject, format!("focus:{subject}:{i}")],
         )
         .unwrap();
     }

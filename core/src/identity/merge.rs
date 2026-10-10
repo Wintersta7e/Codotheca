@@ -326,19 +326,14 @@ fn reparent_removals(
     Ok((parcel, removal_record))
 }
 
-/// §1.7's git-derived event kinds — a pure function of history, so never migrated.
+/// §1.7's git-derived event kinds — a pure function of history, so never migrated. The ledger
+/// module owns the list; this name is kept for the identity code that reads it.
 ///
 /// This is the vocabulary, not the predicate. The sweep below keys on `xp_events.track`, which
-/// `0003`'s `CHECK ((track = 'session') = (kind IN ('session', 'focus')))` already ties to these
-/// five: restating them in the `DELETE` would be one value in two places, and the copy that
-/// went stale would leave a sixth kind's rows behind as stale duplicates after a merge.
-pub const GIT_DERIVED_XP_KINDS: [&str; 5] = [
-    "commit_day",
-    "release",
-    "language_first",
-    "revival",
-    "first_push",
-];
+/// `0019`'s track CHECK already ties to these kinds: restating them in the `DELETE` would be one
+/// value in two places, and the copy that went stale would leave a third kind's rows behind as
+/// stale duplicates after a merge.
+pub use crate::ledger::GIT_KINDS as GIT_DERIVED_XP_KINDS;
 
 /// What the derived half of a merge did. `swept_scene_hash` is the absorbed row's art scene: the
 /// row is gone, and the art layer sweeps its files (§1.5, §7.5).
@@ -1199,12 +1194,11 @@ mod tests {
         tx.commit().unwrap();
     }
 
-    /// `track` is not a free label. `0003`'s
-    /// `CHECK ((track = 'session') = (kind IN ('session', 'focus')))` ties it to the kind, so
-    /// the plan's `'main'` cannot be inserted at all — and the tie is what lets the sweep key
-    /// on the track rather than restating the five git kinds in SQL.
+    /// `track` is not a free label. `0019`'s track CHECK ties it to the kind, so the plan's
+    /// `'main'` cannot be inserted at all — and the tie is what lets the sweep key on the track
+    /// rather than restating the git kinds in SQL.
     fn xp(conn: &rusqlite::Connection, project: i64, kind: &str, dedupe: &str) {
-        let track = if matches!(kind, "session" | "focus") {
+        let track = if crate::ledger::RETAINED_KINDS.contains(&kind) {
             "session"
         } else {
             "git"
@@ -1218,9 +1212,9 @@ mod tests {
         .unwrap();
     }
 
-    /// R26's shape, checked against the database rather than against the source: the five kinds
-    /// this module calls git-derived are exactly the kinds the DDL refuses to file under
-    /// `track = 'session'`. If a sixth is added to one side only, this fails.
+    /// One value in two places, checked against the database rather than against the source: the
+    /// kinds this module calls git-derived are exactly the kinds the DDL refuses to file under
+    /// `track = 'session'`. If a third is added to one side only, this fails.
     #[test]
     fn every_git_derived_kind_is_one_the_ddl_files_under_the_git_track() {
         let conn = open_test_index();
@@ -1266,7 +1260,7 @@ mod tests {
             "commit_day:L:forge.example/mine/w:2026-01-01",
         );
         xp(&conn, a, "release", "release:L::v1");
-        xp(&conn, a, "session", "session:42");
+        xp(&conn, a, "focus", "focus:42");
         xp(&conn, s, "focus", "focus:7");
 
         let tx = conn.transaction().unwrap();
@@ -1399,7 +1393,7 @@ mod tests {
         let copy = super::super::testutil::insert_location(&conn, a, "/w/a", None);
         removal_rows(&conn, a, copy);
         xp(&conn, a, "commit_day", "k1");
-        xp(&conn, a, "session", "s1");
+        xp(&conn, a, "focus", "s1");
         conn.execute(
             "UPDATE project SET notes='theirs', is_pinned=1 WHERE id=?1",
             rusqlite::params![a],
@@ -1734,7 +1728,7 @@ mod tests {
             rusqlite::params![s],
         )
         .unwrap();
-        xp(&conn, a, "session", "s1");
+        xp(&conn, a, "focus", "s1");
 
         let tx = conn.transaction().unwrap();
         super::merge_projects(

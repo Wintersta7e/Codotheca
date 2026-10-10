@@ -28,7 +28,7 @@ fn seeded() -> (tempfile::TempDir, rusqlite::Connection) {
          VALUES (1, 100, 190, 90, 'session_end');
 
          INSERT INTO xp_events (ts, project_id, subject_key, kind, dedupe_key, track)
-         VALUES (150, 1, 'lineage:lineage-1|remote:h/o/n', 'session', 'session:1', 'session');
+         VALUES (150, 1, 'lineage:lineage-1|remote:h/o/n', 'focus', 'focus:1', 'session');
          INSERT INTO xp_events (ts, project_id, subject_key, kind, dedupe_key, track)
          VALUES (160, 1, 'lineage:lineage-1|remote:h/o/n', 'commit_day',
                  'commit_day:lineage-1:h/o/n:2026-08-21', 'git');
@@ -91,7 +91,7 @@ fn only_the_session_track_and_only_custom_targets_are_exported() {
         1,
         "git-derived rows recompute from history"
     );
-    assert_eq!(p.xp_events[0].kind, "session");
+    assert_eq!(p.xp_events[0].kind, "focus");
 
     assert_eq!(p.launch_targets.len(), 1, "detected rows are re-detected");
     assert_eq!(p.launch_targets[0].name, "mine");

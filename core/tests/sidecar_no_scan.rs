@@ -88,8 +88,8 @@ fn uninstalled(conn: &Connection, id: i64, first_location: i64) {
     conn.execute(
         "INSERT INTO xp_events (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key,
                                 track, meta)
-         VALUES (100, 0, ?1, ?2, 'session', ?3, 'session', NULL)",
-        params![id, subject, format!("session:{subject}:0")],
+         VALUES (100, 0, ?1, ?2, 'focus', ?3, 'session', NULL)",
+        params![id, subject, format!("focus:{subject}:0")],
     )
     .unwrap();
 }
@@ -247,10 +247,11 @@ fn a_scan_created_project_never_reuses_a_restored_id() {
     assert!(seq("project") >= 40);
     assert!(seq("location") >= 71);
 
-    // Gone again — the sequence, not the surviving rows, is what keeps the ids unique.
+    // Gone again — the sequence, not the surviving rows, is what keeps the ids unique. A retained
+    // XP row cannot be deleted, so it lets go of its project instead.
     conn.execute_batch(
-        "DELETE FROM xp_events; DELETE FROM session_segment; DELETE FROM session;
-         DELETE FROM location; DELETE FROM project;",
+        "UPDATE xp_events SET project_id = NULL; DELETE FROM session_segment;
+         DELETE FROM session; DELETE FROM location; DELETE FROM project;",
     )
     .unwrap();
     let project = live(conn);
