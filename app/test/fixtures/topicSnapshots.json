@@ -1,0 +1,437 @@
+{
+  "projects": {
+    "frame": "{\"t\":\"snapshot\",\"epoch\":1,\"topic\":\"projects\",\"through_seq\":4,\"data\":{\"generation\":7,\"rows\":[{\"id\":1,\"name\":\"alpha\",\"owner\":null,\"description\":null,\"descriptionSource\":null,\"birthYear\":null,\"primaryLanguage\":null,\"archetype\":null,\"seedBasename\":\"alpha\",\"rerollOffset\":0,\"artSceneHash\":null,\"artState\":\"pending\",\"conditionSignal\":null,\"completionLit\":null,\"completionApplicable\":null,\"isPinned\":false,\"isArchived\":false,\"isHidden\":false,\"isReference\":false,\"authoredByUser\":null,\"isFork\":false,\"isBare\":false,\"isShallow\":false,\"isSubmodule\":false,\"ambiguousLineage\":false,\"lastTouchedAt\":1700000000,\"lastInteractionAt\":null,\"lastCommitAt\":null,\"lastCommitSubject\":null,\"firstCommitAt\":null,\"createdAt\":1700000000,\"acknowledgedAt\":null,\"sizeTrackedBytes\":null,\"trackedFiles\":null,\"collectionIds\":[],\"primaryLocation\":{\"id\":10,\"pathDisplay\":\"/w/alpha\"},\"presence\":\"present\",\"hasRemote\":false,\"branch\":null,\"isDirty\":null,\"untrackedCount\":null,\"ahead\":null,\"behind\":null,\"stashCount\":null,\"interruptedOp\":null,\"fetchHeadAt\":null,\"refstateObservedAt\":null,\"worktreeObservedAt\":null,\"errorKind\":null,\"errorAt\":null,\"eraSectionId\":\"era:live\",\"healthSummary\":{\"state\":\"absent\",\"scoredOpen\":null,\"unverified\":null,\"unknownChecks\":null,\"observedAt\":null},\"lifecycle\":\"active\"},{\"id\":2,\"name\":\"beta\",\"owner\":null,\"description\":null,\"descriptionSource\":null,\"birthYear\":null,\"primaryLanguage\":null,\"archetype\":null,\"seedBasename\":\"beta\",\"rerollOffset\":0,\"artSceneHash\":null,\"artState\":\"pending\",\"conditionSignal\":null,\"completionLit\":null,\"completionApplicable\":null,\"isPinned\":false,\"isArchived\":false,\"isHidden\":false,\"isReference\":false,\"authoredByUser\":null,\"isFork\":false,\"isBare\":false,\"isShallow\":false,\"isSubmodule\":false,\"ambiguousLineage\":false,\"lastTouchedAt\":1700000000,\"lastInteractionAt\":null,\"lastCommitAt\":null,\"lastCommitSubject\":null,\"firstCommitAt\":null,\"createdAt\":1700000000,\"acknowledgedAt\":null,\"sizeTrackedBytes\":null,\"trackedFiles\":null,\"collectionIds\":[],\"primaryLocation\":{\"id\":20,\"pathDisplay\":\"/w/beta\"},\"presence\":\"present\",\"hasRemote\":false,\"branch\":null,\"isDirty\":null,\"untrackedCount\":null,\"ahead\":null,\"behind\":null,\"stashCount\":null,\"interruptedOp\":null,\"fetchHeadAt\":null,\"refstateObservedAt\":null,\"worktreeObservedAt\":null,\"errorKind\":null,\"errorAt\":null,\"eraSectionId\":\"era:live\",\"healthSummary\":{\"state\":\"absent\",\"scoredOpen\":null,\"unverified\":null,\"unknownChecks\":null,\"observedAt\":null},\"lifecycle\":\"active\"}]}}",
+    "batch": [
+      {
+        "topic": "projects",
+        "event": "snapshot",
+        "data": {
+          "generation": 7,
+          "rows": [
+            {
+              "id": 1,
+              "name": "alpha",
+              "owner": null,
+              "description": null,
+              "descriptionSource": null,
+              "birthYear": null,
+              "primaryLanguage": null,
+              "archetype": null,
+              "seedBasename": "alpha",
+              "rerollOffset": 0,
+              "artSceneHash": null,
+              "artState": "pending",
+              "conditionSignal": null,
+              "completionLit": null,
+              "completionApplicable": null,
+              "isPinned": false,
+              "isArchived": false,
+              "isHidden": false,
+              "isReference": false,
+              "authoredByUser": null,
+              "isFork": false,
+              "isBare": false,
+              "isShallow": false,
+              "isSubmodule": false,
+              "ambiguousLineage": false,
+              "lastTouchedAt": 1700000000,
+              "lastInteractionAt": null,
+              "lastCommitAt": null,
+              "lastCommitSubject": null,
+              "firstCommitAt": null,
+              "createdAt": 1700000000,
+              "acknowledgedAt": null,
+              "sizeTrackedBytes": null,
+              "trackedFiles": null,
+              "collectionIds": [],
+              "primaryLocation": {
+                "id": 10,
+                "pathDisplay": "/w/alpha"
+              },
+              "presence": "present",
+              "hasRemote": false,
+              "branch": null,
+              "isDirty": null,
+              "untrackedCount": null,
+              "ahead": null,
+              "behind": null,
+              "stashCount": null,
+              "interruptedOp": null,
+              "fetchHeadAt": null,
+              "refstateObservedAt": null,
+              "worktreeObservedAt": null,
+              "errorKind": null,
+              "errorAt": null,
+              "eraSectionId": "era:live",
+              "healthSummary": {
+                "state": "absent",
+                "scoredOpen": null,
+                "unverified": null,
+                "unknownChecks": null,
+                "observedAt": null
+              },
+              "lifecycle": "active"
+            },
+            {
+              "id": 2,
+              "name": "beta",
+              "owner": null,
+              "description": null,
+              "descriptionSource": null,
+              "birthYear": null,
+              "primaryLanguage": null,
+              "archetype": null,
+              "seedBasename": "beta",
+              "rerollOffset": 0,
+              "artSceneHash": null,
+              "artState": "pending",
+              "conditionSignal": null,
+              "completionLit": null,
+              "completionApplicable": null,
+              "isPinned": false,
+              "isArchived": false,
+              "isHidden": false,
+              "isReference": false,
+              "authoredByUser": null,
+              "isFork": false,
+              "isBare": false,
+              "isShallow": false,
+              "isSubmodule": false,
+              "ambiguousLineage": false,
+              "lastTouchedAt": 1700000000,
+              "lastInteractionAt": null,
+              "lastCommitAt": null,
+              "lastCommitSubject": null,
+              "firstCommitAt": null,
+              "createdAt": 1700000000,
+              "acknowledgedAt": null,
+              "sizeTrackedBytes": null,
+              "trackedFiles": null,
+              "collectionIds": [],
+              "primaryLocation": {
+                "id": 20,
+                "pathDisplay": "/w/beta"
+              },
+              "presence": "present",
+              "hasRemote": false,
+              "branch": null,
+              "isDirty": null,
+              "untrackedCount": null,
+              "ahead": null,
+              "behind": null,
+              "stashCount": null,
+              "interruptedOp": null,
+              "fetchHeadAt": null,
+              "refstateObservedAt": null,
+              "worktreeObservedAt": null,
+              "errorKind": null,
+              "errorAt": null,
+              "eraSectionId": "era:live",
+              "healthSummary": {
+                "state": "absent",
+                "scoredOpen": null,
+                "unverified": null,
+                "unknownChecks": null,
+                "observedAt": null
+              },
+              "lifecycle": "active"
+            }
+          ],
+          "epoch": 1,
+          "throughSeq": 4
+        }
+      }
+    ]
+  },
+  "sync": {
+    "frame": "{\"t\":\"snapshot\",\"epoch\":1,\"topic\":\"sync\",\"through_seq\":2,\"data\":{\"tasks\":[{\"kind\":\"account_repos\",\"key\":3,\"state\":\"parked\",\"outcome\":\"throttled\",\"notBefore\":1700003600,\"summary\":null}],\"budgets\":[{\"accountId\":3,\"resource\":\"core\",\"remaining\":0,\"limit\":5000,\"resetAt\":1700003600,\"observedAt\":1700000000}],\"listing\":{\"accountId\":3,\"listed\":41,\"total\":null},\"notice\":\"throttled\"}}",
+    "batch": [
+      {
+        "topic": "sync",
+        "event": "snapshot",
+        "data": {
+          "tasks": [
+            {
+              "kind": "account_repos",
+              "key": 3,
+              "state": "parked",
+              "outcome": "throttled",
+              "notBefore": 1700003600,
+              "summary": null
+            }
+          ],
+          "budgets": [
+            {
+              "accountId": 3,
+              "resource": "core",
+              "remaining": 0,
+              "limit": 5000,
+              "resetAt": 1700003600,
+              "observedAt": 1700000000
+            }
+          ],
+          "listing": {
+            "accountId": 3,
+            "listed": 41,
+            "total": null
+          },
+          "notice": "throttled"
+        }
+      }
+    ]
+  },
+  "install": {
+    "frame": "{\"t\":\"snapshot\",\"epoch\":1,\"topic\":\"install\",\"through_seq\":6,\"data\":{\"runs\":[{\"runId\":9,\"stage\":\"receiving\",\"done\":120,\"total\":null,\"bytes\":65536}],\"started\":[{\"runId\":9,\"projectId\":5,\"destinationDisplay\":\"/w/gamma\"}]}}",
+    "batch": [
+      {
+        "topic": "install",
+        "event": "snapshot",
+        "data": {
+          "runs": [
+            {
+              "runId": 9,
+              "stage": "receiving",
+              "done": 120,
+              "total": null,
+              "bytes": 65536
+            }
+          ],
+          "started": [
+            {
+              "runId": 9,
+              "projectId": 5,
+              "destinationDisplay": "/w/gamma"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "gap": {
+    "first": "{\"t\":\"event\",\"epoch\":1,\"topic\":\"projects\",\"event\":\"upserted\",\"seq\":1,\"data\":{\"row\":{\"id\":1,\"name\":\"alpha\",\"owner\":null,\"description\":null,\"descriptionSource\":null,\"birthYear\":null,\"primaryLanguage\":null,\"archetype\":null,\"seedBasename\":\"alpha\",\"rerollOffset\":0,\"artSceneHash\":null,\"artState\":\"pending\",\"conditionSignal\":null,\"completionLit\":null,\"completionApplicable\":null,\"isPinned\":false,\"isArchived\":false,\"isHidden\":false,\"isReference\":false,\"authoredByUser\":null,\"isFork\":false,\"isBare\":false,\"isShallow\":false,\"isSubmodule\":false,\"ambiguousLineage\":false,\"lastTouchedAt\":1700000000,\"lastInteractionAt\":null,\"lastCommitAt\":null,\"lastCommitSubject\":null,\"firstCommitAt\":null,\"createdAt\":1700000000,\"acknowledgedAt\":null,\"sizeTrackedBytes\":null,\"trackedFiles\":null,\"collectionIds\":[],\"primaryLocation\":{\"id\":10,\"pathDisplay\":\"/w/alpha\"},\"presence\":\"present\",\"hasRemote\":false,\"branch\":null,\"isDirty\":true,\"untrackedCount\":null,\"ahead\":null,\"behind\":null,\"stashCount\":null,\"interruptedOp\":null,\"fetchHeadAt\":null,\"refstateObservedAt\":null,\"worktreeObservedAt\":null,\"errorKind\":null,\"errorAt\":null,\"eraSectionId\":\"era:live\",\"healthSummary\":{\"state\":\"absent\",\"scoredOpen\":null,\"unverified\":null,\"unknownChecks\":null,\"observedAt\":null},\"lifecycle\":\"active\"}}}",
+    "skipsSeq2": "{\"t\":\"event\",\"epoch\":1,\"topic\":\"projects\",\"event\":\"flags_changed\",\"seq\":3,\"data\":{\"id\":1,\"isPinned\":true,\"isArchived\":false,\"isHidden\":false}}",
+    "snapshot": "{\"t\":\"snapshot\",\"epoch\":1,\"topic\":\"projects\",\"through_seq\":3,\"data\":{\"generation\":4,\"rows\":[{\"id\":1,\"name\":\"alpha\",\"owner\":null,\"description\":null,\"descriptionSource\":null,\"birthYear\":null,\"primaryLanguage\":null,\"archetype\":null,\"seedBasename\":\"alpha\",\"rerollOffset\":0,\"artSceneHash\":null,\"artState\":\"pending\",\"conditionSignal\":null,\"completionLit\":null,\"completionApplicable\":null,\"isPinned\":true,\"isArchived\":false,\"isHidden\":false,\"isReference\":false,\"authoredByUser\":null,\"isFork\":false,\"isBare\":false,\"isShallow\":false,\"isSubmodule\":false,\"ambiguousLineage\":false,\"lastTouchedAt\":1700000000,\"lastInteractionAt\":null,\"lastCommitAt\":null,\"lastCommitSubject\":null,\"firstCommitAt\":null,\"createdAt\":1700000000,\"acknowledgedAt\":null,\"sizeTrackedBytes\":null,\"trackedFiles\":null,\"collectionIds\":[],\"primaryLocation\":{\"id\":10,\"pathDisplay\":\"/w/alpha\"},\"presence\":\"present\",\"hasRemote\":false,\"branch\":null,\"isDirty\":true,\"untrackedCount\":null,\"ahead\":null,\"behind\":null,\"stashCount\":null,\"interruptedOp\":null,\"fetchHeadAt\":null,\"refstateObservedAt\":null,\"worktreeObservedAt\":null,\"errorKind\":null,\"errorAt\":null,\"eraSectionId\":\"era:live\",\"healthSummary\":{\"state\":\"absent\",\"scoredOpen\":null,\"unverified\":null,\"unknownChecks\":null,\"observedAt\":null},\"lifecycle\":\"active\"},{\"id\":2,\"name\":\"beta\",\"owner\":null,\"description\":null,\"descriptionSource\":null,\"birthYear\":null,\"primaryLanguage\":null,\"archetype\":null,\"seedBasename\":\"beta\",\"rerollOffset\":0,\"artSceneHash\":null,\"artState\":\"pending\",\"conditionSignal\":null,\"completionLit\":null,\"completionApplicable\":null,\"isPinned\":false,\"isArchived\":false,\"isHidden\":false,\"isReference\":false,\"authoredByUser\":null,\"isFork\":false,\"isBare\":false,\"isShallow\":false,\"isSubmodule\":false,\"ambiguousLineage\":false,\"lastTouchedAt\":1700000000,\"lastInteractionAt\":null,\"lastCommitAt\":null,\"lastCommitSubject\":null,\"firstCommitAt\":null,\"createdAt\":1700000000,\"acknowledgedAt\":null,\"sizeTrackedBytes\":null,\"trackedFiles\":null,\"collectionIds\":[],\"primaryLocation\":{\"id\":20,\"pathDisplay\":\"/w/beta\"},\"presence\":\"present\",\"hasRemote\":false,\"branch\":null,\"isDirty\":null,\"untrackedCount\":null,\"ahead\":null,\"behind\":null,\"stashCount\":null,\"interruptedOp\":null,\"fetchHeadAt\":null,\"refstateObservedAt\":null,\"worktreeObservedAt\":null,\"errorKind\":null,\"errorAt\":null,\"eraSectionId\":\"era:live\",\"healthSummary\":{\"state\":\"absent\",\"scoredOpen\":null,\"unverified\":null,\"unknownChecks\":null,\"observedAt\":null},\"lifecycle\":\"active\"}]}}",
+    "next": "{\"t\":\"event\",\"epoch\":1,\"topic\":\"projects\",\"event\":\"flags_changed\",\"seq\":4,\"data\":{\"id\":2,\"isPinned\":true,\"isArchived\":false,\"isHidden\":false}}",
+    "batch": [
+      {
+        "topic": "projects",
+        "event": "upserted",
+        "data": {
+          "row": {
+            "id": 1,
+            "name": "alpha",
+            "owner": null,
+            "description": null,
+            "descriptionSource": null,
+            "birthYear": null,
+            "primaryLanguage": null,
+            "archetype": null,
+            "seedBasename": "alpha",
+            "rerollOffset": 0,
+            "artSceneHash": null,
+            "artState": "pending",
+            "conditionSignal": null,
+            "completionLit": null,
+            "completionApplicable": null,
+            "isPinned": false,
+            "isArchived": false,
+            "isHidden": false,
+            "isReference": false,
+            "authoredByUser": null,
+            "isFork": false,
+            "isBare": false,
+            "isShallow": false,
+            "isSubmodule": false,
+            "ambiguousLineage": false,
+            "lastTouchedAt": 1700000000,
+            "lastInteractionAt": null,
+            "lastCommitAt": null,
+            "lastCommitSubject": null,
+            "firstCommitAt": null,
+            "createdAt": 1700000000,
+            "acknowledgedAt": null,
+            "sizeTrackedBytes": null,
+            "trackedFiles": null,
+            "collectionIds": [],
+            "primaryLocation": {
+              "id": 10,
+              "pathDisplay": "/w/alpha"
+            },
+            "presence": "present",
+            "hasRemote": false,
+            "branch": null,
+            "isDirty": true,
+            "untrackedCount": null,
+            "ahead": null,
+            "behind": null,
+            "stashCount": null,
+            "interruptedOp": null,
+            "fetchHeadAt": null,
+            "refstateObservedAt": null,
+            "worktreeObservedAt": null,
+            "errorKind": null,
+            "errorAt": null,
+            "eraSectionId": "era:live",
+            "healthSummary": {
+              "state": "absent",
+              "scoredOpen": null,
+              "unverified": null,
+              "unknownChecks": null,
+              "observedAt": null
+            },
+            "lifecycle": "active"
+          }
+        }
+      },
+      {
+        "topic": "projects",
+        "event": "snapshot",
+        "data": {
+          "generation": 4,
+          "rows": [
+            {
+              "id": 1,
+              "name": "alpha",
+              "owner": null,
+              "description": null,
+              "descriptionSource": null,
+              "birthYear": null,
+              "primaryLanguage": null,
+              "archetype": null,
+              "seedBasename": "alpha",
+              "rerollOffset": 0,
+              "artSceneHash": null,
+              "artState": "pending",
+              "conditionSignal": null,
+              "completionLit": null,
+              "completionApplicable": null,
+              "isPinned": true,
+              "isArchived": false,
+              "isHidden": false,
+              "isReference": false,
+              "authoredByUser": null,
+              "isFork": false,
+              "isBare": false,
+              "isShallow": false,
+              "isSubmodule": false,
+              "ambiguousLineage": false,
+              "lastTouchedAt": 1700000000,
+              "lastInteractionAt": null,
+              "lastCommitAt": null,
+              "lastCommitSubject": null,
+              "firstCommitAt": null,
+              "createdAt": 1700000000,
+              "acknowledgedAt": null,
+              "sizeTrackedBytes": null,
+              "trackedFiles": null,
+              "collectionIds": [],
+              "primaryLocation": {
+                "id": 10,
+                "pathDisplay": "/w/alpha"
+              },
+              "presence": "present",
+              "hasRemote": false,
+              "branch": null,
+              "isDirty": true,
+              "untrackedCount": null,
+              "ahead": null,
+              "behind": null,
+              "stashCount": null,
+              "interruptedOp": null,
+              "fetchHeadAt": null,
+              "refstateObservedAt": null,
+              "worktreeObservedAt": null,
+              "errorKind": null,
+              "errorAt": null,
+              "eraSectionId": "era:live",
+              "healthSummary": {
+                "state": "absent",
+                "scoredOpen": null,
+                "unverified": null,
+                "unknownChecks": null,
+                "observedAt": null
+              },
+              "lifecycle": "active"
+            },
+            {
+              "id": 2,
+              "name": "beta",
+              "owner": null,
+              "description": null,
+              "descriptionSource": null,
+              "birthYear": null,
+              "primaryLanguage": null,
+              "archetype": null,
+              "seedBasename": "beta",
+              "rerollOffset": 0,
+              "artSceneHash": null,
+              "artState": "pending",
+              "conditionSignal": null,
+              "completionLit": null,
+              "completionApplicable": null,
+              "isPinned": false,
+              "isArchived": false,
+              "isHidden": false,
+              "isReference": false,
+              "authoredByUser": null,
+              "isFork": false,
+              "isBare": false,
+              "isShallow": false,
+              "isSubmodule": false,
+              "ambiguousLineage": false,
+              "lastTouchedAt": 1700000000,
+              "lastInteractionAt": null,
+              "lastCommitAt": null,
+              "lastCommitSubject": null,
+              "firstCommitAt": null,
+              "createdAt": 1700000000,
+              "acknowledgedAt": null,
+              "sizeTrackedBytes": null,
+              "trackedFiles": null,
+              "collectionIds": [],
+              "primaryLocation": {
+                "id": 20,
+                "pathDisplay": "/w/beta"
+              },
+              "presence": "present",
+              "hasRemote": false,
+              "branch": null,
+              "isDirty": null,
+              "untrackedCount": null,
+              "ahead": null,
+              "behind": null,
+              "stashCount": null,
+              "interruptedOp": null,
+              "fetchHeadAt": null,
+              "refstateObservedAt": null,
+              "worktreeObservedAt": null,
+              "errorKind": null,
+              "errorAt": null,
+              "eraSectionId": "era:live",
+              "healthSummary": {
+                "state": "absent",
+                "scoredOpen": null,
+                "unverified": null,
+                "unknownChecks": null,
+                "observedAt": null
+              },
+              "lifecycle": "active"
+            }
+          ],
+          "epoch": 1,
+          "throughSeq": 3
+        }
+      },
+      {
+        "topic": "projects",
+        "event": "flags_changed",
+        "data": {
+          "id": 2,
+          "isPinned": true,
+          "isArchived": false,
+          "isHidden": false
+        }
+      }
+    ]
+  }
+}

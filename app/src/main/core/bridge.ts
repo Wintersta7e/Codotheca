@@ -5,7 +5,13 @@
  * carry one are refused here outright. They are issued by the shell after a native dialog it
  * owns, on a different channel.
  */
-import { type CommandName, PRIVILEGED_COMMANDS, type Topic } from '../../generated/protocol';
+import {
+  type CommandName,
+  type EventPayloads,
+  PRIVILEGED_COMMANDS,
+  type Topic,
+  type TopicEvents,
+} from '../../generated/protocol';
 import {
   type BridgeCall,
   type BridgeReply,
@@ -15,7 +21,7 @@ import {
   IPC_REQUEST,
   type RendererEvent,
 } from '../../shared/channels';
-import { CoreRequestError, type TopicHandler } from './client';
+import { CoreRequestError, type SnapshotPosition, type TopicHandler } from './client';
 import { COALESCE_WINDOW_MS, createCoalescer } from './coalesce';
 import type { CoreStatus } from './supervisor';
 
@@ -88,16 +94,45 @@ export function registerBridge(deps: BridgeDeps): void {
       onEvent: (event, data) => {
         coalescer.push({ topic, event, data });
       },
-      // The core's snapshot is the only place the renderer learns first run's stamp and git's
-      // version, and it answers the subscription once startup — a rebuild included — is over. It
-      // crosses as the `core/snapshot` event the schema declares, its position folded in.
-      onSnapshot:
-        topic === 'core'
-          ? (data, at) => {
-              const state = typeof data === 'object' && data !== null ? data : {};
-              coalescer.push({ topic, event: 'snapshot', data: { ...state, ...at } });
-            }
-          : () => undefined,
+      // A snapshot replaces every delta it covers — the answer to a resync after a gap, or to a
+      // queue the core collapsed — so a view that misses it stays stale until it asks again.
+      onSnapshot: (data, at) => {
+        const payload = snapshotEvent(topic, data, at);
+        if (payload !== undefined) coalescer.push({ topic, event: 'snapshot', data: payload });
+      },
     });
   }
+}
+
+/** A topic whose schema declares a `snapshot` event. */
+type SnapshotTopic = { [T in Topic]: 'snapshot' extends TopicEvents[T] ? T : never }[Topic];
+
+/**
+ * Whether each snapshot event's type carries the stream position. Typed from the generated
+ * schema, so a topic gaining a snapshot, or a snapshot type gaining or losing its position, does
+ * not compile until this says so.
+ */
+const CARRIES_POSITION: {
+  readonly [T in SnapshotTopic]: 'throughSeq' extends keyof EventPayloads[`${T}/snapshot`]
+    ? true
+    : false;
+} = { core: true, projects: true, install: false, sync: false };
+
+function declaresSnapshot(topic: Topic): topic is SnapshotTopic {
+  return Object.hasOwn(CARRIES_POSITION, topic);
+}
+
+/**
+ * A snapshot frame's data as the `<topic>/snapshot` event the schema declares, or `undefined`
+ * when there is nothing to send.
+ */
+function snapshotEvent(topic: Topic, data: unknown, at: SnapshotPosition): unknown {
+  if (!declaresSnapshot(topic)) return undefined;
+  const state = typeof data === 'object' && data !== null ? data : null;
+  // `null` is a snapshot the core could not compute. The core topic's crosses anyway: it is the
+  // only place the renderer learns first run's stamp and git's version, and it answers the
+  // subscription once startup — a rebuild included — is over, so its arrival is the news. Any
+  // other topic's has no state to replace, and the shelf would read one as no projects at all.
+  if (state === null) return topic === 'core' ? { ...at } : undefined;
+  return CARRIES_POSITION[topic] ? { ...state, ...at } : state;
 }

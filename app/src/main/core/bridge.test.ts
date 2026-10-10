@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import coreSnapshot from '../../../test/fixtures/coreSnapshot.json';
-import { PRIVILEGED_COMMANDS } from '../../generated/protocol';
+import topicSnapshots from '../../../test/fixtures/topicSnapshots.json';
+import { PRIVILEGED_COMMANDS, type Topic } from '../../generated/protocol';
 import {
   type BridgeReply,
   IPC_CORE_STATUS_NOW,
@@ -10,7 +11,7 @@ import {
 import type { CoreStatus } from '../../shared/coreStatus';
 import { type BridgeDeps, isRendererCallable, registerBridge } from './bridge';
 import { CoreClient, CoreRequestError, type SupervisorLike } from './client';
-import { type Outbound, parseOutbound } from './wire';
+import { type Inbound, type Outbound, parseOutbound } from './wire';
 
 const KNOWN = ['projects.list', 'projects.launch', 'roots.add'];
 
@@ -44,6 +45,63 @@ function rig(request: BridgeDeps['request'], status: CoreStatus = { kind: 'start
     knownCommands: KNOWN,
   };
   return { deps, called, handlers, sent };
+}
+
+/** A snapshot frame as the core writes it when it has nothing to say for the topic. */
+function uncomputed(topic: Topic): string {
+  return JSON.stringify({ t: 'snapshot', epoch: 1, topic, through_seq: 0, data: null });
+}
+
+interface Wired {
+  /** Hands the client one frame's wire text, as the supervisor would. */
+  feed: (text: string) => void;
+  /** Every frame the client wrote to the core. */
+  sentToCore: Inbound[];
+  /** Flushes the coalescer and returns every batch the renderer was sent. */
+  batches: () => unknown[];
+}
+
+/** The real client and the real bridge over a supervisor whose frames the test writes. */
+function wired(topics: Topic[]): Wired {
+  const frameSinks: ((f: Outbound) => void)[] = [];
+  const sentToCore: Inbound[] = [];
+  const sup: SupervisorLike = {
+    status: { kind: 'ready', epoch: 1, coreVersion: '0', protocolVersion: 1, pid: 2 },
+    currentEpoch: 1,
+    onStatus: () => undefined,
+    onFrame: (fn) => {
+      frameSinks.push(fn);
+    },
+    onEpochEnd: () => undefined,
+    send: (frame) => {
+      sentToCore.push(frame);
+      return true;
+    },
+  };
+  const client = new CoreClient(sup);
+  const flushes: (() => void)[] = [];
+  const r = rig(async () => Promise.resolve({}));
+  registerBridge({
+    ...r.deps,
+    subscribe: (topic, handler) => client.subscribe(topic, handler),
+    topics,
+    schedule: (fn) => {
+      flushes.push(fn);
+      return () => undefined;
+    },
+  });
+  return {
+    feed: (text) => {
+      const frame = parseOutbound(text);
+      if (frame === null) throw new Error(`a fixture frame does not parse: ${text}`);
+      for (const sink of frameSinks) sink(frame);
+    },
+    sentToCore,
+    batches: () => {
+      for (const flush of flushes.splice(0)) flush();
+      return r.sent.filter((s) => s.channel === IPC_EVENTS).map((s) => s.payload);
+    },
+  };
 }
 
 describe('renderer bridge', () => {
@@ -176,5 +234,54 @@ describe('renderer bridge', () => {
 
     const batches = r.sent.filter((s) => s.channel === IPC_EVENTS).map((s) => s.payload);
     expect(batches).toEqual([coreSnapshot.batch]);
+  });
+
+  // Every other topic whose schema declares a snapshot event: its frame must leave as the batch
+  // `test/dom/topicSnapshots.test.ts` hands the hook that reads that topic.
+  it.each(['projects', 'sync', 'install'] as const)(
+    'forwards the %s snapshot frame to the renderer as its snapshot event',
+    (topic) => {
+      const core = wired([topic]);
+      core.feed(topicSnapshots[topic].frame);
+      expect(core.batches()).toEqual([topicSnapshots[topic].batch]);
+    },
+  );
+
+  // A gap is answered with a resync, and the resync's answer is a snapshot: a view that missed a
+  // delta recovers only if that snapshot crosses, between the deltas either side of it.
+  it('answers a projects gap with a resync and forwards the snapshot that answers it', () => {
+    const core = wired(['projects']);
+    const { gap } = topicSnapshots;
+    core.feed(gap.first);
+    core.feed(gap.skipsSeq2);
+    expect(core.sentToCore.filter((f) => f.t === 'resync')).toEqual([
+      { t: 'resync', topic: 'projects' },
+    ]);
+    core.feed(gap.snapshot);
+    core.feed(gap.next);
+    expect(core.batches()).toEqual([gap.batch]);
+  });
+
+  // The core answers a subscription to a topic with no snapshot event with a `null` one; a
+  // payload there would still be no event the renderer is told to expect.
+  it('forwards no snapshot for a topic whose schema declares none', () => {
+    const topics: Topic[] = ['scan', 'session', 'accounts'];
+    const core = wired(topics);
+    for (const topic of topics) {
+      core.feed(uncomputed(topic));
+      core.feed(JSON.stringify({ t: 'snapshot', epoch: 1, topic, through_seq: 0, data: {} }));
+    }
+    expect(core.batches()).toEqual([]);
+  });
+
+  // `null` is a snapshot the core could not compute. Read as a payload it would be an empty shelf
+  // or no install running; only the core topic's crosses, because its arrival is the news.
+  it('forwards an uncomputed snapshot for the core topic alone', () => {
+    const topics: Topic[] = ['core', 'projects', 'sync', 'install'];
+    const core = wired(topics);
+    for (const topic of topics) core.feed(uncomputed(topic));
+    expect(core.batches()).toEqual([
+      [{ topic: 'core', event: 'snapshot', data: { epoch: 1, throughSeq: 0 } }],
+    ]);
   });
 });
