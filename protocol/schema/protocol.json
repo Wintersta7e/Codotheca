@@ -1622,6 +1622,24 @@
         "amnestyVerdict",
         "cleanArchive"
       ]
+    },
+    "LevelState": {
+      "kind": "enum",
+      "$comment": "§38.5.1: notComputed while histories are pending and the ledger holds no row; partial while histories are pending over a ledger that holds some; computed once none is pending.",
+      "variants": ["notComputed", "partial", "computed"]
+    },
+    "LevelReading": {
+      "kind": "struct",
+      "$comment": "§38.5: the one level reading. level, xp, levelAt and nextLevelAt are null exactly under notComputed — never 0, never 1. level is the displayed level, max(level of xp, floor); floored is floor > level of xp, so xp < levelAt only when floored. pendingProjects counts projects and nothing else",
+      "fields": {
+        "state": "LevelState",
+        "level": "u32?",
+        "xp": "i64?",
+        "levelAt": "i64?",
+        "nextLevelAt": "i64?",
+        "floored": "bool",
+        "pendingProjects": "u32"
+      }
     }
   },
   "commands": [

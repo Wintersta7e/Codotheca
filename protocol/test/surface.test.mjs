@@ -1240,11 +1240,13 @@ test('the four totals agree with the phase-2 delta table', () => {
    * `RemovalRecovery`). §46's other types land with the writers that put them on the wire.
    *
    * [p4] §38.3a moves it by **+1**: `XpTerm`, one variant per addend of the XP function.
+   *
+   * [p4] §38.5 moves it by **+2**: `LevelState` and `LevelReading`, the one level reading.
    */
   assert.equal(
     types,
-    204,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1; found ${types}`,
+    206,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 2; found ${types}`,
   );
 });
 
