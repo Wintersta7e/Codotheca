@@ -16,6 +16,7 @@ use std::process::ExitCode;
 
 use codotheca_core::index::sidecar::{counts, export, read, RestoreRule, Scope, Sidecar, SECTIONS};
 use codotheca_core::index::{Index, IndexError};
+use codotheca_core::ledger::price::record_ledger_fingerprint;
 use codotheca_core::testing::sidecar::{
     build_library, compare_documents, plant_startup_failure, FixtureLibrary, StartupPlant,
 };
@@ -96,6 +97,9 @@ fn plant_populated(data: &Path, repos: &Path) -> Result<Value, IndexError> {
     let FixtureLibrary {
         index, subjects, ..
     } = build_library(data, repos, PLANTED_AT)?;
+    // Every start records the ledger's fingerprint, so an index the app ran over always carries
+    // it — and the rebuilt one will, before `verify` compares the two.
+    record_ledger_fingerprint(index.conn())?;
     let written = index.export_sidecar(PLANTED_AT + 10)?;
     let shelf = shelf(&index)?;
     drop(index);

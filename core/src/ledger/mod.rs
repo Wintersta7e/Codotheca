@@ -3,6 +3,13 @@
 //!
 //! `0019_ledger.sql` states the same two lists as CHECK constraints; `ledger_migration.rs` reads
 //! them back out of `sqlite_master` and compares, so neither copy can drift alone.
+//!
+//! What the rows are worth is computed here at read time and never stored: `price` holds the one
+//! price table, `curve` turns XP into a level, and `xp` sums the ledger term by term (§38.3–§38.4).
+
+pub mod curve;
+pub mod price;
+pub mod xp;
 
 /// Every kind `xp_events.kind` admits: the git-derived ones first, then the retained ones.
 pub const KINDS: [&str; 7] = [

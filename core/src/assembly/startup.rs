@@ -15,7 +15,7 @@ use crate::surfaces::startup_failure::{self, StartupFailure};
 use std::path::Path;
 use std::sync::PoisonError;
 
-/// What the four non-fatal steps managed to do. A `None` field is a step that failed and
+/// What the five non-fatal steps managed to do. A `None` field is a step that failed and
 /// emitted `core/error`; it is never a step that was skipped silently.
 #[derive(Debug, Default)]
 pub struct StartupSummary {
@@ -29,6 +29,9 @@ pub struct StartupSummary {
     /// What seeding the identity set added. `Some(SeedReport::default())` is a set already in
     /// force — which is the ordinary second launch — and is not the same as a failed seed.
     pub identity: Option<crate::identity::people::SeedReport>,
+    /// Whether the ledger's price table and curve differ from the ones the index last recorded
+    /// (§38.3); a level computed under the old ones may now read differently.
+    pub ledger: Option<crate::ledger::price::FingerprintChange>,
 }
 
 /// Open the index, or write §11.2a's report and exit.
@@ -111,7 +114,7 @@ fn exit_fatal(data_dir: &Path, failure: &StartupFailure) -> ! {
     std::process::exit(i32::from(startup_failure::EXIT_INDEX_FATAL));
 }
 
-/// The four calls that must happen before `run_loop`, in the order their side effects require.
+/// The five calls that must happen before `run_loop`, in the order their side effects require.
 ///
 /// 4. **The identity set, before any scan can run.** J1.5 folds each repository's committers
 ///    against the set and writes §5.5's `is_reference` from the result, so a set seeded *after*
@@ -128,6 +131,8 @@ fn exit_fatal(data_dir: &Path, failure: &StartupFailure) -> ! {
 /// 3. **The git floor, last and non-fatally.** It spawns a process, so it is the one step that
 ///    can be slow or fail environmentally. A missing or too-old git is a drawn window (§11.2a),
 ///    never a refusal to start — the app has plenty to show from the index alone.
+/// 5. **The ledger's fingerprint** (§38.3), before any command can read a level: a changed price
+///    table or curve is reported once, at the start that first runs under it.
 pub fn run_startup(handler: &mut CoreHandler) -> StartupSummary {
     let mut summary = StartupSummary::default();
     let now = handler.clock.now_unix();
@@ -196,6 +201,22 @@ pub fn run_startup(handler: &mut CoreHandler) -> StartupSummary {
             Err(e) => {
                 drop(guard);
                 emit_startup_error(handler.events.as_ref(), "identity seed", &e.to_string());
+            }
+        }
+    }
+
+    // 5. The ledger's fingerprint.
+    {
+        let guard = handler.index.lock().unwrap_or_else(PoisonError::into_inner);
+        match crate::ledger::price::record_ledger_fingerprint(guard.conn()) {
+            Ok(change) => summary.ledger = Some(change),
+            Err(e) => {
+                drop(guard);
+                emit_startup_error(
+                    handler.events.as_ref(),
+                    "ledger fingerprint",
+                    &e.to_string(),
+                );
             }
         }
     }

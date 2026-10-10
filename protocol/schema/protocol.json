@@ -1606,6 +1606,22 @@
         "listing": "SyncListingProgress?",
         "notice": "SyncNotice?"
       }
+    },
+
+    "XpTerm": {
+      "kind": "enum",
+      "$comment": "§38.3a: one per addend of the XP function, in its order. Not xp_events.kind: a revival and a first language have no row of their own, and one commit_day row can feed two terms.",
+      "variants": [
+        "commitDay",
+        "revival",
+        "release",
+        "language",
+        "focus",
+        "debtDay",
+        "completionCheck",
+        "amnestyVerdict",
+        "cleanArchive"
+      ]
     }
   },
   "commands": [
