@@ -1,4 +1,4 @@
-//! J4 — history (§4.1): the root set, the first commit, and commit-**days**.
+//! J4 — history (§4.1): the root set, the first commit, commit-**days** and release days.
 //!
 //! **Never reward volume.** J4 produces commit-days and nothing here stores a commit count:
 //! three commits on one day is one day, and deleting code counts as writing it.
@@ -16,14 +16,17 @@
 //!
 //! J4 and J1.5 read the same `authorship` walk, so scheduling J1.5 first costs J4 nothing.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rusqlite::Transaction;
 
 use super::JobError;
-use crate::git::{Authorship, GitBackend, JobContext, RepoHandle};
+use crate::clock::LocalInstant;
+use crate::git::{local_day, Authorship, GitBackend, JobContext, RepoHandle, TagFact, TagKind};
 use crate::identity::user::IdentitySet;
 use crate::index::IndexError;
+use crate::ledger::git_rows::{reconcile_git_rows, GitRow};
+use crate::ledger::receipt::Receipt;
 use crate::protocol::ProjectId;
 
 /// How many recent subjects `fts_commits` and `peek_cache` keep (§1.9).
@@ -57,6 +60,9 @@ pub struct HistoryFacts {
     /// `project.last_commit_subject` is the first of these rather than a field of its own: two
     /// places holding the same subject is how they end up disagreeing.
     pub recent_subjects: Vec<String>,
+    /// §38.8.6: each local day on which a tag of the user's peels to a commit, to that day's
+    /// first such tag name in byte order. **One per day, never a tag count.**
+    pub releases: BTreeMap<i64, String>,
 }
 
 /// Civil date, `YYYY-MM-DD`, from a day number as [`local_day`] produces one.
@@ -92,6 +98,57 @@ pub fn dedupe_key(lineage_key: &str, remote_key: Option<&str>, local_date: &str)
     )
 }
 
+/// §38.2's key for one release date, in §1.7's git shape — the commit-day key's, under
+/// `release:`.
+#[must_use]
+pub fn release_dedupe_key(lineage: &str, remote: Option<&str>, date: &str) -> String {
+    format!("release:{lineage}:{}:{date}", remote.unwrap_or(""))
+}
+
+/// §38.8.6: the local days on which a qualifying tag falls, each to the day's first qualifying
+/// tag name in byte order.
+///
+/// An annotated tag qualifies by its tagger and is dated in the tagger's zone; a lightweight one
+/// by the tagged commit's committer, dated as that commit's commit-day is. Pure, like
+/// [`fold_authorship`], so the rule is testable without a repository.
+#[must_use]
+pub fn release_days(tags: &[TagFact], ids: &IdentitySet) -> BTreeMap<i64, String> {
+    let mut days: BTreeMap<i64, String> = BTreeMap::new();
+    for tag in tags.iter().filter(|tag| !is_product_archive_tag(tag)) {
+        let (email, at, offset) = match &tag.kind {
+            TagKind::Annotated {
+                tagger_email,
+                tagged_at,
+                tz_offset_min,
+            } => (tagger_email, *tagged_at, *tz_offset_min),
+            TagKind::Lightweight {
+                committer_email,
+                authored_at,
+                tz_offset_min,
+            } => (committer_email, *authored_at, *tz_offset_min),
+        };
+        if !ids.contains(email) {
+            continue;
+        }
+        days.entry(local_day(at, offset))
+            .and_modify(|first| {
+                if tag.name < *first {
+                    first.clone_from(&tag.name);
+                }
+            })
+            .or_insert_with(|| tag.name.clone());
+    }
+    days
+}
+
+/// §45.2a's exclusion: the tag the product itself writes when it archives a project is not a
+/// release. It is decided by the name grammar and re-derivation together, never by the name
+/// alone — a user's own tag named `archived` is a release — and until that predicate exists no
+/// tag is excluded.
+const fn is_product_archive_tag(_tag: &TagFact) -> bool {
+    false
+}
+
 /// Fold a committer walk against the identity set.
 ///
 /// Pure, so the whole "days not counts" rule is testable without a repository.
@@ -117,11 +174,15 @@ pub fn fold_authorship(walked: &Authorship, identities: &IdentitySet) -> History
     facts
 }
 
-/// Read one project's history.
+/// Read one project's history, its tags included.
+///
+/// A tag read that fails fails the whole read: the settle reconciles the git rows to what the
+/// history implies, so a history read without its tags would delete every standing `release`
+/// row. Tags that could not be read are not tags that are absent.
 ///
 /// # Errors
 ///
-/// `JobError::Git` carrying the failure of the root, authorship or subject read.
+/// `JobError::Git` carrying the failure of the root, authorship, subject or tag read.
 pub fn observe(
     git: &dyn GitBackend,
     repo: &RepoHandle,
@@ -135,6 +196,7 @@ pub fn observe(
         .into_iter()
         .map(|c| c.subject)
         .collect();
+    facts.releases = release_days(&git.release_tags(repo, ctx)?, identities);
     Ok((roots, facts))
 }
 
@@ -161,60 +223,89 @@ pub fn read_root_facts(
     })
 }
 
-/// §1.7: git-derived events are a pure function of history. They are inserted idempotently on
-/// [`dedupe_key`] and are deleted-and-recomputed, never migrated.
+/// The `commit_day` rows `facts` implies, one per day, keyed by [`dedupe_key`].
+///
+/// §1.7: git-derived events are a pure function of history. The settle reconciles to these; they
+/// are deleted-and-recomputed, never migrated.
 ///
 /// `track = 'git'` is the class that recomputes; `track = 'session'` is reparented and never
 /// recomputed, and the two must never be confused.
 ///
-/// # Errors
-///
-/// `IndexError::Sqlite` when the insert cannot be prepared or a row cannot be written.
+/// None without a lineage: no lineage yet means no stable key, and the rows are written when the
+/// roots resolve.
+#[must_use]
 pub fn commit_days(
-    tx: &Transaction<'_>,
-    project: ProjectId,
     lineage_key: Option<&str>,
     remote_key: Option<&str>,
     facts: &HistoryFacts,
-) -> Result<usize, IndexError> {
+) -> Vec<GitRow> {
     let Some(lineage) = lineage_key else {
-        // No lineage yet means no stable key; the rows are written when the roots resolve.
-        return Ok(0);
+        return Vec::new();
     };
-    // §28.4a: **one subject key, not two.** This rendered `{lineage}:{remote}` while
-    // `ProjectSubject::to_key()` — the sidecar's writer, and `debt_day`'s — rendered
-    // `lineage:{k}|remote:{r}` for the same logical subject, so two ledgers keyed one project two
-    // ways. It does **not** switch to `subject_for_project`: that returns a `Path` subject for a
-    // project with no lineage, and the early return above is what makes §1.7's `commit_day` key
-    // safe. `dedupe_key` is a different string and is deliberately unchanged.
-    let subject = crate::index::subject::ProjectSubject::Lineage {
+    let subject = subject_key(lineage, remote_key);
+    facts
+        .days
+        .iter()
+        .map(|&day| {
+            let date = local_date(day);
+            GitRow {
+                kind: "commit_day",
+                dedupe_key: dedupe_key(lineage, remote_key, &date),
+                subject_key: subject.clone(),
+                ts: day_ts(day),
+                meta: serde_json::json!({ "when": date }).to_string(),
+            }
+        })
+        .collect()
+}
+
+/// §38.8.6: the `release` rows `facts` implies, one per release day, each carrying its receipt —
+/// the day's first tag name, the date, and `project_name` as it stands at the write.
+#[must_use]
+pub fn releases(
+    lineage: &str,
+    remote: Option<&str>,
+    project_name: &str,
+    facts: &HistoryFacts,
+) -> Vec<GitRow> {
+    let subject = subject_key(lineage, remote);
+    facts
+        .releases
+        .iter()
+        .map(|(&day, name)| {
+            let at = LocalInstant {
+                unix: day_ts(day),
+                offset_min: 0,
+            };
+            GitRow {
+                kind: "release",
+                dedupe_key: release_dedupe_key(lineage, remote, &local_date(day)),
+                subject_key: subject.clone(),
+                ts: at.unix,
+                meta: Receipt::new(name, at, project_name).to_meta(),
+            }
+        })
+        .collect()
+}
+
+/// The day's midnight in the day's own frame. The offset is not recoverable from a day number,
+/// and 0 is the honest answer for "this is a day, not a moment".
+const fn day_ts(day: i64) -> i64 {
+    day.saturating_mul(86_400)
+}
+
+/// §28.4a: **one subject key, not two.** This rendered `{lineage}:{remote}` while
+/// `ProjectSubject::to_key()` — the sidecar's writer, and `debt_day`'s — rendered
+/// `lineage:{k}|remote:{r}` for the same logical subject, so two ledgers keyed one project two
+/// ways. It does **not** switch to `subject_for_project`: that returns a `Path` subject for a
+/// project with no lineage, and a git row is written only under a lineage, which is what makes
+/// §1.7's keys safe. The dedupe keys are different strings and deliberately unchanged.
+fn subject_key(lineage: &str, remote: Option<&str>) -> String {
+    crate::index::subject::ProjectSubject::Lineage {
         lineage_key: lineage.to_owned(),
-        remote_key: remote_key.map(str::to_owned),
+        remote_key: remote.map(str::to_owned),
     }
-    .to_key();
-    let mut stmt = tx.prepare(
-        "INSERT INTO xp_events
-            (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key, track, meta)
-         VALUES (?1, ?2, ?3, ?4, 'commit_day', ?5, 'git', ?6)
-         ON CONFLICT(dedupe_key) DO NOTHING",
-    )?;
-    let mut written = 0;
-    for day in &facts.days {
-        let date = local_date(*day);
-        // The day's midnight in the day's own frame. The offset is not recoverable from a day
-        // number, and 0 is the honest answer for "this is a day, not a moment".
-        let ts = day.saturating_mul(86_400);
-        let meta = serde_json::json!({ "when": date }).to_string();
-        written += stmt.execute(rusqlite::params![
-            ts,
-            0_i64,
-            project.0,
-            subject,
-            dedupe_key(lineage, remote_key, &date),
-            meta,
-        ])?;
-    }
-    Ok(written)
+    .to_key()
 }
 
 impl HistoryFacts {
@@ -225,11 +316,16 @@ impl HistoryFacts {
     }
 }
 
-/// Write everything J4 owns: the history columns §1.2 declares, the commit-days, and the
-/// subject index.
+/// Write everything J4 owns: the history columns §1.2 declares, the git rows, and the subject
+/// index.
 ///
-/// Reads `lineage_key` and `remote_key` from the row rather than taking them, so the dedupe key
-/// cannot be built from a stale copy the caller was holding.
+/// §38.7.4: the git rows are reconciled to exactly what the history implies — `commit_day` and
+/// `release` alike — so a dropped address, a rewritten history or a returning copy leaves no
+/// row nothing implies. A Reference project implies none, so its rows empty while its history is
+/// still walked. A project with no lineage has no stable key, and its rows are left alone.
+///
+/// Reads `lineage_key`, `remote_key`, `is_reference` and `name` from the row rather than taking
+/// them, so the dedupe key cannot be built from a stale copy the caller was holding.
 ///
 /// # Errors
 ///
@@ -240,13 +336,25 @@ pub fn commit_history(
     project: ProjectId,
     roots: &RootFacts,
     facts: &HistoryFacts,
+    now: i64,
 ) -> Result<(), IndexError> {
-    let (lineage, remote): (Option<String>, Option<String>) = tx.query_row(
-        "SELECT lineage_key, remote_key FROM project WHERE id = ?1",
-        [project.0],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
-    commit_days(tx, project, lineage.as_deref(), remote.as_deref(), facts)?;
+    let (lineage, remote, reference, name): (Option<String>, Option<String>, bool, String) = tx
+        .query_row(
+            "SELECT lineage_key, remote_key, is_reference, name FROM project WHERE id = ?1",
+            [project.0],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?;
+    if let Some(lineage) = lineage.as_deref() {
+        let implied = if reference {
+            Vec::new()
+        } else {
+            let mut rows = commit_days(Some(lineage), remote.as_deref(), facts);
+            rows.extend(releases(lineage, remote.as_deref(), &name, facts));
+            rows
+        };
+        // First, so the settle reads whether it is silent before its own writes.
+        reconcile_git_rows(tx, project, &implied, now)?;
+    }
     tx.execute(
         "INSERT INTO fts_commits (project_id, subjects) VALUES (?1, ?2)
          ON CONFLICT(project_id) DO UPDATE SET subjects = excluded.subjects",

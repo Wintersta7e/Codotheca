@@ -7,12 +7,13 @@
 //! What the rows are worth is computed here at read time and never stored: `price` holds the one
 //! price table, `curve` turns XP into a level, and `xp` sums the ledger term by term (§38.3–§38.4).
 //! `level` is the one reading of all three, and `floor` the level it never falls below (§38.5–§38.6).
-//! `recompute` is the one path that deletes git rows, ratchet first (§38.7). A retained row
-//! carries its `receipt`, and `pending` holds every retained writer back until a restored record
-//! has had its chance to match (§48.8.4).
+//! `recompute` holds the one statement that deletes git rows, ratchet first (§38.7), and
+//! `git_rows` is J4's reconcile through it. A retained row carries its `receipt`, and `pending`
+//! holds every retained writer back until a restored record has had its chance to match (§48.8.4).
 
 pub mod curve;
 pub mod floor;
+pub mod git_rows;
 pub mod level;
 pub mod pending;
 pub mod price;

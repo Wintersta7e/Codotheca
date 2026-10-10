@@ -85,10 +85,7 @@ pub fn recompute_git_rows(
     for &project in projects {
         match branch_for(tx, project)? {
             Branch::Delete => {
-                report.deleted += tx.execute(
-                    "DELETE FROM xp_events WHERE project_id = ?1 AND track = 'git'",
-                    [project.0],
-                )?;
+                report.deleted += delete_git_rows(tx, project, None)?;
                 tx.execute(
                     "UPDATE project_job_state
                         SET state = 'queued', reason = 'user_requested', at = ?2, fail_count = 0
@@ -101,4 +98,24 @@ pub fn recompute_git_rows(
         }
     }
     Ok(report)
+}
+
+/// The one statement that deletes git rows: every one of `project`'s, or only those keyed in
+/// `only`, which is how J4's reconcile drops what its history no longer implies. Each caller
+/// ratchets the floor before it calls this.
+pub(super) fn delete_git_rows(
+    tx: &Transaction<'_>,
+    project: ProjectId,
+    only: Option<&[String]>,
+) -> Result<usize, IndexError> {
+    const DELETE: &str = "DELETE FROM xp_events WHERE project_id = ?1 AND track = 'git'";
+    let Some(keys) = only else {
+        return Ok(tx.execute(DELETE, [project.0])?);
+    };
+    let mut statement = tx.prepare(&format!("{DELETE} AND dedupe_key = ?2"))?;
+    let mut deleted = 0;
+    for key in keys {
+        deleted += statement.execute(rusqlite::params![project.0, key])?;
+    }
+    Ok(deleted)
 }

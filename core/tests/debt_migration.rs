@@ -19,6 +19,7 @@ use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VER
 use codotheca_core::index::subject::ProjectSubject;
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::jobs::j4_history::{commit_days, local_date, HistoryFacts};
+use codotheca_core::ledger::git_rows::reconcile_git_rows;
 use codotheca_core::protocol::ProjectId;
 
 /// The committed contract, compiled in rather than re-found at runtime.
@@ -301,14 +302,8 @@ fn both_xp_writers_render_one_subject_key() {
         ..HistoryFacts::default()
     };
     let tx = conn.transaction().unwrap();
-    commit_days(
-        &tx,
-        ProjectId(p),
-        Some("abc123"),
-        Some("github.com/o/r"),
-        &facts,
-    )
-    .unwrap();
+    let implied = commit_days(Some("abc123"), Some("github.com/o/r"), &facts);
+    reconcile_git_rows(&tx, ProjectId(p), &implied, 0).unwrap();
 
     let subject = ProjectSubject::Lineage {
         lineage_key: "abc123".to_owned(),
@@ -369,7 +364,8 @@ fn both_writers_agree_when_there_is_no_remote() {
         ..HistoryFacts::default()
     };
     let tx = conn.transaction().unwrap();
-    commit_days(&tx, ProjectId(p), Some("abc123"), None, &facts).unwrap();
+    let rows = commit_days(Some("abc123"), None, &facts);
+    reconcile_git_rows(&tx, ProjectId(p), &rows, 0).unwrap();
     tx.commit().unwrap();
 
     let key: String = conn

@@ -581,7 +581,7 @@ pub fn run_one(
             let identities = identity_set(index)?;
             let (roots, facts) = j4_history::observe(git, &repo, &identities, &ctx)?;
             write(index, |tx| {
-                j4_history::commit_history(tx, job.project_id, &roots, &facts)
+                j4_history::commit_history(tx, job.project_id, &roots, &facts, now)
             })?;
             Ok(JobOutcome::Done)
         }

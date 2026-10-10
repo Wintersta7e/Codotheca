@@ -28,6 +28,7 @@ use codotheca_core::index::{open_connection, Index};
 use codotheca_core::jobs::j4_history::{
     commit_days, commit_history, observe, read_root_facts, HistoryFacts, RootFacts,
 };
+use codotheca_core::ledger::git_rows::{reconcile_git_rows, GitRow};
 use codotheca_core::protocol::ProjectId;
 use support::TestRepo;
 
@@ -141,7 +142,8 @@ fn commit_days_are_idempotent_on_their_dedupe_key() {
 
     for expected in [2, 0] {
         let tx = conn.transaction().unwrap();
-        let written = commit_days(&tx, project, Some("lin"), Some("host/o/r"), &facts).unwrap();
+        let rows = commit_days(Some("lin"), Some("host/o/r"), &facts);
+        let written = reconcile_git_rows(&tx, project, &rows, 0).unwrap().inserted;
         tx.commit().unwrap();
         assert_eq!(written, expected);
     }
@@ -169,14 +171,13 @@ fn a_fork_and_its_upstream_both_keep_their_commit_day() {
     };
 
     let tx = conn.transaction().unwrap();
-    assert_eq!(
-        commit_days(&tx, upstream, Some("lin"), Some("host/owner-a/r"), &facts).unwrap(),
-        1
-    );
-    assert_eq!(
-        commit_days(&tx, fork, Some("lin"), Some("host/owner-b/r"), &facts).unwrap(),
-        1
-    );
+    for (project, remote) in [(upstream, "host/owner-a/r"), (fork, "host/owner-b/r")] {
+        let rows = commit_days(Some("lin"), Some(remote), &facts);
+        assert_eq!(
+            reconcile_git_rows(&tx, project, &rows, 0).unwrap().inserted,
+            1
+        );
+    }
     tx.commit().unwrap();
 
     let n: i64 = conn
@@ -189,22 +190,22 @@ fn a_fork_and_its_upstream_both_keep_their_commit_day() {
 /// written under a key that will change.
 #[test]
 fn no_lineage_writes_no_commit_days() {
+    let facts = HistoryFacts {
+        days: std::iter::once(19_675).collect(),
+        ..HistoryFacts::default()
+    };
+    assert_eq!(commit_days(None, None, &facts), Vec::<GitRow>::new());
+
+    // The settle of a project with no lineage writes none either.
     let (_dir, mut conn) = fresh();
     let project = insert_project(&conn, "p");
     let tx = conn.transaction().unwrap();
-    let written = commit_days(
-        &tx,
-        project,
-        None,
-        None,
-        &HistoryFacts {
-            days: std::iter::once(19_675).collect(),
-            ..HistoryFacts::default()
-        },
-    )
-    .unwrap();
+    commit_history(&tx, project, &RootFacts::default(), &facts, 0).unwrap();
     tx.commit().unwrap();
-    assert_eq!(written, 0);
+    let n: i64 = conn
+        .query_row("SELECT count(*) FROM xp_events", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 0);
 }
 
 /// Nothing J4 writes is a commit count. The columns it fills are dates and one subject.
@@ -224,10 +225,11 @@ fn committing_history_writes_dates_and_never_a_count() {
         last_commit_at: Some(1_700_000_000),
         last_user_commit_at: Some(1_650_000_000),
         recent_subjects: vec!["third".to_owned(), "second".to_owned()],
+        releases: std::collections::BTreeMap::new(),
     };
 
     let tx = conn.transaction().unwrap();
-    commit_history(&tx, project, &roots, &facts).unwrap();
+    commit_history(&tx, project, &roots, &facts, 0).unwrap();
     tx.commit().unwrap();
 
     let (first, off, sha, last, subject, user): HistoryRow = conn
