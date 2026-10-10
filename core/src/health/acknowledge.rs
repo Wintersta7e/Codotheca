@@ -16,7 +16,7 @@
 //! reason is that the column counts reflog activity performed *outside* the app — deriving
 //! enrolment from it would let activity outside the app forge it.
 
-use rusqlite::Transaction;
+use rusqlite::{Connection, Transaction};
 
 use super::enrolment::is_enrolled;
 use crate::index::IndexError;
@@ -45,15 +45,15 @@ pub fn stamp_acknowledged(
     Ok(changed > 0)
 }
 
-/// The stored stamp, read back through the same transaction.
+/// The stored stamp, read through the caller's transaction or connection.
 ///
 /// # Errors
 /// Fails when the index refuses the read.
 pub fn read_acknowledged_at(
-    tx: &Transaction<'_>,
+    conn: &Connection,
     project: ProjectId,
 ) -> Result<Option<i64>, IndexError> {
-    tx.query_row(
+    conn.query_row(
         "SELECT acknowledged_at FROM project WHERE id = ?1",
         [project.0],
         |r| r.get::<_, Option<i64>>(0),

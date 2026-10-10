@@ -13,6 +13,15 @@ use crate::index::IndexError;
 use crate::projects::current::IS_CURRENT_SQL;
 use crate::protocol::{LevelReading, LevelState};
 
+/// §38.5.1's *concluded*, for the project aliased `p`: its history finished (`j4` reads `ok`),
+/// or something on its history chain failed or was deferred. The one spelling, spliced into every
+/// statement that asks.
+pub(crate) const CONCLUDED_SQL: &str = "EXISTS (SELECT 1 FROM project_job_state j
+                 WHERE j.project_id = p.id
+                   AND ((j.job = 'j4' AND j.state = 'ok')
+                     OR (j.job IN ('j1', 'j1_5', 'j4')
+                         AND j.state IN ('failed', 'deferred_slow'))))";
+
 /// How many projects §38.5.1 counts as pending.
 ///
 /// A project is pending when it is eligible — not merged away, not Reference, current, and with
@@ -32,11 +41,7 @@ pub fn pending_projects(conn: &Connection) -> Result<u32, IndexError> {
                 AND EXISTS (SELECT 1 FROM location l
                              WHERE l.project_id = p.id AND l.removed_at IS NULL
                                AND l.presence = 'present')
-                AND NOT EXISTS (SELECT 1 FROM project_job_state j
-                                 WHERE j.project_id = p.id
-                                   AND ((j.job = 'j4' AND j.state = 'ok')
-                                     OR (j.job IN ('j1', 'j1_5', 'j4')
-                                         AND j.state IN ('failed', 'deferred_slow'))))"
+                AND NOT {CONCLUDED_SQL}"
         ),
         [],
         |r| r.get(0),
