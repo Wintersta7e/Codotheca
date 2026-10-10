@@ -85,6 +85,17 @@ fn plant(conn: &Connection, id: i64, name: &str) {
         )
         .unwrap();
     }
+    // A present copy, so the merge can read the history again and deletes the git rows rather
+    // than freezing them (§38.7.2).
+    let path = format!("/w/{name}");
+    conn.execute(
+        "INSERT INTO location
+            (project_id, kind, distro, path_bytes, path_key, path_display, volume_key, store_key,
+             presence, scan_generation, repo_kind)
+         VALUES (?1, 'linux', '', ?2, ?2, ?3, 'vol', 'store', 'present', 1, 'worktree')",
+        rusqlite::params![id, path.as_bytes(), path],
+    )
+    .unwrap();
 }
 
 fn deltas(conn: &Connection) -> Vec<(i64, i64, i64)> {

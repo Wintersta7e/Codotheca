@@ -75,6 +75,20 @@ fn plant_xp(conn: &rusqlite::Connection, project: i64, kind: &str, track: &str, 
     .unwrap();
 }
 
+/// A present copy, so the merge can read `project`'s history again and deletes its git rows
+/// rather than freezing them (§38.7.2).
+fn plant_copy(conn: &rusqlite::Connection, project: i64) {
+    let path = format!("/w/{project}");
+    conn.execute(
+        "INSERT INTO location
+            (project_id, kind, distro, path_bytes, path_key, path_display, volume_key, store_key,
+             presence, scan_generation, repo_kind)
+         VALUES (?1, 'linux', '', ?2, ?2, ?3, 'vol', 'store', 'present', 1, 'worktree')",
+        rusqlite::params![project, path.as_bytes(), path],
+    )
+    .unwrap();
+}
+
 fn count(conn: &rusqlite::Connection, sql: &str, project: i64) -> i64 {
     conn.query_row(sql, [project], |r| r.get(0)).unwrap()
 }
@@ -94,7 +108,7 @@ fn ac_p3_28_6_a_merge_deletes_both_sides_and_pays_nothing() {
     plant_item(&conn, absorbed, "missing_readme");
 
     let tx = conn.transaction().unwrap();
-    recompute_derived(&tx, survivor, absorbed).unwrap();
+    recompute_derived(&tx, survivor, absorbed, 1).unwrap();
     tx.commit().unwrap();
 
     for project in [survivor, absorbed] {
@@ -136,6 +150,8 @@ fn ac_p3_28_18_a_debt_day_survives_the_merge_a_commit_day_does_not() {
     plant_xp(&conn, absorbed, "debt_day", "session", "debt_day:x");
     plant_xp(&conn, absorbed, "commit_day", "git", "commit_day:x");
     plant_xp(&conn, survivor, "commit_day", "git", "commit_day:y");
+    plant_copy(&conn, survivor);
+    plant_copy(&conn, absorbed);
 
     let before: String = conn
         .query_row(
@@ -146,7 +162,7 @@ fn ac_p3_28_18_a_debt_day_survives_the_merge_a_commit_day_does_not() {
         .unwrap();
 
     let tx = conn.transaction().unwrap();
-    recompute_derived(&tx, survivor, absorbed).unwrap();
+    recompute_derived(&tx, survivor, absorbed, 1).unwrap();
     tx.commit().unwrap();
 
     // The git-track rows are gone, for both sides.
@@ -175,9 +191,9 @@ fn ac_p3_28_18_a_debt_day_survives_the_merge_a_commit_day_does_not() {
 }
 
 /// **The hazard the class assignment avoids, and the tree anticipates only its mirror image.**
-/// `recompute_derived` deletes `WHERE track = 'git'` and `level_floor` counts `track = 'git'`
-/// only, so a `debt_day` row on the git track would satisfy both DDL CHECKs, be deleted by the
-/// first merge, and be covered by **no floor** — silent, permanent data loss.
+/// `recompute_git_rows` deletes `WHERE track = 'git'` and the history job writes back only
+/// `GIT_KINDS`, so a `debt_day` row on the git track would satisfy both DDL CHECKs, be deleted by
+/// the first merge, and **never be recomputed** — silent, permanent data loss.
 ///
 /// Task 3's CHECK is what stops that, and this is it doing the work.
 #[test]
@@ -215,7 +231,7 @@ fn health_delta_is_reparented_by_another_function_entirely() {
     // `recompute_derived` alone — the function the other two classes pass through. It moves the
     // `debt_day` row and **does not touch `health_delta`**, which is the discriminator.
     let tx = conn.transaction().unwrap();
-    recompute_derived(&tx, survivor, absorbed).unwrap();
+    recompute_derived(&tx, survivor, absorbed, 1).unwrap();
     tx.commit().unwrap();
 
     let debt_day_owner: i64 = conn
@@ -293,10 +309,10 @@ fn ac_p3_28_7_a_debt_day_round_trips_through_the_sidecar() {
 ///
 /// The DDL refuses a git-track `debt_day`, so the loss this guards against cannot be reached in
 /// production. It is reached here in a **scratch database with the CHECK dropped**, and the row
-/// vanishes on the first merge with `level_floor` unchanged — silent, permanent data loss that
-/// no test around it would see.
+/// vanishes on the first merge: inside the git-track delete, outside the kinds the history job
+/// writes back — silent, permanent data loss that no test around it would see.
 #[test]
-fn a_debt_day_on_the_git_track_would_vanish_with_the_floor_unmoved() {
+fn a_debt_day_on_the_git_track_would_be_deleted_and_never_recomputed() {
     let dir = tempfile::tempdir().unwrap();
     let conn = rusqlite::Connection::open(dir.path().join("scratch.db")).unwrap();
     // A scratch table with §28.8's CHECKs deliberately absent, so the row the DDL refuses can
@@ -314,16 +330,14 @@ fn a_debt_day_on_the_git_track_would_vanish_with_the_floor_unmoved() {
     )
     .unwrap();
 
-    // `level_floor` counts `track = 'git'` only, so this row is inside the floor's unit.
-    let floor_before: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM xp_events WHERE track = 'git'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
+    // The history job writes back the git kinds only; `debt_day` is retained, not one of them.
+    assert!(
+        codotheca_core::ledger::RETAINED_KINDS.contains(&"debt_day")
+            && !codotheca_core::ledger::GIT_KINDS.contains(&"debt_day"),
+        "debt_day is a git kind, so a recompute would write it back"
+    );
 
-    // `recompute_derived`'s first statement, verbatim in shape.
+    // `recompute_git_rows`' `track = 'git'` delete, over both sides, verbatim in shape.
     conn.execute(
         "DELETE FROM xp_events WHERE project_id IN (?1, ?2) AND track = 'git'",
         rusqlite::params![1, 2],
@@ -353,8 +367,4 @@ fn a_debt_day_on_the_git_track_would_vanish_with_the_floor_unmoved() {
         )
         .unwrap();
     assert_eq!(survived, 1);
-
-    // And the floor never moved to cover the loss: it is counted **before** the delete, in a unit
-    // the deleted row was inside.
-    assert_eq!(floor_before, 1);
 }

@@ -3,6 +3,8 @@
 use rusqlite::{params, OptionalExtension as _, Transaction};
 
 use super::IdentityError;
+use crate::ledger::recompute::{recompute_git_rows, RecomputeCause};
+use crate::protocol::ProjectId;
 
 /// The rule line §1.5 puts between two concatenated notes.
 pub const NOTE_SEPARATOR: &str = "\n\n---\n\n";
@@ -329,9 +331,9 @@ fn reparent_removals(
 /// §1.7's git-derived event kinds — a pure function of history, so never migrated. The ledger
 /// module owns the list; this name is kept for the identity code that reads it.
 ///
-/// This is the vocabulary, not the predicate. The sweep below keys on `xp_events.track`, which
-/// `0019`'s track CHECK already ties to these kinds: restating them in the `DELETE` would be one
-/// value in two places, and the copy that went stale would leave a third kind's rows behind as
+/// This is the vocabulary, not the predicate. The ledger's recompute keys on `xp_events.track`,
+/// which `0019`'s track CHECK already ties to these kinds: restating them in the `DELETE` would be
+/// one value in two places, and the copy that went stale would leave a third kind's rows behind as
 /// stale duplicates after a merge.
 pub use crate::ledger::GIT_KINDS as GIT_DERIVED_XP_KINDS;
 
@@ -343,8 +345,6 @@ pub struct DerivedSweep {
     pub git_events_deleted: usize,
     /// Session-track `xp_events` rows moved to the survivor.
     pub xp_events_reparented: usize,
-    /// `app_meta.level_floor` as it now stands.
-    pub level_floor: i64,
     /// The absorbed row's art scene hash, whose files the art layer sweeps; `None` if it had no
     /// scene.
     pub swept_scene_hash: Option<String>,
@@ -352,31 +352,27 @@ pub struct DerivedSweep {
 
 /// Delete everything that recomputes, reparent everything that does not.
 ///
-/// **`level_floor` is stamped before the delete, or it is unrecoverable** (§1.4's ruling, which
-/// §1.7 extends to every deletion of git-derived events). Phase 1 renders no level and has no
-/// level function, so the floor is stored in the only unit phase 1 can compute honestly: the
-/// library-wide count of git-derived events immediately before the delete, `max(existing,
-/// counted)`, monotonic. Any level function monotonic in that count inherits the guarantee.
+/// The git rows go through the ledger's one recompute path, which ratchets the floor before it
+/// deletes anything and keeps the rows of a side with no readable copy (§38.6.1, §38.7.2). It
+/// reads each side's own copies, so it runs before the copies move to the survivor.
 ///
 /// # Errors
-/// Fails with [`IdentityError::Sqlite`] when SQLite refuses the count, the floor's stamp, or any
-/// delete or update.
+/// Fails with [`IdentityError::Index`] when the recompute fails, and [`IdentityError::Sqlite`]
+/// when SQLite refuses any other delete or update.
 pub fn recompute_derived(
     tx: &Transaction<'_>,
     survivor: i64,
     absorbed: i64,
+    now: i64,
 ) -> Result<DerivedSweep, IdentityError> {
-    let before: i64 = tx.query_row(
-        "SELECT COUNT(*) FROM xp_events WHERE track = 'git'",
-        [],
-        |r| r.get(0),
-    )?;
-    let level_floor = stamp_level_floor(tx, before)?;
-
-    let git_events_deleted = tx.execute(
-        "DELETE FROM xp_events WHERE project_id IN (?1, ?2) AND track = 'git'",
-        params![survivor, absorbed],
-    )?;
+    let git_events_deleted = recompute_git_rows(
+        tx,
+        &[ProjectId(survivor), ProjectId(absorbed)],
+        RecomputeCause::Merge,
+        now,
+    )
+    .map_err(IdentityError::Index)?
+    .deleted;
     let xp_events_reparented = tx.execute(
         "UPDATE xp_events SET project_id = ?1 WHERE project_id = ?2",
         params![survivor, absorbed],
@@ -464,36 +460,8 @@ pub fn recompute_derived(
     Ok(DerivedSweep {
         git_events_deleted,
         xp_events_reparented,
-        level_floor,
         swept_scene_hash,
     })
-}
-
-fn stamp_level_floor(tx: &Transaction<'_>, counted: i64) -> Result<i64, IdentityError> {
-    let existing: Option<i64> = tx
-        .query_row(
-            "SELECT CAST(v AS INTEGER) FROM app_meta WHERE k = 'level_floor'",
-            [],
-            |r| r.get(0),
-        )
-        .optional()?;
-    match existing {
-        Some(current) if current >= counted => Ok(current),
-        Some(_) => {
-            tx.execute(
-                "UPDATE app_meta SET v = ?1 WHERE k = 'level_floor'",
-                params![counted.to_string()],
-            )?;
-            Ok(counted)
-        }
-        None => {
-            tx.execute(
-                "INSERT INTO app_meta (k, v) VALUES ('level_floor', ?1)",
-                params![counted.to_string()],
-            )?;
-            Ok(counted)
-        }
-    }
 }
 
 /// The result of §1.5's one transaction.
@@ -541,8 +509,9 @@ pub fn merge_projects(
     let (survivor, absorbed) = choose_survivor(tx, a, b)?;
 
     let snapshot = reconcile_scalars(tx, survivor, absorbed, now)?;
+    // Before the copies move: each side's git rows are deleted only if that side can be read.
+    let derived = recompute_derived(tx, survivor, absorbed, now)?;
     let reparented = reparent_rows(tx, survivor, absorbed)?;
-    let derived = recompute_derived(tx, survivor, absorbed)?;
 
     let stored: Option<String> = tx
         .query_row(
@@ -1262,9 +1231,12 @@ mod tests {
         xp(&conn, a, "release", "release:L::v1");
         xp(&conn, a, "focus", "focus:42");
         xp(&conn, s, "focus", "focus:7");
+        // Rows are deleted only where a copy can read the history again (§38.7.2).
+        super::super::testutil::insert_location(&conn, s, "/w/s", None);
+        super::super::testutil::insert_location(&conn, a, "/w/a", None);
 
         let tx = conn.transaction().unwrap();
-        let d = super::recompute_derived(&tx, s, a).unwrap();
+        let d = super::recompute_derived(&tx, s, a, 1).unwrap();
         assert_eq!(d.git_events_deleted, 3);
         assert_eq!(d.xp_events_reparented, 1);
         let left: i64 = tx
@@ -1276,40 +1248,6 @@ mod tests {
             2
         );
         tx.commit().unwrap();
-    }
-
-    #[test]
-    fn the_level_floor_is_stamped_before_the_delete_and_only_ever_rises() {
-        let mut conn = open_test_index();
-        let s = p(&conn, "s", 100);
-        let a = p(&conn, "a", 200);
-        xp(&conn, s, "commit_day", "k1");
-        xp(&conn, a, "commit_day", "k2");
-        xp(&conn, a, "commit_day", "k3");
-
-        let tx = conn.transaction().unwrap();
-        let d = super::recompute_derived(&tx, s, a).unwrap();
-        assert_eq!(d.level_floor, 3);
-        let stored: String = tx
-            .query_row("SELECT v FROM app_meta WHERE k='level_floor'", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert_eq!(stored, "3");
-        tx.commit().unwrap();
-
-        // A second, smaller merge must not lower it. Nothing earned is ever taken away.
-        let b = p(&conn, "b", 300);
-        let second_tx = conn.transaction().unwrap();
-        let d2 = super::recompute_derived(&second_tx, s, b).unwrap();
-        assert_eq!(d2.level_floor, 3);
-        second_tx.commit().unwrap();
-        let stored_after: String = conn
-            .query_row("SELECT v FROM app_meta WHERE k='level_floor'", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert_eq!(stored_after, "3");
     }
 
     #[test]
@@ -1358,7 +1296,7 @@ mod tests {
         .unwrap();
 
         let tx = conn.transaction().unwrap();
-        let d = super::recompute_derived(&tx, s, a).unwrap();
+        let d = super::recompute_derived(&tx, s, a, 1).unwrap();
         assert_eq!(d.swept_scene_hash.as_deref(), Some("hash-a"));
         for table in ["fts_commits", "peek_cache", "project_committer"] {
             let n: i64 = tx

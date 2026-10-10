@@ -128,8 +128,8 @@ fn the_chain_reaches_thirteen_and_stamps_it() {
 
 /// `AC-P3-28-16`. The two CHECKs widen **together**: `debt_day` joins `kind`'s list and joins
 /// the `session` side of the track equivalence. A `debt_day` row on the git track would satisfy
-/// `kind`'s CHECK alone, be deleted by the first merge's `recompute_derived`, and be covered by
-/// no `level_floor` — silent, permanent data loss.
+/// `kind`'s CHECK alone, be deleted by the first merge's git-track delete, and be written back by
+/// nothing — the history job rewrites only the git kinds — silent, permanent data loss.
 #[test]
 fn a_debt_day_is_a_session_row_and_the_git_track_is_refused() {
     let (_d, conn) = fresh();

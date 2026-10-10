@@ -135,7 +135,7 @@ fn ac_p3_32_21_the_notice_ledger_is_carried_across_a_merge() {
 
     let tx = conn.transaction().unwrap();
     let counts = reparent_rows(&tx, survivor, absorbed).expect("reparent");
-    recompute_derived(&tx, survivor, absorbed).expect("recompute");
+    recompute_derived(&tx, survivor, absorbed, NOW).expect("recompute");
     tx.commit().unwrap();
 
     eprintln!(
@@ -175,7 +175,7 @@ fn a_stale_survivor_row_does_not_survive() {
     seed_read(&conn, survivor, "stale");
 
     let tx = conn.transaction().unwrap();
-    recompute_derived(&tx, survivor, absorbed).expect("recompute");
+    recompute_derived(&tx, survivor, absorbed, NOW).expect("recompute");
     tx.commit().unwrap();
 
     assert_eq!(
@@ -222,7 +222,7 @@ fn a_merge_does_not_touch_the_library_wide_cache() {
 
     let tx = conn.transaction().unwrap();
     reparent_rows(&tx, survivor, absorbed).expect("reparent");
-    recompute_derived(&tx, survivor, absorbed).expect("recompute");
+    recompute_derived(&tx, survivor, absorbed, NOW).expect("recompute");
     tx.commit().unwrap();
 
     eprintln!("advisory_merge: library-wide rows before={before:?}");

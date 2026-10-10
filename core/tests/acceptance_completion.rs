@@ -1086,7 +1086,7 @@ fn ac_p3_31_15_a_merge_clears_the_rows_and_the_projection_on_both_sides() {
     }
 
     let tx = conn.transaction().unwrap();
-    recompute_derived(&tx, survivor, absorbed).unwrap();
+    recompute_derived(&tx, survivor, absorbed, 1).unwrap();
     tx.commit().unwrap();
 
     // **Scoped to every project, not to every project with rows** — the old scoping is exactly

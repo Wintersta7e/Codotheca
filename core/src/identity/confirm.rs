@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 
 use crate::index::IndexError;
+use crate::ledger::recompute::{history_readable, recompute_git_rows, RecomputeCause};
 use crate::protocol::{IdentityConfirm, ProjectId};
 
 /// What confirming this set would do, or has just done.
@@ -18,24 +19,6 @@ pub struct Delta {
     /// ([`history_readable`]) lose their git rows and have their history jobs re-queued, so the
     /// git-derived ledger is rebuilt rather than left missing; the others keep their rows.
     pub affected: Vec<i64>,
-}
-
-/// §38.7.1: git rows are deleted only for a project whose history can be re-read — some copy is
-/// neither removed nor away. An offline copy is not readable; its rows wait for the drive.
-///
-/// # Errors
-/// Returns [`IndexError`] when the read fails.
-pub fn history_readable(
-    conn: &rusqlite::Connection,
-    project: ProjectId,
-) -> Result<bool, IndexError> {
-    let readable: i64 = conn.query_row(
-        "SELECT EXISTS (SELECT 1 FROM location
-                         WHERE project_id = ?1 AND removed_at IS NULL AND presence = 'present')",
-        [project.0],
-        |r| r.get(0),
-    )?;
-    Ok(readable != 0)
 }
 
 /// One project's authorship, before and after.
@@ -124,7 +107,7 @@ pub fn preview(conn: &rusqlite::Connection, emails: &[String]) -> Result<Delta, 
     })
 }
 
-/// Apply the set: one transaction, and the floor stamped before anything is deleted.
+/// Apply the set in one transaction, its git rows going through the ledger's one recompute path.
 ///
 /// # Errors
 /// Returns [`IndexError`] when a read or write fails.
@@ -137,8 +120,13 @@ pub fn apply(
     let _guard = crate::proto::txguard::TxGuard::enter();
     let tx = conn.transaction()?;
 
-    // Before the delete, or it is unrecoverable.
-    stamp_level_floor(&tx)?;
+    // §1.7: git-derived events are a pure function of history and are deleted and recomputed,
+    // never migrated; session-derived rows are untouched. First, so the floor ratchets from the
+    // reading before this answer changes it — and on the first answer, finds the card unanswered.
+    // §38.7.3: a project whose history cannot be walked again keeps its rows and is not re-queued
+    // — its authorship still moves, with the rows frozen.
+    let affected: Vec<ProjectId> = delta.affected.iter().copied().map(ProjectId).collect();
+    let recomputed = recompute_git_rows(&tx, &affected, RecomputeCause::IdentityConfirm, now)?;
 
     let mine: Vec<String> = emails.to_vec();
     let placeholders = if mine.is_empty() {
@@ -181,21 +169,8 @@ pub fn apply(
         ),
     )?;
 
-    // §1.7: git-derived events are a pure function of history and are deleted and recomputed,
-    // never migrated. Session-derived rows are untouched — two ledgers, never merged.
-    // §38.7.3: only where the history can be walked again. An uninstalled or offline project
-    // keeps its rows and is not re-queued — its authorship still moves, with the rows frozen.
-    for id in &delta.affected {
-        let project = ProjectId(*id);
-        if !history_readable(&tx, project)? {
-            continue;
-        }
-        for kind in crate::identity::merge::GIT_DERIVED_XP_KINDS {
-            tx.execute(
-                "DELETE FROM xp_events WHERE project_id = ?1 AND kind = ?2 AND track = 'git'",
-                rusqlite::params![id, kind],
-            )?;
-        }
+    // The rest of a re-queued project's history chain runs again too.
+    for &project in &recomputed.queued {
         crate::jobs::state::reset_for(
             &tx,
             project,
@@ -220,38 +195,6 @@ pub fn apply(
         commit_days_removed: delta.commit_days_removed,
         applied: true,
     })
-}
-
-/// Record the pre-change ledger's weight, monotonically.
-///
-/// §1.4 asks for "the level implied by the pre-change ledger", and phase 1 defines no level:
-/// §1.7 defers points, level, rings and badges entirely to phase 4. What phase 4 cannot
-/// recover, and what this therefore preserves, is the **size of the git-derived ledger before
-/// the delete**. It is stored as `max(existing, computed)` so nothing earned is ever taken
-/// away. Phase 4 owns the curve that turns it into a level; it does not own a time machine.
-///
-/// # Errors
-/// Returns [`IndexError`] when a read or write fails.
-pub fn stamp_level_floor(tx: &rusqlite::Transaction<'_>) -> Result<i64, IndexError> {
-    let before: i64 = tx.query_row(
-        "SELECT COUNT(*) FROM xp_events WHERE track = 'git'",
-        [],
-        |r| r.get(0),
-    )?;
-    let existing: i64 = tx
-        .query_row("SELECT v FROM app_meta WHERE k = 'level_floor'", [], |r| {
-            r.get::<_, String>(0)
-        })
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    let floor = existing.max(before);
-    tx.execute(
-        "INSERT INTO app_meta (k, v) VALUES ('level_floor', ?1)
-           ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-        rusqlite::params![floor.to_string()],
-    )?;
-    Ok(floor)
 }
 
 #[cfg(test)]
@@ -412,55 +355,6 @@ mod tests {
             removed, 0,
             "the moved project's commit-days were not deleted"
         );
-    }
-
-    // §1.4 / §1.7: level_floor is stamped before the delete, or it is unrecoverable.
-    #[test]
-    fn the_level_floor_is_stamped_before_the_delete_and_never_falls() {
-        let (_dir, mut index) = open();
-        {
-            let conn = index.conn();
-            let mine = project(conn, "mine");
-            let theirs = project(conn, "theirs");
-            readable(conn, theirs);
-            committer(conn, mine, "a@example.invalid");
-            committer(conn, theirs, "other@example.invalid");
-            commit_day(conn, theirs, "k1");
-            commit_day(conn, theirs, "k2");
-            commit_day(conn, mine, "k3");
-            seeded(conn, "a@example.invalid");
-            seeded(conn, "other@example.invalid");
-        }
-
-        apply(index.conn_mut(), &["a@example.invalid".to_owned()], NOW).unwrap();
-        let floor: String = index
-            .conn()
-            .query_row("SELECT v FROM app_meta WHERE k = 'level_floor'", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert_eq!(
-            floor, "3",
-            "the floor is the pre-change ledger, not the post-change one"
-        );
-
-        // Monotone: a second, wider confirmation cannot lower it.
-        apply(
-            index.conn_mut(),
-            &[
-                "a@example.invalid".to_owned(),
-                "other@example.invalid".to_owned(),
-            ],
-            NOW,
-        )
-        .unwrap();
-        let floor_after: String = index
-            .conn()
-            .query_row("SELECT v FROM app_meta WHERE k = 'level_floor'", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert_eq!(floor_after, "3");
     }
 
     #[test]

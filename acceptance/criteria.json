@@ -85,7 +85,7 @@
           "runner": "cargo",
           "owner": "08",
           "test": "acceptance_identity::ac_3_merge_is_transactional",
-          "assert": "Amendment 3: git-derived rows are deleted and recomputed for the survivor, session-derived rows are reparented, a redirect is written, level_floor cannot fall, and projects.merged is emitted."
+          "assert": "Amendment 3: git-derived rows are deleted and recomputed for the survivor, session-derived rows are reparented, a redirect is written, the displayed level cannot fall (the one-row `level_floor` table, §38.6), and projects.merged is emitted."
         }
       ]
     },

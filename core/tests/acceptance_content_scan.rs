@@ -1861,7 +1861,7 @@ fn ac_p3_29_23_a_merge_deletes_the_per_project_scan_and_keeps_the_cache() {
 
     let tx = conn.transaction().unwrap();
     let _guard = TxGuard::enter();
-    codotheca_core::identity::merge::recompute_derived(&tx, survivor, absorbed).unwrap();
+    codotheca_core::identity::merge::recompute_derived(&tx, survivor, absorbed, 1).unwrap();
     tx.commit().unwrap();
 
     let after = (
