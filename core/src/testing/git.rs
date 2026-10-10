@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use crate::git::{
     Authorship, BlobBatch, BlobRead, CommitSubject, Divergence, GitBackend, GitError, GitResult,
     GitVersion, InterruptedOperation, JobContext, RefListing, RefState, RepoFacts, RepoHandle,
-    RootCommit, StashEntries, StatusOptions, TrackedInventory, TreeEntry, WorktreeScan,
+    RootCommit, StashEntries, StatusOptions, TagFact, TrackedInventory, TreeEntry, WorktreeScan,
     WorktreeStatus,
 };
 use crate::testing::FakeClock;
@@ -120,6 +120,8 @@ pub struct FakeGitBackend {
     objects_present: Op<Vec<bool>>,
     any_uncovered: Op<bool>,
     interrupted_ops: Op<Vec<InterruptedOperation>>,
+    release_tags: Op<Vec<TagFact>>,
+    archive_reach: Op<bool>,
     /// §29.3's scripted blob bodies, keyed by object id — content-addressed here for the same
     /// reason the cache is: two projects holding identical bytes hold one object.
     blobs: Mutex<BTreeMap<String, Vec<u8>>>,
@@ -257,6 +259,8 @@ setters! {
     objects_present: Vec<bool>, on_objects_present, always_objects_present;
     any_uncovered: bool, on_any_uncovered, always_any_uncovered;
     interrupted_ops: Vec<InterruptedOperation>, on_interrupted_ops, always_interrupted_ops;
+    release_tags: Vec<TagFact>, on_release_tags, always_release_tags;
+    archive_reach: bool, on_archive_reach, always_archive_reach;
 }
 
 /// An unconfigured operation fails loudly rather than inventing a value: a fake that answers
@@ -464,6 +468,34 @@ impl GitBackend for FakeGitBackend {
             &self.interrupted_ops,
             Some(&repo.work_dir),
             || unconfigured("interrupted_ops"),
+        )
+    }
+
+    fn release_tags(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<Vec<TagFact>> {
+        // Unconfigured fails loudly: a fake answering *no tags* by default would teach a release
+        // writer that an unread repository has none.
+        self.answer(
+            "release_tags",
+            &self.release_tags,
+            Some(&repo.work_dir),
+            || unconfigured("release_tags"),
+        )
+    }
+
+    fn archive_reach(
+        &self,
+        repo: &RepoHandle,
+        _detached_head: Option<&str>,
+        _extra_excluded: &[String],
+        _ctx: &JobContext<'_>,
+    ) -> GitResult<bool> {
+        // Unconfigured fails loudly: a fake answering *archived* by default would teach a caller
+        // that every local commit is on a remote.
+        self.answer(
+            "archive_reach",
+            &self.archive_reach,
+            Some(&repo.work_dir),
+            || unconfigured("archive_reach"),
         )
     }
 
@@ -713,5 +745,22 @@ impl<B: GitBackend> GitBackend for RecordingGitBackend<B> {
     ) -> GitResult<Vec<InterruptedOperation>> {
         self.record("interrupted_ops", Some(&repo.work_dir));
         self.inner.interrupted_ops(repo, ctx)
+    }
+
+    fn release_tags(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TagFact>> {
+        self.record("release_tags", Some(&repo.work_dir));
+        self.inner.release_tags(repo, ctx)
+    }
+
+    fn archive_reach(
+        &self,
+        repo: &RepoHandle,
+        detached_head: Option<&str>,
+        extra_excluded: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<bool> {
+        self.record("archive_reach", Some(&repo.work_dir));
+        self.inner
+            .archive_reach(repo, detached_head, extra_excluded, ctx)
     }
 }

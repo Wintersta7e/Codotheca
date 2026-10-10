@@ -193,7 +193,7 @@ pub fn is_object_id(text: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-fn unreadable(detail: impl Into<String>) -> GitError {
+pub(super) fn unreadable(detail: impl Into<String>) -> GitError {
     GitError::Unreadable {
         detail: detail.into(),
     }
@@ -221,7 +221,7 @@ fn quiet(out: &GitOutput, what: &str) -> GitResult<()> {
     }
 }
 
-fn text_of(bytes: &[u8], what: &str) -> GitResult<String> {
+pub(super) fn text_of(bytes: &[u8], what: &str) -> GitResult<String> {
     String::from_utf8(bytes.to_vec()).map_err(|_| unreadable(format!("{what} printed non-UTF-8")))
 }
 
@@ -233,7 +233,7 @@ fn is_tracking(name: &str) -> bool {
 
 /// `cat-file --batch-check` over `queries`, one answer per line in input order: `Some((oid,
 /// type))`, or `None` for an object git reports missing.
-fn batch_check(
+pub(super) fn batch_check(
     exec: &GitExec,
     repo: &RepoHandle,
     queries: &[String],
@@ -834,6 +834,24 @@ pub(crate) fn any_uncovered(
     limits: RunLimits,
     cancel: &CancelToken,
 ) -> GitResult<bool> {
+    any_uncovered_also(exec, repo, roots, covered, &[], limits, cancel)
+}
+
+/// [`any_uncovered`] with `also_covered` appended to the walk's argv — pseudo-options naming
+/// more covered tips, such as `--not --remotes`. The roots on stdin stay roots whatever argv
+/// says: git reads stdin's revisions with flags of their own.
+///
+/// # Errors
+/// As [`any_uncovered`].
+pub(super) fn any_uncovered_also(
+    exec: &GitExec,
+    repo: &RepoHandle,
+    roots: &[String],
+    covered: &[String],
+    also_covered: &[&OsStr],
+    limits: RunLimits,
+    cancel: &CancelToken,
+) -> GitResult<bool> {
     if roots.is_empty() {
         return Ok(false);
     }
@@ -853,18 +871,13 @@ pub(crate) fn any_uncovered(
         stdin.push(b'\n');
     }
     let env = history_off(exec);
-    let out = exec.run_with_stdin(
-        repo,
-        &[
-            OsStr::new("rev-list"),
-            OsStr::new("--stdin"),
-            OsStr::new("--max-count=1"),
-        ],
-        stdin,
-        &env,
-        limits,
-        cancel,
-    )?;
+    let mut args = vec![
+        OsStr::new("rev-list"),
+        OsStr::new("--stdin"),
+        OsStr::new("--max-count=1"),
+    ];
+    args.extend_from_slice(also_covered);
+    let out = exec.run_with_stdin(repo, &args, stdin, &env, limits, cancel)?;
     let text = text_of(&out.stdout, "rev-list")?;
     let mut uncovered = false;
     for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {

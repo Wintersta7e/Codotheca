@@ -15,10 +15,12 @@ use super::history::{
     authorship, commit_subjects, root_commits, Authorship, CommitSubject, RootCommit,
 };
 use super::inventory::{submodule_gitlinks, tracked_inventory, TrackedInventory};
+use super::reach;
 use super::refstate::{divergence, read_ref_state, Divergence, RefState};
 use super::repo::{RepoHandle, StoreKey};
 use super::slots::{GitSlots, JobClass};
 use super::status::{worktree_status, StatusOptions, WorktreeStatus};
+use super::tags::{self, TagFact};
 use super::tree::{head_tree, read_blobs, BlobBatch, TreeEntry};
 use super::version::{meets_floor, parse_version, GitVersion};
 
@@ -278,6 +280,28 @@ pub trait GitBackend: Send + Sync + std::fmt::Debug {
         repo: &RepoHandle,
         ctx: &JobContext<'_>,
     ) -> GitResult<Vec<InterruptedOperation>>;
+    /// §38.8: every tag that peels to a commit, with its tagger or its commit's date.
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; otherwise any read
+    /// that failed or answered in another shape — never a shorter list.
+    fn release_tags(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TagFact>>;
+    /// The archive reachability observation: is every commit reachable from a branch, a tag or
+    /// `detached_head` also reachable from a remote-tracking tip or from `extra_excluded`?
+    ///
+    /// # Errors
+    ///
+    /// `GitError::Cancelled` when the token fires while waiting for a slot; an id that is not
+    /// an object id; otherwise the enumeration's or the walk's failure — a missing object
+    /// included, which is never `true`.
+    fn archive_reach(
+        &self,
+        repo: &RepoHandle,
+        detached_head: Option<&str>,
+        extra_excluded: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<bool>;
 }
 
 /// Native git, under the slot caps.
@@ -529,6 +553,31 @@ impl GitBackend for SystemGit {
     ) -> GitResult<Vec<InterruptedOperation>> {
         self.with_slot(repo, ctx, || {
             analyse::interrupted_ops(&self.exec, repo, ctx.limits(), ctx.cancel)
+        })
+    }
+
+    fn release_tags(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TagFact>> {
+        self.with_slot(repo, ctx, || {
+            tags::release_tags(&self.exec, repo, ctx.limits(), ctx.cancel)
+        })
+    }
+
+    fn archive_reach(
+        &self,
+        repo: &RepoHandle,
+        detached_head: Option<&str>,
+        extra_excluded: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<bool> {
+        self.with_slot(repo, ctx, || {
+            reach::archive_reach(
+                &self.exec,
+                repo,
+                detached_head,
+                extra_excluded,
+                ctx.limits(),
+                ctx.cancel,
+            )
         })
     }
 }

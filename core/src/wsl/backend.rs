@@ -8,7 +8,7 @@
 use crate::git::{
     Authorship, BlobBatch, CommitSubject, Divergence, GitBackend, GitError, GitResult, GitVersion,
     InterruptedOperation, JobContext, RefListing, RefState, RepoFacts, RepoHandle, RootCommit,
-    StashEntries, StatusOptions, StoreKey, TrackedInventory, TreeEntry, UntrackedMode,
+    StashEntries, StatusOptions, StoreKey, TagFact, TrackedInventory, TreeEntry, UntrackedMode,
     WorktreeScan, WorktreeStatus,
 };
 use crate::mount::StoreClass;
@@ -286,6 +286,27 @@ impl GitBackend for WslGitBackend {
     ) -> GitResult<Vec<InterruptedOperation>> {
         host_only(ctx, "interrupted_ops")
     }
+
+    fn release_tags(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TagFact>> {
+        self.op(repo, WorkerGitOp::ReleaseTags, ctx)
+    }
+
+    fn archive_reach(
+        &self,
+        repo: &RepoHandle,
+        detached_head: Option<&str>,
+        extra_excluded: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<bool> {
+        self.op(
+            repo,
+            WorkerGitOp::ArchiveReach {
+                detached_head: detached_head.map(str::to_owned),
+                extra_excluded: extra_excluded.to_vec(),
+            },
+            ctx,
+        )
+    }
 }
 
 /// D-11's refusal: the analyser's reads run on the host git, never through the worker.
@@ -309,7 +330,9 @@ mod tests {
 
     use super::{wsl_to_git, WslGitBackend};
     use crate::cancel::CancelToken;
-    use crate::git::{GitBackend, GitError, JobClass, JobContext, RepoHandle, StoreKey};
+    use crate::git::{
+        GitBackend, GitError, JobClass, JobContext, RepoHandle, StoreKey, TagFact, TagKind,
+    };
     use crate::mount::StoreClass;
     use crate::testing::wsl::LoopbackLauncher;
     use crate::testing::FakeGitBackend;
@@ -461,6 +484,60 @@ mod tests {
             .submodule_gitlinks(&handle(), &paths, &ctx)
             .expect("answers");
         assert_eq!(got, expected);
+        pool.shutdown_all();
+    }
+
+    #[test]
+    fn the_release_tags_and_the_archive_reach_cross_the_wire() {
+        let tags = vec![
+            TagFact {
+                name: "v1".to_owned(),
+                object_oid: "a".repeat(40),
+                commit_oid: "b".repeat(40),
+                kind: TagKind::Annotated {
+                    tagger_email: "pé@example.invalid".to_owned(),
+                    tagged_at: 1_709_508_967,
+                    tz_offset_min: 330,
+                },
+            },
+            TagFact {
+                name: "v2".to_owned(),
+                object_oid: "c".repeat(40),
+                commit_oid: "c".repeat(40),
+                kind: TagKind::Lightweight {
+                    committer_email: "me@example.invalid".to_owned(),
+                    authored_at: 1_707_031_800,
+                    tz_offset_min: -480,
+                },
+            },
+        ];
+        let wanted = tags.clone();
+        let pool = WslWorkerPool::new(Arc::new(LoopbackLauncher::new(move |distro: &str| {
+            let fake = FakeGitBackend::new();
+            fake.always_release_tags(crate::testing::GitReply::Ok(wanted.clone()));
+            fake.always_archive_reach(crate::testing::GitReply::Ok(false));
+            WorkerContext {
+                distro: distro.to_owned(),
+                git: Box::new(fake),
+                mounts: MountTable::from_mountinfo(MOUNTINFO),
+                presence: WorkerGit::Present {
+                    version: "2.43.0".to_owned(),
+                },
+            }
+        })));
+        let backend = WslGitBackend::new(pool.get("alpha").expect("connects"));
+        let cancel = CancelToken::new();
+        let ctx = JobContext::new(JobClass::Background, &cancel, None);
+
+        assert_eq!(
+            backend.release_tags(&handle(), &ctx).expect("answers"),
+            tags
+        );
+        let detached = "d".repeat(40);
+        let reached = backend
+            .archive_reach(&handle(), Some(&detached), &["e".repeat(40)], &ctx)
+            .expect("answers");
+        assert!(!reached, "the distro's answer, not a default");
         pool.shutdown_all();
     }
 }

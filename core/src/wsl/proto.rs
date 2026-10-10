@@ -21,7 +21,10 @@ use std::collections::BTreeMap;
 /// 2 (R249): `WorkerFault::LazyFetchUnguarded`, and a worker whose reads pin `GIT_NO_LAZY_FETCH`.
 /// The bump is load-bearing: a version-1 worker left in a distro reads without the pin, and a
 /// partial clone there would fetch from its promisor remote.
-pub const WORKER_PROTOCOL_VERSION: u32 = 2;
+///
+/// 3: `WorkerGitOp::ReleaseTags` and `WorkerGitOp::ArchiveReach`. Version 2 shipped in `0.9.0`
+/// and has neither, so a copy of it left in a distro must fail the handshake, not the first read.
+pub const WORKER_PROTOCOL_VERSION: u32 = 3;
 
 /// One request from the core to a worker, tagged with the id its answer will echo.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +153,15 @@ pub enum WorkerGitOp {
         byte_cap: u64,
         /// Bytes read across the whole batch before it stops.
         budget_bytes: u64,
+    },
+    /// §38.8's tag facts, read inside the distro.
+    ReleaseTags,
+    /// The archive reachability observation, walked inside the distro.
+    ArchiveReach {
+        /// The commit a detached `HEAD` names, when the ref state found `HEAD` detached.
+        detached_head: Option<String>,
+        /// Tips excluded beside every remote-tracking tip.
+        extra_excluded: Vec<String>,
     },
 }
 

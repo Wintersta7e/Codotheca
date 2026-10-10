@@ -90,7 +90,7 @@ pub fn local_day(epoch_seconds: i64, tz_offset_min: i32) -> i64 {
 /// no offset at all, so every root date and every commit-day silently disappeared. The offset
 /// has to be taken off the ISO-like date instead. A format string that quietly prints itself is
 /// why this is a named helper rather than a literal at three call sites.
-fn tz_offset_from_iso_date(iso: &str) -> Option<i32> {
+pub(super) fn tz_offset_from_iso_date(iso: &str) -> Option<i32> {
     parse_tz_offset_min(iso.trim().rsplit(' ').next()?)
 }
 

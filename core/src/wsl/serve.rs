@@ -159,6 +159,11 @@ fn run_git(
             byte_cap,
             budget_bytes,
         } => encode(git.read_blobs(&handle, oids, *byte_cap, *budget_bytes, &jc)),
+        WorkerGitOp::ReleaseTags => encode(git.release_tags(&handle, &jc)),
+        WorkerGitOp::ArchiveReach {
+            detached_head,
+            extra_excluded,
+        } => encode(git.archive_reach(&handle, detached_head.as_deref(), extra_excluded, &jc)),
     }
 }
 

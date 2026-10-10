@@ -649,6 +649,49 @@ mod tests {
         }))
     }
 
+    /// A worker that says hello at its version and then nothing.
+    #[derive(Debug)]
+    struct HelloOnly(u32);
+
+    impl WorkerLauncher for HelloOnly {
+        fn launch(&self, distro: &str) -> Result<WorkerIo, WslError> {
+            let hello = crate::wsl::proto::WorkerOutbound::Hello {
+                protocol_version: self.0,
+                worker_version: "0.9.0".to_owned(),
+                git: WorkerGit::Present {
+                    version: "2.43.0".to_owned(),
+                },
+                pid: 1,
+            };
+            let mut wire = Vec::new();
+            crate::wsl::proto::write_worker_frame(&mut wire, &hello).map_err(|err| {
+                WslError::Launch {
+                    distro: distro.to_owned(),
+                    detail: err.to_string(),
+                }
+            })?;
+            Ok(WorkerIo {
+                reader: Box::new(std::io::Cursor::new(wire)),
+                writer: Box::new(std::io::sink()),
+                stop: Box::new(|| {}),
+            })
+        }
+    }
+
+    /// Version 2 shipped in `0.9.0` without the release-tag and archive-reach reads, so a copy
+    /// of it left in a distro is refused at the handshake rather than at its first read.
+    #[test]
+    fn a_worker_at_the_shipped_version_two_is_refused() {
+        let refused = WslWorkerPool::new(Arc::new(HelloOnly(2))).get("alpha");
+        assert!(
+            matches!(
+                refused,
+                Err(WslError::VersionMismatch { worker: 2, core: 3 })
+            ),
+            "{refused:?}"
+        );
+    }
+
     #[test]
     fn connecting_reads_hello_before_the_first_request() {
         let pool = WslWorkerPool::new(launcher());

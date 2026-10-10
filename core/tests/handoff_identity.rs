@@ -484,6 +484,25 @@ impl GitBackend for LockWatch {
         self.observe();
         self.inner.interrupted_ops(repo, ctx)
     }
+    fn release_tags(
+        &self,
+        repo: &RepoHandle,
+        ctx: &JobContext<'_>,
+    ) -> GitResult<Vec<codotheca_core::git::TagFact>> {
+        self.observe();
+        self.inner.release_tags(repo, ctx)
+    }
+    fn archive_reach(
+        &self,
+        repo: &RepoHandle,
+        detached_head: Option<&str>,
+        extra_excluded: &[String],
+        ctx: &JobContext<'_>,
+    ) -> GitResult<bool> {
+        self.observe();
+        self.inner
+            .archive_reach(repo, detached_head, extra_excluded, ctx)
+    }
 }
 
 #[test]
