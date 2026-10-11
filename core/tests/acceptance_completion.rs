@@ -157,7 +157,7 @@ fn ac_p3_31_11_j1_persists_the_tag_count() {
     let state = read_ref_state(&repo.handle(), &SystemClock::new()).unwrap();
     assert_eq!(i64::from(state.tag_count), expected, "the reader counted");
     let tx = conn.transaction().unwrap();
-    persist(&tx, location, &state).unwrap();
+    persist(&tx, location, &state, None).unwrap();
     tx.commit().unwrap();
 
     let stored: Option<i64> = conn

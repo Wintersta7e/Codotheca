@@ -9420,7 +9420,7 @@
           "runner": "cargo",
           "owner": "p4-46b",
           "test": "ledger_clean_archive::ac_p4_38_22_clean_archive",
-          "assert": "A sealed project with a remote covering every local tip, a clean tree and no scored debt pays once, at the settle after its J1; seal \u2192 unseal \u2192 reseal writes one row; a local-only branch, a detached HEAD with a local-only commit, a dirty tree, a stash or an unverified scored item each withhold it; a project with no complete sweep, or a NULL archive_reached, pays nothing; and a repository with no remote pays after a sealed parcel covers its tips and not before."
+          "assert": "A sealed project with a remote covering every local tip, a clean tree and no scored debt pays once, at the settle after its J1; seal \u2192 unseal \u2192 reseal writes one row; a local-only branch, a detached HEAD with a local-only commit, a dirty tree, a stash or an unverified scored item each withhold it; a project with no complete sweep (where the content scan is granted and the project enrolled: no content-scan reading of its current tree), through a real settle, or a NULL archive_reached, pays nothing; with the content scan off it pays on the always-run sweeps; and a repository with no remote pays after a sealed parcel covers its tips and not before."
         },
         {
           "id": "AC-P4-38-22-seal",

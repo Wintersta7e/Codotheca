@@ -47,7 +47,7 @@ fn persisted_stash_count(stash: Option<u32>) -> Option<i64> {
     let binding = index.index();
     let conn = binding.conn();
     let tx = conn.unchecked_transaction().expect("tx");
-    persist(&tx, LocationId(location.0), &state(stash)).expect("persisted");
+    persist(&tx, LocationId(location.0), &state(stash), None).expect("persisted");
     tx.commit().expect("commit");
 
     conn.query_row(

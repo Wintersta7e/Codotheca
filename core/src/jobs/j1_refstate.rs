@@ -40,6 +40,32 @@ pub fn apply_divergence(state: &mut RefState, counts: Option<Divergence>) {
     state.behind = counts.map(|d| d.behind);
 }
 
+/// `location.archive_reached` for an archived project's copy (§38.8.5).
+///
+/// Whether every commit the copy holds — a detached HEAD's included — was reachable from a
+/// remote-tracking ref when J1 read it. A cached, commit-based observation whose age is
+/// `refstate_observed_at`, never a claim that the copy is safe to delete.
+///
+/// `None` for any other project's copy, which is never read, and whenever the read fails: a
+/// failure is never `Some(true)`, and it never fails J1.
+pub fn archive_reached(
+    git: &dyn GitBackend,
+    repo: &RepoHandle,
+    state: &RefState,
+    archived: bool,
+    ctx: &JobContext<'_>,
+) -> Option<bool> {
+    if !archived {
+        return None;
+    }
+    let detached_head = if state.branch.is_none() {
+        state.head_oid.as_deref()
+    } else {
+        None
+    };
+    git.archive_reach(repo, detached_head, &[], ctx).ok()
+}
+
 /// Write one location's ref state.
 ///
 /// `ahead` and `behind` are written as they stand, `None` included: overwriting a NULL with a 0
@@ -56,6 +82,9 @@ pub fn apply_divergence(state: &mut RefState, counts: Option<Divergence>) {
 /// why §28's `no_release` arm reads `project.is_shallow` beside it rather than treating a zero
 /// as a failure.
 ///
+/// §38.8.5: `archive_reached` is written beside them on every persist, so a copy whose project
+/// was un-archived, or whose read failed, reads NULL rather than a stale `1`.
+///
 /// # Errors
 ///
 /// `IndexError::Sqlite` when the update fails.
@@ -63,11 +92,13 @@ pub fn persist(
     tx: &rusqlite::Transaction<'_>,
     location: crate::protocol::LocationId,
     s: &RefState,
+    archive_reached: Option<bool>,
 ) -> Result<(), crate::index::IndexError> {
     tx.execute(
         "UPDATE location SET branch = ?2, head_oid = ?3, ahead = ?4, behind = ?5,
              stash_count = ?6, interrupted_op = ?7, fetch_head_at = ?8, reflog_tail_at = ?9,
-             refstate_basis = ?10, refstate_observed_at = ?11, tag_count = ?12
+             refstate_basis = ?10, refstate_observed_at = ?11, tag_count = ?12,
+             archive_reached = ?13
          WHERE id = ?1",
         rusqlite::params![
             location.0,
@@ -82,6 +113,7 @@ pub fn persist(
             s.basis.as_str(),
             s.observed_at,
             i64::from(s.tag_count),
+            archive_reached.map(i64::from),
         ],
     )?;
     Ok(())

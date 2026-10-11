@@ -12,8 +12,10 @@
 //! holds every retained writer back until a restored record has had its chance to match (§48.8.4).
 //! `latch` pays a passing completion check once (§38.8.2), and `verdict` writes the verdict awards
 //! (§38.8.4). `marginal` prices a closure through the one reading each of those rows' writers acts
-//! on (§38.11). `focus` stores each segment close's share of the day's Focus union (§38.8.3).
+//! on (§38.11). `focus` stores each segment close's share of the day's Focus union (§38.8.3), and
+//! `archive` pays a clean archive once, as last observed (§38.8.5).
 
+pub mod archive;
 pub mod curve;
 pub mod floor;
 pub mod focus;

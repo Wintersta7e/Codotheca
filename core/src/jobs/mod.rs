@@ -424,6 +424,9 @@ struct LocationPlace {
     common_dir: Option<std::path::PathBuf>,
     repo_kind: String,
     trusted: bool,
+    /// The owning project's `is_archived`, read before any git so J1 knows whether to read
+    /// `archive_reached` (§38.8.5).
+    archived: bool,
 }
 
 fn read_place(
@@ -435,7 +438,9 @@ fn read_place(
         .map_err(|_| JobError::Io("index lock is poisoned".to_owned()))?;
     let place = guard.read(|conn| {
         conn.query_row(
-            "SELECT path_bytes, common_dir_bytes, repo_kind, trusted_at FROM location WHERE id = ?1",
+            "SELECT l.path_bytes, l.common_dir_bytes, l.repo_kind, l.trusted_at,
+                    (SELECT p.is_archived FROM project p WHERE p.id = l.project_id)
+               FROM location l WHERE l.id = ?1",
             [location.0],
             |r| {
                 Ok((
@@ -443,13 +448,14 @@ fn read_place(
                     r.get::<_, Option<Vec<u8>>>(1)?,
                     r.get::<_, String>(2)?,
                     r.get::<_, Option<i64>>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
                 ))
             },
         )
         .map_err(crate::index::IndexError::Sqlite)
     })?;
     drop(guard);
-    let (path_bytes, common_dir_bytes, repo_kind, trusted_at) = place;
+    let (path_bytes, common_dir_bytes, repo_kind, trusted_at, is_archived) = place;
     Ok(LocationPlace {
         work_dir: crate::paths::path_from_bytes(&path_bytes),
         common_dir: common_dir_bytes
@@ -457,6 +463,7 @@ fn read_place(
             .map(crate::paths::path_from_bytes),
         repo_kind,
         trusted: trusted_at.is_some(),
+        archived: is_archived == Some(1),
     })
 }
 
@@ -547,8 +554,9 @@ pub fn run_one(
         }
         JobKind::J1Refstate => {
             let state = j1_refstate::observe(git, &repo, &ctx)?;
+            let reached = j1_refstate::archive_reached(git, &repo, &state, place.archived, &ctx);
             write(index, |tx| {
-                j1_refstate::persist(tx, job.location_id, &state)
+                j1_refstate::persist(tx, job.location_id, &state, reached)
             })?;
             Ok(JobOutcome::Done)
         }

@@ -351,6 +351,10 @@ impl JobRunner {
             // **It is not folded into `recompute`**: that has other callers, and a hook firing
             // from an unbounded set is a hook nobody can count.
             crate::completion::evaluate_and_write(tx, job.project_id, at)?;
+            // §38.8.5: after §31's evaluator, on every settle, over cached observations only — a
+            // J1 that just wrote `archive_reached` pays at its own settle. The paid row is
+            // returned for a hook in this transaction; none reads it yet.
+            crate::ledger::archive::evaluate_clean_archive(tx, job.project_id, at)?;
             Ok((recomputed, announce))
         });
         if let Ok((r, _)) = &recomputed {
