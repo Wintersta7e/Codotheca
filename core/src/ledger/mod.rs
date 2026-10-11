@@ -10,17 +10,21 @@
 //! `recompute` holds the one statement that deletes git rows, ratchet first (§38.7), and
 //! `git_rows` is J4's reconcile through it. A retained row carries its `receipt`, and `pending`
 //! holds every retained writer back until a restored record has had its chance to match (§48.8.4).
-//! `latch` pays a passing completion check once (§38.8.2).
+//! `latch` pays a passing completion check once (§38.8.2), and `verdict` writes the verdict awards
+//! (§38.8.4). `marginal` prices a closure through the one reading each of those rows' writers acts
+//! on (§38.11).
 
 pub mod curve;
 pub mod floor;
 pub mod git_rows;
 pub mod latch;
 pub mod level;
+pub mod marginal;
 pub mod pending;
 pub mod price;
 pub mod receipt;
 pub mod recompute;
+pub mod verdict;
 pub mod xp;
 
 /// Every kind `xp_events.kind` admits: the git-derived ones first, then the retained ones.

@@ -14,16 +14,14 @@
 
 use std::collections::BTreeSet;
 
-use rusqlite::{OptionalExtension as _, Transaction};
+use rusqlite::Transaction;
 
 use super::store::{DebtCloseReason, SweepEffect};
 use super::{enum_from_text, enum_text, DebtError};
 use crate::clock::LocalInstant;
-use crate::index::subject::subject_for_project;
-use crate::ledger::pending::awaiting_restore;
-use crate::ledger::price::{debt_day_gate, Gate};
+use crate::ledger::marginal::{debt_day_due, debt_day_pays, RowDue};
 use crate::ledger::receipt::Receipt;
-use crate::protocol::{DebtScoring, DebtSource, ProjectId};
+use crate::protocol::{DebtSource, ProjectId};
 
 /// A call that wrote nothing: no paying closure, or a project the gates refuse.
 const fn unpaid() -> DebtDayPayout {
@@ -44,6 +42,13 @@ pub struct DebtDayPayout {
     pub closed_today: u32,
     /// The day's sources, sorted and deduplicated.
     pub sources: Vec<DebtSource>,
+}
+
+/// The day a paying closure lands on: a new row keyed on the project's subject, or the day's
+/// row by id with its stored `meta`.
+enum Day {
+    New(String),
+    Existing(i64, String),
 }
 
 /// §28.4's idempotency key, `debt_day:<subject_key>:<local-date>`.
@@ -71,14 +76,13 @@ pub fn debt_day_dedupe_key(subject_key: &str, local_date: &str) -> String {
 /// from the count and from `sources` before the row is written, and a day with no paying closure
 /// writes **no row at all**.
 ///
-/// **The project's gates are [`debt_day_gate`]'s** (§38.8.1 gate 2), the one reading the marginal
-/// price quotes too: a subject to key the row on, enrolled (§30.5's `is_enrolled`), and not
-/// Reference (§38.3a), read at the closing observation. A refused closure leaves nothing behind
-/// that a later call could pay. The subject is read here, from the project row, so no caller can
-/// hand the writer a key that is not the project's own.
-///
-/// **Nothing is written while a restored record may still match the project** (§48.8.4,
-/// [`awaiting_restore`]): the restore brings the old day back, never a second one.
+/// **The day is read through `debt_day_due`, the one reading the marginal price quotes too**:
+/// nothing while a restored record may still match the project (§48.8.4) — the restore brings
+/// the old day back, never a second one; then the project's gates (§38.8.1 gate 2): a subject to
+/// key the row on, enrolled (§30.5's `is_enrolled`), and not Reference (§38.3a), read at the
+/// closing observation. A refused closure leaves nothing behind that a later call could pay. The
+/// subject is read from the project row, so no caller can hand the writer a key that is not the
+/// project's own.
 ///
 /// **The day is `at`'s own local date** (§39.2 rule 5): the caller frames its closing instant in
 /// the zone in force at it, and the row stores that instant and that offset. The day's row is
@@ -96,42 +100,28 @@ pub fn pay_debt_day(
     let paid: Vec<DebtSource> = effect
         .closed
         .iter()
-        .filter(|c| c.reason == DebtCloseReason::Fixed && c.scoring == DebtScoring::Scored)
+        .filter(|c| c.reason == DebtCloseReason::Fixed && debt_day_pays(c.scoring))
         .map(|c| c.key.source)
         .collect();
 
     if paid.is_empty() {
         return Ok(unpaid());
     }
-    // A restored record may yet match this project and bring its own day back (§48.8.4).
-    if awaiting_restore(tx, project)? {
-        return Ok(unpaid());
-    }
-    if debt_day_gate(tx, project)? != Gate::Open {
-        return Ok(unpaid());
-    }
-    let Some(subject) = subject_for_project(tx, project)? else {
-        return Ok(unpaid());
-    };
-    let subject_key = subject.to_key();
     let date = at.date();
 
-    // The day so far, found by project and local date — never by key (§38.2): the subject moves
-    // from `path:` to `lineage:` at a first commit and a merge reparents rows without rewriting
-    // keys, so a key lookup would pay the day twice. A row written before receipts carries no
-    // `when`, and is dated from its own instant and offset. `meta` is read back before the merge
-    // because a sentence describing only the first closure undercounts the day it describes.
-    let existing: Option<(i64, String)> = tx
-        .query_row(
-            "SELECT id, meta FROM xp_events
-              WHERE project_id = ?1 AND kind = 'debt_day'
-                AND COALESCE(json_extract(meta, '$.when'),
-                             date(ts + COALESCE(tz_offset_min, 0) * 60, 'unixepoch')) = ?2
-              ORDER BY id LIMIT 1",
-            rusqlite::params![project.0, date],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()?;
+    // The day so far — found by project and local date, never by key (§38.2). `meta` is read
+    // back before the merge because a sentence describing only the first closure undercounts the
+    // day it describes.
+    let day = match debt_day_due(tx, project, at)? {
+        RowDue::Write(subject_key) => Day::New(subject_key),
+        RowDue::Written(id) => Day::Existing(
+            id,
+            tx.query_row("SELECT meta FROM xp_events WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })?,
+        ),
+        RowDue::Held | RowDue::Refused | RowDue::NotComputable => return Ok(unpaid()),
+    };
 
     // The generated enums derive no `Ord` — they are wire vocabularies, not ordered ones — so
     // the day's source set is held as its wire spelling, which is also the order `meta` reads in.
@@ -140,7 +130,7 @@ pub fn pay_debt_day(
     for source in &paid {
         source_text.insert(enum_text(source)?);
     }
-    if let Some((_, raw)) = existing.as_ref() {
+    if let Day::Existing(_, raw) = &day {
         let previous: serde_json::Value = serde_json::from_str(raw)
             .map_err(|e| DebtError::Codec(format!("xp_events.meta is not JSON: {e}")))?;
         if let Some(n) = previous.get("closed").and_then(serde_json::Value::as_u64) {
@@ -178,27 +168,30 @@ pub fn pay_debt_day(
     // updated.** The payout is the row's existence and that never changes; only the day's
     // sentence moves, on the lowest id of the day. `ts` is the closing observation's own moment
     // and not a synthetic midnight, because a debt transition happens at a time.
-    let wrote_row = if let Some((id, _)) = existing {
-        tx.execute(
-            "UPDATE xp_events SET meta = ?2 WHERE id = ?1",
-            rusqlite::params![id, meta],
-        )?;
-        false
-    } else {
-        tx.execute(
-            "INSERT INTO xp_events
+    let wrote_row = match day {
+        Day::Existing(id, _) => {
+            tx.execute(
+                "UPDATE xp_events SET meta = ?2 WHERE id = ?1",
+                rusqlite::params![id, meta],
+            )?;
+            false
+        }
+        Day::New(subject_key) => {
+            tx.execute(
+                "INSERT INTO xp_events
                 (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key, track, meta)
              VALUES (?1, ?2, ?3, ?4, 'debt_day', ?5, 'session', ?6)
              ON CONFLICT(dedupe_key) DO NOTHING",
-            rusqlite::params![
-                at.unix,
-                at.offset_min,
-                project.0,
-                subject_key,
-                debt_day_dedupe_key(&subject_key, &date),
-                meta
-            ],
-        )? > 0
+                rusqlite::params![
+                    at.unix,
+                    at.offset_min,
+                    project.0,
+                    subject_key,
+                    debt_day_dedupe_key(&subject_key, &date),
+                    meta
+                ],
+            )? > 0
+        }
     };
 
     Ok(DebtDayPayout {

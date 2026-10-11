@@ -29,6 +29,16 @@ impl Receipt {
         Self { fields }
     }
 
+    /// A row of no project's — a group approval's: `what` and the local date of `at` as `when`,
+    /// and no name.
+    #[must_use]
+    pub fn library(what: &str, at: LocalInstant) -> Self {
+        let mut fields = Map::new();
+        fields.insert("what".to_owned(), Value::from(what));
+        fields.insert("when".to_owned(), Value::from(at.date()));
+        Self { fields }
+    }
+
     /// §38.2's optional `silent` key, written only when true: an absent key reads as not silent,
     /// and a restored row carries none.
     #[must_use]
