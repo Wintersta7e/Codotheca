@@ -11,6 +11,7 @@ use codotheca_core::protocol::{CloseReason, ClosedBy, LocationId, ProjectId, Ses
 use codotheca_core::session::orphan;
 use codotheca_core::session::segment::ClosedSegment;
 use codotheca_core::session::store::{self, SessionOpen};
+use codotheca_core::testing::zone::FixedZone;
 use codotheca_core::testing::TempIndex;
 
 const T0: i64 = 1_700_000_000;
@@ -165,7 +166,8 @@ fn an_orphaned_session_is_closed_at_its_last_observed_activity_not_at_now() {
     let seg = h.open_segment(T0);
     h.mark_activity(seg, T0 + 600); // the watermark the crash left behind
 
-    let report = orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS).unwrap();
+    let report =
+        orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS, &FixedZone(0)).unwrap();
     assert_eq!((report.sessions_closed, report.segments_closed), (1, 1));
     assert_eq!(report.credited_seconds, 600);
 
@@ -191,7 +193,8 @@ fn a_completed_segment_and_the_open_one_are_both_credited() {
     let seg = h.open_segment(T0 + 2_400);
     h.mark_activity(seg, T0 + 2_700);
 
-    let report = orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS).unwrap();
+    let report =
+        orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS, &FixedZone(0)).unwrap();
     assert_eq!(report.credited_seconds, 1_500);
     assert_eq!(
         store::credited_seconds(h.index.index().conn(), h.session).unwrap(),
@@ -204,7 +207,7 @@ fn a_completed_segment_and_the_open_one_are_both_credited() {
 fn a_segment_that_never_saw_activity_credits_nothing_rather_than_a_guess() {
     let mut h = fixture();
     h.open_segment(T0);
-    orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS).unwrap();
+    orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS, &FixedZone(0)).unwrap();
     assert_eq!(
         store::credited_seconds(h.index.index().conn(), h.session).unwrap(),
         0
@@ -217,7 +220,7 @@ fn the_open_segment_is_marked_crash_and_the_session_orphaned() {
     let mut h = fixture();
     let seg = h.open_segment(T0);
     h.mark_activity(seg, T0 + 60);
-    orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS).unwrap();
+    orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS, &FixedZone(0)).unwrap();
     assert_eq!(
         h.segment_closed_by(seg),
         "crash",
@@ -231,8 +234,9 @@ fn recovery_is_idempotent_and_leaves_a_closed_session_alone() {
     let mut h = fixture();
     let seg = h.open_segment(T0);
     h.mark_activity(seg, T0 + 600);
-    orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS).unwrap();
-    let second = orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS + 10).unwrap();
+    orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS, &FixedZone(0)).unwrap();
+    let second =
+        orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS + 10, &FixedZone(0)).unwrap();
     assert_eq!((second.sessions_closed, second.credited_seconds), (0, 0));
     assert_eq!(h.ended_at(), Some(T0 + 600));
 }
@@ -240,7 +244,7 @@ fn recovery_is_idempotent_and_leaves_a_closed_session_alone() {
 #[test]
 fn a_clean_database_closes_nothing() {
     let mut h = fixture_with_no_open_session();
-    let report = orphan::close_orphans(h.index.index_mut(), T0).unwrap();
+    let report = orphan::close_orphans(h.index.index_mut(), T0, &FixedZone(0)).unwrap();
     assert_eq!(report.sessions_closed, 0);
     assert_eq!(report.segments_closed, 0);
 }
@@ -259,7 +263,8 @@ fn every_orphaned_session_is_closed_not_only_the_first() {
     store::mark_activity(&tx, seg2, T0 + 5_400).unwrap();
     tx.commit().unwrap();
 
-    let report = orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS).unwrap();
+    let report =
+        orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS, &FixedZone(0)).unwrap();
     assert_eq!((report.sessions_closed, report.segments_closed), (2, 2));
     assert_eq!(report.credited_seconds, 300 + 400);
     for session in [first, second] {
@@ -279,7 +284,8 @@ fn recovery_runs_before_any_session_of_this_process_and_says_how_much_it_recover
     let mut h = fixture();
     let seg = h.open_segment(T0);
     h.mark_activity(seg, T0 + 900);
-    let report = orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS).unwrap();
+    let report =
+        orphan::close_orphans(h.index.index_mut(), T0 + THREE_DAYS, &FixedZone(0)).unwrap();
     assert_eq!(report.credited_seconds, 900);
     assert_eq!(report.sessions_closed, 1);
 }

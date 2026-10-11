@@ -10,7 +10,11 @@
 //! its own `started_at` for zero credit. The session is stamped at the **latest segment end**,
 //! never at `now`: a session orphaned three days ago must not move `last_interaction_at` to
 //! today, which would light a tile the user has not touched since.
+//!
+//! A segment closed here is a close like any other: its share of the day's Focus union is
+//! credited in the same transaction (§38.8.3).
 
+use crate::clock::LocalZone;
 use crate::index::Index;
 use crate::protocol::{CloseReason, ProjectId};
 use crate::session::{close_reason_str, closed_by_str, ClosedBy, SessionError};
@@ -29,14 +33,18 @@ pub struct OrphanReport {
 /// Close every session a previous process left open, in one transaction, at its watermark.
 ///
 /// `now` is passed only to the derived-state recompute each close triggers; no row is stamped
-/// with it.
+/// with it. `zone` dates each closed segment's Focus share.
 ///
 /// # Errors
 ///
 /// `SessionError::Sqlite` when the transaction or any statement in it fails, and
 /// `SessionError::Index` when recomputing a project's derived state fails. Either rolls the whole
 /// pass back.
-pub fn close_orphans(index: &mut Index, now: i64) -> Result<OrphanReport, SessionError> {
+pub fn close_orphans(
+    index: &mut Index,
+    now: i64,
+    zone: &dyn LocalZone,
+) -> Result<OrphanReport, SessionError> {
     let _guard = crate::proto::txguard::TxGuard::enter();
     let tx = index.conn_mut().transaction()?;
     let mut report = OrphanReport::default();
@@ -54,19 +62,34 @@ pub fn close_orphans(index: &mut Index, now: i64) -> Result<OrphanReport, Sessio
     };
 
     for (session_id, project_id, started_at) in open {
-        // The watermark already lives in `credited_seconds`; §1.6's
-        // `CHECK ((ended_at IS NULL) = (closed_by IS NULL))` is why it could not live in
-        // `ended_at` while the row was open. Closing the row recovers the end exactly.
-        report.segments_closed += u64::try_from(tx.execute(
-            "UPDATE session_segment
-                SET ended_at = started_at + credited_seconds,
-                    closed_by = ?2
-              WHERE session_id = ?1 AND closed_by IS NULL",
-            rusqlite::params![session_id, closed_by_str(ClosedBy::Crash)],
-        )?)
-        // A row count cannot be negative, and `expect_used` is denied, so there is no failure
-        // to report here.
-        .unwrap_or(0);
+        let segments: Vec<i64> = {
+            let mut stmt = tx.prepare(
+                "SELECT id FROM session_segment
+                  WHERE session_id = ?1 AND closed_by IS NULL ORDER BY id",
+            )?;
+            let rows = stmt.query_map([session_id], |r| r.get(0))?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row?);
+            }
+            out
+        };
+        for segment in segments {
+            // The watermark already lives in `credited_seconds`; §1.6's
+            // `CHECK ((ended_at IS NULL) = (closed_by IS NULL))` is why it could not live in
+            // `ended_at` while the row was open. Closing the row recovers the end exactly.
+            report.segments_closed += u64::try_from(tx.execute(
+                "UPDATE session_segment
+                    SET ended_at = started_at + credited_seconds,
+                        closed_by = ?2
+                  WHERE id = ?1 AND closed_by IS NULL",
+                rusqlite::params![segment, closed_by_str(ClosedBy::Crash)],
+            )?)
+            // A row count cannot be negative, and `expect_used` is denied, so there is no
+            // failure to report here.
+            .unwrap_or(0);
+            crate::ledger::focus::credit_segment_close(&tx, zone, segment)?;
+        }
 
         let (credited, latest_end): (i64, Option<i64>) = tx.query_row(
             "SELECT COALESCE(SUM(credited_seconds), 0), MAX(ended_at)

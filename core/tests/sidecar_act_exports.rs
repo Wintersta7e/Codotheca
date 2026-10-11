@@ -62,6 +62,7 @@ fn handler_over(lib: &Library) -> CoreHandler {
             events.clone(),
             Box::new(codotheca_core::session::watch::FakeActivitySource::new()),
             Arc::new(codotheca_core::session::activity::FakeIgnoreCheck::new(&[])),
+            Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         ),
         scans: codotheca_core::scan::ScanSupervisor::new(Arc::new(
             codotheca_core::testing::ScanLauncherFake::new(),

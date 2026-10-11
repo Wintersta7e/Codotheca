@@ -107,6 +107,7 @@ fn rig() -> Rig {
         Arc::new(NoEvents),
         Box::new(activity.clone()),
         Arc::new(FakeIgnoreCheck::new(&["dist/"])),
+        Arc::new(FixedZone(0)),
     );
     Rig {
         index,

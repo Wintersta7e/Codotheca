@@ -397,6 +397,7 @@ fn main() -> ExitCode {
                 exec: Arc::clone(&git_exec),
                 limits: codotheca_core::git::RunLimits::none(),
             }),
+            Arc::clone(&zone),
         ),
         // A supervisor over plan 07's `Send + Sync` launcher seam, not a `JobRunner`: no
         // `rusqlite::Connection` crosses it, which is what keeps the one-writer rule intact.

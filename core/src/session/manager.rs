@@ -64,6 +64,8 @@ pub struct SessionManager {
     activity: Box<dyn ActivitySource>,
     ignore: Arc<dyn IgnoreCheck>,
     live: BTreeMap<i64, Live>,
+    /// The zone each close's Focus share is dated in (§39.2 rule 1).
+    zone: Arc<dyn crate::clock::LocalZone>,
     /// The focused project and the monotonic time it was last reported.
     focus: Option<(ProjectId, u64)>,
     condition_changes: Vec<ProjectId>,
@@ -82,13 +84,15 @@ impl std::fmt::Debug for SessionManager {
 }
 
 impl SessionManager {
-    /// A manager with no live sessions; `activity` feeds it paths and `ignore` scopes them.
+    /// A manager with no live sessions; `activity` feeds it paths and `ignore` scopes them, and
+    /// `zone` dates each segment close's Focus share.
     #[must_use]
     pub fn new(
         clock: Arc<dyn crate::clock::Clock>,
         events: Arc<dyn crate::proto::EventSink>,
         activity: Box<dyn ActivitySource>,
         ignore: Arc<dyn IgnoreCheck>,
+        zone: Arc<dyn crate::clock::LocalZone>,
     ) -> Self {
         Self {
             clock,
@@ -96,9 +100,17 @@ impl SessionManager {
             activity,
             ignore,
             live: BTreeMap::new(),
+            zone,
             focus: None,
             condition_changes: Vec::new(),
         }
+    }
+
+    /// The zone every close this manager writes is dated in — the one orphan recovery dates its
+    /// closes in too.
+    #[must_use]
+    pub fn zone(&self) -> &dyn crate::clock::LocalZone {
+        self.zone.as_ref()
     }
 
     fn now(&self) -> Tick {
@@ -360,6 +372,8 @@ impl SessionManager {
             if let Some(closed) = outcome.closed_segment {
                 if let Some(segment) = segment_id {
                     store::close_segment(&tx, segment, &closed)?;
+                    // §38.8.3: the close's share of the day's Focus union, in its transaction.
+                    crate::ledger::focus::credit_segment_close(&tx, self.zone.as_ref(), segment)?;
                 }
                 next_segment = Some(None);
                 published.push(SessionEvent::SegmentClosed(SegmentClosed {

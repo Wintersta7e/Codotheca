@@ -121,6 +121,7 @@ fn harness() -> Harness {
         events.clone(),
         Box::new(activity.clone()),
         ignore,
+        Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     );
     Harness {
         index,
@@ -452,6 +453,7 @@ fn a_session_with_no_watcher_still_credits_its_window() {
         h.events.clone(),
         Box::new(RefusingWatcher),
         Arc::new(FakeIgnoreCheck::new(&[])),
+        Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     );
 
     let s = h.launch(h.alpha, h.loc, None);

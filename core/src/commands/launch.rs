@@ -410,7 +410,7 @@ pub fn startup(
         .map(|row| row.session_id)
         .collect();
 
-    let report = crate::session::orphan::close_orphans(ctx.index, ctx.now)
+    let report = crate::session::orphan::close_orphans(ctx.index, ctx.now, ctx.sessions.zone())
         .map_err(|e| session_failure(&e))?;
 
     for id in open {

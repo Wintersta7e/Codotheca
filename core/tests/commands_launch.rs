@@ -142,6 +142,7 @@ fn fixture_with(kind: &str, distro: &str) -> Fixture {
         events.clone(),
         Box::new(FakeActivitySource::default()),
         Arc::new(FakeIgnoreCheck::new(&["dist/"])),
+        Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     );
     let mounts = FakeMountResolver::new();
     mounts.map(

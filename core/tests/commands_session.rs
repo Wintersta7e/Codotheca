@@ -81,6 +81,7 @@ fn manager(clock: &Arc<FakeClock>, events: &Arc<RecordingSink>) -> SessionManage
         events.clone(),
         Box::new(FakeActivitySource::default()),
         Arc::new(FakeIgnoreCheck::new(&["dist/"])),
+        Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     )
 }
 
