@@ -58,6 +58,9 @@ pub const SECTION_FIXTURES: &[(&str, SectionFixture)] = &[
     ("accounts", connected_account),
     ("parcels", plant_parcels),
     ("removal_records", plant_removal_records),
+    ("ledger_floor", raised_floor),
+    ("ledger_library_awards", library_award),
+    ("ledger_frozen_git", frozen_git_rows),
 ];
 
 /// A project with one present copy, for a fixture that rules on a project or trusts a copy.
@@ -187,6 +190,47 @@ fn uninstalled_project(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), In
          VALUES (?1, ?2, 100, 160, 60, 'stop')",
         [project, tx.last_insert_rowid()],
     )?;
+    Ok(())
+}
+
+/// The floor raised to level 4.
+fn raised_floor(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexError> {
+    crate::ledger::floor::ratchet_level_floor(tx, 4, 60)?;
+    Ok(())
+}
+
+/// A pre-pass group approval's award: the library's, of no project.
+fn library_award(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexError> {
+    let at = crate::clock::LocalInstant {
+        unix: 70,
+        offset_min: 0,
+    };
+    crate::ledger::verdict::pay_prepass_award(tx, 70, "fixture group", 2, at)?;
+    Ok(())
+}
+
+/// A project whose only copy this app removed, with the two commit-days its history last implied.
+fn frozen_git_rows(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexError> {
+    tx.execute(
+        "INSERT INTO project (name, seed_basename, lineage_key, created_at, updated_at)
+         VALUES ('frozen', 'frozen', 'frozen-lineage', 1, 1)",
+        [],
+    )?;
+    let project = ProjectId(tx.last_insert_rowid());
+    removed_copy(tx, project, "/fixture/frozen")?;
+    let subject = subject_for_project(tx, project)?
+        .map(|s| s.to_key())
+        .unwrap_or_default();
+    let rows = [("2022-01-08", 18_635_i64), ("2022-01-09", 18_636)].map(|(date, day)| {
+        crate::ledger::git_rows::GitRow {
+            kind: "commit_day",
+            dedupe_key: crate::jobs::j4_history::dedupe_key("frozen-lineage", None, date),
+            subject_key: subject.clone(),
+            ts: day * 86_400,
+            meta: "{}".to_owned(),
+        }
+    });
+    crate::ledger::git_rows::reconcile_git_rows(tx, project, &rows, 80)?;
     Ok(())
 }
 

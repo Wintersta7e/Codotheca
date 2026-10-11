@@ -60,6 +60,16 @@ const CASES: &[Case] = &[
                  UPDATE removal_log SET log = 'present'",
         tables: &["removal_record", "removal_log"],
     },
+    Case {
+        section: "ledger_floor",
+        differ: "UPDATE level_floor SET level = level + 3",
+        tables: &["level_floor"],
+    },
+    Case {
+        section: "ledger_library_awards",
+        differ: "UPDATE xp_events SET meta = '{\"present\":true}' WHERE project_id IS NULL",
+        tables: &["xp_events"],
+    },
 ];
 
 fn section(name: &str) -> &'static SectionSpec {
@@ -193,4 +203,27 @@ fn a_write_once_restore_never_overwrites_a_present_row() {
     }
     eprintln!("sections exercised: {exercised:?}");
     assert_ne!(exercised.len(), 0, "no section was exercised");
+}
+
+/// **A raise-only restore never lowers a raised value.** Each raise-only section's present value
+/// is raised past the exported one, and restoring the lower export leaves it where it stood.
+#[test]
+fn ac_p4_48_19_restore_never_lowers_a_raised_value() {
+    let mut exercised = Vec::new();
+    for case in CASES
+        .iter()
+        .filter(|c| section(c.section).rule == RestoreRule::RaiseOnly)
+    {
+        for (table, (before, after)) in case.tables.iter().zip(restore_over_present(case)) {
+            assert_ne!(before.len(), 0, "{}: {table} holds no row", case.section);
+            assert_eq!(
+                after, before,
+                "{} lowered a raised {table} row",
+                case.section
+            );
+        }
+        exercised.push(case.section);
+    }
+    eprintln!("sections exercised: {exercised:?}");
+    assert_ne!(exercised.len(), 0, "no raise-only section was exercised");
 }

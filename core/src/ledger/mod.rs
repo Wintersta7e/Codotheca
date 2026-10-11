@@ -27,6 +27,7 @@ pub mod pending;
 pub mod price;
 pub mod receipt;
 pub mod recompute;
+pub mod sidecar;
 pub mod verdict;
 pub mod xp;
 

@@ -14,7 +14,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use codotheca_core::index::sidecar::{counts, export, read, RestoreRule, Scope, Sidecar, SECTIONS};
+use codotheca_core::index::sidecar::{
+    counts, export, read, RestoreRule, Scope, SectionRow, Sidecar, SECTIONS,
+};
 use codotheca_core::index::{Index, IndexError};
 use codotheca_core::ledger::price::record_ledger_fingerprint;
 use codotheca_core::testing::sidecar::{
@@ -138,6 +140,34 @@ fn sessions_of(doc: &Sidecar, subject: &str) -> usize {
         .sum()
 }
 
+/// `ledger_floor` is one row of no project; every field the planted row stores is a level the
+/// restore may raise and never lower, so each must come back at least as high.
+fn floor_lowered(planted: &[SectionRow], after: &[SectionRow]) -> Vec<String> {
+    let ([was], [now]) = (planted, after) else {
+        return vec![format!(
+            "ledger_floor: {} rows planted, {} after the rebuild",
+            planted.len(),
+            after.len()
+        )];
+    };
+    let Value::Object(fields) = &was.data else {
+        return vec![format!("ledger_floor: a planted row of {}", was.data)];
+    };
+    fields
+        .iter()
+        .filter(|(field, level)| {
+            !matches!(
+                (level.as_u64(), now.data.get(field.as_str()).and_then(Value::as_u64)),
+                (Some(before), Some(restored)) if restored >= before
+            )
+        })
+        .map(|(field, level)| {
+            let restored = now.data.get(field.as_str()).unwrap_or(&Value::Null);
+            format!("ledger_floor: {field} planted {level}, {restored} after the rebuild")
+        })
+        .collect()
+}
+
 /// The index the app left, exported and compared with the planted document.
 fn verify(data: &Path) -> Result<Value, IndexError> {
     let planted = read(&data.join(PLANTED_SIDECAR))?;
@@ -168,11 +198,19 @@ fn verify(data: &Path) -> Result<Value, IndexError> {
         .filter(|s| matches!(s.rule, RestoreRule::RaiseOnly))
         .map(|s| s.name)
         .collect();
-    // No raise-only section is registered yet. The first one brings the comparison its values
-    // need; until it does, it is named here rather than passed unchecked.
+    let rows = |doc: &Sidecar, name: &str| -> Vec<SectionRow> {
+        doc.payload.sections.get(name).cloned().unwrap_or_default()
+    };
+    // Each raise-only section brings the comparison its values need; one without it is named
+    // here rather than passed unchecked.
     let lowered: Vec<String> = raise_only
         .iter()
-        .map(|name| format!("{name}: no raise-only comparison is written for this section"))
+        .flat_map(|&name| match name {
+            "ledger_floor" => floor_lowered(&rows(&planted, name), &rows(&after, name)),
+            _ => vec![format!(
+                "{name}: no raise-only comparison is written for this section"
+            )],
+        })
         .collect();
     Ok(json!({
         "counts": counted,

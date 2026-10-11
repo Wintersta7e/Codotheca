@@ -164,6 +164,9 @@ export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, stri
   accounts: interimNoun('accounts'),
   parcels: interimNoun('parcels'),
   removal_records: interimNoun('removal_records'),
+  ledger_floor: interimNoun('ledger_floor'),
+  ledger_library_awards: interimNoun('ledger_library_awards'),
+  ledger_frozen_git: interimNoun('ledger_frozen_git'),
 };
 
 /** §48.8.3: merges ride the sidecar and are never replayed, so a rebuild restores none. */

@@ -334,14 +334,15 @@ fn apply_project(
         for seg in &s.segments {
             tx.execute(
                 "INSERT INTO session_segment
-                   (session_id, started_at, ended_at, credited_seconds, closed_by)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                   (session_id, started_at, ended_at, credited_seconds, closed_by, signalled)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 rusqlite::params![
                     session_id,
                     seg.started_at,
                     seg.ended_at,
                     seg.credited_seconds,
-                    seg.closed_by
+                    seg.closed_by,
+                    seg.signalled
                 ],
             )?;
             report.add("session_segments", 1);

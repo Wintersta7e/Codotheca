@@ -38,7 +38,10 @@ pub const REBUILD_OWNED_SETTINGS: [&str; 4] = [
 /// This is the one place a retired key is dropped. `level_floor` is the legacy floor count, never
 /// read as a level;
 /// `restore_pending_generation` was written by a rebuild nothing called and read by nothing.
-pub const RETIRED_SETTINGS: [&str; 2] = ["level_floor", "restore_pending_generation"];
+pub const RETIRED_SETTINGS: [&str; 2] = [
+    crate::ledger::LEGACY_FLOOR_KEY,
+    "restore_pending_generation",
+];
 
 /// Whether `key` stays out of the sidecar in both directions.
 fn never_travels(key: &str) -> bool {
@@ -312,6 +315,35 @@ pub const SECTIONS: &[SectionSpec] = &[
         export: crate::removal::sidecar::export_removal_records_section,
         restore: crate::removal::sidecar::restore_removal_records_section,
     },
+    // §38.10: the floor only rises, and the library's awards restore only where absent.
+    SectionSpec {
+        name: "ledger_floor",
+        owner: "§38",
+        scope: Scope::Global,
+        rule: RestoreRule::RaiseOnly,
+        preserves_ids: &[],
+        export: crate::ledger::sidecar::export_floor,
+        restore: crate::ledger::sidecar::restore_floor,
+    },
+    SectionSpec {
+        name: "ledger_library_awards",
+        owner: "§38",
+        scope: Scope::Global,
+        rule: RestoreRule::WriteOnce,
+        preserves_ids: &[],
+        export: crate::ledger::sidecar::export_library_awards,
+        restore: crate::ledger::sidecar::restore_library_award,
+    },
+    // After `no_scan_projects`, which re-creates the project these rows restore onto.
+    SectionSpec {
+        name: "ledger_frozen_git",
+        owner: "§38",
+        scope: Scope::NoScan,
+        rule: RestoreRule::Replace,
+        preserves_ids: &[],
+        export: crate::ledger::sidecar::export_frozen_git,
+        restore: crate::ledger::sidecar::restore_frozen_git,
+    },
 ];
 
 /// Something the schema holds that a rebuild could lose: a whole table, or one column of one.
@@ -427,8 +459,21 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     ),
     (Entry::Table("session"), PROJECTS),
     (Entry::Table("session_segment"), PROJECTS),
-    // The session track; J4 writes the git track again (§1.7).
+    // The session track; J4 writes the git track again (§1.7), but for a project no scan can find
+    // again. The library's own awards have no project to ride (§38.10).
     (Entry::Table("xp_events"), PROJECTS),
+    (
+        Entry::Table("xp_events"),
+        Classification::Section("ledger_library_awards"),
+    ),
+    (
+        Entry::Table("xp_events"),
+        Classification::Section("ledger_frozen_git"),
+    ),
+    (
+        Entry::Table("level_floor"),
+        Classification::Section("ledger_floor"),
+    ),
     // The user's own targets; a detected one is detected again.
     (Entry::Table("launch_target"), PROJECTS),
     (
@@ -704,6 +749,7 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     (Entry::Column("location", "refstate_basis"), BY_REFSTATE),
     (Entry::Column("location", "fetch_head_at"), BY_REFSTATE),
     (Entry::Column("location", "reflog_tail_at"), BY_REFSTATE),
+    (Entry::Column("location", "archive_reached"), BY_REFSTATE),
     (Entry::Column("location", "is_dirty"), BY_STATUS),
     (Entry::Column("location", "untracked_count"), BY_STATUS),
     (Entry::Column("location", "worktree_observed_at"), BY_STATUS),
@@ -867,6 +913,10 @@ record!(
         /// What ended it — `idle`, `session_end`, `app_exit` or `crash`; `None` exactly when
         /// `ended_at` is.
         closed_by: Option<String>,
+        /// §39.3's: `1` once a §9 signal touched it, `0` for a launch's that none has; `None` in
+        /// format 1 and for a segment written before the column, which §39.3's legacy rule reads.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signalled: Option<i64>,
     }
 );
 record!(
@@ -1423,7 +1473,7 @@ fn export_sessions(conn: &Connection, id: ProjectId) -> Result<Vec<SidecarSessio
     while let Some(row) = rows.next()? {
         let session_id: i64 = row.get(0)?;
         let mut seg_stmt = conn.prepare(
-            "SELECT started_at, ended_at, credited_seconds, closed_by
+            "SELECT started_at, ended_at, credited_seconds, closed_by, signalled
              FROM session_segment WHERE session_id = ?1 ORDER BY started_at, id",
         )?;
         let mut seg_rows = seg_stmt.query([session_id])?;
@@ -1434,6 +1484,7 @@ fn export_sessions(conn: &Connection, id: ProjectId) -> Result<Vec<SidecarSessio
                 ended_at: s.get(1)?,
                 credited_seconds: s.get(2)?,
                 closed_by: s.get(3)?,
+                signalled: s.get(4)?,
             });
         }
         sessions.push(SidecarSession {

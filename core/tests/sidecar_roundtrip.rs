@@ -234,6 +234,12 @@ fn ac_p4_48_19_a_restore_writes_no_unexported_row_and_announces_nothing() {
         .projects
         .iter()
         .flat_map(|p| p.xp_events.iter().map(|e| e.dedupe_key.clone()))
+        // The library's own award belongs to no project, so its section carries it.
+        .chain(
+            trip.before.payload.sections["ledger_library_awards"]
+                .iter()
+                .map(|row| row.data["dedupe_key"]["v"].as_str().unwrap().to_owned()),
+        )
         .collect();
     eprintln!(
         "session-track XP rows: {} exported, {} after the restore",
