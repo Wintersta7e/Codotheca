@@ -1108,13 +1108,24 @@ fn a_check_that_is_not_applicable_opens_nothing_and_closes_nothing() {
     presence(&conn, lib, "present", "present", "absent");
     let lib_tx = conn.transaction().unwrap();
     evaluate_singletons(&lib_tx, ProjectId(lib), 10, &SqliteDebtStore).unwrap();
-    evaluate_and_write(&lib_tx, ProjectId(lib), 10).unwrap();
+    evaluate_and_write(
+        &lib_tx,
+        ProjectId(lib),
+        codotheca_core::clock::LocalInstant {
+            unix: 10,
+            offset_min: 0,
+        },
+    )
+    .unwrap();
     set_check_na(
         &lib_tx,
         ProjectId(lib),
         CompletionCheck::Tests,
         Some(true),
-        10,
+        codotheca_core::clock::LocalInstant {
+            unix: 10,
+            offset_min: 0,
+        },
     )
     .unwrap();
     lib_tx.commit().unwrap();

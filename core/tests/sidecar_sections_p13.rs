@@ -197,7 +197,16 @@ fn evaluate(index: &Mutex<Index>, project: ProjectId) {
     index
         .lock()
         .unwrap()
-        .with_tx(|tx| evaluate_and_write(tx, project, NOW))
+        .with_tx(|tx| {
+            evaluate_and_write(
+                tx,
+                project,
+                codotheca_core::clock::LocalInstant {
+                    unix: NOW,
+                    offset_min: 0,
+                },
+            )
+        })
         .unwrap();
 }
 
@@ -269,7 +278,18 @@ fn a_users_na_ruling_lands_with_the_first_evaluation_after_a_rebuild() {
     index
         .lock()
         .unwrap()
-        .with_tx(|tx| set_check_na(tx, project, CompletionCheck::Remote, Some(true), NOW))
+        .with_tx(|tx| {
+            set_check_na(
+                tx,
+                project,
+                CompletionCheck::Remote,
+                Some(true),
+                codotheca_core::clock::LocalInstant {
+                    unix: NOW,
+                    offset_min: 0,
+                },
+            )
+        })
         .unwrap();
     assert_eq!(remote_ruling(&index, project), Some(true));
     let twin = projection(&index, project);
@@ -296,6 +316,82 @@ fn a_users_na_ruling_lands_with_the_first_evaluation_after_a_rebuild() {
     assert_eq!(waiting, 0, "the first evaluation left the ruling unapplied");
     assert_eq!(remote_ruling(&rebuilt, restored), Some(true));
     assert_eq!(projection(&rebuilt, restored), twin);
+}
+
+/// §38.8.2: the ruling a rebuilt project's first evaluation restores is the one its latch reads.
+/// `remote` passes before the ruling lands, the gate is open, and nothing is paid for it — then
+/// clearing the ruling pays at once, so the gate was not what held it back.
+#[test]
+fn a_restored_na_ruling_is_never_latched_as_passing() {
+    let latched = |index: &Mutex<Index>, project: ProjectId| -> Vec<String> {
+        let guard = index.lock().unwrap();
+        let mut st = guard
+            .conn()
+            .prepare(
+                "SELECT json_extract(meta, '$.what') FROM xp_events
+                  WHERE project_id = ?1 AND kind = 'completion_check'",
+            )
+            .unwrap();
+        let whats = st
+            .query_map([project.0], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        drop(st);
+        drop(guard);
+        whats
+    };
+    let at = codotheca_core::clock::LocalInstant {
+        unix: NOW,
+        offset_min: 0,
+    };
+    let lib = Library::new();
+    let repo = lib.repo("widget");
+    let index = lib.open();
+    let project = lib.hand_off(&index, &repo).project;
+    mark_scorable(&index, project);
+    index
+        .lock()
+        .unwrap()
+        .with_tx(|tx| {
+            evaluate_and_write(tx, project, at)?;
+            set_check_na(tx, project, CompletionCheck::Remote, Some(true), at)
+        })
+        .unwrap();
+
+    lib.export_corrupt_and_rebuild(index);
+    let rebuilt = lib.open();
+    let restored = lib.hand_off(&rebuilt, &repo).project;
+    mark_scorable(&rebuilt, restored);
+    {
+        let guard = rebuilt.lock().unwrap();
+        for day in 0..3 {
+            guard
+                .conn()
+                .execute(
+                    "INSERT INTO xp_events (ts, tz_offset_min, project_id, subject_key, kind,
+                                            dedupe_key, track)
+                     VALUES (?1, 0, ?2, 'gate', 'commit_day', ?3, 'git')",
+                    rusqlite::params![NOW - 86_400 * (day + 1), restored.0, format!("cd:{day}")],
+                )
+                .unwrap();
+        }
+        drop(guard);
+    }
+    evaluate(&rebuilt, restored);
+    assert_eq!(remote_ruling(&rebuilt, restored), Some(true));
+    assert_eq!(
+        latched(&rebuilt, restored),
+        Vec::<String>::new(),
+        "the latch read the rows from before the restored ruling"
+    );
+
+    rebuilt
+        .lock()
+        .unwrap()
+        .with_tx(|tx| set_check_na(tx, restored, CompletionCheck::Remote, None, at))
+        .unwrap();
+    assert_eq!(latched(&rebuilt, restored), ["remote"], "the gate was shut");
 }
 
 /// §11.1's trust is the user's act on one copy; the rebuilt index trusts the same copy from the

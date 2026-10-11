@@ -105,6 +105,7 @@ fn handler_over(lib: &Library) -> CoreHandler {
         ),
         events,
         tz_offset_min: 0,
+        zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     })
 }
 

@@ -102,7 +102,14 @@ fn round_trip() -> RoundTrip {
                     "UPDATE project SET authored_by_user = 1 WHERE id = ?1",
                     [project],
                 )?;
-                evaluate_and_write(tx, ProjectId(project), NOW + 40)
+                evaluate_and_write(
+                    tx,
+                    ProjectId(project),
+                    codotheca_core::clock::LocalInstant {
+                        unix: NOW + 40,
+                        offset_min: 0,
+                    },
+                )
             })
             .unwrap();
         eprintln!("evaluated project {project}: {written:?}");

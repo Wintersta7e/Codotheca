@@ -86,6 +86,7 @@ impl Rig {
             jobs: &self.jobs,
             sync: &codotheca_core::sync::runner::NullSyncSink,
             now: NOW,
+            zone: &codotheca_core::testing::zone::FixedZone(0),
         }
     }
 

@@ -1079,8 +1079,26 @@ use codotheca_core::protocol::{CompletionCheck, HealthCheckSwitch, HealthReading
 /// §31's ten rows exist, so a ruling has a row to land on — which is how the product reaches it.
 fn rule_na(conn: &rusqlite::Connection, project: i64, key: CompletionCheck, na: Option<bool>) {
     let tx = conn.unchecked_transaction().unwrap();
-    evaluate_and_write(&tx, ProjectId(project), READ_NOW).unwrap();
-    set_check_na(&tx, ProjectId(project), key, na, READ_NOW).unwrap();
+    evaluate_and_write(
+        &tx,
+        ProjectId(project),
+        codotheca_core::clock::LocalInstant {
+            unix: READ_NOW,
+            offset_min: 0,
+        },
+    )
+    .unwrap();
+    set_check_na(
+        &tx,
+        ProjectId(project),
+        key,
+        na,
+        codotheca_core::clock::LocalInstant {
+            unix: READ_NOW,
+            offset_min: 0,
+        },
+    )
+    .unwrap();
     tx.commit().unwrap();
     let key_slug = serde_json::to_value(key).unwrap();
     let stored: Option<i64> = conn

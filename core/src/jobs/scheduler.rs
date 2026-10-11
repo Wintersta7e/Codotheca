@@ -350,7 +350,7 @@ impl JobRunner {
             //
             // **It is not folded into `recompute`**: that has other callers, and a hook firing
             // from an unbounded set is a hook nobody can count.
-            crate::completion::evaluate_and_write(tx, job.project_id, now)?;
+            crate::completion::evaluate_and_write(tx, job.project_id, at)?;
             Ok((recomputed, announce))
         });
         if let Ok((r, _)) = &recomputed {

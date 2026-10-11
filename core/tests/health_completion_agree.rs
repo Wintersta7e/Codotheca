@@ -65,7 +65,15 @@ fn settle(rig: &Rig, project: i64, now: i64) {
         &SqliteDebtStore,
     )
     .unwrap();
-    evaluate_and_write(&tx, ProjectId(project), now).unwrap();
+    evaluate_and_write(
+        &tx,
+        ProjectId(project),
+        codotheca_core::clock::LocalInstant {
+            unix: now,
+            offset_min: 0,
+        },
+    )
+    .unwrap();
     tx.commit().unwrap();
 }
 
@@ -150,7 +158,15 @@ fn seed_partial(rig: &Rig, project: i64, with_item: bool) {
 
 fn evaluate(rig: &Rig, project: i64) {
     let tx = rig.conn().unchecked_transaction().unwrap();
-    evaluate_and_write(&tx, ProjectId(project), NOW).unwrap();
+    evaluate_and_write(
+        &tx,
+        ProjectId(project),
+        codotheca_core::clock::LocalInstant {
+            unix: NOW,
+            offset_min: 0,
+        },
+    )
+    .unwrap();
     tx.commit().unwrap();
 }
 

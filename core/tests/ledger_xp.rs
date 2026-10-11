@@ -582,6 +582,7 @@ fn handler(dir: &std::path::Path) -> CoreHandler {
         ),
         events,
         tz_offset_min: 0,
+        zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     })
 }
 

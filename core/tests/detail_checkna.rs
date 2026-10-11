@@ -43,7 +43,15 @@ fn scored(rig: &Rig) -> i64 {
     .unwrap();
     // One evaluation, so there are ten rows for the command to rule on.
     let tx = conn.unchecked_transaction().unwrap();
-    codotheca_core::completion::evaluate_and_write(&tx, ProjectId(1), NOW).unwrap();
+    codotheca_core::completion::evaluate_and_write(
+        &tx,
+        ProjectId(1),
+        codotheca_core::clock::LocalInstant {
+            unix: NOW,
+            offset_min: 0,
+        },
+    )
+    .unwrap();
     tx.commit().unwrap();
     1
 }
@@ -178,7 +186,15 @@ fn ac_p3_31_3_zero_evaluable_is_a_present_detail_beside_a_null_row() {
     {
         let conn = rig.conn();
         let tx = conn.unchecked_transaction().unwrap();
-        codotheca_core::completion::evaluate_and_write(&tx, ProjectId(1), NOW).unwrap();
+        codotheca_core::completion::evaluate_and_write(
+            &tx,
+            ProjectId(1),
+            codotheca_core::clock::LocalInstant {
+                unix: NOW,
+                offset_min: 0,
+            },
+        )
+        .unwrap();
         tx.commit().unwrap();
     }
 

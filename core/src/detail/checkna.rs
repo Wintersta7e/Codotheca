@@ -59,7 +59,7 @@ pub fn handle_projects_set_check_na(
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
-    let written = crate::completion::set_check_na(&tx, a.id, a.check, a.na, ctx.now)
+    let written = crate::completion::set_check_na(&tx, a.id, a.check, a.na, ctx.zone.at(ctx.now))
         .map_err(|e| CommandFailure::internal(format!("{e:?}")))?;
     tx.commit()
         .map_err(|e| CommandFailure::internal(e.to_string()))?;

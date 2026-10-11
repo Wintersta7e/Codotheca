@@ -11,7 +11,7 @@ use crate::protocol::{CheckState, CompletionCheck, ProjectId, UnknownReason};
 use super::evaluate::CheckRow;
 
 /// A generated enum's own wire spelling, read back through serde rather than restated (R24).
-fn slug<T: serde::Serialize>(value: &T) -> String {
+pub(crate) fn slug<T: serde::Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(raw)) => raw,
         _ => String::new(),

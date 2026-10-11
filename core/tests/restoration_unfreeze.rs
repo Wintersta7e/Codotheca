@@ -322,6 +322,7 @@ impl Rig {
             jobs,
             sync: &NullSyncSink,
             now: self.clock.now_unix(),
+            zone: &codotheca_core::testing::zone::FixedZone(0),
         };
         let detail = dispatch_detail_command(
             &ctx,

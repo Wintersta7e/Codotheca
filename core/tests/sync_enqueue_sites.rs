@@ -145,6 +145,7 @@ fn detail_ctx<'a>(
         jobs,
         sync,
         now: NOW,
+        zone: &codotheca_core::testing::zone::FixedZone(0),
     }
 }
 

@@ -713,10 +713,12 @@ impl SyncRunner {
         // which is correct — the bulk case stays covered by `scan/finished`.
         let projects = self.projects_for_sync_task(task, &outcome);
         if !projects.is_empty() {
+            // §39.2 rule 5: a latch is dated in the offset in force at this settle's own instant.
+            let at = self.deps.zone.at(now);
             let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
             let _ = guard.with_tx(|tx| {
                 for project in &projects {
-                    let _ = crate::completion::evaluate_and_write(tx, *project, now);
+                    let _ = crate::completion::evaluate_and_write(tx, *project, at);
                 }
                 Ok(())
             });

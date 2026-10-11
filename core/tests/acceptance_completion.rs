@@ -419,7 +419,15 @@ fn content_scan(conn: &rusqlite::Connection, project: i64, ci: &str) {
 
 fn recompute(conn: &mut rusqlite::Connection, project: i64, now: i64) -> Written {
     let tx = conn.transaction().unwrap();
-    let written = evaluate_and_write(&tx, ProjectId(project), now).unwrap();
+    let written = evaluate_and_write(
+        &tx,
+        ProjectId(project),
+        codotheca_core::clock::LocalInstant {
+            unix: now,
+            offset_min: 0,
+        },
+    )
+    .unwrap();
     tx.commit().unwrap();
     written
 }
@@ -536,7 +544,15 @@ fn ac_p3_31_10_budget_exceeded_is_unknown_but_absent_is_fail() {
         .unwrap();
         let tx = conn.transaction().unwrap();
         evaluate_singletons(&tx, ProjectId(p), 100, &SqliteDebtStore).unwrap();
-        let written = evaluate_and_write(&tx, ProjectId(p), 100).unwrap();
+        let written = evaluate_and_write(
+            &tx,
+            ProjectId(p),
+            codotheca_core::clock::LocalInstant {
+                unix: 100,
+                offset_min: 0,
+            },
+        )
+        .unwrap();
         tx.commit().unwrap();
 
         for key in ["license", "tests", "ci"] {
@@ -625,7 +641,15 @@ fn ac_p3_31_18_unreadable_readme_passes_but_missing_readme_fails() {
         let tx = conn.transaction().unwrap();
         j6_content::persist(&tx, ProjectId(p), &facts, 100).unwrap();
         evaluate_singletons(&tx, ProjectId(p), 100, &SqliteDebtStore).unwrap();
-        evaluate_and_write(&tx, ProjectId(p), 100).unwrap();
+        evaluate_and_write(
+            &tx,
+            ProjectId(p),
+            codotheca_core::clock::LocalInstant {
+                unix: 100,
+                offset_min: 0,
+            },
+        )
+        .unwrap();
         tx.commit().unwrap();
 
         // query_row must find a row; a missing row cannot masquerade as a NULL excerpt.
@@ -1003,7 +1027,17 @@ fn ac_p3_31_17_a_user_ruling_survives_a_reclassification() {
     // The user rules `tests` not applicable.
     let set = |db: &mut rusqlite::Connection, key: CompletionCheck, na: Option<bool>| {
         let tx = db.transaction().unwrap();
-        set_check_na(&tx, ProjectId(p), key, na, 2_000).unwrap();
+        set_check_na(
+            &tx,
+            ProjectId(p),
+            key,
+            na,
+            codotheca_core::clock::LocalInstant {
+                unix: 2_000,
+                offset_min: 0,
+            },
+        )
+        .unwrap();
         tx.commit().unwrap();
     };
     set(&mut conn, CompletionCheck::Tests, Some(true));
@@ -1328,7 +1362,15 @@ fn ac_p3_31_14_a_demotion_writes_no_health_delta_row() {
 
     content_scan(&conn, p, "absent");
     let tx = conn.transaction().unwrap();
-    let written = evaluate_and_write(&tx, ProjectId(p), 2_000).unwrap();
+    let written = evaluate_and_write(
+        &tx,
+        ProjectId(p),
+        codotheca_core::clock::LocalInstant {
+            unix: 2_000,
+            offset_min: 0,
+        },
+    )
+    .unwrap();
     // Counted inside the transaction as well, so a row written and then deleted before the commit
     // could not pass either.
     let deltas_in_tx = count_for(&tx, "health_delta", p);

@@ -388,7 +388,15 @@ impl GitRig {
         guard
             .with_tx(|tx| {
                 evaluate_singletons(tx, self.project, 1_700_000_000, &SqliteDebtStore).unwrap();
-                evaluate_and_write(tx, self.project, 1_700_000_000).unwrap();
+                evaluate_and_write(
+                    tx,
+                    self.project,
+                    codotheca_core::clock::LocalInstant {
+                        unix: 1_700_000_000,
+                        offset_min: 0,
+                    },
+                )
+                .unwrap();
                 Ok(())
             })
             .unwrap();
@@ -1741,6 +1749,7 @@ fn j7_is_enqueued_from_get_and_from_no_other_visibility_site() {
         jobs: &jobs,
         sync: &sync,
         now: 1_800_000_000,
+        zone: &codotheca_core::testing::zone::FixedZone(0),
     };
     let _ = codotheca_core::detail::dispatch_detail_command(
         &detail,

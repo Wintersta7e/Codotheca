@@ -43,6 +43,8 @@ pub struct DetailCtx<'a> {
     pub sync: &'a dyn crate::sync::runner::SyncSink,
     /// The caller's clock reading, in unix seconds.
     pub now: i64,
+    /// The machine's zone, read at the instant of each write that persists a local date.
+    pub zone: &'a dyn crate::clock::LocalZone,
 }
 
 impl std::fmt::Debug for DetailCtx<'_> {

@@ -29,8 +29,10 @@ pub mod store;
 
 use rusqlite::Transaction;
 
+use crate::clock::LocalInstant;
 use crate::index::completion::{set_completion, Completion};
 use crate::index::IndexError;
+use crate::ledger::latch::latch_completion_checks;
 use crate::protocol::{CompletionCheck, ProjectId};
 
 use evaluate::{evaluate, CheckRow, Counts};
@@ -70,22 +72,41 @@ pub enum Written {
 /// **A project's first write also applies what a rebuild staged for it** (§48.8.4): a ruling
 /// restores onto its check's row, so it cannot land before that row exists.
 ///
+/// **Then the latch (§38.8.2), on a rewrite and an unchanged recompute alike** — the unchanged
+/// return is exactly where a third commit-day opening the gate under a passing check would
+/// otherwise be lost. It reads the rows computed here; a skipped reading latches nothing.
+///
 /// # Errors
 /// Fails when SQLite cannot be read or refuses a write.
 pub fn evaluate_and_write(
     tx: &Transaction<'_>,
     project: ProjectId,
-    now: i64,
+    at: LocalInstant,
 ) -> Result<Written, IndexError> {
+    match recompute(tx, project, at.unix)? {
+        Ok((written, rows)) => {
+            latch_completion_checks(tx, project, &rows, at)?;
+            Ok(written)
+        }
+        Err(why) => Ok(Written::Skipped(why)),
+    }
+}
+
+/// The recompute without the latch: what was written, and the rows as they now stand computed.
+fn recompute(
+    tx: &Transaction<'_>,
+    project: ProjectId,
+    now: i64,
+) -> Result<Result<(Written, Vec<CheckRow>), inputs::NotScorable>, IndexError> {
     let gathered = match inputs::gather(tx, project)? {
         Ok(gathered) => gathered,
-        Err(why) => return Ok(Written::Skipped(why)),
+        Err(why) => return Ok(Err(why)),
     };
     let rows = evaluate(&gathered, now);
 
     let stored = store::load_rows(tx, project)?;
     if stored.len() == rows.len() && stored.iter().zip(rows.iter()).all(|(a, b)| same(a, b)) {
-        return Ok(Written::Unchanged);
+        return Ok(Ok((Written::Unchanged, rows.to_vec())));
     }
 
     store::write_all_ten(tx, project, &rows)?;
@@ -102,17 +123,26 @@ pub fn evaluate_and_write(
         }
     };
     set_completion(tx, project, value)?;
+    let written = Written::Rewritten {
+        counts: Counts::of(&rows),
+    };
 
     // A rebuilt index restores the user's N/A rulings onto these rows, which exist only from a
     // project's first write. After the projection, which the restore rewrites through
-    // `set_check_na`; never on a later write, which that call is.
-    if stored.is_empty() {
-        crate::index::pending::match_pending(tx, project, now)?;
+    // `restore_ruling`; never on a later write, which that call is. A restore that applied
+    // anything recomputed the rows under it, so the latch reads that computation — a check the
+    // user ruled N/A is never paid as the pass it read before the ruling landed.
+    if stored.is_empty()
+        && !crate::index::pending::match_pending(tx, project, now)?
+            .applied
+            .is_empty()
+    {
+        if let Ok((_, restored)) = recompute(tx, project, now)? {
+            return Ok(Ok((written, restored)));
+        }
     }
 
-    Ok(Written::Rewritten {
-        counts: Counts::of(&rows),
-    })
+    Ok(Ok((written, rows.to_vec())))
 }
 
 /// Everything the diff compares, and deliberately **not** `observed_at`.
@@ -123,7 +153,8 @@ fn same(a: &CheckRow, b: &CheckRow) -> bool {
         && a.unknown_reason == b.unknown_reason
 }
 
-/// Write the user's ruling for one key and recompute in the same transaction.
+/// Write the user's ruling for one key and recompute in the same transaction, latching what
+/// the recompute finds passing.
 ///
 /// §31.5 names three triggers for the evaluator and R123 kept only the two settle hooks; this is
 /// the third, and it is the only one that survives as a trigger rather than a hook.
@@ -135,8 +166,28 @@ pub fn set_check_na(
     project: ProjectId,
     key: CompletionCheck,
     na: Option<bool>,
+    at: LocalInstant,
+) -> Result<Written, IndexError> {
+    store::set_user_na(tx, project, key, na)?;
+    evaluate_and_write(tx, project, at)
+}
+
+/// A ruling restored from a sidecar, written and recomputed in the caller's transaction, with
+/// **no latch**: a restore knows its instant and not the zone a latch's date is read in.
+///
+/// Nothing is lost by it. The restore inside a project's first write is latched by that write,
+/// over the rows this recompute leaves; any other restore is latched by the project's next
+/// settle, which latches on an unchanged recompute too.
+///
+/// # Errors
+/// Fails when SQLite cannot be read or refuses a write.
+pub(crate) fn restore_ruling(
+    tx: &Transaction<'_>,
+    project: ProjectId,
+    key: CompletionCheck,
+    na: Option<bool>,
     now: i64,
 ) -> Result<Written, IndexError> {
     store::set_user_na(tx, project, key, na)?;
-    evaluate_and_write(tx, project, now)
+    Ok(recompute(tx, project, now)?.map_or_else(Written::Skipped, |(written, _)| written))
 }

@@ -74,8 +74,8 @@ pub(crate) fn export_check_na(conn: &Connection) -> Result<Vec<SectionRow>, Inde
     Ok(out)
 }
 
-/// The `check_na` section's restore, through `completion::set_check_na`, which records the ruling
-/// on the check's row and recomputes the project.
+/// The `check_na` section's restore, through `completion::restore_ruling`, which records the
+/// ruling on the check's row and recomputes the project.
 ///
 /// A ruling is a column of that row, and a rebuilt index has the row only once the evaluator has
 /// written the project's ten — never at the hand-off that brings the project back. Until then
@@ -97,7 +97,13 @@ pub(crate) fn restore_check_na(
     if !has_row {
         return Ok(RestoreOutcome::Pending);
     }
-    crate::completion::set_check_na(tx, project, ruling.check_key, Some(ruling.user_na), ctx.now)?;
+    crate::completion::restore_ruling(
+        tx,
+        project,
+        ruling.check_key,
+        Some(ruling.user_na),
+        ctx.now,
+    )?;
     Ok(RestoreOutcome::Applied(1))
 }
 

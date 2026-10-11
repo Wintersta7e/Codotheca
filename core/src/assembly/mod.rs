@@ -84,6 +84,9 @@ pub struct CoreDeps {
     /// `ProjectsCtx`'s (plan 13). §8.1's era bands cut on the local calendar year and nothing
     /// under `crate::projects` reads a clock or a zone, so the offset arrives with the deps.
     pub tz_offset_min: i32,
+    /// The machine's zone, read at the instant of each command's write that persists a local
+    /// date (§39.2 rule 1). The era bands above keep their start-up offset (§39.2 rule 7).
+    pub zone: Arc<dyn crate::clock::LocalZone>,
 }
 
 impl std::fmt::Debug for CoreDeps {
@@ -128,6 +131,8 @@ pub struct CoreHandler {
     /// are the only two endings (§20.2).
     connect: Option<crate::accounts::pump::ConnectPump>,
     tz_offset_min: i32,
+    /// The one zone, copied from the deps; every command arm that dates a write reads it here.
+    zone: Arc<dyn crate::clock::LocalZone>,
     /// Measured against `Clock::monotonic_ms`, never wall time: a clock step backwards must not
     /// fire a burst of ticks, and `now_unix` is something a user or NTP can move.
     last_tick_ms: u64,
@@ -171,6 +176,7 @@ impl CoreHandler {
             client_id: deps.client_id,
             connect: None,
             tz_offset_min: deps.tz_offset_min,
+            zone: deps.zone,
             last_tick_ms,
             ticks: 0,
         }
@@ -862,6 +868,7 @@ impl CommandHandler for CoreHandler {
                     jobs: self.jobs.sink_ref(),
                     sync: self.sync.sink_ref(),
                     now,
+                    zone: self.zone.as_ref(),
                 };
                 crate::detail::dispatch_detail_command(&ctx, command, args)
             }

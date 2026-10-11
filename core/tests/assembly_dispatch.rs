@@ -248,6 +248,21 @@ mod corehandler {
         http: Arc<dyn codotheca_core::http::HttpTransport>,
         tokens: Arc<dyn codotheca_core::accounts::keychain::TokenStore>,
     ) -> CoreHandler {
+        // UTC, so a test's local date never depends on the machine running it.
+        let zone = Arc::new(codotheca_core::testing::zone::FixedZone(0));
+        handler_zoned(dir, index, events, clock, http, tokens, zone)
+    }
+
+    /// The same handler, dating its writes in `zone`.
+    fn handler_zoned(
+        dir: &std::path::Path,
+        index: &Arc<std::sync::Mutex<codotheca_core::index::Index>>,
+        events: &Arc<PublisherSink>,
+        clock: &Arc<codotheca_core::testing::FakeClock>,
+        http: Arc<dyn codotheca_core::http::HttpTransport>,
+        tokens: Arc<dyn codotheca_core::accounts::keychain::TokenStore>,
+        zone: Arc<dyn codotheca_core::clock::LocalZone>,
+    ) -> CoreHandler {
         let clock = Arc::clone(clock);
         let index = Arc::clone(index);
         let events = Arc::clone(events);
@@ -319,7 +334,137 @@ mod corehandler {
             ),
             events: Arc::clone(&events),
             tz_offset_min: 0,
+            zone,
         })
+    }
+
+    /// A project gated open and passing `remote`, last touched 200 days before `t` so its era
+    /// is the calendar clause, on one present copy whose refs were read.
+    fn gated_project(
+        index: &std::sync::Mutex<codotheca_core::index::Index>,
+        name: &str,
+        t: i64,
+    ) -> i64 {
+        const DAY: i64 = 86_400;
+        let guard = index.lock().expect("lock");
+        let conn = guard.conn();
+        conn.execute(
+            "INSERT INTO project (name, seed_basename, remote_key, authored_by_user,
+                                  is_reference, last_touched_at, created_at, updated_at)
+             VALUES (?1, ?1, ?1, 1, 0, ?2, 0, 0)",
+            rusqlite::params![name, t - 200 * DAY],
+        )
+        .expect("project");
+        let id = conn.last_insert_rowid();
+        let path = format!("/srv/{name}");
+        conn.execute(
+            "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                   store_key, presence, repo_kind, refstate_observed_at)
+             VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree', ?4)",
+            rusqlite::params![id, path.as_bytes(), path, t - DAY],
+        )
+        .expect("location");
+        for day in 1..=3 {
+            conn.execute(
+                "INSERT INTO xp_events (ts, tz_offset_min, project_id, subject_key, kind,
+                                        dedupe_key, track)
+                 VALUES (?1, 0, ?2, 'gate', 'commit_day', ?3, 'git')",
+                rusqlite::params![t - 300 * DAY, id, format!("cd:{name}:{day}")],
+            )
+            .expect("commit day");
+        }
+        drop(guard);
+        id
+    }
+
+    /// The receipt date of each completion latch `id` holds.
+    fn latch_dates(index: &std::sync::Mutex<codotheca_core::index::Index>, id: i64) -> Vec<String> {
+        let guard = index.lock().expect("lock");
+        let mut st = guard
+            .conn()
+            .prepare(
+                "SELECT json_extract(meta, '$.when') FROM xp_events
+                  WHERE project_id = ?1 AND kind = 'completion_check'",
+            )
+            .expect("prepare");
+        let dates = st
+            .query_map([id], |r| r.get(0))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("rows");
+        drop(st);
+        drop(guard);
+        dates
+    }
+
+    /// [p4] §39.2 rules 5 and 7 in one handler: a latch is dated in the zone in force at its own
+    /// instant, while the era bands keep cutting on the offset captured at start-up.
+    #[test]
+    fn the_handler_zone_dates_writes_and_eras_keep_the_start_offset() {
+        // UTC 23:00 on 31 December 2026, where the zone steps from UTC to UTC+1: half an hour
+        // later it is already 1 January locally, and still 31 December at the start-up offset.
+        const T: i64 = 1_798_758_000;
+        let dir = tempfile::tempdir().expect("tmp");
+        let index = Arc::new(std::sync::Mutex::new(
+            codotheca_core::index::Index::open_at(dir.path(), T).expect("index opens"),
+        ));
+        let (a, b) = (gated_project(&index, "a", T), gated_project(&index, "b", T));
+
+        let events = Arc::new(PublisherSink::new(Publisher::detached()));
+        let clock = Arc::new(codotheca_core::testing::FakeClock::new(T - 1_800));
+        let http: Arc<dyn codotheca_core::http::HttpTransport> =
+            Arc::new(codotheca_core::testing::FakeTransport::new());
+        let mut h = handler_zoned(
+            dir.path(),
+            &index,
+            &events,
+            &clock,
+            http,
+            Arc::new(codotheca_core::testing::FakeTokenStore::unavailable()),
+            Arc::new(codotheca_core::testing::zone::TransitionZone {
+                at: T,
+                before_min: 0,
+                after_min: 60,
+            }),
+        );
+        let rule = |handler: &mut CoreHandler, id: i64| {
+            handler
+                .handle(
+                    "projects.setCheckNa",
+                    serde_json::json!({ "id": id, "check": "readme", "na": true }),
+                )
+                .expect("the ruling lands");
+        };
+        rule(&mut h, a);
+        clock.set_unix(T + 1_800);
+        rule(&mut h, b);
+        let page = h
+            .handle("projects.list", serde_json::json!({}))
+            .expect("the list answers");
+        h.shutdown();
+
+        let era = |id: i64| -> String {
+            page["rows"]
+                .as_array()
+                .expect("rows")
+                .iter()
+                .find(|row| row["id"] == id)
+                .and_then(|row| row["eraSectionId"].as_str())
+                .expect("the project is listed")
+                .to_owned()
+        };
+        let (when_a, when_b, era_a) = (latch_dates(&index, a), latch_dates(&index, b), era(a));
+        eprintln!("zone: latch a {when_a:?}, latch b {when_b:?}, era of a {era_a}");
+        assert_eq!(when_a, ["2026-12-31"], "before the switch");
+        assert_eq!(
+            when_b,
+            ["2027-01-01"],
+            "after the switch, in the zone at that instant"
+        );
+        assert_eq!(
+            era_a, "era:year",
+            "the era bands cut on the new year, not the start-up offset's"
+        );
     }
 
     /// An unreachable forge and an unregistered application are **different facts**.

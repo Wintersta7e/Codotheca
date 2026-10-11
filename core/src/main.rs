@@ -423,6 +423,8 @@ fn main() -> ExitCode {
         events: Arc::clone(&events),
         // §8.1's era bands cut on the local calendar year, so this is a correctness input.
         tz_offset_min: local_utc_offset_min(),
+        // The same zone the pumps read: a command's write is dated as a job's is.
+        zone,
     };
 
     let mut handler = CoreHandler::new(deps);
