@@ -12,6 +12,9 @@ export const FOCUS_STALE_SECS = 120;
 /**
  * Four heartbeats fit inside the staleness window, so three consecutive losses survive and a
  * genuinely dead renderer is believed dead within two minutes.
+ *
+ * Mirrors `core::session::FOCUS_HEARTBEAT_SECS`, which the core sums into the most one touch
+ * can credit (`ONE_TOUCH_CREDIT_BOUND_SECS`). The test asserts the two agree.
  */
 export const FOCUS_HEARTBEAT_SECS = 30;
 

@@ -9,6 +9,7 @@
 
 pub mod activity;
 pub mod manager;
+pub mod measure;
 pub mod orphan;
 pub mod segment;
 pub mod store;
@@ -38,13 +39,29 @@ pub const FOCUS_STALE_MS: u64 = FOCUS_STALE_SECS.unsigned_abs() * 1_000;
 
 /// How often `SessionManager::tick` is pumped. It bounds three things at once: idle-close
 /// precision, wait-mode exit latency, and how much credit a crash can lose (§9's watermark).
-pub const DEFAULT_TICK_SECS: u64 = 15;
+pub const DEFAULT_TICK_SECS: u64 = TICK_SECS.unsigned_abs();
 
 // The two relations the three constants above have to hold, asserted at compile time rather
 // than in a test: a build that breaks either one cannot exist. A dead renderer must cost less
 // than a segment, and the tick has to be finer than the staleness it is there to notice.
 const _: () = assert!(FOCUS_STALE_SECS * 2 < SEGMENT_IDLE_SECS);
 const _: () = assert!(DEFAULT_TICK_SECS < FOCUS_STALE_SECS.unsigned_abs());
+
+/// [`DEFAULT_TICK_SECS`] in the signed seconds every column holds; the unsigned one is derived
+/// from it, so the bound below sums it without a cast.
+const TICK_SECS: i64 = 15;
+
+/// How often a renderer re-sends its claim while input keeps arriving (§39.3a). The core mirror
+/// of `app/src/shared/sessionFocus.ts`'s, which a test there reads from this line.
+pub const FOCUS_HEARTBEAT_SECS: i64 = 30;
+
+/// The most one touch can credit, measured from the input (§39.3a's bound plus §9's tail).
+///
+/// The claim goes out within a heartbeat of the input, is believed for [`FOCUS_STALE_SECS`], is
+/// noticed within a tick, and the segment then idles out. §39.3's Focus target floor is held
+/// above it, so a single touch can never close the ring.
+pub const ONE_TOUCH_CREDIT_BOUND_SECS: i64 =
+    FOCUS_HEARTBEAT_SECS + FOCUS_STALE_SECS + TICK_SECS + SEGMENT_IDLE_SECS;
 
 /// The `close_reason` column spelling of a generated variant (§1.6's CHECK).
 #[must_use]

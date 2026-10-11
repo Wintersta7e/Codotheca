@@ -145,7 +145,7 @@ fn fixture_with_commit_days_and_sessions() -> Ledgers {
         },
     )
     .unwrap();
-    let segment = store::open_segment(&tx, session, T0).unwrap();
+    let segment = store::open_segment(&tx, session, T0, false).unwrap();
     store::close_segment(
         &tx,
         segment,

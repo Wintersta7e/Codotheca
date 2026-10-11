@@ -75,7 +75,7 @@ fn credited_seconds_is_the_sum_of_segments_whatever_ended_the_session() {
 
     let tx = h.index.index_mut().conn_mut().transaction().unwrap();
     for (start, end) in [(T0, T0 + 1_200), (T0 + 2_400, T0 + 3_000)] {
-        let seg = store::open_segment(&tx, s, start).unwrap();
+        let seg = store::open_segment(&tx, s, start, false).unwrap();
         store::close_segment(
             &tx,
             seg,
@@ -115,7 +115,7 @@ fn the_stored_total_and_the_live_sum_agree_once_the_session_is_closed() {
     let s = h.open_session();
 
     let tx = h.index.index_mut().conn_mut().transaction().unwrap();
-    let seg = store::open_segment(&tx, s, T0).unwrap();
+    let seg = store::open_segment(&tx, s, T0, false).unwrap();
     store::close_segment(
         &tx,
         seg,
@@ -150,7 +150,7 @@ fn an_open_segment_carries_a_durable_watermark() {
     let s = h.open_session();
 
     let tx = h.index.index_mut().conn_mut().transaction().unwrap();
-    let seg = store::open_segment(&tx, s, T0).unwrap();
+    let seg = store::open_segment(&tx, s, T0, false).unwrap();
     store::mark_activity(&tx, seg, T0 + 300).unwrap();
     tx.commit().unwrap();
 
@@ -185,7 +185,7 @@ fn a_watermark_never_moves_backwards_or_credits_a_negative_span() {
     let s = h.open_session();
 
     let tx = h.index.index_mut().conn_mut().transaction().unwrap();
-    let seg = store::open_segment(&tx, s, T0).unwrap();
+    let seg = store::open_segment(&tx, s, T0, false).unwrap();
     store::mark_activity(&tx, seg, T0 - 900).unwrap();
     tx.commit().unwrap();
 
@@ -208,7 +208,7 @@ fn a_closed_segment_is_not_reopened_by_a_late_watermark_or_a_second_close() {
     let s = h.open_session();
 
     let tx = h.index.index_mut().conn_mut().transaction().unwrap();
-    let seg = store::open_segment(&tx, s, T0).unwrap();
+    let seg = store::open_segment(&tx, s, T0, false).unwrap();
     store::close_segment(
         &tx,
         seg,
@@ -249,7 +249,7 @@ fn closing_a_session_moves_last_interaction_at() {
     let s = h.open_session();
 
     let tx = h.index.index_mut().conn_mut().transaction().unwrap();
-    let seg = store::open_segment(&tx, s, T0).unwrap();
+    let seg = store::open_segment(&tx, s, T0, false).unwrap();
     store::close_segment(
         &tx,
         seg,
@@ -333,7 +333,7 @@ fn every_column_spelling_this_module_writes_is_one_the_ddl_check_accepts() {
         ClosedBy::Crash,
     ] {
         let tx = h.index.index_mut().conn_mut().transaction().unwrap();
-        let seg = store::open_segment(&tx, s, T0).unwrap();
+        let seg = store::open_segment(&tx, s, T0, false).unwrap();
         store::close_segment(
             &tx,
             seg,

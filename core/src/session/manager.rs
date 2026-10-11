@@ -49,6 +49,9 @@ struct Live {
     repo: crate::git::RepoHandle,
     machine: SegmentMachine,
     segment_id: Option<i64>,
+    /// The monotonic time of the launch: a focus claim reported before it is the launch's own
+    /// click or key, never input on the session it opened (§39.3a).
+    launched_mono_ms: u64,
     scope: ScopeFilter,
     waiter: Option<std::thread::JoinHandle<Option<i32>>>,
 }
@@ -141,8 +144,13 @@ impl SessionManager {
                     started_at: now.unix,
                 },
             )?;
-            let segment_id =
-                store::open_segment(&tx, session, opened.opened_segment_at.unwrap_or(now.unix))?;
+            // The launch segment: no signal has touched it yet (§39.3).
+            let segment_id = store::open_segment(
+                &tx,
+                session,
+                opened.opened_segment_at.unwrap_or(now.unix),
+                false,
+            )?;
             let started = store::session_ref(&tx, session)?;
             tx.commit()?;
             (session, segment_id, started)
@@ -157,6 +165,7 @@ impl SessionManager {
                 repo: launched.repo,
                 machine,
                 segment_id: Some(segment_id),
+                launched_mono_ms: now.mono_ms,
                 scope: ScopeFilter::new(Arc::clone(&self.ignore)),
                 waiter: launched.waiter,
             },
@@ -264,12 +273,14 @@ impl SessionManager {
             }
         }
 
-        // Focus reaches only the session whose own project is focused, and only while the report
-        // is fresh. Worktree activity already recorded above wins; both are equivalent here.
+        // Focus reaches only the session whose own project is focused, only while the report
+        // is fresh, and only when it was reported at or after that session's launch: the launch
+        // is not input (§39.3a). Worktree activity already recorded above wins; both are
+        // equivalent here.
         if let Some((project, reported_at)) = self.focus {
             if now.mono_ms.saturating_sub(reported_at) < FOCUS_STALE_MS {
                 for (id, live) in &self.live {
-                    if live.project_id == project {
+                    if live.project_id == project && reported_at >= live.launched_mono_ms {
                         signals.entry(*id).or_insert(Signal::OwnView);
                     }
                 }
@@ -361,8 +372,9 @@ impl SessionManager {
                     session_credited_seconds: store::credited_seconds(&tx, session)?,
                 }));
             }
+            // Only a signal opens a segment here — the launch's is opened by `launch`.
             if let Some(at) = outcome.opened_segment_at {
-                next_segment = Some(Some(store::open_segment(&tx, session, at)?));
+                next_segment = Some(Some(store::open_segment(&tx, session, at, true)?));
             }
             if let Some((ended_at, reason)) = outcome.ended_session {
                 let closed = store::close_session(&tx, session, ended_at, reason, now.unix)?;

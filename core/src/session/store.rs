@@ -85,6 +85,9 @@ pub fn open_session(tx: &Transaction<'_>, open: &SessionOpen) -> Result<SessionI
 
 /// Insert a new open `session_segment` row under `session`, returning the segment's row id.
 ///
+/// `signalled` is §39.3's: `false` for the segment a launch opens, which no §9 signal has touched
+/// yet, and `true` for one a signal opened. [`mark_activity`] sets it once a signal arrives.
+///
 /// # Errors
 ///
 /// `SessionError::Sqlite` when the insert fails, e.g. `session` names no row.
@@ -92,18 +95,20 @@ pub fn open_segment(
     tx: &Transaction<'_>,
     session: SessionId,
     started_at: i64,
+    signalled: bool,
 ) -> Result<i64, SessionError> {
     tx.execute(
         "INSERT INTO session_segment
-           (session_id, started_at, ended_at, credited_seconds, closed_by)
-         VALUES (?1, ?2, NULL, 0, NULL)",
-        params![session.0, started_at],
+           (session_id, started_at, ended_at, credited_seconds, closed_by, signalled)
+         VALUES (?1, ?2, NULL, 0, NULL, ?3)",
+        params![session.0, started_at, signalled],
     )?;
     Ok(tx.last_insert_rowid())
 }
 
 /// Keep the open row current, so a crash credits up to the last observed activity and invents
-/// nothing after it.
+/// nothing after it. Only a §9 signal reaches here, so the segment is signalled from now on
+/// (§39.3).
 ///
 /// `max(…, 0)` because a wall clock can move backwards, and the guard on `closed_by IS NULL` is
 /// what stops a late activity batch reopening a segment already closed.
@@ -114,7 +119,8 @@ pub fn open_segment(
 pub fn mark_activity(tx: &Transaction<'_>, segment_id: i64, at: i64) -> Result<(), SessionError> {
     tx.execute(
         "UPDATE session_segment
-            SET credited_seconds = max(max(?2 - started_at, 0), credited_seconds)
+            SET credited_seconds = max(max(?2 - started_at, 0), credited_seconds),
+                signalled = 1
           WHERE id = ?1 AND closed_by IS NULL",
         params![segment_id, at],
     )?;

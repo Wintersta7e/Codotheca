@@ -10,18 +10,24 @@ import {
 } from './sessionFocus';
 import { required } from './required';
 
+/** The value of an `i64` constant declared in `core/src/session/mod.rs`, as written there. */
+function rustSeconds(name: string): number {
+  const source = readFileSync(new URL('../../../core/src/session/mod.rs', import.meta.url), 'utf8');
+  const match = new RegExp(`${name}\\s*:\\s*i64\\s*=\\s*([0-9_]+)`).exec(source);
+  expect(match, `${name} is not declared in core/src/session/mod.rs`).not.toBeNull();
+  const digits = required(required(match, `${name} declaration`)[1], 'its value');
+  return Number(digits.replaceAll('_', ''));
+}
+
 describe('the focus constants', () => {
   it('mirrors the Rust constant the core actually measures against', () => {
     // The whole reason this test exists: one value, two languages, and the project's
     // dominant defect class is exactly that.
-    const source = readFileSync(
-      new URL('../../../core/src/session/mod.rs', import.meta.url),
-      'utf8',
-    );
-    const match = /FOCUS_STALE_SECS\s*:\s*i64\s*=\s*([0-9_]+)/.exec(source);
-    expect(match, 'FOCUS_STALE_SECS is not declared in core/src/session/mod.rs').not.toBeNull();
-    const digits = required(required(match, 'FOCUS_STALE_SECS declaration')[1], 'its value');
-    expect(Number(digits.replaceAll('_', ''))).toBe(FOCUS_STALE_SECS);
+    expect(rustSeconds('FOCUS_STALE_SECS')).toBe(FOCUS_STALE_SECS);
+  });
+
+  it('mirrors the heartbeat the core sums into its one-touch credit bound', () => {
+    expect(rustSeconds('FOCUS_HEARTBEAT_SECS')).toBe(FOCUS_HEARTBEAT_SECS);
   });
 
   it('reads the Rust source it claims to, rather than an empty string', () => {

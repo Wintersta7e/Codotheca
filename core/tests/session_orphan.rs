@@ -94,7 +94,7 @@ impl Fixture {
     fn open_segment(&mut self, at: i64) -> i64 {
         let session = self.session;
         let tx = self.index.index_mut().conn_mut().transaction().unwrap();
-        let id = store::open_segment(&tx, session, at).unwrap();
+        let id = store::open_segment(&tx, session, at, false).unwrap();
         tx.commit().unwrap();
         id
     }
@@ -108,7 +108,7 @@ impl Fixture {
     fn close_segment(&mut self, start: i64, end: i64) {
         let session = self.session;
         let tx = self.index.index_mut().conn_mut().transaction().unwrap();
-        let id = store::open_segment(&tx, session, start).unwrap();
+        let id = store::open_segment(&tx, session, start, false).unwrap();
         store::close_segment(
             &tx,
             id,
@@ -255,7 +255,7 @@ fn every_orphaned_session_is_closed_not_only_the_first() {
 
     let second = h.open_session(T0 + 5_000);
     let tx = h.index.index_mut().conn_mut().transaction().unwrap();
-    let seg2 = store::open_segment(&tx, second, T0 + 5_000).unwrap();
+    let seg2 = store::open_segment(&tx, second, T0 + 5_000, false).unwrap();
     store::mark_activity(&tx, seg2, T0 + 5_400).unwrap();
     tx.commit().unwrap();
 
