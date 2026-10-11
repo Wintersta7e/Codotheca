@@ -192,6 +192,12 @@ impl SessionManager {
         self.focus = project.map(|p| (p, self.clock.monotonic_ms()));
     }
 
+    /// The project whose view last claimed focus, however old the claim; `None` after a release.
+    #[must_use]
+    pub fn focused(&self) -> Option<ProjectId> {
+        self.focus.map(|(project, _)| project)
+    }
+
     /// §7.8's Stop: close the ledger. It writes nothing to disk and kills nothing.
     ///
     /// A session that is not live is already closed, and stopping it again is `Ok`.

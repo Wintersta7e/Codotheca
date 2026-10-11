@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import type { InstallPreview, ProjectId, ProjectRow, SessionRef } from '../../generated/protocol';
 import { CARD_ROLE } from '../a11y/names';
 import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
@@ -13,6 +13,7 @@ import { frameToken, rungFor, uncomputedRank } from './completion';
 import { densityStep } from './geometry';
 import { BENCH_LABEL, useBenchElapsed } from './useBenchElapsed';
 import { noop } from '../noop';
+import { useFocusEvidence } from '../session/useFocusReporter';
 
 /**
  * The grid tile the shelf mounts, and the composition every value in the card modules was
@@ -74,6 +75,10 @@ export interface ProjectCardProps {
 export function ProjectCard(props: ProjectCardProps): ReactElement {
   const { row } = props;
   const [hovered, setHovered] = useState(false);
+  // §39.3a: the live tile is the project's own view on the shelf, so input in it counts; a tile
+  // with no open session is browsing, and claims nothing.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useFocusEvidence(rootRef, props.session === null ? null : row.id);
   const step = densityStep(props.density);
   const appearance = appearanceFor(seedOf(row), fadeFor(row), row.primaryLanguage);
   // §23.5: a project with no working copy asks for the second pass, at its own address. The
@@ -133,6 +138,7 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
 
   return (
     <Card
+      ref={rootRef}
       surface="card"
       appearance={appearance}
       // [p3] §31.1c. `rungFor` answers `null` for the three cases decided ABOVE the ladder —

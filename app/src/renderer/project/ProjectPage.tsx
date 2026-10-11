@@ -28,6 +28,7 @@ import { useInstallOffer } from '../install/useInstallOffer';
 import { useHealthDelta } from '../restoration/useHealthDelta';
 import { movesHealthReading, toSettingsPatch } from '../settings/Drawer';
 import { resolveKey, type KeyEventLike } from '../keyboard/contexts';
+import { useFocusEvidence } from '../session/useFocusReporter';
 import { ActivityTab } from './activity/ActivityTab';
 import { BackupStateBlock } from './BackupState';
 import { useProjectPageDeps } from './deps';
@@ -144,6 +145,8 @@ export function ProjectPageView({
   const [pinnedOverride, setPinnedOverride] = useState<boolean | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const deps = useProjectPageDeps();
+  // §39.3a: input anywhere in this page is someone at this project.
+  useFocusEvidence(rootRef, projectId);
 
   useEffect(() => {
     if (redirectedTo !== null) onOpenProject(redirectedTo);

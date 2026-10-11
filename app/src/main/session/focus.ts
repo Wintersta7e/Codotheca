@@ -22,7 +22,7 @@ export interface WindowFocusDeps {
  * without this the core would believe the last claim for a further `FOCUS_STALE_SECS`.
  *
  * There is no `onFocus`. The shell does not know which view will be on screen when the window
- * comes back, and the renderer re-reports on its own.
+ * comes back, and the renderer re-claims at the next input in the project's view (§39.3a).
  */
 export function registerFocusRelease(deps: WindowFocusDeps): void {
   const release = (): void => {

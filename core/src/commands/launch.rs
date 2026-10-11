@@ -376,15 +376,29 @@ pub fn handle_stop(ctx: &mut LaunchCtx<'_>, args: Value) -> Result<Value, Comman
 
 /// L4: the only command in §2.4's table that opens no transaction and issues no statement.
 ///
-/// It arrives on every project-page entry and exit, and once per heartbeat while a page is
-/// held. A handler that opened a write transaction would put `TxGuard` contention on a timer,
-/// on the one command whose whole purpose is to be cheap enough to repeat.
+/// It arrives at the first input in a project's page or live tile, on every exit from one, and
+/// once per heartbeat while input continues (§39.3a). A handler that opened a write transaction
+/// would put `TxGuard` contention on a timer, on the one command whose whole purpose is to be
+/// cheap enough to repeat.
+///
+/// A change of claim writes one stderr line, which the shell merges into its rolling log — the
+/// only place a renderer→core request is observable from outside. A repeat writes nothing, so
+/// the heartbeat never floods the log.
 ///
 /// # Errors
 /// `PROTOCOL` when the arguments do not parse; nothing else can fail.
 pub fn handle_focus(ctx: &mut LaunchCtx<'_>, args: Value) -> Result<Value, CommandFailure> {
     let args: FocusArgs = parse_args(args)?;
+    let changed = ctx.sessions.focused() != args.project_id;
     ctx.sessions.set_focus(args.project_id);
+    if changed {
+        let claim = args
+            .project_id
+            .map_or_else(|| "none".to_owned(), |p| p.0.to_string());
+        // `eprintln!`, not a raw `stderr()` write: the test harness captures only the macro, and
+        // an uncaptured line lands inside the harness's own `test … ok` lines.
+        eprintln!("codotheca-core: session.focus claim={claim}");
+    }
     Ok(serde_json::json!({}))
 }
 

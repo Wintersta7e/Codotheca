@@ -1880,7 +1880,7 @@
       "args": { "projectId": "ProjectId?" },
       "returns": "Empty",
       "idempotent": true,
-      "$comment": "§9: app focus extends a segment only while the focused view is that project, so the renderer must report which project's view holds focus; null means none. §2.4's table omits it. Not privileged — it originates no path and no executable"
+      "$comment": "§9/§39.3a: a claim extends a segment only after input in that project's page or live tile; null means none. §2.4's table omits it. Not privileged — it originates no path and no executable"
     },
     {
       "name": "accounts.list",

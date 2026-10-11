@@ -8,30 +8,34 @@ export interface FocusReporterDeps {
 }
 
 export interface FocusReporter {
-  /** The project whose page or live tile is focused, or `null` for every other view. */
+  /** The view changed: the project whose page or live tile it is, or `null` for any other view. */
   readonly focus: (projectId: number | null) => void;
+  /** Keyboard or pointer input inside P's page or live tile; untrusted input is ignored. */
+  readonly input: (projectId: number, trusted: boolean) => void;
+  /** P's session started, so the input that launched it is not evidence of anyone at P. */
+  readonly sessionStarted: (projectId: number) => void;
   readonly stop: () => void;
   readonly claimed: () => number | null;
 }
 
 /**
- * §9's renderer half, with two jobs that pull in opposite directions.
+ * §9's renderer half, gated on input (§39.3a): a project is claimed because someone *touched*
+ * its view, never because the view is on screen — a page left open with nobody at it would
+ * otherwise hold a segment open for as long as the window stayed up.
  *
- * **Coalescing**: a project page re-rendering ten times a second must not send ten reports, so
- * an unchanged claim sends nothing. **Liveness**: a claim that is never repeated cannot be
- * told apart from one made by a renderer that has since died, so an unchanged claim must be
- * repeated on a timer. The resolution is that the heartbeat runs *only while a project is
- * claimed*: releasing sends one `null` and stops the timer, because there is nothing left to
- * prove.
- *
- * Which project counts is §9's, not this file's: app focus extends a segment only if the
- * focused view is that project's — its page, or its live tile. Callers pass `null` for the
- * shelf, the palette, settings and every other view, which is what closes the farming hole.
+ * **Claiming**: the first trusted input in P's view sends P at once. **Liveness**: a claim that
+ * is never repeated cannot be told apart from one made by a renderer that has since died, so it
+ * is repeated at each heartbeat — but only when input arrived in the interval just ended.
+ * Without it the heartbeat stops and the core lets the claim lapse after `FOCUS_STALE_SECS`;
+ * the next input claims again at once. **Releasing** is immediate and ungated: a view that is
+ * not the claimed project's sends one `null`, because the core believes a lapsing claim until
+ * it goes stale.
  *
  * R3: the reporter reads no clock. The core stamps every report with its own `monotonic_ms`.
  */
 export function createFocusReporter(deps: FocusReporterDeps): FocusReporter {
   let claimed: number | null = null;
+  let evidence = false;
   let timer: number | null = null;
 
   const stopTimer = (): void => {
@@ -47,26 +51,41 @@ export function createFocusReporter(deps: FocusReporterDeps): FocusReporter {
   };
 
   const beat = (): void => {
-    if (claimed === null) return;
+    timer = null;
+    if (claimed === null || !evidence) return;
+    evidence = false;
     send(claimed);
     timer = deps.setTimer(beat, FOCUS_HEARTBEAT_MS);
   };
 
+  const release = (): void => {
+    stopTimer();
+    evidence = false;
+    if (claimed === null) return;
+    claimed = null;
+    send(null);
+  };
+
   return {
     focus(projectId) {
-      if (projectId === claimed) return;
+      if (claimed !== null && claimed !== projectId) release();
+    },
+    input(projectId, trusted) {
+      if (!trusted) return;
+      if (claimed === projectId && timer !== null) {
+        evidence = true;
+        return;
+      }
+      stopTimer();
       claimed = projectId;
-      stopTimer();
+      evidence = false;
       send(projectId);
-      // A claim is a liveness assertion and is repeated; a release asserts nothing.
-      if (projectId !== null) timer = deps.setTimer(beat, FOCUS_HEARTBEAT_MS);
+      timer = deps.setTimer(beat, FOCUS_HEARTBEAT_MS);
     },
-    stop() {
-      stopTimer();
-      if (claimed === null) return;
-      claimed = null;
-      send(null);
+    sessionStarted(projectId) {
+      if (claimed === projectId) evidence = false;
     },
+    stop: release,
     claimed: () => claimed,
   };
 }

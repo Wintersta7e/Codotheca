@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactElement, ReactNode } from 'react';
+import type { CSSProperties, ReactElement, ReactNode, Ref } from 'react';
 import type { ConditionSignal } from '../../generated/protocol';
 import type { CardAppearance } from '../art/appearance';
 import type { CardGesture } from '../motion/transition';
@@ -89,6 +89,8 @@ export interface CardProps {
   readonly onClick?: (shiftKey: boolean) => void;
   /** Band 5. The hero's belongs to the project page; the tile's to `ProjectCard`. */
   readonly children: ReactNode;
+  /** The frame's element, for a caller that listens to input inside the whole tile. */
+  readonly ref?: Ref<HTMLDivElement>;
 }
 
 export function Card(props: CardProps): ReactElement {
@@ -107,6 +109,7 @@ export function Card(props: CardProps): ReactElement {
 
   return (
     <div
+      ref={props.ref}
       className="cdt-card-frame"
       data-hovered={hovered}
       data-gesture={props.gesture ?? undefined}

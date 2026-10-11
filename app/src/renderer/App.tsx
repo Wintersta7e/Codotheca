@@ -6,7 +6,7 @@
  * hook with its own test; the only state here is which overlay is open and which page, which
  * are facts about the window rather than decisions about the library.
  */
-import { useCallback, useMemo, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 
 import type { LocationId, ProjectId } from '../generated/protocol';
 import { AppDepsContext, createDefaultAppDeps, type AppDeps } from './app/deps';
@@ -31,6 +31,7 @@ import { TransitionBeam } from './app/TransitionBeam';
 import { IdentityCard } from './firstrun/IdentityCard';
 import { ProjectPageDepsContext } from './project/deps';
 import { ProjectPageView } from './project/ProjectPage';
+import { FocusReporterContext, useFocusReporter } from './session/useFocusReporter';
 import { noticeDismissed } from './shelf/notice';
 import { DEFAULT_DENSITY_PX } from './shelf/viewState';
 
@@ -53,6 +54,9 @@ export function App(props: AppProps = {}): ReactElement {
   const library = useLibrary(deps);
   const scan = useScanStatus(deps);
   const sessions = useSessions(deps);
+  // §39.3a: one reporter per window. It claims only after input in a project's own view, so the
+  // route tells it which view is on screen and the page and the live tile feed it the input.
+  const focusReporter = useFocusReporter(deps);
   const [view, setView] = useViewState(deps, VIEW_WRITE_DEBOUNCE_MS);
   const problems = useProblems(deps, scan);
   // §1.4's set decides `authored_by_user` for every project, so confirming it changes the shelf
@@ -137,6 +141,13 @@ export function App(props: AppProps = {}): ReactElement {
     hasStoredShelf: rows !== null && rows.length > 0,
     openProjectId,
   });
+
+  const focusedProjectId = route.kind === 'project' ? route.id : null;
+  // On every route change, including between two views that belong to no project: a live tile's
+  // claim is released when the shelf it sits on leaves the screen.
+  useEffect(() => {
+    focusReporter.focus(focusedProjectId);
+  }, [focusReporter, route.kind, focusedProjectId]);
 
   const liveSessionProjectIds = useMemo(() => new Set(sessions.keys()), [sessions]);
 
@@ -227,7 +238,10 @@ export function App(props: AppProps = {}): ReactElement {
             onOpenScanSummary={openScanSummary}
             onShowMe={showMe}
           >
-            {body}
+            {/* The project page and the live tiles are the only views that feed the reporter. */}
+            <FocusReporterContext.Provider value={focusReporter}>
+              {body}
+            </FocusReporterContext.Provider>
           </FirstRunHost>
         )}
         <SurfaceHost
