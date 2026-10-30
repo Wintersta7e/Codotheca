@@ -705,9 +705,14 @@ fn the_sentinel_reaches_no_verify_read_child() {
     );
 }
 
+/// A fixture git that reads no global or system config, so a developer's own hooks and settings
+/// cannot decide whether the fixture builds.
 fn run_git(cwd: &Path, args: &[&str]) {
+    let null_device = if cfg!(windows) { "NUL" } else { "/dev/null" };
     let output = Command::new("git")
         .current_dir(cwd)
+        .env("GIT_CONFIG_GLOBAL", null_device)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .args(args)
         .stdin(Stdio::null())
         .output()

@@ -5,7 +5,7 @@ import * as path from 'node:path';
 
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 
-import { homeEnv } from './isolatedHome.js';
+import { FIXTURE_GIT_ENV, homeEnv } from './isolatedHome.js';
 
 // Playwright transpiles specs to CommonJS, so `__dirname` is correct here and `import.meta` is
 // not — the opposite of every vitest file in this repo.
@@ -62,6 +62,7 @@ function seedHome(): string {
     const git = (...args: string[]): void => {
       execFileSync('git', ['-c', 'user.name=E2E', '-c', `user.email=${EMAIL}`, ...args], {
         cwd: dir,
+        env: { ...process.env, ...FIXTURE_GIT_ENV },
         stdio: 'ignore',
       });
     };

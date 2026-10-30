@@ -17,3 +17,12 @@ export function homeEnv(home: string): Record<string, string> {
     XDG_CONFIG_HOME: path.join(home, '.config'),
   };
 }
+
+/**
+ * The environment a fixture's own `git` runs in: no global or system config, so a developer's
+ * hooks and settings cannot decide whether the fixture repository builds.
+ */
+export const FIXTURE_GIT_ENV: Readonly<Record<string, string>> = {
+  GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1',
+};
