@@ -15,6 +15,7 @@
 use rusqlite::OptionalExtension as _;
 
 use crate::detail::DetailCtx;
+use crate::jobs::state::J4_COVERED_SQL;
 use crate::projects::rows::{
     enum_from_column, load_project_row, locations_of, pick_primary, LocationFacts,
 };
@@ -320,7 +321,10 @@ fn activity(
 ) -> Result<Activity, CommandFailure> {
     let j4_done: bool = conn
         .query_row(
-            "SELECT 1 FROM project_job_state WHERE project_id = ?1 AND job = 'j4' AND state = 'ok'",
+            &format!(
+                "SELECT 1 FROM project_job_state WHERE project_id = ?1 AND job = 'j4' \
+                 AND {J4_COVERED_SQL}"
+            ),
             [id],
             |_| Ok(true),
         )

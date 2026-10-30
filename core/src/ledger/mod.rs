@@ -13,7 +13,8 @@
 //! `latch` pays a passing completion check once (§38.8.2), and `verdict` writes the verdict awards
 //! (§38.8.4). `marginal` prices a closure through the one reading each of those rows' writers acts
 //! on (§38.11). `focus` stores each segment close's share of the day's Focus union (§38.8.3), and
-//! `archive` pays a clean archive once, as last observed (§38.8.5).
+//! `archive` pays a clean archive once, as last observed (§38.8.5). Each of those per-project rows
+//! is inserted through `retained`, which acts on a twin's row when the key is already held.
 
 pub mod archive;
 pub mod curve;
@@ -27,6 +28,7 @@ pub mod pending;
 pub mod price;
 pub mod receipt;
 pub mod recompute;
+pub(crate) mod retained;
 pub mod sidecar;
 pub mod verdict;
 pub mod xp;

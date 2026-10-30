@@ -16,7 +16,6 @@ use codotheca_core::clock::{day_bounds, LocalZone};
 use codotheca_core::git::{RepoHandle, StoreKey};
 use codotheca_core::index::Index;
 use codotheca_core::mount::StoreClass;
-use codotheca_core::proto::EventSink;
 use codotheca_core::protocol::{CloseReason, ClosedBy, LocationId, ProjectId, SessionId, TargetId};
 use codotheca_core::session::activity::FakeIgnoreCheck;
 use codotheca_core::session::manager::{LaunchedSession, SessionManager};
@@ -30,6 +29,7 @@ use codotheca_core::session::{
     SessionError, DEFAULT_TICK_SECS, FOCUS_HEARTBEAT_SECS, ONE_TOUCH_CREDIT_BOUND_SECS,
     SEGMENT_IDLE_SECS,
 };
+use codotheca_core::testing::events::ValidatingSink;
 use codotheca_core::testing::zone::{FixedZone, TransitionZone};
 use codotheca_core::testing::{FakeClock, TempIndex};
 
@@ -42,15 +42,6 @@ const T0: i64 = MIDNIGHT + 3_600;
 /// A reading long after every segment here.
 const LATER: i64 = MIDNIGHT + 10 * 86_400;
 const UTC: FixedZone = FixedZone(0);
-
-/// Every payload the manager emits is checked against the schema, then dropped.
-struct NoEvents;
-
-impl EventSink for NoEvents {
-    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
-        codotheca_core::testing::events::validated(topic, event, &payload);
-    }
-}
 
 /// The manager takes `Box<dyn ActivitySource>`; the test keeps a handle to stand in for the OS.
 #[derive(Debug, Clone, Default)]
@@ -104,7 +95,7 @@ fn rig() -> Rig {
     let activity = SharedActivity::default();
     let manager = SessionManager::new(
         clock.clone(),
-        Arc::new(NoEvents),
+        Arc::new(ValidatingSink::default()),
         Box::new(activity.clone()),
         Arc::new(FakeIgnoreCheck::new(&["dist/"])),
         Arc::new(FixedZone(0)),

@@ -178,6 +178,114 @@ fn live_holders(conn: &Connection, subject: &ProjectSubject) -> Result<Vec<Proje
     Ok(ids.into_iter().map(ProjectId).collect())
 }
 
+/// One record staged on a subject, and the project §48.8.4's predicate gives it to.
+struct Staged {
+    id: i64,
+    generation: i64,
+    record: String,
+    /// `None` when no single live project is its owner.
+    owner: Option<ProjectId>,
+}
+
+/// The records staged on one project's subject.
+struct Claims {
+    /// The subject key they are staged on.
+    key: String,
+    /// How many live projects hold the subject when no single one does; zero when one does.
+    holders: usize,
+    /// Oldest generation first.
+    staged: Vec<Staged>,
+}
+
+/// §48.8.4's matching predicate, the one spelling both the restore and the retained writers' hold
+/// ask: every record staged on `project`'s subject key, each owned by the subject's one live
+/// holder or — when several hold it — by the one whose copies the record's location keys name,
+/// and otherwise by nobody. `None` when the project has no subject.
+fn claims(conn: &Connection, project: ProjectId) -> Result<Option<Claims>, IndexError> {
+    let Some(subject) = subject_for_project(conn, project)? else {
+        return Ok(None);
+    };
+    let key = subject.to_key();
+    let rows: Vec<(i64, i64, String, String)> = conn
+        .prepare(
+            "SELECT id, source_generation, location_keys, record FROM sidecar_pending
+             WHERE subject_key = ?1 ORDER BY source_generation, id",
+        )?
+        .query_map([&key], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<Result<_, _>>()?;
+    if rows.is_empty() {
+        return Ok(Some(Claims {
+            key,
+            holders: 0,
+            staged: Vec::new(),
+        }));
+    }
+    let unique = resolve_subject_unique(conn, &subject)?;
+    let holders = match unique {
+        Some(_) => Vec::new(),
+        None => live_holders(conn, &subject)?,
+    };
+    let mut staged = Vec::with_capacity(rows.len());
+    for (id, generation, keys, record) in rows {
+        let owner = match unique {
+            Some(only) => Some(only),
+            None => named_holder(conn, &holders, &keys)?,
+        };
+        staged.push(Staged {
+            id,
+            generation,
+            record,
+            owner,
+        });
+    }
+    Ok(Some(Claims {
+        key,
+        holders: holders.len(),
+        staged,
+    }))
+}
+
+/// Whether `sidecar_pending` holds a record the restore would give `project`.
+///
+/// Such a record, once matched, brings back the project's own retained rows. A record for another
+/// subject, or one several live projects hold and its location keys name none of, is not
+/// `project`'s.
+///
+/// # Errors
+/// Fails when SQLite refuses a read, or a record's location keys name a malformed path key.
+pub fn has_own_pending(conn: &Connection, project: ProjectId) -> Result<bool, IndexError> {
+    Ok(claims(conn, project)?.is_some_and(|c| c.staged.iter().any(|s| s.owner == Some(project))))
+}
+
+/// Whether a lineage-less `project` may yet own a pending lineage-keyed record.
+///
+/// True while the project's subject is its path and `sidecar_pending` holds a lineage-keyed record
+/// no live project holds. The settle that fixes the project's lineage matches records again, and such a record may then
+/// be the project's own. A project that already has a lineage is never one it could become.
+///
+/// # Errors
+/// Fails when SQLite refuses a read.
+pub fn may_gain_pending(conn: &Connection, project: ProjectId) -> Result<bool, IndexError> {
+    if !matches!(
+        subject_for_project(conn, project)?,
+        Some(ProjectSubject::Path { .. })
+    ) {
+        return Ok(false);
+    }
+    let keys: Vec<String> = conn
+        .prepare("SELECT DISTINCT subject_key FROM sidecar_pending")?
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    for key in keys {
+        if let Some(subject @ ProjectSubject::Lineage { .. }) = ProjectSubject::parse(&key) {
+            if live_holders(conn, &subject)?.is_empty() {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// Apply every record staged on `project`'s subject that is `project`'s, in the caller's
 /// transaction, deleting each one it applied (§48.8.4).
 ///
@@ -196,32 +304,23 @@ pub fn match_pending(
     now: i64,
 ) -> Result<MatchReport, IndexError> {
     let mut report = MatchReport::default();
-    let Some(subject) = subject_for_project(tx, project)? else {
+    let Some(Claims {
+        key,
+        holders,
+        staged,
+    }) = claims(tx, project)?
+    else {
         return Ok(report);
     };
-    let key = subject.to_key();
-    let staged: Vec<(i64, i64, String, String)> = tx
-        .prepare(
-            "SELECT id, source_generation, location_keys, record FROM sidecar_pending
-             WHERE subject_key = ?1 ORDER BY source_generation, id",
-        )?
-        .query_map([&key], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-        .collect::<Result<_, _>>()?;
-    if staged.is_empty() {
-        return Ok(report);
-    }
-    let unique = resolve_subject_unique(tx, &subject)?;
-    let holders = match unique {
-        Some(_) => Vec::new(),
-        None => live_holders(tx, &subject)?,
-    };
-    for (id, generation, keys, record) in staged {
-        let owner = match unique {
-            Some(only) => Some(only),
-            None => named_holder(tx, &holders, &keys)?,
-        };
+    for Staged {
+        id,
+        generation,
+        record,
+        owner,
+    } in staged
+    {
         if owner != Some(project) {
-            if owner.is_none() && holders.len() > 1 {
+            if owner.is_none() && holders > 1 {
                 report.left_ambiguous += 1;
             }
             continue;
@@ -250,7 +349,7 @@ pub fn match_pending(
 /// The one holder among `holders` with a copy at one of `keys`, or `None` when none or several
 /// have one. `keys` is the JSON text the pending row's `location_keys` column holds.
 fn named_holder(
-    tx: &Transaction<'_>,
+    conn: &Connection,
     holders: &[ProjectId],
     keys: &str,
 ) -> Result<Option<ProjectId>, IndexError> {
@@ -259,7 +358,7 @@ fn named_holder(
     };
     let mut named: Vec<ProjectId> = Vec::new();
     for key in &keys {
-        if let Some((_, holder)) = location_at(tx, key)? {
+        if let Some((_, holder)) = location_at(conn, key)? {
             if holders.contains(&holder) && !named.contains(&holder) {
                 named.push(holder);
             }
@@ -273,10 +372,10 @@ fn named_holder(
 
 /// The location at `key`, with its project, if one exists.
 fn location_at(
-    tx: &Transaction<'_>,
+    conn: &Connection,
     key: &SidecarLocationKey,
 ) -> Result<Option<(LocationId, ProjectId)>, IndexError> {
-    Ok(tx
+    Ok(conn
         .query_row(
             "SELECT id, project_id FROM location WHERE kind = ?1 AND distro = ?2 AND path_key = ?3",
             rusqlite::params![key.kind, key.distro, unhex(&key.path_key)?],

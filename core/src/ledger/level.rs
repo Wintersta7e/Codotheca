@@ -7,11 +7,11 @@
 use rusqlite::{Connection, Transaction};
 
 use super::curve::{level_of, threshold};
-use super::floor::{ratchet_from_reading, read_floor};
+use super::floor::{may_raise, ratchet_level_floor, read_floor};
 use super::xp::xp_by_term;
 use crate::index::IndexError;
 use crate::projects::current::IS_CURRENT_SQL;
-use crate::protocol::{LevelReading, LevelState};
+use crate::protocol::{LevelFigures, LevelReading, LevelState};
 
 /// §38.5.1's *concluded*, for the project aliased `p`: its history finished (`j4` reads `ok`),
 /// or something on its history chain failed or was deferred. The one spelling, spliced into every
@@ -64,8 +64,9 @@ pub(crate) fn state_of(conn: &Connection, pending: u32) -> Result<LevelState, In
 
 /// The level reading, and the only production caller of the level function (§38.5.2).
 ///
-/// It ratchets the floor when the reading allows it, then returns the XP by term and the
-/// displayed level, the greater of the computed level and the floor.
+/// It takes the reading once, ratchets the floor from it when the reading allows it, then
+/// returns the XP and the displayed level, the greater of the computed level and the floor.
+/// Under `notComputed` it carries no figures at all.
 ///
 /// It reads no quiet-mode key — the reading is computed in every mode and its readers decide
 /// what renders.
@@ -73,31 +74,31 @@ pub(crate) fn state_of(conn: &Connection, pending: u32) -> Result<LevelState, In
 /// # Errors
 /// Returns [`IndexError`] when a read or the floor's raise fails.
 pub fn read_level(tx: &Transaction<'_>, now: i64) -> Result<LevelReading, IndexError> {
-    ratchet_from_reading(tx, now)?;
     let pending_projects = pending_projects(tx)?;
     let state = state_of(tx, pending_projects)?;
     if state == LevelState::NotComputed {
         return Ok(LevelReading {
             state,
-            level: None,
-            xp: None,
-            level_at: None,
-            next_level_at: None,
-            floored: false,
+            figures: None,
             pending_projects,
         });
     }
     let xp = xp_by_term(tx)?.total();
     let earned = level_of(xp);
+    if may_raise(tx, state)? {
+        ratchet_level_floor(tx, earned, now)?;
+    }
     let floor = read_floor(tx)?;
     let level = earned.max(floor);
     Ok(LevelReading {
         state,
-        level: Some(level),
-        xp: Some(xp),
-        level_at: Some(threshold(level)),
-        next_level_at: Some(threshold(level.saturating_add(1))),
-        floored: floor > earned,
+        figures: Some(LevelFigures {
+            level,
+            xp,
+            level_at: threshold(level),
+            next_level_at: threshold(level.saturating_add(1)),
+            floored: floor > earned,
+        }),
         pending_projects,
     })
 }

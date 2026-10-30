@@ -8,10 +8,10 @@
     clippy::indexing_slicing
 )]
 
+use codotheca_core::clock::local_date;
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
 use codotheca_core::index::subject::ProjectSubject;
 use codotheca_core::index::{open_connection, Index, IndexError};
-use codotheca_core::jobs::j4_history::local_date;
 use codotheca_core::ledger::{CUT_KINDS, GIT_KINDS, KINDS, LEGACY_FLOOR_KEY, RETAINED_KINDS};
 use rusqlite::Connection;
 
@@ -270,15 +270,19 @@ fn ac_p4_38_2_the_rebuild_keeps_what_it_copies() {
         "a new row reused the deleted id {highest}: the high-water mark was lowered"
     );
     let indexes: Vec<String> = conn
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'xp_events'")
+        .prepare(
+            "SELECT name FROM sqlite_master
+              WHERE type = 'index' AND tbl_name = 'xp_events' AND sql IS NOT NULL",
+        )
         .unwrap()
         .query_map([], |r| r.get(0))
         .unwrap()
         .map(Result::unwrap)
         .collect();
-    assert!(
-        indexes.iter().any(|i| i == "idx_xp_events_project_ts"),
-        "the index is gone: {indexes:?}"
+    assert_eq!(
+        indexes,
+        ["idx_xp_events_project_kind_ts"],
+        "the rebuild's one index, serving every `project_id`-prefix read"
     );
 
     // A pragma inside the runner's transaction is a no-op that reads as if it worked. The header
@@ -299,6 +303,70 @@ fn ac_p4_38_2_the_rebuild_keeps_what_it_copies() {
     );
 
     a_cut_kind_fails_the_migration_and_the_backup_is_restored();
+}
+
+/// The query plan of `sql`, one detail per step.
+fn plan(conn: &Connection, sql: &str) -> String {
+    let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+    let rows = stmt.query_map([], |r| r.get::<_, String>(3)).unwrap();
+    rows.map(Result::unwrap).collect::<Vec<_>>().join(" | ")
+}
+
+/// The ledger's readers that filter one project's rows by kind, and the session total that reads
+/// one session's segments, each find their rows through an index rather than a scan.
+#[test]
+fn the_kind_filtered_readers_use_an_index() {
+    let (_d, conn) = migrated_to(MIGRATIONS.len());
+    let kind_index = "idx_xp_events_project_kind_ts";
+    let cases = [
+        (
+            kind_index,
+            "SELECT EXISTS (SELECT 1 FROM xp_events WHERE project_id = 1 AND kind = 'clean_archive')",
+        ),
+        (
+            kind_index,
+            "SELECT id FROM xp_events
+              WHERE project_id = 1 AND kind = 'completion_check'
+                AND json_extract(meta, '$.what') = 'readme'
+              ORDER BY id LIMIT 1",
+        ),
+        (
+            kind_index,
+            "SELECT id FROM xp_events
+              WHERE project_id = 1 AND kind = 'debt_day'
+                AND COALESCE(json_extract(meta, '$.when'),
+                             date(ts + COALESCE(tz_offset_min, 0) * 60, 'unixepoch')) = '2027-01-01'
+              ORDER BY id LIMIT 1",
+        ),
+        (
+            kind_index,
+            "SELECT COUNT(*) FROM xp_events
+              WHERE project_id = 1 AND kind = 'commit_day' AND ts >= 0 AND ts < 86400",
+        ),
+        (
+            kind_index,
+            "SELECT p.is_archived = 1
+                    AND NOT EXISTS (SELECT 1 FROM xp_events x
+                                     WHERE x.project_id = p.id AND x.kind = 'clean_archive')
+               FROM project p WHERE p.id = 1",
+        ),
+        (
+            "idx_session_segment_session",
+            "SELECT COALESCE(SUM(credited_seconds), 0) FROM session_segment WHERE session_id = 1",
+        ),
+        (
+            "idx_session_segment_session",
+            "SELECT id FROM session_segment WHERE session_id = 1 ORDER BY started_at, id",
+        ),
+    ];
+    for (index, sql) in cases {
+        let detail = plan(&conn, sql);
+        eprintln!(
+            "{detail}\n  <- {}",
+            sql.split_whitespace().collect::<Vec<_>>().join(" ")
+        );
+        assert!(detail.contains(index), "{index} unused; plan was: {detail}");
+    }
 }
 
 /// The second fixture of `AC-P4-38-2`, opened through the production door so the backup is real.

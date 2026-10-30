@@ -7,6 +7,7 @@
 //! records a fingerprint of both (`record_ledger_fingerprint`): a change is then something a
 //! reader can see, rather than a level that silently moved.
 
+use super::marginal::RowDue;
 use crate::health::acknowledge::read_acknowledged_at;
 use crate::health::enrolment::is_enrolled;
 use crate::index::subject::subject_for_project;
@@ -152,32 +153,25 @@ pub fn record_ledger_fingerprint(conn: &Connection) -> Result<FingerprintChange,
 /// How many `commit_day` rows a project needs before a completion check can latch (§38.8.2).
 pub const COMPLETION_GATE_COMMIT_DAYS: i64 = 3;
 
-/// Whether a writer's gate lets a row through, read by the writer and by the marginal price alike.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Gate {
-    /// The row may be written.
-    Open,
-    /// The row is refused: the price is `0`.
-    Shut,
-    /// The gate cannot be evaluated: no price is quoted, distinct from `0`.
-    NotComputable,
-}
-
 /// §38.8.1's project gates for a `debt_day`: a subject to key the row on, enrolled, and not
 /// Reference. The closure's own gates — `Fixed`, of a `scored` item — are the writer's.
 ///
+/// `None` when the row may be written; otherwise what the row is instead, read by the writer and
+/// by the marginal price alike: [`RowDue::Refused`] (price `0`) or [`RowDue::NotComputable`] (no
+/// price, distinct from `0`).
+///
 /// # Errors
 /// Returns [`IndexError`] when a read fails.
-pub fn debt_day_gate(conn: &Connection, project: ProjectId) -> Result<Gate, IndexError> {
+pub fn debt_day_gate(conn: &Connection, project: ProjectId) -> Result<Option<RowDue>, IndexError> {
     // A project with no subject is paid nothing (§38.2): never an empty key, which would make
     // every such project collide on `debt_day::<date>`.
     if subject_for_project(conn, project)?.is_none() {
-        return Ok(Gate::NotComputable);
+        return Ok(Some(RowDue::NotComputable));
     }
     // *Enrolled*, never *not suppressed*: both suppression predicates also read `is_archived`,
     // and an acknowledged, archived project is enrolled and is paid.
     if !is_enrolled(read_acknowledged_at(conn, project)?) {
-        return Ok(Gate::Shut);
+        return Ok(Some(RowDue::Refused));
     }
     // The column, not `jobs::scheduler::is_reference`: that reader answers `None` for a project
     // J1.5 has not classified, whose column is `0` and which is paid. A Reference project earns
@@ -189,24 +183,23 @@ pub fn debt_day_gate(conn: &Connection, project: ProjectId) -> Result<Gate, Inde
             |r| r.get(0),
         )
         .optional()?;
-    Ok(if is_reference == Some(0) {
-        Gate::Open
-    } else {
-        Gate::Shut
-    })
+    Ok((is_reference != Some(0)).then_some(RowDue::Refused))
 }
 
-/// §38.8.2's gate for a completion check's latch.
+/// §38.8.2's gate for a completion check's latch, answered as [`debt_day_gate`] answers.
 ///
-/// Open when authored by the user, not Reference, not merged away, and with at least
+/// Open (`None`) when authored by the user, not Reference, not merged away, and with at least
 /// [`COMPLETION_GATE_COMMIT_DAYS`] `commit_day` rows. Not computable with no subject or with
 /// authorship not yet classified.
 ///
 /// # Errors
 /// Returns [`IndexError`] when a read fails.
-pub fn completion_gate(conn: &Connection, project: ProjectId) -> Result<Gate, IndexError> {
+pub fn completion_gate(
+    conn: &Connection,
+    project: ProjectId,
+) -> Result<Option<RowDue>, IndexError> {
     if subject_for_project(conn, project)?.is_none() {
-        return Ok(Gate::NotComputable);
+        return Ok(Some(RowDue::NotComputable));
     }
     let row: Option<(Option<i64>, i64, bool, i64)> = conn
         .query_row(
@@ -219,19 +212,13 @@ pub fn completion_gate(conn: &Connection, project: ProjectId) -> Result<Gate, In
         )
         .optional()?;
     let Some((Some(authored), is_reference, unmerged, commit_days)) = row else {
-        return Ok(Gate::NotComputable);
+        return Ok(Some(RowDue::NotComputable));
     };
-    Ok(
-        if authored == 1
-            && is_reference == 0
-            && unmerged
-            && commit_days >= COMPLETION_GATE_COMMIT_DAYS
-        {
-            Gate::Open
-        } else {
-            Gate::Shut
-        },
-    )
+    let open = authored == 1
+        && is_reference == 0
+        && unmerged
+        && commit_days >= COMPLETION_GATE_COMMIT_DAYS;
+    Ok((!open).then_some(RowDue::Refused))
 }
 
 /// A test-only override of the price table and the curve, so a test can show what a change to

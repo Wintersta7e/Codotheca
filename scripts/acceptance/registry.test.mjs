@@ -1411,7 +1411,7 @@ const PHASE4_UNCHANGED = [
 // may move with the lane that re-measures them.
 const PHASE4_ASSERT_UNCHANGED = ['AC-P3-35-4', 'AC-P3-35-5', 'AC-P3-35-6', 'AC-P3-35-9'];
 // R253.9's `PHASE4_TEXT_ONLY` (registry.mjs): their checks stand — AC-P4-47-21 still holds ALLOWED
-// byte-identical — and only their text moved, false since ls-tree joined ALLOWED and VerifyRead's
+// byte-identical but for for-each-ref (§38.8.6) — and only their text moved, false since ls-tree joined ALLOWED and VerifyRead's
 // fetch shipped in core/src/gitw/. Every key but `assert` is still the frozen copy's.
 
 test('what §49.3 leaves unchanged stays byte-identical to the frozen copy', () => {
@@ -1744,9 +1744,9 @@ test('a phase-4 id outside §38–§48 is refused by the id form', () => {
 
 // [p4 Task 5] §49.1's table, copied for §36.5's reason: `.dev/spec/` is absent on CI. The total
 // lives in two places, §49.1 and this one assertion; no other file states it.
-test('PHASE4_SECTIONS is §49.1’s table and sums to 253', () => {
+test('PHASE4_SECTIONS is §49.1’s table and sums to 257', () => {
   assert.deepEqual(PHASE4_SECTIONS, {
-    38: 24,
+    38: 28,
     39: 13,
     40: 22,
     41: 16,
@@ -1760,7 +1760,7 @@ test('PHASE4_SECTIONS is §49.1’s table and sums to 253', () => {
   });
   assert.equal(
     Object.values(PHASE4_SECTIONS).reduce((a, b) => a + b, 0),
-    253,
+    257,
   );
 });
 
@@ -1827,7 +1827,7 @@ test('a phase-4 register with no scanning check or no mirror has stopped reading
 });
 
 test('unlike phases 2 and 3, a phase-4 check may be deferred to the plan that lands it', () => {
-  const criteria = p4Section(38, 24);
+  const criteria = p4Section(38, PHASE4_SECTIONS[38]);
   criteria[0].checks[0] = p4Check({
     owner: 'p4-44',
     scanning: true,

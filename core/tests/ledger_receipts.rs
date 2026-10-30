@@ -14,10 +14,13 @@ use codotheca_core::debt::identity::DebtKey;
 use codotheca_core::debt::store::{DebtCloseReason, DebtClosure, SweepEffect};
 use codotheca_core::debt::xp::pay_debt_day;
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
+use codotheca_core::index::subject::subject_for_project;
 use codotheca_core::index::{open_connection, Index};
+use codotheca_core::ledger::marginal::RowDue;
 use codotheca_core::ledger::pending::awaiting_restore;
-use codotheca_core::ledger::price::{completion_gate, debt_day_gate, Gate};
+use codotheca_core::ledger::price::{completion_gate, debt_day_gate};
 use codotheca_core::ledger::receipt::Receipt;
+use codotheca_core::ledger::recompute::{recompute_git_rows, RecomputeCause};
 use codotheca_core::protocol::{DebtScoring, DebtSource, ProjectId};
 use serde_json::json;
 
@@ -215,34 +218,33 @@ fn receipts_carry_what_when_project_name() {
     );
 }
 
-#[test]
-fn silent_is_absent_unless_set() {
-    let quiet: serde_json::Value =
-        serde_json::from_str(&Receipt::new("v1", NOON_AT_UTC, "w").silent(true).to_meta()).unwrap();
-    assert_eq!(quiet["silent"], true);
-    for receipt in [
-        Receipt::new("v1", NOON_AT_UTC, "w"),
-        Receipt::new("v1", NOON_AT_UTC, "w").silent(false),
-    ] {
-        let meta: serde_json::Value = serde_json::from_str(&receipt.to_meta()).unwrap();
-        assert_eq!(meta.get("silent"), None, "{meta}");
-    }
+/// One record a rebuild left pending on `subject_key`, naming no copy.
+fn stage(conn: &rusqlite::Connection, subject_key: &str) {
+    conn.execute(
+        "INSERT INTO sidecar_pending (source_generation, subject_key, location_keys, record,
+                                     queued_at)
+         VALUES (1, ?1, '[]', '{}', 1)",
+        [subject_key],
+    )
+    .unwrap();
 }
 
-/// With a restored record still pending and the project's history not concluded, a closure writes
-/// nothing: the record may yet match this project and bring its own row back. Once the history
-/// job settles, the next closure pays.
+/// The key `project` is exported and matched under.
+fn own_key(conn: &rusqlite::Connection, project: ProjectId) -> String {
+    subject_for_project(conn, project)
+        .unwrap()
+        .unwrap()
+        .to_key()
+}
+
+/// With a restored record for this project still pending and its history not concluded, a closure
+/// writes nothing: the record may yet bring its own row back. Once the history job settles, the
+/// next closure pays.
 #[test]
 fn no_retained_write_before_the_match() {
     let (_d, mut conn) = fresh();
     let project = insert_lineaged(&conn, "widget");
-    conn.execute(
-        "INSERT INTO sidecar_pending (source_generation, subject_key, location_keys, record,
-                                     queued_at)
-         VALUES (1, 'lineage:other', '[]', '{}', 1)",
-        [],
-    )
-    .unwrap();
+    stage(&conn, &own_key(&conn, project));
 
     assert!(awaiting_restore(&conn, project).unwrap());
     assert!(!pay(&mut conn, project, 1, NOON_AT_UTC));
@@ -256,6 +258,105 @@ fn no_retained_write_before_the_match() {
     assert!(!awaiting_restore(&conn, project).unwrap());
     assert!(pay(&mut conn, project, 1, NOON_AT_UTC));
     assert_eq!(days(&conn).len(), 1);
+}
+
+/// `AC-P4-38-27`, §48.8.4: the hold is the project's own. A settled project whose history is
+/// queued again is held only by a record the restore would give it — never by a record for a
+/// subject that has not come back, nor by one two live projects share and neither is named by.
+#[test]
+fn ac_p4_38_27_the_restore_hold_is_the_projects_own() {
+    let (_d, mut conn) = fresh();
+    let project = insert_lineaged(&conn, "widget");
+    conn.execute(
+        "INSERT INTO location (project_id, kind, distro, path_bytes, path_key, path_display,
+                               store_key, presence, repo_kind)
+         VALUES (?1, 'linux', '', x'2f77', x'2f77', '/w', 'store', 'present', 'worktree')",
+        [project.0],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, 'j4', 'ok', 1)",
+        [project.0],
+    )
+    .unwrap();
+    let tx = conn.transaction().unwrap();
+    let report = recompute_git_rows(&tx, &[project], RecomputeCause::IdentityConfirm, 2).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(report.queued, [project], "its history walks again");
+
+    stage(&conn, "lineage:GONE|remote:");
+    assert!(
+        !awaiting_restore(&conn, project).unwrap(),
+        "another subject's record holds nothing"
+    );
+    assert!(pay(&mut conn, project, 1, NOON_AT_UTC));
+
+    stage(&conn, &own_key(&conn, project));
+    assert!(
+        awaiting_restore(&conn, project).unwrap(),
+        "its own record holds it"
+    );
+    let tomorrow = LocalInstant {
+        unix: NOON + 86_400,
+        offset_min: 0,
+    };
+    assert!(!pay(&mut conn, project, 1, tomorrow));
+    assert_eq!(days(&conn).len(), 1);
+
+    // A twin on the same subject: the record names neither copy, so it is neither's and stays
+    // pending — and holds neither.
+    let twin = insert_lineaged(&conn, "widget twin");
+    assert!(!awaiting_restore(&conn, project).unwrap());
+    assert!(!awaiting_restore(&conn, twin).unwrap());
+    conn.execute("DELETE FROM project WHERE id = ?1", [twin.0])
+        .unwrap();
+    assert!(awaiting_restore(&conn, project).unwrap());
+
+    conn.execute(
+        "UPDATE project_job_state SET state = 'ok' WHERE project_id = ?1 AND job = 'j4'",
+        [project.0],
+    )
+    .unwrap();
+    assert!(
+        !awaiting_restore(&conn, project).unwrap(),
+        "held only until its history concludes"
+    );
+    assert!(pay(&mut conn, project, 1, tomorrow));
+
+    // A project with no lineage yet is exported under its path, and the settle that fixes its
+    // lineage may match a lineage-keyed record no live project holds: until that history
+    // concludes, such a record holds it. The settled lineaged project beside it stays free.
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, acknowledged_at, created_at, updated_at)
+         VALUES ('fresh', 'fresh', 1, 1, 1)",
+        [],
+    )
+    .unwrap();
+    let fresh_project = ProjectId(conn.last_insert_rowid());
+    conn.execute(
+        "INSERT INTO location (project_id, kind, distro, path_bytes, path_key, path_display,
+                               store_key, presence, repo_kind)
+         VALUES (?1, 'linux', '', x'2f6e', x'2f6e', '/n', 'store', 'present', 'worktree')",
+        [fresh_project.0],
+    )
+    .unwrap();
+    assert!(own_key(&conn, fresh_project).starts_with("path:"));
+    assert!(
+        awaiting_restore(&conn, fresh_project).unwrap(),
+        "an unclaimed lineage record may be its own"
+    );
+    assert!(!pay(&mut conn, fresh_project, 1, tomorrow));
+    assert!(
+        !awaiting_restore(&conn, project).unwrap(),
+        "a lineaged project is never held by it"
+    );
+    conn.execute(
+        "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, 'j4', 'ok', 1)",
+        [fresh_project.0],
+    )
+    .unwrap();
+    assert!(!awaiting_restore(&conn, fresh_project).unwrap());
+    assert!(pay(&mut conn, fresh_project, 1, tomorrow));
 }
 
 /// With nothing pending there is nothing to wait for, concluded or not.
@@ -282,10 +383,10 @@ fn commit_days(conn: &rusqlite::Connection, project: ProjectId, days: std::ops::
 fn the_gates_read_their_columns() {
     let (_d, conn) = fresh();
     let project = insert_lineaged(&conn, "widget");
-    assert_eq!(debt_day_gate(&conn, project).unwrap(), Gate::Open);
+    assert_eq!(debt_day_gate(&conn, project).unwrap(), None);
     assert_eq!(
         completion_gate(&conn, project).unwrap(),
-        Gate::NotComputable,
+        Some(RowDue::NotComputable),
         "authorship not yet classified"
     );
 
@@ -295,17 +396,26 @@ fn the_gates_read_their_columns() {
     )
     .unwrap();
     commit_days(&conn, project, 0..2);
-    assert_eq!(completion_gate(&conn, project).unwrap(), Gate::Shut);
+    assert_eq!(
+        completion_gate(&conn, project).unwrap(),
+        Some(RowDue::Refused)
+    );
     commit_days(&conn, project, 2..3);
-    assert_eq!(completion_gate(&conn, project).unwrap(), Gate::Open);
+    assert_eq!(completion_gate(&conn, project).unwrap(), None);
 
     conn.execute(
         "UPDATE project SET is_reference = 1 WHERE id = ?1",
         [project.0],
     )
     .unwrap();
-    assert_eq!(completion_gate(&conn, project).unwrap(), Gate::Shut);
-    assert_eq!(debt_day_gate(&conn, project).unwrap(), Gate::Shut);
+    assert_eq!(
+        completion_gate(&conn, project).unwrap(),
+        Some(RowDue::Refused)
+    );
+    assert_eq!(
+        debt_day_gate(&conn, project).unwrap(),
+        Some(RowDue::Refused)
+    );
 
     let unenrolled = insert_lineaged(&conn, "other");
     conn.execute(
@@ -313,11 +423,14 @@ fn the_gates_read_their_columns() {
         [unenrolled.0],
     )
     .unwrap();
-    assert_eq!(debt_day_gate(&conn, unenrolled).unwrap(), Gate::Shut);
+    assert_eq!(
+        debt_day_gate(&conn, unenrolled).unwrap(),
+        Some(RowDue::Refused)
+    );
 
     assert_eq!(
         debt_day_gate(&conn, ProjectId(9_999)).unwrap(),
-        Gate::NotComputable,
+        Some(RowDue::NotComputable),
         "no subject, no row could be keyed"
     );
 }

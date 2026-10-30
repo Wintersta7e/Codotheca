@@ -10,6 +10,7 @@ use std::ffi::OsStr;
 use std::io::BufRead;
 
 use crate::cancel::CancelToken;
+use crate::clock::local_day;
 
 use super::error::{GitError, GitResult};
 use super::exec::{GitExec, RunLimits};
@@ -76,12 +77,6 @@ pub fn parse_tz_offset_min(tz: &str) -> Option<i32> {
     let hours = digits.get(0..2)?.parse::<i32>().ok()?;
     let minutes = digits.get(2..4)?.parse::<i32>().ok()?;
     Some(sign * (hours * 60 + minutes))
-}
-
-/// The day number in the committer's own timezone.
-#[must_use]
-pub fn local_day(epoch_seconds: i64, tz_offset_min: i32) -> i64 {
-    (epoch_seconds + i64::from(tz_offset_min) * 60).div_euclid(86_400)
 }
 
 /// The `+HHMM` offset out of git's `%ai` form, `YYYY-MM-DD HH:MM:SS +HHMM`.

@@ -20,7 +20,6 @@ use codotheca_core::ledger::focus::credit_segment_close;
 use codotheca_core::ledger::price::PRICES;
 use codotheca_core::ledger::xp::xp_by_term;
 use codotheca_core::mount::StoreClass;
-use codotheca_core::proto::EventSink;
 use codotheca_core::protocol::{ClosedBy, LocationId, ProjectId, SessionId, TargetId, XpTerm};
 use codotheca_core::session::activity::FakeIgnoreCheck;
 use codotheca_core::session::manager::{LaunchedSession, SessionManager};
@@ -30,6 +29,7 @@ use codotheca_core::session::segment::ClosedSegment;
 use codotheca_core::session::store::{self, SessionOpen};
 use codotheca_core::session::watch::{ActivityBatch, ActivitySource, FakeActivitySource};
 use codotheca_core::session::{SessionError, DEFAULT_TICK_SECS};
+use codotheca_core::testing::events::ValidatingSink;
 use codotheca_core::testing::zone::FixedZone;
 use codotheca_core::testing::{FakeClock, TempIndex};
 
@@ -39,15 +39,6 @@ const MIDNIGHT: i64 = 1_700_006_400;
 const T0: i64 = MIDNIGHT + 3_600;
 /// A reading long after every segment here.
 const LATER: i64 = MIDNIGHT + 10 * 86_400;
-
-/// Every payload the manager emits is checked against the schema, then dropped.
-struct NoEvents;
-
-impl EventSink for NoEvents {
-    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
-        codotheca_core::testing::events::validated(topic, event, &payload);
-    }
-}
 
 /// The manager takes `Box<dyn ActivitySource>`; the test keeps a handle to stand in for the OS.
 #[derive(Debug, Clone, Default)]
@@ -151,7 +142,7 @@ fn rig(at: i64) -> Rig {
     let activity = SharedActivity::default();
     let manager = SessionManager::new(
         clock.clone(),
-        Arc::new(NoEvents),
+        Arc::new(ValidatingSink::default()),
         Box::new(activity.clone()),
         Arc::new(FakeIgnoreCheck::new(&["dist/"])),
         Arc::new(FixedZone(0)),

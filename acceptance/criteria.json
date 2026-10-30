@@ -9475,6 +9475,128 @@
       ]
     },
     {
+      "id": "P4-38-25",
+      "title": "The tag read is bounded and never fails on one tag",
+      "group": "functional",
+      "spec": "§38.16",
+      "checks": [
+        {
+          "id": "AC-P4-38-25",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-38",
+          "test": "git_release_tags::ac_p4_38_25_the_tag_read_is_bounded",
+          "assert": "One annotated tag with a message of at least 10 MiB named by 4 refs: the release read's git stdout is under 64 KiB, printed, and all four tags are read; the format names no body atom (git_readonly::ac_p4_38_25_no_format_names_a_body_atom). A lightweight tag on a commit whose committer email holds a TAB (git fsck --strict passes) is read with that email intact (ac_p4_38_25_a_tab_in_an_email_keeps_the_tag), and J4 over both settles ok with one release row per date (ledger_j4::ac_p4_38_25_a_large_tag_and_a_tab_email_settle_ok). A stray file, a refused ref name and a dangling symbolic ref under refs/tags each fail the read and the settle and keep every standing release row (ac_p4_38_25_a_broken_ref_fails_the_settle_and_keeps_releases). A Reference project's J4 runs no tag read (ac_p4_38_25_a_reference_project_spawns_no_tag_read), and a settle that read no tags deletes no release row (ac_p4_38_25_an_unread_tag_set_keeps_the_release_rows).",
+          "source": "§38.8.6"
+        },
+        {
+          "id": "AC-P4-38-25-no-body-atom",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-38",
+          "test": "git_readonly::ac_p4_38_25_no_format_names_a_body_atom",
+          "assert": "The release read's format names no tag body atom.",
+          "source": "§38.8.6"
+        },
+        {
+          "id": "AC-P4-38-25-tab-email",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-38",
+          "test": "git_release_tags::ac_p4_38_25_a_tab_in_an_email_keeps_the_tag",
+          "assert": "A lightweight tag on a commit whose committer email holds a TAB (git fsck --strict passes) is read with that email intact.",
+          "source": "§38.8.6"
+        },
+        {
+          "id": "AC-P4-38-25-settle",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-38",
+          "test": "ledger_j4::ac_p4_38_25_a_large_tag_and_a_tab_email_settle_ok",
+          "assert": "J4 over a 10 MiB annotated tag and a TAB-email tag settles ok with one release row per date.",
+          "source": "§38.8.6"
+        },
+        {
+          "id": "AC-P4-38-25-broken-ref",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-38",
+          "test": "ledger_j4::ac_p4_38_25_a_broken_ref_fails_the_settle_and_keeps_releases",
+          "assert": "A stray file, a refused ref name and a dangling symbolic ref under refs/tags each fail the read and the settle and keep every standing release row.",
+          "source": "§38.8.6"
+        },
+        {
+          "id": "AC-P4-38-25-reference",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-38",
+          "test": "ledger_j4::ac_p4_38_25_a_reference_project_spawns_no_tag_read",
+          "assert": "A Reference project's J4 runs no tag read.",
+          "source": "§38.8.6"
+        },
+        {
+          "id": "AC-P4-38-25-unread",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-38",
+          "test": "ledger_j4::ac_p4_38_25_an_unread_tag_set_keeps_the_release_rows",
+          "assert": "A settle that read no tags deletes no release row.",
+          "source": "§38.8.6"
+        }
+      ]
+    },
+    {
+      "id": "P4-38-26",
+      "title": "An upgraded history still reads measured",
+      "group": "functional",
+      "spec": "§38.16",
+      "checks": [
+        {
+          "id": "AC-P4-38-26",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-38",
+          "test": "project_detail::ac_p4_38_26_an_upgraded_history_still_reads_measured",
+          "assert": "A finished J4 with two commit days, re-queued by 0019's own UPDATE statement (reason app_upgraded): the project page's commit-day lane reads Measured with both days and read_level reads partial. The same row re-queued user_requested reads NotComputed with every week's commit days absent. The covered reading names the upgrade by ResetCause::AppUpgraded's slug (jobs::state the_covered_reading_names_the_upgrade_by_its_own_slug).",
+          "source": "§38.9"
+        }
+      ]
+    },
+    {
+      "id": "P4-38-27",
+      "title": "The restore hold is the project's own",
+      "group": "functional",
+      "spec": "§38.16",
+      "checks": [
+        {
+          "id": "AC-P4-38-27",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-38",
+          "test": "ledger_receipts::ac_p4_38_27_the_restore_hold_is_the_projects_own",
+          "assert": "A settled project with a present copy, its J4 re-queued through recompute_git_rows: one pending record for another subject holds nothing and a debt day pays. A pending record on its own subject key holds it (awaiting_restore true, a closure writes nothing); with a live twin on the same subject and a record naming no copy, the record is neither's and holds neither. Once its J4 reads ok the hold lifts and the closure pays. The hold asks the restore matcher's own predicate (index::pending::has_own_pending), and no_retained_write_before_the_match holds on the project's own record. A project with no lineage yet (a path subject) is also held, until its J4 reads ok, by a lineage-keyed pending record no live project holds (index::pending::may_gain_pending); the settled lineaged project beside it is not.",
+          "source": "§48.8.4"
+        }
+      ]
+    },
+    {
+      "id": "P4-38-28",
+      "title": "Twins lose nothing and are paid once",
+      "group": "functional",
+      "spec": "§38.16",
+      "checks": [
+        {
+          "id": "AC-P4-38-28",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-38",
+          "test": "ledger_twins::ac_p4_38_28_twins_lose_nothing_and_are_paid_once",
+          "assert": "Two live projects on one lineage subject. The twin's Focus segment lands its seconds on the holder's row: one focus row on the date, its seconds equal to focus_seconds' union (1200, printed). The twin's debt_day quotes 0 and its sources and closed count merge into the holder's day meta. The holder's latch pays once; the twin's completion_check quotes 0 and writes nothing; the twin's verdict is AlreadyPaid. A project paid a debt day under its path subject, then given a lineage, quotes 0 and writes no second row for that date. Every per-project retained insert goes through ledger::retained::insert_retained.",
+          "source": "§38.2"
+        }
+      ]
+    },
+    {
       "id": "P4-39-1",
       "title": "Two ledgers, by source scan",
       "group": "functional",
@@ -15096,7 +15218,7 @@
           "runner": "cargo",
           "owner": "p4-L0a",
           "test": "git_readonly::the_read_allow_list_is_byte_identical_and_holds_no_write_verb",
-          "assert": "AC-P2-24-1's ALLOWED list is byte-identical to a2fc935's and holds no ls-remote, tag or bundle; the test prints it. AC-P2-24-3's no-unaudited-git-spawn rule still names exactly three files after every new intent, enumeration and version probe lands.",
+          "assert": "AC-P2-24-1's ALLOWED list is byte-identical to a2fc935's plus exactly for-each-ref (§38.8.6's one added read) and holds no ls-remote, tag or bundle; the test prints it. AC-P2-24-3's no-unaudited-git-spawn rule still names exactly three files after every new intent, enumeration and version probe lands.",
           "firstTag": true
         }
       ]

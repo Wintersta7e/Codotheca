@@ -1630,15 +1630,22 @@
     },
     "LevelReading": {
       "kind": "struct",
-      "$comment": "§38.5: the one level reading. level, xp, levelAt and nextLevelAt are null exactly under notComputed — never 0, never 1. level is the displayed level, max(level of xp, floor); floored is floor > level of xp, so xp < levelAt only when floored. pendingProjects counts projects and nothing else",
+      "$comment": "§38.5: the one level reading. figures is null exactly under notComputed — no figure is ever 0 or 1 for unknown. pendingProjects counts projects and nothing else",
       "fields": {
         "state": "LevelState",
-        "level": "u32?",
-        "xp": "i64?",
-        "levelAt": "i64?",
-        "nextLevelAt": "i64?",
-        "floored": "bool",
+        "figures": "LevelFigures?",
         "pendingProjects": "u32"
+      }
+    },
+    "LevelFigures": {
+      "kind": "struct",
+      "$comment": "§38.5: the reading's figures, present unless notComputed. level is the displayed level, max(level of xp, floor); levelAt and nextLevelAt are T(level) and T(level + 1); floored is floor > level of xp, so xp < levelAt only when floored",
+      "fields": {
+        "level": "u32",
+        "xp": "i64",
+        "levelAt": "i64",
+        "nextLevelAt": "i64",
+        "floored": "bool"
       }
     }
   },

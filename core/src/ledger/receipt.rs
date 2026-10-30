@@ -39,18 +39,6 @@ impl Receipt {
         Self { fields }
     }
 
-    /// §38.2's optional `silent` key, written only when true: an absent key reads as not silent,
-    /// and a restored row carries none.
-    #[must_use]
-    pub fn silent(mut self, silent: bool) -> Self {
-        if silent {
-            self.fields.insert("silent".to_owned(), Value::Bool(true));
-        } else {
-            self.fields.remove("silent");
-        }
-        self
-    }
-
     /// One of the kind's own keys beside the receipt's.
     #[must_use]
     pub fn extra(mut self, key: &str, value: impl Into<Value>) -> Self {

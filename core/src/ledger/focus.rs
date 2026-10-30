@@ -10,6 +10,7 @@ use rusqlite::{OptionalExtension as _, Transaction};
 
 use super::pending::awaiting_restore;
 use super::receipt::Receipt;
+use super::retained::{insert_retained, Retained, RetainedRow};
 use crate::clock::LocalZone;
 use crate::index::subject::subject_for_project;
 use crate::protocol::ProjectId;
@@ -22,7 +23,8 @@ use crate::session::SessionError;
 /// Nothing while a restored record may still match the project (§48.8.4), nor for a project
 /// with no subject to key a row on. A date's row is found by project and date, never by key
 /// (§38.2) — the lower id after a merge — and only its `meta.seconds` moves. A new one takes
-/// the date's first credited instant, and the offset in force at it.
+/// the date's first credited instant, and the offset in force at it; when a twin's row already
+/// holds its key, the seconds move on that row instead.
 ///
 /// # Errors
 /// `SessionError::Sqlite` or `SessionError::Index` when a read or a write fails.
@@ -67,31 +69,35 @@ pub fn credit_segment_close(
                 |r| r.get(0),
             )
             .optional()?;
-        let changed = if let Some(id) = row {
-            tx.execute(
+        let existing = match row {
+            Some(id) => Some(id),
+            None => match insert_retained(
+                tx,
+                &RetainedRow {
+                    at: first,
+                    project,
+                    subject_key: &subject_key,
+                    kind: "focus",
+                    dedupe_key: &format!("focus:{subject_key}:{date}"),
+                    meta: &Receipt::new("focus", first, &project_name)
+                        .extra("seconds", share.seconds)
+                        .to_meta(),
+                },
+            )? {
+                Retained::Inserted(_) => None,
+                // A twin's row holds the date: the seconds are the subject's, so they land there.
+                Retained::Held(id) => Some(id),
+            },
+        };
+        let changed = match existing {
+            Some(id) => tx.execute(
                 "UPDATE xp_events
                     SET meta = json_set(COALESCE(meta, '{}'), '$.seconds',
                                         COALESCE(json_extract(meta, '$.seconds'), 0) + ?2)
                   WHERE id = ?1",
                 rusqlite::params![id, share.seconds],
-            )?
-        } else {
-            tx.execute(
-                "INSERT INTO xp_events
-                    (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key, track, meta)
-                 VALUES (?1, ?2, ?3, ?4, 'focus', ?5, 'session', ?6)
-                 ON CONFLICT(dedupe_key) DO NOTHING",
-                rusqlite::params![
-                    first.unix,
-                    first.offset_min,
-                    project.0,
-                    subject_key,
-                    format!("focus:{subject_key}:{date}"),
-                    Receipt::new("focus", first, &project_name)
-                        .extra("seconds", share.seconds)
-                        .to_meta()
-                ],
-            )?
+            )?,
+            None => 1,
         };
         written = written.saturating_add(u32::try_from(changed).unwrap_or(u32::MAX));
     }

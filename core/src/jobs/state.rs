@@ -49,6 +49,12 @@ impl ResetCause {
     }
 }
 
+/// Whether a `project_job_state` row's J4 counts as covering the project's history: it finished,
+/// or an upgrade re-queued a finished walk only to write new kinds ([`ResetCause::AppUpgraded`]),
+/// so the days it measured still stand. The one spelling, over an unaliased row.
+pub(crate) const J4_COVERED_SQL: &str =
+    "(state = 'ok' OR (state = 'queued' AND reason = 'app_upgraded'))";
+
 /// Returns the row to persist and, when the job should run again, the epoch second it becomes
 /// runnable. A chunk boundary is runnable immediately; a transient failure waits out its backoff.
 #[must_use]
@@ -284,6 +290,12 @@ pub fn put(tx: &Transaction<'_>, project: ProjectId, row: &JobStateRow) -> Resul
 mod tests {
     use super::*;
     use crate::jobs::JobOutcome;
+
+    #[test]
+    fn the_covered_reading_names_the_upgrade_by_its_own_slug() {
+        let quoted = format!("reason = '{}'", ResetCause::AppUpgraded.slug());
+        assert!(J4_COVERED_SQL.contains(&quoted), "{J4_COVERED_SQL}");
+    }
 
     #[test]
     fn transient_failure_backs_off_then_defers() {

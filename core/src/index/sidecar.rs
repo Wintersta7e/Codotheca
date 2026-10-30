@@ -946,7 +946,8 @@ record!(
         ts: i64,
         /// The machine's offset from UTC at the time, in minutes east; `None` when not recorded.
         tz_offset_min: Option<i64>,
-        /// The event kind — on this track `session`, `focus` or `debt_day`.
+        /// The event kind — on this track one of [`crate::ledger::RETAINED_KINDS`]: `focus`,
+        /// `debt_day`, `completion_check`, `amnesty_verdict` or `clean_archive`.
         kind: String,
         /// The row's unique key; restoring a key that already exists writes nothing.
         dedupe_key: String,

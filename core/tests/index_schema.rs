@@ -460,7 +460,7 @@ fn migration_0003_creates_its_tables_and_index() {
     ] {
         assert!(has(&conn, "table", t), "{t} is missing");
     }
-    assert!(has(&conn, "index", "idx_xp_events_project_ts"));
+    assert!(has(&conn, "index", "idx_xp_events_project_kind_ts"));
 }
 
 #[test]
@@ -881,8 +881,8 @@ fn every_section_1_11_index_has_a_query_plan_behind_it() {
             "SELECT id FROM session WHERE project_id = 1 ORDER BY started_at DESC",
         ),
         (
-            "idx_xp_events_project_ts",
-            "SELECT id FROM xp_events WHERE project_id = 1 ORDER BY ts",
+            "idx_xp_events_project_kind_ts",
+            "SELECT id FROM xp_events WHERE project_id = 1 AND kind = 'focus' ORDER BY ts",
         ),
         (
             "idx_launch_target_project",

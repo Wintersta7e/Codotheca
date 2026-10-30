@@ -8,16 +8,21 @@
 
 use std::collections::BTreeSet;
 
-/// Every non-flag argv literal this module is permitted to emit: nine read-only subcommands
+/// Every non-flag argv literal this module is permitted to emit: ten read-only subcommands
 /// plus the one revision name that is spelled out. §17 forbids the rest for the whole of
 /// phase 1, and this list may not grow without a spec change.
 ///
 /// **`ls-tree` is the ninth, and §29.1 is the spec change this list requires.** It reads the
 /// committed tree, which `ls-files -s` cannot: that one reads the index. Both stay.
+///
+/// **`for-each-ref` is the tenth, and §38.8.6 is the spec change.** It lists the tags with their
+/// tagger and commit fields and no message, which `cat-file --batch` cannot: that one prints
+/// every tag's whole body.
 const ALLOWED: &[&str] = &[
     "--version",
     "cat-file",
     "check-ignore",
+    "for-each-ref",
     "log",
     "ls-files",
     "ls-tree",
@@ -149,6 +154,12 @@ const NON_LITERAL_OS_STR_ALLOWLIST: &[NonLiteralOsStrAllowance] = &[
         reason: "[p4] R249: the constant object id no repository holds, after `cat-file -p` in \
                  the lazy-fetch probe's own file-built repository — an object, not a subcommand",
     },
+    NonLiteralOsStrAllowance {
+        file: "tags.rs",
+        call: "OsStr::new(REFS_TAGS)",
+        reason: "[p4] the constant `refs/tags`, the pattern after `for-each-ref` — §38.8.6 lists \
+                 the tags through git, a namespace and not a subcommand",
+    },
 ];
 
 /// Collect `OsStr::new(...)` calls whose argument is not exactly one string literal.
@@ -252,21 +263,61 @@ const ALLOWED_AT_PHASE4_BASE: [&str; 11] = [
     "HEAD",
 ];
 
+/// The one subcommand phase 4 adds to the read side, by §38.8.6's spec change.
+const ADDED_IN_PHASE4: &str = "for-each-ref";
+
 /// **AC-P4-47-21 — what does not move.** The read allow-list is byte-identical to the phase-4
-/// base's, and holds none of the verbs phase 4 adds to the write side.
+/// base's plus exactly `for-each-ref`, and holds none of the verbs phase 4 adds to the write side.
 #[test]
 fn the_read_allow_list_is_byte_identical_and_holds_no_write_verb() {
     eprintln!("git_readonly: ALLOWED = {ALLOWED:?}");
+    let without_added: Vec<&str> = ALLOWED
+        .iter()
+        .copied()
+        .filter(|entry| *entry != ADDED_IN_PHASE4)
+        .collect();
     assert_eq!(
-        ALLOWED,
+        without_added,
         ALLOWED_AT_PHASE4_BASE.as_slice(),
         "the read allow-list moved; core/src/git/ gains reads, never subcommands (§47.1)"
+    );
+    assert_eq!(
+        ALLOWED.len(),
+        ALLOWED_AT_PHASE4_BASE.len() + 1,
+        "{ADDED_IN_PHASE4} is on the list exactly once"
     );
     for write_verb in ["ls-remote", "tag", "bundle", "fetch", "clone", "push"] {
         assert!(
             !ALLOWED.contains(&write_verb),
             "{write_verb} reached the read allow-list"
         );
+    }
+}
+
+/// **AC-P4-38-25** — no read in `core/src/git/` asks `for-each-ref` for a tag's body, which would
+/// carry every message into its output. The scan must find the release read's own format, or it
+/// proved nothing.
+#[test]
+fn ac_p4_38_25_no_format_names_a_body_atom() {
+    let files = source_files();
+    let formats = files
+        .iter()
+        .filter(|(_, source)| source.contains("%(tagger)"))
+        .count();
+    eprintln!(
+        "body-atom scan: {} files, {formats} holding the release read's format",
+        files.len()
+    );
+    assert_eq!(formats, 1, "the release read's format was not found");
+    for (name, source) in &files {
+        // A peeled atom reads the same field one object down.
+        let source = source.replace("%(*", "%(");
+        for atom in ["%(contents", "%(body", "%(subject", "%(trailers", "%(raw"] {
+            assert!(
+                !source.contains(atom),
+                "{name} names the body atom `{atom}`"
+            );
+        }
     }
 }
 

@@ -16,7 +16,7 @@ import type {
 } from '../../generated/protocol';
 import { GIT_FLOOR } from '../../shared/gitFloor';
 import type { RebuildReport } from '../../shared/rebuildReport';
-import { countLine, gapStartLine } from '../failure/copy';
+import { countLine, foldCounts, gapStartLine } from '../failure/copy';
 
 export interface NoticeCopy {
   readonly title: string;
@@ -201,7 +201,7 @@ export const REVEAL_INDEX = 'REVEAL';
  */
 export function rebuildOutcomeNotice(report: RebuildReport): NoticeCopy {
   const names = report.quarantineFiles.map((file) => file.split(/[\\/]/u).at(-1) ?? file);
-  const restored = Object.entries(report.restored)
+  const restored = Object.entries(foldCounts(report.restored))
     .filter(([, n]) => n > 0)
     .map(([key, n]) => countLine(key, n));
   return {

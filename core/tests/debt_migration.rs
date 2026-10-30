@@ -16,9 +16,10 @@ use std::collections::BTreeSet;
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS, SUPPORTED_SCHEMA_VERSION};
 
+use codotheca_core::clock::local_date;
 use codotheca_core::index::subject::ProjectSubject;
 use codotheca_core::index::{open_connection, Index};
-use codotheca_core::jobs::j4_history::{commit_days, local_date, HistoryFacts};
+use codotheca_core::jobs::j4_history::{commit_days, HistoryFacts};
 use codotheca_core::ledger::git_rows::reconcile_git_rows;
 use codotheca_core::protocol::ProjectId;
 
@@ -164,8 +165,10 @@ fn the_rebuild_changes_no_column() {
     assert_eq!(was, now, "0013 must widen two CHECKs and move no column");
     assert!(!was.is_empty(), "a diff over zero columns proves nothing");
 
-    // The index is recreated by name, because a rebuild drops it with the table.
-    let idx: i64 = after
+    // The index is recreated by name, because a rebuild drops it with the table. A later
+    // rebuild replaces it, so this reads the chain as `0013` left it.
+    let (_d3, at_13) = migrated_to(13);
+    let idx: i64 = at_13
         .query_row(
             "SELECT count(*) FROM sqlite_master
               WHERE type='index' AND name='idx_xp_events_project_ts'",
@@ -302,7 +305,7 @@ fn both_xp_writers_render_one_subject_key() {
         ..HistoryFacts::default()
     };
     let tx = conn.transaction().unwrap();
-    let implied = commit_days(Some("abc123"), Some("github.com/o/r"), &facts);
+    let implied = commit_days("abc123", Some("github.com/o/r"), &facts);
     reconcile_git_rows(&tx, ProjectId(p), &implied, 0).unwrap();
 
     let subject = ProjectSubject::Lineage {
@@ -364,7 +367,7 @@ fn both_writers_agree_when_there_is_no_remote() {
         ..HistoryFacts::default()
     };
     let tx = conn.transaction().unwrap();
-    let rows = commit_days(Some("abc123"), None, &facts);
+    let rows = commit_days("abc123", None, &facts);
     reconcile_git_rows(&tx, ProjectId(p), &rows, 0).unwrap();
     tx.commit().unwrap();
 

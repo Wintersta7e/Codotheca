@@ -19,8 +19,8 @@ use std::sync::Arc;
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::SystemClock;
 use codotheca_core::git::{
-    ensure_empty_hooks_dir, GitBackend, GitExec, GitResult, GitSlots, JobClass, JobContext,
-    RepoHandle, StoreKey, SystemGit, TagFact, TagKind,
+    ensure_empty_hooks_dir, release_listing, GitBackend, GitExec, GitResult, GitSlots, JobClass,
+    JobContext, RepoHandle, StoreKey, SystemGit, TagFact, TagKind,
 };
 use codotheca_core::mount::StoreClass;
 
@@ -358,6 +358,85 @@ fn a_reftable_repository_reads_its_tags() {
             .map(|t| (t.name.as_str(), t.commit_oid.as_str()))
             .collect::<Vec<_>>(),
         [("v1", commit.as_str())]
+    );
+}
+
+/// **AC-P4-38-25** — one annotated tag whose message is 10 MiB, named by four refs. The release
+/// read names no body atom, so what git prints for it grows with the refs and never with a
+/// message: a read that carried each body would print the message four times.
+#[test]
+fn ac_p4_38_25_the_tag_read_is_bounded() {
+    let repo = Repo::init();
+    let commit = repo.commit(&[], "first");
+    let message = repo.root.join("message");
+    let line = "a release note line, repeated until the message is ten mebibytes long\n";
+    std::fs::write(&message, line.repeat(10 * 1024 * 1024 / line.len() + 1)).unwrap();
+    repo.git_with(
+        &[
+            ("GIT_COMMITTER_EMAIL", TAGGER),
+            ("GIT_COMMITTER_DATE", "2024-03-04T05:06:07+05:30"),
+        ],
+        &["tag", "-a", "big", "-F", message.to_str().unwrap()],
+    );
+    for name in ["refs/tags/big-1", "refs/tags/big-2", "refs/tags/big-3"] {
+        repo.git(&["update-ref", name, "refs/tags/big"]);
+    }
+    let size: usize = repo
+        .git(&["cat-file", "-s", "refs/tags/big"])
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(size >= 10 * 1024 * 1024, "the tag object is {size} bytes");
+
+    let hooks = ensure_empty_hooks_dir(&repo.root.join("app-data")).unwrap();
+    let listing = release_listing(&GitExec::new(support::test_git(), hooks), &repo.handle())
+        .expect("the release read");
+    eprintln!(
+        "a {size}-byte tag object named by 4 refs: the release read printed {} bytes",
+        listing.stdout.len()
+    );
+    assert!(
+        listing.stdout.len() < 64 * 1024,
+        "the release read printed {} bytes",
+        listing.stdout.len()
+    );
+
+    let tags = repo.tags().expect("tags read");
+    assert_eq!(
+        tags.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+        ["big", "big-1", "big-2", "big-3"]
+    );
+    for tag in &tags {
+        assert_eq!(tag.commit_oid, commit);
+        assert_eq!(
+            tag.kind,
+            TagKind::Annotated {
+                tagger_email: TAGGER.to_owned(),
+                tagged_at: 1_709_508_967,
+                tz_offset_min: 330,
+            }
+        );
+    }
+}
+
+/// **AC-P4-38-25** — a committer email holding a TAB, which `git fsck --strict` accepts: the
+/// lightweight tag on that commit is read with the email as it was written, never split at it.
+#[test]
+fn ac_p4_38_25_a_tab_in_an_email_keeps_the_tag() {
+    let repo = Repo::init();
+    let email = "tab\there@example.invalid";
+    let commit = repo.commit(
+        &[
+            ("GIT_AUTHOR_DATE", "2024-01-02T03:04:05+00:00"),
+            ("GIT_COMMITTER_EMAIL", email),
+        ],
+        "first",
+    );
+    repo.git(&["tag", "tabbed"]);
+    repo.git(&["fsck", "--strict"]);
+    assert_eq!(
+        repo.tags().expect("tags read"),
+        [lightweight("tabbed", &commit, email, 1_704_164_645, 0)]
     );
 }
 

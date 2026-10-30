@@ -164,13 +164,37 @@ export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, stri
   accounts: interimNoun('accounts'),
   parcels: interimNoun('parcels'),
   removal_records: interimNoun('removal_records'),
-  ledger_floor: interimNoun('ledger_floor'),
-  ledger_library_awards: interimNoun('ledger_library_awards'),
-  ledger_frozen_git: interimNoun('ledger_frozen_git'),
+  ledger_floor: ['level floor', 'level floors'],
+  ledger_library_awards: ['XP event', 'XP events'],
+  ledger_frozen_git: ['XP event', 'XP events'],
 };
 
 /** §48.8.3: merges ride the sidecar and are never replayed, so a rebuild restores none. */
 const NOT_RESTORED: ReadonlySet<string> = new Set(['merges']);
+
+/** §38.6: the floor guards a level, and the level is the level reading's to state, not a count. */
+const NOT_COUNTED: ReadonlySet<string> = new Set(['ledger_floor']);
+
+/** §38: XP the ledger holds outside `xp_events`, counted into that one row. */
+const XP_EVENT_SECTIONS: readonly string[] = ['ledger_library_awards', 'ledger_frozen_git'];
+
+/**
+ * The counts as every recovery surface prints them: the ledger sections added into `xp_events`,
+ * the floor dropped, and every other key kept as it came — the rebuild report also counts keys
+ * the sidecar has no noun for, and those still print.
+ */
+export function foldCounts(
+  counts: Readonly<Record<string, number>>,
+): Readonly<Record<string, number>> {
+  const folded: Record<string, number> = {};
+  for (const [key, n] of Object.entries(counts)) {
+    if (!NOT_COUNTED.has(key)) {
+      const into = XP_EVENT_SECTIONS.includes(key) ? 'xp_events' : key;
+      folded[into] = (folded[into] ?? 0) + n;
+    }
+  }
+  return folded;
+}
 
 /**
  * `null` is *the report could not count this*, and `0` is *counted, and there were none*. They
@@ -184,10 +208,11 @@ function ledgerLines(
   if (counts === null) {
     return [`How much ${subject} is not known: the index did not open far enough to count it.`];
   }
+  const folded = foldCounts(counts);
   const lines = Object.keys(SIDECAR_COUNT_NOUNS)
     .filter((key) => !NOT_RESTORED.has(key))
     .flatMap((key) => {
-      const n = counts[key] ?? 0;
+      const n = folded[key] ?? 0;
       return n > 0 ? [countLine(key, n)] : [];
     });
   return lines.length > 0 ? lines : ['Nothing.'];

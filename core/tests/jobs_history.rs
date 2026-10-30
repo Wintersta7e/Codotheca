@@ -28,7 +28,7 @@ use codotheca_core::index::{open_connection, Index};
 use codotheca_core::jobs::j4_history::{
     commit_days, commit_history, observe, read_root_facts, HistoryFacts, RootFacts,
 };
-use codotheca_core::ledger::git_rows::{reconcile_git_rows, GitRow};
+use codotheca_core::ledger::git_rows::reconcile_git_rows;
 use codotheca_core::protocol::ProjectId;
 use support::TestRepo;
 
@@ -121,7 +121,7 @@ fn the_users_commits_become_days_and_the_newest_subject_is_recorded() {
     let email = repo.git(&["log", "-1", "--format=%ce"]).trim().to_owned();
     let ids = IdentitySet::from_emails([email]);
 
-    let (_roots, facts) = observe(&git, &repo.handle(), &ids, &ctx).unwrap();
+    let (_roots, facts) = observe(&git, &repo.handle(), &ids, false, &ctx).unwrap();
     assert_eq!(
         facts.days.len(),
         2,
@@ -142,7 +142,7 @@ fn commit_days_are_idempotent_on_their_dedupe_key() {
 
     for expected in [2, 0] {
         let tx = conn.transaction().unwrap();
-        let rows = commit_days(Some("lin"), Some("host/o/r"), &facts);
+        let rows = commit_days("lin", Some("host/o/r"), &facts);
         let written = reconcile_git_rows(&tx, project, &rows, 0).unwrap().inserted;
         tx.commit().unwrap();
         assert_eq!(written, expected);
@@ -172,7 +172,7 @@ fn a_fork_and_its_upstream_both_keep_their_commit_day() {
 
     let tx = conn.transaction().unwrap();
     for (project, remote) in [(upstream, "host/owner-a/r"), (fork, "host/owner-b/r")] {
-        let rows = commit_days(Some("lin"), Some(remote), &facts);
+        let rows = commit_days("lin", Some(remote), &facts);
         assert_eq!(
             reconcile_git_rows(&tx, project, &rows, 0).unwrap().inserted,
             1
@@ -187,16 +187,14 @@ fn a_fork_and_its_upstream_both_keep_their_commit_day() {
 }
 
 /// A project with no lineage yet has no stable key, so nothing is written rather than something
-/// written under a key that will change.
+/// written under a key that will change. `commit_days` takes a lineage, so the settle is the one
+/// place that decides.
 #[test]
 fn no_lineage_writes_no_commit_days() {
     let facts = HistoryFacts {
         days: std::iter::once(19_675).collect(),
         ..HistoryFacts::default()
     };
-    assert_eq!(commit_days(None, None, &facts), Vec::<GitRow>::new());
-
-    // The settle of a project with no lineage writes none either.
     let (_dir, mut conn) = fresh();
     let project = insert_project(&conn, "p");
     let tx = conn.transaction().unwrap();
@@ -225,7 +223,7 @@ fn committing_history_writes_dates_and_never_a_count() {
         last_commit_at: Some(1_700_000_000),
         last_user_commit_at: Some(1_650_000_000),
         recent_subjects: vec!["third".to_owned(), "second".to_owned()],
-        releases: std::collections::BTreeMap::new(),
+        releases: Some(std::collections::BTreeMap::new()),
     };
 
     let tx = conn.transaction().unwrap();

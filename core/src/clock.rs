@@ -112,14 +112,40 @@ impl LocalInstant {
     /// The local day number: days since 1970-01-01 in this instant's own offset.
     #[must_use]
     pub fn day(self) -> i64 {
-        crate::git::local_day(self.unix, self.offset_min)
+        local_day(self.unix, self.offset_min)
     }
 
     /// The local calendar date, `YYYY-MM-DD` — the date a `debt_day` key carries.
     #[must_use]
     pub fn date(self) -> String {
-        crate::jobs::j4_history::local_date(self.day())
+        local_date(self.day())
     }
+}
+
+/// The day number in the committer's own timezone.
+#[must_use]
+pub fn local_day(epoch_seconds: i64, tz_offset_min: i32) -> i64 {
+    (epoch_seconds + i64::from(tz_offset_min) * 60).div_euclid(86_400)
+}
+
+/// Civil date, `YYYY-MM-DD`, from a day number as [`local_day`] produces one.
+///
+/// The day number is the storable form and this is the human one; the dedupe key needs a stable
+/// string, and a bare integer in it would be unreadable in the one place a person ever looks.
+#[must_use]
+pub fn local_date(day: i64) -> String {
+    // Howard Hinnant's civil_from_days.
+    let z = day + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
 }
 
 /// The half-open instant range `[start, end)` whose local day is `day` (§39.2 rule 2).

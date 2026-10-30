@@ -7,9 +7,10 @@
 use rusqlite::{Connection, OptionalExtension as _};
 
 use super::pending::awaiting_restore;
-use super::price::{completion_gate, debt_day_gate, prices, Gate};
+use super::price::{completion_gate, debt_day_gate, prices};
 use crate::clock::LocalInstant;
 use crate::completion::store::slug;
+use crate::debt::xp::debt_day_dedupe_key;
 use crate::index::subject::subject_for_project;
 use crate::index::IndexError;
 use crate::protocol::{CompletionCheck, DebtScoring, ProjectId};
@@ -25,12 +26,19 @@ pub struct Closure {
     pub verdict: bool,
 }
 
-/// What a row's writer would do with it now.
+/// What a row's writer would do with it now. A gate answers in the same terms: `None` lets the
+/// row through, or the gate's [`RowDue::Refused`] or [`RowDue::NotComputable`] is the row's.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RowDue {
-    /// Written now, keyed on this subject: priced from the table.
-    Write(String),
-    /// Already written, as this row: priced `0`. A `debt_day` writer still updates its sentence.
+pub enum RowDue {
+    /// Written now: priced from the table.
+    Write {
+        /// The project's subject key.
+        subject_key: String,
+        /// The row's key, which no row holds yet.
+        dedupe_key: String,
+    },
+    /// Already written, as this row — the project's own, or a twin's holding the key it would
+    /// write: priced `0`. A `debt_day` writer still updates its sentence.
     Written(i64),
     /// Held until a restored record has had its chance to match (§48.8.4): priced `0`.
     Held,
@@ -79,7 +87,7 @@ pub fn marginal_xp(
     let mut total = 0_i64;
     for (due, price) in rows {
         match due {
-            RowDue::Write(_) => total = total.saturating_add(price),
+            RowDue::Write { .. } => total = total.saturating_add(price),
             RowDue::Written(_) | RowDue::Held | RowDue::Refused => {}
             RowDue::NotComputable => return Ok(None),
         }
@@ -106,7 +114,7 @@ pub(crate) fn debt_day_due(
     if awaiting_restore(conn, project)? {
         return Ok(RowDue::Held);
     }
-    if let Some(refused) = refused_by(debt_day_gate(conn, project)?) {
+    if let Some(refused) = debt_day_gate(conn, project)? {
         return Ok(refused);
     }
     let day: Option<i64> = conn
@@ -120,7 +128,9 @@ pub(crate) fn debt_day_due(
             |r| r.get(0),
         )
         .optional()?;
-    written_or_keyed(conn, project, day)
+    written_or_keyed(conn, project, day, |subject_key| {
+        debt_day_dedupe_key(subject_key, &at.date())
+    })
 }
 
 /// A `completion_check` for `check` (§38.8.2): held, then the latch's gate
@@ -134,7 +144,7 @@ pub(crate) fn completion_check_due(
     if awaiting_restore(conn, project)? {
         return Ok(RowDue::Held);
     }
-    if let Some(refused) = refused_by(completion_gate(conn, project)?) {
+    if let Some(refused) = completion_gate(conn, project)? {
         return Ok(refused);
     }
     let latched: Option<i64> = conn
@@ -147,7 +157,9 @@ pub(crate) fn completion_check_due(
             |r| r.get(0),
         )
         .optional()?;
-    written_or_keyed(conn, project, latched)
+    written_or_keyed(conn, project, latched, |subject_key| {
+        format!("completion_check:{subject_key}:{}", slug(&check))
+    })
 }
 
 /// A card or page `amnesty_verdict` (§38.8.4): held, then a subject to key it on, then the
@@ -170,30 +182,39 @@ pub(crate) fn verdict_due(conn: &Connection, project: ProjectId) -> Result<RowDu
             |r| r.get(0),
         )
         .optional()?;
-    written_or_keyed(conn, project, award)
+    written_or_keyed(conn, project, award, |subject_key| {
+        format!("amnesty_verdict:{subject_key}")
+    })
 }
 
-/// A gate's answer as a row's, when it lets nothing through.
-const fn refused_by(gate: Gate) -> Option<RowDue> {
-    match gate {
-        Gate::Open => None,
-        Gate::Shut => Some(RowDue::Refused),
-        Gate::NotComputable => Some(RowDue::NotComputable),
-    }
-}
-
-/// The row already written, or a new one keyed on the project's subject.
+/// The row already written — found by project, or a twin's holding the key — or a new one keyed
+/// on the project's subject, its key built by `key`.
 fn written_or_keyed(
     conn: &Connection,
     project: ProjectId,
     found: Option<i64>,
+    key: impl FnOnce(&str) -> String,
 ) -> Result<RowDue, IndexError> {
     if let Some(id) = found {
         return Ok(RowDue::Written(id));
     }
-    Ok(
-        subject_for_project(conn, project)?.map_or(RowDue::NotComputable, |subject| {
-            RowDue::Write(subject.to_key())
-        }),
-    )
+    let Some(subject) = subject_for_project(conn, project)? else {
+        return Ok(RowDue::NotComputable);
+    };
+    let subject_key = subject.to_key();
+    let dedupe_key = key(&subject_key);
+    let holder: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM xp_events WHERE dedupe_key = ?1",
+            [&dedupe_key],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(holder.map_or(
+        RowDue::Write {
+            subject_key,
+            dedupe_key,
+        },
+        RowDue::Written,
+    ))
 }

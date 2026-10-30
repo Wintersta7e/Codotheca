@@ -92,7 +92,7 @@ export const LETTERED_P3 = ['P3-28-18a', 'P3-30-11a'];
  * `registry.test.mjs`. Phase 4 has no letter, so the range and the total are the same number.
  */
 export const PHASE4_SECTIONS = {
-  38: 24,
+  38: 28,
   39: 13,
   40: 22,
   41: 16,

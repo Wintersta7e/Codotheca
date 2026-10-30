@@ -368,7 +368,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | Disposition | Criteria | Checks |
 |---|---|---|
 | automated | 31 | 96 |
-| deferred | 200 | 457 |
+| deferred | 204 | 467 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -399,6 +399,10 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-38-22 | deferred | `clean_archive`, through a real Seal | `AC-P4-38-22` deferred, plan p4-46b — `ledger_clean_archive::ac_p4_38_22_clean_archive`<br>`AC-P4-38-22-seal` deferred, plan p4-44 — `amnesty_verdict::ac_p4_38_22_a_real_seal_pays_clean_archive_at_the_settle_after_its_j1`<br>`AC-P4-38-22-product-tag` deferred, plan p4-44 — `archived_tag_exclusion::ac_p4_38_22_the_product_tag_never_withholds_a_clean_archive` |
 | P4-38-23 | deferred | The sidecar round trip | `AC-P4-38-23` deferred, plan p4-38 — `ledger_sidecar::ac_p4_38_23_the_sidecar_round_trip` |
 | P4-38-24 | manual | Nothing unwired | `AC-P4-38-24` manual, gate `UNWIRED-AUDIT` |
+| P4-38-25 | deferred | The tag read is bounded and never fails on one tag | `AC-P4-38-25` deferred, plan p4-38 — `git_release_tags::ac_p4_38_25_the_tag_read_is_bounded`<br>`AC-P4-38-25-no-body-atom` deferred, plan p4-38 — `git_readonly::ac_p4_38_25_no_format_names_a_body_atom`<br>`AC-P4-38-25-tab-email` deferred, plan p4-38 — `git_release_tags::ac_p4_38_25_a_tab_in_an_email_keeps_the_tag`<br>`AC-P4-38-25-settle` deferred, plan p4-38 — `ledger_j4::ac_p4_38_25_a_large_tag_and_a_tab_email_settle_ok`<br>`AC-P4-38-25-broken-ref` deferred, plan p4-38 — `ledger_j4::ac_p4_38_25_a_broken_ref_fails_the_settle_and_keeps_releases`<br>`AC-P4-38-25-reference` deferred, plan p4-38 — `ledger_j4::ac_p4_38_25_a_reference_project_spawns_no_tag_read`<br>`AC-P4-38-25-unread` deferred, plan p4-38 — `ledger_j4::ac_p4_38_25_an_unread_tag_set_keeps_the_release_rows` |
+| P4-38-26 | deferred | An upgraded history still reads measured | `AC-P4-38-26` deferred, plan p4-38 — `project_detail::ac_p4_38_26_an_upgraded_history_still_reads_measured` |
+| P4-38-27 | deferred | The restore hold is the project's own | `AC-P4-38-27` deferred, plan p4-38 — `ledger_receipts::ac_p4_38_27_the_restore_hold_is_the_projects_own` |
+| P4-38-28 | deferred | Twins lose nothing and are paid once | `AC-P4-38-28` deferred, plan p4-38 — `ledger_twins::ac_p4_38_28_twins_lose_nothing_and_are_paid_once` |
 | P4-39-1 | deferred | Two ledgers, by source scan | `AC-P4-39-1` deferred, plan p4-39 — `rings_ledgers::ac_p4_39_1_each_reader_names_only_its_ledger`<br>`AC-P4-39-1-union` deferred, plan p4-39 — `rings_ledgers::ac_p4_39_1_the_union_takes_three_day_sets`<br>`AC-P4-39-1-analyser` deferred, plan p4-39 — `rings_ledgers::ac_p4_39_1_the_analyser_never_reads_the_push_columns` |
 | P4-39-2 | deferred | Launch-only never counts; one touch never closes Focus | `AC-P4-39-2` deferred, plan p4-38 — `focus_measure::ac_p4_39_2_launch_only_never_counts`<br>`AC-P4-39-2-ring` deferred, plan p4-39 — `rings_focus_ship::ac_p4_39_2_one_touch_never_closes_focus`<br>`AC-P4-39-2-mirror` deferred, plan p4-38 — `AC-P4-39-2-mirror` |
 | P4-39-3 | deferred | Union, marginal, midnight | `AC-P4-39-3` deferred, plan p4-38 — `focus_measure::ac_p4_39_3_union_and_midnight`<br>`AC-P4-39-3-marginals` deferred, plan p4-38 — `ledger_focus::ac_p4_39_3_stored_marginals_sum_to_the_union` |

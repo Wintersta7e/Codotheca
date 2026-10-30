@@ -31,8 +31,8 @@ use codotheca_core::ledger::floor::{identity_answered, read_floor};
 use codotheca_core::ledger::level::{pending_projects, read_level};
 use codotheca_core::ledger::xp::xp_by_term;
 use codotheca_core::mount::StoreClass;
-use codotheca_core::proto::EventSink;
-use codotheca_core::protocol::{LevelReading, LevelState, LocationId, ProjectId};
+use codotheca_core::protocol::{LevelFigures, LevelReading, LevelState, LocationId, ProjectId};
+use codotheca_core::testing::events::ValidatingSink;
 use codotheca_core::testing::FakeClock;
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -45,15 +45,6 @@ const DAY: i64 = 86_400;
 const FIXTURE: &str = "fixture@example.invalid";
 const A: &str = "a@example.invalid";
 const B: &str = "b@example.invalid";
-
-#[derive(Debug, Default)]
-struct NullSink;
-
-impl EventSink for NullSink {
-    fn emit(&self, topic: &str, event: &str, payload: Value) {
-        codotheca_core::testing::events::validated(topic, event, &payload);
-    }
-}
 
 /// One reading through the production producer, in its own transaction.
 fn read(index: &mut Index, now: i64) -> LevelReading {
@@ -147,23 +138,60 @@ fn earned(conn: &Connection) -> (i64, u32) {
     (xp, level_of(xp))
 }
 
+/// The keys of a wire object, sorted.
+fn keys(object: &Value) -> Vec<String> {
+    let mut keys: Vec<String> = object.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    keys
+}
+
+/// §38.5 on the wire, both ways: `figures` is null exactly under `notComputed`, and otherwise
+/// carries all five figures; no figure sits beside `state` outside it.
+fn assert_wire(reading: &LevelReading) {
+    let wire = serde_json::to_value(reading).unwrap();
+    eprintln!("wire: {wire}");
+    assert_eq!(keys(&wire), ["figures", "pendingProjects", "state"]);
+    if reading.state == LevelState::NotComputed {
+        assert_eq!(
+            wire["figures"],
+            Value::Null,
+            "notComputed carries no figure"
+        );
+    } else {
+        let figures = &wire["figures"];
+        assert_eq!(
+            keys(figures),
+            ["floored", "level", "levelAt", "nextLevelAt", "xp"]
+        );
+        for (field, value) in figures.as_object().unwrap() {
+            assert_ne!(*value, Value::Null, "{field} is present in {figures}");
+        }
+    }
+}
+
 /// `xp < levelAt` happens only when floored, and the thresholds are the curve's.
 fn assert_consistent(reading: &LevelReading) {
-    let (Some(level), Some(xp), Some(at), Some(next)) = (
-        reading.level,
-        reading.xp,
-        reading.level_at,
-        reading.next_level_at,
-    ) else {
-        panic!("a computed or partial reading carries every number: {reading:?}");
-    };
-    assert_eq!(at, threshold(level), "levelAt is T(level)");
-    assert_eq!(next, threshold(level + 1), "nextLevelAt is T(level + 1)");
+    assert_wire(reading);
+    let f = figures(reading);
+    assert_eq!(f.level_at, threshold(f.level), "levelAt is T(level)");
     assert_eq!(
-        xp < at,
-        reading.floored,
+        f.next_level_at,
+        threshold(f.level + 1),
+        "nextLevelAt is T(level + 1)"
+    );
+    assert_eq!(
+        f.xp < f.level_at,
+        f.floored,
         "xp sits below levelAt exactly when the floor holds the level: {reading:?}"
     );
+}
+
+/// A computed or partial reading's figures.
+fn figures(reading: &LevelReading) -> &LevelFigures {
+    reading
+        .figures
+        .as_ref()
+        .unwrap_or_else(|| panic!("a computed or partial reading carries its figures: {reading:?}"))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -198,7 +226,7 @@ fn settle(
         cancel: CancelToken::new(),
         zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
     };
-    let runner = JobRunner::new(Arc::clone(index), deps, Arc::new(NullSink));
+    let runner = JobRunner::new(Arc::clone(index), deps, Arc::new(ValidatingSink::default()));
     for &(project, location) in jobs {
         assert!(runner.enqueue(Job {
             kind: JobKind::J1Refstate,
@@ -259,14 +287,8 @@ fn a_new_install_reads_no_number() {
     eprintln!("new install: {reading:?}");
     assert_eq!(reading.state, LevelState::NotComputed);
     assert_eq!(reading.pending_projects, 1);
-    assert!(
-        !reading.floored,
-        "nothing is floored before anything is computed"
-    );
+    assert_wire(&reading);
     let wire = serde_json::to_value(&reading).unwrap();
-    for field in ["level", "xp", "levelAt", "nextLevelAt"] {
-        assert_eq!(wire[field], Value::Null, "{field} is absent, never 0 or 1");
-    }
     assert_eq!(wire["state"], json!("notComputed"));
     assert_eq!(floor_row(index.conn()), (1, None), "no reading raised it");
 }
@@ -461,7 +483,7 @@ fn ac_p4_38_9_pa22s_gate() {
     let (_, both) = earned(index.conn());
     eprintln!("before the answer: {before:?}");
     assert_eq!(before.state, LevelState::Computed);
-    assert_eq!(before.level, Some(both));
+    assert_eq!(figures(&before).level, both);
     assert!(
         both > 2,
         "the fixture's level must be worth protecting, got {both}"
@@ -492,11 +514,11 @@ fn ac_p4_38_9_pa22s_gate() {
     assert!(mine < both, "unticking B removed nothing: {mine} vs {both}");
     assert_eq!(after.state, LevelState::Computed);
     assert_eq!(
-        after.level,
-        Some(mine),
+        figures(&after).level,
+        mine,
         "the card's own answer lowers the level"
     );
-    assert!(!after.floored);
+    assert!(!figures(&after).floored);
 
     // After the answer, a computed read raises the floor and dates the raise.
     assert_eq!(
@@ -515,8 +537,8 @@ fn ac_p4_38_9_pa22s_gate() {
     eprintln!("partial: {partial:?}");
     assert_eq!(partial.state, LevelState::Partial);
     assert_eq!(
-        partial.level,
-        Some(more),
+        figures(&partial).level,
+        more,
         "the displayed level is the computed one"
     );
     assert_eq!(
@@ -531,7 +553,7 @@ fn ac_p4_38_9_pa22s_gate() {
     assert_eq!(computed.state, LevelState::Computed);
     assert_eq!(floor_row(index.conn()), (i64::from(more), Some(T0 + 40)));
     let again = read(&mut index, T0 + 50);
-    assert_eq!(again.level, Some(more));
+    assert_eq!(figures(&again).level, more);
     assert_eq!(
         floor_row(index.conn()),
         (i64::from(more), Some(T0 + 40)),
@@ -557,7 +579,7 @@ fn a_dismissed_card_counts_as_answered() {
     assert!(identity_answered(index.conn()).unwrap());
     let reading = read(&mut index, T0 + 5);
     let (_, level) = earned(index.conn());
-    assert_eq!(reading.level, Some(level));
+    assert_eq!(figures(&reading).level, level);
     assert_eq!(floor_row(index.conn()), (i64::from(level), Some(T0 + 5)));
 }
 
@@ -578,8 +600,8 @@ fn xp_below_level_only_when_floored() {
     let earned_reading = read(&mut index, T0);
     eprintln!("earned: {earned_reading:?}");
     assert_consistent(&earned_reading);
-    assert!(!earned_reading.floored);
-    let level = earned_reading.level.unwrap();
+    assert!(!figures(&earned_reading).floored);
+    let level = figures(&earned_reading).level;
     assert!(level > 1);
 
     // The git rows go (a history rewrite, say): the XP falls below the level's threshold and
@@ -590,8 +612,8 @@ fn xp_below_level_only_when_floored() {
         .unwrap();
     let held = read(&mut index, T0 + 1);
     eprintln!("held: {held:?}");
-    assert_eq!(held.level, Some(level));
-    assert_eq!(held.xp, Some(0));
-    assert!(held.floored);
+    assert_eq!(figures(&held).level, level);
+    assert_eq!(figures(&held).xp, 0);
+    assert!(figures(&held).floored);
     assert_consistent(&held);
 }

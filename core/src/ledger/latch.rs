@@ -5,6 +5,7 @@ use rusqlite::Transaction;
 
 use super::marginal::{completion_check_due, RowDue};
 use super::receipt::Receipt;
+use super::retained::{insert_retained, Retained, RetainedRow};
 use crate::clock::LocalInstant;
 use crate::completion::evaluate::CheckRow;
 use crate::completion::store::slug;
@@ -28,31 +29,40 @@ pub fn latch_completion_checks(
     rows: &[CheckRow],
     at: LocalInstant,
 ) -> Result<u32, IndexError> {
+    let mut passing = rows
+        .iter()
+        .filter(|row| row.state == CheckState::Pass)
+        .peekable();
+    if passing.peek().is_none() {
+        return Ok(0);
+    }
+    let project_name: String =
+        tx.query_row("SELECT name FROM project WHERE id = ?1", [project.0], |r| {
+            r.get(0)
+        })?;
     let mut written = 0_u32;
-    for row in rows.iter().filter(|row| row.state == CheckState::Pass) {
-        let RowDue::Write(subject_key) = completion_check_due(tx, project, row.key)? else {
+    for row in passing {
+        let RowDue::Write {
+            subject_key,
+            dedupe_key,
+        } = completion_check_due(tx, project, row.key)?
+        else {
             continue;
         };
         let check = slug(&row.key);
-        let project_name: String =
-            tx.query_row("SELECT name FROM project WHERE id = ?1", [project.0], |r| {
-                r.get(0)
-            })?;
-        let inserted = tx.execute(
-            "INSERT INTO xp_events
-                (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key, track, meta)
-             VALUES (?1, ?2, ?3, ?4, 'completion_check', ?5, 'session', ?6)
-             ON CONFLICT(dedupe_key) DO NOTHING",
-            rusqlite::params![
-                at.unix,
-                at.offset_min,
-                project.0,
-                subject_key,
-                format!("completion_check:{subject_key}:{check}"),
-                Receipt::new(&check, at, &project_name).to_meta()
-            ],
+        let inserted = insert_retained(
+            tx,
+            &RetainedRow {
+                at,
+                project,
+                subject_key: &subject_key,
+                kind: "completion_check",
+                dedupe_key: &dedupe_key,
+                meta: &Receipt::new(&check, at, &project_name).to_meta(),
+            },
         )?;
-        if inserted > 0 {
+        // A twin's row holding the key is the subject's latch, already paid.
+        if matches!(inserted, Retained::Inserted(_)) {
             written = written.saturating_add(1);
         }
     }

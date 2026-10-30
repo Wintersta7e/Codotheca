@@ -110,12 +110,31 @@ describe('the corrupt-index window', () => {
     const [reDerived, restored] = corruptLedger(corrupt);
     expect(reDerived?.lines.join(' ')).not.toMatch(/\d/);
     const text = restored?.lines.join(' ') ?? '';
-    const listed = Object.entries(SIDECAR_COUNT_NOUNS).filter(([key]) => key !== 'merges');
+    const listed = Object.entries(SIDECAR_COUNT_NOUNS).filter(
+      ([key]) => key !== 'merges' && key !== 'xp_events' && !key.startsWith('ledger_'),
+    );
     expect(listed.length).toBeGreaterThan(0);
     for (const [key, [one, many]] of listed) {
       const n = COUNTS[key] ?? 0;
       expect(text, key).toContain(`${String(n)} ${n === 1 ? one : many}`);
     }
+  });
+
+  // §38: the two ledger sections hold XP the rebuild restores, so they add into the one XP
+  // count; the floor guards a level, which the level reading reports, so it is no row here.
+  it('adds the ledger sections into the XP count and draws no floor row', () => {
+    for (const key of Object.keys(SIDECAR_COUNT_NOUNS).filter((k) => k.startsWith('ledger_'))) {
+      expect(SIDECAR_COUNT_NOUNS[key]?.join(' '), key).not.toContain('‹COPY');
+    }
+    const counts = { ...COUNTS, xp_events: 7, ledger_library_awards: 30, ledger_frozen_git: 500 };
+    const sidecar = { ...corrupt.sidecar, counts };
+    const text = corruptLedger({ ...corrupt, sidecar })[1]?.lines.join(' ') ?? '';
+    // eslint-disable-next-line no-console -- the planted figures and their sum are the evidence
+    console.log(`xp 7 + awards 30 + frozen 500 → ${/\d+ XP events?/u.exec(text)?.[0] ?? 'none'}`);
+    expect(text).toContain('537 XP events');
+    expect(text).not.toMatch(/\b(7|30|500) XP event/u);
+    expect(text).not.toContain('‹COPY: ledger_');
+    expect(text).not.toContain(String(COUNTS['ledger_floor']));
   });
 
   // §48.8.3: merges are exported and never replayed, so a rebuild does not restore them and

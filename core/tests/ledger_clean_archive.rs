@@ -30,24 +30,16 @@ use codotheca_core::jobs::{
 };
 use codotheca_core::mount::StoreClass;
 use codotheca_core::projects::{dispatch_projects_command, ProjectsCtx};
-use codotheca_core::proto::EventSink;
 use codotheca_core::protocol::{LocationId, ProjectId};
+use codotheca_core::testing::events::ValidatingSink;
 use codotheca_core::testing::zone::FixedZone;
 use codotheca_core::testing::{
     FakeClock, FakeGitBackend, FakeMountResolver, GitReply, RecordingGitBackend,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 use support::TestRepo;
 
 const T0: i64 = 1_800_000_000;
-
-struct Quiet;
-
-impl EventSink for Quiet {
-    fn emit(&self, topic: &str, event: &str, payload: Value) {
-        codotheca_core::testing::events::validated(topic, event, &payload);
-    }
-}
 
 /// One project on one present copy of its own repository, and the bare remote it pushes to.
 struct Project {
@@ -232,7 +224,11 @@ impl Rig {
     fn settle(&self, p: &Project, at: i64) {
         let clock = Arc::new(FakeClock::new(at));
         let deps = Self::deps(Arc::new(Self::system_git(p, &clock)), clock);
-        let runner = JobRunner::new(Arc::clone(&self.index), deps, Arc::new(Quiet));
+        let runner = JobRunner::new(
+            Arc::clone(&self.index),
+            deps,
+            Arc::new(ValidatingSink::default()),
+        );
         assert!(runner.enqueue(Self::job(p, JobKind::J2Status)));
         runner.start(1);
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -693,4 +689,42 @@ fn archive_reached_is_null_unless_archived_and_read() {
         T0 + 2,
     );
     assert_eq!(rig.archive_reached(archived.location), None);
+}
+
+/// J1's reach reads for `p`, run through native git behind a recorder.
+fn reach_reads(rig: &Rig, p: &Project, at: i64) -> usize {
+    let clock = Arc::new(FakeClock::new(at));
+    let recording = Arc::new(RecordingGitBackend::new(Rig::system_git(p, &clock)));
+    rig.j1_with(p, recording.clone(), at);
+    let reads = recording
+        .calls()
+        .iter()
+        .filter(|c| c.op == "archive_reach")
+        .count();
+    eprintln!("project {}: {reads} reach read(s) at {at}", p.id.0);
+    reads
+}
+
+/// §38.8.5's award is paid once, ever, so J1 reads reachability only while it is unpaid: an
+/// archived copy is read until its project holds the row, and never after.
+#[test]
+fn a_paid_clean_archive_spawns_no_reach_read() {
+    let rig = Rig::new();
+    let p = rig.project("paid", true);
+    rig.archive(&p, true);
+    assert_eq!(
+        reach_reads(&rig, &p, T0 + 10),
+        1,
+        "an unpaid archive is read"
+    );
+    rig.settle(&p, T0 + 15);
+    assert_eq!(rig.count(p.id), 1, "the fixture pays first");
+
+    assert_eq!(
+        reach_reads(&rig, &p, T0 + 20),
+        0,
+        "a paid archive spawned a reach read"
+    );
+    rig.settle(&p, T0 + 25);
+    assert_eq!(rig.count(p.id), 1);
 }

@@ -175,7 +175,7 @@ struct Before {
 fn read_and_export(index: &mut Index) -> (Before, Sidecar) {
     let reading = index.with_tx(|tx| read_level(tx, NOW)).unwrap();
     assert_eq!(reading.state, LevelState::Computed);
-    assert_eq!(reading.level, Some(2));
+    assert_eq!(reading.figures.as_ref().map(|f| f.level), Some(2));
     assert_eq!(
         read_floor(index.conn()).unwrap(),
         2,
@@ -186,7 +186,7 @@ fn read_and_export(index: &mut Index) -> (Before, Sidecar) {
         retained: xp_rows(conn, "track = 'session' AND project_id IS NOT NULL"),
         award: xp_rows(conn, "project_id IS NULL"),
         frozen: xp_rows(conn, "track = 'git'"),
-        level: reading.level,
+        level: reading.figures.as_ref().map(|f| f.level),
     };
     assert_eq!(before.retained.len(), RETAINED_KINDS.len());
     assert_eq!(signalled(conn), [Some(1), Some(0), None]);
@@ -334,8 +334,9 @@ fn ac_p4_38_23_the_sidecar_round_trip() {
         "the frozen project keeps its id"
     );
     let after = index.with_tx(|tx| read_level(tx, NOW + 30)).unwrap();
-    eprintln!("level before {:?}, after {:?}", before.level, after.level);
-    assert!(after.level >= before.level, "the rebuild lowered the level");
+    let after = after.figures.as_ref().map(|f| f.level);
+    eprintln!("level before {:?}, after {after:?}", before.level);
+    assert!(after >= before.level, "the rebuild lowered the level");
 
     let gate = unclassified(index.conn()).unwrap_or_else(|findings| panic!("{findings:#?}"));
     eprintln!(

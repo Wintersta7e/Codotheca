@@ -21,6 +21,7 @@ use super::{enum_from_text, enum_text, DebtError};
 use crate::clock::LocalInstant;
 use crate::ledger::marginal::{debt_day_due, debt_day_pays, RowDue};
 use crate::ledger::receipt::Receipt;
+use crate::ledger::retained::{insert_retained, Retained, RetainedRow};
 use crate::protocol::{DebtSource, ProjectId};
 
 /// A call that wrote nothing: no paying closure, or a project the gates refuse.
@@ -42,13 +43,6 @@ pub struct DebtDayPayout {
     pub closed_today: u32,
     /// The day's sources, sorted and deduplicated.
     pub sources: Vec<DebtSource>,
-}
-
-/// The day a paying closure lands on: a new row keyed on the project's subject, or the day's
-/// row by id with its stored `meta`.
-enum Day {
-    New(String),
-    Existing(i64, String),
 }
 
 /// §28.4's idempotency key, `debt_day:<subject_key>:<local-date>`.
@@ -107,22 +101,6 @@ pub fn pay_debt_day(
     if paid.is_empty() {
         return Ok(unpaid());
     }
-    let date = at.date();
-
-    // The day so far — found by project and local date, never by key (§38.2). `meta` is read
-    // back before the merge because a sentence describing only the first closure undercounts the
-    // day it describes.
-    let day = match debt_day_due(tx, project, at)? {
-        RowDue::Write(subject_key) => Day::New(subject_key),
-        RowDue::Written(id) => Day::Existing(
-            id,
-            tx.query_row("SELECT meta FROM xp_events WHERE id = ?1", [id], |r| {
-                r.get(0)
-            })?,
-        ),
-        RowDue::Held | RowDue::Refused | RowDue::NotComputable => return Ok(unpaid()),
-    };
-
     // The generated enums derive no `Ord` — they are wire vocabularies, not ordered ones — so
     // the day's source set is held as its wire spelling, which is also the order `meta` reads in.
     let mut closed_today = u32::try_from(paid.len()).unwrap_or(u32::MAX);
@@ -130,70 +108,98 @@ pub fn pay_debt_day(
     for source in &paid {
         source_text.insert(enum_text(source)?);
     }
-    if let Day::Existing(_, raw) = &day {
-        let previous: serde_json::Value = serde_json::from_str(raw)
-            .map_err(|e| DebtError::Codec(format!("xp_events.meta is not JSON: {e}")))?;
-        if let Some(n) = previous.get("closed").and_then(serde_json::Value::as_u64) {
-            closed_today = closed_today.saturating_add(u32::try_from(n).unwrap_or(u32::MAX));
+
+    // The day so far — found by project and local date, never by key (§38.2), or a twin's day
+    // holding the key this one would write.
+    let day = match debt_day_due(tx, project, at)? {
+        RowDue::Write {
+            subject_key,
+            dedupe_key,
+        } => {
+            let meta = day_meta(tx, project, at, &source_text, closed_today)?;
+            match insert_retained(
+                tx,
+                &RetainedRow {
+                    at,
+                    project,
+                    subject_key: &subject_key,
+                    kind: "debt_day",
+                    dedupe_key: &dedupe_key,
+                    meta: &meta,
+                },
+            )? {
+                Retained::Inserted(_) => return payout(true, closed_today, &source_text),
+                Retained::Held(id) => id,
+            }
         }
-        if let Some(list) = previous
-            .get("sources")
-            .and_then(serde_json::Value::as_array)
-        {
-            for value in list {
-                if let Some(spelling) = value.as_str() {
-                    source_text.insert(spelling.to_owned());
-                }
+        RowDue::Written(id) => id,
+        RowDue::Held | RowDue::Refused | RowDue::NotComputable => return Ok(unpaid()),
+    };
+
+    // `meta` is read back before the merge because a sentence describing only the latest closure
+    // undercounts the day it describes.
+    let raw: String = tx.query_row("SELECT meta FROM xp_events WHERE id = ?1", [day], |r| {
+        r.get(0)
+    })?;
+    let previous: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| DebtError::Codec(format!("xp_events.meta is not JSON: {e}")))?;
+    if let Some(n) = previous.get("closed").and_then(serde_json::Value::as_u64) {
+        closed_today = closed_today.saturating_add(u32::try_from(n).unwrap_or(u32::MAX));
+    }
+    if let Some(list) = previous
+        .get("sources")
+        .and_then(serde_json::Value::as_array)
+    {
+        for value in list {
+            if let Some(spelling) = value.as_str() {
+                source_text.insert(spelling.to_owned());
             }
         }
     }
-
-    let mut sources = Vec::with_capacity(source_text.len());
-    for raw in &source_text {
-        sources.push(
-            enum_from_text::<DebtSource>(raw)
-                .ok_or_else(|| DebtError::Codec(format!("xp_events.meta names {raw:?}")))?,
-        );
-    }
-    let project_name: String =
-        tx.query_row("SELECT name FROM project WHERE id = ?1", [project.0], |r| {
-            r.get(0)
-        })?;
-    let meta = Receipt::day(at, &project_name)
-        .extra("sources", source_text.iter().cloned().collect::<Vec<_>>())
-        .extra("closed", closed_today)
-        .to_meta();
 
     // **`ts`, `tz_offset_min`, `kind`, `track`, `subject_key` and `dedupe_key` are never
     // updated.** The payout is the row's existence and that never changes; only the day's
     // sentence moves, on the lowest id of the day. `ts` is the closing observation's own moment
     // and not a synthetic midnight, because a debt transition happens at a time.
-    let wrote_row = match day {
-        Day::Existing(id, _) => {
-            tx.execute(
-                "UPDATE xp_events SET meta = ?2 WHERE id = ?1",
-                rusqlite::params![id, meta],
-            )?;
-            false
-        }
-        Day::New(subject_key) => {
-            tx.execute(
-                "INSERT INTO xp_events
-                (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key, track, meta)
-             VALUES (?1, ?2, ?3, ?4, 'debt_day', ?5, 'session', ?6)
-             ON CONFLICT(dedupe_key) DO NOTHING",
-                rusqlite::params![
-                    at.unix,
-                    at.offset_min,
-                    project.0,
-                    subject_key,
-                    debt_day_dedupe_key(&subject_key, &date),
-                    meta
-                ],
-            )? > 0
-        }
-    };
+    let meta = day_meta(tx, project, at, &source_text, closed_today)?;
+    tx.execute(
+        "UPDATE xp_events SET meta = ?2 WHERE id = ?1",
+        rusqlite::params![day, meta],
+    )?;
+    payout(false, closed_today, &source_text)
+}
 
+/// The day's receipt: its sources and how many paying closures it holds.
+fn day_meta(
+    tx: &Transaction<'_>,
+    project: ProjectId,
+    at: LocalInstant,
+    source_text: &BTreeSet<String>,
+    closed_today: u32,
+) -> Result<String, DebtError> {
+    let project_name: String =
+        tx.query_row("SELECT name FROM project WHERE id = ?1", [project.0], |r| {
+            r.get(0)
+        })?;
+    Ok(Receipt::day(at, &project_name)
+        .extra("sources", source_text.iter().cloned().collect::<Vec<_>>())
+        .extra("closed", closed_today)
+        .to_meta())
+}
+
+/// The call's report, its sources read back from their wire spelling.
+fn payout(
+    wrote_row: bool,
+    closed_today: u32,
+    source_text: &BTreeSet<String>,
+) -> Result<DebtDayPayout, DebtError> {
+    let mut sources = Vec::with_capacity(source_text.len());
+    for raw in source_text {
+        sources.push(
+            enum_from_text::<DebtSource>(raw)
+                .ok_or_else(|| DebtError::Codec(format!("xp_events.meta names {raw:?}")))?,
+        );
+    }
     Ok(DebtDayPayout {
         wrote_row,
         closed_today,

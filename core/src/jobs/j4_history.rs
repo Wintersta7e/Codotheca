@@ -21,8 +21,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusqlite::Transaction;
 
 use super::JobError;
-use crate::clock::LocalInstant;
-use crate::git::{local_day, Authorship, GitBackend, JobContext, RepoHandle, TagFact, TagKind};
+use crate::clock::{local_date, local_day, LocalInstant};
+use crate::git::{Authorship, GitBackend, JobContext, RepoHandle, TagFact, TagKind};
 use crate::identity::user::IdentitySet;
 use crate::index::IndexError;
 use crate::ledger::git_rows::{reconcile_git_rows, GitRow};
@@ -61,28 +61,10 @@ pub struct HistoryFacts {
     /// places holding the same subject is how they end up disagreeing.
     pub recent_subjects: Vec<String>,
     /// §38.8.6: each local day on which a tag of the user's peels to a commit, to that day's
-    /// first such tag name in byte order. **One per day, never a tag count.**
-    pub releases: BTreeMap<i64, String>,
-}
-
-/// Civil date, `YYYY-MM-DD`, from a day number as [`local_day`] produces one.
-///
-/// The day number is the storable form and this is the human one; the dedupe key needs a stable
-/// string, and a bare integer in it would be unreadable in the one place a person ever looks.
-#[must_use]
-pub fn local_date(day: i64) -> String {
-    // Howard Hinnant's civil_from_days.
-    let z = day + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02}")
+    /// first such tag name in byte order. **One per day, never a tag count.** `None` when the
+    /// tags were not read — a Reference project's — and then no `release` row is written or
+    /// deleted on their account.
+    pub releases: Option<BTreeMap<i64, String>>,
 }
 
 /// §1.7's idempotency key for one commit-day.
@@ -174,7 +156,8 @@ pub fn fold_authorship(walked: &Authorship, identities: &IdentitySet) -> History
     facts
 }
 
-/// Read one project's history, its tags included.
+/// Read one project's history, its tags included unless `reference` — a Reference project
+/// writes no git row, so its tags are never read.
 ///
 /// A tag read that fails fails the whole read: the settle reconciles the git rows to what the
 /// history implies, so a history read without its tags would delete every standing `release`
@@ -187,6 +170,7 @@ pub fn observe(
     git: &dyn GitBackend,
     repo: &RepoHandle,
     identities: &IdentitySet,
+    reference: bool,
     ctx: &JobContext<'_>,
 ) -> Result<(RootFacts, HistoryFacts), JobError> {
     let roots = read_root_facts(git, repo, ctx)?;
@@ -196,7 +180,9 @@ pub fn observe(
         .into_iter()
         .map(|c| c.subject)
         .collect();
-    facts.releases = release_days(&git.release_tags(repo, ctx)?, identities);
+    if !reference {
+        facts.releases = Some(release_days(&git.release_tags(repo, ctx)?, identities));
+    }
     Ok((roots, facts))
 }
 
@@ -231,17 +217,10 @@ pub fn read_root_facts(
 /// `track = 'git'` is the class that recomputes; `track = 'session'` is reparented and never
 /// recomputed, and the two must never be confused.
 ///
-/// None without a lineage: no lineage yet means no stable key, and the rows are written when the
-/// roots resolve.
+/// Keyed on a lineage, so a project without one has none: no lineage yet means no stable key,
+/// and the settle writes the rows when the roots resolve.
 #[must_use]
-pub fn commit_days(
-    lineage_key: Option<&str>,
-    remote_key: Option<&str>,
-    facts: &HistoryFacts,
-) -> Vec<GitRow> {
-    let Some(lineage) = lineage_key else {
-        return Vec::new();
-    };
+pub fn commit_days(lineage: &str, remote_key: Option<&str>, facts: &HistoryFacts) -> Vec<GitRow> {
     let subject = subject_key(lineage, remote_key);
     facts
         .days
@@ -272,6 +251,7 @@ pub fn releases(
     facts
         .releases
         .iter()
+        .flatten()
         .map(|(&day, name)| {
             let at = LocalInstant {
                 unix: day_ts(day),
@@ -286,6 +266,26 @@ pub fn releases(
             }
         })
         .collect()
+}
+
+/// `project`'s `release` rows as they stand, implied again by a settle that did not read tags.
+fn standing_releases(tx: &Transaction<'_>, project: ProjectId) -> Result<Vec<GitRow>, IndexError> {
+    let mut statement = tx.prepare(
+        "SELECT dedupe_key, subject_key, ts, meta FROM xp_events
+          WHERE project_id = ?1 AND track = 'git' AND kind = 'release'",
+    )?;
+    let rows = statement
+        .query_map([project.0], |r| {
+            Ok(GitRow {
+                kind: "release",
+                dedupe_key: r.get(0)?,
+                subject_key: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                ts: r.get(2)?,
+                meta: r.get(3)?,
+            })
+        })?
+        .collect::<Result<_, _>>()?;
+    Ok(rows)
 }
 
 /// The day's midnight in the day's own frame. The offset is not recoverable from a day number,
@@ -348,8 +348,14 @@ pub fn commit_history(
         let implied = if reference {
             Vec::new()
         } else {
-            let mut rows = commit_days(Some(lineage), remote.as_deref(), facts);
-            rows.extend(releases(lineage, remote.as_deref(), &name, facts));
+            let mut rows = commit_days(lineage, remote.as_deref(), facts);
+            if facts.releases.is_some() {
+                rows.extend(releases(lineage, remote.as_deref(), &name, facts));
+            } else {
+                // The tags were not read — the project read as Reference and is authored again
+                // by this write — so the standing `release` rows stand, and none is deleted.
+                rows.extend(standing_releases(tx, project)?);
+            }
             rows
         };
         // First, so the settle reads whether it is silent before its own writes.
@@ -387,7 +393,7 @@ pub fn commit_history(
 )]
 mod tests {
     use super::*;
-    use crate::git::{local_day, CommitterTally};
+    use crate::git::CommitterTally;
 
     fn ids(list: &[&str]) -> IdentitySet {
         IdentitySet::from_emails(list.iter().map(|s| (*s).to_owned()))

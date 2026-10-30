@@ -53,8 +53,9 @@ FROM xp_events;
 DROP TABLE xp_events;
 ALTER TABLE xp_events_new RENAME TO xp_events;
 
--- The only index on the table, dropped with it and recreated by name.
-CREATE INDEX idx_xp_events_project_ts ON xp_events(project_id, ts);
+-- The only index on the table, dropped with it. Its successor leads with the same column, so it
+-- serves every read by project, and the ledger's reads of one project's rows of one kind too.
+CREATE INDEX idx_xp_events_project_kind_ts ON xp_events(project_id, kind, ts);
 
 -- Monotone: restores a mark that was lost and can never lower one. The INSERT arm covers a table
 -- whose rows have all been deleted, where the copy writes no `sqlite_sequence` row to update.
@@ -156,3 +157,6 @@ ALTER TABLE location ADD COLUMN archive_reached INTEGER
 -- 8. §39.12. NULL until observed.
 ALTER TABLE session_segment ADD COLUMN signalled INTEGER
   CHECK (signalled IS NULL OR signalled IN (0, 1));
+
+-- A session's segments are read by session, in start order; nothing indexed them.
+CREATE INDEX idx_session_segment_session ON session_segment(session_id, started_at);

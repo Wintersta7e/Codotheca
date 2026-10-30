@@ -12,7 +12,8 @@
 mod detail_rig;
 
 use codotheca_core::detail::get::handle_project_get;
-use codotheca_core::protocol::{ErrorCode, LaneState, ReadmeStateKind};
+use codotheca_core::ledger::level::read_level;
+use codotheca_core::protocol::{ErrorCode, LaneState, LevelState, ReadmeStateKind};
 use detail_rig::{Rig, NOW};
 use serde_json::{json, Value};
 
@@ -263,6 +264,72 @@ fn a_measured_lane_reports_commit_days_and_never_a_commit_count() {
         .filter_map(|w| w.commit_days)
         .sum();
     assert_eq!(total, 2, "days, and at most seven of them a week");
+}
+
+/// The statement `0019` runs on every finished history, taken from the migration itself so the
+/// test plants exactly the row an upgrade leaves behind.
+fn upgrade_requeue_sql() -> String {
+    let migration = include_str!("../migrations/0019_ledger.sql");
+    let (_, rest) = migration
+        .split_once("UPDATE project_job_state")
+        .expect("0019 re-queues finished histories");
+    let (body, _) = rest.split_once(';').expect("statement end");
+    format!("UPDATE project_job_state{body};")
+}
+
+/// `AC-P4-38-26`, §38.9 step 3: the upgrade re-queues every finished history so the next scan
+/// writes the new kinds. The days it already measured are still measured in the meantime; only
+/// the level waits for the walk.
+#[test]
+fn ac_p4_38_26_an_upgraded_history_still_reads_measured() {
+    let mut rig = rig_with_nothing_computed();
+    rig.location(1, 1, "/srv/work/thing", "present", Some("main"), None, None);
+    rig.conn()
+        .execute(
+            "INSERT INTO project_job_state (project_id, job, state, at) VALUES (1, 'j4', 'ok', ?1)",
+            [NOW],
+        )
+        .expect("j4 ran");
+    for (i, day) in [NOW - 86_400, NOW - 2 * 86_400].iter().enumerate() {
+        rig.conn()
+            .execute(
+                "INSERT INTO xp_events (ts, project_id, subject_key, kind, dedupe_key, track)
+                 VALUES (?1, 1, 'p1', 'commit_day', ?2, 'git')",
+                rusqlite::params![day, format!("commit_day:p1:{i}")],
+            )
+            .expect("seed day");
+    }
+    let requeued = rig
+        .conn()
+        .execute(&upgrade_requeue_sql(), [])
+        .expect("the upgrade's re-queue");
+    assert_eq!(requeued, 1, "the upgrade re-queued this history");
+
+    let detail = handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("get");
+    assert_eq!(detail.activity.commit_days, LaneState::Measured);
+    let newest = detail.activity.weeks.last().expect("26 weeks");
+    assert_eq!(newest.commit_days, Some(2));
+    let level = rig.index.with_tx(|tx| read_level(tx, NOW)).expect("level");
+    assert_eq!(
+        level.state,
+        LevelState::Partial,
+        "the level waits for the walk"
+    );
+
+    // A history queued for any other reason has not been measured as far as this page knows.
+    rig.conn()
+        .execute(
+            "UPDATE project_job_state SET reason = 'user_requested' WHERE job = 'j4'",
+            [],
+        )
+        .expect("user re-queue");
+    let user_queued = handle_project_get(&rig.ctx(), json!({ "id": 1 })).expect("get");
+    assert_eq!(user_queued.activity.commit_days, LaneState::NotComputed);
+    assert!(user_queued
+        .activity
+        .weeks
+        .iter()
+        .all(|w| w.commit_days.is_none()));
 }
 
 #[test]

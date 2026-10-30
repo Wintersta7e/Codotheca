@@ -17,21 +17,22 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use codotheca_core::cancel::CancelToken;
+use codotheca_core::clock::local_date;
 use codotheca_core::git::{
-    ensure_empty_hooks_dir, Authorship, CommitterTally, GitBackend, GitError, GitExec, GitSlots,
-    RootCommit, SystemGit, TagFact, TagKind,
+    ensure_empty_hooks_dir, Authorship, CommitterTally, GitBackend, GitError, GitExec, GitResult,
+    GitSlots, JobClass, JobContext, RepoHandle, RootCommit, StoreKey, SystemGit, TagFact, TagKind,
 };
 use codotheca_core::identity::confirm;
 use codotheca_core::index::Index;
-use codotheca_core::jobs::j4_history::local_date;
+use codotheca_core::jobs::j4_history::{commit_history, HistoryFacts, RootFacts};
 use codotheca_core::jobs::scheduler::JobRunner;
 use codotheca_core::jobs::{Job, JobDeps, JobKind, JobOrigin, Priority};
 use codotheca_core::ledger::xp::xp_by_term;
 use codotheca_core::mount::StoreClass;
-use codotheca_core::proto::EventSink;
 use codotheca_core::protocol::{LocationId, ProjectId, XpTerm};
+use codotheca_core::testing::events::ValidatingSink;
 use codotheca_core::testing::zone::FixedZone;
-use codotheca_core::testing::{FakeClock, FakeGitBackend, GitReply};
+use codotheca_core::testing::{FakeClock, FakeGitBackend, GitReply, RecordingGitBackend};
 use serde_json::Value;
 
 const ME: &str = "me@example.invalid";
@@ -118,15 +119,6 @@ impl Repo {
     }
 }
 
-/// What a J4 settle announces is not under test here, beyond matching the schema.
-struct Quiet;
-
-impl EventSink for Quiet {
-    fn emit(&self, topic: &str, event: &str, payload: Value) {
-        codotheca_core::testing::events::validated(topic, event, &payload);
-    }
-}
-
 /// One project on one present copy of `repo`, the user's addresses confirmed as `identities`,
 /// and `committers` as its authorship census.
 struct Rig {
@@ -184,14 +176,28 @@ impl Rig {
         }
     }
 
-    fn real_git(&self, clock: Arc<FakeClock>) -> Arc<dyn GitBackend> {
+    fn system_git(&self, clock: Arc<FakeClock>) -> SystemGit {
         // The empty hooks directory sits beside the repository, as the shared fixture keeps it.
         let hooks = ensure_empty_hooks_dir(&self.repo.root).unwrap();
-        Arc::new(SystemGit::new(
+        SystemGit::new(
             Arc::new(GitExec::new(support::test_git(), hooks)),
             Arc::new(GitSlots::new(4)),
             clock,
-        ))
+        )
+    }
+
+    fn real_git(&self, clock: Arc<FakeClock>) -> Arc<dyn GitBackend> {
+        Arc::new(self.system_git(clock))
+    }
+
+    /// The release read J4 runs, over the real repository, outside any settle.
+    fn read_tags(&self) -> GitResult<Vec<TagFact>> {
+        let cancel = CancelToken::new();
+        let ctx = JobContext::new(JobClass::Background, &cancel, None);
+        let handle =
+            RepoHandle::resolve(&self.repo.work, StoreKey::new("store"), StoreClass::Local)?;
+        self.system_git(Arc::new(FakeClock::new(T0)))
+            .release_tags(&handle, &ctx)
     }
 
     /// One J4 over the real repository, run to idle.
@@ -208,7 +214,11 @@ impl Rig {
             cancel: CancelToken::new(),
             zone: Arc::new(FixedZone(0)),
         };
-        let runner = JobRunner::new(Arc::clone(&self.index), deps, Arc::new(Quiet));
+        let runner = JobRunner::new(
+            Arc::clone(&self.index),
+            deps,
+            Arc::new(ValidatingSink::default()),
+        );
         assert!(runner.enqueue(Job {
             kind: JobKind::J4History,
             project_id: self.project,
@@ -578,6 +588,136 @@ fn a_failed_tag_read_keeps_the_standing_release_rows() {
         rig.job_state().map(|(state, _)| state).as_deref(),
         Some("ok")
     );
+    assert_eq!(rig.releases(), ["2024-05-03 v1"]);
+    assert_eq!(rig.dates("commit_day"), ["2024-05-01"]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// AC-P4-38-25 — the tag read is bounded and never fails on one tag.
+// ---------------------------------------------------------------------------------------------
+
+/// A committer address holding a TAB, which `git fsck --strict` accepts.
+const TABBED: &str = "tab\there@example.invalid";
+
+fn ok(rig: &Rig) -> bool {
+    rig.job_state().map(|(state, _)| state).as_deref() == Some("ok")
+}
+
+/// One 10 MiB annotated tag named by four refs, and a lightweight tag on a commit whose committer
+/// address holds a TAB: the settle is `ok` with one `release` row per date.
+#[test]
+fn ac_p4_38_25_a_large_tag_and_a_tab_email_settle_ok() {
+    let repo = Repo::init();
+    repo.commit(ME, "2024-05-01");
+    let message = repo.root.join("message");
+    std::fs::write(
+        &message,
+        "a release note\n".repeat(10 * 1024 * 1024 / 15 + 1),
+    )
+    .unwrap();
+    let at = "2024-05-03T12:00:00+00:00";
+    repo.git_as(
+        ME,
+        at,
+        &["tag", "-a", "big", "-F", message.to_str().unwrap()],
+    );
+    for name in ["refs/tags/big-1", "refs/tags/big-2", "refs/tags/big-3"] {
+        repo.git_as(ME, at, &["update-ref", name, "refs/tags/big"]);
+    }
+    repo.commit(TABBED, "2024-05-09");
+    repo.lightweight("tabbed");
+    let rig = Rig::new(repo, &[ME, TABBED], &[ME, TABBED]);
+
+    rig.settle();
+    eprintln!("job={:?} release={:?}", rig.job_state(), rig.releases());
+    assert!(ok(&rig));
+    assert_eq!(rig.releases(), ["2024-05-03 big", "2024-05-09 tabbed"]);
+}
+
+/// git lists the tags while skipping a broken ref and exits 0; a shorter tag set would delete
+/// every `release` row the skipped tag earned. So the read fails, the settle with it, and every
+/// standing row stays — for a stray file git warns about, a name git refuses, and a symbolic ref
+/// naming nothing, which git skips without a word.
+#[test]
+fn ac_p4_38_25_a_broken_ref_fails_the_settle_and_keeps_releases() {
+    let repo = Repo::init();
+    repo.commit(ME, "2024-05-01");
+    repo.annotated(ME, "2024-05-03", "v1");
+    let tip = repo.git_as(ME, "2024-05-03T12:00:00+00:00", &["rev-parse", "HEAD"]);
+    let rig = Rig::new(repo, &[ME], &[ME]);
+    rig.settle();
+    assert!(ok(&rig));
+    assert_eq!(rig.releases(), ["2024-05-03 v1"]);
+
+    let tags = rig.repo.work.join(".git").join("refs").join("tags");
+    for (name, contents) in [
+        ("stray", "not a ref\n".to_owned()),
+        ("a..b", tip),
+        ("dangling", "ref: refs/heads/nowhere\n".to_owned()),
+    ] {
+        let plant = tags.join(name);
+        std::fs::write(&plant, contents).unwrap();
+        let read = rig.read_tags();
+        rig.settle();
+        eprintln!(
+            "{name}: read={:?} job={:?} release={:?}",
+            read.as_ref().map(Vec::len),
+            rig.job_state(),
+            rig.releases()
+        );
+        assert!(read.is_err(), "{name}: the tag read returned {read:?}");
+        assert!(!ok(&rig), "{name}: the settle was ok");
+        assert_eq!(rig.releases(), ["2024-05-03 v1"], "{name}");
+        assert_eq!(rig.dates("commit_day"), ["2024-05-01"], "{name}");
+        std::fs::remove_file(&plant).unwrap();
+    }
+}
+
+/// A Reference project writes no git row, so its J4 asks git for no tag at all — and still walks.
+#[test]
+fn ac_p4_38_25_a_reference_project_spawns_no_tag_read() {
+    let repo = Repo::init();
+    repo.commit(ME, "2024-05-01");
+    repo.annotated(ME, "2024-05-03", "v1");
+    let rig = Rig::new(repo, &[ME], &[ME]);
+    rig.sql("UPDATE project SET is_reference = 1 WHERE id = ?1");
+    let clock = Arc::new(FakeClock::new(T0));
+    let recording = Arc::new(RecordingGitBackend::new(rig.system_git(Arc::clone(&clock))));
+
+    rig.settle_with(
+        Arc::<RecordingGitBackend<SystemGit>>::clone(&recording),
+        clock,
+    );
+    let ops: Vec<&str> = recording.calls().iter().map(|call| call.op).collect();
+    eprintln!("a Reference project's J4 asked git for {ops:?}");
+    assert!(ok(&rig));
+    assert!(ops.contains(&"authorship"), "J4 still walked: {ops:?}");
+    assert!(!ops.contains(&"release_tags"), "{ops:?}");
+    assert_eq!(rig.releases(), Vec::<String>::new());
+}
+
+/// A history read without its tags — the project read as Reference and authored again by the
+/// time the settle writes — leaves the standing `release` rows as they are.
+#[test]
+fn ac_p4_38_25_an_unread_tag_set_keeps_the_release_rows() {
+    let repo = Repo::init();
+    repo.commit(ME, "2024-05-01");
+    repo.annotated(ME, "2024-05-03", "v1");
+    let rig = Rig::new(repo, &[ME], &[ME]);
+    rig.settle();
+    assert_eq!(rig.releases(), ["2024-05-03 v1"]);
+
+    // 2024-05-01, as the settle dated it.
+    let facts = HistoryFacts {
+        days: std::iter::once(1_714_564_800 / DAY).collect(),
+        releases: None,
+        ..HistoryFacts::default()
+    };
+    let mut guard = rig.index.lock().unwrap();
+    guard
+        .with_tx(|tx| commit_history(tx, rig.project, &RootFacts::default(), &facts, T0))
+        .unwrap();
+    drop(guard);
     assert_eq!(rig.releases(), ["2024-05-03 v1"]);
     assert_eq!(rig.dates("commit_day"), ["2024-05-01"]);
 }

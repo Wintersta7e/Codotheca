@@ -15,12 +15,20 @@ use codotheca_core::ledger::curve::LEVEL_THRESHOLDS;
 use codotheca_core::ledger::level::read_level;
 use codotheca_core::ledger::price::testkit::{override_curve, override_prices};
 use codotheca_core::ledger::price::{PriceTable, PRICES};
-use codotheca_core::protocol::{LevelReading, LevelState};
+use codotheca_core::protocol::{LevelFigures, LevelReading, LevelState};
 
 const T0: i64 = 1_700_000_000;
 
 fn read(index: &mut Index, now: i64) -> LevelReading {
     index.with_tx(|tx| read_level(tx, now)).unwrap()
+}
+
+/// A computed reading's figures.
+fn figures(reading: &LevelReading) -> &LevelFigures {
+    reading
+        .figures
+        .as_ref()
+        .expect("a computed reading carries its figures")
 }
 
 /// Every price halved; the caps and the focus rate, which are limits rather than prices, kept.
@@ -70,8 +78,8 @@ fn a_price_or_curve_change_never_lowers_the_displayed_level() {
     let earned = read(&mut index, T0);
     eprintln!("as ruled: {earned:?}");
     assert_eq!(earned.state, LevelState::Computed);
-    assert!(!earned.floored);
-    let level = earned.level.unwrap();
+    assert!(!figures(&earned).floored);
+    let level = figures(&earned).level;
     assert!(
         level > 2,
         "the fixture's level must be worth protecting, got {level}"
@@ -81,34 +89,37 @@ fn a_price_or_curve_change_never_lowers_the_displayed_level() {
         let _prices = override_prices(halved(PRICES));
         let reading = read(&mut index, T0 + 1);
         eprintln!("prices halved: {reading:?}");
-        assert!(reading.xp < earned.xp, "halving every price moved no XP");
+        assert!(
+            figures(&reading).xp < figures(&earned).xp,
+            "halving every price moved no XP"
+        );
         assert_eq!(
-            reading.level,
-            Some(level),
+            figures(&reading).level,
+            level,
             "a price change lowered the level"
         );
-        assert!(reading.floored);
+        assert!(figures(&reading).floored);
     }
     let restored = read(&mut index, T0 + 2);
     assert_eq!(restored, earned, "the override's drop restores the reading");
-    assert!(!restored.floored);
+    assert!(!figures(&restored).floored);
 
     {
         let _curve = override_curve(LEVEL_THRESHOLDS.map(|t| t * 2));
         let reading = read(&mut index, T0 + 3);
         eprintln!("thresholds doubled: {reading:?}");
-        assert_eq!(reading.xp, earned.xp);
+        assert_eq!(figures(&reading).xp, figures(&earned).xp);
         assert_eq!(
-            reading.level,
-            Some(level),
+            figures(&reading).level,
+            level,
             "a curve change lowered the level"
         );
-        assert!(reading.floored);
+        assert!(figures(&reading).floored);
     }
     let uncurved = read(&mut index, T0 + 4);
     assert_eq!(
         uncurved, earned,
         "the curve override's drop restores the reading"
     );
-    assert!(!uncurved.floored);
+    assert!(!figures(&uncurved).floored);
 }

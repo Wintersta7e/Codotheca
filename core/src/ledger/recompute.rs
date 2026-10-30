@@ -29,8 +29,6 @@ pub struct RecomputeReport {
     pub deleted: usize,
     /// Projects whose git rows went and whose history job is queued to write them again.
     pub queued: Vec<ProjectId>,
-    /// Projects with no readable history, whose rows were kept as they are.
-    pub frozen: Vec<ProjectId>,
 }
 
 /// §38.7.1: whether `project`'s history can be read again — some copy is neither removed nor
@@ -94,7 +92,7 @@ pub fn recompute_git_rows(
                 )?;
                 report.queued.push(project);
             }
-            Branch::Freeze => report.frozen.push(project),
+            Branch::Freeze => {}
         }
     }
     Ok(report)

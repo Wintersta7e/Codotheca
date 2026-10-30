@@ -328,15 +328,6 @@ fn reparent_removals(
     Ok((parcel, removal_record))
 }
 
-/// §1.7's git-derived event kinds — a pure function of history, so never migrated. The ledger
-/// module owns the list; this name is kept for the identity code that reads it.
-///
-/// This is the vocabulary, not the predicate. The ledger's recompute keys on `xp_events.track`,
-/// which `0019`'s track CHECK already ties to these kinds: restating them in the `DELETE` would be
-/// one value in two places, and the copy that went stale would leave a third kind's rows behind as
-/// stale duplicates after a merge.
-pub use crate::ledger::GIT_KINDS as GIT_DERIVED_XP_KINDS;
-
 /// What the derived half of a merge did. `swept_scene_hash` is the absorbed row's art scene: the
 /// row is gone, and the art layer sweeps its files (§1.5, §7.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1182,13 +1173,13 @@ mod tests {
     }
 
     /// One value in two places, checked against the database rather than against the source: the
-    /// kinds this module calls git-derived are exactly the kinds the DDL refuses to file under
+    /// kinds the ledger calls git-derived are exactly the kinds the DDL refuses to file under
     /// `track = 'session'`. If a third is added to one side only, this fails.
     #[test]
     fn every_git_derived_kind_is_one_the_ddl_files_under_the_git_track() {
         let conn = open_test_index();
         let p = p(&conn, "s", 100);
-        for (i, kind) in super::GIT_DERIVED_XP_KINDS.iter().enumerate() {
+        for (i, kind) in crate::ledger::GIT_KINDS.iter().enumerate() {
             xp(&conn, p, kind, &format!("ok:{i}"));
             let wrong = conn.execute(
                 "INSERT INTO xp_events (ts, tz_offset_min, project_id, subject_key, kind,
@@ -1208,10 +1199,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(
-            git,
-            i64::try_from(super::GIT_DERIVED_XP_KINDS.len()).unwrap()
-        );
+        assert_eq!(git, i64::try_from(crate::ledger::GIT_KINDS.len()).unwrap());
     }
 
     #[test]

@@ -4,9 +4,8 @@
 //!
 //! Per site the control runs first and pays exactly one row, so a negative case proves something:
 //! each differs from the control in one variable. The gates live inside `pay_debt_day`, so every
-//! site takes them; this proves each one is on **that caller's** path. Rust integration tests
-//! cannot import one another, so the rig shapes are copied from `restoration_callers.rs` and
-//! `advisory_sweep_settle.rs`, never shared.
+//! site takes them; this proves each one is on **that caller's** path. Each site's fixture is
+//! `support::ledger_rig`'s, shared with `local_time.rs`.
 //!
 //! Some cases cannot discriminate at a site, and each is printed with the reason rather than
 //! dropped: J7 runs no content sweep for an unenrolled or a Reference project, so it closes
@@ -24,23 +23,17 @@
 mod support;
 
 use std::collections::BTreeSet;
-use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use codotheca_core::advisories::lockfiles::read_lockfiles;
 use codotheca_core::cancel::CancelToken;
-use codotheca_core::git::{GitSlots, JobClass, JobContext, RepoHandle, SystemGit, TreeEntry};
-use codotheca_core::health::switches::write_switches;
-use codotheca_core::http::HttpResponse;
+use codotheca_core::git::{GitSlots, JobClass, JobContext, RepoHandle, SystemGit};
 use codotheca_core::index::Index;
 use codotheca_core::jobs::scheduler::JobRunner;
 use codotheca_core::jobs::{j7_markers, Job, JobDeps, JobKind, JobOrigin, Priority};
 use codotheca_core::mount::StoreClass;
-use codotheca_core::proto::EventSink;
 use codotheca_core::protocol::{
-    DebtSource, HealthCheckSwitch, HealthDetectedIn, LocationId, ProjectId, SyncTaskKind,
-    SyncTaskState,
+    HealthDetectedIn, LocationId, ProjectId, SyncTaskKind, SyncTaskState,
 };
 use codotheca_core::provider::GitHubProvider;
 use codotheca_core::sync::http::ObservingTransport;
@@ -48,8 +41,12 @@ use codotheca_core::sync::runner::SyncRunner;
 use codotheca_core::sync::state::SyncTaskStateRow;
 use codotheca_core::sync::store::{load, put};
 use codotheca_core::sync::SyncDeps;
-use codotheca_core::testing::{FakeClock, FakeGitBackend, FakeTokenStore, FakeTransport, GitReply};
+use codotheca_core::testing::events::ValidatingSink;
+use codotheca_core::testing::{FakeClock, FakeGitBackend, FakeTokenStore, FakeTransport};
 use rusqlite::Connection;
+use support::ledger_rig::{
+    advisory_project, answer, j7_fixture, lock_left, marker_tree, release_fixture,
+};
 use support::TestRepo;
 
 /// The one variable a case changes against its site's control.
@@ -106,15 +103,6 @@ fn debt_days(conn: &Connection) -> BTreeSet<String> {
     keys
 }
 
-#[derive(Debug, Default)]
-struct NullSink;
-
-impl EventSink for NullSink {
-    fn emit(&self, topic: &str, event: &str, payload: serde_json::Value) {
-        codotheca_core::testing::events::validated(topic, event, &payload);
-    }
-}
-
 // ---------------------------------------------------------------------------------------------
 // Site 1 — the scheduler's settle, through the real `JobRunner`.
 // ---------------------------------------------------------------------------------------------
@@ -136,51 +124,13 @@ struct ReleaseRig {
 
 impl ReleaseRig {
     fn new() -> Self {
-        let repo = TestRepo::init();
-        // An entry point, so J3 classifies it `cli`, for which `release` applies.
-        repo.write("main.py", b"print('one')\n");
-        repo.commit("first");
-        let dir = tempfile::tempdir().unwrap();
-        let mut index = Index::open_at(dir.path(), T0).unwrap();
-        let path = repo.path().to_string_lossy().into_owned();
-        let (project, location) = index
-            .with_tx(|tx| {
-                tx.execute(
-                    "INSERT INTO project (name, seed_basename, lineage_key, authored_by_user,
-                                          is_reference, acknowledged_at, created_at, updated_at)
-                     VALUES ('p', 'p', 'fixture', 1, 0, ?1, 0, 0)",
-                    [T0 - 100],
-                )?;
-                let project = ProjectId(tx.last_insert_rowid());
-                tx.execute(
-                    "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
-                                           store_key, presence, repo_kind)
-                     VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree')",
-                    rusqlite::params![project.0, path.as_bytes(), path],
-                )?;
-                let location = LocationId(tx.last_insert_rowid());
-                write_switches(
-                    tx,
-                    &[
-                        HealthCheckSwitch {
-                            check: DebtSource::MissingReadme,
-                            enabled: false,
-                        },
-                        HealthCheckSwitch {
-                            check: DebtSource::MissingLicense,
-                            enabled: false,
-                        },
-                    ],
-                )?;
-                Ok((project, location))
-            })
-            .unwrap();
+        let fixture = release_fixture(T0);
         Self {
-            repo,
-            _dir: dir,
-            index: Arc::new(Mutex::new(index)),
-            project,
-            location,
+            repo: fixture.repo,
+            _dir: fixture.dir,
+            index: Arc::new(Mutex::new(fixture.index)),
+            project: fixture.project,
+            location: fixture.location,
         }
     }
 
@@ -197,7 +147,11 @@ impl ReleaseRig {
             cancel: CancelToken::new(),
             zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         };
-        let runner = JobRunner::new(Arc::clone(&self.index), deps, Arc::new(NullSink));
+        let runner = JobRunner::new(
+            Arc::clone(&self.index),
+            deps,
+            Arc::new(ValidatingSink::default()),
+        );
         assert!(runner.enqueue(Job {
             kind: JobKind::J1Refstate,
             project_id: self.project,
@@ -303,40 +257,13 @@ struct J7Rig {
 
 impl J7Rig {
     fn new() -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        let mut index = Index::open_at(dir.path(), NOW).unwrap();
-        let (project, location) = index
-            .with_tx(|tx| {
-                tx.execute(
-                    "INSERT INTO project (name, seed_basename, lineage_key, authored_by_user,
-                                          is_reference, acknowledged_at, created_at, updated_at)
-                     VALUES ('p', 'p', 'fixture', 1, 0, ?1, 0, 0)",
-                    [NOW - 1_000],
-                )?;
-                let project = ProjectId(tx.last_insert_rowid());
-                tx.execute(
-                    "INSERT INTO app_meta (k, v) VALUES ('content_scan_enabled', '1')
-                     ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-                    [],
-                )?;
-                tx.execute(
-                    "INSERT INTO location
-                       (project_id, kind, path_bytes, path_key, path_display, store_key,
-                        presence, repo_kind, head_oid)
-                     VALUES (?1, 'linux', x'2f70', x'2f70', '/p', 'store-a', 'present',
-                             'worktree', 'head-one')",
-                    [project.0],
-                )?;
-                let location = LocationId(tx.last_insert_rowid());
-                Ok((project, location))
-            })
-            .unwrap();
+        let fixture = j7_fixture(NOW);
         Self {
-            _dir: dir,
-            index: Mutex::new(index),
+            _dir: fixture.dir,
+            index: Mutex::new(fixture.index),
             git: Arc::new(FakeGitBackend::new()),
-            project,
-            location,
+            project: fixture.project,
+            location: fixture.location,
             repo: RepoHandle::bare(
                 std::path::Path::new("/does/not/matter"),
                 codotheca_core::git::StoreKey::new("test-store"),
@@ -347,22 +274,7 @@ impl J7Rig {
 
     /// A HEAD of one file carrying `markers` distinct TODO lines.
     fn tree(&self, head: &str, markers: usize) {
-        let mut bytes = String::new();
-        for i in 0..markers {
-            let _ = writeln!(bytes, "// TODO: marker number {i}");
-        }
-        let oid = format!("{head:a>40}");
-        self.git.script_blob(&oid, bytes.as_bytes());
-        self.git.always_head_tree(GitReply::Ok(vec![TreeEntry {
-            mode: "100644".to_owned(),
-            kind: "blob".to_owned(),
-            oid,
-            path: b"src/a.rs".to_vec(),
-        }]));
-        self.exec_with(
-            "UPDATE location SET head_oid = ?2 WHERE id = ?1",
-            rusqlite::params![self.location.0, head],
-        );
+        marker_tree(&self.git, &self.index, self.location, head, markers);
     }
 
     fn run(&self, now: i64) {
@@ -506,29 +418,7 @@ impl AdvisoryRig {
         let dir = tempfile::tempdir().unwrap();
         let index = Arc::new(Mutex::new(Index::open_at(dir.path(), NOW).unwrap()));
         let work = tempfile::tempdir().unwrap();
-        let mut guard = index.lock().unwrap();
-        let project = guard
-            .with_tx(|tx| {
-                tx.execute(
-                    "INSERT INTO project (name, seed_basename, lineage_key, acknowledged_at,
-                                          authored_by_user, is_reference, created_at, updated_at)
-                     VALUES ('alpha', 'alpha', ?1, ?2, 1, 0, 1, 1)",
-                    rusqlite::params![located.then_some("alpha"), NOW],
-                )?;
-                let project = ProjectId(tx.last_insert_rowid());
-                if located {
-                    let path = work.path().to_string_lossy().into_owned();
-                    tx.execute(
-                        "INSERT INTO location (project_id, kind, path_bytes, path_key,
-                                               path_display, store_key, presence, repo_kind)
-                         VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree')",
-                        rusqlite::params![project.0, path.as_bytes(), path],
-                    )?;
-                }
-                Ok(project)
-            })
-            .unwrap();
-        drop(guard);
+        let project = advisory_project(&index, work.path(), NOW, located);
         Self {
             index,
             transport: Arc::new(FakeTransport::new()),
@@ -540,20 +430,7 @@ impl AdvisoryRig {
 
     /// The working copy resolves `left` at `version`, and the read J6 runs has seen it.
     fn lock(&self, version: &str, at: i64) {
-        std::fs::write(
-            self.work.path().join("package-lock.json"),
-            format!(
-                r#"{{"lockfileVersion":3,"packages":{{"":{{}},"node_modules/left":{{"version":"{version}"}}}}}}"#
-            ),
-        )
-        .unwrap();
-        let mut guard = self.index.lock().unwrap();
-        guard
-            .with_tx(|tx| {
-                read_lockfiles(tx, self.project, self.work.path(), at).unwrap();
-                Ok(())
-            })
-            .unwrap();
+        lock_left(&self.index, self.project, self.work.path(), version, at);
     }
 
     /// Queue the sweep, script the answer, run the real runner at `at` until it settles.
@@ -569,11 +446,7 @@ impl AdvisoryRig {
                 })
                 .unwrap();
         }
-        self.transport.push(HttpResponse {
-            status: 200,
-            headers: codotheca_core::http::normalise_headers([("x-ratelimit-resource", "core")]),
-            body: response.as_bytes().to_vec(),
-        });
+        answer(&self.transport, response);
         let clock = Arc::new(FakeClock::new(at));
         let observing = Arc::new(ObservingTransport::new(
             self.transport.clone(),
@@ -588,7 +461,11 @@ impl AdvisoryRig {
             cancel: CancelToken::new(),
             zone: Arc::new(codotheca_core::testing::zone::FixedZone(0)),
         };
-        let runner = SyncRunner::new(Arc::clone(&self.index), deps, Arc::new(NullSink));
+        let runner = SyncRunner::new(
+            Arc::clone(&self.index),
+            deps,
+            Arc::new(ValidatingSink::default()),
+        );
         runner.start();
         let deadline = Instant::now() + DEADLINE;
         loop {

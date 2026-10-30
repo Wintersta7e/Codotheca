@@ -111,8 +111,11 @@ function writtenKinds(): { files: number; inserts: number; kinds: Map<string, st
       inserts += 1;
       if (literal !== null) kinds.set(literal, [...(kinds.get(literal) ?? []), where]);
     }
-    for (const m of production.matchAll(/\bGitRow\s*\{[^}]*?\bkind:\s*"([a-z_]+)"/g)) {
-      const literal = required(m[1], 'the git row kind');
+    // The git rows and the retained rows reach their one insert with the kind bound, not inline.
+    for (const m of production.matchAll(
+      /\b(?:GitRow|RetainedRow)\s*\{[^}]*?\bkind:\s*"([a-z_]+)"/g,
+    )) {
+      const literal = required(m[1], 'the row kind');
       kinds.set(literal, [...(kinds.get(literal) ?? []), where]);
     }
   }

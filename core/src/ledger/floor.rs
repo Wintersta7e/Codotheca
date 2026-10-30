@@ -57,9 +57,13 @@ pub fn ratchet_level_floor(tx: &Transaction<'_>, level: u32, now: i64) -> Result
 /// The answer itself may lower the level: until it exists, the level counts addresses the user
 /// may yet untick, and locking that in would keep them.
 pub(crate) fn ratchet_from_reading(tx: &Transaction<'_>, now: i64) -> Result<bool, IndexError> {
-    let computed = state_of(tx, pending_projects(tx)?)? == LevelState::Computed;
-    if !computed || !identity_answered(tx)? {
+    if !may_raise(tx, state_of(tx, pending_projects(tx)?)?)? {
         return Ok(false);
     }
     ratchet_level_floor(tx, level_of(xp_by_term(tx)?.total()), now)
+}
+
+/// §38.6.2's gate over a reading's state: it is `computed` and the identity card is answered.
+pub(crate) fn may_raise(conn: &Connection, state: LevelState) -> Result<bool, IndexError> {
+    Ok(state == LevelState::Computed && identity_answered(conn)?)
 }

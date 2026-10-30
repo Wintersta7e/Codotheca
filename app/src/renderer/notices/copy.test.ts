@@ -5,6 +5,7 @@ import {
   degradedNotice,
   GIT_FLOOR_DISPLAY,
   problemsNotice,
+  rebuildOutcomeNotice,
   remoteSyncNotice,
   spawnFailureNotice,
   staleTargetsNotice,
@@ -195,5 +196,33 @@ describe('remoteSyncNotice', () => {
       expect(text).not.toContain('score');
       expect(text).not.toContain('xp');
     }
+  });
+});
+
+describe('rebuildOutcomeNotice', () => {
+  // §38: the restored counts read as the corrupt-index window reads them — the two ledger
+  // sections add into the one XP count, the floor is no count, and a key the sidecar has no
+  // noun for (the locations a rebuild re-creates) still prints.
+  it('folds the ledger sections into one XP count, draws no floor and keeps every other key', () => {
+    const body = rebuildOutcomeNotice({
+      quarantinedAt: 100,
+      quarantineFiles: ['index.db.quarantined-100'],
+      restored: {
+        projects: 3,
+        xp_events: 7,
+        ledger_library_awards: 30,
+        ledger_frozen_git: 500,
+        ledger_floor: 41,
+        locations: 4,
+      },
+      pending: 0,
+      gapStartedAt: null,
+    }).body;
+    expect(body).toContain('3 projects');
+    expect(body).toContain('537 XP events');
+    expect(body).not.toMatch(/\b(7|30|500) XP event/u);
+    expect(body).not.toContain('41');
+    expect(body).not.toContain('level floor');
+    expect(body).toContain('4 ‹COPY: locations›');
   });
 });

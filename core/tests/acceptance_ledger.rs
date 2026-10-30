@@ -32,11 +32,10 @@ use codotheca_core::ledger::level::read_level;
 use codotheca_core::ledger::price::testkit::{override_curve, override_prices};
 use codotheca_core::ledger::price::{PriceTable, PRICES};
 use codotheca_core::mount::StoreClass;
-use codotheca_core::proto::EventSink;
 use codotheca_core::protocol::{LevelState, LocationId, ProjectId};
+use codotheca_core::testing::events::ValidatingSink;
 use codotheca_core::testing::zone::FixedZone;
 use codotheca_core::testing::FakeClock;
-use serde_json::Value;
 use support::TestRepo;
 
 const T0: i64 = 1_800_000_000;
@@ -54,15 +53,6 @@ const WORK: &str = "work@example.invalid";
 const WORK_DAYS: i64 = 60;
 const MY_DAYS: i64 = 130;
 const SQUASHED: &str = "HEAD~50";
-
-/// What a J4 settle announces is not under test here, beyond matching the schema.
-struct Quiet;
-
-impl EventSink for Quiet {
-    fn emit(&self, topic: &str, event: &str, payload: Value) {
-        codotheca_core::testing::events::validated(topic, event, &payload);
-    }
-}
 
 /// A linear history of empty commits on `main`, one per `(committer, day)` at noon UTC, written as
 /// raw objects because every commit `TestRepo` makes carries the one fixture address.
@@ -100,7 +90,7 @@ fn settle(index: &Arc<Mutex<Index>>, repo: &TestRepo, project: ProjectId, locati
         cancel: CancelToken::new(),
         zone: Arc::new(FixedZone(0)),
     };
-    let runner = JobRunner::new(Arc::clone(index), deps, Arc::new(Quiet));
+    let runner = JobRunner::new(Arc::clone(index), deps, Arc::new(ValidatingSink::default()));
     assert!(runner.enqueue(Job {
         kind: JobKind::J4History,
         project_id: project,
@@ -142,17 +132,15 @@ struct Reading {
 fn read(index: &mut Index, now: i64, step: &str) -> Reading {
     let reading = index.with_tx(|tx| read_level(tx, now)).unwrap();
     let floor = read_floor(index.conn()).unwrap();
-    let (Some(level), Some(xp)) = (reading.level, reading.xp) else {
-        panic!("{step}: a computed reading carries its numbers: {reading:?}");
+    let Some(figures) = &reading.figures else {
+        panic!("{step}: a computed reading carries its figures: {reading:?}");
     };
+    let (level, xp, floored) = (figures.level, figures.xp, figures.floored);
     let earned = level_of(xp);
-    eprintln!(
-        "{step}: level {level}, xp {xp}, earned {earned}, floor {floor}, floored {}",
-        reading.floored
-    );
+    eprintln!("{step}: level {level}, xp {xp}, earned {earned}, floor {floor}, floored {floored}");
     assert_eq!(reading.state, LevelState::Computed, "{step}");
     assert_eq!(
-        reading.floored,
+        floored,
         floor > earned,
         "{step}: floored is the floor exceeding the earned level"
     );

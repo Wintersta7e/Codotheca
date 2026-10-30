@@ -22,6 +22,7 @@ pub mod visible;
 
 use std::time::Duration;
 
+use crate::ledger::archive::AWAITS_CLEAN_ARCHIVE_SQL;
 // R31/R21: `ProjectId` and `LocationId` are declared in `protocol/schema/protocol.json` and
 // generated into `crate::protocol`. Plan 09's interface block names them under `core::index`,
 // which never produced them; a hand-written pair here would be the R31 shape exactly.
@@ -424,9 +425,9 @@ struct LocationPlace {
     common_dir: Option<std::path::PathBuf>,
     repo_kind: String,
     trusted: bool,
-    /// The owning project's `is_archived`, read before any git so J1 knows whether to read
-    /// `archive_reached` (§38.8.5).
-    archived: bool,
+    /// Whether the owning project still awaits its clean-archive award — archived and unpaid —
+    /// read before any git so J1 reads `archive_reached` only while it can pay (§38.8.5).
+    award_open: bool,
 }
 
 fn read_place(
@@ -438,9 +439,12 @@ fn read_place(
         .map_err(|_| JobError::Io("index lock is poisoned".to_owned()))?;
     let place = guard.read(|conn| {
         conn.query_row(
-            "SELECT l.path_bytes, l.common_dir_bytes, l.repo_kind, l.trusted_at,
-                    (SELECT p.is_archived FROM project p WHERE p.id = l.project_id)
-               FROM location l WHERE l.id = ?1",
+            &format!(
+                "SELECT l.path_bytes, l.common_dir_bytes, l.repo_kind, l.trusted_at,
+                        (SELECT {AWAITS_CLEAN_ARCHIVE_SQL} FROM project p
+                          WHERE p.id = l.project_id)
+                   FROM location l WHERE l.id = ?1"
+            ),
             [location.0],
             |r| {
                 Ok((
@@ -455,7 +459,7 @@ fn read_place(
         .map_err(crate::index::IndexError::Sqlite)
     })?;
     drop(guard);
-    let (path_bytes, common_dir_bytes, repo_kind, trusted_at, is_archived) = place;
+    let (path_bytes, common_dir_bytes, repo_kind, trusted_at, awaits) = place;
     Ok(LocationPlace {
         work_dir: crate::paths::path_from_bytes(&path_bytes),
         common_dir: common_dir_bytes
@@ -463,7 +467,7 @@ fn read_place(
             .map(crate::paths::path_from_bytes),
         repo_kind,
         trusted: trusted_at.is_some(),
-        archived: is_archived == Some(1),
+        award_open: awaits == Some(1),
     })
 }
 
@@ -554,7 +558,7 @@ pub fn run_one(
         }
         JobKind::J1Refstate => {
             let state = j1_refstate::observe(git, &repo, &ctx)?;
-            let reached = j1_refstate::archive_reached(git, &repo, &state, place.archived, &ctx);
+            let reached = j1_refstate::archive_reached(git, &repo, &state, place.award_open, &ctx);
             write(index, |tx| {
                 j1_refstate::persist(tx, job.location_id, &state, reached)
             })?;
@@ -586,8 +590,8 @@ pub fn run_one(
             Ok(JobOutcome::Done)
         }
         JobKind::J4History => {
-            let identities = identity_set(index)?;
-            let (roots, facts) = j4_history::observe(git, &repo, &identities, &ctx)?;
+            let (identities, reference) = j4_inputs(index, job.project_id)?;
+            let (roots, facts) = j4_history::observe(git, &repo, &identities, reference, &ctx)?;
             write(index, |tx| {
                 j4_history::commit_history(tx, job.project_id, &roots, &facts, now)
             })?;
@@ -653,6 +657,22 @@ pub(crate) fn read<T>(
     let out = guard.read(f);
     drop(guard);
     out.map_err(JobError::Index)
+}
+
+/// J4's two reads before git: the identity set, and whether `project` is Reference — which
+/// decides whether J4 reads tags at all.
+fn j4_inputs(
+    index: &std::sync::Mutex<crate::index::Index>,
+    project: ProjectId,
+) -> Result<(crate::identity::user::IdentitySet, bool), JobError> {
+    let reference = read(index, |conn| {
+        Ok(conn.query_row(
+            "SELECT is_reference FROM project WHERE id = ?1",
+            [project.0],
+            |r| r.get(0),
+        )?)
+    })?;
+    Ok((identity_set(index)?, reference))
 }
 
 /// `load_identity_set` fails with the identity module's error and the job vocabulary carries the

@@ -36,8 +36,8 @@ pub use error::{classify, classify_spawn, transport_refused, BusyMarker, GitErro
 pub use exec::{GitExec, GitOutput, RunLimits};
 pub use facts::{repo_facts, RepoFacts};
 pub use history::{
-    authorship, commit_subjects, local_day, parse_tz_offset_min, root_commits, unpushed_refs,
-    Authorship, CommitSubject, CommitterTally, RootCommit,
+    authorship, commit_subjects, parse_tz_offset_min, root_commits, unpushed_refs, Authorship,
+    CommitSubject, CommitterTally, RootCommit,
 };
 pub use ignore::{check_ignore, CHECK_IGNORE_BATCH};
 pub use inventory::{
@@ -59,6 +59,8 @@ pub use slots::{GitSlots, JobClass, SlotGuard};
 pub use status::{
     parse_status_v2, worktree_status, StatusCounts, StatusOptions, UntrackedMode, WorktreeStatus,
 };
+#[cfg(feature = "testkit")]
+pub use tags::release_listing;
 pub use tags::{TagFact, TagKind};
 pub use tree::{head_tree, parse_ls_tree_z, read_blobs, BlobBatch, BlobRead, TreeEntry};
 pub use version::{meets_floor, parse_version, GitVersion, GIT_FLOOR};

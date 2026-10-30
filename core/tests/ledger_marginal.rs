@@ -24,6 +24,7 @@ use codotheca_core::debt::store::{DebtCloseReason, DebtClosure, SweepEffect};
 use codotheca_core::debt::xp::pay_debt_day;
 use codotheca_core::git::{JobClass, JobContext, RepoHandle, TreeEntry};
 use codotheca_core::health::switches::write_switches;
+use codotheca_core::index::subject::subject_for_project;
 use codotheca_core::index::{Index, IndexError};
 use codotheca_core::jobs::j7_markers;
 use codotheca_core::ledger::latch::latch_completion_checks;
@@ -419,18 +420,21 @@ fn unclassified_authorship_leaves_only_the_check_unknown() {
     );
 }
 
-/// A project awaiting restore is held before anything else is read (§48.8.4): every writer
-/// writes nothing for it, so it quotes `0` — even with no subject, which alone quotes `None`.
+/// A project awaiting restore of its own record is held before anything else is read
+/// (§48.8.4): every writer writes nothing for it, so it quotes `0`. A project with no subject has
+/// no record of its own, so nothing holds it and it quotes `None`.
 #[test]
 fn a_held_project_quotes_what_its_writers_write() {
     let rig = Rig::new();
-    let held = rig.unkeyed("held");
+    let held = rig.project("held", Some(1), true).id;
+    let unkeyed = rig.unkeyed("unkeyed");
     rig.tx(|tx| {
+        let key = subject_for_project(tx, held)?.expect("subject").to_key();
         tx.execute(
             "INSERT INTO sidecar_pending (source_generation, subject_key, location_keys, record,
                                          queued_at)
-             VALUES (1, 'lineage:other', '[]', '{}', 1)",
-            [],
+             VALUES (1, ?1, '[]', '{}', 1)",
+            [key],
         )?;
         Ok(())
     });
@@ -440,6 +444,7 @@ fn a_held_project_quotes_what_its_writers_write() {
         verdict: true,
     };
     assert_eq!(rig.quote(held, every_row), Some(0), "a held project");
+    assert_eq!(rig.quote(unkeyed, every_row), None, "no subject, no hold");
 
     let before = rig.xp();
     let day = rig
@@ -463,7 +468,8 @@ fn a_held_project_quotes_what_its_writers_write() {
     );
     assert_eq!(
         rig.rows(
-            "SELECT json_object('kind', kind) FROM xp_events WHERE project_id = ?1",
+            "SELECT json_object('kind', kind) FROM xp_events
+              WHERE project_id = ?1 AND kind <> 'commit_day'",
             Some(held)
         ),
         Vec::<Value>::new()

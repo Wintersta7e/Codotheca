@@ -9,6 +9,7 @@ use rusqlite::{OptionalExtension as _, Transaction};
 
 use super::pending::awaiting_restore;
 use super::receipt::Receipt;
+use super::retained::{insert_retained, Retained, RetainedRow};
 use crate::clock::LocalInstant;
 use crate::health::enrolment::is_enrolled;
 use crate::index::subject::subject_for_project;
@@ -54,11 +55,18 @@ pub struct CleanArchivePaid {
     pub project: ProjectId,
 }
 
+/// §38.8.5's award still awaited, for the project aliased `p`: it is archived and holds no
+/// `clean_archive` row, found by project and never by key. The one spelling, read by the
+/// evaluator and by J1, which reads a copy's reachability only while it holds.
+pub(crate) const AWAITS_CLEAN_ARCHIVE_SQL: &str = "(p.is_archived = 1
+        AND NOT EXISTS (SELECT 1 FROM xp_events x
+                         WHERE x.project_id = p.id AND x.kind = 'clean_archive'))";
+
 /// Pay `project`'s `clean_archive` if it qualifies as last observed; `None` when it does not, or
 /// when its award exists.
 ///
-/// In order: no `clean_archive` row for the project, found by project and never by key; no
-/// restored record still waiting to match (§48.8.4); a subject to key the row on; then the
+/// In order, cheapest first: the project archived with no `clean_archive` row
+/// (`AWAITS_CLEAN_ARCHIVE_SQL`); no restored record still waiting to match (§48.8.4); a subject to key the row on; then the
 /// project archived, not Reference, not merged away and current, with every current copy last
 /// observed with `archive_reached = 1`, a clean tree, no untracked file and no stash, no scored
 /// debt item open or unverified, and the project's debt read. A copy never observed — any of
@@ -77,12 +85,14 @@ pub fn evaluate_clean_archive(
     project: ProjectId,
     at: LocalInstant,
 ) -> Result<Option<CleanArchivePaid>, IndexError> {
-    let paid: bool = tx.query_row(
-        "SELECT EXISTS (SELECT 1 FROM xp_events WHERE project_id = ?1 AND kind = 'clean_archive')",
-        [project.0],
-        |r| r.get(0),
-    )?;
-    if paid || awaiting_restore(tx, project)? {
+    let awaited: Option<bool> = tx
+        .query_row(
+            &format!("SELECT {AWAITS_CLEAN_ARCHIVE_SQL} FROM project p WHERE p.id = ?1"),
+            [project.0],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if awaited != Some(true) || awaiting_restore(tx, project)? {
         return Ok(None);
     }
     let Some(subject) = subject_for_project(tx, project)? else {
@@ -135,24 +145,22 @@ pub fn evaluate_clean_archive(
         return Ok(None);
     };
     let subject_key = subject.to_key();
-    let inserted = tx.execute(
-        "INSERT INTO xp_events
-            (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key, track, meta)
-         VALUES (?1, ?2, ?3, ?4, 'clean_archive', ?5, 'session', ?6)
-         ON CONFLICT(dedupe_key) DO NOTHING",
-        rusqlite::params![
-            at.unix,
-            at.offset_min,
-            project.0,
-            subject_key,
-            format!("clean_archive:{subject_key}"),
-            Receipt::new("clean_archive", at, &project_name)
+    let inserted = insert_retained(
+        tx,
+        &RetainedRow {
+            at,
+            project,
+            subject_key: &subject_key,
+            kind: "clean_archive",
+            dedupe_key: &format!("clean_archive:{subject_key}"),
+            meta: &Receipt::new("clean_archive", at, &project_name)
                 .extra("observed_at", observed_at)
-                .to_meta()
-        ],
+                .to_meta(),
+        },
     )?;
-    Ok((inserted > 0).then(|| CleanArchivePaid {
-        row_id: tx.last_insert_rowid(),
-        project,
-    }))
+    // A twin's row holding the key is the subject's award, already paid.
+    Ok(match inserted {
+        Retained::Inserted(row_id) => Some(CleanArchivePaid { row_id, project }),
+        Retained::Held(_) => None,
+    })
 }

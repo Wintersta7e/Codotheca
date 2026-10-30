@@ -40,22 +40,23 @@ pub fn apply_divergence(state: &mut RefState, counts: Option<Divergence>) {
     state.behind = counts.map(|d| d.behind);
 }
 
-/// `location.archive_reached` for an archived project's copy (§38.8.5).
+/// `location.archive_reached` for the copy of an archived project whose clean-archive award is
+/// not paid yet (§38.8.5).
 ///
 /// Whether every commit the copy holds — a detached HEAD's included — was reachable from a
 /// remote-tracking ref when J1 read it. A cached, commit-based observation whose age is
 /// `refstate_observed_at`, never a claim that the copy is safe to delete.
 ///
-/// `None` for any other project's copy, which is never read, and whenever the read fails: a
-/// failure is never `Some(true)`, and it never fails J1.
+/// `None` for any other copy, which is never read — once the award is paid nothing reads the
+/// answer — and whenever the read fails: a failure is never `Some(true)`, and it never fails J1.
 pub fn archive_reached(
     git: &dyn GitBackend,
     repo: &RepoHandle,
     state: &RefState,
-    archived: bool,
+    awaits_clean_archive: bool,
     ctx: &JobContext<'_>,
 ) -> Option<bool> {
-    if !archived {
+    if !awaits_clean_archive {
         return None;
     }
     let detached_head = if state.branch.is_none() {

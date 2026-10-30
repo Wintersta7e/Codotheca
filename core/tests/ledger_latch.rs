@@ -27,22 +27,14 @@ use codotheca_core::index::Index;
 use codotheca_core::jobs::scheduler::JobRunner;
 use codotheca_core::jobs::{Job, JobDeps, JobKind, JobOrigin, Priority};
 use codotheca_core::mount::StoreClass;
-use codotheca_core::proto::EventSink;
 use codotheca_core::protocol::{CompletionCheck, LocationId, ProjectId};
+use codotheca_core::testing::events::ValidatingSink;
 use codotheca_core::testing::zone::FixedZone;
 use codotheca_core::testing::FakeClock;
-use serde_json::{json, Value};
+use serde_json::json;
 use support::TestRepo;
 
 const T0: i64 = 1_800_000_000;
-
-struct Quiet;
-
-impl EventSink for Quiet {
-    fn emit(&self, topic: &str, event: &str, payload: Value) {
-        codotheca_core::testing::events::validated(topic, event, &payload);
-    }
-}
 
 /// One project on one present copy of its own repository.
 struct Project {
@@ -151,7 +143,11 @@ impl Rig {
             cancel: CancelToken::new(),
             zone: Arc::new(FixedZone(0)),
         };
-        let runner = JobRunner::new(Arc::clone(&self.index), deps, Arc::new(Quiet));
+        let runner = JobRunner::new(
+            Arc::clone(&self.index),
+            deps,
+            Arc::new(ValidatingSink::default()),
+        );
         assert!(runner.enqueue(Job {
             kind: JobKind::J2Status,
             project_id: p.id,

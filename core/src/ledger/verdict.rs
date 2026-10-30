@@ -7,6 +7,7 @@ use rusqlite::Transaction;
 
 use super::marginal::{verdict_due, RowDue};
 use super::receipt::Receipt;
+use super::retained::{insert_retained, Retained, RetainedRow};
 use crate::clock::LocalInstant;
 use crate::index::IndexError;
 use crate::protocol::ProjectId;
@@ -40,8 +41,11 @@ pub fn pay_verdict_award(
     verdict_slug: &str,
     at: LocalInstant,
 ) -> Result<VerdictAward, IndexError> {
-    let subject_key = match verdict_due(tx, project)? {
-        RowDue::Write(subject_key) => subject_key,
+    let (subject_key, dedupe_key) = match verdict_due(tx, project)? {
+        RowDue::Write {
+            subject_key,
+            dedupe_key,
+        } => (subject_key, dedupe_key),
         // No gate refuses a verdict, so `Refused` never reaches here.
         RowDue::Written(_) | RowDue::Refused => return Ok(VerdictAward::AlreadyPaid),
         RowDue::Held => return Ok(VerdictAward::AwaitingRestore),
@@ -51,26 +55,23 @@ pub fn pay_verdict_award(
         tx.query_row("SELECT name FROM project WHERE id = ?1", [project.0], |r| {
             r.get(0)
         })?;
-    let inserted = tx.execute(
-        "INSERT INTO xp_events
-            (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key, track, meta)
-         VALUES (?1, ?2, ?3, ?4, 'amnesty_verdict', ?5, 'session', ?6)
-         ON CONFLICT(dedupe_key) DO NOTHING",
-        rusqlite::params![
-            at.unix,
-            at.offset_min,
-            project.0,
-            subject_key,
-            format!("amnesty_verdict:{subject_key}"),
-            Receipt::new("verdict", at, &project_name)
+    let inserted = insert_retained(
+        tx,
+        &RetainedRow {
+            at,
+            project,
+            subject_key: &subject_key,
+            kind: "amnesty_verdict",
+            dedupe_key: &dedupe_key,
+            meta: &Receipt::new("verdict", at, &project_name)
                 .extra("verdict", verdict_slug)
-                .to_meta()
-        ],
+                .to_meta(),
+        },
     )?;
-    Ok(if inserted > 0 {
-        VerdictAward::Paid(tx.last_insert_rowid())
-    } else {
-        VerdictAward::AlreadyPaid
+    Ok(match inserted {
+        Retained::Inserted(id) => VerdictAward::Paid(id),
+        // A twin's row holding the key is the subject's award.
+        Retained::Held(_) => VerdictAward::AlreadyPaid,
     })
 }
 

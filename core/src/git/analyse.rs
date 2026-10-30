@@ -210,7 +210,7 @@ fn io_failure(error: &std::io::Error, what: &Path) -> GitError {
 
 /// §45.6: a non-empty diagnostic stream on an enumerating read is an error in itself — git's
 /// warnings are how it reports the refs it skipped.
-fn quiet(out: &GitOutput, what: &str) -> GitResult<()> {
+pub(super) fn quiet(out: &GitOutput, what: &str) -> GitResult<()> {
     if out.stderr.is_empty() {
         Ok(())
     } else {
@@ -395,14 +395,35 @@ fn resolve(
     }
 }
 
-/// The files backend's name set, by an error-strict walk.
-fn walked_names(common_dir: &Path) -> GitResult<BTreeSet<String>> {
+/// The files backend's loose and packed refs, by an error-strict walk.
+fn walked(common_dir: &Path) -> GitResult<(BTreeMap<String, Loose>, BTreeSet<String>)> {
     let packed = packed_names(common_dir)?;
     let mut loose = BTreeMap::new();
     let refs = common_dir.join("refs");
     if refs.exists() {
         walk_loose(common_dir, &refs, 0, &mut loose)?;
     }
+    Ok((loose, packed))
+}
+
+/// The files backend's `refs/tags/` names as `for-each-ref` lists them — a symbolic ref under its
+/// own name — by the same error-strict walk. git skips a symbolic ref that names nothing, and a
+/// directory it cannot read, without a word; here each is an error.
+pub(super) fn walked_tag_names(common_dir: &Path) -> GitResult<BTreeSet<String>> {
+    let (loose, packed) = walked(common_dir)?;
+    let mut names = BTreeSet::new();
+    for name in loose.keys().chain(packed.iter()) {
+        if name.starts_with("refs/tags/") {
+            resolve(name, &loose, &packed, 0)?;
+            names.insert(name.clone());
+        }
+    }
+    Ok(names)
+}
+
+/// The files backend's name set, by an error-strict walk.
+fn walked_names(common_dir: &Path) -> GitResult<BTreeSet<String>> {
+    let (loose, packed) = walked(common_dir)?;
     let mut names = BTreeSet::new();
     for name in loose.keys().chain(packed.iter()) {
         if is_tracking(name) {

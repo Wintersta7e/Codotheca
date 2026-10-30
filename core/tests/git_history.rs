@@ -9,8 +9,9 @@
 mod support;
 
 use codotheca_core::cancel::CancelToken;
+use codotheca_core::clock::local_day;
 use codotheca_core::git::{
-    authorship, commit_subjects, local_day, parse_tz_offset_min, root_commits, RunLimits,
+    authorship, commit_subjects, parse_tz_offset_min, root_commits, RunLimits,
 };
 use support::TestRepo;
 
