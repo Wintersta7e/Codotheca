@@ -106,6 +106,51 @@ describe('selectPaletteRows', () => {
     expect(sel.matched).toBe(41);
   });
 
+  // D12: the cap applies after ranking, so recency can no longer push an exact name off the list.
+  it('AC-P4-50-5 an older exact name outranks 41 newer substring hits', () => {
+    const all = [
+      makeProjectRow({ id: 1 as ProjectId, name: 'core', lastTouchedAt: 1 }),
+      ...Array.from({ length: 41 }, (_, i) =>
+        makeProjectRow({
+          id: (i + 2) as ProjectId,
+          name: `hardcore${String(i)}`,
+          lastTouchedAt: 1000 + i,
+        }),
+      ),
+    ];
+    const sel = selectPaletteRows(all, 'core');
+    expect(sel.rows[0]?.name).toBe('core');
+    expect(sel.rows).toHaveLength(PALETTE_ROW_CAP);
+    expect(sel.matched).toBe(42);
+    expect(paletteCountText(sel)).toBe('42 OF 42');
+  });
+
+  it('ranks exact, prefix, word-start, substring, then language, newest first in a tier', () => {
+    const all = [
+      makeProjectRow({
+        id: 1 as ProjectId,
+        name: 'vault',
+        primaryLanguage: 'Ark',
+        lastTouchedAt: 9,
+      }),
+      makeProjectRow({ id: 2 as ProjectId, name: 'subarkive', lastTouchedAt: 8 }),
+      makeProjectRow({ id: 3 as ProjectId, name: 'old-ark-tools', lastTouchedAt: 7 }),
+      makeProjectRow({ id: 4 as ProjectId, name: 'myArkPlan', lastTouchedAt: 6 }),
+      makeProjectRow({ id: 5 as ProjectId, name: 'arkade', lastTouchedAt: 5 }),
+      makeProjectRow({ id: 6 as ProjectId, name: 'arkive', lastTouchedAt: 4 }),
+      makeProjectRow({ id: 7 as ProjectId, name: 'ARK', lastTouchedAt: 1 }),
+    ];
+    expect(selectPaletteRows(all, 'ark').rows.map((r) => r.name)).toEqual([
+      'ARK',
+      'arkade',
+      'arkive',
+      'old-ark-tools',
+      'myArkPlan',
+      'subarkive',
+      'vault',
+    ]);
+  });
+
   it('counts candidates in the denominator, never the whole library', () => {
     const all = [
       makeProjectRow({ id: 1 as ProjectId, name: 'keep' }),

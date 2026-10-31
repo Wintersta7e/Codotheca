@@ -58,12 +58,41 @@ function sortsAfterEveryLocatedRow(row: ProjectRow): number {
   return paletteRowAction(row).kind === 'install' ? 1 : 0;
 }
 
+/** Whether `at` opens a word in `name`: after a non-alphanumeric, or a lower-to-upper step. */
+function opensWord(name: string, at: number): boolean {
+  const before = name.charAt(at - 1);
+  if (!/[\p{L}\p{N}]/u.test(before)) return true;
+  return /\p{Ll}/u.test(before) && /\p{Lu}/u.test(name.charAt(at));
+}
+
+/**
+ * D12's tiers, best first: the name exactly, a prefix of it, the start of one of its words,
+ * anywhere in it, then the language. Recency orders rows inside a tier and never across one, so
+ * an exact name is not cut by the cap however old it is. An empty query puts every row in tier 0.
+ */
+function matchTier(row: ProjectRow, needle: string): number {
+  if (needle === '') return 0;
+  const name = row.name.toLowerCase();
+  if (name === needle) return 0;
+  if (name.startsWith(needle)) return 1;
+  let at = name.indexOf(needle);
+  if (at < 0) return 4;
+  while (at >= 0) {
+    if (opensWord(row.name, at)) return 2;
+    at = name.indexOf(needle, at + 1);
+  }
+  return 3;
+}
+
 export function selectPaletteRows(all: readonly ProjectRow[], query: string): PaletteSelection {
   const candidates = all.filter(isPaletteCandidate);
   const hits = candidates.filter((row) => paletteMatches(row, query));
+  const needle = query.trim().toLowerCase();
+  const tier = new Map(hits.map((row) => [row, matchTier(row, needle)]));
   const ordered = [...hits].sort(
     (a, b) =>
       sortsAfterEveryLocatedRow(a) - sortsAfterEveryLocatedRow(b) ||
+      (tier.get(a) ?? 0) - (tier.get(b) ?? 0) ||
       b.lastTouchedAt - a.lastTouchedAt ||
       a.id - b.id,
   );
