@@ -1319,8 +1319,8 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
-          "test": "the README pipeline readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text",
-          "assert": "[p2] The project page's half is superseded by \u00a725.5: the panel renders markup inside a sandboxed frame, and what replaces the plain-text rule is \u00a725.10's hostile document \u2014 a script tag as visible text, no on* attribute, no non-http(s) href. Peek's half is AC-42-peek and is unchanged."
+          "test": "the README pipeline readmeMarkup::ac_p2_25_17_hostile_markup_leaves_no_script_handler_or_unsafe_href",
+          "assert": "[p2] The project page's half is superseded by \u00a725.5: the panel renders markup inside a sandboxed frame, and what replaces the plain-text rule is \u00a725.10's hostile document \u2014 no script element or script text, no on* attribute, no non-http(s) href. Peek's half is AC-42-peek and is unchanged."
         },
         {
           "id": "AC-42-register-audit",
@@ -3266,8 +3266,8 @@
           "status": "automated",
           "runner": "vitest",
           "owner": "p2-25b",
-          "test": "the README pipeline readmeMarkup::ac_p2_25_17_hostile_markup_renders_as_visible_text",
-          "assert": "A README carrying a script tag, an onerror attribute, a javascript: link, a data:text/html link and a details block renders the script tag as visible text, keeps no on* attribute and no non-http(s)/mailto href. Reverting the sanitiser turns at least one red."
+          "test": "the README pipeline readmeMarkup::ac_p2_25_17_hostile_markup_leaves_no_script_handler_or_unsafe_href",
+          "assert": "A README carrying a script tag, an onerror attribute, a javascript: link, a data:text/html link and a details block keeps no script element or script text, no on* attribute and no non-http(s)/mailto href, and renders the details block as an element (inline HTML parses since D11; the sanitiser is the layer doing the work). Reverting the sanitiser turns at least one red."
         }
       ]
     },

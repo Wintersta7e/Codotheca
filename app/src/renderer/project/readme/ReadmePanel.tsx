@@ -4,8 +4,9 @@
  * §8.4's ruling still binds **Peek**, which stays plain text — mounting a document per expanded
  * card on the surface measured at 1,000 virtualized cards is a different decision with different
  * evidence. What moves here is the project page's half: the `<p>` becomes a sandboxed frame, and
- * the markup is parsed with `html: false`, sanitised against an explicit allowlist and serialised
- * into a document with an opaque origin and every sandbox flag off.
+ * the markup is parsed with its inline HTML, sanitised against DOMPurify's explicit allowlist and
+ * `FORBID_CONTENTS`, and serialised into a document with an opaque origin and every sandbox flag
+ * off.
  *
  * **Nothing in this file imports the pipeline statically.** `useReadmeDocument` reaches it through
  * one dynamic `import()`, which is what keeps `markdown-it`, DOMPurify, `highlight.js` and KaTeX

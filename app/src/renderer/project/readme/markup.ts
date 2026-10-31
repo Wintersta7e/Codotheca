@@ -1,11 +1,13 @@
 /**
  * §25.5, stages 1, 2 and 2½: parse, sanitise, and take every image out of the document.
  *
- * **Two layers, and the first is a parser-level guarantee.** `markdown-it` with `html: false`
- * escapes raw HTML in the source to text rather than parsing it, so a `<script>` in a README is
- * visible characters and never a node. DOMPurify is the second layer and is still needed, because
- * markdown carries URLs of its own — `[x](javascript:…)` — and because the highlighter's and
- * KaTeX's output must pass the same gate as everything else.
+ * **Two layers, and neither is the parser.** `markdown-it` runs with `html: true`, because a
+ * README centres its logo with `<p align="center">` and folds sections into `<details>`, and an
+ * escaped tag is a README the reader cannot read. Every raw tag therefore reaches DOMPurify as a
+ * node: its explicit allowlists below decide what survives, and its `FORBID_CONTENTS` drops a
+ * `<script>` together with its text. The second layer is the frame — `sandbox=""`, every flag
+ * off, so nothing that did survive can run. Markdown's own URLs — `[x](javascript:…)` — and the
+ * highlighter's and KaTeX's output pass the same gate.
  *
  * **The allowlist is written out here, not inherited.** A default profile changes with the
  * dependency; this list changes only when somebody edits this file.
@@ -209,6 +211,11 @@ export const FORBID_TAGS: readonly string[] = [
   'link',
   'meta',
   'svg',
+  // A `<source>` fetches through `srcset` and `<picture>` chooses between sources; neither can be
+  // walked into the core's image path, so neither renders. A `<picture>`'s fallback `img` is
+  // kept and walked like any other.
+  'picture',
+  'source',
 ];
 
 declare const sanitised: unique symbol;
@@ -242,7 +249,7 @@ export interface RenderedMarkup {
  * and replacing its quotes is an edit.
  */
 const parser = new MarkdownIt({
-  html: false,
+  html: true,
   linkify: true,
   typographer: false,
   // §25.5: the highlighter plugs in here rather than in a second AST pass, and its output goes
@@ -325,6 +332,16 @@ export function renderMarkup(source: string): RenderedMarkup {
   // The one place the brand is applied, and the cast is the whole of it: DOMPurify returns a
   // `DocumentFragment` and what makes this one sanitised is that it came from here.
   const fragment = DOMPurify.sanitize(html, sanitiseConfig()) as unknown as SanitisedFragment;
+
+  // `ALLOWED_ATTR` cannot scope an attribute to one tag, and MathML elements accept `href`. An
+  // anchor's `href` is inert in the frame and an image's `src` is walked below; on any other
+  // element either is a URL nothing here accounts for, so it goes.
+  for (const element of [...fragment.querySelectorAll('[href]:not(a)')]) {
+    element.removeAttribute('href');
+  }
+  for (const element of [...fragment.querySelectorAll('[src]:not(img)')]) {
+    element.removeAttribute('src');
+  }
 
   const imageRefs: string[] = [];
   for (const image of [...fragment.querySelectorAll('img')]) {
