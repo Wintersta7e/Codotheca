@@ -17,7 +17,7 @@
   "scripts": {
     "gen": "node protocol/generate.mjs",
     "gen:check": "node protocol/generate.mjs --check",
-    "build:core": "cargo build --release --manifest-path core/Cargo.toml",
+    "build:core": "cargo build --release --locked --manifest-path core/Cargo.toml",
     "build:app": "npm run build --workspace app",
     "build": "npm run gen && npm run build:core && npm run build:app",
     "dev": "npm run gen && npm run dev --workspace app",

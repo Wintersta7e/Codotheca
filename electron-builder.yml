@@ -19,6 +19,10 @@ files:
   # OFL-1.1 texts for the three embedded families.
   - licenses/**
   - package.json
+  # The GPL text, and the third-party notices `scripts/third-party-notices.mjs` writes at
+  # package time. `check-packaging.mjs` asserts both reached app.asar, non-empty.
+  - LICENSE
+  - THIRD-PARTY-NOTICES
 
 # The core is staged per platform and NOT at the top level. A platform's `extraResources`
 # concatenates with the top-level list rather than replacing it, so one top-level entry naming

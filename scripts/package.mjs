@@ -32,6 +32,13 @@ const builderDir = join(root, 'node_modules', 'electron-builder');
 const bin = JSON.parse(readFileSync(join(builderDir, 'package.json'), 'utf8')).bin;
 const entry = typeof bin === 'string' ? bin : bin['electron-builder'];
 
+// The notices are generated, not committed: write them before the packer reads `files:`.
+const notices = spawnSync(process.execPath, [join(root, 'scripts', 'third-party-notices.mjs')], {
+  stdio: 'inherit',
+});
+if (notices.error) throw notices.error;
+if (notices.status !== 0) process.exit(notices.status ?? 1);
+
 const signing = process.env.CODOTHECA_SIGN_TOOL ? 'configured' : 'none';
 console.error(`package: signing=${signing} publisher=${publisher === '' ? '(none)' : publisher}`);
 const result = spawnSync(process.execPath, [join(builderDir, entry), ...args], {

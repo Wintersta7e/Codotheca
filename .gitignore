@@ -16,6 +16,8 @@ target/
 # rather than a rebuild. Set CARGO_TARGET_DIR to this when building through interop.
 target-win/
 dist/
+# Written by scripts/third-party-notices.mjs at package time.
+/THIRD-PARTY-NOTICES
 out/
 node_modules/
 *.tsbuildinfo

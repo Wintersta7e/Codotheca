@@ -3,20 +3,14 @@
  * Post-pack guard. Run after `npm run package:dir` (or a full target build).
  *
  * The packager fails loudly on a bad config and silently on a bad result. Each silent failure
- * has one assertion here: missing filtered resources, a non-executable Linux core, or an asar
- * whose packed manifest does not point at the built main process.
+ * has one assertion here: missing filtered resources, a non-executable Linux core, an asar
+ * whose packed manifest does not point at the built main process, or one without the licence
+ * and the third-party notices.
  */
-import {
-  closeSync,
-  existsSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  readSync,
-  statSync,
-} from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { packedLicenceFailures, readAsarFile } from './lib/asar.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const configPath = join(root, 'electron-builder.yml');
@@ -131,90 +125,13 @@ if (publish !== undefined && publish !== 'null') {
   fail('publish must be null — builds must not publish or carry update metadata');
 }
 
-function readExactly(descriptor, size, position) {
-  const output = Buffer.alloc(size);
-  let read = 0;
-  while (read < size) {
-    const count = readSync(descriptor, output, read, size - read, position + read);
-    if (count === 0) break;
-    read += count;
-  }
-  if (read !== size) {
-    throw new Error(`unexpected end of file at ${String(position + read)}`);
-  }
-  return output;
-}
-
-/**
- * Reads only the root package.json. An asar starts with an 8-byte pickle: uint32 `4`, then the
- * complete inner-pickle size. The inner pickle is uint32 payload size, uint32 JSON byte length,
- * JSON, then four-byte padding. Packed entry offsets are decimal strings relative to the byte
- * immediately after those two pickles.
- */
+/** The root package.json of an `app.asar`, parsed. */
 function readPackedManifest(archivePath) {
-  const archiveSize = statSync(archivePath).size;
-  if (archiveSize < 16) throw new Error('archive is shorter than its two pickle headers');
-
-  const descriptor = openSync(archivePath, 'r');
+  const contents = readAsarFile(archivePath, 'package.json');
   try {
-    const prefix = readExactly(descriptor, 8, 0);
-    if (prefix.readUInt32LE(0) !== 4) {
-      throw new Error('outer pickle payload size is not 4');
-    }
-
-    const headerSize = prefix.readUInt32LE(4);
-    if (headerSize < 8) throw new Error('inner pickle is shorter than 8 bytes');
-    if (headerSize > 64 * 1024 * 1024) throw new Error('inner pickle exceeds 64 MiB');
-    if (8 + headerSize > archiveSize) throw new Error('inner pickle extends past the archive');
-
-    const header = readExactly(descriptor, headerSize, 8);
-    const payloadSize = header.readUInt32LE(0);
-    if (payloadSize !== headerSize - 4) {
-      throw new Error('inner pickle payload size does not match its header');
-    }
-    const jsonSize = header.readUInt32LE(4);
-    if (jsonSize > payloadSize - 4) throw new Error('header JSON extends past the inner pickle');
-    const paddedPayloadSize = Math.ceil((4 + jsonSize) / 4) * 4;
-    if (paddedPayloadSize !== payloadSize) {
-      throw new Error('inner pickle padding is inconsistent');
-    }
-
-    let tree;
-    try {
-      tree = JSON.parse(header.subarray(8, 8 + jsonSize).toString('utf8'));
-    } catch (error) {
-      throw new Error(`header JSON is invalid: ${String(error)}`);
-    }
-    const entry = tree?.files?.['package.json'];
-    if (entry === undefined || entry === null || typeof entry !== 'object') {
-      throw new Error('asar header has no root package.json entry');
-    }
-    if (entry.unpacked === true) throw new Error('root package.json is unexpectedly unpacked');
-    if (Object.hasOwn(entry, 'link')) throw new Error('root package.json is unexpectedly a link');
-    if (typeof entry.offset !== 'string' || !/^(?:0|[1-9]\d*)$/u.test(entry.offset)) {
-      throw new Error('root package.json has an invalid packed offset');
-    }
-    if (!Number.isSafeInteger(entry.size) || entry.size < 0) {
-      throw new Error('root package.json has an invalid size');
-    }
-
-    const filePositionBig = 8n + BigInt(headerSize) + BigInt(entry.offset);
-    const fileEndBig = filePositionBig + BigInt(entry.size);
-    if (fileEndBig > BigInt(archiveSize)) {
-      throw new Error('root package.json extends past the archive');
-    }
-    if (filePositionBig > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new Error('root package.json offset exceeds the safe integer range');
-    }
-
-    const contents = readExactly(descriptor, entry.size, Number(filePositionBig));
-    try {
-      return JSON.parse(contents.toString('utf8'));
-    } catch (error) {
-      throw new Error(`packed package.json is invalid: ${String(error)}`);
-    }
-  } finally {
-    closeSync(descriptor);
+    return JSON.parse(contents.toString('utf8'));
+  } catch (error) {
+    throw new Error(`packed package.json is invalid: ${String(error)}`);
   }
 }
 
@@ -336,6 +253,12 @@ for (const pack of packs) {
   if (manifest?.main !== 'app/out/main/index.js') {
     fail(`packed main is "${String(manifest?.main)}"`);
   }
+
+  // The licence and the third-party notices travel inside the archive (`files:`), so a glob
+  // that stopped matching ships an artifact without them and the packager says nothing.
+  const licenceFailures = packedLicenceFailures(archive);
+  for (const message of licenceFailures) fail(message);
+  if (licenceFailures.length === 0) packedFilesChecked += 2;
 }
 
 if (failures.length > 0) {

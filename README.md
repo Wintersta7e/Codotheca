@@ -15,7 +15,7 @@ light, ignorable layer that makes upkeep visible. Local-first, no account, no te
 
 ![The shelf: twelve projects with generated cover art, their status badges and the attention row](docs/screenshots/shelf.png)
 
-* * *
+---
 
 ## Why
 
@@ -24,7 +24,7 @@ what is in most of them. Which ones still build. Which one I abandoned three wee
 uncommitted work I forgot about in 2023. `ls ~/code` is a list of names, and a name is not a memory.
 
 Game launchers solved this — a shelf, cover art, a play button, hours played — and it works because
-the shelf is *visual* and the state is *real*. Codotheca is that for the code you wrote. It scans
+the shelf is _visual_ and the state is _real_. Codotheca is that for the code you wrote. It scans
 your disks, identifies each repository by its root commit, generates a piece of cover art seeded on
 the project itself, and shows you what git actually says: dirty, ahead, shallow, stashed, untouched
 since 2021.
@@ -35,10 +35,10 @@ not nag, it does not gamify, and it never invents a number it did not measure.
 
 ## Screenshots
 
-| | |
-|---|---|
-| ![The first-run reveal: six figures computed from the history just scanned](docs/screenshots/reveal.png) | ![Quick switch: Alt+Space from anywhere, filtered as you type](docs/screenshots/quick-switch.png) |
-| ![A project page: the hero card, condition, copies and README](docs/screenshots/project.png) | ![The HEALTH tab: every check, the open debt items and the completion checklist](docs/screenshots/health.png) |
+|                                                                                                          |                                                                                                               |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| ![The first-run reveal: six figures computed from the history just scanned](docs/screenshots/reveal.png) | ![Quick switch: Alt+Space from anywhere, filtered as you type](docs/screenshots/quick-switch.png)             |
+| ![A project page: the hero card, condition, copies and README](docs/screenshots/project.png)             | ![The HEALTH tab: every check, the open debt items and the completion checklist](docs/screenshots/health.png) |
 
 Every repository in these screenshots is invented; they were taken from the real app.
 
@@ -94,13 +94,13 @@ is no adoption goal and no support guarantee.
   shelf can sort by what needs attention; it is a sort, not a feed.
 - **Packaging** — portable `.exe`, NSIS installer, AppImage, `.deb` and `.rpm`.
 
-About 5,700 automated tests across the core, the shell and the renderer; ten Playwright tests that
+About 5,700 automated tests across the core, the shell and the renderer; Playwright tests that
 launch the real Electron app, one of them asserting a painted screen; and an acceptance register
 tying 1328 checks to 577 written criteria.
 
 ### Known limits
 
-- **The artifacts are unsigned.** Windows shows SmartScreen's *More info → Run anyway*. There is no
+- **The artifacts are unsigned.** Windows shows SmartScreen's _More info → Run anyway_. There is no
   certificate, by decision.
 - **"Portable" means no installer, not portable data.** The portable `.exe` and the installed build
   share one per-user library, so two copies in two folders are not two libraries. It also unpacks
@@ -141,23 +141,23 @@ tying 1328 checks to 577 written criteria.
 
 ## Keyboard
 
-| Key | Where | What |
-|---|---|---|
-| `Alt+Space` | anywhere | quick switch |
-| `↑` `↓` `←` `→` | shelf | move the grid selection |
-| `Enter` | shelf | launch the selected project |
-| `Shift+Enter` | shelf | open the project page |
-| `Space` | shelf | peek |
-| `Escape` | shelf | close the peek |
-| `P` | shelf | pin or unpin |
-| `Ctrl+S` | shelf | save the current query as a collection |
-| `←` `→` | project page | cycle tabs |
-| `Escape` | project page | back to the shelf |
-| `↑` `↓` | quick switch | move through the results |
-| `Enter` | quick switch | launch the project |
-| `Shift+Enter` | quick switch | open the project page |
-| `Escape` | quick switch | close |
-| `Escape` | settings | close the drawer |
+| Key             | Where        | What                                   |
+| --------------- | ------------ | -------------------------------------- |
+| `Alt+Space`     | anywhere     | quick switch                           |
+| `↑` `↓` `←` `→` | shelf        | move the grid selection                |
+| `Enter`         | shelf        | launch the selected project            |
+| `Shift+Enter`   | shelf        | open the project page                  |
+| `Space`         | shelf        | peek                                   |
+| `Escape`        | shelf        | close the peek                         |
+| `P`             | shelf        | pin or unpin                           |
+| `Ctrl+S`        | shelf        | save the current query as a collection |
+| `←` `→`         | project page | cycle tabs                             |
+| `Escape`        | project page | back to the shelf                      |
+| `↑` `↓`         | quick switch | move through the results               |
+| `Enter`         | quick switch | launch the project                     |
+| `Shift+Enter`   | quick switch | open the project page                  |
+| `Escape`        | quick switch | close                                  |
+| `Escape`        | settings     | close the drawer                       |
 
 Every context owns its keys exclusively and nothing is bound twice — `←` `→` move the grid on the
 shelf and cycle tabs on the project page, and only one of those contexts is ever live.
@@ -211,15 +211,15 @@ Build artifacts land in `dist/`.
 
 ## Stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| Shell | Electron 44 | one engine on both targets, testable in CI |
-| Renderer | React + electron-vite | DOM only in phase 1 |
-| Core | Rust, supervised child process | owns the database, git and rasterisation |
-| Transport | length-prefixed JSON on stdin/stdout | stdout carries frames and nothing else |
-| Database | SQLite via rusqlite, WAL | exactly one writer, and it is the core |
-| Git | native `git`, shelled out | CLI compatibility over a process-spawn saving |
-| Contract | `protocol/schema/protocol.json` → codegen | one source of truth, both languages generated |
+| Layer     | Choice                                    | Why                                           |
+| --------- | ----------------------------------------- | --------------------------------------------- |
+| Shell     | Electron 44                               | one engine on both targets, testable in CI    |
+| Renderer  | React + electron-vite                     | DOM only in phase 1                           |
+| Core      | Rust, supervised child process            | owns the database, git and rasterisation      |
+| Transport | length-prefixed JSON on stdin/stdout      | stdout carries frames and nothing else        |
+| Database  | SQLite via rusqlite, WAL                  | exactly one writer, and it is the core        |
+| Git       | native `git`, shelled out                 | CLI compatibility over a process-spawn saving |
+| Contract  | `protocol/schema/protocol.json` → codegen | one source of truth, both languages generated |
 
 The renderer is sandboxed and cannot open the database. Every read crosses the protocol.
 
@@ -241,7 +241,7 @@ docs/       Release checklist, WSL worker notes
 3. **Two ledgers, never merged.** Git facts recompute from history; playtime counts launched
    sessions. Side by side, never summed — a stacked bar reads as a total, and the total is undefined.
 4. **Never reward volume.** No figure for lines written or commits made. The activity view counts
-   commit-*days*.
+   commit-_days_.
 5. **The renderer may never originate a filesystem path or an executable.** Paths enter only through
    a native dialog the shell owns.
 
@@ -257,7 +257,7 @@ docs/       Release checklist, WSL worker notes
 GPL-3.0-or-later. See [`LICENSE`](LICENSE). The bundled typefaces ship with their own OFL licences
 under `licenses/fonts/`.
 
-* * *
+---
 
 Built for one library, in the open. If it is useful to yours, good — but the shelf it was designed
 against is mine, and the defaults show it.

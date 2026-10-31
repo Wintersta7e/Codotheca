@@ -8,6 +8,7 @@
  */
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { MARKUP_PACKAGES, README_MARKUP_CHUNK } from './lib/markup-chunk.mjs';
+import { NOTICES_FILE } from './third-party-notices.mjs';
 import { dirname, extname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -203,6 +204,9 @@ if (filesBlock === null) {
     if (line.trim().startsWith('#')) continue;
     const glob = line.replace(/^\s*-\s*/u, '').trim();
     if (glob === '') continue;
+    // The notices are written by `scripts/third-party-notices.mjs` at package time, after this
+    // pre-pack guard runs; `check-packaging.mjs` asserts they reached the archive.
+    if (glob === NOTICES_FILE) continue;
     // The only glob shapes this config uses are `dir/**` and a bare path.
     const target = glob.endsWith('/**') ? glob.slice(0, -3) : glob;
     if (!existsSync(join(root, target))) {

@@ -249,9 +249,14 @@ async function main() {
   // surfaces as an unresolved import in code nobody touched.
   await step('gen', npm, ['run', 'gen']);
 
-  await step('cargo-build', 'cargo', ['build', '--release', '--manifest-path', 'core/Cargo.toml'], {
-    CARGO_TARGET_DIR: join(root, cargoTargetDir(process.platform)),
-  });
+  await step(
+    'cargo-build',
+    'cargo',
+    ['build', '--release', '--locked', '--manifest-path', 'core/Cargo.toml'],
+    {
+      CARGO_TARGET_DIR: join(root, cargoTargetDir(process.platform)),
+    },
+  );
   say(`core staged: ${stageCore(process.platform).slice(root.length + 1)}`);
   reportWorkers();
 
