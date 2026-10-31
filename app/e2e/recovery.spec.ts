@@ -226,7 +226,7 @@ function quarantined(dataDir: string): Record<string, string> {
   return out;
 }
 
-test('AC-P4-48-12 the corrupt-index chain restores every registered section end to end', async ({}, testInfo) => {
+test('AC-P4-48-12 AC-P4-50-8 the corrupt-index chain restores every registered section end to end', async ({}, testInfo) => {
   test.skip(!existsSync(coreBinary), NO_CORE);
   test.setTimeout(300_000);
   const dataDir = mkdtempSync(path.join(tmpdir(), 'codotheca-recovery-populated-'));
@@ -268,6 +268,24 @@ test('AC-P4-48-12 the corrupt-index chain restores every registered section end 
   for (const name of planted.quarantinable) {
     expect(notice).toContain(`${name}.corrupt-`);
   }
+
+  // AC-P4-50-8: a card is not the hand-off. A restored N/A ruling waits in the pending table
+  // until the project's first completion write applies it, in the same transaction
+  // (§48.8.4), and a card shows before that write. The core holds the index exclusively, so the
+  // wait reads the completion through the card: its "not computed" rank leaves once it is written.
+  await expect
+    .poll(
+      async () => {
+        const uncomputed: string[] = [];
+        for (const name of planted.shelf) {
+          const card = window.locator('.cdt-card', { hasText: name });
+          if ((await card.locator('.cdt-rank').count()) > 0) uncomputed.push(name);
+        }
+        return uncomputed;
+      },
+      { message: 'shelf cards whose completion is still not computed', timeout: 60_000 },
+    )
+    .toEqual([]);
 
   // The user's close, not `app.quit()`: the core exports on its clean shutdown.
   const closed = app.waitForEvent('close', { timeout: 20_000 });
