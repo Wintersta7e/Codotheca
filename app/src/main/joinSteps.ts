@@ -3,8 +3,9 @@
 // §11.5's premise, stated once: a Squirrel-installed editor lives in a versioned directory and
 // moves on every update, so a stored path goes stale routinely rather than exceptionally.
 // `targets.verify` runs at startup for that reason, and its result feeds both the drawer's
-// rows and §8.0's priority-4 notice.
+// rows and §8.0's priority-4 notice — the notice through `staleTargetsRelay`.
 import type { CommandName, Settings, TargetVerification } from '../generated/protocol';
+import { IPC_STALE_TARGETS, IPC_STALE_TARGETS_NOW } from '../shared/channels';
 import type { JoinStep } from './startup';
 
 type Request = (name: CommandName, args: unknown) => Promise<unknown>;
@@ -30,6 +31,42 @@ export function verifyTargetsStep(
  */
 export function staleTargets(rows: readonly TargetVerification[]): readonly TargetVerification[] {
   return rows.filter((r) => r.verifyState === 'missing');
+}
+
+/**
+ * §8.0's priority-4 notice, fed from the startup sweep. `staleTargets` is its one predicate: the
+ * window is handed the stale rows and never filters again. `send` pushes them to a window that
+ * is listening; `now` answers one that mounted after the push.
+ */
+export function staleTargetsRelay(send: (rows: readonly TargetVerification[]) => void): {
+  readonly onResult: (rows: readonly TargetVerification[]) => void;
+  readonly now: () => readonly TargetVerification[] | null;
+} {
+  let last: readonly TargetVerification[] | null = null;
+  return {
+    onResult: (rows) => {
+      const stale = staleTargets(rows);
+      last = stale;
+      send(stale);
+    },
+    now: () => last,
+  };
+}
+
+/**
+ * The relay on its two channels: the push on `IPC_STALE_TARGETS`, the late-mount answer on
+ * `IPC_STALE_TARGETS_NOW` — `null` until the startup sweep lands, never an empty list that would
+ * claim a check that has not run.
+ */
+export function registerStaleTargets(deps: {
+  readonly handle: (channel: string, fn: () => unknown) => void;
+  readonly send: (channel: string, rows: readonly TargetVerification[]) => void;
+}): ReturnType<typeof staleTargetsRelay> {
+  const relay = staleTargetsRelay((rows) => {
+    deps.send(IPC_STALE_TARGETS, rows);
+  });
+  deps.handle(IPC_STALE_TARGETS_NOW, () => relay.now());
+  return relay;
 }
 
 /**

@@ -56,8 +56,8 @@ import { registerFocusRelease } from './session/focus';
 import {
   bootMirrorStep,
   logLevelStep,
+  registerStaleTargets,
   residentShortcutStep,
-  staleTargets,
   verifyTargetsStep,
 } from './joinSteps';
 import { launchJoinSteps } from './startup/launchSteps';
@@ -459,6 +459,15 @@ async function main(): Promise<void> {
   ipcMain.handle(IPC_REBUILD_REPORT_ACK, () => {
     ackRebuildReport(dataDir);
   });
+  // §11.5 / §8.0 priority 4: the startup sweep's stale rows reach the window's notice slot.
+  const staleRelay = registerStaleTargets({
+    handle: (channel, fn) => {
+      ipcMain.handle(channel, fn);
+    },
+    send: (channel, rows) => {
+      win?.webContents.send(channel, rows);
+    },
+  });
 
   // §2.4: `locations.relocate` is privileged, so the bridge above refuses it by design. It
   // travels its own channel, where the path is whatever this process's dialog returns and never
@@ -655,7 +664,8 @@ async function main(): Promise<void> {
         verifyTargetsStep(
           (name, args) => client.request(name as never, args as never),
           (rows) => {
-            const stale = staleTargets(rows);
+            staleRelay.onResult(rows);
+            const stale = staleRelay.now() ?? [];
             if (stale.length > 0) {
               log.write('warn', 'shell', `${String(stale.length)} launch target(s) missing`);
             }

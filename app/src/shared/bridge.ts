@@ -120,6 +120,10 @@ export interface CodothecaBridge {
   rebuildReport(): Promise<unknown>;
   /** §48.7.1 step 5: the user's acknowledgement, after which the report is gone. */
   ackRebuildReport(): Promise<unknown>;
+  /** §8.0 priority 4: the startup sweep's stale launch targets, pushed when the sweep lands. */
+  onStaleTargets(cb: (rows: unknown) => void): void;
+  /** What `onStaleTargets` last pushed, or `null` before any sweep, for a late window. */
+  staleTargetsNow(): Promise<unknown>;
   /** One batch per frame, never one message per event. */
   onCoreEvents(cb: (batch: unknown) => void): void;
   /**

@@ -23,6 +23,8 @@ import {
   IPC_REBUILD,
   IPC_REBUILD_REPORT,
   IPC_REBUILD_REPORT_ACK,
+  IPC_STALE_TARGETS,
+  IPC_STALE_TARGETS_NOW,
   IPC_RELOCATE,
   IPC_REQUEST,
   IPC_REVEAL,
@@ -97,6 +99,12 @@ const bridge: CodothecaBridge = {
   rebuild: (): Promise<unknown> => ipcRenderer.invoke(IPC_REBUILD),
   rebuildReport: (): Promise<unknown> => ipcRenderer.invoke(IPC_REBUILD_REPORT),
   ackRebuildReport: (): Promise<unknown> => ipcRenderer.invoke(IPC_REBUILD_REPORT_ACK),
+  onStaleTargets: (cb: (rows: unknown) => void): void => {
+    ipcRenderer.on(IPC_STALE_TARGETS, (_event, rows: unknown) => {
+      cb(rows);
+    });
+  },
+  staleTargetsNow: (): Promise<unknown> => ipcRenderer.invoke(IPC_STALE_TARGETS_NOW),
   onCoreEvents: (cb: (batch: unknown) => void): void => {
     ipcRenderer.on(IPC_EVENTS, (_event, batch: unknown) => {
       cb(batch);

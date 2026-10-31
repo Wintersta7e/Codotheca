@@ -6,12 +6,17 @@
  * `dismissedNotices`, because a dismissed `coreFailure` is still rendered and a filter here
  * would silently overrule `UNDISMISSABLE`.
  *
- * A notice with no source is not rendered. §8.0 has six obligations and this raises the two
- * that have a producer today; a third invented here would be inventing a surface.
+ * A notice with no source is not rendered: each candidate below has a producer, and one invented
+ * here would be inventing a surface.
  */
 import { useMemo } from 'react';
 
-import type { DegradedReason, Problems, SyncNotice } from '../../generated/protocol.js';
+import type {
+  DegradedReason,
+  Problems,
+  SyncNotice,
+  TargetVerification,
+} from '../../generated/protocol.js';
 import type { RebuildReport } from '../../shared/rebuildReport.js';
 import type { NoticeCopy, SpawnFailureFacts } from '../notices/copy.js';
 import { IDENTITY_BODY_1, IDENTITY_TITLE } from '../firstrun/copy.js';
@@ -23,6 +28,7 @@ import {
   rebuildOutcomeNotice,
   remoteSyncNotice,
   spawnFailureNotice,
+  staleTargetsNotice,
 } from '../notices/copy.js';
 import type { Notice, NoticeAction, NoticeKind } from '../shelf/notice.js';
 
@@ -54,6 +60,11 @@ export interface NoticeInput {
   readonly sync: SyncNotice | null;
   /** [p4] §48.7.1 step 5: the last rebuild's report, until the user acknowledges it. */
   readonly rebuildReport: RebuildReport | null;
+  /**
+   * §8.0 priority 4: the startup sweep's stale launch targets, already filtered by the shell's
+   * `staleTargets`. `null` is *no sweep has reported*.
+   */
+  readonly staleTargets: readonly TargetVerification[] | null;
   readonly onOpenLog: () => void;
   readonly onOpenScanSummary: () => void;
   /** The rebuild outcome's own action, and its only dismissal. */
@@ -112,6 +123,7 @@ export function useNotices(input: NoticeInput): readonly Notice[] {
     identityToConfirm,
     sync,
     rebuildReport,
+    staleTargets,
     onOpenLog,
     onOpenScanSummary,
     onAckRebuildReport,
@@ -146,6 +158,17 @@ export function useNotices(input: NoticeInput): readonly Notice[] {
       out.push(toNotice('problems', String(problems.runId), scan, runners));
     }
 
+    const stale = staleTargets === null ? null : staleTargetsNotice(staleTargets);
+    if (stale !== null && staleTargets !== null) {
+      // Scoped to the set of targets that have gone, so a dismissal silences these and a target
+      // that goes later asks again.
+      const scope = staleTargets
+        .map((row) => String(row.targetId))
+        .sort()
+        .join(',');
+      out.push(toNotice('targetUnresolved', scope, stale, runners));
+    }
+
     if (sync !== null) {
       // **Scoped to the variant.** `noticeDismissKey` renders `notice.dismissed.remoteSync:<v>`,
       // so dismissing `throttled` does not also hide a later `unauthorized`: the two ask for
@@ -175,6 +198,7 @@ export function useNotices(input: NoticeInput): readonly Notice[] {
     identityToConfirm,
     sync,
     rebuildReport,
+    staleTargets,
     onOpenLog,
     onOpenScanSummary,
     onAckRebuildReport,

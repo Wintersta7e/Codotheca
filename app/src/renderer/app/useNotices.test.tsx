@@ -28,6 +28,7 @@ function input(over: Partial<NoticeInput> = {}): NoticeInput {
     identityToConfirm: false,
     sync: null,
     rebuildReport: null,
+    staleTargets: null,
     onOpenLog: vi.fn(),
     onOpenScanSummary: vi.fn(),
     onAckRebuildReport: vi.fn(),

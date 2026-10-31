@@ -20,6 +20,7 @@ import type {
 import { type CoreStatus, isCoreStatus } from '../../shared/coreStatus';
 import type { EffectsTier, EffectsTierSource } from '../../shared/effectsTier';
 import { isRebuildReport, type RebuildReport } from '../../shared/rebuildReport';
+import type { TargetVerification } from '../../generated/protocol';
 import { call } from '../core/call';
 import { createEventFanout, type ProjectPageDeps } from '../project/deps';
 
@@ -87,6 +88,10 @@ export interface AppDeps extends ProjectPageDeps {
   readonly rebuildReport: () => Promise<RebuildReport | null>;
   /** §48.7.1 step 5: the user's acknowledgement, which removes the report. */
   readonly ackRebuildReport: () => Promise<void>;
+  /** §8.0 priority 4: the startup sweep's stale launch targets, as the shell filtered them. */
+  readonly onStaleTargets: (cb: (rows: readonly TargetVerification[]) => void) => () => void;
+  /** What the shell kept from the sweep; `null` before any sweep or when unreadable. */
+  readonly staleTargetsNow: () => Promise<readonly TargetVerification[] | null>;
   readonly onShortcutState: (cb: (state: ShortcutState) => void) => () => void;
   readonly onOpenPalette: (cb: () => void) => () => void;
   readonly effectsTier: EffectsTier;
@@ -155,6 +160,13 @@ export function createDefaultAppDeps(): AppDeps {
     ackRebuildReport: async () => {
       await bridge.ackRebuildReport();
     },
+    onStaleTargets: createValueFanout<readonly TargetVerification[]>((cb) => {
+      bridge.onStaleTargets((rows) => {
+        const parsed = asTargetVerifications(rows);
+        if (parsed !== null) cb(parsed);
+      });
+    }),
+    staleTargetsNow: async () => asTargetVerifications(await bridge.staleTargetsNow()),
     onShortcutState: createValueFanout<ShortcutState>((cb) => {
       bridge.onShortcutState(cb);
     }),
@@ -170,4 +182,23 @@ export function createDefaultAppDeps(): AppDeps {
     logPath: bridge.logPath,
     buildStamp: bridge.buildStamp,
   };
+}
+
+/**
+ * The shell's stale rows, checked rather than trusted: a value crossing IPC is `unknown`, and a
+ * row missing its display string would draw a notice naming nothing.
+ */
+function asTargetVerifications(value: unknown): readonly TargetVerification[] | null {
+  if (!Array.isArray(value)) return null;
+  const rows = value as readonly unknown[];
+  const valid = rows.every((row) => {
+    if (typeof row !== 'object' || row === null) return false;
+    const r = row as { targetId?: unknown; verifyState?: unknown; execDisplay?: unknown };
+    return (
+      typeof r.targetId === 'number' &&
+      typeof r.verifyState === 'string' &&
+      typeof r.execDisplay === 'string'
+    );
+  });
+  return valid ? (rows as readonly TargetVerification[]) : null;
 }

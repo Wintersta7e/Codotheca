@@ -1,4 +1,9 @@
-import type { CommandArgs, CommandName, CommandResult } from '../../generated/protocol.js';
+import type {
+  CommandArgs,
+  CommandName,
+  CommandResult,
+  TargetVerification,
+} from '../../generated/protocol.js';
 import type { RendererEvent, ShortcutState } from '../../shared/channels.js';
 import type { CoreStatus } from '../../shared/coreStatus.js';
 import type { AppDeps } from './deps.js';
@@ -14,6 +19,8 @@ export interface FakeAppDeps {
   readonly emit: (event: RendererEvent) => void;
   readonly setCoreStatus: (status: CoreStatus) => void;
   readonly setShortcutState: (state: ShortcutState) => void;
+  /** Push the startup sweep's stale rows, as the shell does when the sweep lands. */
+  readonly setStaleTargets: (rows: readonly TargetVerification[]) => void;
   readonly openPalette: () => void;
   /** Every command the surface under test issued, in order. */
   readonly calls: { name: CommandName; args: unknown }[];
@@ -31,6 +38,7 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
 
   let pushStatus: ((status: CoreStatus) => void) | null = null;
   let pushShortcut: ((state: ShortcutState) => void) | null = null;
+  let pushStale: ((rows: readonly TargetVerification[]) => void) | null = null;
   let pushPalette: (() => void) | null = null;
 
   const deps: AppDeps = {
@@ -80,6 +88,11 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
     rebuild: () => Promise.resolve(),
     rebuildReport: () => Promise.resolve(null),
     ackRebuildReport: () => Promise.resolve(),
+    onStaleTargets: createValueFanout<readonly TargetVerification[]>((cb) => {
+      pushStale = cb;
+    }),
+    // No sweep has run: nothing is stale, and nothing claims it is not.
+    staleTargetsNow: () => Promise.resolve(null),
     onShortcutState: createValueFanout<ShortcutState>((cb) => {
       pushShortcut = cb;
     }),
@@ -105,6 +118,7 @@ export function fakeAppDeps(replies: FakeReplies = {}, over: Partial<AppDeps> = 
     },
     setCoreStatus: (status) => pushStatus?.(status),
     setShortcutState: (state) => pushShortcut?.(state),
+    setStaleTargets: (rows) => pushStale?.(rows),
     openPalette: () => pushPalette?.(),
     setNow: (unixSeconds) => {
       nowSeconds = unixSeconds;

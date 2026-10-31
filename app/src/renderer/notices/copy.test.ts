@@ -131,16 +131,16 @@ describe('priority 4: a launch target no longer resolves', () => {
   });
 
   it('counts rather than lists when more than one has gone', () => {
-    const n = staleTargetsNotice([
-      target(),
-      target({ targetId: 2, verifyState: 'not_executable' }),
-    ]);
+    const n = staleTargetsNotice([target(), target({ targetId: 2 })]);
     expect(n?.title).toContain('2');
   });
 
-  it('treats unverified as unknown, never as broken', () => {
-    expect(staleTargetsNotice([target({ verifyState: 'unverified' })])).toBeNull();
-    expect(staleTargetsNotice([target({ verifyState: 'ok' })])).toBeNull();
+  // D5: the rows arrive already filtered by the shell's `staleTargets`, which keeps `missing`
+  // only — `not_executable` has its own window in §11.5 and `unverified` is unknown, not broken.
+  // A second filter here once counted `not_executable` as gone; the notice now counts what it is
+  // handed, so its one way to raise nothing is an empty list.
+  it('raises nothing when no target has gone', () => {
+    expect(staleTargetsNotice([])).toBeNull();
   });
 });
 

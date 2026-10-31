@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   logLevelStep,
+  registerStaleTargets,
   residentShortcutStep,
   staleTargets,
+  staleTargetsRelay,
   verifyTargetsStep,
 } from '../src/main/joinSteps';
+import { IPC_STALE_TARGETS, IPC_STALE_TARGETS_NOW } from '../src/shared/channels';
 import type { TargetId, TargetVerification } from '../src/generated/protocol';
 
 // `TargetId` is a branded number in the generated types, so a literal needs the cast; the
@@ -45,6 +48,46 @@ describe('the join steps', () => {
     // §11.5 draws a different window for each; folding them would send the user looking for a
     // file that never moved.
     expect(staleTargets([notExecutable, unverified])).toEqual([]);
+  });
+
+  // D5: `staleTargets` is the notice's one predicate — the window is handed its rows, and
+  // nothing the renderer holds filters a second time.
+  it('AC-P4-50-2 a missing target raises the notice', () => {
+    const send = vi.fn();
+    const relay = staleTargetsRelay(send);
+    expect(relay.now()).toBeNull();
+    relay.onResult([ok, missing, unverified, notExecutable]);
+    expect(send).toHaveBeenCalledWith([missing]);
+    expect(relay.now()).toEqual([missing]);
+  });
+
+  // §8.0: a window that mounts after the push asks; the main side answers from the last sweep.
+  it('AC-P4-50-2 the late-mount handler answers the last stale rows pushed', () => {
+    const handlers = new Map<string, () => unknown>();
+    const sent: [string, readonly TargetVerification[]][] = [];
+    const relay = registerStaleTargets({
+      handle: (channel, fn) => {
+        handlers.set(channel, fn);
+      },
+      send: (channel, rows) => {
+        sent.push([channel, rows]);
+      },
+    });
+    const now = handlers.get(IPC_STALE_TARGETS_NOW);
+    expect(now).toBeDefined();
+    // No sweep yet: unknown, never an empty list that would claim a check ran.
+    expect(now?.()).toBeNull();
+    relay.onResult([ok, missing, notExecutable]);
+    expect(sent).toEqual([[IPC_STALE_TARGETS, [missing]]]);
+    expect(now?.()).toEqual([missing]);
+  });
+
+  it('AC-P4-50-2 unverified or not_executable raises none', () => {
+    const send = vi.fn();
+    const relay = staleTargetsRelay(send);
+    relay.onResult([ok, unverified, notExecutable]);
+    expect(send).toHaveBeenCalledWith([]);
+    expect(relay.now()).toEqual([]);
   });
 
   it('applies the stored log level to the rolling log', async () => {

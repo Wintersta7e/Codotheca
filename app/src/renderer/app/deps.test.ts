@@ -36,6 +36,8 @@ function stubBridge(): StubBridge {
     rebuild: () => Promise.resolve(true),
     rebuildReport: () => Promise.resolve(null),
     ackRebuildReport: () => Promise.resolve(undefined),
+    onStaleTargets: () => undefined,
+    staleTargetsNow: () => Promise.resolve(null),
     onCoreEvents: (cb) => {
       registrations.push(cb);
     },

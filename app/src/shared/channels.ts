@@ -24,6 +24,13 @@ export const IPC_REBUILD = 'codotheca:rebuild';
 export const IPC_REBUILD_REPORT = 'codotheca:rebuild-report';
 /** §48.7.1 step 5: the user acknowledged the outcome, so the shell removes the report. */
 export const IPC_REBUILD_REPORT_ACK = 'codotheca:rebuild-report-ack';
+/**
+ * §8.0's priority-4 notice: the startup `targets.verify` sweep's **stale** rows, already
+ * filtered by the shell. Pushed when the sweep lands; `_NOW` answers a window that mounted after
+ * the push, with `null` before any sweep has run.
+ */
+export const IPC_STALE_TARGETS = 'codotheca:stale-targets';
+export const IPC_STALE_TARGETS_NOW = 'codotheca:stale-targets-now';
 export const IPC_EVENTS = 'codotheca:events';
 
 /**

@@ -144,11 +144,11 @@ export function problemsNotice(problems: Problems): NoticeCopy | null {
   };
 }
 
-export function staleTargetsNotice(rows: readonly TargetVerification[]): NoticeCopy | null {
-  // `unverified` has not been checked. Drawing it as broken is unknown rendered as a failure.
-  const gone = rows.filter(
-    (r) => r.verifyState === 'missing' || r.verifyState === 'not_executable',
-  );
+/**
+ * `rows` are the shell's `staleTargets` — `missing` only, the one predicate. `unverified` has not
+ * been checked and `not_executable` has its own window in §11.5, so neither reaches this.
+ */
+export function staleTargetsNotice(gone: readonly TargetVerification[]): NoticeCopy | null {
   const first = gone[0];
   if (first === undefined) return null;
   if (gone.length === 1) {

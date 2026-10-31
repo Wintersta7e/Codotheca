@@ -21,6 +21,7 @@ import { useMotionSettings } from './app/useMotionSettings';
 import { useNotices } from './app/useNotices';
 import { useProblems } from './app/useProblems';
 import { useRebuildReport } from './app/useRebuildReport';
+import { useStaleTargets } from './app/useStaleTargets';
 import { useScanStatus } from './app/useScanStatus';
 import { useSessions } from './app/useSessions';
 import { useSync } from './app/useSync';
@@ -107,6 +108,7 @@ export function App(props: AppProps = {}): ReactElement {
     void deps.reveal('index');
   }, [deps]);
   const rebuildOutcome = useRebuildReport(deps);
+  const staleTargets = useStaleTargets(deps);
 
   const notices = useNotices({
     degraded: core.degraded,
@@ -119,6 +121,7 @@ export function App(props: AppProps = {}): ReactElement {
     // [p2] §21.10's banner, from the `sync` topic. `null` is *no sync failure*.
     sync: sync.notice,
     rebuildReport: rebuildOutcome.report,
+    staleTargets,
     onOpenLog: openLog,
     onOpenScanSummary: openScanSummary,
     onAckRebuildReport: rebuildOutcome.acknowledge,
