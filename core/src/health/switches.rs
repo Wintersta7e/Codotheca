@@ -67,7 +67,7 @@ pub fn read_switches(conn: &Connection) -> Result<Vec<HealthCheckSwitch>, IndexE
         out.push(HealthCheckSwitch {
             check,
             // Absent is **on**. The whole default lives in this one expression.
-            enabled: stored.map_or(true, |v| v == "1"),
+            enabled: stored.is_none_or(|v| v == "1"),
         });
     }
     Ok(out)

@@ -91,12 +91,12 @@ fn to_hex(bytes: &[u8]) -> String {
 }
 
 fn from_hex(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return None;
     }
     let raw = hex.as_bytes();
     let mut out = Vec::with_capacity(hex.len() / 2);
-    for pair in raw.chunks_exact(2) {
+    for pair in raw.as_chunks::<2>().0 {
         let s = std::str::from_utf8(pair).ok()?;
         out.push(u8::from_str_radix(s, 16).ok()?);
     }

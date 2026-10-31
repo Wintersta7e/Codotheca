@@ -24,7 +24,7 @@ fn read(index: &mut Index, now: i64) -> LevelReading {
 }
 
 /// A computed reading's figures.
-fn figures(reading: &LevelReading) -> &LevelFigures {
+const fn figures(reading: &LevelReading) -> &LevelFigures {
     reading
         .figures
         .as_ref()

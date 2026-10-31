@@ -53,7 +53,7 @@ impl Index {
     }
 
     /// The one connection, mutably — what a caller opening its own transaction needs.
-    pub fn conn_mut(&mut self) -> &mut Connection {
+    pub const fn conn_mut(&mut self) -> &mut Connection {
         &mut self.conn
     }
 

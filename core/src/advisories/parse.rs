@@ -112,7 +112,7 @@ fn is_npm_published(entry: &serde_json::Value, version: &str) -> bool {
         && entry
             .get("resolved")
             .and_then(serde_json::Value::as_str)
-            .map_or(true, is_registry_tarball)
+            .is_none_or(is_registry_tarball)
 }
 
 /// npm, JSON. **v2/v3's `packages` map and v1's nested `dependencies`**, which are two layouts of
@@ -275,7 +275,7 @@ fn parse_yarn_lock(text: &str) -> LockfileRead {
         } else if let Some(value) = trimmed.strip_prefix("resolution:") {
             let value = value.trim().trim_matches('"');
             entry.off_registry =
-                split_name_version(value).map_or(true, |(_, spec)| !is_registry_resolution(spec));
+                split_name_version(value).is_none_or(|(_, spec)| !is_registry_resolution(spec));
         }
     }
     if let Some(done) = open {

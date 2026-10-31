@@ -116,7 +116,7 @@ fn boundary_before(bytes: &[u8], start: usize) -> bool {
     start
         .checked_sub(1)
         .and_then(|i| bytes.get(i))
-        .map_or(true, |b| !(b.is_ascii_alphanumeric() || *b == b'_'))
+        .is_none_or(|b| !(b.is_ascii_alphanumeric() || *b == b'_'))
 }
 
 /// Every marker occurrence in `bytes`, in `(line, column)` order.

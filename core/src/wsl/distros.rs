@@ -38,8 +38,10 @@ pub fn decode_utf16le(bytes: &[u8]) -> String {
         bytes
     };
     let units: Vec<u16> = body
-        .chunks_exact(2)
-        .filter_map(|pair| Some(u16::from_le_bytes([*pair.first()?, *pair.get(1)?])))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&pair| u16::from_le_bytes(pair))
         .collect();
     char::decode_utf16(units)
         .map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER))

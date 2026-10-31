@@ -30,7 +30,7 @@ fn stash(repo: &TestRepo) -> StashEntries {
 }
 
 /// The number of stash entries, or `None` when the stash cannot be read.
-fn entries(truth: &StashEntries) -> Option<usize> {
+const fn entries(truth: &StashEntries) -> Option<usize> {
     match truth {
         StashEntries::Entries(entries) => Some(entries.len()),
         StashEntries::Unreadable => None,

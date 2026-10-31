@@ -163,7 +163,8 @@ impl FakeProbe {
     /// Set the install time, unix seconds, on every application already added at `exec`.
     pub fn installed_at(&mut self, exec: &str, at: i64) -> &mut Self {
         for a in &mut self.facts.apps {
-            if a.exec == *exec {
+            // `PathBuf == str` is newer than the 1.88 floor; through `Path` it builds there.
+            if a.exec == std::path::Path::new(exec) {
                 a.installed_at = Some(at);
             }
         }

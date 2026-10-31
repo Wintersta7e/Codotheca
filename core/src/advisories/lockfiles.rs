@@ -197,7 +197,7 @@ pub fn walk_lockfiles(root: &Path) -> LockfileWalk {
         .filter(|declared| {
             declared
                 .as_ref()
-                .map_or(true, |eco| !files.iter().any(|f| f.ecosystem == *eco))
+                .is_none_or(|eco| !files.iter().any(|f| f.ecosystem == *eco))
         })
         .count();
     LockfileWalk {

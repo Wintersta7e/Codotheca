@@ -563,7 +563,7 @@ impl Fixture {
             .expect("verified_at")
     }
 
-    fn advance(&mut self, seconds: i64) {
+    const fn advance(&mut self, seconds: i64) {
         self.now += seconds;
     }
 }

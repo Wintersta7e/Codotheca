@@ -205,7 +205,7 @@ pub fn remote_facts(
         _ => (Vec::new(), Vec::new()),
     };
 
-    let permitted = row.as_ref().map_or(true, |r| r.permitted != 0);
+    let permitted = row.as_ref().is_none_or(|r| r.permitted != 0);
     let observed_at = row.as_ref().and_then(|r| r.observed_at);
     let ci_observed_at = row.as_ref().and_then(|r| r.ci_observed_at);
 

@@ -59,7 +59,7 @@ struct Fixture {
 impl Fixture {
     /// `SyncDeps` is not `Clone` — it holds a keychain and a provider — so the fixture hands it
     /// over once, to the one runner a test starts.
-    fn take_deps(&mut self) -> SyncDeps {
+    const fn take_deps(&mut self) -> SyncDeps {
         self.deps.take().expect("deps taken once")
     }
 }

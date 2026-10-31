@@ -1903,11 +1903,11 @@ pub(crate) fn rows(n: usize) -> u64 {
 /// digit.
 pub(crate) fn unhex(s: &str) -> Result<Vec<u8>, IndexError> {
     let raw = s.as_bytes();
-    if raw.len() % 2 != 0 {
+    if !raw.len().is_multiple_of(2) {
         return Err(IndexError::Sidecar(format!("not hex: {s}")));
     }
     let mut out = Vec::with_capacity(raw.len() / 2);
-    for pair in raw.chunks_exact(2) {
+    for pair in raw.as_chunks::<2>().0 {
         let text = std::str::from_utf8(pair).map_err(|e| IndexError::Sidecar(e.to_string()))?;
         out.push(u8::from_str_radix(text, 16).map_err(|e| IndexError::Sidecar(e.to_string()))?);
     }

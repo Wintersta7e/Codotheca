@@ -73,6 +73,9 @@ pub const fn is_revival_gap(prev_day: i64, day: i64) -> bool {
 
 /// The table every ledger reader prices through: `PRICES`, unless a test has overridden it.
 #[must_use]
+// Const-eligible only without `testkit`, whose override reads a runtime cell; `const` here would
+// make the callers const in one feature set only.
+#[allow(clippy::missing_const_for_fn)]
 pub fn prices() -> PriceTable {
     #[cfg(feature = "testkit")]
     if let Some(table) = testkit::prices() {

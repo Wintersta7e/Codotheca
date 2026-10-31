@@ -22,7 +22,7 @@ const RULE_ID = 'no-unaudited-git-spawn';
 const NON_GIT_SPAWNS = [
   { path: 'core/src/launch/spawn.rs', line: 46, program: 'an editor the user chose' },
   { path: 'core/src/launch/probe_linux.rs', line: 27, program: 'a launch probe' },
-  { path: 'core/src/wsl/distros.rs', line: 130, program: 'wsl.exe' },
+  { path: 'core/src/wsl/distros.rs', line: 132, program: 'wsl.exe' },
 ] as const;
 
 /** Only the two fields this file joins on; the register's own validator owns the rest. */

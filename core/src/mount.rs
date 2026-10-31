@@ -147,9 +147,9 @@ pub(crate) fn parse_mountinfo(contents: &str, path: &Path) -> Option<MountEntry>
         if !path.starts_with(&mount_point) {
             continue;
         }
-        let deeper = best.as_ref().map_or(true, |b| {
-            mount_point.components().count() > b.mount_point.components().count()
-        });
+        let deeper = best
+            .as_ref()
+            .is_none_or(|b| mount_point.components().count() > b.mount_point.components().count());
         if deeper {
             best = Some(MountEntry {
                 mount_point,

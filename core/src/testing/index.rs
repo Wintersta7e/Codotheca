@@ -48,7 +48,7 @@ impl TempIndex {
 
     /// The index, mutably — `Index::with_tx` needs it, because so does
     /// `rusqlite::Connection::transaction`.
-    pub fn index_mut(&mut self) -> &mut Index {
+    pub const fn index_mut(&mut self) -> &mut Index {
         &mut self.index
     }
 

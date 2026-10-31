@@ -113,7 +113,7 @@ pub fn is_public_address(addr: IpAddr) -> bool {
             // AAAA record a stranger's README points at.
             // `map_or(true, …)` rather than `is_none_or`, which is newer than this crate's MSRV.
             v6.to_ipv4()
-                .map_or(true, |v4| is_public_address(IpAddr::V4(v4)))
+                .is_none_or(|v4| is_public_address(IpAddr::V4(v4)))
         }
     }
 }

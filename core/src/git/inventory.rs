@@ -119,9 +119,9 @@ fn one_per_path(entries: Vec<IndexEntry>) -> Vec<IndexEntry> {
     let mut chosen: HashMap<Vec<u8>, IndexEntry> = HashMap::new();
     for e in entries {
         // `Option::is_none_or` is stable only from 1.82 and the workspace MSRV is 1.80.
-        let better = chosen.get(&e.path).map_or(true, |existing| {
-            stage_rank(e.stage) < stage_rank(existing.stage)
-        });
+        let better = chosen
+            .get(&e.path)
+            .is_none_or(|existing| stage_rank(e.stage) < stage_rank(existing.stage));
         if better {
             chosen.insert(e.path.clone(), e);
         }

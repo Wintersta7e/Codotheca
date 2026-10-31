@@ -165,7 +165,7 @@ fn config_names_promisor(text: &str) -> bool {
             return true;
         }
         // `map_or`, not `is_none_or`: that is 1.82 and the floor is 1.80.
-        if section.starts_with("remote") && key == "promisor" && value.map_or(true, is_true) {
+        if section.starts_with("remote") && key == "promisor" && value.is_none_or(is_true) {
             return true;
         }
     }

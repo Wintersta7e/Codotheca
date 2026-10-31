@@ -2,7 +2,8 @@
 name = "codotheca-core"
 version = "0.9.0"
 edition = "2021"
-rust-version = "1.80"
+# The floor the locked graph sets: `ignore`, `globset` and the `icu_*` crates declare 1.88.
+rust-version = "1.88"
 license = "GPL-3.0-or-later"
 description = "Codotheca core: scanning, git, index and art rasterisation"
 # Shipped inside the app, never to a registry.
@@ -83,7 +84,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 # the whole tree. A plain kill left eight live git processes holding file locks (§3.4).
 command-group = "5"
 # Cross-platform advisory file locks with no libc and no unsafe in our tree. std's own
-# File::try_lock is stable only from 1.89 and the workspace MSRV is 1.80.
+# File::try_lock is stable only from 1.89 and the workspace MSRV is 1.88. Re-decide at the MSRV
+# follow-up.
 fs4 = "1.1"
 # The parallel directory walk (J0). Standard filters off: this is a filesystem census, not a
 # git operation, so nothing may be hidden by a `.gitignore`.
@@ -96,8 +98,9 @@ ignore = "0.4"
 # pure Rust, so there is no OpenSSL to build for two targets — the doctrine this file already
 # states for `image-webp` and `tiny-skia`.
 #
-# NOT keyring 4.x: its `rust-version` is 1.88.0 against this package's 1.80. Adopting it is a
-# workspace MSRV decision, not an accounts decision.
+# NOT keyring 4.x, held at 3.x: 4.x's `rust-version` is 1.88.0, which this package's floor now
+# meets, so the hold is no longer forced. Adopting it is a workspace MSRV decision, not an
+# accounts decision — re-decide at the MSRV follow-up.
 keyring = { version = "3.6.3", optional = true, default-features = false, features = [
     "windows-native",
     "sync-secret-service",
@@ -138,11 +141,11 @@ tiny-skia = "0.12"
 # the failure cases be "detected and stated plainly rather than silently falling back", which a
 # stub cannot do.
 #
-# PINNED EXACTLY, and not a caret: `5.2.9` raises its `rust-version` to 1.85 against this
-# package's 1.80, so `^5.2.3` silently locks a version this crate does not claim to support.
-# Lifting the pin is a workspace MSRV decision, not a removal decision — the same rule that
-# kept `keyring` at 3.x. New crates for the two shipped targets are `scopeguard` and
-# `urlencoding` only; `chrono`, `libc`, `log` and `once_cell` were already in the graph, and
+# PINNED EXACTLY, and not a caret: `5.2.9` raised its `rust-version` to 1.85, above the 1.80
+# floor this pin was set under; the 1.88 floor now covers it, so the pin is no longer forced.
+# Lifting it is a workspace MSRV decision, not a removal decision — the same rule that keeps
+# `keyring` at 3.x. Re-decide at the MSRV follow-up. New crates for the two shipped targets
+# are `scopeguard` and `urlencoding` only; `chrono`, `libc`, `log` and `once_cell` were already in the graph, and
 # the `objc2*` entries this adds to Cargo.lock are macOS-only and are never built for either.
 trash = "=5.2.3"
 

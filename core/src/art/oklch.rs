@@ -112,7 +112,7 @@ fn in_gamut(rgb: (f64, f64, f64)) -> bool {
     (0.0..=1.0).contains(&red) && (0.0..=1.0).contains(&green) && (0.0..=1.0).contains(&blue)
 }
 
-fn clip(rgb: (f64, f64, f64)) -> (f64, f64, f64) {
+const fn clip(rgb: (f64, f64, f64)) -> (f64, f64, f64) {
     let (red, green, blue) = rgb;
     (
         red.clamp(0.0, 1.0),
@@ -153,7 +153,7 @@ fn map_to_gamut(color: Oklch) -> (f64, f64, f64) {
     // its stopping rule as this width, and a step count would be a second, drifting copy of it.
     #[allow(clippy::while_float)]
     while high - low > MAP_EPSILON {
-        let chroma = (low + high) / 2.0;
+        let chroma = f64::midpoint(low, high);
         let current = oklch_to_oklab(Oklch { c: chroma, ..color });
         let current_rgb = oklab_to_linear_srgb(current);
         if low_in_gamut && in_gamut(current_rgb) {

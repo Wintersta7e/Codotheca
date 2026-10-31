@@ -213,7 +213,7 @@ impl StageMachine {
     }
 
     /// Never let a figure go backwards inside one phase.
-    fn clamp(&mut self, mut observation: StageObservation) -> StageObservation {
+    const fn clamp(&mut self, mut observation: StageObservation) -> StageObservation {
         match (self.high_water, observation.done) {
             (Some(high), Some(done)) if done < high => observation.done = Some(high),
             (_, Some(done)) => self.high_water = Some(done),

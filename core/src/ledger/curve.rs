@@ -56,6 +56,9 @@ fn rounded(value: f64) -> i64 {
 }
 
 /// The thresholds every reader goes through: `LEVEL_THRESHOLDS`, unless a test overrode them.
+// Const-eligible only without `testkit`, whose override reads a runtime cell; `const` here would
+// make the callers const in one feature set only.
+#[allow(clippy::missing_const_for_fn)]
 fn thresholds() -> [i64; 200] {
     #[cfg(feature = "testkit")]
     if let Some(curve) = super::price::testkit::curve() {

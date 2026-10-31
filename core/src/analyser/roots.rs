@@ -26,7 +26,7 @@ impl Roots {
     /// Does anything here need an elsewhere? Stash entries never do: they are `stash_present`
     /// before the network step, which is what keeps step 6 from running for them (AC-P4-45-16).
     #[must_use]
-    pub fn need_elsewhere(&self) -> bool {
+    pub const fn need_elsewhere(&self) -> bool {
         !self.walked.is_empty() || !self.tags.is_empty()
     }
 }

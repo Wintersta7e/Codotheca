@@ -115,7 +115,5 @@ pub fn advisory_due(conn: &Connection, now: i64) -> Result<bool, IndexError> {
             |row| row.get(0),
         )
         .unwrap_or(None);
-    Ok(newest.map_or(true, |at| {
-        at.saturating_add(ADVISORY_SWEEP_INTERVAL_SECS) <= now
-    }))
+    Ok(newest.is_none_or(|at| at.saturating_add(ADVISORY_SWEEP_INTERVAL_SECS) <= now))
 }
