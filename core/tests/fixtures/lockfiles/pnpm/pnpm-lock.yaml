@@ -1,0 +1,65 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      git-pkg:
+        specifier: git+ssh://git@git.example.com/owner/git-pkg.git
+        version: git+ssh://git@git.example.com/owner/git-pkg.git#6a53f4ba8b006b005a508f28dd6a534c21d31412
+      hosted-pkg:
+        specifier: github:owner/hosted-pkg
+        version: https://codeload.github.com/owner/hosted-pkg/tar.gz/6a53f4ba8b006b005a508f28dd6a534c21d31412
+      left-pad-like:
+        specifier: ^1.3.0
+        version: 1.3.0
+      linked-pkg:
+        specifier: link:./linked-pkg
+        version: link:linked-pkg
+      local-pkg:
+        specifier: file:./local-pkg
+        version: file:local-pkg
+      tarball-pkg:
+        specifier: https://example.com/tarball-pkg-1.0.0.tgz
+        version: https://example.com/tarball-pkg-1.0.0.tgz
+      ws-member:
+        specifier: workspace:*
+        version: link:packages/ws-member
+
+  packages/ws-member: {}
+
+packages:
+
+  git-pkg@git+ssh://git@git.example.com/owner/git-pkg.git#6a53f4ba8b006b005a508f28dd6a534c21d31412:
+    resolution: {commit: 6a53f4ba8b006b005a508f28dd6a534c21d31412, repo: ssh://git@git.example.com/owner/git-pkg.git, type: git}
+    version: 1.0.0
+
+  hosted-pkg@https://codeload.github.com/owner/hosted-pkg/tar.gz/6a53f4ba8b006b005a508f28dd6a534c21d31412:
+    resolution: {tarball: https://codeload.github.com/owner/hosted-pkg/tar.gz/6a53f4ba8b006b005a508f28dd6a534c21d31412}
+    version: 1.0.0
+
+  left-pad-like@1.3.0:
+    resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==}
+
+  local-pkg@file:local-pkg:
+    resolution: {directory: local-pkg, type: directory}
+
+  tarball-pkg@https://example.com/tarball-pkg-1.0.0.tgz:
+    resolution: {integrity: sha512-DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD==, tarball: https://example.com/tarball-pkg-1.0.0.tgz}
+    version: 1.0.0
+
+snapshots:
+
+  git-pkg@git+ssh://git@git.example.com/owner/git-pkg.git#6a53f4ba8b006b005a508f28dd6a534c21d31412: {}
+
+  hosted-pkg@https://codeload.github.com/owner/hosted-pkg/tar.gz/6a53f4ba8b006b005a508f28dd6a534c21d31412: {}
+
+  left-pad-like@1.3.0: {}
+
+  local-pkg@file:local-pkg: {}
+
+  tarball-pkg@https://example.com/tarball-pkg-1.0.0.tgz: {}

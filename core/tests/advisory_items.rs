@@ -67,7 +67,7 @@ fn cargo_lock(entries: &[(&str, &str)]) -> String {
     for (name, version) in entries {
         let _ = write!(
             out,
-            "[[package]]\nname = \"{name}\"\nversion = \"{version}\"\n"
+            "[[package]]\nname = \"{name}\"\nversion = \"{version}\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n"
         );
     }
     out

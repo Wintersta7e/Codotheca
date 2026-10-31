@@ -77,7 +77,7 @@ fn lockfile(
     for (name, version) in pkgs {
         let _ = write!(
             body,
-            "[[package]]\nname = \"{name}\"\nversion = \"{version}\"\n"
+            "[[package]]\nname = \"{name}\"\nversion = \"{version}\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n"
         );
     }
     std::fs::write(root.join("Cargo.lock"), body).unwrap();

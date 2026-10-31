@@ -47,7 +47,7 @@ fn write(root: &Path, rel: &str, body: &str) {
 }
 
 fn cargo_lock(name: &str, version: &str) -> String {
-    format!("[[package]]\nname = \"{name}\"\nversion = \"{version}\"\n")
+    format!("[[package]]\nname = \"{name}\"\nversion = \"{version}\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n")
 }
 
 /// Run the real lockfile read over a real directory, at `at`.

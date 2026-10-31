@@ -130,11 +130,11 @@ fn a_j6_run_reads_the_lockfiles_of_the_working_copy() {
     let repo = TestRepo::init();
     repo.write(
         "Cargo.lock",
-        b"[[package]]\nname = \"alpha\"\nversion = \"1.0.0\"\n",
+        b"[[package]]\nname = \"alpha\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
     );
     repo.write(
         "tools/Cargo.lock",
-        b"[[package]]\nname = \"beta\"\nversion = \"2.0.0\"\n",
+        b"[[package]]\nname = \"beta\"\nversion = \"2.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
     );
     let (index, project, _dir) = run_j6(&repo, "worktree");
 
@@ -209,7 +209,7 @@ fn ac_p3_30_11_a_suppressed_projects_lockfiles_are_still_read() {
         let repo = TestRepo::init();
         repo.write(
             "Cargo.lock",
-            b"[[package]]\nname = \"alpha\"\nversion = \"1.0.0\"\n",
+            b"[[package]]\nname = \"alpha\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
         );
         let (index, project, _dir) = run_j6_as(&repo, "worktree", acknowledged_at, is_archived);
         assert!(

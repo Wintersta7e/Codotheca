@@ -201,7 +201,7 @@ fn every_parser_is_total_or_not_read() {
         LockfileRead::NotRead
     );
 
-    let yarn = "# yarn lockfile v1\n\n\nleft@^1.0.0, left@^1.2.0:\n  version \"1.2.3\"\n  resolved \"x\"\n\n\"@scope/right@^2.0.0\":\n  version \"2.0.0\"\n";
+    let yarn = "# yarn lockfile v1\n\n\nleft@^1.0.0, left@^1.2.0:\n  version \"1.2.3\"\n  resolved \"https://registry.yarnpkg.com/left/-/left-1.2.3.tgz#0000\"\n\n\"@scope/right@^2.0.0\":\n  version \"2.0.0\"\n";
     assert_eq!(
         parsed(parse_lockfile("yarn.lock", yarn.as_bytes())),
         vec![pair("left", "1.2.3"), pair("@scope/right", "2.0.0")]
@@ -223,7 +223,7 @@ fn every_parser_is_total_or_not_read() {
         LockfileRead::NotRead
     );
 
-    let cargo = "version = 3\n\n[[package]]\nname = \"left\"\nversion = \"1.2.3\"\n\n[[package]]\nname = \"right\"\nversion = \"2.0.0\"\ndependencies = [\n \"left\",\n]\n";
+    let cargo = "version = 3\n\n[[package]]\nname = \"left\"\nversion = \"1.2.3\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n\n[[package]]\nname = \"right\"\nversion = \"2.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\ndependencies = [\n \"left\",\n]\n";
     assert_eq!(
         parsed(parse_lockfile("Cargo.lock", cargo.as_bytes())),
         vec![pair("left", "1.2.3"), pair("right", "2.0.0")]
@@ -237,7 +237,7 @@ fn every_parser_is_total_or_not_read() {
 
     // `poetry.lock` and `uv.lock` share one reader because they share one format — three files,
     // two ecosystems, one parser.
-    let poetry = "[[package]]\nname = \"requests\"\nversion = \"2.31.0\"\n";
+    let poetry = "[[package]]\nname = \"requests\"\nversion = \"2.31.0\"\nsource = { registry = \"https://pypi.org/simple\" }\n";
     for name in ["poetry.lock", "uv.lock"] {
         assert_eq!(
             parsed(parse_lockfile(name, poetry.as_bytes())),
@@ -319,7 +319,7 @@ fn ac_p3_32_18_the_read_writes_worktree_rows_and_counts_them() {
     write(
         root,
         "Cargo.lock",
-        "[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\n",
+        "[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
     );
     write(
         root,
