@@ -156,6 +156,13 @@ winapi-util = "0.1"
 # parsers beside them are platform-free and are tested on Linux too.
 winreg = "0.56"
 
+# §2.2 clause 3 on Unix: the core consumes SIGTERM, so a signal sent to the shell's whole process
+# group leaves the core's stop to the shell's stdin EOF. Its safe `flag` API only; default
+# features off, because the iterator and channel halves are unused. `signal-hook-registry` and
+# `libc` were already in the graph.
+[target.'cfg(unix)'.dependencies]
+signal-hook = { version = "0.4", default-features = false }
+
 [dev-dependencies]
 tempfile = "3"
 

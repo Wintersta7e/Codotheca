@@ -185,6 +185,13 @@ fn main() -> ExitCode {
         return exit;
     }
 
+    // Before anything that may take time, so a group SIGTERM during startup cannot skip the
+    // orderly close either. A failure costs only that, so it is noted and the core runs on.
+    #[cfg(unix)]
+    if let Err(error) = codotheca_core::lifecycle::consume_sigterm() {
+        note(&format!("codotheca-core: SIGTERM handler: {error}"));
+    }
+
     let args = match parse_args(std::env::args().skip(1)) {
         Ok(a) => a,
         Err(e) => {

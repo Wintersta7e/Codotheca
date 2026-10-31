@@ -218,6 +218,23 @@ impl OsParentProbe {
     }
 }
 
+/// Makes a SIGTERM leave the core running, so its stop stays the shell's.
+///
+/// A logout signals the shell's whole process group, the core with it, and a core that died of
+/// that signal would skip the orderly close the shell starts by closing stdin. The installed
+/// handler only replaces the default action — the flag it sets is read by nothing — so stdin EOF
+/// and [`OsParentProbe`] remain the only two ways the core stops. The shell's own kill is SIGKILL.
+///
+/// # Errors
+/// Returns the OS error when the handler cannot be installed; the core then dies of a SIGTERM as
+/// it did before.
+#[cfg(unix)]
+pub fn consume_sigterm() -> std::io::Result<()> {
+    let unread = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::consts::SIGTERM, unread)?;
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {

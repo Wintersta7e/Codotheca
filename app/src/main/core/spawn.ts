@@ -27,6 +27,12 @@ export interface CoreChild {
   readonly stdin: NodeJS.WritableStream;
   readonly stdout: NodeJS.ReadableStream;
   readonly stderr: NodeJS.ReadableStream;
+  /**
+   * Kills the core at once: SIGKILL, never Node's default SIGTERM. On Unix the core consumes
+   * SIGTERM so that a signal to the shell's whole process group leaves its stop to the shell,
+   * and a SIGTERM kill would reach a core that ignores it. Windows maps every signal to
+   * TerminateProcess.
+   */
   kill(): void;
   onExit(cb: (code: number | null, signal: NodeJS.Signals | null) => void): void;
   onError(cb: (err: Error) => void): void;
@@ -83,7 +89,7 @@ export const spawnCoreChild: SpawnCore = (argv) => {
     stdout: child.stdout,
     stderr: child.stderr,
     kill: (): void => {
-      child.kill();
+      child.kill('SIGKILL');
     },
     onExit: (cb): void => {
       child.on('exit', cb);

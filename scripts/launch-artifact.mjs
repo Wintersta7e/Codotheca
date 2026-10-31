@@ -9,10 +9,10 @@
  * `StdinEof`. It then waits a settle period and reads the log again, because a core that dies at
  * once crash-loops a moment after the shell's first line, behind a window that looks alive.
  *
- * Then the app is asked to quit — SIGTERM to its process group on Linux; on Windows `taskkill`
+ * Then the app is asked to quit — SIGTERM to its main process on Linux; on Windows `taskkill`
  * without `/F` or `/T` to the process that owns the window, which closes it, and closing the
  * window quits — and the exit is awaited. A process tree still alive after the grace period is killed and reported as `killed`,
- * never hidden.
+ * never hidden; a main process that exits non-zero or of a signal is reported as `crashed`.
  *
  * With no data directory given, the app's default one is found under `--default-data-dir`: the
  * child directory whose log this run wrote. That is how an installed and a portable build are
@@ -229,17 +229,33 @@ export async function launch({
   const failure = FAILURE.exec(settled);
   if (failure) throw failWith(`the log in ${found.dir} names ${failure[0]}`);
 
-  killTree(child, 'SIGTERM');
+  // The main process only, never the group: a SIGTERM to the group also takes Chromium's zygote
+  // and GPU process, and the main process then aborts ("GPU process isn't usable") before its
+  // quit steps finish — measured. Windows already asks only the window's owner.
+  if (group) {
+    try {
+      process.kill(child.pid, 'SIGTERM');
+    } catch {
+      // Already gone; the exit below says how.
+    }
+  } else {
+    killTree(child, 'SIGTERM');
+  }
   await Promise.race([exited, sleep(graceMs)]);
-  let quit = 'clean';
   // The first process gone is not the tree gone: on Linux the whole group must have exited.
   const lingering = () => exit === null || (group && alive(child.pid, true));
   const until = Date.now() + graceMs;
   while (lingering() && Date.now() < until) await sleep(pollMs);
+  let quit;
   if (lingering()) {
     killTree(child, 'SIGKILL');
     quit = 'killed';
     await Promise.race([exited, sleep(graceMs)]);
+  } else if (exit.code === 0 && exit.signal === null) {
+    quit = 'clean';
+  } else {
+    // Gone within the grace period is not a clean quit: an abort is gone in time too.
+    quit = `crashed (${String(exit.signal ?? exit.code)})`;
   }
 
   return {

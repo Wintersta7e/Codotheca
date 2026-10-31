@@ -28,7 +28,11 @@ if (mode === 'crash-loop') {
   appendFileSync(log, new Date().toISOString() + ' error shell core failed (crash_loop): two crashes\\n');
 }
 if (mode !== 'no-index') writeFileSync(join(dataDir, 'index.db'), '');
-process.on('SIGTERM', () => process.exit(0));
+process.on('SIGTERM', () => {
+  if (mode === 'die-on-quit') process.kill(process.pid, 'SIGKILL');
+  else if (mode === 'fail-on-quit') process.exit(2);
+  else process.exit(0);
+});
 setInterval(() => undefined, 1000);
 `;
 
@@ -74,6 +78,14 @@ test('AC-P4-48-3 an app that exits before its log line fails, naming the exit co
 test('AC-P4-48-3 a log naming crash_loop fails', async (t) => {
   if (skipReason !== null) return t.skip(skipReason);
   await assert.rejects(start('crash-loop'), /crash_loop/u);
+});
+
+// An app that aborts while it quits is gone within the grace period, as a clean one is; only its
+// exit says which, and Electron's main process dying of a signal is not a clean quit.
+test('AC-P4-50-7 a quit that dies of a signal or exits non-zero is not clean', async (t) => {
+  if (skipReason !== null) return t.skip(skipReason);
+  assert.equal((await start('die-on-quit')).quit, 'crashed (SIGKILL)');
+  assert.equal((await start('fail-on-quit')).quit, 'crashed (2)');
 });
 
 test('AC-P4-48-3 with no data directory given, the one the app wrote is found', async (t) => {

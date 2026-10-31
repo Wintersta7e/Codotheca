@@ -61,7 +61,7 @@ test('closing the window quits the app and every quit step succeeds', async () =
   expect(quitSteps(userData)).toEqual(['shortcut-release released', 'core-shutdown exited']);
 });
 
-test('the release launch script asks the real app to quit, and it does', async () => {
+test('AC-P4-50-7 the release launch script asks the real app to quit, and it does', async () => {
   test.skip(!existsSync(coreBinary), NO_CORE);
   test.setTimeout(180_000);
   const dataDir = mkdtempSync(path.join(tmpdir(), 'codotheca-launch-'));
