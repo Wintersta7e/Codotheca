@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { ReactElement } from 'react';
 import {
   ADD_A_FOLDER_LABEL,
@@ -14,7 +14,9 @@ import {
   ROOTS_EYEBROW,
   ROOTS_HEADLINE,
   ROOTS_LIST_CAPTION,
+  ROOTS_LIST_CAPTION_NEUTRAL,
   ROOTS_STANDFIRST,
+  ROOTS_STANDFIRST_NEUTRAL,
   WHAT_EXACTLY_LABEL,
 } from './copy';
 import {
@@ -67,15 +69,20 @@ export function RootsScreen(props: RootsScreenProps): ReactElement {
   const [whatExactly, setWhatExactly] = useState(false);
   const hidden = EXCLUSION_LIST.length - EXCLUSION_CHIPS_BEFORE_EXPANDER;
   const inert = !consented || busy;
+  // The standfirst and caption name git config and editors as the rows' source; they are drawn
+  // only when a row really came from one.
+  const sourced = rows.some((row) => row.sourced);
+  const standfirst = sourced ? ROOTS_STANDFIRST : ROOTS_STANDFIRST_NEUTRAL;
+  const caption = sourced ? ROOTS_LIST_CAPTION : ROOTS_LIST_CAPTION_NEUTRAL;
 
   return (
     <div className="cdt-fr-view cdt-fr-view--roots" data-effects-tier={tier}>
       <div className="cdt-fr-column">
         <span className="cdt-fr-eyebrow">{ROOTS_EYEBROW}</span>
         <h1 className="cdt-fr-headline">{ROOTS_HEADLINE}</h1>
-        <p className="cdt-fr-standfirst">{ROOTS_STANDFIRST}</p>
+        <p className="cdt-fr-standfirst">{standfirst}</p>
 
-        <div className="cdt-fr-roots" role="group" aria-label={ROOTS_LIST_CAPTION}>
+        <div className="cdt-fr-roots" role="group" aria-label={caption}>
           {rows.map((row) => (
             <RootRowView
               key={row.key}
@@ -87,7 +94,7 @@ export function RootsScreen(props: RootsScreenProps): ReactElement {
             />
           ))}
         </div>
-        <p className="cdt-fr-note">{ROOTS_LIST_CAPTION}</p>
+        <p className="cdt-fr-note">{caption}</p>
         <button type="button" className="cdt-fr-chip cdt-fr-chip--more" onClick={deps.onAddFolder}>
           {ADD_A_FOLDER_LABEL}
         </button>
@@ -151,7 +158,7 @@ export function RootsScreen(props: RootsScreenProps): ReactElement {
                   }}
                 >
                   <span className="cdt-fr-tick" data-on={consented} />
-                  <span>
+                  <span className="cdt-fr-consent-text">
                     <span className="cdt-fr-consent-body">{row.body}</span>
                     <span className="cdt-fr-consent-note">{row.note}</span>
                   </span>
@@ -159,7 +166,7 @@ export function RootsScreen(props: RootsScreenProps): ReactElement {
               ) : (
                 <div key={row.note} className="cdt-fr-consent-row" data-kind="statement">
                   <span className="cdt-fr-consent-dot" data-testid="fr-consent-dot" />
-                  <span>
+                  <span className="cdt-fr-consent-text">
                     <span className="cdt-fr-consent-body">{row.body}</span>
                     <span className="cdt-fr-consent-note">{row.note}</span>
                   </span>
@@ -204,15 +211,28 @@ function RootRowView(props: {
   readonly onToggle: () => void;
 }): ReactElement {
   const { row, on, onToggle } = props;
+  const id = useId();
+  const distroId = `${id}-distro`;
+  const pathId = `${id}-path`;
+  const provenanceId = `${id}-provenance`;
   const body = (
     <>
       {/* §10.1b: the three absolute refusals are listed with no tick slot at all. */}
       {row.tickable ? <span className="cdt-fr-tick" data-on={on} /> : null}
       <span className="cdt-fr-row-body">
         <span className="cdt-fr-path" data-on={row.tickable && on}>
-          {row.pathDisplay}
+          {/* Every distro row renders the same home-parent path; the distro is what tells
+              them apart. */}
+          {row.distro !== '' ? (
+            <span className="cdt-fr-distro" id={distroId}>
+              {row.distro}
+            </span>
+          ) : null}
+          <span id={pathId}>{row.pathDisplay}</span>
         </span>
-        <span className="cdt-fr-provenance">{row.provenance}</span>
+        <span className="cdt-fr-provenance" id={provenanceId}>
+          {row.provenance}
+        </span>
       </span>
       <span className="cdt-fr-count">
         {row.count}
@@ -228,6 +248,9 @@ function RootRowView(props: {
       data-tickable="true"
       role="checkbox"
       aria-checked={on}
+      // The name is the folder the tick adds; where it came from is its description.
+      aria-labelledby={row.distro !== '' ? `${distroId} ${pathId}` : pathId}
+      aria-describedby={provenanceId}
       onClick={onToggle}
     >
       {body}

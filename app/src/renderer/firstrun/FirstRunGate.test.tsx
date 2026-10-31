@@ -7,7 +7,7 @@ import { SETTLE_HOLD_MS } from './phase';
 import { SKIP_AHEAD_LABEL } from '../a11y/names';
 import * as copy from './copy';
 import type { Mock } from 'vitest';
-import type { PickRootReply } from '../../shared/channels';
+import type { CommitSuggestionRequest, PickRootReply } from '../../shared/channels';
 import type { ScanFeedEvent } from './scanFeed';
 import type {
   ProjectId,
@@ -29,7 +29,7 @@ interface Harness {
   readonly shownQueries: string[];
   readonly deps: FirstRunGateDeps & {
     readonly suggestRoots: Mock<() => Promise<readonly RootSuggestion[]>>;
-    readonly commitSuggestion: Mock<(pathDisplay: string) => Promise<RootAdd>>;
+    readonly commitSuggestion: Mock<(row: CommitSuggestionRequest) => Promise<RootAdd>>;
     readonly pickRoot: Mock<(confirmLarge: boolean) => Promise<PickRootReply>>;
     readonly startScan: Mock<() => Promise<void>>;
     readonly loadReveal: Mock<() => Promise<Reveal>>;
@@ -83,13 +83,16 @@ const reveal: Reveal = {
 
 const noRefusal = { root: null, refusedBecause: null, estimatedDirs: null };
 
-function harness(over: Partial<Parameters<typeof FirstRunGate>[0]> = {}): Harness {
+function harness(
+  over: Partial<Parameters<typeof FirstRunGate>[0]> = {},
+  rows: readonly RootSuggestion[] = [suggestion],
+): Harness {
   let emit: (event: ScanFeedEvent) => void = () => undefined;
   const shownQueries: string[] = [];
   const released = vi.fn();
   const deps = {
     nowMs: () => Date.now(),
-    suggestRoots: vi.fn(() => Promise.resolve([suggestion])),
+    suggestRoots: vi.fn(() => Promise.resolve(rows)),
     commitSuggestion: vi.fn(() => Promise.resolve(noRefusal)),
     pickRoot: vi.fn((): Promise<PickRootReply> => Promise.resolve({ kind: 'cancelled' })),
     startScan: vi.fn(() => Promise.resolve(undefined)),
@@ -217,18 +220,44 @@ test('the gate asks the core for suggestions once and draws them with their tick
   expect(row.getAttribute('aria-checked')).toBe('true');
 });
 
-// §2.4: the renderer may never originate a filesystem path. Nothing but a display string the
+// §2.4: the renderer may never originate a filesystem path. Nothing but the display parts the
 // core produced crosses back.
-test('committing a tick sends the display string the core produced, and nothing else', async () => {
+test('committing a tick sends the display parts the core produced, and nothing else', async () => {
   const { deps } = harness();
   await screen.findByText('/somewhere/dev');
   dig();
   await waitFor(() => {
-    expect(deps.commitSuggestion).toHaveBeenCalledWith('/somewhere/dev');
+    expect(deps.commitSuggestion).toHaveBeenCalledWith({
+      kind: 'linux',
+      distro: '',
+      pathDisplay: '/somewhere/dev',
+    });
   });
   await waitFor(() => {
     expect(deps.startScan).toHaveBeenCalledTimes(1);
   });
+});
+
+// LUS-1: two distro rows render one path. Ticking one commits that distro and only that one.
+test('AC-P4-50-1 ticking one of two distros commits exactly that distro', async () => {
+  const distro = (name: string): RootSuggestion => ({
+    pathDisplay: '/home',
+    kind: 'wsl',
+    distro: name,
+    provenance: 'distro',
+    provenanceDetail: 'running',
+    hits: null,
+    preTicked: false,
+  });
+  const { deps } = harness({}, [distro('alpha'), distro('beta')]);
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'beta /home' }));
+  dig();
+  await waitFor(() => {
+    expect(deps.startScan).toHaveBeenCalledTimes(1);
+  });
+  expect(deps.commitSuggestion.mock.calls).toEqual([
+    [{ kind: 'wsl', distro: 'beta', pathDisplay: '/home' }],
+  ]);
 });
 
 // The commit must precede the start, or the walk has no roots.

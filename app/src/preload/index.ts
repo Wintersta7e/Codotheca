@@ -29,6 +29,7 @@ import {
   IPC_SHORTCUT_STATE,
   IPC_UNINSTALL,
   type CommitSuggestionReply,
+  type CommitSuggestionRequest,
   IPC_COMMIT_SUGGESTION,
   type InstallCancelReply,
   type InstallStartReply,
@@ -72,8 +73,12 @@ const bridge: CodothecaBridge = {
     ipcRenderer.invoke(IPC_PICK_ROOT, { confirmLarge }) as Promise<PickRootReply>,
   // A display string and nothing else. The shell resolves it against what `roots.suggest`
   // returned and adds the folder the core itself proposed — the renderer never holds a path.
-  commitSuggestion: (pathDisplay: string): Promise<CommitSuggestionReply> =>
-    ipcRenderer.invoke(IPC_COMMIT_SUGGESTION, { pathDisplay }) as Promise<CommitSuggestionReply>,
+  commitSuggestion: (row: CommitSuggestionRequest): Promise<CommitSuggestionReply> =>
+    ipcRenderer.invoke(IPC_COMMIT_SUGGESTION, {
+      kind: row.kind,
+      distro: row.distro,
+      pathDisplay: row.pathDisplay,
+    }) as Promise<CommitSuggestionReply>,
   // [p2] §24.8: an id and nothing else, and no path in either direction. The core reads the path
   // from the row it re-verifies, and the verdict it acts on is the one it computes itself.
   uninstall: (locationId: number): Promise<UninstallReply> =>

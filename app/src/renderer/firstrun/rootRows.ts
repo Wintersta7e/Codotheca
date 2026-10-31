@@ -2,15 +2,34 @@ import type { RootAdd, RootSuggestion } from '../../generated/protocol';
 import { REFUSAL_REASONS, UNCOMPUTED_GLYPH, UNKNOWN_GLYPH } from './copy';
 
 export interface RootRow {
-  /** The display string. §2.5: the renderer never constructs, compares or returns a path. */
+  /**
+   * The row's identity, built from display parts only. §2.5: the renderer never constructs,
+   * compares or returns a path.
+   */
   readonly key: string;
   readonly pathDisplay: string;
+  /** The WSL distro the row's path lives in; empty for a native path. */
+  readonly distro: string;
+  /** True when a named source — git config or an editor's recent list — proposed the row. */
+  readonly sourced: boolean;
   readonly provenance: string;
   readonly count: string;
   readonly countUnit: 'HITS' | 'PROJECTS';
   readonly ticked: boolean;
   /** False for the three absolute refusals, which are listed with no tick slot at all. */
   readonly tickable: boolean;
+}
+
+/**
+ * A suggestion's identity as the screen can see it: `kind`, `distro` and `pathDisplay`.
+ *
+ * The display string alone is not one. Every WSL distro row renders the same home-parent path,
+ * so a key of the path gave two distros one tick between them.
+ */
+export function suggestionKey(
+  row: Pick<RootSuggestion, 'kind' | 'distro' | 'pathDisplay'>,
+): string {
+  return JSON.stringify([row.kind, row.distro, row.pathDisplay]);
 }
 
 /**
@@ -63,8 +82,10 @@ export function countGlyph(
 export function toRow(row: RootSuggestion, ticked: boolean): RootRow {
   const count = countGlyph(row.hits, null);
   return {
-    key: row.pathDisplay,
+    key: suggestionKey(row),
     pathDisplay: row.pathDisplay,
+    distro: row.distro,
+    sourced: row.provenance === 'gitconfig' || row.provenance === 'editor_recent',
     provenance: provenanceLabel(row),
     count: count.text,
     countUnit: count.unit,
@@ -80,6 +101,8 @@ export function refusedRow(add: RootAdd, pathDisplay: string): RootRow {
   return {
     key: pathDisplay,
     pathDisplay,
+    distro: '',
+    sourced: false,
     provenance: refusal === null ? 'CHOSEN BY YOU' : REFUSAL_REASONS[refusal],
     count: UNKNOWN_GLYPH,
     countUnit: 'HITS',
@@ -89,5 +112,5 @@ export function refusedRow(add: RootAdd, pathDisplay: string): RootRow {
 }
 
 export function initialTicks(rows: readonly RootSuggestion[]): ReadonlySet<string> {
-  return new Set(rows.filter((r) => r.preTicked).map((r) => r.pathDisplay));
+  return new Set(rows.filter((r) => r.preTicked).map(suggestionKey));
 }

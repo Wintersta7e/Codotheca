@@ -1,6 +1,7 @@
 import type { RemoteLinkKind } from '../generated/protocol';
 import type {
   CommitSuggestionReply,
+  CommitSuggestionRequest,
   InstallCancelReply,
   InstallStartReply,
   OpenRemoteLinkReply,
@@ -86,11 +87,12 @@ export interface CodothecaBridge {
   /**
    * Commit a **suggested** root — GAP-16b-1.
    *
-   * The renderer holds only the display string `roots.suggest` returned; the shell resolves it
-   * against that same list and calls `roots.add` with the path the core produced. A string that
-   * names no suggestion, or two, is refused rather than guessed.
+   * The renderer holds only the display parts `roots.suggest` returned — `kind`, `distro` and
+   * `pathDisplay`; the shell resolves them against that same list and calls `roots.add` with the
+   * path and distro the core produced. Parts that name no suggestion, or two, are refused rather
+   * than guessed.
    */
-  commitSuggestion(pathDisplay: string): Promise<CommitSuggestionReply>;
+  commitSuggestion(row: CommitSuggestionRequest): Promise<CommitSuggestionReply>;
   /**
    * [p2] §24.8's removal. It sends an opaque `LocationId` and nothing else: the core reads the
    * path from the row it is about to re-verify, and **no verdict token crosses** — a verdict

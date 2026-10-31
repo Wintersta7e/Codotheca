@@ -155,6 +155,10 @@ fn handle_set_descend(conn: &rusqlite::Connection, args: &Value) -> Result<Value
 struct AddArgs {
     path_bytes: crate::protocol::Bytes,
     confirm_large: bool,
+    /// The WSL distro the path lives in, as the core's own suggestion named it; empty for a
+    /// native path. Every distro row renders the same home-parent path, so without it a ticked
+    /// distro row would add the host's own folder of that name.
+    distro: String,
 }
 
 fn handle_add(
@@ -171,7 +175,7 @@ fn handle_add(
         skip: &env.skip,
         cache: &env.cache,
         platform: env.platform,
-        distro: "",
+        distro: &parsed.distro,
         provenance: crate::protocol::RootProvenance::Dialog,
         now,
         ceiling_for_tests: refuse::DIRECTORY_CEILING,

@@ -1,5 +1,12 @@
 import { test, expect } from 'vitest';
-import { countGlyph, initialTicks, provenanceLabel, refusedRow, toRow } from './rootRows';
+import {
+  countGlyph,
+  initialTicks,
+  provenanceLabel,
+  refusedRow,
+  suggestionKey,
+  toRow,
+} from './rootRows';
 import type { RootSuggestion } from '../../generated/protocol';
 
 const base: RootSuggestion = {
@@ -56,12 +63,15 @@ test('a root that has been walked but has no computable count reads as unknown',
 });
 
 test('pre-ticked rows are ticked and the rest are not', () => {
-  const ticks = initialTicks([
-    base,
-    { ...base, pathDisplay: '/somewhere/synced', provenance: 'cloud_synced', preTicked: false },
-  ]);
-  expect(ticks.has('/somewhere/dev')).toBe(true);
-  expect(ticks.has('/somewhere/synced')).toBe(false);
+  const synced: RootSuggestion = {
+    ...base,
+    pathDisplay: '/somewhere/synced',
+    provenance: 'cloud_synced',
+    preTicked: false,
+  };
+  const ticks = initialTicks([base, synced]);
+  expect(ticks.has(suggestionKey(base))).toBe(true);
+  expect(ticks.has(suggestionKey(synced))).toBe(false);
 });
 
 // §10.1b: three refusals are absolute and are listed with no tick slot at all.
@@ -85,6 +95,11 @@ test('the confirmable refusal keeps its tick', () => {
   expect(row.ticked).toBe(true);
 });
 
-test('a row is keyed by its display string and never by a path the renderer built', () => {
-  expect(toRow(base, true).key).toBe(base.pathDisplay);
+// LUS-1: every distro row renders one home-parent path, so the display string alone is not an
+// identity — two distros keyed by it shared one tick.
+test('a row is keyed by its display parts and never by a path the renderer built', () => {
+  expect(toRow(base, true).key).toBe(suggestionKey(base));
+  const alpha: RootSuggestion = { ...base, pathDisplay: '/home', kind: 'wsl', distro: 'alpha' };
+  const beta: RootSuggestion = { ...alpha, distro: 'beta' };
+  expect(toRow(alpha, false).key).not.toBe(toRow(beta, false).key);
 });

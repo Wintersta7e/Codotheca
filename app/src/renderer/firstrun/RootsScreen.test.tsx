@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { RootsScreen, moreChipLabel, visibleExclusions } from './RootsScreen';
-import { refusedRow, toRow } from './rootRows';
+import { refusedRow, suggestionKey, toRow } from './rootRows';
 import * as copy from './copy';
 import { EXCLUSION_CAPTION, EXCLUSION_LIST } from '../../shared/skipList';
 import type { RootAdd, RootSuggestion } from '../../generated/protocol';
@@ -50,7 +50,7 @@ function draw(over: Partial<Parameters<typeof RootsScreen>[0]> = {}): {
     <RootsScreen
       deps={deps}
       rows={rows}
-      ticked={new Set(['/somewhere/dev'])}
+      ticked={new Set([suggestionKey(suggestion())])}
       consented
       pendingConfirm={null}
       tier="full"
@@ -101,7 +101,9 @@ test('a cloud-synced row arrives unticked and says why', () => {
 test('ticking a row asks the gate, and never mutates a row itself', () => {
   const deps = draw();
   fireEvent.click(required(screen.getAllByRole('checkbox')[1], 'second checkbox'));
-  expect(deps.onToggleRoot).toHaveBeenCalledWith('/somewhere/synced');
+  expect(deps.onToggleRoot).toHaveBeenCalledWith(
+    suggestionKey(suggestion({ pathDisplay: '/somewhere/synced' })),
+  );
 });
 
 // §10.1b: three rows, one of them a control. A checkbox on rows 2 and 3 would store a preference
@@ -239,4 +241,63 @@ test('ADD A FOLDER asks the shell and sends no path', () => {
   // The handler is passed straight to onClick, so the only argument it can ever see is the
   // event — never a path this screen assembled.
   expect(deps.onAddFolder.mock.calls[0]?.filter((a) => typeof a === 'string')).toEqual([]);
+});
+
+const distroRow = (distro: string): RootSuggestion =>
+  suggestion({
+    pathDisplay: '/home',
+    kind: 'wsl',
+    distro,
+    provenance: 'distro',
+    provenanceDetail: 'running',
+    hits: null,
+    preTicked: false,
+  });
+
+// LUS-1: every distro row renders the same home-parent path, so a row that drew the path alone
+// gave two distros one indistinguishable name.
+test('AC-P4-50-1 two distros render two rows, each named by its distro and path', () => {
+  const rows = [toRow(distroRow('alpha'), false), toRow(distroRow('beta'), false)];
+  const deps = draw({ rows, ticked: new Set() });
+
+  const alpha = screen.getByRole('checkbox', { name: 'alpha /home' });
+  const beta = screen.getByRole('checkbox', { name: 'beta /home' });
+  expect(within(alpha).getByText('alpha')).toBeTruthy();
+  expect(within(beta).getByText('beta')).toBeTruthy();
+
+  fireEvent.click(beta);
+  fireEvent.click(alpha);
+  const keys = deps.onToggleRoot.mock.calls.map((call) => call[0] as string);
+  expect(keys).toEqual([required(rows[1], 'beta').key, required(rows[0], 'alpha').key]);
+  expect(new Set(keys).size).toBe(2);
+});
+
+// LUS-3: the checkbox is named by the folder it adds; the provenance is its description, not
+// part of its name.
+test('AC-P4-50-1 a checkbox is named by its path alone, and its provenance describes it', () => {
+  draw();
+  const box = screen.getByRole('checkbox', { name: '/somewhere/dev' });
+  expect(box.getAttribute('aria-describedby')).not.toBeNull();
+  expect(
+    screen.getByRole('checkbox', {
+      name: '/somewhere/dev',
+      description: /GITCONFIG · includeIf gitdir:\/somewhere\/dev\//,
+    }),
+  ).toBe(box);
+});
+
+// LUS-5: the standfirst and caption claim the rows came from git config and editors. With no
+// row naming a source the claim is false, so U26's neutral pair is drawn instead.
+test('AC-P4-50-1 with no row naming a source, the standfirst and caption are the neutral pair', () => {
+  const rows = [
+    toRow(suggestion({ provenance: 'convention', provenanceDetail: null, hits: null }), true),
+    toRow(distroRow('alpha'), false),
+  ];
+  draw({ rows });
+  const standfirst = screen.getByRole('heading', { level: 1 }).nextElementSibling;
+  expect(standfirst?.textContent).toBe(copy.ROOTS_STANDFIRST_NEUTRAL);
+  expect(screen.getByText(copy.ROOTS_LIST_CAPTION_NEUTRAL)).toBeTruthy();
+  expect(screen.queryByText(copy.ROOTS_STANDFIRST)).toBeNull();
+  expect(screen.queryByText(copy.ROOTS_LIST_CAPTION)).toBeNull();
+  expect(screen.getByRole('group', { name: copy.ROOTS_LIST_CAPTION_NEUTRAL })).toBeTruthy();
 });

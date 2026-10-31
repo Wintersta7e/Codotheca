@@ -60,6 +60,8 @@ test('roots.add is the privileged shell-dialog path, and carries bytes not a str
   const c = schema.commands.find((x) => x.name === 'roots.add');
   assert.equal(c.privileged, true);
   assert.equal(c.args.pathBytes, 'Bytes');
+  // AC-P4-50-1: every WSL distro row renders the same path, so the distro travels beside it.
+  assert.equal(c.args.distro, 'String');
 });
 
 // §11.3a draws one row per root and an `N OF M ACTIVE` caption over them. §2.4's table declared

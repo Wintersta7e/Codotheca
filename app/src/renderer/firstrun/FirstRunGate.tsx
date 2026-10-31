@@ -9,7 +9,7 @@ import {
 } from './phase';
 import { INITIAL_SCAN_FEED, milestoneCrossed, scanFeedReducer } from './scanFeed';
 import { MILESTONE_FIGURES, panelFor } from './revealModel';
-import { initialTicks, refusedRow, toRow } from './rootRows';
+import { initialTicks, refusedRow, suggestionKey, toRow } from './rootRows';
 import { RootsScreen } from './RootsScreen';
 import { ScanScreen } from './ScanScreen';
 import { RevealScreen } from './RevealScreen';
@@ -19,7 +19,7 @@ import type { RevealDeps, RevealPanel } from './revealModel';
 import type { ScanFeedEvent } from './scanFeed';
 import type { RootRow } from './rootRows';
 import type { Reveal, RootAdd, RootSuggestion, ScanStatus } from '../../generated/protocol';
-import type { PickRootReply } from '../../shared/channels';
+import type { CommitSuggestionRequest, PickRootReply } from '../../shared/channels';
 import type { ResolvedTier } from '../motion/tier';
 
 export interface TurnHandlers {
@@ -32,11 +32,11 @@ export interface FirstRunGateDeps {
   readonly nowMs: () => number;
   readonly suggestRoots: () => Promise<readonly RootSuggestion[]>;
   /**
-   * GAP-16b-1: no command yet commits a suggestion the core produced. The shell resolves this
-   * through plan 16's `SuggestionCache`; the argument is the display string, never a path the
-   * renderer built.
+   * GAP-16b-1: commits a suggestion the core produced. The shell resolves this through its
+   * `SuggestionCache`; the argument is the row's display parts as the core sent them, never a
+   * path the renderer built.
    */
-  readonly commitSuggestion: (pathDisplay: string) => Promise<RootAdd>;
+  readonly commitSuggestion: (row: CommitSuggestionRequest) => Promise<RootAdd>;
   /**
    * The native dialog behind `IPC_PICK_ROOT`, exactly as `CodothecaBridge.pickRoot` answers it.
    * The three variants are kept apart rather than collapsed to `RootAdd | null`: a dialog the
@@ -196,7 +196,7 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
   }, [state.phase, reveal, loadReveal]);
 
   const rows = useMemo<readonly RootRow[]>(
-    () => [...suggestions.map((s) => toRow(s, ticked.has(s.pathDisplay))), ...extra],
+    () => [...suggestions.map((s) => toRow(s, ticked.has(suggestionKey(s)))), ...extra],
     [suggestions, ticked, extra],
   );
 
@@ -239,14 +239,23 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
         setBusy(true);
         // Commit before start, or the walk has no roots.
         void (async () => {
-          for (const key of ticked) await commitSuggestion(key);
+          // Only a suggestion is committed here: a dialog row was added by the dialog itself.
+          for (const s of suggestions) {
+            if (ticked.has(suggestionKey(s))) {
+              await commitSuggestion({
+                kind: s.kind,
+                distro: s.distro,
+                pathDisplay: s.pathDisplay,
+              });
+            }
+          }
           await startScan();
           setBusy(false);
           dispatch({ kind: 'dig' });
         })();
       },
     }),
-    [pickRoot, commitSuggestion, startScan, ticked, absorb],
+    [pickRoot, commitSuggestion, startScan, ticked, absorb, suggestions],
   );
 
   const turnHandlers = useMemo<TurnHandlers>(

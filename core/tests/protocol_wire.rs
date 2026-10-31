@@ -62,8 +62,7 @@ fn the_protocol_version_is_the_schema_version() {
 fn a_privileged_command_is_the_only_shape_carrying_bytes_inbound() {
     // §2.4's trust rule as the core sees it: a bytes-bearing frame must name one of the three
     // privileged commands. The generated Command enum is what makes that checkable at all.
-    let frame =
-        r#"{"command":"roots.add","args":{"pathBytes":{"b64":"L3RtcA=="},"confirmLarge":false}}"#;
+    let frame = r#"{"command":"roots.add","args":{"pathBytes":{"b64":"L3RtcA=="},"confirmLarge":false,"distro":""}}"#;
     let c: Command = serde_json::from_str(frame).expect("deserialise");
     match c {
         Command::RootsAdd(a) => {

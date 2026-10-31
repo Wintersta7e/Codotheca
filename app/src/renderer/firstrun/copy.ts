@@ -50,6 +50,15 @@ export const ROOTS_STANDFIRST =
  */
 export const ROOTS_LIST_CAPTION = "from your editor's recent projects and .gitconfig";
 
+/**
+ * The standfirst and caption above claim the rows came from git config and editors. When no row
+ * names such a source that claim is false, and these are drawn instead (the user's wording).
+ */
+export const ROOTS_STANDFIRST_NEUTRAL =
+  'These are places that usually hold repositories on this machine, and nothing is read until ' +
+  'you say so.';
+export const ROOTS_LIST_CAPTION_NEUTRAL = 'common places for repositories on this machine';
+
 export const EXCLUSION_HEADING = 'NEVER LOOKED AT';
 export const CONSENT_HEADING = 'CONSENT';
 export const WHAT_EXACTLY_LABEL = 'WHAT EXACTLY';

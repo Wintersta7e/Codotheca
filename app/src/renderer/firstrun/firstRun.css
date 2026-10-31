@@ -148,6 +148,13 @@
 .cdt-fr-row-body {
   flex: 1;
   min-width: 0;
+  /* The path and its provenance are two lines; as inline spans they ran together on one. */
+  display: flex;
+  flex-direction: column;
+}
+.cdt-fr-distro {
+  margin-right: 1ch;
+  color: var(--text-0);
 }
 .cdt-fr-path {
   font-family: var(--font-mono);
@@ -243,6 +250,10 @@
   flex: none;
   margin-top: 5px;
   background: var(--line-5);
+}
+.cdt-fr-consent-text {
+  display: flex;
+  flex-direction: column;
 }
 .cdt-fr-consent-body {
   font-size: 12px;

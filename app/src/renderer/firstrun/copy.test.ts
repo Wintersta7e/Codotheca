@@ -75,6 +75,14 @@ test('the root list is captioned with the two files it read', () => {
   expect(copy.ROOTS_LIST_CAPTION).toBe("from your editor's recent projects and .gitconfig");
 });
 
+// LUS-5 (U26, verbatim): when no row names a source, the screen claims no source.
+test('AC-P4-50-1 the neutral standfirst and caption are the ruled pair, verbatim', () => {
+  expect(copy.ROOTS_STANDFIRST_NEUTRAL).toBe(
+    'These are places that usually hold repositories on this machine, and nothing is read until you say so.',
+  );
+  expect(copy.ROOTS_LIST_CAPTION_NEUTRAL).toBe('common places for repositories on this machine');
+});
+
 // §10.1b: the prototype's "You can use the app while it works." is false by the design's own
 // performance rule — every full-screen flow unmounts the shelf.
 test('the DIG note claims only what is true', () => {

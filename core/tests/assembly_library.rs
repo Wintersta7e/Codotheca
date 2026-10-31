@@ -218,6 +218,8 @@ fn the_binary_scans_a_corpus_and_answers_with_a_library() {
             // The root is this test's own temporary tree, not a folder a user picked, so the
             // directory estimate would only be a slow way to learn what the walk is about to.
             "confirmLarge": true,
+            // A native folder: no WSL distro.
+            "distro": "",
         }),
     );
     assert!(

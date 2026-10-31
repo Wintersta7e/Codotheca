@@ -11,7 +11,12 @@
  */
 import { createContext, useContext } from 'react';
 
-import type { CommitSuggestionReply, RevealTarget, ShortcutState } from '../../shared/channels';
+import type {
+  CommitSuggestionReply,
+  CommitSuggestionRequest,
+  RevealTarget,
+  ShortcutState,
+} from '../../shared/channels';
 import { type CoreStatus, isCoreStatus } from '../../shared/coreStatus';
 import type { EffectsTier, EffectsTierSource } from '../../shared/effectsTier';
 import { isRebuildReport, type RebuildReport } from '../../shared/rebuildReport';
@@ -66,8 +71,8 @@ export interface AppDeps extends ProjectPageDeps {
   readonly nowMs: () => number;
   // `pickRoot`, `installStart` and `installCancel` are inherited: the project page needs all
   // three, so `ProjectPageDeps` owns them and this interface is not a second declaration.
-  /** GAP-16b-1: commit a *suggested* root, which carries a display string and never a path. */
-  readonly commitSuggestion: (pathDisplay: string) => Promise<CommitSuggestionReply>;
+  /** GAP-16b-1: commit a *suggested* root, which carries display parts and never a path. */
+  readonly commitSuggestion: (row: CommitSuggestionRequest) => Promise<CommitSuggestionReply>;
   readonly pickExecutable: (scope: unknown) => Promise<unknown>;
   /** Two named targets, never a path. */
   readonly reveal: (target: RevealTarget) => Promise<unknown>;
@@ -124,7 +129,7 @@ export function createDefaultAppDeps(): AppDeps {
     now: () => Math.floor(nowMs() / 1000),
     nowMs,
     pickRoot: (confirmLarge) => bridge.pickRoot(confirmLarge),
-    commitSuggestion: (pathDisplay) => bridge.commitSuggestion(pathDisplay),
+    commitSuggestion: (row) => bridge.commitSuggestion(row),
     pickExecutable: (scope) => bridge.pickExecutable(scope),
     reveal: (target) => bridge.reveal(target),
     indexLocation: () => bridge.indexLocation(),

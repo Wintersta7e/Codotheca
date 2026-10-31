@@ -22,7 +22,7 @@ import type {
   RootSuggestion,
   ScanStatus,
 } from '../../generated/protocol.js';
-import type { RendererEvent } from '../../shared/channels.js';
+import type { CommitSuggestionRequest, RendererEvent } from '../../shared/channels.js';
 import { appearanceFor } from '../art/appearance.js';
 import { FirstRunGate, type TurnHandlers } from '../firstrun/FirstRunGate.js';
 import type { ScanFeedEvent } from '../firstrun/scanFeed.js';
@@ -228,8 +228,8 @@ export function FirstRunHost(props: FirstRunHostProps): ReactElement {
        * string naming no suggestion, or two — comes back as no root added, which the scan then
        * reports as nothing found under a root nobody added. Visible, rather than a hung button.
        */
-      commitSuggestion: async (pathDisplay: string): Promise<RootAdd> => {
-        const reply = await commitSuggestion(pathDisplay);
+      commitSuggestion: async (row: CommitSuggestionRequest): Promise<RootAdd> => {
+        const reply = await commitSuggestion(row);
         return reply.kind === 'added'
           ? reply.add
           : { root: null, refusedBecause: null, estimatedDirs: null };

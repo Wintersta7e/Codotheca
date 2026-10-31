@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RootAdd, RootId, RootSuggestion } from '../generated/protocol';
 import type { CommitSuggestionReply } from '../shared/channels';
-import { registerSuggestionCommit, SuggestionCache } from './rootPicker';
+import { encodePathBytes, registerSuggestionCommit, SuggestionCache } from './rootPicker';
 
 /**
  * GAP-16b-1. On first run, ticking only *suggested* roots and pressing `DIG IN` added **no
@@ -11,16 +11,21 @@ import { registerSuggestionCommit, SuggestionCache } from './rootPicker';
  * is awkward — the renderer holds only the display string. The shell resolves it against what
  * `roots.suggest` returned and calls `roots.add` with the folder the core itself proposed.
  */
-function suggestion(pathDisplay: string): RootSuggestion {
+function suggestion(pathDisplay: string, distro = ''): RootSuggestion {
   return {
     pathDisplay,
-    kind: 'linux',
-    distro: '',
-    provenance: 'convention',
+    kind: distro === '' ? 'linux' : 'wsl',
+    distro,
+    provenance: distro === '' ? 'convention' : 'distro',
     provenanceDetail: null,
     hits: null,
-    preTicked: true,
+    preTicked: distro === '',
   };
+}
+
+/** What the renderer sends for a ticked row: the row's display parts, never a path it built. */
+function ask(row: RootSuggestion): { kind: string; distro: string; pathDisplay: string } {
+  return { kind: row.kind, distro: row.distro, pathDisplay: row.pathDisplay };
 }
 
 const ADDED: RootAdd = {
@@ -66,7 +71,7 @@ function harness(rows: readonly RootSuggestion[]): Harness {
 describe('committing a suggested root', () => {
   it('adds the folder the core proposed', async () => {
     const h = harness([suggestion('/home/u/code')]);
-    const reply = await h.invoke({ pathDisplay: '/home/u/code' });
+    const reply = await h.invoke(ask(suggestion('/home/u/code')));
 
     expect(reply.kind).toBe('added');
     expect(h.addRoot).toHaveBeenCalledTimes(1);
@@ -77,7 +82,7 @@ describe('committing a suggested root', () => {
 
   it('refuses a display string that names no suggestion, and adds nothing', async () => {
     const h = harness([suggestion('/home/u/code')]);
-    const reply = await h.invoke({ pathDisplay: '/home/u/elsewhere' });
+    const reply = await h.invoke(ask(suggestion('/home/u/elsewhere')));
 
     expect(reply).toEqual({ kind: 'unknown' });
     expect(h.addRoot).not.toHaveBeenCalled();
@@ -87,7 +92,7 @@ describe('committing a suggested root', () => {
     // Two conventional locations can produce one display string. Adding the wrong folder is
     // worse than adding none, so this is a refusal and never a first match.
     const h = harness([suggestion('/home/u/code'), suggestion('/home/u/code')]);
-    const reply = await h.invoke({ pathDisplay: '/home/u/code' });
+    const reply = await h.invoke(ask(suggestion('/home/u/code')));
 
     expect(reply).toEqual({ kind: 'ambiguous' });
     expect(h.addRoot).not.toHaveBeenCalled();
@@ -95,8 +100,8 @@ describe('committing a suggested root', () => {
 
   it('re-reads the suggestions on every commit, so a folder that has gone is refused', async () => {
     const h = harness([suggestion('/home/u/code')]);
-    await h.invoke({ pathDisplay: '/home/u/code' });
-    await h.invoke({ pathDisplay: '/home/u/code' });
+    await h.invoke(ask(suggestion('/home/u/code')));
+    await h.invoke(ask(suggestion('/home/u/code')));
     expect(h.suggestRoots).toHaveBeenCalledTimes(2);
   });
 
@@ -108,17 +113,51 @@ describe('committing a suggested root', () => {
     expect(h.suggestRoots).not.toHaveBeenCalled();
     expect(h.addRoot).not.toHaveBeenCalled();
   });
+
+  // LUS-1: every distro row renders the same home-parent path, so the path alone named two
+  // suggestions and the commit was refused as ambiguous — two ticked distros added nothing.
+  it('AC-P4-50-1 two distros resolve to two roots', async () => {
+    const alpha = suggestion('/home', 'alpha');
+    const beta = suggestion('/home', 'beta');
+    const h = harness([alpha, beta]);
+
+    expect((await h.invoke(ask(alpha))).kind).toBe('added');
+    expect((await h.invoke(ask(beta))).kind).toBe('added');
+    expect(h.addRoot.mock.calls.map((call) => (call[0] as { distro: string }).distro)).toEqual([
+      'alpha',
+      'beta',
+    ]);
+  });
+
+  // S1: what reaches `roots.add` is what the core proposed, the distro included — the cache's
+  // own row, never a value assembled from the renderer's request.
+  it('AC-P4-50-1 the distro passed is the cached one', async () => {
+    const beta = suggestion('/home', 'beta');
+    const cache = new SuggestionCache();
+    cache.remember([suggestion('/home', 'alpha'), beta]);
+    expect(cache.resolve(ask(beta))).toBe(beta);
+    expect(cache.resolve({ kind: 'wsl', distro: 'gamma', pathDisplay: '/home' })).toBeNull();
+
+    const h = harness([beta]);
+    await h.invoke(ask(beta));
+    expect(h.addRoot.mock.calls[0]?.[0]).toEqual({
+      pathBytes: encodePathBytes('/home'),
+      confirmLarge: true,
+      distro: 'beta',
+    });
+  });
 });
 
 describe('the suggestion cache', () => {
   it('answers only for a string exactly one suggestion carries', () => {
     const cache = new SuggestionCache();
-    cache.remember([suggestion('/home/u/code'), suggestion('/home/u/work')]);
-    expect(cache.resolve('/home/u/code')).toBe('/home/u/code');
-    expect(cache.resolve('/home/u/nothing')).toBeNull();
+    const code = suggestion('/home/u/code');
+    cache.remember([code, suggestion('/home/u/work')]);
+    expect(cache.resolve(ask(code))).toBe(code);
+    expect(cache.resolve(ask(suggestion('/home/u/nothing')))).toBeNull();
 
     cache.remember([suggestion('/home/u/code'), suggestion('/home/u/code')]);
-    expect(cache.resolve('/home/u/code')).toBeNull();
-    expect(cache.count('/home/u/code')).toBe(2);
+    expect(cache.resolve(ask(code))).toBeNull();
+    expect(cache.count(ask(code))).toBe(2);
   });
 });

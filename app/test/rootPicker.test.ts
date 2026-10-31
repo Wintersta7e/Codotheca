@@ -2,12 +2,12 @@ import { test, expect } from 'vitest';
 import { IPC_PICK_ROOT } from '../src/shared/channels';
 import type { PickRootReply } from '../src/shared/channels';
 import { encodePathBytes, registerRootPicker } from '../src/main/rootPicker';
-import type { RootAdd, RootId } from '../src/generated/protocol';
+import type { RootAdd, RootId, RootsAddArgs } from '../src/generated/protocol';
 import { required } from '../src/shared/required';
 
 function harness(
   dialog: { canceled: boolean; filePaths: string[] },
-  addRoot: (args: { pathBytes: { b64: string }; confirmLarge: boolean }) => Promise<RootAdd>,
+  addRoot: (args: RootsAddArgs) => Promise<RootAdd>,
 ): (payload: unknown) => Promise<PickRootReply> {
   let handler = null as ((payload: unknown) => Promise<PickRootReply>) | null;
   let registrations = 0;
@@ -62,7 +62,7 @@ test('cancelling the dialog calls nothing and says so', async () => {
 });
 
 test('a chosen folder reaches roots.add exactly once, with the confirmation flag', async () => {
-  const seen: { pathBytes: { b64: string }; confirmLarge: boolean }[] = [];
+  const seen: RootsAddArgs[] = [];
   const handler = harness({ canceled: false, filePaths: ['/somewhere/dev'] }, (args) => {
     seen.push(args);
     return Promise.resolve(added);
@@ -73,6 +73,8 @@ test('a chosen folder reaches roots.add exactly once, with the confirmation flag
   const [call] = seen;
   expect(required(call, 'roots.add call').confirmLarge).toBe(true);
   expect(required(call, 'roots.add call').pathBytes).toEqual(encodePathBytes('/somewhere/dev'));
+  // A dialog pick is a native folder: no WSL distro, whatever the screen was showing.
+  expect(required(call, 'roots.add call').distro).toBe('');
 });
 
 // §10.1a: a refusal comes back with an explanation, never a silent no. The refusal is a normal

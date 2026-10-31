@@ -221,13 +221,19 @@ export interface PickRootRequest {
  * Committing a **suggested** root — GAP-16b-1.
  *
  * §2.4 bars the renderer from originating a filesystem path and `RootSuggestion` carries no
- * bytes, so the renderer holds only a display string. The shell resolves that string against
- * what `roots.suggest` returned and calls `roots.add` with the path the core itself produced;
- * a string that names no suggestion is **refused**, never guessed.
+ * bytes, so the renderer holds only a row's display parts. The shell resolves them against what
+ * `roots.suggest` returned and calls `roots.add` with the path and distro the core itself
+ * produced; parts that name no suggestion are **refused**, never guessed.
  */
 export const IPC_COMMIT_SUGGESTION = 'codotheca:commit-suggestion';
 
+/**
+ * A suggestion's identity as the renderer can see it. Every WSL distro row renders the same
+ * home-parent path, so the path alone cannot tell two distros apart.
+ */
 export interface CommitSuggestionRequest {
+  readonly kind: string;
+  readonly distro: string;
   readonly pathDisplay: string;
 }
 

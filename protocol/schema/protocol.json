@@ -1661,10 +1661,10 @@
     },
     {
       "name": "roots.add",
-      "args": { "pathBytes": "Bytes", "confirmLarge": "bool" },
+      "args": { "pathBytes": "Bytes", "confirmLarge": "bool", "distro": "String" },
       "returns": "RootAdd",
       "privileged": true,
-      "$comment": "privileged: the path originates from a shell-owned native dialog, never from the renderer. §10.1a's refuse-list answers with RootRefusal and an explanation, never a silent no"
+      "$comment": "privileged: the path originates from a shell-owned native dialog, never from the renderer. §10.1a's refuse-list answers with RootRefusal and an explanation, never a silent no. `distro` is the WSL distro the path lives in, copied by the shell from the core's own RootSuggestion; empty for a native path and for every dialog pick"
     },
     { "name": "roots.remove", "args": { "id": "RootId" }, "returns": "Empty" },
     {
