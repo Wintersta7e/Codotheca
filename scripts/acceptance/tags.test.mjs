@@ -87,6 +87,13 @@ test('§37 and §49 own no criterion and phase 4 has no letter, so none mints a 
   assert.deepEqual(tagsIn('ac_p4_38_1a'), []);
 });
 
+test('§50, the follow-up review, owns criteria and mints a phase-4 tag', () => {
+  assert.deepEqual(tagsIn('ac_p4_50_1_two_distros'), ['P4-50-1']);
+  assert.deepEqual(tagsIn('AC-P4-50-8 the recovery spec'), ['P4-50-8']);
+  assert.deepEqual(tagsIn('ac_p4_49_1'), []);
+  assert.deepEqual(tagsIn('ac_p4_51_1'), []);
+});
+
 test('a name carrying all four phases carries all four tags, in order', () => {
   assert.deepEqual(tagsIn('AC-14 and AC-P2-24-3 and AC-P3-28-1 and AC-P4-45-1'), [
     '14',

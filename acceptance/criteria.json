@@ -1302,7 +1302,7 @@
     },
     {
       "id": "42",
-      "title": "A README renders as literal text on both surfaces",
+      "title": "A README renders as literal text in Peek; on the project page no script survives",
       "group": "surfaces",
       "spec": "\u00a716.42",
       "checks": [
@@ -3256,7 +3256,7 @@
     },
     {
       "id": "P2-25-17",
-      "title": "Hostile markup renders as text",
+      "title": "Hostile markup leaves no script element or script text, and details renders as an element",
       "group": "surfaces",
       "spec": "\u00a725.5",
       "checks": [
@@ -15799,7 +15799,7 @@
           "status": "deferred",
           "runner": "e2e",
           "owner": "p4-48",
-          "test": "AC-P4-48-12 the corrupt-index chain restores every registered section end to end",
+          "test": "AC-P4-48-12 AC-P4-50-8 the corrupt-index chain restores every registered section end to end",
           "assert": "The release core and the real shell against a planted corrupt index.db beside a format-2 sidecar populating every registered section: the corrupt_index window paints and claims no quarantine; REBUILD drives the startup mode; the three database files are set aside together with a copy of the sidecar; global and no_scan sections are restored before the scan; after the rescan every subject record is restored exactly once; the persistent notice names the quarantine. Prints the per-section count; fails at zero restored. New-test proof: fails on a2fc935 (a black window, nothing restored).",
           "scanning": true
         },
@@ -15809,7 +15809,7 @@
           "status": "deferred",
           "runner": "e2e",
           "owner": "p4-38",
-          "test": "AC-P4-48-12 the corrupt-index chain restores every registered section end to end",
+          "test": "AC-P4-48-12 AC-P4-50-8 the corrupt-index chain restores every registered section end to end",
           "assert": "The floor clause of the same run: once \u00a738 registers the floor, the rebuilt floor is at least the exported floor. The run's raise-only comparison is vacuous until the floor section exists."
         }
       ]
@@ -16154,6 +16154,351 @@
           "owner": "p4-49",
           "test": "scripts/acceptance/release.test.mjs::ac_p4_48_27 a release run refuses a dirty tree",
           "assert": "A release-mode run refuses a dirty tree: a non-empty working-tree status stops it before anything is graded."
+        }
+      ]
+    },
+    {
+      "id": "P4-50-1",
+      "title": "a WSL distro row adds that distro",
+      "group": "functional",
+      "spec": "\u00a750.5",
+      "checks": [
+        {
+          "id": "AC-P4-50-1",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "AC-P4-50-1 ticking one of two distros commits exactly that distro",
+          "assert": "With two distros suggested, ticking one commits exactly one root whose distro is that name, through the real first-run gate."
+        },
+        {
+          "id": "AC-P4-50-1-rows",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "AC-P4-50-1 two distros render two rows, each named by its distro and path",
+          "assert": "Two suggested distros render two rows, each naming its distro and its path."
+        },
+        {
+          "id": "AC-P4-50-1-name",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "AC-P4-50-1 a checkbox is named by its path alone, and its provenance describes it",
+          "assert": "Each checkbox's accessible name is the path alone; its provenance is its description."
+        },
+        {
+          "id": "AC-P4-50-1-neutral",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "AC-P4-50-1 with no row naming a source, the standfirst and caption are the neutral pair",
+          "assert": "With no row naming a source, the standfirst and caption are U26's neutral pair."
+        },
+        {
+          "id": "AC-P4-50-1-copy",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "AC-P4-50-1 the neutral standfirst and caption are the ruled pair, verbatim",
+          "assert": "The neutral standfirst and caption strings are the ruled pair, verbatim."
+        },
+        {
+          "id": "AC-P4-50-1-picker",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "committing a suggested root AC-P4-50-1 two distros resolve to two roots",
+          "assert": "The shell's root picker resolves two suggested distros to two roots, one per distro."
+        },
+        {
+          "id": "AC-P4-50-1-cached",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "committing a suggested root AC-P4-50-1 the distro passed is the cached one",
+          "assert": "The distro the shell passes for a ticked row is the one the suggestion cached, never \"\"."
+        },
+        {
+          "id": "AC-P4-50-1-core",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-50",
+          "test": "firstrun_roots::ac_p4_50_1_a_distro_root_keeps_its_distro",
+          "assert": "The core adds a ticked distro row's root with that distro's name as its distro, never \"\"."
+        },
+        {
+          "id": "AC-P4-50-1-native",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-50",
+          "test": "firstrun_roots::ac_p4_50_1_a_dialog_folder_stays_native",
+          "assert": "A folder chosen through the native dialog stays a native root with no distro."
+        }
+      ]
+    },
+    {
+      "id": "P4-50-2",
+      "title": "a moved editor raises the notice",
+      "group": "functional",
+      "spec": "\u00a750.5",
+      "checks": [
+        {
+          "id": "AC-P4-50-2",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "AC-P4-50-2 a missing target raises the notice",
+          "assert": "A startup targets.verify result with a missing row renders \u00a78.0's priority-4 stale-target notice."
+        },
+        {
+          "id": "AC-P4-50-2-late",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "AC-P4-50-2 a sweep that lands after the window mounted raises it too",
+          "assert": "A verify result pushed after the window mounted raises the same notice."
+        },
+        {
+          "id": "AC-P4-50-2-none",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "AC-P4-50-2 unverified or not_executable raises none",
+          "assert": "A result holding only unverified or not_executable rows renders no stale-target notice."
+        },
+        {
+          "id": "AC-P4-50-2-join",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "the join steps AC-P4-50-2 a missing target raises the notice",
+          "assert": "The shell's join step forwards a missing row as stale."
+        },
+        {
+          "id": "AC-P4-50-2-now",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "the join steps AC-P4-50-2 the late-mount handler answers the last stale rows pushed",
+          "assert": "The late-mount handler answers the last stale rows pushed, and null before the startup verify."
+        },
+        {
+          "id": "AC-P4-50-2-join-none",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "the join steps AC-P4-50-2 unverified or not_executable raises none",
+          "assert": "The shell's join step forwards no unverified or not_executable row as stale."
+        }
+      ]
+    },
+    {
+      "id": "P4-50-3",
+      "title": "the artifact carries its licences",
+      "group": "functional",
+      "spec": "\u00a750.5",
+      "checks": [
+        {
+          "id": "AC-P4-50-3",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p4-50",
+          "test": "scripts/check-packaging.test.mjs::AC-P4-50-3 a pack without LICENSE or notices fails",
+          "assert": "check:packaging's asar assertion fails when app.asar lacks LICENSE or THIRD-PARTY-NOTICES."
+        },
+        {
+          "id": "AC-P4-50-3-empty",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p4-50",
+          "test": "scripts/check-packaging.test.mjs::AC-P4-50-3 a pack with an empty licence file fails",
+          "assert": "It fails when either file is packed but empty."
+        },
+        {
+          "id": "AC-P4-50-3-files",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p4-50",
+          "test": "scripts/check-packaging.test.mjs::AC-P4-50-3 a pack of what files: names carries both licence files",
+          "assert": "An asar of the bare paths electron-builder.yml's files: names carries both files; dropping LICENSE from files: turns it red."
+        },
+        {
+          "id": "AC-P4-50-3-crates",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p4-50",
+          "test": "scripts/third-party-notices.test.mjs::AC-P4-50-3 the notices name the crates the core links and skip dev and build dependencies",
+          "assert": "The notices name every crate reachable over normal dependencies across the core targets, and no dev or build dependency."
+        },
+        {
+          "id": "AC-P4-50-3-npm",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p4-50",
+          "test": "scripts/third-party-notices.test.mjs::AC-P4-50-3 the notices name every bundled npm package and electron",
+          "assert": "The notices name every npm package the renderer's chunk map carries, plus electron."
+        },
+        {
+          "id": "AC-P4-50-3-zero",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p4-50",
+          "test": "scripts/third-party-notices.test.mjs::AC-P4-50-3 the notices generator fails at zero entries",
+          "assert": "The generator fails at zero crates or zero npm packages."
+        }
+      ]
+    },
+    {
+      "id": "P4-50-4",
+      "title": "inline HTML renders and fetches nothing",
+      "group": "functional",
+      "spec": "\u00a750.5",
+      "checks": [
+        {
+          "id": "AC-P4-50-4",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "README inline HTML (D11) AC-P4-50-4 inline html renders with zero requests",
+          "assert": "A README with an img carrying src and srcset inside p align=center, an HTML comment and details renders with zero network requests on the first frame, no visible comment text and the image placeholder in its place; picture and source render nothing."
+        },
+        {
+          "id": "AC-P4-50-4-attributes",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "README inline HTML (D11) AC-P4-50-4 every network-capable default attribute is absent or walked",
+          "assert": "Every network-capable attribute the sanitiser's defaults allow is absent from the output or walked by the fetch guard."
+        }
+      ]
+    },
+    {
+      "id": "P4-50-5",
+      "title": "an exact name is never cut by the cap",
+      "group": "functional",
+      "spec": "\u00a750.5",
+      "checks": [
+        {
+          "id": "AC-P4-50-5",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-50",
+          "test": "selectPaletteRows AC-P4-50-5 an older exact name outranks 41 newer substring hits",
+          "assert": "With 41 newer substring matches and one older exact match, the exact match is the first rendered row and the count states 42."
+        }
+      ]
+    },
+    {
+      "id": "P4-50-6",
+      "title": "no local package is sent",
+      "group": "functional",
+      "spec": "\u00a750.5",
+      "checks": [
+        {
+          "id": "AC-P4-50-6",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-50",
+          "test": "advisories_local::ac_p4_50_6_npm_sends_registry_only",
+          "assert": "A npm fixture lockfile holding one registry package, one local package of every kind U29 item 6 lists and each git, url or tarball source the format can express yields the registry pair only."
+        },
+        {
+          "id": "AC-P4-50-6-cargo",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-50",
+          "test": "advisories_local::ac_p4_50_6_cargo_sends_registry_only",
+          "assert": "A cargo fixture lockfile holding one registry package, one local package of every kind U29 item 6 lists and each git, url or tarball source the format can express yields the registry pair only."
+        },
+        {
+          "id": "AC-P4-50-6-yarn",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-50",
+          "test": "advisories_local::ac_p4_50_6_yarn_sends_registry_only",
+          "assert": "A yarn fixture lockfile holding one registry package, one local package of every kind U29 item 6 lists and each git, url or tarball source the format can express yields the registry pair only."
+        },
+        {
+          "id": "AC-P4-50-6-pnpm",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-50",
+          "test": "advisories_local::ac_p4_50_6_pnpm_sends_registry_only",
+          "assert": "A pnpm fixture lockfile holding one registry package, one local package of every kind U29 item 6 lists and each git, url or tarball source the format can express yields the registry pair only."
+        },
+        {
+          "id": "AC-P4-50-6-poetry",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-50",
+          "test": "advisories_local::ac_p4_50_6_poetry_sends_registry_only",
+          "assert": "A poetry fixture lockfile holding one registry package, one local package of every kind U29 item 6 lists and each git, url or tarball source the format can express yields the registry pair only."
+        },
+        {
+          "id": "AC-P4-50-6-uv",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-50",
+          "test": "advisories_local::ac_p4_50_6_uv_sends_registry_only",
+          "assert": "A uv fixture lockfile holding one registry package, one local package of every kind U29 item 6 lists and each git, url or tarball source the format can express yields the registry pair only."
+        },
+        {
+          "id": "AC-P4-50-6-own",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-50",
+          "test": "advisories_local::ac_p4_50_6_this_repository_sends_no_own_name",
+          "assert": "This repository's own package-lock.json and core/Cargo.lock yield no app, protocol or codotheca-core pair."
+        }
+      ]
+    },
+    {
+      "id": "P4-50-7",
+      "title": "a SIGTERM leaves the core's shutdown to the shell",
+      "group": "functional",
+      "spec": "\u00a750.5",
+      "checks": [
+        {
+          "id": "AC-P4-50-7",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-50",
+          "test": "sigterm_orderly::ac_p4_50_7_sigterm_does_not_stop_the_core",
+          "assert": "On Unix a core sent SIGTERM is still running 1 s later, and on stdin EOF it then exits through its orderly-close path with exit code 0."
+        },
+        {
+          "id": "AC-P4-50-7-clean",
+          "status": "automated",
+          "runner": "node",
+          "owner": "p4-50",
+          "test": "scripts/launch-artifact.test.mjs::AC-P4-50-7 a quit that dies of a signal or exits non-zero is not clean",
+          "assert": "launch-artifact.mjs prints quit: clean only for an exit with code 0 and no signal."
+        },
+        {
+          "id": "AC-P4-50-7-quit",
+          "status": "automated",
+          "runner": "e2e",
+          "owner": "p4-50",
+          "test": "AC-P4-50-7 the release launch script asks the real app to quit, and it does",
+          "assert": "launch-artifact.mjs asks the main process to quit (SIGTERM to its pid on Unix) and quit.spec.ts records core-shutdown exited."
+        }
+      ]
+    },
+    {
+      "id": "P4-50-8",
+      "title": "the recovery spec closes after the hand-off",
+      "group": "functional",
+      "spec": "\u00a750.5",
+      "checks": [
+        {
+          "id": "AC-P4-50-8",
+          "shares": "AC-P4-48-12",
+          "status": "automated",
+          "runner": "e2e",
+          "owner": "p4-50",
+          "test": "AC-P4-48-12 AC-P4-50-8 the corrupt-index chain restores every registered section end to end",
+          "assert": "The recovery spec closes the window only after no fixture shelf card still shows the Completion not computed rank, polled within its timeout and never slept, and fails naming those cards otherwise."
         }
       ]
     }

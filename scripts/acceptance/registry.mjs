@@ -39,10 +39,11 @@ const P2_ID = /^P2-(2[0-5])-(\d{1,2})$/u;
 // a criterion `P3-32-1` carrying a slug `6-caps`.
 const CHECK_ID_P3 = /^AC-(P3-(?:2[89]|3[0-5])-\d{1,2}[a-c]?)(-[a-z][a-z0-9]*)*$/u;
 const P3_ID = /^P3-(2[89]|3[0-5])-(\d{1,2}[a-c]?)$/u;
-// §49.1's `AC-P4-<section>-<n>`. `3[89]|4[0-8]` refuses §37 and §49, which own no criterion, by
-// the id form rather than a reviewer. No letter: phase 4 has none, and one needs a ruling (R139).
-const CHECK_ID_P4 = /^AC-(P4-(?:3[89]|4[0-8])-\d{1,2})(-[a-z][a-z0-9]*)*$/u;
-const P4_ID = /^P4-(3[89]|4[0-8])-(\d{1,2})$/u;
+// §49.1's `AC-P4-<section>-<n>`. `3[89]|4[0-8]|50` refuses §37 and §49, which own no criterion,
+// by the id form rather than a reviewer; §50 is the follow-up review's. No letter: phase 4 has
+// none, and one needs a ruling (R139).
+const CHECK_ID_P4 = /^AC-(P4-(?:3[89]|4[0-8]|50)-\d{1,2})(-[a-z][a-z0-9]*)*$/u;
+const P4_ID = /^P4-(3[89]|4[0-8]|50)-(\d{1,2})$/u;
 // R44: a plan number, optionally with the letter suffix of a second half — `13`, `13b`, `13c`
 // — and a phase-2, phase-3 or phase-4 plan id, `p2-20`, `p3-36a`, `p4-46b`. Phase 4's three
 // Lane-0 plans carry a capital `L` (`p4-L0a`), so widening the prefix alone refused all three.
@@ -88,8 +89,9 @@ export const PHASE3_SECTIONS = { 28: 18, 29: 29, 30: 18, 31: 18, 32: 23, 33: 12,
 export const LETTERED_P3 = ['P3-28-18a', 'P3-30-11a'];
 
 /**
- * §49.1's table, copied for §36.5's reason (`.dev/spec/` is absent on CI); summed once, at 253, in
- * `registry.test.mjs`. Phase 4 has no letter, so the range and the total are the same number.
+ * §49.1's table plus §50.5's eight, copied for §36.5's reason (`.dev/spec/` is absent on CI);
+ * summed once, in `registry.test.mjs`. Phase 4 has no letter, so the range and the total are the
+ * same number.
  */
 export const PHASE4_SECTIONS = {
   38: 28,
@@ -103,6 +105,7 @@ export const PHASE4_SECTIONS = {
   46: 30,
   47: 22,
   48: 27,
+  50: 8,
 };
 
 /**

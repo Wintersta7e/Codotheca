@@ -1744,7 +1744,7 @@ test('a phase-4 id outside §38–§48 is refused by the id form', () => {
 
 // [p4 Task 5] §49.1's table, copied for §36.5's reason: `.dev/spec/` is absent on CI. The total
 // lives in two places, §49.1 and this one assertion; no other file states it.
-test('PHASE4_SECTIONS is §49.1’s table and sums to 257', () => {
+test('PHASE4_SECTIONS is §49.1’s table plus §50.5 and sums to 265', () => {
   assert.deepEqual(PHASE4_SECTIONS, {
     38: 28,
     39: 13,
@@ -1757,10 +1757,11 @@ test('PHASE4_SECTIONS is §49.1’s table and sums to 257', () => {
     46: 30,
     47: 22,
     48: 27,
+    50: 8,
   });
   assert.equal(
     Object.values(PHASE4_SECTIONS).reduce((a, b) => a + b, 0),
-    257,
+    265,
   );
 });
 
