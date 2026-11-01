@@ -153,6 +153,50 @@ impl RingsRig {
         conn.last_insert_rowid()
     }
 
+    /// Marks `project` enrolled (§30.5): the user has acknowledged it.
+    pub(crate) fn enrol(&self, project: ProjectId) {
+        self.conn()
+            .execute(
+                "UPDATE project SET acknowledged_at = 1 WHERE id = ?1",
+                [project.0],
+            )
+            .unwrap();
+    }
+
+    /// `project`'s `debt_sweep` row for `source`, with `outcome`; a `complete` or `partial` row
+    /// carries a zero item count, as the column's `CHECK` requires.
+    pub(crate) fn sweep(&self, project: ProjectId, source: &str, outcome: &str) {
+        let count = matches!(outcome, "complete" | "partial").then_some(0_i64);
+        self.conn()
+            .execute(
+                "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+                 VALUES (?1, ?2, ?3, ?4, 1)
+                 ON CONFLICT (project_id, source) DO UPDATE
+                   SET outcome = excluded.outcome, item_count = excluded.item_count",
+                rusqlite::params![project.0, source, outcome, count],
+            )
+            .unwrap();
+    }
+
+    /// One `debt_item` of `project` from `source`, in `state` and `scoring`.
+    pub(crate) fn item(&self, project: ProjectId, source: &str, state: &str, scoring: &str) {
+        self.conn()
+            .execute(
+                "INSERT INTO debt_item (project_id, subject_key, source, fingerprint, state,
+                                        scoring, first_seen_at, last_seen_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, 1)",
+                rusqlite::params![
+                    project.0,
+                    format!("subject-{}", project.0),
+                    source,
+                    format!("f{}", self.fresh()),
+                    state,
+                    scoring,
+                ],
+            )
+            .unwrap();
+    }
+
     pub(crate) fn meta(&self, k: &str, v: &str) {
         self.conn()
             .execute(
