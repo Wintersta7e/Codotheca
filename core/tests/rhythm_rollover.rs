@@ -69,6 +69,19 @@ fn seeded(index: &Index, target: u32) {
     }
 }
 
+/// A project with no copy: the library is not empty, and no history is pending.
+fn copyless(index: &Index) {
+    index
+        .conn()
+        .execute(
+            "INSERT INTO project (name, seed_basename, lineage_key, authored_by_user,
+                                  is_reference, created_at, updated_at)
+             VALUES ('q', 'q', 'lin-q', 1, 0, 0, 0)",
+            [],
+        )
+        .unwrap();
+}
+
 /// A `CoreHandler` over `index` in `zone`, with fakes for everything the settlement does not read;
 /// the sink and the clock come back so a test can watch `core/error` and move time.
 fn handler(
@@ -195,6 +208,7 @@ fn rollover(name: &str, zone: Arc<dyn LocalZone>, previous: i64, midnight: i64) 
     let start = midnight - 10;
     let index = Index::open_at(dir.path(), start).unwrap();
     seeded(&index, 3);
+    copyless(&index);
     let (mut h, events, clock) = handler(dir.path(), index, start, zone);
 
     // Sunday 23:59:50 local: the week ending tonight is not complete yet.
@@ -306,6 +320,8 @@ fn startup_settles_after_the_restore() {
         restored, exported,
         "the restore brought the weeks and the target back"
     );
+    // The scan has indexed a project, so the start-up pass runs rather than idling on none.
+    copyless(&rebuilt);
 
     let (mut h, _events, _clock) = handler(dir.path(), rebuilt, now, Arc::new(FixedZone(0)));
     let summary = run_startup(&mut h);
@@ -383,6 +399,75 @@ fn j4(h: &CoreHandler, clock: &Arc<FakeClock>, place: (ProjectId, LocationId), d
         origin: JobOrigin::Walk,
     };
     run_one(h.index(), &deps, &job, &RefCell::new(Vec::new())).unwrap();
+}
+
+#[test]
+fn a_rebuilt_index_settles_no_week_before_a_project_is_indexed() {
+    // Wednesday noon two weeks after week `M`: weeks `M` and `M + 7` are complete and unsettled.
+    let now = (M + 16) * DAY + 12 * 3_600;
+    let dir = tempfile::tempdir().unwrap();
+    let index = Index::open_at(dir.path(), now - 100).unwrap();
+    seeded(&index, 2);
+    index.export_sidecar(now - 50).unwrap();
+    drop(index);
+
+    std::fs::write(Index::db_path(dir.path()), b"this is not a database").unwrap();
+    assert!(matches!(
+        rebuild_in_place(dir.path(), now - 40),
+        Ok(RebuildOutcome::Rebuilt(_))
+    ));
+    let rebuilt = Index::open_at(dir.path(), now - 30).unwrap();
+    let projects: i64 = rebuilt
+        .conn()
+        .query_row("SELECT count(*) FROM project", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        projects, 0,
+        "the rebuilt index holds no project until a scan"
+    );
+    let restored = stored(&rebuilt);
+
+    // Core start runs before any scan: with no project, no history has been read, so a week
+    // settled now would claim a complete, empty history.
+    let (mut h, _events, clock) = handler(dir.path(), rebuilt, now, Arc::new(FixedZone(0)));
+    let summary = run_startup(&mut h);
+    eprintln!("startup over no project: {:?}", summary.rhythm);
+    assert_eq!(
+        stored(&h.index().lock().unwrap()),
+        restored,
+        "a week settled over an index that holds no project"
+    );
+    assert_eq!(summary.rhythm, Some(SettleReport::default()));
+
+    // The scan indexes the user's project and J4 reads its history; the next due pass settles
+    // the missing weeks with their real active days.
+    let place = authored(&mut h.index().lock().unwrap());
+    j4(&h, &clock, place, &[M, M + 1, M + 7]);
+    // The runner's settle row for the job: the project's history is no longer pending.
+    h.index()
+        .lock()
+        .unwrap()
+        .conn()
+        .execute(
+            "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, 'j4', 'ok', 1)",
+            [place.0 .0],
+        )
+        .unwrap();
+    clock.advance(tick());
+    h.pump();
+    let settled_at = now + tick();
+    let after = stored(&h.index().lock().unwrap());
+    eprintln!("after the scan's history: {:?}", after.0);
+    assert_eq!(
+        after.0,
+        [
+            restored.0[0].clone(),
+            restored.0[1].clone(),
+            format!("{}|2|2|counted|complete|{settled_at}", local_date(M)),
+            format!("{}|1|2|missed|complete|{settled_at}", local_date(M + 7)),
+        ],
+        "the first pass after the history was read settles the missing weeks from it"
+    );
 }
 
 #[test]
