@@ -35,6 +35,8 @@ const SETTINGS: Settings = {
     { check: 'todo_marker', enabled: true },
     { check: 'missing_readme', enabled: true },
   ],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
 };
 
 describe('§30.4 the four outcome forms', () => {

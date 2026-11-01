@@ -91,6 +91,8 @@ test('the call names autostart under the key the command takes, and disturbs not
       installRootId: null,
       contentScanEnabled: null,
       healthChecks: null,
+      focusTargetMinutes: null,
+      rhythmTarget: null,
     },
   });
 });

@@ -25,6 +25,8 @@ const settings = (installRootId: RootId | null): Settings => ({
   roastEnabled: true,
   contentScanEnabled: false,
   healthChecks: [],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
   logLevel: 'info',
   installRootId,
 });

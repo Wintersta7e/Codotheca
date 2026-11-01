@@ -75,6 +75,8 @@ function mount(launch: Launch): FakeAppDeps {
     installRootId: null,
     contentScanEnabled: false,
     healthChecks: [],
+    focusTargetMinutes: 45,
+    rhythmTarget: null,
   };
   const fake = fakeAppDeps(
     {

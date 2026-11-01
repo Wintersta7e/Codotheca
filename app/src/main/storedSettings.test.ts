@@ -12,6 +12,8 @@ const answer = (residentShortcut: string | null): Settings => ({
   installRootId: null,
   contentScanEnabled: false,
   healthChecks: [],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
 });
 
 describe('onStoredSettings', () => {

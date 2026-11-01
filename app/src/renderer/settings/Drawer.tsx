@@ -70,6 +70,8 @@ export function toSettingsPatch(patch: Partial<Settings>): SettingsPatch {
     installRootId: patch.installRootId ?? null,
     contentScanEnabled: patch.contentScanEnabled ?? null,
     healthChecks: patch.healthChecks ?? null,
+    focusTargetMinutes: patch.focusTargetMinutes ?? null,
+    rhythmTarget: patch.rhythmTarget ?? null,
   };
 }
 

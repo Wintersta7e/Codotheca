@@ -221,6 +221,7 @@
     "LogLevel": { "kind": "enum", "variants": ["error", "warn", "info", "debug", "trace"] },
     "Settings": {
       "kind": "struct",
+      "$comment": "[p4] §39.12: focusTargetMinutes is 30–1380 and reads 45 when unset; rhythmTarget is 1–7 and null before the first settlement and before any choice",
       "fields": {
         "effectsTier": "EffectsTier",
         "reducedMotionOverride": "bool",
@@ -230,11 +231,14 @@
         "logLevel": "LogLevel",
         "installRootId": "RootId?",
         "contentScanEnabled": "bool",
-        "healthChecks": "[HealthCheckSwitch]"
+        "healthChecks": "[HealthCheckSwitch]",
+        "focusTargetMinutes": "u32",
+        "rhythmTarget": "u32?"
       }
     },
     "SettingsPatch": {
       "kind": "struct",
+      "$comment": "[p4] §39.13: focusTargetMinutes 30–1380 and rhythmTarget 1–7; a value out of range is refused with the PROTOCOL failure settings.set already answers an invalid value with, and nothing is written. A rhythmTarget sets its basis to chosen. No patch clears rhythmTarget: null leaves it alone",
       "fields": {
         "effectsTier": "EffectsTier?",
         "reducedMotionOverride": "bool?",
@@ -244,7 +248,9 @@
         "logLevel": "LogLevel?",
         "installRootId": "RootId?",
         "contentScanEnabled": "bool?",
-        "healthChecks": "[HealthCheckSwitch]?"
+        "healthChecks": "[HealthCheckSwitch]?",
+        "focusTargetMinutes": "u32?",
+        "rhythmTarget": "u32?"
       }
     },
 

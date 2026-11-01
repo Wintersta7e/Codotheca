@@ -40,6 +40,8 @@ const settings: Settings = {
     { check: 'todo_marker', enabled: true },
     { check: 'missing_readme', enabled: false },
   ],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
 };
 
 /** Every slot supplied, so every row the registry declares is actually drawn. */

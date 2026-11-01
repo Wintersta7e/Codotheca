@@ -1318,6 +1318,12 @@ test('§39 declares RingsState and its eight parts', () => {
       assert.ok(!variant.includes('_'), `${name}.${variant} must be camelCase`);
     }
   }
+  // §39.13's four settings fields: the stored targets read back non-null for Focus (45 when
+  // unset) and null for the rhythm until one exists; a patch names either or neither.
+  assert.equal(schema.types.Settings.fields.focusTargetMinutes, 'u32');
+  assert.equal(schema.types.Settings.fields.rhythmTarget, 'u32?');
+  assert.equal(schema.types.SettingsPatch.fields.focusTargetMinutes, 'u32?');
+  assert.equal(schema.types.SettingsPatch.fields.rhythmTarget, 'u32?');
 });
 
 /**

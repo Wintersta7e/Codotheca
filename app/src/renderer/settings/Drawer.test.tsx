@@ -32,6 +32,8 @@ const settings: Settings = {
   installRootId: null,
   contentScanEnabled: false,
   healthChecks: [],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
 };
 
 const answers = (name: CommandName): unknown => {
@@ -149,6 +151,8 @@ describe('the settings drawer', () => {
       installRootId: null,
       contentScanEnabled: null,
       healthChecks: null,
+      focusTargetMinutes: null,
+      rhythmTarget: null,
     });
     expect(toSettingsPatch({ effectsTier: 'off' }).effectsTier).toBe('off');
   });

@@ -22,6 +22,8 @@ const fn empty_patch() -> SettingsPatch {
         install_root_id: None,
         content_scan_enabled: None,
         health_checks: None,
+        focus_target_minutes: None,
+        rhythm_target: None,
     }
 }
 
@@ -191,11 +193,15 @@ fn every_setting_round_trips_through_the_stored_form() {
             install_root_id: Some(RootId(7)),
             content_scan_enabled: Some(true),
             health_checks: None,
+            focus_target_minutes: Some(90),
+            rhythm_target: Some(5),
         },
         NOW,
     )
     .expect("write");
     assert_eq!(written, settings::read(index.conn()).expect("read"));
+    assert_eq!(written.focus_target_minutes, 90);
+    assert_eq!(written.rhythm_target, Some(5));
     assert_eq!(written.effects_tier, EffectsTier::Reduced);
     assert_eq!(written.log_level, LogLevel::Debug);
     assert!(written.reduced_motion_override);

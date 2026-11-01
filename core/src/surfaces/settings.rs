@@ -6,6 +6,7 @@ use crate::index::IndexError;
 use crate::proto::dispatch::{parse_args, CommandFailure}; // R15: one helper, plan 03's
 use crate::proto::txguard::TxGuard;
 use crate::protocol::{EffectsTier, LogLevel, RootId, Settings, SettingsPatch, SettingsSetArgs};
+use crate::rings::{targets, FOCUS_TARGET_DEFAULT_MINUTES};
 use crate::surfaces::SurfaceCtx;
 
 /// `app_meta` key for the effects tier, stored as its protocol string.
@@ -64,6 +65,10 @@ pub const DEFAULTS: Settings = Settings {
     // per `DebtSource` variant, always in full, and it is built by reading the enum rather than
     // by writing a table down. `read` fills it; this const carries the scalar defaults only.
     health_checks: Vec::new(),
+    // §39.12: absent reads 45, and no rhythm target exists before the first settlement or a
+    // choice — `None`, never a default the week would be judged against.
+    focus_target_minutes: FOCUS_TARGET_DEFAULT_MINUTES,
+    rhythm_target: None,
 };
 
 /// # Errors
@@ -73,8 +78,8 @@ pub fn handle_get(ctx: &SurfaceCtx<'_>) -> Result<Settings, CommandFailure> {
 }
 
 /// # Errors
-/// Fails when the arguments do not parse, when the proposed chord binds nothing, or when the
-/// index cannot be written.
+/// Fails when the arguments do not parse, when the proposed chord binds nothing, when a target
+/// lies outside its range, or when the index cannot be written.
 pub fn handle_set(
     ctx: &SurfaceCtx<'_>,
     args: serde_json::Value,
@@ -88,11 +93,15 @@ pub fn handle_set(
             ));
         }
     }
+    // §39.13: an out-of-range target is the same refusal as an invalid chord, checked before
+    // anything is written; `write` re-checks inside its transaction.
+    targets::check_patch(&args.patch).map_err(|e| CommandFailure::protocol(e.to_string()))?;
     write(ctx.index.conn(), &args.patch, ctx.now)
         .map_err(|e| CommandFailure::internal(e.to_string()))
 }
 
-fn get(conn: &rusqlite::Connection, key: &str) -> Result<Option<String>, IndexError> {
+/// One `app_meta` value, `None` when the key is absent.
+pub(crate) fn get(conn: &rusqlite::Connection, key: &str) -> Result<Option<String>, IndexError> {
     let mut stmt = conn.prepare("SELECT v FROM app_meta WHERE k = ?1")?;
     let mut rows = stmt.query([key])?;
     Ok(match rows.next()? {
@@ -101,7 +110,8 @@ fn get(conn: &rusqlite::Connection, key: &str) -> Result<Option<String>, IndexEr
     })
 }
 
-fn put(conn: &rusqlite::Connection, key: &str, value: &str) -> Result<(), IndexError> {
+/// Inserts or replaces one `app_meta` value.
+pub(crate) fn put(conn: &rusqlite::Connection, key: &str, value: &str) -> Result<(), IndexError> {
     conn.execute(
         "INSERT INTO app_meta (k, v) VALUES (?1, ?2)
          ON CONFLICT(k) DO UPDATE SET v = excluded.v",
@@ -137,6 +147,8 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings, IndexError> {
         // §30.9: one entry per `DebtSource` variant, always in full, with an absent key read
         // as **on** — `roast_enabled`'s precedent, applied per check.
         health_checks: crate::health::switches::read_switches(conn)?,
+        focus_target_minutes: targets::focus_target_minutes(conn)?,
+        rhythm_target: targets::rhythm_target(conn)?.map(|(target, _basis)| target),
     })
 }
 
@@ -156,7 +168,8 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings, IndexError> {
 /// deciding what time the stamp would carry.
 ///
 /// # Errors
-/// Fails when the index cannot be written.
+/// Fails when the index cannot be written, or when a target lies outside its range — then the
+/// whole patch is rolled back.
 pub fn write(
     conn: &rusqlite::Connection,
     patch: &SettingsPatch,
@@ -193,6 +206,13 @@ pub fn write(
             // §30.9. Applies only the entries it names, and an entry turned off takes the
             // source's sweep row with it — never a `debt_item` row.
             crate::health::switches::write_switches(&tx, v)?;
+        }
+        if let Some(v) = patch.focus_target_minutes {
+            targets::set_focus_target(&tx, v)?;
+        }
+        if let Some(v) = patch.rhythm_target {
+            // §39.8: basis `chosen`, so the first settlement keeps it rather than deriving one.
+            targets::choose_rhythm_target(&tx, v)?;
         }
         if let Some(v) = patch.content_scan_enabled {
             put(&tx, KEY_CONTENT_SCAN_ENABLED, bit(v))?;

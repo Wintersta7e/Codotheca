@@ -29,6 +29,8 @@ const settings: Settings = {
   installRootId: null,
   contentScanEnabled: false,
   healthChecks: [],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
 };
 
 const stored: BootFile = {

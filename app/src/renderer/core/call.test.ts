@@ -27,6 +27,8 @@ describe('the renderer call wrapper', () => {
       installRootId: null,
       contentScanEnabled: null,
       healthChecks: null,
+      focusTargetMinutes: null,
+      rhythmTarget: null,
     };
     expect(await call('settings.set', { patch })).toEqual(settings);
     expect(request).toHaveBeenCalledWith('settings.set', { patch });

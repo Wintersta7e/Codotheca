@@ -34,6 +34,8 @@ const SETTINGS: Settings = {
   installRootId: null,
   contentScanEnabled: true,
   healthChecks: [],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
 };
 
 const LIVE: HealthReading = {

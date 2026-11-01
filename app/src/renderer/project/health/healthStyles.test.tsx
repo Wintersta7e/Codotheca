@@ -54,6 +54,8 @@ const SETTINGS: Settings = {
     { check: 'todo_marker', enabled: true },
     { check: 'missing_tests', enabled: false },
   ],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
 };
 
 /** One check per outcome, so every form is on the page at once. */

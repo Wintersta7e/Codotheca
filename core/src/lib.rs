@@ -50,6 +50,7 @@ pub mod readme;
 pub mod remote;
 pub mod removal;
 pub mod restoration;
+pub mod rings;
 pub mod scan;
 pub mod session;
 pub mod stats;

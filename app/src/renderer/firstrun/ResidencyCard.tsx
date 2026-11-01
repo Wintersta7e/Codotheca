@@ -42,6 +42,8 @@ export function residencySettingsArgs(answer: ResidencyAnswer): SettingsSetArgs 
       installRootId: null,
       contentScanEnabled: null,
       healthChecks: null,
+      focusTargetMinutes: null,
+      rhythmTarget: null,
     },
   };
 }

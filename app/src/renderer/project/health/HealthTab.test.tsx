@@ -30,6 +30,8 @@ function settings(over: Partial<Settings> = {}): Settings {
       { check: 'missing_readme', enabled: true },
       { check: 'missing_license', enabled: true },
     ],
+    focusTargetMinutes: 45,
+    rhythmTarget: null,
     ...over,
   };
 }

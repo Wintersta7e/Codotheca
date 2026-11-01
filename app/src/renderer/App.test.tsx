@@ -73,6 +73,8 @@ const settings: Settings = {
   installRootId: null,
   contentScanEnabled: false,
   healthChecks: [],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
 };
 
 function page(rows: readonly ProjectRow[]): ProjectPage {

@@ -73,6 +73,8 @@ const settings: Settings = {
   installRootId: null,
   contentScanEnabled: false,
   healthChecks: [],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
 };
 
 // §8.1's reference tail renders as text rows outside the virtualizer's window, so it is the row

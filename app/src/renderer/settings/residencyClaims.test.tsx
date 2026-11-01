@@ -27,6 +27,8 @@ const settings: Settings = {
   installRootId: null,
   contentScanEnabled: false,
   healthChecks: [],
+  focusTargetMinutes: 45,
+  rhythmTarget: null,
 };
 
 /** Every string a zero-argument notice or a string constant of `notices/copy.ts` renders. */

@@ -43,6 +43,8 @@ function settingsWith(over: Partial<Settings> = {}): Settings {
     installRootId: null,
     contentScanEnabled: true,
     healthChecks: everyCheck(),
+    focusTargetMinutes: 45,
+    rhythmTarget: null,
     ...over,
   };
 }

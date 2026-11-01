@@ -63,6 +63,15 @@ pub const FOCUS_HEARTBEAT_SECS: i64 = 30;
 pub const ONE_TOUCH_CREDIT_BOUND_SECS: i64 =
     FOCUS_HEARTBEAT_SECS + FOCUS_STALE_SECS + TICK_SECS + SEGMENT_IDLE_SECS;
 
+// [p4] §39.3a: one input extends a segment to at most last input + heartbeat + stale + tick, and
+// §9's idle tail runs from there — ONE_TOUCH_CREDIT_BOUND_SECS. The Focus floor must exceed it,
+// or one touch closes the ring. Asserting against SEGMENT_IDLE_SECS alone would let a 21-minute
+// floor compile while one touch closes Focus.
+// u32 -> i64 in a const: `i64::from` is not const-callable, and the widening is lossless.
+#[allow(clippy::as_conversions, clippy::cast_lossless)]
+const _: () =
+    assert!(crate::rings::FOCUS_TARGET_MIN_MINUTES as i64 * 60 > ONE_TOUCH_CREDIT_BOUND_SECS);
+
 /// The `close_reason` column spelling of a generated variant (§1.6's CHECK).
 #[must_use]
 pub const fn close_reason_str(reason: CloseReason) -> &'static str {

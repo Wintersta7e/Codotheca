@@ -159,6 +159,8 @@ function mount(contentScanEnabled = true): FakeAppDeps {
       { check: 'todo_marker', enabled: true },
       { check: 'missing_readme', enabled: true },
     ],
+    focusTargetMinutes: 45,
+    rhythmTarget: null,
   };
   // The shelf's reference tail is the one row jsdom mounts — the grid's virtualizer has a
   // zero-sized viewport — so it is the row clicked. The page draws its own `projects.get`.

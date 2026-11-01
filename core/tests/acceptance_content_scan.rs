@@ -1479,6 +1479,8 @@ fn ac_p3_29_18_turning_the_grant_off_deletes_what_it_wrote() {
         install_root_id: None,
         content_scan_enabled: Some(false),
         health_checks: None,
+        focus_target_minutes: None,
+        rhythm_target: None,
     };
     let guard = rig.index.lock().unwrap();
     let settings = settings::write(guard.conn(), &patch, 1_700_000_100).unwrap();
