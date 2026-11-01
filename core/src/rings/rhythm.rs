@@ -14,8 +14,9 @@ use super::commit_days::git_days;
 use super::focus::{focus_days, index_error};
 use super::targets::{focus_target_minutes, rhythm_target, settle_rhythm_target};
 use super::tend::tend_days;
-use super::RHYTHM_FALLBACK_TARGET;
+use super::{RHYTHM_FALLBACK_TARGET, RHYTHM_MIN_ACTIVE_WEEKS, RHYTHM_WINDOW_WEEKS};
 use crate::clock::{local_date, parse_local_date, week_start, LocalZone};
+use crate::firstrun::first_run_completed_at;
 use crate::index::sidecar::{RestoreCtx, RestoreOutcome, SectionRow};
 use crate::index::IndexError;
 use crate::ledger::level::pending_projects;
@@ -32,7 +33,7 @@ pub enum RhythmVerdict {
     Counted,
     /// The week settled below its target; a late witness may still raise it to `Counted`.
     Missed,
-    /// The week settled before the first settlement could judge it (§39.8): never a failure.
+    /// The week settled below its target but holds day one (§39.9): never a failure.
     Waived,
 }
 
@@ -288,8 +289,8 @@ fn active_dates(
 /// an id above `raise_mark` — and, once nothing is pending, every `partial` week — are re-read
 /// and raised where they rise. A narrowing that deleted rows recomputes lower, and nothing is
 /// written. `raise_mark` is the highest `xp_events.id` a previous pass has read; 0 re-reads
-/// every settled week. An empty table is §39.8's first settlement, which this pass leaves to
-/// its own change: it answers an empty report there. Quiet mode is never read.
+/// every settled week. An empty table is §39.8's first settlement; a `fallback` target is replaced
+/// once, after the pass's inserts. Quiet mode is never read.
 ///
 /// # Errors
 /// Fails when the index cannot be read or written, or a stored week is malformed.
@@ -302,7 +303,7 @@ pub fn settle(
     let mut report = SettleReport::default();
     let settled = load_weeks(tx)?;
     let Some(newest) = settled.last() else {
-        return Ok(report);
+        return first_settlement(tx, now, zone, raise_mark);
     };
     let last_complete = week_start(zone.at(now).day()) - 7;
     let new_weeks: Vec<i64> = (week_start(monday_of(newest)?) + 7..=last_complete)
@@ -354,10 +355,117 @@ pub fn settle(
             }
         }
     }
-    *raise_mark = tx.query_row("SELECT COALESCE(MAX(id), 0) FROM xp_events", [], |r| {
-        r.get(0)
-    })?;
+    if matches!(rhythm_target(tx)?, Some((_, RhythmTargetBasis::Fallback))) {
+        report.target_replaced = replace_fallback(tx, last_complete)?;
+    }
+    *raise_mark = max_event_id(tx)?;
     Ok(report)
+}
+
+fn max_event_id(tx: &Transaction<'_>) -> Result<i64, IndexError> {
+    Ok(
+        tx.query_row("SELECT COALESCE(MAX(id), 0) FROM xp_events", [], |r| {
+            r.get(0)
+        })?,
+    )
+}
+
+/// The lower median: the lower middle of an even count. `None` for no values. Sorts `values`.
+#[must_use]
+pub fn lower_median(values: &mut [u32]) -> Option<u32> {
+    values.sort_unstable();
+    let middle = values.len().checked_sub(1)? / 2;
+    values.get(middle).copied()
+}
+
+/// The Monday of the oldest of the window's weeks, the newest being `last_complete`.
+fn window_first(last_complete: i64) -> i64 {
+    last_complete - 7 * (i64::from(RHYTHM_WINDOW_WEEKS) - 1)
+}
+
+/// §39.8's first settlement, over an empty table: only once first run has ended and no
+/// project's history is pending — otherwise nothing is written, and the target, the run and
+/// best stay absent rather than 0.
+///
+/// The window's 52 complete weeks are read once per witness and inserted against the target:
+/// a target already stored is kept (a `chosen` one is the user's, and a `derived` one is never
+/// recomputed); else the lower median of the active weeks, or the fallback below
+/// [`RHYTHM_MIN_ACTIVE_WEEKS`] of them. Every row was just computed from the ledgers as they
+/// stand, so the raise mark moves to the newest event.
+fn first_settlement(
+    tx: &Transaction<'_>,
+    now: i64,
+    zone: &dyn LocalZone,
+    raise_mark: &mut i64,
+) -> Result<SettleReport, IndexError> {
+    let mut report = SettleReport::default();
+    if first_run_completed_at(tx)?.is_none() || pending_projects(tx)? != 0 {
+        return Ok(report);
+    }
+    let last_complete = week_start(zone.at(now).day()) - 7;
+    let first = window_first(last_complete);
+    let weeks: Vec<i64> = (first..=last_complete).step_by(7).collect();
+    let active = active_dates(
+        tx,
+        DaySpan {
+            first,
+            last: last_complete + 6,
+        },
+        zone,
+        now,
+    )?;
+    let days_in =
+        |monday: i64| u32::try_from(active.range(monday..=monday + 6).count()).unwrap_or(7);
+    let kept = rhythm_target(tx)?.filter(|(_, basis)| *basis != RhythmTargetBasis::Fallback);
+    if kept.is_none() {
+        let mut active_weeks: Vec<u32> = weeks
+            .iter()
+            .map(|&monday| days_in(monday))
+            .filter(|&days| days > 0)
+            .collect();
+        let derived = lower_median(&mut active_weeks)
+            .filter(|_| active_weeks.len() >= RHYTHM_MIN_ACTIVE_WEEKS);
+        match derived {
+            Some(derived) => settle_rhythm_target(tx, derived, RhythmTargetBasis::Derived)?,
+            None => settle_rhythm_target(tx, RHYTHM_FALLBACK_TARGET, RhythmTargetBasis::Fallback)?,
+        }
+    }
+    insert_weeks(
+        tx,
+        &weeks,
+        &days_in,
+        RhythmCoverage::Complete,
+        now,
+        &mut report,
+    )?;
+    report.first_settlement = true;
+    *raise_mark = max_event_id(tx)?;
+    Ok(report)
+}
+
+/// Replaces a `fallback` target once the rows of the trailing window hold enough active weeks,
+/// by their lower median capped at the fallback — the app never raises a target. Its basis
+/// becomes `derived`, so no later pass re-checks it. Whether it wrote.
+fn replace_fallback(tx: &Transaction<'_>, last_complete: i64) -> Result<bool, IndexError> {
+    let window = window_first(last_complete)..=last_complete;
+    let mut active_weeks = Vec::new();
+    for row in load_weeks(tx)? {
+        if row.active_days > 0 && window.contains(&monday_of(&row)?) {
+            active_weeks.push(row.active_days);
+        }
+    }
+    if active_weeks.len() < RHYTHM_MIN_ACTIVE_WEEKS {
+        return Ok(false);
+    }
+    let Some(derived) = lower_median(&mut active_weeks) else {
+        return Ok(false);
+    };
+    settle_rhythm_target(
+        tx,
+        derived.min(RHYTHM_FALLBACK_TARGET),
+        RhythmTargetBasis::Derived,
+    )?;
+    Ok(true)
 }
 
 /// Inserts `weeks`, oldest first, against the target in force — the fallback written first when
