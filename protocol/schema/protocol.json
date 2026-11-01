@@ -1647,6 +1647,81 @@
         "nextLevelAt": "i64",
         "floored": "bool"
       }
+    },
+
+    "RingsState": {
+      "kind": "struct",
+      "$comment": "[p4] §39.13: the rings and the rhythm, one pure reading of the index at an instant. focus, ship and tend are null iff waived (day one). It reaches the wire only inside §43's MotivationState — §39 declares no command, event or topic. weekStart is the local Monday as YYYY-MM-DD, a String like today",
+      "fields": {
+        "today": "String",
+        "weekStart": "String",
+        "waived": "bool",
+        "focus": "FocusRing?",
+        "ship": "ShipRing?",
+        "tend": "TendRing?",
+        "rhythm": "RhythmState"
+      }
+    },
+    "FocusRing": {
+      "kind": "struct",
+      "$comment": "[p4] §39.3: today's credited Focus seconds against the target in force; status is open or closed",
+      "fields": {
+        "creditedSeconds": "i64",
+        "targetSeconds": "i64",
+        "status": "RingStatus"
+      }
+    },
+    "ShipRing": {
+      "kind": "struct",
+      "$comment": "[p4] §39.4: the user's own push record. pushedOn is the local date of the newest observed push; observable and unobservable count locations, so an unobservable record never reads as open",
+      "fields": {
+        "status": "RingStatus",
+        "pushedOn": "String?",
+        "observable": "u32",
+        "unobservable": "u32"
+      }
+    },
+    "TendRing": {
+      "kind": "struct",
+      "$comment": "[p4] §39.5: the debt ledger over the declared domain. excluded names the sources outside it; unobservableProjects counts projects whose debt cannot be read",
+      "fields": {
+        "status": "RingStatus",
+        "excluded": "[DebtSource]",
+        "unobservableProjects": "u32"
+      }
+    },
+    "RhythmState": {
+      "kind": "struct",
+      "$comment": "[p4] §39.7: days is seven cells, Monday first. target and targetBasis are null iff no target is stored (before the first settlement and before any choice); runWeeks and bestWeeks are null iff no week is settled — never 0 for unknown",
+      "fields": {
+        "days": "[RhythmDay]",
+        "activeDays": "u32",
+        "target": "u32?",
+        "targetBasis": "RhythmTargetBasis?",
+        "runWeeks": "u32?",
+        "bestWeeks": "u32?",
+        "gitCoverage": "RhythmCoverage"
+      }
+    },
+    "RingStatus": {
+      "kind": "enum",
+      "$comment": "[p4] §39.13: one ring's state. Named RingStatus, not RingState, because that sat one letter from RingsState. Every multi-word variant is camelCase, as in every phase-4 enum",
+      "variants": ["notComputed", "notApplicable", "open", "closed", "nothingToTend"]
+    },
+    "RhythmDay": {
+      "kind": "enum",
+      "$comment": "[p4] §39.13: one cell of the week. pending is today, not yet witnessed",
+      "variants": ["active", "inactive", "pending", "future", "waived", "notComputed"]
+    },
+    "RhythmTargetBasis": {
+      "kind": "enum",
+      "$comment": "[p4] §39.8: derived and fallback are written once by the first settlement; chosen is the user's, through settings.set. The app never raises a target",
+      "variants": ["derived", "fallback", "chosen"]
+    },
+    "RhythmCoverage": {
+      "kind": "enum",
+      "$comment": "[p4] §39.7: one vocabulary with rhythm_week.git_coverage's CHECK; a test reads the other side",
+      "variants": ["complete", "partial"]
     }
   },
   "commands": [

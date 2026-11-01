@@ -1245,12 +1245,79 @@ test('the four totals agree with the phase-2 delta table', () => {
    *
    * [p4] §38.5 moves it by **+3**: `LevelState`, `LevelReading`, the one level reading, and
    * `LevelFigures`, its figures, absent as one under `notComputed`.
+   *
+   * [p4] §39.13 moves it by **+9**: `RingsState`, its three rings, `RhythmState` and the four
+   * vocabularies. Read off the regenerated schema, never added up from a branch.
    */
   assert.equal(
     types,
-    207,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3; found ${types}`,
+    216,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9; found ${types}`,
   );
+});
+
+/**
+ * [p4] §39.13's nine types, asserted by SHAPE: a total moves for any reason, these fail only when
+ * the rings' own delta is wrong. Every multi-word variant is camelCase, so no enum in the schema
+ * mixes two casings and no renderer compares one band against two spellings.
+ */
+test('§39 declares RingsState and its eight parts', () => {
+  assert.deepEqual(schema.types.RingsState.fields, {
+    today: 'String',
+    weekStart: 'String',
+    waived: 'bool',
+    focus: 'FocusRing?',
+    ship: 'ShipRing?',
+    tend: 'TendRing?',
+    rhythm: 'RhythmState',
+  });
+  assert.deepEqual(schema.types.FocusRing.fields, {
+    creditedSeconds: 'i64',
+    targetSeconds: 'i64',
+    status: 'RingStatus',
+  });
+  assert.deepEqual(schema.types.ShipRing.fields, {
+    status: 'RingStatus',
+    pushedOn: 'String?',
+    observable: 'u32',
+    unobservable: 'u32',
+  });
+  assert.deepEqual(schema.types.TendRing.fields, {
+    status: 'RingStatus',
+    excluded: '[DebtSource]',
+    unobservableProjects: 'u32',
+  });
+  assert.deepEqual(schema.types.RhythmState.fields, {
+    days: '[RhythmDay]',
+    activeDays: 'u32',
+    target: 'u32?',
+    targetBasis: 'RhythmTargetBasis?',
+    runWeeks: 'u32?',
+    bestWeeks: 'u32?',
+    gitCoverage: 'RhythmCoverage',
+  });
+  assert.deepEqual(schema.types.RingStatus.variants, [
+    'notComputed',
+    'notApplicable',
+    'open',
+    'closed',
+    'nothingToTend',
+  ]);
+  assert.deepEqual(schema.types.RhythmDay.variants, [
+    'active',
+    'inactive',
+    'pending',
+    'future',
+    'waived',
+    'notComputed',
+  ]);
+  assert.deepEqual(schema.types.RhythmTargetBasis.variants, ['derived', 'fallback', 'chosen']);
+  assert.deepEqual(schema.types.RhythmCoverage.variants, ['complete', 'partial']);
+  for (const name of ['RingStatus', 'RhythmDay']) {
+    for (const variant of schema.types[name].variants) {
+      assert.ok(!variant.includes('_'), `${name}.${variant} must be camelCase`);
+    }
+  }
 });
 
 /**
