@@ -35,6 +35,17 @@ pub fn focus_days(
     )
 }
 
+/// A session-ledger read's failure, as the index's: the rings read inside index transactions.
+pub(crate) fn index_error(error: SessionError) -> IndexError {
+    match error {
+        SessionError::Sqlite(e) => IndexError::Sqlite(e),
+        SessionError::Index(e) => e,
+        other => IndexError::Corrupt {
+            detail: other.to_string(),
+        },
+    }
+}
+
 /// Today's Focus ring: `Focus(today)` against the target in force (§39.3).
 ///
 /// Open segments count to their watermark, nothing after `now`. The credit crosses the wire
@@ -50,13 +61,7 @@ pub fn focus_ring(
     zone: &dyn LocalZone,
     now: i64,
 ) -> Result<FocusRing, IndexError> {
-    let seconds = focus_seconds(conn, zone, today, now).map_err(|error| match error {
-        SessionError::Sqlite(e) => IndexError::Sqlite(e),
-        SessionError::Index(e) => e,
-        other => IndexError::Corrupt {
-            detail: other.to_string(),
-        },
-    })?;
+    let seconds = focus_seconds(conn, zone, today, now).map_err(index_error)?;
     let target_seconds = i64::from(focus_target_minutes(conn)?) * 60;
     Ok(FocusRing {
         credited_seconds: seconds - seconds.rem_euclid(60),

@@ -3,13 +3,25 @@
 //!
 //! The schema refuses every lowering (`0020_rhythm.sql`'s triggers); this module is the one insert
 //! and the one update, so a write that would trip a trigger is a defect here, never a user's loss.
+//! Its settlement pass is their one production caller.
+
+use std::collections::BTreeSet;
 
 use rusqlite::{Connection, OptionalExtension as _, Transaction};
 
-use crate::clock::{parse_local_date, week_start};
+use super::active::{union_days, DaySpan};
+use super::commit_days::git_days;
+use super::focus::{focus_days, index_error};
+use super::targets::{focus_target_minutes, rhythm_target, settle_rhythm_target};
+use super::tend::tend_days;
+use super::RHYTHM_FALLBACK_TARGET;
+use crate::clock::{local_date, parse_local_date, week_start, LocalZone};
 use crate::index::sidecar::{RestoreCtx, RestoreOutcome, SectionRow};
 use crate::index::IndexError;
-use crate::protocol::RhythmCoverage;
+use crate::ledger::level::pending_projects;
+use crate::protocol::{RhythmCoverage, RhythmTargetBasis};
+
+const DAY_SECS: i64 = 86_400;
 
 /// `rhythm_week.verdict`'s vocabulary. Core-only — the wire carries no verdict — and the column's
 /// `CHECK` lists exactly these, which `rhythm_migration.rs` holds by inserting each.
@@ -202,6 +214,244 @@ pub fn restore_week(tx: &Transaction<'_>, row: &RhythmWeekRow) -> Result<bool, I
     }
     insert_week(tx, row)?;
     Ok(true)
+}
+
+/// What one settlement pass did. The default is an idle pass, which wrote nothing.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SettleReport {
+    /// Whether the pass was §39.8's first settlement, which derives the target.
+    pub first_settlement: bool,
+    /// How many weeks it inserted.
+    pub inserted: u32,
+    /// How many settled weeks' active days it raised.
+    pub raised: u32,
+    /// How many settled weeks' git coverage it moved from `partial` to `complete`.
+    pub completed: u32,
+    /// Whether it replaced a `fallback` target with a derived one, which happens once (§39.8).
+    pub target_replaced: bool,
+}
+
+/// §43's day-one key: §43 owns it and its one write; the settlement only reads it.
+pub(crate) const DAY_ONE_KEY: &str = "motivation_day_one";
+
+/// Day one (§39.9) as a local day number. Absent or malformed reads `None`, so no week holds it
+/// and nothing fails on it.
+///
+/// # Errors
+/// Fails when SQLite refuses the read.
+pub fn day_one(conn: &Connection) -> Result<Option<i64>, IndexError> {
+    let stored: Option<String> = conn
+        .query_row("SELECT v FROM app_meta WHERE k = ?1", [DAY_ONE_KEY], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    Ok(stored.as_deref().and_then(parse_local_date))
+}
+
+fn monday_of(row: &RhythmWeekRow) -> Result<i64, IndexError> {
+    parse_local_date(&row.week_start).ok_or_else(|| IndexError::Corrupt {
+        detail: format!("rhythm_week {:?} is not a date", row.week_start),
+    })
+}
+
+/// The Mondays of the weeks holding a `commit_day` row written after `mark`.
+fn weeks_written_after(tx: &Transaction<'_>, mark: i64) -> Result<BTreeSet<i64>, IndexError> {
+    let weeks = tx
+        .prepare_cached("SELECT DISTINCT ts FROM xp_events WHERE kind = 'commit_day' AND id > ?1")?
+        .query_map([mark], |r| r.get::<_, i64>(0))?
+        .map(|ts| ts.map(|ts| week_start(ts.div_euclid(DAY_SECS))))
+        .collect::<Result<_, _>>()?;
+    Ok(weeks)
+}
+
+/// §39.6's active dates over `span`: one read of each witness, then their union. (s) is judged
+/// against the Focus target in force now — no column stores the one a settled week saw.
+fn active_dates(
+    tx: &Transaction<'_>,
+    span: DaySpan,
+    zone: &dyn LocalZone,
+    now: i64,
+) -> Result<BTreeSet<i64>, IndexError> {
+    let target_secs = i64::from(focus_target_minutes(tx)?) * 60;
+    Ok(union_days(
+        &git_days(tx, span)?,
+        &focus_days(tx, span, target_secs, zone, now).map_err(index_error)?,
+        &tend_days(tx, span)?,
+    ))
+}
+
+/// §39.7's one settlement pass. Idempotent, and a pass with nothing to do writes nothing, so it
+/// never moves the change counter §43's publisher reads.
+///
+/// Every complete week after the newest row up to the week before today is inserted, oldest
+/// first, against the target in force; then the settled weeks holding a `commit_day` row with
+/// an id above `raise_mark` — and, once nothing is pending, every `partial` week — are re-read
+/// and raised where they rise. A narrowing that deleted rows recomputes lower, and nothing is
+/// written. `raise_mark` is the highest `xp_events.id` a previous pass has read; 0 re-reads
+/// every settled week. An empty table is §39.8's first settlement, which this pass leaves to
+/// its own change: it answers an empty report there. Quiet mode is never read.
+///
+/// # Errors
+/// Fails when the index cannot be read or written, or a stored week is malformed.
+pub fn settle(
+    tx: &Transaction<'_>,
+    now: i64,
+    zone: &dyn LocalZone,
+    raise_mark: &mut i64,
+) -> Result<SettleReport, IndexError> {
+    let mut report = SettleReport::default();
+    let settled = load_weeks(tx)?;
+    let Some(newest) = settled.last() else {
+        return Ok(report);
+    };
+    let last_complete = week_start(zone.at(now).day()) - 7;
+    let new_weeks: Vec<i64> = (week_start(monday_of(newest)?) + 7..=last_complete)
+        .step_by(7)
+        .collect();
+    let written = weeks_written_after(tx, *raise_mark)?;
+    let any_partial = settled
+        .iter()
+        .any(|w| w.git_coverage == RhythmCoverage::Partial);
+    if !new_weeks.is_empty() || !written.is_empty() || any_partial {
+        let coverage = if pending_projects(tx)? == 0 {
+            RhythmCoverage::Complete
+        } else {
+            RhythmCoverage::Partial
+        };
+        let mut raise = Vec::new();
+        for row in &settled {
+            let monday = monday_of(row)?;
+            if written.contains(&monday)
+                || (coverage == RhythmCoverage::Complete
+                    && row.git_coverage == RhythmCoverage::Partial)
+            {
+                raise.push((monday, row));
+            }
+        }
+        let mondays = || new_weeks.iter().copied().chain(raise.iter().map(|r| r.0));
+        if let (Some(first), Some(last)) = (mondays().min(), mondays().max()) {
+            let active = active_dates(
+                tx,
+                DaySpan {
+                    first,
+                    last: last + 6,
+                },
+                zone,
+                now,
+            )?;
+            let days_in =
+                |monday: i64| u32::try_from(active.range(monday..=monday + 6).count()).unwrap_or(7);
+            insert_weeks(tx, &new_weeks, &days_in, coverage, now, &mut report)?;
+            for (monday, row) in raise {
+                let days = days_in(monday);
+                if raise_week(tx, &row.week_start, days, coverage)? {
+                    report.raised += u32::from(days > row.active_days);
+                    report.completed += u32::from(
+                        row.git_coverage == RhythmCoverage::Partial
+                            && coverage == RhythmCoverage::Complete,
+                    );
+                }
+            }
+        }
+    }
+    *raise_mark = tx.query_row("SELECT COALESCE(MAX(id), 0) FROM xp_events", [], |r| {
+        r.get(0)
+    })?;
+    Ok(report)
+}
+
+/// Inserts `weeks`, oldest first, against the target in force — the fallback written first when
+/// a restored table arrived without its target. The week holding day one never settles `missed`.
+fn insert_weeks(
+    tx: &Transaction<'_>,
+    weeks: &[i64],
+    days_in: &dyn Fn(i64) -> u32,
+    coverage: RhythmCoverage,
+    now: i64,
+    report: &mut SettleReport,
+) -> Result<(), IndexError> {
+    if weeks.is_empty() {
+        return Ok(());
+    }
+    let target = if let Some((target, _)) = rhythm_target(tx)? {
+        target
+    } else {
+        settle_rhythm_target(tx, RHYTHM_FALLBACK_TARGET, RhythmTargetBasis::Fallback)?;
+        RHYTHM_FALLBACK_TARGET
+    };
+    let day_one_week = day_one(tx)?.map(week_start);
+    for &monday in weeks {
+        let active_days = days_in(monday);
+        let verdict = if active_days >= target {
+            RhythmVerdict::Counted
+        } else if day_one_week == Some(monday) {
+            RhythmVerdict::Waived
+        } else {
+            RhythmVerdict::Missed
+        };
+        insert_week(
+            tx,
+            &RhythmWeekRow {
+                week_start: local_date(monday),
+                active_days,
+                target,
+                verdict,
+                git_coverage: coverage,
+                settled_at: now,
+            },
+        )?;
+        report.inserted += 1;
+    }
+    Ok(())
+}
+
+/// §39.7's run: the consecutive `counted` weeks ending at the newest row, plus the current week.
+///
+/// A `waived` week bridges; a `missed` week or a calendar gap ends the run. The current week
+/// adds one when it is met. `rows` oldest first, as [`load_weeks`] answers them.
+#[must_use]
+pub fn run_weeks(rows: &[RhythmWeekRow], current_met: bool) -> u32 {
+    let mut run = 0_u32;
+    let mut later: Option<i64> = None;
+    for row in rows.iter().rev() {
+        let Some(monday) = parse_local_date(&row.week_start) else {
+            break;
+        };
+        if later.is_some_and(|next| next != monday + 7) {
+            break;
+        }
+        later = Some(monday);
+        match row.verdict {
+            RhythmVerdict::Counted => run += 1,
+            RhythmVerdict::Waived => {}
+            RhythmVerdict::Missed => break,
+        }
+    }
+    run + u32::from(current_met)
+}
+
+/// §39.7's best rhythm: the longest run over the rows alone, in weeks. The rows only rise, so
+/// it never falls; no copy of it is stored.
+#[must_use]
+pub fn best_weeks(rows: &[RhythmWeekRow]) -> u32 {
+    let (mut best, mut run) = (0_u32, 0_u32);
+    let mut earlier: Option<i64> = None;
+    for row in rows {
+        let monday = parse_local_date(&row.week_start);
+        if monday.is_none() || earlier.is_some_and(|prev| Some(prev + 7) != monday) {
+            run = 0;
+        }
+        earlier = monday;
+        match row.verdict {
+            RhythmVerdict::Counted => {
+                run += 1;
+                best = best.max(run);
+            }
+            RhythmVerdict::Waived => {}
+            RhythmVerdict::Missed => run = 0,
+        }
+    }
+    best
 }
 
 fn section_error(error: impl std::fmt::Display) -> IndexError {

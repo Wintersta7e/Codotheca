@@ -155,6 +155,17 @@ pub fn choose_rhythm_target(
     Ok(())
 }
 
+/// The settlement pass only: writes a `derived` or `fallback` target, never `chosen` — the
+/// app never stands in for the user's choice.
+pub(crate) fn settle_rhythm_target(
+    tx: &rusqlite::Transaction<'_>,
+    target: u32,
+    basis: RhythmTargetBasis,
+) -> Result<(), IndexError> {
+    debug_assert_ne!(basis, RhythmTargetBasis::Chosen);
+    put_rhythm_pair(tx, target, basis)
+}
+
 /// Both rhythm keys, always together, inside the caller's transaction.
 fn put_rhythm_pair(
     tx: &rusqlite::Transaction<'_>,
