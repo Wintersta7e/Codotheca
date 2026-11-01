@@ -165,13 +165,21 @@ pub const MIGRATIONS: &[Migration] = &[
         // re-keying the track equivalence to the retained ones is a create-copy-drop-rename.
         rebuilds_a_table: true,
     },
+    Migration {
+        version: 20,
+        name: "rhythm",
+        sql: include_str!("../../migrations/0020_rhythm.sql"),
+        // §39.12: a new table and three `ADD COLUMN`s on `location`; nothing is copied, dropped
+        // or renamed.
+        rebuilds_a_table: false,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 19;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 20;
 
 /// The version `PRAGMA user_version` holds; a value that does not fit a `u32` reads as `0`.
 ///

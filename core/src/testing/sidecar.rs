@@ -61,6 +61,7 @@ pub const SECTION_FIXTURES: &[(&str, SectionFixture)] = &[
     ("ledger_floor", raised_floor),
     ("ledger_library_awards", library_award),
     ("ledger_frozen_git", frozen_git_rows),
+    ("rhythm_week", settled_weeks),
 ];
 
 /// A project with one present copy, for a fixture that rules on a project or trusts a copy.
@@ -206,6 +207,39 @@ fn library_award(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexErr
         offset_min: 0,
     };
     crate::ledger::verdict::pay_prepass_award(tx, 70, "fixture group", 2, at)?;
+    Ok(())
+}
+
+/// Two settled weeks: one missed below its target, one counted.
+fn settled_weeks(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexError> {
+    use crate::protocol::RhythmCoverage;
+    use crate::rings::rhythm::{insert_week, RhythmVerdict, RhythmWeekRow};
+    for (week_start, active_days, verdict, git_coverage) in [
+        (
+            "2026-09-14",
+            2,
+            RhythmVerdict::Missed,
+            RhythmCoverage::Partial,
+        ),
+        (
+            "2026-09-21",
+            4,
+            RhythmVerdict::Counted,
+            RhythmCoverage::Complete,
+        ),
+    ] {
+        insert_week(
+            tx,
+            &RhythmWeekRow {
+                week_start: week_start.to_owned(),
+                active_days,
+                target: 3,
+                verdict,
+                git_coverage,
+                settled_at: 80,
+            },
+        )?;
+    }
     Ok(())
 }
 

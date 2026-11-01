@@ -141,6 +141,10 @@ function interimNoun(key: string): readonly [string, string] {
  * window prints: one per `BASE_COUNT_KEYS` entry and one per section in
  * `core/src/index/sidecar.rs`, which `app/test/sidecarNouns.test.ts` reads so a key added there
  * cannot go unnamed here. The first seven are §11.2a's enumeration, in its order.
+ *
+ * `rhythm_week`'s constraint in full: settled weeks of rhythm; never "streak". The rendered
+ * interim drops the clause naming the banned word, because §39.10a keeps it out of every
+ * rendered string.
  */
 export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, string]>> = {
   projects: ['project', 'projects'],
@@ -167,6 +171,8 @@ export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, stri
   ledger_floor: ['level floor', 'level floors'],
   ledger_library_awards: ['XP event', 'XP events'],
   ledger_frozen_git: ['XP event', 'XP events'],
+  // ‹COPY› interim — the user's words replace this before v1.0.0
+  rhythm_week: ['‹COPY: settled weeks of rhythm›', '‹COPY: settled weeks of rhythm›'],
 };
 
 /** §48.8.3: merges ride the sidecar and are never replayed, so a rebuild restores none. */

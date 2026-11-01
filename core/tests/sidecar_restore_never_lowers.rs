@@ -70,6 +70,12 @@ const CASES: &[Case] = &[
         differ: "UPDATE xp_events SET meta = '{\"present\":true}' WHERE project_id IS NULL",
         tables: &["xp_events"],
     },
+    Case {
+        section: "rhythm_week",
+        differ: "UPDATE rhythm_week SET active_days = 7, verdict = 'counted',
+                 git_coverage = 'complete'",
+        tables: &["rhythm_week"],
+    },
 ];
 
 fn section(name: &str) -> &'static SectionSpec {

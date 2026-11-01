@@ -344,6 +344,16 @@ pub const SECTIONS: &[SectionSpec] = &[
         export: crate::ledger::sidecar::export_frozen_git,
         restore: crate::ledger::sidecar::restore_frozen_git,
     },
+    // §39.12: a settled week only rises; restored in the rebuild transaction before any scan.
+    SectionSpec {
+        name: "rhythm_week",
+        owner: "§39",
+        scope: Scope::Global,
+        rule: RestoreRule::RaiseOnly,
+        preserves_ids: &[],
+        export: crate::rings::rhythm::export_section,
+        restore: crate::rings::rhythm::restore_section,
+    },
 ];
 
 /// Something the schema holds that a rebuild could lose: a whole table, or one column of one.
@@ -411,6 +421,7 @@ const BY_SUBMODULES: Classification =
 const BY_BINDING: Classification =
     derivable("bound again from the copy's remote (identity::binding)");
 const BY_REFSTATE: Classification = derivable("J1 reads the copy's refs again (jobs::j1_refstate)");
+const BY_PUSH_RECORD: Classification = derivable("J1 re-reads the tracking reflogs");
 const BY_STATUS: Classification =
     derivable("J2 reads the copy's working tree again (jobs::j2_status)");
 const BY_INVENTORY: Classification =
@@ -473,6 +484,10 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     (
         Entry::Table("level_floor"),
         Classification::Section("ledger_floor"),
+    ),
+    (
+        Entry::Table("rhythm_week"),
+        Classification::Section("rhythm_week"),
     ),
     // The user's own targets; a detected one is detected again.
     (Entry::Table("launch_target"), PROJECTS),
@@ -750,6 +765,12 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     (Entry::Column("location", "fetch_head_at"), BY_REFSTATE),
     (Entry::Column("location", "reflog_tail_at"), BY_REFSTATE),
     (Entry::Column("location", "archive_reached"), BY_REFSTATE),
+    (Entry::Column("location", "last_push_at"), BY_PUSH_RECORD),
+    (
+        Entry::Column("location", "last_push_tz_offset_min"),
+        BY_PUSH_RECORD,
+    ),
+    (Entry::Column("location", "push_record"), BY_PUSH_RECORD),
     (Entry::Column("location", "is_dirty"), BY_STATUS),
     (Entry::Column("location", "untracked_count"), BY_STATUS),
     (Entry::Column("location", "worktree_observed_at"), BY_STATUS),
