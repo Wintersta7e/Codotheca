@@ -106,7 +106,7 @@ fn job(rig: &RingsRig, project: ProjectId, job: &str, state: &str) {
 /// The seeded row, and commit-days on three days of `W1` and one of `W2`, by a project with
 /// no copy — so nothing is pending and every settled week reads `complete`.
 fn three_missing_weeks() -> RingsRig {
-    let rig = RingsRig::new();
+    let rig = RingsRig::scanned();
     seed(&rig, W0, 0, 3);
     let author = rig.project(Flags::default());
     for day in [W1, W1 + 1, W1 + 2, W2 + 4] {
@@ -183,7 +183,7 @@ fn a_lost_target_is_restored_as_the_fallback_before_a_week_is_inserted() {
 
 /// Three witnesses in `W1` — one day twice — and git alone in `W2`, a week the app never ran.
 fn three_witnesses() -> RingsRig {
-    let rig = RingsRig::new();
+    let rig = RingsRig::scanned();
     seed(&rig, W0, 0, 3);
     let project = rig.project(Flags::default());
     rig.commit_day(project, W1);
@@ -250,7 +250,7 @@ fn the_week_holding_day_one_settles_counted_or_waived_never_missed() {
         ),
     ];
     for (name, stored, days, w1, w2) in cases {
-        let mut rig = RingsRig::new();
+        let mut rig = RingsRig::scanned();
         seed(&rig, W0, 0, 3);
         let author = rig.project(Flags::default());
         for day in W1..W1 + days {
@@ -306,7 +306,7 @@ fn a_late_commit_day_raises_a_settled_week_and_nothing_lowers_one() {
 
 #[test]
 fn a_partial_week_completes_when_history_is_read() {
-    let mut rig = RingsRig::new();
+    let mut rig = RingsRig::scanned();
     seed(&rig, W0, 0, 3);
     let project = rig.project(Flags::default());
     rig.location(project, "present", None);
@@ -391,7 +391,7 @@ fn best(rig: &RingsRig) -> u32 {
 
 #[test]
 fn ac_p4_39_8_a_narrowed_identity_lowers_no_week() {
-    let mut rig = RingsRig::new();
+    let mut rig = RingsRig::scanned();
     let home = tempfile::tempdir().unwrap();
     for email in [A, B] {
         rig.conn()
@@ -539,7 +539,7 @@ fn the_run_bridges_a_waived_week_and_breaks_at_a_missed_one() {
 
 /// Sixty weeks of absence across a year boundary, read in a zone whose offset changes.
 fn long_absence() -> RingsRig {
-    let rig = RingsRig::new();
+    let rig = RingsRig::scanned();
     seed(&rig, W0 - 7 * 60, 0, 3);
     let author = rig.project(Flags::default());
     for week in 0..60 {

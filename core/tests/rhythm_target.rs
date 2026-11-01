@@ -45,7 +45,7 @@ fn history(rig: &RingsRig, weeks: &[(i64, i64)]) {
 
 /// A library whose first run has ended, holding `weeks` of history.
 fn library(weeks: &[(i64, i64)]) -> RingsRig {
-    let rig = RingsRig::new();
+    let rig = RingsRig::scanned();
     rig.meta("first_run_completed_at", "1");
     history(&rig, weeks);
     rig
@@ -217,7 +217,7 @@ fn a_settled_week_keeps_its_target() {
 
 /// Before first run ends, and while a project's history is pending, the pass writes nothing.
 fn no_first_settlement_before_the_library_is_known() {
-    let mut not_finished = RingsRig::new();
+    let mut not_finished = RingsRig::scanned();
     history(&not_finished, &steady(1..=20, 3));
     let mut pending = library(&steady(1..=20, 3));
     let unread = pending.project(Flags::default());

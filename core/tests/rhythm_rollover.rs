@@ -31,6 +31,9 @@ use codotheca_core::rings::targets::{rhythm_target, KEY_RHYTHM_TARGET, KEY_RHYTH
 use codotheca_core::session::DEFAULT_TICK_SECS;
 use codotheca_core::testing::zone::{FixedZone, TransitionZone};
 use codotheca_core::testing::{FakeClock, FakeGitBackend, GitReply};
+use support::rings_rig::scan_run;
+
+mod support;
 
 const DAY: i64 = 86_400;
 /// Monday 2026-10-12: the week the rollover finishes. Its Sunday is `M + 6`.
@@ -67,19 +70,6 @@ fn seeded(index: &Index, target: u32) {
             .execute("INSERT INTO app_meta (k, v) VALUES (?1, ?2)", [k, &v])
             .unwrap();
     }
-}
-
-/// A project with no copy: the library is not empty, and no history is pending.
-fn copyless(index: &Index) {
-    index
-        .conn()
-        .execute(
-            "INSERT INTO project (name, seed_basename, lineage_key, authored_by_user,
-                                  is_reference, created_at, updated_at)
-             VALUES ('q', 'q', 'lin-q', 1, 0, 0, 0)",
-            [],
-        )
-        .unwrap();
 }
 
 /// A `CoreHandler` over `index` in `zone`, with fakes for everything the settlement does not read;
@@ -208,7 +198,8 @@ fn rollover(name: &str, zone: Arc<dyn LocalZone>, previous: i64, midnight: i64) 
     let start = midnight - 10;
     let index = Index::open_at(dir.path(), start).unwrap();
     seeded(&index, 3);
-    copyless(&index);
+    // The index has finished a scan, so the pass may settle.
+    scan_run(index.conn(), false);
     let (mut h, events, clock) = handler(dir.path(), index, start, zone);
 
     // Sunday 23:59:50 local: the week ending tonight is not complete yet.
@@ -320,8 +311,8 @@ fn startup_settles_after_the_restore() {
         restored, exported,
         "the restore brought the weeks and the target back"
     );
-    // The scan has indexed a project, so the start-up pass runs rather than idling on none.
-    copyless(&rebuilt);
+    // The rebuilt index has finished a scan, so the start-up pass runs rather than idling on none.
+    scan_run(rebuilt.conn(), false);
 
     let (mut h, _events, _clock) = handler(dir.path(), rebuilt, now, Arc::new(FixedZone(0)));
     let summary = run_startup(&mut h);
@@ -402,12 +393,27 @@ fn j4(h: &CoreHandler, clock: &Arc<FakeClock>, place: (ProjectId, LocationId), d
 }
 
 #[test]
-fn a_rebuilt_index_settles_no_week_before_a_project_is_indexed() {
+fn a_rebuilt_index_settles_no_week_before_its_first_finished_scan() {
     // Wednesday noon two weeks after week `M`: weeks `M` and `M + 7` are complete and unsettled.
     let now = (M + 16) * DAY + 12 * 3_600;
     let dir = tempfile::tempdir().unwrap();
     let index = Index::open_at(dir.path(), now - 100).unwrap();
     seeded(&index, 2);
+    // A project the lost index had scanned, whose only copy was removed: no scan can find it
+    // again, so the rebuild restores it — and no scan.
+    index
+        .conn()
+        .execute_batch(
+            "INSERT INTO project (id, name, seed_basename, lineage_key, authored_by_user,
+                                  is_reference, created_at, updated_at)
+             VALUES (9, 'gone', 'gone', 'lin-gone', 1, 0, 0, 0);
+             INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                   store_key, presence, repo_kind, removed_at)
+             VALUES (9, 'linux', X'2F7269672F676F6E65', X'2F7269672F676F6E65', '/rig/gone',
+                     'store', 'missing', 'worktree', 1);",
+        )
+        .unwrap();
+    scan_run(index.conn(), false);
     index.export_sidecar(now - 50).unwrap();
     drop(index);
 
@@ -417,47 +423,64 @@ fn a_rebuilt_index_settles_no_week_before_a_project_is_indexed() {
         Ok(RebuildOutcome::Rebuilt(_))
     ));
     let rebuilt = Index::open_at(dir.path(), now - 30).unwrap();
-    let projects: i64 = rebuilt
-        .conn()
-        .query_row("SELECT count(*) FROM project", [], |r| r.get(0))
-        .unwrap();
+    let count = |table: &str| -> i64 {
+        rebuilt
+            .conn()
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    };
+    let (projects, scans) = (count("project"), count("scan_run"));
+    eprintln!("rebuilt: {projects} projects, {scans} scans");
     assert_eq!(
-        projects, 0,
-        "the rebuilt index holds no project until a scan"
+        (projects, scans),
+        (1, 0),
+        "the rebuild restores the project and no scan"
     );
     let restored = stored(&rebuilt);
 
-    // Core start runs before any scan: with no project, no history has been read, so a week
-    // settled now would claim a complete, empty history.
+    // Core start runs before any scan of this index: nothing is pending, yet no history has been
+    // read, so a week settled now would claim a complete, empty one.
     let (mut h, _events, clock) = handler(dir.path(), rebuilt, now, Arc::new(FixedZone(0)));
     let summary = run_startup(&mut h);
-    eprintln!("startup over no project: {:?}", summary.rhythm);
+    eprintln!("startup before a scan: {:?}", summary.rhythm);
     assert_eq!(
         stored(&h.index().lock().unwrap()),
         restored,
-        "a week settled over an index that holds no project"
+        "a week settled before this index finished a scan"
     );
     assert_eq!(summary.rhythm, Some(SettleReport::default()));
 
-    // The scan indexes the user's project and J4 reads its history; the next due pass settles
-    // the missing weeks with their real active days.
-    let place = authored(&mut h.index().lock().unwrap());
-    j4(&h, &clock, place, &[M, M + 1, M + 7]);
-    // The runner's settle row for the job: the project's history is no longer pending.
-    h.index()
-        .lock()
-        .unwrap()
-        .conn()
-        .execute(
-            "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, 'j4', 'ok', 1)",
-            [place.0 .0],
-        )
-        .unwrap();
+    // A cancelled scan read only part of the disk.
+    scan_run(h.index().lock().unwrap().conn(), true);
     clock.advance(tick());
     h.pump();
-    let settled_at = now + tick();
+    assert_eq!(
+        stored(&h.index().lock().unwrap()),
+        restored,
+        "a week settled after a cancelled scan"
+    );
+
+    // The next scan finishes over the user's project and J4 reads its history; the next due pass
+    // settles the missing weeks with their real active days.
+    let place = authored(&mut h.index().lock().unwrap());
+    j4(&h, &clock, place, &[M, M + 1, M + 7]);
+    {
+        let guard = h.index().lock().unwrap();
+        // The runner's settle row for the job: the project's history is no longer pending.
+        guard
+            .conn()
+            .execute(
+                "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, 'j4', 'ok', 1)",
+                [place.0 .0],
+            )
+            .unwrap();
+        scan_run(guard.conn(), false);
+    }
+    clock.advance(tick());
+    h.pump();
+    let settled_at = now + 2 * tick();
     let after = stored(&h.index().lock().unwrap());
-    eprintln!("after the scan's history: {:?}", after.0);
+    eprintln!("after the finished scan: {:?}", after.0);
     assert_eq!(
         after.0,
         [
@@ -466,7 +489,7 @@ fn a_rebuilt_index_settles_no_week_before_a_project_is_indexed() {
             format!("{}|2|2|counted|complete|{settled_at}", local_date(M)),
             format!("{}|1|2|missed|complete|{settled_at}", local_date(M + 7)),
         ],
-        "the first pass after the history was read settles the missing weeks from it"
+        "the first pass after the finished scan settles the missing weeks from its history"
     );
 }
 
@@ -476,6 +499,7 @@ fn a_late_commit_day_is_raised_within_one_pump_period() {
     let dir = tempfile::tempdir().unwrap();
     let mut index = Index::open_at(dir.path(), now).unwrap();
     let place = authored(&mut index);
+    scan_run(index.conn(), false);
     seeded(&index, 3);
     let (mut h, _events, clock) = handler(dir.path(), index, now, Arc::new(FixedZone(0)));
 

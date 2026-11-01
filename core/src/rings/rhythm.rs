@@ -364,10 +364,11 @@ pub fn rhythm_state(
 /// every settled week. An empty table is §39.8's first settlement; a `fallback` target is replaced
 /// once, after the pass's inserts. Quiet mode is never read.
 ///
-/// While the index holds no project — a rebuilt index that restored none, before its first
-/// scan — the pass is idle:
-/// no history has been read, so a week settled then would claim a complete, empty one, and
-/// `complete` never moves back to `partial`.
+/// Until this index has finished a scan the pass is idle. `scan_run` is never restored, so a
+/// rebuilt index has none until it reads the disk again, while the projects it restored carry no
+/// present copy and so leave nothing pending: a week settled then would claim a complete, empty
+/// history the index has not read, and `complete` never moves back to `partial`. A cancelled scan
+/// read only part of the disk and does not count.
 ///
 /// # Errors
 /// Fails when the index cannot be read or written, or a stored week is malformed.
@@ -378,9 +379,12 @@ pub fn settle(
     raise_mark: &mut i64,
 ) -> Result<SettleReport, IndexError> {
     let mut report = SettleReport::default();
-    let any_project: bool =
-        tx.query_row("SELECT EXISTS (SELECT 1 FROM project)", [], |r| r.get(0))?;
-    if !any_project {
+    let scanned: bool = tx.query_row(
+        "SELECT EXISTS (SELECT 1 FROM scan_run WHERE ended_at IS NOT NULL AND cancelled = 0)",
+        [],
+        |r| r.get(0),
+    )?;
+    if !scanned {
         return Ok(report);
     }
     let settled = load_weeks(tx)?;

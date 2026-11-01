@@ -181,10 +181,12 @@ fn weeks(rows: &[SectionRow]) -> BTreeMap<String, &Value> {
         .collect()
 }
 
-/// `rhythm_week` is raise-only, and the app settles at start every week completed since the
-/// newest planted one (§39.8), on the real clock. So each planted week must come back at least as
-/// high — more active days, `missed`/`waived` to `counted`, `partial` to `complete`, its target
-/// and settlement time unchanged — and any other row must be a later week.
+/// `rhythm_week` is raise-only, and once the rebuilt index has finished a scan, the next due pass
+/// settles every week completed since the newest planted one (§39.7), on the real clock — the
+/// spec's scan finishes before it closes the app, so whether a pass falls in between is timing.
+/// So each planted week must come back at least as high — more active days, `missed`/`waived` to
+/// `counted`, `partial` to `complete`, its target and settlement time unchanged — and any other
+/// row must be a later week.
 fn weeks_lowered(planted: &[SectionRow], after: &[SectionRow]) -> Vec<String> {
     let (was, now) = (weeks(planted), weeks(after));
     let newest = was.keys().next_back().cloned().unwrap_or_default();

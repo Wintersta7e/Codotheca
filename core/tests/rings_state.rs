@@ -136,7 +136,7 @@ fn day_one_cell_sweep() {
 /// The live pass: two counted weeks, the week holding day one with no active day, then a met
 /// week — the day-one week settles `waived` and the run runs across it.
 fn the_live_pass_waives_the_day_one_week() {
-    let mut rig = RingsRig::new();
+    let mut rig = RingsRig::scanned();
     seed(&rig, MONDAY - 14, 3, "counted");
     seed(&rig, MONDAY - 7, 4, "counted");
     set_day_one(&rig, MONDAY + 2);
@@ -152,7 +152,7 @@ fn the_live_pass_waives_the_day_one_week() {
     assert_eq!(verdict_of(&rig, MONDAY + 7), RhythmVerdict::Counted);
     assert_eq!(run, 3, "the waived week neither breaks nor extends the run");
 
-    let mut met = RingsRig::new();
+    let mut met = RingsRig::scanned();
     seed(&met, MONDAY - 7, 3, "counted");
     set_day_one(&met, MONDAY + 2);
     commits(&met, &[MONDAY, MONDAY + 1, MONDAY + 2]);
@@ -163,7 +163,7 @@ fn the_live_pass_waives_the_day_one_week() {
 /// The first settlement, with day one inside its window — the restored-index shape: twenty
 /// three-day weeks, the one holding day one empty.
 fn the_first_settlement_waives_the_day_one_week() {
-    let mut rig = RingsRig::new();
+    let mut rig = RingsRig::scanned();
     rig.meta("first_run_completed_at", "1");
     let days: Vec<i64> = (1..=20)
         .filter(|&k| k != 10)

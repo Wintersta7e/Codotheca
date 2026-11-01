@@ -35,6 +35,13 @@ impl RingsRig {
         }
     }
 
+    /// A library whose index has finished a scan, which the rhythm settlement waits for (§39.7).
+    pub(crate) fn scanned() -> Self {
+        let rig = Self::new();
+        scan_run(rig.conn(), false);
+        rig
+    }
+
     pub(crate) const fn conn(&self) -> &Connection {
         self.tmp.index().conn()
     }
@@ -206,4 +213,15 @@ impl RingsRig {
             )
             .unwrap();
     }
+}
+
+/// A `scan_run` row that has ended, `cancelled` or not: the one shape the settlement reads to know
+/// the index has read the disk since it was built.
+pub(crate) fn scan_run(conn: &Connection, cancelled: bool) {
+    conn.execute(
+        "INSERT INTO scan_run (generation, started_at, ended_at, mode, roots_json, cancelled)
+         VALUES (1, 1, 2, 'full', '[]', ?1)",
+        [cancelled],
+    )
+    .unwrap();
 }
