@@ -7,6 +7,7 @@ pub mod active;
 pub mod commit_days;
 pub mod focus;
 pub mod rhythm;
+pub mod ship;
 pub mod targets;
 pub mod tend;
 
