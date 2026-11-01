@@ -15,7 +15,7 @@ use crate::surfaces::startup_failure::{self, StartupFailure};
 use std::path::Path;
 use std::sync::PoisonError;
 
-/// What the five non-fatal steps managed to do. A `None` field is a step that failed and
+/// What the six non-fatal steps managed to do. A `None` field is a step that failed and
 /// emitted `core/error`; it is never a step that was skipped silently.
 #[derive(Debug, Default)]
 pub struct StartupSummary {
@@ -32,6 +32,9 @@ pub struct StartupSummary {
     /// Whether the ledger's price table and curve differ from the ones the index last recorded
     /// (§38.3); a level computed under the old ones may now read differently.
     pub ledger: Option<crate::ledger::price::FingerprintChange>,
+    /// What the rhythm settlement settled, raised or replaced (§39.7). An idle pass is
+    /// `Some(SettleReport::default())`, not a failure.
+    pub rhythm: Option<crate::rings::rhythm::SettleReport>,
 }
 
 /// Open the index, or write §11.2a's report and exit.
@@ -114,7 +117,7 @@ fn exit_fatal(data_dir: &Path, failure: &StartupFailure) -> ! {
     std::process::exit(i32::from(startup_failure::EXIT_INDEX_FATAL));
 }
 
-/// The five calls that must happen before `run_loop`, in the order their side effects require.
+/// The six calls that must happen before `run_loop`, in the order their side effects require.
 ///
 /// 4. **The identity set, before any scan can run.** J1.5 folds each repository's committers
 ///    against the set and writes §5.5's `is_reference` from the result, so a set seeded *after*
@@ -133,6 +136,10 @@ fn exit_fatal(data_dir: &Path, failure: &StartupFailure) -> ! {
 ///    never a refusal to start — the app has plenty to show from the index alone.
 /// 5. **The ledger's fingerprint** (§38.3), before any command can read a level: a changed price
 ///    table or curve is reported once, at the start that first runs under it.
+/// 6. **The rhythm settlement** (§39.7), after the sidecar's restore — which runs when the index
+///    opens, before the handler exists — so a restored `rhythm_week` is never re-derived. The
+///    handler's raise mark is still 0, so every settled week holding a `commit_day` is re-read:
+///    a raise lost to a crash between a J4 write and the next due pass comes back here.
 pub fn run_startup(handler: &mut CoreHandler) -> StartupSummary {
     let mut summary = StartupSummary::default();
     let now = handler.clock.now_unix();
@@ -217,6 +224,26 @@ pub fn run_startup(handler: &mut CoreHandler) -> StartupSummary {
                     "ledger fingerprint",
                     &e.to_string(),
                 );
+            }
+        }
+    }
+
+    // 6. The rhythm settlement, which leaves the mark where its pass set it.
+    {
+        let mut guard = handler.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let settled = guard.with_tx(|tx| {
+            crate::rings::rhythm::settle(
+                tx,
+                now,
+                handler.zone.as_ref(),
+                &mut handler.rhythm_raise_mark,
+            )
+        });
+        drop(guard);
+        match settled {
+            Ok(report) => summary.rhythm = Some(report),
+            Err(e) => {
+                emit_startup_error(handler.events.as_ref(), "rhythm settlement", &e.to_string());
             }
         }
     }

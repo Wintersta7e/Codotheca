@@ -137,6 +137,9 @@ pub struct CoreHandler {
     /// fire a burst of ticks, and `now_unix` is something a user or NTP can move.
     last_tick_ms: u64,
     ticks: u64,
+    /// The highest `xp_events.id` the rhythm settlement has read (§39.7); 0 at birth, so the
+    /// first pass re-reads every settled week.
+    rhythm_raise_mark: i64,
 }
 
 impl std::fmt::Debug for CoreHandler {
@@ -179,6 +182,7 @@ impl CoreHandler {
             zone: deps.zone,
             last_tick_ms,
             ticks: 0,
+            rhythm_raise_mark: 0,
         }
     }
 
@@ -186,6 +190,14 @@ impl CoreHandler {
     #[must_use]
     pub const fn ticks(&self) -> u64 {
         self.ticks
+    }
+
+    /// The highest `xp_events.id` the rhythm settlement has read, so a test can watch a pass
+    /// read past a late row.
+    #[cfg(feature = "testkit")]
+    #[must_use]
+    pub const fn rhythm_raise_mark(&self) -> i64 {
+        self.rhythm_raise_mark
     }
 
     /// The one connection, shared rather than owned. Every caller takes the lock for the length
@@ -932,21 +944,35 @@ impl CommandHandler for CoreHandler {
 
         // 2. §1's hourly sidecar export. It rides this tick because it is the only other
         //    periodic work the core has, and a second scheduler would want a second connection.
-        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-        match guard.sidecar_due(now) {
-            Ok(true) => {
-                if let Err(e) = guard.export_sidecar(now) {
+        {
+            let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+            match guard.sidecar_due(now) {
+                Ok(true) => {
+                    if let Err(e) = guard.export_sidecar(now) {
+                        let message = e.to_string();
+                        drop(guard);
+                        self.emit_tick_error("sidecar export", &message);
+                    }
+                }
+                Ok(false) => {}
+                Err(e) => {
                     let message = e.to_string();
                     drop(guard);
-                    self.emit_tick_error("sidecar export", &message);
+                    self.emit_tick_error("sidecar due", &message);
                 }
             }
-            Ok(false) => {}
-            Err(e) => {
-                let message = e.to_string();
-                drop(guard);
-                self.emit_tick_error("sidecar due", &message);
-            }
+        }
+
+        // 3. §39.7's rhythm settlement, on every due pass: a Monday settles the finished week at
+        //    the first pass after local midnight, a late `commit_day` raises its settled week,
+        //    and a pass with nothing to do writes nothing.
+        let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let settled = guard.with_tx(|tx| {
+            crate::rings::rhythm::settle(tx, now, self.zone.as_ref(), &mut self.rhythm_raise_mark)
+        });
+        drop(guard);
+        if let Err(e) = settled {
+            self.emit_tick_error("rhythm settlement", &e.to_string());
         }
     }
 
