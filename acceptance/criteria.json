@@ -9604,7 +9604,7 @@
       "checks": [
         {
           "id": "AC-P4-39-1",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rings_ledgers::ac_p4_39_1_each_reader_names_only_its_ledger",
@@ -9613,7 +9613,7 @@
         },
         {
           "id": "AC-P4-39-1-union",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rings_ledgers::ac_p4_39_1_the_union_takes_three_day_sets",
@@ -9621,7 +9621,7 @@
         },
         {
           "id": "AC-P4-39-1-analyser",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rings_ledgers::ac_p4_39_1_the_analyser_never_reads_the_push_columns",
@@ -9646,7 +9646,7 @@
         },
         {
           "id": "AC-P4-39-2-ring",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rings_focus_ship::ac_p4_39_2_one_touch_never_closes_focus",
@@ -9737,7 +9737,7 @@
       "checks": [
         {
           "id": "AC-P4-39-5",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "ship_evidence::ac_p4_39_5_push_evidence_through_j1",
@@ -9745,7 +9745,7 @@
         },
         {
           "id": "AC-P4-39-5-ring",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rings_focus_ship::ac_p4_39_5_the_ship_ring_never_reads_unobservable_as_open",
@@ -9772,7 +9772,7 @@
       "checks": [
         {
           "id": "AC-P4-39-6",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rings_tend::ac_p4_39_6_the_tend_truth_table",
@@ -9788,7 +9788,7 @@
       "checks": [
         {
           "id": "AC-P4-39-7",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rings_state::ac_p4_39_7_day_one_waives_and_is_never_a_failure",
@@ -9812,7 +9812,7 @@
       "checks": [
         {
           "id": "AC-P4-39-8",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rhythm_migration::ac_p4_39_8_the_triggers_refuse_every_lowering",
@@ -9820,7 +9820,7 @@
         },
         {
           "id": "AC-P4-39-8-production",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rhythm_settle::ac_p4_39_8_a_narrowed_identity_lowers_no_week",
@@ -9836,7 +9836,7 @@
       "checks": [
         {
           "id": "AC-P4-39-9",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rhythm_target::ac_p4_39_9_the_target_is_derived_once_and_never_raised",
@@ -9861,7 +9861,7 @@
         },
         {
           "id": "AC-P4-39-10-rollover",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rhythm_rollover::ac_p4_39_10_the_monday_rollover_settles_once",
@@ -9920,7 +9920,7 @@
       "checks": [
         {
           "id": "AC-P4-39-12-ledger",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-39",
           "test": "rings_ledgers::ac_p4_39_12_the_rings_module_writes_no_ledger_row",
