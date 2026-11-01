@@ -55,25 +55,26 @@ pub fn tend_domain(conn: &Connection) -> Result<Vec<ProjectId>, IndexError> {
 /// One project of `E` as the *nothing to tend* predicate reads it.
 #[derive(Default)]
 struct Looked {
-    /// An open scored item, or an unverified one.
-    blocking_item: bool,
+    /// The sources holding an open scored item or an unverified one, by column spelling.
+    blocking_sources: BTreeSet<String>,
     /// Every stored sweep outcome, by its source's column spelling.
     outcomes: BTreeMap<String, String>,
 }
 
 fn looked_at(conn: &Connection, project: ProjectId) -> Result<Looked, IndexError> {
-    let blocking_item: bool = conn
+    let blocking_sources = conn
         .prepare_cached(
-            "SELECT EXISTS (SELECT 1 FROM debt_item WHERE project_id = ?1
-                 AND ((state = 'open' AND scoring = 'scored') OR state = 'unverified'))",
+            "SELECT DISTINCT source FROM debt_item WHERE project_id = ?1
+                 AND ((state = 'open' AND scoring = 'scored') OR state = 'unverified')",
         )?
-        .query_row([project.0], |r| r.get(0))?;
+        .query_map([project.0], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
     let outcomes = conn
         .prepare_cached("SELECT source, outcome FROM debt_sweep WHERE project_id = ?1")?
         .query_map([project.0], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?;
     Ok(Looked {
-        blocking_item,
+        blocking_sources,
         outcomes,
     })
 }
@@ -92,9 +93,10 @@ fn column_slug(source: DebtSource) -> Result<String, IndexError> {
 /// First match: a `T` row dated today closes it, earned — before `|E| = 0`, so a Seal later the
 /// same day keeps it; an empty `E` is `NotComputed`; then *nothing to tend*; else `Open`. A
 /// source is excluded when switched off or, for `todo_marker`, without the content-scan grant;
-/// it never blocks. *Nothing to tend* closes only of what was read: a `partial`, `failed`,
-/// missing or stale `skipped_*` sweep row of a permitted source blocks, and so does an open
-/// scored or an unverified item. Binary: no item count and no `meta.closed` reaches the ring.
+/// it never blocks, nor do its items. *Nothing to tend* closes only of what was read: a
+/// `partial`, `failed`, missing or stale `skipped_*` sweep row of a permitted source blocks, and
+/// so does an open scored or an unverified item of a permitted source. Binary: no item count and
+/// no `meta.closed` reaches the ring.
 ///
 /// # Errors
 /// Fails when the index cannot be read.
@@ -114,7 +116,12 @@ pub fn tend_ring(conn: &Connection, today: i64) -> Result<TendRing, IndexError> 
         if permitted.iter().any(|s| outcome(s) == Some("unobservable")) {
             unobservable_projects += 1;
         }
-        all_looked &= !looked.blocking_item
+        // An excluded source blocks nothing, its items included: its check is off, so nothing
+        // could verify a fix, and `excluded` keeps the ring from claiming those items are gone.
+        let blocked = permitted
+            .iter()
+            .any(|s| looked.blocking_sources.contains(s));
+        all_looked &= !blocked
             && permitted
                 .iter()
                 .all(|s| matches!(outcome(s), Some("complete" | "unobservable")));

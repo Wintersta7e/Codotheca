@@ -232,6 +232,31 @@ fn sweep_cases() -> Vec<Case> {
             want: open,
         },
         Case {
+            name: "a switched-off source's open and unverified items: excluded, not blocking",
+            setup: |r| {
+                let p = clean(r);
+                r.item(p, "missing_readme", "open", "scored");
+                r.item(p, "missing_readme", "unverified", "scored");
+                switch_off(r, DebtSource::MissingReadme);
+            },
+            domain: 1,
+            want: want(
+                RingStatus::NothingToTend,
+                &[DebtSource::TodoMarker, DebtSource::MissingReadme],
+                0,
+            ),
+        },
+        Case {
+            name: "the same items with their switch on: open",
+            setup: |r| {
+                let p = clean(r);
+                r.item(p, "missing_readme", "open", "scored");
+                r.item(p, "missing_readme", "unverified", "scored");
+            },
+            domain: 1,
+            want: want(RingStatus::Open, NO_CONSENT, 0),
+        },
+        Case {
             name: "an open shown_only item does not block",
             setup: |r| {
                 let p = clean(r);
