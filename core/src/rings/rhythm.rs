@@ -6,6 +6,7 @@
 
 use rusqlite::{Connection, OptionalExtension as _, Transaction};
 
+use crate::clock::{parse_local_date, week_start};
 use crate::index::sidecar::{RestoreCtx, RestoreOutcome, SectionRow};
 use crate::index::IndexError;
 use crate::protocol::RhythmCoverage;
@@ -115,8 +116,14 @@ pub fn load_weeks(conn: &Connection) -> Result<Vec<RhythmWeekRow>, IndexError> {
         .collect()
 }
 
-/// The ONE insert of a settled week.
+/// The ONE insert of a settled week. Its `week_start` must be a Monday written `YYYY-MM-DD`
+/// (§39.2 rule 4): the column cannot say so, so the writer does.
 pub(crate) fn insert_week(tx: &Transaction<'_>, row: &RhythmWeekRow) -> Result<(), IndexError> {
+    if parse_local_date(&row.week_start).is_none_or(|day| week_start(day) != day) {
+        return Err(IndexError::Corrupt {
+            detail: format!("rhythm_week {:?} is not a Monday", row.week_start),
+        });
+    }
     tx.execute(
         "INSERT INTO rhythm_week
             (week_start, active_days, target, verdict, git_coverage, settled_at)

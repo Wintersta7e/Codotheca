@@ -148,6 +148,35 @@ pub fn local_date(day: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// [p4] §39.2 rule 4: the Monday on or before `day`, a day number as [`local_day`] produces one.
+///
+/// Weeks run Monday to Sunday by calendar date, not configurable. Epoch day 0 is a Thursday, so
+/// three days are added before the week is cut. §42 reads this; nothing keeps a week of its own.
+#[must_use]
+pub const fn week_start(day: i64) -> i64 {
+    day - (day + 3).rem_euclid(7)
+}
+
+/// The inverse of [`local_date`]: `YYYY-MM-DD` to its day number.
+///
+/// `None` for anything that is not a real calendar date written in exactly that form — four,
+/// two and two ASCII digits — so a stored week can be checked against [`week_start`].
+#[must_use]
+pub fn parse_local_date(text: &str) -> Option<i64> {
+    let &[y0, y1, y2, y3, b'-', m0, m1, b'-', d0, d1] = text.as_bytes() else {
+        return None;
+    };
+    let digits = [y0, y1, y2, y3, m0, m1, d0, d1];
+    if !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let number = |ds: &[u8]| ds.iter().fold(0_u32, |n, d| n * 10 + u32::from(d - b'0'));
+    let year = i32::try_from(number(&[y0, y1, y2, y3])).ok()?;
+    let date = chrono::NaiveDate::from_ymd_opt(year, number(&[m0, m1]), number(&[d0, d1]))?;
+    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)?;
+    Some(date.signed_duration_since(epoch).num_days())
+}
+
 /// The half-open instant range `[start, end)` whose local day is `day` (§39.2 rule 2).
 ///
 /// 23 or 25 hours long across a transition, by construction: each end is found by asking the

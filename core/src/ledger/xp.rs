@@ -223,18 +223,26 @@ fn focus_term(conn: &Connection, p: &PriceTable) -> Result<i64, IndexError> {
         .sum())
 }
 
-/// The `debt_day` term. A row whose `meta.sources` is exactly `["abandoned_with_debt"]` is the
-/// one class the writer before §38.8.1's gates paid for a shown-only closure, and prices 0.
+/// Whether a `debt_day` row whose `meta` is `meta` prices above zero (§38.3a).
+///
+/// False exactly when `meta.sources` is `["abandoned_with_debt"]` — the one class the writer
+/// before §38.8.1's gates paid for a shown-only closure. The list is parsed, so spacing does not
+/// decide it. The XP term and the Tend ring's day set both read this one rule.
+#[must_use]
+pub fn debt_day_priced(meta: &str) -> bool {
+    !parsed(Some(meta)).is_some_and(|m| {
+        m.get("sources")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|s| *s == [serde_json::Value::from("abandoned_with_debt")])
+    })
+}
+
+/// The `debt_day` term: one price per row [`debt_day_priced`] admits.
 fn debt_day_term(conn: &Connection, p: &PriceTable) -> Result<i64, IndexError> {
     let mut stmt = conn.prepare("SELECT meta FROM xp_events WHERE kind = 'debt_day'")?;
     let mut paying = 0_usize;
     for meta in stmt.query_map([], |r| r.get::<_, Option<String>>(0))? {
-        let legacy = parsed(meta?.as_deref()).is_some_and(|m| {
-            m.get("sources")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|s| *s == [serde_json::Value::from("abandoned_with_debt")])
-        });
-        paying += usize::from(!legacy);
+        paying += usize::from(meta?.as_deref().is_none_or(debt_day_priced));
     }
     Ok(count(paying) * p.debt_day)
 }

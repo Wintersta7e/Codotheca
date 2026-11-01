@@ -16,7 +16,7 @@ use codotheca_core::index::rebuild::{rebuild_in_place, RebuildOutcome};
 use codotheca_core::index::sidecar::{counts, read, RestoreCtx, RestoreOutcome, SECTIONS};
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::protocol::RhythmCoverage;
-use codotheca_core::rings::rhythm::{load_weeks, RhythmVerdict, RhythmWeekRow};
+use codotheca_core::rings::rhythm::{load_weeks, restore_week, RhythmVerdict, RhythmWeekRow};
 use codotheca_core::testing::sidecar::{FixtureIds, SECTION_FIXTURES};
 use rusqlite::Connection;
 
@@ -296,4 +296,32 @@ fn a_settled_week_round_trips_through_the_sidecar() {
     );
     assert_eq!(higher[0].active_days, 7);
     assert_eq!(higher[0].verdict, RhythmVerdict::Counted);
+}
+
+/// The writer enforces what the column cannot: a settled week starts on a Monday, written
+/// `YYYY-MM-DD`.
+#[test]
+fn a_week_that_is_not_a_monday_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut index = Index::open_at(dir.path(), NOW).unwrap();
+    let week = |week_start: &str| RhythmWeekRow {
+        week_start: week_start.to_owned(),
+        active_days: 1,
+        target: 3,
+        verdict: RhythmVerdict::Missed,
+        git_coverage: RhythmCoverage::Complete,
+        settled_at: NOW,
+    };
+    let mut refused = 0;
+    for bad in ["2026-09-15", "2026-09-20", "2026-9-14", "2026-02-30", ""] {
+        let result = index.with_tx(|tx| restore_week(tx, &week(bad)));
+        assert!(result.is_err(), "{bad:?} was written");
+        refused += 1;
+    }
+    eprintln!("refused {refused}");
+    assert_eq!(load_weeks(index.conn()).unwrap(), Vec::new());
+    assert!(index
+        .with_tx(|tx| restore_week(tx, &week("2026-09-14")))
+        .unwrap());
+    assert_eq!(load_weeks(index.conn()).unwrap().len(), 1);
 }

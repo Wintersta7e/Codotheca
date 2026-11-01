@@ -3,8 +3,12 @@
 //! This module owns §39.12's constants; the renderer never restates one and reads its targets
 //! from `RingsState`. `targets` holds the one reader and the one writer of each stored target.
 
+pub mod active;
+pub mod commit_days;
+pub mod focus;
 pub mod rhythm;
 pub mod targets;
+pub mod tend;
 
 /// [p4] §39.12 — the constants §39 owns. 45, 3, Monday weeks and "no daily Ship" are the
 /// defaults the user may overturn.

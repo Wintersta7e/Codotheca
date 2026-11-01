@@ -13,6 +13,8 @@ pub(crate) mod analyser_world;
 pub(crate) mod git_world;
 #[cfg(feature = "testkit")]
 pub(crate) mod ledger_rig;
+#[cfg(feature = "testkit")]
+pub(crate) mod rings_rig;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

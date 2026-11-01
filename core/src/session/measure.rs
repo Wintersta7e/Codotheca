@@ -9,6 +9,8 @@
 //! included ([`super::store::playtime_seconds`]): one source, two values, two owners. Nothing
 //! here names a table but `session`, `session_segment` and `project`.
 
+use std::collections::BTreeMap;
+
 use rusqlite::{Connection, OptionalExtension as _};
 
 use crate::clock::{day_bounds, LocalZone};
@@ -58,17 +60,46 @@ pub fn focus_seconds(
     day: i64,
     now: i64,
 ) -> Result<i64, SessionError> {
-    let (start, end) = day_bounds(zone, day);
-    let end = end.min(now);
-    if start >= end {
-        return Ok(0);
-    }
-    let spans = union(
+    Ok(focus_seconds_by_day(conn, zone, day, day, now)?
+        .get(&day)
+        .copied()
+        .unwrap_or(0))
+}
+
+/// `Focus(d)` for every local day `d` from `first_day` to `last_day` inclusive, each answered.
+///
+/// The counted segments over the whole span are read once, then each day takes the one union
+/// of their intervals clipped to it — never a second union, so every day equals
+/// [`focus_seconds`] on it. Nothing after `now` is counted.
+///
+/// # Errors
+/// `SessionError::Sqlite` when the segments cannot be read.
+pub fn focus_seconds_by_day(
+    conn: &Connection,
+    zone: &dyn LocalZone,
+    first_day: i64,
+    last_day: i64,
+    now: i64,
+) -> Result<BTreeMap<i64, i64>, SessionError> {
+    let start = day_bounds(zone, first_day).0;
+    let end = day_bounds(zone, last_day).1.min(now);
+    let segments = if start < end {
         counted(conn, start, end)?
-            .iter()
-            .map(|c| (c.start.max(start), c.end.min(end))),
-    );
-    Ok(spans.iter().map(|&(from, to)| to - from).sum())
+    } else {
+        Vec::new()
+    };
+    let mut by_day = BTreeMap::new();
+    for day in first_day..=last_day {
+        let (day_start, day_end) = day_bounds(zone, day);
+        let day_end = day_end.min(now);
+        let spans = union(
+            segments
+                .iter()
+                .map(|c| (c.start.max(day_start), c.end.min(day_end))),
+        );
+        by_day.insert(day, spans.iter().map(|&(from, to)| to - from).sum());
+    }
+    Ok(by_day)
 }
 
 /// §39.3's marginal measure for `segment_id`: for each local date its interval touches, the
