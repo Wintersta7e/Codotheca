@@ -168,12 +168,71 @@ fn floor_lowered(planted: &[SectionRow], after: &[SectionRow]) -> Vec<String> {
         .collect()
 }
 
+/// The raise-only section the app itself writes to at start: `rhythm_week`.
+const RHYTHM_WEEK: &str = "rhythm_week";
+
+/// `rhythm_week` rows by their week.
+fn weeks(rows: &[SectionRow]) -> BTreeMap<String, &Value> {
+    rows.iter()
+        .map(|row| {
+            let week = row.data.get("week_start").and_then(Value::as_str);
+            (week.unwrap_or_default().to_owned(), &row.data)
+        })
+        .collect()
+}
+
+/// `rhythm_week` is raise-only, and the app settles at start every week completed since the
+/// newest planted one (§39.8), on the real clock. So each planted week must come back at least as
+/// high — more active days, `missed`/`waived` to `counted`, `partial` to `complete`, its target
+/// and settlement time unchanged — and any other row must be a later week.
+fn weeks_lowered(planted: &[SectionRow], after: &[SectionRow]) -> Vec<String> {
+    let (was, now) = (weeks(planted), weeks(after));
+    let newest = was.keys().next_back().cloned().unwrap_or_default();
+    let mut out: Vec<String> = now
+        .keys()
+        .filter(|week| !was.contains_key(*week) && **week <= newest)
+        .map(|week| format!("{RHYTHM_WEEK}: {week} appeared at or before the newest planted week"))
+        .collect();
+    for (week, before) in &was {
+        let Some(restored) = now.get(week) else {
+            out.push(format!(
+                "{RHYTHM_WEEK}: {week} planted, absent after the rebuild"
+            ));
+            continue;
+        };
+        let field = |row: &Value, name: &str| row.get(name).cloned().unwrap_or(Value::Null);
+        let raised = |name: &str, to: &str| {
+            let (b, r) = (field(before, name), field(restored, name));
+            b == r || r.as_str() == Some(to)
+        };
+        let days = |row: &Value| row.get("active_days").and_then(Value::as_u64);
+        let held = days(restored) >= days(before)
+            && raised("verdict", "counted")
+            && raised("git_coverage", "complete")
+            && field(before, "target") == field(restored, "target")
+            && field(before, "settled_at") == field(restored, "settled_at");
+        if !held {
+            out.push(format!(
+                "{RHYTHM_WEEK}: {week} planted {before}, {restored} after the rebuild"
+            ));
+        }
+    }
+    out
+}
+
+/// `doc` without `rhythm_week`, which [`weeks_lowered`] compares instead of the exact comparison.
+fn without_weeks(doc: &Sidecar) -> Sidecar {
+    let mut doc = doc.clone();
+    doc.payload.sections.remove(RHYTHM_WEEK);
+    doc
+}
+
 /// The index the app left, exported and compared with the planted document.
 fn verify(data: &Path) -> Result<Value, IndexError> {
     let planted = read(&data.join(PLANTED_SIDECAR))?;
     let index = Index::open_at(data, VERIFIED_AT)?;
     let after = export(index.conn(), planted.generation, VERIFIED_AT)?;
-    let comparison = compare_documents(&planted, &after)?;
+    let comparison = compare_documents(&without_weeks(&planted), &without_weeks(&after))?;
     let pending: i64 = index
         .conn()
         .query_row("SELECT COUNT(*) FROM sidecar_pending", [], |r| r.get(0))?;
@@ -207,6 +266,7 @@ fn verify(data: &Path) -> Result<Value, IndexError> {
         .iter()
         .flat_map(|&name| match name {
             "ledger_floor" => floor_lowered(&rows(&planted, name), &rows(&after, name)),
+            RHYTHM_WEEK => weeks_lowered(&rows(&planted, name), &rows(&after, name)),
             _ => vec![format!(
                 "{name}: no raise-only comparison is written for this section"
             )],
@@ -214,7 +274,7 @@ fn verify(data: &Path) -> Result<Value, IndexError> {
         .collect();
     Ok(json!({
         "counts": counted,
-        "compared": comparison.compared.values().sum::<usize>(),
+        "compared": comparison.compared.values().sum::<usize>() + rows(&planted, RHYTHM_WEEK).len(),
         "differences": comparison.differences,
         "pending": pending,
         "sessionMismatch": session_mismatch,

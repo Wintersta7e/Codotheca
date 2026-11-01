@@ -210,10 +210,13 @@ fn library_award(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexErr
     Ok(())
 }
 
-/// Two settled weeks: one missed below its target, one counted.
+/// Two settled weeks: one missed below its target, one counted — and the derived target they
+/// were judged against, which the first settlement stores with its weeks, so no index the app
+/// wrote holds a settled week without one.
 fn settled_weeks(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexError> {
-    use crate::protocol::RhythmCoverage;
+    use crate::protocol::{RhythmCoverage, RhythmTargetBasis};
     use crate::rings::rhythm::{insert_week, RhythmVerdict, RhythmWeekRow};
+    crate::rings::targets::settle_rhythm_target(tx, 3, RhythmTargetBasis::Derived)?;
     for (week_start, active_days, verdict, git_coverage) in [
         (
             "2026-09-14",
