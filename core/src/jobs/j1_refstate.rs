@@ -83,6 +83,8 @@ pub fn archive_reached(
 /// why §28's `no_release` arm reads `project.is_shallow` beside it rather than treating a zero
 /// as a failure.
 ///
+/// §39.4: `push_record` and its two push columns are written from `s.push` on every persist.
+///
 /// §38.8.5: `archive_reached` is written beside them on every persist, so a copy whose project
 /// was un-archived, or whose read failed, reads NULL rather than a stale `1`.
 ///
@@ -95,11 +97,22 @@ pub fn persist(
     s: &RefState,
     archive_reached: Option<bool>,
 ) -> Result<(), crate::index::IndexError> {
+    // §39.12: a push time only under `read`, and the two push columns NULL together — enforced
+    // here as well as by construction, because the observation may have crossed the WSL hop.
+    let (last_push_at, last_push_tz_offset_min) = match (
+        s.push.record,
+        s.push.last_push_at,
+        s.push.last_push_tz_offset_min,
+    ) {
+        (crate::git::PushRecord::Read, Some(at), Some(offset)) => (Some(at), Some(offset)),
+        _ => (None, None),
+    };
     tx.execute(
         "UPDATE location SET branch = ?2, head_oid = ?3, ahead = ?4, behind = ?5,
              stash_count = ?6, interrupted_op = ?7, fetch_head_at = ?8, reflog_tail_at = ?9,
              refstate_basis = ?10, refstate_observed_at = ?11, tag_count = ?12,
-             archive_reached = ?13
+             archive_reached = ?13, push_record = ?14, last_push_at = ?15,
+             last_push_tz_offset_min = ?16
          WHERE id = ?1",
         rusqlite::params![
             location.0,
@@ -115,6 +128,9 @@ pub fn persist(
             s.observed_at,
             i64::from(s.tag_count),
             archive_reached.map(i64::from),
+            s.push.record.as_str(),
+            last_push_at,
+            last_push_tz_offset_min,
         ],
     )?;
     Ok(())
@@ -163,6 +179,7 @@ mod tests {
             reflog_tail_at: None,
             basis: RefFingerprint::from_hex(&"0".repeat(64)).unwrap(),
             observed_at: clock.now_unix(),
+            push: crate::git::PushObservation::without_push(crate::git::PushRecord::NoRemote),
         }
     }
 

@@ -51,8 +51,9 @@ pub use invocation::{
 pub use lazy_fetch::{LazyFetch, LAZY_FETCH_PROBE_DIR_NAME};
 pub use observe::{busy_marker, defer_while_locked, observe_stable, Backoff, Observation};
 pub use refstate::{
-    divergence, local_ref_names, observation_fingerprint, read_ref_state, ref_fingerprint,
-    Divergence, InterruptedOp, ObservationFingerprint, RefFingerprint, RefState, UpstreamRef,
+    divergence, local_ref_names, observation_fingerprint, read_push_record, read_ref_state,
+    ref_fingerprint, Divergence, InterruptedOp, ObservationFingerprint, PushObservation,
+    PushRecord, RefFingerprint, RefState, UpstreamRef, PUSH_REFLOG_MESSAGE,
 };
 pub use repo::{RepoHandle, StoreKey};
 pub use slots::{GitSlots, JobClass, SlotGuard};

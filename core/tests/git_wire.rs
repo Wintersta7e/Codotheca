@@ -68,10 +68,18 @@ fn ref_state_survives_the_hop() {
         reflog_tail_at: Some(1_699_999_999),
         basis: RefFingerprint::from_hex(DIGEST).expect("parses"),
         observed_at: 1_700_000_001,
+        push: codotheca_core::git::PushObservation {
+            record: codotheca_core::git::PushRecord::Read,
+            last_push_at: Some(1_790_000_000),
+            last_push_tz_offset_min: Some(330),
+        },
     };
     let json = round_trip(&state);
     // The interrupted operation travels as the slug `as_str` already returns, not as `Rebase`.
     assert!(json.contains("\"interrupted_op\":\"rebase\""), "{json}");
+    // §39.4: the push record travels as its column slug, with the line's own stamp.
+    assert!(json.contains("\"record\":\"read\""), "{json}");
+    assert!(json.contains("\"last_push_tz_offset_min\":330"), "{json}");
 }
 
 #[test]
@@ -175,6 +183,9 @@ fn every_stash_state_survives_the_hop_to_the_worker() {
         reflog_tail_at: None,
         basis: RefFingerprint::from_hex(DIGEST).expect("parses"),
         observed_at: 1,
+        push: codotheca_core::git::PushObservation::without_push(
+            codotheca_core::git::PushRecord::NoRemote,
+        ),
     };
 
     // `Some(0)` is *no stash* — a real observation — and must not arrive as `null`.

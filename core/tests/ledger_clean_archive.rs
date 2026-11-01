@@ -659,6 +659,9 @@ fn fake_git(reach: GitReply<bool>, at: i64) -> Arc<dyn GitBackend> {
         reflog_tail_at: None,
         basis: RefFingerprint::from_hex(&"0".repeat(64)).unwrap(),
         observed_at: at,
+        push: codotheca_core::git::PushObservation::without_push(
+            codotheca_core::git::PushRecord::NoRemote,
+        ),
     }));
     git.always_divergence(GitReply::Ok(None));
     git.always_archive_reach(reach);

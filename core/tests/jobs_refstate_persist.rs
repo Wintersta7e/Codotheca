@@ -33,6 +33,9 @@ fn state(stash_count: Option<u32>) -> RefState {
         reflog_tail_at: None,
         basis: RefFingerprint::from_hex(DIGEST).expect("parses"),
         observed_at: 1,
+        push: codotheca_core::git::PushObservation::without_push(
+            codotheca_core::git::PushRecord::NoRemote,
+        ),
     }
 }
 

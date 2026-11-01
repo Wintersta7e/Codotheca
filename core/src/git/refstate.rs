@@ -160,6 +160,267 @@ pub struct RefState {
     pub basis: RefFingerprint,
     /// `location.refstate_observed_at` — when the app looked, never when the user stopped.
     pub observed_at: i64,
+    /// §39.4: the user's own push record, `location.push_record` and its two push columns.
+    pub push: PushObservation,
+}
+
+/// §39.4 — exactly the message git writes into a pusher's remote-tracking reflog. Measured on
+/// git 2.43.0 and pinned against the running git by `ship_evidence.rs`.
+pub const PUSH_REFLOG_MESSAGE: &str = "update by push";
+
+/// `location.push_record`: what the push-record reader could say about one copy (§39.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PushRecord {
+    /// The remote-tracking reflogs were read; a push may or may not be among them.
+    Read,
+    /// The config names no remote and no remote-tracking ref exists.
+    NoRemote,
+    /// Ref logging is off, so a push would have left no line to read.
+    Absent,
+    /// An I/O error on the config, a ref or a reflog file.
+    Unreadable,
+    /// The config declares a ref backend other than `files`, which keeps no `logs/`.
+    Unsupported,
+}
+
+impl PushRecord {
+    /// Every record, in the column's CHECK order.
+    pub const ALL: [Self; 5] = [
+        Self::Read,
+        Self::NoRemote,
+        Self::Absent,
+        Self::Unreadable,
+        Self::Unsupported,
+    ];
+
+    /// The column's spelling.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::NoRemote => "no_remote",
+            Self::Absent => "absent",
+            Self::Unreadable => "unreadable",
+            Self::Unsupported => "unsupported",
+        }
+    }
+}
+
+/// One reading of a copy's push record.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PushObservation {
+    /// Which row of §39.4's table matched.
+    pub record: PushRecord,
+    /// The newest `update by push` line's timestamp, in its own frame. `Some` only under `Read`.
+    pub last_push_at: Option<i64>,
+    /// That line's own offset, minutes east. `Some` iff `last_push_at` is.
+    pub last_push_tz_offset_min: Option<i32>,
+}
+
+impl PushObservation {
+    /// A record that carries no push: every row but `Read`, and `Read` with no push line.
+    #[must_use]
+    pub const fn without_push(record: PushRecord) -> Self {
+        Self {
+            record,
+            last_push_at: None,
+            last_push_tz_offset_min: None,
+        }
+    }
+}
+
+/// An I/O error the push-record reader turns into `unreadable`.
+struct PushUnreadable;
+
+impl From<std::io::Error> for PushUnreadable {
+    fn from(_: std::io::Error) -> Self {
+        Self
+    }
+}
+
+/// The three facts the push-record reader takes from the repository config.
+#[derive(Default)]
+struct PushConfig {
+    ref_storage: Option<String>,
+    log_all_ref_updates: Option<bool>,
+    has_remote: bool,
+}
+
+/// git's boolean spelling: `false`/`no`/`off`/`0` are false; a bare key, `always` and every other
+/// value are true.
+fn git_bool(value: Option<&str>) -> bool {
+    value.is_none_or(|v| {
+        !["false", "no", "off", "0"]
+            .iter()
+            .any(|f| v.eq_ignore_ascii_case(f))
+    })
+}
+
+/// `extensions.refStorage`, `core.logAllRefUpdates` and whether a `[remote …]` section exists, in
+/// `config_is_bare`'s idiom: section and key names compared case-insensitively, the last
+/// assignment winning. **`include` and `includeIf` are not followed** — a setting delivered that
+/// way is what the `absent` row's second clause catches.
+fn parse_push_config(text: &str) -> PushConfig {
+    let mut out = PushConfig::default();
+    let mut section = String::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if let Some(header) = line.strip_prefix('[') {
+            let name = header
+                .split(|c: char| c == ']' || c == '.' || c.is_whitespace())
+                .next()
+                .unwrap_or_default();
+            section = name.to_ascii_lowercase();
+            out.has_remote |= section == "remote";
+            continue;
+        }
+        let (key, value) = match line.split_once('=') {
+            Some((k, v)) => {
+                let v = v.split(['#', ';']).next().unwrap_or_default().trim();
+                (k.trim(), Some(v.trim_matches('"')))
+            }
+            None => (line, None),
+        };
+        if section == "extensions" && key.eq_ignore_ascii_case("refstorage") {
+            out.ref_storage = value.map(str::to_owned);
+        } else if section == "core" && key.eq_ignore_ascii_case("logallrefupdates") {
+            out.log_all_ref_updates = Some(git_bool(value));
+        }
+    }
+    out
+}
+
+/// Every remote-tracking ref, loose and packed. Unlike [`loose_refs`] the walk reports its I/O
+/// errors: a ref the reader could not list is `unreadable`, never *no ref*.
+fn tracking_refs(common_dir: &Path) -> Result<Vec<String>, PushUnreadable> {
+    fn walk(
+        base: &Path,
+        dir: &Path,
+        depth: u32,
+        out: &mut Vec<String>,
+    ) -> Result<(), PushUnreadable> {
+        if depth > 16 {
+            return Ok(());
+        }
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(e) if depth == 0 && e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.metadata()?.is_dir() {
+                walk(base, &path, depth + 1, out)?;
+            } else if let Ok(rel) = path.strip_prefix(base) {
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(
+        common_dir,
+        &common_dir.join("refs").join("remotes"),
+        0,
+        &mut out,
+    )?;
+    match std::fs::read_to_string(common_dir.join("packed-refs")) {
+        Ok(text) => out.extend(
+            text.lines()
+                .filter(|line| !line.starts_with('#') && !line.starts_with('^'))
+                .filter_map(|line| line.split_once(' '))
+                .map(|(_, name)| name.trim())
+                .filter(|name| name.starts_with("refs/remotes/"))
+                .map(str::to_owned),
+        ),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
+    out.sort_unstable();
+    out.dedup();
+    Ok(out)
+}
+
+/// One reflog line's `(timestamp, offset)` when its message is exactly [`PUSH_REFLOG_MESSAGE`].
+///
+/// The header is `<old> <new> <identity> <timestamp> <+HHMM>` and the identity may hold spaces, so
+/// the stamp is read from its last two tokens. A malformed line answers `None`.
+fn push_line_stamp(line: &str) -> Option<(i64, i32)> {
+    let (header, message) = line.split_once('\t')?;
+    if message.trim_end_matches(['\r', '\n']) != PUSH_REFLOG_MESSAGE {
+        return None;
+    }
+    let mut tokens = header.split_whitespace().rev();
+    let tz = super::history::parse_tz_offset_min(tokens.next()?)?;
+    let at = tokens.next()?.parse::<i64>().ok()?;
+    Some((at, tz))
+}
+
+/// `logs/<name>` for a full ref name.
+fn reflog_path(common_dir: &Path, name: &str) -> PathBuf {
+    let mut path = common_dir.join("logs");
+    for part in name.split('/') {
+        path.push(part);
+    }
+    path
+}
+
+fn push_record_or_unreadable(common_dir: &Path) -> Result<PushObservation, PushUnreadable> {
+    let config = parse_push_config(&std::fs::read_to_string(common_dir.join("config"))?);
+    if config
+        .ref_storage
+        .as_deref()
+        .is_some_and(|backend| !backend.eq_ignore_ascii_case("files"))
+    {
+        return Ok(PushObservation::without_push(PushRecord::Unsupported));
+    }
+    // Every read happens before any verdict, so an I/O error anywhere wins over the rows below
+    // it, as §39.4's first-match order says.
+    let refs = tracking_refs(common_dir)?;
+    let mut logged = 0_usize;
+    let mut newest: Option<(i64, i32)> = None;
+    for name in &refs {
+        let bytes = match std::fs::read(reflog_path(common_dir, name)) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e.into()),
+        };
+        logged += 1;
+        for line in String::from_utf8_lossy(&bytes).split('\n') {
+            if let Some(stamp) = push_line_stamp(line) {
+                if newest.is_none_or(|(at, _)| stamp.0 > at) {
+                    newest = Some(stamp);
+                }
+            }
+        }
+    }
+    if !config.has_remote && refs.is_empty() {
+        return Ok(PushObservation::without_push(PushRecord::NoRemote));
+    }
+    if config.log_all_ref_updates == Some(false) || (!refs.is_empty() && logged == 0) {
+        return Ok(PushObservation::without_push(PushRecord::Absent));
+    }
+    Ok(PushObservation {
+        record: PushRecord::Read,
+        last_push_at: newest.map(|(at, _)| at),
+        last_push_tz_offset_min: newest.map(|(_, tz)| tz),
+    })
+}
+
+/// §39.4's record, first match: `unsupported`, `unreadable`, `no_remote`, `absent`, `read`.
+///
+/// File reads only — no spawn and no git verb. Any I/O error on the config (a missing one
+/// included: a repository that cannot say which ref backend it uses cannot claim *absent*), on a
+/// remote-tracking ref or on a reflog file is `unreadable`.
+#[must_use]
+pub fn read_push_record(common_dir: &Path) -> PushObservation {
+    push_record_or_unreadable(common_dir)
+        .unwrap_or_else(|PushUnreadable| PushObservation::without_push(PushRecord::Unreadable))
 }
 
 fn read_trimmed(path: &Path) -> Option<String> {
@@ -466,6 +727,7 @@ pub fn read_ref_state(repo: &RepoHandle, clock: &dyn Clock) -> GitResult<RefStat
         reflog_tail_at: mtime_secs(&repo.git_dir.join("logs").join("HEAD")),
         basis,
         observed_at: clock.now_unix(),
+        push: read_push_record(&repo.common_dir),
     })
 }
 
@@ -533,5 +795,76 @@ pub fn divergence(
         _ => Err(GitError::Internal {
             detail: format!("non-numeric rev-list --count output: {}", text.trim()),
         }),
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    const OLD: &str = "0000000000000000000000000000000000000000";
+    const NEW: &str = "1111111111111111111111111111111111111111";
+
+    #[test]
+    fn an_identity_holding_spaces_still_yields_the_stamp() {
+        let line = format!(
+            "{OLD} {NEW} Jo Q. van Example <jo@example.invalid> 1790000000 +0530\tupdate by push"
+        );
+        assert_eq!(push_line_stamp(&line), Some((1_790_000_000, 330)));
+    }
+
+    #[test]
+    fn a_crlf_ending_is_trimmed_from_the_message() {
+        let line =
+            format!("{OLD} {NEW} A <a@example.invalid> 1790000000 -0800\tupdate by push\r\n");
+        assert_eq!(push_line_stamp(&line), Some((1_790_000_000, -480)));
+    }
+
+    #[test]
+    fn a_malformed_line_is_skipped() {
+        for line in [
+            "update by push".to_owned(),
+            format!("{OLD} {NEW} A <a@example.invalid> notatime +0000\tupdate by push"),
+            format!("{OLD} {NEW} A <a@example.invalid> 1790000000 0530\tupdate by push"),
+            String::new(),
+        ] {
+            assert_eq!(push_line_stamp(&line), None, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn a_message_that_only_starts_with_the_push_message_is_not_a_push() {
+        for message in [
+            "update by push (forced)",
+            "update by push2",
+            "fetch: storing head",
+        ] {
+            let line = format!("{OLD} {NEW} A <a@example.invalid> 1790000000 +0000\t{message}");
+            assert_eq!(push_line_stamp(&line), None, "{message}");
+        }
+    }
+
+    #[test]
+    fn the_config_reader_takes_the_three_facts_case_insensitively() {
+        let config = parse_push_config(
+            "[Core]\n\tLogAllRefUpdates = off ; a comment\n[Extensions]\n\trefStorage = reftable\n\
+             [remote \"origin\"]\n\turl = x\n",
+        );
+        assert_eq!(config.log_all_ref_updates, Some(false));
+        assert_eq!(config.ref_storage.as_deref(), Some("reftable"));
+        assert!(config.has_remote);
+        let bare_key = parse_push_config("[core]\n\tlogallrefupdates\n");
+        assert_eq!(bare_key.log_all_ref_updates, Some(true));
+        assert!(!bare_key.has_remote);
+        assert_eq!(
+            parse_push_config("[core]\n\tlogAllRefUpdates = always\n").log_all_ref_updates,
+            Some(true)
+        );
     }
 }
