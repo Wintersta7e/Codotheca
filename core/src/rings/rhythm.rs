@@ -20,7 +20,7 @@ use crate::firstrun::first_run_completed_at;
 use crate::index::sidecar::{RestoreCtx, RestoreOutcome, SectionRow};
 use crate::index::IndexError;
 use crate::ledger::level::pending_projects;
-use crate::protocol::{RhythmCoverage, RhythmTargetBasis};
+use crate::protocol::{RhythmCoverage, RhythmDay, RhythmState, RhythmTargetBasis};
 
 const DAY_SECS: i64 = 86_400;
 
@@ -268,17 +268,89 @@ fn weeks_written_after(tx: &Transaction<'_>, mark: i64) -> Result<BTreeSet<i64>,
 /// §39.6's active dates over `span`: one read of each witness, then their union. (s) is judged
 /// against the Focus target in force now — no column stores the one a settled week saw.
 fn active_dates(
-    tx: &Transaction<'_>,
+    conn: &Connection,
     span: DaySpan,
     zone: &dyn LocalZone,
     now: i64,
 ) -> Result<BTreeSet<i64>, IndexError> {
-    let target_secs = i64::from(focus_target_minutes(tx)?) * 60;
+    let target_secs = i64::from(focus_target_minutes(conn)?) * 60;
     Ok(union_days(
-        &git_days(tx, span)?,
-        &focus_days(tx, span, target_secs, zone, now).map_err(index_error)?,
-        &tend_days(tx, span)?,
+        &git_days(conn, span)?,
+        &focus_days(conn, span, target_secs, zone, now).map_err(index_error)?,
+        &tend_days(conn, span)?,
     ))
+}
+
+/// §39.6–§39.8's rhythm at the instant: the current week's seven cells, Monday first, from one
+/// read of each witness over `[week_start(today), today]`, and the stored target, run and best.
+///
+/// A cell is `future` after today; else `active` if witnessed; else `waived` if it is day one
+/// (§39.9 — never `inactive`, and on day one itself it wins over `pending`); else `pending` if
+/// it is today; else `not_computed` while a project's history is pending, because (g) is then
+/// unknown and a date is inactive only when all three witnesses are known false; else
+/// `inactive`. (s) reads the Focus target in force now. The run and best are absent while
+/// nothing is settled — never 0 — and `git_coverage` is `partial` while history is pending.
+///
+/// # Errors
+/// Fails when the index cannot be read, or a stored week is malformed.
+pub fn rhythm_state(
+    conn: &Connection,
+    today: i64,
+    day_one: Option<i64>,
+    zone: &dyn LocalZone,
+    now: i64,
+) -> Result<RhythmState, IndexError> {
+    let monday = week_start(today);
+    let active = active_dates(
+        conn,
+        DaySpan {
+            first: monday,
+            last: today,
+        },
+        zone,
+        now,
+    )?;
+    let history_pending = pending_projects(conn)? > 0;
+    let days: Vec<RhythmDay> = (monday..monday + 7)
+        .map(|d| {
+            if d > today {
+                RhythmDay::Future
+            } else if active.contains(&d) {
+                RhythmDay::Active
+            } else if Some(d) == day_one {
+                RhythmDay::Waived
+            } else if d == today {
+                RhythmDay::Pending
+            } else if history_pending {
+                RhythmDay::NotComputed
+            } else {
+                RhythmDay::Inactive
+            }
+        })
+        .collect();
+    let active_days =
+        u32::try_from(days.iter().filter(|&&d| d == RhythmDay::Active).count()).unwrap_or(7);
+    let target = rhythm_target(conn)?;
+    let rows = load_weeks(conn)?;
+    let (run_weeks, best_weeks) = if rows.is_empty() {
+        (None, None)
+    } else {
+        let met = target.is_some_and(|(t, _)| active_days >= t);
+        (Some(run_weeks(&rows, met)), Some(best_weeks(&rows)))
+    };
+    Ok(RhythmState {
+        days,
+        active_days,
+        target: target.map(|(t, _)| t),
+        target_basis: target.map(|(_, basis)| basis),
+        run_weeks,
+        best_weeks,
+        git_coverage: if history_pending {
+            RhythmCoverage::Partial
+        } else {
+            RhythmCoverage::Complete
+        },
+    })
 }
 
 /// §39.7's one settlement pass. Idempotent, and a pass with nothing to do writes nothing, so it
