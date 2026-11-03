@@ -5,6 +5,8 @@
 //! answer is not to hold numbers back; it is to make each one carry its basis.
 
 use crate::index::IndexError;
+use crate::jobs::state::J4_COVERED_SQL;
+use crate::projects::current::IS_CURRENT_SQL;
 use crate::protocol::{ProjectId, Reveal, RevealBasis, RevealFigure, RevealOldest};
 
 /// Projects that count, and projects whose slow jobs have returned.
@@ -21,7 +23,25 @@ pub struct Population {
     pub history_complete: bool,
 }
 
-const LIVE: &str = "is_hidden = 0 AND merged_into IS NULL";
+/// The projects the shelf shows, over a `project` row: not hidden, not merged away. The one
+/// population every other count — the reveal's and §40.2's badge populations — builds on.
+pub(crate) const LIVE: &str = "is_hidden = 0 AND merged_into IS NULL";
+
+/// §40.11: whether no live, current project lacks J4 coverage. A project with no copy left
+/// (§23's not-cloned shape, or every copy removed) or one the user removed runs no J4, so it
+/// cannot hold history incomplete. Covered is [`J4_COVERED_SQL`]: a finished walk, or the
+/// migration's re-queue, which keeps the days it already wrote. Only the migration writes that
+/// reason on a J4 row today; a later production reset giving it would count a walk that never
+/// finished as covered.
+fn history_complete_sql() -> String {
+    format!(
+        "SELECT NOT EXISTS (
+           SELECT 1 FROM project p
+            WHERE {LIVE} AND {IS_CURRENT_SQL}
+              AND NOT EXISTS (SELECT 1 FROM project_job_state
+                               WHERE project_id = p.id AND job = 'j4' AND {J4_COVERED_SQL}))"
+    )
+}
 
 /// Count the population and the two coverages.
 ///
@@ -46,11 +66,12 @@ pub fn population(conn: &rusqlite::Connection) -> Result<Population, IndexError>
     };
     let history_covered = covered("j4")?;
     let inventory_covered = covered("j3")?;
+    let history_complete: bool = conn.query_row(&history_complete_sql(), [], |r| r.get(0))?;
     Ok(Population {
         total: u32::try_from(total).unwrap_or(u32::MAX),
         history_covered: u32::try_from(history_covered).unwrap_or(u32::MAX),
         inventory_covered: u32::try_from(inventory_covered).unwrap_or(u32::MAX),
-        history_complete: history_covered >= total,
+        history_complete,
     })
 }
 
@@ -270,6 +291,28 @@ mod tests {
         conn.last_insert_rowid()
     }
 
+    /// A copy of `project` on disk, removed at `removed_at` when given. Without one a project is
+    /// §23's not-cloned shape, which runs no J4.
+    fn location(conn: &rusqlite::Connection, project: i64, removed_at: Option<i64>) {
+        let path = format!("/srv/copies/{project}");
+        conn.execute(
+            "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                   store_key, presence, repo_kind, removed_at)
+             VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree', ?4)",
+            rusqlite::params![project, path.as_bytes(), path, removed_at],
+        )
+        .unwrap();
+    }
+
+    fn j4_queued(conn: &rusqlite::Connection, project: i64, reason: &str) {
+        conn.execute(
+            "INSERT INTO project_job_state (project_id, job, state, fail_count, reason, at)
+             VALUES (?1, 'j4', 'queued', 0, ?2, ?3)",
+            rusqlite::params![project, reason, NOW],
+        )
+        .unwrap();
+    }
+
     fn history_done(conn: &rusqlite::Connection, project: i64) {
         conn.execute(
             "INSERT INTO project_job_state (project_id, job, state, fail_count, at)
@@ -307,7 +350,7 @@ mod tests {
     fn project_count_matches_what_the_scan_counted_reference_rows_included() {
         let (_dir, index) = open();
         let conn = index.conn();
-        project(
+        let a = project(
             conn,
             "a",
             Some(NOW - DAY * 900),
@@ -316,7 +359,8 @@ mod tests {
             false,
             false,
         );
-        project(
+        location(conn, a, None);
+        let b = project(
             conn,
             "b",
             Some(NOW - DAY * 100),
@@ -325,6 +369,7 @@ mod tests {
             true,
             false,
         );
+        location(conn, b, None);
         let out = reveal(conn, NOW).unwrap();
         assert_eq!(out.project_count.value, Some(2.0));
         assert_eq!(out.project_count.basis.projects_total, 2);
@@ -403,11 +448,53 @@ mod tests {
             false,
         );
         history_done(conn, a);
-        project(conn, "b", None, None, false, false, false);
+        let b = project(conn, "b", None, None, false, false, false);
+        location(conn, b, None);
         let out = reveal(conn, NOW).unwrap();
         assert_eq!(out.span_days.basis.projects_covered, 1);
         assert_eq!(out.span_days.basis.projects_total, 2);
         assert!(!out.span_days.basis.history_complete);
+    }
+
+    // §40.11: a project with no copy cannot run J4, so it cannot hold history incomplete. The
+    // coverage line still counts it.
+    #[test]
+    fn a_project_with_no_copy_leaves_history_complete_and_stays_in_the_count() {
+        let (_dir, index) = open();
+        let conn = index.conn();
+        let a = project(conn, "a", None, None, false, false, false);
+        location(conn, a, None);
+        history_done(conn, a);
+        project(conn, "not-cloned", None, None, false, false, false);
+        let gone = project(conn, "gone", None, None, false, false, false);
+        location(conn, gone, Some(NOW - DAY));
+        let removed = project(conn, "removed", None, None, false, false, false);
+        location(conn, removed, None);
+        conn.execute(
+            "UPDATE project SET removed_at = ?2 WHERE id = ?1",
+            rusqlite::params![removed, NOW - DAY],
+        )
+        .unwrap();
+        let out = reveal(conn, NOW).unwrap();
+        assert!(out.span_days.basis.history_complete);
+        assert_eq!(out.span_days.basis.projects_covered, 1);
+        assert_eq!(out.span_days.basis.projects_total, 4);
+    }
+
+    // §40.11: the migration's re-queue keeps the days its walk wrote; any other re-queue is a
+    // walk that has not finished.
+    #[test]
+    fn only_the_migrations_requeue_counts_as_covered_history() {
+        let (_dir, index) = open();
+        let conn = index.conn();
+        let upgraded = project(conn, "upgraded", None, None, false, false, false);
+        location(conn, upgraded, None);
+        j4_queued(conn, upgraded, "app_upgraded");
+        assert!(population(conn).unwrap().history_complete);
+        let asked = project(conn, "asked", None, None, false, false, false);
+        location(conn, asked, None);
+        j4_queued(conn, asked, "user_requested");
+        assert!(!population(conn).unwrap().history_complete);
     }
 
     // §10.4a: PLAYTIME takes neither string — 0h is complete by construction.

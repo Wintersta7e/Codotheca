@@ -10611,7 +10611,7 @@
       "checks": [
         {
           "id": "AC-P4-40-21",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_21_a_not_cloned_project_does_not_hold_history_incomplete",

@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 45 | 153 |
-| deferred | 198 | 445 |
+| automated | 45 | 154 |
+| deferred | 198 | 444 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -436,7 +436,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-40-18 | automated | One vocabulary | `AC-P4-40-18` automated, runs now — `badges_migration::ac_p4_40_18_the_kind_check_is_the_generated_vocabulary` |
 | P4-40-19 | deferred | Durable | `AC-P4-40-19` automated, runs now — `acceptance_badges::ac_p4_40_19_every_column_but_the_project_restores_and_a_second_restore_writes_nothing`<br>`AC-P4-40-19-day-close` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_19_the_day_close_resolves_a_restored_project_by_subject` |
 | P4-40-20 | deferred | Merge | `AC-P4-40-20` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_20_a_merge_repoints_the_award_and_nothing_else` |
-| P4-40-21 | deferred | History complete means what it says | `AC-P4-40-21` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_21_a_not_cloned_project_does_not_hold_history_incomplete`<br>`AC-P4-40-21-comeback` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_21_comeback_is_awarded_beside_a_not_cloned_project` |
+| P4-40-21 | deferred | History complete means what it says | `AC-P4-40-21` automated, runs now — `acceptance_badges::ac_p4_40_21_a_not_cloned_project_does_not_hold_history_incomplete`<br>`AC-P4-40-21-comeback` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_21_comeback_is_awarded_beside_a_not_cloned_project` |
 | P4-40-22 | deferred | Quiet mode records | `AC-P4-40-22` deferred, plan p4-40 — `badges_landing::ac_p4_40_22_quiet_mode_records_and_changes_no_due` |
 | P4-41-1 | deferred | clock invariance | `AC-P4-41-1` deferred, plan p4-41 — `quests_select::ac_p4_41_1_a_clock_advance_with_no_state_change_moves_nothing` |
 | P4-41-2 | deferred | two gates of its own, and the table | `AC-P4-41-2` deferred, plan p4-41 — `quests_select::ac_p4_41_2_the_table_of_states`<br>`AC-P4-41-2-flips` deferred, plan p4-41 — `quests_rank::ac_p4_41_2_flipping_reference_or_archived_moves_nothing_hiding_or_stable_removes`<br>`AC-P4-41-2-gate` deferred, plan p4-41 — `quests_candidates::ac_p4_41_2_the_gate_is_live_not_hidden_not_stable` |

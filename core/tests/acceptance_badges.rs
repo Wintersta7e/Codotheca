@@ -230,3 +230,86 @@ fn ac_p4_40_19_every_column_but_the_project_restores_and_a_second_restore_writes
         "a second restore changed a byte"
     );
 }
+
+/// A project row, named, with no location — §23's not-cloned shape until one is planted.
+fn plant_project(conn: &Connection, name: &str) -> i64 {
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, created_at, updated_at)
+         VALUES (?1, ?1, 1, 1)",
+        [name],
+    )
+    .unwrap();
+    conn.last_insert_rowid()
+}
+
+/// A location for `project`, removed at `removed_at` when given.
+fn plant_location(conn: &Connection, project: i64, removed_at: Option<i64>) {
+    let path = format!("/srv/copies/{project}");
+    conn.execute(
+        "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display, store_key,
+                               presence, repo_kind, removed_at)
+         VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree', ?4)",
+        rusqlite::params![project, path.as_bytes(), path, removed_at],
+    )
+    .unwrap();
+}
+
+/// `project`'s J4 row in `state`, with `reason`.
+fn plant_j4(conn: &Connection, project: i64, state: &str, reason: Option<&str>) {
+    conn.execute(
+        "INSERT INTO project_job_state (project_id, job, state, fail_count, reason, at)
+         VALUES (?1, 'j4', ?2, 0, ?3, 1)",
+        rusqlite::params![project, state, reason],
+    )
+    .unwrap();
+}
+
+/// `historyComplete` as the `stats.reveal` handler returns it.
+fn history_complete(conn: &Connection) -> bool {
+    let out = codotheca_core::stats::reveal::reveal(conn, NOW).unwrap();
+    out.span_days.basis.history_complete
+}
+
+/// §40.11: a project with no present location cannot run J4, so it cannot hold history
+/// incomplete; a migration re-queue keeps the days its walk wrote, so it counts as covered.
+#[test]
+fn ac_p4_40_21_a_not_cloned_project_does_not_hold_history_incomplete() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = Index::open_at(dir.path(), NOW).unwrap();
+    let conn = index.conn();
+    for name in ["one", "two", "three"] {
+        let p = plant_project(conn, name);
+        plant_location(conn, p, None);
+        plant_j4(conn, p, "ok", None);
+    }
+    plant_project(conn, "not-cloned");
+    let walked_and_not_cloned = history_complete(conn);
+    eprintln!("three walked + one not cloned: historyComplete = {walked_and_not_cloned}");
+    assert!(walked_and_not_cloned, "a not-cloned project held it false");
+
+    let gone = plant_project(conn, "gone");
+    plant_location(conn, gone, Some(NOW - 10));
+    let with_removed = history_complete(conn);
+    eprintln!("+ one whose only location is removed: historyComplete = {with_removed}");
+    assert!(with_removed, "a removed location held it false");
+
+    let upgraded = plant_project(conn, "upgraded");
+    plant_location(conn, upgraded, None);
+    plant_j4(conn, upgraded, "queued", Some("app_upgraded"));
+    let with_requeue = history_complete(conn);
+    eprintln!("+ one re-queued app_upgraded: historyComplete = {with_requeue}");
+    assert!(
+        with_requeue,
+        "the migration re-queue did not count as covered"
+    );
+
+    let asked = plant_project(conn, "asked");
+    plant_location(conn, asked, None);
+    plant_j4(conn, asked, "queued", Some("user_requested"));
+    let with_user_requeue = history_complete(conn);
+    eprintln!("+ one queued user_requested: historyComplete = {with_user_requeue}");
+    assert!(
+        !with_user_requeue,
+        "a user's re-queue counted as covered history"
+    );
+}
