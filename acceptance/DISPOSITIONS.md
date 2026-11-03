@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 55 | 193 |
-| deferred | 188 | 405 |
+| automated | 55 | 194 |
+| deferred | 188 | 404 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -420,7 +420,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-40-2 | automated | The latch is the schema's | `AC-P4-40-2` automated, runs now — `badges_migration::ac_p4_40_2_a_delete_aborts`<br>`AC-P4-40-2-replace` automated, runs now — `badges_migration::ac_p4_40_2_replace_and_upsert_leave_a_held_row_byte_identical`<br>`AC-P4-40-2-update` automated, runs now — `badges_migration::ac_p4_40_2_only_the_project_moves_and_a_landing_is_written_once`<br>`AC-P4-40-2-project-delete` automated, runs now — `badges_migration::ac_p4_40_2_deleting_a_referenced_project_aborts_and_deletes_nothing` |
 | P4-40-3 | deferred | The latch in code | `AC-P4-40-3` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_3_the_latch_in_code`<br>`AC-P4-40-3-landing-writer` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_3_only_mark_landed_updates_a_landing`<br>`AC-P4-40-3-identity` automated, runs now — `acceptance_badges::ac_p4_40_3_a_narrowed_identity_set_leaves_the_award` |
 | P4-40-4 | deferred | No XP | `AC-P4-40-4` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_4_no_award_writes_the_ledger` |
-| P4-40-5 | deferred | Never announced outside a landing | `AC-P4-40-5` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_5_an_award_emits_no_event_but_motivation_changed`<br>`AC-P4-40-5-shell` deferred, plan p4-40 — `ac_p4_40_5_the_notification_call_site_takes_no_badge_input` |
+| P4-40-5 | deferred | Never announced outside a landing | `AC-P4-40-5` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_5_an_award_emits_no_event_but_motivation_changed`<br>`AC-P4-40-5-shell` automated, runs now — `ac_p4_40_5_the_notification_call_site_takes_no_badge_input` |
 | P4-40-6 | automated | No progress on the wire | `AC-P4-40-6` automated, runs now — `acceptance_badges::ac_p4_40_6_the_list_returns_awarded_rows_only`<br>`AC-P4-40-6-fields` automated, runs now — `acceptance_badges::ac_p4_40_6_the_badge_types_carry_no_progress` |
 | P4-40-7 | automated | One landing per local day | `AC-P4-40-7` automated, runs now — `badges_landing::ac_p4_40_7_one_landing_per_local_day` |
 | P4-40-8 | automated | The order | `AC-P4-40-8` automated, runs now — `badges_landing::ac_p4_40_8_the_order` |

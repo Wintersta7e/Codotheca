@@ -10200,7 +10200,7 @@
         },
         {
           "id": "AC-P4-40-5-shell",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-40",
           "test": "ac_p4_40_5_the_notification_call_site_takes_no_badge_input",
