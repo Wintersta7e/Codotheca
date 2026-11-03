@@ -6,8 +6,8 @@ use rusqlite::Connection;
 use crate::health::enrolment::{is_enrolled, surface_suppressed};
 use crate::index::IndexError;
 use crate::projects::current::IS_CURRENT_SQL;
-use crate::protocol::ProjectId;
-use crate::stats::reveal::LIVE;
+use crate::protocol::{ProjectId, RevealBasis};
+use crate::stats::reveal::{self, LIVE};
 
 /// **H**, the history population: live, not Reference, not shallow. A Reference project's days
 /// are not the user's history, and a shallow clone's first commit is a truncation point, not a
@@ -27,6 +27,17 @@ pub(crate) fn s_sql() -> String {
 /// leaves it.
 pub(crate) fn p_sql() -> String {
     format!("({} AND {IS_CURRENT_SQL})", s_sql())
+}
+
+/// The basis §10.4's history figures carry — the projects J4 has covered of the live total, and
+/// whether every project that could yield history has — read through the reveal's own producer,
+/// so the badge surface draws *not computed* from the same population the reveal does.
+///
+/// # Errors
+/// Fails when SQLite refuses the read.
+pub(crate) fn history_basis(conn: &Connection) -> Result<RevealBasis, IndexError> {
+    let pop = reveal::population(conn)?;
+    Ok(reveal::basis(pop.history_covered, &pop))
 }
 
 /// **L**, Lifeline's population: **P** less every project §30.5's surface gate suppresses — the

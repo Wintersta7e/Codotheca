@@ -2092,6 +2092,19 @@
       "args": { "projectId": "ProjectId" },
       "returns": "Weathering",
       "$comment": "[p3] §33.8, and the first name spent from the `health.*` prefix §30 opened and occupied none of (§30.11). It reads `art_scene.scene_json` and nothing else — no debt table, no `health_delta`, no `location`, no clock — so it is read-only and idempotent, and unprivileged because it carries no Bytes and writes nothing. The anchor set is keyed by `scene_hash`, which is why it is a command of its own rather than a field on `ProjectDetail`: that payload is re-fetched on every debt change, and the geometry moves only when the art re-renders."
+    },
+    {
+      "name": "badges.list",
+      "args": {},
+      "returns": "BadgesListed",
+      "$comment": "[p4] §40.10. Read-only, unprivileged. Serves the reveal and Profile."
+    },
+    {
+      "name": "badges.markLanded",
+      "args": { "kind": "BadgeKind" },
+      "returns": "Empty",
+      "idempotent": true,
+      "$comment": "[p4] §40.8. Write-once; writes only the index; an unawarded kind is PROTOCOL."
     }
   ],
   "topics": {

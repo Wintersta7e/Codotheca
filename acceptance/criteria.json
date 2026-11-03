@@ -10217,7 +10217,7 @@
       "checks": [
         {
           "id": "AC-P4-40-6",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_6_the_list_returns_awarded_rows_only",
@@ -10242,7 +10242,7 @@
       "checks": [
         {
           "id": "AC-P4-40-7",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_landing::ac_p4_40_7_one_landing_per_local_day",
@@ -10258,7 +10258,7 @@
       "checks": [
         {
           "id": "AC-P4-40-8",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_landing::ac_p4_40_8_the_order",
@@ -10635,7 +10635,7 @@
       "checks": [
         {
           "id": "AC-P4-40-22",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_landing::ac_p4_40_22_quiet_mode_records_and_changes_no_due",

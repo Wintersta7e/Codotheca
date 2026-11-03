@@ -428,6 +428,30 @@ impl CoreHandler {
         crate::sync::commands::dispatch_sync_command(&ctx, command, args)
     }
 
+    /// [p3] §33.8. It takes no `now`: the anchor set is a derivation over a stored document, not
+    /// an observation. Its own method because `handle` is at clippy's `too_many_lines` ceiling.
+    fn weathering_arm(
+        index: &Index,
+        command: &str,
+        args: Value,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::weathering::WeatheringCtx { index };
+        crate::weathering::dispatch_weathering_command(&ctx, command, args)
+    }
+
+    /// [p4] §40.10's two commands. `due` is computed for `now`'s local date in the handler's one
+    /// zone.
+    fn badges_arm(
+        index: &Index,
+        zone: &dyn crate::clock::LocalZone,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::badges::commands::BadgesCtx { index, now, zone };
+        crate::badges::commands::dispatch_badges_command(&ctx, command, args)
+    }
+
     /// §25.2's opener. Its own method for the same reason `accounts_arm` is one: `handle` is at
     /// clippy's `too_many_lines` ceiling, and a two-line arm there costs the whole function.
     fn remote_arm(
@@ -924,12 +948,8 @@ impl CommandHandler for CoreHandler {
             }
             Route::Remote => Self::remote_arm(&guard, command, args, now),
             Route::Readme => Self::readme_arm(&guard, self.events.as_ref(), command, args, now),
-            // [p3] §33.8. It takes no `now`: the anchor set is a derivation over a stored
-            // document, not an observation.
-            Route::Weathering => {
-                let ctx = crate::weathering::WeatheringCtx { index: &guard };
-                crate::weathering::dispatch_weathering_command(&ctx, command, args)
-            }
+            Route::Weathering => Self::weathering_arm(&guard, command, args),
+            Route::Badges => Self::badges_arm(&guard, self.zone.as_ref(), command, args, now),
         };
         drop(guard);
 

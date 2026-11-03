@@ -943,8 +943,10 @@ mod corehandler {
         // over the document it returns, and §31.6's `projects.setCheckNa` writes one column and
         // recomputes ten rows. Each lane stated its own +1 off the base it read, which is the
         // right form; the ordinal was the part that could not survive the merge.
+        // [p4] §40.10 raises it by two: `badges.list` and `badges.markLanded`, both answered
+        // under the guard, neither reaching a network or a file.
         assert_eq!(
-            checked, 60,
+            checked, 62,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(
@@ -957,6 +959,20 @@ mod corehandler {
             names.len(),
             "every schema command is answerable, refused by name, or the loop's"
         );
+    }
+
+    /// §40.10: `badges.list` reaches the badges module through the handler, under its guard.
+    #[test]
+    fn badges_list_reaches_the_badges_module() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let mut h = handler(dir.path());
+        let listed = h
+            .handle("badges.list", serde_json::json!({}))
+            .expect("badges.list answered");
+        eprintln!("{listed}");
+        assert_eq!(listed["awards"], serde_json::json!([]));
+        assert_eq!(listed["due"], serde_json::Value::Null);
+        assert!(listed["basis"].is_object());
     }
 
     /// A gate whose passing run scans zero files is a failing gate; the same is true of a loop.

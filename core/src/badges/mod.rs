@@ -14,8 +14,10 @@
 use crate::index::IndexError;
 use crate::protocol::BadgeKind;
 
+pub mod commands;
 pub mod evaluate;
 pub mod evidence;
+pub mod landing;
 pub mod lifeline;
 pub(crate) mod population;
 pub mod store;

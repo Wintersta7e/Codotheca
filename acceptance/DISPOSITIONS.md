@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 50 | 187 |
-| deferred | 193 | 411 |
+| automated | 54 | 191 |
+| deferred | 189 | 407 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -421,9 +421,9 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-40-3 | deferred | The latch in code | `AC-P4-40-3` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_3_the_latch_in_code`<br>`AC-P4-40-3-landing-writer` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_3_only_mark_landed_updates_a_landing`<br>`AC-P4-40-3-identity` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_3_a_narrowed_identity_set_leaves_the_award` |
 | P4-40-4 | deferred | No XP | `AC-P4-40-4` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_4_no_award_writes_the_ledger` |
 | P4-40-5 | deferred | Never announced outside a landing | `AC-P4-40-5` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_5_an_award_emits_no_event_but_motivation_changed`<br>`AC-P4-40-5-shell` deferred, plan p4-40 — `ac_p4_40_5_the_notification_call_site_takes_no_badge_input` |
-| P4-40-6 | deferred | No progress on the wire | `AC-P4-40-6` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_6_the_list_returns_awarded_rows_only`<br>`AC-P4-40-6-fields` automated, runs now — `acceptance_badges::ac_p4_40_6_the_badge_types_carry_no_progress` |
-| P4-40-7 | deferred | One landing per local day | `AC-P4-40-7` deferred, plan p4-40 — `badges_landing::ac_p4_40_7_one_landing_per_local_day` |
-| P4-40-8 | deferred | The order | `AC-P4-40-8` deferred, plan p4-40 — `badges_landing::ac_p4_40_8_the_order` |
+| P4-40-6 | automated | No progress on the wire | `AC-P4-40-6` automated, runs now — `acceptance_badges::ac_p4_40_6_the_list_returns_awarded_rows_only`<br>`AC-P4-40-6-fields` automated, runs now — `acceptance_badges::ac_p4_40_6_the_badge_types_carry_no_progress` |
+| P4-40-7 | automated | One landing per local day | `AC-P4-40-7` automated, runs now — `badges_landing::ac_p4_40_7_one_landing_per_local_day` |
+| P4-40-8 | automated | The order | `AC-P4-40-8` automated, runs now — `badges_landing::ac_p4_40_8_the_order` |
 | P4-40-9 | automated | Missing data withholds | `AC-P4-40-9` automated, runs now — `badges_predicates::ac_p4_40_9_comeback_waits_for_complete_history`<br>`AC-P4-40-9-necromancer` automated, runs now — `badges_predicates::ac_p4_40_9_shallow_and_reference_yield_no_necromancer`<br>`AC-P4-40-9-polyglot` automated, runs now — `badges_predicates::ac_p4_40_9_shallow_reference_and_null_languages_make_no_polyglot` |
 | P4-40-10 | deferred | One gap arithmetic | `AC-P4-40-10` automated, runs now — `badges_predicates::ac_p4_40_10_necromancer_is_the_gap_rule_at_the_constant`<br>`AC-P4-40-10-comeback` automated, runs now — `badges_predicates::ac_p4_40_10_comeback_is_the_gap_rule_at_its_constant`<br>`AC-P4-40-10-no-literal` deferred, plan p4-40 — `badges_predicates::ac_p4_40_10_no_dormancy_literal_in_badges` |
 | P4-40-11 | automated | Firefighter counts only an attributed same-day repair | `AC-P4-40-11` automated, runs now — `badges_predicates::ac_p4_40_11` |
@@ -437,7 +437,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-40-19 | automated | Durable | `AC-P4-40-19` automated, runs now — `acceptance_badges::ac_p4_40_19_every_column_but_the_project_restores_and_a_second_restore_writes_nothing`<br>`AC-P4-40-19-day-close` automated, runs now — `acceptance_badges::ac_p4_40_19_the_day_close_resolves_a_restored_project_by_subject` |
 | P4-40-20 | deferred | Merge | `AC-P4-40-20` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_20_a_merge_repoints_the_award_and_nothing_else` |
 | P4-40-21 | automated | History complete means what it says | `AC-P4-40-21` automated, runs now — `acceptance_badges::ac_p4_40_21_a_not_cloned_project_does_not_hold_history_incomplete`<br>`AC-P4-40-21-comeback` automated, runs now — `acceptance_badges::ac_p4_40_21_comeback_is_awarded_beside_a_not_cloned_project` |
-| P4-40-22 | deferred | Quiet mode records | `AC-P4-40-22` deferred, plan p4-40 — `badges_landing::ac_p4_40_22_quiet_mode_records_and_changes_no_due` |
+| P4-40-22 | automated | Quiet mode records | `AC-P4-40-22` automated, runs now — `badges_landing::ac_p4_40_22_quiet_mode_records_and_changes_no_due` |
 | P4-41-1 | deferred | clock invariance | `AC-P4-41-1` deferred, plan p4-41 — `quests_select::ac_p4_41_1_a_clock_advance_with_no_state_change_moves_nothing` |
 | P4-41-2 | deferred | two gates of its own, and the table | `AC-P4-41-2` deferred, plan p4-41 — `quests_select::ac_p4_41_2_the_table_of_states`<br>`AC-P4-41-2-flips` deferred, plan p4-41 — `quests_rank::ac_p4_41_2_flipping_reference_or_archived_moves_nothing_hiding_or_stable_removes`<br>`AC-P4-41-2-gate` deferred, plan p4-41 — `quests_candidates::ac_p4_41_2_the_gate_is_live_not_hidden_not_stable` |
 | P4-41-3 | deferred | candidate items are `scoredOpen`'s | `AC-P4-41-3` deferred, plan p4-41 — `quests_candidates::ac_p4_41_3_candidate_items_are_exactly_scored_opens`<br>`AC-P4-41-3-switch-grant-na` deferred, plan p4-41 — `quests_candidates::ac_p4_41_3_switch_grant_and_na_remove_items_with_no_selector_change` |

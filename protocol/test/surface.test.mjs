@@ -331,7 +331,8 @@ test('every remaining command of §2.4, and §9 focus, is declared', () => {
 test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8, §25.8, §24.9, §21.13 and nothing extra', () => {
   // [p3] Two commands landed in one wave: §33.8's `health.weathering` and §31.6's
   // `projects.setCheckNa`. Each lane called its own "the 61st"; after the merge neither is.
-  assert.equal(names.length, 62, `expected 62 commands, found ${names.length}`);
+  // [p4] §40.10 raises it by two off this lane's base: `badges.list` and `badges.markLanded`.
+  assert.equal(names.length, 64, `expected 64 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -1146,10 +1147,11 @@ test('the four totals agree with the phase-2 delta table', () => {
   // `health.weathering` and §31.6's `projects.setCheckNa`, the writer `user_na` would otherwise
   // not have had. Each lane correctly stated its own +1 off the base it read; the merge sums
   // them, and the sum is counted off the merged schema rather than taken from either side.
+  // [p4] §40.10 raises it by two off this lane's base: `badges.list` and `badges.markLanded`.
   assert.equal(
     commands,
-    62,
-    `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 + §33's 1 + §31's 1 = 62, found ${commands}`,
+    64,
+    `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 + §33's 1 + §31's 1 + §40's 2 = 64, found ${commands}`,
   );
   assert.equal(topics, 7, `topics: 4 + accounts + sync + install = 7, found ${topics}`);
   // [p3] §32.12 raises this by exactly one from the branch base: `sync/advisory_alert`. §34.4
@@ -1680,7 +1682,8 @@ test('§30: the health reading moves the type row alone', () => {
   // `projects.setCheckNa` — and neither is §30's. This assertion is §30's claim that IT moved
   // none, so it is raised to the merged figure rather than relaxed. The figure is absolute only
   // because this test's subject IS the totals.
-  assert.equal(schema.commands.length, 62);
+  // [p4] §40.10's two `badges.*` commands are not §30's either.
+  assert.equal(schema.commands.length, 64);
   assert.equal(Object.keys(schema.topics).length, 7);
   // [p3] §34.4's `projects/health_delta` raised the event row by ONE, and it is not §30's.
   assert.equal(

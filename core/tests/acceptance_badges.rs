@@ -223,6 +223,65 @@ fn ac_p4_40_6_the_badge_types_carry_no_progress() {
     assert!(read > 0, "read zero fields");
 }
 
+/// §40.10: `badges.list` answers the awarded rows and nothing else — three awards come back as
+/// exactly three, and no other kind is named anywhere in the payload. Its basis is the reveal's.
+#[test]
+fn ac_p4_40_6_the_list_returns_awarded_rows_only() {
+    let lib = codotheca_core::testing::TempIndex::new();
+    let index = lib.index();
+    let held = ["comeback", "marathon", "necromancer"];
+    for (i, kind) in (0_i64..).zip(held) {
+        let earned_at = NOW - i * 86_400;
+        index
+            .conn()
+            .execute(
+                "INSERT INTO badge_award (kind, earned_at, tz_offset_min, earned_on, evidence,
+                                          awarded_at, awarded_on)
+                 VALUES (?1, ?2, 0, ?3, '{}', ?4, ?3)",
+                rusqlite::params![kind, earned_at, local_date(earned_at / 86_400), NOW],
+            )
+            .unwrap();
+    }
+    let zone = FixedZone(0);
+    let ctx = codotheca_core::badges::commands::BadgesCtx {
+        index,
+        now: NOW,
+        zone: &zone,
+    };
+    let payload = codotheca_core::badges::commands::dispatch_badges_command(
+        &ctx,
+        "badges.list",
+        serde_json::json!({}),
+    )
+    .expect("owned")
+    .expect("listed");
+    eprintln!("{payload}");
+    let awards = payload["awards"].as_array().unwrap();
+    let kinds: BTreeSet<&str> = awards.iter().map(|a| a["kind"].as_str().unwrap()).collect();
+    assert_eq!(awards.len(), 3);
+    assert_eq!(kinds, held.into_iter().collect());
+    let text = payload.to_string();
+    let mut absent = 0;
+    for kind in codotheca_core::protocol::BadgeKind::ALL {
+        let name = codotheca_core::badges::kind_text(kind);
+        if !held.contains(&name.as_str()) {
+            absent += 1;
+            assert!(!text.contains(&name), "the list names unearned {name}");
+        }
+    }
+    eprintln!("{absent} unearned kinds absent from the payload");
+    assert_eq!(absent, 5);
+    let pop = codotheca_core::stats::reveal::population(index.conn()).unwrap();
+    assert_eq!(
+        payload["basis"],
+        serde_json::json!({
+            "projectsCovered": pop.history_covered,
+            "projectsTotal": pop.total,
+            "historyComplete": pop.history_complete,
+        })
+    );
+}
+
 /// §40.7: evidence names what was earned, never a volume of lines or commits.
 #[test]
 fn ac_p4_40_17_evidence_names_no_line_or_commit() {

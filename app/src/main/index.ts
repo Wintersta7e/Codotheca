@@ -181,6 +181,10 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   // unprivileged: it reads one stored document and answers geometry, and which of those anchors
   // light is the renderer decision.
   'health.weathering',
+  // [p4] badges::commands::dispatch_badges_command — the list the reveal and Profile read, and the
+  // one landing writer. Neither is privileged.
+  'badges.list',
+  'badges.markLanded',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two

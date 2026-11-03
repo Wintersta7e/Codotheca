@@ -50,16 +50,20 @@ pub(crate) fn latched(conn: &Connection) -> Result<Vec<BadgeKind>, IndexError> {
     let kinds = st
         .query_map([], |r| r.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
-    kinds
-        .into_iter()
-        .map(|text| {
-            serde_json::from_value(serde_json::Value::String(text.clone())).map_err(|_| {
-                IndexError::Corrupt {
-                    detail: format!("badge_award holds a kind this build does not know: {text}"),
-                }
-            })
-        })
-        .collect()
+    kinds.iter().map(|text| kind_of(text)).collect()
+}
+
+/// A stored `badge_award.kind` read back as its `BadgeKind`. A kind this build does not know is
+/// refused, naming it, rather than skipped.
+///
+/// # Errors
+/// [`IndexError::Corrupt`] when `text` is not a `BadgeKind`.
+pub(crate) fn kind_of(text: &str) -> Result<BadgeKind, IndexError> {
+    serde_json::from_value(serde_json::Value::String(text.to_owned())).map_err(|_| {
+        IndexError::Corrupt {
+            detail: format!("badge_award holds a kind this build does not know: {text}"),
+        }
+    })
 }
 
 /// Write `award`, the evaluator's one way in. Answers whether a row went in: a held kind is

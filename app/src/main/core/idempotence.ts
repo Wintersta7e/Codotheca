@@ -104,6 +104,10 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   // [p3] §33.8. It deserialises one stored scene document and answers geometry — no table is
   // written, no job enqueued, no process spawned.
   'health.weathering': 'read',
+  // [p4] §40.10. The list reads the index and writes nothing.
+  'badges.list': 'read',
+  // [p4] §40.8. It writes one landing column at most once; a write is never auto-replayed.
+  'badges.markLanded': 'write',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {

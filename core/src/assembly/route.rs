@@ -78,6 +78,10 @@ pub enum Route {
     /// `art_scene` and a pure derivation over the document it returns; no network, no clock, so
     /// it takes the index guard.
     Weathering,
+    /// [p4] `crate::badges::commands::dispatch_badges_command` — §40.10. The list and the one
+    /// landing writer read and write only the index and reach no network, so they take the index
+    /// guard.
+    Badges,
     /// `projects.readmeAssets`, answered **without** the index guard (R75). Same carve-out as
     /// [`Route::Scan`] and [`Route::AccountsNet`], for the same reason: it fetches up to 24
     /// remote assets of 5 s each, and the one SQLite mutex may not be held across them.
@@ -245,6 +249,9 @@ pub const fn route(command: CommandName) -> Route {
         // [p3] §33.8's anchor resolver. A read of one stored document that reaches no network,
         // so it takes the index guard like every other read.
         CommandName::HealthWeathering => Route::Weathering,
+
+        // [p4] §40.10's two, under the index guard: neither reaches a network or a file.
+        CommandName::BadgesList | CommandName::BadgesMarkLanded => Route::Badges,
     }
 }
 
@@ -324,13 +331,15 @@ mod tests {
         // R67 names three assertions that go red on a phase-2 schema change; this is a fourth,
         // and it is raised by each plan's own delta read from the branch base — never to a
         // running total a lane cannot know after the merges ahead of it.
+        // [p4] §40.10 raises it by two: badges.list and badges.markLanded.
         assert_eq!(
             commands.len(),
-            62,
+            64,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
              remote.webUrl plus §25.8's three projects.readme* commands plus §24.9's three \
              install.* commands plus §21.13's sync.status plus §24.7's two locations.uninstall* \
-             commands plus §33.8's health.weathering plus §31.6's projects.setCheckNa"
+             commands plus §33.8's health.weathering plus §31.6's projects.setCheckNa plus \
+             §40.10's two badges.* commands"
         );
         let unnamed: Vec<&str> = commands
             .iter()

@@ -75,7 +75,8 @@ pub fn population(conn: &rusqlite::Connection) -> Result<Population, IndexError>
     })
 }
 
-const fn basis(covered: u32, pop: &Population) -> RevealBasis {
+/// The basis a figure computed over `covered` of `pop`'s projects carries.
+pub(crate) const fn basis(covered: u32, pop: &Population) -> RevealBasis {
     RevealBasis {
         projects_covered: covered,
         projects_total: pop.total,
