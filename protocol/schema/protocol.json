@@ -1728,6 +1728,54 @@
       "kind": "enum",
       "$comment": "[p4] §39.7: one vocabulary with rhythm_week.git_coverage's CHECK; a test reads the other side",
       "variants": ["complete", "partial"]
+    },
+    "BadgeKind": {
+      "kind": "enum",
+      "$comment": "[p4] §40.10: the eight badges, closed. Character-identical to badge_award.kind's CHECK; a test reads the other side. Variant order carries no meaning: the landing order is the core's constant",
+      "variants": [
+        "necromancer",
+        "polyglot",
+        "comeback",
+        "curator",
+        "marathon",
+        "undertaker",
+        "firefighter",
+        "lifeline"
+      ]
+    },
+    "BadgeEvidenceProject": {
+      "kind": "struct",
+      "$comment": "[p4] §40.10: one project an award names, by its name at award time. evaluable is the project's evaluable check count for Curator, null for Undertaker",
+      "fields": { "name": "String", "evaluable": "u32?" }
+    },
+    "BadgeEvidence": {
+      "kind": "struct",
+      "$comment": "[p4] §40.10: what earned the badge, snapshotted at award time and never re-derived. Each kind fills only its own fields (§40.7's table); none carries a line or commit count",
+      "fields": {
+        "projectName": "String?",
+        "gapDays": "u32?",
+        "year": "u32?",
+        "languages": "[String]?",
+        "creditedSeconds": "i64?",
+        "projects": "[BadgeEvidenceProject]?",
+        "runStartOn": "String?"
+      }
+    },
+    "BadgeAward": {
+      "kind": "struct",
+      "$comment": "[p4] §40.10: one awarded badge. earnedOn is a local YYYY-MM-DD (§39.2); projectId is null for a library-wide award and for one whose project is not yet rediscovered. There is no unearned badge on the wire",
+      "fields": {
+        "kind": "BadgeKind",
+        "earnedOn": "String",
+        "projectId": "ProjectId?",
+        "evidence": "BadgeEvidence",
+        "landed": "bool"
+      }
+    },
+    "BadgesListed": {
+      "kind": "struct",
+      "$comment": "[p4] §40.10: every award, by earnedOn then the landing order; due is the one award to land today, if any; basis is the reveal's, so the surface draws not computed from the same read",
+      "fields": { "awards": "[BadgeAward]", "due": "BadgeKind?", "basis": "RevealBasis" }
     }
   },
   "commands": [

@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 43 | 144 |
-| deferred | 200 | 454 |
+| automated | 43 | 146 |
+| deferred | 200 | 452 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -421,7 +421,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-40-3 | deferred | The latch in code | `AC-P4-40-3` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_3_the_latch_in_code`<br>`AC-P4-40-3-landing-writer` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_3_only_mark_landed_updates_a_landing`<br>`AC-P4-40-3-identity` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_3_a_narrowed_identity_set_leaves_the_award` |
 | P4-40-4 | deferred | No XP | `AC-P4-40-4` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_4_no_award_writes_the_ledger` |
 | P4-40-5 | deferred | Never announced outside a landing | `AC-P4-40-5` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_5_an_award_emits_no_event_but_motivation_changed`<br>`AC-P4-40-5-shell` deferred, plan p4-40 — `ac_p4_40_5_the_notification_call_site_takes_no_badge_input` |
-| P4-40-6 | deferred | No progress on the wire | `AC-P4-40-6` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_6_the_list_returns_awarded_rows_only`<br>`AC-P4-40-6-fields` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_6_the_badge_types_carry_no_progress` |
+| P4-40-6 | deferred | No progress on the wire | `AC-P4-40-6` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_6_the_list_returns_awarded_rows_only`<br>`AC-P4-40-6-fields` automated, runs now — `acceptance_badges::ac_p4_40_6_the_badge_types_carry_no_progress` |
 | P4-40-7 | deferred | One landing per local day | `AC-P4-40-7` deferred, plan p4-40 — `badges_landing::ac_p4_40_7_one_landing_per_local_day` |
 | P4-40-8 | deferred | The order | `AC-P4-40-8` deferred, plan p4-40 — `badges_landing::ac_p4_40_8_the_order` |
 | P4-40-9 | deferred | Missing data withholds | `AC-P4-40-9` deferred, plan p4-40 — `badges_predicates::ac_p4_40_9_comeback_waits_for_complete_history`<br>`AC-P4-40-9-necromancer` deferred, plan p4-40 — `badges_predicates::ac_p4_40_9_shallow_and_reference_yield_no_necromancer`<br>`AC-P4-40-9-polyglot` deferred, plan p4-40 — `badges_predicates::ac_p4_40_9_shallow_reference_and_null_languages_make_no_polyglot` |
@@ -432,7 +432,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-40-14 | deferred | Marathon | `AC-P4-40-14` deferred, plan p4-40 — `badges_predicates::ac_p4_40_14_credit_not_wall_clock`<br>`AC-P4-40-14-orphans` deferred, plan p4-40 — `badges_predicates::ac_p4_40_14_a_session_closed_by_close_orphans_awards`<br>`AC-P4-40-14-arming` deferred, plan p4-43 — `badges_predicates::ac_p4_40_14_arming_backfills_a_session_dated_by_its_own_ended_at` |
 | P4-40-15 | deferred | Undertaker | `AC-P4-40-15` deferred, plan p4-40 — `badges_predicates::ac_p4_40_15_one_project_archived_twice_counts_once`<br>`AC-P4-40-15-seal-verdict` deferred, plan p4-44 — `badges_predicates::ac_p4_40_15_a_seal_verdict_without_a_clean_archive_row_awards_nothing` |
 | P4-40-16 | deferred | The line-count ban at the argv seam | `AC-P4-40-16` deferred, plan p4-40 — `git_readonly::ac_p4_40_16_no_line_count_flag_under_core_src_git` |
-| P4-40-17 | deferred | Evidence is a closed set | `AC-P4-40-17` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_17_every_stored_evidence_decodes_strictly`<br>`AC-P4-40-17-fields` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_17_evidence_names_no_line_or_commit` |
+| P4-40-17 | deferred | Evidence is a closed set | `AC-P4-40-17` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_17_every_stored_evidence_decodes_strictly`<br>`AC-P4-40-17-fields` automated, runs now — `acceptance_badges::ac_p4_40_17_evidence_names_no_line_or_commit` |
 | P4-40-18 | deferred | One vocabulary | `AC-P4-40-18` deferred, plan p4-40 — `badges_migration::ac_p4_40_18_the_kind_check_is_the_generated_vocabulary` |
 | P4-40-19 | deferred | Durable | `AC-P4-40-19` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_19_every_column_but_the_project_restores_and_a_second_restore_writes_nothing`<br>`AC-P4-40-19-day-close` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_19_the_day_close_resolves_a_restored_project_by_subject` |
 | P4-40-20 | deferred | Merge | `AC-P4-40-20` deferred, plan p4-40 — `acceptance_badges::ac_p4_40_20_a_merge_repoints_the_award_and_nothing_else` |

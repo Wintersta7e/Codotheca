@@ -1248,11 +1248,14 @@ test('the four totals agree with the phase-2 delta table', () => {
    *
    * [p4] §39.13 moves it by **+9**: `RingsState`, its three rings, `RhythmState` and the four
    * vocabularies. Read off the regenerated schema, never added up from a branch.
+   *
+   * [p4] §40.10 moves it by **+5**: `BadgeKind`, `BadgeEvidenceProject`, `BadgeEvidence`,
+   * `BadgeAward` and `BadgesListed`. The two badge commands land with their handler, later.
    */
   assert.equal(
     types,
-    216,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9; found ${types}`,
+    221,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9 + §40's 5; found ${types}`,
   );
 });
 

@@ -10225,7 +10225,7 @@
         },
         {
           "id": "AC-P4-40-6-fields",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_6_the_badge_types_carry_no_progress",
@@ -10534,7 +10534,7 @@
         },
         {
           "id": "AC-P4-40-17-fields",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_17_evidence_names_no_line_or_commit",
