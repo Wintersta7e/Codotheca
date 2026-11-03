@@ -1,6 +1,7 @@
 //! §40.2's populations, as SQL over a `project` row aliased `p`, each built on the reveal's one
 //! live population and never restating it.
 
+use crate::projects::current::IS_CURRENT_SQL;
 use crate::stats::reveal::LIVE;
 
 /// **H**, the history population: live, not Reference, not shallow. A Reference project's days
@@ -14,4 +15,11 @@ pub(crate) fn h_sql() -> String {
 /// every statistic, and a badge is one.
 pub(crate) fn s_sql() -> String {
     format!("({LIVE} AND p.is_reference = 0)")
+}
+
+/// **P**, the present population: **S** with a present copy — not removed, and holding a location
+/// that is not removed. A standing badge counts what the library holds now, so a removed project
+/// leaves it.
+pub(crate) fn p_sql() -> String {
+    format!("({} AND {IS_CURRENT_SQL})", s_sql())
 }

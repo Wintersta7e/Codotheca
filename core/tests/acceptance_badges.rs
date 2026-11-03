@@ -16,29 +16,40 @@ mod support;
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+use std::time::{Duration, Instant};
 
-use codotheca_core::badges::{COMEBACK_GAP_DAYS, MARATHON_CREDITED_SECONDS};
+use codotheca_core::badges::{COMEBACK_GAP_DAYS, CURATOR_PROJECTS, MARATHON_CREDITED_SECONDS};
+use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::local_date;
 use codotheca_core::commands::launch::{startup, LaunchCtx};
+use codotheca_core::detail::{dispatch_detail_command, DetailCtx};
 use codotheca_core::git::{RepoHandle, StoreKey};
 use codotheca_core::index::rebuild::{rebuild_in_place, RebuildOutcome};
 use codotheca_core::index::sidecar::{counts, read, RestoreCtx, RestoreOutcome, SECTIONS};
 use codotheca_core::index::Index;
+use codotheca_core::jobs::NullJobSink;
 use codotheca_core::launch::spawn::RecordingSpawner;
 use codotheca_core::ledger::price::REVIVAL_GAP_DAYS;
 use codotheca_core::mount::StoreClass;
 use codotheca_core::protocol::{ProjectId, SessionId};
+use codotheca_core::provider::GitHubProvider;
 use codotheca_core::session::activity::FakeIgnoreCheck;
 use codotheca_core::session::manager::{LaunchedSession, SessionManager};
 use codotheca_core::session::watch::{ActivityBatch, ActivitySource, FakeActivitySource};
 use codotheca_core::session::SessionError;
+use codotheca_core::sync::http::ObservingTransport;
+use codotheca_core::sync::runner::{NullSyncSink, SyncRunner};
+use codotheca_core::sync::task::SyncTask;
+use codotheca_core::sync::SyncDeps;
 use codotheca_core::testing::events::ValidatingSink;
 use codotheca_core::testing::zone::FixedZone;
-use codotheca_core::testing::{FakeClock, FakeMountResolver};
+use codotheca_core::testing::{
+    FakeClock, FakeGitBackend, FakeMountResolver, FakeTokenStore, FakeTransport,
+};
 use rusqlite::types::Value;
 use rusqlite::Connection;
 use support::badges_rig::{
-    award_row, orphaned_session, session_index, session_row, BadgesRig, Flags,
+    award_row, orphaned_session, session_index, session_row, BadgesRig, Flags, T0,
 };
 
 const SCHEMA: &str = include_str!("../../protocol/schema/protocol.json");
@@ -721,4 +732,142 @@ fn ac_p4_40_1_marathon_through_close_orphans() {
     assert_eq!(award.awarded_at, later);
     assert_eq!(award.project_id, Some(lib.project.0));
     assert_eq!(award.evidence["creditedSeconds"], MARATHON_CREDITED_SECONDS);
+}
+
+/// Nine projects of **P** already at §31's 100%, and a tenth carrying the facts §31's checks
+/// read, its CI config answer `ci` — the library each Curator site test completes.
+fn nine_at_gold_and(rig: &mut BadgesRig, ci: &str) -> ProjectId {
+    let nine: Vec<(ProjectId, i64)> = (1..CURATOR_PROJECTS)
+        .map(|i| {
+            (
+                rig.project(&format!("gold{i}"), &[D1], Flags::default()),
+                10,
+            )
+        })
+        .collect();
+    rig.at_top_rung(&nine);
+    let tenth = rig.project("tenth", &[D1], Flags::default());
+    rig.completion_facts(tenth, ci);
+    tenth
+}
+
+/// The names Curator's evidence counted, and how many evaluable checks each had.
+fn curator_counted(rig: &BadgesRig) -> Option<Vec<(String, i64)>> {
+    rig.award("curator")
+        .map(|(_, project, evidence)| listed(project, &evidence))
+}
+
+/// A Curator row's evidence, as `(name, evaluable)` per project it lists.
+fn listed(project: Option<i64>, evidence: &serde_json::Value) -> Vec<(String, i64)> {
+    assert_eq!(project, None, "curator names no one project");
+    let counted: Vec<(String, i64)> = evidence["projects"]
+        .as_array()
+        .expect("curator evidence lists its projects")
+        .iter()
+        .map(|p| {
+            (
+                p["name"].as_str().unwrap().to_owned(),
+                p["evaluable"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    eprintln!("curator counted {} projects: {counted:?}", counted.len());
+    counted
+}
+
+/// The tenth project at gold, as the evidence lists it: by its name, with its evaluable count.
+fn tenth_listed(rig: &BadgesRig, tenth: ProjectId, counted: &[(String, i64)]) {
+    let (lit, evaluable) = rig.projection(tenth);
+    eprintln!("tenth: {lit:?} of {evaluable:?}");
+    assert!(
+        lit.is_some() && lit == evaluable,
+        "the tenth is not at gold"
+    );
+    assert_eq!(counted.len(), CURATOR_PROJECTS);
+    assert!(counted.contains(&("tenth".to_owned(), evaluable.unwrap())));
+}
+
+/// The job settle's Curator site: the tenth project reaches its top rung through a real J2.
+#[test]
+fn ac_p4_40_1_curator_through_evaluate_and_write() {
+    let mut rig = BadgesRig::new();
+    let tenth = nine_at_gold_and(&mut rig, "present");
+    assert_eq!(curator_counted(&rig), None, "nine is not ten");
+    rig.settle_j2(tenth);
+    let counted = curator_counted(&rig).expect("the settle wrote no curator");
+    tenth_listed(&rig, tenth, &counted);
+}
+
+/// The `projects.setCheckNa` site: the tenth project's one failing check, its CI config, ruled
+/// not applicable through the command, lifts it to gold, and the row is there once it commits.
+#[test]
+fn ac_p4_40_1_curator_through_set_check_na() {
+    let mut rig = BadgesRig::new();
+    let tenth = nine_at_gold_and(&mut rig, "absent");
+    rig.settle_j2(tenth);
+    let (lit, evaluable) = rig.projection(tenth);
+    eprintln!("tenth after its settle: {lit:?} of {evaluable:?}");
+    assert!(lit < evaluable, "the fixture must start below gold");
+    assert_eq!(curator_counted(&rig), None, "nine is not ten");
+
+    let guard = rig.index.lock().unwrap();
+    let ctx = DetailCtx {
+        index: &guard,
+        git: &FakeGitBackend::new(),
+        mount: &FakeMountResolver::new(),
+        events: rig.events.as_ref(),
+        jobs: &NullJobSink,
+        sync: &NullSyncSink,
+        now: T0,
+        zone: &FixedZone(0),
+    };
+    let args = serde_json::json!({ "id": tenth.0, "check": "ci", "na": true });
+    dispatch_detail_command(&ctx, "projects.setCheckNa", args)
+        .expect("the detail module owns this command")
+        .expect("the ruling was refused");
+    drop(guard);
+    let counted = curator_counted(&rig).expect("the ruling wrote no curator");
+    tenth_listed(&rig, tenth, &counted);
+}
+
+/// The sync completion hook's site: a sync settle over the tenth project recomputes it onto
+/// facts that moved since its last settle — its CI config is now present — and lifts it to gold.
+#[test]
+fn ac_p4_40_1_curator_through_the_sync_completion_hook() {
+    let mut rig = BadgesRig::new();
+    let tenth = nine_at_gold_and(&mut rig, "absent");
+    rig.settle_j2(tenth);
+    rig.completion_facts(tenth, "present");
+    let (lit, evaluable) = rig.projection(tenth);
+    eprintln!("tenth before the sync: {lit:?} of {evaluable:?}");
+    assert!(lit < evaluable, "the fixture must start below gold");
+    assert_eq!(curator_counted(&rig), None, "nine is not ten");
+
+    let clock = Arc::new(FakeClock::new(T0));
+    let observing = Arc::new(ObservingTransport::new(
+        Arc::new(FakeTransport::new()),
+        clock.clone(),
+    ));
+    let deps = SyncDeps {
+        provider: Arc::new(GitHubProvider::new(
+            observing.clone(),
+            "forge.example.invalid".to_owned(),
+        )),
+        transport: observing,
+        tokens: Arc::new(FakeTokenStore::available()),
+        clock,
+        cancel: CancelToken::new(),
+        zone: Arc::new(FixedZone(0)),
+    };
+    let runner = SyncRunner::new(Arc::clone(&rig.index), deps, rig.events.clone());
+    runner.enqueue(SyncTask::ProjectRemote { project_id: tenth });
+    runner.start();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline && rig.award("curator").is_none() {
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    runner.request_stop();
+    runner.join();
+    let counted = curator_counted(&rig).expect("the sync settle wrote no curator");
+    tenth_listed(&rig, tenth, &counted);
 }

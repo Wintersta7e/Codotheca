@@ -121,6 +121,73 @@ impl BadgesRig {
         self.settle(project, JobKind::J3Inventory);
     }
 
+    /// One J2 for `project`, as [`Self::settle_j4`]: the settle that runs §28's singletons and
+    /// §31's completion evaluator over the copy's worktree.
+    pub(crate) fn settle_j2(&self, project: ProjectId) {
+        self.settle(project, JobKind::J2Status);
+    }
+
+    /// The facts §31's ten checks read for `project`, as the jobs that own them leave them: a
+    /// remote, a tag, a persisted refstate, and a finished content scan whose CI config answer
+    /// is `ci` (`present` or `absent`).
+    pub(crate) fn completion_facts(&self, project: ProjectId, ci: &str) {
+        let guard = self.index.lock().unwrap();
+        let conn = guard.conn();
+        conn.execute(
+            "UPDATE project SET remote_key = 'forge/o/' || name WHERE id = ?1",
+            [project.0],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE location SET tag_count = 1, refstate_observed_at = 50 WHERE project_id = ?1",
+            [project.0],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO project_content_scan
+                (project_id, head_oid, complete_head_oid, blobs_total, blobs_pending,
+                 predicate_version, has_readme, has_license, has_tests, has_ci,
+                 presence_observed_at, enumerated_at, completed_at)
+             VALUES (?1, 'head0', 'head0', 1, 0, 1, 'present', 'present', 'present', ?2, 1, 1, 1)
+             ON CONFLICT(project_id) DO UPDATE SET has_ci = excluded.has_ci",
+            rusqlite::params![project.0, ci],
+        )
+        .unwrap();
+        drop(guard);
+    }
+
+    /// Each `(project, evaluable)` given the projection a settle that lit every evaluable check
+    /// leaves: `completion_lit = completion_applicable = evaluable`.
+    pub(crate) fn at_top_rung(&self, projects: &[(ProjectId, i64)]) {
+        let guard = self.index.lock().unwrap();
+        for &(project, evaluable) in projects {
+            guard
+                .conn()
+                .execute(
+                    "UPDATE project SET completion_lit = ?2, completion_applicable = ?2
+                      WHERE id = ?1",
+                    rusqlite::params![project.0, evaluable],
+                )
+                .unwrap();
+        }
+        drop(guard);
+    }
+
+    /// `project`'s `(completion_lit, completion_applicable)`.
+    pub(crate) fn projection(&self, project: ProjectId) -> (Option<i64>, Option<i64>) {
+        let guard = self.index.lock().unwrap();
+        let projection = guard
+            .conn()
+            .query_row(
+                "SELECT completion_lit, completion_applicable FROM project WHERE id = ?1",
+                [project.0],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        drop(guard);
+        projection
+    }
+
     /// Write `rel` into `project`'s repository and commit it at noon UTC on local day `day`, so a
     /// day the project already holds gains no commit-day.
     pub(crate) fn commit_file(&self, project: ProjectId, rel: &str, bytes: &[u8], day: i64) {

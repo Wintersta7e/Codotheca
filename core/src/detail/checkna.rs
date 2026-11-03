@@ -61,6 +61,19 @@ pub fn handle_projects_set_check_na(
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
     let written = crate::completion::set_check_na(&tx, a.id, a.check, a.na, ctx.zone.at(ctx.now))
         .map_err(|e| CommandFailure::internal(format!("{e:?}")))?;
+    // §40.3's Curator stands on the projection this ruling may have rewritten, so it is read in
+    // the ruling's own transaction and lands with it.
+    if matches!(written, crate::completion::Written::Rewritten { .. }) {
+        crate::badges::evaluate::evaluate(
+            &tx,
+            &[crate::protocol::BadgeKind::Curator],
+            &crate::badges::evaluate::EvalCtx {
+                now: ctx.now,
+                zone: ctx.zone,
+            },
+        )
+        .map_err(|e| CommandFailure::internal(format!("{e:?}")))?;
+    }
     tx.commit()
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
 

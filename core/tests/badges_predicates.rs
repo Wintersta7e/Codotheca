@@ -14,7 +14,7 @@
 mod support;
 
 use codotheca_core::badges::evaluate::{evaluate, EvalCtx};
-use codotheca_core::badges::{COMEBACK_GAP_DAYS, MARATHON_CREDITED_SECONDS};
+use codotheca_core::badges::{COMEBACK_GAP_DAYS, CURATOR_PROJECTS, MARATHON_CREDITED_SECONDS};
 use codotheca_core::clock::local_date;
 use codotheca_core::ledger::price::REVIVAL_GAP_DAYS;
 use codotheca_core::protocol::{BadgeKind, CloseReason, ClosedBy, ProjectId, SessionId};
@@ -23,7 +23,8 @@ use codotheca_core::session::segment::ClosedSegment;
 use codotheca_core::session::store;
 use codotheca_core::testing::zone::FixedZone;
 use support::badges_rig::{
-    award_row, opening, orphaned_session, session_index, session_row, BadgesRig, Flags, SessionLib,
+    award_row, opening, orphaned_session, session_index, session_row, AwardRow, BadgesRig, Flags,
+    SessionLib, T0,
 };
 
 /// A local day number in early 2024: the first commit-day of every gap below.
@@ -443,4 +444,78 @@ fn a_session_recorded_before_the_migration_is_dated_by_its_own_ended_at() {
     assert_eq!(award.earned_at, end);
     assert_eq!(award.earned_on, "2023-11-14");
     assert_eq!(award.awarded_on, "2023-11-17");
+}
+
+/// `curator` evaluated over `rig`'s library at `T0`, and its row after.
+fn curator_over(rig: &BadgesRig) -> Option<AwardRow> {
+    let mut guard = rig.index.lock().unwrap();
+    let wrote = guard
+        .with_tx(|tx| {
+            evaluate(
+                tx,
+                &[BadgeKind::Curator],
+                &EvalCtx {
+                    now: T0,
+                    zone: &FixedZone(0),
+                },
+            )
+        })
+        .unwrap();
+    let award = award_row(guard.conn(), "curator");
+    drop(guard);
+    eprintln!("wrote {wrote:?}: {award:?}");
+    award
+}
+
+/// Notched gold is gold: ten projects whose every evaluable check is lit, each with fewer than
+/// ten evaluable, award Curator, and the evidence names each with its evaluable count.
+#[test]
+fn ac_p4_40_13_notched_gold_counts_with_its_evaluable_count() {
+    let mut rig = BadgesRig::new();
+    let scored: Vec<(ProjectId, i64)> = (0..CURATOR_PROJECTS)
+        .map(|i| {
+            let project = rig.project(&format!("p{i}"), &[D1], Flags::default());
+            (project, 6 + i64::try_from(i % 4).unwrap())
+        })
+        .collect();
+    rig.at_top_rung(&scored);
+    let award = curator_over(&rig).expect("ten notched-gold projects wrote no curator");
+    assert_eq!(award.earned_at, T0);
+    assert_eq!(award.awarded_at, T0);
+    assert_eq!(award.project_id, None);
+    assert_eq!(award.subject_key, None);
+    let listed: Vec<(String, i64)> = award.evidence["projects"]
+        .as_array()
+        .expect("curator evidence lists its projects")
+        .iter()
+        .map(|p| {
+            (
+                p["name"].as_str().unwrap().to_owned(),
+                p["evaluable"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    let want: Vec<(String, i64)> = scored
+        .iter()
+        .enumerate()
+        .map(|(i, &(_, evaluable))| (format!("p{i}"), evaluable))
+        .collect();
+    assert_eq!(listed, want);
+}
+
+/// **P**'s present-location clause: nine present projects at gold and a tenth whose every copy
+/// is removed make nine, which is not ten.
+#[test]
+fn ac_p4_40_13_a_project_with_no_present_location_is_not_counted() {
+    let mut rig = BadgesRig::new();
+    let scored: Vec<(ProjectId, i64)> = (0..CURATOR_PROJECTS)
+        .map(|i| (rig.project(&format!("p{i}"), &[D1], Flags::default()), 10))
+        .collect();
+    rig.at_top_rung(&scored);
+    let gone = scored[CURATOR_PROJECTS - 1].0;
+    rig.sql(&format!(
+        "UPDATE location SET removed_at = {T0} WHERE project_id = {}",
+        gone.0
+    ));
+    assert_eq!(curator_over(&rig), None);
 }

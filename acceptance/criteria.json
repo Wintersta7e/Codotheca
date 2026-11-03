@@ -10011,7 +10011,7 @@
         },
         {
           "id": "AC-P4-40-1-curator",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_curator_through_evaluate_and_write",
@@ -10019,7 +10019,7 @@
         },
         {
           "id": "AC-P4-40-1-curator-check-na",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_curator_through_set_check_na",
@@ -10027,7 +10027,7 @@
         },
         {
           "id": "AC-P4-40-1-curator-sync",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_curator_through_the_sync_completion_hook",
@@ -10420,7 +10420,7 @@
       "checks": [
         {
           "id": "AC-P4-40-13",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_13_notched_gold_counts_with_its_evaluable_count",
@@ -10428,7 +10428,7 @@
         },
         {
           "id": "AC-P4-40-13-no-present-location",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_13_a_project_with_no_present_location_is_not_counted",

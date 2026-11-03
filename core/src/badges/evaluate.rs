@@ -11,12 +11,12 @@ use crate::index::subject::subject_for_project;
 use crate::index::IndexError;
 use crate::jobs::JobKind;
 use crate::ledger::price::is_revival_gap;
-use crate::protocol::{BadgeEvidence, BadgeKind, ProjectId};
+use crate::protocol::{BadgeEvidence, BadgeEvidenceProject, BadgeKind, ProjectId};
 
 use super::evidence::encode;
-use super::population::{h_sql, s_sql};
+use super::population::{h_sql, p_sql, s_sql};
 use super::store::{insert_award, latched, NewAward};
-use super::{COMEBACK_GAP_DAYS, MARATHON_CREDITED_SECONDS, POLYGLOT_LANGUAGES};
+use super::{COMEBACK_GAP_DAYS, CURATOR_PROJECTS, MARATHON_CREDITED_SECONDS, POLYGLOT_LANGUAGES};
 
 /// Seconds in a day: a day-grain row's `ts` is its day's midnight.
 const DAY_SECONDS: i64 = 86_400;
@@ -111,12 +111,10 @@ fn predicate(
         BadgeKind::Necromancer => necromancer(tx, ctx),
         BadgeKind::Polyglot => polyglot(tx, ctx),
         BadgeKind::Comeback => comeback(tx, ctx),
+        BadgeKind::Curator => curator(tx, ctx),
         BadgeKind::Marathon => marathon(tx, ctx),
         // Not evaluated yet: each of these lands with its own production caller.
-        BadgeKind::Curator
-        | BadgeKind::Undertaker
-        | BadgeKind::Firefighter
-        | BadgeKind::Lifeline => Ok(None),
+        BadgeKind::Undertaker | BadgeKind::Firefighter | BadgeKind::Lifeline => Ok(None),
     }
 }
 
@@ -377,6 +375,52 @@ fn marathon(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>,
         earned_on: ctx.zone.at(ended_at).date(),
         project: Some(project),
         subject_key: subject_for_project(tx, project)?.map(|s| s.to_key()),
+        evidence: encode(&evidence)?,
+        awarded_at: ctx.now,
+        awarded_on: ctx.zone.at(ctx.now).date(),
+    }))
+}
+
+/// §40.3's Curator: `CURATOR_PROJECTS` or more projects in **P** at §31's 100% of their
+/// evaluable set, at this one observation. Notched gold counts — the 100% is of what could be
+/// scored. Standing, so never backdated: earned at `now`, dated by the zone's offset at it. The
+/// evidence lists every qualifying project by id, each with its evaluable count.
+fn curator(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>, IndexError> {
+    let mut st = tx.prepare_cached(&format!(
+        "SELECT p.name, p.completion_applicable
+           FROM project p
+          WHERE p.completion_lit IS NOT NULL AND p.completion_lit = p.completion_applicable
+            AND {}
+          ORDER BY p.id",
+        p_sql()
+    ))?;
+    let projects = st
+        .query_map([], |r| {
+            Ok(BadgeEvidenceProject {
+                name: r.get(0)?,
+                evaluable: Some(r.get(1)?),
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    if projects.len() < CURATOR_PROJECTS {
+        return Ok(None);
+    }
+    let evidence = BadgeEvidence {
+        project_name: None,
+        gap_days: None,
+        year: None,
+        languages: None,
+        credited_seconds: None,
+        projects: Some(projects),
+        run_start_on: None,
+    };
+    Ok(Some(NewAward {
+        kind: BadgeKind::Curator,
+        earned_at: ctx.now,
+        tz_offset_min: i64::from(ctx.zone.offset_min_at(ctx.now)),
+        earned_on: ctx.zone.at(ctx.now).date(),
+        project: None,
+        subject_key: None,
         evidence: encode(&evidence)?,
         awarded_at: ctx.now,
         awarded_on: ctx.zone.at(ctx.now).date(),

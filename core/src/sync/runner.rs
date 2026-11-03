@@ -717,8 +717,25 @@ impl SyncRunner {
             let at = self.deps.zone.at(now);
             let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
             let _ = guard.with_tx(|tx| {
+                let mut rewritten = false;
                 for project in &projects {
-                    let _ = crate::completion::evaluate_and_write(tx, *project, at);
+                    let written = crate::completion::evaluate_and_write(tx, *project, at);
+                    rewritten |=
+                        matches!(written, Ok(crate::completion::Written::Rewritten { .. }));
+                }
+                // [p4] §40.3's Curator stands on the projections the loop wrote, so it is read
+                // once, after the last of them, and only when one was rewritten. Its failure
+                // leaves those writes standing, as each project's failure above does.
+                if rewritten {
+                    let ctx = crate::badges::evaluate::EvalCtx {
+                        now,
+                        zone: &*self.deps.zone,
+                    };
+                    let _ = crate::badges::evaluate::evaluate(
+                        tx,
+                        &[crate::protocol::BadgeKind::Curator],
+                        &ctx,
+                    );
                 }
                 Ok(())
             });
