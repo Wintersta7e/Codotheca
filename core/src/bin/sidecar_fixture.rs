@@ -222,10 +222,53 @@ fn weeks_lowered(planted: &[SectionRow], after: &[SectionRow]) -> Vec<String> {
     out
 }
 
-/// `doc` without `rhythm_week`, which [`weeks_lowered`] compares instead of the exact comparison.
-fn without_weeks(doc: &Sidecar) -> Sidecar {
+/// The run state the first tick's day close writes (§40.6 rule 3); it is not rebuild-owned.
+const LIFELINE_RUN: &str = "badges.lifeline_run";
+
+/// The latch sections, by their registered rule: the awards, which the app writes at start.
+fn latches() -> impl Iterator<Item = &'static str> {
+    SECTIONS
+        .iter()
+        .filter(|s| matches!(s.rule, RestoreRule::Latch))
+        .map(|s| s.name)
+}
+
+/// A latch section's rows are keyed by `kind`, and the first tick's day close sweeps every
+/// unlatched kind (§40.6), so the rebuilt index may hold an award the planted one did not —
+/// earned from the restored history, such as a backdated Comeback. Each planted row must come
+/// back exactly as it was, and any other row must be a kind the planted document did not hold.
+fn latch_lowered(name: &str, planted: &[SectionRow], after: &[SectionRow]) -> Vec<String> {
+    let kind = |row: &SectionRow| {
+        row.data
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    let mut out: Vec<String> = planted
+        .iter()
+        .filter(|was| !after.contains(was))
+        .map(|was| format!("{name}: planted {}, not restored unchanged", was.data))
+        .collect();
+    out.extend(
+        after
+            .iter()
+            .filter(|now| {
+                !planted.contains(now) && planted.iter().any(|was| kind(was) == kind(now))
+            })
+            .map(|now| format!("{name}: a planted kind came back as {}", now.data)),
+    );
+    out
+}
+
+/// `doc` without what the app writes at start — `rhythm_week` and the latch sections, which
+/// [`weeks_lowered`] and [`latch_lowered`] compare instead, and the Lifeline run state.
+fn without_start_writes(doc: &Sidecar) -> Sidecar {
     let mut doc = doc.clone();
     doc.payload.sections.remove(RHYTHM_WEEK);
+    for name in latches() {
+        doc.payload.sections.remove(name);
+    }
+    doc.payload.settings.remove(LIFELINE_RUN);
     doc
 }
 
@@ -234,7 +277,10 @@ fn verify(data: &Path) -> Result<Value, IndexError> {
     let planted = read(&data.join(PLANTED_SIDECAR))?;
     let index = Index::open_at(data, VERIFIED_AT)?;
     let after = export(index.conn(), planted.generation, VERIFIED_AT)?;
-    let comparison = compare_documents(&without_weeks(&planted), &without_weeks(&after))?;
+    let comparison = compare_documents(
+        &without_start_writes(&planted),
+        &without_start_writes(&after),
+    )?;
     let pending: i64 = index
         .conn()
         .query_row("SELECT COUNT(*) FROM sidecar_pending", [], |r| r.get(0))?;
@@ -273,10 +319,16 @@ fn verify(data: &Path) -> Result<Value, IndexError> {
                 "{name}: no raise-only comparison is written for this section"
             )],
         })
+        .chain(
+            latches()
+                .flat_map(|name| latch_lowered(name, &rows(&planted, name), &rows(&after, name))),
+        )
         .collect();
     Ok(json!({
         "counts": counted,
-        "compared": comparison.compared.values().sum::<usize>() + rows(&planted, RHYTHM_WEEK).len(),
+        "compared": comparison.compared.values().sum::<usize>()
+            + rows(&planted, RHYTHM_WEEK).len()
+            + latches().map(|name| rows(&planted, name).len()).sum::<usize>(),
         "differences": comparison.differences,
         "pending": pending,
         "sessionMismatch": session_mismatch,
@@ -314,4 +366,66 @@ fn main() -> ExitCode {
     }
     let _ = writeln!(err, "{file}: {found}");
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use super::{latch_lowered, latches, SectionRow};
+    use serde_json::json;
+
+    fn award(kind: &str, landed_on: Option<&str>) -> SectionRow {
+        SectionRow {
+            subject: None,
+            location_keys: Vec::new(),
+            data: json!({ "kind": kind, "earned_on": "2023-10-15", "landed_on": landed_on }),
+        }
+    }
+
+    #[test]
+    fn the_registry_holds_a_latch_section_to_compare() {
+        assert!(latches().count() > 0, "no latch section is registered");
+    }
+
+    #[test]
+    fn an_award_the_first_sweep_earns_is_not_a_difference() {
+        let planted = [
+            award("curator", None),
+            award("marathon", Some("2026-01-02")),
+        ];
+        let after = [
+            award("marathon", Some("2026-01-02")),
+            award("comeback", None),
+            award("curator", None),
+        ];
+        assert_eq!(
+            latch_lowered("awards", &planted, &after),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_planted_award_that_changed_or_vanished_is_named() {
+        let planted = [
+            award("curator", None),
+            award("marathon", Some("2026-01-02")),
+        ];
+        let after = [award("marathon", None)];
+        let found = latch_lowered("awards", &planted, &after);
+        assert_eq!(found.len(), 3, "{found:?}");
+        assert!(
+            found.iter().any(|line| line.contains("\"curator\"")),
+            "{found:?}"
+        );
+        assert!(
+            found.iter().any(|line| line.contains("came back as")),
+            "{found:?}"
+        );
+    }
 }
