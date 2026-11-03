@@ -525,3 +525,60 @@ fn the_remote_url_argv_is_a_read() {
     }
     assert_eq!(argv.len(), 4, "an extra token would be a value: {argv:?}");
 }
+
+/// Every `.rs` file under `core/src/git/`, walked recursively, with each line cut at its first
+/// `//` so a sentence about a flag is never the flag.
+fn git_sources_recursive() -> Vec<(String, String)> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("git");
+    let mut out = Vec::new();
+    let mut pending = vec![root.clone()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let name = path.strip_prefix(&root).unwrap().display().to_string();
+                let text = std::fs::read_to_string(&path).unwrap();
+                let stripped: Vec<&str> = text
+                    .lines()
+                    .map(|line| line.split("//").next().unwrap_or_default())
+                    .collect();
+                out.push((name, stripped.join("\n")));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// **AC-P4-40-16** — §40.4: Demolitionist's cut is held at the argv seam, not by absence. No file
+/// anywhere under `core/src/git/` spells a line-count flag as a string literal, bare or with a
+/// value.
+#[test]
+fn ac_p4_40_16_no_line_count_flag_under_core_src_git() {
+    let files = git_sources_recursive();
+    eprintln!(
+        "line-count flag scan: {} files under core/src/git/",
+        files.len()
+    );
+    assert!(!files.is_empty(), "the scan read no file");
+    let mut hits = Vec::new();
+    for (name, source) in &files {
+        for flag in ["shortstat", "numstat", "stat", "dirstat"] {
+            for close in ["\"", "="] {
+                let needle = format!("\"--{flag}{close}");
+                if source.contains(&needle) {
+                    hits.push(format!("{name}: {needle}"));
+                }
+            }
+        }
+    }
+    eprintln!("hits: {hits:?}");
+    assert!(
+        hits.is_empty(),
+        "a line-count flag reached core/src/git/: {hits:?}"
+    );
+}

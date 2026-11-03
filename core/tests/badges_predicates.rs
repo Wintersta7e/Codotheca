@@ -800,3 +800,31 @@ fn ac_p4_40_15_one_project_archived_twice_counts_once() {
         .collect();
     assert_eq!(listed, ["twice", "second", "third", "fourth", "fifth"]);
 }
+
+/// §40.3: one gap arithmetic. The dormancy constant's decimal value, read from §38's constant,
+/// is spelled as no integer literal anywhere under `core/src/badges/`: every gap there is the
+/// constant, never a copy of its number.
+#[test]
+fn ac_p4_40_10_no_dormancy_literal_in_badges() {
+    let files = support::source_scan::rust_sources("src/badges");
+    let value = i128::from(REVIVAL_GAP_DAYS);
+    let mut literals = 0;
+    let mut hits = Vec::new();
+    for (name, source) in &files {
+        let found = support::source_scan::integer_literals(source);
+        literals += found.len();
+        if found.contains(&value) {
+            hits.push(name.clone());
+        }
+    }
+    eprintln!(
+        "{} files under core/src/badges/, {literals} integer literals, {value} in {hits:?}",
+        files.len()
+    );
+    assert!(!files.is_empty(), "the scan read no file");
+    assert!(literals > 0, "the scan read no integer literal");
+    assert!(
+        hits.is_empty(),
+        "{value} is spelled as a literal in {hits:?}"
+    );
+}

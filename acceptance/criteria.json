@@ -10075,7 +10075,7 @@
         },
         {
           "id": "AC-P4-40-1-every-kind",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_every_kind_has_a_production_arm",
@@ -10140,7 +10140,7 @@
       "checks": [
         {
           "id": "AC-P4-40-3",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_3_the_latch_in_code",
@@ -10149,7 +10149,7 @@
         },
         {
           "id": "AC-P4-40-3-landing-writer",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_3_only_mark_landed_updates_a_landing",
@@ -10174,7 +10174,7 @@
       "checks": [
         {
           "id": "AC-P4-40-4",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_4_no_award_writes_the_ledger",
@@ -10191,7 +10191,7 @@
       "checks": [
         {
           "id": "AC-P4-40-5",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_5_an_award_emits_no_event_but_motivation_changed",
@@ -10323,7 +10323,7 @@
         },
         {
           "id": "AC-P4-40-10-no-literal",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_10_no_dormancy_literal_in_badges",
@@ -10509,7 +10509,7 @@
       "checks": [
         {
           "id": "AC-P4-40-16",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "git_readonly::ac_p4_40_16_no_line_count_flag_under_core_src_git",
@@ -10526,7 +10526,7 @@
       "checks": [
         {
           "id": "AC-P4-40-17",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_17_every_stored_evidence_decodes_strictly",

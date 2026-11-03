@@ -19,6 +19,7 @@ pub(crate) mod ledger_rig;
 pub(crate) mod lifeline_rig;
 #[cfg(feature = "testkit")]
 pub(crate) mod rings_rig;
+pub(crate) mod source_scan;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
