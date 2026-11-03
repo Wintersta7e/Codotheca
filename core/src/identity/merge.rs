@@ -368,6 +368,12 @@ pub fn recompute_derived(
         "UPDATE xp_events SET project_id = ?1 WHERE project_id = ?2",
         params![survivor, absorbed],
     )?;
+    // §40.7: an award is reparented, never recomputed — the merge moves `project_id` and nothing
+    // else, which is all the table's no-rewrite trigger admits.
+    tx.execute(
+        "UPDATE badge_award SET project_id = ?1 WHERE project_id = ?2",
+        params![survivor, absorbed],
+    )?;
 
     // Recomputed from the survivor by the history and content jobs. Deleting both sides is
     // required, not tidy: a stale row for the survivor would survive the merge and be read as

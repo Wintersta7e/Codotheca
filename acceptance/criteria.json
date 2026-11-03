@@ -10158,7 +10158,7 @@
         },
         {
           "id": "AC-P4-40-3-identity",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_3_a_narrowed_identity_set_leaves_the_award",
@@ -10595,7 +10595,7 @@
       "checks": [
         {
           "id": "AC-P4-40-20",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_20_a_merge_repoints_the_award_and_nothing_else",

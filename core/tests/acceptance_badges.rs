@@ -1340,3 +1340,134 @@ fn ac_p4_40_19_the_day_close_resolves_a_restored_project_by_subject() {
     eprintln!("after the day close: {after:?}");
     assert_eq!(after, before, "every column equals the pre-rebuild row");
 }
+
+/// `rig`'s index under the lock, with every `badge_award` row and the `project_id` column.
+fn awards_and_column(rig: &BadgesRig) -> (Vec<Vec<Value>>, usize) {
+    let guard = rig.index.lock().unwrap();
+    let out = (awards(guard.conn()), project_column(guard.conn()));
+    drop(guard);
+    out
+}
+
+/// §40.7: a merge reparents an award and recomputes nothing. A Necromancer award on project B,
+/// then `projects.merge {a, b}` through the identity dispatcher absorbing B: every row that
+/// named B names the survivor, and every other column is byte-identical.
+#[test]
+fn ac_p4_40_20_a_merge_repoints_the_award_and_nothing_else() {
+    let mut rig = BadgesRig::new();
+    let keeper = rig.project("keeper", &[D1], Flags::default());
+    let revived = rig.project("revived", &[D1, D1 + REVIVAL_GAP_DAYS], Flags::default());
+    rig.settle_j4(keeper);
+    rig.settle_j4(revived);
+    let (before, at) = awards_and_column(&rig);
+    eprintln!("before the merge: {before:?}");
+    let on_b = before
+        .iter()
+        .filter(|row| row[at] == Value::Integer(revived.0))
+        .count();
+    assert!(on_b > 0, "the fixture holds no award on the absorbed side");
+    assert!(
+        !of_kind(&before, "necromancer").is_empty(),
+        "no necromancer"
+    );
+
+    let guard = rig.index.lock().unwrap();
+    let ctx = codotheca_core::identity::commands::IdentityCtx {
+        index: &guard,
+        events: rig.events.as_ref(),
+        now: T0,
+    };
+    let merged = codotheca_core::identity::commands::dispatch_identity_command(
+        &ctx,
+        "projects.merge",
+        serde_json::json!({ "a": keeper.0, "b": revived.0 }),
+    )
+    .expect("projects.merge is identity's")
+    .expect("the merge commits");
+    drop(guard);
+    eprintln!("merge: {merged}");
+    assert_eq!(merged["survivor"], keeper.0);
+    assert_eq!(merged["absorbed"], revived.0);
+
+    let (after, _) = awards_and_column(&rig);
+    eprintln!("after the merge: {after:?}");
+    let expected: Vec<Vec<Value>> = before
+        .iter()
+        .map(|row| {
+            let mut row = row.clone();
+            if row[at] == Value::Integer(revived.0) {
+                row[at] = Value::Integer(keeper.0);
+            }
+            row
+        })
+        .collect();
+    assert_eq!(after, expected, "a column other than project_id moved");
+}
+
+/// §40.7: an award is never recomputed. Necromancer through a J4 settle; then the address
+/// behind it is unticked through `identity.confirm {apply: true}` on a present copy, so the
+/// `commit_day` rows go — and the award row stays byte-identical.
+#[test]
+fn ac_p4_40_3_a_narrowed_identity_set_leaves_the_award() {
+    let mut rig = BadgesRig::new();
+    let revived = rig.project("revived", &[D1, D1 + REVIVAL_GAP_DAYS], Flags::default());
+    rig.settle_j4(revived);
+    let commit_days = |of: &BadgesRig| -> i64 {
+        let guard = of.index.lock().unwrap();
+        let n = guard
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM xp_events WHERE kind = 'commit_day' AND project_id = ?1",
+                [revived.0],
+                |r| r.get(0),
+            )
+            .unwrap();
+        drop(guard);
+        n
+    };
+    let (before, _) = awards_and_column(&rig);
+    let days_before = commit_days(&rig);
+    eprintln!("before: {days_before} commit_day rows, awards {before:?}");
+    assert!(days_before > 0, "the settle wrote no commit_day");
+    assert!(
+        !of_kind(&before, "necromancer").is_empty(),
+        "no necromancer"
+    );
+
+    let home = tempfile::tempdir().unwrap();
+    let env = codotheca_core::firstrun::FirstRunEnv {
+        sources: codotheca_core::firstrun::sources::SourceEnv {
+            home: home.path().to_path_buf(),
+            app_data: None,
+            xdg_config: None,
+        },
+        classifier: Arc::new(codotheca_core::firstrun::classify::FixedClassifier::new(
+            vec![],
+        )),
+        distros: Arc::new(codotheca_core::firstrun::classify::NoDistros),
+        platform: codotheca_core::index::path::PathPlatform::Unix,
+        skip: codotheca_core::scan::skiplist::SkipList::default(),
+        cache: codotheca_core::firstrun::roots::SuggestionCache::new(),
+    };
+    let mut guard = rig.index.lock().unwrap();
+    let applied = codotheca_core::firstrun::dispatch(
+        guard.conn_mut(),
+        &env,
+        "identity.confirm",
+        &serde_json::json!({ "emails": [], "apply": true }),
+        T0,
+    )
+    .expect("identity.confirm is first run's")
+    .expect("identity.confirm answered");
+    drop(guard);
+    eprintln!("identity.confirm: {applied}");
+
+    let days_after = commit_days(&rig);
+    let (after, _) = awards_and_column(&rig);
+    eprintln!("after: {days_after} commit_day rows, awards {after:?}");
+    assert_eq!(
+        days_after, 0,
+        "the narrowing kept the rows behind the award"
+    );
+    assert_eq!(after, before, "the narrowing touched an award");
+}
