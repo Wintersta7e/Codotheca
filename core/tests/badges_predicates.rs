@@ -13,11 +13,18 @@
 
 mod support;
 
-use codotheca_core::badges::COMEBACK_GAP_DAYS;
+use codotheca_core::badges::evaluate::{evaluate, EvalCtx};
+use codotheca_core::badges::{COMEBACK_GAP_DAYS, MARATHON_CREDITED_SECONDS};
 use codotheca_core::clock::local_date;
 use codotheca_core::ledger::price::REVIVAL_GAP_DAYS;
-use codotheca_core::protocol::ProjectId;
-use support::badges_rig::{BadgesRig, Flags};
+use codotheca_core::protocol::{BadgeKind, CloseReason, ClosedBy, ProjectId, SessionId};
+use codotheca_core::session::orphan;
+use codotheca_core::session::segment::ClosedSegment;
+use codotheca_core::session::store;
+use codotheca_core::testing::zone::FixedZone;
+use support::badges_rig::{
+    award_row, opening, orphaned_session, session_index, session_row, BadgesRig, Flags, SessionLib,
+};
 
 /// A local day number in early 2024: the first commit-day of every gap below.
 const D1: i64 = 19_724;
@@ -305,4 +312,135 @@ fn a_reference_verdict_cannot_open_a_comeback_gap() {
         award, None,
         "a Reference verdict's deleted days opened a gap"
     );
+}
+
+/// The session tests' first instant, 2023-11-14 22:13:20 UTC.
+const T_SESSION: i64 = 1_700_000_000;
+
+/// Three days after it: when the next process starts.
+const LATER: i64 = T_SESSION + 3 * 86_400;
+
+/// A session a previous process left open at `started_at` whose one segment was already closed
+/// over `[started_at, started_at + wall]` with `credited` seconds of credit.
+fn orphan_with_closed_segment(
+    lib: &mut SessionLib,
+    started_at: i64,
+    wall: i64,
+    credited: i64,
+) -> SessionId {
+    let open = opening(lib, started_at);
+    let tx = lib.index.index_mut().conn_mut().transaction().unwrap();
+    let session = store::open_session(&tx, &open).unwrap();
+    let segment = store::open_segment(&tx, session, started_at, false).unwrap();
+    store::close_segment(
+        &tx,
+        segment,
+        &ClosedSegment {
+            started_at,
+            ended_at: started_at + wall,
+            credited_seconds: credited,
+            closed_by: ClosedBy::Idle,
+        },
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    session
+}
+
+/// §40.3: Marathon reads credited seconds, never wall-clock. A session spanning
+/// `MARATHON_CREDITED_SECONDS` of wall-clock with one second less credit is not awarded; one
+/// credited exactly the constant is.
+#[test]
+fn ac_p4_40_14_credit_not_wall_clock() {
+    let mut lib = session_index();
+    let short = orphan_with_closed_segment(
+        &mut lib,
+        T_SESSION,
+        MARATHON_CREDITED_SECONDS,
+        MARATHON_CREDITED_SECONDS - 1,
+    );
+    orphan::close_orphans(lib.index.index_mut(), LATER, &FixedZone(0)).unwrap();
+    let (ended_at, credited) = session_row(&lib.index, short);
+    let none = award_row(lib.index.index().conn(), "marathon");
+    eprintln!(
+        "wall {:?}, credited {credited}: {none:?}",
+        ended_at.map(|e| e - T_SESSION)
+    );
+    assert_eq!(ended_at, Some(T_SESSION + MARATHON_CREDITED_SECONDS));
+    assert_eq!(credited, MARATHON_CREDITED_SECONDS - 1);
+    assert_eq!(none, None, "wall-clock awarded marathon");
+
+    let start = T_SESSION + 86_400;
+    orphan_with_closed_segment(
+        &mut lib,
+        start,
+        MARATHON_CREDITED_SECONDS,
+        MARATHON_CREDITED_SECONDS,
+    );
+    orphan::close_orphans(lib.index.index_mut(), LATER, &FixedZone(0)).unwrap();
+    let award = award_row(lib.index.index().conn(), "marathon");
+    eprintln!("credited the constant: {award:?}");
+    let award = award.expect("no marathon at the constant");
+    assert_eq!(award.earned_at, start + MARATHON_CREDITED_SECONDS);
+    assert_eq!(award.evidence["creditedSeconds"], MARATHON_CREDITED_SECONDS);
+}
+
+/// §40.5's second close path: `close_orphans` closes a crashed session at its watermark, and
+/// that close awards, dated by the zone at the session's own end.
+#[test]
+fn ac_p4_40_14_a_session_closed_by_close_orphans_awards() {
+    let mut lib = session_index();
+    orphaned_session(&mut lib, T_SESSION, MARATHON_CREDITED_SECONDS);
+    let report = orphan::close_orphans(lib.index.index_mut(), LATER, &FixedZone(-300)).unwrap();
+    let award = award_row(lib.index.index().conn(), "marathon");
+    eprintln!("{report:?}: {award:?}");
+    assert_eq!(report.sessions_closed, 1);
+    let award = award.expect("close_orphans wrote no marathon");
+    assert_eq!(award.earned_at, T_SESSION + MARATHON_CREDITED_SECONDS);
+    assert_eq!(award.tz_offset_min, -300);
+    assert_eq!(award.earned_on, "2023-11-14");
+    assert_eq!(award.project_id, Some(lib.project.0));
+    assert_eq!(
+        award.subject_key.as_deref(),
+        Some("lineage:marathon|remote:")
+    );
+    assert_eq!(award.evidence["projectName"], "marathon");
+}
+
+/// A session the app recorded before badges existed is awarded when the evaluator next runs
+/// over the stored rows, dated by its own `ended_at`, never by the evaluation. The day-close
+/// sweep is that evaluation's production caller once it lands.
+#[test]
+fn a_session_recorded_before_the_migration_is_dated_by_its_own_ended_at() {
+    let mut lib = session_index();
+    let end = T_SESSION + MARATHON_CREDITED_SECONDS;
+    let session = orphan_with_closed_segment(
+        &mut lib,
+        T_SESSION,
+        MARATHON_CREDITED_SECONDS,
+        MARATHON_CREDITED_SECONDS,
+    );
+    let tx = lib.index.index_mut().conn_mut().transaction().unwrap();
+    store::close_session(&tx, session, end, CloseReason::Stop, end).unwrap();
+    tx.commit().unwrap();
+    let stored = award_row(lib.index.index().conn(), "marathon");
+    assert_eq!(stored, None, "the store's close is not an award site");
+
+    let sweep = lib.index.index_mut().conn_mut().transaction().unwrap();
+    let wrote = evaluate(
+        &sweep,
+        &[BadgeKind::Marathon],
+        &EvalCtx {
+            now: LATER,
+            zone: &FixedZone(-300),
+        },
+    )
+    .unwrap();
+    sweep.commit().unwrap();
+    let award = award_row(lib.index.index().conn(), "marathon");
+    eprintln!("wrote {wrote:?}: {award:?}");
+    let award = award.expect("the stored session was not awarded");
+    assert_eq!(award.earned_at, end);
+    assert_eq!(award.earned_on, "2023-11-14");
+    assert_eq!(award.awarded_on, "2023-11-17");
 }

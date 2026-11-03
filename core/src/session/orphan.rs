@@ -115,6 +115,16 @@ pub fn close_orphans(
         report.credited_seconds = report.credited_seconds.saturating_add(credited);
     }
 
+    // §40.5: the second session close path. Once, after every close, in this transaction; a
+    // pass that closed nothing observed no new session.
+    if report.sessions_closed > 0 {
+        crate::badges::evaluate::evaluate(
+            &tx,
+            &[crate::protocol::BadgeKind::Marathon],
+            &crate::badges::evaluate::EvalCtx { now, zone },
+        )?;
+    }
+
     tx.commit()?;
     Ok(report)
 }

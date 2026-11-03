@@ -14,9 +14,9 @@ use crate::ledger::price::is_revival_gap;
 use crate::protocol::{BadgeEvidence, BadgeKind, ProjectId};
 
 use super::evidence::encode;
-use super::population::h_sql;
+use super::population::{h_sql, s_sql};
 use super::store::{insert_award, latched, NewAward};
-use super::{COMEBACK_GAP_DAYS, POLYGLOT_LANGUAGES};
+use super::{COMEBACK_GAP_DAYS, MARATHON_CREDITED_SECONDS, POLYGLOT_LANGUAGES};
 
 /// Seconds in a day: a day-grain row's `ts` is its day's midnight.
 const DAY_SECONDS: i64 = 86_400;
@@ -111,9 +111,9 @@ fn predicate(
         BadgeKind::Necromancer => necromancer(tx, ctx),
         BadgeKind::Polyglot => polyglot(tx, ctx),
         BadgeKind::Comeback => comeback(tx, ctx),
+        BadgeKind::Marathon => marathon(tx, ctx),
         // Not evaluated yet: each of these lands with its own production caller.
         BadgeKind::Curator
-        | BadgeKind::Marathon
         | BadgeKind::Undertaker
         | BadgeKind::Firefighter
         | BadgeKind::Lifeline => Ok(None),
@@ -332,6 +332,55 @@ fn comeback(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>,
         run_start_on: None,
     };
     Ok(Some(day_grain(BadgeKind::Comeback, d2, &evidence, ctx)?))
+}
+
+/// §40.3's Marathon: the earliest closed session — by `ended_at`, then id — of a project in **S**
+/// credited `MARATHON_CREDITED_SECONDS` or more. Credited seconds, the number PLAYTIME shows,
+/// never wall-clock. Earned at the session's end; a session stores no offset, so that instant is
+/// dated by the zone's offset at it.
+fn marathon(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>, IndexError> {
+    let mut st = tx.prepare_cached(&format!(
+        "SELECT p.id, p.name, s.ended_at, s.credited_seconds
+           FROM session s JOIN project p ON p.id = s.project_id
+          WHERE s.ended_at IS NOT NULL AND s.credited_seconds >= ?1 AND {}
+          ORDER BY s.ended_at, s.id
+          LIMIT 1",
+        s_sql()
+    ))?;
+    let found = st
+        .query_map([MARATHON_CREDITED_SECONDS], |r| {
+            Ok((
+                ProjectId(r.get(0)?),
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })?
+        .next()
+        .transpose()?;
+    let Some((project, name, ended_at, credited)) = found else {
+        return Ok(None);
+    };
+    let evidence = BadgeEvidence {
+        project_name: Some(name),
+        gap_days: None,
+        year: None,
+        languages: None,
+        credited_seconds: Some(credited),
+        projects: None,
+        run_start_on: None,
+    };
+    Ok(Some(NewAward {
+        kind: BadgeKind::Marathon,
+        earned_at: ended_at,
+        tz_offset_min: i64::from(ctx.zone.offset_min_at(ended_at)),
+        earned_on: ctx.zone.at(ended_at).date(),
+        project: Some(project),
+        subject_key: subject_for_project(tx, project)?.map(|s| s.to_key()),
+        evidence: encode(&evidence)?,
+        awarded_at: ctx.now,
+        awarded_on: ctx.zone.at(ctx.now).date(),
+    }))
 }
 
 /// A day-grain award naming no project: earned at `day`'s midnight, offset 0, as a commit-day

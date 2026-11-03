@@ -11,10 +11,11 @@ use codotheca_core::index::Index;
 use codotheca_core::jobs::scheduler::JobRunner;
 use codotheca_core::jobs::{Job, JobDeps, JobKind, JobOrigin, Priority};
 use codotheca_core::mount::StoreClass;
-use codotheca_core::protocol::{LocationId, ProjectId};
+use codotheca_core::protocol::{LocationId, ProjectId, SessionId, TargetId};
+use codotheca_core::session::store::{self, SessionOpen};
 use codotheca_core::testing::events::ValidatingSink;
 use codotheca_core::testing::zone::FixedZone;
-use codotheca_core::testing::FakeClock;
+use codotheca_core::testing::{FakeClock, TempIndex};
 use rusqlite::types::Value;
 
 use super::TestRepo;
@@ -249,4 +250,116 @@ impl BadgesRig {
         drop(guard);
         n
     }
+}
+
+/// One `badge_award` row, its columns by name.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AwardRow {
+    pub(crate) earned_at: i64,
+    pub(crate) tz_offset_min: i64,
+    pub(crate) earned_on: String,
+    pub(crate) project_id: Option<i64>,
+    pub(crate) subject_key: Option<String>,
+    pub(crate) evidence: serde_json::Value,
+    pub(crate) awarded_at: i64,
+    pub(crate) awarded_on: String,
+}
+
+/// `kind`'s row on `conn`, when it is held.
+pub(crate) fn award_row(conn: &rusqlite::Connection, kind: &str) -> Option<AwardRow> {
+    conn.query_row(
+        "SELECT earned_at, tz_offset_min, earned_on, project_id, subject_key, evidence,
+                awarded_at, awarded_on
+           FROM badge_award WHERE kind = ?1",
+        [kind],
+        |r| {
+            Ok(AwardRow {
+                earned_at: r.get(0)?,
+                tz_offset_min: r.get(1)?,
+                earned_on: r.get(2)?,
+                project_id: r.get(3)?,
+                subject_key: r.get(4)?,
+                evidence: serde_json::from_str(&r.get::<_, String>(5)?).unwrap(),
+                awarded_at: r.get(6)?,
+                awarded_on: r.get(7)?,
+            })
+        },
+    )
+    .ok()
+}
+
+/// A session index: one project of **S** named `marathon`, with a lineage, on one present copy
+/// with one launch target.
+pub(crate) struct SessionLib {
+    pub(crate) index: TempIndex,
+    pub(crate) project: ProjectId,
+    pub(crate) location: LocationId,
+    pub(crate) target: TargetId,
+}
+
+/// See [`SessionLib`].
+pub(crate) fn session_index() -> SessionLib {
+    let index = TempIndex::new();
+    let project = index.insert_project();
+    index
+        .index()
+        .conn()
+        .execute(
+            "UPDATE project SET name = 'marathon', lineage_key = 'marathon' WHERE id = ?1",
+            [project.0],
+        )
+        .unwrap();
+    let location = index.insert_location(project, "/w/marathon");
+    index
+        .index()
+        .conn()
+        .execute(
+            "INSERT INTO launch_target (project_id, location_id, kind, name, exec_bytes,
+                                        sort_index)
+             VALUES (?1, ?2, 'editor', 'an editor', X'2F65', 0)",
+            rusqlite::params![project.0, location.0],
+        )
+        .unwrap();
+    let target = TargetId(index.index().conn().last_insert_rowid());
+    SessionLib {
+        index,
+        project,
+        location,
+        target,
+    }
+}
+
+/// `lib`'s project opening a session at `started_at`, on its copy and target.
+pub(crate) const fn opening(lib: &SessionLib, started_at: i64) -> SessionOpen {
+    SessionOpen {
+        project_id: lib.project,
+        location_id: Some(lib.location),
+        target_id: Some(lib.target),
+        started_at,
+    }
+}
+
+/// A session a previous process left open at `started_at`, its one segment's watermark
+/// `credited` seconds in — what a crash leaves behind.
+pub(crate) fn orphaned_session(lib: &mut SessionLib, started_at: i64, credited: i64) -> SessionId {
+    let open = opening(lib, started_at);
+    let tx = lib.index.index_mut().conn_mut().transaction().unwrap();
+    let session = store::open_session(&tx, &open).unwrap();
+    let segment = store::open_segment(&tx, session, started_at, false).unwrap();
+    store::mark_activity(&tx, segment, started_at + credited).unwrap();
+    tx.commit().unwrap();
+    session
+}
+
+/// `session`'s stored `(ended_at, credited_seconds)`.
+pub(crate) fn session_row(index: &TempIndex, session: SessionId) -> (Option<i64>, i64) {
+    index
+        .index()
+        .conn()
+        .query_row(
+            "SELECT ended_at, credited_seconds FROM session WHERE id = ?1",
+            [session.0],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
 }

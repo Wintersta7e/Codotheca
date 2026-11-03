@@ -15,18 +15,31 @@ mod support;
 
 use std::collections::BTreeSet;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
-use codotheca_core::badges::COMEBACK_GAP_DAYS;
+use codotheca_core::badges::{COMEBACK_GAP_DAYS, MARATHON_CREDITED_SECONDS};
 use codotheca_core::clock::local_date;
+use codotheca_core::commands::launch::{startup, LaunchCtx};
+use codotheca_core::git::{RepoHandle, StoreKey};
 use codotheca_core::index::rebuild::{rebuild_in_place, RebuildOutcome};
 use codotheca_core::index::sidecar::{counts, read, RestoreCtx, RestoreOutcome, SECTIONS};
 use codotheca_core::index::Index;
+use codotheca_core::launch::spawn::RecordingSpawner;
 use codotheca_core::ledger::price::REVIVAL_GAP_DAYS;
-use codotheca_core::protocol::ProjectId;
+use codotheca_core::mount::StoreClass;
+use codotheca_core::protocol::{ProjectId, SessionId};
+use codotheca_core::session::activity::FakeIgnoreCheck;
+use codotheca_core::session::manager::{LaunchedSession, SessionManager};
+use codotheca_core::session::watch::{ActivityBatch, ActivitySource, FakeActivitySource};
+use codotheca_core::session::SessionError;
+use codotheca_core::testing::events::ValidatingSink;
+use codotheca_core::testing::zone::FixedZone;
+use codotheca_core::testing::{FakeClock, FakeMountResolver};
 use rusqlite::types::Value;
 use rusqlite::Connection;
-use support::badges_rig::{BadgesRig, Flags};
+use support::badges_rig::{
+    award_row, orphaned_session, session_index, session_row, BadgesRig, Flags,
+};
 
 const SCHEMA: &str = include_str!("../../protocol/schema/protocol.json");
 const NOW: i64 = 1_760_000_000;
@@ -572,4 +585,140 @@ fn ac_p4_40_21_comeback_is_awarded_beside_a_not_cloned_project() {
     eprintln!("historyComplete {complete}, award {award:?}");
     assert!(complete, "a not-cloned project held history incomplete");
     assert!(award.is_some(), "no comeback beside a not-cloned project");
+}
+
+/// The session tests' first instant, 2023-11-14 22:13:20 UTC: four hours on is the next UTC
+/// day and still the same day five hours west.
+const T_SESSION: i64 = 1_700_000_000;
+
+/// Five hours west of UTC, in minutes east.
+const WEST: i32 = -300;
+
+/// The session manager's tick.
+const TICK: i64 = 15;
+
+/// A hand-driven activity source the test keeps a handle on once the manager owns it.
+#[derive(Debug, Clone, Default)]
+struct SharedActivity(Arc<Mutex<FakeActivitySource>>);
+
+impl ActivitySource for SharedActivity {
+    fn watch(&mut self, session: SessionId, root: &Path) -> Result<(), SessionError> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .watch(session, root)
+    }
+
+    fn unwatch(&mut self, session: SessionId) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .unwatch(session);
+    }
+
+    fn drain(&mut self) -> Vec<ActivityBatch> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain()
+    }
+}
+
+/// §40.3, §40.5: Marathon through the session manager's close. A launched session saved into
+/// every tick for `MARATHON_CREDITED_SECONDS`, then stopped, writes the row in the close's
+/// transaction: earned at the session's end, dated by the zone at that instant.
+#[test]
+fn ac_p4_40_1_marathon_through_close_session() {
+    let mut lib = session_index();
+    let clock = Arc::new(FakeClock::new(T_SESSION));
+    let activity = SharedActivity::default();
+    let mut manager = SessionManager::new(
+        clock.clone(),
+        Arc::new(ValidatingSink::default()),
+        Box::new(activity.clone()),
+        Arc::new(FakeIgnoreCheck::new(&["dist/"])),
+        Arc::new(FixedZone(WEST)),
+    );
+    let session = manager
+        .launch(
+            lib.index.index_mut(),
+            LaunchedSession {
+                project_id: lib.project,
+                location_id: Some(lib.location),
+                target_id: Some(lib.target),
+                repo: RepoHandle::bare(
+                    Path::new("/w/marathon"),
+                    StoreKey::new("s"),
+                    StoreClass::Local,
+                ),
+                waiter: None,
+            },
+        )
+        .unwrap();
+    for _ in 0..MARATHON_CREDITED_SECONDS / TICK {
+        activity.0.lock().unwrap().push(session, "src/main.rs");
+        clock.advance(TICK);
+        manager.tick(lib.index.index_mut()).unwrap();
+    }
+    let before = award_row(lib.index.index().conn(), "marathon");
+    manager.stop(lib.index.index_mut(), session).unwrap();
+    let (ended_at, credited) = session_row(&lib.index, session);
+    let award = award_row(lib.index.index().conn(), "marathon");
+    eprintln!("open: {before:?}; closed at {ended_at:?} credited {credited}: {award:?}");
+    assert_eq!(before, None, "a session still open was awarded");
+    assert_eq!(credited, MARATHON_CREDITED_SECONDS);
+    let award = award.expect("the close wrote no marathon");
+    assert_eq!(Some(award.earned_at), ended_at);
+    assert_eq!(award.tz_offset_min, i64::from(WEST));
+    assert_eq!(award.earned_on, "2023-11-14", "not dated in the zone");
+    assert_eq!(award.project_id, Some(lib.project.0));
+    assert_eq!(
+        award.subject_key.as_deref(),
+        Some("lineage:marathon|remote:")
+    );
+    assert_eq!(
+        award.evidence,
+        serde_json::json!({"projectName": "marathon", "creditedSeconds": credited})
+    );
+}
+
+/// §40.3, §40.5: Marathon through the second close path — the startup lane's orphan recovery.
+/// A session a crash left open with `MARATHON_CREDITED_SECONDS` of credit is closed at its
+/// watermark, never at now, and that close writes the row.
+#[test]
+fn ac_p4_40_1_marathon_through_close_orphans() {
+    let mut lib = session_index();
+    let session = orphaned_session(&mut lib, T_SESSION, MARATHON_CREDITED_SECONDS);
+    let later = T_SESSION + 3 * 86_400;
+    let clock = Arc::new(FakeClock::new(later));
+    let events = Arc::new(ValidatingSink::default());
+    let mut sessions = SessionManager::new(
+        clock,
+        events.clone(),
+        Box::new(FakeActivitySource::new()),
+        Arc::new(FakeIgnoreCheck::new(&["dist/"])),
+        Arc::new(FixedZone(WEST)),
+    );
+    let spawner = RecordingSpawner::new();
+    let mounts = FakeMountResolver::new();
+    let report = startup(&mut LaunchCtx {
+        index: lib.index.index_mut(),
+        sessions: &mut sessions,
+        spawner: &spawner,
+        events: events.as_ref(),
+        mounts: &mounts,
+        now: later,
+    })
+    .unwrap();
+    let (ended_at, credited) = session_row(&lib.index, session);
+    let award = award_row(lib.index.index().conn(), "marathon");
+    eprintln!("{report:?}; closed at {ended_at:?} credited {credited}: {award:?}");
+    assert_eq!(report.sessions_closed, 1);
+    let award = award.expect("the orphan close wrote no marathon");
+    assert_eq!(award.earned_at, T_SESSION + MARATHON_CREDITED_SECONDS);
+    assert_eq!(Some(award.earned_at), ended_at);
+    assert_eq!(award.earned_on, "2023-11-14");
+    assert_eq!(award.awarded_at, later);
+    assert_eq!(award.project_id, Some(lib.project.0));
+    assert_eq!(award.evidence["creditedSeconds"], MARATHON_CREDITED_SECONDS);
 }

@@ -9,3 +9,9 @@ use crate::stats::reveal::LIVE;
 pub(crate) fn h_sql() -> String {
     format!("({LIVE} AND p.is_reference = 0 AND p.is_shallow = 0)")
 }
+
+/// **S**, the state population: live, not Reference. Reference is excluded from XP and from
+/// every statistic, and a badge is one.
+pub(crate) fn s_sql() -> String {
+    format!("({LIVE} AND p.is_reference = 0)")
+}

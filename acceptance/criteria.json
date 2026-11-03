@@ -9995,7 +9995,7 @@
         },
         {
           "id": "AC-P4-40-1-marathon",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_marathon_through_close_session",
@@ -10003,7 +10003,7 @@
         },
         {
           "id": "AC-P4-40-1-marathon-orphans",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_marathon_through_close_orphans",
@@ -10452,7 +10452,7 @@
       "checks": [
         {
           "id": "AC-P4-40-14",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_14_credit_not_wall_clock",
@@ -10461,7 +10461,7 @@
         },
         {
           "id": "AC-P4-40-14-orphans",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_14_a_session_closed_by_close_orphans_awards",

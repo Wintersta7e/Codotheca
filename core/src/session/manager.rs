@@ -398,6 +398,15 @@ impl SessionManager {
             }
             if let Some((ended_at, reason)) = outcome.ended_session {
                 let closed = store::close_session(&tx, session, ended_at, reason, now.unix)?;
+                // §40.5: Marathon reads the credit this close just wrote, in its transaction.
+                crate::badges::evaluate::evaluate(
+                    &tx,
+                    &[crate::protocol::BadgeKind::Marathon],
+                    &crate::badges::evaluate::EvalCtx {
+                        now: now.unix,
+                        zone: self.zone.as_ref(),
+                    },
+                )?;
                 condition_changed = closed.condition_changed;
                 published.push(SessionEvent::Ended(SessionEnded {
                     session: store::session_ref(&tx, session)?,
