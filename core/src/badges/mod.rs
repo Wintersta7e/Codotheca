@@ -70,8 +70,9 @@ pub enum BadgeError {
     /// The index refused a read or a write.
     #[error(transparent)]
     Index(#[from] IndexError),
-    /// The kind asked about holds no award.
-    #[error("no {0:?} award is held")]
+    /// The kind asked about holds no award. The message reaches the wire, so it names the kind
+    /// by its schema slug.
+    #[error("no {} award is held", kind_text(*.0))]
     NotAwarded(BadgeKind),
     /// A stored evidence document is not the generated `BadgeEvidence`.
     #[error("badge evidence: {0}")]

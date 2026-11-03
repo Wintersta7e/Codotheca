@@ -199,6 +199,8 @@ fn ac_p4_40_8_the_order() {
     let refused = mark(index, D + 20, "undertaker").expect_err("an unawarded kind");
     eprintln!("undertaker: {:?} {}", refused.code, refused.message);
     assert_eq!(refused.code, ErrorCode::Protocol, "clause 7");
+    // The message is wire-visible, so it names the kind by the schema's slug.
+    assert_eq!(refused.message, "no undertaker award is held");
 
     // Day one's own clause: nothing outside the three lands on day one — neither a retro award
     // nor a live one, which a write dated east of the zone now read can make on that date.
