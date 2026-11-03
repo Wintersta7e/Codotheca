@@ -10059,7 +10059,7 @@
         },
         {
           "id": "AC-P4-40-1-undertaker",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_undertaker_through_the_clean_archive_writer",
@@ -10485,7 +10485,7 @@
       "checks": [
         {
           "id": "AC-P4-40-15",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_15_one_project_archived_twice_counts_once",

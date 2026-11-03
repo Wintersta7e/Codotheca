@@ -18,7 +18,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
-use codotheca_core::badges::{COMEBACK_GAP_DAYS, CURATOR_PROJECTS, MARATHON_CREDITED_SECONDS};
+use codotheca_core::badges::{
+    COMEBACK_GAP_DAYS, CURATOR_PROJECTS, MARATHON_CREDITED_SECONDS, UNDERTAKER_PROJECTS,
+};
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::local_date;
 use codotheca_core::commands::launch::{startup, LaunchCtx};
@@ -50,7 +52,7 @@ use rusqlite::types::Value;
 use rusqlite::Connection;
 use support::badges_rig::{
     award_row, connect_ci, orphaned_session, plant_repairs, red_then_green, repair_pairs,
-    session_index, session_row, BadgesRig, Flags, T0,
+    session_index, session_row, AwardRow, BadgesRig, Flags, T0,
 };
 
 const SCHEMA: &str = include_str!("../../protocol/schema/protocol.json");
@@ -1134,4 +1136,57 @@ fn ac_p4_40_1_firefighter_through_the_j7_payout() {
     let award = earned(&index, "firefighter");
     eprintln!("after the run that closed one: {award:?}");
     assert_eq!(award, Some((local_date(TENTH), NOW + 60)));
+}
+
+/// `undertaker`'s row on the rig's index, when it is held.
+fn undertaker_row(rig: &BadgesRig) -> Option<AwardRow> {
+    let guard = rig.index.lock().unwrap();
+    let row = award_row(guard.conn(), "undertaker");
+    drop(guard);
+    row
+}
+
+/// Undertaker through §38's `clean_archive` writer, at that writer's caller in the settle: five
+/// projects archived through `projects.setFlags`, each read by a J1 and then a settle that pays its
+/// row. The fifth settle runs at 01:00 UTC, the evening before five hours west, so the award is
+/// dated by the fifth row's own instant and offset, not UTC's date and not the first row's.
+#[test]
+fn ac_p4_40_1_undertaker_through_the_clean_archive_writer() {
+    let mut rig = BadgesRig::new();
+    let names = ["first", "second", "third", "fourth", "fifth"];
+    assert_eq!(names.len(), UNDERTAKER_PROJECTS);
+    // T0 is 08:00 UTC; the five settles run from 21:00 to 01:00 UTC.
+    let mut at = T0 + 13 * HOUR_S;
+    let mut last = Vec::new();
+    for (i, name) in names.iter().enumerate() {
+        let project = rig.archivable(name);
+        rig.set_archived(project, true);
+        rig.observe_archive(project, at, WEST);
+        last = rig.clean_archive_rows(project);
+        let held = undertaker_row(&rig);
+        eprintln!("{name}: clean_archive {last:?}, undertaker {held:?}");
+        assert_eq!(last.len(), 1, "{name}'s settle paid no clean_archive");
+        if i + 1 < UNDERTAKER_PROJECTS {
+            assert_eq!(held, None, "{} projects awarded undertaker", i + 1);
+        }
+        at += HOUR_S;
+    }
+    let (ts, offset) = last[0];
+    let row = undertaker_row(&rig).expect("the fifth settle wrote no undertaker");
+    assert_eq!(row.earned_at, ts, "earned at the fifth project's row");
+    assert_eq!(row.tz_offset_min, i64::from(WEST));
+    assert_eq!(offset, i64::from(WEST));
+    assert_eq!(
+        row.earned_on, "2027-01-15",
+        "the row's local date, not UTC's"
+    );
+    assert_eq!(row.awarded_at, ts, "awarded at the paying settle");
+    assert_eq!((row.project_id, row.subject_key), (None, None));
+    let listed: Vec<(&str, bool)> = row.evidence["projects"]
+        .as_array()
+        .expect("undertaker evidence lists its projects")
+        .iter()
+        .map(|p| (p["name"].as_str().unwrap(), p["evaluable"].is_null()))
+        .collect();
+    assert_eq!(listed, names.map(|n| (n, true)));
 }

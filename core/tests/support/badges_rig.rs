@@ -35,6 +35,8 @@ pub(crate) struct Flags {
 
 struct Copy {
     repo: TestRepo,
+    /// The bare remote the copy pushed to, kept alive for J1's reachability read.
+    _remote: Option<TestRepo>,
     project: ProjectId,
     location: LocationId,
 }
@@ -75,6 +77,113 @@ impl BadgesRig {
             let date = local_date(day);
             repo.commit_at(&date, &format!("{date}T12:00:00+00:00"));
         }
+        self.plant(name, repo, None, flags)
+    }
+
+    /// A project §38.8.5 can pay once it is archived: one commit, tagged and pushed to a bare
+    /// remote, a clean tree, and one `complete` debt sweep at `T0`. The tag is load-bearing: a
+    /// settle reading no tag opens a scored `no_release` item, which withholds the award alone.
+    pub(crate) fn archivable(&mut self, name: &str) -> ProjectId {
+        let repo = TestRepo::init();
+        repo.write("a.txt", b"one\n");
+        repo.commit("first");
+        repo.git(&["tag", "v1.0.0"]);
+        let remote = TestRepo::init_bare();
+        let url = remote.path().to_string_lossy().into_owned();
+        repo.git(&["remote", "add", "origin", &url]);
+        repo.git(&["push", "-q", "origin", "main", "v1.0.0"]);
+        let project = self.plant(name, repo, Some(remote), Flags::default());
+        let guard = self.index.lock().unwrap();
+        guard
+            .conn()
+            .execute(
+                "INSERT INTO debt_sweep (project_id, source, outcome, item_count, observed_at)
+                 VALUES (?1, 'todo_marker', 'complete', 0, ?2)",
+                rusqlite::params![project.0, T0],
+            )
+            .unwrap();
+        drop(guard);
+        project
+    }
+
+    /// `projects.setFlags` with `isArchived`, as the product's archive control sends it.
+    pub(crate) fn set_archived(&self, project: ProjectId, archived: bool) {
+        let guard = self.index.lock().unwrap();
+        let sink = codotheca_core::art::testsupport::CollectingSink::default();
+        let mounts = codotheca_core::testing::FakeMountResolver::default();
+        let ctx = codotheca_core::projects::ProjectsCtx {
+            index: &guard,
+            events: &sink,
+            jobs: &codotheca_core::jobs::NullJobSink,
+            mounts: &mounts,
+            sync: &codotheca_core::sync::runner::NullSyncSink,
+            now: T0,
+            tz_offset_min: 0,
+        };
+        codotheca_core::projects::dispatch_projects_command(
+            &ctx,
+            "projects.setFlags",
+            serde_json::json!({ "id": project.0, "isArchived": archived }),
+        )
+        .expect("owned")
+        .expect("ok");
+        drop(guard);
+    }
+
+    /// J1's arm at `at` — run alone, as the scheduler runs it, so it chains nothing that would
+    /// rewrite the fixture — writing `archive_reached` from the real reachability read; then a
+    /// J2's settle at `at + 1`, in a zone `offset_min` east of UTC, which runs §38's writer.
+    pub(crate) fn observe_archive(&self, project: ProjectId, at: i64, offset_min: i32) {
+        let copy = self.copy(project);
+        let clock = Arc::new(FakeClock::new(at));
+        let deps = JobDeps {
+            git: Arc::new(SystemGit::new(
+                Arc::new(copy.repo.exec()),
+                Arc::new(GitSlots::new(4)),
+                clock.clone(),
+            )),
+            clock,
+            cancel: CancelToken::new(),
+            zone: Arc::new(FixedZone(offset_min)),
+        };
+        codotheca_core::jobs::run_one(
+            &self.index,
+            &deps,
+            &Self::job(copy, JobKind::J1Refstate),
+            &std::cell::RefCell::new(Vec::new()),
+        )
+        .unwrap();
+        self.settle_at(project, JobKind::J2Status, at + 1, offset_min);
+    }
+
+    /// `project`'s `clean_archive` rows as `(ts, tz_offset_min)`, by `ts` then id.
+    pub(crate) fn clean_archive_rows(&self, project: ProjectId) -> Vec<(i64, i64)> {
+        let guard = self.index.lock().unwrap();
+        let mut st = guard
+            .conn()
+            .prepare(
+                "SELECT ts, tz_offset_min FROM xp_events
+                  WHERE project_id = ?1 AND kind = 'clean_archive' ORDER BY ts, id",
+            )
+            .unwrap();
+        let rows = st
+            .query_map([project.0], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        drop(st);
+        drop(guard);
+        rows
+    }
+
+    /// Insert `name` on one present copy at `repo`, keeping `remote` alive beside it.
+    fn plant(
+        &mut self,
+        name: &str,
+        repo: TestRepo,
+        remote: Option<TestRepo>,
+        flags: Flags,
+    ) -> ProjectId {
         let path = repo.path().to_string_lossy().into_owned();
         let mut guard = self.index.lock().unwrap();
         let (project, location) = guard
@@ -104,6 +213,7 @@ impl BadgesRig {
         drop(guard);
         self.copies.push(Copy {
             repo,
+            _remote: remote,
             project,
             location,
         });
@@ -201,13 +311,35 @@ impl BadgesRig {
         copy.repo.commit_at(rel, &format!("{date}T12:00:00+00:00"));
     }
 
-    fn settle(&self, project: ProjectId, kind: JobKind) {
-        let copy = self
-            .copies
+    fn copy(&self, project: ProjectId) -> &Copy {
+        self.copies
             .iter()
             .find(|c| c.project == project)
-            .expect("a project this rig planted");
-        let clock = Arc::new(FakeClock::new(T0));
+            .expect("a project this rig planted")
+    }
+
+    fn job(copy: &Copy, kind: JobKind) -> Job {
+        Job {
+            kind,
+            project_id: copy.project,
+            location_id: copy.location,
+            store_key: "store".to_owned(),
+            store_kind: StoreClass::Local,
+            priority: Priority::Interactive,
+            not_before: 0,
+            origin: JobOrigin::Walk,
+        }
+    }
+
+    fn settle(&self, project: ProjectId, kind: JobKind) {
+        self.settle_at(project, kind, T0, 0);
+    }
+
+    /// One `kind` for `project` on a fresh runner whose clock reads `at`, in a zone `offset_min`
+    /// east of UTC, spun until the runner is idle.
+    fn settle_at(&self, project: ProjectId, kind: JobKind, at: i64, offset_min: i32) {
+        let copy = self.copy(project);
+        let clock = Arc::new(FakeClock::new(at));
         let git = SystemGit::new(
             Arc::new(copy.repo.exec()),
             Arc::new(GitSlots::new(4)),
@@ -217,19 +349,10 @@ impl BadgesRig {
             git: Arc::new(git),
             clock,
             cancel: CancelToken::new(),
-            zone: Arc::new(FixedZone(0)),
+            zone: Arc::new(FixedZone(offset_min)),
         };
         let runner = JobRunner::new(Arc::clone(&self.index), deps, self.events.clone());
-        assert!(runner.enqueue(Job {
-            kind,
-            project_id: project,
-            location_id: copy.location,
-            store_key: "store".to_owned(),
-            store_kind: StoreClass::Local,
-            priority: Priority::Interactive,
-            not_before: 0,
-            origin: JobOrigin::Walk,
-        }));
+        assert!(runner.enqueue(Self::job(copy, kind)));
         runner.start(1);
         let deadline = Instant::now() + Duration::from_secs(60);
         while Instant::now() < deadline && !runner.is_idle() {
@@ -313,6 +436,21 @@ impl BadgesRig {
         let n = guard
             .conn()
             .query_row("SELECT COUNT(*) FROM xp_events", [], |r| r.get(0))
+            .unwrap();
+        drop(guard);
+        n
+    }
+
+    /// `SELECT COUNT(*) FROM xp_events` of one `kind`.
+    pub(crate) fn xp_event_count_of(&self, kind: &str) -> i64 {
+        let guard = self.index.lock().unwrap();
+        let n = guard
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM xp_events WHERE kind = ?1",
+                [kind],
+                |r| r.get(0),
+            )
             .unwrap();
         drop(guard);
         n

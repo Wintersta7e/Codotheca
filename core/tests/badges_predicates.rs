@@ -729,3 +729,75 @@ fn the_tenth_pair(index: &mut Index) {
         serde_json::json!({ "projectName": "tenth" })
     );
 }
+
+/// `undertaker`'s row, when it is held.
+fn undertaker_over(rig: &BadgesRig) -> Option<AwardRow> {
+    let guard = rig.index.lock().unwrap();
+    let row = award_row(guard.conn(), "undertaker");
+    drop(guard);
+    row
+}
+
+/// §40.3: Undertaker counts distinct projects, never rows. One project archived, unarchived and
+/// archived again carries one row; a second row moved onto it — a merge reparents the absorbed
+/// project's `xp_events` onto the survivor — still counts it once. Five rows over four projects
+/// award nothing; the fifth distinct project does, and the evidence lists the first five.
+#[test]
+fn ac_p4_40_15_one_project_archived_twice_counts_once() {
+    let mut rig = BadgesRig::new();
+    let mut at = T0;
+    let mut observe = |lib: &BadgesRig, project: ProjectId| {
+        at += 3_600;
+        lib.observe_archive(project, at, 0);
+    };
+    let twice = rig.archivable("twice");
+    rig.set_archived(twice, true);
+    observe(&rig, twice);
+    rig.set_archived(twice, false);
+    observe(&rig, twice);
+    rig.set_archived(twice, true);
+    observe(&rig, twice);
+    assert_eq!(
+        rig.clean_archive_rows(twice).len(),
+        1,
+        "re-archiving wrote a second row"
+    );
+
+    let absorbed = rig.archivable("absorbed");
+    rig.set_archived(absorbed, true);
+    observe(&rig, absorbed);
+    assert_eq!(rig.clean_archive_rows(absorbed).len(), 1);
+    rig.sql(&format!(
+        "UPDATE xp_events SET project_id = {survivor} WHERE project_id = {gone};
+         UPDATE project SET merged_into = {survivor} WHERE id = {gone};",
+        survivor = twice.0,
+        gone = absorbed.0
+    ));
+    assert_eq!(rig.clean_archive_rows(twice).len(), 2);
+
+    for name in ["second", "third", "fourth"] {
+        let p = rig.archivable(name);
+        rig.set_archived(p, true);
+        observe(&rig, p);
+        assert_eq!(rig.clean_archive_rows(p).len(), 1, "{name} was not paid");
+    }
+    let rows = rig.xp_event_count_of("clean_archive");
+    let held = undertaker_over(&rig);
+    eprintln!("{rows} clean_archive rows over four projects: {held:?}");
+    assert_eq!(rows, 5);
+    assert_eq!(held, None, "five rows over four projects awarded");
+
+    let fifth = rig.archivable("fifth");
+    rig.set_archived(fifth, true);
+    observe(&rig, fifth);
+    let award = undertaker_over(&rig).expect("five distinct projects awarded nothing");
+    eprintln!("after the fifth distinct project: {award:?}");
+    assert_eq!(award.earned_at, rig.clean_archive_rows(fifth)[0].0);
+    let listed: Vec<&str> = award.evidence["projects"]
+        .as_array()
+        .expect("undertaker evidence lists its projects")
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(listed, ["twice", "second", "third", "fourth", "fifth"]);
+}

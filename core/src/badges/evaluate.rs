@@ -6,7 +6,7 @@
 
 use rusqlite::Transaction;
 
-use crate::clock::{local_date, LocalZone};
+use crate::clock::{local_date, LocalInstant, LocalZone};
 use crate::index::subject::subject_for_project;
 use crate::index::IndexError;
 use crate::jobs::JobKind;
@@ -18,7 +18,7 @@ use super::population::{h_sql, p_sql, s_sql};
 use super::store::{insert_award, latched, NewAward};
 use super::{
     COMEBACK_GAP_DAYS, CURATOR_PROJECTS, FIREFIGHTER_PAIRS, MARATHON_CREDITED_SECONDS,
-    POLYGLOT_LANGUAGES,
+    POLYGLOT_LANGUAGES, UNDERTAKER_PROJECTS,
 };
 
 /// Seconds in a day: a day-grain row's `ts` is its day's midnight.
@@ -123,9 +123,10 @@ fn predicate(
         BadgeKind::Comeback => comeback(tx, ctx),
         BadgeKind::Curator => curator(tx, ctx),
         BadgeKind::Marathon => marathon(tx, ctx),
+        BadgeKind::Undertaker => undertaker(tx, ctx),
         BadgeKind::Firefighter => firefighter(tx, ctx),
-        // Not evaluated yet: each of these lands with its own production caller.
-        BadgeKind::Undertaker | BadgeKind::Lifeline => Ok(None),
+        // Not evaluated yet: it lands with its own production caller.
+        BadgeKind::Lifeline => Ok(None),
     }
 }
 
@@ -436,6 +437,63 @@ fn curator(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>, 
         awarded_at: ctx.now,
         awarded_on: ctx.zone.at(ctx.now).date(),
     }))
+}
+
+/// §40.3's Undertaker: `UNDERTAKER_PROJECTS` or more distinct projects carrying §38's
+/// `clean_archive` row — the transition that writer records, never a Seal verdict; the writer is
+/// the only gate. Rows are read by `ts`, then id, and the award is earned at the row that made the
+/// fifth distinct project, in that row's own offset. Distinct, because a merge moves the absorbed
+/// project's rows onto the survivor, so one project can carry two. The evidence lists the first
+/// five by name.
+fn undertaker(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>, IndexError> {
+    let mut st = tx.prepare_cached(
+        "SELECT x.project_id, p.name, x.ts, x.tz_offset_min
+           FROM xp_events x JOIN project p ON p.id = x.project_id
+          WHERE x.kind = 'clean_archive'
+          ORDER BY x.ts, x.id",
+    )?;
+    let mut rows = st.query([])?;
+    let mut seen = Vec::new();
+    let mut projects = Vec::new();
+    while let Some(r) = rows.next()? {
+        let project = ProjectId(r.get(0)?);
+        if seen.contains(&project) {
+            continue;
+        }
+        seen.push(project);
+        projects.push(BadgeEvidenceProject {
+            name: r.get(1)?,
+            evaluable: None,
+        });
+        if projects.len() < UNDERTAKER_PROJECTS {
+            continue;
+        }
+        let made = LocalInstant {
+            unix: r.get(2)?,
+            offset_min: r.get(3)?,
+        };
+        let evidence = BadgeEvidence {
+            project_name: None,
+            gap_days: None,
+            year: None,
+            languages: None,
+            credited_seconds: None,
+            projects: Some(projects),
+            run_start_on: None,
+        };
+        return Ok(Some(NewAward {
+            kind: BadgeKind::Undertaker,
+            earned_at: made.unix,
+            tz_offset_min: i64::from(made.offset_min),
+            earned_on: made.date(),
+            project: None,
+            subject_key: None,
+            evidence: encode(&evidence)?,
+            awarded_at: ctx.now,
+            awarded_on: ctx.zone.at(ctx.now).date(),
+        }));
+    }
+    Ok(None)
 }
 
 /// Firefighter's pairs — of `project` alone when given — as `(project, its name, local day)`,

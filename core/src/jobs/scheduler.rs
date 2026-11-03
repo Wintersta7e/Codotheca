@@ -117,14 +117,20 @@ struct Shared {
 
 /// §40.5's badge evaluation at a settle: the kinds `job` can make true, then §40.3's Curator when
 /// the settle rewrote the completion projection — a standing condition over that projection, so
-/// only a rewrite can have made it true.
+/// only a rewrite can have made it true — and §40.3's Undertaker when the settle paid §38's
+/// `clean_archive`: at that writer's caller, in its transaction, because only a row this settle
+/// wrote can make a fifth distinct project.
 fn settle_badges(
     tx: &rusqlite::Transaction<'_>,
     job: &Job,
     written: crate::completion::Written,
+    archived: Option<crate::ledger::archive::CleanArchivePaid>,
     ctx: &crate::badges::evaluate::EvalCtx<'_>,
 ) -> Result<(), crate::index::IndexError> {
     crate::badges::evaluate::on_settle(tx, job.kind, job.project_id, ctx)?;
+    if archived.is_some() {
+        crate::badges::evaluate::evaluate(tx, &[crate::protocol::BadgeKind::Undertaker], ctx)?;
+    }
     if matches!(written, crate::completion::Written::Rewritten { .. }) {
         crate::badges::evaluate::evaluate(tx, &[crate::protocol::BadgeKind::Curator], ctx)?;
     }
@@ -370,9 +376,8 @@ impl JobRunner {
             // from an unbounded set is a hook nobody can count.
             let written = crate::completion::evaluate_and_write(tx, job.project_id, at)?;
             // §38.8.5: after §31's evaluator, on every settle, over cached observations only — a
-            // J1 that just wrote `archive_reached` pays at its own settle. The paid row is
-            // returned for a hook in this transaction; none reads it yet.
-            crate::ledger::archive::evaluate_clean_archive(tx, job.project_id, at)?;
+            // J1 that just wrote `archive_reached` pays at its own settle.
+            let archived = crate::ledger::archive::evaluate_clean_archive(tx, job.project_id, at)?;
             // [p4] §40.5: the badge evaluator's settle site. After §31's and §38's evaluators,
             // because Comeback reads `project_job_state`, which `put` wrote above, and J4's own
             // transaction has committed its commit-days before this one opens.
@@ -380,7 +385,7 @@ impl JobRunner {
                 now,
                 zone: &*self.deps.zone,
             };
-            settle_badges(tx, job, written, &badges)?;
+            settle_badges(tx, job, written, archived, &badges)?;
             Ok((recomputed, announce))
         });
         if let Ok((r, _)) = &recomputed {
