@@ -354,6 +354,17 @@ pub const SECTIONS: &[SectionSpec] = &[
         export: crate::rings::rhythm::export_section,
         restore: crate::rings::rhythm::restore_section,
     },
+    // §40.7: an award is latched; a held kind is never touched, and the project is resolved by
+    // subject only when exactly one live project holds it.
+    SectionSpec {
+        name: "badge_award",
+        owner: "§40",
+        scope: Scope::Global,
+        rule: RestoreRule::Latch,
+        preserves_ids: &[],
+        export: crate::badges::store::export_section,
+        restore: crate::badges::store::restore_section,
+    },
 ];
 
 /// Something the schema holds that a rebuild could lose: a whole table, or one column of one.
@@ -488,6 +499,10 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     (
         Entry::Table("rhythm_week"),
         Classification::Section("rhythm_week"),
+    ),
+    (
+        Entry::Table("badge_award"),
+        Classification::Section("badge_award"),
     ),
     // The user's own targets; a detected one is detected again.
     (Entry::Table("launch_target"), PROJECTS),

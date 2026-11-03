@@ -173,6 +173,7 @@ export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, stri
   ledger_frozen_git: ['XP event', 'XP events'],
   // ‹COPY› interim — the user's words replace this before v1.0.0
   rhythm_week: ['‹COPY: settled weeks of rhythm›', '‹COPY: settled weeks of rhythm›'],
+  badge_award: interimNoun('badge_award'),
 };
 
 /** §48.8.3: merges ride the sidecar and are never replayed, so a rebuild restores none. */

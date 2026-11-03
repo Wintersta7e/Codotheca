@@ -76,6 +76,15 @@ const CASES: &[Case] = &[
                  git_coverage = 'complete'",
         tables: &["rhythm_week"],
     },
+    // The unlanded award is landed and loses its project: the two moves the latch allows. The
+    // restore's row is unlanded and its subject resolves, so a restore that touched a held kind
+    // would show in either.
+    Case {
+        section: "badge_award",
+        differ: "UPDATE badge_award SET landed_at = 95000, landed_on = '1970-01-02',
+                 project_id = NULL WHERE landed_at IS NULL",
+        tables: &["badge_award"],
+    },
 ];
 
 fn section(name: &str) -> &'static SectionSpec {
@@ -211,15 +220,19 @@ fn a_write_once_restore_never_overwrites_a_present_row() {
     assert_ne!(exercised.len(), 0, "no section was exercised");
 }
 
-/// **A raise-only restore never lowers a raised value.** Each raise-only section's present value
-/// is raised past the exported one, and restoring the lower export leaves it where it stood.
+/// **A raise-only restore never lowers a raised value, and a latch restore never re-sets a set
+/// latch.** Each raise-only section's present value is raised past the exported one, and each
+/// latch section's present row moved on from the exported one; restoring the export leaves it
+/// where it stood.
 #[test]
 fn ac_p4_48_19_restore_never_lowers_a_raised_value() {
     let mut exercised = Vec::new();
-    for case in CASES
-        .iter()
-        .filter(|c| section(c.section).rule == RestoreRule::RaiseOnly)
-    {
+    for case in CASES.iter().filter(|c| {
+        matches!(
+            section(c.section).rule,
+            RestoreRule::RaiseOnly | RestoreRule::Latch
+        )
+    }) {
         for (table, (before, after)) in case.tables.iter().zip(restore_over_present(case)) {
             assert_ne!(before.len(), 0, "{}: {table} holds no row", case.section);
             assert_eq!(
@@ -231,5 +244,9 @@ fn ac_p4_48_19_restore_never_lowers_a_raised_value() {
         exercised.push(case.section);
     }
     eprintln!("sections exercised: {exercised:?}");
-    assert_ne!(exercised.len(), 0, "no raise-only section was exercised");
+    assert_ne!(
+        exercised.len(),
+        0,
+        "no raise-only or latch section was exercised"
+    );
 }

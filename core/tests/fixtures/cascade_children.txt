@@ -25,3 +25,4 @@ project_check
 health_delta
 parcel
 removal_record
+badge_award

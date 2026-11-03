@@ -10099,7 +10099,7 @@
       "checks": [
         {
           "id": "AC-P4-40-2",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_migration::ac_p4_40_2_a_delete_aborts",
@@ -10107,7 +10107,7 @@
         },
         {
           "id": "AC-P4-40-2-replace",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_migration::ac_p4_40_2_replace_and_upsert_leave_a_held_row_byte_identical",
@@ -10115,7 +10115,7 @@
         },
         {
           "id": "AC-P4-40-2-update",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_migration::ac_p4_40_2_only_the_project_moves_and_a_landing_is_written_once",
@@ -10124,7 +10124,7 @@
         },
         {
           "id": "AC-P4-40-2-project-delete",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_migration::ac_p4_40_2_deleting_a_referenced_project_aborts_and_deletes_nothing",
@@ -10551,7 +10551,7 @@
       "checks": [
         {
           "id": "AC-P4-40-18",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_migration::ac_p4_40_18_the_kind_check_is_the_generated_vocabulary",
@@ -10571,7 +10571,7 @@
       "checks": [
         {
           "id": "AC-P4-40-19",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_19_every_column_but_the_project_restores_and_a_second_restore_writes_nothing",
@@ -15953,7 +15953,7 @@
         },
         {
           "id": "AC-P4-48-19-raise",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "sidecar_restore_never_lowers::ac_p4_48_19_restore_never_lowers_a_raised_value",

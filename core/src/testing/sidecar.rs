@@ -62,6 +62,7 @@ pub const SECTION_FIXTURES: &[(&str, SectionFixture)] = &[
     ("ledger_library_awards", library_award),
     ("ledger_frozen_git", frozen_git_rows),
     ("rhythm_week", settled_weeks),
+    ("badge_award", awarded_badges),
 ];
 
 /// A project with one present copy, for a fixture that rules on a project or trusts a copy.
@@ -243,6 +244,46 @@ fn settled_weeks(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexErr
             },
         )?;
     }
+    Ok(())
+}
+
+/// Two awards through the section's own writer: an unlanded Necromancer naming the library's
+/// first project (or one of its own in a library that has none), and a landed library-wide
+/// Lifeline.
+fn awarded_badges(tx: &Transaction<'_>, ids: &FixtureIds) -> Result<(), IndexError> {
+    use crate::badges::store::{restore_rows, SidecarBadgeAward};
+    let project = match ids.projects.first() {
+        Some(project) => *project,
+        None => present_project(tx, "awarded")?.0,
+    };
+    let subject = subject_for_project(tx, project)?.map(|subject| subject.to_key());
+    let awards = [
+        SidecarBadgeAward {
+            kind: "necromancer".to_owned(),
+            earned_at: 86_400,
+            tz_offset_min: 0,
+            earned_on: "1970-01-02".to_owned(),
+            subject_key: subject,
+            evidence: r#"{"projectName":"awarded","gapDays":200}"#.to_owned(),
+            awarded_at: 90_000,
+            awarded_on: "1970-01-02".to_owned(),
+            landed_at: None,
+            landed_on: None,
+        },
+        SidecarBadgeAward {
+            kind: "lifeline".to_owned(),
+            earned_at: 172_800,
+            tz_offset_min: 60,
+            earned_on: "1970-01-03".to_owned(),
+            subject_key: None,
+            evidence: r#"{"runStartOn":"1969-12-04"}"#.to_owned(),
+            awarded_at: 180_000,
+            awarded_on: "1970-01-03".to_owned(),
+            landed_at: Some(190_000),
+            landed_on: Some("1970-01-03".to_owned()),
+        },
+    ];
+    restore_rows(tx, &awards)?;
     Ok(())
 }
 

@@ -17,6 +17,7 @@ pub mod advisories;
 pub mod analyser;
 pub mod art;
 pub mod assembly;
+pub mod badges;
 pub mod cancel;
 pub mod clock;
 pub mod commands;
