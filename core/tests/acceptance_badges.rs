@@ -18,6 +18,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
+use codotheca_core::badges::lifeline::LIFELINE_RUN_KEY;
 use codotheca_core::badges::{
     COMEBACK_GAP_DAYS, CURATOR_PROJECTS, MARATHON_CREDITED_SECONDS, UNDERTAKER_PROJECTS,
 };
@@ -53,6 +54,9 @@ use rusqlite::Connection;
 use support::badges_rig::{
     award_row, connect_ci, orphaned_session, plant_repairs, red_then_green, repair_pairs,
     session_index, session_row, AwardRow, BadgesRig, Flags, T0,
+};
+use support::lifeline_rig::{
+    date as lifeline_date, real_handler, tick_and_settle, LifelineRig, D0 as LIFELINE_D0,
 };
 
 const SCHEMA: &str = include_str!("../../protocol/schema/protocol.json");
@@ -1189,4 +1193,91 @@ fn ac_p4_40_1_undertaker_through_the_clean_archive_writer() {
         .map(|p| (p["name"].as_str().unwrap(), p["evaluable"].is_null()))
         .collect();
     assert_eq!(listed, names.map(|n| (n, true)));
+}
+
+/// §40.5's day close is Lifeline's production path: thirty clear days through the core's tick,
+/// one project read by the daily pass each day, award the row at the close of the thirtieth.
+#[test]
+fn ac_p4_40_1_lifeline_through_the_tick() {
+    let mut rig = LifelineRig::new();
+    rig.project("daily");
+    rig.tick();
+    for _ in 0..codotheca_core::badges::LIFELINE_DAYS {
+        rig.after_days(1);
+    }
+    let guard = rig.index.lock().unwrap();
+    let award = award_row(guard.conn(), "lifeline");
+    drop(guard);
+    eprintln!(
+        "after {}: {:?} {award:?}",
+        lifeline_date(rig.today()),
+        rig.run()
+    );
+    let award = award.expect("the tick awarded no lifeline");
+    let last = LIFELINE_D0 + codotheca_core::badges::LIFELINE_DAYS - 1;
+    assert_eq!(award.earned_on, lifeline_date(last));
+    assert_eq!(
+        award.evidence,
+        serde_json::json!({ "runStartOn": lifeline_date(LIFELINE_D0) })
+    );
+}
+
+/// `project`, given the lineage the restored award's subject names.
+fn with_lineage(conn: &Connection, project: i64) -> i64 {
+    conn.execute(
+        "UPDATE project SET lineage_key = 'awarded-lineage' WHERE id = ?1",
+        [project],
+    )
+    .unwrap();
+    project
+}
+
+/// §40.7, an award restored with no project gets it at the first day close after the scan
+/// rediscovers its subject, through the resolver that never guesses — every column then equals
+/// the pre-rebuild row — and the run state came back through the settings export.
+#[test]
+fn ac_p4_40_19_the_day_close_resolves_a_restored_project_by_subject() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = Index::open_at(dir.path(), NOW).unwrap();
+    let conn = index.conn();
+    let project = with_lineage(conn, plant_project(conn, "awarded"));
+    conn.execute(
+        "INSERT INTO badge_award (kind, earned_at, tz_offset_min, earned_on, project_id,
+                                  subject_key, evidence, awarded_at, awarded_on)
+         VALUES ('necromancer', 86400, 0, '1970-01-02', ?1, ?2,
+                 '{\"projectName\":\"awarded\",\"gapDays\":200}', 90000, '1970-01-02')",
+        rusqlite::params![project, "lineage:awarded-lineage|remote:"],
+    )
+    .unwrap();
+    let today = local_date(NOW.div_euclid(86_400));
+    let run = format!(r#"{{"open":"{today}","runStart":"2025-10-01","runEnd":"2025-10-08"}}"#);
+    index.set_app_meta(LIFELINE_RUN_KEY, &run).unwrap();
+    let before = awards(conn);
+    let at = project_column(conn);
+    index.export_sidecar(NOW + 10).unwrap();
+    drop(index);
+
+    let rebuilt = corrupt_and_rebuild(dir.path(), NOW + 20);
+    let restored_run = rebuilt.app_meta(LIFELINE_RUN_KEY).unwrap();
+    eprintln!("run restored: {restored_run:?}");
+    assert_eq!(restored_run.as_deref(), Some(run.as_str()));
+    assert_eq!(
+        awards(rebuilt.conn())[0][at],
+        Value::Null,
+        "waits for its subject"
+    );
+
+    // The scan rediscovers the subject.
+    let found = with_lineage(rebuilt.conn(), plant_project(rebuilt.conn(), "awarded"));
+    assert_eq!(found, project, "the fixture's ids line up");
+    let shared = Arc::new(Mutex::new(rebuilt));
+    let clock = Arc::new(FakeClock::new(NOW + 86_400));
+    let (mut handler, pump, _) = real_handler(dir.path(), &shared, &clock);
+    tick_and_settle(&mut handler, &pump);
+    let guard = shared.lock().unwrap();
+    let after = awards(guard.conn());
+    drop(guard);
+    codotheca_core::proto::dispatch::CommandHandler::shutdown(&mut handler);
+    eprintln!("after the day close: {after:?}");
+    assert_eq!(after, before, "every column equals the pre-rebuild row");
 }

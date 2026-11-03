@@ -450,8 +450,7 @@ impl JobRunner {
                 self.events.emit("projects", "art_ready", data);
             }
         }
-        let is_reference = self.read_is_reference(job.project_id);
-        for (kind, priority) in next_jobs_after(job.kind, is_reference) {
+        for (kind, priority) in self.chain_after(job) {
             // Ruling 6: art takes a slot keyed apart from the repository's own, so a card does
             // not spend a git slot on a store it never touches.
             let store_key = if kind == JobKind::J5Art {
@@ -525,6 +524,15 @@ impl JobRunner {
         let out = guard.with_tx(f);
         drop(guard);
         out
+    }
+
+    /// What `job`'s settle queues: [`next_jobs_after`], or nothing for §40.6's daily pass, whose
+    /// job is J1 alone. `next_jobs_after` stays origin-blind because the walk asks it too.
+    fn chain_after(&self, job: &Job) -> Vec<(JobKind, Priority)> {
+        if job.origin == JobOrigin::DailyPass {
+            return Vec::new();
+        }
+        next_jobs_after(job.kind, self.read_is_reference(job.project_id))
     }
 
     /// `None` when authorship has not been computed.

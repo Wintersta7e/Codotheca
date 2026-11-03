@@ -10067,7 +10067,7 @@
         },
         {
           "id": "AC-P4-40-1-lifeline",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_lifeline_through_the_tick",
@@ -10356,7 +10356,7 @@
       "checks": [
         {
           "id": "AC-P4-40-12",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_lifeline::ac_p4_40_12",
@@ -10364,7 +10364,7 @@
         },
         {
           "id": "AC-P4-40-12-unread-location",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_lifeline::ac_p4_40_12_unread_location",
@@ -10372,7 +10372,7 @@
         },
         {
           "id": "AC-P4-40-12-not-clear",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_lifeline::ac_p4_40_12_not_clear",
@@ -10380,7 +10380,7 @@
         },
         {
           "id": "AC-P4-40-12-fail-then-pass",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_lifeline::ac_p4_40_12_fail_then_pass",
@@ -10388,7 +10388,7 @@
         },
         {
           "id": "AC-P4-40-12-empty",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_lifeline::ac_p4_40_12_empty",
@@ -10396,7 +10396,7 @@
         },
         {
           "id": "AC-P4-40-12-award",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_lifeline::ac_p4_40_12_award",
@@ -10404,7 +10404,7 @@
         },
         {
           "id": "AC-P4-40-12-no-chain",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_lifeline::ac_p4_40_12_no_chain",
@@ -10579,7 +10579,7 @@
         },
         {
           "id": "AC-P4-40-19-day-close",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_19_the_day_close_resolves_a_restored_project_by_subject",

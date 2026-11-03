@@ -139,7 +139,7 @@ pub fn emit_health_delta(events: &dyn EventSink, delta: &ProjectHealthDelta) {
 pub const fn detected_in_for(origin: JobOrigin) -> HealthDetectedIn {
     match origin {
         JobOrigin::Interactive => HealthDetectedIn::Foreground,
-        JobOrigin::Walk => HealthDetectedIn::Background,
+        JobOrigin::Walk | JobOrigin::DailyPass => HealthDetectedIn::Background,
     }
 }
 

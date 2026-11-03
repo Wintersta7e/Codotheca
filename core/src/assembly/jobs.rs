@@ -16,8 +16,10 @@ use crate::git::GitBackend;
 use crate::index::Index;
 use crate::jobs::queue::global_cap;
 use crate::jobs::scheduler::JobRunner;
-use crate::jobs::{JobDeps, JobSink};
+use crate::jobs::{Job, JobDeps, JobKind, JobOrigin, JobSink, Priority};
+use crate::mount::StoreClass;
 use crate::proto::EventSink;
+use crate::protocol::{LocationId, ProjectId};
 
 /// How many worker threads the pump runs.
 ///
@@ -100,6 +102,36 @@ impl JobPump {
     #[must_use]
     pub fn sink_ref(&self) -> &dyn JobSink {
         self.runner.as_ref()
+    }
+
+    /// Queue §40.6's daily pass for one copy: J1 at `Standard`, ordinary background work,
+    /// origin `DailyPass`, so its settle chains nothing. A J1 already queued at a better priority
+    /// keeps its place and its origin, so a walk's chain is never lost. Answers whether it queued.
+    #[must_use]
+    pub fn enqueue_daily_pass(
+        &self,
+        project: ProjectId,
+        location: LocationId,
+        store_key: &str,
+        store_kind: StoreClass,
+    ) -> bool {
+        self.runner.enqueue(Job {
+            kind: JobKind::J1Refstate,
+            project_id: project,
+            location_id: location,
+            store_key: store_key.to_owned(),
+            store_kind,
+            priority: Priority::Standard,
+            not_before: 0,
+            origin: JobOrigin::DailyPass,
+        })
+    }
+
+    /// Whether no job holds a slot and none is due, so a test can wait for a pass to settle.
+    #[cfg(feature = "testkit")]
+    #[must_use]
+    pub fn is_idle(&self) -> bool {
+        self.runner.is_idle()
     }
 
     /// Stop every worker and wait for it.

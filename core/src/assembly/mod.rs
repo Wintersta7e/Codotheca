@@ -745,6 +745,40 @@ impl CoreHandler {
         }
     }
 
+    /// §40.6 on the loop thread: the close under the index lock, in one transaction, then — the
+    /// lock dropped, because a worker settling a job takes it — each pass target queued as a
+    /// `DailyPass` J1. The store class is the mount's answer now, `Unknown` when it has none, as
+    /// `jobs::visible` resolves it.
+    fn badge_day_close(&self, now: i64) {
+        let ctx = crate::badges::evaluate::EvalCtx {
+            now,
+            zone: self.zone.as_ref(),
+        };
+        let first_tick_of_process = self.ticks == 1;
+        let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let ticked =
+            guard.with_tx(|tx| crate::badges::lifeline::day_tick(tx, &ctx, first_tick_of_process));
+        drop(guard);
+        match ticked {
+            Ok(tick) => {
+                for target in tick.pass {
+                    let class = self
+                        .mount
+                        .resolve(&crate::paths::path_from_bytes(&target.path_bytes))
+                        .map_or(crate::mount::StoreClass::Unknown, |facts| facts.class);
+                    // A copy already queued at a better priority keeps its place: nothing to do.
+                    let _queued = self.jobs.enqueue_daily_pass(
+                        target.project,
+                        target.location,
+                        &target.store_key,
+                        class,
+                    );
+                }
+            }
+            Err(e) => self.emit_tick_error("badge day close", &e.to_string()),
+        }
+    }
+
     /// A tick step that failed is a `core/error` event, never a panic and never a silent skip.
     /// The message is diagnostic (§2.4) and is not rendered.
     fn emit_tick_error(&self, step: &str, message: &str) {
@@ -941,6 +975,12 @@ impl CommandHandler for CoreHandler {
                 self.emit_tick_error("session tick", &e.message);
             }
         }
+
+        // 1b. §40.6's day close and daily pass. After the session tick and before the sidecar
+        //     export, so the export this tick writes carries the close and any award it made;
+        //     before step 3's rhythm settlement only because that follows the export — neither
+        //     reads what the other writes.
+        self.badge_day_close(now);
 
         // 2. §1's hourly sidecar export. It rides this tick because it is the only other
         //    periodic work the core has, and a second scheduler would want a second connection.

@@ -220,6 +220,40 @@ fn a_finished_job_chains_the_next_one_and_publishes_job_done() {
     );
 }
 
+/// §40.6: a daily pass's J1 settles done and chains nothing — no J1.5, so nothing after it.
+#[test]
+fn a_daily_pass_settles_done_and_chains_nothing() {
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"one\n");
+    repo.git(&["add", "a.txt"]);
+    repo.commit("first");
+
+    let rig = rig(&repo);
+    rig.runner.start(2);
+    let mut pass = job(&rig, JobKind::J1Refstate, Priority::Standard);
+    pass.origin = JobOrigin::DailyPass;
+    assert!(rig.runner.enqueue(pass));
+    let idle = wait_for(Duration::from_secs(20), || {
+        job_state(&rig, JobKind::J1Refstate) == Some(JobState::Done) && rig.runner.is_idle()
+    });
+    rig.runner.request_stop();
+    rig.runner.join();
+    let jobs: Vec<String> = rig
+        .events
+        .seen()
+        .into_iter()
+        .filter(|(topic, event, _)| topic == "scan" && event == "job_done")
+        .map(|(_, _, payload)| payload["job"].as_str().unwrap_or("?").to_owned())
+        .collect();
+    eprintln!(
+        "jobs done: {jobs:?}, authorship {:?}",
+        job_state(&rig, JobKind::J15Authorship)
+    );
+    assert!(idle, "the pass never settled");
+    assert_eq!(jobs, ["j1"]);
+    assert_eq!(job_state(&rig, JobKind::J15Authorship), None);
+}
+
 /// The scanner's hand-off queues J1 for a newly indexed location — the production `JobSink`
 /// implementation, not a fake of one.
 #[test]

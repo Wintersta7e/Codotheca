@@ -13,7 +13,7 @@
 
 mod support;
 
-use codotheca_core::badges::evaluate::{evaluate, EvalCtx};
+use codotheca_core::badges::evaluate::{evaluate, sweep_unlatched, EvalCtx};
 use codotheca_core::badges::{
     COMEBACK_GAP_DAYS, CURATOR_PROJECTS, FIREFIGHTER_PAIRS, MARATHON_CREDITED_SECONDS,
 };
@@ -417,8 +417,8 @@ fn ac_p4_40_14_a_session_closed_by_close_orphans_awards() {
 }
 
 /// A session the app recorded before badges existed is awarded when the evaluator next runs
-/// over the stored rows, dated by its own `ended_at`, never by the evaluation. The day-close
-/// sweep is that evaluation's production caller once it lands.
+/// over the stored rows — the sweep the day close and the arming run — dated by its own
+/// `ended_at`, never by the sweep.
 #[test]
 fn a_session_recorded_before_the_migration_is_dated_by_its_own_ended_at() {
     let mut lib = session_index();
@@ -436,9 +436,8 @@ fn a_session_recorded_before_the_migration_is_dated_by_its_own_ended_at() {
     assert_eq!(stored, None, "the store's close is not an award site");
 
     let sweep = lib.index.index_mut().conn_mut().transaction().unwrap();
-    let wrote = evaluate(
+    let wrote = sweep_unlatched(
         &sweep,
-        &[BadgeKind::Marathon],
         &EvalCtx {
             now: LATER,
             zone: &FixedZone(-300),

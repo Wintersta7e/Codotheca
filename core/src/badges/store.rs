@@ -186,6 +186,42 @@ pub fn restore_rows(tx: &Transaction<'_>, rows: &[SidecarBadgeAward]) -> Result<
     Ok(inserted)
 }
 
+/// §40.7's re-resolution: give each award still waiting for its project — `project_id` NULL, a subject recorded —
+/// the one live project that holds that subject now. A subject no project or several projects
+/// hold stays NULL for a later rollover: never a guess between them (§48.8.4). Answers how many
+/// rows it set.
+///
+/// # Errors
+/// Fails when SQLite refuses a read or the write.
+pub(crate) fn resolve_project_ids(tx: &Transaction<'_>) -> Result<u32, IndexError> {
+    let waiting = {
+        let mut st = tx.prepare_cached(
+            "SELECT kind, subject_key FROM badge_award
+              WHERE project_id IS NULL AND subject_key IS NOT NULL",
+        )?;
+        let rows = st
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    let mut set = 0;
+    for (kind, key) in waiting {
+        let Some(subject) = ProjectSubject::parse(&key) else {
+            continue;
+        };
+        let Some(project) = resolve_subject_unique(tx, &subject)? else {
+            continue;
+        };
+        set += u32::from(
+            tx.execute(
+                "UPDATE badge_award SET project_id = ?2 WHERE kind = ?1",
+                rusqlite::params![kind, project.0],
+            )? > 0,
+        );
+    }
+    Ok(set)
+}
+
 fn section_error(error: impl std::fmt::Display) -> IndexError {
     IndexError::Sidecar(format!("a badge_award row: {error}"))
 }

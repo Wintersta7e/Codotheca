@@ -16,6 +16,8 @@ pub(crate) mod git_world;
 #[cfg(feature = "testkit")]
 pub(crate) mod ledger_rig;
 #[cfg(feature = "testkit")]
+pub(crate) mod lifeline_rig;
+#[cfg(feature = "testkit")]
 pub(crate) mod rings_rig;
 
 use std::path::{Path, PathBuf};

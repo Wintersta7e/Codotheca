@@ -16,6 +16,7 @@ use crate::protocol::BadgeKind;
 
 pub mod evaluate;
 pub mod evidence;
+pub mod lifeline;
 pub(crate) mod population;
 pub mod store;
 

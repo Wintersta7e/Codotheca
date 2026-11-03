@@ -111,6 +111,18 @@ pub fn on_settle(
     evaluate(tx, &kinds, ctx)
 }
 
+/// §40.5's sweep: every kind not yet held, library-wide. Its production callers are §40.6's day
+/// close and the arming transaction, `motivation.acknowledge`'s first day-one stamp.
+///
+/// # Errors
+/// Fails when SQLite refuses a read or a write.
+pub fn sweep_unlatched(
+    tx: &Transaction<'_>,
+    ctx: &EvalCtx<'_>,
+) -> Result<Vec<BadgeKind>, IndexError> {
+    evaluate(tx, &BadgeKind::ALL, ctx)
+}
+
 /// `kind`'s predicate over the library: the award it would write now, or `None`.
 fn predicate(
     tx: &Transaction<'_>,
@@ -125,8 +137,7 @@ fn predicate(
         BadgeKind::Marathon => marathon(tx, ctx),
         BadgeKind::Undertaker => undertaker(tx, ctx),
         BadgeKind::Firefighter => firefighter(tx, ctx),
-        // Not evaluated yet: it lands with its own production caller.
-        BadgeKind::Lifeline => Ok(None),
+        BadgeKind::Lifeline => lifeline(tx, ctx),
     }
 }
 
@@ -560,6 +571,24 @@ fn firefighter(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAwar
         &evidence,
         ctx,
     )?))
+}
+
+/// §40.3's Lifeline: the stored run holds `LIFELINE_DAYS` or more consecutive clear dates.
+/// Earned on the run's last date, day-grain; the evidence is the run's first.
+fn lifeline(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>, IndexError> {
+    let Some((start, end)) = super::lifeline::completed_run(tx)? else {
+        return Ok(None);
+    };
+    let evidence = BadgeEvidence {
+        project_name: None,
+        gap_days: None,
+        year: None,
+        languages: None,
+        credited_seconds: None,
+        projects: None,
+        run_start_on: Some(local_date(start)),
+    };
+    Ok(Some(day_grain(BadgeKind::Lifeline, end, &evidence, ctx)?))
 }
 
 /// A day-grain award naming no project: earned at `day`'s midnight, offset 0, as a commit-day

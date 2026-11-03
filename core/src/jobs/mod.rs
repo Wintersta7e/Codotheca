@@ -219,6 +219,9 @@ pub enum JobOrigin {
     /// `Standard`, not `Interactive`, so a priority gate would miss the one path the whole
     /// ruling exists for — closing a TODO, reopening the page, and watching the card change.
     Interactive,
+    /// [p4] Queued by §40.6's daily pass. Its settle chains nothing — J1 alone, never J2's
+    /// measured `git status` — and publishes nothing.
+    DailyPass,
 }
 
 /// `project_job_state.state`.
