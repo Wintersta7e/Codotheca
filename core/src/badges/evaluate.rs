@@ -16,6 +16,7 @@ use crate::protocol::{BadgeEvidence, BadgeKind, ProjectId};
 use super::evidence::encode;
 use super::population::h_sql;
 use super::store::{insert_award, latched, NewAward};
+use super::{COMEBACK_GAP_DAYS, POLYGLOT_LANGUAGES};
 
 /// Seconds in a day: a day-grain row's `ts` is its day's midnight.
 const DAY_SECONDS: i64 = 86_400;
@@ -59,9 +60,14 @@ pub fn evaluate(
 
 /// The badge evaluator's job-settle site: the kinds `job` can make true, for its project.
 ///
-/// Each is checked over the settled project alone first — one indexed read — and only one that
-/// qualifies there runs the library-wide predicate, so a first scan's thousand settles pay a
-/// thousand one-project reads, not a thousand library scans.
+/// J4 writes commit-days, which feed Necromancer, Polyglot and Comeback; J3 writes
+/// `primary_language`, which feeds Polyglot.
+/// Necromancer and Polyglot are checked over the settled project first — one indexed read — and
+/// only one that qualifies there runs the library-wide predicate, so a first scan's thousand
+/// settles pay a thousand small reads, not a thousand library scans. Comeback has no
+/// one-project form: the settle that completes history can make a gap between other projects'
+/// days count. Its predicate reads history's completeness first and stops there while it is
+/// incomplete, as it is for the whole of a first scan.
 ///
 /// # Errors
 /// Fails when SQLite refuses a read or the write.
@@ -72,12 +78,22 @@ pub fn on_settle(
     ctx: &EvalCtx<'_>,
 ) -> Result<Vec<BadgeKind>, IndexError> {
     let held = latched(tx)?;
+    let open = |kind: BadgeKind| !held.contains(&kind);
     let mut kinds = Vec::new();
     if job == JobKind::J4History
-        && !held.contains(&BadgeKind::Necromancer)
+        && open(BadgeKind::Necromancer)
         && revival(tx, Some(project))?.is_some()
     {
         kinds.push(BadgeKind::Necromancer);
+    }
+    if matches!(job, JobKind::J4History | JobKind::J3Inventory)
+        && open(BadgeKind::Polyglot)
+        && polyglot_could_count(tx, project)?
+    {
+        kinds.push(BadgeKind::Polyglot);
+    }
+    if job == JobKind::J4History && open(BadgeKind::Comeback) {
+        kinds.push(BadgeKind::Comeback);
     }
     if kinds.is_empty() {
         return Ok(kinds);
@@ -93,10 +109,10 @@ fn predicate(
 ) -> Result<Option<NewAward>, IndexError> {
     match kind {
         BadgeKind::Necromancer => necromancer(tx, ctx),
+        BadgeKind::Polyglot => polyglot(tx, ctx),
+        BadgeKind::Comeback => comeback(tx, ctx),
         // Not evaluated yet: each of these lands with its own production caller.
-        BadgeKind::Polyglot
-        | BadgeKind::Comeback
-        | BadgeKind::Curator
+        BadgeKind::Curator
         | BadgeKind::Marathon
         | BadgeKind::Undertaker
         | BadgeKind::Firefighter
@@ -170,6 +186,173 @@ fn necromancer(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAwar
         awarded_at: ctx.now,
         awarded_on: ctx.zone.at(ctx.now).date(),
     }))
+}
+
+/// Polyglot's projects: those of **H** whose language is computed. NULL — not computed, or
+/// nothing recognised — never counts, and `primary_language` is programming languages only.
+fn polyglot_sql() -> String {
+    format!("{} AND p.primary_language IS NOT NULL", h_sql())
+}
+
+/// Whether a settle of `project` can bring Polyglot: the project counts toward it and holds a
+/// commit-day, and its population holds `POLYGLOT_LANGUAGES` languages at all.
+fn polyglot_could_count(tx: &Transaction<'_>, project: ProjectId) -> Result<bool, IndexError> {
+    let languages = format!(
+        "SELECT COUNT(DISTINCT p.primary_language) FROM project p
+          WHERE {} AND EXISTS (SELECT 1 FROM xp_events x
+                                WHERE x.project_id = p.id AND x.kind = 'commit_day')",
+        polyglot_sql()
+    );
+    let mut st = tx.prepare_cached(&format!(
+        "SELECT EXISTS (SELECT 1 FROM project p
+                         WHERE p.id = ?1 AND {}
+                           AND EXISTS (SELECT 1 FROM xp_events x
+                                        WHERE x.project_id = p.id AND x.kind = 'commit_day'))
+            AND ({languages}) >= ?2",
+        polyglot_sql()
+    ))?;
+    let count = i64::try_from(POLYGLOT_LANGUAGES).unwrap_or(i64::MAX);
+    Ok(st.query_row(rusqlite::params![project.0, count], |r| r.get(0))?)
+}
+
+/// The calendar year of local day `day`.
+fn year_of(day: i64) -> Option<u32> {
+    local_date(day).split('-').next()?.parse().ok()
+}
+
+/// §40.3's Polyglot: the commit-days of Polyglot's projects in `(day, project)` order, each
+/// adding its project's language to its calendar year's set. The row that brings a year's set
+/// to `POLYGLOT_LANGUAGES` is the earn; the earliest year wins, and the evidence is that year
+/// and its languages in the order they arrived.
+fn polyglot(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>, IndexError> {
+    let mut st = tx.prepare_cached(&format!(
+        "SELECT x.ts, p.primary_language
+           FROM xp_events x JOIN project p ON p.id = x.project_id
+          WHERE x.kind = 'commit_day' AND {}
+          ORDER BY x.ts, x.project_id",
+        polyglot_sql()
+    ))?;
+    let rows = st
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut year = None;
+    let mut languages: Vec<String> = Vec::new();
+    for (ts, language) in rows {
+        let day = ts.div_euclid(DAY_SECONDS);
+        let this_year = year_of(day);
+        if this_year != year {
+            year = this_year;
+            languages.clear();
+        }
+        if languages.contains(&language) {
+            continue;
+        }
+        languages.push(language);
+        if languages.len() < POLYGLOT_LANGUAGES {
+            continue;
+        }
+        let evidence = BadgeEvidence {
+            project_name: None,
+            gap_days: None,
+            year,
+            languages: Some(languages),
+            credited_seconds: None,
+            projects: None,
+            run_start_on: None,
+        };
+        return Ok(Some(day_grain(BadgeKind::Polyglot, day, &evidence, ctx)?));
+    }
+    Ok(None)
+}
+
+/// §40.3's Comeback, evaluated only while history is complete: the earliest second day of two
+/// consecutive days, in the union of every non-Reference project's commit-days, whose gap is
+/// `COMEBACK_GAP_DAYS` or more — unless a Reference project's recorded user span crosses it.
+///
+/// The union takes hidden, merged, shallow and removed projects' days too, because more days
+/// only close a gap. A Reference verdict deletes its project's commit-days, which would open a
+/// gap the user never took; the project keeps its span, which covers every one of those days,
+/// so a gap it crosses is withheld. The span is widened by a day each side because a commit
+/// instant's UTC day and its local commit-day can differ by one. A project with no user commit
+/// has no span; one whose first commit is unknown is open to the left. App absence is never an
+/// input.
+fn comeback(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>, IndexError> {
+    if !crate::stats::reveal::population(tx)?.history_complete {
+        return Ok(None);
+    }
+    let mut union = tx.prepare_cached(
+        "SELECT DISTINCT x.ts FROM xp_events x JOIN project p ON p.id = x.project_id
+          WHERE x.kind = 'commit_day' AND p.is_reference = 0
+          ORDER BY x.ts",
+    )?;
+    let mut days = union
+        .query_map([], |r| r.get::<_, i64>(0))?
+        .map(|ts| ts.map(|ts| ts.div_euclid(DAY_SECONDS)))
+        .collect::<Result<Vec<_>, _>>()?;
+    days.dedup();
+    let mut reference = tx.prepare_cached(
+        "SELECT first_commit_at, last_user_commit_at FROM project
+          WHERE is_reference = 1 AND last_user_commit_at IS NOT NULL",
+    )?;
+    let spans = reference
+        .query_map([], |r| {
+            Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, i64>(1)?))
+        })?
+        .map(|span| {
+            span.map(|(first, last)| {
+                (
+                    first.map(|f| f.div_euclid(DAY_SECONDS) - 1),
+                    last.div_euclid(DAY_SECONDS) + 1,
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let crossed = |d1: i64, d2: i64| {
+        spans
+            .iter()
+            .any(|&(lo, hi)| lo.is_none_or(|lo| lo < d2) && hi > d1)
+    };
+    let Some((d1, d2)) = days
+        .windows(2)
+        .filter_map(|w| match *w {
+            [d1, d2] => Some((d1, d2)),
+            _ => None,
+        })
+        .find(|&(d1, d2)| d2 - d1 >= COMEBACK_GAP_DAYS && !crossed(d1, d2))
+    else {
+        return Ok(None);
+    };
+    let evidence = BadgeEvidence {
+        project_name: None,
+        gap_days: u32::try_from(d2 - d1).ok(),
+        year: None,
+        languages: None,
+        credited_seconds: None,
+        projects: None,
+        run_start_on: None,
+    };
+    Ok(Some(day_grain(BadgeKind::Comeback, d2, &evidence, ctx)?))
+}
+
+/// A day-grain award naming no project: earned at `day`'s midnight, offset 0, as a commit-day
+/// row is stored.
+fn day_grain(
+    kind: BadgeKind,
+    day: i64,
+    evidence: &BadgeEvidence,
+    ctx: &EvalCtx<'_>,
+) -> Result<NewAward, IndexError> {
+    Ok(NewAward {
+        kind,
+        earned_at: day * DAY_SECONDS,
+        tz_offset_min: 0,
+        earned_on: local_date(day),
+        project: None,
+        subject_key: None,
+        evidence: encode(evidence)?,
+        awarded_at: ctx.now,
+        awarded_on: ctx.zone.at(ctx.now).date(),
+    })
 }
 
 #[cfg(test)]

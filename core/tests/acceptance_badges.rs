@@ -17,6 +17,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::OnceLock;
 
+use codotheca_core::badges::COMEBACK_GAP_DAYS;
 use codotheca_core::clock::local_date;
 use codotheca_core::index::rebuild::{rebuild_in_place, RebuildOutcome};
 use codotheca_core::index::sidecar::{counts, read, RestoreCtx, RestoreOutcome, SECTIONS};
@@ -425,10 +426,12 @@ fn ac_p4_40_1_necromancer_through_the_j4_settle() {
         twin.latched.events
     );
     assert_eq!(twin.fresh.before, Vec::<Vec<Value>>::new());
-    assert_eq!(twin.fresh.awards.len(), 1, "the settle wrote no award");
+    // The fixture's gap is past Comeback's too, so the settle writes that row beside it.
+    let fresh = of_kind(&twin.fresh.awards, "necromancer");
+    assert_eq!(fresh.len(), 1, "the settle wrote no necromancer");
     // `SELECT *` in §40.7's column order.
     let [kind, earned_at, tz_offset_min, earned_on, project_id, subject_key, evidence, ..] =
-        twin.fresh.awards[0].as_slice()
+        fresh[0].as_slice()
     else {
         panic!("badge_award has fewer columns than §40.7 declares");
     };
@@ -450,7 +453,123 @@ fn ac_p4_40_1_necromancer_through_the_j4_settle() {
     assert_eq!(evidence["projectName"], "revived");
 
     assert_eq!(
-        twin.latched.awards, twin.latched.before,
+        of_kind(&twin.latched.awards, "necromancer"),
+        of_kind(&twin.latched.before, "necromancer"),
         "a held kind was evaluated again"
     );
+}
+
+/// The rows of `kind` among `rows`, which are `SELECT *` with the kind first.
+fn of_kind(rows: &[Vec<Value>], kind: &str) -> Vec<Vec<Value>> {
+    rows.iter()
+        .filter(|row| row.first() == Some(&Value::Text(kind.to_owned())))
+        .cloned()
+        .collect()
+}
+
+/// `project`'s `primary_language`, as a finished J3 would have written it.
+fn set_language(rig: &BadgesRig, project: ProjectId, language: &str) {
+    rig.sql(&format!(
+        "UPDATE project SET primary_language = '{language}' WHERE id = {}",
+        project.0
+    ));
+}
+
+/// §40.3, §40.5: Polyglot through both settles that feed it. Four projects of **H** carry four
+/// languages; the fifth project's language is not computed until its J3 settles, and that
+/// settle awards — earned on the commit-day that brought the fifth language, which is not the
+/// fifth project's own day.
+#[test]
+fn ac_p4_40_1_polyglot_through_the_j4_and_j3_settles() {
+    let mut rig = BadgesRig::new();
+    let planted = [
+        ("go", D1 + 1, Some("Go")),
+        ("python", D1 + 2, Some("Python")),
+        ("ruby", D1 + 3, Some("Ruby")),
+        ("rust", D1 + 5, None),
+        ("c", D1 + 10, Some("C")),
+    ];
+    let mut projects = Vec::new();
+    for (name, day, language) in planted {
+        let project = rig.project(name, &[day], Flags::default());
+        if let Some(language) = language {
+            set_language(&rig, project, language);
+        } else {
+            rig.commit_file(project, "src/main.rs", b"fn main() {}\n", day);
+        }
+        projects.push(project);
+    }
+    for &project in &projects {
+        rig.settle_j4(project);
+    }
+    let after_j4 = rig.award("polyglot");
+    eprintln!("after five J4 settles, four languages: {after_j4:?}");
+    assert_eq!(after_j4, None, "four languages awarded polyglot");
+
+    rig.settle_j3(projects[3]);
+    let language: String = {
+        let guard = rig.index.lock().unwrap();
+        let language = guard
+            .conn()
+            .query_row(
+                "SELECT primary_language FROM project WHERE id = ?1",
+                [projects[3].0],
+                |r| r.get(0),
+            )
+            .unwrap();
+        drop(guard);
+        language
+    };
+    let award = rig.award("polyglot");
+    eprintln!("J3 wrote {language}; award {award:?}");
+    assert_eq!(language, "Rust");
+    let (earned_on, project, evidence) = award.expect("the J3 settle wrote no polyglot");
+    assert_eq!(earned_on, local_date(D1 + 10));
+    assert_eq!(project, None);
+    assert_eq!(evidence["year"], 2024);
+    assert_eq!(
+        evidence["languages"],
+        serde_json::json!(["Go", "Python", "Ruby", "Rust", "C"])
+    );
+}
+
+/// §40.3, §40.5: Comeback through the J4 settle — two commit-days `COMEBACK_GAP_DAYS` apart,
+/// every present-location project walked. Day-grain, naming no project, the gap as evidence.
+#[test]
+fn ac_p4_40_1_comeback_through_the_j4_settle() {
+    let mut rig = BadgesRig::new();
+    let project = rig.project("returned", &[D1, D1 + COMEBACK_GAP_DAYS], Flags::default());
+    rig.settle_j4(project);
+    let award = rig.award("comeback");
+    eprintln!(
+        "historyComplete {}, award {award:?}",
+        rig.history_complete()
+    );
+    let (earned_on, project_id, evidence) = award.expect("the J4 settle wrote no comeback");
+    assert_eq!(earned_on, local_date(D1 + COMEBACK_GAP_DAYS));
+    assert_eq!(project_id, None);
+    assert_eq!(evidence["gapDays"], COMEBACK_GAP_DAYS);
+    assert_eq!(
+        evidence.as_object().map(serde_json::Map::len),
+        Some(1),
+        "comeback carries the gap and nothing else"
+    );
+}
+
+/// §40.11's second clause: beside a not-cloned project (§23 — a row with no location, which
+/// never runs J4), history is complete and Comeback is awarded.
+#[test]
+fn ac_p4_40_21_comeback_is_awarded_beside_a_not_cloned_project() {
+    let mut rig = BadgesRig::new();
+    rig.sql(
+        "INSERT INTO project (name, seed_basename, created_at, updated_at)
+         VALUES ('not-cloned', 'not-cloned', 0, 0)",
+    );
+    let project = rig.project("returned", &[D1, D1 + COMEBACK_GAP_DAYS], Flags::default());
+    rig.settle_j4(project);
+    let complete = rig.history_complete();
+    let award = rig.award("comeback");
+    eprintln!("historyComplete {complete}, award {award:?}");
+    assert!(complete, "a not-cloned project held history incomplete");
+    assert!(award.is_some(), "no comeback beside a not-cloned project");
 }

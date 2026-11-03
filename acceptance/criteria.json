@@ -9979,7 +9979,7 @@
         },
         {
           "id": "AC-P4-40-1-polyglot",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_polyglot_through_the_j4_and_j3_settles",
@@ -9987,7 +9987,7 @@
         },
         {
           "id": "AC-P4-40-1-comeback",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_comeback_through_the_j4_settle",
@@ -10274,7 +10274,7 @@
       "checks": [
         {
           "id": "AC-P4-40-9",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_9_comeback_waits_for_complete_history",
@@ -10290,7 +10290,7 @@
         },
         {
           "id": "AC-P4-40-9-polyglot",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_9_shallow_reference_and_null_languages_make_no_polyglot",
@@ -10314,7 +10314,7 @@
         },
         {
           "id": "AC-P4-40-10-comeback",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_10_comeback_is_the_gap_rule_at_its_constant",
@@ -10619,7 +10619,7 @@
         },
         {
           "id": "AC-P4-40-21-comeback",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_21_comeback_is_awarded_beside_a_not_cloned_project",

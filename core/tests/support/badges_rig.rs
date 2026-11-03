@@ -111,6 +111,29 @@ impl BadgesRig {
 
     /// One J4 for `project` on a fresh runner over real git, spun until the runner is idle.
     pub(crate) fn settle_j4(&self, project: ProjectId) {
+        self.settle(project, JobKind::J4History);
+    }
+
+    /// One J3 for `project`, as [`Self::settle_j4`]: it writes `primary_language` from the
+    /// files at HEAD, and the jobs it chains run to idle with it.
+    pub(crate) fn settle_j3(&self, project: ProjectId) {
+        self.settle(project, JobKind::J3Inventory);
+    }
+
+    /// Write `rel` into `project`'s repository and commit it at noon UTC on local day `day`, so a
+    /// day the project already holds gains no commit-day.
+    pub(crate) fn commit_file(&self, project: ProjectId, rel: &str, bytes: &[u8], day: i64) {
+        let copy = self
+            .copies
+            .iter()
+            .find(|c| c.project == project)
+            .expect("a project this rig planted");
+        copy.repo.write(rel, bytes);
+        let date = local_date(day);
+        copy.repo.commit_at(rel, &format!("{date}T12:00:00+00:00"));
+    }
+
+    fn settle(&self, project: ProjectId, kind: JobKind) {
         let copy = self
             .copies
             .iter()
@@ -130,7 +153,7 @@ impl BadgesRig {
         };
         let runner = JobRunner::new(Arc::clone(&self.index), deps, self.events.clone());
         assert!(runner.enqueue(Job {
-            kind: JobKind::J4History,
+            kind,
             project_id: project,
             location_id: copy.location,
             store_key: "store".to_owned(),
@@ -147,19 +170,33 @@ impl BadgesRig {
         let idle = runner.is_idle();
         runner.request_stop();
         runner.join();
-        assert!(idle, "J4 did not settle for {project:?}");
-        let state: String = self.query(
-            "SELECT state FROM project_job_state WHERE project_id = ?1 AND job = 'j4'",
-            project.0,
+        assert!(idle, "{} did not settle for {project:?}", kind.slug());
+        let guard = self.index.lock().unwrap();
+        let state: String = guard
+            .conn()
+            .query_row(
+                "SELECT state FROM project_job_state WHERE project_id = ?1 AND job = ?2",
+                rusqlite::params![project.0, kind.slug()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        drop(guard);
+        assert_eq!(
+            state,
+            "ok",
+            "{} did not finish for {project:?}",
+            kind.slug()
         );
-        assert_eq!(state, "ok", "J4 did not finish for {project:?}");
     }
 
-    fn query(&self, sql: &str, param: i64) -> String {
+    /// `historyComplete` as the reveal reads it now.
+    pub(crate) fn history_complete(&self) -> bool {
         let guard = self.index.lock().unwrap();
-        let out = guard.conn().query_row(sql, [param], |r| r.get(0)).unwrap();
+        let complete = codotheca_core::stats::reveal::population(guard.conn())
+            .unwrap()
+            .history_complete;
         drop(guard);
-        out
+        complete
     }
 
     /// Run `sql` on the index.
