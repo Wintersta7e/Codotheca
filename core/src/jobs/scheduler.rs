@@ -355,6 +355,14 @@ impl JobRunner {
             // J1 that just wrote `archive_reached` pays at its own settle. The paid row is
             // returned for a hook in this transaction; none reads it yet.
             crate::ledger::archive::evaluate_clean_archive(tx, job.project_id, at)?;
+            // [p4] §40.5: the badge evaluator's settle site. After §31's and §38's evaluators,
+            // because Comeback reads `project_job_state`, which `put` wrote above, and J4's own
+            // transaction has committed its commit-days before this one opens.
+            let badges = crate::badges::evaluate::EvalCtx {
+                now,
+                zone: &*self.deps.zone,
+            };
+            crate::badges::evaluate::on_settle(tx, job.kind, job.project_id, &badges)?;
             Ok((recomputed, announce))
         });
         if let Ok((r, _)) = &recomputed {

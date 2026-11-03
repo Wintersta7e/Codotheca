@@ -9971,7 +9971,7 @@
       "checks": [
         {
           "id": "AC-P4-40-1",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_necromancer_through_the_j4_settle",
@@ -10282,7 +10282,7 @@
         },
         {
           "id": "AC-P4-40-9-necromancer",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_9_shallow_and_reference_yield_no_necromancer",
@@ -10306,7 +10306,7 @@
       "checks": [
         {
           "id": "AC-P4-40-10",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_10_necromancer_is_the_gap_rule_at_the_constant",

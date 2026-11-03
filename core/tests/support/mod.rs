@@ -10,6 +10,8 @@
 //! The fixture builder every git integration test in this plan shares.
 
 pub(crate) mod analyser_world;
+#[cfg(feature = "testkit")]
+pub(crate) mod badges_rig;
 pub(crate) mod git_world;
 #[cfg(feature = "testkit")]
 pub(crate) mod ledger_rig;

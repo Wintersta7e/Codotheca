@@ -1,4 +1,5 @@
-//! §40's acceptance suite: the badge types on the wire, read from the schema itself.
+//! §40's acceptance suite: the badge types on the wire, read from the schema itself, and each
+//! award driven through its production caller.
 //!
 //! Every test here prints what it read and fails when it read nothing, so a renamed type or an
 //! emptied field set cannot pass by scanning zero fields.
@@ -10,17 +11,108 @@
     clippy::indexing_slicing
 )]
 
+mod support;
+
 use std::collections::BTreeSet;
 use std::path::Path;
+use std::sync::OnceLock;
 
+use codotheca_core::clock::local_date;
 use codotheca_core::index::rebuild::{rebuild_in_place, RebuildOutcome};
 use codotheca_core::index::sidecar::{counts, read, RestoreCtx, RestoreOutcome, SECTIONS};
 use codotheca_core::index::Index;
+use codotheca_core::ledger::price::REVIVAL_GAP_DAYS;
+use codotheca_core::protocol::ProjectId;
 use rusqlite::types::Value;
 use rusqlite::Connection;
+use support::badges_rig::{BadgesRig, Flags};
 
 const SCHEMA: &str = include_str!("../../protocol/schema/protocol.json");
 const NOW: i64 = 1_760_000_000;
+
+/// A local day number in early 2024: the first commit-day of every gap below.
+const D1: i64 = 19_724;
+
+/// What one drive left behind over one fixture.
+#[derive(Debug)]
+struct TwinOutcome {
+    /// Every `badge_award` row before the drive.
+    before: Vec<Vec<Value>>,
+    /// Every `badge_award` row after it.
+    awards: Vec<Vec<Value>>,
+    /// `SELECT COUNT(*) FROM xp_events` after it.
+    xp_events: i64,
+    /// Every event the runners emitted, as `topic/event`.
+    events: Vec<String>,
+}
+
+/// The same drive over two fresh fixtures, identical but for a pre-latched row of `kind` in the
+/// second.
+#[derive(Debug)]
+struct Twin {
+    fresh: TwinOutcome,
+    latched: TwinOutcome,
+}
+
+fn run_once<S>(
+    kind: Option<&str>,
+    fixture: &impl Fn() -> (BadgesRig, S),
+    drive: &impl Fn(&BadgesRig, &S),
+) -> TwinOutcome {
+    let (rig, state) = fixture();
+    if let Some(kind) = kind {
+        rig.sql(&format!(
+            "INSERT INTO badge_award (kind, earned_at, tz_offset_min, earned_on, evidence,
+                                      awarded_at, awarded_on)
+             VALUES ('{kind}', 0, 0, '1970-01-01', '{{}}', 0, '1970-01-01')"
+        ));
+    }
+    let before = rig.awards();
+    drive(&rig, &state);
+    let events = rig
+        .events
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(topic, event, _)| format!("{topic}/{event}"))
+        .collect();
+    TwinOutcome {
+        before,
+        awards: rig.awards(),
+        xp_events: rig.xp_event_count(),
+        events,
+    }
+}
+
+/// `drive` over `fixture`, fresh and with `kind` pre-latched.
+fn twin<S>(
+    kind: &str,
+    fixture: impl Fn() -> (BadgesRig, S),
+    drive: impl Fn(&BadgesRig, &S),
+) -> Twin {
+    Twin {
+        fresh: run_once(None, &fixture, &drive),
+        latched: run_once(Some(kind), &fixture, &drive),
+    }
+}
+
+/// A project whose two commit-days sit §38's dormancy constant apart, settled by a real J4.
+fn necromancer_twin() -> &'static Twin {
+    static OUTCOME: OnceLock<Twin> = OnceLock::new();
+    OUTCOME.get_or_init(|| {
+        twin(
+            "necromancer",
+            || {
+                let mut rig = BadgesRig::new();
+                let project =
+                    rig.project("revived", &[D1, D1 + REVIVAL_GAP_DAYS], Flags::default());
+                (rig, project)
+            },
+            |rig: &BadgesRig, project: &ProjectId| rig.settle_j4(*project),
+        )
+    })
+}
 
 /// The field names of one declared struct, in declaration order.
 fn fields_of(name: &str) -> Vec<String> {
@@ -311,5 +403,54 @@ fn ac_p4_40_21_a_not_cloned_project_does_not_hold_history_incomplete() {
     assert!(
         !with_user_requeue,
         "a user's re-queue counted as covered history"
+    );
+}
+
+/// §40.3, §40.5: Necromancer is awarded through the J4 settle, its production caller, never by
+/// calling the evaluator: earned on the second date, naming the project, with the gap as
+/// evidence. Over the same library with Necromancer already held, the settle writes nothing.
+#[test]
+fn ac_p4_40_1_necromancer_through_the_j4_settle() {
+    let twin = necromancer_twin();
+    eprintln!(
+        "fresh: {} award rows, {} xp_events, events {:?}",
+        twin.fresh.awards.len(),
+        twin.fresh.xp_events,
+        twin.fresh.events
+    );
+    eprintln!(
+        "latched: {} award rows, {} xp_events, events {:?}",
+        twin.latched.awards.len(),
+        twin.latched.xp_events,
+        twin.latched.events
+    );
+    assert_eq!(twin.fresh.before, Vec::<Vec<Value>>::new());
+    assert_eq!(twin.fresh.awards.len(), 1, "the settle wrote no award");
+    // `SELECT *` in §40.7's column order.
+    let [kind, earned_at, tz_offset_min, earned_on, project_id, subject_key, evidence, ..] =
+        twin.fresh.awards[0].as_slice()
+    else {
+        panic!("badge_award has fewer columns than §40.7 declares");
+    };
+    let d2 = D1 + REVIVAL_GAP_DAYS;
+    assert_eq!(*kind, Value::Text("necromancer".to_owned()));
+    assert_eq!(*earned_at, Value::Integer(d2 * 86_400));
+    assert_eq!(*tz_offset_min, Value::Integer(0));
+    assert_eq!(*earned_on, Value::Text(local_date(d2)));
+    assert_eq!(*project_id, Value::Integer(1));
+    assert_eq!(
+        *subject_key,
+        Value::Text("lineage:revived|remote:".to_owned())
+    );
+    let Value::Text(evidence) = evidence else {
+        panic!("evidence is not text");
+    };
+    let evidence: serde_json::Value = serde_json::from_str(evidence).unwrap();
+    assert_eq!(evidence["gapDays"], REVIVAL_GAP_DAYS);
+    assert_eq!(evidence["projectName"], "revived");
+
+    assert_eq!(
+        twin.latched.awards, twin.latched.before,
+        "a held kind was evaluated again"
     );
 }
