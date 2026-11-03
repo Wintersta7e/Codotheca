@@ -17,6 +17,7 @@ use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::protocol::{DecayLayer, HealthDetectedIn, ProjectHealthDelta, ProjectId};
 use codotheca_core::restoration::{record_after_write, LayerValues};
+use codotheca_core::testing::zone::FixedZone;
 use rusqlite::Connection;
 
 const NOW: i64 = 1_800_000_000;
@@ -129,7 +130,8 @@ fn advisory_settle(
 ) -> Option<ProjectHealthDelta> {
     let tx = conn.transaction().unwrap();
     let before = LayerValues::read(&tx, project).unwrap();
-    let swept = sync_advisory_items(&tx, project, None, at, &SqliteDebtStore).unwrap();
+    let swept =
+        sync_advisory_items(&tx, project, None, at, &FixedZone(0), &SqliteDebtStore).unwrap();
     let event = record_after_write(
         &tx,
         project,

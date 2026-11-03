@@ -11,12 +11,15 @@ use crate::index::subject::subject_for_project;
 use crate::index::IndexError;
 use crate::jobs::JobKind;
 use crate::ledger::price::is_revival_gap;
-use crate::protocol::{BadgeEvidence, BadgeEvidenceProject, BadgeKind, ProjectId};
+use crate::protocol::{BadgeEvidence, BadgeEvidenceProject, BadgeKind, DebtSource, ProjectId};
 
 use super::evidence::encode;
 use super::population::{h_sql, p_sql, s_sql};
 use super::store::{insert_award, latched, NewAward};
-use super::{COMEBACK_GAP_DAYS, CURATOR_PROJECTS, MARATHON_CREDITED_SECONDS, POLYGLOT_LANGUAGES};
+use super::{
+    COMEBACK_GAP_DAYS, CURATOR_PROJECTS, FIREFIGHTER_PAIRS, MARATHON_CREDITED_SECONDS,
+    POLYGLOT_LANGUAGES,
+};
 
 /// Seconds in a day: a day-grain row's `ts` is its day's midnight.
 const DAY_SECONDS: i64 = 86_400;
@@ -60,7 +63,8 @@ pub fn evaluate(
 
 /// The badge evaluator's job-settle site: the kinds `job` can make true, for its project.
 ///
-/// J4 writes commit-days, which feed Necromancer, Polyglot and Comeback; J3 writes
+/// J4 writes commit-days, which feed Necromancer, Polyglot, Comeback and Firefighter — the
+/// commit-day half of a same-day repair may arrive after the repair; J3 writes
 /// `primary_language`, which feeds Polyglot.
 /// Necromancer and Polyglot are checked over the settled project first — one indexed read — and
 /// only one that qualifies there runs the library-wide predicate, so a first scan's thousand
@@ -95,6 +99,12 @@ pub fn on_settle(
     if job == JobKind::J4History && open(BadgeKind::Comeback) {
         kinds.push(BadgeKind::Comeback);
     }
+    if job == JobKind::J4History
+        && open(BadgeKind::Firefighter)
+        && !repairs(tx, Some(project))?.is_empty()
+    {
+        kinds.push(BadgeKind::Firefighter);
+    }
     if kinds.is_empty() {
         return Ok(kinds);
     }
@@ -113,8 +123,9 @@ fn predicate(
         BadgeKind::Comeback => comeback(tx, ctx),
         BadgeKind::Curator => curator(tx, ctx),
         BadgeKind::Marathon => marathon(tx, ctx),
+        BadgeKind::Firefighter => firefighter(tx, ctx),
         // Not evaluated yet: each of these lands with its own production caller.
-        BadgeKind::Undertaker | BadgeKind::Firefighter | BadgeKind::Lifeline => Ok(None),
+        BadgeKind::Undertaker | BadgeKind::Lifeline => Ok(None),
     }
 }
 
@@ -425,6 +436,72 @@ fn curator(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>, 
         awarded_at: ctx.now,
         awarded_on: ctx.zone.at(ctx.now).date(),
     }))
+}
+
+/// Firefighter's pairs — of `project` alone when given — as `(project, its name, local day)`,
+/// by day then project id: a project's `debt_day` row whose same-day repairs list `ci_red`,
+/// joined to a commit-day of that project on that date. The payout's date is its instant in its
+/// stored offset; a commit-day's is its midnight. The join is the attribution: a repair counts on
+/// a day the user committed there.
+fn repairs(
+    tx: &Transaction<'_>,
+    project: Option<ProjectId>,
+) -> Result<Vec<(ProjectId, String, i64)>, IndexError> {
+    let ci_red = crate::debt::enum_text(&DebtSource::CiRed).map_err(|e| IndexError::Corrupt {
+        detail: e.to_string(),
+    })?;
+    // One project's read is `idx_xp_events_project_kind_ts`; the library's is every debt-day.
+    let one = if project.is_some() {
+        "AND d.project_id = ?2"
+    } else {
+        ""
+    };
+    let mut st = tx.prepare_cached(&format!(
+        "SELECT DISTINCT d.project_id, p.name, (d.ts + d.tz_offset_min * 60) / {DAY_SECONDS} AS day
+           FROM xp_events d JOIN project p ON p.id = d.project_id
+          WHERE d.kind = 'debt_day' {one}
+            AND EXISTS (SELECT 1 FROM json_each(d.meta, '$.same_day') j WHERE j.value = ?1)
+            AND EXISTS (SELECT 1 FROM xp_events c
+                         WHERE c.kind = 'commit_day' AND c.project_id = d.project_id
+                           AND c.ts / {DAY_SECONDS} = (d.ts + d.tz_offset_min * 60) / {DAY_SECONDS})
+          ORDER BY day, d.project_id"
+    ))?;
+    let params: Vec<rusqlite::types::Value> = std::iter::once(ci_red.into())
+        .chain(project.map(|p| p.0.into()))
+        .collect();
+    let pairs = st
+        .query_map(rusqlite::params_from_iter(params), |r| {
+            Ok((ProjectId(r.get(0)?), r.get(1)?, r.get(2)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(pairs)
+}
+
+/// §40.3's Firefighter: `FIREFIGHTER_PAIRS` or more same-day repairs, each on a date its project
+/// committed. Earned on the tenth pair's date, naming that pair's project. Not observable without
+/// a connected account — `ci_red` reads the forge — so nothing renders a count of it.
+fn firefighter(tx: &Transaction<'_>, ctx: &EvalCtx<'_>) -> Result<Option<NewAward>, IndexError> {
+    let Some((_, name, day)) = repairs(tx, None)?
+        .into_iter()
+        .nth(FIREFIGHTER_PAIRS.saturating_sub(1))
+    else {
+        return Ok(None);
+    };
+    let evidence = BadgeEvidence {
+        project_name: Some(name),
+        gap_days: None,
+        year: None,
+        languages: None,
+        credited_seconds: None,
+        projects: None,
+        run_start_on: None,
+    };
+    Ok(Some(day_grain(
+        BadgeKind::Firefighter,
+        day,
+        &evidence,
+        ctx,
+    )?))
 }
 
 /// A day-grain award naming no project: earned at `day`'s midnight, offset 0, as a commit-day

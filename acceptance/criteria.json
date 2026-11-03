@@ -10035,7 +10035,7 @@
         },
         {
           "id": "AC-P4-40-1-firefighter",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_firefighter_through_the_payout_and_the_j4_settle",
@@ -10043,7 +10043,7 @@
         },
         {
           "id": "AC-P4-40-1-firefighter-advisory",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_firefighter_through_the_advisory_payout",
@@ -10051,7 +10051,7 @@
         },
         {
           "id": "AC-P4-40-1-firefighter-j7",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_1_firefighter_through_the_j7_payout",
@@ -10340,7 +10340,7 @@
       "checks": [
         {
           "id": "AC-P4-40-11",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-40",
           "test": "badges_predicates::ac_p4_40_11",

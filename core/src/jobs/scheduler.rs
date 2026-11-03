@@ -87,12 +87,14 @@ fn settle_debt(
     tx: &rusqlite::Transaction<'_>,
     job: &Job,
     at: crate::clock::LocalInstant,
+    zone: &dyn crate::clock::LocalZone,
 ) -> Result<Option<crate::protocol::ProjectHealthDelta>, crate::index::IndexError> {
     let layers_before = crate::restoration::LayerValues::read(tx, job.project_id)?;
     let effect = crate::debt::singletons::settle_singletons(
         tx,
         job.project_id,
         at,
+        zone,
         &crate::debt::store::SqliteDebtStore,
     )
     .map_err(debt_to_index)?;
@@ -350,7 +352,7 @@ impl JobRunner {
             // §28.2's singleton evaluator, and §34's producer around it. It runs **before** §31's
             // completion evaluator, or every Group-A check answers from the previous settle; do
             // not reorder them.
-            let announce = settle_debt(tx, job, at)?;
+            let announce = settle_debt(tx, job, at, &*self.deps.zone)?;
             let recomputed = crate::derive::persist::recompute(tx, job.project_id, now)?;
             // [p3] §31.5's evaluator — **hook site 1 of exactly two** (R123). None of §31.5's
             // three triggers is observable: `coverage_for` returns two booleans and

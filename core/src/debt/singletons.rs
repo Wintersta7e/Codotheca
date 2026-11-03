@@ -325,6 +325,7 @@ pub fn evaluate_singletons(
     tx: &Transaction<'_>,
     project: ProjectId,
     now: i64,
+    zone: &dyn crate::clock::LocalZone,
     store: &dyn DebtStore,
 ) -> Result<SweepEffect, DebtError> {
     let subject_key = crate::index::subject::subject_for_project(tx, project)?
@@ -382,7 +383,7 @@ pub fn evaluate_singletons(
             obs.item_count = None;
         }
 
-        let effect = store.observe(tx, &obs, &seen)?;
+        let effect = store.observe(tx, &obs, &seen, zone)?;
         total.opened.extend(effect.opened);
         total.closed.extend(effect.closed);
         total.refreshed = total.refreshed.saturating_add(effect.refreshed);
@@ -391,7 +392,8 @@ pub fn evaluate_singletons(
     Ok(total)
 }
 
-/// [`evaluate_singletons`] plus the day's payout, in one transaction.
+/// [`evaluate_singletons`] plus the day's payout, in one transaction, and §40's Firefighter after
+/// a payout that wrote.
 ///
 /// **The one function both settle hooks call**, so the payout cannot be wired at one site and
 /// forgotten at the other. The ledger row and the item deletions commit together: a tree with the
@@ -406,9 +408,16 @@ pub fn settle_singletons(
     tx: &Transaction<'_>,
     project: ProjectId,
     at: crate::clock::LocalInstant,
+    zone: &dyn crate::clock::LocalZone,
     store: &dyn DebtStore,
 ) -> Result<SweepEffect, DebtError> {
-    let effect = evaluate_singletons(tx, project, at.unix, store)?;
-    super::xp::pay_debt_day(tx, project, &effect, at)?;
+    let effect = evaluate_singletons(tx, project, at.unix, zone, store)?;
+    let payout = super::xp::pay_debt_day(tx, project, &effect, at)?;
+    // [p4] §40.5: Firefighter at the payout's caller, in its transaction, dated in its zone.
+    // Only a payout that wrote the day can have changed what Firefighter reads.
+    if payout.closed_today > 0 {
+        let ctx = crate::badges::evaluate::EvalCtx { now: at.unix, zone };
+        crate::badges::evaluate::evaluate(tx, &[crate::protocol::BadgeKind::Firefighter], &ctx)?;
+    }
     Ok(effect)
 }

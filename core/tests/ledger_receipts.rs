@@ -79,6 +79,7 @@ fn fixed(n: usize) -> SweepEffect {
                     key,
                     reason: DebtCloseReason::Fixed,
                     scoring: DebtScoring::Scored,
+                    first_seen_day: 0,
                 }
             })
             .collect(),
@@ -153,6 +154,7 @@ fn a_legacy_day_row_is_found_by_project_and_date() {
                 "closed": 3,
                 "when": "2026-09-17",
                 "project_name": "widget",
+                "same_day": [],
             }),
         )]
     );
@@ -177,6 +179,7 @@ fn receipts_carry_what_when_project_name() {
             "closed": 3,
             "when": "2026-09-17",
             "project_name": "widget",
+            "same_day": [],
         })
     );
 

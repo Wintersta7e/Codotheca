@@ -73,6 +73,7 @@ fn fixed(source: DebtSource) -> SweepEffect {
             key,
             reason: DebtCloseReason::Fixed,
             scoring: DebtScoring::Scored,
+            first_seen_day: 0,
         }],
         ..SweepEffect::default()
     }

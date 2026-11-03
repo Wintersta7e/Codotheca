@@ -25,6 +25,7 @@ use codotheca_core::index::{open_connection, Index};
 use codotheca_core::protocol::{
     DebtScoring, DebtSource, DebtSweepOutcome, Ecosystem, ObservationBasis, ProjectId,
 };
+use codotheca_core::testing::zone::FixedZone;
 
 const NOW: i64 = 1_800_000_000;
 
@@ -124,7 +125,7 @@ fn answer(
 
 fn sync(conn: &mut rusqlite::Connection, project: ProjectId, at: i64) -> ItemSweep {
     let tx = conn.transaction().unwrap();
-    let got = sync_advisory_items(&tx, project, None, at, &SqliteDebtStore).unwrap();
+    let got = sync_advisory_items(&tx, project, None, at, &FixedZone(0), &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     ItemSweep {
         opened: got.opened,
@@ -374,7 +375,9 @@ fn ac_p3_32_18_a_head_basis_sweep_closes_nothing() {
         observed_at: NOW + 60,
     };
     let tx = conn.transaction().unwrap();
-    let effect = SqliteDebtStore.observe(&tx, &head, &[]).unwrap();
+    let effect = SqliteDebtStore
+        .observe(&tx, &head, &[], &FixedZone(0))
+        .unwrap();
     tx.commit().unwrap();
 
     let rows = items(&conn);

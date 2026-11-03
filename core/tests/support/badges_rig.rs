@@ -430,3 +430,155 @@ pub(crate) fn session_row(index: &TempIndex, session: SessionId) -> (Option<i64>
         )
         .unwrap()
 }
+
+/// A project of **S** named `name` on one present copy, its ledger keyed by its lineage, with no
+/// commit-day of its own; `acknowledged` decides whether it is enrolled.
+pub(crate) fn plain_project(index: &mut Index, name: &str, acknowledged: bool) -> ProjectId {
+    index
+        .with_tx(|tx| {
+            tx.execute(
+                "INSERT INTO project (name, seed_basename, lineage_key, authored_by_user,
+                                      acknowledged_at, created_at, updated_at)
+                 VALUES (?1, ?1, ?1, 1, ?2, 0, 0)",
+                rusqlite::params![name, acknowledged.then_some(1_i64)],
+            )?;
+            let project = ProjectId(tx.last_insert_rowid());
+            tx.execute(
+                "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                       store_key, presence, repo_kind)
+                 VALUES (?1, 'linux', ?2, ?2, CAST(?2 AS TEXT), 'store', 'present',
+                         'worktree')",
+                rusqlite::params![project.0, format!("/w/{name}").into_bytes()],
+            )?;
+            Ok(project)
+        })
+        .unwrap()
+}
+
+/// `project`'s CI as §28's `ci_red` arm reads it: the project names its forge repository, its
+/// copy is on `main`, and it is enrolled, so a repair pays.
+pub(crate) fn connect_ci(index: &Index, project: ProjectId) {
+    let conn = index.conn();
+    conn.execute(
+        "UPDATE project SET provider = 'github', provider_repo_id = name,
+                            acknowledged_at = COALESCE(acknowledged_at, 1)
+          WHERE id = ?1",
+        [project.0],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE location SET branch = 'main' WHERE project_id = ?1",
+        [project.0],
+    )
+    .unwrap();
+}
+
+/// A commit-day row for `project` on local day `day`, as J4 writes one: the day's midnight,
+/// offset 0.
+pub(crate) fn plant_commit_day(index: &Index, project: ProjectId, day: i64) {
+    index
+        .conn()
+        .execute(
+            "INSERT INTO xp_events (ts, tz_offset_min, project_id, subject_key, kind, dedupe_key,
+                                    track, meta)
+             SELECT ?2 * 86400, 0, id, 'lineage:' || name || '|remote:', 'commit_day',
+                    'commit_day:' || name || '::' || ?2, 'git', '{}'
+               FROM project WHERE id = ?1",
+            rusqlite::params![project.0, day],
+        )
+        .unwrap();
+}
+
+/// A project holding one qualifying Firefighter pair on each local day of `days`: that day's
+/// `debt_day` row listing `ci_red` among its same-day repairs, and a commit-day the same date.
+pub(crate) fn plant_repairs(index: &mut Index, name: &str, days: &[i64]) -> ProjectId {
+    let project = plain_project(index, name, true);
+    for &day in days {
+        index
+            .conn()
+            .execute(
+                "INSERT INTO xp_events (ts, tz_offset_min, project_id, subject_key, kind,
+                                        dedupe_key, track, meta)
+                 VALUES (?2 * 86400 + 36000, 0, ?1, ?3, 'debt_day', ?4, 'session',
+                         '{\"sources\":[\"ci_red\"],\"closed\":1,\"same_day\":[\"ci_red\"]}')",
+                rusqlite::params![
+                    project.0,
+                    day,
+                    format!("lineage:{name}|remote:"),
+                    format!("debt_day:lineage:{name}|remote::{}", local_date(day))
+                ],
+            )
+            .unwrap();
+        plant_commit_day(index, project, day);
+    }
+    project
+}
+
+/// One concluded run of `project`'s CI on `main`, started at `started_at`.
+fn ci_run(index: &Index, project: ProjectId, conclusion: &str, started_at: i64) {
+    index
+        .conn()
+        .execute(
+            "INSERT INTO remote_ci_run
+                (provider, provider_repo_id, run_id, workflow_name, conclusion, branch,
+                 run_number, started_at)
+             SELECT 'github', provider_repo_id,
+                    (SELECT COALESCE(MAX(run_id), 0) + 1 FROM remote_ci_run), 'build', ?2,
+                    'main', 1, ?3
+               FROM project WHERE id = ?1",
+            rusqlite::params![project.0, conclusion, started_at],
+        )
+        .unwrap();
+}
+
+/// §28's singleton settle for `project` at `unix`, through `settle_singletons` — the payout's
+/// caller both runners reach — in a transaction of its own, under UTC.
+pub(crate) fn settle_singletons_at(index: &mut Index, project: ProjectId, unix: i64) {
+    let zone = FixedZone(0);
+    index
+        .with_tx(|tx| {
+            codotheca_core::debt::singletons::settle_singletons(
+                tx,
+                project,
+                codotheca_core::clock::LocalZone::at(&zone, unix),
+                &zone,
+                &codotheca_core::debt::store::SqliteDebtStore,
+            )
+            .unwrap();
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// A red build at `red_at` turned green at `green_at`, each observed by a singleton settle a
+/// minute after its run started: the `ci_red` item opens at the first and closes at the second.
+pub(crate) fn red_then_green(index: &mut Index, project: ProjectId, red_at: i64, green_at: i64) {
+    ci_run(index, project, "failure", red_at);
+    settle_singletons_at(index, project, red_at + 60);
+    ci_run(index, project, "success", green_at);
+    settle_singletons_at(index, project, green_at + 60);
+}
+
+/// The qualifying Firefighter pairs the library holds, `(project, local date)`, read the way a
+/// reader of §40.3 would: a `debt_day` listing `ci_red` as a same-day repair, joined to a
+/// commit-day of that project on that date.
+pub(crate) fn repair_pairs(index: &Index) -> Vec<(i64, i64)> {
+    let mut st = index
+        .conn()
+        .prepare(
+            "SELECT DISTINCT d.project_id, (d.ts + d.tz_offset_min * 60) / 86400 AS day
+               FROM xp_events d
+              WHERE d.kind = 'debt_day'
+                AND EXISTS (SELECT 1 FROM json_each(d.meta, '$.same_day') j
+                             WHERE j.value = 'ci_red')
+                AND EXISTS (SELECT 1 FROM xp_events c
+                             WHERE c.kind = 'commit_day' AND c.project_id = d.project_id
+                               AND c.ts / 86400 = (d.ts + d.tz_offset_min * 60) / 86400)
+              ORDER BY day, d.project_id",
+        )
+        .unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}

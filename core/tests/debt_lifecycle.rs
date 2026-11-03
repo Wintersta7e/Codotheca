@@ -24,6 +24,7 @@ use codotheca_core::protocol::{
     DebtItemState, DebtScoring, DebtSource, DebtSweepOutcome, DecayLayer, LocationId,
     ObservationBasis, ProjectId,
 };
+use codotheca_core::testing::zone::FixedZone;
 
 const SUBJECT: &str = "lineage:abc123|remote:";
 
@@ -376,19 +377,25 @@ fn a_marker_gone_from_a_readable_root_closes_fixed() {
         Some(ObservationBasis::Head),
     );
     let first = store
-        .observe(&tx, &obs, &[seen(key.clone(), Some(loc), "a.rs", 4)])
+        .observe(
+            &tx,
+            &obs,
+            &[seen(key.clone(), Some(loc), "a.rs", 4)],
+            &FixedZone(0),
+        )
         .unwrap();
     assert_eq!(first.opened, vec![key.clone()]);
     assert_eq!(first.closed, []);
 
     // The same sweep, with the marker gone.
-    let second = store.observe(&tx, &obs, &[]).unwrap();
+    let second = store.observe(&tx, &obs, &[], &FixedZone(0)).unwrap();
     assert_eq!(
         second.closed,
         vec![DebtClosure {
             key,
             reason: DebtCloseReason::Fixed,
             scoring: DebtScoring::Scored,
+            first_seen_day: 0,
         }]
     );
     assert_eq!(second.opened, []);
@@ -425,6 +432,7 @@ fn a_closure_carries_the_scoring_its_item_held_when_it_closed() {
                 seen(stays.clone(), Some(loc), "a.rs", 1),
                 seen(demoted.clone(), Some(loc), "b.rs", 2),
             ],
+            &FixedZone(0),
         )
         .unwrap();
     assert_eq!(opened.opened.len(), 2);
@@ -437,12 +445,13 @@ fn a_closure_carries_the_scoring_its_item_held_when_it_closed() {
             &tx,
             &obs,
             &[seen(stays.clone(), Some(loc), "a.rs", 1), refreshed],
+            &FixedZone(0),
         )
         .unwrap();
     assert_eq!(second.refreshed, 2);
     assert_eq!(second.closed, []);
 
-    let third = store.observe(&tx, &obs, &[]).unwrap();
+    let third = store.observe(&tx, &obs, &[], &FixedZone(0)).unwrap();
     tx.commit().unwrap();
 
     assert_eq!(third.closed.len(), 2, "{:?}", third.closed);
@@ -478,10 +487,20 @@ fn ac_p3_28_3_a_rename_refreshes_and_closes_nothing() {
 
     let tx = conn.transaction().unwrap();
     store
-        .observe(&tx, &obs, &[seen(key.clone(), Some(loc), "old/a.rs", 4)])
+        .observe(
+            &tx,
+            &obs,
+            &[seen(key.clone(), Some(loc), "old/a.rs", 4)],
+            &FixedZone(0),
+        )
         .unwrap();
     let effect = store
-        .observe(&tx, &obs, &[seen(key.clone(), Some(loc), "new/b.rs", 91)])
+        .observe(
+            &tx,
+            &obs,
+            &[seen(key.clone(), Some(loc), "new/b.rs", 91)],
+            &FixedZone(0),
+        )
         .unwrap();
     tx.commit().unwrap();
 
@@ -521,7 +540,12 @@ fn ac_p3_28_1_an_offline_anchor_marks_unverified_and_closes_nothing() {
         Some(ObservationBasis::Head),
     );
     store
-        .observe(&tx, &live, &[seen(key.clone(), Some(loc), "a.rs", 4)])
+        .observe(
+            &tx,
+            &live,
+            &[seen(key.clone(), Some(loc), "a.rs", 4)],
+            &FixedZone(0),
+        )
         .unwrap();
     tx.commit().unwrap();
     let before = open_keys(&conn, p);
@@ -543,7 +567,9 @@ fn ac_p3_28_1_an_offline_anchor_marks_unverified_and_closes_nothing() {
         ..live
     };
     assert_eq!(frozen.outcome, DebtSweepOutcome::Unobservable);
-    let effect = store.observe(&offline_tx, &frozen, &[]).unwrap();
+    let effect = store
+        .observe(&offline_tx, &frozen, &[], &FixedZone(0))
+        .unwrap();
     offline_tx.commit().unwrap();
 
     assert!(
@@ -579,7 +605,12 @@ fn a_skipped_reference_sweep_marks_unverified() {
         Some(ObservationBasis::Head),
     );
     store
-        .observe(&tx, &live, &[seen(key, Some(loc), "a.rs", 4)])
+        .observe(
+            &tx,
+            &live,
+            &[seen(key, Some(loc), "a.rs", 4)],
+            &FixedZone(0),
+        )
         .unwrap();
 
     let skipped = SweepObservation {
@@ -587,7 +618,7 @@ fn a_skipped_reference_sweep_marks_unverified() {
         item_count: None,
         ..live
     };
-    let effect = store.observe(&tx, &skipped, &[]).unwrap();
+    let effect = store.observe(&tx, &skipped, &[], &FixedZone(0)).unwrap();
     tx.commit().unwrap();
 
     assert_eq!(effect.closed, []);
@@ -629,7 +660,12 @@ fn ac_p3_28_17_a_reap_writes_no_closure_and_no_xp() {
         Some(ObservationBasis::Head),
     );
     store
-        .observe(&tx, &at_old, &[seen(key, Some(old), "a.rs", 4)])
+        .observe(
+            &tx,
+            &at_old,
+            &[seen(key, Some(old), "a.rs", 4)],
+            &FixedZone(0),
+        )
         .unwrap();
     store.mark_unverified(&tx, ProjectId(p)).unwrap();
     tx.commit().unwrap();
@@ -653,7 +689,9 @@ fn ac_p3_28_17_a_reap_writes_no_closure_and_no_xp() {
     // with it, and an `observe` that folded the strand into `closed` would pay for it. This is
     // the half that bites — the `xp_events` half below cannot, because §28's XP writer pays from
     // `SweepEffect::closed` and a reap never reaches it.
-    let effect = store.observe(&fresh_tx, &at_new, &[]).unwrap();
+    let effect = store
+        .observe(&fresh_tx, &at_new, &[], &FixedZone(0))
+        .unwrap();
     assert!(
         effect.closed.is_empty(),
         "a stranded item was closed rather than reaped: {:?}",
@@ -691,7 +729,12 @@ fn a_reap_refuses_a_sweep_that_is_not_complete_at_the_primary() {
         Some(ObservationBasis::Head),
     );
     store
-        .observe(&tx, &at_old, &[seen(key, Some(old), "a.rs", 4)])
+        .observe(
+            &tx,
+            &at_old,
+            &[seen(key, Some(old), "a.rs", 4)],
+            &FixedZone(0),
+        )
         .unwrap();
     store.mark_unverified(&tx, ProjectId(p)).unwrap();
     tx.commit().unwrap();
@@ -930,7 +973,14 @@ fn ac_p3_28_14_a_shown_only_closure_through_the_singleton_settle_pays_nothing() 
         unix,
         offset_min: 0,
     };
-    settle_singletons(&tx, ProjectId(p), at(1_789_646_400), &SqliteDebtStore).unwrap();
+    settle_singletons(
+        &tx,
+        ProjectId(p),
+        at(1_789_646_400),
+        &FixedZone(0),
+        &SqliteDebtStore,
+    )
+    .unwrap();
     tx.commit().unwrap();
     let stored: Vec<String> = {
         let mut st = conn
@@ -957,6 +1007,7 @@ fn ac_p3_28_14_a_shown_only_closure_through_the_singleton_settle_pays_nothing() 
         &idle_tx,
         ProjectId(p),
         at(1_789_646_400 + 60),
+        &FixedZone(0),
         &SqliteDebtStore,
     )
     .unwrap();

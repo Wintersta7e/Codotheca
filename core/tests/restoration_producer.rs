@@ -23,6 +23,7 @@ use codotheca_core::protocol::{
     LocationId, ObservationBasis, ProjectId,
 };
 use codotheca_core::restoration::{record_after_write, record_layer_deltas, LayerValues};
+use codotheca_core::testing::zone::FixedZone;
 use rusqlite::{Connection, Transaction};
 
 /// The clock every direct fixture writes at. Evidence is stamped relative to it.
@@ -149,7 +150,9 @@ fn todo_sweep(
         item_count: observes.then(|| u32::try_from(n).unwrap()),
         observed_at: at,
     };
-    SqliteDebtStore.observe(tx, &obs, &seen).unwrap()
+    SqliteDebtStore
+        .observe(tx, &obs, &seen, &FixedZone(0))
+        .unwrap()
 }
 
 /// One writer's transaction: snapshot, write, record — the shape every production caller has.
@@ -454,7 +457,9 @@ fn ac_p3_30_18_no_boundary_driven_through_the_producer_writes_a_row() {
                 column: None,
                 salient_text: None,
             };
-            SqliteDebtStore.observe(&tx, &tests, &[item]).unwrap();
+            SqliteDebtStore
+                .observe(&tx, &tests, &[item], &FixedZone(0))
+                .unwrap();
             tx.commit().unwrap();
             straddle_switch(&mut db)
         }),

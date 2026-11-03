@@ -129,6 +129,7 @@ pub fn sync_advisory_items(
     project: ProjectId,
     location: Option<LocationId>,
     now: i64,
+    zone: &dyn crate::clock::LocalZone,
     store: &dyn DebtStore,
 ) -> Result<AdvisoryItemSweep, AdvisoryError> {
     // §30.9 and §31.9: an `off` source, or one whose `deps` check is N/A for this project, is not
@@ -197,7 +198,7 @@ pub fn sync_advisory_items(
             item_count: None,
             observed_at: now,
         };
-        let effect = store.observe(tx, &observation, &[])?;
+        let effect = store.observe(tx, &observation, &[], zone)?;
         return Ok(AdvisoryItemSweep {
             unverified: usize::try_from(effect.unverified).unwrap_or(usize::MAX),
             effect,
@@ -247,7 +248,7 @@ pub fn sync_advisory_items(
         item_count: u32::try_from(seen.len()).ok(),
         observed_at: now,
     };
-    let mut effect = store.observe(tx, &observation, &seen)?;
+    let mut effect = store.observe(tx, &observation, &seen, zone)?;
 
     // **The reclassification, and it is not cosmetic.** `pay_debt_day` pays exactly the closes
     // marked `Fixed` of items that were `scored`; leaving a withdrawn scored item marked `Fixed`
@@ -298,6 +299,7 @@ pub fn sync_advisory_items(
 pub fn settle_advisory_items(
     tx: &Transaction<'_>,
     at: crate::clock::LocalInstant,
+    zone: &dyn crate::clock::LocalZone,
 ) -> Result<Vec<ProjectHealthDelta>, AdvisoryError> {
     let now = at.unix;
     // §32.12 rule 3: a project's first computation is seeded before the sync marks it computed,
@@ -315,13 +317,14 @@ pub fn settle_advisory_items(
         rows
     };
     let mut deltas = Vec::new();
+    let mut paid = false;
     for id in &projects {
         let project = ProjectId(*id);
         // A snapshot that cannot be read records no delta and costs the item write nothing, as
         // at the producer's other callers.
         let before = crate::restoration::LayerValues::read(tx, project).ok();
-        let swept = sync_advisory_items(tx, project, None, now, &SqliteDebtStore)?;
-        crate::debt::xp::pay_debt_day(tx, project, &swept.effect, at)?;
+        let swept = sync_advisory_items(tx, project, None, now, zone, &SqliteDebtStore)?;
+        paid |= crate::debt::xp::pay_debt_day(tx, project, &swept.effect, at)?.closed_today > 0;
         if let Some(before) = before {
             if let Some(delta) = crate::restoration::record_after_write(
                 tx,
@@ -334,6 +337,12 @@ pub fn settle_advisory_items(
                 deltas.push(delta);
             }
         }
+    }
+    // [p4] §40.5: Firefighter at the payout's caller, in its transaction, dated in its zone.
+    // Only a payout that wrote the day can have changed what Firefighter reads.
+    if paid {
+        let ctx = crate::badges::evaluate::EvalCtx { now, zone };
+        crate::badges::evaluate::evaluate(tx, &[crate::protocol::BadgeKind::Firefighter], &ctx)?;
     }
     Ok(deltas)
 }

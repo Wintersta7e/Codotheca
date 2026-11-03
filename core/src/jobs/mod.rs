@@ -622,12 +622,7 @@ pub fn run_one(
         // §29.6: the cursor is durable, so it is read here rather than carried on the work item —
         // a chunked job resumes after a restart, and the queue is not durable.
         JobKind::J7Markers => {
-            let cursor = read(index, |conn| {
-                Ok(state::load(conn, job.project_id)?
-                    .into_iter()
-                    .find(|row| row.job == JobKind::J7Markers)
-                    .and_then(|row| row.cursor))
-            })?;
+            let cursor = j7_cursor(index, job.project_id)?;
             j7_markers::run_j7(
                 index,
                 git,
@@ -638,12 +633,26 @@ pub fn run_one(
                     location: job.location_id,
                     cursor: cursor.as_deref(),
                     at: deps.zone.at(now),
+                    zone: &*deps.zone,
                     detected_in: crate::restoration::detected_in_for(job.origin),
                     announce: Some(announce),
                 },
             )
         }
     }
+}
+
+/// `project`'s durable J7 cursor (§29.6), where a chunked run resumes.
+fn j7_cursor(
+    index: &std::sync::Mutex<crate::index::Index>,
+    project: ProjectId,
+) -> Result<Option<String>, JobError> {
+    read(index, |conn| {
+        Ok(state::load(conn, project)?
+            .into_iter()
+            .find(|row| row.job == JobKind::J7Markers)
+            .and_then(|row| row.cursor))
+    })
 }
 
 /// Take the lock, read, release. Never called with a git invocation inside `f`.

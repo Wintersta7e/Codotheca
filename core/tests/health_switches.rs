@@ -16,6 +16,7 @@ use codotheca_core::health::switches::{
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
 use codotheca_core::protocol::{DebtSource, HealthCheckSwitch};
+use codotheca_core::testing::zone::FixedZone;
 
 const NOW: i64 = 1_781_179_200;
 
@@ -494,6 +495,7 @@ fn settle(conn: &mut rusqlite::Connection, project: i64, at: i64) {
             unix: at,
             offset_min: 0,
         },
+        &FixedZone(0),
         &codotheca_core::debt::store::SqliteDebtStore,
     )
     .unwrap();

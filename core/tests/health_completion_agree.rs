@@ -17,6 +17,7 @@ use codotheca_core::protocol::{
     CheckOutcome, CheckState, CompletionCheck, DebtSource, ProjectDetail, ProjectId,
 };
 use codotheca_core::surfaces::{dispatch_surface_command, SurfaceCtx};
+use codotheca_core::testing::zone::FixedZone;
 use detail_rig::{Rig, NOW};
 use serde_json::json;
 
@@ -62,6 +63,7 @@ fn settle(rig: &Rig, project: i64, now: i64) {
             unix: now,
             offset_min: 0,
         },
+        &FixedZone(0),
         &SqliteDebtStore,
     )
     .unwrap();

@@ -49,7 +49,8 @@ use codotheca_core::testing::{
 use rusqlite::types::Value;
 use rusqlite::Connection;
 use support::badges_rig::{
-    award_row, orphaned_session, session_index, session_row, BadgesRig, Flags, T0,
+    award_row, connect_ci, orphaned_session, plant_repairs, red_then_green, repair_pairs,
+    session_index, session_row, BadgesRig, Flags, T0,
 };
 
 const SCHEMA: &str = include_str!("../../protocol/schema/protocol.json");
@@ -870,4 +871,267 @@ fn ac_p4_40_1_curator_through_the_sync_completion_hook() {
     runner.join();
     let counted = curator_counted(&rig).expect("the sync settle wrote no curator");
     tenth_listed(&rig, tenth, &counted);
+}
+
+/// Seconds in a day, and in an hour.
+const DAY_S: i64 = 86_400;
+const HOUR_S: i64 = 3_600;
+
+/// The local day of Firefighter's tenth pair in the payout tests: nine planted before it.
+const TENTH: i64 = D1 + 9;
+
+/// A library of two projects of **H** on real repositories, each walked by J4: `alpha`
+/// committed on nine days and `beta` long before them — and on [`TENTH`] too when `committed`.
+/// Both are connected to CI, and `alpha` repairs a red build the same day on each of its nine,
+/// through the singleton settle.
+fn firefighter_rig(committed: bool) -> (BadgesRig, ProjectId) {
+    let mut rig = BadgesRig::new();
+    let days: Vec<i64> = (0..9).map(|i| D1 + i).collect();
+    let alpha = rig.project("alpha", &days, Flags::default());
+    let beta_days: &[i64] = if committed {
+        &[D1 - 100, TENTH]
+    } else {
+        &[D1 - 100]
+    };
+    let beta = rig.project("beta", beta_days, Flags::default());
+    rig.settle_j4(alpha);
+    rig.settle_j4(beta);
+    let mut guard = rig.index.lock().unwrap();
+    connect_ci(&guard, alpha);
+    connect_ci(&guard, beta);
+    for day in days {
+        red_then_green(
+            &mut guard,
+            alpha,
+            day * DAY_S + 9 * HOUR_S,
+            day * DAY_S + 15 * HOUR_S,
+        );
+    }
+    drop(guard);
+    (rig, beta)
+}
+
+/// `beta` repairs a red build on [`TENTH`], through the singleton settle; the pairs after it.
+fn tenth_repair(rig: &BadgesRig, beta: ProjectId) -> usize {
+    let mut guard = rig.index.lock().unwrap();
+    red_then_green(
+        &mut guard,
+        beta,
+        TENTH * DAY_S + 9 * HOUR_S,
+        TENTH * DAY_S + 15 * HOUR_S,
+    );
+    let pairs = repair_pairs(&guard).len();
+    drop(guard);
+    pairs
+}
+
+/// The Firefighter row names `beta` and [`TENTH`], day-grain, naming no project.
+fn assert_tenth(award: Option<(String, Option<i64>, serde_json::Value)>) {
+    let (earned_on, project, evidence) = award.expect("no firefighter row");
+    assert_eq!(earned_on, local_date(TENTH));
+    assert_eq!(project, None);
+    assert_eq!(evidence, serde_json::json!({ "projectName": "beta" }));
+}
+
+/// §40.3, §40.5: Firefighter through the singleton payout's caller and the J4 settle. Ten
+/// same-day repairs, each a `ci_red` item opened and closed on one local date through
+/// `settle_singletons`. Where all ten dates already hold a commit-day, the tenth repair's
+/// settle writes the row; where the tenth's commit-day is not walked yet, nothing is written
+/// until a later J4 settle brings it, and the row appears at that settle.
+#[test]
+fn ac_p4_40_1_firefighter_through_the_payout_and_the_j4_settle() {
+    committed_before_the_tenth_repair();
+    walked_after_the_tenth_repair();
+}
+
+/// Every date already holds its commit-day: the tenth repair's singleton settle writes the row.
+fn committed_before_the_tenth_repair() {
+    let (rig, beta) = firefighter_rig(true);
+    assert_eq!(
+        rig.award("firefighter"),
+        None,
+        "nine pairs awarded firefighter"
+    );
+    let pairs = tenth_repair(&rig, beta);
+    let award = rig.award("firefighter");
+    eprintln!("committed first: {pairs} pairs after the tenth repair, award {award:?}");
+    assert_tenth(award);
+}
+
+/// The tenth date's commit-day is not walked yet: nothing until the J4 settle that brings it.
+fn walked_after_the_tenth_repair() {
+    let (rig, beta) = firefighter_rig(false);
+    let repaired = tenth_repair(&rig, beta);
+    let before = rig.award("firefighter");
+    eprintln!("not yet walked: {repaired} pairs after the tenth repair, award {before:?}");
+    assert_eq!(
+        before, None,
+        "a repair with no commit-day that date counted"
+    );
+    rig.commit_file(beta, "fix.txt", b"fixed\n", TENTH);
+    rig.settle_j4(beta);
+    let pairs = repair_pairs(&rig.index.lock().unwrap()).len();
+    let award = rig.award("firefighter");
+    eprintln!("after the J4 settle: {pairs} pairs, award {award:?}");
+    assert_tenth(award);
+}
+
+/// The project holding `FIREFIGHTER_PAIRS` qualifying pairs, its last on [`TENTH`].
+fn plant_ten(index: &mut Index) {
+    let days: Vec<i64> = (0..10).map(|i| D1 + i).collect();
+    plant_repairs(index, "beta", &days);
+    let pairs = repair_pairs(index);
+    eprintln!("planted {} qualifying pairs: {pairs:?}", pairs.len());
+    assert_eq!(pairs.len(), codotheca_core::badges::FIREFIGHTER_PAIRS);
+}
+
+/// `left@version` answered by an advisory sweep at `at`: vulnerable below 2.0.0 with a fix when
+/// `vulnerable`, clean otherwise.
+fn answer_left(index: &Index, version: &str, at: i64, vulnerable: bool) {
+    let conn = index.conn();
+    conn.execute(
+        "INSERT INTO advisory_sweep (started_at, settled_at, outcome, complete)
+         VALUES (?1, ?1, 'done', 1)",
+        [at],
+    )
+    .unwrap();
+    let sweep = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO advisory_triple
+           (ecosystem, package_name, version, sweep_id, observed_at, answered)
+         VALUES ('npm', 'left', ?1, ?2, ?3, 1)",
+        rusqlite::params![version, sweep, at],
+    )
+    .unwrap();
+    if vulnerable {
+        conn.execute(
+            "INSERT INTO advisory (advisory_id, severity, summary, url, observed_at)
+             VALUES ('GHSA-aaaa', 'critical', 's', 'u', ?1)",
+            [at],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO advisory_match
+               (ecosystem, package_name, version, advisory_id, fix_available, fixed_version)
+             VALUES ('npm', 'left', ?1, 'GHSA-aaaa', 1, '2.0.0')",
+            [version],
+        )
+        .unwrap();
+    }
+}
+
+/// The advisory settle at `at`, in a transaction of its own, under UTC.
+fn settle_advisories(index: &Mutex<Index>, at: i64) {
+    let zone = FixedZone(0);
+    let mut guard = index.lock().unwrap();
+    guard
+        .with_tx(|tx| {
+            codotheca_core::advisories::items::settle_advisory_items(
+                tx,
+                codotheca_core::clock::LocalZone::at(&zone, at),
+                &zone,
+            )
+            .unwrap();
+            Ok(())
+        })
+        .unwrap();
+    drop(guard);
+}
+
+/// `kind`'s `(earned_on, awarded_at)` on `index`.
+fn earned(index: &Mutex<Index>, kind: &str) -> Option<(String, i64)> {
+    let guard = index.lock().unwrap();
+    let row = guard
+        .conn()
+        .query_row(
+            "SELECT earned_on, awarded_at FROM badge_award WHERE kind = ?1",
+            [kind],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
+    drop(guard);
+    row
+}
+
+/// §40.5: Firefighter through the advisory payout's caller. Over a library already holding
+/// `FIREFIGHTER_PAIRS` qualifying pairs, a scored advisory closure paid by the advisory settle
+/// writes the row in that settle's transaction.
+#[test]
+fn ac_p4_40_1_firefighter_through_the_advisory_payout() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = Mutex::new(Index::open_at(dir.path(), NOW).unwrap());
+    let work = tempfile::tempdir().unwrap();
+    let project = support::ledger_rig::advisory_project(&index, work.path(), NOW, true);
+    plant_ten(&mut index.lock().unwrap());
+
+    support::ledger_rig::lock_left(&index, project, work.path(), "1.0.0", NOW);
+    answer_left(&index.lock().unwrap(), "1.0.0", NOW, true);
+    settle_advisories(&index, NOW);
+    let opened = earned(&index, "firefighter");
+    eprintln!("after the settle that opened the advisory: {opened:?}");
+    assert_eq!(
+        opened, None,
+        "a settle that paid nothing evaluated firefighter"
+    );
+
+    let later = NOW + DAY_S;
+    support::ledger_rig::lock_left(&index, project, work.path(), "2.0.0", later);
+    answer_left(&index.lock().unwrap(), "2.0.0", later, false);
+    settle_advisories(&index, later);
+    let award = earned(&index, "firefighter");
+    eprintln!("after the settle that paid the upgrade: {award:?}");
+    assert_eq!(award, Some((local_date(TENTH), later)));
+}
+
+/// §40.5: Firefighter through J7's payout. Over a library already holding `FIREFIGHTER_PAIRS`
+/// qualifying pairs, a marker closure paid in J7's chunk transaction writes the row there.
+#[test]
+fn ac_p4_40_1_firefighter_through_the_j7_payout() {
+    use codotheca_core::git::{JobClass, JobContext};
+    use codotheca_core::jobs::j7_markers;
+
+    let fixture = support::ledger_rig::j7_fixture(NOW);
+    let index = Mutex::new(fixture.index);
+    plant_ten(&mut index.lock().unwrap());
+    let git = FakeGitBackend::new();
+    let repo = RepoHandle::bare(
+        Path::new("/does/not/matter"),
+        StoreKey::new("test-store"),
+        StoreClass::Local,
+    );
+    let run = |now: i64| {
+        let cancel = CancelToken::new();
+        let ctx = JobContext::new(JobClass::Background, &cancel, None);
+        let zone = FixedZone(0);
+        j7_markers::run_j7(
+            &index,
+            &git,
+            &repo,
+            &ctx,
+            j7_markers::ScanRun {
+                project: fixture.project,
+                location: fixture.location,
+                cursor: None,
+                at: codotheca_core::clock::LocalZone::at(&zone, now),
+                zone: &zone,
+                detected_in: codotheca_core::protocol::HealthDetectedIn::Background,
+                announce: None,
+            },
+        )
+        .unwrap();
+    };
+    support::ledger_rig::marker_tree(&git, &index, fixture.location, "head-one", 5);
+    run(NOW);
+    let opened = earned(&index, "firefighter");
+    eprintln!("after the run that opened five markers: {opened:?}");
+    assert_eq!(
+        opened, None,
+        "a run that paid nothing evaluated firefighter"
+    );
+
+    support::ledger_rig::marker_tree(&git, &index, fixture.location, "head-two", 4);
+    run(NOW + 60);
+    let award = earned(&index, "firefighter");
+    eprintln!("after the run that closed one: {award:?}");
+    assert_eq!(award, Some((local_date(TENTH), NOW + 60)));
 }

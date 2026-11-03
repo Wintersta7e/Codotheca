@@ -293,6 +293,7 @@ impl J7Rig {
                     unix: now,
                     offset_min: 0,
                 },
+                zone: &codotheca_core::testing::zone::FixedZone(0),
                 detected_in: HealthDetectedIn::Background,
                 announce: None,
             },

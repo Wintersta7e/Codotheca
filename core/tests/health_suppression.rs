@@ -21,6 +21,7 @@ use codotheca_core::index::Index;
 use codotheca_core::jobs::j7_markers;
 use codotheca_core::jobs::JobOutcome;
 use codotheca_core::protocol::{LocationId, ProjectId};
+use codotheca_core::testing::zone::FixedZone;
 use codotheca_core::testing::{FakeGitBackend, GitReply};
 
 const NOW: i64 = 1_700_000_000;
@@ -119,6 +120,7 @@ impl Rig {
                     unix: NOW,
                     offset_min: 0,
                 },
+                zone: &FixedZone(0),
                 detected_in: codotheca_core::protocol::HealthDetectedIn::Background,
                 announce: None,
             },

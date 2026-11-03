@@ -16,8 +16,11 @@ use codotheca_core::index::{open_connection, Index};
 use codotheca_core::jobs::j7_markers::{ContentGates, ContentOccurrence};
 use codotheca_core::jobs::markers::Marker;
 use codotheca_core::protocol::{LocationId, ProjectId};
+use codotheca_core::testing::zone::FixedZone;
 use rusqlite::OptionalExtension as _;
 
+/// The zone every sweep here is framed in.
+const UTC: FixedZone = FixedZone(0);
 const HEAD: &str = "head0000";
 
 fn fresh() -> (tempfile::TempDir, rusqlite::Connection) {
@@ -125,7 +128,17 @@ fn ac_p3_28_4_two_identical_markers_are_two_items() {
     assert_eq!(project_ordinals(&both), vec![0, 1]);
 
     let tx = conn.transaction().unwrap();
-    let opened = build_items(&tx, ProjectId(p), Some(loc), gates(true), &both, 10, &store).unwrap();
+    let opened = build_items(
+        &tx,
+        ProjectId(p),
+        Some(loc),
+        gates(true),
+        &both,
+        10,
+        &UTC,
+        &store,
+    )
+    .unwrap();
     tx.commit().unwrap();
     assert_eq!(
         opened.opened.len(),
@@ -145,6 +158,7 @@ fn ac_p3_28_4_two_identical_markers_are_two_items() {
         gates(true),
         &one,
         20,
+        &UTC,
         &store,
     )
     .unwrap();
@@ -185,7 +199,17 @@ fn one_blob_at_two_paths_contributes_twice() {
     );
 
     let tx = conn.transaction().unwrap();
-    let effect = build_items(&tx, ProjectId(p), Some(loc), gates(true), &all, 10, &store).unwrap();
+    let effect = build_items(
+        &tx,
+        ProjectId(p),
+        Some(loc),
+        gates(true),
+        &all,
+        10,
+        &UTC,
+        &store,
+    )
+    .unwrap();
     tx.commit().unwrap();
 
     assert_eq!(
@@ -213,6 +237,7 @@ fn ac_p3_28_3_a_line_move_and_a_rename_close_nothing() {
         gates(true),
         &[occurrence("old/a.rs", 4, "text")],
         10,
+        &UTC,
         &store,
     )
     .unwrap();
@@ -227,6 +252,7 @@ fn ac_p3_28_3_a_line_move_and_a_rename_close_nothing() {
         gates(true),
         &[occurrence("new/b.rs", 91, "text")],
         20,
+        &UTC,
         &store,
     )
     .unwrap();
@@ -262,6 +288,7 @@ fn ac_p3_28_2_a_budget_cut_off_opens_and_closes_nothing() {
         gates(true),
         &[occurrence("a.rs", 1, "one"), occurrence("b.rs", 1, "two")],
         10,
+        &UTC,
         &store,
     )
     .unwrap();
@@ -283,6 +310,7 @@ fn ac_p3_28_2_a_budget_cut_off_opens_and_closes_nothing() {
         gates(true),
         &[occurrence("a.rs", 1, "one"), occurrence("c.rs", 1, "three")],
         20,
+        &UTC,
         &store,
     )
     .unwrap();
@@ -325,6 +353,7 @@ fn ac_p3_28_11_never_observed_writes_no_sweep_row() {
         gates(true),
         &[occurrence("a.rs", 1, "one")],
         10,
+        &UTC,
         &store,
     )
     .unwrap();
@@ -360,6 +389,7 @@ fn a_reference_project_writes_skipped_reference_with_no_count() {
         gates(false),
         &[occurrence("a.rs", 1, "one")],
         10,
+        &UTC,
         &store,
     )
     .unwrap();
@@ -440,7 +470,7 @@ fn an_unreadable_readme_opens_no_item() {
     .unwrap();
 
     let tx = conn.transaction().unwrap();
-    let effect = evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    let effect = evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
 
     assert!(
@@ -465,7 +495,7 @@ fn a_not_read_presence_writes_unobservable_and_opens_nothing() {
     presence(&conn, p, "not_read", "not_read", "not_read");
 
     let tx = conn.transaction().unwrap();
-    let effect = evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    let effect = evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
 
     assert_eq!(effect.opened, []);
@@ -497,7 +527,7 @@ fn a_row_absent_presence_is_unobservable_and_is_not_not_read() {
 
     let tx = conn.transaction().unwrap();
     for p in [absent_row, not_read] {
-        evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+        evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     }
     tx.commit().unwrap();
 
@@ -528,7 +558,7 @@ fn an_absent_readme_opens_one_item() {
     presence(&conn, p, "absent", "present", "absent");
 
     let tx = conn.transaction().unwrap();
-    let effect = evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    let effect = evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
 
     assert_eq!(effect.opened.len(), 2, "opened {:?}", effect.opened);
@@ -549,7 +579,7 @@ fn ahead_opens_unpushed_commits_and_null_opens_nothing() {
 
     // NULL: never observed. `0` would be a claim nobody measured.
     let tx = conn.transaction().unwrap();
-    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "unpushed_commits"), 0);
     assert_eq!(
@@ -560,7 +590,7 @@ fn ahead_opens_unpushed_commits_and_null_opens_nothing() {
     conn.execute("UPDATE location SET ahead = 3 WHERE id = ?1", [loc.0])
         .unwrap();
     let ahead_tx = conn.transaction().unwrap();
-    evaluate_singletons(&ahead_tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&ahead_tx, ProjectId(p), 20, &UTC, &SqliteDebtStore).unwrap();
     ahead_tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "unpushed_commits"), 1);
 
@@ -568,7 +598,7 @@ fn ahead_opens_unpushed_commits_and_null_opens_nothing() {
     conn.execute("UPDATE location SET ahead = 0 WHERE id = ?1", [loc.0])
         .unwrap();
     let pushed_tx = conn.transaction().unwrap();
-    let effect = evaluate_singletons(&pushed_tx, ProjectId(p), 30, &SqliteDebtStore).unwrap();
+    let effect = evaluate_singletons(&pushed_tx, ProjectId(p), 30, &UTC, &SqliteDebtStore).unwrap();
     pushed_tx.commit().unwrap();
     assert_eq!(effect.closed.len(), 1);
     assert_eq!(items_of(&conn, p, "unpushed_commits"), 0);
@@ -596,7 +626,7 @@ fn the_latest_concluded_run_on_the_primary_branch_decides_ci_red() {
 
     // No run at all: never observed.
     let tx = conn.transaction().unwrap();
-    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     assert_eq!(
         sweep_of(&conn, p, "ci_red"),
@@ -613,7 +643,7 @@ fn the_latest_concluded_run_on_the_primary_branch_decides_ci_red() {
     )
     .unwrap();
     let in_flight_tx = conn.transaction().unwrap();
-    evaluate_singletons(&in_flight_tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&in_flight_tx, ProjectId(p), 20, &UTC, &SqliteDebtStore).unwrap();
     in_flight_tx.commit().unwrap();
     assert_eq!(
         items_of(&conn, p, "ci_red"),
@@ -636,7 +666,7 @@ fn the_latest_concluded_run_on_the_primary_branch_decides_ci_red() {
     )
     .unwrap();
     let failure_tx = conn.transaction().unwrap();
-    evaluate_singletons(&failure_tx, ProjectId(p), 30, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&failure_tx, ProjectId(p), 30, &UTC, &SqliteDebtStore).unwrap();
     failure_tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "ci_red"), 1);
 
@@ -650,7 +680,7 @@ fn the_latest_concluded_run_on_the_primary_branch_decides_ci_red() {
     )
     .unwrap();
     let other_branch_tx = conn.transaction().unwrap();
-    evaluate_singletons(&other_branch_tx, ProjectId(p), 40, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&other_branch_tx, ProjectId(p), 40, &UTC, &SqliteDebtStore).unwrap();
     other_branch_tx.commit().unwrap();
     assert_eq!(
         items_of(&conn, p, "ci_red"),
@@ -684,7 +714,7 @@ fn no_release_reads_the_column_and_an_unpersisted_copy_is_unobservable() {
     assert_eq!(has_column, 1, "0015_completion.sql declares tag_count");
 
     let tx = conn.transaction().unwrap();
-    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "no_release"), 0);
     assert_eq!(
@@ -697,7 +727,7 @@ fn no_release_reads_the_column_and_an_unpersisted_copy_is_unobservable() {
     conn.execute("UPDATE location SET tag_count = 0 WHERE id = ?1", [loc.0])
         .unwrap();
     let zero_tx = conn.transaction().unwrap();
-    evaluate_singletons(&zero_tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&zero_tx, ProjectId(p), 20, &UTC, &SqliteDebtStore).unwrap();
     zero_tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "no_release"), 1);
     assert_eq!(
@@ -715,7 +745,7 @@ fn a_second_settle_with_no_change_writes_no_row() {
     presence(&conn, p, "absent", "present", "present");
 
     let tx = conn.transaction().unwrap();
-    let first = evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    let first = evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     assert_eq!(first.opened.len(), 1);
     let rows: i64 = conn
@@ -723,7 +753,7 @@ fn a_second_settle_with_no_change_writes_no_row() {
         .unwrap();
 
     let second_tx = conn.transaction().unwrap();
-    let second = evaluate_singletons(&second_tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    let second = evaluate_singletons(&second_tx, ProjectId(p), 20, &UTC, &SqliteDebtStore).unwrap();
     second_tx.commit().unwrap();
 
     assert!(
@@ -837,7 +867,7 @@ fn a_set_aside_item_does_not_light_the_conjunct() {
 
     let tx = conn.transaction().unwrap();
     let lit = abandoned_conjunct(&tx, ProjectId(p)).unwrap();
-    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     eprintln!(
         "three set-aside items: conjunct {lit}, abandoned_with_debt items {}",
@@ -850,7 +880,7 @@ fn a_set_aside_item_does_not_light_the_conjunct() {
     grant_content_scan(&conn);
     let granted_tx = conn.transaction().unwrap();
     assert!(abandoned_conjunct(&granted_tx, ProjectId(p)).unwrap());
-    evaluate_singletons(&granted_tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&granted_tx, ProjectId(p), 20, &UTC, &SqliteDebtStore).unwrap();
     granted_tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 1);
 }
@@ -886,7 +916,7 @@ fn ac_p3_28_13_the_conjunct_does_not_satisfy_itself() {
     // One scored item of another source, so the conjunct lights and the item opens.
     let tx = conn.transaction().unwrap();
     assert!(abandoned_conjunct(&tx, ProjectId(p)).unwrap());
-    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 1);
 
@@ -902,7 +932,7 @@ fn ac_p3_28_13_the_conjunct_does_not_satisfy_itself() {
         !abandoned_conjunct(&fixed_tx, ProjectId(p)).unwrap(),
         "the conjunct counted its own item"
     );
-    evaluate_singletons(&fixed_tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&fixed_tx, ProjectId(p), 20, &UTC, &SqliteDebtStore).unwrap();
     fixed_tx.commit().unwrap();
 
     let open: i64 = conn
@@ -933,7 +963,7 @@ fn a_shown_only_item_does_not_light_the_conjunct() {
         !abandoned_conjunct(&tx, ProjectId(p)).unwrap(),
         "a shown_only item was counted as outstanding work"
     );
-    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 0);
 
@@ -942,7 +972,7 @@ fn a_shown_only_item_does_not_light_the_conjunct() {
     plant_item(&conn, p, "todo_marker", "scored");
     let scored_tx = conn.transaction().unwrap();
     assert!(abandoned_conjunct(&scored_tx, ProjectId(p)).unwrap());
-    evaluate_singletons(&scored_tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&scored_tx, ProjectId(p), 20, &UTC, &SqliteDebtStore).unwrap();
     scored_tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 1);
 }
@@ -960,14 +990,14 @@ fn leaving_the_abandoned_band_closes_the_item() {
     plant_item(&conn, p, "todo_marker", "scored");
 
     let tx = conn.transaction().unwrap();
-    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 1);
 
     set_abandoned(&conn, p, false);
     let revived_tx = conn.transaction().unwrap();
     assert!(!abandoned_conjunct(&revived_tx, ProjectId(p)).unwrap());
-    evaluate_singletons(&revived_tx, ProjectId(p), 20, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&revived_tx, ProjectId(p), 20, &UTC, &SqliteDebtStore).unwrap();
     revived_tx.commit().unwrap();
     assert_eq!(items_of(&conn, p, "abandoned_with_debt"), 0);
 }
@@ -985,7 +1015,7 @@ fn the_abandoned_item_is_shown_only_and_anchored_nowhere() {
     plant_item(&conn, p, "todo_marker", "scored");
 
     let tx = conn.transaction().unwrap();
-    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
 
     let (scoring, basis, anchor): (String, Option<String>, Option<i64>) = conn
@@ -1035,7 +1065,7 @@ fn the_self_exclusion_holds_even_for_a_scored_abandoned_item() {
         !abandoned_conjunct(&tx, ProjectId(p)).unwrap(),
         "the conjunct counted its own item, so it can never close"
     );
-    evaluate_singletons(&tx, ProjectId(p), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&tx, ProjectId(p), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
 
     let open: i64 = conn
@@ -1076,7 +1106,7 @@ fn a_check_that_is_not_applicable_opens_nothing_and_closes_nothing() {
     .unwrap();
     presence(&conn, docs, "absent", "present", "absent");
     let tx = conn.transaction().unwrap();
-    evaluate_singletons(&tx, ProjectId(docs), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&tx, ProjectId(docs), 10, &UTC, &SqliteDebtStore).unwrap();
     tx.commit().unwrap();
     eprintln!(
         "docs project: missing_readme items {}, missing_tests items {}, missing_tests sweep {:?}",
@@ -1107,7 +1137,7 @@ fn a_check_that_is_not_applicable_opens_nothing_and_closes_nothing() {
     .unwrap();
     presence(&conn, lib, "present", "present", "absent");
     let lib_tx = conn.transaction().unwrap();
-    evaluate_singletons(&lib_tx, ProjectId(lib), 10, &SqliteDebtStore).unwrap();
+    evaluate_singletons(&lib_tx, ProjectId(lib), 10, &UTC, &SqliteDebtStore).unwrap();
     evaluate_and_write(
         &lib_tx,
         ProjectId(lib),
@@ -1151,7 +1181,7 @@ fn a_check_that_is_not_applicable_opens_nothing_and_closes_nothing() {
         unix: 20,
         offset_min: 0,
     };
-    let effect = settle_singletons(&settle_tx, ProjectId(lib), at, &SqliteDebtStore).unwrap();
+    let effect = settle_singletons(&settle_tx, ProjectId(lib), at, &UTC, &SqliteDebtStore).unwrap();
     settle_tx.commit().unwrap();
     eprintln!(
         "lib project after an N/A ruling: missing_tests items {}, closed {:?}, xp_events {} -> {}",
@@ -1197,7 +1227,17 @@ fn a_switched_off_or_ungranted_todo_marker_is_not_swept() {
     // The control: switched on and granted, the run sweeps and opens.
     let one = vec![occurrence("a.rs", 4, "x")];
     let tx = conn.transaction().unwrap();
-    build_items(&tx, ProjectId(p), Some(loc), gates(true), &one, 10, &store).unwrap();
+    build_items(
+        &tx,
+        ProjectId(p),
+        Some(loc),
+        gates(true),
+        &one,
+        10,
+        &UTC,
+        &store,
+    )
+    .unwrap();
     tx.commit().unwrap();
     assert_eq!(items(&conn, p).len(), 1, "the control opened nothing");
     assert!(sweep_of(&conn, p, "todo_marker").is_some());
@@ -1212,6 +1252,7 @@ fn a_switched_off_or_ungranted_todo_marker_is_not_swept() {
         gates(true),
         &[],
         20,
+        &UTC,
         &store,
     )
     .unwrap();
@@ -1243,6 +1284,7 @@ fn a_switched_off_or_ungranted_todo_marker_is_not_swept() {
         ungranted,
         &[],
         30,
+        &UTC,
         &store,
     )
     .unwrap();

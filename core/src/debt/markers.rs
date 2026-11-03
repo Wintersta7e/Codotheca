@@ -124,6 +124,9 @@ fn basis_of(raw: &str) -> ObservationBasis {
 /// Fails when SQLite refuses a read or write — the switches, the content-scan state, the
 /// project's subject, the anchor's root, or the store's own diff — or a stored enum is not a
 /// value this build's schema declares.
+// The sweep's inputs are each a distinct fact J7 holds; a struct around them would be built at
+// its one production call only to be taken apart here.
+#[allow(clippy::too_many_arguments)]
 pub fn build_items(
     tx: &Transaction<'_>,
     project: ProjectId,
@@ -131,6 +134,7 @@ pub fn build_items(
     gates: ContentGates,
     occurrences: &[ContentOccurrence],
     now: i64,
+    zone: &dyn crate::clock::LocalZone,
     store: &dyn DebtStore,
 ) -> Result<SweepEffect, DebtError> {
     let off = crate::health::switches::off_sources(
@@ -177,5 +181,5 @@ pub fn build_items(
         obs.item_count = None;
     }
 
-    store.observe(tx, &obs, &seen)
+    store.observe(tx, &obs, &seen, zone)
 }

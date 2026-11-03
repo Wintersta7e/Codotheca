@@ -14,17 +14,25 @@
 mod support;
 
 use codotheca_core::badges::evaluate::{evaluate, EvalCtx};
-use codotheca_core::badges::{COMEBACK_GAP_DAYS, CURATOR_PROJECTS, MARATHON_CREDITED_SECONDS};
-use codotheca_core::clock::local_date;
+use codotheca_core::badges::{
+    COMEBACK_GAP_DAYS, CURATOR_PROJECTS, FIREFIGHTER_PAIRS, MARATHON_CREDITED_SECONDS,
+};
+use codotheca_core::clock::{local_date, LocalInstant};
+use codotheca_core::debt::identity::DebtKey;
+use codotheca_core::debt::store::{DebtCloseReason, DebtClosure, SweepEffect};
+use codotheca_core::debt::xp::pay_debt_day;
+use codotheca_core::index::Index;
 use codotheca_core::ledger::price::REVIVAL_GAP_DAYS;
 use codotheca_core::protocol::{BadgeKind, CloseReason, ClosedBy, ProjectId, SessionId};
+use codotheca_core::protocol::{DebtScoring, DebtSource};
 use codotheca_core::session::orphan;
 use codotheca_core::session::segment::ClosedSegment;
 use codotheca_core::session::store;
 use codotheca_core::testing::zone::FixedZone;
 use support::badges_rig::{
-    award_row, opening, orphaned_session, session_index, session_row, AwardRow, BadgesRig, Flags,
-    SessionLib, T0,
+    award_row, connect_ci, opening, orphaned_session, plain_project, plant_commit_day,
+    plant_repairs, red_then_green, repair_pairs, session_index, session_row, AwardRow, BadgesRig,
+    Flags, SessionLib, T0,
 };
 
 /// A local day number in early 2024: the first commit-day of every gap below.
@@ -518,4 +526,206 @@ fn ac_p4_40_13_a_project_with_no_present_location_is_not_counted() {
         gone.0
     ));
     assert_eq!(curator_over(&rig), None);
+}
+
+/// Seconds in a day.
+const DAY: i64 = 86_400;
+
+/// An hour, in seconds.
+const HOUR: i64 = 3_600;
+
+/// Firefighter evaluated over `index` at `T0`, and the kinds it wrote.
+fn firefighter_over(index: &mut Index) -> Vec<BadgeKind> {
+    index
+        .with_tx(|tx| {
+            evaluate(
+                tx,
+                &[BadgeKind::Firefighter],
+                &EvalCtx {
+                    now: T0,
+                    zone: &FixedZone(0),
+                },
+            )
+        })
+        .unwrap()
+}
+
+/// One case's count, printed, with the award it left (none, for every exclusion).
+fn counted(index: &mut Index, case: &str) -> Option<AwardRow> {
+    let wrote = firefighter_over(index);
+    let pairs = repair_pairs(index);
+    let award = award_row(index.conn(), "firefighter");
+    eprintln!(
+        "{case}: {} qualifying pair(s), wrote {wrote:?}, award {award:?}",
+        pairs.len()
+    );
+    award
+}
+
+/// `project`'s `debt_day` `same_day` list on local day `day`, when the day holds a row.
+fn same_day_of(index: &Index, project: ProjectId, day: i64) -> Option<serde_json::Value> {
+    index
+        .conn()
+        .query_row(
+            "SELECT meta FROM xp_events
+              WHERE kind = 'debt_day' AND project_id = ?1 AND ts / 86400 = ?2",
+            rusqlite::params![project.0, day],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .map(|meta| serde_json::from_str::<serde_json::Value>(&meta).unwrap()["same_day"].clone())
+}
+
+/// §40.3, §40.10: Firefighter counts only an attributed same-day repair. Over a library already
+/// holding one pair fewer than `FIREFIGHTER_PAIRS`, an invalidated `ci_red` closure, a fixed one
+/// of an item first seen the local day before, a same-day repair on a date with no commit-day,
+/// and a same-day repair on an unenrolled project each add no pair — any one of them counted
+/// would award. The tenth qualifying pair then awards, naming that pair's project and date.
+///
+/// The invalidated closure is driven at `pay_debt_day`'s input: the singleton settle closes
+/// nothing as invalidated — only the advisory feed's withdrawal does.
+#[test]
+fn ac_p4_40_11() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut index = Index::open_at(dir.path(), T0).unwrap();
+    let base: Vec<i64> = (0..FIREFIGHTER_PAIRS - 1)
+        .map(|i| D1 + i64::try_from(i).unwrap())
+        .collect();
+    plant_repairs(&mut index, "base", &base);
+    assert_eq!(counted(&mut index, "the planted library"), None);
+    assert_eq!(repair_pairs(&index).len(), FIREFIGHTER_PAIRS - 1);
+
+    an_invalidated_repair(&mut index);
+    a_repair_first_seen_the_day_before(&mut index);
+    a_repair_with_no_commit_day(&mut index);
+    an_unenrolled_repair(&mut index);
+    the_tenth_pair(&mut index);
+}
+
+/// An invalidated `ci_red` closure beside a paying one, on a date the project committed, driven
+/// at `pay_debt_day`'s input.
+fn an_invalidated_repair(index: &mut Index) {
+    let withdrawn = plain_project(index, "withdrawn", true);
+    let day = D1 + 20;
+    plant_commit_day(index, withdrawn, day);
+    let closure = |source, reason| DebtClosure {
+        key: DebtKey::singleton("lineage:withdrawn|remote:", source),
+        reason,
+        scoring: DebtScoring::Scored,
+        first_seen_day: day,
+    };
+    let effect = SweepEffect {
+        closed: vec![
+            closure(DebtSource::CiRed, DebtCloseReason::Invalidated),
+            closure(DebtSource::TodoMarker, DebtCloseReason::Fixed),
+        ],
+        ..SweepEffect::default()
+    };
+    index
+        .with_tx(|tx| {
+            pay_debt_day(
+                tx,
+                withdrawn,
+                &effect,
+                LocalInstant {
+                    unix: day * DAY + 12 * HOUR,
+                    offset_min: 0,
+                },
+            )
+            .unwrap();
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        same_day_of(index, withdrawn, day),
+        Some(serde_json::json!(["todo_marker"])),
+        "the day's same_day lists the invalidated ci_red closure"
+    );
+    assert_eq!(counted(index, "an invalidated ci_red closure"), None);
+}
+
+/// Red the evening before, green the next morning: a repair, not a same-day one.
+fn a_repair_first_seen_the_day_before(index: &mut Index) {
+    let earlier = plain_project(index, "earlier", true);
+    connect_ci(index, earlier);
+    let day = D1 + 21;
+    plant_commit_day(index, earlier, day);
+    plant_commit_day(index, earlier, day + 1);
+    red_then_green(
+        index,
+        earlier,
+        day * DAY + 22 * HOUR,
+        (day + 1) * DAY + 9 * HOUR,
+    );
+    assert_eq!(
+        same_day_of(index, earlier, day + 1),
+        Some(serde_json::json!([])),
+        "the repair did not pay, or counted as same-day"
+    );
+    assert_eq!(counted(index, "an item first seen the day before"), None);
+}
+
+/// A same-day repair on a date the project has no commit-day.
+fn a_repair_with_no_commit_day(index: &mut Index) {
+    let uncommitted = plain_project(index, "uncommitted", true);
+    connect_ci(index, uncommitted);
+    let day = D1 + 23;
+    plant_commit_day(index, uncommitted, day - 1);
+    red_then_green(
+        index,
+        uncommitted,
+        day * DAY + 9 * HOUR,
+        day * DAY + 15 * HOUR,
+    );
+    assert_eq!(
+        same_day_of(index, uncommitted, day),
+        Some(serde_json::json!(["ci_red"])),
+        "the same-day repair was not recorded"
+    );
+    assert_eq!(counted(index, "a same-day repair with no commit-day"), None);
+}
+
+/// A same-day repair on a date it committed, on a project never acknowledged.
+fn an_unenrolled_repair(index: &mut Index) {
+    let unenrolled = plain_project(index, "unenrolled", false);
+    connect_ci(index, unenrolled);
+    index
+        .conn()
+        .execute(
+            "UPDATE project SET acknowledged_at = NULL WHERE id = ?1",
+            [unenrolled.0],
+        )
+        .unwrap();
+    let day = D1 + 24;
+    plant_commit_day(index, unenrolled, day);
+    red_then_green(
+        index,
+        unenrolled,
+        day * DAY + 9 * HOUR,
+        day * DAY + 15 * HOUR,
+    );
+    assert_eq!(
+        same_day_of(index, unenrolled, day),
+        None,
+        "an unenrolled project was paid"
+    );
+    assert_eq!(counted(index, "an unenrolled project's repair"), None);
+}
+
+/// The tenth qualifying pair: the award names its project and date.
+fn the_tenth_pair(index: &mut Index) {
+    let tenth = plain_project(index, "tenth", true);
+    connect_ci(index, tenth);
+    let day = D1 + 25;
+    plant_commit_day(index, tenth, day);
+    red_then_green(index, tenth, day * DAY + 9 * HOUR, day * DAY + 15 * HOUR);
+    let award = counted(index, "the tenth qualifying pair").expect("ten pairs awarded nothing");
+    assert_eq!(repair_pairs(index).len(), FIREFIGHTER_PAIRS);
+    assert_eq!(award.earned_on, local_date(day));
+    assert_eq!(award.earned_at, day * DAY);
+    assert_eq!(award.project_id, None);
+    assert_eq!(
+        award.evidence,
+        serde_json::json!({ "projectName": "tenth" })
+    );
 }

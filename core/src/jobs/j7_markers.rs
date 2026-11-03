@@ -350,6 +350,9 @@ pub struct ScanRun<'a> {
     /// `debt_day` key is a **local** date and the item build runs from here, so the run carries
     /// the frame rather than reading a zone; `at.unix` is the `now` every other row stores.
     pub at: crate::clock::LocalInstant,
+    /// The zone `at` was framed in (`JobDeps.zone`): the sweep frames each closed item's first
+    /// sighting in the offset in force at it, and the payout's badge evaluation dates its award.
+    pub zone: &'a dyn crate::clock::LocalZone,
     /// [p3] §34.2's provenance of the job running this scan, recorded on any `health_delta` row
     /// the item build writes.
     pub detected_in: crate::protocol::HealthDetectedIn,
@@ -507,6 +510,7 @@ fn build_debt_items(
         project,
         location,
         at,
+        zone,
         detected_in,
         ..
     } = *run;
@@ -520,13 +524,20 @@ fn build_debt_items(
         gates,
         &occurrences,
         at.unix,
+        zone,
         &store,
     )
     .map_err(debt_to_index)?;
 
     // The ledger row and the item deletions commit together: a tree with the items gone and no
     // payout, or a payout with the items still open, is the state the ordering prevents.
-    crate::debt::xp::pay_debt_day(tx, project, &effect, at).map_err(debt_to_index)?;
+    let payout = crate::debt::xp::pay_debt_day(tx, project, &effect, at).map_err(debt_to_index)?;
+    // [p4] §40.5: Firefighter at the payout's caller, in its transaction, dated in its zone.
+    // Only a payout that wrote the day can have changed what Firefighter reads.
+    if payout.closed_today > 0 {
+        let ctx = crate::badges::evaluate::EvalCtx { now: at.unix, zone };
+        crate::badges::evaluate::evaluate(tx, &[crate::protocol::BadgeKind::Firefighter], &ctx)?;
+    }
     crate::restoration::record_after_write(
         tx,
         project,

@@ -540,11 +540,13 @@ impl SyncRunner {
         let at = self.deps.zone.at(self.deps.clock.now_unix());
         let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
         let deltas = guard.with_tx(|tx| {
-            crate::advisories::items::settle_advisory_items(tx, at).map_err(|e| match e {
-                crate::advisories::AdvisoryError::Index(inner) => inner,
-                other => IndexError::Corrupt {
-                    detail: other.to_string(),
-                },
+            crate::advisories::items::settle_advisory_items(tx, at, &*self.deps.zone).map_err(|e| {
+                match e {
+                    crate::advisories::AdvisoryError::Index(inner) => inner,
+                    other => IndexError::Corrupt {
+                        detail: other.to_string(),
+                    },
+                }
             })
         });
         drop(guard);
@@ -600,6 +602,7 @@ impl SyncRunner {
                     tx,
                     project_id,
                     at,
+                    &*self.deps.zone,
                     &crate::debt::store::SqliteDebtStore,
                 ) else {
                     return Ok(None);

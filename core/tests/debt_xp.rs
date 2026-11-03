@@ -124,6 +124,7 @@ fn closure(
         key,
         reason,
         scoring,
+        first_seen_day: 0,
     }
 }
 

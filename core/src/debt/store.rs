@@ -7,6 +7,7 @@ use rusqlite::Transaction;
 use super::identity::DebtKey;
 use super::sweep::{comparable, may_close, upsert_sweep, SweepObservation};
 use super::{enum_from_text, enum_text, DebtError};
+use crate::clock::LocalZone;
 use crate::projects::rows::{locations_of, pick_primary};
 use crate::protocol::{
     DebtItemState, DebtScoring, DebtSource, DebtSweepOutcome, LocationId, ObservationBasis,
@@ -112,6 +113,10 @@ pub struct DebtClosure {
     /// The stored item's scoring at the closing observation — the last one a refresh wrote
     /// (`refresh` rewrites it on every observation), never the registry default.
     pub scoring: DebtScoring,
+    /// The local day number the item was first seen on, framed in the zone in force at
+    /// `first_seen_at` (§39.2). Read before the delete, because the row it came from is gone
+    /// after it: a payout compares it with its own day to tell a same-day repair (§40.10).
+    pub first_seen_day: i64,
 }
 
 /// What one `observe` changed — the input the XP writer and §34 both read.
@@ -135,6 +140,9 @@ pub struct SweepEffect {
 pub trait DebtStore: Send + Sync {
     /// Diff one source's observation against what is stored, writing the sweep row with it.
     ///
+    /// `zone` frames each closed item's `first_seen_at` as its own local day, in the offset in
+    /// force at that instant rather than at the closing one.
+    ///
     /// # Errors
     /// Fails when SQLite refuses a read or write — the DDL's CHECKs included — or a stored
     /// `state`, `scoring` or `basis` is not a value this build's schema declares.
@@ -143,6 +151,7 @@ pub trait DebtStore: Send + Sync {
         tx: &Transaction<'_>,
         obs: &SweepObservation,
         seen: &[ObservedItem],
+        zone: &dyn LocalZone,
     ) -> Result<SweepEffect, DebtError>;
 
     /// Delete `unverified` items whose anchor is gone and which this sweep did not re-observe.
@@ -218,6 +227,7 @@ impl DebtStore for SqliteDebtStore {
         tx: &Transaction<'_>,
         obs: &SweepObservation,
         seen: &[ObservedItem],
+        zone: &dyn LocalZone,
     ) -> Result<SweepEffect, DebtError> {
         upsert_sweep(tx, obs)?;
 
@@ -247,6 +257,7 @@ impl DebtStore for SqliteDebtStore {
                     key: item.key.clone(),
                     reason: DebtCloseReason::Fixed,
                     scoring: item.scoring,
+                    first_seen_day: zone.at(item.first_seen_at).day(),
                 });
             } else if comparable(item, obs) && obs.outcome == DebtSweepOutcome::Partial {
                 // A budget cut-off at the item's own anchor and basis observed the root; it
@@ -457,4 +468,84 @@ fn refresh(
         ],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    /// Ten hours west of UTC.
+    #[derive(Debug)]
+    struct West;
+
+    impl LocalZone for West {
+        fn offset_min_at(&self, _unix: i64) -> i32 {
+            -600
+        }
+    }
+
+    /// A UTC midnight: 2024-01-01.
+    const MIDNIGHT: i64 = 19_723 * 86_400;
+
+    fn sweep(project: ProjectId, observed_at: i64) -> SweepObservation {
+        SweepObservation {
+            project,
+            source: DebtSource::AbandonedWithDebt,
+            outcome: DebtSweepOutcome::Complete,
+            location: None,
+            generation: None,
+            basis: None,
+            item_count: Some(0),
+            observed_at,
+        }
+    }
+
+    /// §40.10: the closure carries the local day its item was first seen on, framed in the zone
+    /// at that instant. Under a zone ten hours west, 05:00 UTC is the previous evening, so the
+    /// item first seen then closes carrying the previous UTC day — not the closing one's.
+    #[test]
+    fn a_closure_carries_the_local_day_its_item_was_first_seen() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut index = crate::index::Index::open_at(dir.path(), MIDNIGHT).unwrap();
+        let effect = index
+            .with_tx(|tx| {
+                tx.execute(
+                    "INSERT INTO project (name, seed_basename, lineage_key, created_at, updated_at)
+                     VALUES ('p', 'p', 'p', 0, 0)",
+                    [],
+                )?;
+                let project = ProjectId(tx.last_insert_rowid());
+                let key = DebtKey::singleton("lineage:p|remote:", DebtSource::AbandonedWithDebt);
+                let seen = ObservedItem {
+                    key,
+                    scoring: DebtScoring::ShownOnly,
+                    location: None,
+                    basis: None,
+                    path_bytes: None,
+                    path_display: None,
+                    line: None,
+                    column: None,
+                    salient_text: None,
+                };
+                let mut first = sweep(project, MIDNIGHT + 5 * 3_600);
+                first.item_count = Some(1);
+                SqliteDebtStore.observe(tx, &first, &[seen], &West).unwrap();
+                Ok(SqliteDebtStore
+                    .observe(tx, &sweep(project, MIDNIGHT + 20 * 3_600), &[], &West)
+                    .unwrap())
+            })
+            .unwrap();
+        let days: Vec<i64> = effect.closed.iter().map(|c| c.first_seen_day).collect();
+        eprintln!(
+            "closed {} item(s), first seen on local days {days:?}",
+            days.len()
+        );
+        assert_eq!(days, [MIDNIGHT / 86_400 - 1]);
+    }
 }

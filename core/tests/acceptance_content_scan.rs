@@ -359,6 +359,7 @@ impl GitRig {
                     unix: 1_700_000_000,
                     offset_min: 0,
                 },
+                zone: &codotheca_core::testing::zone::FixedZone(0),
                 detected_in: codotheca_core::protocol::HealthDetectedIn::Background,
                 announce: None,
             },
@@ -387,7 +388,14 @@ impl GitRig {
         let mut guard = self.index.lock().unwrap();
         guard
             .with_tx(|tx| {
-                evaluate_singletons(tx, self.project, 1_700_000_000, &SqliteDebtStore).unwrap();
+                evaluate_singletons(
+                    tx,
+                    self.project,
+                    1_700_000_000,
+                    &codotheca_core::testing::zone::FixedZone(0),
+                    &SqliteDebtStore,
+                )
+                .unwrap();
                 evaluate_and_write(
                     tx,
                     self.project,
@@ -927,6 +935,7 @@ impl Rig {
                     unix: 1_700_000_000,
                     offset_min: 0,
                 },
+                zone: &codotheca_core::testing::zone::FixedZone(0),
                 detected_in: codotheca_core::protocol::HealthDetectedIn::Background,
                 announce: None,
             },

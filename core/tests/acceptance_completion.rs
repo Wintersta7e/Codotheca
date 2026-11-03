@@ -97,7 +97,14 @@ fn no_release_reading(conn: &mut rusqlite::Connection, project: i64) -> ArmReadi
 /// The same predicate as the store sees it: the sweep outcome and the open item count.
 fn no_release_sweep(conn: &mut rusqlite::Connection, project: i64) -> (String, i64) {
     let tx = conn.transaction().unwrap();
-    evaluate_singletons(&tx, ProjectId(project), 100, &SqliteDebtStore).unwrap();
+    evaluate_singletons(
+        &tx,
+        ProjectId(project),
+        100,
+        &codotheca_core::testing::zone::FixedZone(0),
+        &SqliteDebtStore,
+    )
+    .unwrap();
     tx.commit().unwrap();
     let outcome: String = conn
         .query_row(
@@ -543,7 +550,14 @@ fn ac_p3_31_10_budget_exceeded_is_unknown_but_absent_is_fail() {
         )
         .unwrap();
         let tx = conn.transaction().unwrap();
-        evaluate_singletons(&tx, ProjectId(p), 100, &SqliteDebtStore).unwrap();
+        evaluate_singletons(
+            &tx,
+            ProjectId(p),
+            100,
+            &codotheca_core::testing::zone::FixedZone(0),
+            &SqliteDebtStore,
+        )
+        .unwrap();
         let written = evaluate_and_write(
             &tx,
             ProjectId(p),
@@ -640,7 +654,14 @@ fn ac_p3_31_18_unreadable_readme_passes_but_missing_readme_fails() {
         };
         let tx = conn.transaction().unwrap();
         j6_content::persist(&tx, ProjectId(p), &facts, 100).unwrap();
-        evaluate_singletons(&tx, ProjectId(p), 100, &SqliteDebtStore).unwrap();
+        evaluate_singletons(
+            &tx,
+            ProjectId(p),
+            100,
+            &codotheca_core::testing::zone::FixedZone(0),
+            &SqliteDebtStore,
+        )
+        .unwrap();
         evaluate_and_write(
             &tx,
             ProjectId(p),

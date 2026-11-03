@@ -37,6 +37,7 @@ use codotheca_core::protocol::{
     CheckState, CompletionCheck, DebtScoring, DebtSource, HealthCheckSwitch, HealthDetectedIn,
     LocationId, ProjectId,
 };
+use codotheca_core::testing::zone::FixedZone;
 use codotheca_core::testing::{FakeGitBackend, GitReply};
 use serde_json::Value;
 
@@ -206,6 +207,7 @@ impl Rig {
                 location: p.location,
                 cursor: None,
                 at: AT,
+                zone: &FixedZone(0),
                 detected_in: HealthDetectedIn::Foreground,
                 announce: None,
             },
@@ -273,6 +275,7 @@ fn one_fixed() -> SweepEffect {
             key: DebtKey::content("subject", &"a".repeat(64), 0),
             reason: DebtCloseReason::Fixed,
             scoring: DebtScoring::Scored,
+            first_seen_day: 0,
         }],
         ..SweepEffect::default()
     }
