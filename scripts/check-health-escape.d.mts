@@ -19,10 +19,15 @@ export interface HealthEscapeViolation {
 }
 
 export declare const SCAN_ROOTS: readonly string[];
+/** [p4] Where a `MotivationLine` identifier is a violation wherever it sits, repo-relative. */
+export declare const SHELL_ROOT: string;
 export declare const ESCAPE_CALLS: readonly string[];
 
 /** The banned set, derived from `protocol/schema/protocol.json`. Never a literal list. */
 export declare function healthIdentifiers(schema: unknown): string[];
+
+/** [p4] §43.4: the same three derivations over `MotivationLine`. Never a literal list. */
+export declare function motivationLineIdentifiers(schema: object): string[];
 
 export declare function collectFiles(roots: readonly string[], repoRoot: string): string[];
 
@@ -36,6 +41,16 @@ export declare function scanFiles(
   files: readonly string[],
   repoRoot: string,
   identifiers: readonly string[],
-): { scanned: number; escapeSites: HealthEscapeHit[]; violations: HealthEscapeViolation[] };
+  lineIdentifiers?: readonly string[],
+): {
+  scanned: number;
+  shellScanned: number;
+  escapeSites: HealthEscapeHit[];
+  violations: HealthEscapeViolation[];
+  lineViolations: {
+    readonly path: string;
+    readonly identifiers: readonly { readonly line: number; readonly token: string }[];
+  }[];
+};
 
 export declare function main(argv: readonly string[], base?: string): number;

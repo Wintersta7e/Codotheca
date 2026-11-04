@@ -11925,7 +11925,7 @@
         },
         {
           "id": "AC-P4-43-1-polling",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
           "test": "AC-P4-43-1 no polling read",
@@ -11934,7 +11934,7 @@
         },
         {
           "id": "AC-P4-43-1-emitter",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_gates::ac_p4_43_1_one_emitter",
@@ -12001,7 +12001,7 @@
       "checks": [
         {
           "id": "AC-P4-43-4",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
           "test": "AC-P4-43-4 no MotivationLine identifier in the shell",
@@ -12310,7 +12310,7 @@
         },
         {
           "id": "AC-P4-43-14-writer",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_gates::ac_p4_43_14_one_day_one_writer",
@@ -12464,7 +12464,7 @@
       "checks": [
         {
           "id": "AC-P4-43-19",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_gates::ac_p4_43_19_the_level_gates_nothing",
@@ -12473,7 +12473,7 @@
         },
         {
           "id": "AC-P4-43-19-ts",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
           "test": "AC-P4-43-19 the level gates nothing",
@@ -12506,7 +12506,7 @@
       "checks": [
         {
           "id": "AC-P4-43-21",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
           "test": "AC-P4-43-21 no sound",

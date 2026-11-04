@@ -8,11 +8,11 @@
  * deleted by the first person who needed one.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, test } from 'vitest';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const SCRIPT = join(REPO, 'scripts/check-health-escape.mjs');
@@ -27,6 +27,9 @@ interface Report {
   readonly identifiers: readonly string[];
   readonly escapeSites: readonly Hit[];
   readonly violations: readonly { path: string }[];
+  readonly shellFilesScanned: number;
+  readonly motivationLineIdentifiers: readonly string[];
+  readonly lineViolations: readonly { path: string }[];
 }
 
 function run(args: readonly string[]): { status: number; out: string } {
@@ -54,7 +57,13 @@ function report(args: readonly string[]): { status: number; report: Report } {
     !('escapeSites' in parsed) ||
     !Array.isArray(parsed.escapeSites) ||
     !('violations' in parsed) ||
-    !Array.isArray(parsed.violations)
+    !Array.isArray(parsed.violations) ||
+    !('shellFilesScanned' in parsed) ||
+    typeof parsed.shellFilesScanned !== 'number' ||
+    !('motivationLineIdentifiers' in parsed) ||
+    !Array.isArray(parsed.motivationLineIdentifiers) ||
+    !('lineViolations' in parsed) ||
+    !Array.isArray(parsed.lineViolations)
   ) {
     throw new Error('the health-escape report has the wrong shape');
   }
@@ -73,6 +82,7 @@ function withProbes(files: Record<string, string>): { status: number; report: Re
   const dir = mkdtempSync(join(tmpdir(), 'codotheca-health-escape-'));
   try {
     for (const [name, source] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, name)), { recursive: true });
       writeFileSync(join(dir, name), source, 'utf8');
     }
     return report(['--root', dir]);
@@ -159,5 +169,57 @@ describe('AC-P3-35-7 no health-derived figure leaves the window', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * [p4] §43.4 / `AC-P4-43-4`: the shell holds no `MotivationLine` identifier — absolutely, not by
+ * co-location. The identifiers come from the schema by the derivation above.
+ */
+test('AC-P4-43-4 no MotivationLine identifier in the shell', () => {
+  const { status, report: found } = report([]);
+  console.warn(
+    `AC-P4-43-4: ${String(found.shellFilesScanned)} shell file(s) scanned for ` +
+      `${found.motivationLineIdentifiers.join(', ')}; ${String(found.lineViolations.length)} hit(s)`,
+  );
+  expect(
+    found.shellFilesScanned,
+    'a run that scanned no shell file proves nothing',
+  ).toBeGreaterThan(0);
+  expect(found.motivationLineIdentifiers).toContain('MotivationLine');
+  expect(found.motivationLineIdentifiers).toContain('pendingLine');
+  // `level` and `reason` are fields of other wire types too, so bare they name nothing.
+  expect(found.motivationLineIdentifiers).not.toContain('level');
+  expect(found.lineViolations).toEqual([]);
+  expect(status).toBe(0);
+});
+
+// The probes mirror the repository's layout, so a file under `app/src/main/` is the shell's.
+describe("the shell's MotivationLine half bites", () => {
+  it('reports a carrier in the shell, and names the file', () => {
+    const { status, report: found } = withProbes({
+      'app/src/main/probe.ts': 'export const line = state.pendingLine;\n',
+    });
+    expect(status).toBe(1);
+    expect(found.lineViolations.map((v) => v.path)).toEqual(['app/src/main/probe.ts']);
+  });
+
+  it('does not report the same read in the renderer, where the line belongs', () => {
+    const { status, report: found } = withProbes({
+      'app/src/renderer/probe.ts': 'export const line = state.pendingLine;\n',
+      'app/src/main/quiet.ts': 'export const x = 1;\n',
+    });
+    expect(status).toBe(0);
+    expect(found.shellFilesScanned).toBe(1);
+    expect(found.lineViolations).toEqual([]);
+  });
+
+  it('ignores a quoted name and a comment in the shell', () => {
+    const { status, report: found } = withProbes({
+      'app/src/main/probe.ts':
+        "// pendingLine never reaches the shell.\nexport const c = 'pendingLine';\n",
+    });
+    expect(status).toBe(0);
+    expect(found.lineViolations).toEqual([]);
   });
 });

@@ -13,6 +13,11 @@
 // **A gate whose passing run scans zero files is a failing gate**, so the count is printed and a
 // zero exits non-zero — and the same holds for the derived identifier set, which would otherwise
 // pass over everything the first time §30 renamed a type.
+//
+// [p4] §43.4 / `AC-P4-43-4`: **the shell holds no `MotivationLine` identifier at all.** The line
+// is the renderer's; a notification, title or tray reached from it would be the escape §42's
+// channel rule forbids. This half is absolute, not co-location: any hit under `app/src/main`
+// fails, with the same derivation, the same comment stripping and the same quoted-name blanking.
 import { readdirSync, statSync } from 'node:fs';
 import { extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +44,12 @@ const EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.mjs']);
 
 /** The two §30 types whose values are the figures this gate is about. */
 const HEALTH_TYPES = ['HealthSummary', 'HealthReading'];
+
+/** [p4] §43.4's one persistent line. No identifier derived from it may appear in the shell. */
+const MOTIVATION_LINE_TYPES = ['MotivationLine'];
+
+/** [p4] Where a `MotivationLine` identifier is a violation wherever it sits, repo-relative. */
+export const SHELL_ROOT = 'app/src/main/';
 
 /**
  * Where a health-derived count can leave the window, **matched by call shape rather than by bare
@@ -81,9 +92,21 @@ export const ESCAPE_CALLS = [
  * dropping the three shared names loses no reachable case.
  */
 export function healthIdentifiers(schema) {
+  return derivedIdentifiers(schema, HEALTH_TYPES);
+}
+
+/**
+ * [p4] §43.4: `healthIdentifiers`' three derivations over `MotivationLine` — the name, its
+ * carriers (`pendingLine`), and its fields no other type declares.
+ */
+export function motivationLineIdentifiers(schema) {
+  return derivedIdentifiers(schema, MOTIVATION_LINE_TYPES);
+}
+
+function derivedIdentifiers(schema, typeNames) {
   const types = schema.types ?? {};
   const own = new Set();
-  for (const name of HEALTH_TYPES) {
+  for (const name of typeNames) {
     for (const field of Object.keys(types[name]?.fields ?? {})) own.add(field);
   }
   const elsewhere = new Set();
@@ -92,12 +115,12 @@ export function healthIdentifiers(schema) {
     const fields = declared.fields;
     if (fields === undefined) continue;
     for (const [field, type] of Object.entries(fields)) {
-      if (!HEALTH_TYPES.includes(name)) elsewhere.add(field);
-      if (HEALTH_TYPES.includes(String(type).replace(/\?$/u, ''))) carriers.add(field);
+      if (!typeNames.includes(name)) elsewhere.add(field);
+      if (typeNames.includes(String(type).replace(/\?$/u, ''))) carriers.add(field);
     }
   }
   const unique = [...own].filter((field) => !elsewhere.has(field));
-  return [...new Set([...HEALTH_TYPES, ...carriers, ...unique])].sort();
+  return [...new Set([...typeNames, ...carriers, ...unique])].sort();
 }
 
 export function collectFiles(roots, repoRoot) {
@@ -177,10 +200,12 @@ export function scanSource(source, path, identifiers) {
   return { escapes: escapes.map((hit) => ({ path, ...hit })), violations };
 }
 
-export function scanFiles(files, repoRoot, identifiers) {
+export function scanFiles(files, repoRoot, identifiers, lineIdentifiers = []) {
   const escapeSites = [];
   const violations = [];
+  const lineViolations = [];
   let scanned = 0;
+  let shellScanned = 0;
   for (const file of files) {
     const source = readScannedFile(file);
     // A file that vanished between the walk and the read carries nothing to check and is **not
@@ -191,8 +216,13 @@ export function scanFiles(files, repoRoot, identifiers) {
     const result = scanSource(source, path, identifiers);
     escapeSites.push(...result.escapes);
     violations.push(...result.violations);
+    if (path.startsWith(SHELL_ROOT)) {
+      shellScanned += 1;
+      const hits = identifierHits(withoutComments(source), lineIdentifiers);
+      if (hits.length > 0) lineViolations.push({ path, identifiers: hits });
+    }
   }
-  return { scanned, escapeSites, violations };
+  return { scanned, shellScanned, escapeSites, violations, lineViolations };
 }
 
 export function main(argv, base = repoRoot()) {
@@ -214,8 +244,10 @@ export function main(argv, base = repoRoot()) {
     process.stderr.write('health-escape gate: protocol/schema/protocol.json is not readable\n');
     return 1;
   }
-  const identifiers = healthIdentifiers(JSON.parse(schemaText));
-  if (identifiers.length === 0) {
+  const schema = JSON.parse(schemaText);
+  const identifiers = healthIdentifiers(schema);
+  const lineIdentifiers = motivationLineIdentifiers(schema);
+  if (identifiers.length === 0 || lineIdentifiers.length === 0) {
     process.stderr.write(
       'health-escape gate: 0 identifiers derived — a renamed type would make this gate pass ' +
         'over everything\n',
@@ -225,23 +257,38 @@ export function main(argv, base = repoRoot()) {
 
   const scanBase = selectedRoot === null ? base : selectedRoot;
   const roots = selectedRoot === null ? SCAN_ROOTS : ['.'];
-  const { scanned, escapeSites, violations } = scanFiles(
+  const { scanned, shellScanned, escapeSites, violations, lineViolations } = scanFiles(
     collectFiles(roots, scanBase),
     scanBase,
     identifiers,
+    lineIdentifiers,
   );
-  if (scanned === 0) {
+  // A `--root` probe tree may hold no shell file; the real tree always does.
+  if (scanned === 0 || (selectedRoot === null && shellScanned === 0)) {
     process.stderr.write(
       'health-escape gate: 0 files scanned — the gate refuses to pass on a scan it did not run\n',
     );
     return 1;
   }
+  const clean = violations.length === 0 && lineViolations.length === 0;
 
   if (json) {
     process.stdout.write(
-      `${JSON.stringify({ filesScanned: scanned, identifiers, escapeSites, violations }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          filesScanned: scanned,
+          identifiers,
+          escapeSites,
+          violations,
+          shellFilesScanned: shellScanned,
+          motivationLineIdentifiers: lineIdentifiers,
+          lineViolations,
+        },
+        null,
+        2,
+      )}\n`,
     );
-    return violations.length === 0 ? 0 : 1;
+    return clean ? 0 : 1;
   }
 
   for (const violation of violations) {
@@ -251,10 +298,18 @@ export function main(argv, base = repoRoot()) {
         violation.identifiers.map((h) => `  :${h.line} ${h.token}\n`).join(''),
     );
   }
-  if (violations.length > 0) return 1;
+  for (const violation of lineViolations) {
+    process.stderr.write(
+      `${violation.path}: a MotivationLine identifier in the shell\n` +
+        violation.identifiers.map((h) => `  :${h.line} ${h.token}\n`).join(''),
+    );
+  }
+  if (!clean) return 1;
   process.stdout.write(
     `health-escape gate: ${String(scanned)} files, ${String(identifiers.length)} identifiers ` +
-      `(${identifiers.join(', ')}), ${String(escapeSites.length)} escape site(s), 0 violations\n`,
+      `(${identifiers.join(', ')}), ${String(escapeSites.length)} escape site(s), 0 violations; ` +
+      `${String(shellScanned)} shell files, ${String(lineIdentifiers.length)} MotivationLine ` +
+      `identifiers (${lineIdentifiers.join(', ')}), 0 in the shell\n`,
   );
   return 0;
 }
