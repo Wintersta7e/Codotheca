@@ -246,10 +246,12 @@ describe('the status band', () => {
   });
 
   it('makes the number a real button that opens Profile, and names every state in words', () => {
-    const { onOpenProfile, container } = draw();
+    const { onOpenProfile, container, request } = draw();
     const number = screen.getByRole('button', { name: `${LEVEL_LABEL} 4` });
     fireEvent.click(number);
-    expect(onOpenProfile).toHaveBeenCalledTimes(1);
+    expect(onOpenProfile.mock.calls).toEqual([[{ section: 'level' }]]);
+    // The number replays nothing and acknowledges nothing: it only opens Profile.
+    expect(acks(request)).toEqual([]);
     const named = container.querySelectorAll('[role="img"][aria-label]');
     // Three rings and seven cells.
     expect(named).toHaveLength(10);
@@ -281,5 +283,49 @@ describe('the status band', () => {
     } finally {
       style.remove();
     }
+  });
+
+  it('draws the line in the level block, and lands its badge only on screen in an active window', () => {
+    const badgeLine: MotivationState['pendingLine'] = {
+      form: 'badge',
+      level: null,
+      reason: null,
+      award: {
+        kind: 'marathon',
+        earnedOn: '2026-11-03',
+        projectId: null,
+        evidence: {
+          projectName: null,
+          gapDays: null,
+          year: null,
+          languages: null,
+          creditedSeconds: null,
+          projects: null,
+          runStartOn: null,
+        },
+        landed: false,
+      },
+    };
+    const landings = (request: ReturnType<typeof vi.fn>): unknown[][] =>
+      request.mock.calls.filter((call) => call[0] === 'badges.markLanded');
+
+    // On screen in a window without focus: drawn, and nothing lands.
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    const unfocused = draw({ state: state({ pendingLine: badgeLine }) });
+    fireAll(true);
+    const line = unfocused.container.querySelector(`.cdt-band-level [${DATA_MOTIVATION}="line"]`);
+    expect(line).not.toBeNull();
+    expect(landings(unfocused.request)).toEqual([]);
+    cleanup();
+
+    // Off screen in an active window: nothing lands.
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    const offScreen = draw({ state: state({ pendingLine: badgeLine }) });
+    fireAll(false);
+    expect(landings(offScreen.request)).toEqual([]);
+
+    // Scrolled into view: it lands once.
+    fireAll(true);
+    expect(landings(offScreen.request)).toEqual([['badges.markLanded', { kind: 'marathon' }]]);
   });
 });

@@ -48,7 +48,7 @@ import { useVirtualizer } from '../shelf/useVirtualizer.js';
 import { SORT_LABELS, offeredSorts, resolveSort, type ShelfView } from '../shelf/viewState.js';
 import type { AppDeps } from './deps.js';
 import { buildQueryContext } from './queryContext.js';
-import type { AppRoute } from './route.js';
+import type { AppRoute, ProfileAnchor } from './route.js';
 
 const UNKNOWN_SCAN: Pick<ScanStatus, 'running' | 'foundRepos' | 'problemCount'> = {
   running: false,
@@ -103,8 +103,8 @@ export interface ShelfScreenProps {
    */
   readonly motivation: MotivationState | null;
   readonly route: AppRoute['kind'];
-  /** [p4] §43.13: the band's level number opens Profile. */
-  readonly onOpenProfile: () => void;
+  /** [p4] §43.13: the band's level number and its line open Profile at an anchor. */
+  readonly onOpenProfile: (at: ProfileAnchor) => void;
   readonly onOpenPalette: () => void;
   readonly onOpenSettings: () => void;
   readonly onOpenScanSummary: () => void;

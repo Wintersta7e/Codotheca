@@ -10,11 +10,12 @@ import { type CSSProperties, type ReactElement, type RefObject, useEffect, useRe
 import type { MotivationState, ProjectId, ProjectRow, SessionRef } from '../../generated/protocol';
 import { DATA_MOTIVATION } from '../../shared/motivationQuiet';
 import type { AppDeps } from '../app/deps';
-import type { AppRoute } from '../app/route';
+import type { AppRoute, ProfileAnchor } from '../app/route';
 import { BENCH_LABEL, useBenchElapsed } from '../card/useBenchElapsed';
 import { useWindowActive } from '../motion/useWindowActive';
 import { LEVEL_LABEL, RHYTHM_LABEL } from './copy';
 import { levelBlockModel } from './levelBlock';
+import { MotivationLineButton } from './MotivationLineButton';
 import { rhythmModel } from './rhythm';
 import { ringsModel, type RingGlyph } from './rings';
 import { useBandOnScreen } from './useBandOnScreen';
@@ -69,8 +70,8 @@ export interface StatusBandProps {
   /** Unix seconds, read when called — the session block's elapsed is re-derived on each paint. */
   readonly now: () => number;
   readonly onOpenProject: (id: ProjectId) => void;
-  /** §43.13: the number opens Profile at the level. It replays nothing. */
-  readonly onOpenProfile: () => void;
+  /** §43.13: the number and a level line open Profile at the level, a badge line at its badge. */
+  readonly onOpenProfile: (at: ProfileAnchor) => void;
   /** The shelf's one scroll container, the root the band's visibility is measured against. */
   readonly scrollRef: RefObject<HTMLElement | null>;
   readonly request: AppDeps['request'];
@@ -152,7 +153,10 @@ function Band(props: StatusBandProps & { readonly state: MotivationState }): Rea
           type="button"
           className="cdt-band-level-number"
           aria-label={level.name}
-          onClick={onOpenProfile}
+          onClick={() => {
+            // It replays nothing: the number opens Profile, and that is all a click on it does.
+            onOpenProfile({ section: 'level' });
+          }}
         >
           <span className="cdt-band-level-figure" data-unknown={level.unknown ? 'true' : undefined}>
             {level.number}
@@ -170,6 +174,15 @@ function Band(props: StatusBandProps & { readonly state: MotivationState }): Rea
             </div>
           )}
         </div>
+        {state.pendingLine === null ? null : (
+          <MotivationLineButton
+            line={state.pendingLine}
+            level={state.level}
+            onScreen={shown}
+            request={request}
+            onOpenProfile={onOpenProfile}
+          />
+        )}
       </div>
 
       {rings === null ? null : (

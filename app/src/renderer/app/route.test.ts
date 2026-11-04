@@ -47,6 +47,7 @@ function input(over: Partial<RouteInput> = {}): RouteInput {
     scan: scanned,
     hasStoredShelf: true,
     openProjectId: null,
+    openProfileAt: null,
     ...over,
   };
 }
@@ -54,6 +55,24 @@ function input(over: Partial<RouteInput> = {}): RouteInput {
 describe('routeFor', () => {
   it('is the shelf by default', () => {
     expect(routeFor(input())).toEqual({ kind: 'shelf' });
+  });
+
+  it('opens Profile at the anchor the band named, carried in the route', () => {
+    expect(routeFor(input({ openProfileAt: { section: 'badges', badge: 'curator' } }))).toEqual({
+      kind: 'profile',
+      at: { section: 'badges', badge: 'curator' },
+    });
+  });
+
+  it('shows a project opened over Profile, and Profile behind the gate never', () => {
+    const at = { section: 'level' } as const;
+    expect(routeFor(input({ openProfileAt: at, openProjectId: 12 as ProjectId }))).toEqual({
+      kind: 'project',
+      id: 12,
+    });
+    expect(
+      routeFor(input({ openProfileAt: at, scan: neverScanned, hasStoredShelf: false })),
+    ).toEqual({ kind: 'first-run' });
   });
 
   it('opens a project page, carrying the id in the route and not beside it', () => {

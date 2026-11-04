@@ -83,6 +83,29 @@
   transition: none;
 }
 
+/* §43.4's line: a plain button after the XP bar. Its type and colour clear §8.7's floor on
+   --surface-1; every other visual choice is the user's, so it carries no more than that. */
+.cdt-band-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  max-width: 320px;
+  padding: 0 0 6px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+
+.cdt-band-line-sentence {
+  color: var(--text-3);
+}
+
 .cdt-band-divider {
   flex: none;
   width: 1px;
@@ -239,6 +262,7 @@
 }
 
 .cdt-band-level-number:focus-visible,
+.cdt-band-line:focus-visible,
 .cdt-band-session:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 1px var(--sig);

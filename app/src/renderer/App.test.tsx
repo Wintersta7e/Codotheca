@@ -263,6 +263,53 @@ describe('App — the composition root', () => {
     expect(document.querySelector('.cdt-shelf')).toBeNull();
   });
 
+  // [p4] §43.13: the band's number is the shelf's one way into Profile, so the opener has to be
+  // the composition root's real one — a no-op there leaves a button that does nothing.
+  it('opens Profile from the band’s level number, and Esc returns to the shelf', async () => {
+    const rows = [row(1, 'alpha')];
+    const fake = fakeAppDeps(
+      {
+        ...repliesFor(rows, scanned),
+        'motivation.get': () => ({
+          shown: true,
+          level: {
+            state: 'computed',
+            figures: { level: 4, xp: 500, levelAt: 400, nextLevelAt: 700, floored: false },
+            pendingProjects: 0,
+          },
+          rings: null,
+          xpBar: 1 / 3,
+          pendingLine: null,
+          terms: [{ term: 'commitDay', xp: 500 }],
+        }),
+        'badges.list': () => ({
+          awards: [],
+          due: null,
+          basis: { projectsCovered: 1, projectsTotal: 1, historyComplete: true },
+        }),
+      },
+      { effectsTier: 'off' },
+    );
+    fake.setNow(NOW);
+    render(<App deps={fake.deps} />);
+    const number = await screen.findByRole('button', { name: 'LEVEL 4' });
+
+    fireEvent.click(number);
+    await waitFor(() => {
+      expect(document.querySelector('.cdt-profile')).not.toBeNull();
+    });
+    expect(document.querySelector('.cdt-shelf')).toBeNull();
+    expect(document.querySelector('[data-profile-anchor="level"]')).not.toBeNull();
+
+    fireEvent.keyDown(required(document.querySelector('.cdt-profile'), 'Profile'), {
+      key: 'Escape',
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.cdt-shelf')).not.toBeNull();
+    });
+    expect(document.querySelector('.cdt-profile')).toBeNull();
+  });
+
   it('reads each of its channels exactly once at startup', async () => {
     const fake = mount([row(1, 'alpha')], scanned);
     await waitFor(() => {

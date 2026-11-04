@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactElement } from 're
 import type { LocationId, ProjectId } from '../generated/protocol';
 import { AppDepsContext, createDefaultAppDeps, type AppDeps } from './app/deps';
 import { FirstRunHost } from './app/FirstRunHost';
-import { routeFor } from './app/route';
+import { routeFor, type ProfileAnchor } from './app/route';
 import { ShelfScreen } from './app/ShelfScreen';
 import { SurfaceHost } from './app/SurfaceHost';
 import { useCoreStatus } from './app/useCoreStatus';
@@ -33,6 +33,7 @@ import { TransitionBeam } from './app/TransitionBeam';
 import { IdentityCard } from './firstrun/IdentityCard';
 import { ProjectPageDepsContext } from './project/deps';
 import { ProjectPageView } from './project/ProjectPage';
+import { ProfileScreen } from './profile/ProfileScreen';
 import { FocusReporterContext, useFocusReporter } from './session/useFocusReporter';
 import { noticeDismissed } from './shelf/notice';
 import { DEFAULT_DENSITY_PX } from './shelf/viewState';
@@ -73,6 +74,11 @@ export function App(props: AppProps = {}): ReactElement {
   const motivation = useMotivation(deps);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // [p4] §43.13: which Profile anchor is open, beside `openProjectId` — a fact about the window.
+  const [profileAt, setProfileAt] = useState<ProfileAnchor | null>(null);
+  const closeProfile = useCallback(() => {
+    setProfileAt(null);
+  }, []);
   const [summaryOpen, setSummaryOpen] = useState(false);
   // [p3] A check switch or the source-reading grant moves every project's health reading, and
   // `settings.set` raises no event — so, as with the identity set above, the shelf is re-read on
@@ -148,6 +154,7 @@ export function App(props: AppProps = {}): ReactElement {
     // §11.2: a stored shelf that painted rows is proof a scan has already run.
     hasStoredShelf: rows !== null && rows.length > 0,
     openProjectId,
+    openProfileAt: profileAt,
   });
 
   const focusedProjectId = route.kind === 'project' ? route.id : null;
@@ -181,6 +188,13 @@ export function App(props: AppProps = {}): ReactElement {
         healthInputsNonce={healthInputs}
         onHealthInputsChanged={healthInputsChanged}
       />
+    ) : route.kind === 'profile' ? (
+      <ProfileScreen
+        state={motivation}
+        at={route.at}
+        request={deps.request}
+        onBack={closeProfile}
+      />
     ) : (
       <ShelfScreen
         deps={deps}
@@ -199,8 +213,7 @@ export function App(props: AppProps = {}): ReactElement {
         onOpenProject={openProject}
         motivation={motivation}
         route={route.kind}
-        // §43.13's Profile is not built yet, so the number opens nothing until it lands.
-        onOpenProfile={() => undefined}
+        onOpenProfile={setProfileAt}
         onOpenPalette={openPalette}
         onOpenSettings={() => {
           setSettingsOpen(true);

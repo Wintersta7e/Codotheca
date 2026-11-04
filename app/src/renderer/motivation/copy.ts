@@ -9,7 +9,7 @@
  * whole. A formatter renders the constraint, then the figures it is handed; an unknown figure is
  * §7.7a's U+2014, never a zero.
  */
-import type { MotivationReason, RhythmDay, RingStatus } from '../../generated/protocol';
+import type { MotivationReason, RhythmDay, RingStatus, XpTerm } from '../../generated/protocol';
 import { quietNote } from '../../shared/motivationQuiet';
 
 /** §7.7a's glyph for an unknown figure. */
@@ -107,12 +107,20 @@ export const LINE_ARRIVAL =
   '‹COPY: the level, that it was computed from history, the coverage qualifier while partial›';
 
 /**
+ * §43.4, the `arrival` line's coverage qualifier while the level is `partial`, after the level.
+ * Constraint in full: the coverage qualifier while partial — the projects still being read.
+ */
+// ‹COPY› interim — the user's words replace this before v1.0.0
+export const LINE_COVERAGE_PARTIAL = (pendingProjects: number): string =>
+  `‹COPY: the coverage qualifier while partial› ${String(pendingProjects)}`;
+
+/**
  * §43.4, the `rise` line. Constraint in full: the level, then the reason — one transition named
  * from its receipt, several counted; no word after the number, no chips.
  */
 // ‹COPY› interim — the user's words replace this before v1.0.0
-export const LINE_RISE = (level: number, reason: MotivationReason | null): string => {
-  const head = `‹COPY: the level, then the reason — one transition named from its receipt, several counted› ${String(level)}`;
+export const LINE_RISE = (level: number | null, reason: MotivationReason | null): string => {
+  const head = `‹COPY: the level, then the reason — one transition named from its receipt, several counted› ${figure(level)}`;
   if (reason === null) return head;
   if (reason.transitions > 1) return `${head} · ${String(reason.transitions)}`;
   const receipt = [reason.projectName, reason.on].filter((part) => part !== null);
@@ -200,6 +208,28 @@ export const RING_LABELS = { focus: 'FOCUS', ship: 'SHIP', tend: 'TEND' } as con
 
 /** §43.2's label over the week's seven cells. */
 export const RHYTHM_LABEL = 'RHYTHM';
+
+/** §43.13's evidence: each ledger term by §38.3's own name for its source. */
+export const XP_TERM_WORDS: Readonly<Record<XpTerm, string>> = {
+  commitDay: 'COMMIT-DAYS',
+  revival: 'DEAD PROJECTS REVIVED',
+  release: 'RELEASES TAGGED',
+  language: 'NEW LANGUAGES',
+  focus: 'FOCUSED SESSION TIME',
+  debtDay: 'HEALTH ITEMS FIXED',
+  completionCheck: 'COMPLETION CHECKS',
+  amnestyVerdict: 'AMNESTY VERDICTS',
+  cleanArchive: 'ARCHIVED CLEANLY',
+};
+
+/** §43.13's evidence row that adds the terms up, so the sum is read beside the level's XP. */
+export const TERMS_SUM_LABEL = 'SUM';
+
+/** §43.13's second section: every latched badge. */
+export const BADGES_LABEL = 'BADGES';
+
+/** Profile's way back, the project page's own word for the surface it returns to. */
+export const PROFILE_BACK_LABEL = 'SHELF';
 
 /** A binary ring's centre mark while §39's `nothingToTend` closes it — a mark, not a count. */
 export const RING_CLOSED_MARK = '✓';

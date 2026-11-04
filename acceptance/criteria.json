@@ -12108,10 +12108,10 @@
         },
         {
           "id": "AC-P4-43-6-renderer",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
-          "test": "AC-P4-43-6-renderer",
+          "test": "AC-P4-43-6-renderer a badge lands when its line is painted, never on click, and a click opens Profile",
           "assert": "The line's renderer half: painting an unlanded badge line in an active window calls badges.markLanded once and its click does not; a hidden window paints and lands nothing; the level line's click sends levelLineClicked with the shown level and opens Profile at the level; the line carries no aria-live and no alert role."
         }
       ]
@@ -12132,10 +12132,10 @@
         },
         {
           "id": "AC-P4-43-7-renderer",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
-          "test": "AC-P4-43-7-renderer",
+          "test": "AC-P4-43-7-renderer each form renders its own copy and a rise with no reason renders the level alone",
           "assert": "The line's renderer half of the reason: each form renders its own copy, and a rise whose reason is null renders the level alone."
         }
       ]
@@ -12408,10 +12408,10 @@
         },
         {
           "id": "AC-P4-43-17-profile",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
-          "test": "AC-P4-43-17-profile",
+          "test": "AC-P4-43-17-profile Profile's motivation contents carry data-motivation, and none under quiet",
           "assert": "Profile's motivation contents carry data-motivation, and under quiet the count of data-motivation elements Profile renders is 0."
         },
         {

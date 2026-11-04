@@ -1,22 +1,30 @@
 /**
- * Which of the four top-level surfaces is on screen, as a pure function.
+ * Which of the five top-level surfaces is on screen, as a pure function.
  *
  * The drawer, the scan summary and the palette are **not** routes. They are overlays over
- * whichever of the four is mounted, because closing one must not navigate.
+ * whichever of the five is mounted, because closing one must not navigate.
  *
  * `ProjectId` is carried in the route rather than in a second piece of state beside it: two
  * places holding "which page is open" is two places for it to be wrong.
  */
-import type { ProjectId, ScanStatus } from '../../generated/protocol.js';
+import type { BadgeKind, ProjectId, ScanStatus } from '../../generated/protocol.js';
 import type { CoreStatus } from '../../shared/coreStatus.js';
 import type { StartupFailure } from '../../shared/startupFailure.js';
 import type { FailureFact } from '../failure/copy.js';
 import { gateDecision } from '../firstrun/FirstRunGate.js';
 
+/**
+ * [p4] §43.13: where Profile opens — the level, or the badges with the award a line named. One
+ * union on `section`, so a later section is one more arm and never a second Profile.
+ */
+export type ProfileAnchor =
+  { readonly section: 'level' } | { readonly section: 'badges'; readonly badge?: BadgeKind };
+
 export type AppRoute =
   | { readonly kind: 'failure'; readonly fact: FailureFact }
   | { readonly kind: 'first-run' }
   | { readonly kind: 'project'; readonly id: ProjectId }
+  | { readonly kind: 'profile'; readonly at: ProfileAnchor }
   | { readonly kind: 'shelf' };
 
 export interface RouteInput {
@@ -27,6 +35,8 @@ export interface RouteInput {
   readonly scan: ScanStatus | null;
   readonly hasStoredShelf: boolean;
   readonly openProjectId: ProjectId | null;
+  /** [p4] §43.13: the Profile anchor the band opened, or `null` while no Profile is open. */
+  readonly openProfileAt: ProfileAnchor | null;
 }
 
 export function routeFor(input: RouteInput): AppRoute {
@@ -49,5 +59,8 @@ export function routeFor(input: RouteInput): AppRoute {
   }
 
   if (input.openProjectId !== null) return { kind: 'project', id: input.openProjectId };
+  // Profile is reached from the shelf's band; a project opened over it (the palette crosses every
+  // view) is the page on screen, and closing that page lands back on the Profile it covered.
+  if (input.openProfileAt !== null) return { kind: 'profile', at: input.openProfileAt };
   return { kind: 'shelf' };
 }
