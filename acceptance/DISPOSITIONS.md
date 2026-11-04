@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 72 | 248 |
-| deferred | 171 | 359 |
+| automated | 73 | 249 |
+| deferred | 170 | 358 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -480,7 +480,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-42-24 | deferred | the residency ask | `AC-P4-42-24` deferred, plan p4-42 — `AC-P4-42-24`<br>`AC-P4-42-24-dayone` deferred, plan p4-42 — `acceptance_recaps::ac_p4_42_24_the_answer_writes_nothing_day_one_reads` |
 | P4-42-25 | manual | observed, not assumed | `AC-P4-42-25` deferred, plan p4-42 — `AC-P4-42-25`<br>`AC-P4-42-25-nsis` manual, gate `PACKAGED-NOTIFICATION`<br>`AC-P4-42-25-portable` manual, gate `PACKAGED-NOTIFICATION`<br>`AC-P4-42-25-appimage` manual, gate `PACKAGED-NOTIFICATION`<br>`AC-P4-42-25-linuxpkg` manual, gate `PACKAGED-NOTIFICATION` |
 | P4-43-1 | automated | One read, pushed | `AC-P4-43-1` automated, runs now — `protocol/test/surface.test.mjs::AC-P4-43-1 the motivation surface is one read, one topic and no xp.level or rings.get`<br>`AC-P4-43-1-event` automated, runs now — `motivation_publish::ac_p4_43_1_a_real_debt_day_produces_one_event`<br>`AC-P4-43-1-polling` automated, runs now — `AC-P4-43-1 no polling read`<br>`AC-P4-43-1-emitter` automated, runs now — `motivation_gates::ac_p4_43_1_one_emitter` |
-| P4-43-2 | deferred | Unknown is never zero | `AC-P4-43-2` automated, runs now — `AC-P4-43-2 each band table renders every generated variant and never an unknown as zero`<br>`AC-P4-43-2-index` deferred, plan p4-43 — `acceptance_motivation::ac_p4_43_2_index` |
+| P4-43-2 | automated | Unknown is never zero | `AC-P4-43-2` automated, runs now — `AC-P4-43-2 each band table renders every generated variant and never an unknown as zero`<br>`AC-P4-43-2-index` automated, runs now — `acceptance_motivation::ac_p4_43_2_index` |
 | P4-43-3 | deferred | No overlay, no toast | `AC-P4-43-3` deferred, plan p4-43 — `AC-P4-43-3`<br>`AC-P4-43-3-overlay` deferred, plan p4-42 — `AC-P4-42-18` |
 | P4-43-4 | deferred | Nothing outside the window | `AC-P4-43-4` automated, runs now — `AC-P4-43-4 no MotivationLine identifier in the shell`<br>`AC-P4-43-4-api` deferred, plan p4-42 — `AC-P4-42-17` |
 | P4-43-5 | deferred | Silent classes | `AC-P4-43-5` automated, runs now — `motivation_silent::ac_p4_43_5`<br>`AC-P4-43-5-first-read` automated, runs now — `motivation_silent::ac_p4_43_5_first_read`<br>`AC-P4-43-5-confirmed` automated, runs now — `motivation_silent::ac_p4_43_5_confirmed`<br>`AC-P4-43-5-rebalance` automated, runs now — `motivation_silent::ac_p4_43_5_rebalance`<br>`AC-P4-43-5-restore` automated, runs now — `motivation_silent::ac_p4_43_5_restore`<br>`AC-P4-43-5-restore-completion` automated, runs now — `motivation_silent::ac_p4_43_5_restore_at_completion`<br>`AC-P4-43-5-inert` automated, runs now — `motivation_silent::ac_p4_43_5_inert_while_unpresented`<br>`AC-P4-43-5-reference` deferred, plan p4-44 — `acceptance_motivation::ac_p4_43_5_reference` |

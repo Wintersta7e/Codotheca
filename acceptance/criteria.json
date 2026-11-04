@@ -11960,11 +11960,11 @@
         },
         {
           "id": "AC-P4-43-2-index",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "acceptance_motivation::ac_p4_43_2_index",
-          "assert": "Over a new real index the core's payload reads notComputed with level, xp, levelAt and nextLevelAt null, a notComputed ring and no bar figure, so the unknown reaches the band as null and never as a zero."
+          "assert": "Over a new real index the core's payload reads notComputed with its figures (level, xp, levelAt, nextLevelAt) one JSON null, no terms, no bar figure and no line; its rings are waived while day one is unwritten, so no ring carries a figure and the rhythm's past cells read notComputed. The unknown reaches the band as null and never as a zero."
         }
       ]
     },
