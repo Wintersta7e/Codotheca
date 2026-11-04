@@ -9796,7 +9796,7 @@
         },
         {
           "id": "AC-P4-39-7-read",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "acceptance_p4_rings::ac_p4_39_7_reading_the_band_writes_nothing",
@@ -9870,7 +9870,7 @@
         },
         {
           "id": "AC-P4-39-10-dirty",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "acceptance_p4_rings::ac_p4_39_10_the_rollover_publishes_within_one_pump_period",
@@ -9886,7 +9886,7 @@
       "checks": [
         {
           "id": "AC-P4-39-11",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "acceptance_p4_rings::ac_p4_39_11_each_input_class_publishes_once",
@@ -9929,7 +9929,7 @@
         },
         {
           "id": "AC-P4-39-12-reach",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
           "test": "AC-P4-39-12 no ship, tend or rhythm reader names an escape API",
@@ -9955,7 +9955,7 @@
       "checks": [
         {
           "id": "AC-P4-39-13",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "acceptance_p4_rings::ac_p4_39_13_motivation_get_carries_every_ring_from_production",
