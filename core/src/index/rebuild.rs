@@ -16,6 +16,7 @@ use super::migrate::{self, Migration};
 use super::recovery::{self, sibling, QuarantinedFiles, Undo};
 use super::sidecar::{self, RestoreCtx, RestoreOutcome, Scope, Sidecar, SidecarState, SECTIONS};
 use super::{open_connection, pending, Index, IndexError};
+use crate::motivation::absorb::{SilentAbsorb, SilentClass};
 use crate::protocol::ProjectId;
 
 /// The rebuild report's file name inside the data directory, beside the index it describes.
@@ -387,6 +388,9 @@ fn restore(
     let tx_guard = crate::proto::txguard::TxGuard::enter();
     let tx = conn.transaction()?;
     let globals = sidecar::restore_global(&tx, doc)?;
+    // §43.5: a restore returns what was earned and earns nothing. Opened once the settings are
+    // back — the level shown is among them — and before the first ledger row restores.
+    let absorb = SilentAbsorb::begin(&tx, SilentClass::Restore, now)?;
     let mut restored: BTreeMap<String, u64> = [
         ("roots", globals.roots),
         ("identities", globals.identities),
@@ -442,6 +446,7 @@ fn restore(
             *restored.entry(kind).or_default() += n;
         }
     }
+    absorb.finish(&tx)?;
     let waiting: i64 = tx.query_row("SELECT count(*) FROM sidecar_pending", [], |r| r.get(0))?;
     let pending = u64::try_from(waiting)
         .map_err(|e| IndexError::Sidecar(format!("pending count {waiting}: {e}")))?;

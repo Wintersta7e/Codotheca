@@ -30,8 +30,9 @@ use crate::identity::store::{
 };
 use crate::identity::IdentityError;
 use crate::index::path::StoredPath;
-use crate::index::pending::match_pending;
+use crate::index::pending::{has_own_pending, match_pending};
 use crate::index::{Index, IndexError};
+use crate::motivation::absorb::{SilentAbsorb, SilentClass};
 use crate::mount::StoreClass;
 use crate::paths::path_bytes;
 use crate::protocol::{LocationId, Presence, ProjectId};
@@ -192,8 +193,19 @@ pub fn hand_off_discovered(
         }
         // §48.8.4: create, hydrate, attach and move all compute the project's subject key here,
         // so a record a rebuild staged applies in the transaction that makes it matchable —
-        // committed before any job for the copy is enqueued.
-        match_pending(tx, ProjectId(outcome.project_id), now)?;
+        // committed before any job for the copy is enqueued. What it restores earns nothing
+        // (§43.5); the absorb is taken only when a record is the project's, so a routine scan's
+        // hand-off reads no level.
+        let project = ProjectId(outcome.project_id);
+        let absorb = if has_own_pending(tx, project)? {
+            Some(SilentAbsorb::begin(tx, SilentClass::Restore, now)?)
+        } else {
+            None
+        };
+        match_pending(tx, project, now)?;
+        if let Some(absorb) = absorb {
+            absorb.finish(tx)?;
+        }
         Ok(Indexed {
             project: ProjectId(outcome.project_id),
             location: LocationId(location),

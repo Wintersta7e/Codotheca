@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 
 use crate::index::IndexError;
 use crate::ledger::recompute::{history_readable, recompute_git_rows, RecomputeCause};
+use crate::motivation::absorb::{SilentAbsorb, SilentClass};
 use crate::protocol::{IdentityConfirm, ProjectId};
 
 /// What confirming this set would do, or has just done.
@@ -119,6 +120,8 @@ pub fn apply(
     let delta = preview(conn, emails)?;
     let _guard = crate::proto::txguard::TxGuard::enter();
     let tx = conn.transaction()?;
+    // §43.5: the user confirmed this recompute, so what it moves makes no line.
+    let absorb = SilentAbsorb::begin(&tx, SilentClass::Confirmed, now)?;
 
     // §1.7: git-derived events are a pure function of history and are deleted and recomputed,
     // never migrated; session-derived rows are untouched. First, so the floor ratchets from the
@@ -189,6 +192,7 @@ pub fn apply(
         rusqlite::params_from_iter(params.iter().copied().chain(std::iter::once(now_param))),
     )?;
 
+    absorb.finish(&tx)?;
     tx.commit()?;
     Ok(IdentityConfirm {
         moved_to_reference: delta.moved_to_reference,

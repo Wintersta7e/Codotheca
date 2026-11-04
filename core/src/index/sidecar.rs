@@ -26,11 +26,13 @@ pub const SIDECAR_INTERVAL_SECS: i64 = 3600;
 ///
 /// The new database owns them, so they are neither exported nor restored — the restore skips
 /// them too, so a key joining this list takes effect against a document written before it joined.
-pub const REBUILD_OWNED_SETTINGS: [&str; 4] = [
+pub const REBUILD_OWNED_SETTINGS: [&str; 5] = [
     "schema_version",
     "sidecar_generation",
     "git_version",
     "sidecar_written_at",
+    // A ledger row id, which no rebuild keeps: the restore's silent absorb writes it again.
+    crate::motivation::keys::KEY_LEVEL_LINE_SINCE,
 ];
 
 /// `app_meta` keys no build reads any more, dropped on export and on restore.

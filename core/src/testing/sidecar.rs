@@ -308,7 +308,8 @@ fn frozen_git_rows(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexE
             meta: "{}".to_owned(),
         }
     });
-    crate::ledger::git_rows::reconcile_git_rows(tx, project, &rows, 80)?;
+    let silent = crate::ledger::git_rows::j4_settle_is_silent(tx, project)?;
+    crate::ledger::git_rows::reconcile_git_rows(tx, project, &rows, silent, 80)?;
     Ok(())
 }
 

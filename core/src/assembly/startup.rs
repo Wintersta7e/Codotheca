@@ -10,6 +10,7 @@ use crate::index::rebuild::{
     probe_open, rebuild_in_place, Probe, RebuildError, RebuildOutcome, RebuildReportFile,
 };
 use crate::index::{Index, IndexError};
+use crate::motivation::absorb::{SilentAbsorb, SilentClass};
 use crate::proto::pubsub::EventSink;
 use crate::surfaces::startup_failure::{self, StartupFailure};
 use std::path::Path;
@@ -138,7 +139,8 @@ fn exit_fatal(data_dir: &Path, failure: &StartupFailure) -> ! {
 ///    can be slow or fail environmentally. A missing or too-old git is a drawn window (§11.2a),
 ///    never a refusal to start — the app has plenty to show from the index alone.
 /// 5. **The ledger's fingerprint** (§38.3), before any command can read a level: a changed price
-///    table or curve is reported once, at the start that first runs under it.
+///    table or curve is reported once, at the start that first runs under it, and the rise it
+///    causes is absorbed in the same transaction — a rebalance earns no line (§43.5).
 /// 6. **The rhythm settlement** (§39.7), after the sidecar's restore — which runs when the index
 ///    opens, before the handler exists — so a restored `rhythm_week` is never re-derived. The
 ///    handler's raise mark is still 0, so every settled week holding a `commit_day` is re-read:
@@ -218,21 +220,8 @@ pub fn run_startup(handler: &mut CoreHandler) -> StartupSummary {
         }
     }
 
-    // 5. The ledger's fingerprint.
-    {
-        let guard = handler.index.lock().unwrap_or_else(PoisonError::into_inner);
-        match crate::ledger::price::record_ledger_fingerprint(guard.conn()) {
-            Ok(change) => summary.ledger = Some(change),
-            Err(e) => {
-                drop(guard);
-                emit_startup_error(
-                    handler.events.as_ref(),
-                    "ledger fingerprint",
-                    &e.to_string(),
-                );
-            }
-        }
-    }
+    // 5. The ledger's fingerprint, and a changed one's rise absorbed in the same transaction.
+    summary.ledger = record_fingerprint(handler, now);
 
     // 6. The rhythm settlement, which leaves the mark where its pass set it.
     {
@@ -258,6 +247,34 @@ pub fn run_startup(handler: &mut CoreHandler) -> StartupSummary {
     summary.first_run = arm_first_run(handler);
 
     summary
+}
+
+/// Step 5: records the ledger's fingerprint and, when it changed, absorbs the rebalance's rise in
+/// the same transaction — a rebalance earns no line (§43.5). A failure emits `core/error`.
+fn record_fingerprint(
+    handler: &CoreHandler,
+    now: i64,
+) -> Option<crate::ledger::price::FingerprintChange> {
+    let mut guard = handler.index.lock().unwrap_or_else(PoisonError::into_inner);
+    let recorded = guard.with_tx(|tx| {
+        let change = crate::ledger::price::record_ledger_fingerprint(tx)?;
+        if change.changed {
+            SilentAbsorb::begin(tx, SilentClass::Rebalance, now)?.finish(tx)?;
+        }
+        Ok(change)
+    });
+    drop(guard);
+    match recorded {
+        Ok(change) => Some(change),
+        Err(e) => {
+            emit_startup_error(
+                handler.events.as_ref(),
+                "ledger fingerprint",
+                &e.to_string(),
+            );
+            None
+        }
+    }
 }
 
 /// Step 7: arms the handler's first-run stamp from what the index holds, or emits `core/error`

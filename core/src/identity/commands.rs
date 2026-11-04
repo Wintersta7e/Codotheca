@@ -4,6 +4,7 @@ use serde_json::Value;
 
 use crate::index::Index;
 use crate::jobs::state::{reset_for, ResetCause};
+use crate::motivation::absorb::{SilentAbsorb, SilentClass};
 use crate::proto::dispatch::{parse_args, CommandFailure}; // R15: one helper, plan 03's
 use crate::proto::txguard::TxGuard;
 use crate::proto::EventSink; // R16: the trait, not plan 07's WalkSink
@@ -100,6 +101,9 @@ fn handle_merge(ctx: &IdentityCtx<'_>, args: Value) -> Result<Value, CommandFail
             .conn()
             .unchecked_transaction()
             .map_err(|e| CommandFailure::internal(e.to_string()))?;
+        // §43.5: a merge is a recompute the user confirmed, so what it moves makes no line.
+        let absorb = SilentAbsorb::begin(&tx, SilentClass::Confirmed, ctx.now)
+            .map_err(|e| CommandFailure::internal(e.to_string()))?;
         let outcome = merge_projects(
             &tx,
             args.a.0,
@@ -122,6 +126,9 @@ fn handle_merge(ctx: &IdentityCtx<'_>, args: Value) -> Result<Value, CommandFail
             )
             .map_err(|e| CommandFailure::internal(e.to_string()))?;
         }
+        absorb
+            .finish(&tx)
+            .map_err(|e| CommandFailure::internal(e.to_string()))?;
         tx.commit()
             .map_err(|e| CommandFailure::internal(e.to_string()))?;
         outcome

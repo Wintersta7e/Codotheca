@@ -22,7 +22,7 @@ use codotheca_core::index::subject::subject_for_project;
 use codotheca_core::index::Index;
 use codotheca_core::ledger::floor::{ratchet_level_floor, read_floor};
 use codotheca_core::ledger::focus::credit_segment_close;
-use codotheca_core::ledger::git_rows::{reconcile_git_rows, GitRow};
+use codotheca_core::ledger::git_rows::{j4_settle_is_silent, reconcile_git_rows, GitRow};
 use codotheca_core::ledger::level::read_level;
 use codotheca_core::ledger::verdict::pay_prepass_award;
 use codotheca_core::ledger::{LEGACY_FLOOR_KEY, RETAINED_KINDS};
@@ -147,7 +147,7 @@ fn seed(index: &mut Index) -> ProjectId {
                 ts: day * 86_400,
                 meta: "{}".to_owned(),
             });
-            reconcile_git_rows(tx, frozen, &rows, NOW)?;
+            reconcile_git_rows(tx, frozen, &rows, j4_settle_is_silent(tx, frozen)?, NOW)?;
 
             let at = LocalInstant {
                 unix: NOW - 50,

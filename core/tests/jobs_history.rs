@@ -28,7 +28,7 @@ use codotheca_core::index::{open_connection, Index};
 use codotheca_core::jobs::j4_history::{
     commit_days, commit_history, observe, read_root_facts, HistoryFacts, RootFacts,
 };
-use codotheca_core::ledger::git_rows::reconcile_git_rows;
+use codotheca_core::ledger::git_rows::{j4_settle_is_silent, reconcile_git_rows};
 use codotheca_core::protocol::ProjectId;
 use support::TestRepo;
 
@@ -143,7 +143,15 @@ fn commit_days_are_idempotent_on_their_dedupe_key() {
     for expected in [2, 0] {
         let tx = conn.transaction().unwrap();
         let rows = commit_days("lin", Some("host/o/r"), &facts);
-        let written = reconcile_git_rows(&tx, project, &rows, 0).unwrap().inserted;
+        let written = reconcile_git_rows(
+            &tx,
+            project,
+            &rows,
+            j4_settle_is_silent(&tx, project).unwrap(),
+            0,
+        )
+        .unwrap()
+        .inserted;
         tx.commit().unwrap();
         assert_eq!(written, expected);
     }
@@ -174,7 +182,15 @@ fn a_fork_and_its_upstream_both_keep_their_commit_day() {
     for (project, remote) in [(upstream, "host/owner-a/r"), (fork, "host/owner-b/r")] {
         let rows = commit_days("lin", Some(remote), &facts);
         assert_eq!(
-            reconcile_git_rows(&tx, project, &rows, 0).unwrap().inserted,
+            reconcile_git_rows(
+                &tx,
+                project,
+                &rows,
+                j4_settle_is_silent(&tx, project).unwrap(),
+                0
+            )
+            .unwrap()
+            .inserted,
             1
         );
     }

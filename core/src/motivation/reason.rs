@@ -10,6 +10,11 @@ use crate::protocol::{MotivationReason, ProjectId, XpTerm};
 
 const DAY: i64 = 86_400;
 
+/// The rows a reason counts, for `xp_events` aliased `x`: neither silent nor backfilled. The one
+/// spelling, spliced into every statement that asks whether a row could make or name a line.
+pub(crate) const COUNTED_ROW_SQL: &str = "json_extract(x.meta, '$.silent') IS NOT 1
+                AND json_extract(x.meta, '$.backfilled') IS NOT 1";
+
 /// One ledger row the reason counts.
 struct Counted {
     kind: String,
@@ -41,16 +46,14 @@ pub fn reason_since(
         return Ok(None);
     };
     let rows = tx
-        .prepare(
+        .prepare(&format!(
             "SELECT x.kind, x.project_id, x.ts,
                     json_extract(x.meta, '$.project_name'), p.name,
                     json_extract(x.meta, '$.when')
                FROM xp_events x
                LEFT JOIN project p ON p.id = x.project_id
-              WHERE x.id > ?1
-                AND json_extract(x.meta, '$.silent') IS NOT 1
-                AND json_extract(x.meta, '$.backfilled') IS NOT 1",
-        )?
+              WHERE x.id > ?1 AND {COUNTED_ROW_SQL}"
+        ))?
         .query_map([since], |r| {
             Ok(Counted {
                 kind: r.get(0)?,

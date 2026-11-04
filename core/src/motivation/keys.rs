@@ -1,8 +1,9 @@
 //! §43's `app_meta` keys. `app_meta` is key/value, so none of them costs a migration.
 //!
 //! Each key has one writer: day one the acknowledgement, the level shown and its mark
-//! [`write_level_shown`], the return quiet mode's end, quiet itself `settings.set`, and the
-//! acknowledged badge line the acknowledgement.
+//! [`write_level_shown`] — the mark alone, a restore's, through the helper it calls — the return
+//! quiet mode's end, quiet itself `settings.set`, and the acknowledged badge line the
+//! acknowledgement.
 
 use rusqlite::Transaction;
 
@@ -93,13 +94,22 @@ pub fn level_line_return(conn: &rusqlite::Connection) -> Result<Option<u32>, Ind
 /// # Errors
 /// Fails when SQLite refuses the read or a write.
 pub fn write_level_shown(tx: &Transaction<'_>, level: u32) -> Result<(), IndexError> {
+    put(tx, KEY_LEVEL_SHOWN, &level.to_string())?;
+    advance_level_line_since(tx)?;
+    tx.execute("DELETE FROM app_meta WHERE k = ?1", [KEY_LEVEL_LINE_RETURN])?;
+    Ok(())
+}
+
+/// Move the reason's mark to the ledger's highest row id (0 on an empty ledger), the level shown
+/// untouched: a restore's rows carry no silent mark, so only the mark keeps them out of a reason.
+///
+/// # Errors
+/// Fails when SQLite refuses the read or the write.
+pub(crate) fn advance_level_line_since(tx: &Transaction<'_>) -> Result<(), IndexError> {
     let mark: i64 = tx.query_row("SELECT COALESCE(MAX(id), 0) FROM xp_events", [], |r| {
         r.get(0)
     })?;
-    put(tx, KEY_LEVEL_SHOWN, &level.to_string())?;
-    put(tx, KEY_LEVEL_LINE_SINCE, &mark.to_string())?;
-    tx.execute("DELETE FROM app_meta WHERE k = ?1", [KEY_LEVEL_LINE_RETURN])?;
-    Ok(())
+    put(tx, KEY_LEVEL_LINE_SINCE, &mark.to_string())
 }
 
 /// A numeric key, `None` when absent; a stored value that does not parse is a corrupt index,

@@ -25,8 +25,9 @@ use crate::clock::{local_date, local_day, LocalInstant};
 use crate::git::{Authorship, GitBackend, JobContext, RepoHandle, TagFact, TagKind};
 use crate::identity::user::IdentitySet;
 use crate::index::IndexError;
-use crate::ledger::git_rows::{reconcile_git_rows, GitRow};
+use crate::ledger::git_rows::{j4_settle_is_silent, reconcile_git_rows, GitRow};
 use crate::ledger::receipt::Receipt;
+use crate::motivation::absorb::{SilentAbsorb, SilentClass};
 use crate::protocol::ProjectId;
 
 /// How many recent subjects `fts_commits` and `peek_cache` keep (§1.9).
@@ -358,8 +359,19 @@ pub fn commit_history(
             }
             rows
         };
-        // First, so the settle reads whether it is silent before its own writes.
-        reconcile_git_rows(tx, project, &implied, now)?;
+        // First, so the settle reads whether it is silent before its own writes. A silent
+        // settle's rise makes no line (§43.5): the one read decides both the rows' mark and the
+        // absorb around them.
+        let silent = j4_settle_is_silent(tx, project)?;
+        let absorb = if silent {
+            Some(SilentAbsorb::begin(tx, SilentClass::FirstRead, now)?)
+        } else {
+            None
+        };
+        reconcile_git_rows(tx, project, &implied, silent, now)?;
+        if let Some(absorb) = absorb {
+            absorb.finish(tx)?;
+        }
     }
     tx.execute(
         "INSERT INTO fts_commits (project_id, subjects) VALUES (?1, ?2)

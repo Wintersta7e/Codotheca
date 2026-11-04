@@ -4,8 +4,10 @@
 //! `keys` owns the `app_meta` keys §43 adds, one reader and one writer each. `state` builds the
 //! band's one payload; `line` holds its queue and `reason` what a rise is owed to.
 //! `first_run` decides when the first-run stamp is written. `acknowledge` records what a
-//! presentation the user saw writes; the two commands below answer §43.15.
+//! presentation the user saw writes; `absorb` is what a rise the user did not cause writes
+//! instead. The two commands below answer §43.15.
 
+pub mod absorb;
 pub mod acknowledge;
 pub mod first_run;
 pub mod keys;

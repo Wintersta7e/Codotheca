@@ -42,8 +42,12 @@ pub struct ReconcileReport {
 /// Make `project`'s git rows exactly `implied`, in the settle's transaction.
 ///
 /// Every git row whose key `implied` lacks is deleted — the floor ratcheted first, from the
-/// reading about to change — and every implied row not already there is inserted. Rows found on
-/// both sides are left as they are, so a row keeps the `silent` it was written with.
+/// reading about to change — and every implied row not already there is inserted, marked silent
+/// when `silent` says so. Rows found on both sides are left as they are, so a row keeps the
+/// `silent` it was written with.
+///
+/// `silent` is [`j4_settle_is_silent`], read by the caller before this settle's first write: the
+/// settle's silent absorb is decided by the same one read.
 ///
 /// # Errors
 /// Returns [`IndexError`] when a read, the ratchet, a delete or an insert fails.
@@ -51,9 +55,9 @@ pub fn reconcile_git_rows(
     tx: &Transaction<'_>,
     project: ProjectId,
     implied: &[GitRow],
+    silent: bool,
     now: i64,
 ) -> Result<ReconcileReport, IndexError> {
-    let silent = j4_settle_is_silent(tx, project)?;
     let existing: BTreeSet<String> = tx
         .prepare("SELECT dedupe_key FROM xp_events WHERE project_id = ?1 AND track = 'git'")?
         .query_map([project.0], |r| r.get(0))?

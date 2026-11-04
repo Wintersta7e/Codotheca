@@ -33,6 +33,7 @@ use crate::clock::LocalInstant;
 use crate::index::completion::{set_completion, Completion};
 use crate::index::IndexError;
 use crate::ledger::latch::latch_completion_checks;
+use crate::motivation::absorb::{SilentAbsorb, SilentClass};
 use crate::protocol::{CompletionCheck, ProjectId};
 
 use evaluate::{evaluate, CheckRow, Counts};
@@ -132,13 +133,18 @@ fn recompute(
     // `restore_ruling`; never on a later write, which that call is. A restore that applied
     // anything recomputed the rows under it, so the latch reads that computation — a check the
     // user ruled N/A is never paid as the pass it read before the ruling landed.
-    if stored.is_empty()
-        && !crate::index::pending::match_pending(tx, project, now)?
+    // What the restore brings back earns nothing (§43.5), so the match takes the silent absorb
+    // when a record is the project's.
+    if stored.is_empty() && crate::index::pending::has_own_pending(tx, project)? {
+        let absorb = SilentAbsorb::begin(tx, SilentClass::Restore, now)?;
+        let applied = !crate::index::pending::match_pending(tx, project, now)?
             .applied
-            .is_empty()
-    {
-        if let Ok((_, restored)) = recompute(tx, project, now)? {
-            return Ok(Ok((written, restored)));
+            .is_empty();
+        absorb.finish(tx)?;
+        if applied {
+            if let Ok((_, restored)) = recompute(tx, project, now)? {
+                return Ok(Ok((written, restored)));
+            }
         }
     }
 

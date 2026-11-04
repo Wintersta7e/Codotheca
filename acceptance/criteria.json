@@ -12028,11 +12028,51 @@
       "checks": [
         {
           "id": "AC-P4-43-5",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_silent::ac_p4_43_5",
           "assert": "Each silent class of \u00a743.5, driven through its production caller, raises the displayed level and makes no line: a first J4 settle, whose rows carry meta.silent; a confirmed identity apply and a merge; a price or curve change detected at start-up through \u00a738's stored fingerprint and its testkit-only override (R206); and a restore through the production rebuild chain, whose rows are exempt from meta.silent while level_line_since advances past them (R153). New-test proof: with a forward rise pending, a new root's first read raises the line's level and leaves reason.transitions at 1, and the case fails against a reason derived without the meta.silent filter."
+        },
+        {
+          "id": "AC-P4-43-5-first-read",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-43",
+          "test": "motivation_silent::ac_p4_43_5_first_read",
+          "assert": "Class 1 through a J4 settle over a real repository: a project's first read raises the displayed level with no line and every git row it writes carries meta.silent (count printed); the same project's next settle on a new commit-day is forward and makes a rise naming it."
+        },
+        {
+          "id": "AC-P4-43-5-confirmed",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-43",
+          "test": "motivation_silent::ac_p4_43_5_confirmed",
+          "assert": "Class 2: a narrowing identity.confirm {apply: true} through the first-run dispatcher, and projects.merge through the identity dispatcher, each lower the displayed level; the level shown follows it down with no line."
+        },
+        {
+          "id": "AC-P4-43-5-rebalance",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-43",
+          "test": "motivation_silent::ac_p4_43_5_rebalance",
+          "assert": "Class 3 through run_startup: a price change under the testkit override is detected by the stored fingerprint and its rise makes no line; a forward row already past level_line_since keeps its line, at the rebalanced level."
+        },
+        {
+          "id": "AC-P4-43-5-restore",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-43",
+          "test": "motivation_silent::ac_p4_43_5_restore",
+          "assert": "Class 4: a rebuild through the production chain restores the ledger with no line and level_line_since at the restored ledger's highest id; a copy's records the scan hand-off applies later do the same."
+        },
+        {
+          "id": "AC-P4-43-5-inert",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-43",
+          "test": "motivation_silent::ac_p4_43_5_inert_while_unpresented",
+          "assert": "While no level was presented a first read's absorb is inert: a trace of the settle shows no statement touching level_floor (statement count printed); once a level was presented the same settle reads it."
         },
         {
           "id": "AC-P4-43-5-reference",
