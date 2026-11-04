@@ -89,7 +89,9 @@ async function riseThroughScans(window: Page, home: string, nextDay: { n: number
       commitBackdated(home, repo, nextDay.n);
       nextDay.n += 1;
     }
-    await window.locator('[data-slot="scan"]').click();
+    // A bare `click` event, not a pointer press: a rise that arrives a beat after the XP moved is
+    // armed by the next scan, and a real press there is the input that fires the flip early.
+    await window.locator('[data-slot="scan"]').dispatchEvent('click');
     await expect
       .poll(
         async () =>
@@ -226,14 +228,29 @@ test.describe.serial('the band over a real ledger', () => {
 
   test('AC-P4-43-8-app a real rise flips on the next keydown, and a reload paints none', async () => {
     test.setTimeout(600_000);
+    // Every input the flip listens for, so a flip fired before the key names what fired it.
+    await window.evaluate(() => {
+      const seen: string[] = [];
+      Object.assign(globalThis, { flipInputs: seen });
+      const note = (event: Event): void => {
+        if (event.type !== 'focus' || !(event.target instanceof Node)) seen.push(event.type);
+      };
+      globalThis.addEventListener('pointerdown', note, true);
+      globalThis.addEventListener('keydown', note, true);
+      globalThis.addEventListener('focus', note);
+    });
     await riseThroughScans(window, home, nextDay);
+    const inputs = await window.evaluate(() =>
+      JSON.stringify((globalThis as unknown as { flipInputs: string[] }).flipInputs),
+    );
     const armed = await digitAnimations(window);
     await window.keyboard.press('Shift');
     const fired = await digitAnimations(window);
     // eslint-disable-next-line no-console -- the measurement is the deliverable
     console.log(
-      `AC-P4-43-8-app: before the key ${JSON.stringify(armed)}, after ${JSON.stringify(fired)}`,
+      `AC-P4-43-8-app: inputs before the key ${inputs}; before the key ${JSON.stringify(armed)}, after ${JSON.stringify(fired)}`,
     );
+    expect(inputs).toBe('[]');
     expect(armed).toEqual([]);
     expect(fired.length).toBeGreaterThan(0);
 
