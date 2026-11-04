@@ -3,8 +3,9 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { type ElectronApplication, type Page } from '@playwright/test';
 
+import { launchApp } from './launchApp.js';
 import { FIXTURE_GIT_ENV, homeEnv } from './isolatedHome.js';
 
 /**
@@ -79,7 +80,7 @@ export function commitBackdated(home: string, repo: string, daysBack: number): v
 }
 
 export function launch(home: string, userData: string): Promise<ElectronApplication> {
-  return electron.launch({
+  return launchApp({
     args: ['.', `--user-data-dir=${userData}`],
     cwd: appDir,
     env: { ...process.env, ...homeEnv(home), CODOTHECA_DATA_DIR: userData },

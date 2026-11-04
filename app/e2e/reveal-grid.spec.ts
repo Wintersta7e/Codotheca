@@ -3,7 +3,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+
+import { launchApp } from './launchApp.js';
 import { build } from 'esbuild';
 
 import type {
@@ -187,7 +189,7 @@ test('AC-P4-43-11-grid the reveal lays out 3 + 3 at six, 4 + 3 at seven and 4 + 
          .loadURL('about:blank');
      });`,
   );
-  const harness = await electron.launch({ args: [dir], cwd: appDir });
+  const harness = await launchApp({ args: [dir], cwd: appDir });
   try {
     const page = await harness.firstWindow();
     await page.waitForLoadState('domcontentloaded');

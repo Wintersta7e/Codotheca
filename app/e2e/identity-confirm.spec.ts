@@ -3,14 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import {
-  _electron as electron,
-  expect,
-  test,
-  type ElectronApplication,
-  type Page,
-} from '@playwright/test';
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
 
+import { launchApp } from './launchApp.js';
 import { FIXTURE_GIT_ENV, homeEnv } from './isolatedHome.js';
 
 // Playwright transpiles specs to CommonJS, so `__dirname` is correct here and `import.meta` is
@@ -72,7 +67,7 @@ function seedHome(): string {
 
 function launch(home: string): Promise<ElectronApplication> {
   const userData = mkdtempSync(path.join(tmpdir(), 'codotheca-confirm-'));
-  return electron.launch({
+  return launchApp({
     args: ['.', `--user-data-dir=${userData}`],
     cwd: appDir,
     env: { ...process.env, ...homeEnv(home), CODOTHECA_DATA_DIR: userData },

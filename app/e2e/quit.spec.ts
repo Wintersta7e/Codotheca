@@ -3,7 +3,9 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+
+import { launchApp, OFFSCREEN_ARGS } from './launchApp.js';
 
 // Playwright transpiles specs to CommonJS, so `import.meta` is not available here.
 const appDir = path.resolve(__dirname, '..');
@@ -43,7 +45,7 @@ function quitSteps(dataDir: string): string[] {
 test('closing the window quits the app and every quit step succeeds', async () => {
   test.skip(!existsSync(coreBinary), NO_CORE);
   const userData = mkdtempSync(path.join(tmpdir(), 'codotheca-quit-'));
-  const app = await electron.launch({
+  const app = await launchApp({
     args: ['.', `--user-data-dir=${userData}`],
     cwd: appDir,
     env: { ...process.env, CODOTHECA_DATA_DIR: userData },
@@ -77,7 +79,7 @@ test('AC-P4-50-7 the release launch script asks the real app to quit, and it doe
       [
         path.join(repoRoot, 'scripts', 'launch-artifact.mjs'),
         ...['--kind', kind, '--exe', electronBinary(), '--data-dir', dataDir],
-        ...['--', appDir, `--user-data-dir=${userData}`, ...sandbox],
+        ...['--', ...OFFSCREEN_ARGS, appDir, `--user-data-dir=${userData}`, ...sandbox],
       ],
       { encoding: 'utf8', timeout: 170_000 },
       (error, out, err) => {

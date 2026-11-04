@@ -3,7 +3,9 @@ import { copyFileSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
+import { expect, test, type ElectronApplication } from '@playwright/test';
+
+import { launchApp } from './launchApp.js';
 
 // Playwright transpiles specs to CommonJS, so `import.meta` is not available here.
 const appDir = path.resolve(__dirname, '..');
@@ -67,7 +69,7 @@ test('the shell opens exactly one window and the renderer sees no Node', async (
   const step = (name: string): void => {
     console.warn(`shell.spec +${String(Date.now() - started)} ms: ${name}`);
   };
-  const app = await electron.launch({
+  const app = await launchApp({
     args: ['.', `--user-data-dir=${userData}`],
     cwd: appDir,
     env: { ...process.env, CODOTHECA_DATA_DIR: userData },

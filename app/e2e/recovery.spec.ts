@@ -3,15 +3,9 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } fro
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import {
-  _electron as electron,
-  expect,
-  test,
-  type ElectronApplication,
-  type Page,
-  type TestInfo,
-} from '@playwright/test';
+import { expect, test, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 
+import { launchApp } from './launchApp.js';
 import { homeEnv } from './isolatedHome.js';
 
 // Playwright transpiles specs to CommonJS, so `__dirname` is correct here and `import.meta` is
@@ -99,7 +93,7 @@ test.beforeAll(() => {
  */
 async function launch(dataDir: string, home?: string): Promise<ElectronApplication> {
   const isolated = home === undefined ? {} : homeEnv(home);
-  return electron.launch({
+  return launchApp({
     args: ['.', `--user-data-dir=${dataDir}`],
     cwd: appDir,
     env: { ...process.env, ...isolated, CODOTHECA_DATA_DIR: dataDir },

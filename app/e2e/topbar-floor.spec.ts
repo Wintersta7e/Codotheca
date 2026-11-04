@@ -3,7 +3,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+
+import { launchApp } from './launchApp.js';
 import { build } from 'esbuild';
 
 import type { MotivationState } from '../src/generated/protocol.js';
@@ -346,7 +348,7 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
      });`,
   );
 
-  const harness = await electron.launch({ args: [dir], cwd: appDir });
+  const harness = await launchApp({ args: [dir], cwd: appDir });
   const page = await harness.firstWindow();
   await page.waitForLoadState('domcontentloaded');
 

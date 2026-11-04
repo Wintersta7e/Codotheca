@@ -2,7 +2,9 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
+import { expect, test, type ElectronApplication } from '@playwright/test';
+
+import { launchApp } from './launchApp.js';
 
 import { TOP_BAR_FLOOR_PX } from '../src/renderer/shelf/TopBar.js';
 
@@ -36,7 +38,7 @@ async function launch(): Promise<ElectronApplication> {
   // A fresh userData every run: first run is exactly what this is looking at, and a directory
   // carrying yesterday's index would paint the shelf instead.
   const userData = mkdtempSync(path.join(tmpdir(), 'codotheca-mount-'));
-  return electron.launch({
+  return launchApp({
     args: ['.', `--user-data-dir=${userData}`],
     cwd: appDir,
     env: { ...process.env, CODOTHECA_DATA_DIR: userData },
