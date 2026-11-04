@@ -12,10 +12,14 @@
 
 mod support;
 
+use std::path::Path;
 use std::sync::Arc;
 
 use codotheca_core::badges::COMEBACK_GAP_DAYS;
 use codotheca_core::clock::{local_date, Clock as _};
+use codotheca_core::firstrun::first_run_completed_at;
+use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
+use codotheca_core::index::{open_connection, Index};
 use codotheca_core::ledger::price::PRICES;
 use codotheca_core::motivation::keys::level_shown;
 use codotheca_core::proto::dispatch::CommandHandler as _;
@@ -25,12 +29,18 @@ use codotheca_core::session::orphan::close_orphans;
 use codotheca_core::session::store::{self, SessionOpen};
 use codotheca_core::testing::zone::FixedZone;
 use codotheca_core::testing::{core_handler, CoreHandlerParts, HeldScanLauncher};
+use rusqlite::{params, Connection};
 use serde_json::{json, Value};
-use support::badges_rig::{BadgesRig, Flags, T0};
+use support::badges_rig::{BadgesRig, Flags, ME, T0};
+use support::TestRepo;
 
 const DAY: i64 = 86_400;
 /// A fixture day well before `T0`'s, 2024-05-01.
 const D1: i64 = 19_844;
+/// The last migration a phase-3 core shipped, `0016_health_delta.sql`.
+const PHASE3: usize = 16;
+/// When the phase-3 core stored its shelf, a month before `T0`.
+const PHASE3_AT: i64 = T0 - 30 * DAY;
 
 /// Real repositories and the runners that settle them, and the core's dispatcher over the same
 /// index, its clock at `T0`.
@@ -42,7 +52,11 @@ struct Live {
 
 impl Live {
     fn new() -> Self {
-        let rig = BadgesRig::new();
+        Self::over(BadgesRig::new())
+    }
+
+    /// The dispatcher over `rig`'s index.
+    fn over(rig: BadgesRig) -> Self {
         let data = tempfile::tempdir().unwrap();
         let launcher: Arc<dyn ScanLauncher> =
             Arc::new(HeldScanLauncher::new(Arc::clone(&rig.index)));
@@ -441,4 +455,135 @@ fn ac_p4_43_6() {
         "the fortnight did not retire the unlanded badge"
     );
     landed_line_leaves_on_the_next_due();
+}
+
+/// A database in `dir` at exactly `version` migrations, through the shipped chain.
+fn migrated_to(dir: &Path, version: usize) -> Connection {
+    let mut conn = open_connection(&Index::db_path(dir)).unwrap();
+    apply_all(&mut conn, &MIGRATIONS[..version]).unwrap();
+    conn
+}
+
+/// A project as a phase-3 core left it, stored at `created_at`: one present copy of a real
+/// repository holding one of the user's commits at noon UTC on each of `days`, its history walked
+/// (`j4` `ok`).
+fn phase3_project(
+    conn: &Connection,
+    name: &str,
+    days: &[i64],
+    created_at: i64,
+) -> (TestRepo, ProjectId, LocationId) {
+    let repo = TestRepo::init();
+    for &day in days {
+        let date = local_date(day);
+        repo.commit_at(&date, &format!("{date}T12:00:00+00:00"));
+    }
+    let path = repo.path().to_string_lossy().into_owned();
+    conn.execute(
+        "INSERT INTO project (name, seed_basename, lineage_key, authored_by_user, created_at,
+                              updated_at)
+         VALUES (?1, ?1, ?1, 1, ?2, ?2)",
+        params![name, created_at],
+    )
+    .unwrap();
+    let project = ProjectId(conn.last_insert_rowid());
+    conn.execute(
+        "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display, store_key,
+                               presence, repo_kind)
+         VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree')",
+        params![project.0, path.as_bytes(), path],
+    )
+    .unwrap();
+    let location = LocationId(conn.last_insert_rowid());
+    conn.execute(
+        "INSERT INTO project_committer (project_id, email, commits) VALUES (?1, ?2, ?3)",
+        params![project.0, ME, days.len()],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO project_job_state (project_id, job, state, at) VALUES (?1, 'j4', 'ok', ?2)",
+        params![project.0, created_at],
+    )
+    .unwrap();
+    (repo, project, location)
+}
+
+/// **AC-P4-43-13.** A real phase-3 index, migrated through the real open path, reads first run's
+/// end backfilled and no level shown. Once J4 walks one project's history again through the
+/// scheduler, the payload carries an arrival over the partial coverage, with no reason; its click
+/// records the level shown, and §40's best backdated award follows as a badge line.
+#[test]
+fn ac_p4_43_13() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = migrated_to(dir.path(), PHASE3);
+    conn.execute(
+        "INSERT INTO identity (email, is_user, source, confirmed_at)
+         VALUES (?1, 1, 'manual', ?2)",
+        params![ME, PHASE3_AT - DAY],
+    )
+    .unwrap();
+    // Twelve commit-days, then one past the revival gap: a history that earned its badges
+    // long before this version could award them.
+    let revived = D1 + 260 + COMEBACK_GAP_DAYS;
+    let mut history: Vec<i64> = (0..12).map(|i| D1 + i).collect();
+    history.push(revived);
+    let kept = phase3_project(&conn, "kept", &history, PHASE3_AT - DAY);
+    let waiting = phase3_project(&conn, "waiting", &[D1, D1 + 1], PHASE3_AT);
+    let walked = kept.1;
+    drop(conn);
+
+    let rig = BadgesRig::reopened(dir, vec![kept, waiting]);
+    let guard = rig.index.lock().unwrap();
+    let stamp = first_run_completed_at(guard.conn()).unwrap();
+    let shown = level_shown(guard.conn()).unwrap();
+    let queued: i64 = guard
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM project_job_state WHERE job = 'j4' AND state = 'queued'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    drop(guard);
+    eprintln!("migrated: stamp {stamp:?}, level shown {shown:?}, {queued} history walk(s) queued");
+    assert_eq!(stamp, Some(PHASE3_AT), "first run's end was not backfilled");
+    assert_eq!(shown, None, "the upgrade presented a level");
+    assert_eq!(queued, 2, "the upgrade did not queue every walked history");
+
+    let mut live = Live::over(rig);
+    live.ack("bandShown", None);
+    let before = live.get();
+    assert!(
+        before["pendingLine"].is_null(),
+        "a line before any history was walked again: {before}"
+    );
+
+    live.rig.settle_j4(walked);
+    let arrival = live.get();
+    eprintln!("after one walk: {}", arrival["level"]);
+    assert_eq!(form(&arrival), "arrival", "{arrival}");
+    assert!(
+        arrival["pendingLine"]["reason"].is_null(),
+        "an arrival carries a reason"
+    );
+    assert_eq!(arrival["level"]["state"], "partial");
+    assert_eq!(arrival["level"]["pendingProjects"], 1);
+    assert_eq!(
+        arrival["pendingLine"]["level"].as_u64(),
+        Some(displayed(&arrival))
+    );
+
+    live.click_level();
+    assert_eq!(
+        live.level_shown().map(u64::from),
+        Some(displayed(&arrival)),
+        "the arrival's click did not record the level shown"
+    );
+    let badge = live.get();
+    let kind = badge_kind(&badge);
+    let award = &badge["pendingLine"]["award"];
+    eprintln!("then: {award}");
+    assert_eq!(kind, "necromancer", "day one's first backdated kind");
+    assert_eq!(award["earnedOn"], local_date(revived));
+    assert_eq!(award["landed"], false);
 }

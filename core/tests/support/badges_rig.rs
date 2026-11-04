@@ -24,7 +24,7 @@ use super::TestRepo;
 pub(crate) const T0: i64 = 1_800_000_000;
 
 /// The address every fixture commit is made under, confirmed as the user's.
-const ME: &str = "fixture@example.invalid";
+pub(crate) const ME: &str = "fixture@example.invalid";
 
 /// A project's flags, as the scan would have written them.
 #[derive(Debug, Clone, Copy, Default)]
@@ -65,6 +65,30 @@ impl BadgesRig {
             _dir: dir,
             index: Arc::new(Mutex::new(index)),
             copies: Vec::new(),
+            events: Arc::new(ValidatingSink::default()),
+        }
+    }
+
+    /// A rig over the index already in `dir`, opened through the real path — which runs the
+    /// rest of the migration chain — beside the repositories that index's rows already name, each
+    /// `(repository, project, its one copy)`.
+    pub(crate) fn reopened(
+        dir: tempfile::TempDir,
+        planted: Vec<(TestRepo, ProjectId, LocationId)>,
+    ) -> Self {
+        let index = Index::open_at(dir.path(), T0).unwrap();
+        Self {
+            _dir: dir,
+            index: Arc::new(Mutex::new(index)),
+            copies: planted
+                .into_iter()
+                .map(|(repo, project, location)| Copy {
+                    repo,
+                    _remote: None,
+                    project,
+                    location,
+                })
+                .collect(),
             events: Arc::new(ValidatingSink::default()),
         }
     }

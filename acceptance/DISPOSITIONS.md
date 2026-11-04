@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 75 | 251 |
-| deferred | 168 | 356 |
+| automated | 75 | 252 |
+| deferred | 168 | 355 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -491,7 +491,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-43-10 | deferred | Idle | `AC-P4-43-10` deferred, plan p4-43 — `AC-P4-43-10` |
 | P4-43-11 | automated | Reveal panels | `AC-P4-43-11` automated, runs now — `AC-P4-43-11 the reveal holds eight panels in order, gold on the eighth only, and LEVEL is never a zero`<br>`AC-P4-43-11-grid` automated, runs now — `AC-P4-43-11-grid the reveal lays out 3 + 3 at six, 4 + 3 at seven and 4 + 4 at eight` |
 | P4-43-12 | automated | Reveal presentation writes | `AC-P4-43-12` automated, runs now — `motivation_commands::ac_p4_43_12_reveal_level_shown_stamps_and_raises_level_shown`<br>`AC-P4-43-12-renderer` automated, runs now — `AC-P4-43-12-renderer the reveal records the level it displayed and lands the badge once` |
-| P4-43-13 | deferred | Arrival | `AC-P4-43-13` deferred, plan p4-43 — `acceptance_motivation::ac_p4_43_13`<br>`AC-P4-43-13-app` deferred, plan p4-43 — `AC-P4-43-13-app` |
+| P4-43-13 | deferred | Arrival | `AC-P4-43-13` automated, runs now — `acceptance_motivation::ac_p4_43_13`<br>`AC-P4-43-13-app` deferred, plan p4-43 — `AC-P4-43-13-app` |
 | P4-43-14 | automated | Day one | `AC-P4-43-14` automated, runs now — `motivation_commands::ac_p4_43_14_day_one_is_written_once_by_the_presentation_only`<br>`AC-P4-43-14-window` automated, runs now — `AC-P4-43-14 an unfocused or hidden window stamps nothing`<br>`AC-P4-43-14-writer` automated, runs now — `motivation_gates::ac_p4_43_14_one_day_one_writer` |
 | P4-43-15 | automated | `first_run_completed_at` | `AC-P4-43-15` automated, runs now — `motivation_migration::ac_p4_43_15_the_backfill_writes_the_latest_created_at_over_a_shelf`<br>`AC-P4-43-15-empty` automated, runs now — `motivation_migration::ac_p4_43_15_an_empty_index_is_left_for_path_two`<br>`AC-P4-43-15-skip-ahead` automated, runs now — `motivation_first_run::ac_p4_43_15_skip_ahead_stamps_at_the_walk_end_not_the_answer`<br>`AC-P4-43-15-autostart` automated, runs now — `motivation_first_run::ac_p4_43_15_an_autostart_patch_no_longer_stamps`<br>`AC-P4-43-15-restart` automated, runs now — `motivation_first_run::ac_p4_43_15_restart`<br>`AC-P4-43-15-turn` automated, runs now — `AC-P4-43-15 the turn's answer ends first run` |
 | P4-43-16 | automated | `DIG` before the root suggestions land | `AC-P4-43-16` automated, runs now — `AC-P4-43-16 DIG before suggestions answer, or with nothing ticked or added, commits nothing`<br>`AC-P4-43-16-dialog` automated, runs now — `AC-P4-43-16 a root the dialog accepted makes DIG live with no suggestion ticked`<br>`AC-P4-43-16-guard` automated, runs now — `AC-P4-43-16 the DIG handler itself commits nothing while no root would be committed` |
