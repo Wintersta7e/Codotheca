@@ -11976,10 +11976,10 @@
       "checks": [
         {
           "id": "AC-P4-43-3",
-          "status": "deferred",
+          "status": "automated",
           "runner": "e2e",
           "owner": "p4-43",
-          "test": "AC-P4-43-3",
+          "test": "AC-P4-43-3 a real rise renders one line that survives a page, a reload and a restart, and clears only on its click",
           "assert": "In the real app over a release core, a forward rise made through the core by back-dated commit-days renders one line, with no price restated. The line survives a navigation to a project page and back, a window reload and an app restart over the same data directory, and clears only on its click, which opens Profile."
         },
         {
@@ -12128,7 +12128,7 @@
           "runner": "cargo",
           "owner": "p4-43",
           "test": "acceptance_motivation::ac_p4_43_7",
-          "assert": "Through the core, one forward ledger row gives a reason naming its term, meta.project_name as of the write, and its date; three give their count; a rise by focus accrual onto an existing row gives a null reason; arrival and return lines carry none. A reason is never fabricated."
+          "assert": "Through the core, one forward ledger row gives a reason naming its term, meta.project_name as of the write, or the live name for a commit-day, and its date; three give their count; a rise by focus accrual onto an existing row gives a null reason; arrival and return lines carry none. A reason is never fabricated."
         },
         {
           "id": "AC-P4-43-7-renderer",
@@ -12164,10 +12164,10 @@
         },
         {
           "id": "AC-P4-43-8-app",
-          "status": "deferred",
+          "status": "automated",
           "runner": "e2e",
           "owner": "p4-43",
-          "test": "AC-P4-43-8-app",
+          "test": "AC-P4-43-8-app a real rise flips on the next keydown, and a reload paints none",
           "assert": "In the real app, after a real rise the next keydown starts an animation on .cdt-level-digit, and a window reload's first paint starts none."
         }
       ]
@@ -12190,11 +12190,11 @@
         },
         {
           "id": "AC-P4-43-9-app",
-          "status": "deferred",
+          "status": "automated",
           "runner": "e2e",
           "owner": "p4-43",
-          "test": "AC-P4-43-9-app",
-          "assert": "In the real renderer, not jsdom, a mounted .cdt-level-digit given the flip's class resolves animation-name none at reduced and at off, each tier set through the drawer, after asserting the stylesheet loaded."
+          "test": "AC-P4-43-9-app at reduced and at off the flip resolves no animation in the real renderer",
+          "assert": "In the real renderer, not jsdom, a mounted .cdt-level-digit given the flip's playing state (data-flip=\"new\") resolves animation-name none at reduced and at off, each tier set through the drawer, after asserting the stylesheet loaded."
         }
       ]
     },
@@ -12206,10 +12206,10 @@
       "checks": [
         {
           "id": "AC-P4-43-10",
-          "status": "deferred",
+          "status": "automated",
           "runner": "e2e",
           "owner": "p4-43",
-          "test": "AC-P4-43-10",
+          "test": "AC-P4-43-10 at rest the band runs no animation, and a ring, bar or cell changes by a cut at every tier",
           "assert": "The no-transition half: in the real app with the band visible, a line pending and no input, no animation runs, and a ring, bar or cell change resolves transition-duration 0s at every tier, so it applies by a cut. The zero-frames-at-rest measurement is AC-21-frames' run definition (\u00a749.3's criterion-21 row) and not this check."
         }
       ]
@@ -12278,10 +12278,10 @@
         },
         {
           "id": "AC-P4-43-13-app",
-          "status": "deferred",
+          "status": "automated",
           "runner": "e2e",
           "owner": "p4-43",
-          "test": "AC-P4-43-13-app",
+          "test": "AC-P4-43-13-app a new install quit while scanning relaunches to the shelf and an arrival line",
           "assert": "In the real app, a new install quit during scanning and relaunched routes to the shelf with no reveal replay and an arrival line; its click acknowledges it and opens Profile; nothing counts up and no flip plays."
         }
       ]
@@ -12498,10 +12498,10 @@
       "checks": [
         {
           "id": "AC-P4-43-20",
-          "status": "deferred",
+          "status": "automated",
           "runner": "e2e",
           "owner": "p4-43",
-          "test": "AC-P4-43-20",
+          "test": "AC-P4-43-20 every band text meets 5.9:1 on its ground, and the bar, arcs and cells 3:1",
           "assert": "In the real renderer every band text's computed colour against its painted ground is at least 5.9:1, and the bar fill and ring arcs against the track, and an active rhythm cell against an inactive one, are at least 3:1; each pair and its ratio is printed."
         }
       ]
