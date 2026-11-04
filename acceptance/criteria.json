@@ -689,10 +689,10 @@
           "runner": "perf",
           "owner": "12c",
           "test": "perf::idle_scheduled_frames",
-          "assert": "Amendment 21: zero scheduled frames while unfocused or hidden, and at most one flicker element while focused, sampled over at least 60 s in the defined idle state. [p3] The sentence bans a schedule, not a response: the user-triggered specular sweep and the restoration surge (§34.6) beside it are bounded one-shots for a change the user is present for and are absent at reduced and off; idle requires no project page open, so neither can breach this budget.",
+          "assert": "Amendment 21: zero scheduled frames while unfocused or hidden, and at most one flicker element while focused, sampled over at least 60 s in the defined idle state. [p3] The sentence bans a schedule, not a response: the user-triggered specular sweep and the restoration surge (§34.6) beside it are bounded one-shots for a change the user is present for and are absent at reduced and off; idle requires no project page open, so neither can breach this budget. [p4] The run holds with the status band visible and a line pending (AC-P4-43-10's measured half): the band's line waiting for its click schedules nothing.",
           "measurement": {
             "kind": "rate",
-            "run": "at least 60 s with the shelf visible and focused, no project page open, no session open, no job running, and no pointer or keyboard input for at least 5 s",
+            "run": "at least 60 s with the shelf visible and focused, no project page open, no session open, no job running, and no pointer or keyboard input for at least 5 s; [p4] with the status band visible and a line pending",
             "thermal": "warm",
             "machines": ["A"]
           },
