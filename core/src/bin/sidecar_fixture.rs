@@ -19,9 +19,13 @@ use codotheca_core::index::sidecar::{
 };
 use codotheca_core::index::{Index, IndexError};
 use codotheca_core::ledger::price::record_ledger_fingerprint;
+use codotheca_core::motivation::acknowledge::acknowledge;
+use codotheca_core::motivation::keys::KEY_MOTIVATION_DAY_ONE;
+use codotheca_core::protocol::MotivationAck;
 use codotheca_core::testing::sidecar::{
     build_library, compare_documents, plant_startup_failure, FixtureLibrary, StartupPlant,
 };
+use codotheca_core::testing::zone::FixedZone;
 use serde_json::{json, Value};
 
 const USAGE: &str =
@@ -97,8 +101,23 @@ fn shelf(index: &Index) -> Result<Vec<String>, IndexError> {
 /// `corrupt_index` window, with everything a rebuild restores waiting in the sidecar.
 fn plant_populated(data: &Path, repos: &Path) -> Result<Value, IndexError> {
     let FixtureLibrary {
-        index, subjects, ..
+        mut index,
+        subjects,
+        ..
     } = build_library(data, repos, PLANTED_AT)?;
+    // An installed user has seen the band before, so day one is a past date the sidecar carries;
+    // without it the first paint after the rebuild stamps today, which no planted row says. It is
+    // written the way the app writes it: the band's first paint, acknowledged at `PLANTED_AT`.
+    index.with_tx(|tx| {
+        acknowledge(
+            tx,
+            MotivationAck::BandShown,
+            None,
+            PLANTED_AT,
+            &FixedZone(0),
+        )?;
+        Ok(())
+    })?;
     // Every start records the ledger's fingerprint, so an index the app ran over always carries
     // it — and the rebuilt one will, before `verify` compares the two.
     record_ledger_fingerprint(index.conn())?;
@@ -284,6 +303,26 @@ fn verify(data: &Path) -> Result<Value, IndexError> {
     let pending: i64 = index
         .conn()
         .query_row("SELECT COUNT(*) FROM sidecar_pending", [], |r| r.get(0))?;
+    // Read from the index, not the export: a key that stopped travelling would leave both
+    // documents without it, and the comparison above could not see the user's day one reset.
+    let day_one: Vec<String> = index
+        .conn()
+        .prepare("SELECT v FROM app_meta WHERE k = ?1")?
+        .query_map([KEY_MOTIVATION_DAY_ONE], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    let was: Vec<String> = planted
+        .payload
+        .settings
+        .get(KEY_MOTIVATION_DAY_ONE)
+        .cloned()
+        .into_iter()
+        .collect();
+    let mut differences = comparison.differences;
+    if was.is_empty() || day_one != was {
+        differences.push(format!(
+            "settings: {KEY_MOTIVATION_DAY_ONE} planted {was:?}, {day_one:?} after the rebuild"
+        ));
+    }
 
     let now = counts(&after);
     let counted: BTreeMap<String, [u64; 2]> = counts(&planted)
@@ -329,7 +368,7 @@ fn verify(data: &Path) -> Result<Value, IndexError> {
         "compared": comparison.compared.values().sum::<usize>()
             + rows(&planted, RHYTHM_WEEK).len()
             + latches().map(|name| rows(&planted, name).len()).sum::<usize>(),
-        "differences": comparison.differences,
+        "differences": differences,
         "pending": pending,
         "sessionMismatch": session_mismatch,
         "raiseOnly": raise_only.len(),
