@@ -138,6 +138,19 @@ test.describe.serial('the band over a real ledger', () => {
     app = null;
     backdateDayOne(userData);
     await relaunch();
+    // A first run that quit before any history settled showed the reveal's LEVEL as not
+    // computed; the job queue does not outlive a quit, so the level — and the arrival §43.8 owes
+    // for it — waits on the next scan. Run it first, or that arrival lands mid-rise and no rise
+    // line can form while it pends.
+    const levelNumber = window.locator('.cdt-band-level-number');
+    if (((await levelNumber.getAttribute('aria-label')) ?? '').includes('NOT COMPUTED')) {
+      // eslint-disable-next-line no-console -- the trace is the deliverable
+      console.log(`setup: first run left ${await bandReading(window)}; scanning`);
+      await window.locator('[data-slot="scan"]').click();
+      await expect(levelNumber).not.toHaveAttribute('aria-label', /NOT COMPUTED/, {
+        timeout: 90_000,
+      });
+    }
     // Whatever first run left waiting — an arrival over a level the reveal did not show, a badge
     // — is clicked away, so the line each case reads is the one its own rise made.
     for (let n = 0; n < 5 && (await lines(window).count()) > 0; n += 1) {
