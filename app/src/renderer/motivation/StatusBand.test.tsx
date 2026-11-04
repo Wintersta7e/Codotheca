@@ -11,7 +11,7 @@ import { DATA_MOTIVATION } from '../../shared/motivationQuiet';
 import type { AppDeps } from '../app/deps';
 import { BENCH_LABEL } from '../card/useBenchElapsed';
 import bandCss from './band.css?raw';
-import { LEVEL_LABEL, RHYTHM_LABEL } from './copy';
+import { LEVEL_LABEL, RHYTHM_LABEL, UNKNOWN } from './copy';
 import { bandRenders, benchSession, StatusBand, type StatusBandProps } from './StatusBand';
 
 /** jsdom has no IntersectionObserver: each instance records its target and fires on demand. */
@@ -260,6 +260,21 @@ describe('the status band', () => {
     for (const id of ['level', 'xp', 'rings', 'rhythm']) {
       expect(container.querySelector(`[${DATA_MOTIVATION}="${id}"]`), id).not.toBeNull();
     }
+  });
+
+  it('draws a not-computed ring as the --unknown glyph with U+2014, never an empty ring or a 0', () => {
+    expect(bandCss.length, 'band.css imported as an empty string').toBeGreaterThan(0);
+    // The fixture's Tend ring is notComputed; Focus and Ship are measured.
+    const { container } = draw();
+    const unknown = container.querySelectorAll('.cdt-band-ring-glyph[data-fill="unknown"]');
+    expect(unknown).toHaveLength(1);
+    const centre = unknown[0]?.querySelector('.cdt-band-ring-centre');
+    expect(centre?.textContent).toBe(UNKNOWN);
+    expect(centre?.getAttribute('data-unknown')).toBe('true');
+    expect(unknown[0]?.closest('[role="img"]')?.getAttribute('aria-label')).not.toMatch(/\b0\b/u);
+    // The attribute is drawn: band.css paints that fill with the --unknown token.
+    const rule = /\.cdt-band-ring-glyph\[data-fill='unknown'\]\s*\{([^}]*)\}/u.exec(bandCss);
+    expect(rule?.[1]).toMatch(/var\(--unknown\)/u);
   });
 
   it('flips the number on the next key press after a rise, and announces nothing new', () => {

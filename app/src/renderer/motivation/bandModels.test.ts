@@ -220,4 +220,33 @@ describe('the three tables, row by row', () => {
     expect(line).toContain(UNKNOWN);
     expect(line).not.toMatch(/\b0\b/u);
   });
+
+  it('draws the active-day count as U+2014 while any day of the week is not computed, never 0', () => {
+    const fresh = rhythmModel(
+      rhythm({
+        days: ['notComputed', 'notComputed', 'notComputed', 'future', 'future', 'future', 'future'],
+        activeDays: 0,
+      }),
+    ).line;
+    expect(fresh.match(/—/gu)).toHaveLength(1);
+    expect(fresh).not.toMatch(/\b0\b/u);
+    // One unread day is enough: a count over a week with a hole in it is not a count.
+    const holed = rhythmModel(
+      rhythm({
+        days: ['active', 'notComputed', 'pending', 'future', 'future', 'future', 'future'],
+        activeDays: 1,
+      }),
+    ).line;
+    expect(holed.match(/—/gu)).toHaveLength(1);
+    expect(holed).not.toMatch(/\b1\b/u);
+    // A week read in full that holds no active day is a real zero.
+    const idle = rhythmModel(
+      rhythm({
+        days: ['inactive', 'inactive', 'pending', 'future', 'future', 'future', 'future'],
+        activeDays: 0,
+      }),
+    ).line;
+    expect(idle).toMatch(/\b0\b/u);
+    expect(idle).not.toContain(UNKNOWN);
+  });
 });

@@ -70,16 +70,17 @@ export const DAY_ONE_SENTENCE =
 /**
  * §43.2 and §39.10a, the `RHYTHM` line. Constraint in full: active days of target this week, and
  * best rhythm in weeks; the word is "rhythm", never "streak", in every rendered string and
- * accessible name. The clause naming the banned word is left out of the rendered string. A target
- * not yet set and a best rhythm not yet known render as U+2014.
+ * accessible name. The clause naming the banned word is left out of the rendered string. An
+ * active-day count over a week not yet read, a target not yet set and a best rhythm not yet known
+ * render as U+2014.
  */
 // ‹COPY› interim — the user's words replace this before v1.0.0
 export const RHYTHM_LINE = (
-  activeDays: number,
+  activeDays: number | null,
   target: number | null,
   bestWeeks: number | null,
 ): string =>
-  `‹COPY: active days of target this week, and best rhythm in weeks› ${String(activeDays)} · ${figure(target)} · ${figure(bestWeeks)}`;
+  `‹COPY: active days of target this week, and best rhythm in weeks› ${figure(activeDays)} · ${figure(target)} · ${figure(bestWeeks)}`;
 
 /**
  * The `RHYTHM` line's qualifier while `RhythmState.gitCoverage` is `partial`. Constraint in full:
@@ -239,14 +240,15 @@ export const CONDENSED_LEVEL_LABEL = 'LVL';
 
 /**
  * §43.2's short rhythm in the condensed block, the prototype's form: active days over the target,
- * then the best rhythm. §39.7 counts the best rhythm in weeks, so its unit is `w`. A target not
- * yet set and a best rhythm not yet known render as U+2014.
+ * then the best rhythm. §39.7 counts the best rhythm in weeks, so its unit is `w`. An active-day
+ * count over a week not yet read, a target not yet set and a best rhythm not yet known render as
+ * U+2014.
  */
 export const RHYTHM_SHORT = (
-  activeDays: number,
+  activeDays: number | null,
   target: number | null,
   bestWeeks: number | null,
-): string => `${String(activeDays)}/${figure(target)} · ${figure(bestWeeks)}w`;
+): string => `${figure(activeDays)}/${figure(target)} · ${figure(bestWeeks)}w`;
 
 /** A binary ring's centre mark while §39's `nothingToTend` closes it — a mark, not a count. */
 export const RING_CLOSED_MARK = '✓';

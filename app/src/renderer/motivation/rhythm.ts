@@ -51,9 +51,17 @@ function qualifier(coverage: RhythmCoverage): string | null {
   }
 }
 
+/**
+ * The week's active-day count, or `null` while any of its days is `notComputed`: a count over a
+ * week the core has not finished reading is unknown, and unknown is never drawn as a number.
+ */
+export function activeDaysFigure(rhythm: RhythmState): number | null {
+  return rhythm.days.includes('notComputed') ? null : rhythm.activeDays;
+}
+
 export function rhythmModel(rhythm: RhythmState): RhythmModel {
   return {
-    line: RHYTHM_LINE(rhythm.activeDays, rhythm.target, rhythm.bestWeeks),
+    line: RHYTHM_LINE(activeDaysFigure(rhythm), rhythm.target, rhythm.bestWeeks),
     partial: qualifier(rhythm.gitCoverage),
     cells: rhythm.days.map((day, index) => ({
       day,

@@ -14,6 +14,7 @@ import type { AppDeps } from '../app/deps';
 import { useWindowActive } from '../motion/useWindowActive';
 import { CONDENSED_LEVEL_LABEL, CONDENSED_LINE_WAITS, RHYTHM_SHORT } from './copy';
 import { levelBlockModel } from './levelBlock';
+import { activeDaysFigure } from './rhythm';
 import { ringsModel, type RingGlyph } from './rings';
 
 export interface CondensedModel {
@@ -41,7 +42,9 @@ export function condensedModel(state: MotivationState): CondensedModel | null {
     waits: state.pendingLine === null ? null : CONDENSED_LINE_WAITS,
     dots: rings === null || rings.waived ? [] : rings.rings,
     rhythm:
-      rhythm === null ? null : RHYTHM_SHORT(rhythm.activeDays, rhythm.target, rhythm.bestWeeks),
+      rhythm === null
+        ? null
+        : RHYTHM_SHORT(activeDaysFigure(rhythm), rhythm.target, rhythm.bestWeeks),
   };
 }
 

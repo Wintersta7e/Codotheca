@@ -91,6 +91,33 @@ describe('condensedModel', () => {
     expect(model?.waits).toBeNull();
   });
 
+  it('draws the short rhythm’s active-day count as U+2014 while a day is not computed, never 0', () => {
+    const base = state();
+    if (base.rings === null) throw new Error('fixture carries rings');
+    const model = condensedModel(
+      state({
+        rings: {
+          ...base.rings,
+          rhythm: {
+            ...base.rings.rhythm,
+            days: [
+              'notComputed',
+              'notComputed',
+              'notComputed',
+              'future',
+              'future',
+              'future',
+              'future',
+            ],
+            activeDays: 0,
+          },
+        },
+      }),
+    );
+    expect(model?.rhythm?.startsWith(UNKNOWN)).toBe(true);
+    expect(model?.rhythm).not.toMatch(/\b0\b/u);
+  });
+
   it('draws an uncomputed level as U+2014, never a zero', () => {
     const model = condensedModel(state({ level: null, xpBar: null }));
     expect(model?.level).toBe(UNKNOWN);
