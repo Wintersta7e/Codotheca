@@ -20,6 +20,7 @@ use crate::firstrun::first_run_completed_at;
 use crate::index::sidecar::{RestoreCtx, RestoreOutcome, SectionRow};
 use crate::index::IndexError;
 use crate::ledger::level::pending_projects;
+use crate::motivation::keys::day_one;
 use crate::protocol::{RhythmCoverage, RhythmDay, RhythmState, RhythmTargetBasis};
 
 const DAY_SECS: i64 = 86_400;
@@ -232,21 +233,13 @@ pub struct SettleReport {
     pub target_replaced: bool,
 }
 
-/// §43's day-one key: §43 owns it and its one write; the settlement only reads it.
-pub(crate) const DAY_ONE_KEY: &str = "motivation_day_one";
-
-/// Day one (§39.9) as a local day number. Absent or malformed reads `None`, so no week holds it
-/// and nothing fails on it.
+/// Day one (§39.9) as a local day number, parsed from §43's one reader of the key. Absent or
+/// malformed reads `None`, so no week holds it and nothing fails on it.
 ///
 /// # Errors
 /// Fails when SQLite refuses the read.
-pub fn day_one(conn: &Connection) -> Result<Option<i64>, IndexError> {
-    let stored: Option<String> = conn
-        .query_row("SELECT v FROM app_meta WHERE k = ?1", [DAY_ONE_KEY], |r| {
-            r.get(0)
-        })
-        .optional()?;
-    Ok(stored.as_deref().and_then(parse_local_date))
+pub fn day_one_epoch(conn: &Connection) -> Result<Option<i64>, IndexError> {
+    Ok(day_one(conn)?.as_deref().and_then(parse_local_date))
 }
 
 fn monday_of(row: &RhythmWeekRow) -> Result<i64, IndexError> {
@@ -573,7 +566,7 @@ fn insert_weeks(
         settle_rhythm_target(tx, RHYTHM_FALLBACK_TARGET, RhythmTargetBasis::Fallback)?;
         RHYTHM_FALLBACK_TARGET
     };
-    let day_one_week = day_one(tx)?.map(week_start);
+    let day_one_week = day_one_epoch(tx)?.map(week_start);
     for &monday in weeks {
         let active_days = days_in(monday);
         let verdict = if active_days >= target {

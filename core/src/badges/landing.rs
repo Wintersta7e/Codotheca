@@ -10,14 +10,12 @@ use rusqlite::{Connection, OptionalExtension as _, Transaction};
 
 use crate::clock::parse_local_date;
 use crate::index::IndexError;
+use crate::motivation::keys::{self, KEY_MOTIVATION_DAY_ONE};
 use crate::protocol::{BadgeAward, BadgeKind, ProjectId};
 
 use super::evaluate::EvalCtx;
 use super::store::kind_of;
 use super::{evidence, kind_text, BadgeError, LANDING_ORDER, TRICKLE_DAYS};
-
-/// The `app_meta` key §43's arming writes day one under; read here, never written.
-const DAY_ONE_KEY: &str = "motivation_day_one";
 
 /// The only kinds day one may land, in the order it lands them: nothing else lands on day one.
 const DAY_ONE_KINDS: [BadgeKind; 3] = [
@@ -63,15 +61,10 @@ fn day_of(kind: BadgeKind, column: &str, text: &str) -> Result<i64, IndexError> 
 
 /// Day one as a day number; `None` while §43 has not written it.
 fn day_one(conn: &Connection) -> Result<Option<i64>, IndexError> {
-    let stored: Option<String> = conn
-        .query_row("SELECT v FROM app_meta WHERE k = ?1", [DAY_ONE_KEY], |r| {
-            r.get(0)
-        })
-        .optional()?;
-    stored
+    keys::day_one(conn)?
         .map(|text| {
             parse_local_date(&text).ok_or_else(|| IndexError::Corrupt {
-                detail: format!("{DAY_ONE_KEY} is not a local date: {text}"),
+                detail: format!("{KEY_MOTIVATION_DAY_ONE} is not a local date: {text}"),
             })
         })
         .transpose()
@@ -205,6 +198,23 @@ fn stored_awards(conn: &Connection) -> Result<Vec<StoredAward>, IndexError> {
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(raw)
+}
+
+/// The kind most recently landed — the latest `landed_at` — or `None` while nothing has landed.
+/// §43's line reads it: a landed award stays a line until its click is acknowledged.
+///
+/// # Errors
+/// Fails when SQLite refuses the read, or the stored kind is not one this build reads.
+pub fn last_landed(conn: &Connection) -> Result<Option<BadgeKind>, IndexError> {
+    let newest: Option<String> = conn
+        .query_row(
+            "SELECT kind FROM badge_award WHERE landed_at IS NOT NULL
+              ORDER BY landed_at DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    newest.as_deref().map(kind_of).transpose()
 }
 
 /// Every award, by `earnedOn` then the landing order.

@@ -21,7 +21,8 @@ use codotheca_core::firstrun::{dispatch, FirstRunEnv};
 use codotheca_core::jobs::j15_authorship::{persist, AuthorshipFacts};
 use codotheca_core::protocol::{ProjectId, RhythmCoverage, RhythmTargetBasis};
 use codotheca_core::rings::rhythm::{
-    best_weeks, day_one, load_weeks, run_weeks, settle, RhythmVerdict, RhythmWeekRow, SettleReport,
+    best_weeks, day_one_epoch, load_weeks, run_weeks, settle, RhythmVerdict, RhythmWeekRow,
+    SettleReport,
 };
 use codotheca_core::rings::targets::{rhythm_target, KEY_RHYTHM_TARGET, KEY_RHYTHM_TARGET_BASIS};
 use codotheca_core::testing::zone::TransitionZone;
@@ -260,7 +261,7 @@ fn the_week_holding_day_one_settles_counted_or_waived_never_missed() {
             rig.meta(DAY_ONE_KEY, text);
         }
         assert_eq!(
-            day_one(rig.conn()).unwrap(),
+            day_one_epoch(rig.conn()).unwrap(),
             stored.as_deref().and_then(parse_local_date),
             "{name}: day one's reading"
         );

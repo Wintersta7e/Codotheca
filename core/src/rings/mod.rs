@@ -47,7 +47,7 @@ pub fn read_rings(
     zone: &dyn LocalZone,
 ) -> Result<RingsState, IndexError> {
     let today = zone.at(now).day();
-    let day_one = rhythm::day_one(conn)?;
+    let day_one = rhythm::day_one_epoch(conn)?;
     // NULL waives too, so no reading before the first presentation — the tray's included —
     // shows a quantity the user was never told is waived.
     let waived = day_one.is_none_or(|d| d == today);
