@@ -13,6 +13,8 @@ import {
   openWindow,
   seedHome,
 } from './ledgerFixture.js';
+import { TOP_BAR_FLOOR_PX } from '../src/renderer/shelf/TopBar.js';
+import { SHED_WIDTHS } from '../src/renderer/shelf/useShedLevel.js';
 
 /**
  * §43.2's band, §43.13's Profile and §43.7's reveal laid out by the Chromium the app ships, in a
@@ -31,14 +33,80 @@ const HEIGHT = 873;
 /** Optional: a directory the run writes its band screenshots into, for a person to look at. */
 const SHOTS = process.env['BAND_LAYOUT_SHOTS'];
 
-async function setContentWidth(app: ElectronApplication, page: Page, width: number): Promise<void> {
+/**
+ * The widths a target may be replaced by: the same shed step, so the same side of every shed
+ * boundary, and never below the floor.
+ */
+function sameStep(target: number): (width: number) => boolean {
+  const below = SHED_WIDTHS.filter((t) => t < target);
+  const above = SHED_WIDTHS.filter((t) => t >= target);
+  const lo = below.length === 0 ? TOP_BAR_FLOOR_PX - 1 : Math.max(...below);
+  const hi = above.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...above);
+  return (width) => width > lo && width <= hi;
+}
+
+/** Resizes the content area and returns the `innerWidth` it settles at, read until unchanged. */
+async function resizeTo(app: ElectronApplication, page: Page, content: number): Promise<number> {
   await app.evaluate(
     ({ BrowserWindow }, size) => {
       BrowserWindow.getAllWindows()[0]?.setContentSize(size.width, size.height);
     },
-    { width, height: HEIGHT },
+    { width: content, height: HEIGHT },
   );
-  await page.waitForFunction((w) => window.innerWidth === w, width);
+  let last = -1;
+  let steady = 0;
+  for (let read = 0; read < 40 && steady < 3; read += 1) {
+    await page.waitForTimeout(50);
+    const now = await page.evaluate(() => window.innerWidth);
+    steady = now === last ? steady + 1 : 0;
+    last = now;
+  }
+  return last;
+}
+
+/**
+ * Brings the content area to `target` CSS px and returns the width it reached. At a fractional
+ * display scale a content size lands a pixel or two off, so the size is corrected by what was
+ * measured; a width no content size reaches is replaced by the nearest reached width in the same
+ * shed step, and the replacement is printed.
+ */
+async function setContentWidth(
+  app: ElectronApplication,
+  page: Page,
+  target: number,
+): Promise<number> {
+  const reached = new Map<number, number>();
+  let content = target;
+  for (let attempt = 0; attempt < 4 && !reached.has(target); attempt += 1) {
+    const inner = await resizeTo(app, page, content);
+    if (!reached.has(inner)) reached.set(inner, content);
+    content += target - inner;
+  }
+  let width = target;
+  if (!reached.has(target)) {
+    for (let probe = target - 3; probe <= target + 3; probe += 1) {
+      const inner = await resizeTo(app, page, probe);
+      if (!reached.has(inner)) reached.set(inner, probe);
+    }
+    const inStep = [...reached.keys()].filter(sameStep(target));
+    if (inStep.length === 0) {
+      throw new Error(`no content size reaches a width in ${String(target)}'s shed step`);
+    }
+    width = inStep.reduce((best, w) => (Math.abs(w - target) < Math.abs(best - target) ? w : best));
+  }
+  const chosen = reached.get(width) ?? target;
+  const settled = await resizeTo(app, page, chosen);
+  const ratio = await page.evaluate(() => window.devicePixelRatio);
+  // eslint-disable-next-line no-console -- the measurement is the deliverable
+  console.log(
+    `width ${String(target)}: reached ${String(settled)} (content ${String(chosen)}, scale ${String(ratio)})` +
+      (settled === target ? '' : ' — not reachable at this scale, nearest in its shed step'),
+  );
+  if (settled !== width) {
+    throw new Error(
+      `content ${String(chosen)} settled at ${String(settled)}, not ${String(width)}`,
+    );
+  }
   // Two frames: one for the layout, one for anything a resize observer then settles.
   await page.evaluate(
     () =>
@@ -50,7 +118,12 @@ async function setContentWidth(app: ElectronApplication, page: Page, width: numb
         });
       }),
   );
+  return settled;
 }
+
+/** A width's label: the target, and what it was measured at when that differs. */
+const widthLabel = (target: number, reached: number): string =>
+  reached === target ? String(target) : `${String(target)}→${String(reached)}`;
 
 interface BandMeasure {
   readonly clientWidth: number;
@@ -176,15 +249,15 @@ async function bandAtEveryWidth(
 ): Promise<string[]> {
   const failures: string[] = [];
   for (const width of BAND_WIDTHS) {
-    await setContentWidth(app, window, width);
+    const at = `${label} ${widthLabel(width, await setContentWidth(app, window, width))}`;
     const m = await measureBand(window);
     if (m === null) {
-      failures.push(`${label} ${String(width)}: no band`);
+      failures.push(`${at}: no band`);
       continue;
     }
     // eslint-disable-next-line no-console -- the measurement is the deliverable
     console.log(
-      `${label} ${String(width)}: band client ${String(m.clientWidth)} scroll ${String(m.scrollWidth)}, ` +
+      `${at}: band client ${String(m.clientWidth)} scroll ${String(m.scrollWidth)}, ` +
         `${String(m.measured)} boxes, ${String(m.dividers)} divider(s), rows ${m.rows.join(' ')}` +
         (m.escapes.length === 0 ? '' : `\n  escapes: ${m.escapes.join('; ')}`) +
         (m.stranded.length === 0 ? '' : `\n  stranded: ${m.stranded.join('; ')}`) +
@@ -197,7 +270,6 @@ async function bandAtEveryWidth(
     if (SHOTS !== undefined && (width === 1440 || width === 879)) {
       await window.screenshot({ path: path.join(SHOTS, `band-${label}-${String(width)}.png`) });
     }
-    const at = `${label} ${String(width)}`;
     if (m.measured === 0) failures.push(`${at}: measured no box`);
     if (m.dividers === 0) failures.push(`${at}: no divider to measure`);
     if (m.scrollWidth > m.clientWidth) {
@@ -282,7 +354,7 @@ function measureReveal(window: Page): Promise<RevealMeasure> {
 async function revealFailures(app: ElectronApplication, window: Page): Promise<string[]> {
   const failures: string[] = [];
   for (const width of [1440, 879]) {
-    await setContentWidth(app, window, width);
+    const at = `reveal ${widthLabel(width, await setContentWidth(app, window, width))}`;
     await revealSettled(window);
     const m = await measureReveal(window);
     if (SHOTS !== undefined) {
@@ -290,11 +362,10 @@ async function revealFailures(app: ElectronApplication, window: Page): Promise<s
     }
     // eslint-disable-next-line no-console -- the measurement is the deliverable
     console.log(
-      `reveal ${String(width)}: ${String(m.panels)} panels; head offsets ${m.heads.join('; ')}; ` +
+      `${at}: ${String(m.panels)} panels; head offsets ${m.heads.join('; ')}; ` +
         `caption below value by ${m.gaps.join(', ')}` +
         (m.escapes.length === 0 ? '' : `\n  escapes: ${m.escapes.join('; ')}`),
     );
-    const at = `reveal ${String(width)}`;
     if (m.panels < 6) failures.push(`${at}: ${String(m.panels)} panels measured`);
     if (m.gaps.length === 0) failures.push(`${at}: no value and caption measured`);
     for (const escape of m.escapes) failures.push(`${at}: outside its panel: ${escape}`);
