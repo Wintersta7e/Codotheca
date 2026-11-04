@@ -180,13 +180,20 @@ pub const MIGRATIONS: &[Migration] = &[
         // §40.7: one new table and its three triggers; nothing is copied, dropped or renamed.
         rebuilds_a_table: false,
     },
+    Migration {
+        version: 22,
+        name: "first_run_backfill",
+        sql: include_str!("../../migrations/0022_first_run_backfill.sql"),
+        // §43.15: one `INSERT … SELECT` into `app_meta`; no table is created or rebuilt.
+        rebuilds_a_table: false,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 21;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 22;
 
 /// The version `PRAGMA user_version` holds; a value that does not fit a `u32` reads as `0`.
 ///

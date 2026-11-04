@@ -12271,7 +12271,7 @@
       "checks": [
         {
           "id": "AC-P4-43-15",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_migration::ac_p4_43_15_the_backfill_writes_the_latest_created_at_over_a_shelf",
@@ -12279,7 +12279,7 @@
         },
         {
           "id": "AC-P4-43-15-empty",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_migration::ac_p4_43_15_an_empty_index_is_left_for_path_two",
