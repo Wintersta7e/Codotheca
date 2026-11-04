@@ -1490,6 +1490,7 @@ fn ac_p3_29_18_turning_the_grant_off_deletes_what_it_wrote() {
         health_checks: None,
         focus_target_minutes: None,
         rhythm_target: None,
+        motivation_shown: None,
     };
     let guard = rig.index.lock().unwrap();
     let settings = settings::write(guard.conn(), &patch, 1_700_000_100).unwrap();

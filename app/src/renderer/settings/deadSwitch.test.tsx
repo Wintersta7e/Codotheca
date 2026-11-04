@@ -42,6 +42,7 @@ const settings: Settings = {
   ],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 };
 
 /** Every slot supplied, so every row the registry declares is actually drawn. */

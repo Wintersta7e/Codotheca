@@ -36,6 +36,7 @@ const SETTINGS: Settings = {
   healthChecks: [],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 };
 
 const LIVE: HealthReading = {

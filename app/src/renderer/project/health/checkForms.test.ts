@@ -37,6 +37,7 @@ const SETTINGS: Settings = {
   ],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 };
 
 describe('§30.4 the four outcome forms', () => {

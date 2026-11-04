@@ -56,6 +56,7 @@ const SETTINGS: Settings = {
   ],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 };
 
 /** One check per outcome, so every form is on the page at once. */

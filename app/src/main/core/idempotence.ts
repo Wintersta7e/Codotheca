@@ -108,6 +108,10 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'badges.list': 'read',
   // [p4] §40.8. It writes one landing column at most once; a write is never auto-replayed.
   'badges.markLanded': 'write',
+  // [p4] §43.15. The band's one read writes nothing.
+  'motivation.get': 'read',
+  // [p4] §43.15. It records a presentation the user saw in the index; never auto-replayed.
+  'motivation.acknowledge': 'write',
 };
 
 export function isNonIdempotent(name: CommandName): boolean {

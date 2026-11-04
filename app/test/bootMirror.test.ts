@@ -31,6 +31,7 @@ const settings: Settings = {
   healthChecks: [],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 };
 
 const stored: BootFile = {

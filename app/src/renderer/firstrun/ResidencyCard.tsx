@@ -44,6 +44,7 @@ export function residencySettingsArgs(answer: ResidencyAnswer): SettingsSetArgs 
       healthChecks: null,
       focusTargetMinutes: null,
       rhythmTarget: null,
+      motivationShown: null,
     },
   };
 }

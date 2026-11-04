@@ -27,6 +27,7 @@ const settings = (installRootId: RootId | null): Settings => ({
   healthChecks: [],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
   logLevel: 'info',
   installRootId,
 });

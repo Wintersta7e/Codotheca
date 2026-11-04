@@ -129,7 +129,12 @@ pub enum Route {
 /// with the module that answers it — which is this constant's own rule. **§31.6's
 /// `projects.setCheckNa` passed through it the same way**, in a parallel lane, and left in the
 /// change that gave it a handler. Two commands, one rule, neither an exception to it.
-pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
+///
+/// [p4] §43.15's two arrive here with the schema and leave with the handlers that answer them.
+pub const UNOWNED_COMMANDS: [(&str, &str); 2] = [
+    ("motivation.get", "§43.3 motivation handlers"),
+    ("motivation.acknowledge", "§43.3 motivation handlers"),
+];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -252,6 +257,11 @@ pub const fn route(command: CommandName) -> Route {
 
         // [p4] §40.10's two, under the index guard: neither reaches a network or a file.
         CommandName::BadgesList | CommandName::BadgesMarkLanded => Route::Badges,
+
+        // [p4] §43.15's two: declared with the schema, refused by name until their handler lands.
+        CommandName::MotivationGet | CommandName::MotivationAcknowledge => {
+            Route::NoOwner("§43.3 motivation handlers")
+        }
     }
 }
 
@@ -332,14 +342,15 @@ mod tests {
         // and it is raised by each plan's own delta read from the branch base — never to a
         // running total a lane cannot know after the merges ahead of it.
         // [p4] §40.10 raises it by two: badges.list and badges.markLanded.
+        // [p4] §43.15 raises it by two: motivation.get and motivation.acknowledge.
         assert_eq!(
             commands.len(),
-            64,
+            66,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
              remote.webUrl plus §25.8's three projects.readme* commands plus §24.9's three \
              install.* commands plus §21.13's sync.status plus §24.7's two locations.uninstall* \
              commands plus §33.8's health.weathering plus §31.6's projects.setCheckNa plus \
-             §40.10's two badges.* commands"
+             §40.10's two badges.* commands plus §43.15's two motivation.* commands"
         );
         let unnamed: Vec<&str> = commands
             .iter()

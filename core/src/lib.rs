@@ -40,6 +40,7 @@ pub mod jobs;
 pub mod launch;
 pub mod ledger;
 pub mod lifecycle;
+pub mod motivation;
 pub mod mount;
 pub mod paths;
 pub mod projects;

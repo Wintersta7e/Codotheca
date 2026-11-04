@@ -221,7 +221,7 @@
     "LogLevel": { "kind": "enum", "variants": ["error", "warn", "info", "debug", "trace"] },
     "Settings": {
       "kind": "struct",
-      "$comment": "[p4] §39.12: focusTargetMinutes is 30–1380 and reads 45 when unset; rhythmTarget is 1–7 and null before the first settlement and before any choice",
+      "$comment": "[p4] §39.12: focusTargetMinutes is 30–1380 and reads 45 when unset; rhythmTarget is 1–7 and null before the first settlement and before any choice. §43.11: motivationShown is quiet mode's switch, true when unset and never asked",
       "fields": {
         "effectsTier": "EffectsTier",
         "reducedMotionOverride": "bool",
@@ -233,7 +233,8 @@
         "contentScanEnabled": "bool",
         "healthChecks": "[HealthCheckSwitch]",
         "focusTargetMinutes": "u32",
-        "rhythmTarget": "u32?"
+        "rhythmTarget": "u32?",
+        "motivationShown": "bool"
       }
     },
     "SettingsPatch": {
@@ -250,7 +251,8 @@
         "contentScanEnabled": "bool?",
         "healthChecks": "[HealthCheckSwitch]?",
         "focusTargetMinutes": "u32?",
-        "rhythmTarget": "u32?"
+        "rhythmTarget": "u32?",
+        "motivationShown": "bool?"
       }
     },
 
@@ -1776,6 +1778,59 @@
       "kind": "struct",
       "$comment": "[p4] §40.10: every award, by earnedOn then the landing order; due is the one award to land today, if any; basis is the reveal's, so the surface draws not computed from the same read",
       "fields": { "awards": "[BadgeAward]", "due": "BadgeKind?", "basis": "RevealBasis" }
+    },
+    "MotivationState": {
+      "kind": "struct",
+      "$comment": "[p4] §43.3, §43.15: the band's one read and the payload of motivation/changed. Every field but shown is null under quiet mode; xpBar is the one figure derived here, null when level carries no figures or they are floored",
+      "fields": {
+        "shown": "bool",
+        "level": "LevelReading?",
+        "rings": "RingsState?",
+        "xpBar": "f64?",
+        "pendingLine": "MotivationLine?",
+        "terms": "[XpTermTotal]?"
+      }
+    },
+    "MotivationLine": {
+      "kind": "struct",
+      "$comment": "[p4] §43.4: the one persistent line, waiting until it is clicked. level is set iff a level form; award iff badge",
+      "fields": {
+        "form": "MotivationLineForm",
+        "level": "u32?",
+        "reason": "MotivationReason?",
+        "award": "BadgeAward?"
+      }
+    },
+    "MotivationLineForm": {
+      "kind": "enum",
+      "$comment": "[p4] §43.4: arrival is a level never yet shown, rise a level above the one last shown, return a rise that was pending when quiet mode ended, badge §40's due award",
+      "variants": ["arrival", "rise", "return", "badge"]
+    },
+    "MotivationReason": {
+      "kind": "struct",
+      "$comment": "[p4] §43.4: why the level moved. term, projectName and on are set iff transitions is 1; on is a local YYYY-MM-DD",
+      "fields": {
+        "transitions": "u32",
+        "term": "XpTerm?",
+        "projectName": "String?",
+        "on": "String?"
+      }
+    },
+    "MotivationAck": {
+      "kind": "enum",
+      "$comment": "[p4] §43.15's MotivationEvent, renamed because the generator owns MotivationEvent as the motivation topic's event enum: the five acknowledgements motivation.acknowledge records. badgeLineClicked exists because a badge line lands on paint and waits for its own click",
+      "variants": [
+        "bandShown",
+        "revealLevelShown",
+        "levelLineClicked",
+        "firstRunEnded",
+        "badgeLineClicked"
+      ]
+    },
+    "XpTermTotal": {
+      "kind": "struct",
+      "$comment": "[p4] §43.13: one term's share of the XP total; term is §38's enumeration, xp is i64 because the schema has no u64",
+      "fields": { "term": "XpTerm", "xp": "i64" }
     }
   },
   "commands": [
@@ -2105,6 +2160,19 @@
       "returns": "Empty",
       "idempotent": true,
       "$comment": "[p4] §40.8. Write-once; writes only the index; an unawarded kind is PROTOCOL."
+    },
+    {
+      "name": "motivation.get",
+      "args": {},
+      "returns": "MotivationState",
+      "$comment": "[p4] §43.15. The band's one read; unprivileged, writes nothing."
+    },
+    {
+      "name": "motivation.acknowledge",
+      "args": { "event": "MotivationAck", "level": "u32?" },
+      "returns": "MotivationState",
+      "idempotent": true,
+      "$comment": "[p4] §43.15. Records a presentation the user saw; writes only the index, and a repeat changes nothing."
     }
   ],
   "topics": {
@@ -2157,6 +2225,10 @@
       "notice": "SyncNotice",
       "snapshot": "SyncStatus",
       "advisory_alert": "AdvisoryAlert"
+    },
+    "motivation": {
+      "changed": "MotivationState",
+      "snapshot": "MotivationState"
     }
   }
 }

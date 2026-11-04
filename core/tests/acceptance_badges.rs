@@ -2121,7 +2121,13 @@ fn ac_p4_40_5_an_award_emits_no_event_but_motivation_changed() {
                 .into_iter()
                 .filter(|t| t.starts_with("Badge"))
                 .collect();
-            if format!("{topic}/{event}") != "motivation/changed" {
+            // §43.15: `motivation/snapshot` is not a second announcement. It answers a
+            // subscription or an overflow with `motivation.get`'s own state, the payload
+            // `motivation/changed` carries, and no award fires it.
+            if !matches!(
+                format!("{topic}/{event}").as_str(),
+                "motivation/changed" | "motivation/snapshot"
+            ) {
                 assert!(badge.is_empty(), "{topic}/{event} carries {badge:?}");
             }
         }

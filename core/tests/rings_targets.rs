@@ -187,6 +187,7 @@ fn a_direct_write_out_of_range_rolls_back() {
         health_checks: None,
         focus_target_minutes: Some(29),
         rhythm_target: None,
+        motivation_shown: None,
     };
     let err = settings::write(index.conn(), &patch, NOW).expect_err("29 minutes is refused");
     eprintln!("write(29) -> {err}");

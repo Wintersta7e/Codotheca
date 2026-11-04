@@ -34,6 +34,7 @@ const settings: Settings = {
   healthChecks: [],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 };
 
 const answers = (name: CommandName): unknown => {
@@ -153,6 +154,7 @@ describe('the settings drawer', () => {
       healthChecks: null,
       focusTargetMinutes: null,
       rhythmTarget: null,
+      motivationShown: null,
     });
     expect(toSettingsPatch({ effectsTier: 'off' }).effectsTier).toBe('off');
   });

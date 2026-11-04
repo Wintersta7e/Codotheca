@@ -75,6 +75,7 @@ const settings: Settings = {
   healthChecks: [],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 };
 
 // §8.1's reference tail renders as text rows outside the virtualizer's window, so it is the row

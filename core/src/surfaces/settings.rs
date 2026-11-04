@@ -69,6 +69,8 @@ pub const DEFAULTS: Settings = Settings {
     // choice — `None`, never a default the week would be judged against.
     focus_target_minutes: FOCUS_TARGET_DEFAULT_MINUTES,
     rhythm_target: None,
+    // §43.11: the motivation layer is shown until the user turns it off; nothing asks.
+    motivation_shown: true,
 };
 
 /// # Errors
@@ -149,6 +151,7 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings, IndexError> {
         health_checks: crate::health::switches::read_switches(conn)?,
         focus_target_minutes: targets::focus_target_minutes(conn)?,
         rhythm_target: targets::rhythm_target(conn)?.map(|(target, _basis)| target),
+        motivation_shown: crate::motivation::keys::motivation_shown(conn)?,
     })
 }
 
@@ -213,6 +216,9 @@ pub fn write(
         if let Some(v) = patch.rhythm_target {
             // §39.8: basis `chosen`, so the first settlement keeps it rather than deriving one.
             targets::choose_rhythm_target(&tx, v)?;
+        }
+        if let Some(v) = patch.motivation_shown {
+            put(&tx, crate::motivation::keys::KEY_MOTIVATION_SHOWN, bit(v))?;
         }
         if let Some(v) = patch.content_scan_enabled {
             put(&tx, KEY_CONTENT_SCAN_ENABLED, bit(v))?;

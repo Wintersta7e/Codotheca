@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 61 | 204 |
-| deferred | 182 | 394 |
+| automated | 61 | 205 |
+| deferred | 182 | 393 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -479,7 +479,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-42-23 | deferred | Profile | `AC-P4-42-23` deferred, plan p4-42 — `AC-P4-42-23`<br>`AC-P4-42-23-week` deferred, plan p4-42 — `acceptance_recaps::ac_p4_42_23_the_week_view_row_never_sums`<br>`AC-P4-42-23-motion` deferred, plan p4-42 — `AC-P4-42-23-motion` |
 | P4-42-24 | deferred | the residency ask | `AC-P4-42-24` deferred, plan p4-42 — `AC-P4-42-24`<br>`AC-P4-42-24-dayone` deferred, plan p4-42 — `acceptance_recaps::ac_p4_42_24_the_answer_writes_nothing_day_one_reads` |
 | P4-42-25 | manual | observed, not assumed | `AC-P4-42-25` deferred, plan p4-42 — `AC-P4-42-25`<br>`AC-P4-42-25-nsis` manual, gate `PACKAGED-NOTIFICATION`<br>`AC-P4-42-25-portable` manual, gate `PACKAGED-NOTIFICATION`<br>`AC-P4-42-25-appimage` manual, gate `PACKAGED-NOTIFICATION`<br>`AC-P4-42-25-linuxpkg` manual, gate `PACKAGED-NOTIFICATION` |
-| P4-43-1 | deferred | One read, pushed | `AC-P4-43-1` deferred, plan p4-43 — `protocol/test/surface.test.mjs::AC-P4-43-1 the motivation surface is one read, one topic and no xp.level or rings.get`<br>`AC-P4-43-1-event` deferred, plan p4-43 — `motivation_publish::ac_p4_43_1_a_real_debt_day_produces_one_event`<br>`AC-P4-43-1-polling` deferred, plan p4-43 — `AC-P4-43-1 no polling read`<br>`AC-P4-43-1-emitter` deferred, plan p4-43 — `motivation_gates::ac_p4_43_1_one_emitter` |
+| P4-43-1 | deferred | One read, pushed | `AC-P4-43-1` automated, runs now — `protocol/test/surface.test.mjs::AC-P4-43-1 the motivation surface is one read, one topic and no xp.level or rings.get`<br>`AC-P4-43-1-event` deferred, plan p4-43 — `motivation_publish::ac_p4_43_1_a_real_debt_day_produces_one_event`<br>`AC-P4-43-1-polling` deferred, plan p4-43 — `AC-P4-43-1 no polling read`<br>`AC-P4-43-1-emitter` deferred, plan p4-43 — `motivation_gates::ac_p4_43_1_one_emitter` |
 | P4-43-2 | deferred | Unknown is never zero | `AC-P4-43-2` deferred, plan p4-43 — `AC-P4-43-2`<br>`AC-P4-43-2-index` deferred, plan p4-43 — `acceptance_motivation::ac_p4_43_2_index` |
 | P4-43-3 | deferred | No overlay, no toast | `AC-P4-43-3` deferred, plan p4-43 — `AC-P4-43-3`<br>`AC-P4-43-3-overlay` deferred, plan p4-42 — `AC-P4-42-18` |
 | P4-43-4 | deferred | Nothing outside the window | `AC-P4-43-4` deferred, plan p4-43 — `AC-P4-43-4 no MotivationLine identifier in the shell`<br>`AC-P4-43-4-api` deferred, plan p4-42 — `AC-P4-42-17` |

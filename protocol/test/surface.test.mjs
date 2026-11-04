@@ -332,7 +332,9 @@ test('the whole §2.4 table is present, plus §9 focus, roots.list, §20.8, §25
   // [p3] Two commands landed in one wave: §33.8's `health.weathering` and §31.6's
   // `projects.setCheckNa`. Each lane called its own "the 61st"; after the merge neither is.
   // [p4] §40.10 raises it by two off this lane's base: `badges.list` and `badges.markLanded`.
-  assert.equal(names.length, 64, `expected 64 commands, found ${names.length}`);
+  // [p4] §43.15 raises it by two more off its own base: `motivation.get` and
+  // `motivation.acknowledge`.
+  assert.equal(names.length, 66, `expected 66 commands, found ${names.length}`);
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -465,6 +467,9 @@ const TOPICS = {
     'snapshot',
     'advisory_alert',
   ],
+  // [p4] §43.15 adds `motivation`: the band's one pushed event, and a `snapshot` an overflow
+  // resyncs to, which is `motivation.get`'s own answer.
+  motivation: ['changed', 'snapshot'],
 };
 
 test('every topic and event of §2.4 is declared, with a payload type', () => {
@@ -1148,18 +1153,25 @@ test('the four totals agree with the phase-2 delta table', () => {
   // not have had. Each lane correctly stated its own +1 off the base it read; the merge sums
   // them, and the sum is counted off the merged schema rather than taken from either side.
   // [p4] §40.10 raises it by two off this lane's base: `badges.list` and `badges.markLanded`.
+  // [p4] §43.15 raises it by two: `motivation.get` and `motivation.acknowledge`.
   assert.equal(
     commands,
-    64,
-    `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 + §33's 1 + §31's 1 + §40's 2 = 64, found ${commands}`,
+    66,
+    `commands: 42 + 8 + 1 + 0 + 0 + 5 + 4 + §33's 1 + §31's 1 + §40's 2 + §43's 2 = 66, found ${commands}`,
   );
-  assert.equal(topics, 7, `topics: 4 + accounts + sync + install = 7, found ${topics}`);
+  // [p4] §43.15 raises it by one: `motivation`.
+  assert.equal(
+    topics,
+    8,
+    `topics: 4 + accounts + sync + install + motivation = 8, found ${topics}`,
+  );
   // [p3] §32.12 raises this by exactly one from the branch base: `sync/advisory_alert`. §34.4
-  // raises it by its own one, `projects/health_delta`, off the merged base.
+  // raises it by its own one, `projects/health_delta`, off the merged base. [p4] §43.15 raises
+  // it by two: `motivation/changed` and `motivation/snapshot`, the answer an overflow resyncs to.
   assert.equal(
     events,
-    36,
-    `events: 19 + 3 + 6 + 0 + 0 + 5 + 1 + §32's 1 + §34's 1 = 36, found ${events}`,
+    38,
+    `events: 19 + 3 + 6 + 0 + 0 + 5 + 1 + §32's 1 + §34's 1 + §43's 2 = 38, found ${events}`,
   );
   assert.equal(
     schema.errors.length,
@@ -1253,11 +1265,15 @@ test('the four totals agree with the phase-2 delta table', () => {
    *
    * [p4] §40.10 moves it by **+5**: `BadgeKind`, `BadgeEvidenceProject`, `BadgeEvidence`,
    * `BadgeAward` and `BadgesListed`. The two badge commands land with their handler, later.
+   *
+   * [p4] §43.15 moves it by **+6**: `MotivationState`, `MotivationLine`, `MotivationLineForm`,
+   * `MotivationReason`, `MotivationAck` and `XpTermTotal`. `XpTerm` is §38's and is not
+   * declared twice.
    */
   assert.equal(
     types,
-    221,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9 + §40's 5; found ${types}`,
+    227,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9 + §40's 5 + §43's 6; found ${types}`,
   );
 });
 
@@ -1329,6 +1345,85 @@ test('§39 declares RingsState and its eight parts', () => {
   assert.equal(schema.types.Settings.fields.rhythmTarget, 'u32?');
   assert.equal(schema.types.SettingsPatch.fields.focusTargetMinutes, 'u32?');
   assert.equal(schema.types.SettingsPatch.fields.rhythmTarget, 'u32?');
+});
+
+/**
+ * [p4] §43.15: the band has one read and one pushed topic, and no second door to the same
+ * figures. Asserted against the schema, never restated: a field added to `MotivationState` or a
+ * per-figure command fails here.
+ */
+test('AC-P4-43-1 the motivation surface is one read, one topic and no xp.level or rings.get', () => {
+  const byName = new Map(schema.commands.map((c) => [c.name, c]));
+  const get = byName.get('motivation.get');
+  assert.ok(get, 'motivation.get is not declared');
+  assert.deepEqual(get.args, {});
+  assert.equal(get.returns, 'MotivationState');
+  assert.ok(!get.privileged, 'motivation.get is not privileged');
+
+  const ack = byName.get('motivation.acknowledge');
+  assert.ok(ack, 'motivation.acknowledge is not declared');
+  assert.deepEqual(ack.args, { event: 'MotivationAck', level: 'u32?' });
+  assert.equal(ack.returns, 'MotivationState');
+  assert.equal(ack.idempotent, true);
+  assert.ok(!ack.privileged, 'motivation.acknowledge is not privileged');
+
+  assert.deepEqual(schema.topics.motivation, {
+    changed: 'MotivationState',
+    snapshot: 'MotivationState',
+  });
+
+  assert.ok(schema.types.MotivationState, 'MotivationState is not declared');
+  assert.deepEqual(Object.keys(schema.types.MotivationState.fields).sort(), [
+    'level',
+    'pendingLine',
+    'rings',
+    'shown',
+    'terms',
+    'xpBar',
+  ]);
+  assert.deepEqual(schema.types.MotivationState.fields, {
+    shown: 'bool',
+    level: 'LevelReading?',
+    rings: 'RingsState?',
+    xpBar: 'f64?',
+    pendingLine: 'MotivationLine?',
+    terms: '[XpTermTotal]?',
+  });
+  assert.deepEqual(schema.types.MotivationLine.fields, {
+    form: 'MotivationLineForm',
+    level: 'u32?',
+    reason: 'MotivationReason?',
+    award: 'BadgeAward?',
+  });
+  assert.deepEqual(schema.types.MotivationLineForm.variants, [
+    'arrival',
+    'rise',
+    'return',
+    'badge',
+  ]);
+  assert.deepEqual(schema.types.MotivationReason.fields, {
+    transitions: 'u32',
+    term: 'XpTerm?',
+    projectName: 'String?',
+    on: 'String?',
+  });
+  // §43.15's `MotivationEvent`: that name is the generator's, for the topic's event enum.
+  assert.deepEqual(schema.types.MotivationAck.variants, [
+    'bandShown',
+    'revealLevelShown',
+    'levelLineClicked',
+    'firstRunEnded',
+    'badgeLineClicked',
+  ]);
+  // §38's XP-term enumeration is referenced, never declared a second time.
+  assert.deepEqual(schema.types.XpTermTotal.fields, { term: 'XpTerm', xp: 'i64' });
+  assert.equal(schema.types.XpTermTotal.fields.xp, 'i64');
+
+  assert.equal(schema.types.Settings.fields.motivationShown, 'bool');
+  assert.equal(schema.types.SettingsPatch.fields.motivationShown, 'bool?');
+
+  assert.ok(!byName.has('xp.level'), 'a second read of the level exists');
+  assert.ok(!byName.has('rings.get'), 'a second read of the rings exists');
 });
 
 /**
@@ -1682,13 +1777,14 @@ test('§30: the health reading moves the type row alone', () => {
   // `projects.setCheckNa` — and neither is §30's. This assertion is §30's claim that IT moved
   // none, so it is raised to the merged figure rather than relaxed. The figure is absolute only
   // because this test's subject IS the totals.
-  // [p4] §40.10's two `badges.*` commands are not §30's either.
-  assert.equal(schema.commands.length, 64);
-  assert.equal(Object.keys(schema.topics).length, 7);
+  // [p4] §40.10's two `badges.*` commands are not §30's either, nor §43.15's two
+  // `motivation.*` commands, its topic or its two events.
+  assert.equal(schema.commands.length, 66);
+  assert.equal(Object.keys(schema.topics).length, 8);
   // [p3] §34.4's `projects/health_delta` raised the event row by ONE, and it is not §30's.
   assert.equal(
     Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0),
-    36,
+    38,
   );
   assert.equal(schema.errors.length, 14);
 });

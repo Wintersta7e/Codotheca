@@ -29,6 +29,7 @@ describe('the renderer call wrapper', () => {
       healthChecks: null,
       focusTargetMinutes: null,
       rhythmTarget: null,
+      motivationShown: null,
     };
     expect(await call('settings.set', { patch })).toEqual(settings);
     expect(request).toHaveBeenCalledWith('settings.set', { patch });

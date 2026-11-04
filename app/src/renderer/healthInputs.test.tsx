@@ -161,6 +161,7 @@ function mount(contentScanEnabled = true): FakeAppDeps {
     ],
     focusTargetMinutes: 45,
     rhythmTarget: null,
+    motivationShown: true,
   };
   // The shelf's reference tail is the one row jsdom mounts — the grid's virtualizer has a
   // zero-sized viewport — so it is the row clicked. The page draws its own `projects.get`.

@@ -93,6 +93,7 @@ test('the call names autostart under the key the command takes, and disturbs not
       healthChecks: null,
       focusTargetMinutes: null,
       rhythmTarget: null,
+      motivationShown: null,
     },
   });
 });

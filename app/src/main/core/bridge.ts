@@ -116,7 +116,7 @@ const CARRIES_POSITION: {
   readonly [T in SnapshotTopic]: 'throughSeq' extends keyof EventPayloads[`${T}/snapshot`]
     ? true
     : false;
-} = { core: true, projects: true, install: false, sync: false };
+} = { core: true, projects: true, install: false, sync: false, motivation: false };
 
 function declaresSnapshot(topic: Topic): topic is SnapshotTopic {
   return Object.hasOwn(CARRIES_POSITION, topic);

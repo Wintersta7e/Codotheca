@@ -45,6 +45,7 @@ function settingsWith(over: Partial<Settings> = {}): Settings {
     healthChecks: everyCheck(),
     focusTargetMinutes: 45,
     rhythmTarget: null,
+    motivationShown: true,
     ...over,
   };
 }

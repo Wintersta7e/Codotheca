@@ -139,6 +139,8 @@ export function emitRust(schema) {
     "// `empty_structs_with_brackets`: an argument-less command's `Args` stays braced, because",
   );
   L.push('// serde_json reads a unit struct only from `null` and the wire sends `{}`.');
+  L.push('// `match_same_arms`: the event validator keeps one arm per declared event, and a topic');
+  L.push('// whose delta and snapshot carry the same state declares two events of one type.');
   // Laid out the way rustfmt lays it out: this file is checked by `cargo fmt --check` like any
   // other, so the emitter has to produce canonical text rather than merely valid text.
   L.push(`#![allow(
@@ -149,6 +151,7 @@ export function emitRust(schema) {
     clippy::struct_excessive_bools,
     clippy::struct_field_names,
     clippy::doc_markdown,
+    clippy::match_same_arms,
     clippy::module_name_repetitions
 )]
 `);

@@ -75,7 +75,17 @@ import { startAdvisoryNotices } from './advisoryNotice';
 //
 // This line is why: two lanes added one topic each here, and a merge that took either side alone
 // would compile, pass every suite, and ship a dead surface. The gate below is the bar for it.
-const TOPICS: Topic[] = ['scan', 'projects', 'session', 'core', 'accounts', 'install', 'sync'];
+// [p4] §43.15's `motivation` follows the same rule.
+const TOPICS: Topic[] = [
+  'scan',
+  'projects',
+  'session',
+  'core',
+  'accounts',
+  'install',
+  'sync',
+  'motivation',
+];
 
 /**
  * The commands the core answers, and therefore the only names the bridge will accept.

@@ -14,6 +14,7 @@ const answer = (residentShortcut: string | null): Settings => ({
   healthChecks: [],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 });
 
 describe('onStoredSettings', () => {

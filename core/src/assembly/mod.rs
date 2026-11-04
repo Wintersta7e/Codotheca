@@ -727,7 +727,11 @@ impl CoreHandler {
             // this is `None` meaning *not computed*, and deliberately not `{"runs": []}` — an
             // empty list would say *nothing is installing*, which a core that records nothing
             // cannot know. Task 13 gives it an arm of its own.
-            Topic::Scan | Topic::Session | Topic::Accounts => None,
+            //
+            // [p4] `motivation` shares it too, and only until §43.15's `motivation.snapshot` has
+            // `motivation.get`'s handler to answer with: `None` is *not computed*, never an empty
+            // state.
+            Topic::Scan | Topic::Session | Topic::Accounts | Topic::Motivation => None,
             // [p2] §24.9's `install.snapshot` (R54). `None` while nothing is known means *not
             // computed*; an empty `InstallState` would say *nothing is installing*, which a core
             // that has recorded nothing cannot claim.

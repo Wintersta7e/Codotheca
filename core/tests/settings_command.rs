@@ -24,6 +24,7 @@ const fn empty_patch() -> SettingsPatch {
         health_checks: None,
         focus_target_minutes: None,
         rhythm_target: None,
+        motivation_shown: None,
     }
 }
 
@@ -41,6 +42,13 @@ fn a_fresh_index_answers_with_the_stated_defaults() {
     );
     assert!(s.roast_enabled, "§11.3: SET_DEFAULT roasts: 1");
     assert_eq!(s.log_level, LogLevel::Info);
+    assert!(
+        s.motivation_shown,
+        "§43.11: shown until the user turns it off"
+    );
+    // A patch that does not name it leaves it alone.
+    let after = settings::write(index.conn(), &empty_patch(), 1).expect("write");
+    assert!(after.motivation_shown);
 }
 
 #[test]
@@ -195,12 +203,17 @@ fn every_setting_round_trips_through_the_stored_form() {
             health_checks: None,
             focus_target_minutes: Some(90),
             rhythm_target: Some(5),
+            motivation_shown: Some(false),
         },
         NOW,
     )
     .expect("write");
     assert_eq!(written, settings::read(index.conn()).expect("read"));
     assert_eq!(written.focus_target_minutes, 90);
+    assert!(
+        !written.motivation_shown,
+        "§43.11: quiet mode is the stored choice"
+    );
     assert_eq!(written.rhythm_target, Some(5));
     assert_eq!(written.effects_tier, EffectsTier::Reduced);
     assert_eq!(written.log_level, LogLevel::Debug);

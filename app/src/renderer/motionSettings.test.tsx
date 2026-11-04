@@ -77,6 +77,7 @@ function mount(launch: Launch): FakeAppDeps {
     healthChecks: [],
     focusTargetMinutes: 45,
     rhythmTarget: null,
+    motivationShown: true,
   };
   const fake = fakeAppDeps(
     {

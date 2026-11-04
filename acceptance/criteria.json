@@ -10195,7 +10195,7 @@
           "runner": "cargo",
           "owner": "p4-40",
           "test": "acceptance_badges::ac_p4_40_5_an_award_emits_no_event_but_motivation_changed",
-          "assert": "An award written through each production caller emits no protocol event but motivation/changed (R151): each twin pair's event sequences are equal once motivation/changed is removed; no file under core/src/badges/ emits; the schema declares no badges topic and no event but motivation/changed reaches a Badge type. It prints the count of events and files scanned and fails at zero.",
+          "assert": "An award written through each production caller emits no protocol event but motivation/changed (R151): each twin pair's event sequences are equal once motivation/changed is removed; no file under core/src/badges/ emits; the schema declares no badges topic and no event but motivation/changed, and its resync answer motivation/snapshot, reaches a Badge type. It prints the count of events and files scanned and fails at zero.",
           "scanning": true
         },
         {
@@ -11909,7 +11909,7 @@
       "checks": [
         {
           "id": "AC-P4-43-1",
-          "status": "deferred",
+          "status": "automated",
           "runner": "node",
           "owner": "p4-43",
           "test": "protocol/test/surface.test.mjs::AC-P4-43-1 the motivation surface is one read, one topic and no xp.level or rings.get",

@@ -19,6 +19,7 @@ const settings: Settings = {
   healthChecks: [],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 };
 
 const answers = (name: CommandName): unknown => {

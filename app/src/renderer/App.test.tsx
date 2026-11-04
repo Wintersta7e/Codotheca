@@ -75,6 +75,7 @@ const settings: Settings = {
   healthChecks: [],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 };
 
 function page(rows: readonly ProjectRow[]): ProjectPage {

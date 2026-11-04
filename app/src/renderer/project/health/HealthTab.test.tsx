@@ -32,6 +32,7 @@ function settings(over: Partial<Settings> = {}): Settings {
     ],
     focusTargetMinutes: 45,
     rhythmTarget: null,
+    motivationShown: true,
     ...over,
   };
 }

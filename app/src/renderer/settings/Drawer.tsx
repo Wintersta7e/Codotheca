@@ -72,6 +72,7 @@ export function toSettingsPatch(patch: Partial<Settings>): SettingsPatch {
     healthChecks: patch.healthChecks ?? null,
     focusTargetMinutes: patch.focusTargetMinutes ?? null,
     rhythmTarget: patch.rhythmTarget ?? null,
+    motivationShown: patch.motivationShown ?? null,
   };
 }
 

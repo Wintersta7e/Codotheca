@@ -68,6 +68,7 @@ const settings: Settings = {
   healthChecks: [],
   focusTargetMinutes: 45,
   rhythmTarget: null,
+  motivationShown: true,
 };
 
 function address(projects: number, commits: number): IdentityRow {
