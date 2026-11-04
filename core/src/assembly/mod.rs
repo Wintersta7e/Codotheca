@@ -142,6 +142,8 @@ pub struct CoreHandler {
     rhythm_raise_mark: i64,
     /// §43.10's first-run stamp, idle until the turn's answer or start-up arms it.
     first_run: crate::motivation::first_run::FirstRunStamp,
+    /// §43.3's one emitter of `motivation/changed`, polled at the top of every pump.
+    motivation: crate::motivation::publish::MotivationPublisher,
 }
 
 impl std::fmt::Debug for CoreHandler {
@@ -186,6 +188,7 @@ impl CoreHandler {
             ticks: 0,
             rhythm_raise_mark: 0,
             first_run: crate::motivation::first_run::FirstRunStamp::default(),
+            motivation: crate::motivation::publish::MotivationPublisher::new(),
         }
     }
 
@@ -866,6 +869,21 @@ impl CoreHandler {
         }
     }
 
+    /// §43.3: pushes `motivation/changed` when the index or the local date moved and the payload
+    /// with it. Under the index guard for the whole poll, so no write lands between the
+    /// computation and the change counter read after it.
+    fn poll_motivation(&mut self) {
+        let now = self.clock.now_unix();
+        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let polled = self
+            .motivation
+            .poll(&guard, now, self.zone.as_ref(), self.events.as_ref());
+        drop(guard);
+        if let Err(e) = polled {
+            self.emit_tick_error("motivation push", &e.to_string());
+        }
+    }
+
     /// A tick step that failed is a `core/error` event, never a panic and never a silent skip.
     /// The message is diagnostic (§2.4) and is not rendered.
     fn emit_tick_error(&self, step: &str, message: &str) {
@@ -1034,6 +1052,9 @@ impl CommandHandler for CoreHandler {
         // 0. §43.10's first-run stamp, before the due gate: a run's end is seen on the next
         //    loop iteration, not the next tick.
         self.poll_first_run();
+        // 0b. §43.3's push, before the due gate: after every request and at least every
+        //     `PARENT_POLL`, a burst of writes is one computation and an unchanged payload none.
+        self.poll_motivation();
         let mono = self.clock.monotonic_ms();
         let due = self.ticks == 0
             || mono.saturating_sub(self.last_tick_ms) >= DEFAULT_TICK_SECS.saturating_mul(1_000);

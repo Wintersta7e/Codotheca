@@ -98,7 +98,8 @@ pub fn handle_set(
     // §39.13: an out-of-range target is the same refusal as an invalid chord, checked before
     // anything is written; `write` re-checks inside its transaction.
     targets::check_patch(&args.patch).map_err(|e| CommandFailure::protocol(e.to_string()))?;
-    write(ctx.index.conn(), &args.patch).map_err(|e| CommandFailure::internal(e.to_string()))
+    write(ctx.index.conn(), &args.patch, ctx.now)
+        .map_err(|e| CommandFailure::internal(e.to_string()))
 }
 
 /// One `app_meta` value, `None` when the key is absent.
@@ -158,11 +159,16 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings, IndexError> {
 ///
 /// [p4] §43.10: an `autostart` patch is a setting and nothing more — it does not end first run.
 /// The stamp's writers are the turn's answer, the end of a scan run and the migration.
+/// `now` dates the level reading a `motivationShown` patch that ends quiet mode takes.
 ///
 /// # Errors
 /// Fails when the index cannot be written, or when a target lies outside its range — then the
 /// whole patch is rolled back.
-pub fn write(conn: &rusqlite::Connection, patch: &SettingsPatch) -> Result<Settings, IndexError> {
+pub fn write(
+    conn: &rusqlite::Connection,
+    patch: &SettingsPatch,
+    now: i64,
+) -> Result<Settings, IndexError> {
     {
         let _guard = TxGuard::enter();
         let tx = conn.unchecked_transaction()?;
@@ -200,7 +206,10 @@ pub fn write(conn: &rusqlite::Connection, patch: &SettingsPatch) -> Result<Setti
             targets::choose_rhythm_target(&tx, v)?;
         }
         if let Some(v) = patch.motivation_shown {
+            let was = crate::motivation::keys::motivation_shown(&tx)?;
             put(&tx, crate::motivation::keys::KEY_MOTIVATION_SHOWN, bit(v))?;
+            // §43.11: leaving quiet records a rise that waited, in this transaction.
+            crate::motivation::quiet::on_shown_changed(&tx, was, v, now)?;
         }
         if let Some(v) = patch.content_scan_enabled {
             put(&tx, KEY_CONTENT_SCAN_ENABLED, bit(v))?;

@@ -11,6 +11,9 @@ use codotheca_core::index::Index;
 use codotheca_core::protocol::{EffectsTier, LogLevel, RootId, SettingsPatch};
 use codotheca_core::surfaces::settings;
 
+/// The instant every write is dated by; no write here ends quiet mode, so none reads it.
+const NOW: i64 = 1_800_000_000;
+
 const fn empty_patch() -> SettingsPatch {
     SettingsPatch {
         effects_tier: None,
@@ -47,7 +50,7 @@ fn a_fresh_index_answers_with_the_stated_defaults() {
         "§43.11: shown until the user turns it off"
     );
     // A patch that does not name it leaves it alone.
-    let after = settings::write(index.conn(), &empty_patch()).expect("write");
+    let after = settings::write(index.conn(), &empty_patch(), NOW).expect("write");
     assert!(after.motivation_shown);
 }
 
@@ -61,6 +64,7 @@ fn a_null_field_leaves_its_setting_alone() {
             roast_enabled: Some(false),
             ..empty_patch()
         },
+        NOW,
     )
     .expect("first write");
     let after = settings::write(
@@ -69,6 +73,7 @@ fn a_null_field_leaves_its_setting_alone() {
             autostart: Some(true),
             ..empty_patch()
         },
+        NOW,
     )
     .expect("second write");
     assert!(
@@ -88,6 +93,7 @@ fn clearing_the_resident_shortcut_is_expressible_and_is_not_the_same_as_leaving_
             resident_shortcut: Some("Control+Alt+K".into()),
             ..empty_patch()
         },
+        NOW,
     )
     .expect("bind");
     let untouched = settings::write(
@@ -96,6 +102,7 @@ fn clearing_the_resident_shortcut_is_expressible_and_is_not_the_same_as_leaving_
             autostart: Some(true),
             ..empty_patch()
         },
+        NOW,
     )
     .expect("leave it alone");
     assert_eq!(
@@ -109,6 +116,7 @@ fn clearing_the_resident_shortcut_is_expressible_and_is_not_the_same_as_leaving_
             resident_shortcut: Some(String::new()),
             ..empty_patch()
         },
+        NOW,
     )
     .expect("clear");
     assert_eq!(
@@ -200,6 +208,7 @@ fn every_setting_round_trips_through_the_stored_form() {
             rhythm_target: Some(5),
             motivation_shown: Some(false),
         },
+        NOW,
     )
     .expect("write");
     assert_eq!(written, settings::read(index.conn()).expect("read"));
@@ -232,6 +241,7 @@ fn an_autostart_patch_leaves_the_first_run_stamp_null() {
                 autostart: Some(on),
                 ..empty_patch()
             },
+            NOW,
         )
         .expect("write");
         assert_eq!(after.autostart, on);

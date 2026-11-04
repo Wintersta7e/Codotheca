@@ -11917,7 +11917,7 @@
         },
         {
           "id": "AC-P4-43-1-event",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_publish::ac_p4_43_1_a_real_debt_day_produces_one_event",
@@ -12391,7 +12391,7 @@
       "checks": [
         {
           "id": "AC-P4-43-17",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_publish::ac_p4_43_17_quiet_strips_at_the_source",
@@ -12432,7 +12432,7 @@
       "checks": [
         {
           "id": "AC-P4-43-18",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_publish::ac_p4_43_18_leaving_quiet",

@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 61 | 217 |
-| deferred | 182 | 387 |
+| automated | 62 | 220 |
+| deferred | 181 | 384 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -479,7 +479,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-42-23 | deferred | Profile | `AC-P4-42-23` deferred, plan p4-42 — `AC-P4-42-23`<br>`AC-P4-42-23-week` deferred, plan p4-42 — `acceptance_recaps::ac_p4_42_23_the_week_view_row_never_sums`<br>`AC-P4-42-23-motion` deferred, plan p4-42 — `AC-P4-42-23-motion` |
 | P4-42-24 | deferred | the residency ask | `AC-P4-42-24` deferred, plan p4-42 — `AC-P4-42-24`<br>`AC-P4-42-24-dayone` deferred, plan p4-42 — `acceptance_recaps::ac_p4_42_24_the_answer_writes_nothing_day_one_reads` |
 | P4-42-25 | manual | observed, not assumed | `AC-P4-42-25` deferred, plan p4-42 — `AC-P4-42-25`<br>`AC-P4-42-25-nsis` manual, gate `PACKAGED-NOTIFICATION`<br>`AC-P4-42-25-portable` manual, gate `PACKAGED-NOTIFICATION`<br>`AC-P4-42-25-appimage` manual, gate `PACKAGED-NOTIFICATION`<br>`AC-P4-42-25-linuxpkg` manual, gate `PACKAGED-NOTIFICATION` |
-| P4-43-1 | deferred | One read, pushed | `AC-P4-43-1` automated, runs now — `protocol/test/surface.test.mjs::AC-P4-43-1 the motivation surface is one read, one topic and no xp.level or rings.get`<br>`AC-P4-43-1-event` deferred, plan p4-43 — `motivation_publish::ac_p4_43_1_a_real_debt_day_produces_one_event`<br>`AC-P4-43-1-polling` deferred, plan p4-43 — `AC-P4-43-1 no polling read`<br>`AC-P4-43-1-emitter` deferred, plan p4-43 — `motivation_gates::ac_p4_43_1_one_emitter` |
+| P4-43-1 | deferred | One read, pushed | `AC-P4-43-1` automated, runs now — `protocol/test/surface.test.mjs::AC-P4-43-1 the motivation surface is one read, one topic and no xp.level or rings.get`<br>`AC-P4-43-1-event` automated, runs now — `motivation_publish::ac_p4_43_1_a_real_debt_day_produces_one_event`<br>`AC-P4-43-1-polling` deferred, plan p4-43 — `AC-P4-43-1 no polling read`<br>`AC-P4-43-1-emitter` deferred, plan p4-43 — `motivation_gates::ac_p4_43_1_one_emitter` |
 | P4-43-2 | deferred | Unknown is never zero | `AC-P4-43-2` deferred, plan p4-43 — `AC-P4-43-2`<br>`AC-P4-43-2-index` deferred, plan p4-43 — `acceptance_motivation::ac_p4_43_2_index` |
 | P4-43-3 | deferred | No overlay, no toast | `AC-P4-43-3` deferred, plan p4-43 — `AC-P4-43-3`<br>`AC-P4-43-3-overlay` deferred, plan p4-42 — `AC-P4-42-18` |
 | P4-43-4 | deferred | Nothing outside the window | `AC-P4-43-4` deferred, plan p4-43 — `AC-P4-43-4 no MotivationLine identifier in the shell`<br>`AC-P4-43-4-api` deferred, plan p4-42 — `AC-P4-42-17` |
@@ -495,8 +495,8 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-43-14 | deferred | Day one | `AC-P4-43-14` automated, runs now — `motivation_commands::ac_p4_43_14_day_one_is_written_once_by_the_presentation_only`<br>`AC-P4-43-14-window` deferred, plan p4-43 — `AC-P4-43-14 an unfocused or hidden window stamps nothing`<br>`AC-P4-43-14-writer` deferred, plan p4-43 — `motivation_gates::ac_p4_43_14_one_day_one_writer` |
 | P4-43-15 | deferred | `first_run_completed_at` | `AC-P4-43-15` automated, runs now — `motivation_migration::ac_p4_43_15_the_backfill_writes_the_latest_created_at_over_a_shelf`<br>`AC-P4-43-15-empty` automated, runs now — `motivation_migration::ac_p4_43_15_an_empty_index_is_left_for_path_two`<br>`AC-P4-43-15-skip-ahead` automated, runs now — `motivation_first_run::ac_p4_43_15_skip_ahead_stamps_at_the_walk_end_not_the_answer`<br>`AC-P4-43-15-autostart` automated, runs now — `motivation_first_run::ac_p4_43_15_an_autostart_patch_no_longer_stamps`<br>`AC-P4-43-15-restart` automated, runs now — `motivation_first_run::ac_p4_43_15_restart`<br>`AC-P4-43-15-turn` deferred, plan p4-43 — `AC-P4-43-15 the turn's answer ends first run` |
 | P4-43-16 | deferred | `DIG` before the root suggestions land | `AC-P4-43-16` deferred, plan p4-43 — `AC-P4-43-16 DIG before suggestions answer, or with nothing ticked or added, commits nothing` |
-| P4-43-17 | deferred | Quiet reach | `AC-P4-43-17` deferred, plan p4-43 — `motivation_publish::ac_p4_43_17_quiet_strips_at_the_source`<br>`AC-P4-43-17-literals` deferred, plan p4-43 — `AC-P4-43-17 the list's entries occur as literals in exactly one module`<br>`AC-P4-43-17-profile` deferred, plan p4-43 — `AC-P4-43-17-profile`<br>`AC-P4-43-17-app` deferred, plan p4-41 — `AC-P4-43-17-app` |
-| P4-43-18 | deferred | Leaving quiet | `AC-P4-43-18` deferred, plan p4-43 — `motivation_publish::ac_p4_43_18_leaving_quiet` |
+| P4-43-17 | deferred | Quiet reach | `AC-P4-43-17` automated, runs now — `motivation_publish::ac_p4_43_17_quiet_strips_at_the_source`<br>`AC-P4-43-17-literals` deferred, plan p4-43 — `AC-P4-43-17 the list's entries occur as literals in exactly one module`<br>`AC-P4-43-17-profile` deferred, plan p4-43 — `AC-P4-43-17-profile`<br>`AC-P4-43-17-app` deferred, plan p4-41 — `AC-P4-43-17-app` |
+| P4-43-18 | automated | Leaving quiet | `AC-P4-43-18` automated, runs now — `motivation_publish::ac_p4_43_18_leaving_quiet` |
 | P4-43-19 | deferred | The level gates nothing | `AC-P4-43-19` deferred, plan p4-43 — `motivation_gates::ac_p4_43_19_the_level_gates_nothing`<br>`AC-P4-43-19-ts` deferred, plan p4-43 — `AC-P4-43-19 the level gates nothing` |
 | P4-43-20 | deferred | Band contrast | `AC-P4-43-20` deferred, plan p4-43 — `AC-P4-43-20` |
 | P4-43-21 | deferred | No sound | `AC-P4-43-21` deferred, plan p4-43 — `AC-P4-43-21 no sound` |

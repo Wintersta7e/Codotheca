@@ -5,13 +5,16 @@
 //! band's one payload; `line` holds its queue and `reason` what a rise is owed to.
 //! `first_run` decides when the first-run stamp is written. `acknowledge` records what a
 //! presentation the user saw writes; `absorb` is what a rise the user did not cause writes
-//! instead. The two commands below answer §43.15.
+//! instead. `publish` pushes the payload when it changed; `quiet` is what leaving quiet mode
+//! writes. The two commands below answer §43.15.
 
 pub mod absorb;
 pub mod acknowledge;
 pub mod first_run;
 pub mod keys;
 pub mod line;
+pub mod publish;
+pub mod quiet;
 pub mod reason;
 pub mod state;
 
