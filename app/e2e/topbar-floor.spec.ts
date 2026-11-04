@@ -6,6 +6,8 @@ import * as path from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import { build } from 'esbuild';
 
+import type { MotivationState } from '../src/generated/protocol.js';
+import { RHYTHM_TARGET_MAX_DAYS, RHYTHM_TARGET_MIN_DAYS } from '../src/shared/ringTargets.js';
 import { TOP_BAR_FLOOR_PX, TOP_BAR_HEIGHT_PX } from '../src/renderer/shelf/TopBar.js';
 import { SHED_WIDTHS } from '../src/renderer/shelf/useShedLevel.js';
 import { SORT_LABELS } from '../src/renderer/shelf/viewState.js';
@@ -35,7 +37,7 @@ const SORT_LABEL_BY_KEY: Readonly<Record<string, string>> = SORT_LABELS;
  *
  * ~~`const WIDEST_SORT = 'last_touched'`~~ **[p3]** The widest label is **derived by measuring
  * every variant**, never named. `Last touched` was the widest of three; `Needs attention` is
- * wider, and at shed level 2 the bar drops the `SORT` key and renders the value alone
+ * wider, and at shed level 2 ([p4] 3) the bar drops the `SORT` key and renders the value alone
  * (`TopBar.tsx:90-91`), so the value's width **is** the floor. A harness that keeps naming one
  * variant measures a floor the product does not have and reports it green (§35.6, §26.2).
  *
@@ -85,6 +87,73 @@ function fontFaces(): string {
 }
 
 /**
+ * [p4] §43.2's condensed block rides in the bar until its first shed step, so the bar is measured
+ * **with the block at its widest**, and that width is derived, never named (§36.2 rule 8): every
+ * input the block draws is rendered over its stated domain, measured in the real faces, and the
+ * widest value of each is composed into the state the bar is measured with.
+ *
+ * The domain: the level and the best rhythm are at most three digits — the level function runs
+ * past §38.4's 200-row table by formula, so the table's end is not the bound, and 999 weeks of
+ * settled rhythm is nineteen years — plus U+2014 for each figure not yet known; active days are
+ * 0–7 and the target is unset or within the stepper's range. The waits text is present and all
+ * three ring dots are drawn: each is an element the block otherwise leaves out.
+ */
+const THREE_DIGITS = Array.from({ length: 1000 }, (_, n) => n);
+
+function condensedState(over: {
+  level?: number | null;
+  activeDays?: number;
+  target?: number | null;
+  bestWeeks?: number | null;
+}): MotivationState {
+  const level = over.level === undefined ? 1 : over.level;
+  return {
+    shown: true,
+    level: {
+      state: level === null ? 'notComputed' : 'computed',
+      figures: level === null ? null : { level, xp: 1, levelAt: 0, nextLevelAt: 2, floored: false },
+      pendingProjects: 0,
+    },
+    rings: {
+      today: '2026-11-04',
+      weekStart: '2026-11-02',
+      waived: false,
+      focus: { creditedSeconds: 600, targetSeconds: 2_700, status: 'open' },
+      ship: { status: 'closed', pushedOn: '2026-11-03', observable: 1, unobservable: 0 },
+      tend: { status: 'notComputed', excluded: [], unobservableProjects: 0 },
+      rhythm: {
+        days: ['active', 'active', 'pending', 'future', 'future', 'future', 'future'],
+        activeDays: over.activeDays ?? 0,
+        target: over.target === undefined ? 1 : over.target,
+        targetBasis: 'derived',
+        runWeeks: 1,
+        bestWeeks: over.bestWeeks === undefined ? 1 : over.bestWeeks,
+        gitCoverage: 'complete',
+      },
+    },
+    xpBar: 0.5,
+    pendingLine: { form: 'rise', level: level ?? 1, reason: null, award: null },
+    terms: null,
+  };
+}
+
+/** One candidate list per input the block draws, each varying that input alone. */
+const CONDENSED_DOMAIN = {
+  level: [null, ...THREE_DIGITS].map((level) => condensedState({ level })),
+  activeDays: Array.from({ length: 8 }, (_, activeDays) => condensedState({ activeDays })),
+  target: [
+    null,
+    ...Array.from(
+      { length: RHYTHM_TARGET_MAX_DAYS - RHYTHM_TARGET_MIN_DAYS + 1 },
+      (_, i) => RHYTHM_TARGET_MIN_DAYS + i,
+    ),
+  ].map((target) => condensedState({ target })),
+  bestWeeks: [null, ...THREE_DIGITS].map((bestWeeks) => condensedState({ bestWeeks })),
+} as const;
+
+type CondensedInput = keyof typeof CONDENSED_DOMAIN;
+
+/**
  * The bar's markup at each shed level **× each sort variant**, rendered by the component itself.
  *
  * It cannot be rendered in this process: Playwright compiles every TypeScript file it loads with
@@ -95,9 +164,7 @@ function fontFaces(): string {
  * [p3] The child takes the variant list as an **argument** rather than a constant of its own, so
  * one list — the schema's — reaches both this file's derivation and the markup it measures.
  */
-async function barMarkupPerLevel(
-  variants: readonly string[],
-): Promise<readonly (readonly string[])[]> {
+async function bundleBarRenderer(): Promise<(job: object) => unknown> {
   const dir = mkdtempSync(path.join(tmpdir(), 'cdt-bar-render-'));
   const entry = path.join(dir, 'render.ts');
   const bundle = path.join(dir, 'render.cjs');
@@ -108,28 +175,45 @@ async function barMarkupPerLevel(
      import { parseQuery } from ${JSON.stringify(path.join(appDir, 'src/shared/query/parse.js'))};
      import { fieldModel } from ${JSON.stringify(path.join(rendererDir, 'shelf/QueryField.js'))};
      import { TopBar } from ${JSON.stringify(path.join(rendererDir, 'shelf/TopBar.js'))};
+     import { CondensedBlock } from ${JSON.stringify(path.join(rendererDir, 'motivation/CondensedBlock.js'))};
+     import { readFileSync } from 'node:fs';
      import { SHED_WIDTHS } from ${JSON.stringify(path.join(rendererDir, 'shelf/useShedLevel.js'))};
      import { DEFAULT_SHELF_VIEW } from ${JSON.stringify(path.join(rendererDir, 'shelf/viewState.js'))};
      const noop = () => undefined;
-     const variants = ${JSON.stringify(variants)};
-     // One width per level: 2000 sheds nothing, and each threshold is the widest width at which
-     // its own step engages. Each level carries one markup per sort variant.
-     const perLevel = [2000, ...SHED_WIDTHS].map((barWidth) =>
-       variants.map((sort) =>
-         renderToStaticMarkup(
-           createElement(TopBar, {
-             view: { ...DEFAULT_SHELF_VIEW, sort },
-             field: fieldModel('', parseQuery(''), []),
-             scan: { running: false, foundRepos: 0 },
-             barWidth,
-             onQueryChange: noop, onSortChange: noop, onDensityChange: noop,
-             onViewModeChange: noop, onScan: noop, onOpenScanSummary: noop,
-             onOpenPalette: noop, onOpenSettings: noop,
-           }),
+     // The block reads the window's focus on its first render, and a server render has no
+     // window: this answers *not focused*, which draws exactly what a focused window draws.
+     globalThis.document = { visibilityState: 'visible', hasFocus: () => false };
+     const condensed = (state) =>
+       createElement(CondensedBlock, { state, onReveal: noop, request: () => Promise.resolve() });
+     const job = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+     if (job.kind === 'candidates') {
+       // One markup per candidate state: the block alone, measured on its own.
+       const out = {};
+       for (const [input, states] of Object.entries(job.domain)) {
+         out[input] = states.map((state) => renderToStaticMarkup(condensed(state)));
+       }
+       process.stdout.write(JSON.stringify(out));
+     } else {
+       // One width per level: 2000 sheds nothing, and each threshold is the widest width at
+       // which its own step engages. Each level carries one markup per sort variant.
+       const perLevel = [2000, ...SHED_WIDTHS].map((barWidth) =>
+         job.variants.map((sort) =>
+           renderToStaticMarkup(
+             createElement(TopBar, {
+               view: { ...DEFAULT_SHELF_VIEW, sort },
+               field: fieldModel('', parseQuery(''), []),
+               scan: { running: false, foundRepos: 0 },
+               barWidth,
+               onQueryChange: noop, onSortChange: noop, onDensityChange: noop,
+               onViewModeChange: noop, onScan: noop, onOpenScanSummary: noop,
+               onOpenPalette: noop, onOpenSettings: noop,
+               condensed: condensed(job.condensed),
+             }),
+           ),
          ),
-       ),
-     );
-     process.stdout.write(JSON.stringify(perLevel));`,
+       );
+       process.stdout.write(JSON.stringify(perLevel));
+     }`,
   );
 
   await build({
@@ -167,9 +251,47 @@ async function barMarkupPerLevel(
     ],
   });
 
-  const rendered: unknown = JSON.parse(
-    execFileSync(process.execPath, [bundle], { cwd: appDir, encoding: 'utf8' }),
-  );
+  let jobs = 0;
+  return (job: object): unknown => {
+    jobs += 1;
+    const input = path.join(dir, `job-${String(jobs)}.json`);
+    writeFileSync(input, JSON.stringify(job));
+    return JSON.parse(
+      execFileSync(process.execPath, [bundle, input], {
+        cwd: appDir,
+        encoding: 'utf8',
+        // The candidate markups run to megabytes; the default buffer is one.
+        maxBuffer: 256 * 1024 * 1024,
+      }),
+    );
+  };
+}
+
+/** The block's markup for every candidate state, per input. */
+function condensedCandidates(
+  render: (job: object) => unknown,
+): Readonly<Record<CondensedInput, readonly string[]>> {
+  const rendered = render({ kind: 'candidates', domain: CONDENSED_DOMAIN }) as Record<
+    string,
+    unknown
+  >;
+  for (const [input, states] of Object.entries(CONDENSED_DOMAIN)) {
+    const markups = rendered[input];
+    if (!Array.isArray(markups) || markups.length !== states.length) {
+      throw new Error(
+        `the block renderer did not return ${String(states.length)} ${input} markups`,
+      );
+    }
+  }
+  return rendered as Record<CondensedInput, readonly string[]>;
+}
+
+function barMarkupPerLevel(
+  render: (job: object) => unknown,
+  variants: readonly string[],
+  condensed: MotivationState,
+): readonly (readonly string[])[] {
+  const rendered = render({ kind: 'bar', variants, condensed });
   const levels = 1 + SHED_WIDTHS.length;
   if (
     !Array.isArray(rendered) ||
@@ -187,11 +309,13 @@ function harnessHtml(markup: string): string {
   const tokens = readFileSync(path.join(rendererDir, 'styles/tokens.css'), 'utf8');
   const base = readFileSync(path.join(rendererDir, 'styles/base.css'), 'utf8');
   const shelf = readFileSync(path.join(rendererDir, 'shelf/shelf.css'), 'utf8');
+  const band = readFileSync(path.join(rendererDir, 'motivation/band.css'), 'utf8');
   return `<!doctype html><meta charset="utf-8"><style>
 ${fontFaces()}
 ${tokens}
 ${base}
 ${shelf}
+${band}
 html,body{margin:0;padding:0;overflow:hidden}
 </style>${markup}`;
 }
@@ -202,10 +326,10 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
   // eslint-disable-next-line no-console -- the derivation is part of the measurement
   console.log(`measuring ${String(variants.length)} sort variant(s): ${variants.join(', ')}`);
 
-  const perLevel = await barMarkupPerLevel(variants);
-  // The markup really is the component's, and really does differ by level.
-  expect(perLevel[0]?.[0]).toContain('CODOTHECA');
-  expect(perLevel[3]?.[0]).not.toContain('CODOTHECA');
+  const render = await bundleBarRenderer();
+  const candidates = condensedCandidates(render);
+  /** The fully shed level: every step of `SHED_ORDER` engaged. */
+  const lastLevel = SHED_WIDTHS.length;
 
   const dir = mkdtempSync(path.join(tmpdir(), 'cdt-topbar-'));
   writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'h', main: 'main.cjs' }));
@@ -225,6 +349,82 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
   const harness = await electron.launch({ args: [dir], cwd: appDir });
   const page = await harness.firstWindow();
   await page.waitForLoadState('domcontentloaded');
+
+  /**
+   * [p4] The widest condensed block, derived: each input's candidates are laid out side by side in
+   * the real faces, each block measured on its own, and the widest value of each input wins.
+   */
+  const widestCondensed = async (): Promise<MotivationState> => {
+    const chosen: Partial<Record<CondensedInput, number>> = {};
+    let widestAlone = 0;
+    for (const input of Object.keys(CONDENSED_DOMAIN) as CondensedInput[]) {
+      const markups = candidates[input];
+      await page.setContent(
+        harnessHtml(markups.map((markup) => `<div style="display:flex">${markup}</div>`).join('')),
+      );
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
+      expect(
+        await page.evaluate(() => [
+          document.fonts.check('700 15px Rajdhani'),
+          document.fonts.check('400 9px "JetBrains Mono"'),
+        ]),
+        'the condensed block was measured in fallback fonts',
+      ).toEqual([true, true]);
+      const widths = await page.$$eval('.cdt-condensed', (nodes) =>
+        nodes.map((node) => node.getBoundingClientRect().width),
+      );
+      expect(widths.length, `${input}: a run that measured no candidate proves nothing`).toBe(
+        markups.length,
+      );
+      let best = 0;
+      for (const [index, width] of widths.entries()) if (width > (widths[best] ?? 0)) best = index;
+      chosen[input] = best;
+      widestAlone = Math.max(widestAlone, widths[best] ?? 0);
+      // eslint-disable-next-line no-console -- the derivation is part of the measurement
+      console.log(
+        `condensed ${input}: ${String(widths.length)} candidate(s), widest #${String(best)} at ${(widths[best] ?? 0).toFixed(2)}px`,
+      );
+    }
+    const pick = <T>(input: CondensedInput, read: (state: MotivationState) => T): T => {
+      const states: readonly MotivationState[] = CONDENSED_DOMAIN[input];
+      const state = states[chosen[input] ?? 0];
+      if (state === undefined) throw new Error(`no ${input} candidate was chosen`);
+      return read(state);
+    };
+    const composed = condensedState({
+      level: pick('level', (state) => state.level?.figures?.level ?? null),
+      activeDays: pick('activeDays', (state) => state.rings?.rhythm.activeDays ?? 0),
+      target: pick('target', (state) => state.rings?.rhythm.target ?? null),
+      bestWeeks: pick('bestWeeks', (state) => state.rings?.rhythm.bestWeeks ?? null),
+    });
+    // The composed block is at least as wide as any one candidate, or the composition is wrong.
+    const alone = render({ kind: 'candidates', domain: { composed: [composed] } }) as {
+      composed?: unknown;
+    };
+    const markup = Array.isArray(alone.composed) ? String(alone.composed[0]) : '';
+    await page.setContent(harnessHtml(`<div style="display:flex">${markup}</div>`));
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+    const composedWidth = await page.$eval(
+      '.cdt-condensed',
+      (node) => node.getBoundingClientRect().width,
+    );
+    // eslint-disable-next-line no-console -- the measurement is the deliverable
+    console.log(`widest condensed block: ${composedWidth.toFixed(2)}px`);
+    expect(composedWidth).toBeGreaterThanOrEqual(widestAlone - 0.5);
+    return composed;
+  };
+
+  const perLevel = barMarkupPerLevel(render, variants, await widestCondensed());
+  // The markup really is the component's, and really does differ by level: the condensed block
+  // rides only before the first step, and the fully shed bar has lost its lettering.
+  expect(perLevel[0]?.[0]).toContain('CODOTHECA');
+  expect(perLevel[0]?.[0]).toContain('data-slot="motivation"');
+  expect(perLevel[1]?.[0]).not.toContain('data-slot="motivation"');
+  expect(perLevel[lastLevel]?.[0]).not.toContain('CODOTHECA');
 
   /**
    * The bar is a block child of `body`, so setting the body's width sets the bar's exactly.
@@ -279,7 +479,7 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
     const faces = await page.evaluate(() => ({
       loaded: document.fonts.size,
       // Weight 600 at 13px: the sort and density values, which every shed level renders. The
-      // wordmark's 700 is gone by level 3, and `check` reports false for a face no node asked for.
+      // wordmark's 700 is gone by the last level, and `check` reports false for a face no node asked for.
       display: document.fonts.check('600 13px Rajdhani'),
       mono: document.fonts.check('400 10.5px "JetBrains Mono"'),
     }));
@@ -295,14 +495,15 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
   /**
    * [p3] §35.6: the widest label is **measured**, not named and not counted in glyphs.
    *
-   * Shed level 3 is where it matters — the `SORT` key is already gone and the value stands alone,
-   * so the value's own box is the floor. Each variant is rendered in the real layout engine with
+   * The fully shed level is where it matters — the `SORT` key is already gone and the value stands
+   * alone, so the value's own box is the floor ([p4] level 4 since §43.2's block took the first
+   * step; level 3 before it). Each variant is rendered in the real layout engine with
    * the real faces and the widest measured box wins.
    */
   const widestVariant = async (): Promise<{ index: number; width: number }> => {
     let best = { index: 0, width: -1 };
     for (let index = 0; index < variants.length; index += 1) {
-      await showLevel(3, index);
+      await showLevel(lastLevel, index);
       const width = await page.$eval(
         '[data-slot="sort"] .cdt-shelf-control-value',
         (node) => node.getBoundingClientRect().width,
@@ -338,16 +539,12 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
     return good;
   };
 
-  const fits: readonly [number, number, number, number] = [
-    await fitsFrom(0),
-    await fitsFrom(1),
-    await fitsFrom(2),
-    await fitsFrom(3),
-  ];
+  const fits: number[] = [];
+  for (let level = 0; level <= lastLevel; level += 1) fits.push(await fitsFrom(level));
 
   // A step engages at and below the widest width the step above it could not fit.
-  const measuredShedWidths = [fits[0] - 1, fits[1] - 1, fits[2] - 1];
-  const measuredFloor = fits[3];
+  const measuredShedWidths = fits.slice(0, lastLevel).map((fit) => fit - 1);
+  const measuredFloor = fits[lastLevel];
 
   // eslint-disable-next-line no-console -- the measurement is the deliverable
   console.log(
@@ -359,7 +556,8 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
 
   // The floor is tight: one pixel narrower and the bar fails. Without this the bisection could
   // report any width at which the bar happens to fit and the constant would mean nothing.
-  await showLevel(3, widest.index);
+  if (measuredFloor === undefined) throw new Error('no floor was measured');
+  await showLevel(lastLevel, widest.index);
   expect(await failsAt(measuredFloor - 1)).toBe(true);
   expect(await failsAt(measuredFloor)).toBe(false);
 
@@ -374,9 +572,10 @@ test('AC-P3-35-5 the top bar has a measured floor at the widest label, and nothi
   expect((await boxes()).every((box) => box.right > box.left)).toBe(true);
 
   // At the floor the bar has fully shed, in the stated order.
-  await showLevel(3, widest.index);
+  await showLevel(lastLevel, widest.index);
   await setWidth(TOP_BAR_FLOOR_PX);
   expect((await boxes()).map((b) => b.slot)).not.toContain('switch');
+  expect((await boxes()).map((b) => b.slot)).not.toContain('motivation');
   expect(await page.textContent('.cdt-shelf-bar')).not.toContain('CODOTHECA');
   expect(await page.locator('.cdt-shelf-mark').count()).toBe(1);
 

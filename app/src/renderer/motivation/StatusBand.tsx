@@ -75,6 +75,12 @@ export interface StatusBandProps {
   /** The shelf's one scroll container, the root the band's visibility is measured against. */
   readonly scrollRef: RefObject<HTMLElement | null>;
   readonly request: AppDeps['request'];
+  /**
+   * Each observed crossing of the scroll container, and `null` while the band is not observed —
+   * §43.2's condensed block is drawn only on a reported `false`. A stable function: a new one
+   * re-subscribes the observer.
+   */
+  readonly onPlacement?: (onScreen: boolean | null) => void;
 }
 
 export function StatusBand(props: StatusBandProps): ReactElement | null {
@@ -118,7 +124,7 @@ function Ring({ ring }: { readonly ring: RingGlyph }): ReactElement {
 function Band(props: StatusBandProps & { readonly state: MotivationState }): ReactElement {
   const { state, scrollRef, request, onOpenProject, onOpenProfile } = props;
   const bandRef = useRef<HTMLDivElement>(null);
-  const onScreen = useBandOnScreen(bandRef, scrollRef);
+  const onScreen = useBandOnScreen(bandRef, scrollRef, props.onPlacement);
   const active = useWindowActive();
   const shown = onScreen && active;
   const wasShown = useRef(false);

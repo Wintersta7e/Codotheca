@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import type { ScanStatus, SortKey, ViewMode } from '../../generated/protocol.js';
 import { QUICK_SWITCH_CHORD } from '../keyboard/contexts.js';
 import { DensityControl } from './DensityControl.js';
@@ -22,7 +22,10 @@ export const TOP_BAR_HEIGHT_PX = 40 as const;
  *  [p3] ~~`508`~~ re-measured at `NEEDS ATTENTION`, which §35.2 made the widest value the control
  *  can render — `103.16px` against `LAST TOUCHED`'s `84.64px`, and shed level 2 renders the value
  *  alone. The harness derives the widest variant by measuring every one of them, so this moves
- *  again on its own the next time a label does. */
+ *  again on its own the next time a label does.
+ *
+ *  [p4] That level is 3 since §43.2's condensed block took the first step; the floor did not move,
+ *  because the block is gone before any of the bar's own steps engage. */
 export const TOP_BAR_FLOOR_PX = 526;
 
 export const WORDMARK = 'CODOTHECA' as const;
@@ -58,6 +61,11 @@ export interface TopBarProps {
   readonly onOpenScanSummary: () => void;
   readonly onOpenPalette: () => void;
   readonly onOpenSettings: () => void;
+  /**
+   * [p4] §43.2's condensed status block, drawn last and only while the bar has shed nothing — it
+   * is the first step of §8.0a's order. The shelf passes it only while the band is out of view.
+   */
+  readonly condensed?: ReactNode;
 }
 
 /**
@@ -84,7 +92,7 @@ export function TopBar(props: TopBarProps): ReactElement {
           <i className="cdt-shelf-mark-bar is-short" />
           <i className="cdt-shelf-mark-bar" />
         </span>
-        {shed < 3 ? <span className="cdt-shelf-wordmark-text">{WORDMARK}</span> : null}
+        {shed < 4 ? <span className="cdt-shelf-wordmark-text">{WORDMARK}</span> : null}
       </div>
 
       <QueryFieldView
@@ -103,7 +111,7 @@ export function TopBar(props: TopBarProps): ReactElement {
           props.onSortChange(nextSort(sort, offered));
         }}
       >
-        {shed < 2 ? <span className="cdt-shelf-control-key">{SORT_KEY_LABEL}</span> : null}
+        {shed < 3 ? <span className="cdt-shelf-control-key">{SORT_KEY_LABEL}</span> : null}
         <span className="cdt-shelf-control-value">{sortLabel.toUpperCase()}</span>
       </button>
 
@@ -148,7 +156,7 @@ export function TopBar(props: TopBarProps): ReactElement {
         </button>
       </div>
 
-      {shed < 1 ? (
+      {shed < 2 ? (
         <button
           type="button"
           data-slot="switch"
@@ -164,7 +172,7 @@ export function TopBar(props: TopBarProps): ReactElement {
       <DensityControl
         density={view.density}
         viewMode={view.viewMode}
-        showKey={shed < 2}
+        showKey={shed < 3}
         onCycle={props.onDensityChange}
       />
 
@@ -177,6 +185,8 @@ export function TopBar(props: TopBarProps): ReactElement {
       >
         <span className="cdt-shelf-glyph-mark" aria-hidden="true" />
       </button>
+
+      {shed < 1 ? props.condensed : null}
     </div>
   );
 }

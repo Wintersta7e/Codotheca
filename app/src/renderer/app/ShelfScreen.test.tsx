@@ -1,6 +1,6 @@
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectId, ProjectRow } from '../../generated/protocol.js';
+import type { MotivationState, ProjectId, ProjectRow } from '../../generated/protocol.js';
 import { mountedIndices, type MountWindow } from '../keyboard/gridNavigation.js';
 import type { QueryContext } from '../shelf/evaluate.js';
 import { sectionExtents } from '../shelf/measure.js';
@@ -10,6 +10,7 @@ import { useVirtualizer } from '../shelf/useVirtualizer.js';
 import type { VirtualizerInput, VirtualizerState } from '../shelf/useVirtualizer.js';
 import { DEFAULT_SHELF_VIEW } from '../shelf/viewState.js';
 import { makeProjectRow } from '../testing/projectRow.js';
+import { required } from '../../shared/required.js';
 import { ShelfScreen, type ShelfScreenProps } from './ShelfScreen.js';
 import { fakeAppDeps } from './testDeps.js';
 
@@ -224,5 +225,117 @@ describe('ShelfScreen', () => {
 
     unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+/** jsdom has no IntersectionObserver: each instance holds its one target and fires on demand. */
+class FakeObserver {
+  static instances: FakeObserver[] = [];
+  readonly root: Element | Document | null = null;
+  readonly rootMargin = '';
+  readonly thresholds: readonly number[] = [];
+  private target: Element | null = null;
+  private readonly callback: IntersectionObserverCallback;
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback;
+    FakeObserver.instances.push(this);
+  }
+  observe(target: Element): void {
+    this.target = target;
+  }
+  unobserve(): void {
+    this.target = null;
+  }
+  disconnect(): void {
+    this.target = null;
+  }
+  takeRecords(): IntersectionObserverEntry[] {
+    return [];
+  }
+  fire(visible: boolean): void {
+    const target = this.target;
+    if (target === null) return;
+    this.callback(
+      [{ isIntersecting: visible, target } as unknown as IntersectionObserverEntry],
+      this,
+    );
+  }
+}
+
+describe('the condensed block (§43.2)', () => {
+  const motivation: MotivationState = {
+    shown: true,
+    level: {
+      state: 'computed',
+      figures: { level: 9, xp: 500, levelAt: 400, nextLevelAt: 700, floored: false },
+      pendingProjects: 0,
+    },
+    rings: null,
+    xpBar: 1 / 3,
+    pendingLine: null,
+    terms: null,
+  };
+  const block = (root: HTMLElement): Element | null =>
+    root.querySelector('.cdt-shelf-bar [data-slot="motivation"]');
+  const fire = (visible: boolean): void => {
+    act(() => {
+      for (const observer of FakeObserver.instances) observer.fire(visible);
+    });
+  };
+
+  beforeEach(() => {
+    FakeObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', FakeObserver);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('is absent while the band is on screen, and before its place is known', () => {
+    const { container } = render(<ShelfScreen {...propsFor(rowsInEra(2), { motivation })} />);
+    expect(container.querySelector('.cdt-band')).not.toBeNull();
+    expect(block(container)).toBeNull();
+    fire(true);
+    expect(block(container)).toBeNull();
+  });
+
+  it('is in the bar while the band is scrolled away, and brings the band back', () => {
+    const { container } = render(<ShelfScreen {...propsFor(rowsInEra(2), { motivation })} />);
+    fire(false);
+    const condensed = block(container);
+    expect(condensed?.textContent).toContain('9');
+    fireEvent.click(required(condensed, 'the condensed block'));
+    expect(document.activeElement?.classList.contains('cdt-band-level-number')).toBe(true);
+    fire(true);
+    expect(block(container)).toBeNull();
+  });
+
+  it('is absent while the band does not render, even after it was scrolled away', () => {
+    const view = render(<ShelfScreen {...propsFor(rowsInEra(2), { motivation })} />);
+    fire(false);
+    expect(block(view.container)).not.toBeNull();
+    view.rerender(
+      <ShelfScreen {...propsFor(rowsInEra(2), { motivation: { ...motivation, shown: false } })} />,
+    );
+    expect(view.container.querySelector('.cdt-band')).toBeNull();
+    expect(block(view.container)).toBeNull();
+    // Back from quiet: the band's place is unknown again until its observer reports.
+    view.rerender(<ShelfScreen {...propsFor(rowsInEra(2), { motivation })} />);
+    expect(block(view.container)).toBeNull();
+  });
+
+  it('is absent on any route but the shelf and over an empty library', () => {
+    const elsewhere = render(
+      <ShelfScreen {...propsFor(rowsInEra(2), { motivation, route: 'project' })} />,
+    );
+    fire(false);
+    expect(block(elsewhere.container)).toBeNull();
+    cleanup();
+    const empty = render(<ShelfScreen {...propsFor([], { motivation })} />);
+    fire(false);
+    expect(block(empty.container)).toBeNull();
   });
 });

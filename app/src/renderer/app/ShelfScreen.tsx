@@ -27,7 +27,8 @@ import {
 } from '../keyboard/gridNavigation.js';
 import { flickerEligible, useFlicker } from '../motion/flicker.js';
 import { allowsScheduledFrames, type ResolvedTier } from '../motion/tier.js';
-import { StatusBand } from '../motivation/StatusBand.js';
+import { CondensedBlock, revealBand } from '../motivation/CondensedBlock.js';
+import { bandRenders, StatusBand } from '../motivation/StatusBand.js';
 import type { TransitionPhase } from '../motion/transition.js';
 import { AttentionRow } from '../shelf/AttentionRow.js';
 import { isCollapsed, toggled } from '../shelf/collapse.js';
@@ -164,6 +165,9 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
   // [p2] §24.3d's other mount point. The map is owned here, beside `sessions`, and each tile
   // asks for its own preview as it mounts.
   const install = useShelfInstall(deps);
+  // [p4] §43.2: where the band was last observed — `null` until its observer reports, and again
+  // once it stops rendering — so the condensed block is drawn only on an observed `false`.
+  const [bandOnScreen, setBandOnScreen] = useState<boolean | null>(null);
 
   useEffect(() => {
     const advance = (): void => {
@@ -450,6 +454,20 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
     </>
   );
 
+  const motivation = props.motivation;
+  const condensed =
+    motivation !== null &&
+    bandOnScreen === false &&
+    bandRenders({ route: props.route, state: motivation, rows }) ? (
+      <CondensedBlock
+        state={motivation}
+        onReveal={() => {
+          revealBand(scrollRef.current);
+        }}
+        request={request}
+      />
+    ) : null;
+
   return (
     <Shelf
       view={view}
@@ -488,8 +506,10 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
           onOpenProfile={props.onOpenProfile}
           scrollRef={scrollRef}
           request={request}
+          onPlacement={setBandOnScreen}
         />
       }
+      condensed={condensed}
     >
       <AttentionRow
         rows={rows}

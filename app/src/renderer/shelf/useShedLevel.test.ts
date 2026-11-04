@@ -47,7 +47,7 @@ function widen(element: HTMLElement, width: number): void {
 
 describe('SHED_ORDER', () => {
   it("is §8.0a's order and nothing else", () => {
-    expect([...SHED_ORDER]).toEqual(['switch', 'keys', 'wordmarkLettering']);
+    expect([...SHED_ORDER]).toEqual(['motivation', 'switch', 'keys', 'wordmarkLettering']);
   });
   it('carries one threshold per step, descending', () => {
     expect(SHED_WIDTHS).toHaveLength(SHED_ORDER.length);
@@ -58,6 +58,7 @@ describe('SHED_ORDER', () => {
     expect(shedClassName(1)).toBe('cdt-topbar--shed-1');
     expect(shedClassName(2)).toBe('cdt-topbar--shed-2');
     expect(shedClassName(3)).toBe('cdt-topbar--shed-3');
+    expect(shedClassName(4)).toBe('cdt-topbar--shed-4');
   });
   it('names one class per step and no more', () => {
     expect(SHED_CLASSES).toHaveLength(SHED_ORDER.length);
@@ -72,9 +73,10 @@ describe('shedLevelFor', () => {
     expect(shedLevelFor(SHED_WIDTHS[0])).toBe(1);
     expect(shedLevelFor(SHED_WIDTHS[1])).toBe(2);
     expect(shedLevelFor(SHED_WIDTHS[2])).toBe(3);
+    expect(shedLevelFor(SHED_WIDTHS[3])).toBe(4);
   });
   it('stops at the last step — there is nothing further to drop', () => {
-    expect(shedLevelFor(1)).toBe(3);
+    expect(shedLevelFor(1)).toBe(4);
   });
   it('never un-sheds as the bar narrows', () => {
     const widths = [2000, ...SHED_WIDTHS, 1];

@@ -231,6 +231,20 @@ export const BADGES_LABEL = 'BADGES';
 /** Profile's way back, the project page's own word for the surface it returns to. */
 export const PROFILE_BACK_LABEL = 'SHELF';
 
+/** §43.2's condensed top-bar block: the prototype's label before the level. */
+export const CONDENSED_LEVEL_LABEL = 'LVL';
+
+/**
+ * §43.2's short rhythm in the condensed block, the prototype's form: active days over the target,
+ * then the best rhythm. §39.7 counts the best rhythm in weeks, so its unit is `w`. A target not
+ * yet set and a best rhythm not yet known render as U+2014.
+ */
+export const RHYTHM_SHORT = (
+  activeDays: number,
+  target: number | null,
+  bestWeeks: number | null,
+): string => `${String(activeDays)}/${figure(target)} · ${figure(bestWeeks)}w`;
+
 /** A binary ring's centre mark while §39's `nothingToTend` closes it — a mark, not a count. */
 export const RING_CLOSED_MARK = '✓';
 

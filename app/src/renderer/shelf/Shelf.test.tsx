@@ -347,6 +347,7 @@ describe('shelf.css', () => {
       'cdt-topbar--shed-1',
       'cdt-topbar--shed-2',
       'cdt-topbar--shed-3',
+      'cdt-topbar--shed-4',
     ];
     const declared = new Set(
       [...css.matchAll(/\.((?:cdt-)[A-Za-z0-9_-]+)/g)].map(([, name]) => name),

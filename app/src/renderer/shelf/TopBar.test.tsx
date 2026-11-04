@@ -37,8 +37,8 @@ describe('geometry', () => {
     // The value itself belongs to `app/e2e/topbar-floor.spec.ts`, which renders this bar in a
     // real layout engine and fails when the constant is wrong in either direction. What holds
     // here is the relationship: the floor is where the last shed step has already engaged.
-    expect(shedLevelFor(TOP_BAR_FLOOR_PX)).toBe(3);
-    expect(TOP_BAR_FLOOR_PX).toBeLessThanOrEqual(SHED_WIDTHS[2]);
+    expect(shedLevelFor(TOP_BAR_FLOOR_PX)).toBe(4);
+    expect(TOP_BAR_FLOOR_PX).toBeLessThanOrEqual(SHED_WIDTHS[3]);
   });
 });
 
@@ -136,11 +136,11 @@ describe('the seven slots', () => {
 
 describe('the shed order', () => {
   it('is the stated one', () => {
-    expect(SHED_ORDER).toEqual(['switch', 'keys', 'wordmarkLettering']);
+    expect(SHED_ORDER).toEqual(['motivation', 'switch', 'keys', 'wordmarkLettering']);
   });
   it('engages step by step as the bar narrows, and never un-sheds', () => {
     expect(shedLevelFor(1400)).toBe(0);
-    expect(shedLevelFor(TOP_BAR_FLOOR_PX)).toBe(3);
+    expect(shedLevelFor(TOP_BAR_FLOOR_PX)).toBe(4);
     const levels = [1400, ...SHED_WIDTHS, TOP_BAR_FLOOR_PX].map(shedLevelFor);
     expect(levels).toEqual([...levels].sort((a, b) => a - b));
   });
@@ -150,12 +150,34 @@ describe('the shed order', () => {
   const valueOf = (root: HTMLElement, slot: string): string | null =>
     root.querySelector(`[data-slot="${slot}"] .cdt-shelf-control-value`)?.textContent ?? null;
 
-  it('drops SWITCH first, and only SWITCH, and Alt+Space still opens it', () => {
+  const condensed = <button type="button" data-slot="motivation" />;
+
+  it('draws the condensed block last, and only before its first step', () => {
+    const { container } = render(<TopBar {...props({ condensed })} />);
+    const slots = [...container.querySelectorAll('[data-slot]')];
+    expect(slots.at(-1)?.getAttribute('data-slot')).toBe('motivation');
+    for (const width of [...SHED_WIDTHS, TOP_BAR_FLOOR_PX]) {
+      cleanup();
+      const shed = render(<TopBar {...props({ barWidth: width, condensed })} />);
+      expect(shed.container.querySelector('[data-slot="motivation"]'), String(width)).toBeNull();
+    }
+  });
+
+  it('drops the condensed block first, and only it — SWITCH still stands', () => {
+    const { container } = render(<TopBar {...props({ barWidth: SHED_WIDTHS[0], condensed })} />);
+    expect(shedLevelFor(SHED_WIDTHS[0])).toBe(1);
+    expect(container.querySelector('[data-slot="motivation"]')).toBeNull();
+    expect(container.querySelector('[data-slot="switch"]')).not.toBeNull();
+    expect(keyOf(container, 'sort')).toBe('SORT');
+    expect(container.querySelector('.cdt-shelf-wordmark-text')?.textContent).toBe(WORDMARK);
+  });
+
+  it('then drops SWITCH, and only SWITCH, and Alt+Space still opens it', () => {
     // The bar's own `textContent` runs every label together — `CODOTHECASORTLAST TOUCHED` — so
     // `/\bSORT\b/` over it can never match and asserting on it either way proves nothing. Each
     // step is read off the slot it belongs to, and states what still stands as well as what went.
-    const { container } = render(<TopBar {...props({ barWidth: SHED_WIDTHS[0] })} />);
-    expect(shedLevelFor(SHED_WIDTHS[0])).toBe(1);
+    const { container } = render(<TopBar {...props({ barWidth: SHED_WIDTHS[1] })} />);
+    expect(shedLevelFor(SHED_WIDTHS[1])).toBe(2);
     expect(container.querySelector('[data-slot="switch"]')).toBeNull();
     expect(container.textContent).not.toContain('ALT+SPACE');
     expect(container.querySelector('.cdt-shelf-wordmark-text')?.textContent).toBe(WORDMARK);
@@ -164,8 +186,8 @@ describe('the shed order', () => {
   });
 
   it('then drops the SORT and DENSITY keys, leaving their values and the wordmark', () => {
-    const { container } = render(<TopBar {...props({ barWidth: SHED_WIDTHS[1] })} />);
-    expect(shedLevelFor(SHED_WIDTHS[1])).toBe(2);
+    const { container } = render(<TopBar {...props({ barWidth: SHED_WIDTHS[2] })} />);
+    expect(shedLevelFor(SHED_WIDTHS[2])).toBe(3);
     expect(keyOf(container, 'sort')).toBeNull();
     expect(keyOf(container, 'density')).toBeNull();
     expect(container.querySelector('.cdt-shelf-wordmark-text')?.textContent).toBe(WORDMARK);

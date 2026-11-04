@@ -79,6 +79,8 @@ export interface ShelfProps {
    * band decides itself whether it renders; while it does not, the slot draws nothing.
    */
   readonly band?: ReactNode;
+  /** [p4] §43.2's condensed block, handed to the bar, which draws it only before its first shed. */
+  readonly condensed?: ReactNode;
   readonly children: ReactNode;
 }
 
@@ -217,6 +219,7 @@ export function Shelf(props: ShelfProps): ReactElement {
         onOpenScanSummary={props.onOpenScanSummary}
         onOpenPalette={props.onOpenPalette}
         onOpenSettings={props.onOpenSettings}
+        condensed={props.condensed}
       />
       <div className={SHELF_SCROLL_CLASS} style={scrollStyle} ref={props.scrollRef}>
         {props.band}

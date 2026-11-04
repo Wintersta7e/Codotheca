@@ -168,15 +168,21 @@
   border-radius: 50%;
 }
 
+/* [p4] The first step sheds only §43.2's condensed block, so the bar keeps its own gap: the three
+   steps after it are the bar's earlier three, unchanged, and so is the floor they reach. */
 .cdt-topbar--shed-1 {
-  gap: 7px;
+  gap: 8px;
 }
 
 .cdt-topbar--shed-2 {
-  gap: 6px;
+  gap: 7px;
 }
 
 .cdt-topbar--shed-3 {
+  gap: 6px;
+}
+
+.cdt-topbar--shed-4 {
   gap: 5px;
 }
 

@@ -33,6 +33,8 @@ function rendered(): [string, string][] {
   out.push(['XP_LINE_COMPUTED', copy.XP_LINE_COMPUTED(120)]);
   out.push(['RHYTHM_LINE', copy.RHYTHM_LINE(3, 4, 2)]);
   out.push(['RHYTHM_LINE unset', copy.RHYTHM_LINE(0, null, null)]);
+  out.push(['RHYTHM_SHORT', copy.RHYTHM_SHORT(3, 4, 2)]);
+  out.push(['RHYTHM_SHORT unset', copy.RHYTHM_SHORT(0, null, null)]);
   out.push(['LINE_RISE one', copy.LINE_RISE(7, reason())]);
   out.push(['LINE_RISE several', copy.LINE_RISE(7, reason({ transitions: 4 }))]);
   out.push(['LINE_RISE none', copy.LINE_RISE(7, null)]);
@@ -63,6 +65,10 @@ describe('the motivation copy module', () => {
     const unset = copy.RHYTHM_LINE(5, null, null);
     expect(unset).toContain('—');
     expect(unset).not.toMatch(/\b0\b/u);
+    expect(copy.RHYTHM_SHORT(3, 4, 2)).toMatch(/3.*4.*2/u);
+    const shortUnset = copy.RHYTHM_SHORT(5, null, null);
+    expect(shortUnset.match(/—/gu)).toHaveLength(2);
+    expect(shortUnset).not.toMatch(/\b0\b/u);
   });
 
   it('names one transition from its receipt and counts several', () => {

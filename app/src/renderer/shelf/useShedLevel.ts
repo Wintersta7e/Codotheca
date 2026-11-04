@@ -8,14 +8,17 @@ import { type RefObject, useLayoutEffect, useState } from 'react';
  * cycle out of what is a leaf table.
  */
 
-export type ShedLevel = 0 | 1 | 2 | 3;
+export type ShedLevel = 0 | 1 | 2 | 3 | 4;
 
 /**
  * §8.0a's stated order: `SWITCH` first — `Alt+Space` still opens quick switch once its chip is
  * gone — then the `SORT` and `DENSITY` keys leaving their values, then the wordmark's lettering
  * leaving its mark. **The order is spec; the widths below are not.**
+ *
+ * [p4] §43.2's condensed status block sheds before all of them, so a bar that carries it never
+ * needs more room at its floor than one that does not: `TOP_BAR_FLOOR_PX` does not rise.
  */
-export const SHED_ORDER = ['switch', 'keys', 'wordmarkLettering'] as const;
+export const SHED_ORDER = ['motivation', 'switch', 'keys', 'wordmarkLettering'] as const;
 
 /**
  * The bar width at or below which each step engages, in `SHED_ORDER`'s order.
@@ -28,13 +31,17 @@ export const SHED_ORDER = ['switch', 'keys', 'wordmarkLettering'] as const;
  * [p3] ~~`[860, 714, 627]`~~ re-measured in the same run that moved `TOP_BAR_FLOOR_PX`: the
  * harness now **derives** its widest label by measuring every `SortKey` variant, and §35.2's
  * `NEEDS ATTENTION` is wider than the `LAST TOUCHED` the harness used to name.
+ *
+ * [p4] `1155` is the harness's measurement with §43.2's condensed block at its widest derived
+ * content; the three after it re-measured unchanged with the block shed.
  */
-export const SHED_WIDTHS: readonly [number, number, number] = [878, 733, 646];
+export const SHED_WIDTHS: readonly [number, number, number, number] = [1155, 878, 733, 646];
 
 export const SHED_CLASSES = [
   'cdt-topbar--shed-1',
   'cdt-topbar--shed-2',
   'cdt-topbar--shed-3',
+  'cdt-topbar--shed-4',
 ] as const;
 
 export function shedLevelFor(barWidth: number): ShedLevel {
