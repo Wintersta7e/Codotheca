@@ -567,6 +567,11 @@
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 .cdt-fr-panel {
+  /* A column, not a button's centred inline run: the head starts at the top of every panel, and
+     the value, its coverage and its caption each take their own line. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
   padding: 15px 16px 16px;
   text-align: left;
   width: 100%;
@@ -600,11 +605,12 @@
 /* §10.4a: the key is the only thing naming the figure beneath it, and §8.7 bars --text-4 from
    the sole rendering of a fact. */
 .cdt-fr-panel-key {
+  /* Wraps rather than push SHOW WORKING past the border at the dense grid's 200px floor. */
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 7.5px;
   letter-spacing: 0.2em;
   color: var(--text-3);
-  white-space: nowrap;
 }
 /* §10.4a: raised from the design's 7px ornament grey — it is the affordance criterion 23
    rests on, so it takes the 5.9:1 decision floor. */
@@ -634,6 +640,9 @@
   font-size: 22px;
 }
 .cdt-fr-panel-value--uncomputed {
+  /* A sentence, not a figure: it wraps inside the panel rather than end in an ellipsis. */
+  white-space: normal;
+  line-height: 1.5;
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 0.14em;
@@ -655,6 +664,8 @@
   text-wrap: pretty;
 }
 .cdt-fr-evidence {
+  display: flex;
+  flex-direction: column;
   margin-top: 11px;
   padding-top: 10px;
   border-top: 1px solid var(--line-2);
