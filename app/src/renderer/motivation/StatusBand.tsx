@@ -14,6 +14,7 @@ import type { AppDeps } from '../app/deps';
 import type { AppRoute, ProfileAnchor } from '../app/route';
 import { BENCH_LABEL, useBenchElapsed } from '../card/useBenchElapsed';
 import { useWindowActive } from '../motion/useWindowActive';
+import { useSettledDividers } from './bandDividers';
 import { LEVEL_LABEL, RHYTHM_LABEL } from './copy';
 import { levelBlockModel } from './levelBlock';
 import { MotivationLineButton } from './MotivationLineButton';
@@ -127,6 +128,7 @@ function Band(props: StatusBandProps & { readonly state: MotivationState }): Rea
   const { state, scrollRef, request, onOpenProject, onOpenProfile } = props;
   const bandRef = useRef<HTMLDivElement>(null);
   const onScreen = useBandOnScreen(bandRef, scrollRef, props.onPlacement);
+  useSettledDividers(bandRef);
   const active = useWindowActive();
   const shown = onScreen && active;
   const wasShown = useRef(false);
