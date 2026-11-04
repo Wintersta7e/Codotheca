@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 73 | 249 |
-| deferred | 170 | 358 |
+| automated | 75 | 251 |
+| deferred | 168 | 356 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -484,8 +484,8 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-43-3 | deferred | No overlay, no toast | `AC-P4-43-3` deferred, plan p4-43 — `AC-P4-43-3`<br>`AC-P4-43-3-overlay` deferred, plan p4-42 — `AC-P4-42-18` |
 | P4-43-4 | deferred | Nothing outside the window | `AC-P4-43-4` automated, runs now — `AC-P4-43-4 no MotivationLine identifier in the shell`<br>`AC-P4-43-4-api` deferred, plan p4-42 — `AC-P4-42-17` |
 | P4-43-5 | deferred | Silent classes | `AC-P4-43-5` automated, runs now — `motivation_silent::ac_p4_43_5`<br>`AC-P4-43-5-first-read` automated, runs now — `motivation_silent::ac_p4_43_5_first_read`<br>`AC-P4-43-5-confirmed` automated, runs now — `motivation_silent::ac_p4_43_5_confirmed`<br>`AC-P4-43-5-rebalance` automated, runs now — `motivation_silent::ac_p4_43_5_rebalance`<br>`AC-P4-43-5-restore` automated, runs now — `motivation_silent::ac_p4_43_5_restore`<br>`AC-P4-43-5-restore-completion` automated, runs now — `motivation_silent::ac_p4_43_5_restore_at_completion`<br>`AC-P4-43-5-inert` automated, runs now — `motivation_silent::ac_p4_43_5_inert_while_unpresented`<br>`AC-P4-43-5-reference` deferred, plan p4-44 — `acceptance_motivation::ac_p4_43_5_reference` |
-| P4-43-6 | deferred | The queue | `AC-P4-43-6` deferred, plan p4-43 — `acceptance_motivation::ac_p4_43_6`<br>`AC-P4-43-6-renderer` automated, runs now — `AC-P4-43-6-renderer a badge lands when its line is painted, never on click, and a click opens Profile` |
-| P4-43-7 | deferred | The reason | `AC-P4-43-7` deferred, plan p4-43 — `acceptance_motivation::ac_p4_43_7`<br>`AC-P4-43-7-renderer` automated, runs now — `AC-P4-43-7-renderer each form renders its own copy and a rise with no reason renders the level alone` |
+| P4-43-6 | automated | The queue | `AC-P4-43-6` automated, runs now — `acceptance_motivation::ac_p4_43_6`<br>`AC-P4-43-6-renderer` automated, runs now — `AC-P4-43-6-renderer a badge lands when its line is painted, never on click, and a click opens Profile` |
+| P4-43-7 | automated | The reason | `AC-P4-43-7` automated, runs now — `acceptance_motivation::ac_p4_43_7`<br>`AC-P4-43-7-renderer` automated, runs now — `AC-P4-43-7-renderer each form renders its own copy and a rise with no reason renders the level alone` |
 | P4-43-8 | deferred | The flip | `AC-P4-43-8` automated, runs now — `AC-P4-43-8 a rise above the painted level flips once on the next input, and nothing else arms it`<br>`AC-P4-43-8-css` automated, runs now — `AC-P4-43-8-css the flip's durations, delays and curves are §43.6's table, read as numbers`<br>`AC-P4-43-8-app` deferred, plan p4-43 — `AC-P4-43-8-app` |
 | P4-43-9 | deferred | The flip is clamped | `AC-P4-43-9` automated, runs now — `check-motion-clamp:every-animated-class-is-clamped`<br>`AC-P4-43-9-app` deferred, plan p4-43 — `AC-P4-43-9-app` |
 | P4-43-10 | deferred | Idle | `AC-P4-43-10` deferred, plan p4-43 — `AC-P4-43-10` |

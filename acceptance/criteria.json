@@ -12100,7 +12100,7 @@
       "checks": [
         {
           "id": "AC-P4-43-6",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "acceptance_motivation::ac_p4_43_6",
@@ -12124,7 +12124,7 @@
       "checks": [
         {
           "id": "AC-P4-43-7",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "acceptance_motivation::ac_p4_43_7",

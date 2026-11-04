@@ -16,10 +16,14 @@ use std::sync::Arc;
 
 use codotheca_core::badges::COMEBACK_GAP_DAYS;
 use codotheca_core::clock::{local_date, Clock as _};
+use codotheca_core::ledger::price::PRICES;
 use codotheca_core::motivation::keys::level_shown;
 use codotheca_core::proto::dispatch::CommandHandler as _;
-use codotheca_core::protocol::ProjectId;
+use codotheca_core::protocol::{LocationId, ProjectId};
 use codotheca_core::scan::ScanLauncher;
+use codotheca_core::session::orphan::close_orphans;
+use codotheca_core::session::store::{self, SessionOpen};
+use codotheca_core::testing::zone::FixedZone;
 use codotheca_core::testing::{core_handler, CoreHandlerParts, HeldScanLauncher};
 use serde_json::{json, Value};
 use support::badges_rig::{BadgesRig, Flags, T0};
@@ -104,10 +108,46 @@ impl Live {
         self.rig.settle_j4(project);
     }
 
+    /// A session a previous process left open on `project` at `started_at`, `credited` seconds
+    /// of activity in, closed by the orphan recovery a core start runs — a production caller of
+    /// the Focus credit, which adds the segment's share to its date's one `focus` row.
+    fn focus(&self, project: ProjectId, started_at: i64, credited: i64) {
+        let mut guard = self.rig.index.lock().unwrap();
+        let location = guard
+            .conn()
+            .query_row(
+                "SELECT id FROM location WHERE project_id = ?1",
+                [project.0],
+                |r| r.get(0),
+            )
+            .map(LocationId)
+            .unwrap();
+        let tx = guard.conn_mut().transaction().unwrap();
+        let open = SessionOpen {
+            project_id: project,
+            location_id: Some(location),
+            target_id: None,
+            started_at,
+        };
+        let session = store::open_session(&tx, &open).unwrap();
+        let segment = store::open_segment(&tx, session, started_at, false).unwrap();
+        store::mark_activity(&tx, segment, started_at + credited).unwrap();
+        tx.commit().unwrap();
+        let report = close_orphans(&mut guard, T0, &FixedZone(0)).unwrap();
+        drop(guard);
+        assert_eq!(report.segments_closed, 1, "the orphan was not closed");
+    }
+
     /// A library of `days` consecutive commit-days whose level was presented: day one stamped,
     /// the arrival clicked, no line pending.
     fn presented(&mut self, name: &str, days: i64) -> ProjectId {
         let project = self.read(name, &(0..days).map(|i| D1 + i).collect::<Vec<_>>());
+        self.present();
+        project
+    }
+
+    /// Day one stamped, the arrival read and clicked, no line pending.
+    fn present(&mut self) {
         self.ack("bandShown", None);
         let arrival = self.get();
         assert_eq!(form(&arrival), "arrival", "{arrival}");
@@ -122,7 +162,6 @@ impl Live {
             rest["pendingLine"].is_null(),
             "a clicked arrival left a line: {rest}"
         );
-        project
     }
 }
 
@@ -161,8 +200,57 @@ fn ac_p4_43_2_index() {
     assert!(unknown > 0, "no rhythm cell reads not computed: {cells:?}");
 }
 
+/// `AC-P4-43-7`'s Focus clauses: a forward Focus row names the project as its receipt recorded
+/// it, and Focus accrued onto a date's existing row rises with no reason.
+fn focus_reasons() {
+    // A forward row whose receipt records the name names the project as of the write, not as
+    // it stands at the read.
+    let mut renamed = Live::new();
+    let project = renamed.presented("before", 11);
+    let point = PRICES.focus_seconds_per_xp;
+    let day = D1 + 20;
+    renamed.focus(project, day * DAY + DAY / 2, 10 * point);
+    renamed.rig.sql(&format!(
+        "UPDATE project SET name = 'after' WHERE id = {}",
+        project.0
+    ));
+    let named = renamed.get();
+    let receipt = &named["pendingLine"]["reason"];
+    eprintln!("renamed after the write: {receipt}");
+    assert_eq!(form(&named), "rise", "{named}");
+    assert_eq!(receipt["transitions"], 1);
+    assert_eq!(receipt["term"], "focus");
+    assert_eq!(receipt["projectName"], "before");
+    assert_eq!(receipt["on"], local_date(day));
+
+    // Focus accrued onto a date's existing row: a real rise no new row explains, so no reason.
+    let mut focused = Live::new();
+    let own = focused.read("focused", &(0..11).map(|i| D1 + i).collect::<Vec<_>>());
+    let noon = (D1 + 5) * DAY + DAY / 2;
+    // Nine points of Focus keep the eleven commit-days under level 2.
+    focused.focus(own, noon, 9 * point);
+    focused.present();
+    let shown = focused.level_shown().unwrap();
+    focused.focus(own, noon + 3_600, point);
+    let accrued = focused.get();
+    eprintln!("focus accrual: {}", accrued["pendingLine"]);
+    assert_eq!(
+        focused.rig.xp_event_count_of("focus"),
+        1,
+        "the second close wrote a row of its own"
+    );
+    assert_eq!(form(&accrued), "rise", "{accrued}");
+    assert!(u64::from(shown) < displayed(&accrued));
+    assert!(
+        accrued["pendingLine"]["reason"].is_null(),
+        "an accrual onto an existing row was given a reason"
+    );
+}
+
 /// **AC-P4-43-7.** One forward commit-day crossing a threshold names its term, its project and
-/// its date; three crossing together are counted, with no term, project or date named.
+/// its date; three crossing together are counted, with no term, project or date named. A rise
+/// that waited out quiet mode returns with no reason; a forward Focus row names the project as
+/// its receipt recorded it; Focus accrued onto an existing row rises with no reason.
 #[test]
 fn ac_p4_43_7() {
     // Eleven commit-days sit just under level 2's threshold: the twelfth crosses alone.
@@ -181,6 +269,28 @@ fn ac_p4_43_7() {
     assert_eq!(reason["on"], local_date(day));
     assert!(u64::from(shown) < displayed(&state));
 
+    // The same rise waits out quiet mode and returns as the level alone: no reason.
+    one.handle(
+        "settings.set",
+        json!({ "patch": { "motivationShown": false } }),
+    );
+    assert!(one.get()["pendingLine"].is_null(), "quiet mode kept a line");
+    one.handle(
+        "settings.set",
+        json!({ "patch": { "motivationShown": true } }),
+    );
+    let returned = one.get();
+    eprintln!("after quiet: {}", returned["pendingLine"]);
+    assert_eq!(form(&returned), "return", "{returned}");
+    assert_eq!(
+        returned["pendingLine"]["level"].as_u64(),
+        Some(displayed(&returned))
+    );
+    assert!(
+        returned["pendingLine"]["reason"].is_null(),
+        "a return carries a reason"
+    );
+
     // Thirty-three sit just under level 3's: three more cross together.
     let mut three = Live::new();
     let counted = three.presented("counted", 33);
@@ -192,6 +302,8 @@ fn ac_p4_43_7() {
     assert_eq!(count["transitions"], 3);
     assert!(count["term"].is_null(), "a count names no term");
     assert!(count["projectName"].is_null() && count["on"].is_null());
+
+    focus_reasons();
 }
 
 /// The badge line's kind, as the band reads it.
@@ -203,10 +315,49 @@ fn badge_kind(state: &Value) -> String {
         .to_owned()
 }
 
+/// `AC-P4-43-6`'s last clauses: a click never lands a badge, and a landed line nobody clicked
+/// leaves when the next local date's `due` names another award.
+fn landed_line_leaves_on_the_next_due() {
+    let mut next = Live::new();
+    let p = next.presented("twice", 12);
+    // Past the revival gap as well: the settle awards comeback and necromancer together.
+    next.commit_days(p, &[D1 + 260 + COMEBACK_GAP_DAYS]);
+    if form(&next.get()) == "rise" {
+        next.click_level();
+    }
+    let awards = next.rig.awards();
+    eprintln!("awards: {awards:?}");
+    assert!(awards.len() >= 2, "the gap awarded fewer than two badges");
+    let first = next.get();
+    let kind = badge_kind(&first);
+    next.ack("badgeLineClicked", None);
+    let clicked = next.get();
+    assert_eq!(badge_kind(&clicked), kind, "a click took an unlanded line");
+    assert_eq!(
+        clicked["pendingLine"]["award"]["landed"], false,
+        "a click landed the badge"
+    );
+    next.handle("badges.markLanded", json!({ "kind": kind }));
+    let landed = next.get();
+    assert_eq!(badge_kind(&landed), kind);
+    assert_eq!(landed["pendingLine"]["award"]["landed"], true);
+    let today = next.parts.clock.now_unix();
+    next.parts.clock.set_unix(today + DAY);
+    let tomorrow = next.get();
+    let other = badge_kind(&tomorrow);
+    eprintln!("the next date: {kind} landed, {other} due");
+    assert_ne!(
+        other, kind,
+        "the landed {kind} line outlived the next date's due"
+    );
+    assert_eq!(tomorrow["pendingLine"]["award"]["landed"], false);
+}
+
 /// **AC-P4-43-6.** Two rises before a click are one line at the current level, and its click
 /// writes the level shown. A due badge — awarded by the J4 settle that read a dormancy gap —
 /// waits behind a level line and returns after its click; it lands on paint, stays until its own
-/// click, and leaves on it. An unlanded badge line leaves when the fortnight retires it.
+/// click, and leaves on it. An unlanded badge line leaves when the fortnight retires it; a click
+/// never lands a badge; a landed line nobody clicked leaves when the next date's due names another.
 #[test]
 fn ac_p4_43_6() {
     let mut live = Live::new();
@@ -289,4 +440,5 @@ fn ac_p4_43_6() {
         late["pendingLine"].is_null(),
         "the fortnight did not retire the unlanded badge"
     );
+    landed_line_leaves_on_the_next_due();
 }
