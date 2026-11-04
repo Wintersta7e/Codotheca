@@ -508,17 +508,26 @@ test('AC-P4-43-13-app a new install quit while scanning relaunches to the shelf 
     const window = await openWindow(second);
     await window.waitForSelector('.cdt-shelf, .cdt-fr-view', { timeout: 60_000 });
     await expect(window.locator('.cdt-shelf')).toBeVisible();
-    await expect(band(window)).toBeVisible({ timeout: 60_000 });
-    // The walk wrote rows and was cut off before their history was read, so the level is not
-    // computed yet; the shelf's own SCAN is the first run to end in this lifetime (§43.10's
-    // second path), and the read it finishes makes the level computable.
+    // A quit can land at any count, 0 included. The band draws only beside a live row (§43.2),
+    // so it is asserted once the shelf holds a card: now, if the cut-off walk wrote rows, else
+    // after the shelf's own SCAN fills it. Either way that SCAN is the first run to end in this
+    // lifetime (§43.10's second path), and the read it finishes makes the level computable.
+    await window.waitForSelector('.cdt-card, .cdt-shelf-empty', { timeout: 60_000 });
+    const cards = await window.locator('.cdt-card').count();
+    if (cards > 0) await expect(band(window)).toBeVisible({ timeout: 60_000 });
     // eslint-disable-next-line no-console -- the measurement is the deliverable
     console.log(
-      `AC-P4-43-13-app: relaunched to the shelf, ${String(await window.locator('.cdt-card').count())} cards, ` +
-        `${(await window.locator('.cdt-band-level-number').getAttribute('aria-label')) ?? '?'}, ` +
-        `${String(await lines(window).count())} line`,
+      `AC-P4-43-13-app: relaunched to the shelf, ${String(cards)} cards, ` +
+        (cards > 0
+          ? `${(await window.locator('.cdt-band-level-number').getAttribute('aria-label')) ?? '?'}, ` +
+            `${String(await lines(window).count())} line`
+          : 'no band before the scan'),
     );
     await window.locator('[data-slot="scan"]').click();
+    if (cards === 0) {
+      await expect(window.locator('.cdt-card').first()).toBeVisible({ timeout: 120_000 });
+      await expect(band(window)).toBeVisible({ timeout: 60_000 });
+    }
     // No reveal replays while the arrival is awaited: every sample is taken on the shelf.
     let samples = 0;
     while ((await lineOf(window, 'arrival').count()) === 0) {
