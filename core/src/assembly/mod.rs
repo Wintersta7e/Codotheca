@@ -510,8 +510,39 @@ impl CoreHandler {
                 Ok(name) => self.uninstall_arm(name, args, now),
                 Err(failure) => Err(failure),
             }),
+            // [p4] §43.15: the acknowledgement needs the live run and the first-run stamp beside
+            // the guard, so its arm takes the guard itself.
+            Route::Motivation => Ok(self.motivation_arm(command, args, now)),
             _ => Err(args),
         }
+    }
+
+    /// [p4] §43.15's two commands. The guard is taken **through the field**, the `install_arm`
+    /// precedent, because the context also borrows the first-run stamp mutably; a stamp written
+    /// by `firstRunEnded` re-publishes `core/snapshot` once the guard is released.
+    fn motivation_arm(
+        &mut self,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Result<Value, CommandFailure> {
+        let live_run = self.scans.live().map(|run| run.scan_run_id);
+        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut ctx = crate::motivation::MotivationCtx {
+            index: &guard,
+            now,
+            zone: self.zone.as_ref(),
+            live_run,
+            first_run: &mut self.first_run,
+            first_run_stamped: false,
+        };
+        let answer = crate::motivation::dispatch_motivation_command(&mut ctx, command, args);
+        let stamped = ctx.first_run_stamped;
+        drop(guard);
+        if stamped {
+            self.republish_core();
+        }
+        answer.unwrap_or_else(|| Err(Self::declined(command, Route::Motivation)))
     }
 
     /// §24.3d's destination preview — p2-24 Task 10.
@@ -730,11 +761,7 @@ impl CoreHandler {
             // this is `None` meaning *not computed*, and deliberately not `{"runs": []}` — an
             // empty list would say *nothing is installing*, which a core that records nothing
             // cannot know. Task 13 gives it an arm of its own.
-            //
-            // [p4] `motivation` shares it too, and only until §43.15's `motivation.snapshot` has
-            // `motivation.get`'s handler to answer with: `None` is *not computed*, never an empty
-            // state.
-            Topic::Scan | Topic::Session | Topic::Accounts | Topic::Motivation => None,
+            Topic::Scan | Topic::Session | Topic::Accounts => None,
             // [p2] §24.9's `install.snapshot` (R54). `None` while nothing is known means *not
             // computed*; an empty `InstallState` would say *nothing is installing*, which a core
             // that has recorded nothing cannot claim.
@@ -748,6 +775,9 @@ impl CoreHandler {
             // [p2] §21.13 declares one, and it is the command's own answer: a subscriber that
             // missed every delta renders exactly what `sync.status` would have told it.
             Topic::Sync => self.handle("sync.status", serde_json::json!({})).ok(),
+            // [p4] §43.15's `motivation/snapshot` is the read's own answer, so a subscriber that
+            // missed every delta renders exactly what `motivation.get` would have said.
+            Topic::Motivation => self.handle("motivation.get", serde_json::json!({})).ok(),
             Topic::Projects => {
                 let page = self.handle("projects.list", serde_json::json!({})).ok()?;
                 Some(serde_json::json!({
@@ -808,24 +838,6 @@ impl CoreHandler {
             }
             Err(e) => self.emit_tick_error("badge day close", &e.to_string()),
         }
-    }
-
-    /// §43.10's path 1, the turn answered: stamps the end of first run now when no scan run is in
-    /// progress, otherwise arms the stamp for that run's end. `true` when this call stamped; it
-    /// has then re-published `core/snapshot`. Call it with no index guard held.
-    ///
-    /// # Errors
-    /// Returns [`crate::index::IndexError`] when the stamp cannot be read or written.
-    pub fn first_run_ended(&mut self) -> Result<bool, crate::index::IndexError> {
-        let live = self.scans.live().map(|run| run.scan_run_id);
-        let now = self.clock.now_unix();
-        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-        let stamped = self.first_run.on_first_run_ended(guard.conn(), live, now);
-        drop(guard);
-        if stamped.as_ref().is_ok_and(|s| *s) {
-            self.republish_core();
-        }
-        stamped
     }
 
     /// Supplies a fresh `core/snapshot`, replacing whatever the topic had queued.
@@ -918,7 +930,8 @@ impl CommandHandler for CoreHandler {
             | Route::Install
             | Route::Uninstall
             | Route::AccountsNet
-            | Route::ReadmeNet => unreachable!(),
+            | Route::ReadmeNet
+            | Route::Motivation => unreachable!(),
             Route::FirstRun => {
                 crate::firstrun::dispatch(guard.conn_mut(), &self.firstrun, command, &args, now)
             }

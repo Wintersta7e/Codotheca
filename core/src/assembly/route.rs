@@ -82,6 +82,10 @@ pub enum Route {
     /// landing writer read and write only the index and reach no network, so they take the index
     /// guard.
     Badges,
+    /// [p4] `crate::motivation::dispatch_motivation_command` — §43.15. Answered **before** the
+    /// common guarded arm, by an arm that takes the guard itself: the acknowledgement also needs
+    /// the scan supervisor's live run and the handler's first-run stamp beside it.
+    Motivation,
     /// `projects.readmeAssets`, answered **without** the index guard (R75). Same carve-out as
     /// [`Route::Scan`] and [`Route::AccountsNet`], for the same reason: it fetches up to 24
     /// remote assets of 5 s each, and the one SQLite mutex may not be held across them.
@@ -130,11 +134,8 @@ pub enum Route {
 /// `projects.setCheckNa` passed through it the same way**, in a parallel lane, and left in the
 /// change that gave it a handler. Two commands, one rule, neither an exception to it.
 ///
-/// [p4] §43.15's two arrive here with the schema and leave with the handlers that answer them.
-pub const UNOWNED_COMMANDS: [(&str, &str); 2] = [
-    ("motivation.get", "§43.3 motivation handlers"),
-    ("motivation.acknowledge", "§43.3 motivation handlers"),
-];
+/// [p4] §43.15's two arrived here with the schema and left with the handlers that answer them.
+pub const UNOWNED_COMMANDS: [(&str, &str); 0] = [];
 
 /// The wire name of a command into the generated enum.
 ///
@@ -258,10 +259,8 @@ pub const fn route(command: CommandName) -> Route {
         // [p4] §40.10's two, under the index guard: neither reaches a network or a file.
         CommandName::BadgesList | CommandName::BadgesMarkLanded => Route::Badges,
 
-        // [p4] §43.15's two: declared with the schema, refused by name until their handler lands.
-        CommandName::MotivationGet | CommandName::MotivationAcknowledge => {
-            Route::NoOwner("§43.3 motivation handlers")
-        }
+        // [p4] §43.15's two, answered by `motivation`'s own arm, which takes the guard itself.
+        CommandName::MotivationGet | CommandName::MotivationAcknowledge => Route::Motivation,
     }
 }
 
@@ -378,6 +377,18 @@ mod tests {
         }
         loops.sort();
         assert_eq!(loops, ["app.hello_ack", "app.shutdown"]);
+    }
+
+    #[test]
+    fn the_motivation_route_is_exactly_its_modules_commands() {
+        let mut routed: Vec<String> = schema_commands()
+            .into_iter()
+            .filter(|name| route(command_name(name).expect("routable")) == Route::Motivation)
+            .collect();
+        routed.sort();
+        let mut owned = crate::motivation::MOTIVATION_COMMANDS.to_vec();
+        owned.sort_unstable();
+        assert_eq!(routed, owned);
     }
 
     #[test]

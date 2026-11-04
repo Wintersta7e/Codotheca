@@ -195,6 +195,10 @@ export const KNOWN_COMMANDS: readonly CommandName[] = [
   // one landing writer. Neither is privileged.
   'badges.list',
   'badges.markLanded',
+  // [p4] motivation::dispatch_motivation_command — the band read, and the acknowledgement of a
+  // presentation the user saw. Neither is privileged; both write only the index.
+  'motivation.get',
+  'motivation.acknowledge',
 ];
 
 // A second instance must focus the first, never start a second core — two cores would be two

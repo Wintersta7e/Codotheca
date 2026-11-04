@@ -38,7 +38,7 @@ pub enum FirstRunArm {
 
 /// The first-run stamp's one owner in a running core: armed by the turn's answer or by
 /// start-up, stamped by the loop when the watched run ends.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct FirstRunStamp {
     arm: FirstRunArm,
 }

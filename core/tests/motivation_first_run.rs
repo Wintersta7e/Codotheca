@@ -55,6 +55,17 @@ impl Rig {
             .expect("scan.start is answerable");
     }
 
+    /// The turn's answer, as the renderer sends it: `firstRunEnded`.
+    fn answer(&mut self) {
+        self.parts
+            .handler
+            .handle(
+                "motivation.acknowledge",
+                serde_json::json!({"event": "firstRunEnded", "level": null}),
+            )
+            .expect("motivation.acknowledge is answerable");
+    }
+
     fn pump(&mut self) {
         self.parts.handler.pump();
     }
@@ -112,8 +123,10 @@ fn ac_p4_43_15_skip_ahead_stamps_at_the_walk_end_not_the_answer() {
     let mut r = rig();
     r.start_scan();
     r.advance(10);
-    assert!(
-        !r.parts.handler.first_run_ended().unwrap(),
+    r.answer();
+    assert_eq!(
+        r.stamp(),
+        None,
         "the answer does not stamp while the walk runs"
     );
     r.pump();
@@ -137,10 +150,21 @@ fn ac_p4_43_15_skip_ahead_stamps_at_the_walk_end_not_the_answer() {
 #[test]
 fn an_answer_with_no_walk_running_stamps_at_once() {
     let mut r = rig();
-    assert!(r.parts.handler.first_run_ended().unwrap());
+    r.parts.events.with(|p| p.subscribe(Topic::Core));
+    r.answer();
     assert_eq!(r.stamp(), Some(NOW));
-    assert!(
-        !r.parts.handler.first_run_ended().unwrap(),
+    let snapshots = r.core_snapshots();
+    assert_eq!(
+        snapshots.len(),
+        1,
+        "the answer's stamp re-publishes: {snapshots:?}"
+    );
+    assert_eq!(snapshots[0]["firstRunCompletedAt"], NOW);
+    r.advance(10);
+    r.answer();
+    assert_eq!(
+        r.stamp(),
+        Some(NOW),
         "write-once: a second answer stamps nothing"
     );
 }
@@ -226,7 +250,8 @@ fn path_two_stamps_a_run_that_ended_before_the_loop_saw_it_live() {
 fn a_failed_walk_does_not_stamp_and_the_next_cancelled_one_does() {
     let mut r = rig();
     r.start_scan();
-    assert!(!r.parts.handler.first_run_ended().unwrap());
+    r.answer();
+    assert_eq!(r.stamp(), None);
     r.held.release(HeldOutcome::Failed).unwrap();
     r.pump();
     assert_eq!(r.stamp(), None, "a failed walk is not the end of first run");
@@ -245,7 +270,7 @@ fn the_stamp_republishes_the_core_snapshot() {
     let mut r = rig();
     r.parts.events.with(|p| p.subscribe(Topic::Core));
     r.start_scan();
-    assert!(!r.parts.handler.first_run_ended().unwrap());
+    r.answer();
     r.pump();
     assert!(
         r.core_snapshots().is_empty(),

@@ -945,8 +945,10 @@ mod corehandler {
         // right form; the ordinal was the part that could not survive the merge.
         // [p4] §40.10 raises it by two: `badges.list` and `badges.markLanded`, both answered
         // under the guard, neither reaching a network or a file.
+        // [p4] §43.15 raises it by two: `motivation.get` and `motivation.acknowledge` leave the
+        // unowned set for an arm that takes the guard itself.
         assert_eq!(
-            checked, 62,
+            checked, 64,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(

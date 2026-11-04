@@ -12190,7 +12190,7 @@
       "checks": [
         {
           "id": "AC-P4-43-12",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_commands::ac_p4_43_12_reveal_level_shown_stamps_and_raises_level_shown",
@@ -12238,7 +12238,7 @@
       "checks": [
         {
           "id": "AC-P4-43-14",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_commands::ac_p4_43_14_day_one_is_written_once_by_the_presentation_only",

@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 61 | 208 |
-| deferred | 182 | 390 |
+| automated | 61 | 210 |
+| deferred | 182 | 388 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -490,9 +490,9 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-43-9 | deferred | The flip is clamped | `AC-P4-43-9` deferred, plan p4-43 — `check-motion-clamp:every-animated-class-is-clamped`<br>`AC-P4-43-9-app` deferred, plan p4-43 — `AC-P4-43-9-app` |
 | P4-43-10 | deferred | Idle | `AC-P4-43-10` deferred, plan p4-43 — `AC-P4-43-10` |
 | P4-43-11 | deferred | Reveal panels | `AC-P4-43-11` deferred, plan p4-43 — `AC-P4-43-11`<br>`AC-P4-43-11-grid` deferred, plan p4-43 — `AC-P4-43-11-grid` |
-| P4-43-12 | deferred | Reveal presentation writes | `AC-P4-43-12` deferred, plan p4-43 — `motivation_commands::ac_p4_43_12_reveal_level_shown_stamps_and_raises_level_shown`<br>`AC-P4-43-12-renderer` deferred, plan p4-43 — `AC-P4-43-12-renderer` |
+| P4-43-12 | deferred | Reveal presentation writes | `AC-P4-43-12` automated, runs now — `motivation_commands::ac_p4_43_12_reveal_level_shown_stamps_and_raises_level_shown`<br>`AC-P4-43-12-renderer` deferred, plan p4-43 — `AC-P4-43-12-renderer` |
 | P4-43-13 | deferred | Arrival | `AC-P4-43-13` deferred, plan p4-43 — `acceptance_motivation::ac_p4_43_13`<br>`AC-P4-43-13-app` deferred, plan p4-43 — `AC-P4-43-13-app` |
-| P4-43-14 | deferred | Day one | `AC-P4-43-14` deferred, plan p4-43 — `motivation_commands::ac_p4_43_14_day_one_is_written_once_by_the_presentation_only`<br>`AC-P4-43-14-window` deferred, plan p4-43 — `AC-P4-43-14 an unfocused or hidden window stamps nothing`<br>`AC-P4-43-14-writer` deferred, plan p4-43 — `motivation_gates::ac_p4_43_14_one_day_one_writer` |
+| P4-43-14 | deferred | Day one | `AC-P4-43-14` automated, runs now — `motivation_commands::ac_p4_43_14_day_one_is_written_once_by_the_presentation_only`<br>`AC-P4-43-14-window` deferred, plan p4-43 — `AC-P4-43-14 an unfocused or hidden window stamps nothing`<br>`AC-P4-43-14-writer` deferred, plan p4-43 — `motivation_gates::ac_p4_43_14_one_day_one_writer` |
 | P4-43-15 | deferred | `first_run_completed_at` | `AC-P4-43-15` automated, runs now — `motivation_migration::ac_p4_43_15_the_backfill_writes_the_latest_created_at_over_a_shelf`<br>`AC-P4-43-15-empty` automated, runs now — `motivation_migration::ac_p4_43_15_an_empty_index_is_left_for_path_two`<br>`AC-P4-43-15-skip-ahead` automated, runs now — `motivation_first_run::ac_p4_43_15_skip_ahead_stamps_at_the_walk_end_not_the_answer`<br>`AC-P4-43-15-autostart` automated, runs now — `motivation_first_run::ac_p4_43_15_an_autostart_patch_no_longer_stamps`<br>`AC-P4-43-15-restart` automated, runs now — `motivation_first_run::ac_p4_43_15_restart`<br>`AC-P4-43-15-turn` deferred, plan p4-43 — `AC-P4-43-15 the turn's answer ends first run` |
 | P4-43-16 | deferred | `DIG` before the root suggestions land | `AC-P4-43-16` deferred, plan p4-43 — `AC-P4-43-16 DIG before suggestions answer, or with nothing ticked or added, commits nothing` |
 | P4-43-17 | deferred | Quiet reach | `AC-P4-43-17` deferred, plan p4-43 — `motivation_publish::ac_p4_43_17_quiet_strips_at_the_source`<br>`AC-P4-43-17-literals` deferred, plan p4-43 — `AC-P4-43-17 the list's entries occur as literals in exactly one module`<br>`AC-P4-43-17-profile` deferred, plan p4-43 — `AC-P4-43-17-profile`<br>`AC-P4-43-17-app` deferred, plan p4-41 — `AC-P4-43-17-app` |
