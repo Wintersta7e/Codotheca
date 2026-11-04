@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
@@ -102,6 +101,10 @@ const indexPath = (userData: string): string => path.join(userData, 'index.db');
  * release core; the rings' colours and transitions are what the cases measure.
  */
 export function backdateDayOne(userData: string): void {
+  // Not an `import` and not a `require`: Playwright's module hook answers `node:sqlite` with no
+  // source on some Node 22 releases inside the engines range, so collection fails before any
+  // spec runs. `getBuiltinModule` reaches the built-in without passing through that hook.
+  const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
   const db = new DatabaseSync(indexPath(userData));
   try {
     db.exec('PRAGMA busy_timeout = 10000');
