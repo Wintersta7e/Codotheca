@@ -1,6 +1,7 @@
 // The schema's own type system. Every rule that can be checked mechanically is checked here, so
 // a malformed contract fails at `npm run gen` rather than at `tsc` or at runtime.
 import { readFileSync } from 'node:fs';
+import { pascal } from './emit-ts.mjs';
 
 /** Closed scalar table. `Timestamp` is epoch seconds; `Bytes` is §2.5's `{"b64": "..."}`. */
 export const SCALARS = {
@@ -101,6 +102,22 @@ export function validateSchema(schema) {
   for (const [topic, events] of Object.entries(schema.topics)) {
     for (const [event, expr] of Object.entries(events)) {
       checkRef(schema, expr, `event ${topic}/${event}`);
+    }
+  }
+
+  // The Rust emitter generates one `<Topic>Event` enum per topic and one `<Command>Args` struct
+  // per command. A declared type of the same name is emitted twice and does not compile, so it
+  // is refused here, by name, before anything is written.
+  const generated = new Map([
+    ...Object.keys(schema.topics).map((t) => [`${pascal(t)}Event`, `topic ${t}`]),
+    ...schema.commands.map((c) => [`${pascal(c.name)}Args`, `command ${c.name}`]),
+  ]);
+  for (const name of Object.keys(schema.types)) {
+    const owner = generated.get(name);
+    if (owner !== undefined) {
+      throw new Error(
+        `type ${name}: the generator emits ${name} for ${owner}; declare another name`,
+      );
     }
   }
 }

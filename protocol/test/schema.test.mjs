@@ -64,6 +64,18 @@ test('a duplicate command name is rejected', () => {
   assert.throws(() => validateSchema(s), /duplicate command/);
 });
 
+// The Rust emitter writes one `<Topic>Event` enum per topic and one `<Command>Args` struct per
+// command. A declared type of either name emitted a second definition and `npm run gen` still
+// exited 0, so the first to notice was rustc, in code nobody wrote.
+test('a declared type named like a generated topic enum or args struct is rejected', () => {
+  const event = base();
+  event.types.ProjectsEvent = { kind: 'enum', variants: ['seen'] };
+  assert.throws(() => validateSchema(event), /ProjectsEvent.*topic projects/s);
+  const args = base();
+  args.types.ProjectsGetArgs = { kind: 'struct', fields: {} };
+  assert.throws(() => validateSchema(args), /ProjectsGetArgs.*command projects\.get/s);
+});
+
 test('a topic event with no payload type is rejected', () => {
   const s = base();
   s.topics.projects.merged = 'Ghost';
