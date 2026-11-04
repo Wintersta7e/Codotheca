@@ -214,6 +214,60 @@ fn ac_p4_43_2_index() {
     assert!(unknown > 0, "no rhythm cell reads not computed: {cells:?}");
 }
 
+/// **AC-P4-43-12-settle.** A reveal acknowledged while its `LEVEL` panel read *not computed* —
+/// first run ended before any history settled — leaves the level unshown; the J4 settle that
+/// makes the level computable brings the `arrival` line, its click records the level, and a later
+/// rise is a `rise` line.
+#[test]
+fn ac_p4_43_12_settle_a_level_unshown_at_the_reveal_arrives_then_rises() {
+    let mut live = Live::new();
+    let project = live.rig.project(
+        "late",
+        &(0..12).map(|i| D1 + i).collect::<Vec<_>>(),
+        Flags::default(),
+    );
+    let unread = live.get();
+    assert_eq!(unread["level"]["state"], "notComputed");
+    live.ack("bandShown", None);
+    live.ack("revealLevelShown", None);
+    live.ack("firstRunEnded", None);
+    assert_eq!(
+        live.level_shown(),
+        None,
+        "a not-computed reveal showed a level"
+    );
+    assert!(live.get()["pendingLine"].is_null());
+
+    live.rig.settle_j4(project);
+    let arrival = live.get();
+    assert_eq!(form(&arrival), "arrival", "{arrival}");
+    assert_eq!(
+        arrival["pendingLine"]["level"].as_u64(),
+        Some(displayed(&arrival))
+    );
+    live.click_level();
+    assert_eq!(
+        live.level_shown().map(u64::from),
+        Some(displayed(&arrival)),
+        "the click wrote the level shown"
+    );
+    assert!(live.get()["pendingLine"].is_null());
+
+    let mut day = D1 + 20;
+    let mut last = live.get();
+    while displayed(&last) == displayed(&arrival) {
+        assert!(day < D1 + 200, "no rise happened");
+        live.commit_days(project, &[day]);
+        last = live.get();
+        day += 1;
+    }
+    assert_eq!(form(&last), "rise", "{last}");
+    assert_eq!(
+        last["pendingLine"]["level"].as_u64(),
+        Some(displayed(&last))
+    );
+}
+
 /// `AC-P4-43-7`'s Focus clauses: a forward Focus row names the project as its receipt recorded
 /// it, and Focus accrued onto a date's existing row rises with no reason.
 fn focus_reasons() {

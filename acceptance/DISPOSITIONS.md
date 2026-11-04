@@ -367,7 +367,7 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 80 | 258 |
+| automated | 80 | 259 |
 | deferred | 163 | 349 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
@@ -490,7 +490,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-43-9 | automated | The flip is clamped | `AC-P4-43-9` automated, runs now — `check-motion-clamp:every-animated-class-is-clamped`<br>`AC-P4-43-9-app` automated, runs now — `AC-P4-43-9-app at reduced and at off the flip resolves no animation in the real renderer` |
 | P4-43-10 | automated | Idle | `AC-P4-43-10` automated, runs now — `AC-P4-43-10 at rest the band runs no animation, and a ring, bar or cell changes by a cut at every tier` |
 | P4-43-11 | automated | Reveal panels | `AC-P4-43-11` automated, runs now — `AC-P4-43-11 the reveal holds eight panels in order, gold on the eighth only, and LEVEL is never a zero`<br>`AC-P4-43-11-grid` automated, runs now — `AC-P4-43-11-grid the reveal lays out 3 + 3 at six, 4 + 3 at seven and 4 + 4 at eight` |
-| P4-43-12 | automated | Reveal presentation writes | `AC-P4-43-12` automated, runs now — `motivation_commands::ac_p4_43_12_reveal_level_shown_stamps_and_raises_level_shown`<br>`AC-P4-43-12-renderer` automated, runs now — `AC-P4-43-12-renderer the reveal records the level it displayed and lands the badge once` |
+| P4-43-12 | automated | Reveal presentation writes | `AC-P4-43-12` automated, runs now — `motivation_commands::ac_p4_43_12_reveal_level_shown_stamps_and_raises_level_shown`<br>`AC-P4-43-12-settle` automated, runs now — `acceptance_motivation::ac_p4_43_12_settle_a_level_unshown_at_the_reveal_arrives_then_rises`<br>`AC-P4-43-12-renderer` automated, runs now — `AC-P4-43-12-renderer the reveal records the level it displayed and lands the badge once` |
 | P4-43-13 | automated | Arrival | `AC-P4-43-13` automated, runs now — `acceptance_motivation::ac_p4_43_13`<br>`AC-P4-43-13-app` automated, runs now — `AC-P4-43-13-app a new install quit while scanning relaunches to the shelf and an arrival line` |
 | P4-43-14 | automated | Day one | `AC-P4-43-14` automated, runs now — `motivation_commands::ac_p4_43_14_day_one_is_written_once_by_the_presentation_only`<br>`AC-P4-43-14-window` automated, runs now — `AC-P4-43-14 an unfocused or hidden window stamps nothing`<br>`AC-P4-43-14-writer` automated, runs now — `motivation_gates::ac_p4_43_14_one_day_one_writer` |
 | P4-43-15 | automated | `first_run_completed_at` | `AC-P4-43-15` automated, runs now — `motivation_migration::ac_p4_43_15_the_backfill_writes_the_latest_created_at_over_a_shelf`<br>`AC-P4-43-15-empty` automated, runs now — `motivation_migration::ac_p4_43_15_an_empty_index_is_left_for_path_two`<br>`AC-P4-43-15-skip-ahead` automated, runs now — `motivation_first_run::ac_p4_43_15_skip_ahead_stamps_at_the_walk_end_not_the_answer`<br>`AC-P4-43-15-autostart` automated, runs now — `motivation_first_run::ac_p4_43_15_an_autostart_patch_no_longer_stamps`<br>`AC-P4-43-15-restart` automated, runs now — `motivation_first_run::ac_p4_43_15_restart`<br>`AC-P4-43-15-turn` automated, runs now — `AC-P4-43-15 the turn's answer ends first run` |

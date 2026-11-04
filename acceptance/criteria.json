@@ -12253,6 +12253,14 @@
           "assert": "Through the real dispatcher, revealLevelShown with a value stamps day one and level_shown, and the next read carries no arrival; with a null value it leaves level_shown NULL and the next read carries arrival; a level acknowledged above the displayed level is clamped to it."
         },
         {
+          "id": "AC-P4-43-12-settle",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-43",
+          "test": "acceptance_motivation::ac_p4_43_12_settle_a_level_unshown_at_the_reveal_arrives_then_rises",
+          "assert": "A reveal acknowledged while its LEVEL panel read not computed leaves level_shown NULL; the J4 settle that makes the level computable, run through the job runner over a real repository, brings the arrival line at the displayed level; its click writes level_shown, and a later forward commit-day that raises the level is a rise line."
+        },
+        {
           "id": "AC-P4-43-12-renderer",
           "status": "automated",
           "runner": "vitest",
