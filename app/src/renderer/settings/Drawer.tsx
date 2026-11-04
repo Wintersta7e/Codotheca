@@ -39,6 +39,7 @@ import { unwrapReply, type CoreCall } from '../core/call.js';
 import { DATA_GROUP_ROWS, DataGroups } from './groupsData.js';
 import { HEALTH_GROUP_ROWS, HealthGroups } from './groupsHealth.js';
 import { MOTION_GROUP_ROWS, MotionGroups } from './groupsMotion.js';
+import { MOTIVATION_GROUP_ROWS, MotivationGroups } from './groupsMotivation.js';
 import { SCAN_GROUP_ROWS, ScanGroups } from './groupsScan.js';
 import { SETTINGS_GROUP_ORDER, type SettingsRowSpec, type SettingsSlots } from './rows.js';
 import { SD, backdropAnimation, panelAnimation } from './styles.js';
@@ -51,6 +52,7 @@ export const SETTINGS_ROWS: readonly SettingsRowSpec[] = [
   ...SCAN_GROUP_ROWS,
   ...HEALTH_GROUP_ROWS,
   ...MOTION_GROUP_ROWS,
+  ...MOTIVATION_GROUP_ROWS,
   ...DATA_GROUP_ROWS,
 ].sort((a, b) => SETTINGS_GROUP_ORDER.indexOf(a.group) - SETTINGS_GROUP_ORDER.indexOf(b.group));
 
@@ -266,6 +268,13 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null 
               shortcut={shortcut}
               recording={recording}
               onPatch={patch}
+              afterMotion={
+                <MotivationGroups
+                  settings={settings}
+                  onPatch={patch}
+                  shown={settings.motivationShown}
+                />
+              }
               onRecordChord={() => {
                 setRecording(true);
               }}

@@ -26,6 +26,7 @@ import { useScanStatus } from './app/useScanStatus';
 import { useSessions } from './app/useSessions';
 import { useSync } from './app/useSync';
 import { useViewState } from './app/useViewState';
+import { useMotivation } from './motivation/useMotivation';
 import { useResolvedTier, useTierOnDocument } from './motion/tier';
 import { useProjectTransition } from './app/useProjectTransition';
 import { TransitionBeam } from './app/TransitionBeam';
@@ -66,6 +67,10 @@ export function App(props: AppProps = {}): ReactElement {
   // [p2] §21's lane. One subscription, held here beside the others so the banner and the progress
   // line read the same payload rather than two.
   const sync = useSync(deps);
+  // [p4] §43.15's one read of the motivation layer, held here once for the window so the band,
+  // the condensed block, the reveal's `LEVEL` and Profile read one value rather than one each.
+  // None of them draws yet; the value is handed down as each lands.
+  useMotivation(deps);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);

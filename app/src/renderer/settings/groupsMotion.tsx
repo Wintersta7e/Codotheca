@@ -7,7 +7,7 @@
  * density statement, and nothing else. Density is `view_state` (§1.9) and its control is the top
  * bar's (§8.0a), so the drawer names its home and carries no second copy of it.
  */
-import { useState, type KeyboardEvent, type ReactElement } from 'react';
+import { useState, type KeyboardEvent, type ReactElement, type ReactNode } from 'react';
 import type { Settings } from '../../generated/protocol.js';
 import type { ShortcutState } from '../../shared/channels.js';
 import { EFFECTS_TIERS } from '../../shared/effectsTier.js';
@@ -86,6 +86,11 @@ export interface MotionGroupsProps {
   readonly onRecordChord: () => void;
   /** `null` is a cancelled recording, which binds nothing and clears nothing. */
   readonly onChordCaptured: (chord: string | null) => void;
+  /**
+   * [p4] §43.11: the group drawn directly after `MOTION` and before `RESIDENCY`, which this
+   * component also draws — so the drawer's order matches `SETTINGS_GROUP_ORDER`.
+   */
+  readonly afterMotion?: ReactNode;
 }
 
 export function MotionGroups(props: MotionGroupsProps): ReactElement {
@@ -149,6 +154,8 @@ export function MotionGroups(props: MotionGroupsProps): ReactElement {
         />
         <SwitchRow spec={spec('motion-density')} on />
       </SettingsGroup>
+
+      {props.afterMotion}
 
       <SettingsGroup id="residency" title="RESIDENCY">
         <SettingsRow

@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 62 | 220 |
-| deferred | 181 | 384 |
+| automated | 62 | 221 |
+| deferred | 181 | 383 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -495,7 +495,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-43-14 | deferred | Day one | `AC-P4-43-14` automated, runs now — `motivation_commands::ac_p4_43_14_day_one_is_written_once_by_the_presentation_only`<br>`AC-P4-43-14-window` deferred, plan p4-43 — `AC-P4-43-14 an unfocused or hidden window stamps nothing`<br>`AC-P4-43-14-writer` deferred, plan p4-43 — `motivation_gates::ac_p4_43_14_one_day_one_writer` |
 | P4-43-15 | deferred | `first_run_completed_at` | `AC-P4-43-15` automated, runs now — `motivation_migration::ac_p4_43_15_the_backfill_writes_the_latest_created_at_over_a_shelf`<br>`AC-P4-43-15-empty` automated, runs now — `motivation_migration::ac_p4_43_15_an_empty_index_is_left_for_path_two`<br>`AC-P4-43-15-skip-ahead` automated, runs now — `motivation_first_run::ac_p4_43_15_skip_ahead_stamps_at_the_walk_end_not_the_answer`<br>`AC-P4-43-15-autostart` automated, runs now — `motivation_first_run::ac_p4_43_15_an_autostart_patch_no_longer_stamps`<br>`AC-P4-43-15-restart` automated, runs now — `motivation_first_run::ac_p4_43_15_restart`<br>`AC-P4-43-15-turn` deferred, plan p4-43 — `AC-P4-43-15 the turn's answer ends first run` |
 | P4-43-16 | deferred | `DIG` before the root suggestions land | `AC-P4-43-16` deferred, plan p4-43 — `AC-P4-43-16 DIG before suggestions answer, or with nothing ticked or added, commits nothing` |
-| P4-43-17 | deferred | Quiet reach | `AC-P4-43-17` automated, runs now — `motivation_publish::ac_p4_43_17_quiet_strips_at_the_source`<br>`AC-P4-43-17-literals` deferred, plan p4-43 — `AC-P4-43-17 the list's entries occur as literals in exactly one module`<br>`AC-P4-43-17-profile` deferred, plan p4-43 — `AC-P4-43-17-profile`<br>`AC-P4-43-17-app` deferred, plan p4-41 — `AC-P4-43-17-app` |
+| P4-43-17 | deferred | Quiet reach | `AC-P4-43-17` automated, runs now — `motivation_publish::ac_p4_43_17_quiet_strips_at_the_source`<br>`AC-P4-43-17-literals` automated, runs now — `AC-P4-43-17 the list's entries occur as literals in exactly one module`<br>`AC-P4-43-17-profile` deferred, plan p4-43 — `AC-P4-43-17-profile`<br>`AC-P4-43-17-app` deferred, plan p4-41 — `AC-P4-43-17-app` |
 | P4-43-18 | automated | Leaving quiet | `AC-P4-43-18` automated, runs now — `motivation_publish::ac_p4_43_18_leaving_quiet` |
 | P4-43-19 | deferred | The level gates nothing | `AC-P4-43-19` deferred, plan p4-43 — `motivation_gates::ac_p4_43_19_the_level_gates_nothing`<br>`AC-P4-43-19-ts` deferred, plan p4-43 — `AC-P4-43-19 the level gates nothing` |
 | P4-43-20 | deferred | Band contrast | `AC-P4-43-20` deferred, plan p4-43 — `AC-P4-43-20` |

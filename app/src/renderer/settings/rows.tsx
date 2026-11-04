@@ -22,6 +22,7 @@ export type SettingsGroupId =
   | 'scanning'
   | 'healthChecks'
   | 'motion'
+  | 'motivation'
   | 'residency'
   | 'projectPage'
   | 'data'
@@ -33,6 +34,7 @@ export type SettingsGroupId =
  * §11.3a's table, in its order: 1–9 with 8a between 8 and 9, then the notification block.
  * [p3] §30.9's check switches sit after group 4, beside the source-reading grant that one of
  * them also needs (R142).
+ * [p4] §43.11's group sits directly after `MOTION`: quiet mode and the two targets.
  */
 export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = [
   'roots',
@@ -41,6 +43,7 @@ export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = [
   'scanning',
   'healthChecks',
   'motion',
+  'motivation',
   'residency',
   'projectPage',
   'data',

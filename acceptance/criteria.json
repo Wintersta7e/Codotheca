@@ -12399,7 +12399,7 @@
         },
         {
           "id": "AC-P4-43-17-literals",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
           "test": "AC-P4-43-17 the list's entries occur as literals in exactly one module",
