@@ -15,7 +15,7 @@ use crate::surfaces::startup_failure::{self, StartupFailure};
 use std::path::Path;
 use std::sync::PoisonError;
 
-/// What the six non-fatal steps managed to do. A `None` field is a step that failed and
+/// What the seven non-fatal steps managed to do. A `None` field is a step that failed and
 /// emitted `core/error`; it is never a step that was skipped silently.
 #[derive(Debug, Default)]
 pub struct StartupSummary {
@@ -35,6 +35,9 @@ pub struct StartupSummary {
     /// What the rhythm settlement settled, raised or replaced (§39.7). An idle pass is
     /// `Some(SettleReport::default())`, not a failure.
     pub rhythm: Option<crate::rings::rhythm::SettleReport>,
+    /// What the first-run stamp waits for (§43.10): `AwaitRunStart` after the highest run so
+    /// far for a core holding a live project and no stamp, `Idle` otherwise.
+    pub first_run: Option<crate::motivation::first_run::FirstRunArm>,
 }
 
 /// Open the index, or write §11.2a's report and exit.
@@ -117,7 +120,7 @@ fn exit_fatal(data_dir: &Path, failure: &StartupFailure) -> ! {
     std::process::exit(i32::from(startup_failure::EXIT_INDEX_FATAL));
 }
 
-/// The six calls that must happen before `run_loop`, in the order their side effects require.
+/// The seven calls that must happen before `run_loop`, in the order their side effects require.
 ///
 /// 4. **The identity set, before any scan can run.** J1.5 folds each repository's committers
 ///    against the set and writes §5.5's `is_reference` from the result, so a set seeded *after*
@@ -140,6 +143,9 @@ fn exit_fatal(data_dir: &Path, failure: &StartupFailure) -> ! {
 ///    opens, before the handler exists — so a restored `rhythm_week` is never re-derived. The
 ///    handler's raise mark is still 0, so every settled week holding a `commit_day` is re-read:
 ///    a raise lost to a crash between a J4 write and the next due pass comes back here.
+/// 7. **The first-run stamp's arming** (§43.10). A core that starts with a live project and no
+///    stamp is a first run whose reveal was skipped; it stamps at the end of the first scan run
+///    to end in this lifetime. Last, because it only arms: the stamp is written by the loop.
 pub fn run_startup(handler: &mut CoreHandler) -> StartupSummary {
     let mut summary = StartupSummary::default();
     let now = handler.clock.now_unix();
@@ -248,7 +254,29 @@ pub fn run_startup(handler: &mut CoreHandler) -> StartupSummary {
         }
     }
 
+    // 7. The first-run stamp's arming.
+    summary.first_run = arm_first_run(handler);
+
     summary
+}
+
+/// Step 7: arms the handler's first-run stamp from what the index holds, or emits `core/error`
+/// and leaves it idle.
+fn arm_first_run(handler: &mut CoreHandler) -> Option<crate::motivation::first_run::FirstRunArm> {
+    let guard = handler.index.lock().unwrap_or_else(PoisonError::into_inner);
+    let armed = crate::motivation::first_run::FirstRunStamp::at_start(guard.conn());
+    drop(guard);
+    match armed {
+        Ok(stamp) => {
+            let arm = stamp.arm();
+            handler.first_run = stamp;
+            Some(arm)
+        }
+        Err(e) => {
+            emit_startup_error(handler.events.as_ref(), "first-run stamp", &e.to_string());
+            None
+        }
+    }
 }
 
 /// A startup step that failed is a `core/error` event and a `None` field, never a panic and

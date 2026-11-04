@@ -175,6 +175,17 @@ impl Publisher {
         }
     }
 
+    /// What waits on `topic`, oldest first — for a test over a [`Publisher::detached`], whose
+    /// queue nothing drains.
+    #[cfg(feature = "testkit")]
+    #[must_use]
+    pub fn queued(&self, topic: Topic) -> Vec<Queued> {
+        self.topics
+            .iter()
+            .find(|t| t.topic == topic)
+            .map_or_else(Vec::new, |t| t.queue.pending.iter().cloned().collect())
+    }
+
     /// Starts queueing `topic`. Subscribing again keeps the queue it already has.
     pub fn subscribe(&mut self, topic: Topic) {
         if !self.topics.iter().any(|t| t.topic == topic) {

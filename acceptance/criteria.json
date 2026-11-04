@@ -12287,7 +12287,7 @@
         },
         {
           "id": "AC-P4-43-15-skip-ahead",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_first_run::ac_p4_43_15_skip_ahead_stamps_at_the_walk_end_not_the_answer",
@@ -12295,7 +12295,7 @@
         },
         {
           "id": "AC-P4-43-15-autostart",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_first_run::ac_p4_43_15_an_autostart_patch_no_longer_stamps",
@@ -12303,7 +12303,7 @@
         },
         {
           "id": "AC-P4-43-15-restart",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-43",
           "test": "motivation_first_run::ac_p4_43_15_restart",

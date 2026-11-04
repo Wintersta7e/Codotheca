@@ -140,6 +140,8 @@ pub struct CoreHandler {
     /// The highest `xp_events.id` the rhythm settlement has read (§39.7); 0 at birth, so the
     /// first pass re-reads every settled week.
     rhythm_raise_mark: i64,
+    /// §43.10's first-run stamp, idle until the turn's answer or start-up arms it.
+    first_run: crate::motivation::first_run::FirstRunStamp,
 }
 
 impl std::fmt::Debug for CoreHandler {
@@ -183,6 +185,7 @@ impl CoreHandler {
             last_tick_ms,
             ticks: 0,
             rhythm_raise_mark: 0,
+            first_run: crate::motivation::first_run::FirstRunStamp::default(),
         }
     }
 
@@ -807,6 +810,50 @@ impl CoreHandler {
         }
     }
 
+    /// §43.10's path 1, the turn answered: stamps the end of first run now when no scan run is in
+    /// progress, otherwise arms the stamp for that run's end. `true` when this call stamped; it
+    /// has then re-published `core/snapshot`. Call it with no index guard held.
+    ///
+    /// # Errors
+    /// Returns [`crate::index::IndexError`] when the stamp cannot be read or written.
+    pub fn first_run_ended(&mut self) -> Result<bool, crate::index::IndexError> {
+        let live = self.scans.live().map(|run| run.scan_run_id);
+        let now = self.clock.now_unix();
+        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let stamped = self.first_run.on_first_run_ended(guard.conn(), live, now);
+        drop(guard);
+        if stamped.as_ref().is_ok_and(|s| *s) {
+            self.republish_core();
+        }
+        stamped
+    }
+
+    /// Supplies a fresh `core/snapshot`, replacing whatever the topic had queued.
+    fn republish_core(&mut self) {
+        let data = self.snapshot(Topic::Core);
+        self.events
+            .with(|publisher| publisher.supply_snapshot(Topic::Core, data));
+    }
+
+    /// §43.10: steps the first-run stamp against the live run, and re-publishes `core/snapshot`
+    /// when it stamped, so an open window reads `firstRunCompletedAt` without a restart. Idle
+    /// takes no lock — it is the state of every core but a first run's.
+    fn poll_first_run(&mut self) {
+        if self.first_run.arm() == crate::motivation::first_run::FirstRunArm::Idle {
+            return;
+        }
+        let live = self.scans.live().map(|run| run.scan_run_id);
+        let now = self.clock.now_unix();
+        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let stamped = self.first_run.poll(guard.conn(), live, now);
+        drop(guard);
+        match stamped {
+            Ok(true) => self.republish_core(),
+            Ok(false) => {}
+            Err(e) => self.emit_tick_error("first-run stamp", &e.to_string()),
+        }
+    }
+
     /// A tick step that failed is a `core/error` event, never a panic and never a silent skip.
     /// The message is diagnostic (§2.4) and is not rendered.
     fn emit_tick_error(&self, step: &str, message: &str) {
@@ -971,6 +1018,9 @@ impl CommandHandler for CoreHandler {
     /// `run_loop` wakes at least every `PARENT_POLL` (2 s), so a 15 s period lands within 2 s of
     /// its deadline — finer than a segment boundary needs.
     fn pump(&mut self) {
+        // 0. §43.10's first-run stamp, before the due gate: a run's end is seen on the next
+        //    loop iteration, not the next tick.
+        self.poll_first_run();
         let mono = self.clock.monotonic_ms();
         let due = self.ticks == 0
             || mono.saturating_sub(self.last_tick_ms) >= DEFAULT_TICK_SECS.saturating_mul(1_000);

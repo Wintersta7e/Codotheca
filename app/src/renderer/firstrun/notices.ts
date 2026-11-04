@@ -53,6 +53,8 @@ function qualifies(kind: FirstRunNoticeKind, input: FirstRunNoticeInput): boolea
       return input.identityCount >= 1 && input.identityConfirmedAt === null;
     case 'residency':
       // §11.3a: the stamp is what the answer writes, so the stamp is what retires the row.
+      // [p4] No longer true: §43.10 writes the stamp at the end of first run, not on this
+      // answer, and §42 re-keys this row off it.
       return input.firstRunCompletedAt === null;
     case 'newArrivals':
       return input.newArrivalCount >= 1;
@@ -86,6 +88,9 @@ export type ResidencyAnswer = (typeof RESIDENCY_ANSWERS)[number];
  * a `LEAVE IT OFF` answer does. Suppressing the row with a bare `view_state` key instead would
  * leave the stamp NULL, and then `isNewArrival` is false for every project forever: the `NEW`
  * chip and the arrivals row never appear at all. It does not fail; it never shows.
+ *
+ * [p4] No longer true: §43.10 writes the stamp at the end of first run, and the `autostart`
+ * patch stamps nothing; §42 re-keys the residency row off the stamp.
  */
 export function residencyAutostart(answer: ResidencyAnswer): boolean {
   return answer === 'startWithTheSystem';

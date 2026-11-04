@@ -1,8 +1,8 @@
 /**
  * §11.3a's ask, inside §8.0's box at priority 5.
  *
- * Its answer is what stamps `first_run_completed_at`, which is what arms §10.5a's `NEW` chip —
- * so both buttons answer and neither closes the row silently. The numbers are the measured ones
+ * Both buttons answer and neither closes the row silently. [p4] Its answer no longer stamps
+ * `first_run_completed_at`, which arms §10.5a's `NEW` chip: §43.10 stamps the end of first run. The numbers are the measured ones
  * and live in `copy.ts`: the "~30 MB" they replaced was false by seventeen times, and it reached
  * consent copy once already.
  */

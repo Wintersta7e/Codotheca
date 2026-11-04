@@ -47,7 +47,7 @@ fn a_fresh_index_answers_with_the_stated_defaults() {
         "§43.11: shown until the user turns it off"
     );
     // A patch that does not name it leaves it alone.
-    let after = settings::write(index.conn(), &empty_patch(), 1).expect("write");
+    let after = settings::write(index.conn(), &empty_patch()).expect("write");
     assert!(after.motivation_shown);
 }
 
@@ -61,7 +61,6 @@ fn a_null_field_leaves_its_setting_alone() {
             roast_enabled: Some(false),
             ..empty_patch()
         },
-        NOW,
     )
     .expect("first write");
     let after = settings::write(
@@ -70,7 +69,6 @@ fn a_null_field_leaves_its_setting_alone() {
             autostart: Some(true),
             ..empty_patch()
         },
-        NOW,
     )
     .expect("second write");
     assert!(
@@ -90,7 +88,6 @@ fn clearing_the_resident_shortcut_is_expressible_and_is_not_the_same_as_leaving_
             resident_shortcut: Some("Control+Alt+K".into()),
             ..empty_patch()
         },
-        NOW,
     )
     .expect("bind");
     let untouched = settings::write(
@@ -99,7 +96,6 @@ fn clearing_the_resident_shortcut_is_expressible_and_is_not_the_same_as_leaving_
             autostart: Some(true),
             ..empty_patch()
         },
-        NOW,
     )
     .expect("leave it alone");
     assert_eq!(
@@ -113,7 +109,6 @@ fn clearing_the_resident_shortcut_is_expressible_and_is_not_the_same_as_leaving_
             resident_shortcut: Some(String::new()),
             ..empty_patch()
         },
-        NOW,
     )
     .expect("clear");
     assert_eq!(
@@ -205,7 +200,6 @@ fn every_setting_round_trips_through_the_stored_form() {
             rhythm_target: Some(5),
             motivation_shown: Some(false),
         },
-        NOW,
     )
     .expect("write");
     assert_eq!(written, settings::read(index.conn()).expect("read"));
@@ -225,112 +219,26 @@ fn every_setting_round_trips_through_the_stored_form() {
     assert_eq!(written.install_root_id, Some(RootId(7)));
 }
 
-// ---------------------------------------------------------------------------
-// Gap C: `settings.set` stamps the end of first run when its patch carries
-// `autostart`. Three things must be true together and each is in a different
-// plan — the residency card sends the patch, this stamps on it, and first run
-// exposes the stamp. Any one missing and the `NEW` chip is silently dead: it
-// does not fail, it never appears.
-// ---------------------------------------------------------------------------
-
-const NOW: i64 = 1_770_000_000;
-
+/// §43.10 (§37.8's row): an `autostart` patch — `true` or `false`, first or later — is a setting
+/// and nothing more. It once stamped `first_run_completed_at`; first run now ends where it ends.
 #[test]
-fn an_autostart_patch_stamps_the_end_of_first_run() {
+fn an_autostart_patch_leaves_the_first_run_stamp_null() {
     let dir = tempfile::tempdir().expect("tempdir");
     let index = Index::open(dir.path()).expect("open");
-    assert_eq!(
-        codotheca_core::firstrun::first_run_completed_at(index.conn()).expect("read"),
-        None,
-        "nothing has answered the residency ask yet"
-    );
-
-    settings::write(
-        index.conn(),
-        &SettingsPatch {
-            autostart: Some(true),
-            ..empty_patch()
-        },
-        NOW,
-    )
-    .expect("write");
-
-    assert_eq!(
-        codotheca_core::firstrun::first_run_completed_at(index.conn()).expect("read"),
-        Some(NOW),
-        "without this, isNewArrival is false for every project forever"
-    );
-}
-
-/// **`false` is an answer too.** Declining autostart still ends first run — the ask was
-/// answered, which is the event §11.3a stamps, not the value chosen.
-#[test]
-fn declining_autostart_also_ends_first_run() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let index = Index::open(dir.path()).expect("open");
-    settings::write(
-        index.conn(),
-        &SettingsPatch {
-            autostart: Some(false),
-            ..empty_patch()
-        },
-        NOW,
-    )
-    .expect("write");
-    assert_eq!(
-        codotheca_core::firstrun::first_run_completed_at(index.conn()).expect("read"),
-        Some(NOW)
-    );
-}
-
-/// A patch that does not carry `autostart` must not stamp — the turn's button is not the
-/// residency answer, and stamping there would begin the second-launch path with the question
-/// still unasked, leaving a row that can never reappear.
-#[test]
-fn a_patch_without_autostart_does_not_stamp() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let index = Index::open(dir.path()).expect("open");
-    settings::write(
-        index.conn(),
-        &SettingsPatch {
-            roast_enabled: Some(false),
-            ..empty_patch()
-        },
-        NOW,
-    )
-    .expect("write");
-    assert_eq!(
-        codotheca_core::firstrun::first_run_completed_at(index.conn()).expect("read"),
-        None
-    );
-}
-
-/// The stamp is the *first* answer's time and never moves afterwards.
-#[test]
-fn a_later_autostart_change_does_not_move_the_stamp() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let index = Index::open(dir.path()).expect("open");
-    settings::write(
-        index.conn(),
-        &SettingsPatch {
-            autostart: Some(true),
-            ..empty_patch()
-        },
-        NOW,
-    )
-    .expect("first");
-    settings::write(
-        index.conn(),
-        &SettingsPatch {
-            autostart: Some(false),
-            ..empty_patch()
-        },
-        NOW + 10_000,
-    )
-    .expect("second");
-    assert_eq!(
-        codotheca_core::firstrun::first_run_completed_at(index.conn()).expect("read"),
-        Some(NOW),
-        "first run ended once"
-    );
+    for on in [true, false, true] {
+        let after = settings::write(
+            index.conn(),
+            &SettingsPatch {
+                autostart: Some(on),
+                ..empty_patch()
+            },
+        )
+        .expect("write");
+        assert_eq!(after.autostart, on);
+        assert_eq!(
+            codotheca_core::firstrun::first_run_completed_at(index.conn()).expect("read"),
+            None,
+            "autostart {on} does not end first run"
+        );
+    }
 }

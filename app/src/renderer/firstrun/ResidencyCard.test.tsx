@@ -3,8 +3,6 @@ import { afterEach, expect, test, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { ResidencyCard, residencySettingsArgs } from './ResidencyCard';
 import { RESIDENCY_ANSWERS, residencyAutostart } from './notices';
-import { isNewArrival } from './newArrivals';
-import type { ProjectId } from '../../generated/protocol';
 import * as copy from './copy';
 
 afterEach(cleanup);
@@ -43,7 +41,7 @@ test('the title and the two answers are the whole control surface', () => {
   expect(document.querySelectorAll('input, select')).toHaveLength(0);
 });
 
-// §11.3a: the stamp fires on either answer, so neither may be a no-op.
+// §11.3a: either button answers the ask, so neither may be a no-op.
 test('both answers answer', () => {
   const { onAnswer } = renderCard();
   fireEvent.click(screen.getByRole('button', { name: copy.RESIDENCY_YES }));
@@ -60,18 +58,15 @@ test('the secondary answer does not promise a later ask', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The chain, end to end. Three things must be true together and each was in a
-// different plan: the card sends an `autostart` patch, `settings.set` stamps on
-// it, and first run exposes the stamp. Any one missing and the `NEW` chip is
-// silently dead — it does not fail, it never appears.
+// The answer and its patch. [p4] §43.10: the patch is a setting and nothing
+// more — the end of first run, which arms the `NEW` chip, is stamped by the
+// turn's answer and a scan run's end, never by this card.
 // ---------------------------------------------------------------------------
-
-const STAMP = 1_770_000_000;
 
 test('every way out of the row produces a patch that carries autostart', () => {
   for (const answer of RESIDENCY_ANSWERS) {
     const args = residencySettingsArgs(answer);
-    // The core keys the stamp on the field being *present*, not on its value.
+    // Every way out records the answer, so no way out leaves the setting unanswered.
     expect(args.patch.autostart).not.toBeNull();
     expect(args.patch.autostart).toBe(residencyAutostart(answer));
   }
@@ -98,21 +93,12 @@ test('the call names autostart under the key the command takes, and disturbs not
   });
 });
 
-// Declining is still an answer, and this is the whole reason it must send the patch: the chip
-// is dead until the stamp lands, and a card that closed silently would leave it dead forever.
-test('declining the ask still arms the NEW chip', () => {
+// Declining is still an answer: it reaches the caller and produces a patch that turns autostart
+// off, rather than closing the row silently.
+test('declining the ask is an answer and sends its patch', () => {
   const { onAnswer } = renderCard();
   fireEvent.click(screen.getByRole('button', { name: copy.RESIDENCY_NO }));
   const answer = onAnswer.mock.calls[0]?.[0];
   expect(answer).toBe('leaveItOff');
-
-  const arrival = { id: 1 as ProjectId, createdAt: STAMP + 60, acknowledgedAt: null };
-  // Before the answer the stamp is NULL, so nothing on the shelf can be new.
-  expect(isNewArrival(arrival, null)).toBe(false);
-
-  // The patch the answer produces is what `settings.set` stamps on, and the stamp is what the
-  // snapshot hands back as `firstRunCompletedAt`.
-  const args = residencySettingsArgs(answer ?? 'leaveItOff');
-  const firstRunCompletedAt = args.patch.autostart === null ? null : STAMP;
-  expect(isNewArrival(arrival, firstRunCompletedAt)).toBe(true);
+  expect(residencySettingsArgs(answer ?? 'startWithTheSystem').patch.autostart).toBe(false);
 });

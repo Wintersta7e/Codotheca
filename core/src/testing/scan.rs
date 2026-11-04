@@ -265,6 +265,98 @@ impl ScanLauncher for ScanLauncherFake {
     }
 }
 
+/// How a [`HeldScanLauncher`] run ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeldOutcome {
+    /// The walk completed: `ended_at` is written.
+    Finished,
+    /// The walk stopped on its cancel token: `ended_at` and `cancelled` are written.
+    Cancelled,
+    /// The walk failed: nothing is written, as the production launcher writes nothing then.
+    Failed,
+}
+
+/// A launcher whose run writes a real `scan_run` row through the index and then stays live until
+/// the test releases it — so a test can act while a walk is in progress, and choose how it ends.
+pub struct HeldScanLauncher {
+    index: Arc<Mutex<crate::index::Index>>,
+    held: Mutex<Option<(i64, i64, Arc<ScanProgressCell>)>>,
+}
+
+impl std::fmt::Debug for HeldScanLauncher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HeldScanLauncher").finish_non_exhaustive()
+    }
+}
+
+impl HeldScanLauncher {
+    /// A launcher writing its runs through `index`, the one connection the handler also uses.
+    #[must_use]
+    pub const fn new(index: Arc<Mutex<crate::index::Index>>) -> Self {
+        Self {
+            index,
+            held: Mutex::new(None),
+        }
+    }
+
+    /// Ends the held run as `outcome` says, then frees the supervisor's slot. Releasing with no
+    /// run held does nothing.
+    ///
+    /// # Errors
+    /// When the run's `scan_run` row cannot be written.
+    pub fn release(&self, outcome: HeldOutcome) -> Result<(), ScanStoreError> {
+        let held = self
+            .held
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        let Some((id, started_at, progress)) = held else {
+            return Ok(());
+        };
+        if outcome != HeldOutcome::Failed {
+            let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+            guard
+                .conn()
+                .execute(
+                    "UPDATE scan_run SET ended_at = ?1, cancelled = ?2 WHERE id = ?3",
+                    rusqlite::params![started_at, i64::from(outcome == HeldOutcome::Cancelled), id],
+                )
+                .map_err(|e| ScanStoreError::new(e.to_string()))?;
+        }
+        progress.finish();
+        Ok(())
+    }
+}
+
+impl ScanLauncher for HeldScanLauncher {
+    fn launch(
+        &self,
+        mode: ScanMode,
+        now: i64,
+        _cancel: CancelToken,
+        progress: Arc<ScanProgressCell>,
+    ) -> Result<LaunchedScan, ScanStoreError> {
+        let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        let conn = guard.conn();
+        let (id, generation): (i64, i64) = conn
+            .query_row(
+                "INSERT INTO scan_run (generation, started_at, mode, roots_json)
+                 VALUES ((SELECT COALESCE(MAX(generation), 0) + 1 FROM scan_run), ?1, ?2, '[]')
+                 RETURNING id, generation",
+                rusqlite::params![now, mode.as_str()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|e| ScanStoreError::new(e.to_string()))?;
+        drop(guard);
+        *self.held.lock().unwrap_or_else(PoisonError::into_inner) = Some((id, now, progress));
+        Ok(LaunchedScan {
+            scan_run_id: ScanRunId(id),
+            generation,
+            roots: Vec::new(),
+        })
+    }
+}
+
 /// R16: plan 03's `EventSink`, recorded rather than published.
 #[derive(Debug, Default)]
 pub struct ScanEventFake {

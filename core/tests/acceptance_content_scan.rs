@@ -1493,7 +1493,7 @@ fn ac_p3_29_18_turning_the_grant_off_deletes_what_it_wrote() {
         motivation_shown: None,
     };
     let guard = rig.index.lock().unwrap();
-    let settings = settings::write(guard.conn(), &patch, 1_700_000_100).unwrap();
+    let settings = settings::write(guard.conn(), &patch).unwrap();
     let scans: i64 = guard
         .conn()
         .query_row("SELECT count(*) FROM blob_scan", [], |r| r.get(0))

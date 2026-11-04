@@ -98,8 +98,7 @@ pub fn handle_set(
     // §39.13: an out-of-range target is the same refusal as an invalid chord, checked before
     // anything is written; `write` re-checks inside its transaction.
     targets::check_patch(&args.patch).map_err(|e| CommandFailure::protocol(e.to_string()))?;
-    write(ctx.index.conn(), &args.patch, ctx.now)
-        .map_err(|e| CommandFailure::internal(e.to_string()))
+    write(ctx.index.conn(), &args.patch).map_err(|e| CommandFailure::internal(e.to_string()))
 }
 
 /// One `app_meta` value, `None` when the key is absent.
@@ -157,27 +156,13 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings, IndexError> {
 
 /// Applies the fields the patch names and leaves the rest alone.
 ///
-/// **A patch carrying `autostart` also ends first run** (§11.3a). That is the residency answer's
-/// event, not the turn's button: stamping at the turn would begin the second-launch path with
-/// the question still unasked, and the row could never reappear. Answering *no* ends it just the
-/// same — the ask was answered, which is the event, not the value chosen.
-///
-/// It happens inside this transaction because "autostart was set" and "the ask was answered"
-/// are one fact. Without it `first_run_completed_at` stays `NULL`, `CoreSnapshot.firstRunCompletedAt`
-/// stays `null`, and `isNewArrival` is `false` for every project forever — the `NEW` chip and the
-/// arrivals row never appear at all. It does not fail; it just never shows.
-///
-/// `now` is therefore required rather than optional: a caller cannot apply this patch without
-/// deciding what time the stamp would carry.
+/// [p4] §43.10: an `autostart` patch is a setting and nothing more — it does not end first run.
+/// The stamp's writers are the turn's answer, the end of a scan run and the migration.
 ///
 /// # Errors
 /// Fails when the index cannot be written, or when a target lies outside its range — then the
 /// whole patch is rolled back.
-pub fn write(
-    conn: &rusqlite::Connection,
-    patch: &SettingsPatch,
-    now: i64,
-) -> Result<Settings, IndexError> {
+pub fn write(conn: &rusqlite::Connection, patch: &SettingsPatch) -> Result<Settings, IndexError> {
     {
         let _guard = TxGuard::enter();
         let tx = conn.unchecked_transaction()?;
@@ -189,9 +174,6 @@ pub fn write(
         }
         if let Some(v) = patch.autostart {
             put(&tx, KEY_AUTOSTART, bit(v))?;
-            // Idempotent by construction: it returns false and writes nothing once stamped, so
-            // a later change to autostart cannot move the time first run ended.
-            crate::firstrun::stamp_first_run_completed(&tx, now)?;
         }
         if let Some(v) = patch.resident_shortcut.as_deref() {
             put(&tx, KEY_RESIDENT_SHORTCUT, v)?;

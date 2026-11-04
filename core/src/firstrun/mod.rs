@@ -253,11 +253,12 @@ fn read_meta(conn: &rusqlite::Connection, key: &str) -> Result<Option<i64>, Inde
     Ok(raw.and_then(|v| v.parse().ok()))
 }
 
-/// Stamp the end of first run. Returns true when this call wrote it.
+/// Stamp the end of first run. Returns true when this call wrote it; once written it never moves.
 ///
-/// §11.3a: this is the residency answer's event, not the turn's button. Stamping at the turn
-/// would begin the second-launch path with the question still unasked, and the row could never
-/// reappear. **`settings.set` must call this whenever its patch carries `autostart`.**
+/// [p4] §43.10: called where first run ends — the turn's answer with no scan run in progress,
+/// otherwise the end of that run, or of the first run to end for a core that started with a
+/// shelf and no stamp ([`crate::motivation::first_run`]) — and backfilled by the migration. The
+/// residency answer is not one of them.
 ///
 /// # Errors
 /// Returns [`IndexError`] when the write fails.
@@ -385,8 +386,7 @@ mod tests {
         assert_eq!(confirmed, None);
     }
 
-    // §11.3a: first_run_completed_at is stamped when the residency row is answered or
-    // dismissed, not when the turn's button is pressed.
+    // §43.10: first_run_completed_at is written once, and a later stamp never moves it.
     #[test]
     fn the_first_run_stamp_is_written_once_and_never_moved() {
         let (_dir, index) = open();

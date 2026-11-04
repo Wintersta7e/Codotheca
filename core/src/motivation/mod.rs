@@ -3,7 +3,9 @@
 //!
 //! `keys` owns the `app_meta` keys §43 adds, one reader and one writer each. `state` builds the
 //! band's one payload; `line` holds its queue and `reason` what a rise is owed to.
+//! `first_run` decides when the first-run stamp is written.
 
+pub mod first_run;
 pub mod keys;
 pub mod line;
 pub mod reason;
