@@ -85,6 +85,9 @@
 }
 
 .cdt-profile-terms {
+  /* As wide as its labels and figures: the section's column would stretch it to the window and
+     set every figure a window's width from the label it belongs to. */
+  align-self: flex-start;
   border-collapse: collapse;
 }
 
@@ -93,6 +96,13 @@
   padding: 2px 16px 2px 0;
   font-weight: 400;
   text-align: left;
+}
+
+/* Figures right-aligned on one edge, in tabular digits, so the column reads down by place. */
+.cdt-profile-terms td {
+  padding-right: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .cdt-profile-terms tfoot th,
