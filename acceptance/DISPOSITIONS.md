@@ -367,7 +367,7 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 61 | 216 |
+| automated | 61 | 217 |
 | deferred | 182 | 387 |
 | manual | 22 | 26 |
 | unmeasurable | 0 | 0 |
@@ -483,7 +483,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-43-2 | deferred | Unknown is never zero | `AC-P4-43-2` deferred, plan p4-43 — `AC-P4-43-2`<br>`AC-P4-43-2-index` deferred, plan p4-43 — `acceptance_motivation::ac_p4_43_2_index` |
 | P4-43-3 | deferred | No overlay, no toast | `AC-P4-43-3` deferred, plan p4-43 — `AC-P4-43-3`<br>`AC-P4-43-3-overlay` deferred, plan p4-42 — `AC-P4-42-18` |
 | P4-43-4 | deferred | Nothing outside the window | `AC-P4-43-4` deferred, plan p4-43 — `AC-P4-43-4 no MotivationLine identifier in the shell`<br>`AC-P4-43-4-api` deferred, plan p4-42 — `AC-P4-42-17` |
-| P4-43-5 | deferred | Silent classes | `AC-P4-43-5` automated, runs now — `motivation_silent::ac_p4_43_5`<br>`AC-P4-43-5-first-read` automated, runs now — `motivation_silent::ac_p4_43_5_first_read`<br>`AC-P4-43-5-confirmed` automated, runs now — `motivation_silent::ac_p4_43_5_confirmed`<br>`AC-P4-43-5-rebalance` automated, runs now — `motivation_silent::ac_p4_43_5_rebalance`<br>`AC-P4-43-5-restore` automated, runs now — `motivation_silent::ac_p4_43_5_restore`<br>`AC-P4-43-5-inert` automated, runs now — `motivation_silent::ac_p4_43_5_inert_while_unpresented`<br>`AC-P4-43-5-reference` deferred, plan p4-44 — `acceptance_motivation::ac_p4_43_5_reference` |
+| P4-43-5 | deferred | Silent classes | `AC-P4-43-5` automated, runs now — `motivation_silent::ac_p4_43_5`<br>`AC-P4-43-5-first-read` automated, runs now — `motivation_silent::ac_p4_43_5_first_read`<br>`AC-P4-43-5-confirmed` automated, runs now — `motivation_silent::ac_p4_43_5_confirmed`<br>`AC-P4-43-5-rebalance` automated, runs now — `motivation_silent::ac_p4_43_5_rebalance`<br>`AC-P4-43-5-restore` automated, runs now — `motivation_silent::ac_p4_43_5_restore`<br>`AC-P4-43-5-restore-completion` automated, runs now — `motivation_silent::ac_p4_43_5_restore_at_completion`<br>`AC-P4-43-5-inert` automated, runs now — `motivation_silent::ac_p4_43_5_inert_while_unpresented`<br>`AC-P4-43-5-reference` deferred, plan p4-44 — `acceptance_motivation::ac_p4_43_5_reference` |
 | P4-43-6 | deferred | The queue | `AC-P4-43-6` deferred, plan p4-43 — `acceptance_motivation::ac_p4_43_6`<br>`AC-P4-43-6-renderer` deferred, plan p4-43 — `AC-P4-43-6-renderer` |
 | P4-43-7 | deferred | The reason | `AC-P4-43-7` deferred, plan p4-43 — `acceptance_motivation::ac_p4_43_7`<br>`AC-P4-43-7-renderer` deferred, plan p4-43 — `AC-P4-43-7-renderer` |
 | P4-43-8 | deferred | The flip | `AC-P4-43-8` deferred, plan p4-43 — `AC-P4-43-8`<br>`AC-P4-43-8-app` deferred, plan p4-43 — `AC-P4-43-8-app` |

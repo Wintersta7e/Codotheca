@@ -17,7 +17,11 @@ mod handoff_rig;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use codotheca_core::assembly::startup::run_startup;
+use codotheca_core::clock::LocalInstant;
+use codotheca_core::completion::evaluate_and_write;
+use codotheca_core::index::pending::stage_pending;
 use codotheca_core::index::rebuild::{rebuild_in_place, RebuildOutcome};
+use codotheca_core::index::sidecar::export;
 use codotheca_core::index::subject::subject_for_project;
 use codotheca_core::index::Index;
 use codotheca_core::ledger::level::read_level;
@@ -414,6 +418,105 @@ fn ac_p4_43_5_restore() {
     assert_eq!(applied.displayed, Some(2), "the copy's rows came back");
     assert_eq!(applied.line, None, "the hand-off's restore made a line");
     assert_eq!(applied.shown, Some(2));
+    assert_eq!(applied.since, Some(applied.max_id));
+}
+
+/// The evaluator as a settle hook runs it, on a project whose jobs have read its authorship and
+/// its refs, so `remote` is answered rather than unknown.
+fn evaluate(index: &Mutex<Index>, project: ProjectId, now: i64) {
+    let mut guard = index.lock().unwrap();
+    guard
+        .conn()
+        .execute(
+            "UPDATE project SET authored_by_user = 1 WHERE id = ?1",
+            [project.0],
+        )
+        .unwrap();
+    guard
+        .conn()
+        .execute(
+            "UPDATE location SET refstate_observed_at = ?2 WHERE project_id = ?1",
+            [project.0, now],
+        )
+        .unwrap();
+    guard
+        .with_tx(|tx| {
+            evaluate_and_write(
+                tx,
+                project,
+                LocalInstant {
+                    unix: now,
+                    offset_min: 0,
+                },
+            )
+        })
+        .unwrap();
+    drop(guard);
+}
+
+/// Class 4 at the evaluator: a copy's record staged for a project the evaluator has never
+/// written rows for is applied by that first projection write. A level was shown, the record's
+/// rows raise it, and no line is made: the level shown follows them.
+#[test]
+fn ac_p4_43_5_restore_at_completion() {
+    let _serial = serial();
+    let mut rig = handoff_rig::Rig::new();
+    let now = handoff_rig::NOW;
+    let path = rig.repo("kept", "first");
+    // The copy's record: 300 XP on it (level 2), exported by the index that wrote them.
+    let found = rig.hand_off(&path);
+    let doc = {
+        let guard = rig.index.lock().unwrap();
+        let subject = subject_for_project(guard.conn(), found.project)
+            .unwrap()
+            .unwrap()
+            .to_key();
+        for i in 0..2 {
+            guard
+                .conn()
+                .execute(
+                    "INSERT INTO xp_events (ts, tz_offset_min, project_id, subject_key, kind,
+                                            dedupe_key, track, meta)
+                     VALUES (?1, 0, ?2, ?3, 'clean_archive', ?4, 'session', NULL)",
+                    rusqlite::params![D1 * DAY + i, found.project.0, subject, format!("ca:{i}")],
+                )
+                .unwrap();
+        }
+        let doc = export(guard.conn(), 1, now).unwrap();
+        drop(guard);
+        doc
+    };
+
+    // Another index finds the same copy and never evaluates it; 10 XP of its own (level 1) is
+    // the level shown. Then the copy's record is staged.
+    let other = tempfile::tempdir().unwrap();
+    rig.index = Arc::new(Mutex::new(Index::open_at(other.path(), now).unwrap()));
+    let project = rig.hand_off(&path).project;
+    library_rows(&rig.index, "amnesty_verdict", 1);
+    assert_eq!(present(&rig.index, now), 1);
+    let staged = rig
+        .index
+        .lock()
+        .unwrap()
+        .with_tx(|tx| stage_pending(tx, &doc, now + 10))
+        .unwrap();
+    assert!(staged > 0, "the export staged nothing");
+    let waiting = seen(&rig.index, now + 20);
+    assert_eq!(
+        (waiting.displayed, waiting.shown, waiting.line),
+        (Some(1), Some(1), None),
+        "nothing applies the record before the evaluator"
+    );
+
+    evaluate(&rig.index, project, now + 30);
+    let applied = seen(&rig.index, now + 40);
+    assert_eq!(applied.displayed, Some(2), "the copy's rows came back");
+    assert_eq!(applied.line, None, "the evaluator's restore made a line");
+    assert_eq!(
+        applied.shown,
+        Some(2),
+        "the level shown follows the restore"
+    );
     assert_eq!(applied.since, Some(applied.max_id));
 }
 

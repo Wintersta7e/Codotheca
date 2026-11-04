@@ -12067,6 +12067,14 @@
           "assert": "Class 4: a rebuild through the production chain restores the ledger with no line and level_line_since at the restored ledger's highest id; a copy's records the scan hand-off applies later do the same."
         },
         {
+          "id": "AC-P4-43-5-restore-completion",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-43",
+          "test": "motivation_silent::ac_p4_43_5_restore_at_completion",
+          "assert": "Class 4 at the evaluator: a copy's record a project's first projection write applies raises the level while one is shown, makes no line, and the level shown follows it."
+        },
+        {
           "id": "AC-P4-43-5-inert",
           "status": "automated",
           "runner": "cargo",
