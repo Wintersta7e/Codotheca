@@ -111,6 +111,16 @@
   animation: none;
 }
 
+/* [p4] §43.6's flip is absent below `full`: the digits and the fill swap. Both of its classes are
+   named at both tiers — `off`'s blanket weighs less than the flip's `[data-flip]` selectors, and
+   this rule ties them, so it wins by coming last. */
+[data-effects-tier='reduced'] .cdt-level-digit,
+[data-effects-tier='off'] .cdt-level-digit,
+[data-effects-tier='reduced'] .cdt-xp-fill,
+[data-effects-tier='off'] .cdt-xp-fill {
+  animation: none;
+}
+
 /* The scheduled flicker rides the tier and gets no switch of its own (§11.3a). */
 [data-effects-tier='reduced'] .cdt-card-halo,
 [data-effects-tier='off'] .cdt-card-halo {

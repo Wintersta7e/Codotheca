@@ -1,6 +1,7 @@
 /*
  * §43.2's status band — the prototype's geometry snapped by §8.7, with the table's corrections:
- * every label, line and day letter at --text-3, the tracks on --line-2. No literal colour.
+ * every label, line and day letter at --text-3, the tracks on --line-2. No literal colour but
+ * the flip's flash, the vocabulary's one pure white.
  *
  * Nothing here moves at rest: the ring, the bar and the cell declare `transition: none`, so a
  * changed reading lands as a cut at every tier. The flip (§43.6) is the band's only motion.
@@ -33,6 +34,8 @@
 }
 
 .cdt-band-level-figure {
+  position: relative;
+  perspective: 6.2em;
   font-family: var(--font-display);
   font-size: 46px;
   font-weight: 700;
@@ -81,6 +84,105 @@
   background: var(--sig);
   opacity: 0.72;
   transition: none;
+}
+
+/*
+ * §43.6's flip — the band's one motion, played once on the user's next input after a rise. Two
+ * classes carry every animated element, `.cdt-level-digit` and `.cdt-xp-fill`, and `motion.css`
+ * clamps both at `reduced` and `off`. Each resting style here is the flip's end state — the old
+ * digits absent, the new digits and the fill in place, the flash dark — so the clamp swaps
+ * rather than freezes. The translates are the prototype's 84px values in `em`, scaled to the
+ * 46px number; `.cdt-band-level-figure` gives the digits their perspective.
+ */
+.cdt-level-digit {
+  display: block;
+}
+
+.cdt-level-digit[data-flip='old'] {
+  position: absolute;
+  inset: 0;
+  text-align: center;
+  opacity: 0;
+  animation: levelOut 500ms 100ms cubic-bezier(0.4, 0.1, 0.6, 1) both;
+}
+
+.cdt-level-digit[data-flip='new'] {
+  animation: levelIn 620ms 300ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+
+.cdt-xp-fill {
+  transform-origin: left;
+}
+
+.cdt-xp-fill[data-flip='surge'] {
+  animation: xpSurge 800ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+
+.cdt-band-xp-flash {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  opacity: 0;
+}
+
+.cdt-xp-fill[data-flip='flash'] {
+  animation: xpFlash 700ms 200ms ease-out both;
+}
+
+@keyframes levelOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0) rotateX(0deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-0.31em) rotateX(72deg);
+  }
+}
+
+@keyframes levelIn {
+  0% {
+    opacity: 0;
+    transform: translateY(0.36em) rotateX(-70deg);
+  }
+
+  62% {
+    transform: translateY(-0.04em) rotateX(6deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes xpSurge {
+  0% {
+    transform: scaleX(0);
+  }
+
+  72% {
+    transform: scaleX(1.04);
+  }
+
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes xpFlash {
+  0% {
+    opacity: 0;
+  }
+
+  30% {
+    opacity: 0.9;
+  }
+
+  100% {
+    opacity: 0;
+  }
 }
 
 /* §43.4's line: a plain button after the XP bar. Its type and colour clear §8.7's floor on

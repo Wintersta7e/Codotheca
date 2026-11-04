@@ -329,6 +329,10 @@ const UNMOUNTED = new Map([
   // §7.8's watermark is clamped ahead of any producer: no section gives it a glyph, so `Card`
   // passes `CardPlate` none and a clamp that waited for one would ship an escape the day it came.
   ['.cdt-sigil', '§7.8 — no section gives the watermark a glyph, so nothing mounts one'],
+  // [p4] §43.6: the flip is the status band's one motion, and the band mounts both of its
+  // classes (`motivation/StatusBand.test.tsx`). A tile carrying either would move on the grid.
+  ['.cdt-level-digit', "§43.6 — the band's flip; a tile must never carry one"],
+  ['.cdt-xp-fill', "§43.6 — the band's flip; a tile must never carry one"],
 ]);
 
 describe('the mounted tile carries the class names motion.css clamps', () => {

@@ -3,8 +3,9 @@
  * §8.0's notice slot. It draws the level, the rings, the live session and the week's rhythm from
  * the one `MotivationState` the window holds, and draws no unknown as a zero.
  *
- * Nothing in it moves at rest: a ring, the bar and a cell change by a cut at every tier. Nothing
- * in it is a live region. Every element quiet mode removes carries `data-motivation`.
+ * Nothing in it moves at rest: a ring, the bar and a cell change by a cut at every tier, and its
+ * one motion, §43.6's flip, follows the user's input. Nothing in it is a live region. Every
+ * element quiet mode removes carries `data-motivation`.
  */
 import { type CSSProperties, type ReactElement, type RefObject, useEffect, useRef } from 'react';
 import type { MotivationState, ProjectId, ProjectRow, SessionRef } from '../../generated/protocol';
@@ -19,6 +20,7 @@ import { MotivationLineButton } from './MotivationLineButton';
 import { rhythmModel } from './rhythm';
 import { ringsModel, type RingGlyph } from './rings';
 import { useBandOnScreen } from './useBandOnScreen';
+import { useLevelFlip } from './useLevelFlip';
 
 /**
  * §43.2: the shelf is the mounted screen, the layer is shown, and the library holds a live row.
@@ -128,6 +130,9 @@ function Band(props: StatusBandProps & { readonly state: MotivationState }): Rea
   const active = useWindowActive();
   const shown = onScreen && active;
   const wasShown = useRef(false);
+  // §43.6: the flip listens on the band's place alone, since a window gaining focus fires it.
+  const flip = useLevelFlip(state, onScreen);
+  const playing = flip.playing;
 
   // §43.9: each transition into *on screen in an active window* tells the core the band was
   // seen. A hidden or unfocused window sends nothing, and staying shown sends nothing more.
@@ -165,7 +170,19 @@ function Band(props: StatusBandProps & { readonly state: MotivationState }): Rea
           }}
         >
           <span className="cdt-band-level-figure" data-unknown={level.unknown ? 'true' : undefined}>
-            {level.number}
+            {playing === null ? null : (
+              // The leaving number is motion, not content: the button's name is the level now.
+              <span className="cdt-level-digit" data-flip="old" aria-hidden="true">
+                {String(playing.from)}
+              </span>
+            )}
+            <span
+              className="cdt-level-digit"
+              data-flip={playing === null ? undefined : 'new'}
+              ref={flip.incoming}
+            >
+              {level.number}
+            </span>
           </span>
           <span className="cdt-band-level-label">{LEVEL_LABEL}</span>
         </button>
@@ -174,9 +191,17 @@ function Band(props: StatusBandProps & { readonly state: MotivationState }): Rea
           {level.bar === null ? null : (
             <div className="cdt-band-xp-track">
               <div
-                className="cdt-band-xp-fill"
+                className="cdt-band-xp-fill cdt-xp-fill"
+                data-flip={playing === null ? undefined : 'surge'}
                 style={fractionStyle('--cdt-band-fill', level.bar)}
               />
+              {playing === null ? null : (
+                <div
+                  className="cdt-band-xp-flash cdt-xp-fill"
+                  data-flip="flash"
+                  aria-hidden="true"
+                />
+              )}
             </div>
           )}
         </div>

@@ -10,6 +10,8 @@ import css from './card.css?raw';
 // clamp that selects nothing.
 import decayCss from './decay.css?raw';
 import motionCss from './motion.css?raw';
+// [p4] §43.6's flip classes are the band's, declared beside its animation in `band.css`.
+import bandCss from '../motivation/band.css?raw';
 
 /**
  * Both `?raw` imports, asserted non-empty before anything reads them. Vitest stubs CSS to an
@@ -224,7 +226,11 @@ describe('the motion tier clamp resolves against these class names', () => {
     // [p3] `.cdt-surge` sat on a pending list here while `motion.css` clamped a class no rule
     // declared yet — R112 gave the clamp and the element to two different changes. `card.css`
     // declares it now, so every clamped name is held to this assertion and none is excused.
-    const declared = `${body}\n${decayCss.replace(/\/\*[\s\S]*?\*\//g, '')}`;
+    // [p4] And the band's stylesheet, which declares §43.6's two flip classes.
+    expect(bandCss.length).toBeGreaterThan(500);
+    const declared = [decayCss, bandCss]
+      .map((sheet) => sheet.replace(/\/\*[\s\S]*?\*\//g, ''))
+      .reduce((all, sheet) => `${all}\n${sheet}`, body);
     for (const name of clamped) {
       expect(declared, `${name} is clamped by motion.css and declared by no rule`).toContain(name);
     }

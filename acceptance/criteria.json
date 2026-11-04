@@ -12148,11 +12148,19 @@
       "checks": [
         {
           "id": "AC-P4-43-8",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
-          "test": "AC-P4-43-8",
-          "assert": "The flip is armed only by a motivation/changed raising the line's level above the level the band last painted in this renderer's lifetime, and fires once on the next input or focus-gain with the band on screen; it never arms on first paint, arrival, return, badge or a silent rise, and an input mid-flip ends it at its end state. Durations and curves are read from the imported stylesheet, asserted non-empty first, and compared as numbers."
+          "test": "AC-P4-43-8 a rise above the painted level flips once on the next input, and nothing else arms it",
+          "assert": "The flip is armed only by a motivation/changed raising the line's level above the level the band last painted in this renderer's lifetime, and fires once on the next input or focus-gain with the band on screen; it never arms on first paint, arrival, return, badge or a silent rise, and an input mid-flip ends it at its end state."
+        },
+        {
+          "id": "AC-P4-43-8-css",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-43",
+          "test": "AC-P4-43-8-css the flip's durations, delays and curves are \u00a743.6's table, read as numbers",
+          "assert": "The flip's durations, delays and curves are read from the imported stylesheet, asserted non-empty first, and compared as numbers with \u00a743.6's table; the overshoot curve is absent."
         },
         {
           "id": "AC-P4-43-8-app",
@@ -12173,7 +12181,7 @@
         {
           "id": "AC-P4-43-9",
           "shares": "AC-P3-34-14",
-          "status": "deferred",
+          "status": "automated",
           "runner": "script",
           "owner": "p4-43",
           "test": "check-motion-clamp:every-animated-class-is-clamped",
