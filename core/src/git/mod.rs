@@ -9,6 +9,7 @@
 
 mod analyse;
 mod backend;
+pub(crate) mod children;
 mod error;
 mod exec;
 mod facts;
@@ -32,6 +33,7 @@ pub use analyse::{
     StatusEntry, WorktreeScan,
 };
 pub use backend::{require_floor, GitBackend, JobContext, SystemGit};
+pub use children::close_children;
 pub use error::{classify, classify_spawn, transport_refused, BusyMarker, GitError, GitResult};
 pub use exec::{GitExec, GitOutput, RunLimits};
 pub use facts::{repo_facts, RepoFacts};

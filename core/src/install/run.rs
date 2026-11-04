@@ -314,8 +314,8 @@ fn publish(
 
 /// §24.3c's cancel, end to end.
 ///
-/// **Kills the group, not the child.** `WriteExec` spawns through `CommandGroup::group_spawn`
-/// (`core/src/gitw/exec.rs:244`) and kills through the group handle when this token fires; a
+/// **Kills the group, not the child.** `WriteExec` spawns through `CommandGroup::group`
+/// (`WriteExec::run`) and kills through the group handle when this token fires; a
 /// Windows child killed without a Job Object leaves orphans holding file locks, and the staging
 /// removal then fails with *Access is denied*. Recorded in this repository and in §24.3c.
 ///

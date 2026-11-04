@@ -33,6 +33,10 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
+/// How long an exiting core waits for its git children to be killed and reaped. Inside the
+/// shell's own stop deadline, so the shell never has to kill a core that is merely tidying up.
+const CHILDREN_CLOSE_LIMIT: std::time::Duration = std::time::Duration::from_secs(2);
+
 fn note(line: &str) {
     let _ = writeln!(std::io::stderr(), "{line}");
 }
@@ -449,6 +453,14 @@ fn main() -> ExitCode {
 
     let parent = OsParentProbe::new(args.parent_pid);
     let exit = run_loop(transport, &events, &mut handler, epoch, &parent);
+    // Last, so nothing still running can start another: a git child the core was still starting
+    // when it exited would stay suspended on Windows, holding the shell's pipes, for ever.
+    let left = codotheca_core::git::close_children(CHILDREN_CLOSE_LIMIT);
+    if left > 0 {
+        note(&format!(
+            "codotheca-core: {left} git child(ren) still live at exit"
+        ));
+    }
     note(&format!("codotheca-core: exiting ({exit:?})"));
     ExitCode::SUCCESS
 }

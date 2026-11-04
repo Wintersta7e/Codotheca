@@ -2,9 +2,9 @@
 //!
 //! Two structural guarantees:
 //!
-//! * every child goes into a process group (Linux) or Job Object (Windows) via
-//!   `group_spawn`, so [`GitExec::run_piped`] tears down the whole tree and leaves no orphan
-//!   holding a file lock;
+//! * every child goes into a process group (Linux) or a kill-on-close Job Object (Windows) via
+//!   `CommandGroup::group`, so [`GitExec::run_piped`] tears down the whole tree and leaves no
+//!   orphan holding a file lock, and is admitted to `children` so the core's exit ends it;
 //! * [`GitExec::run_piped`] takes a writer closure and a reader closure and runs each on its
 //!   own thread, closing stdin when the writer returns. Writing everything and only then
 //!   reading deadlocks once git's stdout fills the pipe buffer, and this API gives a caller no
@@ -18,10 +18,9 @@ use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use command_group::CommandGroup;
-
 use crate::cancel::CancelToken;
 
+use super::children::{spawn_group, CHILDREN};
 use super::error::{classify, classify_spawn, GitError, GitResult};
 use super::invocation::{base_args, neutralise_env, pin_no_lazy_fetch};
 use super::lazy_fetch::{self, LazyFetch};
@@ -313,7 +312,12 @@ impl GitExec {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = cmd.group_spawn().map_err(|e| classify_spawn(&e))?;
+        // Admitted before the spawn and held until the child is reaped, so a closing core waits
+        // for this spawn to come back and this child to end (`children`).
+        let _admitted = CHILDREN.admit().ok_or(GitError::Cancelled)?;
+        // Kill on drop: the Job Object ends the child when its last handle closes — which is what
+        // the OS does to every handle when the core exits without closing (Windows).
+        let mut child = spawn_group(&mut cmd).map_err(|e| classify_spawn(&e))?;
         let missing = || GitError::Internal {
             detail: "child pipe was not created".to_owned(),
         };
@@ -345,7 +349,7 @@ impl GitExec {
                 Ok(None) => {}
                 Err(e) => return Err(classify_spawn(&e)),
             }
-            if cancel.is_cancelled() {
+            if cancel.is_cancelled() || CHILDREN.is_closing() {
                 let _ = child.kill();
                 let _ = child.wait();
                 break Stop::Cancelled;

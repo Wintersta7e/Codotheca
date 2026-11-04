@@ -16,9 +16,8 @@ use std::sync::{mpsc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use command_group::CommandGroup;
-
 use crate::cancel::CancelToken;
+use crate::git::children::{spawn_group, CHILDREN};
 use crate::git::{
     classify_spawn, neutralise_env, parse_version, transport_refused, GitError, GitResult,
     GitVersion,
@@ -314,6 +313,7 @@ impl WriteExec {
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null());
+            let _admitted = CHILDREN.admit().ok_or(GitError::Cancelled)?;
             let out = cmd.output().map_err(|e| classify_spawn(&e))?;
             let probed = parse_version(&out.stdout)
                 .filter(|_| out.status.success())
@@ -353,6 +353,7 @@ impl WriteExec {
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        let _admitted = CHILDREN.admit().ok_or(GitError::Cancelled)?;
         let out = cmd.output().map_err(|e| classify_spawn(&e))?;
         match out.status.code() {
             Some(0) => Ok(FilterDrivers::enumerated(parse_filter_drivers(&out.stdout))),
@@ -369,10 +370,10 @@ impl WriteExec {
 
     /// Run one intent to completion, streaming the child's stderr a line at a time.
     ///
-    /// Spawned through `CommandGroup::group_spawn` exactly as `core/src/git/exec.rs` does, so a
-    /// cancel kills the **group** rather than the child: killing a Windows child without a Job
-    /// Object leaves orphans holding file locks, and the staging removal then fails with *Access
-    /// is denied*.
+    /// Spawned through `CommandGroup::group`, killed on drop, exactly as `core/src/git/exec.rs`
+    /// does, so a cancel kills the **group** rather than the child: killing a Windows child
+    /// without a Job Object leaves orphans holding file locks, and the staging removal then fails
+    /// with *Access is denied*.
     ///
     /// **Streams (§47.3).** Stdin, when the intent has a payload, is written on its own thread and
     /// then closed; otherwise it is `Stdio::null()`. Stdout is kept when the intent parses it and
@@ -424,7 +425,10 @@ impl WriteExec {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-        let mut child = cmd.group_spawn().map_err(|e| classify_spawn(&e))?;
+        // Admitted before the spawn and held until the child is reaped, so a closing core waits
+        // for this spawn to come back and this child to end; kill on drop, as the read seam does.
+        let _admitted = CHILDREN.admit().ok_or(GitError::Cancelled)?;
+        let mut child = spawn_group(&mut cmd).map_err(|e| classify_spawn(&e))?;
         let missing = || GitError::Internal {
             detail: "child pipe was not created".to_owned(),
         };
@@ -532,7 +536,7 @@ fn wait(
             Ok(None) => {}
             Err(e) => return Err(classify_spawn(&e)),
         }
-        if cancel.is_cancelled() {
+        if cancel.is_cancelled() || CHILDREN.is_closing() {
             let _ = child.kill();
             let _ = child.wait();
             break Stop::Cancelled;
