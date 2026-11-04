@@ -8,8 +8,8 @@
 //! - **All three stdio handles are `null`.** An editor that inherited our stdout would write
 //!   into the protocol frame stream, which §2.1 forbids absolutely.
 //! - **A non-waiting child is detached** so it outlives the core: `process_group(0)` on Unix,
-//!   `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` on Windows. Both APIs are safe; the crate
-//!   forbids `unsafe`, so `pre_exec` is neither available nor needed.
+//!   `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` on Windows, where every child also leaves the
+//!   core's kill-on-close job. Both APIs are safe; the crate forbids `unsafe`, so no `pre_exec`.
 //! - **Nothing here ever kills anything.** §17: phase 1 has no destructive operation, and §7.8
 //!   says Stop "writes nothing to disk". `session.stop` closes the ledger, never the editor.
 
@@ -57,19 +57,27 @@ impl Spawner for OsSpawner {
             command.env(key, value);
         }
 
+        #[cfg(unix)]
         if !inv.wait {
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::CommandExt as _;
-                command.process_group(0);
+            use std::os::unix::process::CommandExt as _;
+            command.process_group(0);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt as _;
+            const DETACHED_PROCESS: u32 = 0x0000_0008;
+            const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+            const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+            let mut flags = 0;
+            if !inv.wait {
+                flags |= DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
             }
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt as _;
-                const DETACHED_PROCESS: u32 = 0x0000_0008;
-                const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-                command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+            // Out of the core's kill-on-close job, waited on or not: a quit must never end what
+            // the user launched.
+            if crate::lifecycle::own_job_allows_breakaway() {
+                flags |= CREATE_BREAKAWAY_FROM_JOB;
             }
+            command.creation_flags(flags);
         }
 
         let mut child = command.spawn().map_err(|err| LaunchError::Spawn {

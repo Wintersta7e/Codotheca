@@ -4,7 +4,8 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-//! Spawning a launch target: the exit waiter, a detached child, and our stdout never inherited.
+//! Spawning a launch target: the exit waiter, a detached child, our stdout never inherited, and
+//! a launched program that outlives the core.
 
 use codotheca_core::launch::argv::Invocation;
 use codotheca_core::launch::spawn::{OsSpawner, Spawner};
@@ -114,5 +115,139 @@ fn no_source_file_in_this_crate_shells_out_to_run_a_target() {
     assert!(
         offenders.is_empty(),
         "a launch path went through a shell: {offenders:?}"
+    );
+}
+
+/// Set, this test binary sleeps a minute: the program a launch starts.
+#[cfg(windows)]
+const SLEEPER_ENV: &str = "CODOTHECA_TEST_SLEEP";
+/// Set, this test binary stands in for the core: it joins its own job and launches.
+#[cfg(windows)]
+const CORE_ENV: &str = "CODOTHECA_TEST_LAUNCH_THEN_WAIT";
+/// What the stand-in prints, followed by three pids, once everything is started.
+#[cfg(windows)]
+const CORE_READY: &str = "launched";
+/// How long a process may take to end once the job holding it has closed.
+#[cfg(windows)]
+const SETTLE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Not a check of its own: with [`SLEEPER_ENV`] set it is a program that runs for a minute.
+#[cfg(windows)]
+#[test]
+fn helper_sleeps_for_a_minute() {
+    if std::env::var_os(SLEEPER_ENV).is_some() {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+}
+
+#[cfg(windows)]
+fn sleeper(wait: bool) -> Invocation {
+    Invocation {
+        program: std::env::current_exe().unwrap(),
+        argv: ["--exact", "helper_sleeps_for_a_minute"]
+            .iter()
+            .map(std::ffi::OsString::from)
+            .collect(),
+        cwd: None,
+        env: vec![(SLEEPER_ENV.to_owned(), "1".to_owned())],
+        wait,
+    }
+}
+
+/// Not a check of its own: with [`CORE_ENV`] set it joins its own job as the core does at
+/// startup, launches one detached and one waited-on program through the production spawner, and
+/// starts one plain child that stays in the job, then waits to be killed.
+#[cfg(windows)]
+#[test]
+fn helper_joins_its_own_job_and_launches() {
+    if std::env::var_os(CORE_ENV).is_none() {
+        return;
+    }
+    codotheca_core::lifecycle::join_own_job().expect("the job is joined");
+    let detached = OsSpawner.spawn(&sleeper(false), "sleeper").expect("spawn");
+    let waited = OsSpawner.spawn(&sleeper(true), "sleeper").expect("spawn");
+    let mut plain = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "helper_sleeps_for_a_minute"])
+        .env(SLEEPER_ENV, "1")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn");
+    eprintln!(
+        "{CORE_READY} {} {} {}",
+        detached.pid,
+        waited.pid,
+        plain.id()
+    );
+    // Killed long before the minute is up; the wait is only for a run that is not.
+    let _ = plain.wait();
+}
+
+#[cfg(windows)]
+fn alive(pid: u32) -> bool {
+    let out = std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("tasklist runs");
+    assert!(out.status.success(), "the process listing failed: {out:?}");
+    String::from_utf8_lossy(&out.stdout).contains(&format!("\",\"{pid}\",\""))
+}
+
+/// A program the user launched outlives a core killed outright, waited on or not: the core's
+/// kill-on-close job ends every child that stayed in it — the plain child proves the job is
+/// there — and a launch leaves the job as it is created.
+#[cfg(windows)]
+#[test]
+fn a_launched_program_outlives_a_killed_core() {
+    let mut core = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "helper_joins_its_own_job_and_launches",
+            "--nocapture",
+        ])
+        .env(CORE_ENV, "1")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("stand-in spawns");
+    let stderr = core.stderr.take().unwrap();
+    let ready = std::io::BufRead::lines(std::io::BufReader::new(stderr))
+        .map_while(Result::ok)
+        .find(|line| line.starts_with(CORE_READY))
+        .expect("the stand-in never launched");
+    let pids: Vec<u32> = ready
+        .split_whitespace()
+        .skip(1)
+        .map(|p| p.parse().unwrap())
+        .collect();
+    let [detached, waited, plain] = pids[..] else {
+        panic!("three pids expected: {ready}")
+    };
+    assert!(
+        alive(detached) && alive(waited) && alive(plain),
+        "the listing does not see the stand-in's children"
+    );
+
+    core.kill().expect("kill");
+    core.wait().expect("wait");
+    let until = std::time::Instant::now() + SETTLE;
+    while alive(plain) && std::time::Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    let survived = (alive(detached), alive(waited), alive(plain));
+    for pid in [detached, waited, plain] {
+        // Ours: started by this test; one pid, never a tree.
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .stdin(std::process::Stdio::null())
+            .output();
+    }
+    assert_eq!(
+        survived,
+        (true, true, false),
+        "(detached launch, waited launch, plain child) alive after the core was killed"
     );
 }

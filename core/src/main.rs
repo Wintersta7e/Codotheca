@@ -189,6 +189,13 @@ fn main() -> ExitCode {
         return exit;
     }
 
+    // Before the first child, so every child joins the core's own kill-on-close job as it is
+    // created. A failure leaves children to their own groups, so it is noted and the core runs on.
+    #[cfg(windows)]
+    if let Err(error) = codotheca_core::lifecycle::join_own_job() {
+        note(&format!("codotheca-core: own job: {error}"));
+    }
+
     // Before anything that may take time, so a group SIGTERM during startup cannot skip the
     // orderly close either. A failure costs only that, so it is noted and the core runs on.
     #[cfg(unix)]

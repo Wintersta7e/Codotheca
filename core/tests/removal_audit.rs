@@ -51,12 +51,12 @@ const BASELINE: &[RemovalAllowance] = &[
     },
     RemovalAllowance {
         file: "lifecycle.rs",
-        line: 326,
+        line: 367,
         reason: "a crashed run's own state directory under the app data root",
     },
     RemovalAllowance {
         file: "lifecycle.rs",
-        line: 347,
+        line: 388,
         reason: "the same state directory on the ordinary shutdown path",
     },
     RemovalAllowance {

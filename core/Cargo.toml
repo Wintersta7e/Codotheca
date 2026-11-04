@@ -154,6 +154,13 @@ trash = "=5.2.3"
 # exposes both but only on nightly, behind `windows_by_handle`, and this crate forbids `unsafe`.
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1"
+# The core's own kill-on-close Job Object (§3.4): a child the core is still starting when it dies
+# — created suspended, not yet in its own group — dies with it instead of waiting for ever. A safe
+# API over the job calls this crate cannot make itself (`unsafe` is forbidden), with breakaway so
+# a launched program outlives the core. Rejected: the 1.x line (winapi, unmaintained since 2.0),
+# two younger crates whose jobs set neither breakaway nor, in one, kill-on-close, and
+# `command-group`, which jobs only the children it spawns.
+win32job = "2"
 # §4bis.1's registry sources: the App Paths keys under both hives, and the default shell verb for
 # a folder. Read-only, and behind `#[cfg(windows)]` at every call site — the two Shell Link
 # parsers beside them are platform-free and are tested on Linux too.

@@ -235,6 +235,47 @@ pub fn consume_sigterm() -> std::io::Result<()> {
     Ok(())
 }
 
+/// The job the core put itself in. Never dropped: its handle closes only when the process ends,
+/// and that close is what ends every descendant still in it.
+#[cfg(windows)]
+static OWN_JOB: std::sync::OnceLock<win32job::Job> = std::sync::OnceLock::new();
+
+/// Puts the core in a Job Object of its own that kills every process in it when the core ends,
+/// however it ends — a quit, a crash, or a kill from outside.
+///
+/// Called at startup before any child exists, so each child joins the job as it is created: a
+/// child the core was still starting when it died — created suspended, not yet in its own group —
+/// dies with it instead of waiting for ever. The job lets a child leave only when its creator asks
+/// ([`own_job_allows_breakaway`]), which is how a program the user launches outlives the core.
+/// Linux has no equivalent without `unsafe`; there a child left behind is reparented and runs to
+/// its own end.
+///
+/// # Errors
+/// Returns the OS error when the job cannot be created or the core cannot join it; the core then
+/// runs as before, its children ended by their own groups.
+#[cfg(windows)]
+pub fn join_own_job() -> Result<(), win32job::JobError> {
+    if OWN_JOB.get().is_some() {
+        return Ok(());
+    }
+    let mut limits = win32job::ExtendedLimitInfo::new();
+    limits.limit_kill_on_job_close().limit_breakaway_ok();
+    let job = win32job::Job::create_with_limit_info(&limits)?;
+    job.assign_current_process()?;
+    // Only startup calls this, once; a lost race would drop a job nothing else is in.
+    let _ = OWN_JOB.set(job);
+    Ok(())
+}
+
+/// Whether the core is in its own job, so a child created with `CREATE_BREAKAWAY_FROM_JOB` leaves
+/// it. Outside it the flag is not asked for: a job that does not allow breakaway refuses the
+/// whole spawn.
+#[cfg(windows)]
+#[must_use]
+pub fn own_job_allows_breakaway() -> bool {
+    OWN_JOB.get().is_some()
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {

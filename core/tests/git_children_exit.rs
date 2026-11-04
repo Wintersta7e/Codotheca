@@ -6,13 +6,13 @@
 )]
 //! No git child outlives the core (§3.4).
 //!
-//! The real binary is spawned over a few hundred empty repositories, told to scan, and ended by
-//! closing stdin (the shell's orderly quit) while its discovery is still starting `git rev-parse`
-//! children; afterwards no process whose command line names this test's corpus may remain. A
-//! second process is killed outright while it holds a running git child, which must die with it. On Windows a child the core was still starting when it exited
+//! The real binary is spawned over a few hundred empty repositories, told to scan, and ended while
+//! its discovery is still starting `git rev-parse` children — by closing stdin (the shell's orderly
+//! quit) and, on Windows, by killing it outright; afterwards no process whose command line names
+//! this test's corpus may remain. A second process is killed outright while it holds a running git
+//! child, which must die with it. On Windows a child the core was still starting when it exited
 //! was left suspended for ever, holding the handles it inherited; on Linux a child is reparented
 //! and runs on after the core that asked for it is gone.
-
 use std::io::Write as _;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -333,6 +333,39 @@ fn a_killed_process_takes_its_running_git_child_with_it() {
     assert!(
         left.is_empty(),
         "the git child was still alive {SETTLE:?} after its parent was killed:\n{}",
+        left.join("\n")
+    );
+}
+
+/// A core killed outright in the middle of a spawn burst leaves nothing behind. Some child is
+/// always between its creation and its own Job Object at that moment; it is ended only because
+/// the core itself sits in a kill-on-close job from startup, which every child joins as it is
+/// created. Windows only: Linux has no kill-on-close group without `unsafe`, and a reparented
+/// child there runs its one `rev-parse` to its own end.
+#[cfg(windows)]
+#[test]
+fn a_core_killed_mid_spawn_burst_leaves_no_git_child_behind() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let (root, marker) = marked_root(tmp.path());
+    let data = tempfile::tempdir().expect("tmp");
+    let mut core = Core::spawn(data.path());
+    let status = core.scan_until_mid_burst(&root, &marker);
+
+    core.child.kill().expect("kill");
+    core.wait_exit();
+
+    let until = Instant::now() + SETTLE;
+    let left = loop {
+        let left = survivors(&marker);
+        if left.is_empty() || Instant::now() >= until {
+            break left;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    assert!(
+        left.is_empty(),
+        "{} git child(ren) were still alive {SETTLE:?} after the core was killed at {status}:\n{}",
+        left.len(),
         left.join("\n")
     );
 }
