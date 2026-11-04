@@ -135,7 +135,20 @@ function turnView(tier: ResolvedTier): Element {
 
 /** The reveal's root is the plain `.cdt-fr-view` entry; its evidence opens on SHOW WORKING. */
 function revealWithEvidence(tier: ResolvedTier): { view: Element; evidence: Element } {
-  render(<RevealScreen reveal={REVEAL} deps={REVEAL_DEPS} tier={tier} onGoOn={() => undefined} />);
+  render(
+    <RevealScreen
+      reveal={REVEAL}
+      deps={REVEAL_DEPS}
+      motivation={{
+        state: null,
+        badges: null,
+        acknowledge: () => Promise.resolve(),
+        markLanded: () => Promise.resolve(),
+      }}
+      tier={tier}
+      onGoOn={() => undefined}
+    />,
+  );
   const panel = screen.getAllByTestId('fr-panel')[0];
   if (panel === undefined) throw new Error('the reveal mounted no panel');
   fireEvent.click(panel);

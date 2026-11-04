@@ -15,6 +15,10 @@ import {
 } from 'react';
 
 import type {
+  BadgeKind,
+  BadgesListed,
+  MotivationAck,
+  MotivationState,
   ProjectId,
   Reveal,
   Root,
@@ -43,6 +47,8 @@ export interface FirstRunHostProps {
   readonly status: ScanStatus | null;
   readonly hasStoredShelf: boolean;
   readonly tier: ResolvedTier;
+  /** [p4] §43.15's one read, held once for the window; the reveal's `LEVEL` reads it. */
+  readonly motivation: MotivationState | null;
   readonly onOpenScanSummary: () => void;
   /** §10.4a: `SHOW ME` sets the shelf's query, expands every era and resets density. */
   readonly onShowMe: (query: string) => void;
@@ -239,6 +245,13 @@ export function FirstRunHost(props: FirstRunHostProps): ReactElement {
         await request('scan.start', { full: true });
       },
       loadReveal: (): Promise<Reveal> => request('stats.reveal', {}),
+      acknowledge: async (event: MotivationAck, level: number | null): Promise<void> => {
+        await request('motivation.acknowledge', { event, level });
+      },
+      listBadges: (): Promise<BadgesListed> => request('badges.list', {}),
+      markLanded: async (kind: BadgeKind): Promise<void> => {
+        await request('badges.markLanded', { kind });
+      },
       revealDeps,
       scan: {
         // §10.3's stripe. The seed is the tile's own name, which is what the card uses before a
@@ -276,6 +289,7 @@ export function FirstRunHost(props: FirstRunHostProps): ReactElement {
       status={props.status}
       hasStoredShelf={props.hasStoredShelf}
       tier={tier}
+      motivation={props.motivation}
     >
       {props.children}
     </FirstRunGate>

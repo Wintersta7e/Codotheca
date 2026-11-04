@@ -93,7 +93,20 @@ const SCREENS: readonly { readonly name: string; readonly draw: () => void }[] =
   {
     name: 'reveal',
     draw: () => {
-      render(<RevealScreen reveal={reveal} deps={revealDeps} tier="full" onGoOn={vi.fn()} />);
+      render(
+        <RevealScreen
+          reveal={reveal}
+          deps={revealDeps}
+          motivation={{
+            state: null,
+            badges: null,
+            acknowledge: () => Promise.resolve(),
+            markLanded: () => Promise.resolve(),
+          }}
+          tier="full"
+          onGoOn={vi.fn()}
+        />,
+      );
     },
   },
   {

@@ -80,6 +80,7 @@ function mount(
       status={over.status === undefined ? neverScanned : over.status}
       hasStoredShelf={over.hasStoredShelf ?? false}
       tier="off"
+      motivation={null}
       onOpenScanSummary={vi.fn()}
       onShowMe={vi.fn()}
     >
@@ -261,6 +262,7 @@ describe('FirstRunHost', () => {
         status={neverScanned}
         hasStoredShelf={false}
         tier="off"
+        motivation={null}
         onOpenScanSummary={vi.fn()}
         onShowMe={vi.fn()}
       >

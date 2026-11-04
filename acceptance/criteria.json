@@ -827,7 +827,7 @@
           "id": "AC-23-reveal",
           "status": "automated",
           "runner": "vitest",
-          "test": "AC-23 no figure over a partial index is presented bare",
+          "test": "AC-23 no figure over a partial index is presented bare, and only PLAYTIME, a computed LEVEL and a badge earned are complete by construction",
           "assert": "Every reveal figure renders with its basis rather than bare \u2014 the projects it was computed over and whether history is complete."
         },
         {
@@ -12222,18 +12222,18 @@
       "checks": [
         {
           "id": "AC-P4-43-11",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
-          "test": "AC-P4-43-11",
+          "test": "AC-P4-43-11 the reveal holds eight panels in order, gold on the eighth only, and LEVEL is never a zero",
           "assert": "The reveal holds eight panels in \u00a743.7's order, LEVEL sixth and BADGE EARNED eighth, with --tier-gold on panel 8 only; LEVEL never reads 0 or 1 while notComputed; BADGE EARNED is not computed while history is unread with no due, and absent over complete history with none; the grid floor is 200px at seven or eight panels and 260px at six; under quiet both panels are absent."
         },
         {
           "id": "AC-P4-43-11-grid",
-          "status": "deferred",
+          "status": "automated",
           "runner": "e2e",
           "owner": "p4-43",
-          "test": "AC-P4-43-11-grid",
+          "test": "AC-P4-43-11-grid the reveal lays out 3 + 3 at six, 4 + 3 at seven and 4 + 4 at eight",
           "assert": "In real Chromium with the real stylesheets, the reveal's markup lays out 4 + 4 at eight panels, 4 + 3 at seven and 3 + 3 at six (quiet) in the 860px column, printing each measured row."
         }
       ]
@@ -12254,10 +12254,10 @@
         },
         {
           "id": "AC-P4-43-12-renderer",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
-          "test": "AC-P4-43-12-renderer",
+          "test": "AC-P4-43-12-renderer the reveal records the level it displayed and lands the badge once",
           "assert": "The reveal screen sends revealLevelShown with the value it displays, or null when not computed, re-sends on a refresh in place and sends nothing from a hidden window; BADGE EARNED displayed in an active window lands its award once through badges.markLanded."
         }
       ]
@@ -12367,7 +12367,7 @@
         },
         {
           "id": "AC-P4-43-15-turn",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
           "test": "AC-P4-43-15 the turn's answer ends first run",

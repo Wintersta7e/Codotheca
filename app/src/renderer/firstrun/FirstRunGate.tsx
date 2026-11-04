@@ -13,12 +13,22 @@ import { initialTicks, refusedRow, suggestionKey, toRow } from './rootRows';
 import { RootsScreen } from './RootsScreen';
 import { ScanScreen } from './ScanScreen';
 import { RevealScreen } from './RevealScreen';
+import { badgePending } from './revealMotivation';
 import type { PendingConfirm } from './RootsScreen';
 import type { ScanScreenDeps } from './ScanScreen';
 import type { RevealDeps, RevealPanel } from './revealModel';
 import type { ScanFeedEvent } from './scanFeed';
 import type { RootRow } from './rootRows';
-import type { Reveal, RootAdd, RootSuggestion, ScanStatus } from '../../generated/protocol';
+import type {
+  BadgeKind,
+  BadgesListed,
+  MotivationAck,
+  MotivationState,
+  Reveal,
+  RootAdd,
+  RootSuggestion,
+  ScanStatus,
+} from '../../generated/protocol';
 import type { CommitSuggestionRequest, PickRootReply } from '../../shared/channels';
 import type { ResolvedTier } from '../motion/tier';
 
@@ -46,6 +56,15 @@ export interface FirstRunGateDeps {
   readonly pickRoot: (confirmLarge: boolean) => Promise<PickRootReply>;
   readonly startScan: () => Promise<void>;
   readonly loadReveal: () => Promise<Reveal>;
+  /**
+   * §43.15's `motivation.acknowledge`: the reveal's `LEVEL` records what it displayed, and the
+   * turn's two answers end first run (`firstRunEnded`, the stamp's first-run path).
+   */
+  readonly acknowledge: (event: MotivationAck, level: number | null) => Promise<void>;
+  /** §40's `badges.list`, read with the reveal and again while `BADGE EARNED` is not computed. */
+  readonly listBadges: () => Promise<BadgesListed>;
+  /** §40's `badges.markLanded`, sent once `BADGE EARNED` is displayed in an active window. */
+  readonly markLanded: (kind: BadgeKind) => Promise<void>;
   readonly revealDeps: RevealDeps;
   readonly scan: ScanScreenDeps;
   readonly subscribe: (cb: (event: ScanFeedEvent) => void) => () => void;
@@ -67,6 +86,8 @@ export interface FirstRunGateProps {
   /** True when the stored snapshot painted rows — proof a scan has already run. */
   readonly hasStoredShelf: boolean;
   readonly tier: ResolvedTier;
+  /** The window's one motivation read (§43.15); `null` is not read, and draws no LEVEL. */
+  readonly motivation: MotivationState | null;
   readonly children: ReactNode;
 }
 
@@ -87,7 +108,7 @@ export function gateDecision(
 }
 
 export function FirstRunGate(props: FirstRunGateProps): ReactElement {
-  const { deps, status, hasStoredShelf, tier, children } = props;
+  const { deps, status, hasStoredShelf, tier, motivation, children } = props;
   /**
    * §10 is a **sequence**, so its gate is an entry condition and not a live one.
    *
@@ -115,11 +136,14 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [busy, setBusy] = useState(false);
   const [reveal, setReveal] = useState<Reveal | null>(null);
+  const [badges, setBadges] = useState<BadgesListed | null>(null);
+  const badgesRef = useRef<BadgesListed | null>(null);
   const [milestone, setMilestone] = useState<RevealPanel | null>(null);
   const foundRef = useRef(0);
 
   const { nowMs, suggestRoots, commitSuggestion, pickRoot, startScan, loadReveal, subscribe } =
     deps;
+  const { acknowledge, listBadges, markLanded } = deps;
   const { revealDeps } = deps;
   const active = decision === 'first-run' && state.phase !== 'shelf';
 
@@ -187,13 +211,46 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
 
   // §10.4: the reveal fires at walk completion, not at full history — otherwise it waits
   // minutes. A shelf with no projects never reaches it and gets §11.1 instead.
+  // [p4] §43.7: `BADGE EARNED` is read with the figures, so the reveal opens on its final count
+  // rather than growing a panel after its cascade. A refused read draws no badge panel.
   useEffect(() => {
     if (state.phase !== 'reveal' || reveal !== null) return;
-    void loadReveal().then((r) => {
-      if ((r.projectCount.value ?? 0) <= 0) dispatch({ kind: 'nothing_found' });
-      else setReveal(r);
+    void Promise.all([
+      loadReveal(),
+      listBadges().then(
+        (listed): BadgesListed | null => listed,
+        () => null,
+      ),
+    ]).then(([r, listed]) => {
+      if ((r.projectCount.value ?? 0) <= 0) {
+        dispatch({ kind: 'nothing_found' });
+        return;
+      }
+      badgesRef.current = listed;
+      setBadges(listed);
+      setReveal(r);
     });
-  }, [state.phase, reveal, loadReveal]);
+  }, [state.phase, reveal, loadReveal, listBadges]);
+
+  // §43.7: a `BADGE EARNED` drawn *not computed* is refreshed in place on each motivation change
+  // — an award publishes one — and removed in place if it resolves to none. Only the
+  // motivation payload moving re-reads it, so a pending answer does not loop on itself.
+  useEffect(() => {
+    const current = badgesRef.current;
+    if (state.phase !== 'reveal' || current === null || !badgePending(current)) return undefined;
+    let live = true;
+    listBadges().then(
+      (listed) => {
+        if (!live) return;
+        badgesRef.current = listed;
+        setBadges(listed);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [motivation, state.phase, listBadges]);
 
   const rows = useMemo<readonly RootRow[]>(
     () => [...suggestions.map((s) => toRow(s, ticked.has(suggestionKey(s)))), ...extra],
@@ -260,14 +317,24 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
 
   const turnHandlers = useMemo<TurnHandlers>(
     () => ({
+      // [p4] §43.15: the turn's answer ends first run, sent before the beat is left — the real
+      // first-run path to the stamp. Its failure does not hold the user on the turn.
       onShowMe: () => {
+        acknowledge('firstRunEnded', null).then(
+          () => undefined,
+          () => undefined,
+        );
         dispatch({ kind: 'show_me' });
       },
       onNotNow: () => {
+        acknowledge('firstRunEnded', null).then(
+          () => undefined,
+          () => undefined,
+        );
         dispatch({ kind: 'not_now' });
       },
     }),
-    [],
+    [acknowledge],
   );
 
   if (decision === 'wait') return <div className="cdt-fr-view" data-effects-tier={tier} />;
@@ -308,6 +375,7 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
         <RevealScreen
           reveal={reveal}
           deps={revealDeps}
+          motivation={{ state: motivation, badges, acknowledge, markLanded }}
           tier={tier}
           onGoOn={() => {
             dispatch({ kind: 'go_on' });

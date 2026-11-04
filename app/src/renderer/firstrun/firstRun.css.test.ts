@@ -6,6 +6,7 @@ import { TOKENS } from '../theme/tokens';
 import CSS from './firstRun.css?raw';
 import vocabularyJson from '../styles/css-vocabulary.json?raw';
 import { required } from '../../shared/required';
+import { revealGridFloorPx } from './revealMotivation';
 
 const VOCABULARY = JSON.parse(vocabularyJson) as {
   readonly durationsMs: readonly number[];
@@ -109,9 +110,22 @@ test('the two ornament greys appear only where §10 assigns them', () => {
 
 // §10.4a: a 260px floor fits three tracks and never four, so six panels lay out 3+3. At 200px
 // six lay out 4+2, and a two-item row under a full one reads as two panels that failed to load.
-test('the reveal grid floor is 260px', () => {
-  expect(CSS).toMatch(/\.cdt-fr-panels\b[^}]*minmax\(\s*260px\s*,\s*1fr\s*\)/s);
-  expect(CSS).not.toMatch(/minmax\(\s*200px/);
+// [p4] §43.7: at seven or eight the floor is 200px — 4 + 3 and 4 + 4 in the 860px column; at
+// eight under 260px the grid reads 3 + 3 + 2. Both floors are `revealGridFloorPx`'s.
+test('the reveal grid floor is 260px at six panels and 200px at seven or eight', () => {
+  const floor = (selector: string): string => {
+    const rule = new RegExp(`${selector}\\s*\\{([^}]*)\\}`).exec(CSS);
+    return required(rule?.[1], selector);
+  };
+  const minmax = (px: number): RegExp =>
+    new RegExp(`minmax\\(\\s*${String(px)}px\\s*,\\s*1fr\\s*\\)`);
+  expect(floor('\\.cdt-fr-panels')).toMatch(minmax(revealGridFloorPx(6)));
+  expect(revealGridFloorPx(7)).toBe(revealGridFloorPx(8));
+  expect(revealGridFloorPx(8)).not.toBe(revealGridFloorPx(6));
+  expect(floor('\\.cdt-fr-panels--dense')).toMatch(minmax(revealGridFloorPx(8)));
+  // The 200px floor belongs to the seven-or-eight rule and to no other.
+  const elsewhere = CSS.replace(/\.cdt-fr-panels--dense\s*\{[^}]*\}/, '');
+  expect(elsewhere).not.toMatch(/minmax\(\s*200px/);
 });
 
 // §10.3a: the scan tile carries a 1px frame, a 1px-inset plate and nothing else. It is not a

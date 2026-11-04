@@ -10,6 +10,10 @@ import type { Mock } from 'vitest';
 import type { CommitSuggestionRequest, PickRootReply } from '../../shared/channels';
 import type { ScanFeedEvent } from './scanFeed';
 import type {
+  BadgeKind,
+  BadgesListed,
+  MotivationAck,
+  MotivationState,
   ProjectId,
   Reveal,
   RootAdd,
@@ -33,12 +37,17 @@ interface Harness {
     readonly pickRoot: Mock<(confirmLarge: boolean) => Promise<PickRootReply>>;
     readonly startScan: Mock<() => Promise<void>>;
     readonly loadReveal: Mock<() => Promise<Reveal>>;
+    readonly acknowledge: Mock<(event: MotivationAck, level: number | null) => Promise<void>>;
+    readonly listBadges: Mock<() => Promise<BadgesListed>>;
+    readonly markLanded: Mock<(kind: BadgeKind) => Promise<void>>;
   };
   readonly emit: (event: ScanFeedEvent) => void;
   readonly released: Mock<() => void>;
   readonly unmount: () => void;
   /** Re-render with new props, which is how the core's own status reaches a mounted gate. */
   readonly setStatus: (next: ScanStatus | null) => void;
+  /** Re-render with a new motivation payload, as a `motivation/changed` reaches the host. */
+  readonly setMotivation: (next: MotivationState | null) => void;
 }
 
 afterEach(() => {
@@ -83,6 +92,9 @@ const reveal: Reveal = {
 
 const noRefusal = { root: null, refusedBecause: null, estimatedDirs: null };
 
+/** Nothing due over a finished history: `BADGE EARNED` is not drawn. */
+const noBadge: BadgesListed = { awards: [], due: null, basis };
+
 function harness(
   over: Partial<Parameters<typeof FirstRunGate>[0]> = {},
   rows: readonly RootSuggestion[] = [suggestion],
@@ -97,6 +109,11 @@ function harness(
     pickRoot: vi.fn((): Promise<PickRootReply> => Promise.resolve({ kind: 'cancelled' })),
     startScan: vi.fn(() => Promise.resolve(undefined)),
     loadReveal: vi.fn(() => Promise.resolve(reveal)),
+    acknowledge: vi.fn<(event: MotivationAck, level: number | null) => Promise<void>>(() =>
+      Promise.resolve(),
+    ),
+    listBadges: vi.fn(() => Promise.resolve(noBadge)),
+    markLanded: vi.fn<(kind: BadgeKind) => Promise<void>>(() => Promise.resolve()),
     revealDeps: {
       nowSecs: 1_760_000_000,
       languageTally: [],
@@ -131,7 +148,14 @@ function harness(
     rootLine: `/somewhere/dev · 1 ${copy.ROOTS_SUFFIX}`,
   };
   const view = render(
-    <FirstRunGate deps={deps} status={status(null)} hasStoredShelf={false} tier="full" {...over}>
+    <FirstRunGate
+      deps={deps}
+      status={status(null)}
+      hasStoredShelf={false}
+      tier="full"
+      motivation={null}
+      {...over}
+    >
       <div data-testid="shelf">the shelf</div>
     </FirstRunGate>,
   );
@@ -147,7 +171,28 @@ function harness(
     unmount: view.unmount,
     setStatus: (next: ScanStatus | null) => {
       view.rerender(
-        <FirstRunGate deps={deps} status={next} hasStoredShelf={false} tier="full" {...over}>
+        <FirstRunGate
+          deps={deps}
+          status={next}
+          hasStoredShelf={false}
+          tier="full"
+          motivation={null}
+          {...over}
+        >
+          <div data-testid="shelf">the shelf</div>
+        </FirstRunGate>,
+      );
+    },
+    setMotivation: (next: MotivationState | null) => {
+      view.rerender(
+        <FirstRunGate
+          deps={deps}
+          status={status(null)}
+          hasStoredShelf={false}
+          tier="full"
+          {...over}
+          motivation={next}
+        >
           <div data-testid="shelf">the shelf</div>
         </FirstRunGate>,
       );
@@ -535,36 +580,138 @@ test('the query the turn computed reaches the host, and NOT NOW carries none', a
 });
 
 // Criterion 23, reveal half: every reveal figure carries its coverage; shallow repositories are
-// excluded from history statistics and counted in the coverage line.
-test('AC-23 no figure over a partial index is presented bare', async () => {
-  const partial = { projectsCovered: 212, projectsTotal: 400, historyComplete: false };
-  const { deps } = harness();
-  deps.loadReveal.mockResolvedValue({
-    spanDays: { value: 4_400, basis: partial },
-    projectCount: { value: 212, basis: partial },
-    languageCount: { value: 9, basis: partial },
-    bestYear: { value: 2021, basis: partial },
-    playtimeSeconds: {
-      value: 0,
-      basis: { ...partial, projectsTotal: 212, historyComplete: true },
+// excluded from history statistics and counted in the coverage line. Over eight panels three are
+// complete by construction and carry none: PLAYTIME, a computed LEVEL and a badge earned (§43.7).
+const partialBasis = { projectsCovered: 212, projectsTotal: 400, historyComplete: false };
+const partialReveal: Reveal = {
+  spanDays: { value: 4_400, basis: partialBasis },
+  projectCount: { value: 212, basis: partialBasis },
+  languageCount: { value: 9, basis: partialBasis },
+  bestYear: { value: 2021, basis: partialBasis },
+  playtimeSeconds: {
+    value: 0,
+    basis: { ...partialBasis, projectsTotal: 212, historyComplete: true },
+  },
+  oldestStillAlive: { projectId: 1 as ProjectId, firstCommitAt: 1, basis: partialBasis },
+};
+
+const levelAt = (state: 'partial' | 'computed'): MotivationState => ({
+  shown: true,
+  level: {
+    state,
+    figures: { level: 6, xp: 935, levelAt: 800, nextLevelAt: 1_100, floored: false },
+    pendingProjects: state === 'partial' ? 188 : 0,
+  },
+  rings: null,
+  xpBar: 0.45,
+  pendingLine: null,
+  terms: [{ term: 'commitDay', xp: 935 }],
+});
+
+const badgeDue: BadgesListed = {
+  awards: [
+    {
+      kind: 'comeback',
+      earnedOn: '2024-03-02',
+      projectId: 1 as ProjectId,
+      evidence: {
+        projectName: null,
+        gapDays: 40,
+        year: null,
+        languages: null,
+        creditedSeconds: null,
+        projects: null,
+        runStartOn: null,
+      },
+      landed: false,
     },
-    oldestStillAlive: { projectId: 1 as ProjectId, firstCommitAt: 1, basis: partial },
-  });
+  ],
+  due: 'comeback',
+  basis: partialBasis,
+};
+
+const COMPLETE_BY_CONSTRUCTION = ['PLAYTIME', 'LEVEL', 'BADGE EARNED'];
+
+async function revealOver(motivation: MotivationState): Promise<readonly HTMLElement[]> {
+  const { deps } = harness({ motivation });
+  deps.loadReveal.mockResolvedValue(partialReveal);
+  deps.listBadges.mockResolvedValue(badgeDue);
   await screen.findByText(copy.ROOTS_HEADLINE);
   dig();
   fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
   await screen.findByText(copy.EVIDENCE_FOOTER);
+  return screen.getAllByTestId('fr-panel');
+}
 
-  const panels = screen.getAllByTestId('fr-panel');
-  expect(panels).toHaveLength(6);
+const keyOf = (panel: HTMLElement): string =>
+  within(panel).getByText((_, node) => node?.className === 'cdt-fr-panel-key').textContent;
+
+test('AC-23 no figure over a partial index is presented bare, and only PLAYTIME, a computed LEVEL and a badge earned are complete by construction', async () => {
+  const panels = await revealOver(levelAt('computed'));
+  expect(panels).toHaveLength(8);
   for (const panel of panels) {
-    const label = within(panel).getByTestId('fr-panel-value').textContent;
+    const key = keyOf(panel);
     const coverage = within(panel).queryByTestId('fr-panel-coverage');
-    // PLAYTIME is the only figure complete by construction.
-    if (panel.textContent.includes('PLAYTIME')) expect(coverage).toBeNull();
-    else expect(coverage, label).not.toBeNull();
+    // The closed list of exemptions; every other figure names what it was computed over.
+    if (COMPLETE_BY_CONSTRUCTION.includes(key)) expect(coverage, key).toBeNull();
+    else expect(coverage, key).not.toBeNull();
   }
   // The two history strings are distinguishable: one promises growth, one admits movement.
   expect(screen.getByText(new RegExp(copy.COVERAGE_HISTORY_GROWS))).toBeTruthy();
   expect(screen.getAllByText(new RegExp(copy.COVERAGE_HISTORY_MOVES))).toHaveLength(2);
+  cleanup();
+
+  // The exemption is a computed level's only: a partial LEVEL carries §10.4a's growth line.
+  const again = await revealOver(levelAt('partial'));
+  expect(again).toHaveLength(8);
+  for (const panel of again) {
+    const key = keyOf(panel);
+    const coverage = within(panel).queryByTestId('fr-panel-coverage');
+    if (key === 'PLAYTIME' || key === 'BADGE EARNED') expect(coverage, key).toBeNull();
+    else expect(coverage, key).not.toBeNull();
+    if (key === 'LEVEL') expect(coverage?.textContent, key).toBe(copy.COVERAGE_HISTORY_GROWS);
+  }
+});
+
+// §43.15: each of the turn's answers ends first run through the one write the core stamps from.
+test("AC-P4-43-15 the turn's answer ends first run", async () => {
+  for (const answer of [copy.SHOW_ME_LABEL, copy.NOT_NOW_LABEL]) {
+    const { deps } = harness();
+    await screen.findByText(copy.ROOTS_HEADLINE);
+    dig();
+    fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
+    fireEvent.click(await screen.findByRole('button', { name: copy.GO_ON_LABEL }));
+    expect(deps.acknowledge).not.toHaveBeenCalledWith('firstRunEnded', null);
+    fireEvent.click(await screen.findByRole('button', { name: answer }));
+    expect(
+      deps.acknowledge.mock.calls.filter(([event]) => event === 'firstRunEnded'),
+      answer,
+    ).toEqual([['firstRunEnded', null]]);
+    expect(screen.getByTestId('shelf')).toBeTruthy();
+    cleanup();
+  }
+});
+
+// §43.7: the reveal reads §40's answer with its figures, and while BADGE EARNED is drawn not
+// computed each motivation change reads it again.
+test('a pending badge panel is re-read on each motivation change and resolves in place', async () => {
+  const pending: BadgesListed = { awards: [], due: null, basis: partialBasis };
+  const view = harness({ motivation: levelAt('computed') });
+  view.deps.listBadges.mockResolvedValue(pending);
+  await screen.findByText(copy.ROOTS_HEADLINE);
+  dig();
+  fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
+  await screen.findByText(copy.EVIDENCE_FOOTER);
+  expect(screen.getAllByTestId('fr-panel')).toHaveLength(8);
+  expect(view.deps.listBadges).toHaveBeenCalledTimes(1);
+
+  view.deps.listBadges.mockResolvedValue({ ...pending, basis });
+  view.setMotivation({ ...levelAt('computed'), xpBar: 0.5 });
+  await waitFor(() => {
+    expect(screen.getAllByTestId('fr-panel')).toHaveLength(7);
+  });
+  expect(view.deps.listBadges).toHaveBeenCalledTimes(2);
+  // Resolved: further changes read nothing more.
+  view.setMotivation({ ...levelAt('computed'), xpBar: 0.6 });
+  expect(view.deps.listBadges).toHaveBeenCalledTimes(2);
 });

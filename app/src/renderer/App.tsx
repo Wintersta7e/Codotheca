@@ -260,6 +260,7 @@ export function App(props: AppProps = {}): ReactElement {
             status={scan}
             hasStoredShelf={rows !== null && rows.length > 0}
             tier={tier}
+            motivation={motivation}
             onOpenScanSummary={openScanSummary}
             onShowMe={showMe}
           >

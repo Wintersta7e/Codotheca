@@ -200,6 +200,9 @@ export const IDENTITY_LEVEL_CLAUSE =
 /** §43.2's label under the level number — the only thing naming the figure (§10.4a). */
 export const LEVEL_LABEL = 'LEVEL';
 
+/** §43.7's eighth reveal panel, the prototype's label for the badge §40 backdates. */
+export const BADGE_EARNED_LABEL = 'BADGE EARNED';
+
 /** §7.7a's label, as the level block's line while nothing has computed the level. */
 export const LEVEL_NOT_COMPUTED = 'NOT COMPUTED';
 

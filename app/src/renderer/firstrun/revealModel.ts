@@ -9,7 +9,10 @@ export type RevealKey =
   | 'oldestStillAlive'
   | 'playtimeSeconds';
 
-/** §10.4a: the design's eight minus LEVEL and BADGE EARNED, both phase 4. */
+/**
+ * §10.4a's six figures from `stats.reveal`. [p4] §43.7's LEVEL and BADGE EARNED join them from
+ * their own reads (`revealMotivation.ts`), which also places the eight in order.
+ */
 export const REVEAL_ORDER: readonly RevealKey[] = [
   'spanDays',
   'projectCount',
@@ -62,7 +65,7 @@ export interface RevealPanel {
   readonly coverage: string | null;
   readonly caption: string;
   readonly evidence: string;
-  /** §10.4a: panel 1 takes --sig; panels 2–6 take --line-4. The gold edge is phase 4. */
+  /** §10.4a: panel 1 takes --sig; the rest take --line-4. [p4] §43.7's gold is BADGE EARNED's. */
   readonly signalEdge: boolean;
   readonly delaySec: number;
 }
@@ -88,7 +91,8 @@ export function spanYears(spanDays: number | null): number | null {
 
 /** §10.4a's two strings, and which panels take which. */
 export function coverageLine(key: RevealKey, basis: RevealBasis): string | null {
-  // 0h is complete by construction, and it is the only figure on the screen that is.
+  // 0h is complete by construction — of these six, the only one. [p4] §43.7's computed LEVEL
+  // and BADGE EARNED are too, and `revealMotivation.ts` draws them without a row.
   if (key === 'playtimeSeconds') return null;
   const parts: string[] = [];
   if (basis.projectsCovered < basis.projectsTotal) {

@@ -560,6 +560,12 @@
   gap: 11px;
   margin-top: 26px;
 }
+/* [p4] §43.7: the floor follows the panel count. 260px fits three tracks of the 860px column
+   (3 + 3 at six) and 200px fits four, so seven lay out 4 + 3 and eight 4 + 4; at eight under
+   260px the grid reads 3 + 3 + 2. `revealGridFloorPx` owns which count takes which. */
+.cdt-fr-panels--dense {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
 .cdt-fr-panel {
   padding: 15px 16px 16px;
   text-align: left;
@@ -578,6 +584,10 @@
 }
 .cdt-fr-panel--sig {
   border-top-color: var(--sig);
+}
+/* [p4] §43.7: BADGE EARNED's edge, the only gold one on the screen. */
+.cdt-fr-panel--gold {
+  border-top-color: var(--tier-gold);
 }
 .cdt-fr-panel[aria-expanded='true'] {
   border-color: var(--sig-edge);
