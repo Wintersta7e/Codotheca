@@ -12396,6 +12396,14 @@
           "owner": "p4-43",
           "test": "AC-P4-43-16 a root the dialog accepted makes DIG live with no suggestion ticked",
           "assert": "With no suggestion to tick, DIG stays inert after a refused dialog pick and goes live after an accepted one; the press then calls scan.start and never roots.add, because the dialog committed the root itself."
+        },
+        {
+          "id": "AC-P4-43-16-guard",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-43",
+          "test": "AC-P4-43-16 the DIG handler itself commits nothing while no root would be committed",
+          "assert": "The gate's DIG handler, called directly past the roots screen's own refusal, calls neither roots.add nor scan.start before the suggestions answer, with nothing ticked, or with consent withheld; the same call with a ticked root and consent commits it and starts the scan."
         }
       ]
     },
