@@ -4,6 +4,7 @@ import {
   ARRIVAL_BATCH_MS,
   INITIAL_FIRST_RUN,
   SETTLE_HOLD_MS,
+  digAllowed,
   firstRunReducer,
   shouldRunFirstRun,
 } from './phase';
@@ -133,6 +134,8 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
   const [suggestions, setSuggestions] = useState<readonly RootSuggestion[]>([]);
   const [extra, setExtra] = useState<readonly RootRow[]>([]);
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
+  const [suggestionsAnswered, setSuggestionsAnswered] = useState(false);
+  const [dialogRoots, setDialogRoots] = useState(0);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [busy, setBusy] = useState(false);
   const [reveal, setReveal] = useState<Reveal | null>(null);
@@ -151,11 +154,18 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
   useEffect(() => {
     if (decision !== 'first-run') return undefined;
     let live = true;
-    void suggestRoots().then((rows) => {
-      if (!live) return;
-      setSuggestions(rows);
-      setTicked(initialTicks(rows));
-    });
+    // [p4] §43.10: a refusal is an answer too — nothing to tick, but the dialog still adds a root.
+    suggestRoots().then(
+      (rows) => {
+        if (!live) return;
+        setSuggestions(rows);
+        setTicked(initialTicks(rows));
+        setSuggestionsAnswered(true);
+      },
+      () => {
+        if (live) setSuggestionsAnswered(true);
+      },
+    );
     return () => {
       live = false;
     };
@@ -259,10 +269,21 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
 
   const absorb = useCallback((add: RootAdd, pathDisplay: string) => {
     setExtra((current) => [...current, refusedRow(add, pathDisplay)]);
+    // The dialog committed an accepted root itself, so it is one DIG need not commit.
+    if (add.root !== null) setDialogRoots((n) => n + 1);
     if (add.refusedBecause === 'too_many_directories' && add.estimatedDirs !== null) {
       setPendingConfirm({ pathDisplay, estimatedDirs: add.estimatedDirs });
     }
   }, []);
+
+  const digInput = useMemo(
+    () => ({
+      suggestionsAnswered,
+      ticked: suggestions.filter((s) => ticked.has(suggestionKey(s))).length,
+      dialogRoots,
+    }),
+    [suggestionsAnswered, suggestions, ticked, dialogRoots],
+  );
 
   const rootsDeps = useMemo(
     () => ({
@@ -293,6 +314,8 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
         });
       },
       onDig: () => {
+        // [p4] §43.10: refused before any side effect — no `roots.add`, no `scan.start`.
+        if (!digAllowed({ ...digInput, consented: state.consented })) return;
         setBusy(true);
         // Commit before start, or the walk has no roots.
         void (async () => {
@@ -308,11 +331,11 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
           }
           await startScan();
           setBusy(false);
-          dispatch({ kind: 'dig' });
+          dispatch({ kind: 'dig', ...digInput });
         })();
       },
     }),
-    [pickRoot, commitSuggestion, startScan, ticked, absorb, suggestions],
+    [pickRoot, commitSuggestion, startScan, ticked, absorb, suggestions, digInput, state.consented],
   );
 
   const turnHandlers = useMemo<TurnHandlers>(
@@ -348,6 +371,7 @@ export function FirstRunGate(props: FirstRunGateProps): ReactElement {
           rows={rows}
           ticked={ticked}
           consented={state.consented}
+          digInput={digInput}
           pendingConfirm={pendingConfirm}
           tier={tier}
           busy={busy}

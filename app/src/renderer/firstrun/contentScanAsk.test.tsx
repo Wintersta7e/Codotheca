@@ -69,6 +69,7 @@ const SCREENS: readonly { readonly name: string; readonly draw: () => void }[] =
           rows={[toRow(suggestion, true)]}
           ticked={new Set(['/somewhere/dev'])}
           consented
+          digInput={{ suggestionsAnswered: true, ticked: 1, dialogRoots: 0 }}
           pendingConfirm={null}
           tier="full"
           busy={false}

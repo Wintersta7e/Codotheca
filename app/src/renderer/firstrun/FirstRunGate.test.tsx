@@ -6,6 +6,7 @@ import type { FirstRunGateDeps } from './FirstRunGate';
 import { SETTLE_HOLD_MS } from './phase';
 import { SKIP_AHEAD_LABEL } from '../a11y/names';
 import * as copy from './copy';
+import * as motivationCopy from '../motivation/copy';
 import type { Mock } from 'vitest';
 import type { CommitSuggestionRequest, PickRootReply } from '../../shared/channels';
 import type { ScanFeedEvent } from './scanFeed';
@@ -17,6 +18,7 @@ import type {
   ProjectId,
   Reveal,
   RootAdd,
+  RootId,
   RootSuggestion,
   ScanRunId,
   ScanStatus,
@@ -97,7 +99,7 @@ const noBadge: BadgesListed = { awards: [], due: null, basis };
 
 function harness(
   over: Partial<Parameters<typeof FirstRunGate>[0]> = {},
-  rows: readonly RootSuggestion[] = [suggestion],
+  rows: readonly RootSuggestion[] | Promise<readonly RootSuggestion[]> = [suggestion],
 ): Harness {
   let emit: (event: ScanFeedEvent) => void = () => undefined;
   const shownQueries: string[] = [];
@@ -333,6 +335,102 @@ test('withholding consent commits nothing and starts nothing', async () => {
   expect(deps.commitSuggestion).not.toHaveBeenCalled();
   expect(deps.startScan).not.toHaveBeenCalled();
   expect(screen.getByText(copy.DIG_INERT_NOTE)).toBeTruthy();
+});
+
+// [p4] §43.10: DIG pressed before the suggestions landed committed no root, the walk scanned
+// nothing, and the reveal was skipped for good. It stays inert until a root would be committed.
+test('AC-P4-43-16 DIG before suggestions answer, or with nothing ticked or added, commits nothing', async () => {
+  let answer: (rows: readonly RootSuggestion[]) => void = () => undefined;
+  const pending = new Promise<readonly RootSuggestion[]>((resolve) => {
+    answer = resolve;
+  });
+  const { deps } = harness({}, pending);
+  const order: string[] = [];
+  deps.commitSuggestion.mockImplementation(() => {
+    order.push('commit');
+    return Promise.resolve(noRefusal);
+  });
+  deps.startScan.mockImplementation(() => {
+    order.push('start');
+    return Promise.resolve(undefined);
+  });
+  await screen.findByText(copy.ROOTS_HEADLINE);
+
+  dig();
+  await act(() => Promise.resolve());
+  expect(deps.commitSuggestion).not.toHaveBeenCalled();
+  expect(deps.startScan).not.toHaveBeenCalled();
+  expect(screen.getByText(copy.ROOTS_HEADLINE)).toBeTruthy();
+  // The brief interval before the suggestions answer needs no note of its own.
+  expect(screen.getByText(copy.DIG_NOTE)).toBeTruthy();
+  expect(screen.queryByText(motivationCopy.DIG_NO_ROOT_NOTE)).toBeNull();
+
+  await act(async () => {
+    answer([{ ...suggestion, preTicked: false }]);
+    await pending;
+  });
+  await screen.findByText('/somewhere/dev');
+  dig();
+  await act(() => Promise.resolve());
+  expect(deps.commitSuggestion).not.toHaveBeenCalled();
+  expect(deps.startScan).not.toHaveBeenCalled();
+  expect(screen.getByText(copy.ROOTS_HEADLINE)).toBeTruthy();
+  expect(screen.getByText(motivationCopy.DIG_NO_ROOT_NOTE)).toBeTruthy();
+
+  fireEvent.click(screen.getByTestId('fr-root-row'));
+  dig();
+  await waitFor(() => {
+    expect(order).toEqual(['commit', 'start']);
+  });
+  await screen.findByRole('button', { name: SKIP_AHEAD_LABEL });
+});
+
+// [p4] §43.10: a root the dialog accepted is already committed, so it alone makes DIG live.
+test('AC-P4-43-16 a root the dialog accepted makes DIG live with no suggestion ticked', async () => {
+  const { deps } = harness({}, []);
+  await screen.findByText(copy.ROOTS_HEADLINE);
+  await act(() => Promise.resolve());
+  expect(screen.getByText(motivationCopy.DIG_NO_ROOT_NOTE)).toBeTruthy();
+
+  // A refused pick commits nothing, so it leaves DIG inert.
+  deps.pickRoot.mockResolvedValueOnce({
+    kind: 'added',
+    add: { root: null, refusedBecause: 'filesystem_root', estimatedDirs: null },
+  });
+  fireEvent.click(screen.getByRole('button', { name: copy.ADD_A_FOLDER_LABEL }));
+  await screen.findByText('A DRIVE ROOT IS NOT A PROJECT FOLDER');
+  dig();
+  await act(() => Promise.resolve());
+  expect(deps.startScan).not.toHaveBeenCalled();
+
+  deps.pickRoot.mockResolvedValueOnce({
+    kind: 'added',
+    add: {
+      root: {
+        id: 3 as RootId,
+        pathDisplay: '/elsewhere/code',
+        kind: 'linux',
+        distro: '',
+        enabled: true,
+        descendIntoRepos: false,
+        provenance: 'dialog',
+        state: 'watched',
+        addedAt: 1_760_000_000,
+        projectCount: null,
+      },
+      refusedBecause: null,
+      estimatedDirs: null,
+    },
+  });
+  fireEvent.click(screen.getByRole('button', { name: copy.ADD_A_FOLDER_LABEL }));
+  await screen.findByText('/elsewhere/code');
+  expect(screen.queryByText(motivationCopy.DIG_NO_ROOT_NOTE)).toBeNull();
+  dig();
+  await waitFor(() => {
+    expect(deps.startScan).toHaveBeenCalledTimes(1);
+  });
+  // The dialog committed it already; DIG commits only suggestions.
+  expect(deps.commitSuggestion).not.toHaveBeenCalled();
 });
 
 // §2.4 and §10.1b: the dialog is the only way a folder reaches the core, and its three replies

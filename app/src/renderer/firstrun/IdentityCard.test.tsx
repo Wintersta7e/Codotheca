@@ -4,6 +4,7 @@ import type { Mock } from 'vitest';
 import type { IdentityConfirm, IdentityId, IdentityRow } from '../../generated/protocol';
 import { IdentityCard, identityEffectLine, identitySourceLine } from './IdentityCard';
 import * as copy from './copy';
+import * as motivationCopy from '../motivation/copy';
 
 afterEach(cleanup);
 
@@ -33,6 +34,7 @@ interface Rendered {
 function renderCard(
   rows: readonly IdentityRow[],
   preview: IdentityConfirm | null = null,
+  showLevelClause = false,
 ): Rendered {
   const onConfirm = vi.fn<(emails: readonly string[]) => void>();
   const onLeaveAsIs = vi.fn<() => void>();
@@ -44,10 +46,25 @@ function renderCard(
       onPreview={onPreview}
       onConfirm={onConfirm}
       onLeaveAsIs={onLeaveAsIs}
+      showLevelClause={showLevelClause}
     />,
   );
   return { onConfirm, onLeaveAsIs, onPreview };
 }
+
+// [p4] §43.12: the card states the level effect, carries quiet's marker, and states no figure;
+// quiet removes the clause and nothing else.
+test('the level clause renders with the flag and is absent without it', () => {
+  renderCard([identity()], null, true);
+  const clause = screen.getByText(motivationCopy.IDENTITY_LEVEL_CLAUSE);
+  expect(clause.getAttribute('data-motivation')).toBe('identityLevelClause');
+  expect(document.querySelectorAll('[data-motivation]')).toHaveLength(1);
+  cleanup();
+  renderCard([identity()]);
+  expect(screen.queryByText(motivationCopy.IDENTITY_LEVEL_CLAUSE)).toBeNull();
+  expect(document.querySelectorAll('[data-motivation]')).toHaveLength(0);
+  expect(screen.getByText(copy.IDENTITY_BODY_2)).toBeTruthy();
+});
 
 test('the card says what the tick already did, in §1.4 words', () => {
   renderCard([identity()]);

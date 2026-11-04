@@ -12383,11 +12383,19 @@
       "checks": [
         {
           "id": "AC-P4-43-16",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
           "test": "AC-P4-43-16 DIG before suggestions answer, or with nothing ticked or added, commits nothing",
           "assert": "DIG pressed before roots.suggest answers, or with nothing ticked or added, calls neither roots.add nor scan.start and first run stays on the roots screen; with one root ticked both are called in order. New-test proof: the case fails against FirstRunGate.tsx's onDig on a2fc935, which commits and starts the scan before the reducer's guard runs."
+        },
+        {
+          "id": "AC-P4-43-16-dialog",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-43",
+          "test": "AC-P4-43-16 a root the dialog accepted makes DIG live with no suggestion ticked",
+          "assert": "With no suggestion to tick, DIG stays inert after a refused dialog pick and goes live after an accepted one; the press then calls scan.start and never roots.add, because the dialog committed the root itself."
         }
       ]
     },

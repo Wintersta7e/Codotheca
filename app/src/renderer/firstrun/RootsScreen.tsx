@@ -19,6 +19,9 @@ import {
   ROOTS_STANDFIRST_NEUTRAL,
   WHAT_EXACTLY_LABEL,
 } from './copy';
+import { DIG_NO_ROOT_NOTE } from '../motivation/copy';
+import { digAllowed } from './phase';
+import type { DigInput } from './phase';
 import {
   EXCLUSION_CAPTION,
   EXCLUSION_CHIPS_BEFORE_EXPANDER,
@@ -47,6 +50,8 @@ export interface RootsScreenProps {
   readonly rows: readonly RootRow[];
   readonly ticked: ReadonlySet<string>;
   readonly consented: boolean;
+  /** [p4] §43.10: whether the suggestions answered, and how many roots `DIG` would commit. */
+  readonly digInput: Omit<DigInput, 'consented'>;
   /** The one refusal that is a question rather than a verdict. `null` when none is open. */
   readonly pendingConfirm: PendingConfirm | null;
   readonly tier: ResolvedTier;
@@ -64,11 +69,11 @@ export function moreChipLabel(hidden: number): string {
 }
 
 export function RootsScreen(props: RootsScreenProps): ReactElement {
-  const { deps, rows, ticked, consented, pendingConfirm, tier, busy } = props;
+  const { deps, rows, ticked, consented, digInput, pendingConfirm, tier, busy } = props;
   const [expanded, setExpanded] = useState(false);
   const [whatExactly, setWhatExactly] = useState(false);
   const hidden = EXCLUSION_LIST.length - EXCLUSION_CHIPS_BEFORE_EXPANDER;
-  const inert = !consented || busy;
+  const inert = busy || !digAllowed({ ...digInput, consented });
   // The standfirst and caption name git config and editors as the rows' source; they are drawn
   // only when a row really came from one.
   const sourced = rows.some((row) => row.sourced);
@@ -198,11 +203,21 @@ export function RootsScreen(props: RootsScreenProps): ReactElement {
           >
             {DIG_LABEL}
           </button>
-          <span className="cdt-fr-note">{consented ? DIG_NOTE : DIG_INERT_NOTE}</span>
+          <span className="cdt-fr-note">{digNote(consented, digInput)}</span>
         </div>
       </div>
     </div>
   );
+}
+
+/**
+ * §10.1b's consent note wins; [p4] §43.10's no-root note once the suggestions answered with nothing
+ * ticked or added. The brief interval before they answer needs no note of its own.
+ */
+function digNote(consented: boolean, input: Omit<DigInput, 'consented'>): string {
+  if (!consented) return DIG_INERT_NOTE;
+  if (input.suggestionsAnswered && !digAllowed({ ...input, consented })) return DIG_NO_ROOT_NOTE;
+  return DIG_NOTE;
 }
 
 function RootRowView(props: {

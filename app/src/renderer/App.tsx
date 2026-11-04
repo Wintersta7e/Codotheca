@@ -230,6 +230,7 @@ export function App(props: AppProps = {}): ReactElement {
                 dismiss();
               }}
               onLeaveAsIs={dismiss}
+              showLevelClause={motivation?.shown === true}
             />
           )
         }

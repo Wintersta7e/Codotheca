@@ -1,7 +1,16 @@
 import { test, expect } from 'vitest';
-import { INITIAL_FIRST_RUN, SETTLE_HOLD_MS, firstRunReducer, shouldRunFirstRun } from './phase';
+import {
+  INITIAL_FIRST_RUN,
+  SETTLE_HOLD_MS,
+  digAllowed,
+  firstRunReducer,
+  shouldRunFirstRun,
+} from './phase';
 import type { FirstRunState } from './phase';
 import type { ScanRunId } from '../../generated/protocol';
+
+/** A root ticked and the suggestions answered: the press §10.1b always meant. */
+const ready = { suggestionsAnswered: true, ticked: 1, dialogRoots: 0 } as const;
 
 const at = (phase: FirstRunState['phase']): FirstRunState => ({
   ...INITIAL_FIRST_RUN,
@@ -18,9 +27,26 @@ test('first run is offered only when no scan has ever started', () => {
 // §10.1b: unticking row 1 is honoured — DIG goes inert.
 test('the flow cannot leave the roots screen without consent', () => {
   const withheld = firstRunReducer(INITIAL_FIRST_RUN, { kind: 'consent', granted: false });
-  expect(firstRunReducer(withheld, { kind: 'dig' }).phase).toBe('roots');
+  expect(firstRunReducer(withheld, { kind: 'dig', ...ready }).phase).toBe('roots');
   const granted = firstRunReducer(INITIAL_FIRST_RUN, { kind: 'consent', granted: true });
-  expect(firstRunReducer(granted, { kind: 'dig' }).phase).toBe('scanning');
+  expect(firstRunReducer(granted, { kind: 'dig', ...ready }).phase).toBe('scanning');
+});
+
+// [p4] §43.10: DIG is inert until the suggestions answer, and while no root would be committed.
+test('the reducer refuses DIG with no root to commit, by the same rule the gate reads', () => {
+  const cases = [
+    { suggestionsAnswered: false, ticked: 1, dialogRoots: 1, allowed: false },
+    { suggestionsAnswered: true, ticked: 0, dialogRoots: 0, allowed: false },
+    { suggestionsAnswered: true, ticked: 1, dialogRoots: 0, allowed: true },
+    { suggestionsAnswered: true, ticked: 0, dialogRoots: 1, allowed: true },
+  ];
+  for (const { allowed, ...input } of cases) {
+    expect(digAllowed({ ...input, consented: true })).toBe(allowed);
+    expect(digAllowed({ ...input, consented: false })).toBe(false);
+    expect(firstRunReducer(at('roots'), { kind: 'dig', ...input }).phase).toBe(
+      allowed ? 'scanning' : 'roots',
+    );
+  }
 });
 
 // §10.3a: exactly one settle at walk completion, then 700 ms before the reveal takes the
@@ -52,7 +78,7 @@ test('the reveal leads to the turn and the turn leads to the shelf, both ways ou
 test('nothing returns to a beat that has already played', () => {
   const shelf = at('shelf');
   for (const action of [
-    { kind: 'dig' },
+    { kind: 'dig', ...ready },
     { kind: 'skip_ahead' },
     { kind: 'walk_finished', at: 5 },
     { kind: 'go_on' },

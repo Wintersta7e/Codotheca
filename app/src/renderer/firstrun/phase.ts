@@ -13,7 +13,7 @@ export interface FirstRunState {
 
 export type FirstRunAction =
   | { readonly kind: 'consent'; readonly granted: boolean }
-  | { readonly kind: 'dig' }
+  | ({ readonly kind: 'dig' } & Omit<DigInput, 'consented'>)
   | { readonly kind: 'skip_ahead' }
   | { readonly kind: 'walk_finished'; readonly at: number }
   | { readonly kind: 'tick'; readonly at: number }
@@ -21,6 +21,26 @@ export type FirstRunAction =
   | { readonly kind: 'go_on' }
   | { readonly kind: 'show_me' }
   | { readonly kind: 'not_now' };
+
+/** What decides whether `DIG` would commit a root (§43.10). */
+export interface DigInput {
+  readonly consented: boolean;
+  /** `roots.suggest` has answered — with rows, with none, or with an error. */
+  readonly suggestionsAnswered: boolean;
+  /** Ticked suggestions, which `DIG` commits. */
+  readonly ticked: number;
+  /** Roots the dialog accepted; the dialog committed them already. */
+  readonly dialogRoots: number;
+}
+
+/**
+ * [p4] §43.10: `DIG` is inert until the suggestions answer, and while no root would be committed.
+ * Pressed earlier it committed nothing, the walk scanned nothing, and the reveal was skipped for
+ * good. The reducer's guard and the gate's handler both read this, before any side effect.
+ */
+export function digAllowed(input: DigInput): boolean {
+  return input.consented && input.suggestionsAnswered && input.ticked + input.dialogRoots > 0;
+}
 
 export const INITIAL_FIRST_RUN: FirstRunState = {
   phase: 'roots',
@@ -52,8 +72,11 @@ export function firstRunReducer(state: FirstRunState, action: FirstRunAction): F
     case 'consent':
       return state.phase === 'roots' ? { ...state, consented: action.granted } : state;
     case 'dig':
-      // Unticking row 1 leaves DIG inert: there is nothing to index without it.
-      return state.phase === 'roots' && state.consented ? { ...state, phase: 'scanning' } : state;
+      // Unticking row 1 leaves DIG inert: there is nothing to index without it. Nor is there
+      // before the suggestions answer, or with no root ticked or added.
+      return state.phase === 'roots' && digAllowed({ ...action, consented: state.consented })
+        ? { ...state, phase: 'scanning' }
+        : state;
     case 'skip_ahead':
       return state.phase === 'scanning' ? { ...state, phase: 'reveal' } : state;
     case 'walk_finished':

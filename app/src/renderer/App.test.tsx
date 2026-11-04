@@ -17,6 +17,7 @@ import { detailFixture } from './project/testFixtures';
 import { PROJECT_PAGE_ROOT_CLASS } from './project/ProjectPage';
 import { makeProjectRow } from './testing/projectRow';
 import { required } from '../shared/required';
+import { IDENTITY_LEVEL_CLAUSE } from './motivation/copy';
 
 afterEach(() => {
   cleanup();
@@ -373,6 +374,54 @@ describe('App — the composition root', () => {
     await waitFor(() => {
       expect(fake.calls.filter((call) => call.name === 'projects.list').length).toBeGreaterThan(1);
     });
+  });
+
+  // [p4] §43.12: the mounted card carries the level clause, and quiet removes it (§43.11).
+  it('the mounted identity card states the level clause unless quiet', async () => {
+    for (const shown of [true, false]) {
+      const fake = fakeAppDeps(
+        {
+          ...repliesFor([row(1, 'alpha')], scanned),
+          'identity.list': () => [
+            {
+              id: 1 as IdentityId,
+              isUser: true,
+              email: 'a@example.invalid',
+              name: null,
+              source: 'gitconfig' as const,
+              confirmedAt: null,
+              commits: 12,
+              projects: 1,
+              repositories: null,
+              primaryEmail: null,
+              aliasReason: null,
+            },
+          ],
+          'motivation.get': () => ({
+            shown,
+            level: null,
+            rings: null,
+            xpBar: null,
+            pendingLine: null,
+            terms: null,
+          }),
+        },
+        { effectsTier: 'off' },
+      );
+      fake.setNow(NOW);
+      const view = render(<App deps={fake.deps} />);
+      await screen.findByText('WHAT COUNTS AS YOURS');
+      await waitFor(() => {
+        expect(fake.calls.some((call) => call.name === 'motivation.get')).toBe(true);
+      });
+      await act(() => Promise.resolve());
+      if (shown) {
+        expect(await screen.findByText(IDENTITY_LEVEL_CLAUSE)).not.toBeNull();
+      } else {
+        expect(screen.queryByText(IDENTITY_LEVEL_CLAUSE)).toBeNull();
+      }
+      view.unmount();
+    }
   });
 
   it('raises no identity card over a set that has already been confirmed', async () => {

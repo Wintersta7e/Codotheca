@@ -32,6 +32,7 @@ function renderedClaims(): { standfirst: string; paragraph: string } {
       rows={[]}
       ticked={new Set()}
       consented
+      digInput={{ suggestionsAnswered: false, ticked: 0, dialogRoots: 0 }}
       pendingConfirm={null}
       tier="full"
       busy={false}

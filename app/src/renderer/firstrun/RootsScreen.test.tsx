@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { RootsScreen, moreChipLabel, visibleExclusions } from './RootsScreen';
 import { refusedRow, suggestionKey, toRow } from './rootRows';
 import * as copy from './copy';
+import * as motivationCopy from '../motivation/copy';
 import { EXCLUSION_CAPTION, EXCLUSION_LIST } from '../../shared/skipList';
 import type { RootAdd, RootSuggestion } from '../../generated/protocol';
 import { required } from '../../shared/required';
@@ -52,6 +53,7 @@ function draw(over: Partial<Parameters<typeof RootsScreen>[0]> = {}): {
       rows={rows}
       ticked={new Set([suggestionKey(suggestion())])}
       consented
+      digInput={{ suggestionsAnswered: true, ticked: 1, dialogRoots: 0 }}
       pendingConfirm={null}
       tier="full"
       busy={false}
@@ -167,6 +169,25 @@ test('with consent DIG commits and claims only the true thing', () => {
   expect(screen.getByText(copy.DIG_NOTE)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: copy.DIG_LABEL }));
   expect(deps.onDig).toHaveBeenCalledTimes(1);
+});
+
+// [p4] §43.10: with nothing ticked or added DIG is inert and says why; before the suggestions
+// answer it is inert and says nothing new — that interval is brief.
+test('DIG is inert with no root to commit, and names the reason once the suggestions answer', () => {
+  const answered = draw({ digInput: { suggestionsAnswered: true, ticked: 0, dialogRoots: 0 } });
+  const button = (): HTMLElement => screen.getByRole('button', { name: copy.DIG_LABEL });
+  expect(button().getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(button());
+  expect(answered.onDig).not.toHaveBeenCalled();
+  expect(screen.getByText(motivationCopy.DIG_NO_ROOT_NOTE)).toBeTruthy();
+  cleanup();
+
+  const waiting = draw({ digInput: { suggestionsAnswered: false, ticked: 1, dialogRoots: 0 } });
+  expect(button().getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(button());
+  expect(waiting.onDig).not.toHaveBeenCalled();
+  expect(screen.getByText(copy.DIG_NOTE)).toBeTruthy();
+  expect(screen.queryByText(motivationCopy.DIG_NO_ROOT_NOTE)).toBeNull();
 });
 
 test('DIG is inert while a commit is in flight, so one press cannot start two scans', () => {

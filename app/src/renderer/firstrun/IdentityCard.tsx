@@ -18,6 +18,9 @@ import {
   IDENTITY_NO_COMMITS,
   IDENTITY_TITLE,
 } from './copy';
+import { IDENTITY_LEVEL_CLAUSE } from '../motivation/copy';
+import { DATA_MOTIVATION } from '../../shared/motivationQuiet';
+import type { QuietEntryId } from '../../shared/motivationQuiet';
 
 function plural(n: number, one: string, many: string): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
@@ -90,7 +93,14 @@ export interface IdentityCardProps {
   readonly onConfirm: (emails: readonly string[]) => void;
   /** §8.0: unscoped and one-shot. Writes `notice.dismissed.identity` and nothing else. */
   readonly onLeaveAsIs: () => void;
+  /**
+   * [p4] §43.12: the card states the level effect — recomputed from the addresses kept, badges
+   * stay. False under quiet (§43.11), which hides the clause and nothing else on the card.
+   */
+  readonly showLevelClause: boolean;
 }
+
+const LEVEL_CLAUSE_ENTRY: QuietEntryId = 'identityLevelClause';
 
 export function IdentityCard(props: IdentityCardProps): ReactElement {
   // §1.4: every seeded row arrives ticked, because the seeded set is the set already in force.
@@ -110,6 +120,11 @@ export function IdentityCard(props: IdentityCardProps): ReactElement {
       <p className="cdt-shelf-notice-title">{IDENTITY_TITLE}</p>
       <p className="cdt-shelf-notice-body">{IDENTITY_BODY_1}</p>
       <p className="cdt-shelf-notice-body">{IDENTITY_BODY_2}</p>
+      {props.showLevelClause ? (
+        <p className="cdt-shelf-notice-body" {...{ [DATA_MOTIVATION]: LEVEL_CLAUSE_ENTRY }}>
+          {IDENTITY_LEVEL_CLAUSE}
+        </p>
+      ) : null}
       <ul className="cdt-fr-identity-rows">
         {props.rows.map((row) => {
           const on = !unticked.has(row.email);
