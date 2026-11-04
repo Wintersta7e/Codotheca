@@ -8,6 +8,8 @@ import './styles/card.css';
 import './styles/decay.css';
 import './styles/projectPage.css';
 import './shelf/shelf.css';
+// [p4] §43.2's band, block 1a of the shelf's scroll container.
+import './motivation/band.css';
 // §8.5.1's gesture spans the shelf and the page, so it sits after both and before the tier clamp.
 import './styles/transition.css';
 // §11.2a: a first-run beat unmounts the shelf, so these rules never coexist with the grid — but

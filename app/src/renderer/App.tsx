@@ -69,8 +69,8 @@ export function App(props: AppProps = {}): ReactElement {
   const sync = useSync(deps);
   // [p4] §43.15's one read of the motivation layer, held here once for the window so the band,
   // the condensed block, the reveal's `LEVEL` and Profile read one value rather than one each.
-  // None of them draws yet; the value is handed down as each lands.
-  useMotivation(deps);
+  // The band reads it now; the others are handed it as each lands.
+  const motivation = useMotivation(deps);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -197,6 +197,10 @@ export function App(props: AppProps = {}): ReactElement {
         tier={tier}
         phase={transition.phase}
         onOpenProject={openProject}
+        motivation={motivation}
+        route={route.kind}
+        // §43.13's Profile is not built yet, so the number opens nothing until it lands.
+        onOpenProfile={() => undefined}
         onOpenPalette={openPalette}
         onOpenSettings={() => {
           setSettingsOpen(true);

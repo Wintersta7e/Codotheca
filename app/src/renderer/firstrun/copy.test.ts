@@ -70,6 +70,13 @@ test('two of the three consent rows are statements and not controls', () => {
   );
 });
 
+// §43.2: the band renders the level, so row 3 no longer says nothing renders the ledger.
+test('consent row 3 makes no claim that nothing renders the ledger', () => {
+  const note = copy.CONSENT_ROWS[2]?.note ?? '';
+  expect(note).toContain('RECORDED FROM DAY ONE');
+  expect(note).not.toMatch(/NOTHING RENDERS/u);
+});
+
 // §10.1a: this sentence does more trust work than any privacy paragraph.
 test('the root list is captioned with the two files it read', () => {
   expect(copy.ROOTS_LIST_CAPTION).toBe("from your editor's recent projects and .gitconfig");

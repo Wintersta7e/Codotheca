@@ -89,6 +89,20 @@ describe('the four blocks', () => {
     expect(scroll.firstElementChild?.className).toBe('cdt-shelf-notice-slot');
   });
 
+  it('draws the status band first in the scroll container, above the notice slot', () => {
+    const notices = [
+      { kind: 'problems' as const, scope: 'run-7', title: 'PROBLEMS', body: 'b', actions: [] },
+    ];
+    const band = <div data-testid="band" />;
+    const { container } = render(<Shelf {...props({ notices, band })} />);
+    const scroll = required(
+      container.querySelector<HTMLElement>(`.${SHELF_SCROLL_CLASS}`),
+      'shelf scroller',
+    );
+    expect(scroll.firstElementChild?.getAttribute('data-testid')).toBe('band');
+    expect(scroll.children[1]?.className).toBe('cdt-shelf-notice-slot');
+  });
+
   it('fills the vacated space with nothing', () => {
     // No placeholder band, no dimmed rings, no "arriving in a later release" strip.
     const { container } = render(<Shelf {...props()} />);

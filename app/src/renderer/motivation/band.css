@@ -1,0 +1,322 @@
+/*
+ * §43.2's status band — the prototype's geometry snapped by §8.7, with the table's corrections:
+ * every label, line and day letter at --text-3, the tracks on --line-2. No literal colour.
+ *
+ * Nothing here moves at rest: the ring, the bar and the cell declare `transition: none`, so a
+ * changed reading lands as a cut at every tier. The flip (§43.6) is the band's only motion.
+ */
+
+.cdt-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 26px;
+  padding: 16px 22px 15px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.cdt-band-level {
+  display: flex;
+  align-items: flex-end;
+  gap: 13px;
+  flex: none;
+}
+
+.cdt-band-level-number {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.cdt-band-level-figure {
+  font-family: var(--font-display);
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 0.82;
+  color: var(--text-1);
+}
+
+.cdt-band-level-figure[data-unknown='true'] {
+  color: var(--unknown-ink);
+}
+
+.cdt-band-level-label {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: 0.28em;
+  color: var(--text-3);
+}
+
+.cdt-band-xp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 6px;
+  min-width: 118px;
+}
+
+.cdt-band-xp-line {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.cdt-band-xp-track {
+  position: relative;
+  height: 3px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+
+.cdt-band-xp-fill {
+  height: 100%;
+  width: calc(var(--cdt-band-fill) * 100%);
+  background: var(--sig);
+  opacity: 0.72;
+  transition: none;
+}
+
+.cdt-band-divider {
+  flex: none;
+  width: 1px;
+  height: 44px;
+  background: var(--line-2);
+}
+
+.cdt-band-rings {
+  display: flex;
+  gap: 20px;
+  flex: none;
+}
+
+.cdt-band-ring {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cdt-band-ring-glyph {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: conic-gradient(
+    color-mix(in srgb, var(--sig) 78%, transparent) 0 calc(var(--cdt-band-arc) * 100%),
+    var(--line-2) 0
+  );
+  transition: none;
+}
+
+.cdt-band-ring-glyph[data-fill='track'] {
+  background: var(--line-2);
+}
+
+.cdt-band-ring-glyph[data-fill='unknown'] {
+  background: var(--unknown);
+}
+
+/* The inner disc, inset 4px, in the scroll container's ground. */
+.cdt-band-ring-glyph::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--surface-1);
+}
+
+.cdt-band-ring-centre {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+
+.cdt-band-ring-centre[data-closed='true'] {
+  color: var(--sig);
+}
+
+.cdt-band-ring-centre[data-unknown='true'] {
+  color: var(--unknown-ink);
+}
+
+.cdt-band-ring-text,
+.cdt-band-waived {
+  display: flex;
+  flex-direction: column;
+}
+
+.cdt-band-waived-labels {
+  display: flex;
+  gap: 20px;
+}
+
+.cdt-band-ring-label,
+.cdt-band-rhythm-label {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.cdt-band-ring-sub {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.cdt-band-session {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cdt-band-session-glyph {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: conic-gradient(
+    color-mix(in srgb, var(--sig) 78%, transparent) 0 calc(var(--cdt-band-arc) * 100%),
+    var(--line-2) 0
+  );
+}
+
+.cdt-band-session-glyph::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--surface-1);
+}
+
+.cdt-band-session-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.cdt-band-session-name {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.cdt-band-session-bench {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--sig);
+  white-space: nowrap;
+}
+
+.cdt-band-level-number:focus-visible,
+.cdt-band-session:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--sig);
+}
+
+.cdt-band-spacer {
+  flex: 1;
+  min-width: 14px;
+}
+
+.cdt-band-rhythm {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: none;
+}
+
+.cdt-band-rhythm-head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.cdt-band-rhythm-line {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.cdt-band-week {
+  display: flex;
+  gap: 4px;
+}
+
+.cdt-band-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.cdt-band-cell {
+  width: 17px;
+  height: 17px;
+  transition: none;
+}
+
+.cdt-band-cell[data-day='active'] {
+  background: color-mix(in srgb, var(--sig) 70%, transparent);
+}
+
+.cdt-band-cell[data-day='inactive'] {
+  background: var(--line-1);
+  box-shadow: inset 0 0 0 1px var(--line-3);
+}
+
+.cdt-band-cell[data-day='pending'] {
+  background: var(--line-1);
+  box-shadow: inset 0 0 0 1px var(--text-1);
+}
+
+.cdt-band-cell[data-day='future'] {
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+.cdt-band-cell[data-day='waived'] {
+  box-shadow: inset 0 0 0 1px var(--sig-edge);
+}
+
+.cdt-band-cell[data-day='notComputed'] {
+  background: var(--unknown);
+}
+
+.cdt-band-day-letter {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}

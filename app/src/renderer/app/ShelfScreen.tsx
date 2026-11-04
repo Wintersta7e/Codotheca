@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import type {
+  MotivationState,
   Peek,
   Problems,
   ProjectId,
@@ -26,6 +27,7 @@ import {
 } from '../keyboard/gridNavigation.js';
 import { flickerEligible, useFlicker } from '../motion/flicker.js';
 import { allowsScheduledFrames, type ResolvedTier } from '../motion/tier.js';
+import { StatusBand } from '../motivation/StatusBand.js';
 import type { TransitionPhase } from '../motion/transition.js';
 import { AttentionRow } from '../shelf/AttentionRow.js';
 import { isCollapsed, toggled } from '../shelf/collapse.js';
@@ -46,6 +48,7 @@ import { useVirtualizer } from '../shelf/useVirtualizer.js';
 import { SORT_LABELS, offeredSorts, resolveSort, type ShelfView } from '../shelf/viewState.js';
 import type { AppDeps } from './deps.js';
 import { buildQueryContext } from './queryContext.js';
+import type { AppRoute } from './route.js';
 
 const UNKNOWN_SCAN: Pick<ScanStatus, 'running' | 'foundRepos' | 'problemCount'> = {
   running: false,
@@ -94,6 +97,14 @@ export interface ShelfScreenProps {
    */
   readonly phase?: TransitionPhase;
   readonly onOpenProject: (id: ProjectId) => void;
+  /**
+   * [p4] §43.15's one read, held by the composition root and handed down, and the route it is
+   * mounted under: §43.2's band renders only on the shelf, never under first run.
+   */
+  readonly motivation: MotivationState | null;
+  readonly route: AppRoute['kind'];
+  /** [p4] §43.13: the band's level number opens Profile. */
+  readonly onOpenProfile: () => void;
   readonly onOpenPalette: () => void;
   readonly onOpenSettings: () => void;
   readonly onOpenScanSummary: () => void;
@@ -466,6 +477,19 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
       onOpenScanSummary={props.onOpenScanSummary}
       onAddScanRoot={props.onAddScanRoot}
       scrollRef={scrollRef}
+      band={
+        <StatusBand
+          route={props.route}
+          state={props.motivation}
+          rows={rows}
+          sessions={sessions}
+          now={readNow}
+          onOpenProject={onOpenProject}
+          onOpenProfile={props.onOpenProfile}
+          scrollRef={scrollRef}
+          request={request}
+        />
+      }
     >
       <AttentionRow
         rows={rows}

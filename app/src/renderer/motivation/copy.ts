@@ -9,11 +9,11 @@
  * whole. A formatter renders the constraint, then the figures it is handed; an unknown figure is
  * §7.7a's U+2014, never a zero.
  */
-import type { MotivationReason } from '../../generated/protocol';
+import type { MotivationReason, RhythmDay, RingStatus } from '../../generated/protocol';
 import { quietNote } from '../../shared/motivationQuiet';
 
 /** §7.7a's glyph for an unknown figure. */
-const UNKNOWN = '—';
+export const UNKNOWN = '—';
 
 const figure = (value: number | null): string => (value === null ? UNKNOWN : String(value));
 
@@ -183,3 +183,59 @@ export const DIG_NO_ROOT_NOTE = '‹COPY: one line; says a root must be ticked o
 // ‹COPY› interim — the user's words replace this before v1.0.0
 export const IDENTITY_LEVEL_CLAUSE =
   '‹COPY: one clause; says the level is recomputed from the addresses kept, and that badges stay›';
+
+/*
+ * §43.2's labels and the words each ring and cell's accessible name carries. These are the
+ * prototype's labels and §39's state names, not ‹COPY› slots: no constraint stands in for them.
+ */
+
+/** §43.2's label under the level number — the only thing naming the figure (§10.4a). */
+export const LEVEL_LABEL = 'LEVEL';
+
+/** §7.7a's label, as the level block's line while nothing has computed the level. */
+export const LEVEL_NOT_COMPUTED = 'NOT COMPUTED';
+
+/** §39.1's three rings, in §39's order. */
+export const RING_LABELS = { focus: 'FOCUS', ship: 'SHIP', tend: 'TEND' } as const;
+
+/** §43.2's label over the week's seven cells. */
+export const RHYTHM_LABEL = 'RHYTHM';
+
+/** A binary ring's centre mark while §39's `nothingToTend` closes it — a mark, not a count. */
+export const RING_CLOSED_MARK = '✓';
+
+/**
+ * Each ring status in words, for the ring's accessible name. `nothingToTend` is §39's closed
+ * state, and its own sub-line says the rest; `notComputed` is never a zero.
+ */
+export const RING_STATUS_WORDS: Readonly<Record<RingStatus, string>> = {
+  notComputed: 'not computed',
+  notApplicable: 'does not apply',
+  open: 'open',
+  closed: 'closed',
+  nothingToTend: 'closed',
+};
+
+/** Each rhythm cell's state in words, for its accessible name. */
+export const RHYTHM_DAY_WORDS: Readonly<Record<RhythmDay, string>> = {
+  active: 'active',
+  inactive: 'not active',
+  pending: 'today, not yet active',
+  future: 'still to come',
+  waived: 'waived',
+  notComputed: 'not computed',
+};
+
+/** The week's cells, Monday first (§39.2: `weekStart` is the Monday). */
+export const DAY_LETTERS: readonly string[] = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+/** The same seven days in full, for each cell's accessible name. */
+export const DAY_NAMES: readonly string[] = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+];

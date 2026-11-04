@@ -22,6 +22,12 @@ function rendered(): [string, string][] {
   const out: [string, string][] = [];
   for (const [name, value] of Object.entries(copy)) {
     if (typeof value === 'string') out.push([name, value]);
+    // The label tables and the words each accessible name carries.
+    else if (typeof value === 'object') {
+      for (const [key, entry] of Object.entries(value)) {
+        if (typeof entry === 'string') out.push([`${name}.${key}`, entry]);
+      }
+    }
   }
   out.push(['XP_LINE_PARTIAL', copy.XP_LINE_PARTIAL(120, 3)]);
   out.push(['XP_LINE_COMPUTED', copy.XP_LINE_COMPUTED(120)]);

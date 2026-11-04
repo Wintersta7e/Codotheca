@@ -11951,10 +11951,10 @@
       "checks": [
         {
           "id": "AC-P4-43-2",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
-          "test": "AC-P4-43-2",
+          "test": "AC-P4-43-2 each band table renders every generated variant and never an unknown as zero",
           "assert": "The band's level, ring and rhythm models enumerate their variants from the schema's generated enums and render each, printing the covered count over the total and failing at zero or on a variant with no rendering. notComputed draws U+2014, NOT COMPUTED and no bar track, never 0 or 1; partial draws the qualifier naming pendingProjects; a notComputed ring draws the --unknown glyph, never an empty ring; floored draws no bar.",
           "scanning": true
         },
@@ -12294,7 +12294,7 @@
         },
         {
           "id": "AC-P4-43-14-window",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-43",
           "test": "AC-P4-43-14 an unfocused or hidden window stamps nothing",

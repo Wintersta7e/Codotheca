@@ -74,6 +74,11 @@ export interface ShelfProps {
   // React 19's `useRef<T>(null)` yields `RefObject<T | null>`: a ref genuinely is null before
   // mount, and the 18 types said otherwise. Widened rather than cast at the call site.
   readonly scrollRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * [p4] §43.2's block 1a, drawn first in the scroll container and above the notice slot. The
+   * band decides itself whether it renders; while it does not, the slot draws nothing.
+   */
+  readonly band?: ReactNode;
   readonly children: ReactNode;
 }
 
@@ -96,12 +101,14 @@ function asKeyEvent(event: KeyboardEvent): KeyEventLike {
 }
 
 /**
- * The four blocks and the one scroll container.
+ * The blocks and the one scroll container.
  *
- * Three blocks the design draws are not built — the status band, the quest strip and the
- * amnesty invitation — and **the space they leave is filled by nothing**: a level or ring
- * placeholder renders unknown as zero, and anything animated at rest costs frames the budget
- * puts at zero. The attention row moves up and the grid starts higher; that is the whole change.
+ * [p4] §43.2's status band is block 1a, first in the scroll container, above the notice slot;
+ * it arrives as `band` and draws its own bottom border. While it does not render — quiet mode,
+ * an empty library — the phase-1–3 layout ships unchanged. Two blocks the design draws are still
+ * not built — the quest strip and the amnesty invitation — and **the space they leave is filled
+ * by nothing**: a placeholder renders unknown as zero, and anything animated at rest costs frames
+ * the budget puts at zero.
  *
  * Blocks 3 and 4 arrive as `children`. This component decides only between that body and the
  * empty state, and hands down the one tile value the grid lays out against.
@@ -212,6 +219,7 @@ export function Shelf(props: ShelfProps): ReactElement {
         onOpenSettings={props.onOpenSettings}
       />
       <div className={SHELF_SCROLL_CLASS} style={scrollStyle} ref={props.scrollRef}>
+        {props.band}
         <NoticeSlot
           candidates={props.notices}
           dismissed={view.dismissedNotices}

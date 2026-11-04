@@ -89,7 +89,9 @@ describe('AttentionRow', () => {
     expect(screen.getByText(SPACE_PEEK_HINT)).toBeTruthy();
   });
 
-  it('carries the row border itself after §1.7 removed the band above it', () => {
+  // §43.2's band renders above the notice slot again and carries its own bottom border, so the
+  // row's border stays the row's whether the band is drawn or not.
+  it('carries the row border itself, with the status band above it or without', () => {
     const { container } = draw();
     expect(container.querySelector('.cdt-attention-row')).toBeTruthy();
   });
