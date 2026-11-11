@@ -99,18 +99,70 @@ test('AC-P4-48-4 the floor step follows packaging', () => {
   }
 });
 
-test('AC-P4-48-4 the draft job refuses update metadata and uses a written notes file', () => {
-  const drafting = jobs.filter(([, job]) =>
-    (job.steps ?? []).some((s) => runOf(s).includes('gh release create')),
-  );
+/** A step that makes or fills the draft: it creates the release, or uploads to the one that exists. */
+const DRAFTS = /gh release (create|upload)\b/u;
+
+/** The one job that drafts, and the index of its drafting step. */
+function draftingJob() {
+  const drafting = jobs.filter(([, job]) => (job.steps ?? []).some((s) => DRAFTS.test(runOf(s))));
   assert.equal(drafting.length, 1, 'one job drafts the release');
   const list = drafting[0][1].steps;
-  const create = list.findIndex((s) => runOf(s).includes('gh release create'));
+  return { id: drafting[0][0], list, draft: list.findIndex((s) => DRAFTS.test(runOf(s))) };
+}
+
+test('AC-P4-48-4 the draft job refuses update metadata and uses a written notes file', () => {
+  const { list, draft } = draftingJob();
   const guard = list.findIndex((s) => runOf(s).includes('scripts/check-update-metadata.mjs'));
   const notes = list.findIndex((s) => runOf(s).includes('docs/release-notes/'));
-  assert.ok(guard >= 0 && guard < create, 'the metadata guard runs before the draft');
-  assert.ok(notes >= 0 && notes < create, 'the notes file is checked before the draft');
-  assert.match(runOf(list[create]), /--notes-file "[^"]*docs\/release-notes\/\$TAG\.md"/u);
+  assert.ok(guard >= 0 && guard < draft, 'the metadata guard runs before the draft');
+  assert.ok(notes >= 0 && notes < draft, 'the notes file is checked before the draft');
+  assert.match(runOf(list[draft]), /--notes-file "[^"]*docs\/release-notes\/\$TAG\.md"/u);
+});
+
+/** Every offset at which `needle` occurs in `hay`. */
+function offsets(hay, needle) {
+  const found = [];
+  for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + 1)) found.push(i);
+  return found;
+}
+
+test('AC-P4-51-3 the draft step fills a draft without --clobber, and creates one only when absent', () => {
+  const { list, draft } = draftingJob();
+  const body = runOf(list[draft]);
+  assert.ok(
+    !body.includes('--clobber'),
+    '--clobber deletes the old asset before the new one lands',
+  );
+  const upload = body.indexOf('gh release upload "$TAG"');
+  const edit = body.indexOf('gh release edit "$TAG" --notes-file "../docs/release-notes/$TAG.md"');
+  const create = body.indexOf('gh release create "$TAG" --draft --verify-tag');
+  const reads = offsets(body, '--json isDraft');
+  process.stdout.write(`isDraft reads in the draft step: ${String(reads.length)}\n`);
+  assert.ok(upload >= 0, 'an existing draft is filled by upload');
+  assert.ok(edit > upload, "the draft's body is set to the notes after the upload");
+  assert.ok(create >= 0, 'a tag with no release still gets a draft, as before');
+  assert.equal(reads.length, 2, 'isDraft is read before the upload and again after the edit');
+  assert.ok(
+    reads[0] < upload && reads[1] > edit,
+    'one read precedes the upload, one follows the edit',
+  );
+  assert.ok(
+    reads[0] > body.indexOf('> SHA256SUMS'),
+    'the release is read once the checksums exist',
+  );
+});
+
+test('AC-P4-51-3 the draft step tells absent from unreadable, and refuses a published release', () => {
+  const { list, draft } = draftingJob();
+  const body = runOf(list[draft]);
+  const upload = body.indexOf('gh release upload');
+  // gh's own words for a tag with no release; any other failure must not reach the create.
+  assert.match(body, /grep -qx 'release not found'/u, 'absent is told by gh saying so');
+  assert.match(body, /could not read the release/u, 'another gh failure stops the step');
+  const published = body.search(/is already published/u);
+  assert.ok(published >= 0, 'a published release has its own failing branch');
+  assert.ok(published < upload, 'the published branch is decided before any upload');
+  assert.match(body, /was published while/u, 'a draft published mid-run fails loudly');
 });
 
 test('AC-P4-48-4 a launch job runs every artifact kind from the uploaded artifact', () => {

@@ -295,6 +295,13 @@ jobs:
       # GitHub renames a release asset's spaces to dots, so the files are renamed first and the
       # checksums name exactly what a user downloads. The attestations are by digest and do not
       # care what the file is called.
+      #
+      # A release PR's merge leaves a draft on the tag already, so that draft is filled; a tag
+      # pushed by hand has none, and one is created as before. A published release is never
+      # touched, and a read that fails for any reason but "not found" stops here rather than
+      # creating a second release. The upload takes no `--clobber`: that deletes the asset already
+      # on the draft before the new one lands, so a name present twice fails here, naming it, and
+      # a person removes the stale asset and re-runs.
       - name: checksums and the draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -310,5 +317,36 @@ jobs:
           test "${#files[@]}" -gt 0 || { echo 'no artifact to release'; exit 1; }
           sha256sum -- "${files[@]}" > SHA256SUMS
           cat SHA256SUMS
-          gh release create "$TAG" --draft --verify-tag --title "$TAG" \
-            --notes-file "../docs/release-notes/$TAG.md" -- "${files[@]}" SHA256SUMS
+          err="$RUNNER_TEMP/release-view.err"
+          if state=$(gh release view "$TAG" --json isDraft --jq .isDraft 2> "$err"); then
+            :
+          elif grep -qx 'release not found' "$err"; then
+            state=absent
+          else
+            cat "$err"
+            echo "could not read the release for $TAG; nothing was created or uploaded"
+            exit 1
+          fi
+          case "$state" in
+            absent)
+              gh release create "$TAG" --draft --verify-tag --title "$TAG" \
+                --notes-file "../docs/release-notes/$TAG.md" -- "${files[@]}" SHA256SUMS
+              ;;
+            false)
+              echo "release $TAG is already published; nothing was uploaded"
+              exit 1
+              ;;
+            true)
+              gh release upload "$TAG" -- "${files[@]}" SHA256SUMS
+              gh release edit "$TAG" --notes-file "../docs/release-notes/$TAG.md"
+              after=$(gh release view "$TAG" --json isDraft --jq .isDraft)
+              test "$after" = true || {
+                echo "release $TAG was published while its assets were uploaded; check them on the release page"
+                exit 1
+              }
+              ;;
+            *)
+              echo "could not read the release for $TAG (isDraft: $state); nothing was uploaded"
+              exit 1
+              ;;
+          esac
