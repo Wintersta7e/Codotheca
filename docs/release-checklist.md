@@ -5,11 +5,21 @@ and, where it matters, why the obvious shortcut is wrong.
 
 ---
 
-## 1. Before the tag
+## 1. The release PR, and the push that tags it
 
-- [ ] **Write the release notes** at `docs/release-notes/<tag>.md` and commit them before tagging.
-      The draft job refuses a tag without them: generated notes cannot carry the limits a person
-      has to state (section 3).
+release-please keeps one release PR open on `main`. It bumps every version declaration and
+`CHANGELOG.md` from the conventional commits since the last release, and names the version in
+its title. The release is `v<x>`, that version with a `v`.
+
+- [ ] **Choose the number first, if it should differ from the one the PR proposes.** Set
+      `release-as` on the `"."` package in `release-please-config.json` and commit that to `main`;
+      release-please rewrites the PR to that version.
+- [ ] **Write the release notes** at `docs/release-notes/v<x>.md` and commit them **to the release
+      PR's branch**. The draft job refuses a tag without them: generated notes cannot carry the
+      limits a person has to state (section 3). If you set `release-as`, remove it in a commit on
+      the same branch: release-please never removes it, and left in place it pins every later
+      release to the same number. If `main` moves before the push, release-please rewrites the
+      branch and drops both commits; add them again.
 - [ ] **Run the version check against the tag you are about to push:**
       `npm run check:version -- --tag <tag>`. It prints every version declaration the workspace
       holds and fails unless all of them equal the tag without its `v`. Quote its output.
@@ -18,6 +28,23 @@ and, where it matters, why the obvious shortcut is wrong.
       output.
 - [ ] **Re-run gitleaks and quote its own count:** `gitleaks detect --source .` — the commits it
       scanned and the leaks it found, as it printed them, not as a summary of them.
+- [ ] **Read CI green on the PR's head commit, the SHA you will push.** A green run on an older
+      head does not count: the notes and the `release-as` removal are commits of their own. On the
+      release branch the `version` job fails while a declaration differs from the manifest, the
+      README's version line is stale, the notes are missing or empty, or `release-as` is still
+      set. A commit you push to the branch starts a run; if the head has none, dispatch one:
+      `gh workflow run ci.yml --ref <branch>`.
+- [ ] **Never press Merge: the push is the release.** Fetch the PR's head, run the local full gate
+      and the Windows-native run on that exact SHA, and run the three checks above on it too. Then
+      `git push origin <sha>:main`, a fast-forward. Every button GitHub offers writes a commit no
+      gate ran on.
+- [ ] **Read the release-please run the push started.** The PR shows merged and labelled
+      `autorelease: tagged`, and the `v<x>` tag and its draft exist. If they do not, push the tag
+      by hand on the same SHA: `git push origin <sha>:refs/tags/v<x>`. A tag a person pushes
+      starts `release.yml` on its own; dispatch it on the tag only if no run started.
+- [ ] **Read the `release.yml` run to its end** (section 4). release-please dispatches it on the
+      tag; if that step failed, dispatch it by hand: `gh workflow run release.yml --ref v<x>`.
+- [ ] **Verify the draft (section 4), then publish it by hand.** Nothing publishes it for you.
 
 ## 2. Building the artifacts
 

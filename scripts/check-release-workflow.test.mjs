@@ -409,3 +409,66 @@ test('AC-P4-51-1 the manifest holds the version every site holds, and the README
   assert.equal(marked.length, 1, 'one README line carries the version marker');
   assert.ok(marked[0].includes(`v${version}`), `the marked README line states v${version}`);
 });
+
+// §51.3 — CI is the release PR's gate: release-please's PRs start no unattended run, so its job
+// dispatches this workflow on the PR's branch, and on that branch the version job checks what the
+// person must add before the push that releases it.
+
+const ciYml = () => /** @type {any} */ (loadRequired('.github/workflows/ci.yml', yaml.load));
+const RELEASE_BRANCH = 'release-please--branches--main';
+
+/** The one ci.yml job running check-version.mjs, and its steps. */
+function versionJob() {
+  const wf = ciYml();
+  const found = Object.entries(wf.jobs ?? {}).filter(([, job]) =>
+    (job.steps ?? []).some((s) => runOf(s).includes('scripts/check-version.mjs')),
+  );
+  process.stdout.write(`ci.yml jobs running check-version.mjs: ${String(found.length)}\n`);
+  assert.equal(found.length, 1, 'one ci.yml job runs check-version.mjs');
+  const [id, job] = found[0];
+  return { wf, id, job, list: job.steps ?? [] };
+}
+
+test('AC-P4-51-4 ci.yml can be dispatched, the route release-please uses to start it', () => {
+  const on = ciYml().on ?? {};
+  assert.ok('workflow_dispatch' in on, 'ci.yml has a workflow_dispatch trigger');
+  assert.ok('pull_request' in on && 'push' in on, 'the push and pull_request triggers stay');
+});
+
+test('AC-P4-51-4 the version job checks every site on every run, and the verdict waits on it', () => {
+  const { wf, id, job, list } = versionJob();
+  const plain = list.filter((s) => runOf(s).trim() === 'node scripts/check-version.mjs');
+  assert.equal(plain.length, 1, 'one step runs check-version.mjs with no arguments');
+  assert.equal(plain[0].if, undefined, 'and it runs on every run, under no condition');
+  const pinned = list.filter((s) => s.uses !== undefined);
+  assert.ok(pinned.length > 0, 'the job checks out the tree');
+  for (const s of pinned) assert.match(String(s.uses), /@[0-9a-f]{40}$/u, `${s.uses} is pinned`);
+  const checkout = pinned.find((s) => String(s.uses).startsWith('actions/checkout@'));
+  assert.equal(checkout?.with?.['persist-credentials'], false, 'the checkout keeps no token');
+  assert.ok(Number(job['timeout-minutes']) > 0, 'the job has a timeout');
+  const verdict = Object.values(wf.jobs).filter((j) => j.if === 'always()' && j.needs);
+  assert.equal(verdict.length, 1, 'one aggregate job gathers the others');
+  assert.ok([verdict[0].needs].flat().includes(id), `the aggregate verdict needs ${id}`);
+});
+
+test('AC-P4-51-4 on the release branch the job checks the manifest version, the notes and release-as', () => {
+  const { list } = versionJob();
+  const gated = list.filter((s) => runOf(s).includes(RELEASE_BRANCH));
+  assert.equal(gated.length, 1, `one step is bound to the ${RELEASE_BRANCH} prefix`);
+  const body = runOf(gated[0]);
+  for (const needle of [
+    'GITHUB_REF_NAME',
+    '.release-please-manifest.json',
+    'scripts/check-version.mjs --tag',
+    'x-release-please-version',
+    'docs/release-notes/',
+    'test -s',
+    'release-as',
+  ]) {
+    assert.ok(body.includes(needle), `the release-branch step holds ${needle}`);
+  }
+  assert.ok(
+    !body.includes('${{'),
+    'the ref reaches the shell through the runner env, never inline',
+  );
+});

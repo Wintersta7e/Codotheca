@@ -2,6 +2,9 @@ name: CI
 on:
   push: { branches: [main] }
   pull_request:
+  # The release PR is opened and rewritten with GITHUB_TOKEN, and a PR made that way starts no
+  # unattended run. `release-please.yml` dispatches this workflow on the PR's branch instead.
+  workflow_dispatch:
 permissions: { contents: read }
 
 # A hosted runner has ~14 GB free and this workspace does not fit in it twice. Ninety-six test
@@ -45,6 +48,72 @@ jobs:
         run: pipx run zizmor==1.30.1 --format=github .github
         env:
           GH_TOKEN: ${{ github.token }}
+
+  # Every version declaration agrees, on every run: before this job a partial bump surfaced only
+  # when `release.yml` ran, on a tag or a dispatch, after the commit carrying it was on `main`.
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 22, package-manager-cache: false }
+      - run: node scripts/check-version.mjs
+      # On release-please's branch the release is what gets pushed, so it is checked here before
+      # the push: every site equals the version the manifest states, the README line names it, the
+      # notes a person writes on the branch exist, and no `release-as` is left — release-please
+      # never removes one, and left in place it pins every later release to the same number. A
+      # dispatch names the branch in GITHUB_REF_NAME; a pull-request run names it in GITHUB_HEAD_REF.
+      - name: the release branch carries its version, its notes and no release-as
+        run: |
+          ref=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}
+          case "$ref" in
+            release-please--branches--main*) ;;
+            *) echo "not a release branch ($ref): nothing more to check"; exit 0 ;;
+          esac
+          V=$(node -p 'require("./.release-please-manifest.json")["."]')
+          echo "release branch $ref: .release-please-manifest.json states $V"
+          failed=0
+          if node scripts/check-version.mjs --tag "v$V"; then
+            echo "every version site equals v$V"
+          else
+            echo "::error file=.release-please-manifest.json::a version site is not v$V, the version the manifest states"
+            failed=1
+          fi
+          line=$(grep -F 'x-release-please-version' README.md || true)
+          case "$line" in
+            *"v$V"*) echo "README.md: the x-release-please-version line carries v$V" ;;
+            *) echo "::error file=README.md::the x-release-please-version line does not carry v$V: $line"; failed=1 ;;
+          esac
+          notes="docs/release-notes/v$V.md"
+          if test -s "$notes"; then
+            echo "$notes: present and non-empty"
+          else
+            echo "::error file=$notes::$notes is missing or empty; write the notes on this branch"
+            failed=1
+          fi
+          found=$(node -e '
+            const hits = [];
+            const walk = (o, at) => {
+              if (o === null || typeof o !== "object") return;
+              for (const [k, v] of Object.entries(o)) {
+                const key = at + "[" + JSON.stringify(k) + "]";
+                if (k === "release-as") hits.push(key);
+                walk(v, key);
+              }
+            };
+            walk(require("./release-please-config.json"), "");
+            console.log(hits.join(" "));
+          ')
+          if [ -z "$found" ]; then
+            echo "release-please-config.json: no release-as"
+          else
+            echo "::error file=release-please-config.json::release-as is still set ($found); remove it in a commit on this branch"
+            failed=1
+          fi
+          exit "$failed"
 
   core:
     name: core (${{ matrix.os }})
@@ -358,7 +427,7 @@ jobs:
   all-green:
     name: all green
     if: always()
-    needs: [workflows, core, app, e2e, acceptance, advisories]
+    needs: [workflows, version, core, app, e2e, acceptance, advisories]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
