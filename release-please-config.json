@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/v17.6.0/schemas/config.json",
+  "last-release-sha": "18191ee947ce34850357fc0b25184485e019aac0",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "include-component-in-tag": false,
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true,
+      "draft": true,
+      "force-tag-creation": true,
+      "pull-request-title-pattern": "chore: release ${version}",
+      "extra-files": [
+        { "type": "json", "path": "app/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "protocol/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages.app.version" },
+        { "type": "json", "path": "package-lock.json", "jsonpath": "$.packages.protocol.version" },
+        { "type": "toml", "path": "core/Cargo.toml", "jsonpath": "$.package.version" },
+        {
+          "type": "toml",
+          "path": "core/Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value=='codotheca-core')].version"
+        },
+        { "type": "generic", "path": "README.md" }
+      ]
+    }
+  }
+}

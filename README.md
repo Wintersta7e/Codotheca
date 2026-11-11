@@ -44,7 +44,7 @@ Every repository in these screenshots is invented; they were taken from the real
 
 ## Status
 
-**v0.9.0 — pre-release, built from source.** Three of the six planned phases are complete — the shelf, remote
+**v0.9.0 — pre-release, built from source.** <!-- x-release-please-version --> Three of the six planned phases are complete — the shelf, remote
 repositories with the quick-switch palette, and upkeep — and the app runs on Windows and Linux. It
 is a personal tool built for one person's library; you are welcome to clone and build it, but there
 is no adoption goal and no support guarantee.

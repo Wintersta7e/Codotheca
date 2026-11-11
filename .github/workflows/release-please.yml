@@ -1,0 +1,54 @@
+name: Release PR
+on:
+  push: { branches: [main] }
+permissions: {}
+
+# Every push to `main` updates one open release PR: the next version, read from the Conventional
+# Commits since the last release, written into every version declaration and `CHANGELOG.md`. The
+# PR is never merged with the Merge button: its head is gated locally and fast-forward pushed to
+# `main`, which GitHub records as the PR merged, and the run on that push tags `v<x>` and makes a
+# private draft.
+#
+# A PR or tag made with this run's `GITHUB_TOKEN` starts no unattended run of another workflow, so
+# neither CI on the release PR nor the release build on the tag would ever start by itself. A
+# dispatch is the one event the token may start, so both are dispatched here.
+#
+# Two pushes in a row must not open or tag the same release twice; the second waits.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: release PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # The release PR's branch and commits, the tag, and the draft release.
+      contents: write
+      # Opening and updating the release PR.
+      pull-requests: write
+      # The `autorelease:` labels on the PR, which are what marks it released.
+      issues: write
+      # `gh workflow run` for the two dispatches below.
+      actions: write
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      # CI on the PR's head is the check a person reads before gating and pushing that head.
+      - name: CI on the release PR
+        if: steps.release.outputs.pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+      # The tag release-please just made builds, launches and fills the draft it just made.
+      - name: release build on the tag
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "v$VERSION"

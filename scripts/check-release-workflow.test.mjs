@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
+import { checkVersion, declarationSites } from './check-version.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const text = readFileSync(join(root, '.github', 'workflows', 'release.yml'), 'utf8');
@@ -183,4 +184,176 @@ test('AC-P4-48-26 no updater: the NSIS target is built without a blockmap', () =
   );
   assert.equal(config.publish, null, 'no publish target');
   assert.equal(config.nsis?.differentialPackage, false, 'nsis.differentialPackage is false');
+});
+
+// §51 — release-please keeps the release PR open, and its merge tags and drafts. These read the
+// workflow and the config the action reads; whether release-please writes what they say is the
+// recorded dry run's evidence, not this file's.
+
+/** A repository file's text, or `null` when it does not exist — so one absent file fails its own tests. */
+function readOptional(rel) {
+  try {
+    return readFileSync(join(root, rel), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function loadRequired(rel, parse) {
+  const raw = readOptional(rel);
+  assert.ok(raw !== null, `${rel} is missing`);
+  return parse(raw);
+}
+
+const releasePleaseYml = () =>
+  /** @type {any} */ (loadRequired('.github/workflows/release-please.yml', yaml.load));
+const releasePleaseConfig = () =>
+  /** @type {any} */ (loadRequired('release-please-config.json', JSON.parse));
+const RELEASE_PLEASE_ACTION = 'googleapis/release-please-action@';
+
+/** The action's step and every step of the job that holds it. */
+function releasePleaseJob() {
+  const wf = releasePleaseYml();
+  const found = Object.entries(wf.jobs ?? {}).filter(([, job]) =>
+    (job.steps ?? []).some((s) => String(s.uses ?? '').startsWith(RELEASE_PLEASE_ACTION)),
+  );
+  assert.equal(found.length, 1, 'one job runs the release-please action');
+  const [id, job] = found[0];
+  const action = job.steps.find((s) => String(s.uses ?? '').startsWith(RELEASE_PLEASE_ACTION));
+  return { wf, id, job, action };
+}
+
+test('AC-P4-51-1 release-please.yml grants nothing at the top and four writes to its one job', () => {
+  const { wf, id, job } = releasePleaseJob();
+  assert.deepEqual(wf.permissions, {}, 'top-level permissions are {}');
+  assert.deepEqual(
+    Object.entries(job.permissions ?? {}).sort(),
+    [
+      ['actions', 'write'],
+      ['contents', 'write'],
+      ['issues', 'write'],
+      ['pull-requests', 'write'],
+    ],
+    `job ${id} holds exactly the four writes §51.2 lists`,
+  );
+  assert.deepEqual(wf.on?.push?.branches, ['main'], 'it runs on a push to main');
+});
+
+test('AC-P4-51-1 the release-please action is pinned by a full commit SHA and reads the root files', () => {
+  const { action } = releasePleaseJob();
+  assert.match(String(action.uses), /@[0-9a-f]{40}$/u, 'pinned by a 40-hex commit SHA');
+  assert.equal(action.id, 'release', 'the dispatch conditions read steps.release');
+  assert.equal(action.with?.['config-file'], 'release-please-config.json');
+  assert.equal(action.with?.['manifest-file'], '.release-please-manifest.json');
+});
+
+test('AC-P4-51-1 release.yml is dispatched only on release_created, ci.yml only on a PR', () => {
+  const { job } = releasePleaseJob();
+  const list = job.steps ?? [];
+  const dispatching = (wf) => list.filter((s) => runOf(s).includes(`gh workflow run ${wf}`));
+  const release = dispatching('release.yml');
+  const ci = dispatching('ci.yml');
+  process.stdout.write(
+    `dispatch steps: release.yml ${String(release.length)}, ci.yml ${String(ci.length)}\n`,
+  );
+  assert.equal(release.length, 1, 'one step dispatches release.yml');
+  assert.equal(ci.length, 1, 'one step dispatches ci.yml');
+  assert.equal(
+    String(release[0].if ?? '').replace(/\s+/gu, ''),
+    "steps.release.outputs.release_created=='true'",
+    'release.yml is dispatched only when a release was created',
+  );
+  assert.equal(
+    String(ci[0].if ?? '').trim(),
+    'steps.release.outputs.pr',
+    'ci.yml is dispatched only when the action reports a PR',
+  );
+  for (const step of [...release, ...ci]) {
+    assert.ok(!runOf(step).includes('${{'), 'values reach the shell through env, never inline');
+  }
+});
+
+test('AC-P4-51-1 the config drafts the release and creates its tag', () => {
+  const pkg = releasePleaseConfig().packages?.['.'];
+  assert.ok(pkg, 'the config has package "."');
+  assert.equal(pkg.draft, true, 'draft is true: the merge makes a private draft, never a release');
+  assert.equal(
+    pkg['force-tag-creation'],
+    true,
+    'force-tag-creation is true: a draft without its tag hides the previous release',
+  );
+});
+
+test('AC-P4-51-1 no workflow or config carries a Release-As trailer or a release-as input', () => {
+  const texts = {
+    '.github/workflows/release-please.yml': readOptional('.github/workflows/release-please.yml'),
+    '.github/workflows/release.yml': text,
+    '.github/workflows/ci.yml': readOptional('.github/workflows/ci.yml'),
+    'release-please-config.json': readOptional('release-please-config.json'),
+  };
+  for (const [rel, body] of Object.entries(texts)) {
+    assert.ok(body !== null, `${rel} is missing`);
+    assert.ok(!body.includes('Release-As'), `${rel} names the Release-As trailer`);
+  }
+  const { action } = releasePleaseJob();
+  assert.ok(!('release-as' in (action.with ?? {})), 'the action is given no release-as input');
+});
+
+/**
+ * Where release-please writes a site, spelled as the extra-files entry that would name it. The
+ * `node` release type writes the root `package.json` and the lockfile's two root entries itself.
+ */
+const NODE_WRITES = new Set([
+  'package.json#version',
+  'package-lock.json#version',
+  'package-lock.json#packages[""].version',
+]);
+
+/** `<file>#<field>` as check-version.mjs spells a site → the `{ type, path, jsonpath }` naming it. */
+function extraFileFor(site) {
+  const [path, field] = site.split('#');
+  const type = /\.json$/u.test(path) ? 'json' : 'toml';
+  const keyed = /^packages\["([^"]+)"\]\.version$/u.exec(field);
+  const named = /^package\["([^"]+)"\]\.version$/u.exec(field);
+  if (keyed) return { type, path, jsonpath: `$.packages.${keyed[1]}.version` };
+  // release-please's TOML updater parses each value into a node holding it as `.value`, so a
+  // filter on a plain `@.name` matches no entry and the lock is silently left stale.
+  if (named) return { type, path, jsonpath: `$.package[?(@.name.value=='${named[1]}')].version` };
+  return { type, path, jsonpath: `$.${field}` };
+}
+
+test('AC-P4-51-1 every version site check-version.mjs derives is written by the release PR', () => {
+  const pkg = releasePleaseConfig().packages?.['.'];
+  assert.equal(pkg?.['release-type'], 'node', 'package "." is a node release');
+  const extra = (pkg['extra-files'] ?? []).filter((e) => typeof e === 'object');
+  const sites = declarationSites(root).map((s) => s.site);
+  const uncovered = [];
+  for (const site of sites) {
+    if (NODE_WRITES.has(site)) continue;
+    const want = extraFileFor(site);
+    const hit = extra.some(
+      (e) => e.type === want.type && e.path === want.path && e.jsonpath === want.jsonpath,
+    );
+    if (!hit) uncovered.push(`${site} (wants ${JSON.stringify(want)})`);
+  }
+  process.stdout.write(`sites covered: ${String(sites.length - uncovered.length)}\n`);
+  assert.ok(sites.length > 0, 'no version site was derived, so nothing was checked');
+  assert.deepEqual(uncovered, [], 'every site is written by the node type or an extra-files entry');
+});
+
+test('AC-P4-51-1 the manifest holds the version every site holds, and the README line is marked', () => {
+  const manifest = loadRequired('.release-please-manifest.json', JSON.parse);
+  const { version, problems } = checkVersion({ root, tag: null });
+  assert.deepEqual(problems, []);
+  assert.equal(manifest['.'], version, 'the manifest states the version the sites agree on');
+  const extra = releasePleaseConfig().packages?.['.']?.['extra-files'] ?? [];
+  assert.ok(
+    extra.some((e) => e === 'README.md' || (e?.type === 'generic' && e?.path === 'README.md')),
+    'README.md is a generic extra-file',
+  );
+  const marked = String(readOptional('README.md'))
+    .split('\n')
+    .filter((l) => l.includes('x-release-please-version'));
+  assert.equal(marked.length, 1, 'one README line carries the version marker');
+  assert.ok(marked[0].includes(`v${version}`), `the marked README line states v${version}`);
 });
