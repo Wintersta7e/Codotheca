@@ -84,6 +84,14 @@ pub fn read_readme_source(
     location: LocationId,
 ) -> Result<ReadmeSource, ReadmeError> {
     let work_dir = work_dir_of(ctx.index.conn(), project, location)?;
+    // §56.5 row 13: an excluded copy's directory is never opened.
+    crate::exclusion::gate::check_location_read(
+        ctx.index.conn(),
+        ctx.exclusions,
+        crate::exclusion::gate::GateSite::Readme,
+        location,
+    )
+    .map_err(|_| ReadmeError::Excluded)?;
 
     // **Five `open` calls, not a directory listing.** This runs under the process's one SQLite
     // mutex (`Route::Readme`), once per project-page open, and the corpus this project measures
@@ -133,8 +141,8 @@ pub fn read_readme_source(
 ///
 /// # Errors
 /// `PROTOCOL` for an argument shape the schema does not admit or a pair that names no live
-/// location; `REPO_UNREADABLE` for a working directory that cannot be listed; `INTERNAL` for an
-/// index fault.
+/// location; `REPO_UNREADABLE` for a working directory that cannot be listed; `EXCLUDED` for an
+/// excluded copy; `INTERNAL` for an index fault.
 pub fn handle_readme(
     ctx: &ReadmeCtx<'_>,
     args: serde_json::Value,

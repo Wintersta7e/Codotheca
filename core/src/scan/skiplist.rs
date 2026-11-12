@@ -148,17 +148,30 @@ impl SkipList {
     /// itself, and must use [`covers`](Self::covers) when the question is about a descendant.
     #[must_use]
     pub fn skips(&self, dir: &Path) -> bool {
-        let hay = normalise(&path_display(dir));
-        let name_start = hay.rfind('/').map_or(0, |i| i + 1);
-        let name = hay.get(name_start..).unwrap_or_default();
-        self.rules.iter().any(|rule| match rule {
-            Rule::Name(entry) => name == entry,
-            Rule::Suffix(entry) => hay.ends_with(entry.as_str()),
-            Rule::Absolute(entry) => {
-                cfg!(unix) && (hay == *entry || hay.starts_with(&format!("{entry}/")))
-            }
-        })
+        matches_any(&self.rules, dir)
     }
+
+    /// True when one of the user's own entries, never a built-in, names `dir`: the question
+    /// asked of a repository nested inside a copy, where a built-in is a walk-cost skip and not
+    /// a promise that the directory is never read (GA38).
+    #[must_use]
+    pub fn user_skips(&self, dir: &Path) -> bool {
+        matches_any(self.rules.get(SKIP_LIST.len()..).unwrap_or_default(), dir)
+    }
+}
+
+/// True when one of `rules` names `dir`.
+fn matches_any(rules: &[Rule], dir: &Path) -> bool {
+    let hay = normalise(&path_display(dir));
+    let name_start = hay.rfind('/').map_or(0, |i| i + 1);
+    let name = hay.get(name_start..).unwrap_or_default();
+    rules.iter().any(|rule| match rule {
+        Rule::Name(entry) => name == entry,
+        Rule::Suffix(entry) => hay.ends_with(entry.as_str()),
+        Rule::Absolute(entry) => {
+            cfg!(unix) && (hay == *entry || hay.starts_with(&format!("{entry}/")))
+        }
+    })
 }
 
 /// Separators unified; case folded on Windows only.

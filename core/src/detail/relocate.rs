@@ -52,13 +52,13 @@ pub fn handle_location_relocate(
 ) -> Result<LocationDetail, CommandFailure> {
     let a: LocationsRelocateArgs = parse_args(args)?;
     let conn = ctx.index.conn();
-    let (project_id, kind, expected): (i64, String, Option<String>) = conn
+    let (project_id, kind, distro, expected): (i64, String, String, Option<String>) = conn
         .query_row(
-            "SELECT l.project_id, l.kind, p.lineage_key
+            "SELECT l.project_id, l.kind, l.distro, p.lineage_key
                FROM location l JOIN project p ON p.id = l.project_id
               WHERE l.id = ?1",
             [a.location_id.0],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => {
@@ -66,6 +66,8 @@ pub fn handle_location_relocate(
             }
             other => internal(other),
         })?;
+
+    refuse_excluded(ctx, a.location_id, &kind, &distro, &a.path_bytes.0)?;
 
     // The path exists only because the shell's dialog produced it. Nothing derives it from a
     // renderer string, and nothing here writes to it.
@@ -127,4 +129,26 @@ pub fn handle_location_relocate(
 
     crate::detail::emit_upserted(ctx, crate::protocol::ProjectId(project_id));
     crate::detail::get::location_detail(conn, a.location_id)
+}
+
+/// §56.5 row 14: an excluded copy is not relocated, and neither is a copy onto an excluded path.
+/// Asked before the new path is resolved or read; the row is left unchanged.
+fn refuse_excluded(
+    ctx: &DetailCtx<'_>,
+    location: crate::protocol::LocationId,
+    kind: &str,
+    distro: &str,
+    new_bytes: &[u8],
+) -> Result<(), CommandFailure> {
+    use crate::exclusion::gate::{check_location_read, GateSite};
+    let conn = ctx.index.conn();
+    check_location_read(conn, ctx.exclusions, GateSite::Relocate, location)
+        .map_err(|_| CommandFailure::excluded("the copy is excluded"))?;
+    let kind = crate::protocol::LocationKind::parse(kind)
+        .ok_or_else(|| CommandFailure::internal(format!("location kind {kind:?}")))?;
+    let key =
+        crate::exclusion::store::candidate_key(conn, kind, distro, new_bytes).map_err(internal)?;
+    ctx.exclusions
+        .check_read(GateSite::Relocate, &key)
+        .map_err(|_| CommandFailure::excluded("the new path is excluded"))
 }

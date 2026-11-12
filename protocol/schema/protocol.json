@@ -18,7 +18,8 @@
     "PROTOCOL",
     "INTERNAL",
     "TOKEN_INVALID",
-    "SSO_REQUIRED"
+    "SSO_REQUIRED",
+    "EXCLUDED"
   ],
   "types": {
     "ProjectId": { "kind": "id", "repr": "i64" },

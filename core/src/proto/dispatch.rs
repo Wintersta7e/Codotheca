@@ -40,6 +40,17 @@ impl CommandFailure {
             outcome: None,
         }
     }
+
+    /// An `EXCLUDED` refusal (§56.11): the user excluded the copy, so its read never started
+    /// and the command took no effect.
+    #[must_use]
+    pub fn excluded(message: impl Into<String>) -> Self {
+        Self {
+            code: ErrorCode::Excluded,
+            message: message.into(),
+            outcome: None,
+        }
+    }
 }
 
 /// Deserialises one **command's** `args` object, turning a shape error into `PROTOCOL` (**R15**).

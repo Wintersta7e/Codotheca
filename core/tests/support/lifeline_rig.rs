@@ -88,6 +88,7 @@ pub(crate) fn real_handler(
             Box::new(codotheca_core::session::watch::FakeActivitySource::new()),
             Arc::new(codotheca_core::session::activity::FakeIgnoreCheck::new(&[])),
             Arc::new(FixedZone(0)),
+            Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         ),
         scans: codotheca_core::scan::ScanSupervisor::new(Arc::new(
             codotheca_core::testing::ScanLauncherFake::new(),

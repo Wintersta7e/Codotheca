@@ -96,6 +96,7 @@ pub fn core_handler_with(
             Box::new(crate::session::watch::FakeActivitySource::new()),
             Arc::new(crate::session::activity::FakeIgnoreCheck::new(&[])),
             Arc::new(FixedZone(0)),
+            Arc::clone(&exclusions),
         ),
         scans: crate::scan::ScanSupervisor::new(launcher),
         scan_store: Arc::new(crate::testing::MemScanStore::new()),

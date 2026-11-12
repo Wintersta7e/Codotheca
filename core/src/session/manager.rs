@@ -16,6 +16,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::exclusion::gate::ExclusionGate;
 use crate::index::Index;
 use crate::protocol::{
     CloseReason, LocationId, ProjectId, SegmentClosed, SessionEnded, SessionEvent, SessionId,
@@ -63,6 +64,8 @@ pub struct SessionManager {
     events: Arc<dyn crate::proto::EventSink>,
     activity: Box<dyn ActivitySource>,
     ignore: Arc<dyn IgnoreCheck>,
+    /// The core's exclusion gate, which each session's scope filter asks before a read (GA33).
+    exclusions: Arc<ExclusionGate>,
     live: BTreeMap<i64, Live>,
     /// The zone each close's Focus share is dated in (§39.2 rule 1).
     zone: Arc<dyn crate::clock::LocalZone>,
@@ -84,8 +87,8 @@ impl std::fmt::Debug for SessionManager {
 }
 
 impl SessionManager {
-    /// A manager with no live sessions; `activity` feeds it paths and `ignore` scopes them, and
-    /// `zone` dates each segment close's Focus share.
+    /// A manager with no live sessions; `activity` feeds it paths and `ignore` scopes them while
+    /// `exclusions` admits the session's copy, and `zone` dates each segment close's Focus share.
     #[must_use]
     pub fn new(
         clock: Arc<dyn crate::clock::Clock>,
@@ -93,12 +96,14 @@ impl SessionManager {
         activity: Box<dyn ActivitySource>,
         ignore: Arc<dyn IgnoreCheck>,
         zone: Arc<dyn crate::clock::LocalZone>,
+        exclusions: Arc<ExclusionGate>,
     ) -> Self {
         Self {
             clock,
             events,
             activity,
             ignore,
+            exclusions,
             live: BTreeMap::new(),
             zone,
             focus: None,
@@ -144,7 +149,7 @@ impl SessionManager {
         let now = self.now();
         let (machine, opened) = SegmentMachine::open(now, launched.waiter.is_some());
 
-        let (session, segment_id, started) = {
+        let (session, segment_id, started, key) = {
             let _guard = crate::proto::txguard::TxGuard::enter();
             let tx = index.conn_mut().transaction()?;
             let session = store::open_session(
@@ -164,8 +169,13 @@ impl SessionManager {
                 false,
             )?;
             let started = store::session_ref(&tx, session)?;
+            // GA33: the copy as the gate keys it, read beside the row that names it. A copy that
+            // cannot be keyed gets no `check-ignore` for this session.
+            let key = launched
+                .location_id
+                .and_then(|location| crate::exclusion::store::location_key(&tx, location).ok());
             tx.commit()?;
-            (session, segment_id, started)
+            (session, segment_id, started, key)
         };
 
         let _ = self.activity.watch(session, &launched.repo.work_dir);
@@ -178,7 +188,11 @@ impl SessionManager {
                 machine,
                 segment_id: Some(segment_id),
                 launched_mono_ms: now.mono_ms,
-                scope: ScopeFilter::new(Arc::clone(&self.ignore)),
+                scope: ScopeFilter::new(
+                    Arc::clone(&self.ignore),
+                    Arc::clone(&self.exclusions),
+                    key,
+                ),
                 waiter: launched.waiter,
             },
         );

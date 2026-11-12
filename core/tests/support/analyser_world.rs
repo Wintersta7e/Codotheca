@@ -367,7 +367,21 @@ impl Library {
         remotes: &'a dyn RemoteVerifier,
         trash: &'a dyn Trash,
     ) -> AnalyserSeams<'a> {
+        // One gate holding the built-ins: no analyser fixture excludes anything.
+        static NO_EXCLUSIONS: std::sync::LazyLock<codotheca_core::exclusion::gate::ExclusionGate> =
+            std::sync::LazyLock::new(codotheca_core::exclusion::gate::ExclusionGate::default);
+        self.seams_under(remotes, trash, &NO_EXCLUSIONS)
+    }
+
+    /// The seams over `remotes` and `trash`, reading through `exclusions`.
+    pub(crate) fn seams_under<'a>(
+        &'a self,
+        remotes: &'a dyn RemoteVerifier,
+        trash: &'a dyn Trash,
+        exclusions: &'a codotheca_core::exclusion::gate::ExclusionGate,
+    ) -> AnalyserSeams<'a> {
         AnalyserSeams {
+            exclusions,
             git: &self.read_git,
             remotes,
             trash,
@@ -378,6 +392,25 @@ impl Library {
     /// `locations.uninstallPreflight` over `remotes`.
     pub(crate) fn preflight(&self, id: LocationId, remotes: &dyn RemoteVerifier) -> Verdict {
         self.preflight_with(id, remotes, &CountingTrash::new())
+    }
+
+    /// `locations.uninstallPreflight` over `remotes`, with `exclusions` as the core's one list.
+    pub(crate) fn preflight_under(
+        &self,
+        id: LocationId,
+        remotes: &dyn RemoteVerifier,
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate,
+    ) -> Verdict {
+        let trash = CountingTrash::new();
+        let value = codotheca_core::uninstall::handle_preflight_off_lock(
+            &self.index,
+            &self.seams_under(remotes, &trash, exclusions),
+            serde_json::json!({ "locationId": id }),
+            NOW,
+        )
+        .expect("the pre-flight answers");
+        assert_eq!(trash.sends(), 0, "a pre-flight sent something to the trash");
+        Verdict(value)
     }
 
     /// `locations.uninstallPreflight` over `remotes` and `trash`.

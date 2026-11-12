@@ -35,10 +35,28 @@ fn internal(e: impl std::fmt::Display) -> CommandFailure {
 /// The one row read, under the guard and in one read transaction.
 // **A read transaction, not a bare connection**: `gate_live_session` takes a `&Transaction`,
 // and every rusqlite transaction in this core opens through `TxGuard`.
-fn read_row(index: &Arc<Mutex<Index>>, id: LocationId) -> Result<LocationRow, CommandFailure> {
+//
+// §56.5 row 15: an excluded copy is refused here, before the analyser reads git. The user removes
+// the exclusion first.
+fn read_row(
+    index: &Arc<Mutex<Index>>,
+    seams: &AnalyserSeams<'_>,
+    id: LocationId,
+) -> Result<LocationRow, CommandFailure> {
     let mut guard = index.lock().unwrap_or_else(PoisonError::into_inner);
     guard
-        .with_tx(|tx| Ok(read_location_row(tx, id)))
+        .with_tx(|tx| {
+            Ok(read_location_row(tx, id).and_then(|row| {
+                crate::exclusion::gate::check_location_read(
+                    tx,
+                    seams.exclusions,
+                    crate::exclusion::gate::GateSite::Uninstall,
+                    id,
+                )
+                .map(|()| row)
+                .map_err(|_| CommandFailure::excluded("the copy is excluded"))
+            }))
+        })
         .map_err(internal)?
 }
 
@@ -47,7 +65,8 @@ fn read_row(index: &Arc<Mutex<Index>>, id: LocationId) -> Result<LocationRow, Co
 ///
 /// # Errors
 /// `PROTOCOL` for an argument shape the schema does not admit or an id that names no location;
-/// `INTERNAL` for an index fault. A *blocked* verdict is a success, not an error.
+/// `EXCLUDED` for an excluded copy; `INTERNAL` for an index fault. A *blocked* verdict is a
+/// success, not an error.
 pub fn handle_preflight_off_lock(
     index: &Arc<Mutex<Index>>,
     seams: &AnalyserSeams<'_>,
@@ -55,7 +74,7 @@ pub fn handle_preflight_off_lock(
     now: i64,
 ) -> Result<Value, CommandFailure> {
     let a: LocationsUninstallPreflightArgs = parse_args(args)?;
-    let row = read_row(index, a.location_id)?;
+    let row = read_row(index, seams, a.location_id)?;
     let analysis = analyse(&row, GovernedAct::Uninstall, seams, now);
     serde_json::to_value(analysis.verdict).map_err(internal)
 }
@@ -68,7 +87,8 @@ pub fn handle_preflight_off_lock(
 ///
 /// # Errors
 /// `PROTOCOL` when the freshly computed verdict is not `safe`, when the directory's identity no
-/// longer matches its row, or when the removal itself refuses; `INTERNAL` for an index fault.
+/// longer matches its row, or when the removal itself refuses; `EXCLUDED` for an excluded copy;
+/// `INTERNAL` for an index fault.
 pub fn handle_uninstall_off_lock(
     index: &Arc<Mutex<Index>>,
     seams: &AnalyserSeams<'_>,
@@ -76,7 +96,7 @@ pub fn handle_uninstall_off_lock(
     now: i64,
 ) -> Result<Value, CommandFailure> {
     let a: LocationsUninstallArgs = parse_args(args)?;
-    let row = read_row(index, a.location_id)?;
+    let row = read_row(index, seams, a.location_id)?;
     let analysis = analyse(&row, GovernedAct::Uninstall, seams, now);
     if analysis.verdict.disposition != UninstallDisposition::Safe {
         return Err(CommandFailure::protocol(format!(

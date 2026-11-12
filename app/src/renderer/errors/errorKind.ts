@@ -115,6 +115,8 @@ export function explainErrorKind(kind: ErrorCode): ExplainedError {
     // a badge on a tile — and neither overloads PERMISSION_DENIED, which is a filesystem error.
     case 'TOKEN_INVALID':
     case 'SSO_REQUIRED':
+    // [p4-gaps] §56.11: a command's refusal for an excluded copy, never a stored row's state.
+    case 'EXCLUDED':
       return NOT_A_PROJECT_STATE;
     default: {
       const unhandled: never = kind;

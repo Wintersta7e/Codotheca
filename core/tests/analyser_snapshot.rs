@@ -53,6 +53,7 @@ fn take(lib: &Library, path: &Path) -> Snapshot {
         &repo,
         &lib.read_git,
         &JobContext::new(JobClass::Interactive, &cancel, None),
+        &|_| true,
     )
     .expect("the snapshot reads")
 }

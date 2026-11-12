@@ -168,7 +168,16 @@ impl ExclusionGate {
     /// # Errors
     /// `Covered` when the list in force covers `target`; the read must not start.
     pub fn check_read(&self, site: GateSite, target: &LocationKey) -> Result<(), Covered> {
-        self.decide(site, target)
+        self.decide(site, |list| list.covers_location(target))
+    }
+
+    /// Asked before reading `target`, a repository nested inside a copy already admitted: only
+    /// the user's entries cover it, never a built-in name (GA38).
+    ///
+    /// # Errors
+    /// `Covered` when a user entry in force covers `target`; the read must not start.
+    pub fn check_nested_read(&self, site: GateSite, target: &LocationKey) -> Result<(), Covered> {
+        self.decide(site, |list| list.user_covers_location(target))
     }
 
     /// Asked inside the writer's transaction, before its first write of a fact read from
@@ -183,7 +192,7 @@ impl ExclusionGate {
         _tx: &Transaction<'_>,
         target: &LocationKey,
     ) -> Result<(), Covered> {
-        self.decide(site, target)
+        self.decide(site, |list| list.covers_location(target))
     }
 
     /// A list held across many checks, which follows this gate's swaps: the walk's, which asks
@@ -200,8 +209,12 @@ impl ExclusionGate {
         }
     }
 
-    fn decide(&self, site: GateSite, target: &LocationKey) -> Result<(), Covered> {
-        let covered = self.snapshot().covers_location(target);
+    fn decide(
+        &self,
+        site: GateSite,
+        covers: impl FnOnce(&ExclusionList) -> bool,
+    ) -> Result<(), Covered> {
+        let covered = covers(&self.snapshot());
         #[cfg(feature = "testkit")]
         self.note(site, covered);
         verdict(site, covered)

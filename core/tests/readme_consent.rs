@@ -26,6 +26,7 @@ fn granting_writes_a_timestamp_and_publishes_it_revoking_writes_null() {
     let project = index.insert_project();
     let sink = CollectingSink::default();
     let ctx = ReadmeCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: index.index(),
         events: &sink,
         now: NOW,
@@ -67,6 +68,7 @@ fn granting_twice_emits_twice_and_leaves_one_row() {
     let project = index.insert_project();
     let sink = CollectingSink::default();
     let ctx = ReadmeCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: index.index(),
         events: &sink,
         now: NOW,
@@ -89,6 +91,7 @@ fn an_id_that_names_no_project_is_a_protocol_error_and_writes_nothing() {
     let index = TempIndex::new();
     let sink = CollectingSink::default();
     let ctx = ReadmeCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: index.index(),
         events: &sink,
         now: NOW,
@@ -108,6 +111,7 @@ fn the_command_is_dispatched_by_name_and_returns_empty() {
     let project = index.insert_project();
     let sink = CollectingSink::default();
     let ctx = ReadmeCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: index.index(),
         events: &sink,
         now: NOW,

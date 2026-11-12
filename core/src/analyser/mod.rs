@@ -33,6 +33,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::cancel::CancelToken;
+use crate::exclusion::gate::GateSite;
 use crate::git::{establish_ownership, GitBackend, JobClass, JobContext, RepoHandle, StoreKey};
 use crate::gitw::floor::meets_governed_floor;
 use crate::gitw::intent::GIT_INVOCATION_DEADLINE;
@@ -76,6 +77,9 @@ pub struct AnalyserSeams<'a> {
     pub remotes: &'a dyn RemoteVerifier,
     /// Where an act's bytes would go, for §46.7's availability reading.
     pub trash: &'a dyn Trash,
+    /// The core's exclusion gate, asked before any probe of the copy or a repository inside it
+    /// and before a remote's verifying read (§56.5 rows 4 and 17).
+    pub exclusions: &'a crate::exclusion::gate::ExclusionGate,
     /// Test-only: runs between step 8 and step 9 of an act, where a perturbation must be seen.
     #[cfg(feature = "testkit")]
     pub before_act: Option<&'a dyn Fn()>,
@@ -138,15 +142,18 @@ pub fn reread_before_act(
         &cancel,
         Some(GIT_INVOCATION_DEADLINE),
     );
-    let repo = resolve(row, seams.git, &ctx).ok_or(ActRefusal::Unresolvable)?;
+    let repo = admitted(row, seams, GateSite::OwnershipProbe)
+        .then(|| resolve(row, seams.git, &ctx))
+        .flatten()
+        .ok_or(ActRefusal::Unresolvable)?;
     match identify(seams.git, &repo, row.lineage_key.as_deref(), &ctx) {
         IdentityOutcome::Match => {}
         IdentityOutcome::Mismatch | IdentityOutcome::Shallow | IdentityOutcome::Unreadable => {
             return Err(ActRefusal::IdentityChanged)
         }
     }
-    let live =
-        snapshot::snapshot(&repo, seams.git, &ctx).map_err(ActRefusal::SnapshotUnreadable)?;
+    let live = snapshot::snapshot(&repo, seams.git, &ctx, &nested_admit(row, seams))
+        .map_err(ActRefusal::SnapshotUnreadable)?;
     if live.digest() != recorded.digest() {
         return Err(ActRefusal::Changed);
     }
@@ -183,6 +190,9 @@ pub struct LocationRow {
     pub live_session: bool,
     /// Every other present location, for §45.5's containment and borrowing refusals.
     pub others: Vec<OtherLocation>,
+    /// What the exclusion gate decides this copy's coverage from. `None` when it could not be
+    /// read, and then nothing in the copy is probed (§56.5 row 4 fails closed).
+    pub key: Option<crate::exclusion::list::LocationKey>,
 }
 
 /// **The one row read**, in the caller's transaction: `location` joined to its project's
@@ -215,6 +225,7 @@ pub fn read_location_row(
                     scan_roots: Vec::new(),
                     live_session: false,
                     others: Vec::new(),
+                    key: None,
                 })
             },
         )
@@ -236,6 +247,8 @@ pub fn read_location_row(
         .iter()
         .map(|bytes| crate::paths::path_from_bytes(bytes))
         .collect();
+
+    row.key = crate::exclusion::store::location_key(tx, id).ok();
 
     row.live_session = gates::gate_live_session(tx, id)
         .map_err(internal)?
@@ -262,6 +275,26 @@ pub fn read_location_row(
     Ok(row)
 }
 
+/// §56.5 row 4: the copy may be probed. A row with no key fails closed: a reader that cannot
+/// tell whether the copy is excluded does not read it.
+fn admitted(row: &LocationRow, seams: &AnalyserSeams<'_>, site: GateSite) -> bool {
+    row.key
+        .as_ref()
+        .is_some_and(|key| seams.exclusions.check_read(site, key).is_ok())
+}
+
+/// The same check for a repository nested in the copy, keyed at its own directory.
+fn nested_admit<'s>(
+    row: &'s LocationRow,
+    seams: &'s AnalyserSeams<'_>,
+) -> impl Fn(&std::path::Path) -> bool + 's {
+    let budget = Budget {
+        started: Instant::now(),
+        key: row.key.as_ref(),
+    };
+    move |dir| budget.admits(seams, GateSite::OwnershipProbe, dir)
+}
+
 /// The directory, re-resolved from disk (§24.7E) — never reconstructed from the row.
 ///
 /// A WSL-spelled pointer this user cannot be shown to own now does not resolve: the row says
@@ -278,12 +311,26 @@ pub fn resolve(
     establish_ownership(git, repo, ctx).ok()
 }
 
-/// The analysis's clock: the total budget, and each read's deadline inside what remains of it.
-struct Budget {
+/// The analysis's clock: the total budget, and each read's deadline inside what remains of it —
+/// and the analysed copy's exclusion key, which every repository inside it is keyed from.
+struct Budget<'b> {
     started: Instant,
+    key: Option<&'b crate::exclusion::list::LocationKey>,
 }
 
-impl Budget {
+impl Budget<'_> {
+    /// §56.5: may the repository at `dir`, inside the analysed copy, be read at `site`? No key
+    /// fails closed. Only the user's entries are asked (GA38): the copy itself passed the whole
+    /// list at step 1 and the built-ins never change, so for it the answer is the same.
+    fn admits(&self, seams: &AnalyserSeams<'_>, site: GateSite, dir: &std::path::Path) -> bool {
+        self.key.is_some_and(|key| {
+            seams
+                .exclusions
+                .check_nested_read(site, &key.at(dir))
+                .is_ok()
+        })
+    }
+
     fn exhausted(&self) -> bool {
         self.started.elapsed() >= ANALYSIS_BUDGET
     }
@@ -329,6 +376,7 @@ pub fn analyse(
 ) -> Analysis {
     let budget = Budget {
         started: Instant::now(),
+        key: row.key.as_ref(),
     };
     let cancel = CancelToken::new();
     let git = seams.git;
@@ -336,7 +384,11 @@ pub fn analyse(
 
     // Step 1. A directory that does not resolve is one nothing can reason about: the shipped
     // `never_observed`, beside whatever the local gates say.
-    let Some(repo) = resolve(row, git, &budget.ctx(&cancel)) else {
+    let probe = admitted(row, seams, GateSite::OwnershipProbe);
+    let Some(repo) = probe
+        .then(|| resolve(row, git, &budget.ctx(&cancel)))
+        .flatten()
+    else {
         local_gates(row, &mut found);
         found.push(UninstallBlocker::NeverObserved);
         return finish(Findings::of(found), row, seams, now);
@@ -381,7 +433,8 @@ pub fn analyse(
     // §45.8's use 1: a `safe` verdict binds the content it was decided over, for step 9. A
     // snapshot that cannot be read is its input's unknown blocker, and the verdict is not safe.
     let snapshot = if findings.blockers.is_empty() {
-        match snapshot::snapshot(&repo, git, &budget.ctx(&cancel)) {
+        let admit = |dir: &std::path::Path| budget.admits(seams, GateSite::OwnershipProbe, dir);
+        match snapshot::snapshot(&repo, git, &budget.ctx(&cancel), &admit) {
             Ok(taken) => Some(taken),
             Err(blocker) => {
                 findings.blockers.push(blocker);
@@ -422,7 +475,7 @@ fn analyse_repo(
     repo: &RepoHandle,
     act: GovernedAct,
     seams: &AnalyserSeams<'_>,
-    budget: &Budget,
+    budget: &Budget<'_>,
     depth: u32,
     mut found: Vec<UninstallBlocker>,
 ) -> Findings {
@@ -471,7 +524,15 @@ fn analyse_repo(
     // unknown-class blockers up, so an offline submodule remote leaves the parent `unknown`.
     let mut listed: Vec<NestedRepository> = Vec::new();
     let nested_ctx = budget.ctx(&cancel);
-    for candidate in nested::candidates(repo, &tree.gitlinks, &tree.in_tree, git, &nested_ctx) {
+    let admit = |dir: &std::path::Path| budget.admits(seams, GateSite::OwnershipProbe, dir);
+    for candidate in nested::candidates(
+        repo,
+        &tree.gitlinks,
+        &tree.in_tree,
+        git,
+        &nested_ctx,
+        &admit,
+    ) {
         let entries = analyse_nested(&candidate, act, seams, budget, depth + 1);
         if let Some(child) = entries.first() {
             match child.disposition {
@@ -514,7 +575,7 @@ fn analyse_nested(
     candidate: &nested::Candidate,
     act: GovernedAct,
     seams: &AnalyserSeams<'_>,
-    budget: &Budget,
+    budget: &Budget<'_>,
     depth: u32,
 ) -> Vec<NestedRepository> {
     let path_display = candidate.rel.to_string_lossy().replace('\\', "/");
@@ -555,11 +616,17 @@ fn elsewhere(
     repo: &RepoHandle,
     roots: &roots::Roots,
     seams: &AnalyserSeams<'_>,
-    budget: &Budget,
+    budget: &Budget<'_>,
     found: &mut Vec<UninstallBlocker>,
 ) -> bool {
     let cancel = CancelToken::new();
     if budget.exhausted() {
+        found.push(UninstallBlocker::RemoteUnreachable);
+        return false;
+    }
+    // §56.5 row 17: no verifying read of a copy excluded since step 1 — the remote is then not
+    // established, which is what it is.
+    if !budget.admits(seams, GateSite::Fetch, &repo.work_dir) {
         found.push(UninstallBlocker::RemoteUnreachable);
         return false;
     }

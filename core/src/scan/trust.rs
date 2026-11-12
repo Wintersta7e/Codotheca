@@ -63,7 +63,8 @@ impl std::fmt::Debug for TrustCtx<'_> {
 /// `PROTOCOL` for arguments that do not parse or a row of another kind; `PATH_GONE` for a row
 /// that is not there (already answered), keeps no folder, or whose root was removed, and for a
 /// folder no longer there; `STORE_OFFLINE` when its store is not mounted; `REPO_UNREADABLE` when
-/// the folder is no longer a repository; git's own code when the trusted hand-off fails.
+/// the folder is no longer a repository; `EXCLUDED` when the list covers the folder; git's own
+/// code when the trusted hand-off fails.
 pub fn handle_trust(
     ctx: &TrustCtx<'_>,
     args: serde_json::Value,
@@ -71,6 +72,28 @@ pub fn handle_trust(
     let args: ProblemsTrustArgs = parse_args(args)?;
     let location = trust_problem(ctx, args.problem_id)?;
     serde_json::to_value(location).map_err(|e| CommandFailure::internal(e.to_string()))
+}
+
+/// §56.5 row 16: a folder the list covers is not read — not even tested for existence.
+fn refuse_excluded(ctx: &TrustCtx<'_>, target: &Target) -> Result<(), CommandFailure> {
+    let kind = crate::protocol::LocationKind::parse(&target.root_kind)
+        .ok_or_else(|| CommandFailure::internal(format!("root kind {:?}", target.root_kind)))?;
+    let key = {
+        let guard = ctx
+            .index
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::exclusion::store::candidate_key(
+            guard.conn(),
+            kind,
+            &target.distro,
+            &target.path_bytes,
+        )
+        .map_err(|e| CommandFailure::internal(e.to_string()))?
+    };
+    ctx.exclusions
+        .check_read(crate::exclusion::gate::GateSite::Trust, &key)
+        .map_err(|_| CommandFailure::excluded("the folder is excluded"))
 }
 
 /// What the row says about the folder, read under the guard and nothing else.
@@ -85,6 +108,7 @@ struct Target {
 
 fn trust_problem(ctx: &TrustCtx<'_>, problem: ScanProblemId) -> Result<LocationId, CommandFailure> {
     let target = read_target(ctx.index, problem)?;
+    refuse_excluded(ctx, &target)?;
     if !target.path.exists() {
         return Err(refusal(
             ErrorCode::PathGone,
@@ -258,11 +282,11 @@ fn handoff_refusal(err: &HandoffError) -> CommandFailure {
             .protocol_code()
             .and_then(|code| serde_json::from_value(serde_json::Value::from(code)).ok())
             .unwrap_or(ErrorCode::Internal),
-        // An exclusion's own code arrives with the command rows that answer it before any read.
-        HandoffError::Identity(_)
-        | HandoffError::UnknownKind(_)
-        | HandoffError::Poisoned
-        | HandoffError::Excluded => ErrorCode::Internal,
+        // An exclusion added between the row read and the hand-off: §56.5 row 16's own code.
+        HandoffError::Excluded => ErrorCode::Excluded,
+        HandoffError::Identity(_) | HandoffError::UnknownKind(_) | HandoffError::Poisoned => {
+            ErrorCode::Internal
+        }
     };
     refusal(code, err.to_string())
 }

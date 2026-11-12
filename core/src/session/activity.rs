@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
+use crate::exclusion::gate::{ExclusionGate, GateSite};
+use crate::exclusion::list::LocationKey;
 use crate::git::{GitError, RepoHandle};
 use crate::session::segment::Signal;
 
@@ -63,17 +65,29 @@ impl IgnoreCheck for GitIgnoreCheck {
 #[derive(Debug)]
 pub struct ScopeFilter {
     check: Arc<dyn IgnoreCheck>,
+    /// The core's exclusion gate, asked before every batch (GA33).
+    gate: Arc<ExclusionGate>,
+    /// The session's copy, as the gate decides coverage of it. `None` when it could not be read,
+    /// and then no `check-ignore` runs for the session at all.
+    key: Option<LocationKey>,
     /// Keyed on the full relative path. A parent-directory key would collapse a build directory
     /// to one question but would take a force-added tracked file inside it down too.
     verdicts: BTreeMap<PathBuf, bool>,
 }
 
 impl ScopeFilter {
-    /// A filter with no verdicts remembered yet, asking `check` for each new path.
+    /// A filter with no verdicts remembered yet, asking `check` for each new path of the copy
+    /// `key` describes while `gate` admits it.
     #[must_use]
-    pub fn new(check: Arc<dyn IgnoreCheck>) -> Self {
+    pub fn new(
+        check: Arc<dyn IgnoreCheck>,
+        gate: Arc<ExclusionGate>,
+        key: Option<LocationKey>,
+    ) -> Self {
         Self {
             check,
+            gate,
+            key,
             verdicts: BTreeMap::new(),
         }
     }
@@ -88,7 +102,18 @@ impl ScopeFilter {
     ///
     /// Paths under `.git` are skipped, remembered verdicts answer without git, and the rest go to
     /// the check in one batch.
+    ///
+    /// The exclusion gate is asked first, against the list in force now (GA33): a copy excluded
+    /// mid-session folds every batch to `Signal::None`, spawning nothing and remembering nothing,
+    /// so the session continues on its other signals and a removal resumes it at the next batch.
     pub fn fold(&mut self, repo: &RepoHandle, paths: &[PathBuf]) -> Signal {
+        let admitted = self
+            .key
+            .as_ref()
+            .is_some_and(|key| self.gate.check_read(GateSite::Session, key).is_ok());
+        if !admitted {
+            return Signal::None;
+        }
         let mut ask: Vec<PathBuf> = Vec::new();
         let mut in_scope = false;
         for path in paths {
@@ -210,11 +235,23 @@ mod tests {
         paths.iter().map(PathBuf::from).collect()
     }
 
+    /// A filter over a copy no exclusion covers.
+    fn filter(check: Arc<dyn IgnoreCheck>) -> ScopeFilter {
+        let key = LocationKey {
+            kind: crate::protocol::LocationKind::Linux,
+            distro: String::new(),
+            path_bytes: b"/w/repo".to_vec(),
+            path_key: b"/w/repo".to_vec(),
+            root_path_bytes: None,
+        };
+        ScopeFilter::new(check, Arc::new(ExclusionGate::default()), Some(key))
+    }
+
     #[test]
     fn a_build_directory_never_extends_a_segment() {
         // §9: "A dev server writing into dist/ must not hold a segment open."
         let check = Arc::new(FakeIgnoreCheck::new(&["dist/", "node_modules/"]));
-        let mut filter = ScopeFilter::new(check);
+        let mut filter = filter(check);
         let signal = filter.fold(&repo(), &rel(&["dist/app.js", "dist/app.css"]));
         assert_eq!(signal, Signal::None);
     }
@@ -222,7 +259,7 @@ mod tests {
     #[test]
     fn one_source_save_among_a_thousand_build_writes_is_in_scope() {
         let check = Arc::new(FakeIgnoreCheck::new(&["dist/"]));
-        let mut filter = ScopeFilter::new(check);
+        let mut filter = filter(check);
         let mut paths = rel(&["src/main.rs"]);
         paths.extend((0..1_000).map(|n| PathBuf::from(format!("dist/chunk-{n}.js"))));
         assert_eq!(filter.fold(&repo(), &paths), Signal::Worktree);
@@ -231,7 +268,7 @@ mod tests {
     #[test]
     fn gits_own_metadata_is_never_activity_and_never_reaches_git() {
         let check = Arc::new(FakeIgnoreCheck::new(&[]));
-        let mut filter = ScopeFilter::new(check.clone());
+        let mut filter = filter(check.clone());
         let signal = filter.fold(&repo(), &rel(&[".git/index.lock", ".git/refs/heads/main"]));
         assert_eq!(signal, Signal::None);
         assert_eq!(check.calls(), 0, "no git process for a path under .git");
@@ -242,7 +279,7 @@ mod tests {
     #[test]
     fn a_verdict_is_asked_for_once_and_then_cached() {
         let check = Arc::new(FakeIgnoreCheck::new(&["dist/"]));
-        let mut filter = ScopeFilter::new(check.clone());
+        let mut filter = filter(check.clone());
         for _ in 0..50 {
             assert_eq!(filter.fold(&repo(), &rel(&["dist/app.js"])), Signal::None);
         }
@@ -256,7 +293,7 @@ mod tests {
         // be cheaper and would drop a force-added tracked file inside an ignored one, because
         // `check-ignore` is index-aware for a path and a directory is not a tracked path.
         let check = Arc::new(FakeIgnoreCheck::new(&["dist/"]));
-        let mut filter = ScopeFilter::new(check.clone());
+        let mut filter = filter(check.clone());
         filter.fold(&repo(), &rel(&["dist/a.js", "dist/b.js"]));
         assert_eq!(check.asked(), rel(&["dist/a.js", "dist/b.js"]));
         assert_eq!(filter.cached(), 2, "one verdict each, not one for the pair");
@@ -275,7 +312,7 @@ mod tests {
                 })
             }
         }
-        let mut filter = ScopeFilter::new(Arc::new(Failing));
+        let mut filter = filter(Arc::new(Failing));
         assert_eq!(filter.fold(&repo(), &rel(&["src/main.rs"])), Signal::None);
         assert_eq!(filter.cached(), 0);
     }
@@ -283,7 +320,7 @@ mod tests {
     #[test]
     fn the_cache_is_bounded_so_a_pathological_writer_cannot_grow_it_forever() {
         let check = Arc::new(FakeIgnoreCheck::new(&[]));
-        let mut filter = ScopeFilter::new(check);
+        let mut filter = filter(check);
         let paths: Vec<PathBuf> = (0..SCOPE_CACHE_CAP + 500)
             .map(|n| PathBuf::from(format!("src/f{n}.rs")))
             .collect();
@@ -294,7 +331,7 @@ mod tests {
     #[test]
     fn an_empty_batch_is_not_activity() {
         let check = Arc::new(FakeIgnoreCheck::new(&[]));
-        let mut filter = ScopeFilter::new(check.clone());
+        let mut filter = filter(check.clone());
         assert_eq!(filter.fold(&repo(), &[]), Signal::None);
         assert_eq!(check.calls(), 0);
     }

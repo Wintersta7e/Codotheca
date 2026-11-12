@@ -149,6 +149,7 @@ fn reftable_refs_and_stashes_are_read_through_git() {
         let remotes = FixtureRemoteVerifier::new();
         let trash = CountingTrash::new();
         let seams = codotheca_core::analyser::AnalyserSeams {
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             git: &recording,
             remotes: &remotes,
             trash: &trash,
@@ -186,6 +187,7 @@ fn reftable_refs_and_stashes_are_read_through_git() {
         &handle,
         &stashed.read_git,
         &JobContext::new(JobClass::Interactive, &cancel, None),
+        &|_| true,
     )
     .expect("snapshot");
     let stash_entries = snapshot.repos[""].stash.len();

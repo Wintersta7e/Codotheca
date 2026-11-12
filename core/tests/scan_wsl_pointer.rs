@@ -484,6 +484,7 @@ fn the_analyser_and_a_session_establish_ownership_where_they_read() {
     w.respell_for_this_host();
     let git = w.wrapped();
     let row = LocationRow {
+        key: None,
         id: LocationId(1),
         path: w.lane.clone(),
         lineage_key: None,

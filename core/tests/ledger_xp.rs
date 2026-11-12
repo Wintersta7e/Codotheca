@@ -542,6 +542,7 @@ fn handler(dir: &std::path::Path) -> CoreHandler {
             Box::new(codotheca_core::session::watch::FakeActivitySource::new()),
             Arc::new(codotheca_core::session::activity::FakeIgnoreCheck::new(&[])),
             Arc::new(codotheca_core::testing::zone::FixedZone(0)),
+            Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         ),
         scans: codotheca_core::scan::ScanSupervisor::new(Arc::new(
             codotheca_core::testing::ScanLauncherFake::new(),

@@ -493,3 +493,32 @@ fn one_analyser_constructs_every_blocker() {
         "a second site constructs blockers: {outside:?}"
     );
 }
+
+/// **GA38 — a user's name entry keeps a nested repository unread.** The §4.3 built-ins do not
+/// gate the analyser's nested reads: the repository under the built-in `vendor/` is read and
+/// blocks. A user's entry naming it does, and it then reads `unknown`, never `safe` — so the
+/// user's entry, not the built-in, is what kept the read from happening.
+#[test]
+fn a_user_name_entry_over_a_nested_repository_reads_unknown_never_safe() {
+    use codotheca_core::exclusion::gate::ExclusionGate;
+    use codotheca_core::exclusion::list::ExclusionList;
+
+    let lib = Library::new();
+    let copy = lib.pushed_repo("widget");
+    let inner = copy.join("vendor").join("x");
+    lib.git(
+        &lib.base,
+        &["init", "-q", "-b", "main", &inner.to_string_lossy()],
+    );
+    lib.commit(&inner, "x.txt", "only here\n");
+    let id = lib.register(&copy);
+
+    let read = lib.preflight(id, &lib.verifier());
+    assert_eq!(read.disposition(), "blocked", "{read}");
+    assert!(read.has("submodule_unsafe"), "{read}");
+
+    let gate = ExclusionGate::new(ExclusionList::new(&["x".to_owned()], Vec::new()));
+    let covered = lib.preflight_under(id, &lib.verifier(), &gate);
+    assert_eq!(covered.disposition(), "unknown", "{covered}");
+    assert!(!covered.has("submodule_unsafe"), "{covered}");
+}

@@ -143,6 +143,7 @@ fn fixture_with(kind: &str, distro: &str) -> Fixture {
         Box::new(FakeActivitySource::default()),
         Arc::new(FakeIgnoreCheck::new(&["dist/"])),
         Arc::new(codotheca_core::testing::zone::FixedZone(0)),
+        Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
     );
     let mounts = FakeMountResolver::new();
     mounts.map(

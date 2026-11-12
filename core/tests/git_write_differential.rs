@@ -964,6 +964,7 @@ fn every_configured_remote_is_read_one_at_a_time() {
     let verdict = codotheca_core::uninstall::handle_preflight_off_lock(
         &index,
         &codotheca_core::analyser::AnalyserSeams {
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             git: &read_git,
             remotes: &remotes,
             trash: &trash,
@@ -1746,6 +1747,7 @@ fn the_verifying_read_runs_through_the_preflight() {
     let value = codotheca_core::uninstall::handle_preflight_off_lock(
         &lib.index,
         &codotheca_core::analyser::AnalyserSeams {
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             git: &lib.read_git,
             remotes: &remotes,
             trash: &trash,

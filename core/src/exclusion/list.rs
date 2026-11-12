@@ -40,6 +40,26 @@ pub struct LocationKey {
     pub root_path_bytes: Option<Vec<u8>>,
 }
 
+impl LocationKey {
+    /// The key of `dir`, a directory inside this copy (a nested repository): the same side,
+    /// distro and root, so a name or path entry covering `dir` covers it whether or not it
+    /// covers the copy.
+    #[must_use]
+    pub fn at(&self, dir: &Path) -> Self {
+        let path_bytes = crate::paths::path_bytes(dir);
+        let path_key = StoredPath::from_bytes(path_bytes.clone(), platform_of(self.kind.as_str()))
+            .key()
+            .to_vec();
+        Self {
+            kind: self.kind,
+            distro: self.distro.clone(),
+            path_bytes,
+            path_key,
+            root_path_bytes: self.root_path_bytes.clone(),
+        }
+    }
+}
+
 /// The built-ins, the user's names, and the user's paths, in the order they were added.
 #[derive(Debug, Clone)]
 pub struct ExclusionList {
@@ -123,6 +143,20 @@ impl ExclusionList {
     /// it, or a name matches a directory strictly below its root down to the copy itself.
     #[must_use]
     pub fn covers_location(&self, key: &LocationKey) -> bool {
+        self.covers_key(key, |dir| self.names.skips(dir))
+    }
+
+    /// [`covers_location`](Self::covers_location) with the user's entries alone: whether a
+    /// repository nested inside a copy is covered. A built-in name there is a walk-cost skip,
+    /// and the pre-removal read must still see what a vendored submodule holds (GA38).
+    #[must_use]
+    pub fn user_covers_location(&self, key: &LocationKey) -> bool {
+        self.covers_key(key, |dir| self.names.user_skips(dir))
+    }
+
+    /// A path entry holds `key`, or `named` holds a directory strictly below its root down to
+    /// the copy itself.
+    fn covers_key(&self, key: &LocationKey, named: impl Fn(&Path) -> bool) -> bool {
         if self
             .paths
             .iter()
@@ -140,7 +174,7 @@ impl ExclusionList {
         path_from_bytes(&key.path_bytes)
             .ancestors()
             .take(below)
-            .any(|dir| self.names.skips(dir))
+            .any(named)
     }
 }
 

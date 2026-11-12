@@ -41,6 +41,7 @@ fn read(
 ) -> Result<ReadmeSource, ReadmeError> {
     let sink = CollectingSink::default();
     let ctx = ReadmeCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: index.index(),
         events: &sink,
         now: NOW,
@@ -168,6 +169,7 @@ fn a_location_that_is_not_that_projects_is_a_protocol_error() {
 
     let sink = CollectingSink::default();
     let ctx = ReadmeCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: index.index(),
         events: &sink,
         now: NOW,
@@ -190,6 +192,7 @@ fn the_command_is_dispatched_by_name_and_serialises_the_wire_shape() {
     let (index, project, location) = seeded(tmp.path());
     let sink = CollectingSink::default();
     let ctx = ReadmeCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: index.index(),
         events: &sink,
         now: NOW,

@@ -660,6 +660,7 @@ impl CoreHandler {
             git: self.git.as_ref(),
             remotes: &remotes,
             trash: self.trash.as_ref(),
+            exclusions: &self.exclusions,
             #[cfg(feature = "testkit")]
             before_act: None,
         };
@@ -752,6 +753,7 @@ impl CoreHandler {
             index: &self.index,
             queue: &self.installs,
             now,
+            exclusions: &self.exclusions,
             begin: &begin,
         };
         let started = crate::install::handle_start(&ctx, args)?;
@@ -765,6 +767,7 @@ impl CoreHandler {
     fn readme_net_arm(&self, args: Value, now: i64) -> Result<Value, CommandFailure> {
         crate::readme::handle_readme_assets_off_lock(
             &self.index,
+            &self.exclusions,
             self.http.as_ref(),
             crate::readme::fetch::system_resolver,
             args,
@@ -778,6 +781,7 @@ impl CoreHandler {
     fn readme_arm(
         guard: &Index,
         events: &dyn EventSink,
+        exclusions: &crate::exclusion::gate::ExclusionGate,
         command: &str,
         args: Value,
         now: i64,
@@ -786,6 +790,7 @@ impl CoreHandler {
             index: guard,
             events,
             now,
+            exclusions,
         };
         crate::readme::dispatch_readme_command(&ctx, command, args)
     }
@@ -1086,7 +1091,14 @@ impl CommandHandler for CoreHandler {
                 crate::view::dispatch_view_command(&ctx, command, args)
             }
             Route::Remote => Self::remote_arm(&guard, command, args, now),
-            Route::Readme => Self::readme_arm(&guard, self.events.as_ref(), command, args, now),
+            Route::Readme => Self::readme_arm(
+                &guard,
+                self.events.as_ref(),
+                &self.exclusions,
+                command,
+                args,
+                now,
+            ),
             Route::Weathering => Self::weathering_arm(&guard, command, args),
             Route::Badges => Self::badges_arm(&guard, self.zone.as_ref(), command, args, now),
         };

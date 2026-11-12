@@ -131,9 +131,10 @@ pub fn snapshot(
     repo: &RepoHandle,
     git: &dyn GitBackend,
     ctx: &JobContext<'_>,
+    admit: &dyn Fn(&Path) -> bool,
 ) -> Result<Snapshot, UninstallBlocker> {
     let mut out = Snapshot::default();
-    take(repo, "", git, ctx, 0, &mut out)?;
+    take(repo, "", git, ctx, admit, 0, &mut out)?;
     Ok(out)
 }
 
@@ -142,6 +143,7 @@ fn take(
     key: &str,
     git: &dyn GitBackend,
     ctx: &JobContext<'_>,
+    admit: &dyn Fn(&Path) -> bool,
     depth: u32,
     out: &mut Snapshot,
 ) -> Result<(), UninstallBlocker> {
@@ -231,7 +233,7 @@ fn take(
     if depth >= MAX_NESTING {
         return Ok(());
     }
-    for candidate in nested::candidates(repo, &gitlinks, &in_tree, git, ctx) {
+    for candidate in nested::candidates(repo, &gitlinks, &in_tree, git, ctx, admit) {
         let rel = candidate.rel.to_string_lossy().replace('\\', "/");
         let child_key = if key.is_empty() {
             rel
@@ -239,7 +241,7 @@ fn take(
             format!("{key}/{rel}")
         };
         let child = candidate.repo.ok_or(UninstallBlocker::NeverObserved)?;
-        take(&child, &child_key, git, ctx, depth + 1, out)?;
+        take(&child, &child_key, git, ctx, admit, depth + 1, out)?;
     }
     Ok(())
 }

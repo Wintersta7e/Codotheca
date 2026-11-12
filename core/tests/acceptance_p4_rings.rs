@@ -438,6 +438,7 @@ impl World {
             Box::new(activity.clone()),
             Arc::new(FakeIgnoreCheck::new(&[])),
             Arc::new(FixedZone(0)),
+            Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         );
         let world = Self {
             band,

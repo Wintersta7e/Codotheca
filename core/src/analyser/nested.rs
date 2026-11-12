@@ -40,8 +40,14 @@ pub fn candidates(
     in_tree: &[PathBuf],
     git: &dyn GitBackend,
     ctx: &JobContext<'_>,
+    admit: &dyn Fn(&Path) -> bool,
 ) -> Vec<Candidate> {
+    // §56.5 row 4: a directory the exclusion list covers is neither tested nor probed. It stays a
+    // candidate with no repository, so the parent's verdict reads it unknown, never safe.
     let resolve = |dir: &Path| {
+        if !admit(dir) {
+            return None;
+        }
         RepoHandle::resolve(dir, parent.store.clone(), parent.store_class)
             .ok()
             .and_then(|repo| establish_ownership(git, repo.with_trust(parent.trusted), ctx).ok())
@@ -49,6 +55,14 @@ pub fn candidates(
     let mut out = Vec::new();
     for rel in gitlinks {
         let dir = parent.work_dir.join(rel);
+        if !admit(&dir) {
+            out.push(Candidate {
+                kind: NestedKind::Submodule,
+                rel: rel.clone(),
+                repo: None,
+            });
+            continue;
+        }
         // A gitlink that is not checked out holds no bytes of its own in the tree; its git dir,
         // if any, is found below.
         if holds_git(&dir) {

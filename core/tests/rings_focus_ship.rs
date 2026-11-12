@@ -96,6 +96,7 @@ impl Rig {
             Box::new(activity.clone()),
             Arc::new(FakeIgnoreCheck::new(&["dist/"])),
             Arc::new(FixedZone(0)),
+            Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         );
         Self {
             index,

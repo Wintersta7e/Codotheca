@@ -30,6 +30,8 @@ pub struct ReadmeCtx<'a> {
     pub events: &'a dyn EventSink,
     /// The caller's clock, in unix seconds.
     pub now: i64,
+    /// The core's exclusion gate, asked before a copy's working directory is opened (§56.5 row 13).
+    pub exclusions: &'a crate::exclusion::gate::ExclusionGate,
 }
 
 /// Written by hand: `&dyn EventSink` does not require `Debug`, and a derived one would demand it
@@ -67,6 +69,8 @@ pub enum ReadmeError {
     Unreadable(std::io::Error),
     /// A read or write against the project or location rows failed.
     Sqlite(rusqlite::Error),
+    /// The user excluded the copy, so its working directory is never opened (§56.5 row 13).
+    Excluded,
 }
 
 impl std::fmt::Display for ReadmeError {
@@ -75,6 +79,7 @@ impl std::fmt::Display for ReadmeError {
             Self::UnknownSubject => write!(f, "no such project and location"),
             Self::Unreadable(e) => write!(f, "the working directory could not be read: {e}"),
             Self::Sqlite(e) => write!(f, "sqlite: {e}"),
+            Self::Excluded => write!(f, "the copy is excluded"),
         }
     }
 }
@@ -95,6 +100,7 @@ impl ReadmeError {
             Self::UnknownSubject => ErrorCode::Protocol,
             Self::Unreadable(_) => ErrorCode::RepoUnreadable,
             Self::Sqlite(_) => ErrorCode::Internal,
+            Self::Excluded => ErrorCode::Excluded,
         }
     }
 }
@@ -121,9 +127,11 @@ impl From<ReadmeError> for CommandFailure {
 ///
 /// # Errors
 /// `PROTOCOL` for an argument shape the schema does not admit or a pair that names no live
-/// location; `INTERNAL` for an index fault.
+/// location; `EXCLUDED` when local assets are asked of an excluded copy; `INTERNAL` for an index
+/// fault.
 pub fn handle_readme_assets_off_lock(
     index: &std::sync::Mutex<Index>,
+    exclusions: &crate::exclusion::gate::ExclusionGate,
     http: &dyn crate::http::HttpTransport,
     resolve: fetch::HostResolver,
     args: serde_json::Value,
@@ -135,6 +143,16 @@ pub fn handle_readme_assets_off_lock(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let work_dir = source::work_dir_of(guard.conn(), args.project_id, args.location_id)?;
+        // §56.5 row 13: only the local branch reads the copy; the remote one reads the forge.
+        if !args.local.is_empty() {
+            crate::exclusion::gate::check_location_read(
+                guard.conn(),
+                exclusions,
+                crate::exclusion::gate::GateSite::Readme,
+                args.location_id,
+            )
+            .map_err(|_| ReadmeError::Excluded)?;
+        }
         let consent = consent::readme_remote_at(guard.conn(), args.project_id)?;
         drop(guard);
         (work_dir, consent)

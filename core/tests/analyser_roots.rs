@@ -345,6 +345,7 @@ fn the_walk_count_is_independent_of_ref_count() {
     );
     let trash = CountingTrash::new();
     let seams = codotheca_core::analyser::AnalyserSeams {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         git: &recording,
         remotes: &remotes,
         trash: &trash,

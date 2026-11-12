@@ -780,6 +780,7 @@ fn marathon_session(
         Box::new(activity.clone()),
         Arc::new(FakeIgnoreCheck::new(&["dist/"])),
         Arc::new(FixedZone(WEST)),
+        Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
     );
     let session = manager
         .launch(
@@ -842,6 +843,7 @@ fn startup_later(lib: &mut SessionLib, events: &Arc<ValidatingSink>) -> u64 {
         Box::new(FakeActivitySource::new()),
         Arc::new(FakeIgnoreCheck::new(&["dist/"])),
         Arc::new(FixedZone(WEST)),
+        Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
     );
     let spawner = RecordingSpawner::new();
     let mounts = FakeMountResolver::new();

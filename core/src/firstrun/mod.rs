@@ -167,7 +167,10 @@ fn handle_add(
     now: i64,
 ) -> Result<Value, CommandFailure> {
     let parsed: AddArgs = parse_args(args.clone())?;
-    let list = env.exclusions.snapshot();
+    // §56.5 row 12: the estimate applies the list itself, so the record is an admitted snapshot.
+    let list = env
+        .exclusions
+        .snapshot_at(crate::exclusion::gate::GateSite::FirstRun);
     let params = roots::AddParams {
         path_bytes: &parsed.path_bytes.0,
         confirm_large: parsed.confirm_large,

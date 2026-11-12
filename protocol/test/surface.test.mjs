@@ -37,10 +37,12 @@ test('every infrastructure command of §2.4 is declared', () => {
 
 // [p2] §20.8 adds the two identity errors. Neither overloads PERMISSION_DENIED, which is a
 // filesystem error — a shared name is not a shared shape.
-test('the error enum is closed: §2.4 plus §1.6 PROJECT_MERGED plus §20.8 and nothing else', () => {
+// [p4-gaps] §56.11 adds EXCLUDED: a read refused because the user excluded the copy.
+test('the error enum is closed: §2.4 plus §1.6 PROJECT_MERGED plus §20.8 plus §56.11 and nothing else', () => {
   assert.deepEqual([...schema.errors].sort(), [
     'BUDGET_EXCEEDED',
     'CORE_RESTARTED',
+    'EXCLUDED',
     'GIT_MISSING',
     'GIT_TOO_OLD',
     'INTERNAL',
@@ -1188,8 +1190,8 @@ test('the four totals agree with the phase-2 delta table', () => {
   );
   assert.equal(
     schema.errors.length,
-    14,
-    `errors: 12 + §20's two = 14, found ${schema.errors.length}`,
+    15,
+    `errors: 12 + §20's two + §56.11's one = 15, found ${schema.errors.length}`,
   );
 
   // The derivation beside the literal, which is what makes a wrong merge resolution fail: a
@@ -1811,7 +1813,7 @@ test('§30: the health reading moves the type row alone', () => {
     Object.values(schema.topics).reduce((n, t) => n + Object.keys(t).length, 0),
     38,
   );
-  assert.equal(schema.errors.length, 14);
+  assert.equal(schema.errors.length, 15);
 });
 
 /**

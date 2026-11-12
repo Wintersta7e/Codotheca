@@ -89,8 +89,9 @@ impl InstallRunState {
 /// protocol loop for minutes.
 ///
 /// # Errors
-/// Fails when the arguments do not parse or the run row cannot be written. A **refusal** is not a
-/// failure: it comes back in `InstallStart.refusedBecause`.
+/// Fails when the arguments do not parse or the run row cannot be written, and `EXCLUDED` when the
+/// list covers the destination. A **refusal** is not a failure: it comes back in
+/// `InstallStart.refusedBecause`.
 pub fn handle_start(
     ctx: &StartCtx<'_>,
     args: serde_json::Value,
@@ -143,6 +144,7 @@ pub fn handle_start(
             refused_because: Some(crate::protocol::InstallRefusal::RootUnavailable),
         });
     };
+    refuse_excluded(&tx, ctx.exclusions, &root, &paths)?;
 
     let request = queue::InstallRequest {
         project: args.project_id,
@@ -170,6 +172,28 @@ pub fn handle_start(
     })
 }
 
+/// A destination the list covers would be indexed by no hand-off (§56.5 row 2), so the clone
+/// never starts: `EXCLUDED` before the run is queued, not `git_failed` after the clone.
+fn refuse_excluded(
+    tx: &rusqlite::Transaction<'_>,
+    exclusions: &crate::exclusion::gate::ExclusionGate,
+    root: &run::RootFacts,
+    paths: &run::RunPaths,
+) -> Result<(), CommandFailure> {
+    let kind = crate::protocol::LocationKind::parse(&root.kind)
+        .ok_or_else(|| CommandFailure::internal(format!("root kind {:?}", root.kind)))?;
+    let key = crate::exclusion::store::candidate_key(
+        tx,
+        kind,
+        &root.distro,
+        &crate::paths::path_bytes(&paths.destination),
+    )
+    .map_err(|e| CommandFailure::internal(e.to_string()))?;
+    exclusions
+        .check_read(crate::exclusion::gate::GateSite::Handoff, &key)
+        .map_err(|_| CommandFailure::excluded("the destination is excluded"))
+}
+
 /// What `handle_start` needs beyond its arguments.
 ///
 /// `begin` is a callback rather than the seams themselves so this function stays testable without
@@ -183,6 +207,8 @@ pub struct StartCtx<'a> {
     pub queue: &'a queue::InstallQueue,
     /// The caller's clock reading, in unix seconds.
     pub now: i64,
+    /// The core's exclusion gate: a destination the list covers is never cloned into.
+    pub exclusions: &'a crate::exclusion::gate::ExclusionGate,
     /// Starts the queued run: its id, request, root, paths and clone URL.
     #[allow(clippy::type_complexity)]
     pub begin: &'a dyn Fn(
