@@ -202,6 +202,9 @@ function harness(
   };
 }
 
+// DIG is inert until the suggestions answer, and the headline renders before they do. A test that
+// needs DIG to act waits for a suggestion row first: after the headline alone, a slow answer left
+// the press inert and the test waiting for a screen that never came.
 const dig = (): void => {
   fireEvent.click(screen.getByRole('button', { name: copy.DIG_LABEL }));
 };
@@ -544,7 +547,7 @@ test('a walk that finishes before scan.start resolves still reaches the reveal',
 // is the only thing the DIG note claims.
 test('skip ahead reaches the reveal without waiting for the walk', async () => {
   const { deps } = harness();
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await screen.findByText(suggestion.pathDisplay);
   dig();
   fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
   await waitFor(() => {
@@ -577,7 +580,7 @@ test('an empty library skips the reveal and the turn entirely', async () => {
 // the reveal itself.
 test('crossing a milestone previews a figure from the reveal own basis', async () => {
   const { deps, emit } = harness();
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await screen.findByText(suggestion.pathDisplay);
   dig();
   await screen.findByRole('button', { name: SKIP_AHEAD_LABEL });
   emit({ kind: 'progress', indexedProjects: 10, walkedDirs: 1, foundRepos: 1 });
@@ -592,7 +595,7 @@ test('crossing a milestone previews a figure from the reveal own basis', async (
 // §10.5: nothing returns to a beat that has already played.
 test('the turn leads to the shelf and nothing leads back', async () => {
   const { deps } = harness();
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await screen.findByText(suggestion.pathDisplay);
   dig();
   fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
   fireEvent.click(await screen.findByRole('button', { name: copy.GO_ON_LABEL }));
@@ -604,7 +607,7 @@ test('the turn leads to the shelf and nothing leads back', async () => {
 
 test('the subscription is released when the gate stops needing it', async () => {
   const { released, unmount } = harness();
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await screen.findByText(suggestion.pathDisplay);
   dig();
   await screen.findByRole('button', { name: SKIP_AHEAD_LABEL });
   expect(released).not.toHaveBeenCalled();
@@ -633,7 +636,7 @@ test('AC-12 first run asks nothing, shows no percentage, and states its coverage
     oldestStillAlive: { projectId: 1 as ProjectId, firstCommitAt: 1, basis: partial },
   });
 
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await screen.findByText(suggestion.pathDisplay);
   const seen: string[] = [];
   const sweep = (): void => {
     seen.push(document.body.textContent);
@@ -671,7 +674,7 @@ test('AC-12 first run asks nothing, shows no percentage, and states its coverage
 // nowhere to put a query, so the wiring site is what carries it and this pins that it does.
 test('the query the turn computed reaches the host, and NOT NOW carries none', async () => {
   const { shownQueries } = harness();
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await screen.findByText(suggestion.pathDisplay);
   dig();
   fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
   fireEvent.click(await screen.findByRole('button', { name: copy.GO_ON_LABEL }));
@@ -742,7 +745,7 @@ async function revealOver(motivation: MotivationState): Promise<readonly HTMLEle
   const { deps } = harness({ motivation });
   deps.loadReveal.mockResolvedValue(partialReveal);
   deps.listBadges.mockResolvedValue(badgeDue);
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await screen.findByText(suggestion.pathDisplay);
   dig();
   fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
   await screen.findByText(copy.EVIDENCE_FOOTER);
@@ -783,7 +786,7 @@ test('AC-23 no figure over a partial index is presented bare, and only PLAYTIME,
 test("AC-P4-43-15 the turn's answer ends first run", async () => {
   for (const answer of [copy.SHOW_ME_LABEL, copy.NOT_NOW_LABEL]) {
     const { deps } = harness();
-    await screen.findByText(copy.ROOTS_HEADLINE);
+    await screen.findByText(suggestion.pathDisplay);
     dig();
     fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
     fireEvent.click(await screen.findByRole('button', { name: copy.GO_ON_LABEL }));
@@ -804,7 +807,7 @@ test('a pending badge panel is re-read on each motivation change and resolves in
   const pending: BadgesListed = { awards: [], due: null, basis: partialBasis };
   const view = harness({ motivation: levelAt('computed') });
   view.deps.listBadges.mockResolvedValue(pending);
-  await screen.findByText(copy.ROOTS_HEADLINE);
+  await screen.findByText(suggestion.pathDisplay);
   dig();
   fireEvent.click(await screen.findByRole('button', { name: SKIP_AHEAD_LABEL }));
   await screen.findByText(copy.EVIDENCE_FOOTER);
