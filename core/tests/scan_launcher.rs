@@ -112,32 +112,13 @@ struct Rig {
 }
 
 fn rig(root: &Path) -> Rig {
-    rig_with(root, |launcher| launcher)
+    rig_with(&[root], shared_git(root), |launcher| launcher)
 }
 
-/// `wrap` sits between the real `ThreadScanLauncher` and the supervisor. Only the cancellation
-/// test uses it, and it takes the seam rather than a flag so every other test builds the exact
-/// production stack.
-fn rig_with(root: &Path, wrap: impl FnOnce(Arc<dyn ScanLauncher>) -> Arc<dyn ScanLauncher>) -> Rig {
-    let dir = tempfile::tempdir().unwrap();
-    let index = Arc::new(Mutex::new(Index::open(dir.path()).unwrap()));
-    seed_root(&index, root);
-
-    let index_for_rig = Arc::clone(&index);
-    let store = Arc::new(SqliteScanStore::new(Arc::clone(&index)));
-    let events = Arc::new(ScanEventFake::default());
-    let mounts = FakeMountResolver::new();
-    mounts.map(
-        root,
-        MountFacts {
-            store_key: "store-a".to_owned(),
-            volume_key: Some("vol-a".to_owned()),
-            class: StoreClass::Local,
-        },
-    );
-    // The fixtures are bare `.git` directories, so the hand-off's probe answers from the fake.
-    // One common dir for all of them: two locations under one project is a real shape, and the
-    // question this file asks is what reaches the `scan` topic, not how identity decides.
+/// The fixtures are bare `.git` directories, so the hand-off's probe answers from the fake.
+/// One common dir for all of them: two locations under one project is a real shape, and the
+/// question most of this file asks is what reaches the `scan` topic, not how identity decides.
+fn shared_git(root: &Path) -> FakeGitBackend {
     let git = FakeGitBackend::new();
     git.always_repo_facts(GitReply::Ok(RepoFacts {
         is_bare: false,
@@ -147,6 +128,37 @@ fn rig_with(root: &Path, wrap: impl FnOnce(Arc<dyn ScanLauncher>) -> Arc<dyn Sca
     }));
     git.always_root_commits(GitReply::Ok(Vec::new()));
     git.always_remote_urls(GitReply::Ok(Vec::new()));
+    git
+}
+
+/// `wrap` sits between the real `ThreadScanLauncher` and the supervisor. Only the cancellation
+/// test uses it, and it takes the seam rather than a flag so every other test builds the exact
+/// production stack. Every root is seeded enabled, in order, on one store.
+fn rig_with(
+    roots: &[&Path],
+    git: FakeGitBackend,
+    wrap: impl FnOnce(Arc<dyn ScanLauncher>) -> Arc<dyn ScanLauncher>,
+) -> Rig {
+    let dir = tempfile::tempdir().unwrap();
+    let index = Arc::new(Mutex::new(Index::open(dir.path()).unwrap()));
+    for root in roots {
+        seed_root(&index, root);
+    }
+
+    let index_for_rig = Arc::clone(&index);
+    let store = Arc::new(SqliteScanStore::new(Arc::clone(&index)));
+    let events = Arc::new(ScanEventFake::default());
+    let mounts = FakeMountResolver::new();
+    for root in roots {
+        mounts.map(
+            *root,
+            MountFacts {
+                store_key: "store-a".to_owned(),
+                volume_key: Some("vol-a".to_owned()),
+                class: StoreClass::Local,
+            },
+        );
+    }
     let jobs = Arc::new(RecordingJobs::default());
     let launcher = Arc::new(ThreadScanLauncher::new(
         codotheca_core::scan::launcher::ScanLauncherDeps {
@@ -266,7 +278,9 @@ impl ScanLauncher for CancelAtLaunch {
 fn a_cancelled_run_publishes_cancelled_and_marks_its_row() {
     let tree = tempfile::tempdir().unwrap();
     repo_at(tree.path(), "a");
-    let r = rig_with(tree.path(), |launcher| Arc::new(CancelAtLaunch(launcher)));
+    let r = rig_with(&[tree.path()], shared_git(tree.path()), |launcher| {
+        Arc::new(CancelAtLaunch(launcher))
+    });
 
     let (_live, _) = r.scans.start(ScanMode::Full, NOW).unwrap();
     await_idle(&r.scans);
@@ -346,4 +360,70 @@ fn the_production_launcher_hands_every_indexed_location_to_the_scheduler() {
         .unwrap();
     drop(guard);
     assert_eq!(locations, 2, "and each one is a row, not just an event");
+}
+
+/// A fake whose every repository under `names` is its own project: each resolves to its own
+/// common dir. `copies` replies are queued per repository because each run probes once.
+fn distinct_git(base: &Path, names: &[&str], copies: usize) -> FakeGitBackend {
+    let git = shared_git(base);
+    for name in names {
+        let git_dir = base.join(name).join(".git");
+        for _ in 0..copies {
+            git.on_repo_facts(
+                Some(name),
+                GitReply::Ok(RepoFacts {
+                    is_bare: false,
+                    is_shallow: false,
+                    git_dir: git_dir.clone(),
+                    common_dir: git_dir.clone(),
+                }),
+            );
+        }
+    }
+    git
+}
+
+fn project_rows(index: &Arc<Mutex<Index>>) -> i64 {
+    let guard = index.lock().unwrap();
+    let n = guard
+        .conn()
+        .query_row("SELECT COUNT(*) FROM project", [], |row| row.get(0))
+        .unwrap();
+    drop(guard);
+    n
+}
+
+fn last_indexed_projects(events: &ScanEventFake) -> serde_json::Value {
+    events
+        .named("scan", "progress")
+        .last()
+        .expect("a run that found repositories reports progress")["indexedProjects"]
+        .clone()
+}
+
+/// §10.3a's headline is `indexedProjects`. It used to be the count at `begin`, re-sent on every
+/// frame, so a first run read `0 projects` from its first repository to its last.
+#[test]
+fn the_last_progress_counts_every_project_the_library_holds_as_it_commits() {
+    let tree = tempfile::tempdir().unwrap();
+    let names = ["p0", "p1", "p2"];
+    for name in names {
+        repo_at(tree.path(), name);
+    }
+    let r = rig_with(
+        &[tree.path()],
+        distinct_git(tree.path(), &names, 2),
+        |launcher| launcher,
+    );
+
+    r.scans.start(ScanMode::Full, NOW).unwrap();
+    await_idle(&r.scans);
+    assert_eq!(project_rows(&r.index), 3, "the fixture is three projects");
+    assert_eq!(last_indexed_projects(&r.events), 3);
+
+    // A second run re-indexes the same three: the library still holds three, not six.
+    r.scans.start(ScanMode::Full, NOW).unwrap();
+    await_idle(&r.scans);
+    assert_eq!(project_rows(&r.index), 3);
+    assert_eq!(last_indexed_projects(&r.events), 3);
 }

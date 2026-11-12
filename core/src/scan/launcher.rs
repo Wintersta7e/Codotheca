@@ -17,7 +17,7 @@
 //! `run_started` is **not** published here either: only `scan.start` knows whether it started a
 //! run or coalesced onto a live one, and one run started is one event.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 
 use crate::cancel::CancelToken;
@@ -176,7 +176,7 @@ impl ThreadScanLauncher {
     fn publish_walk_event(
         &self,
         run_id: ScanRunId,
-        indexed_projects: u32,
+        published: &Mutex<Published>,
         progress: &ScanProgressCell,
         event: WalkEvent,
     ) {
@@ -185,6 +185,13 @@ impl ThreadScanLauncher {
                 walked_dirs,
                 found_repos,
             } => {
+                let mut last = published.lock().unwrap_or_else(PoisonError::into_inner);
+                // Read as each frame goes out, so the headline moves as the hand-off commits
+                // projects. A failed read carries the last figure rather than publishing a
+                // count nobody measured.
+                if let Ok(count) = self.store.indexed_project_count() {
+                    last.indexed_projects = clamp32(count);
+                }
                 progress.observe(walked_dirs, found_repos);
                 self.emit(
                     "progress",
@@ -192,9 +199,10 @@ impl ThreadScanLauncher {
                         run_id,
                         walked_dirs: clamp64(walked_dirs),
                         found_repos: clamp32(found_repos),
-                        indexed_projects,
+                        indexed_projects: last.indexed_projects,
                     },
                 );
+                drop(last);
             }
             WalkEvent::Problem(problem) => self.publish_problem(run_id, &problem),
             _ => {}
@@ -245,7 +253,9 @@ impl ScanLauncher for ThreadScanLauncher {
 
         let run_id = launched.scan_run_id;
         let scan_run_id = begun.scan_run_id;
-        let indexed_projects = clamp32(begun.resumed_from);
+        let published = Mutex::new(Published {
+            indexed_projects: clamp32(begun.resumed_from),
+        });
         let worker = self.clone();
         // One clone for the worker's own use, one kept here so a spawn failure can still release
         // the supervisor's slot.
@@ -255,7 +265,7 @@ impl ScanLauncher for ThreadScanLauncher {
             .name("codotheca-scan".to_owned())
             .spawn(move || {
                 let outcome = worker.runner(&cancel).finish(begun, &|event| {
-                    worker.publish_walk_event(run_id, indexed_projects, &worker_progress, event);
+                    worker.publish_walk_event(run_id, &published, &worker_progress, event);
                 });
                 match outcome {
                     Ok(outcome) => worker.publish_end(run_id, &outcome),
@@ -276,6 +286,14 @@ impl ScanLauncher for ThreadScanLauncher {
         }
         Ok(launched)
     }
+}
+
+/// What the run's last `progress` frame said, shared by the walk's worker threads.
+///
+/// `indexed_projects` is the index's project count — the same figure `cancelled` reports — so a
+/// merge lowers it and a re-scan of a known library does not count its projects twice.
+struct Published {
+    indexed_projects: u32,
 }
 
 /// `ScanProblemKind` → the wire's `ProblemKind`. The two enums share their serialised spellings
