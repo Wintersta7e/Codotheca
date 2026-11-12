@@ -1865,7 +1865,7 @@ fn ac_p3_29_23_a_merge_deletes_the_per_project_scan_and_keeps_the_cache() {
                (blob_oid, scanner_version, ordinal_in_blob, marker, salient_sha256,
                 salient_text_capped, line, \"column\")
              VALUES (?1, 1, ?2, 'TODO', 'sha', 'TODO x', 1, 1)",
-            rusqlite::params![oid, n],
+            rusqlite::params![oid, i64::try_from(n).unwrap()],
         )
         .unwrap();
     }

@@ -6,6 +6,9 @@
 )]
 //! §2.4's two session commands and §11.2's orphan recovery, through the layer that runs them.
 
+#[path = "support/statement_trace.rs"]
+mod statement_trace;
+
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -222,7 +225,7 @@ impl Fixture {
     /// Statements issued from now on, counted by `rusqlite`'s trace hook.
     fn trace_statements(&mut self) {
         STATEMENTS.store(0, Ordering::Relaxed);
-        self.index.conn_mut().trace(Some(count_statement));
+        statement_trace::trace(self.index.conn_mut(), Some(count_statement));
     }
 }
 

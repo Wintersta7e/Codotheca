@@ -551,7 +551,7 @@ fn phase3_project(
     let location = LocationId(conn.last_insert_rowid());
     conn.execute(
         "INSERT INTO project_committer (project_id, email, commits) VALUES (?1, ?2, ?3)",
-        params![project.0, ME, days.len()],
+        params![project.0, ME, i64::try_from(days.len()).unwrap()],
     )
     .unwrap();
     conn.execute(

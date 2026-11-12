@@ -1703,7 +1703,7 @@ fn export_merges(conn: &Connection) -> Result<Vec<SidecarMerge>, IndexError> {
 /// Fails when SQLite refuses the read, no row has that `rowid`, or a `TEXT` value is not UTF-8.
 pub fn dump_row(conn: &Connection, table: &str, rowid: i64) -> Result<SidecarRow, IndexError> {
     let mut stmt = conn.prepare(&format!("SELECT * FROM {table} WHERE rowid = ?1"))?;
-    let names: Vec<String> = stmt.column_names().into_iter().map(str::to_owned).collect();
+    let names: Vec<String> = stmt.column_names().map(str::to_owned).collect();
     let row = stmt.query_row([rowid], |r| {
         let mut row = SidecarRow::new();
         for (i, name) in names.iter().enumerate() {

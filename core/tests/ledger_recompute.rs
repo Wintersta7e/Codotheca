@@ -11,6 +11,9 @@
     clippy::indexing_slicing
 )]
 
+#[path = "support/statement_trace.rs"]
+mod statement_trace;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -490,9 +493,9 @@ fn record(sql: &str) {
 /// The statements `f` issues on `conn`, whitespace-flattened, in order.
 fn traced(conn: &mut Connection, f: impl FnOnce(&mut Connection)) -> Vec<String> {
     TRACE.lock().unwrap().clear();
-    conn.trace(Some(record));
+    statement_trace::trace(conn, Some(record));
     f(conn);
-    conn.trace(None);
+    statement_trace::trace(conn, None);
     std::mem::take(&mut *TRACE.lock().unwrap())
 }
 

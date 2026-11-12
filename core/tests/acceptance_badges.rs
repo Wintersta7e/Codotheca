@@ -352,8 +352,7 @@ fn project_column(conn: &Connection) -> usize {
     conn.prepare("SELECT * FROM badge_award")
         .unwrap()
         .column_names()
-        .iter()
-        .position(|name| *name == "project_id")
+        .position(|name| name == "project_id")
         .expect("badge_award has project_id")
 }
 

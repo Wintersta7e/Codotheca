@@ -12,6 +12,9 @@
 
 mod support;
 
+#[path = "support/statement_trace.rs"]
+mod statement_trace;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -486,9 +489,9 @@ fn the_publishers_own_write_does_not_trigger_it_again() {
     );
 
     STATEMENTS.store(0, Ordering::SeqCst);
-    t.index_mut().conn_mut().trace(Some(count_statement));
+    statement_trace::trace(t.index_mut().conn_mut(), Some(count_statement));
     let again = publisher.poll(t.index(), NOW + 1, &zone, &sink).unwrap();
-    t.index_mut().conn_mut().trace(None);
+    statement_trace::trace(t.index_mut().conn_mut(), None);
     let ran = STATEMENTS.load(Ordering::SeqCst);
     eprintln!("an idle poll ran {ran} statements");
     assert!(!again);

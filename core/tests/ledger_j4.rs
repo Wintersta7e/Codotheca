@@ -11,6 +11,9 @@
 
 mod support;
 
+#[path = "support/statement_trace.rs"]
+mod statement_trace;
+
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -476,9 +479,9 @@ fn a_history_rewrite_is_reconciled_after_a_ratchet() {
         ],
     );
     TRACE.lock().unwrap().clear();
-    rig.index.lock().unwrap().conn_mut().trace(Some(record));
+    statement_trace::trace(rig.index.lock().unwrap().conn_mut(), Some(record));
     rig.settle();
-    rig.index.lock().unwrap().conn_mut().trace(None);
+    statement_trace::trace(rig.index.lock().unwrap().conn_mut(), None);
     let statements = std::mem::take(&mut *TRACE.lock().unwrap());
 
     assert_eq!(rig.dates("commit_day"), ["2024-05-01", "2024-05-09"]);

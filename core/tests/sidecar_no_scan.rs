@@ -26,7 +26,7 @@ fn dump(conn: &Connection, table: &str, id: i64) -> BTreeMap<String, String> {
     let mut stmt = conn
         .prepare(&format!("SELECT * FROM {table} WHERE id = ?1"))
         .unwrap();
-    let names: Vec<String> = stmt.column_names().into_iter().map(str::to_owned).collect();
+    let names: Vec<String> = stmt.column_names().map(str::to_owned).collect();
     stmt.query_row([id], |r| {
         names
             .iter()

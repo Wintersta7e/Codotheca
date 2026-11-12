@@ -994,6 +994,9 @@ use codotheca_core::health::summary::{summaries_for_all, summary_for};
 use codotheca_core::protocol::ProjectLifecycle;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[path = "support/statement_trace.rs"]
+mod statement_trace;
+
 /// The statement counter `rusqlite`'s trace hook feeds. A plain `fn(&str)` cannot capture, so the
 /// count is a static; the one test that reads it resets it first.
 static STATEMENTS: AtomicUsize = AtomicUsize::new(0);
@@ -1046,9 +1049,9 @@ fn the_projection_issues_a_bounded_number_of_statements_for_n_projects() {
             item(&conn, id, "missing_readme", "", "open");
         }
         STATEMENTS.store(0, Ordering::Relaxed);
-        conn.trace(Some(count_statement));
+        statement_trace::trace(&mut conn, Some(count_statement));
         let all = summaries_for_all(&conn).unwrap();
-        conn.trace(None);
+        statement_trace::trace(&mut conn, None);
         assert_eq!(all.len(), projects, "the projection skipped a project");
         STATEMENTS.load(Ordering::Relaxed)
     };

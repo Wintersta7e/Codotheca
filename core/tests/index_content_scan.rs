@@ -294,7 +294,7 @@ fn every_blob_outcome_slug_is_accepted_by_the_column() {
                (blob_oid, scanner_version, ordinal_in_blob, marker, salient_sha256,
                 salient_text_capped, line, \"column\")
              VALUES (?1, 1, ?2, ?3, 'sha', 'text', 1, 1)",
-            rusqlite::params![format!("{:040}", 0), n, slug],
+            rusqlite::params![format!("{:040}", 0), i64::try_from(n).unwrap(), slug],
         )
         .unwrap_or_else(|e| panic!("blob_finding.marker refused {slug}: {e}"));
         filed += 1;

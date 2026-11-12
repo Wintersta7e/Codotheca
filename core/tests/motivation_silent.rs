@@ -14,6 +14,9 @@ mod support;
 #[path = "support/handoff_rig.rs"]
 mod handoff_rig;
 
+#[path = "support/statement_trace.rs"]
+mod statement_trace;
+
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use codotheca_core::assembly::startup::run_startup;
@@ -587,9 +590,9 @@ fn record(sql: &str) {
 /// Statements touching `level_floor` while `rig` settles `project` with `traced` on.
 fn floor_reads(rig: &BadgesRig, project: ProjectId) -> (usize, usize) {
     TRACE.lock().unwrap().clear();
-    rig.index.lock().unwrap().conn_mut().trace(Some(record));
+    statement_trace::trace(rig.index.lock().unwrap().conn_mut(), Some(record));
     rig.settle_j4(project);
-    rig.index.lock().unwrap().conn_mut().trace(None);
+    statement_trace::trace(rig.index.lock().unwrap().conn_mut(), None);
     let all = std::mem::take(&mut *TRACE.lock().unwrap());
     let floor = all.iter().filter(|s| s.contains("level_floor")).count();
     (all.len(), floor)

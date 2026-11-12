@@ -2,8 +2,9 @@
 name = "codotheca-core"
 version = "0.9.0"
 edition = "2021"
-# The floor the locked graph sets: `ignore`, `globset` and the `icu_*` crates declare 1.88.
-rust-version = "1.88"
+# The floor the locked graph sets: `rusqlite` declares 1.89; `ignore`, `globset` and the `icu_*`
+# crates declare 1.88.
+rust-version = "1.89"
 license = "GPL-3.0-or-later"
 description = "Codotheca core: scanning, git, index and art rasterisation"
 # Shipped inside the app, never to a registry.
@@ -84,8 +85,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 # the whole tree. A plain kill left eight live git processes holding file locks (§3.4).
 command-group = "5"
 # Cross-platform advisory file locks with no libc and no unsafe in our tree. std's own
-# File::try_lock is stable only from 1.89 and the workspace MSRV is 1.88. Re-decide at the MSRV
-# follow-up.
+# File::try_lock is stable from 1.89, which the floor now meets, so this is no longer forced.
+# Re-decide at the MSRV follow-up.
 fs4 = "1.1"
 # The parallel directory walk (J0). Standard filters off: this is a filesystem census, not a
 # git operation, so nothing may be hidden by a `.gitignore`.
@@ -125,7 +126,7 @@ reqwest = { version = "0.12.24", default-features = false, features = [
     "gzip",
     "json",
 ] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # R5: the ref-state basis is a lowercase-hex SHA-256, because `location.refstate_basis` is TEXT.
@@ -142,7 +143,7 @@ tiny-skia = "0.12"
 # stub cannot do.
 #
 # PINNED EXACTLY, and not a caret: `5.2.9` raised its `rust-version` to 1.85, above the 1.80
-# floor this pin was set under; the 1.88 floor now covers it, so the pin is no longer forced.
+# floor this pin was set under; the 1.89 floor now covers it, so the pin is no longer forced.
 # Lifting it is a workspace MSRV decision, not a removal decision — the same rule that keeps
 # `keyring` at 3.x. Re-decide at the MSRV follow-up. New crates for the two shipped targets
 # are `scopeguard` and `urlencoding` only; `chrono`, `libc`, `log` and `once_cell` were already in the graph, and
