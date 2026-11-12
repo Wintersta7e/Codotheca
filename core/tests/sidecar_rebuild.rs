@@ -58,12 +58,13 @@ fn take_fingerprint(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>, (String, io
             Ok(bytes) => {
                 files.insert(name, bytes);
             }
-            // 32 is Windows' sharing violation, which std leaves uncategorised.
+            // 32 is Windows' sharing violation and 33 its lock violation, which std leaves
+            // uncategorised.
             Err(err)
                 if matches!(
                     err.kind(),
                     io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
-                ) || err.raw_os_error() == Some(32) =>
+                ) || matches!(err.raw_os_error(), Some(32 | 33)) =>
             {
                 return Err((name, err));
             }
