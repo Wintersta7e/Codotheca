@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MotivationState, ProjectId, ProjectRow } from '../../generated/protocol.js';
 import { mountedIndices, type MountWindow } from '../keyboard/gridNavigation.js';
 import type { QueryContext } from '../shelf/evaluate.js';
+import { toggled } from '../shelf/collapse.js';
 import { sectionExtents } from '../shelf/measure.js';
 import { buildShelfPage, type ShelfPage } from '../shelf/page.js';
 import { projectionCapabilities, toShelfRow, type ShelfRow } from '../shelf/row.js';
@@ -207,6 +208,53 @@ describe('ShelfScreen', () => {
     expect(container.querySelector('.cdt-shelf-grid')).toBeNull();
     expect(container.querySelectorAll('.cdt-list')).toHaveLength(1);
     expect(listNames).toEqual(expectedNames);
+  });
+
+  // §8.0c: era sectioning and collapse are unchanged in the list; it swaps only what a section's
+  // body renders. One flat table lost every era header and the collapse with them.
+  it('keeps the grid’s era sections, order, headers and collapse in the list', () => {
+    const rows = [
+      row({ id: 1 as ProjectId, name: 'live', lastTouchedAt: NOW - DAY }),
+      row({ id: 2 as ProjectId, name: 'month', lastTouchedAt: NOW - 14 * DAY }),
+      row({ id: 3 as ProjectId, name: 'quarter', lastTouchedAt: NOW - 45 * DAY }),
+      row({ id: 4 as ProjectId, name: 'prior-year', lastTouchedAt: Date.UTC(2025, 5, 1) / 1000 }),
+      row({ id: 5 as ProjectId, name: 'reference', isReference: true }),
+    ];
+    const sections = pageFor(rows).sections;
+    const closed = required(sections[1], 'a second era');
+    const props = propsFor(rows);
+    const list = { ...props.view, viewMode: 'list' as const };
+    const { container, rerender } = render(<ShelfScreen {...props} />);
+    const headersOf = (): (string | null)[] =>
+      [...container.querySelectorAll('.cdt-shelf-section .cdt-era-header')].map(
+        (header) => header.textContent,
+      );
+    const gridHeaders = headersOf();
+
+    rerender(<ShelfScreen {...props} view={list} />);
+    const bodies = [...container.querySelectorAll('.cdt-shelf-section')].map((section) =>
+      [...section.querySelectorAll('.cdt-list-row .cdt-list-c3')].map((cell) => cell.textContent),
+    );
+
+    expect(sections.length).toBeGreaterThan(2);
+    expect(headersOf()).toEqual(gridHeaders);
+    expect(bodies).toEqual(sections.map((section) => section.rows.map((entry) => entry.name)));
+    expect(container.querySelector('.cdt-shelf-body')?.lastElementChild).toBe(
+      container.querySelector('.cdt-reference-tail'),
+    );
+
+    rerender(
+      <ShelfScreen
+        {...props}
+        view={{ ...list, collapsed: toggled(list.collapsed, closed.id, true) }}
+      />,
+    );
+    const collapsed = [...container.querySelectorAll('.cdt-shelf-section')][1];
+    expect(collapsed?.querySelector('.cdt-era-chevron')?.getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(collapsed?.querySelector('.cdt-list')).toBeNull();
+    expect(container.querySelectorAll('.cdt-list')).toHaveLength(sections.length - 1);
   });
 
   it('re-reads the injected clock every second and clears the interval', () => {

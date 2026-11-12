@@ -40,7 +40,7 @@ import { GridSection } from '../shelf/GridSection.js';
 import { useShelfInstall } from '../shelf/useShelfInstall.js';
 import { ListView } from '../shelf/ListView.js';
 import type { Notice } from '../shelf/notice.js';
-import { buildShelfPage } from '../shelf/page.js';
+import { buildShelfPage, type ShelfSection } from '../shelf/page.js';
 import { PeekPanel } from '../shelf/Peek.js';
 import { ReferenceTail } from '../shelf/ReferenceTail.js';
 import type { ShelfRow } from '../shelf/row.js';
@@ -395,33 +395,35 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
   // Scoped to that one section, exactly as the handoff prototype scopes it.
   const landingId = props.phase?.kind === 'landing' ? props.phase.id : null;
 
+  // §8.0c: the list view keeps §8.1's era sections and their collapse, and swaps only what a
+  // section's body renders — so both views draw the same header from here.
+  const collapsedOf = (section: ShelfSection): boolean =>
+    isCollapsed(view.collapsed, section.id, section.order, page.renderedTotal, queryIsEmpty);
+  const eraHeader = (section: ShelfSection, collapsed: boolean): ReactElement => (
+    <EraHeader
+      section={section}
+      flaring={landingId !== null && section.rows.some((row) => row.id === landingId)}
+      collapsed={collapsed}
+      onToggle={() => {
+        onViewChange({
+          ...view,
+          collapsed: toggled(view.collapsed, section.id, !collapsed),
+        });
+      }}
+    />
+  );
+
   const grid = (
     <>
       <div style={{ minHeight: virtual.canvasHeight }}>
         {page.sections.map((section, index) => {
           const extent = virtual.extents[index];
           if (extent === undefined) return null;
-          const collapsed = isCollapsed(
-            view.collapsed,
-            section.id,
-            section.order,
-            page.renderedTotal,
-            queryIsEmpty,
-          );
+          const collapsed = collapsedOf(section);
           const ownsPeek = peekOpen && selectedSectionId === section.id;
           return (
             <section className="cdt-shelf-section" key={section.id}>
-              <EraHeader
-                section={section}
-                flaring={landingId !== null && section.rows.some((row) => row.id === landingId)}
-                collapsed={collapsed}
-                onToggle={() => {
-                  onViewChange({
-                    ...view,
-                    collapsed: toggled(view.collapsed, section.id, !collapsed),
-                  });
-                }}
-              />
+              {eraHeader(section, collapsed)}
               <GridSection
                 section={section}
                 extent={extent}
@@ -450,6 +452,31 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
           );
         })}
       </div>
+      <ReferenceTail rows={page.reference} onOpen={onOpenProject} />
+    </>
+  );
+
+  const list = (
+    <>
+      {page.sections.map((section) => {
+        const collapsed = collapsedOf(section);
+        return (
+          <section className="cdt-shelf-section" key={section.id}>
+            {eraHeader(section, collapsed)}
+            {collapsed ? null : (
+              <ListView
+                rows={section.rows}
+                now={now}
+                firstRunCompletedAt={firstRunCompletedAt}
+                selectedId={view.selectedProjectId}
+                peek={selectedSectionId === section.id ? peek : null}
+                onActivate={onOpenProject}
+                onOpen={onOpenProject}
+              />
+            )}
+          </section>
+        );
+      })}
       <ReferenceTail rows={page.reference} onOpen={onOpenProject} />
     </>
   );
@@ -522,21 +549,7 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
         }}
         savedChips={props.savedChips ?? null}
       />
-      <div className="cdt-shelf-body">
-        {view.viewMode === 'grid' ? (
-          grid
-        ) : (
-          <ListView
-            rows={flatRows}
-            now={now}
-            firstRunCompletedAt={firstRunCompletedAt}
-            selectedId={view.selectedProjectId}
-            peek={peek}
-            onActivate={onOpenProject}
-            onOpen={onOpenProject}
-          />
-        )}
-      </div>
+      <div className="cdt-shelf-body">{view.viewMode === 'grid' ? grid : list}</div>
     </Shelf>
   );
 }
