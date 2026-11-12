@@ -27,7 +27,6 @@ use codotheca_core::mount::SystemMountResolver;
 use codotheca_core::projects::{list, ProjectsCtx};
 use codotheca_core::protocol::{ProjectId, ScanMode};
 use codotheca_core::scan::launcher::{ScanLauncherDeps, ThreadScanLauncher};
-use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::store::SqliteScanStore;
 use codotheca_core::scan::ScanSupervisor;
 use codotheca_core::sync::runner::NullSyncSink;
@@ -174,7 +173,7 @@ fn rediscover(index: &Arc<Mutex<Index>>, events: &Arc<ValidatingSink>, data: &Pa
         git,
         mounts: Arc::new(SystemMountResolver::new()),
         clock,
-        skip: Arc::new(SkipList::default()),
+        exclusions: Arc::default(),
         wsl: None,
         jobs: Arc::new(NullJobSink),
         events: events.clone(),

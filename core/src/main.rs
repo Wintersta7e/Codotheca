@@ -13,6 +13,7 @@
 use codotheca_core::assembly::startup::{open_index, rebuild_index, run_startup};
 use codotheca_core::assembly::{CoreDeps, CoreHandler};
 use codotheca_core::clock::{local_utc_offset_min, Clock, LocalZone, SystemClock, SystemZone};
+use codotheca_core::exclusion::gate::ExclusionGate;
 use codotheca_core::git::{GitBackend, GitExec, GitSlots, SystemGit, EMPTY_HOOKS_DIR_NAME};
 use codotheca_core::gitw::credential::{
     configure_data_dir, run_credential_helper, CREDENTIAL_MODE_FLAG,
@@ -112,7 +113,10 @@ fn credential_helper_mode() -> Option<ExitCode> {
 /// Plan 16's `FirstRunEnv`, assembled from the environment.
 ///
 /// Private: nothing outside the binary composes it.
-fn first_run_env(data_dir: &Path) -> codotheca_core::firstrun::FirstRunEnv {
+fn first_run_env(
+    data_dir: &Path,
+    exclusions: Arc<ExclusionGate>,
+) -> codotheca_core::firstrun::FirstRunEnv {
     let _ = data_dir;
     codotheca_core::firstrun::FirstRunEnv {
         sources: codotheca_core::firstrun::sources::SourceEnv {
@@ -133,7 +137,7 @@ fn first_run_env(data_dir: &Path) -> codotheca_core::firstrun::FirstRunEnv {
         // stand-in used to say and is now said by the code that would actually find them.
         distros: Arc::new(codotheca_core::wsl::distros::SystemDistroProbe::system()),
         platform: codotheca_core::index::path::native_platform(),
-        skip: codotheca_core::scan::skiplist::SkipList::default(),
+        exclusions,
         cache: codotheca_core::firstrun::roots::SuggestionCache::new(),
     }
 }
@@ -275,6 +279,15 @@ fn main() -> ExitCode {
         Ok(opened) => opened,
         Err(e) => {
             note(&format!("codotheca-core: index: {e}"));
+            return ExitCode::FAILURE;
+        }
+    };
+    // GA1: the core's one exclusion list, read once the schema is current and before anything
+    // reads a repository. Every reader below holds this gate, never a list of its own.
+    let exclusions = match codotheca_core::exclusion::store::load_list(index.conn()) {
+        Ok(list) => Arc::new(ExclusionGate::new(list)),
+        Err(e) => {
+            note(&format!("codotheca-core: exclusions: {e}"));
             return ExitCode::FAILURE;
         }
     };
@@ -427,7 +440,7 @@ fn main() -> ExitCode {
                     git: Arc::clone(&git),
                     mounts: Arc::clone(&mount),
                     clock: Arc::clone(&clock),
-                    skip: Arc::new(codotheca_core::scan::skiplist::SkipList::default()),
+                    exclusions: Arc::clone(&exclusions),
                     wsl,
                     // The real queue. `NullJobSink` is the absence of a scheduler, not a fake of
                     // one, and installing it here is what left every discovery uncomputed.
@@ -437,7 +450,8 @@ fn main() -> ExitCode {
             ),
         )),
         scan_store: Arc::clone(&scan_store),
-        firstrun: first_run_env(&args.data_dir),
+        firstrun: first_run_env(&args.data_dir, Arc::clone(&exclusions)),
+        exclusions,
         jobs,
         events: Arc::clone(&events),
         // §8.1's era bands cut on the local calendar year, so this is a correctness input.

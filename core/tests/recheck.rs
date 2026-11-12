@@ -208,7 +208,9 @@ impl RecheckRig {
             clock.clone(),
         ));
         let sync_http: Arc<dyn codotheca_core::http::HttpTransport> = sync_observing.clone();
+        let exclusions = Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default());
         CoreHandler::new(CoreDeps {
+            exclusions: Arc::clone(&exclusions),
             index: Arc::clone(&self.index),
             provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
                 Arc::clone(&http),
@@ -247,7 +249,7 @@ impl RecheckRig {
                 )),
                 distros: Arc::new(codotheca_core::firstrun::classify::NoDistros),
                 platform: codotheca_core::index::path::PathPlatform::Unix,
-                skip: codotheca_core::scan::skiplist::SkipList::default(),
+                exclusions,
                 cache: codotheca_core::firstrun::roots::SuggestionCache::new(),
             },
             jobs: codotheca_core::assembly::jobs::JobPump::start(

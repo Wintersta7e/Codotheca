@@ -55,6 +55,9 @@ pub struct CoreDeps {
     pub scan_store: Arc<dyn ScanStore>,
     /// Everything §10's first-run commands need that is not the database.
     pub firstrun: crate::firstrun::FirstRunEnv,
+    /// The core's one exclusion gate (GA1), the same instance `firstrun` and the scan launcher
+    /// hold: a second list would let one reader honour an exclusion another ignores.
+    pub exclusions: Arc<crate::exclusion::gate::ExclusionGate>,
     /// The job pump (§4.1a). Held here so `shutdown` can stop it **before** the publisher
     /// closes and before the process exits: a worker mid-write to SQLite when `main` returns is
     /// a torn observation, and a worker inside a twenty-second history read is a git process
@@ -119,6 +122,7 @@ pub struct CoreHandler {
     scans: ScanSupervisor,
     scan_store: Arc<dyn ScanStore>,
     firstrun: crate::firstrun::FirstRunEnv,
+    exclusions: Arc<crate::exclusion::gate::ExclusionGate>,
     jobs: jobs::JobPump,
     sync: sync::SyncPump,
     events: Arc<PublisherSink>,
@@ -174,6 +178,7 @@ impl CoreHandler {
             scans: deps.scans,
             scan_store: deps.scan_store,
             firstrun: deps.firstrun,
+            exclusions: deps.exclusions,
             jobs: deps.jobs,
             sync: deps.sync,
             events: deps.events,
@@ -190,6 +195,12 @@ impl CoreHandler {
             first_run: crate::motivation::first_run::FirstRunStamp::default(),
             motivation: crate::motivation::publish::MotivationPublisher::new(),
         }
+    }
+
+    /// The core's one exclusion gate, which every read and write of a repository's facts asks.
+    #[must_use]
+    pub const fn exclusions(&self) -> &Arc<crate::exclusion::gate::ExclusionGate> {
+        &self.exclusions
     }
 
     /// How many ticks have run. The pump's period is otherwise unobservable from outside.

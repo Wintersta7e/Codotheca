@@ -14,7 +14,6 @@ use serde_json::Value;
 use crate::index::path::PathPlatform;
 use crate::index::IndexError;
 use crate::proto::dispatch::{parse_args, CommandFailure}; // R15: one helper, plan 03's
-use crate::scan::skiplist::SkipList;
 
 /// The five commands of §10, plus §11.3a's four root-row commands (**R37**, **R33 gap 1**).
 ///
@@ -42,8 +41,8 @@ pub struct FirstRunEnv {
     pub distros: Arc<dyn classify::DistroProbe>,
     /// The host platform, whose rules fold a root's path into its key.
     pub platform: PathPlatform,
-    /// The directories a `roots.add` estimate does not descend into.
-    pub skip: SkipList,
+    /// The core's one exclusion gate; a `roots.add` estimate descends into nothing it covers.
+    pub exclusions: Arc<crate::exclusion::gate::ExclusionGate>,
     /// The paths the latest `roots.suggest` produced, which are never estimated.
     pub cache: roots::SuggestionCache,
 }
@@ -168,11 +167,12 @@ fn handle_add(
     now: i64,
 ) -> Result<Value, CommandFailure> {
     let parsed: AddArgs = parse_args(args.clone())?;
+    let list = env.exclusions.snapshot();
     let params = roots::AddParams {
         path_bytes: &parsed.path_bytes.0,
         confirm_large: parsed.confirm_large,
         home: &env.sources.home,
-        skip: &env.skip,
+        skip: list.names(),
         cache: &env.cache,
         platform: env.platform,
         distro: &parsed.distro,
@@ -306,7 +306,7 @@ mod tests {
             classifier: Arc::new(classify::FixedClassifier::new(vec![])),
             distros: Arc::new(classify::NoDistros),
             platform: PathPlatform::Unix,
-            skip: SkipList::default(),
+            exclusions: Arc::default(),
             cache: roots::SuggestionCache::new(),
         }
     }

@@ -30,7 +30,6 @@ use crate::provider::listing::OrgListing;
 use crate::scan::discover::{RepoCandidate, RepoKind};
 use crate::scan::launcher::{ScanLauncherDeps, ThreadScanLauncher};
 use crate::scan::run::{platform_of, Discovered};
-use crate::scan::skiplist::SkipList;
 use crate::scan::store::SqliteScanStore;
 use crate::scan::ScanSupervisor;
 use crate::testing::events::ValidatingSink;
@@ -581,7 +580,7 @@ fn scan_once(
         git,
         mounts: Arc::new(SystemMountResolver::new()),
         clock: Arc::new(FakeClock::new(now)),
-        skip: Arc::new(SkipList::default()),
+        exclusions: Arc::default(),
         wsl: None,
         jobs: Arc::new(NullJobSink),
         events: Arc::new(ValidatingSink::default()),

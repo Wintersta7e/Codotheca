@@ -23,7 +23,6 @@ use codotheca_core::protocol::{LocationId, ProjectId};
 use codotheca_core::scan::launcher::ThreadScanLauncher;
 use codotheca_core::scan::presence::{ScanStore, ScanStoreError};
 use codotheca_core::scan::run::platform_of;
-use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::store::SqliteScanStore;
 use codotheca_core::scan::{LaunchedScan, ScanLauncher, ScanProgressCell, ScanSupervisor};
 use codotheca_core::testing::{
@@ -168,7 +167,7 @@ fn rig_with(
             git: Arc::new(git),
             mounts: Arc::new(mounts),
             clock: Arc::new(FakeClock::new(NOW)),
-            skip: Arc::new(SkipList::default()),
+            exclusions: Arc::default(),
             wsl: None,
             jobs: jobs.clone(),
             events: events.clone(),

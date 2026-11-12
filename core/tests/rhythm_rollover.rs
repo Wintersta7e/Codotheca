@@ -91,7 +91,9 @@ fn handler(
     ));
     let home = dir.join("home");
     std::fs::create_dir_all(&home).unwrap();
+    let exclusions = Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default());
     let h = CoreHandler::new(CoreDeps {
+        exclusions: Arc::clone(&exclusions),
         index: Arc::clone(&index),
         provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
             Arc::clone(&http),
@@ -130,7 +132,7 @@ fn handler(
             )),
             distros: Arc::new(codotheca_core::firstrun::classify::NoDistros),
             platform: codotheca_core::index::path::PathPlatform::Unix,
-            skip: codotheca_core::scan::skiplist::SkipList::default(),
+            exclusions,
             cache: codotheca_core::firstrun::roots::SuggestionCache::new(),
         },
         jobs: codotheca_core::assembly::jobs::JobPump::start(

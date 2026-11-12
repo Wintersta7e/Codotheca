@@ -62,7 +62,9 @@ pub(crate) fn real_handler(
         clock.clone(),
     ));
     let sync_http: Arc<dyn codotheca_core::http::HttpTransport> = sync_observing.clone();
+    let exclusions = Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default());
     let handler = CoreHandler::new(CoreDeps {
+        exclusions: Arc::clone(&exclusions),
         index: Arc::clone(index),
         provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
             Arc::clone(&http),
@@ -101,7 +103,7 @@ pub(crate) fn real_handler(
             )),
             distros: Arc::new(codotheca_core::firstrun::classify::NoDistros),
             platform: codotheca_core::index::path::PathPlatform::Unix,
-            skip: codotheca_core::scan::skiplist::SkipList::default(),
+            exclusions,
             cache: codotheca_core::firstrun::roots::SuggestionCache::new(),
         },
         jobs: pump.clone(),

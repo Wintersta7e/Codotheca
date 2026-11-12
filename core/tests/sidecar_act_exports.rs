@@ -42,7 +42,9 @@ fn handler_over(lib: &Library) -> CoreHandler {
         Arc::clone(&http),
         clock.clone(),
     ));
+    let exclusions = Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default());
     CoreHandler::new(CoreDeps {
+        exclusions: Arc::clone(&exclusions),
         index: Arc::clone(&lib.index),
         provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
             Arc::clone(&http),
@@ -79,7 +81,7 @@ fn handler_over(lib: &Library) -> CoreHandler {
             )),
             distros: Arc::new(codotheca_core::firstrun::classify::NoDistros),
             platform: codotheca_core::index::path::PathPlatform::Unix,
-            skip: codotheca_core::scan::skiplist::SkipList::default(),
+            exclusions,
             cache: codotheca_core::firstrun::roots::SuggestionCache::new(),
         },
         jobs: codotheca_core::assembly::jobs::JobPump::start(

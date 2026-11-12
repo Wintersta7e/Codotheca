@@ -1,6 +1,10 @@
 //! §56.4–§56.9: the user's exclusion list — §4.3's built-in thirty followed by the entries the
 //! user adds — and everything that keeps a covered repository unread.
 //!
-//! `store` owns the `scan_exclusion` rows and their sidecar section.
+//! `list` answers every coverage question, `gate` holds the core's one list behind a pointer
+//! swap, and `store` owns the `scan_exclusion` rows, the dialog-path normaliser,
+//! `location.excluded` and their sidecar section.
 
+pub mod gate;
+pub mod list;
 pub mod store;

@@ -22,6 +22,8 @@ use std::thread;
 
 use crate::cancel::CancelToken;
 use crate::clock::Clock;
+use crate::exclusion::gate::ExclusionGate;
+use crate::exclusion::list::ExclusionList;
 use crate::git::GitBackend;
 use crate::index::Index;
 use crate::jobs::JobSink;
@@ -33,7 +35,6 @@ use crate::protocol::{
 };
 use crate::scan::presence::{ScanStore, ScanStoreError};
 use crate::scan::run::{ScanRunOutcome, ScanRunner};
-use crate::scan::skiplist::SkipList;
 use crate::scan::{LaunchedScan, ScanLauncher, ScanProblem, ScanProgressCell, WalkEvent};
 
 /// Runs one scan on a worker thread and publishes it onto the `scan` topic.
@@ -49,7 +50,7 @@ pub struct ThreadScanLauncher {
     git: Arc<dyn GitBackend>,
     mounts: Arc<dyn MountResolver>,
     clock: Arc<dyn Clock>,
-    skip: Arc<SkipList>,
+    exclusions: Arc<ExclusionGate>,
     /// §13's dispatcher, or `None` on a host with no WSL and in a build that staged no worker.
     wsl: Option<Arc<crate::wsl::dispatch::WslDispatcher>>,
     /// §4.1a's queue. **Not `NullJobSink`**: that is the absence of a scheduler, not a fake of
@@ -79,8 +80,8 @@ pub struct ScanLauncherDeps {
     pub mounts: Arc<dyn MountResolver>,
     /// The unix-seconds clock that runs and their events are stamped with.
     pub clock: Arc<dyn Clock>,
-    /// The exclusion list (§4.3) every run applies.
-    pub skip: Arc<SkipList>,
+    /// The core's one exclusion gate; each run applies the list in force when it starts.
+    pub exclusions: Arc<ExclusionGate>,
     /// §13's dispatcher. `None` on a host with no WSL, or in a build that staged no worker.
     pub wsl: Option<Arc<crate::wsl::dispatch::WslDispatcher>>,
     /// §4.1a's queue for each newly indexed location.
@@ -105,20 +106,20 @@ impl ThreadScanLauncher {
             git: deps.git,
             mounts: deps.mounts,
             clock: deps.clock,
-            skip: deps.skip,
+            exclusions: deps.exclusions,
             wsl: deps.wsl,
             jobs: deps.jobs,
             events: deps.events,
         }
     }
 
-    fn runner<'a>(&'a self, cancel: &'a CancelToken) -> ScanRunner<'a> {
+    fn runner<'a>(&'a self, cancel: &'a CancelToken, list: &'a ExclusionList) -> ScanRunner<'a> {
         ScanRunner {
             store: self.store.as_ref(),
             git: self.git.as_ref(),
             mounts: Arc::clone(&self.mounts),
             clock: self.clock.as_ref(),
-            skip: self.skip.as_ref(),
+            skip: list.names(),
             cancel,
             index: self.index.as_ref(),
             wsl: self.wsl.as_deref(),
@@ -249,7 +250,9 @@ impl ScanLauncher for ThreadScanLauncher {
         cancel: CancelToken,
         progress: Arc<ScanProgressCell>,
     ) -> Result<LaunchedScan, ScanStoreError> {
-        let begun = self.runner(&cancel).begin(mode)?;
+        let begun = self
+            .runner(&cancel, &self.exclusions.snapshot())
+            .begin(mode)?;
         let launched = LaunchedScan {
             scan_run_id: ScanRunId(begun.scan_run_id),
             generation: begun.generation,
@@ -271,7 +274,8 @@ impl ScanLauncher for ThreadScanLauncher {
         let spawned = thread::Builder::new()
             .name("codotheca-scan".to_owned())
             .spawn(move || {
-                let outcome = worker.runner(&cancel).finish(begun, &|event| {
+                let list = worker.exclusions.snapshot();
+                let outcome = worker.runner(&cancel, &list).finish(begun, &|event| {
                     worker.publish_walk_event(run_id, &published, &worker_progress, event);
                 });
                 match outcome {
@@ -350,7 +354,7 @@ mod tests {
             git: Arc::new(FakeGitBackend::new()),
             mounts: Arc::new(FakeMountResolver::new()),
             clock: Arc::new(FakeClock::new(0)),
-            skip: Arc::new(SkipList::default()),
+            exclusions: Arc::default(),
             wsl: None,
             jobs: Arc::new(NullJobSink),
             events: events.clone(),

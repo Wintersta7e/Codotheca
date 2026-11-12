@@ -15,7 +15,6 @@ use std::sync::Arc;
 use codotheca_core::firstrun::{classify, roots, sources, FirstRunEnv};
 use codotheca_core::index::path::PathPlatform;
 use codotheca_core::protocol::Bytes;
-use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::wsl::distros::{DistroInfo, DistroState};
 use serde_json::{json, Value};
 
@@ -49,7 +48,7 @@ fn env(home: &std::path::Path) -> FirstRunEnv {
         classifier: Arc::new(classify::FixedClassifier::new(vec![])),
         distros: Arc::new(TwoDistros),
         platform: PathPlatform::Unix,
-        skip: SkipList::default(),
+        exclusions: Arc::default(),
         cache: roots::SuggestionCache::new(),
     }
 }

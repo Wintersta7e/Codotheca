@@ -271,7 +271,9 @@ mod corehandler {
             clock.clone(),
         ));
         let sync_http: Arc<dyn codotheca_core::http::HttpTransport> = sync_observing.clone();
+        let exclusions = Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default());
         CoreHandler::new(CoreDeps {
+            exclusions: Arc::clone(&exclusions),
             index: Arc::clone(&index),
             // The seam and a fake of it. `FakeTransport` answers nothing here: every accounts
             // command in this file is a routing assertion, not a network one.
@@ -303,7 +305,7 @@ mod corehandler {
                 codotheca_core::testing::ScanLauncherFake::new(),
             )),
             scan_store: Arc::new(codotheca_core::testing::MemScanStore::new()),
-            firstrun: firstrun_env(dir),
+            firstrun: firstrun_env(dir, exclusions),
             // A real pump over the fake git: `shutdown` stops it, and a handler built with one
             // that never started would not exercise that.
             jobs: codotheca_core::assembly::jobs::JobPump::start(
@@ -833,7 +835,10 @@ mod corehandler {
         );
     }
 
-    fn firstrun_env(home: &std::path::Path) -> codotheca_core::firstrun::FirstRunEnv {
+    fn firstrun_env(
+        home: &std::path::Path,
+        exclusions: Arc<codotheca_core::exclusion::gate::ExclusionGate>,
+    ) -> codotheca_core::firstrun::FirstRunEnv {
         codotheca_core::firstrun::FirstRunEnv {
             sources: codotheca_core::firstrun::sources::SourceEnv {
                 home: home.to_path_buf(),
@@ -845,7 +850,7 @@ mod corehandler {
             )),
             distros: Arc::new(codotheca_core::firstrun::classify::NoDistros),
             platform: codotheca_core::index::path::PathPlatform::Unix,
-            skip: codotheca_core::scan::skiplist::SkipList::default(),
+            exclusions,
             cache: codotheca_core::firstrun::roots::SuggestionCache::new(),
         }
     }

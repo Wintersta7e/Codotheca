@@ -71,7 +71,9 @@ pub fn core_handler_with(
         clock.clone(),
     ));
     let sync_http: Arc<dyn crate::http::HttpTransport> = sync_observing.clone();
+    let exclusions = Arc::new(crate::exclusion::gate::ExclusionGate::default());
     let handler = CoreHandler::new(CoreDeps {
+        exclusions: Arc::clone(&exclusions),
         index: Arc::clone(index),
         provider: Arc::new(crate::provider::GitHubProvider::new(
             Arc::clone(&http),
@@ -106,7 +108,7 @@ pub fn core_handler_with(
             classifier: Arc::new(crate::firstrun::classify::FixedClassifier::new(vec![])),
             distros: Arc::new(crate::firstrun::classify::NoDistros),
             platform: crate::index::path::PathPlatform::Unix,
-            skip: crate::scan::skiplist::SkipList::default(),
+            exclusions,
             cache: crate::firstrun::roots::SuggestionCache::new(),
         },
         jobs: crate::assembly::jobs::JobPump::start(

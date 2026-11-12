@@ -1,0 +1,128 @@
+//! The one exclusion list (§56.4): §4.3's built-in thirty and the user's names, matched as the
+//! walk always matched them, followed by the user's path entries, matched by `path_key`.
+//!
+//! A list is immutable. Changing it means building a new one and swapping it into the
+//! [`ExclusionGate`](super::gate::ExclusionGate), so every question asked of one list gets one
+//! answer however long the asker holds it.
+
+use std::path::Path;
+
+use crate::index::path::{PathPlatform, StoredPath};
+use crate::paths::{is_under, path_from_bytes, path_key};
+use crate::protocol::LocationKind;
+use crate::scan::run::platform_of;
+use crate::scan::skiplist::SkipList;
+
+/// One user path entry, compared by key and never opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathEntry {
+    /// The WSL distro the path lives in; empty for a path on the host itself.
+    pub distro: String,
+    /// The rules `match_key` was folded by, which every key compared with it must share.
+    pub platform: PathPlatform,
+    /// `paths::path_key` of the entry's bytes (GA2).
+    pub match_key: Vec<u8>,
+}
+
+/// What coverage of one stored `location` is decided from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocationKey {
+    /// The side the copy lives on, which decides how its paths fold.
+    pub kind: LocationKind,
+    /// The copy's distro; empty unless `kind` is WSL.
+    pub distro: String,
+    /// The copy's `location.path_bytes`.
+    pub path_bytes: Vec<u8>,
+    /// The copy's `location.path_key`, folded by its kind's platform.
+    pub path_key: Vec<u8>,
+    /// The bytes of the innermost scan root containing the copy, enabled or not. `None` when no
+    /// root contains it: a name then has nothing to lie below, and only path entries apply.
+    pub root_path_bytes: Option<Vec<u8>>,
+}
+
+/// The built-ins, the user's names, and the user's paths, in the order they were added.
+#[derive(Debug, Clone)]
+pub struct ExclusionList {
+    names: SkipList,
+    paths: Vec<PathEntry>,
+}
+
+impl Default for ExclusionList {
+    /// The built-ins alone: what a core with no user entry applies.
+    fn default() -> Self {
+        Self::new(&[], Vec::new())
+    }
+}
+
+impl ExclusionList {
+    /// The built-ins followed by `user_names`, and `paths`, each in the order given.
+    #[must_use]
+    pub fn new(user_names: &[String], paths: Vec<PathEntry>) -> Self {
+        Self {
+            names: SkipList::with_user_entries(user_names),
+            paths,
+        }
+    }
+
+    /// The name half — built-ins and user names — as the walk and the root estimate apply it.
+    #[must_use]
+    pub const fn names(&self) -> &SkipList {
+        &self.names
+    }
+
+    /// True when the walk must not read `dir`, which lies at or below `root` in `distro`, whose
+    /// paths fold by `platform`.
+    ///
+    /// `root` itself is never covered (§4.3). A path entry is keyed only when one exists for
+    /// `distro`, so a list without one costs the walk nothing it did not already pay.
+    #[must_use]
+    pub fn covers_dir(
+        &self,
+        dir: &Path,
+        root: &Path,
+        distro: &str,
+        platform: PathPlatform,
+    ) -> bool {
+        if dir == root {
+            return false;
+        }
+        if self.names.covers(dir, root) {
+            return true;
+        }
+        let mut entries = self.paths.iter().filter(|e| e.distro == distro).peekable();
+        if entries.peek().is_none() {
+            return false;
+        }
+        let key = path_key(dir, platform);
+        entries.any(|e| is_under(&key, &e.match_key))
+    }
+
+    /// True when the stored copy `key` describes is covered: a path entry of its distro holds
+    /// it, or a name matches a directory strictly below its root down to the copy itself.
+    #[must_use]
+    pub fn covers_location(&self, key: &LocationKey) -> bool {
+        if self
+            .paths
+            .iter()
+            .any(|e| e.distro == key.distro && is_under(&key.path_key, &e.match_key))
+        {
+            return true;
+        }
+        let Some(root) = &key.root_path_bytes else {
+            return false;
+        };
+        // How many of the copy's own path components lie below its root, counted on the keys so
+        // that a root spelled in another case still bounds the walk up (GA36).
+        let root_key = StoredPath::from_bytes(root.clone(), platform_of(key.kind.as_str()));
+        let below = components(&key.path_key).saturating_sub(components(root_key.key()));
+        path_from_bytes(&key.path_bytes)
+            .ancestors()
+            .take(below)
+            .any(|dir| self.names.skips(dir))
+    }
+}
+
+/// The number of components in a `path_key`, whose separators are already one `/` each.
+fn components(key: &[u8]) -> usize {
+    key.split(|b| *b == b'/').filter(|c| !c.is_empty()).count()
+}

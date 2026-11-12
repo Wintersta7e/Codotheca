@@ -28,7 +28,6 @@ use codotheca_core::paths::path_key;
 use codotheca_core::protocol::ScanMode;
 use codotheca_core::scan::launcher::{ScanLauncherDeps, ThreadScanLauncher};
 use codotheca_core::scan::run::platform_of;
-use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::store::SqliteScanStore;
 use codotheca_core::scan::ScanSupervisor;
 use codotheca_core::testing::events::ValidatingSink;
@@ -165,7 +164,7 @@ fn ac_p4_48_23_emitted_payloads_validate() {
         git,
         mounts: Arc::new(mounts),
         clock,
-        skip: Arc::new(SkipList::default()),
+        exclusions: Arc::default(),
         wsl: None,
         jobs: pump.sink(),
         events: events.clone(),

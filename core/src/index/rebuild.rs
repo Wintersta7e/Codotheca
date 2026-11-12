@@ -446,6 +446,10 @@ fn restore(
             *restored.entry(kind).or_default() += n;
         }
     }
+    // §56.9: the restored list decides every re-created copy's `excluded`; the exported column
+    // is the old index's answer, not this one's.
+    let list = crate::exclusion::store::load_list(&tx)?;
+    crate::exclusion::store::apply_coverage(&tx, &list)?;
     absorb.finish(&tx)?;
     let waiting: i64 = tx.query_row("SELECT count(*) FROM sidecar_pending", [], |r| r.get(0))?;
     let pending = u64::try_from(waiting)

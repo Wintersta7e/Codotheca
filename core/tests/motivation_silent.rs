@@ -224,7 +224,7 @@ fn ac_p4_43_5_confirmed() {
         )),
         distros: Arc::new(codotheca_core::firstrun::classify::NoDistros),
         platform: codotheca_core::index::path::PathPlatform::Unix,
-        skip: codotheca_core::scan::skiplist::SkipList::default(),
+        exclusions: Arc::default(),
         cache: codotheca_core::firstrun::roots::SuggestionCache::new(),
     };
     let mut guard = rig.index.lock().unwrap();

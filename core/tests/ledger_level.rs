@@ -429,7 +429,7 @@ fn env(home: &Path) -> FirstRunEnv {
         )),
         distros: Arc::new(codotheca_core::firstrun::classify::NoDistros),
         platform: codotheca_core::index::path::PathPlatform::Unix,
-        skip: codotheca_core::scan::skiplist::SkipList::default(),
+        exclusions: Arc::default(),
         cache: codotheca_core::firstrun::roots::SuggestionCache::new(),
     }
 }

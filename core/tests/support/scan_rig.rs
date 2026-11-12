@@ -13,7 +13,6 @@ use codotheca_core::protocol::{LocationId, ProjectId, ScanMode};
 use codotheca_core::scan::launcher::{ScanLauncherDeps, ThreadScanLauncher};
 use codotheca_core::scan::presence::ScanStore as _;
 use codotheca_core::scan::run::platform_of;
-use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::store::SqliteScanStore;
 use codotheca_core::scan::ScanSupervisor;
 use codotheca_core::testing::{FakeClock, FakeMountResolver, ScanEventFake};
@@ -135,7 +134,7 @@ fn scan_into(exec: GitExec, root: &Path, index: &Arc<Mutex<Index>>) -> Scanned {
         )),
         mounts: Arc::new(mounts),
         clock,
-        skip: Arc::new(SkipList::default()),
+        exclusions: Arc::default(),
         wsl: None,
         jobs: jobs.clone(),
         events: events.clone(),
