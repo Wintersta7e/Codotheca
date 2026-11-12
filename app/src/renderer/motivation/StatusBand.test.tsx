@@ -268,6 +268,16 @@ describe('the status band', () => {
     }
   });
 
+  it('draws the Focus target under its ring, in the ring and in its name', () => {
+    const { container } = draw();
+    const focus = [...container.querySelectorAll('[role="img"]')].find((element) =>
+      element.getAttribute('aria-label')?.startsWith(`${RING_LABELS.focus},`),
+    );
+    expect(focus).toBeDefined();
+    expect(focus?.querySelector('.cdt-band-ring-sub')?.textContent).toBe('TODAY · TARGET 45m');
+    expect(focus?.getAttribute('aria-label')).toContain('TODAY · TARGET 45m');
+  });
+
   it('draws a not-computed ring as the --unknown glyph with U+2014, never an empty ring or a 0', () => {
     expect(bandCss.length, 'band.css imported as an empty string').toBeGreaterThan(0);
     // The fixture's Tend ring is notComputed; Focus and Ship are measured.

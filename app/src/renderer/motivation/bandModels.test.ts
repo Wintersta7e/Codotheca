@@ -190,6 +190,34 @@ describe('the three tables, row by row', () => {
     expect(na.rings[1]?.centre).toBe(RING_NOT_APPLICABLE);
   });
 
+  it('gives Focus its target under the ring, read from the target the band carries', () => {
+    for (const status of ['open', 'closed'] as const) {
+      const model = ringsModel(
+        ringsWith(status, { focus: { creditedSeconds: 1_380, targetSeconds: 2_700, status } }),
+      );
+      if (model.waived) throw new Error('unreachable');
+      expect(model.rings[0]?.sub, status).toBe('TODAY · TARGET 45m');
+      expect(model.rings[0]?.name, status).toContain('TODAY · TARGET 45m');
+    }
+    const longer = ringsModel(
+      ringsWith('open', { focus: { creditedSeconds: 0, targetSeconds: 5_400, status: 'open' } }),
+    );
+    if (longer.waived) throw new Error('unreachable');
+    expect(longer.rings[0]?.sub).toBe('TODAY · TARGET 90m');
+    // No reading, no target: the sub-line is absent, never a made-up figure.
+    const unread = ringsModel(ringsWith('open', { focus: null }));
+    if (unread.waived) throw new Error('unreachable');
+    expect(unread.rings[0]?.sub).toBeNull();
+  });
+
+  it('gives Tend no count beneath it: §39.5 carries none, so none is drawn', () => {
+    for (const status of ['open', 'closed'] as const) {
+      const model = ringsModel(ringsWith(status));
+      if (model.waived) throw new Error('unreachable');
+      expect(model.rings[2]?.sub, status).toBeNull();
+    }
+  });
+
   it('waives day one with no glyph, the three labels and exactly one sentence', () => {
     const model = ringsModel(
       ringsWith('open', { waived: true, focus: null, ship: null, tend: null }),

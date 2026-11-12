@@ -9,6 +9,7 @@
 import type { RingsState, RingStatus } from '../../generated/protocol';
 import {
   DAY_ONE_SENTENCE,
+  FOCUS_TARGET_SUB,
   RING_CLOSED_MARK,
   RING_LABELS,
   RING_NOT_APPLICABLE,
@@ -48,6 +49,11 @@ export type RingsModel =
 interface Measure {
   readonly fraction: number;
   readonly figure: string;
+  /**
+   * The sub-line a reading carries while the ring is open or closed — only a value the band holds
+   * (Focus's target); `null` where §39 carries none (Tend has no count, §39.5).
+   */
+  readonly sub: string | null;
 }
 
 /** A status the schema added after this table: fail rather than draw it blank. */
@@ -63,7 +69,7 @@ function glyph(key: RingKey, status: RingStatus, measure: Measure): RingGlyph {
   switch (status) {
     case 'open': {
       // Ship's open week says what is recorded, in the sub-line and the accessible name alike.
-      const sub = key === 'ship' ? SHIP_OPEN_SUB : null;
+      const sub = key === 'ship' ? SHIP_OPEN_SUB : measure.sub;
       return {
         ...base,
         fill: 'arc',
@@ -80,7 +86,8 @@ function glyph(key: RingKey, status: RingStatus, measure: Measure): RingGlyph {
         fraction: 1,
         centre: measure.figure,
         closed: true,
-        name: named(measure.figure),
+        sub: measure.sub,
+        name: named(measure.figure, measure.sub),
       };
     case 'nothingToTend':
       return {
@@ -108,18 +115,30 @@ function glyph(key: RingKey, status: RingStatus, measure: Measure): RingGlyph {
   }
 }
 
-/** Focus: `min(credited, target) / target`, its centre the credited minutes. */
+/** One minute figure for the ring: whole minutes, floored, never below zero. */
+const minutes = (seconds: number): string => `${String(Math.floor(Math.max(0, seconds) / 60))}m`;
+
+/**
+ * Focus: `min(credited, target) / target`, its centre the credited minutes, its sub-line the
+ * target in force.
+ */
 function focusMeasure(creditedSeconds: number, targetSeconds: number): Measure {
   const fraction = targetSeconds > 0 ? Math.min(creditedSeconds, targetSeconds) / targetSeconds : 0;
-  return { fraction, figure: `${String(Math.floor(Math.max(0, creditedSeconds) / 60))}m` };
+  return {
+    fraction,
+    figure: minutes(creditedSeconds),
+    sub: FOCUS_TARGET_SUB(minutes(targetSeconds)),
+  };
 }
 
 /** Ship and Tend are binary: one push, one earning debt day — none yet, or one. */
 const binaryMeasure = (status: RingStatus): Measure =>
-  status === 'closed' ? { fraction: 1, figure: '1/1' } : { fraction: 0, figure: '0/1' };
+  status === 'closed'
+    ? { fraction: 1, figure: '1/1', sub: null }
+    : { fraction: 0, figure: '0/1', sub: null };
 
 /** A ring the core left null outside day one has no reading, and is drawn as one. */
-const UNREAD: Measure = { fraction: 0, figure: UNKNOWN };
+const UNREAD: Measure = { fraction: 0, figure: UNKNOWN, sub: null };
 
 export function ringsModel(rings: RingsState): RingsModel {
   if (rings.waived) {

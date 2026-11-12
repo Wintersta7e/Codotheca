@@ -67,6 +67,12 @@ export const TEND_NOTHING_TO_TEND = 'NOTHING TO TEND IN WHAT IS READ';
 export const SHIP_OPEN_SUB = 'NO PUSH RECORDED THIS WEEK';
 
 /**
+ * §43.2's Focus sub-line, the design's `TODAY · TARGET 45m`: the day's target in force, as §39.3's
+ * `FocusRing.targetSeconds` carries it. `target` arrives formatted by the ring's minute figure.
+ */
+export const FOCUS_TARGET_SUB = (target: string): string => `TODAY · TARGET ${target}`;
+
+/**
  * §43.2 and §39.10a, day one's one sentence in place of the three rings' sub-lines. Constraint in
  * full: one sentence; says the rings start tomorrow; never implies a miss; implies no failure and
  * names no absence.

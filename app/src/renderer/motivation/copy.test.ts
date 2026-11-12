@@ -36,6 +36,7 @@ function rendered(): [string, string][] {
   out.push(['RHYTHM_LINE unset', copy.RHYTHM_LINE(0, null, null)]);
   out.push(['RHYTHM_SHORT', copy.RHYTHM_SHORT(3, 4, 2)]);
   out.push(['RHYTHM_SHORT unset', copy.RHYTHM_SHORT(0, null, null)]);
+  out.push(['FOCUS_TARGET_SUB', copy.FOCUS_TARGET_SUB('45m')]);
   out.push(['LINE_RISE one', copy.LINE_RISE(7, reason())]);
   out.push(['LINE_RISE several', copy.LINE_RISE(7, reason({ transitions: 4 }))]);
   out.push(['LINE_RISE none', copy.LINE_RISE(7, null)]);
