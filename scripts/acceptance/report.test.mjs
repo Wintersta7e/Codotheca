@@ -17,9 +17,9 @@ import {
 // Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
 const registryPath = fileURLToPath(new URL('../../acceptance/criteria.json', import.meta.url));
 
-// [p4-gaps] §49.8's sections, admitted by the id form but not yet in `criteria.json`. The register
-// fold owns this list: the change that registers a section removes it here, or the test below fails.
-const UNREGISTERED_P4 = [53, 54, 55, 56];
+// [p4-gaps] §49.8's sections admitted by the id form but not yet in `criteria.json`. The change that
+// registers a section removes it here, or the test below fails; all four registered at once (GA35).
+const UNREGISTERED_P4 = [];
 
 // [p4] §49.1: phase 4's criterion total lives in two places, and this file is not one of them.
 const PHASE4_CRITERIA = Object.entries(PHASE4_SECTIONS)
@@ -121,7 +121,7 @@ test('countByPhase splits the register without a second file', () => {
   // `PHASE4_SECTIONS`' sum; its checks are the register's as registered, measured.
   assert.deepEqual(
     { criteria: counts[4].criteria, checks: counts[4].checks },
-    { criteria: PHASE4_CRITERIA, checks: 634 },
+    { criteria: PHASE4_CRITERIA, checks: 751 },
   );
   assert.equal(
     Object.values(counts[4].byStatus).reduce((a, b) => a + b, 0),
@@ -142,8 +142,8 @@ test('the line a successful run prints states what it validated, per phase', () 
   // about the register, and a run that validated nothing must not read like a clean one.
   assert.equal(
     renderRegistryLine(loadRegistry(registryPath)),
-    `${String(320 + PHASE4_CRITERIA)} criteria / 1373 checks validated — phase 1 70/175, ` +
-      `phase 2 104/225, phase 3 146/339, phase 4 ${String(PHASE4_CRITERIA)}/634`,
+    `${String(320 + PHASE4_CRITERIA)} criteria / 1490 checks validated — phase 1 70/175, ` +
+      `phase 2 104/225, phase 3 146/339, phase 4 ${String(PHASE4_CRITERIA)}/751`,
   );
   assert.equal(
     renderRegistryLine({ criteria: [] }),
@@ -214,7 +214,7 @@ test('the run report splits its check count by phase', () => {
   assert.match(rendered, /Phase 1: 175 checks/u);
   assert.match(rendered, /Phase 2: 225 checks/u);
   assert.match(rendered, /Phase 3: 339 checks/u);
-  assert.match(rendered, /Phase 4: 634 checks/u);
+  assert.match(rendered, /Phase 4: 751 checks/u);
 });
 
 // [p4] §49.5 item 7: a fourth table. [Task 8] Phase 4 is registered, so its heading carries a

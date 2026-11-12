@@ -296,6 +296,12 @@ test('every deferred check names a plan that exists in the plan set', () => {
     'p4-46b',
     'p4-48',
     'p4-49',
+    // [p4-gaps] GA35: the four gaps plans, whose checks are registered before their tests land.
+    'p4-53',
+    'p4-54',
+    'p4-55',
+    'p4-56a',
+    'p4-56b',
   ]);
   // The phase-3 lanes, in the set before the first `AC-P3-*` id is written anywhere. Same rule
   // again: a literal, because the plans live under a gitignored directory.
@@ -2084,6 +2090,19 @@ test('§47 registers its twenty-two criteria', () => {
 });
 test('§48 registers its twenty-seven criteria', () => {
   assertRegisteredPhase4Section(48, { spec: '§48.15', group: 'functional' });
+});
+// [p4-gaps] GA35: §49.8's sections, registered before their tests land.
+test('§53 registers its twelve criteria, over rendered elements', () => {
+  assertRegisteredPhase4Section(53, { spec: '§53.9', group: 'surfaces' });
+});
+test('§54 registers its seventeen criteria', () => {
+  assertRegisteredPhase4Section(54, { spec: '§54.10', group: 'functional' });
+});
+test('§55 registers its twelve criteria', () => {
+  assertRegisteredPhase4Section(55, { spec: '§55.10', group: 'functional' });
+});
+test('§56 registers its twenty-six criteria', () => {
+  assertRegisteredPhase4Section(56, { spec: '§56.13', group: 'functional' });
 });
 
 // §49.1a's Bar column, stated once more and made safe by an invariant instead of a literal list:

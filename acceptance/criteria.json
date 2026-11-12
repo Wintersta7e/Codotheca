@@ -16581,6 +16581,1497 @@
           "assert": "The recovery spec closes the window only after no fixture shelf card still shows the Completion not computed rank, polled within its timeout and never slept, and fails naming those cards otherwise."
         }
       ]
+    },
+    {
+      "id": "P4-53-1",
+      "title": "one ladder",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-1",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_1_one_ladder_in_core_src",
+          "assert": "signal and the projection both call ladder: a scan of core/src finds exactly one 0..=7 ladder match, prints its count of matching arms and of files scanned, and fails at zero files scanned.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P4-53-1-table",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "derive::condition::tests::ac_p4_53_1_projection_is_the_ladder_at_days_plus_horizon",
+          "assert": "Over days-since-clock {0, 7, 8, 30, 31, 90, 91, 275, 276, 365, 366} at horizon 90 the projection equals ladder(days + 90): dormant at 0, neglected at 1 to 275, abandoned from 276."
+        }
+      ]
+    },
+    {
+      "id": "P4-53-2",
+      "title": "the six NULL conditions, through projects.get",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-2",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_none_holds",
+          "assert": "Through handle_project_get over a real migrated index, a project with none of the NULL conditions answers conditionProjection {horizonDays: 90, signal: neglected}, the key present on the wire."
+        },
+        {
+          "id": "AC-P4-53-2-band-null",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_band_null",
+          "assert": "A stored band NULL, alone, answers conditionProjection null through projects.get, the key present."
+        },
+        {
+          "id": "AC-P4-53-2-band-offline",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_band_offline",
+          "assert": "A stored band offline, alone, answers conditionProjection null through projects.get."
+        },
+        {
+          "id": "AC-P4-53-2-band-empty",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_band_empty",
+          "assert": "A stored band empty, alone, answers conditionProjection null through projects.get."
+        },
+        {
+          "id": "AC-P4-53-2-clock-null",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_clock_null",
+          "assert": "A NULL last_interaction_at, alone, answers conditionProjection null through projects.get."
+        },
+        {
+          "id": "AC-P4-53-2-reference",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_reference",
+          "assert": "is_reference, alone, answers conditionProjection null through projects.get."
+        },
+        {
+          "id": "AC-P4-53-2-archived",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_archived",
+          "assert": "is_archived, alone, answers conditionProjection null through projects.get."
+        },
+        {
+          "id": "AC-P4-53-2-lifecycle-done",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_lifecycle_done",
+          "assert": "lifecycle = done, alone and guarded on the row reading Done, answers conditionProjection null through projects.get."
+        },
+        {
+          "id": "AC-P4-53-2-session-open",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_session_open",
+          "assert": "An open session, alone and guarded on live_session being set, answers conditionProjection null through projects.get."
+        },
+        {
+          "id": "AC-P4-53-2-fully-excluded",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_fully_excluded",
+          "assert": "Every non-removed location excluded, alone and guarded on isExcluded, answers conditionProjection null through projects.get."
+        },
+        {
+          "id": "AC-P4-53-2-partially-excluded",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "condition_projection::ac_p4_53_2_partially_excluded",
+          "assert": "A partially excluded project, guarded on isExcluded false, answers {horizonDays: 90, signal: neglected} through projects.get."
+        }
+      ]
+    },
+    {
+      "id": "P4-53-3",
+      "title": "never warmer than NOW",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-3",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-53",
+          "test": "derive::condition::tests::ac_p4_53_3_never_warmer_than_now",
+          "assert": "A property test over (clock, derive-now <= read-now) asserts the projection's ladder position is at or past the stored band's and that signal is never offline or empty."
+        },
+        {
+          "id": "AC-P4-53-3-ghost",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "ConditionTrack.test.tsx::ac_p4_53_3",
+          "assert": "A track handed a projection warmer than NOW, and one equal to it, draws no ghost."
+        }
+      ]
+    },
+    {
+      "id": "P4-53-4",
+      "title": "the ghost label is the wire's",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-4",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "ProjectPage.test.tsx::ac_p4_53_4 the ghost label is the wire's horizon",
+          "assert": "ProjectPage mounted with a projects.get answer carrying {horizonDays: 45, signal: neglected} over a dormant row renders a ghost on the neglected rung whose label shows 45, and no 90 anywhere in the track."
+        }
+      ]
+    },
+    {
+      "id": "P4-53-5",
+      "title": "the empty dial is gone",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-5",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "ConditionPanel.test.tsx::ac_p4_53_5 draws no panel for a NULL band, with and without isReference",
+          "assert": "ConditionPanel with signal null, with isReference false and true, renders no [data-testid=cp-condition] and no .cp-condition-rose; it replaces the old outer-needle test rather than sitting beside it."
+        },
+        {
+          "id": "AC-P4-53-5-excluded",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "ProjectPage.test.tsx::ac_p4_53_5 a fully excluded project's page draws no CONDITION panel",
+          "assert": "GA20: a fully excluded project's page, its band NULL and isExcluded true, draws no CONDITION panel at all."
+        }
+      ]
+    },
+    {
+      "id": "P4-53-6",
+      "title": "the dial's states",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-6",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "ConditionPanel.test.tsx::ac_p4_53_6",
+          "assert": "Per the dial's state table: material NULL gives no inner-ring element, no divergence and one legend row; both clocks on the ladder light exactly one sector per ring at LADDER_POSITION, filled with conditionDot's value; offline or empty on a ring, or isReference or isArchived, light zero sectors; a NULL clock's legend row holds the band word and matches no /\\b0\\s*d\\b/; the visible centre word equals the slug."
+        },
+        {
+          "id": "AC-P4-53-6-dots",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "ProjectPage.test.tsx::AC-P4-53-6",
+          "assert": "The project page's condition dots still number three (the existing dots test, re-tagged with the criterion id)."
+        }
+      ]
+    },
+    {
+      "id": "P4-53-7",
+      "title": "the track's states",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-7",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "ConditionTrack.test.tsx::ac_p4_53_7",
+          "assert": "One fixture per track row: no track element for offline, empty, isReference or isArchived; NOW on the stored rung; a ghost only when strictly colder and never for abandoned; no sentence element in any state; the title matches no /decay/i and no rendered string matches /warm|cooling/i."
+        }
+      ]
+    },
+    {
+      "id": "P4-53-8",
+      "title": "the bar is litCounts",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-8",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "DamageBar.test.tsx::ac_p4_53_8",
+          "assert": "Over open scored, open shown_only and unverified items across three layers, chosen so the sum differs from every per-layer count and from scoredOpen: segments equal litCounts in DECAY_LAYER_ORDER, each flex-grow equals its count, the shown_only note appears on exactly the layers holding one, and the sum appears in no text node, title or accessible name in the bar."
+        }
+      ]
+    },
+    {
+      "id": "P4-53-9",
+      "title": "NO DAMAGE only under the shared predicate",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-9",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "DamageBar.test.tsx::ac_p4_53_9",
+          "assert": "Table-driven over (scoredOpen, basis, debt): the NO DAMAGE block renders iff litCounts is empty, no item is unverified and nothingOpen is true; for ran = 0, unknown > 0, a lone unverified item and a NULL basis neither the block nor any bar element exists."
+        },
+        {
+          "id": "AC-P4-53-9-openline",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "checkForms.test.ts::ac_p4_53_9 openLine reads nothing open exactly when nothingOpen does",
+          "assert": "For every (scoredOpen, basis) row of the table, openLine returns nothing open exactly when nothingOpen does."
+        }
+      ]
+    },
+    {
+      "id": "P4-53-10",
+      "title": "scope gates reach the new files",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-10",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "app/test/healthScope.test.ts::AC-P4-53-10 the word ban reads DamageBar.tsx",
+          "assert": "AC-P3-30-2's word-ban audit prints its count of files under project/health/, the set is non-empty and holds DamageBar.tsx, and the audit stays green; AC-P3-30-11a stays green."
+        },
+        {
+          "id": "AC-P4-53-10-imports",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "app/test/healthScope.test.ts::AC-P4-53-10 project/condition imports no HealthState, HealthSummary or HealthReading",
+          "assert": "A scan of project/condition/ prints its count of files, fails at zero, and finds no import of HealthState, HealthSummary or HealthReading.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P4-53-11",
+      "title": "static",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-11",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "conditionStyles.test.tsx::ac_p4_53_11",
+          "assert": "With projectPage.css and motion.css asserted non-empty first, a mounted page under each data-effects-tier resolves, through getComputedStyle on the real dial sector, track-mark and damage-segment elements, animation-name none and a zero transition-duration."
+        },
+        {
+          "id": "AC-P4-53-11-clamp",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "app/test/tierClamp.test.ts::ac_p4_53_11 the clamp set is the integration base's and holds no \u00a753 class",
+          "assert": "motion.css's derived clamp selector set equals its frozen base set and holds no class this section adds."
+        }
+      ]
+    },
+    {
+      "id": "P4-53-12",
+      "title": "ink",
+      "group": "surfaces",
+      "spec": "\u00a753.9",
+      "checks": [
+        {
+          "id": "AC-P4-53-12",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-53",
+          "test": "conditionStyles.test.tsx::ac_p4_53_12",
+          "assert": "Every colour declared by a rule this section adds resolves to a design token or a --cdt-* property set from conditionDot (the rule count printed, failing at zero), and every decision-carrying element resolves its color to --text-3 or lighter, measured on the mounted element.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P4-54-1",
+      "title": "restoration by press, through production",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-1",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_1_restoration_by_press_through_production",
+          "assert": "A walk-seeded open missing_license, a LICENSE committed, then projects.recheck through the production handler to the real JobRunner: the reply is queued true and exactly one projects.health_delta with detectedIn foreground carries the item's layer decreasing."
+        },
+        {
+          "id": "AC-P4-54-1-order",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_1_restoration_by_press_through_production",
+          "assert": "The same test, extended when the chain's terminal signal lands: the foreground delta is emitted before the chain's endsRecheck true job_done.",
+          "shares": "AC-P4-54-1"
+        }
+      ]
+    },
+    {
+      "id": "P4-54-2",
+      "title": "by focus and by mount",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-2",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "the page-mount re-check (\u00a754.4 caller 2) AC-P4-54-2 mounting the page sends exactly one projects.recheck",
+          "assert": "Mounting the project page sends exactly one projects.recheck."
+        },
+        {
+          "id": "AC-P4-54-2-reload",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "the page-mount re-check (\u00a754.4 caller 2) AC-P4-54-2 an upserted-driven projects.get reload sends none",
+          "assert": "A projects.get reload driven by upserted sends no projects.recheck."
+        },
+        {
+          "id": "AC-P4-54-2-focus",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "app/src/renderer/project/recheck/useRecheck.test.tsx::AC-P4-54-2 a focus event sends exactly one projects.recheck",
+          "assert": "A focus event on a mounted page with canRecheck true sends exactly one projects.recheck."
+        },
+        {
+          "id": "AC-P4-54-2-visibility",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "app/src/renderer/project/recheck/useRecheck.test.tsx::AC-P4-54-2 visibilitychange to visible sends exactly one",
+          "assert": "A visibilitychange to visible on a mounted page with canRecheck true sends exactly one projects.recheck."
+        },
+        {
+          "id": "AC-P4-54-2-core",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_2_the_same_command_from_any_caller_yields_the_foreground_delta",
+          "assert": "The AC-P4-54-1 fixture through the same command yields the foreground delta; the core cannot tell callers apart."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-3",
+      "title": "J1-fed sources",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-3",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_3_a_local_tag_closes_no_release_foreground",
+          "assert": "A local tag closes no_release, recorded foreground by a re-check."
+        },
+        {
+          "id": "AC-P4-54-3-push",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_3_a_push_made_outside_the_app_closes_unpushed_commits_foreground",
+          "assert": "A push to a local bare upstream made outside the app closes unpushed_commits, recorded foreground by a re-check."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-4",
+      "title": "chain mapping",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-4",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_4_the_chain_mapping_over_every_kind_reference_and_origin",
+          "assert": "Over every JobKind x is_reference in {None, Some(true), Some(false)} x origin: Walk equals the pre-change mapping, Interactive differs only in J1.5 and J7 at Interactive, DailyPass chains nothing; the case count is derived from JobKind::ALL, printed, and the test fails at zero.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P4-54-5",
+      "title": "no concurrent runs",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-5",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_5_no_two_in_flight_jobs_share_a_kind_and_location",
+          "assert": "Concurrent walk chains and re-checks over a fixture library: the count of moments two in-flight jobs share one (kind, location) is printed and is 0, and the number of jobs run is printed and fails at zero."
+        },
+        {
+          "id": "AC-P4-54-5-queue",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "jobs::queue::tests::a_ready_job_whose_kind_and_location_are_in_flight_is_skipped",
+          "assert": "pop_ready skips a ready job whose (kind, location) is in flight, and pops it after that job is released."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-6",
+      "title": "terminal signal",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-6",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_6_",
+          "assert": "One case per row of the terminal-signal table, printing the case count and failing at zero: Partial J7 and a transient J1 retry give endsRecheck false; J7 done, J1 failed, J1.5 failed, J1.5 done on a Reference project and J1.5 done with authorship not computed give true; every Walk settle gives false.",
+          "scanning": true
+        },
+        {
+          "id": "AC-P4-54-6-removed",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_6_a_dropped_chain_job_ends_the_recheck_with_no_state_row",
+          "assert": "A chain job dropped at dispatch because its copy was removed ends the re-check with endsRecheck true and writes no project_job_state row."
+        },
+        {
+          "id": "AC-P4-54-6-covered",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_6_a_covered_chain_job_is_dropped_and_ends_the_recheck",
+          "assert": "A chain job dropped at dispatch because its copy is covered by the exclusion gate ends the re-check with endsRecheck true and writes no project_job_state row."
+        },
+        {
+          "id": "AC-P4-54-6-midrun",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_6_a_copy_excluded_while_its_j1_runs_still_ends_the_recheck",
+          "assert": "A copy excluded while its J1 runs still ends the re-check with exactly one endsRecheck true job_done and queues no J1.5."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-7",
+      "title": "queued",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-7",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_7_no_current_primary_answers_false",
+          "assert": "A project with no current primary copy (no location, or its only copy removed) answers queued false and queues nothing."
+        },
+        {
+          "id": "AC-P4-54-7-coalesce",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_7_an_already_queued_ref_state_coalesces",
+          "assert": "With a walk's J1 already queued for the copy, the command answers queued true and the queue holds exactly one J1, now at Interactive."
+        },
+        {
+          "id": "AC-P4-54-7-covered",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_7_a_covered_primary_answers_false_and_queues_nothing",
+          "assert": "A primary copy covered by the exclusion gate answers queued false and nothing is queued."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-8",
+      "title": "control states",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-8",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "app/src/renderer/project/recheck/recheckable.test.ts::AC-P4-54-8 canRecheck is false for absent, suppressed, frozen, isExcluded, an unscanned primary and zero re-checkable items",
+          "assert": "canRecheck is false for absent, suppressed, frozen, isExcluded, an unscanned primary and zero re-checkable items; each re-checkable source alone makes it true and each of the three non-re-checkable alone does not."
+        },
+        {
+          "id": "AC-P4-54-8-pending",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "app/src/renderer/project/recheck/useRecheck.test.tsx::AC-P4-54-8 pending ends on each terminal",
+          "assert": "Pending ends on each of the five terminals; with fake timers advanced ten minutes and no terminal it is still pending."
+        },
+        {
+          "id": "AC-P4-54-8-control",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "app/src/renderer/project/recheck/RecheckControl.test.tsx::AC-P4-54-8 the control is absent unless canRecheck, and drawn otherwise",
+          "assert": "Rendered through Rail, the CHECK AGAIN control is absent unless canRecheck holds, and drawn otherwise."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-9",
+      "title": "an open page under a new exclusion",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-9",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_9_open_page_then_exclude_then_press",
+          "assert": "GA3: projects.get, then the primary copy excluded, then projects.recheck answers queued false and no job_done follows for the project."
+        },
+        {
+          "id": "AC-P4-54-9-control",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "app/src/renderer/project/recheck/RecheckControl.test.tsx::AC-P4-54-9 after the row reports isExcluded the control is absent and a focus event sends nothing",
+          "assert": "GA3: pending ends on queued false with no job_done; after the row reports isExcluded the control is absent and a focus event sends nothing."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-10",
+      "title": "focus throttle",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-10",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "app/src/renderer/project/recheck/useRecheck.test.tsx::AC-P4-54-10",
+          "assert": "Two focus events 29 s apart send one re-check and a third at 30 s or later sends a second; none while one is pending, after unmount, for a Reference project or for a covered one; a remount within 30 s does not reset the throttle."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-11",
+      "title": "reads only",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-11",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_11_a_recheck_runs_read_intents_only",
+          "assert": "During AC-P4-54-1's press under a hostile repo config, every git invocation is a read intent: the invocation count is printed and fails at zero, the mutating backend records no call, and no file under the worktree or .git changes byte for byte.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P4-54-12",
+      "title": "no network",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-12",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_12_a_recheck_queues_no_sync_task",
+          "assert": "A re-check queues no sync task: zero on_project_visible calls from projects.recheck and the sync_task_state rows byte-equal before and after."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-13",
+      "title": "XP",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-13",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_13_xp_from_a_recheck_is_the_walks",
+          "assert": "A re-check that closes nothing writes zero xp_events rows; one that closes an item writes exactly the rows the same closure writes under a walk."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-14",
+      "title": "one re-checkable set",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-14",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "app/src/renderer/project/recheck/recheckable.test.ts::AC-P4-54-14 the re-checkable set and the three non-re-checkable sources equal the schema's DebtSource variants with no overlap",
+          "assert": "The renderer's re-checkable sources together with ci_red, dependency_advisory and abandoned_with_debt equal the schema's DebtSource variants exactly, with no overlap, read from the schema file and asserted non-empty first.",
+          "mirror": {
+            "other": "protocol/schema/protocol.json"
+          }
+        }
+      ]
+    },
+    {
+      "id": "P4-54-15",
+      "title": "result line",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-15",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "app/src/renderer/project/recheck/RecheckControl.test.tsx::AC-P4-54-15",
+          "assert": "A press ending ok true with no delta shows the result line built from the primary's refstateObservedAt; a press during which a delta arrived, even one in which nothing decreased, shows none; a mount or focus re-check never shows one."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-16",
+      "title": "static pending",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-16",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-54",
+          "test": "app/src/renderer/project/recheck/RecheckControl.test.tsx::AC-P4-54-16 pending is static under every tier",
+          "assert": "With projectPage.css asserted non-empty first, a pending control resolves animationName none under each data-effects-tier."
+        }
+      ]
+    },
+    {
+      "id": "P4-54-17",
+      "title": "page open asks no standalone J7",
+      "group": "functional",
+      "spec": "\u00a754.10",
+      "checks": [
+        {
+          "id": "AC-P4-54-17",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-54",
+          "test": "recheck::ac_p4_54_17_page_open_asks_no_standalone_content_scan",
+          "assert": "projects.get queues no J7; J7 reaches an opened page's project only through the re-check chain, at Interactive."
+        }
+      ]
+    },
+    {
+      "id": "P4-55-1",
+      "title": "the ci_red repair, cross-surface",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-1",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "repo_shields_ci_red::ac_p4_55_1_removing_ci_sets_ci_red_aside_and_pays_nothing",
+          "assert": "GA28 core half, through the production JobRunner settle: a project with a CI config and a failing default-branch run opens ci_red; with the config removed and J1 then J7 re-run, ciGreen is na, the reading's ci_red check is notApplicable, ProjectDetail.debt holds no ci_red, the item is still open (set aside, not closed) and no health_delta or debt_day row is written."
+        },
+        {
+          "id": "AC-P4-55-1-hero",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-55",
+          "test": "app/src/renderer/project/hero/shields.ac.test.tsx::AC-P4-55-1 a project whose CI config was removed reads BUILD NONE and lights no crack",
+          "assert": "GA28 hero half, asserted with AC-P4-55-4: the same project's hero reads BUILD as the ci fail value (NONE) and renders zero lit crack anchors."
+        }
+      ]
+    },
+    {
+      "id": "P4-55-2",
+      "title": "one expression",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-2",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "completion_evaluator::ac_p4_55_2_ci_red_and_ci_green_read_one_rule",
+          "assert": "source_not_applicable and evaluate's CiGreen arm read one rule over every ci ruling x archetype x has_ci (present, absent, not_read, row-absent); the table is printed with its row count derived from the inputs, and not_read or row-absent leave ci_red applicable."
+        }
+      ]
+    },
+    {
+      "id": "P4-55-3",
+      "title": "every row of the shield table",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-3",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-55",
+          "test": "app/src/renderer/card/repoShields.test.ts::AC-P4-55-3",
+          "assert": "One test per row of the shield table against repoShields, plus the star 0 case and both stale clauses; the row count is printed and derived from the table."
+        },
+        {
+          "id": "AC-P4-55-3-excluded",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-55",
+          "test": "app/src/renderer/card/repoShields.test.ts::AC-P4-55-3 an excluded project draws \u00a755.3's shields from its purged checks",
+          "assert": "GA22: a fully excluded project draws the shield table's shields from its purged checks: LICENSE and RELEASE UNKNOWN from their purged checks, BUILD from the kept ciGreen, the star as observed."
+        }
+      ]
+    },
+    {
+      "id": "P4-55-4",
+      "title": "shield equals checklist",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-4",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-55",
+          "test": "app/src/renderer/project/hero/shields.ac.test.tsx::AC-P4-55-4 the shield shows the checklist's state",
+          "assert": "For license, ci/ciGreen and release and every state, the shield's state equals the HEALTH checklist row's state rendered from the same ProjectDetail; the test reads both rendered DOMs and prints the pairs."
+        }
+      ]
+    },
+    {
+      "id": "P4-55-5",
+      "title": "licence identification",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-5",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "repo_shields_license::ac_p4_55_5_identification",
+          "assert": "The identifier line wins over the title table; every table entry identifies from a fixture text; a GPL-3.0 and an MPL-2.0 text are not AGPL-3.0; an unknown text is unidentified; two root files join byte-ordered."
+        }
+      ]
+    },
+    {
+      "id": "P4-55-6",
+      "title": "the grant gates the licence read",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-6",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "acceptance_content_scan::ac_p4_55_6_the_grant_gates_every_licence_read",
+          "assert": "With contentScanEnabled off, a J7 run reads zero licence blobs, counted at the GitBackend seam and printed, and licenseId is NULL; with the grant on the oid is requested once and licenseId is the fixture's id."
+        },
+        {
+          "id": "AC-P4-55-6-revoke",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "acceptance_content_scan::ac_p3_29_18_turning_the_grant_off_deletes_what_it_wrote",
+          "assert": "AC-P3-29-18's test, extended in place under its own name: turning the grant off after an identification clears license_id and license_id_head_oid, its before/after counts printed.",
+          "shares": "AC-P3-29-18"
+        }
+      ]
+    },
+    {
+      "id": "P4-55-7",
+      "title": "the licence reaches existing projects",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-7",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "acceptance_content_scan::ac_p4_55_7_an_existing_complete_scan_gains_its_licence_id",
+          "assert": "A project whose scan completed at HEAD before migration 0025 (GA32), with the grant on, gets license_id_head_oid = head_oid on its next J7 run while complete_head_oid is unchanged."
+        }
+      ]
+    },
+    {
+      "id": "P4-55-8",
+      "title": "newest tag",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-8",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "repo_shields_tag::ac_p4_55_8_newest_tag_by_date_then_name",
+          "assert": "The newest tag is chosen by date with a name tie-break over mixed annotated and lightweight tags, and an empty list gives none."
+        },
+        {
+          "id": "AC-P4-55-8-basis",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "repo_shields_tag::ac_p4_55_8_the_basis_is_taken_before_the_listing",
+          "assert": "J4 takes the ref-state basis before listing tags, and the stored basis equals it."
+        },
+        {
+          "id": "AC-P4-55-8-moved",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "repo_shields_tag::ac_p4_55_8_a_ref_moved_mid_read_withholds_the_name",
+          "assert": "Refs moved mid-read, after the listing, leave latestTag NULL (TAGGED); the product archive tag is excluded through is_product_archive_tag."
+        }
+      ]
+    },
+    {
+      "id": "P4-55-9",
+      "title": "shields on the hero only",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-9",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-55",
+          "test": "app/src/renderer/card/shieldSurfaces.test.tsx::AC-P4-55-9",
+          "assert": "GA7: over the shelf at every density, the list, the palette and Peek zero shield elements render, the count of cards and rows scanned printed and failing at zero; a HeroFrame with no shields prop renders none.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P4-55-10",
+      "title": "the shield geometry gate",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-10",
+          "status": "deferred",
+          "runner": "e2e",
+          "owner": "p4-55",
+          "test": "app/e2e/repo-shields.spec.ts::AC-P4-55-10",
+          "assert": "On a real mounted hero in the worst case (four chips, NEW and four shields), the last shield ends above the jewel stripe's top; the test prints both measured coordinates. Written, owed at integration."
+        }
+      ]
+    },
+    {
+      "id": "P4-55-11",
+      "title": "shield contrast",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-11",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-55",
+          "test": "app/src/renderer/card/shieldSurfaces.test.tsx::AC-P4-55-11",
+          "assert": "With the imported CSS asserted non-empty first, each shield fill/text pair resolved by getComputedStyle on a real mounted shield is at least 5.9:1, and the five ratios are printed."
+        }
+      ]
+    },
+    {
+      "id": "P4-55-12",
+      "title": "migration and sidecar",
+      "group": "functional",
+      "spec": "\u00a755.10",
+      "checks": [
+        {
+          "id": "AC-P4-55-12",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "repo_shields_migration::ac_p4_55_12_0025_adds_four_columns_and_rebuilds_nothing",
+          "assert": "GA32: migration 0025 applies on a 0024 index and adds its four columns without rebuilding either table."
+        },
+        {
+          "id": "AC-P4-55-12-sidecar",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-55",
+          "test": "sidecar_registry::ac_p4_55_12_the_tag_columns_are_derivable_by_history",
+          "assert": "The sidecar classification names both new location columns derivable: J4 writes the newest tag and its basis."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-1",
+      "title": "CHANGE writes the right tier",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-1",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56b",
+          "test": "launch_target_change::ac_p4_56_1_a_language_pick_writes_the_language_tier",
+          "assert": "targets.setDefault with language Rust writes tier 3, a Rust project's targets.list reports the language tier, and the chosen row's bytes and scope columns are unchanged."
+        },
+        {
+          "id": "AC-P4-56-1-any",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56b",
+          "test": "launch_target_change::ac_p4_56_1_an_any_pick_writes_the_global_tier",
+          "assert": "targets.setDefault with no language writes tier 4, and a project of another language resolves the global tier to the new head."
+        },
+        {
+          "id": "AC-P4-56-1-drawer",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/src/renderer/settings/Drawer.test.tsx::AC-P4-56-1",
+          "assert": "Through the drawer, an RS pick sends targets.setDefault with language Rust and an ANY pick sends it with no language."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-2",
+      "title": "launch-target row display",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-2",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/src/renderer/settings/groupsScan.test.tsx::AC-P4-56-2",
+          "assert": "A language row shows its own scope's head editor; with none, the ANY head marked inherited; NOT SET only with no global editor; a terminal row in the global scope is never displayed."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-3",
+      "title": "the tag map mirror",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-3",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/test/launchTargetLanguages.test.ts::AC-P4-56-3 every mapped launch-target language is one the core produces",
+          "assert": "The test reads core/src/jobs/classify.rs, prints the five mapped languages it found, and fails if one is not produced there.",
+          "mirror": {
+            "other": "core/src/jobs/classify.rs"
+          }
+        }
+      ]
+    },
+    {
+      "id": "P4-56-4",
+      "title": "OTHER inserts",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-4",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/test/shellServices.test.ts::AC-P4-56-4",
+          "assert": "A renderer targetId in the IPC payload is not forwarded, a missing name becomes the dialog path's file stem, a supplied name is kept, and a cancel sends no request."
+        },
+        {
+          "id": "AC-P4-56-4-core",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56b",
+          "test": "launch_target_change::ac_p4_56_4_upsert_without_a_target_id_inserts_and_heads",
+          "assert": "targets.upsert with no targetId inserts a row that heads its scope, the row count rises by one and no existing row changes."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-5",
+      "title": "a live session survives a change",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-5",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56b",
+          "test": "launch_target_change::ac_p4_56_5_a_live_session_survives_both_change_paths",
+          "assert": "A session started on target T, then a setDefault and an upsert: session.target_id and T's row are byte-identical, and the next launch resolves the new head."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-6",
+      "title": "targets epoch",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-6",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/src/renderer/project/useProjectDetail.test.tsx::AC-P4-56-6 an open page re-reads its target after a drawer change",
+          "assert": "An open page's OPENS IN shows the new default after a drawer change, without a remount."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-7",
+      "title": "launch targets survive a rebuild",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-7",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56b",
+          "test": "launch_target_sidecar::ac_p4_56_7",
+          "assert": "A language default, a custom global default and a tier-2 location row are exported, the index is rebuilt through the production path, and each resolves at its tier with identical bytes; the registry gate checks all three halves."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-8",
+      "title": "drawer hide",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-8",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/src/renderer/settings/HidePicker.test.tsx::AC-P4-56-8",
+          "assert": "Picking a project calls projects.setFlags {isHidden: true}; it leaves the bare query, the palette and the counts; is:hidden reaches it; its hidden-list control unhides it; Escape returns focus to CHOOSE."
+        },
+        {
+          "id": "AC-P4-56-8-core",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56b",
+          "test": "hide_state_rule::ac_p4_56_8",
+          "assert": "A hidden project's live session, notes and XP survive the hide."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-9",
+      "title": "one hide writer",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-9",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/test/hideWriter.test.ts::AC-P4-56-9",
+          "assert": "Renderer call sites sending a non-null isHidden are the drawer row alone (and, after p4-46b, the page control); none writes is_hidden another way."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-10",
+      "title": "identity add",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-10",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56b",
+          "test": "identity_add::ac_p4_56_10",
+          "assert": "An added address previews movedFromReference > 0 for a project it authored, applies as a manual, confirmed row, survives a rescan seed and moves the project out of Reference; a preview never applied writes no row; a different-ASCII-case duplicate ticks the existing row."
+        },
+        {
+          "id": "AC-P4-56-10-card",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/src/renderer/firstrun/IdentityCard.test.tsx::AC-P4-56-10",
+          "assert": "The identity card's add, preview and confirm send the added address; an add abandoned before apply sends nothing."
+        },
+        {
+          "id": "AC-P4-56-10-drawer",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/src/renderer/settings/groupsData.test.tsx::AC-P4-56-10",
+          "assert": "The drawer's identity slot confirms the added address through the same command."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-11",
+      "title": "one case fold",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-11",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56b",
+          "test": "identity_add::ac_p4_56_11_preview_and_apply_move_the_same_projects_for_a_non_ascii_capital",
+          "assert": "For an address with a non-ASCII capital, preview and apply move the same projects."
+        },
+        {
+          "id": "AC-P4-56-11-card",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/src/renderer/firstrun/IdentityCard.test.tsx::AC-P4-56-11",
+          "assert": "The identity card folds case the way the core does, so a different-ASCII-case duplicate ticks the existing row."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-12",
+      "title": "hidden projects move with the set",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-12",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56b",
+          "test": "identity_add::ac_p4_56_12_a_hidden_project_moves_with_the_set",
+          "assert": "A hidden project's authorship changes on apply and is still correct on unhide; preview counted it."
+        },
+        {
+          "id": "AC-P4-56-12-refusals",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56b",
+          "test": "identity_add::ac_p4_56_12",
+          "assert": "Each invalid address answers PROTOCOL on preview and on apply and writes nothing."
+        },
+        {
+          "id": "AC-P4-56-12-field",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56b",
+          "test": "app/src/renderer/settings/identityAddress.test.ts::AC-P4-56-12",
+          "assert": "The field's own validation never sends an address the core would refuse."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-13",
+      "title": "the exclusion gate audit",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-13",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_audit::ac_p4_56_13",
+          "assert": "GA1: every row of the gate's entry-point table, driven against a covered location through the real routes with a spawn-recording git backend and an open-recording filesystem probe, records zero spawns and zero opens and answers as its row states; the count of entry points exercised is printed and the test fails below the table's count, and so at zero.",
+          "scanning": true
+        }
+      ]
+    },
+    {
+      "id": "P4-56-14",
+      "title": "add during a job",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-14",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_interleave::ac_p4_56_14",
+          "assert": "Through the real job writers and exclusions.add: a job admitted under the old list and held mid-read writes nothing and chains nothing after the add commits; a job that committed before the add has its rows gone after it; instrumented, no read check admits a covered target between the add's commit and its release. GA19: project B mid content scan, an add covering project A, then B's J7 run to completion closes zero debt_item rows and writes zero debt_day and zero health_delta rows for B."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-15",
+      "title": "mid-walk",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-15",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_interleave::ac_p4_56_15",
+          "assert": "An entry added during a walk stops descent at the next directory tested; the run is neither cancelled nor restarted."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-16",
+      "title": "a fully excluded project leaves",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-16",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_outcomes::ac_p4_56_16",
+          "assert": "Through projects.list: isExcluded true; it leaves the bare query, the palette and every count; is:excluded reaches it; sessions, notes, XP, flags and project_committer are kept; every project-scope purge row is gone; projects.get, projects.peek, the health reading and completion return not computed, never zero or clean; repository-evidenced project_check keys read unknown with reason notObserved (GA22)."
+        },
+        {
+          "id": "AC-P4-56-16-page",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56a",
+          "test": "app/src/renderer/project/excludedPage.test.tsx::AC-P4-56-16",
+          "assert": "As amended by GA20 and GA22: the fully excluded project's page draws no CONDITION panel, and its shields follow the shield table (LICENSE and RELEASE UNKNOWN, BUILD from the kept ciGreen, the star as observed)."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-17",
+      "title": "mixed copies",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-17",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_outcomes::ac_p4_56_17",
+          "assert": "One copy excluded and one allowed: isExcluded false; project-keyed rows kept; the excluded copy's branch, latest_tag_name and latest_tag_basis NULL, presence unscanned, not primary; the blob cache empty; the page unchanged except facts only the excluded copy supplied, which read not computed until an allowed copy's next walk (GA34)."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-18",
+      "title": "removal",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-18",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_remove::ac_p4_56_18",
+          "assert": "Removing the exclusion returns the project with excluded = 0, presence unscanned and purged facts not computed; the recording backend shows zero spawns until page open, CHECK AGAIN, focus, the daily pass or scan.start (GA26)."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-19",
+      "title": "path keys on both platforms",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-19",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_commands::ac_p4_56_19",
+          "assert": "GA2, Unix: a non-UTF-8 path entry stores as its path_key bytes, round-trips through the sidecar, and covers its location."
+        },
+        {
+          "id": "AC-P4-56-19-win",
+          "status": "manual",
+          "runner": "manual",
+          "gate": "WINDOWS-NATIVE",
+          "owner": "p4-56a",
+          "assert": "GA2, Windows-native: a dialog path entry covers a location stored from a \\\\?\\-canonicalised path.",
+          "reason": "The clause names Windows-native canonicalised paths, and every capture the register grades is a Linux run, so it is discharged by a recorded Windows-native run of the same core test against the graded commit (R207).",
+          "platforms": ["windows"],
+          "record": null
+        }
+      ]
+    },
+    {
+      "id": "P4-56-20",
+      "title": "exclusion refusals",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-20",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_commands::ac_p4_56_20",
+          "assert": "Each ExclusionRefusal answers from its input in the refusal table; a path outside every root is accepted with locationsCovered 0; roots.add under a path entry answers excluded."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-21",
+      "title": "preview equals apply",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-21",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_commands::ac_p4_56_21",
+          "assert": "addName with apply false writes nothing, and its two counts equal the following apply's."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-22",
+      "title": "exclusions round-trip",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-22",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_roundtrip::ac_p4_56_22",
+          "assert": "The sidecar carries scan_exclusions and a rebuild restores it before any scan, so the rebuild's own scan indexes nothing covered; diag.bundle carries the list, anonymised by default."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-23",
+      "title": "one visibility predicate",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-23",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "visibility_fragment::ac_p4_56_23",
+          "assert": "The core is_hidden classification test prints its count of classified sites and fails on an unclassified one."
+        },
+        {
+          "id": "AC-P4-56-23-renderer",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56a",
+          "test": "app/test/visibilityReaders.test.ts::AC-P4-56-23",
+          "assert": "The renderer reader test prints its count of classified readers and fails on an unclassified one."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-24",
+      "title": "the purge classification",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-24",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_purge::ac_p4_56_24",
+          "assert": "Every Derivable registry entry has a purge class (GA24's five, project_check named as a section with its derived columns purged); the test prints the classified count and fails on a missing one."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-25",
+      "title": "exclusions reach the WSL worker",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-25",
+          "status": "deferred",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_wsl::ac_p4_56_25",
+          "assert": "The production request builder's skip_extra carries the user names and the distro's path entries as bytes, and the worker's list skips both."
+        }
+      ]
+    },
+    {
+      "id": "P4-56-26",
+      "title": "group 3 is real",
+      "group": "functional",
+      "spec": "\u00a756.13",
+      "checks": [
+        {
+          "id": "AC-P4-56-26",
+          "status": "deferred",
+          "runner": "vitest",
+          "owner": "p4-56a",
+          "test": "app/src/renderer/settings/groupsExclusions.test.tsx::AC-P4-56-26",
+          "assert": "The drawer's + ADD and each user chip's control are registered rows whose backing is exclusions.* in the dead-switch registry; the first-run caption constant is unchanged."
+        }
+      ]
     }
   ]
 }
