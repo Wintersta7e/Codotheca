@@ -801,6 +801,8 @@ fn an_empty_dot_git_directory_is_neither_found_nor_reported() {
 
 mod bridge {
     use super::{indexable, rig, runner_with_wsl, Rig};
+    use codotheca_core::scan::run::RunTally;
+    use codotheca_core::scan::wsl::WslBridgeRef;
     use codotheca_core::scan::{ScanProblemKind, WalkEvent, WalkOptions};
     use codotheca_core::testing::wsl::LoopbackLauncher;
     use codotheca_core::testing::{FakeGitBackend, FakeMountResolver};
@@ -855,6 +857,7 @@ mod bridge {
             &WalkOptions::default(),
             1,
             7,
+            &RunTally::new(0),
             &|event| {
                 if let WalkEvent::Problem(p) = event {
                     problems.lock().expect("lock").push(p.kind);
@@ -923,6 +926,7 @@ mod bridge {
             &WalkOptions::default(),
             1,
             7,
+            &RunTally::new(0),
             &|event| {
                 if let WalkEvent::Problem(p) = event {
                     problems.lock().expect("lock").push(p.kind);
@@ -933,5 +937,101 @@ mod bridge {
             problems.into_inner().expect("lock"),
             vec![ScanProblemKind::OfflineStore]
         );
+    }
+
+    /// The distro's repositories are the user's repositories on this machine, so they count in
+    /// the run's found figure, and the directories its worker walked join the walked figure on
+    /// top of what the run had walked before the crossing. Driven through the real worker loop
+    /// (`LoopbackLauncher`) over a real tree; no Linux walk reaches a `\\wsl$\` bridge itself.
+    #[test]
+    fn a_crossing_adds_the_distros_walked_dirs_and_repositories_to_the_run() {
+        let r = rig();
+        let tree = tempfile::tempdir().expect("tempdir");
+        // Past one 512-directory frame, so the worker reports while it walks.
+        for i in 0..600 {
+            std::fs::create_dir_all(tree.path().join(format!("d{i}"))).expect("mkdir");
+        }
+        for repo in ["a", "b"] {
+            std::fs::create_dir_all(tree.path().join(repo).join(".git")).expect("mkdir");
+        }
+        let linux_root = tree.path().to_str().expect("utf-8 temp path").to_owned();
+        // `parse_bridge_path` reads either separator, so the Linux path appends as it is.
+        let bridge = format!(r"\\wsl$\distro-a{linux_root}");
+
+        // What the worker itself reports for this tree: the figure the run must add.
+        let (_, reference) = dispatcher(true);
+        let worker_total = match reference.scan(
+            &WslBridgeRef {
+                distro: "distro-a".to_owned(),
+            },
+            &linux_root,
+            1,
+            &WalkOptions::default(),
+            &|_| {},
+        ) {
+            codotheca_core::wsl::dispatch::DistroOutcome::Scanned {
+                walked_dirs: Some(total),
+                repos,
+                ..
+            } => {
+                assert_eq!(repos, 2, "the worker found both repositories");
+                total
+            }
+            other => panic!("the reference walk did not finish: {other:?}"),
+        };
+        assert!(worker_total > 600, "the worker walked {worker_total}");
+
+        let (_, wsl) = dispatcher(true);
+        let runner = runner_with_wsl(&r, Arc::new(FakeMountResolver::new()), Some(&wsl));
+        let tally = RunTally::new(0);
+        // An earlier root's 1000 directories, already closed.
+        tally.close_root(1000);
+        let frames = Mutex::new(Vec::new());
+        runner.cross_the_bridge(
+            "distro-a",
+            &bridge,
+            1,
+            &WalkOptions::default(),
+            1,
+            7,
+            &tally,
+            &|event| {
+                if let WalkEvent::Progress {
+                    walked_dirs,
+                    found_repos,
+                } = event
+                {
+                    frames
+                        .lock()
+                        .expect("lock")
+                        .push((walked_dirs, found_repos));
+                }
+            },
+        );
+        let frames = frames.into_inner().expect("lock");
+
+        assert_eq!(tally.found_this_run(), 2, "both distro repositories count");
+        assert_eq!(
+            tally.walked_dirs(),
+            1000 + worker_total,
+            "the distro's directories add to what the run had walked"
+        );
+        assert!(
+            frames
+                .iter()
+                .any(|&(w, _)| w > 1000 && w < 1000 + worker_total),
+            "a frame reports the distro's walk while it runs: {frames:?}"
+        );
+        assert!(
+            frames
+                .windows(2)
+                .all(|p| p[0].0 <= p[1].0 && p[0].1 <= p[1].1),
+            "no frame lowers a count: {frames:?}"
+        );
+        assert_eq!(frames.last(), Some(&(1000 + worker_total, 2)));
+
+        // Closing the root carries the distro's directories into the run's total.
+        tally.close_root(5);
+        assert_eq!(tally.walked_dirs(), 1000 + worker_total + 5);
     }
 }

@@ -411,8 +411,7 @@ impl ScanRunner<'_> {
             .iter()
             .map(|w| w.root.path_key.clone())
             .collect();
-        let mut walked_dirs = 0_u64;
-        let found_this_run = AtomicU64::new(0);
+        let tally = RunTally::new(resumed_from);
         let mut links_refused = 0_u64;
         let mut cancelled = self.cancel.is_cancelled();
 
@@ -421,10 +420,6 @@ impl ScanRunner<'_> {
                 cancelled = true;
                 break;
             }
-            // Each root's walk counts from zero, so a frame reports the roots already walked
-            // plus this root's latest counter. A discovery between counter frames carries it.
-            let walked_before = walked_dirs;
-            let walked_here = AtomicU64::new(0);
             let opts = WalkOptions {
                 descend_into_repos: entry.root.descend_into_repos,
                 // §4.2: bare candidates are only tested under explicitly enabled roots, and
@@ -453,7 +448,7 @@ impl ScanRunner<'_> {
             let stats = walk_root(&entry.path, &ctx, &|event| match event {
                 WalkEvent::Repo(candidate) => {
                     let discovered = self.enrich(candidate, entry);
-                    let seen = found_this_run.fetch_add(1, Ordering::Relaxed) + 1;
+                    tally.note_found();
                     let indexed = self.index_one(
                         &discovered,
                         entry.facts.class,
@@ -477,18 +472,11 @@ impl ScanRunner<'_> {
                         );
                     }
                     sink(WalkEvent::Discovered(Box::new(discovered)));
-                    sink(WalkEvent::Progress {
-                        walked_dirs: walked_before
-                            .saturating_add(walked_here.load(Ordering::Relaxed)),
-                        found_repos: seen.max(resumed_from),
-                    });
+                    sink(tally.progress());
                 }
                 WalkEvent::Walked { dirs } => {
-                    let here = walked_here.fetch_max(dirs, Ordering::Relaxed).max(dirs);
-                    sink(WalkEvent::Progress {
-                        walked_dirs: walked_before.saturating_add(here),
-                        found_repos: found_this_run.load(Ordering::Relaxed).max(resumed_from),
-                    });
+                    tally.note_native(dirs);
+                    sink(tally.progress());
                 }
                 // An untrusted repository's row keeps the root it was found under, so §11.1's
                 // TRUST can find the folder again (`scan::trust`).
@@ -508,19 +496,20 @@ impl ScanRunner<'_> {
                     &opts,
                     scan_run_id,
                     generation,
+                    &tally,
                     sink,
                 ),
                 other => sink(other),
             });
 
-            walked_dirs = walked_dirs.saturating_add(stats.walked_dirs);
+            tally.close_root(stats.walked_dirs);
             links_refused = links_refused.saturating_add(stats.links_refused);
             cancelled |= stats.cancelled;
         }
 
         (
-            walked_dirs,
-            found_this_run.load(Ordering::Relaxed),
+            tally.walked_dirs(),
+            tally.found_this_run(),
             links_refused,
             cancelled,
         )
@@ -538,6 +527,9 @@ impl ScanRunner<'_> {
     /// Public so a host with **no** bridge to walk can still drive this arm. `\\wsl$\` paths
     /// exist only on Windows, so a Linux test can never reach it through `walk_root` — and an
     /// arm no test can reach is how the whole in-distro subsystem stayed unwired.
+    ///
+    /// The distro's walked directories and repositories join `tally`, the run's own running
+    /// figures, so its progress frames and the finished run's totals include them.
     #[allow(clippy::too_many_arguments)]
     pub fn cross_the_bridge(
         &self,
@@ -547,6 +539,7 @@ impl ScanRunner<'_> {
         opts: &WalkOptions,
         scan_run_id: i64,
         generation: i64,
+        tally: &RunTally,
         sink: &WalkSink<'_>,
     ) {
         let Some(wsl) = self.wsl else {
@@ -580,6 +573,7 @@ impl ScanRunner<'_> {
             return;
         };
         let generation_for_walk = generation;
+        let distro_walked = AtomicU64::new(0);
         let outcome = wsl.scan(
             &crate::scan::wsl::WslBridgeRef {
                 distro: distro.to_owned(),
@@ -600,11 +594,31 @@ impl ScanRunner<'_> {
                         sink,
                     );
                     sink(WalkEvent::Discovered(discovered));
+                    // An in-distro repository is one of the user's repositories on this machine.
+                    tally.note_found();
+                    sink(tally.progress());
                 }
                 WalkEvent::Problem(problem) => self.report(scan_run_id, problem, sink),
+                // The worker's figures count from zero inside the distro: only the rise since
+                // its last frame joins the run's total, and its found figure is the run's own.
+                WalkEvent::Progress { walked_dirs, .. } => {
+                    let before = distro_walked.fetch_max(walked_dirs, Ordering::Relaxed);
+                    tally.add_bridged(walked_dirs.saturating_sub(before));
+                    sink(tally.progress());
+                }
                 other => sink(other),
             },
         );
+        // The reply's total covers the directories walked since the last 512-directory frame.
+        // A walk that broke off has no reply, and what its frames reported stays counted.
+        if let crate::wsl::dispatch::DistroOutcome::Scanned {
+            walked_dirs: Some(total),
+            ..
+        } = outcome
+        {
+            tally.add_bridged(total.saturating_sub(distro_walked.load(Ordering::Relaxed)));
+            sink(tally.progress());
+        }
         if let Some(kind) = crate::wsl::dispatch::error_kind_for(&outcome) {
             // §11.5 for a distro that has no git of its own. Its repositories were found; they
             // just cannot be read, and that is a different sentence from "not found".
@@ -735,6 +749,76 @@ impl ScanRunner<'_> {
             volume_key: facts.volume_key,
             candidate,
         }
+    }
+}
+
+/// The run's running walked and found figures, shared by the walk threads and every bridge
+/// crossing, so a frame from either reports the same totals.
+///
+/// Each root's walk counts its directories from zero and a distro's worker counts its own, so
+/// the walked figure is the roots already finished, plus this root's native counter, plus what
+/// the distros reached from this root have walked. Every part only rises, so the sum does.
+#[derive(Debug, Default)]
+pub struct RunTally {
+    resumed_from: u64,
+    finished_roots: AtomicU64,
+    native: AtomicU64,
+    bridged: AtomicU64,
+    found: AtomicU64,
+}
+
+impl RunTally {
+    /// A tally for a run that starts over `resumed_from` already-indexed projects, the floor its
+    /// found figure never reads below.
+    #[must_use]
+    pub fn new(resumed_from: u64) -> Self {
+        Self {
+            resumed_from,
+            ..Self::default()
+        }
+    }
+
+    /// Directories walked so far: finished roots, the current root and its distros.
+    #[must_use]
+    pub fn walked_dirs(&self) -> u64 {
+        self.finished_roots
+            .load(Ordering::Relaxed)
+            .saturating_add(self.native.load(Ordering::Relaxed))
+            .saturating_add(self.bridged.load(Ordering::Relaxed))
+    }
+
+    /// Repositories this run has found, natively and inside distros.
+    #[must_use]
+    pub fn found_this_run(&self) -> u64 {
+        self.found.load(Ordering::Relaxed)
+    }
+
+    /// Closes the current root: its walk's own total and its distros' directories join the
+    /// finished roots, and the next root counts from zero.
+    pub fn close_root(&self, native_walked: u64) {
+        let bridged = self.bridged.swap(0, Ordering::Relaxed);
+        self.native.store(0, Ordering::Relaxed);
+        self.finished_roots
+            .fetch_add(native_walked.saturating_add(bridged), Ordering::Relaxed);
+    }
+
+    fn progress(&self) -> WalkEvent {
+        WalkEvent::Progress {
+            walked_dirs: self.walked_dirs(),
+            found_repos: self.found_this_run().max(self.resumed_from),
+        }
+    }
+
+    fn note_native(&self, dirs: u64) {
+        self.native.fetch_max(dirs, Ordering::Relaxed);
+    }
+
+    fn note_found(&self) {
+        self.found.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn add_bridged(&self, dirs: u64) {
+        self.bridged.fetch_add(dirs, Ordering::Relaxed);
     }
 }
 

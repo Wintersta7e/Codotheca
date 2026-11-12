@@ -14,7 +14,9 @@ use crate::scan::{ScanProblem, ScanProblemKind, WalkEvent, WalkOptions, WalkSink
 use crate::wsl::conn::WslWorkerPool;
 use crate::wsl::distros::{DistroInfo, DistroState};
 use crate::wsl::path::bridge_path;
-use crate::wsl::proto::{WalkRequest, WorkerEvent, WorkerGit, WorkerRepoFound, WorkerRequest};
+use crate::wsl::proto::{
+    WalkRequest, WalkSummary, WorkerEvent, WorkerGit, WorkerRepoFound, WorkerRequest,
+};
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -113,6 +115,9 @@ pub enum DistroOutcome {
         store_keys: BTreeSet<String>,
         /// Repositories handed to the sink as discovered rows.
         repos: u64,
+        /// Directories the distro's walk visited, from its reply; `None` when the reply carried
+        /// no walk summary, so a caller keeps what the progress frames reported.
+        walked_dirs: Option<u64>,
         /// §13: the distro has no git, so its repositories carry an explained error.
         git_missing: bool,
     },
@@ -328,7 +333,7 @@ impl WslDispatcher {
             }
         });
 
-        if let Err(err) = outcome {
+        if let Err(err) = &outcome {
             let broken_off = Unavailable::Launch {
                 detail: err.to_string(),
             };
@@ -345,9 +350,17 @@ impl WslDispatcher {
             distro,
             store_keys: store_keys.into_inner().unwrap_or_default(),
             repos: repos.load(Ordering::Relaxed),
+            walked_dirs: outcome.ok().and_then(walked_of),
             git_missing,
         }
     }
+}
+
+/// The directory total a walk's reply carries, or `None` when the reply is not a walk summary.
+fn walked_of(reply: serde_json::Value) -> Option<u64> {
+    serde_json::from_value::<WalkSummary>(reply)
+        .ok()
+        .map(|summary| summary.walked_dirs)
 }
 
 fn problem_kind_of(slug: &str) -> ScanProblemKind {

@@ -185,6 +185,40 @@ pub fn repo_found_of(ctx: &WorkerContext, candidate: &RepoCandidate) -> WorkerRe
     }
 }
 
+/// The frame one walk event becomes on the way to the core, or `None` for an event that ends
+/// here. `found` counts the repositories framed so far.
+fn worker_event_of(
+    ctx: &WorkerContext,
+    found: &AtomicU64,
+    event: WalkEvent,
+) -> Option<WorkerEvent> {
+    match event {
+        WalkEvent::Repo(candidate) => {
+            found.fetch_add(1, Ordering::Relaxed);
+            Some(WorkerEvent::Repo(repo_found_of(ctx, &candidate)))
+        }
+        WalkEvent::Problem(problem) => Some(WorkerEvent::Problem {
+            kind: problem.kind.as_str().to_owned(),
+            path_display: problem.path_display,
+            detail: problem.detail,
+        }),
+        // The walk's raw directory counter is the only running figure `walk_root` sends; it
+        // crosses as `Progress` so the core's live count rises during a distro's walk.
+        WalkEvent::Progress {
+            walked_dirs: dirs, ..
+        }
+        | WalkEvent::Walked { dirs } => Some(WorkerEvent::Progress {
+            walked_dirs: dirs,
+            found_repos: found.load(Ordering::Relaxed),
+        }),
+        // The distro never registers a bridge inside itself, and the core owns identity and
+        // submodule edges: those events end here.
+        WalkEvent::WslBridge { .. } | WalkEvent::Discovered(_) | WalkEvent::SubmoduleEdge(_) => {
+            None
+        }
+    }
+}
+
 /// Runs plan 07's walk inside the distro and streams what it finds.
 ///
 /// The one behaviour that is not plan 07's: a root standing on a Windows-backed filesystem is
@@ -265,29 +299,11 @@ pub fn walk(
     // otherwise report repositories the core never received.
     let out = std::sync::Mutex::new(emit);
     let failed = AtomicU64::new(0);
+    let found = AtomicU64::new(0);
     let sink = |event: WalkEvent| {
-        let framed = match event {
-            WalkEvent::Repo(candidate) => Some(WorkerEvent::Repo(repo_found_of(ctx, &candidate))),
-            WalkEvent::Problem(problem) => Some(WorkerEvent::Problem {
-                kind: problem.kind.as_str().to_owned(),
-                path_display: problem.path_display,
-                detail: problem.detail,
-            }),
-            WalkEvent::Progress {
-                walked_dirs,
-                found_repos,
-            } => Some(WorkerEvent::Progress {
-                walked_dirs,
-                found_repos,
-            }),
-            // The distro never registers a bridge inside itself, and the core owns identity,
-            // submodule edges and the raw directory counter: those events end here.
-            WalkEvent::WslBridge { .. }
-            | WalkEvent::Discovered(_)
-            | WalkEvent::SubmoduleEdge(_)
-            | WalkEvent::Walked { .. } => None,
+        let Some(worker_event) = worker_event_of(ctx, &found, event) else {
+            return;
         };
-        let Some(worker_event) = framed else { return };
         let Ok(mut guard) = out.lock() else {
             failed.fetch_add(1, Ordering::Relaxed);
             return;
