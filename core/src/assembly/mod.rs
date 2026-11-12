@@ -206,6 +206,14 @@ impl CoreHandler {
         self.rhythm_raise_mark
     }
 
+    /// Whether every job a tick queued has finished and written, so a test can poll the next
+    /// payload only once the history a job completes has landed.
+    #[cfg(feature = "testkit")]
+    #[must_use]
+    pub fn jobs_idle(&self) -> bool {
+        self.jobs.is_idle()
+    }
+
     /// The one connection, shared rather than owned. Every caller takes the lock for the length
     /// of one call and releases it; a poisoned lock is recovered rather than propagated, for the
     /// reason `SqliteScanStore` gives — the connection's own state is intact after an unrelated

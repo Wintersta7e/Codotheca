@@ -14,6 +14,7 @@ mod support;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use codotheca_core::clock::{day_bounds, local_date, Clock as _, LocalZone as _};
 use codotheca_core::index::Index;
@@ -89,9 +90,19 @@ impl Rig {
         );
     }
 
-    /// One loop iteration; the `motivation/changed` payloads it pushed.
+    /// One loop iteration; the `motivation/changed` payloads it pushed. A job the tick queued
+    /// finishes on a worker thread and its write moves the payload, so the iteration waits for
+    /// it: otherwise that write lands in whichever later pump runs after it, at random.
     fn pump(&mut self) -> Vec<Value> {
         self.parts.handler.pump();
+        let start = Instant::now();
+        while !self.parts.handler.jobs_idle() {
+            assert!(
+                start.elapsed() < Duration::from_secs(60),
+                "the tick's jobs never settled"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
         let all: Vec<Value> = self
             .parts
             .events
