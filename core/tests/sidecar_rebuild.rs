@@ -294,8 +294,13 @@ fn a_wal_database_with_no_journal_probes_without_making_one() {
     let dir = tempfile::tempdir().unwrap();
     let scratch = tempfile::tempdir().unwrap();
     let db = Index::db_path(dir.path());
+    // Built elsewhere and copied in: the WAL connection's `-wal` and `-shm` live and die beside
+    // the fixture, and a resident scanner's transient copy of either would otherwise land in the
+    // directory this test fingerprints.
+    let fixture = tempfile::tempdir().unwrap();
+    let built = Index::db_path(fixture.path());
     {
-        let conn = rusqlite::Connection::open(&db).unwrap();
+        let conn = rusqlite::Connection::open(&built).unwrap();
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              CREATE TABLE kept (v TEXT);
@@ -303,6 +308,7 @@ fn a_wal_database_with_no_journal_probes_without_making_one() {
         )
         .unwrap();
     }
+    std::fs::copy(&built, &db).unwrap();
     assert_eq!(
         std::fs::read(&db).unwrap()[18..20],
         [2, 2],
