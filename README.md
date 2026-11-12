@@ -30,8 +30,10 @@ the project itself, and shows you what git actually says: dirty, ahead, shallow,
 since 2021.
 
 The upkeep layer is deliberately quiet. A neglected project's cover art gathers dust, cobwebs and
-rust drawn from what is actually wrong with it, and polishes back when you fix the thing. It does
-not nag, it does not gamify, and it never invents a number it did not measure.
+rust drawn from what is actually wrong with it, and polishes back when you fix the thing. Above the
+shelf sit a level, three rings and a weekly rhythm, computed backwards from the history you already
+have rather than from the day you installed it — and one switch hides all of it. It does not nag, it pays for
+nothing you could farm, and it never invents a number it did not measure.
 
 ## Screenshots
 
@@ -45,7 +47,8 @@ Every repository in these screenshots is invented; they were taken from the real
 ## Status
 
 **v0.9.0 — pre-release, built from source.** <!-- x-release-please-version --> Three of the six planned phases are complete — the shelf, remote
-repositories with the quick-switch palette, and upkeep — and the app runs on Windows and Linux. It
+repositories with the quick-switch palette, and upkeep — and the first half of the fourth,
+motivation, is in: level, rings, rhythm and badges. The app runs on Windows and Linux. It
 is a personal tool built for one person's library; you are welcome to clone and build it, but there
 is no adoption goal and no support guarantee.
 
@@ -92,9 +95,27 @@ is no adoption goal and no support guarantee.
 - **Condition** — five material layers on the cover art (dust, cobwebs, rust, cracks and
   overgrowth), each fed by the checks behind it, and a restoration surge when a fix lands. The
   shelf can sort by what needs attention; it is a sort, not a feed.
+- **Level and XP** — one ledger, priced by term: commit-days, a dormant project revived, a release
+  tagged, a new language, focus time, a debt item fixed, a completion check passed and a project
+  archived cleanly. Nothing pays for lines or commit counts, and a level, once reached, holds. While
+  history is still being read the band says so and the figure can only grow.
+- **Rings and rhythm** — three rings for the day and the week: _Focus_ (minutes spent in a project
+  against a target you set), _Ship_ (a push recorded this week on this machine, read from your
+  remote-tracking reflogs) and _Tend_ (closed when nothing is left to tend in what it can read). The rhythm counts
+  active days against a weekly target, and is never called a streak.
+- **Badges** — eight, each latched once from a fact in your history: a project revived, a year
+  spread across many languages, a return to work after a gap, a shelf of complete projects, a long
+  session, a run of clean archives, a habit of same-day CI repairs and a run of daily pushes. None shows
+  progress toward itself.
+- **The band** — level, rings and rhythm above the shelf, folding into the top bar when you scroll.
+  A level-up or a badge waits there as one line until you read it. Quiet mode, one switch in
+  settings, hides every part of the layer.
+- **Recovery** — the core keeps a sidecar beside its database. An index that will not open is
+  reported as corrupt rather than as a first run, and `REBUILD` builds a new one beside it from
+  the sidecar, swapping only once it works and setting the old files aside.
 - **Packaging** — portable `.exe`, NSIS installer, AppImage, `.deb` and `.rpm`.
 
-About 5,700 automated tests across the core, the shell and the renderer; Playwright tests that
+About 6,300 automated tests across the core, the shell and the renderer; Playwright tests that
 launch the real Electron app, one of them asserting a painted screen; and an acceptance register
 tying 1373 checks to 585 written criteria.
 
@@ -114,8 +135,9 @@ tying 1373 checks to 585 written criteria.
 
 ### Not yet
 
-- **Phase 4, motivation and the Amnesty** — rings, level, badges, recaps and quests, and the Amnesty:
-  a safe way to retire a project, with its full recovery model. The app will not push: publishing
+- **The rest of phase 4** — quests, recaps (a Sunday line, a week view and a year-end wrap) and
+  notifications, and the Amnesty: a safe way to
+  retire a project, with its full recovery model. The app will not push: publishing
   a copy stays your own act in your own client. `checkout` and `worktree add` are not planned
   before 1.0.
 - **Phase 5, the watchlist** — starred repositories as a wishlist, and a release feed.
@@ -214,7 +236,7 @@ Build artifacts land in `dist/`.
 | Layer     | Choice                                    | Why                                           |
 | --------- | ----------------------------------------- | --------------------------------------------- |
 | Shell     | Electron 44                               | one engine on both targets, testable in CI    |
-| Renderer  | React + electron-vite                     | DOM only in phase 1                           |
+| Renderer  | React + electron-vite                     | DOM only — no canvas, no WebGL                |
 | Core      | Rust, supervised child process            | owns the database, git and rasterisation      |
 | Transport | length-prefixed JSON on stdin/stdout      | stdout carries frames and nothing else        |
 | Database  | SQLite via rusqlite, WAL                  | exactly one writer, and it is the core        |
@@ -240,8 +262,8 @@ docs/       Release checklist, WSL worker notes
 2. **Never claim currency you do not have.** Absence of dirty is "no changes as of T", never "clean".
 3. **Two ledgers, never merged.** Git facts recompute from history; playtime counts launched
    sessions. Side by side, never summed — a stacked bar reads as a total, and the total is undefined.
-4. **Never reward volume.** No figure for lines written or commits made. The activity view counts
-   commit-_days_.
+4. **Never reward volume.** Nothing pays for lines written or commits made: XP and the activity view
+   count commit-_days_, and a day counts once however much was committed.
 5. **The renderer may never originate a filesystem path or an executable.** Paths enter only through
    a native dialog the shell owns.
 
