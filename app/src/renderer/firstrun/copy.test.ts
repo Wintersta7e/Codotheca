@@ -75,6 +75,8 @@ test('consent row 3 makes no claim that nothing renders the ledger', () => {
   const note = copy.CONSENT_ROWS[2]?.note ?? '';
   expect(note).toContain('RECORDED FROM DAY ONE');
   expect(note).not.toMatch(/NOTHING RENDERS/u);
+  // Quiet mode hides the level, so the note makes no render claim either way.
+  expect(note).not.toMatch(/‹COPY|SHOWN|RENDER|LEVEL/u);
 });
 
 // §10.1a: this sentence does more trust work than any privacy paragraph.

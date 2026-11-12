@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SidecarReport, StartupFailure } from '../../shared/startupFailure';
 import {
   corruptLedger,
+  countLine,
   failureCopy,
   forceIsOffered,
   FORCE_AVAILABLE_AFTER_MS,
@@ -137,6 +138,27 @@ describe('the corrupt-index window', () => {
     expect(text).not.toContain(String(COUNTS['ledger_floor']));
   });
 
+  // Every count the sidecar carries prints under a noun in words: never a placeholder, never a
+  // snake_case key, and never "streak" for the settled rhythm weeks (§39.10a).
+  it('names every sidecar count in words', () => {
+    for (const [key, nouns] of Object.entries(SIDECAR_COUNT_NOUNS)) {
+      for (const noun of nouns) {
+        expect(noun, key).not.toBe('');
+        expect(noun, key).not.toMatch(/‹COPY|_|streak/iu);
+      }
+    }
+    expect(countLine('rhythm_week', 1)).toBe('1 settled week of rhythm');
+    expect(countLine('rhythm_week', 3)).toBe('3 settled weeks of rhythm');
+  });
+
+  // The rebuild report counts the locations a replayed record re-created, which the sidecar
+  // does not; that key has its own noun. Any other key still prints its figure, raw.
+  it('names the re-created locations, and prints a key it has no noun for raw', () => {
+    expect(countLine('locations', 1)).toBe('1 re-created location');
+    expect(countLine('locations', 4)).toBe('4 re-created locations');
+    expect(countLine('planted_future_key', 2)).toBe('2 planted_future_key');
+  });
+
   // §48.8.3: merges are exported and never replayed, so a rebuild does not restore them and
   // the block may not list them as restored.
   it('does not list the merges a rebuild never replays', () => {
@@ -181,6 +203,51 @@ describe('the corrupt-index window', () => {
     const body = failureCopy(failed).body;
     expect(body).toHaveLength(failureCopy(corrupt).body.length + 1);
     expect(body.filter((line) => line.includes('the rebuild failed: planted'))).toHaveLength(1);
+    expect(body[0]).toBe('The last REBUILD did not finish — the rebuild failed: planted.');
+  });
+
+  // §48.7.2: each sidecar state says what REBUILD will do, in words; a newer sidecar says this
+  // build will not rebuild. The window keys body lines by their first 24 characters, so no two
+  // lines one window can show may share them.
+  it('says in words what REBUILD will do, each line keyed apart from the others', () => {
+    for (const fact of [corrupt, ...OTHER_STATES]) {
+      const failed = { ...fact, rebuildFailed: 'the rebuild failed: planted' };
+      const body = failureCopy(failed).body;
+      const keys = body.map((line) => line.slice(0, 24));
+      expect(new Set(keys).size, fact.sidecar.state).toBe(body.length);
+    }
+    expect(failureCopy(corrupt).body[0]).toMatch(
+      /^REBUILD will build a new index beside this one/u,
+    );
+    for (const fact of [ABSENT_FACT, UNREADABLE_FACT]) {
+      expect(failureCopy(fact).body[0], fact.sidecar.state).toMatch(
+        /REBUILD will start a new, empty index and first run will begin again\.$/u,
+      );
+    }
+    expect(failureCopy(NEWER_FACT).body[0]).toMatch(
+      /^A newer version of Codotheca wrote the sidecar, so this build will not rebuild/u,
+    );
+  });
+
+  // No string any of the four windows can draw is a placeholder for words.
+  it('draws no placeholder in any window, in any state', () => {
+    const facts: FailureFact[] = [
+      corrupt,
+      ...OTHER_STATES,
+      { ...corrupt, rebuildFailed: 'planted' },
+      { kind: 'schema_from_future', onDisk: 9, supported: 5 },
+      { kind: 'migration_failed', version: 4, name: 'x', restoredTo: 3, restoredAt: 1 },
+      { kind: 'still_shutting_down', startedAtMs: 0 },
+    ];
+    for (const fact of facts) {
+      const copy = failureCopy(fact);
+      const blocks =
+        fact.kind === 'corrupt_index'
+          ? corruptLedger(fact).flatMap((block) => [block.label, ...block.lines])
+          : [];
+      const text = [copy.eyebrow, copy.headline, ...copy.body, ...blocks].join(' ');
+      expect(text, fact.kind).not.toContain('‹COPY');
+    }
   });
 
   it('gives the gap its start time', () => {

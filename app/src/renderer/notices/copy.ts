@@ -186,9 +186,11 @@ export function staleTargetsNotice(gone: readonly TargetVerification[]): NoticeC
  * `tsc` here rather than falling through to a sentence written for something else, which is the
  * failure a `default` arm would hide.
  */
-/** §48.7.1 step 5: the outcome notice's only dismissal, which removes the report. */
-// ‹COPY› interim — the user's words replace this before v1.0.0
-export const REBUILD_ACKNOWLEDGE = '‹COPY: acknowledges the rebuild›';
+/**
+ * §48.7.1 step 5: the outcome notice's only dismissal, which removes the report. It is a key of
+ * the notice runner map, so it differs from every other notice button's label.
+ */
+export const REBUILD_ACKNOWLEDGE = 'UNDERSTOOD';
 
 /** The settings drawer's label for the same act: the shell reveals the index's folder. */
 export const REVEAL_INDEX = 'REVEAL';
@@ -205,12 +207,11 @@ export function rebuildOutcomeNotice(report: RebuildReport): NoticeCopy {
     .filter(([, n]) => n > 0)
     .map(([key, n]) => countLine(key, n));
   return {
-    // ‹COPY› interim — the user's words replace this before v1.0.0
-    title:
-      "‹COPY: names where the set-aside files are; states restored counts and the gap's start›",
+    // The title is the headline and prints no figure; the counts and the gap are the body's.
+    title: 'THE INDEX WAS REBUILT · THE OLD FILES ARE SET ASIDE BESIDE IT',
     body: [
-      `‹COPY: set aside› ${names.join(', ')}`,
-      `‹COPY: restored› ${restored.length > 0 ? restored.join(', ') : 'Nothing.'}`,
+      `Set aside: ${names.join(', ')}`,
+      `Restored: ${restored.length > 0 ? restored.join(', ') : 'nothing'}`,
       ...(report.pending > 0 ? [countLine('pending', report.pending)] : []),
       gapStartLine(report.gapStartedAt),
     ].join(' · '),

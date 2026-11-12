@@ -5,7 +5,9 @@ import {
   degradedNotice,
   GIT_FLOOR_DISPLAY,
   problemsNotice,
+  REBUILD_ACKNOWLEDGE,
   rebuildOutcomeNotice,
+  REVEAL_INDEX,
   remoteSyncNotice,
   spawnFailureNotice,
   staleTargetsNotice,
@@ -223,6 +225,56 @@ describe('rebuildOutcomeNotice', () => {
     expect(body).not.toMatch(/\b(7|30|500) XP event/u);
     expect(body).not.toContain('41');
     expect(body).not.toContain('level floor');
-    expect(body).toContain('4 ‹COPY: locations›');
+    expect(body).toContain('4 re-created locations');
+  });
+
+  // A key a later core counts and this build has no noun for still prints its figure, under its
+  // raw key — never a placeholder.
+  it('prints a restored key it has no noun for under the raw key', () => {
+    const body = rebuildOutcomeNotice({
+      quarantinedAt: 100,
+      quarantineFiles: ['index.db.quarantined-100'],
+      restored: { planted_future_key: 2 },
+      pending: 0,
+      gapStartedAt: null,
+    }).body;
+    expect(body).toContain('Restored: 2 planted_future_key');
+    expect(body).not.toContain('‹COPY');
+  });
+
+  // §48.7.1 step 5: the headline prints no figure; the body names the set-aside files, then
+  // what came back — or nothing — then the records still waiting and the gap's start.
+  it('heads the notice in words and names the set-aside files and the restored counts', () => {
+    const report = {
+      quarantinedAt: 100,
+      quarantineFiles: ['data/index.db.quarantined-100', 'data\\index.db-wal.quarantined-100'],
+      restored: { projects: 3 },
+      pending: 2,
+      gapStartedAt: null,
+    };
+    const notice = rebuildOutcomeNotice(report);
+    expect(notice.title).toBe('THE INDEX WAS REBUILT · THE OLD FILES ARE SET ASIDE BESIDE IT');
+    expect(notice.body).toBe(
+      'Set aside: index.db.quarantined-100, index.db-wal.quarantined-100 · Restored: 3 projects' +
+        ' · 2 records waiting for their projects · The start of the gap is not known.',
+    );
+    const empty = rebuildOutcomeNotice({ ...report, restored: {}, pending: 0 }).body;
+    expect(empty).toContain('Restored: nothing');
+    expect(`${notice.title} ${notice.body} ${empty}`).not.toContain('‹COPY');
+  });
+
+  // The acknowledgement is a key of the notice runner map: a label shared with another
+  // notice's button would run the other's act.
+  it('acknowledges with a label no other notice button carries', () => {
+    expect(REBUILD_ACKNOWLEDGE).toBe('UNDERSTOOD');
+    for (const other of [
+      'OPEN THE LOG',
+      'SEE THE SUMMARY',
+      'RE-DETECT',
+      'OPEN ACCOUNTS',
+      REVEAL_INDEX,
+    ]) {
+      expect(REBUILD_ACKNOWLEDGE).not.toBe(other);
+    }
   });
 });

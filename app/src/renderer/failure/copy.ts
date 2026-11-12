@@ -53,14 +53,22 @@ export function offersRebuild(fact: FailureFact): boolean {
 
 /**
  * §48.7.2: what REBUILD will do, by the sidecar beside the index. With none to read, absent or
- * unreadable alike, the rebuild restores nothing and first run starts over.
+ * unreadable alike, the rebuild restores nothing and first run starts over. Each line is in the
+ * future tense — nothing has moved yet — and none promises what a failed attempt leaves.
  */
-// ‹COPY› interim — the user's words replace this before v1.0.0
 const REBUILD_WILL: Readonly<Record<SidecarReport['state'], string>> = {
-  present: '‹COPY: says what REBUILD will do›',
-  absent: '‹COPY: says REBUILD restores nothing and first run starts over›',
-  unreadable: '‹COPY: says REBUILD restores nothing and first run starts over›',
-  newer: '‹COPY: says a newer build wrote the sidecar, so this build will not rebuild›',
+  present:
+    'REBUILD will build a new index beside this one from the sidecar, and only once that works ' +
+    'move this one aside, kept. Your folders are then scanned again for the rest.',
+  absent:
+    'There is no sidecar to restore from, so REBUILD will start a new, empty index and first ' +
+    'run will begin again.',
+  unreadable:
+    'The sidecar could not be read, so REBUILD will start a new, empty index and first run ' +
+    'will begin again.',
+  newer:
+    'A newer version of Codotheca wrote the sidecar, so this build will not rebuild from it. ' +
+    'Nothing here has been touched.',
 };
 
 export function failureCopy(fact: FailureFact): FailureCopy {
@@ -97,10 +105,9 @@ export function failureCopy(fact: FailureFact): FailureCopy {
         headline: 'THE INDEX WOULD NOT OPEN',
         // §48.7.2: nothing has been moved before REBUILD, so no sentence may say it was.
         body: [
-          // ‹COPY› interim — the user's words replace this before v1.0.0
           ...(fact.rebuildFailed === null
             ? []
-            : [`‹COPY: names the failure› ${fact.rebuildFailed}`]),
+            : [`The last REBUILD did not finish — ${fact.rebuildFailed}.`]),
           REBUILD_WILL[fact.sidecar.state],
           'What comes back and what does not is below, in three parts.',
         ],
@@ -131,20 +138,14 @@ export interface LedgerBlock {
   readonly lines: readonly string[];
 }
 
-// ‹COPY› interim — the user's words replace this before v1.0.0
-function interimNoun(key: string): readonly [string, string] {
-  return [`‹COPY: ${key}›`, `‹COPY: ${key}›`];
-}
-
 /**
  * Every count the sidecar carries, keyed as the core keys it, with the singular and plural the
  * window prints: one per `BASE_COUNT_KEYS` entry and one per section in
  * `core/src/index/sidecar.rs`, which `app/test/sidecarNouns.test.ts` reads so a key added there
  * cannot go unnamed here. The first seven are §11.2a's enumeration, in its order.
  *
- * `rhythm_week`'s constraint in full: settled weeks of rhythm; never "streak". The rendered
- * interim drops the clause naming the banned word, because §39.10a keeps it out of every
- * rendered string.
+ * `accounts` says account, never connected: a restored row does not prove its token still works.
+ * `rhythm_week` is settled weeks of rhythm, never the word §39.10a keeps out of every string.
  */
 export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, string]>> = {
   projects: ['project', 'projects'],
@@ -154,26 +155,33 @@ export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, stri
   roots: ['scan root', 'scan roots'],
   launch_targets: ['launch target', 'launch targets'],
   xp_events: ['XP event', 'XP events'],
-  session_segments: interimNoun('session_segments'),
-  collection_members: interimNoun('collection_members'),
-  identities: interimNoun('identities'),
-  merges: interimNoun('merges'),
-  settings: interimNoun('settings'),
-  view_state: interimNoun('view_state'),
-  pending: interimNoun('pending'),
-  no_scan_projects: interimNoun('no_scan_projects'),
-  check_na: interimNoun('check_na'),
-  location_trust: interimNoun('location_trust'),
-  readme_consent: interimNoun('readme_consent'),
-  accounts: interimNoun('accounts'),
-  parcels: interimNoun('parcels'),
-  removal_records: interimNoun('removal_records'),
+  session_segments: ['session segment', 'session segments'],
+  collection_members: ['collection entry', 'collection entries'],
+  identities: ['identity', 'identities'],
+  merges: ['merge decision', 'merge decisions'],
+  settings: ['setting', 'settings'],
+  view_state: ['view preference', 'view preferences'],
+  pending: ['record waiting for its project', 'records waiting for their projects'],
+  no_scan_projects: ['record of a removed project', 'records of removed projects'],
+  check_na: ['check marked N/A', 'checks marked N/A'],
+  location_trust: ['trusted folder', 'trusted folders'],
+  readme_consent: ['README image permission', 'README image permissions'],
+  accounts: ['account', 'accounts'],
+  parcels: ['parcel', 'parcels'],
+  removal_records: ['removal record', 'removal records'],
   ledger_floor: ['level floor', 'level floors'],
   ledger_library_awards: ['XP event', 'XP events'],
   ledger_frozen_git: ['XP event', 'XP events'],
-  // ‹COPY› interim — the user's words replace this before v1.0.0
-  rhythm_week: ['‹COPY: settled weeks of rhythm›', '‹COPY: settled weeks of rhythm›'],
-  badge_award: interimNoun('badge_award'),
+  rhythm_week: ['settled week of rhythm', 'settled weeks of rhythm'],
+  badge_award: ['badge', 'badges'],
+};
+
+/**
+ * Keys the rebuild report counts that the sidecar does not: the locations a replayed record
+ * re-created. Kept apart so `SIDECAR_COUNT_NOUNS` stays one entry per sidecar key.
+ */
+const REPORT_COUNT_NOUNS: Readonly<Record<string, readonly [string, string]>> = {
+  locations: ['re-created location', 're-created locations'],
 };
 
 /** §48.8.3: merges ride the sidecar and are never replayed, so a rebuild restores none. */
@@ -226,11 +234,11 @@ function ledgerLines(
 }
 
 /**
- * One count under its noun: `1 project`, `212 projects`. A key with no noun here — the rebuild
- * report also counts the locations it re-created — prints under an interim one.
+ * One count under its noun: `1 project`, `212 projects`. A key with no noun here — one a later
+ * core counts and this build does not know — still prints its figure, under its raw key.
  */
 export function countLine(key: string, n: number): string {
-  const [one, many] = SIDECAR_COUNT_NOUNS[key] ?? interimNoun(key);
+  const [one, many] = SIDECAR_COUNT_NOUNS[key] ?? REPORT_COUNT_NOUNS[key] ?? [key, key];
   return `${String(n)} ${n === 1 ? one : many}`;
 }
 

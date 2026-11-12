@@ -97,11 +97,9 @@ export const CONSENT_ROWS: readonly ConsentRow[] = [
     // [p4] §48.3 row 19 (R158): only kinds a production writer stores. `release` rows arrive with
     // the ledger's later kinds, and a revival is derived, never written.
     body: 'A ledger of the days you commit and the days you pay down debt is kept from the first scan.',
-    // [p4] §43.2 renders the level now, so the note makes no render claim. Constraint in full:
-    // names only kinds the ledger stores or derives; never says a revival is written; no render
-    // claim once the level renders.
-    // ‹COPY› interim — the user's words replace this before v1.0.0
-    note: 'RECORDED FROM DAY ONE · ‹COPY: no render claim once the level renders›',
+    // [p4] §43.2 renders the level now, but quiet mode hides it, so the note makes no render
+    // claim: it names only that the ledger is kept, never that a revival is written.
+    note: 'RECORDED FROM DAY ONE',
   },
 ];
 
