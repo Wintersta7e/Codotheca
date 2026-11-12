@@ -15,6 +15,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::git::{
     Authorship, BlobBatch, BlobRead, CommitSubject, Divergence, GitBackend, GitError, GitResult,
@@ -128,6 +129,8 @@ pub struct FakeGitBackend {
     /// Every oid `read_blobs` was asked for, in order. **This is what lets a test assert that a
     /// cached blob was not re-read** — `calls()` would say only that the method was entered.
     blob_requests: Mutex<Vec<String>>,
+    /// The per-invocation deadline each call carried, beside `calls()` and in the same order.
+    deadlines: Mutex<Vec<(&'static str, Option<Duration>)>>,
 }
 
 impl FakeGitBackend {
@@ -153,13 +156,31 @@ impl FakeGitBackend {
         self.calls.lock().map_or_else(|_| Vec::new(), |c| c.clone())
     }
 
-    /// Forget the recorded calls and blob requests; scripted replies and blobs stay.
+    /// Forget the recorded calls, deadlines and blob requests; scripted replies and blobs stay.
     pub fn clear(&self) {
         if let Ok(mut c) = self.calls.lock() {
             c.clear();
         }
         if let Ok(mut r) = self.blob_requests.lock() {
             r.clear();
+        }
+        if let Ok(mut d) = self.deadlines.lock() {
+            d.clear();
+        }
+    }
+
+    /// Every call's operation and the `JobContext::deadline` it was handed, in order. This is
+    /// what lets a test assert the kill ceiling a job runs its git under, which `calls()` omits.
+    #[must_use]
+    pub fn deadlines(&self) -> Vec<(&'static str, Option<Duration>)> {
+        self.deadlines
+            .lock()
+            .map_or_else(|_| Vec::new(), |d| d.clone())
+    }
+
+    fn note_deadline(&self, op: &'static str, ctx: &JobContext<'_>) {
+        if let Ok(mut d) = self.deadlines.lock() {
+            d.push((op, ctx.deadline));
         }
     }
 
@@ -204,12 +225,14 @@ impl FakeGitBackend {
 
     fn answer<T: Clone>(
         &self,
+        ctx: &JobContext<'_>,
         op: &'static str,
         which: &Op<T>,
         repo: Option<&Path>,
         default: impl FnOnce() -> GitResult<T>,
     ) -> GitResult<T> {
         self.record(op, repo);
+        self.note_deadline(op, ctx);
         which
             .take(repo)
             .map_or_else(default, |reply| self.settle(reply))
@@ -273,40 +296,55 @@ fn unconfigured<T>(op: &str) -> GitResult<T> {
 }
 
 impl GitBackend for FakeGitBackend {
-    fn version(&self, _ctx: &JobContext<'_>) -> GitResult<GitVersion> {
-        self.answer("version", &self.version, None, || unconfigured("version"))
-    }
-
-    fn repo_facts(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<RepoFacts> {
-        self.answer("repo_facts", &self.repo_facts, Some(&repo.work_dir), || {
-            unconfigured("repo_facts")
+    fn version(&self, ctx: &JobContext<'_>) -> GitResult<GitVersion> {
+        self.answer(ctx, "version", &self.version, None, || {
+            unconfigured("version")
         })
     }
 
-    fn ref_state(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<RefState> {
-        self.answer("ref_state", &self.ref_state, Some(&repo.work_dir), || {
-            unconfigured("ref_state")
-        })
+    fn repo_facts(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<RepoFacts> {
+        self.answer(
+            ctx,
+            "repo_facts",
+            &self.repo_facts,
+            Some(&repo.work_dir),
+            || unconfigured("repo_facts"),
+        )
+    }
+
+    fn ref_state(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<RefState> {
+        self.answer(
+            ctx,
+            "ref_state",
+            &self.ref_state,
+            Some(&repo.work_dir),
+            || unconfigured("ref_state"),
+        )
     }
 
     fn divergence(
         &self,
         repo: &RepoHandle,
         _state: &RefState,
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<Option<Divergence>> {
-        self.answer("divergence", &self.divergence, Some(&repo.work_dir), || {
-            Ok(None)
-        })
+        self.answer(
+            ctx,
+            "divergence",
+            &self.divergence,
+            Some(&repo.work_dir),
+            || Ok(None),
+        )
     }
 
     fn worktree_status(
         &self,
         repo: &RepoHandle,
         _opts: StatusOptions,
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<WorktreeStatus> {
         self.answer(
+            ctx,
             "worktree_status",
             &self.worktree_status,
             Some(&repo.work_dir),
@@ -317,9 +355,10 @@ impl GitBackend for FakeGitBackend {
     fn tracked_inventory(
         &self,
         repo: &RepoHandle,
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<TrackedInventory> {
         self.answer(
+            ctx,
             "tracked_inventory",
             &self.tracked_inventory,
             Some(&repo.work_dir),
@@ -331,9 +370,10 @@ impl GitBackend for FakeGitBackend {
         &self,
         repo: &RepoHandle,
         _paths: &[Vec<u8>],
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<BTreeMap<Vec<u8>, String>> {
         self.answer(
+            ctx,
             "submodule_gitlinks",
             &self.submodule_gitlinks,
             Some(&repo.work_dir),
@@ -344,9 +384,10 @@ impl GitBackend for FakeGitBackend {
     fn remote_urls(
         &self,
         repo: &RepoHandle,
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<Vec<(String, String)>> {
         self.answer(
+            ctx,
             "remote_urls",
             &self.remote_urls,
             Some(&repo.work_dir),
@@ -354,8 +395,9 @@ impl GitBackend for FakeGitBackend {
         )
     }
 
-    fn root_commits(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>> {
+    fn root_commits(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<RootCommit>> {
         self.answer(
+            ctx,
             "root_commits",
             &self.root_commits,
             Some(&repo.work_dir),
@@ -363,10 +405,11 @@ impl GitBackend for FakeGitBackend {
         )
     }
 
-    fn unpushed_refs(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<Vec<String>> {
+    fn unpushed_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<String>> {
         // Unconfigured fails loudly: a fake answering "nothing unpushed" by default would teach
         // a deletion gate that every repository is safe.
         self.answer(
+            ctx,
             "unpushed_refs",
             &self.unpushed_refs,
             Some(&repo.work_dir),
@@ -374,19 +417,24 @@ impl GitBackend for FakeGitBackend {
         )
     }
 
-    fn authorship(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<Authorship> {
-        self.answer("authorship", &self.authorship, Some(&repo.work_dir), || {
-            unconfigured("authorship")
-        })
+    fn authorship(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Authorship> {
+        self.answer(
+            ctx,
+            "authorship",
+            &self.authorship,
+            Some(&repo.work_dir),
+            || unconfigured("authorship"),
+        )
     }
 
     fn commit_subjects(
         &self,
         repo: &RepoHandle,
         _limit: u32,
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<Vec<CommitSubject>> {
         self.answer(
+            ctx,
             "commit_subjects",
             &self.commit_subjects,
             Some(&repo.work_dir),
@@ -394,14 +442,19 @@ impl GitBackend for FakeGitBackend {
         )
     }
 
-    fn head_tree(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<Vec<TreeEntry>> {
-        self.answer("head_tree", &self.head_tree, Some(&repo.work_dir), || {
-            unconfigured("head_tree")
-        })
+    fn head_tree(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TreeEntry>> {
+        self.answer(
+            ctx,
+            "head_tree",
+            &self.head_tree,
+            Some(&repo.work_dir),
+            || unconfigured("head_tree"),
+        )
     }
 
-    fn enumerate_refs(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<RefListing> {
+    fn enumerate_refs(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<RefListing> {
         self.answer(
+            ctx,
             "enumerate_refs",
             &self.enumerate_refs,
             Some(&repo.work_dir),
@@ -409,8 +462,9 @@ impl GitBackend for FakeGitBackend {
         )
     }
 
-    fn stash_entries(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<StashEntries> {
+    fn stash_entries(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<StashEntries> {
         self.answer(
+            ctx,
             "stash_entries",
             &self.stash_entries,
             Some(&repo.work_dir),
@@ -418,8 +472,9 @@ impl GitBackend for FakeGitBackend {
         )
     }
 
-    fn worktree_scan(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<WorktreeScan> {
+    fn worktree_scan(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<WorktreeScan> {
         self.answer(
+            ctx,
             "worktree_scan",
             &self.worktree_scan,
             Some(&repo.work_dir),
@@ -431,9 +486,10 @@ impl GitBackend for FakeGitBackend {
         &self,
         repo: &RepoHandle,
         _oids: &[String],
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<Vec<bool>> {
         self.answer(
+            ctx,
             "objects_present",
             &self.objects_present,
             Some(&repo.work_dir),
@@ -446,11 +502,12 @@ impl GitBackend for FakeGitBackend {
         repo: &RepoHandle,
         _roots: &[String],
         _covered: &[String],
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<bool> {
         // Unconfigured fails loudly: a fake answering *covered* by default would teach a
         // deletion gate that every commit is pushed.
         self.answer(
+            ctx,
             "any_uncovered",
             &self.any_uncovered,
             Some(&repo.work_dir),
@@ -461,9 +518,10 @@ impl GitBackend for FakeGitBackend {
     fn interrupted_ops(
         &self,
         repo: &RepoHandle,
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<Vec<InterruptedOperation>> {
         self.answer(
+            ctx,
             "interrupted_ops",
             &self.interrupted_ops,
             Some(&repo.work_dir),
@@ -471,10 +529,11 @@ impl GitBackend for FakeGitBackend {
         )
     }
 
-    fn release_tags(&self, repo: &RepoHandle, _ctx: &JobContext<'_>) -> GitResult<Vec<TagFact>> {
+    fn release_tags(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TagFact>> {
         // Unconfigured fails loudly: a fake answering *no tags* by default would teach a release
         // writer that an unread repository has none.
         self.answer(
+            ctx,
             "release_tags",
             &self.release_tags,
             Some(&repo.work_dir),
@@ -487,11 +546,12 @@ impl GitBackend for FakeGitBackend {
         repo: &RepoHandle,
         _detached_head: Option<&str>,
         _extra_excluded: &[String],
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<bool> {
         // Unconfigured fails loudly: a fake answering *archived* by default would teach a caller
         // that every local commit is on a remote.
         self.answer(
+            ctx,
             "archive_reach",
             &self.archive_reach,
             Some(&repo.work_dir),
@@ -508,9 +568,10 @@ impl GitBackend for FakeGitBackend {
         oids: &[String],
         byte_cap: u64,
         budget_bytes: u64,
-        _ctx: &JobContext<'_>,
+        ctx: &JobContext<'_>,
     ) -> GitResult<BlobBatch> {
         self.record("read_blobs", Some(&repo.work_dir));
+        self.note_deadline("read_blobs", ctx);
         if let Ok(mut asked) = self.blob_requests.lock() {
             asked.extend(oids.iter().cloned());
         }

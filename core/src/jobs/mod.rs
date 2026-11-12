@@ -23,10 +23,15 @@ pub mod visible;
 use std::time::Duration;
 
 use crate::ledger::archive::AWAITS_CLEAN_ARCHIVE_SQL;
+use crate::scan::discover::GIT_PROBE_TIMEOUT;
 // R31/R21: `ProjectId` and `LocationId` are declared in `protocol/schema/protocol.json` and
 // generated into `crate::protocol`. Plan 09's interface block names them under `core::index`,
 // which never produced them; a hand-written pair here would be the R31 shape exactly.
 use crate::protocol::{LocationId, ProjectId};
+
+/// J3's ceiling on one git invocation, for a git that hangs and never a budget. §4.1 (v2.1): a
+/// 50,000-file repository outruns J3's 300 ms *every time*, and J3 is not killed and restarted.
+pub const J3_HANG_CEILING: Duration = Duration::from_secs(60);
 
 /// Which of §4.1's jobs a work item is; [`JobKind::ALL`] holds every one.
 ///
@@ -103,8 +108,10 @@ impl JobKind {
         Self::ALL.into_iter().find(|k| k.slug() == s)
     }
 
-    /// The interval between yield checks, not a deadline to fail against. J4 has none:
-    /// it is resumable and chunked, and a deadline would strand the biggest histories.
+    /// §4.1's budget column: the interval between yield checks. Nothing kills a job for
+    /// outrunning it — the kill ceiling on each git invocation is [`Self::invocation_deadline`],
+    /// which equals this for J2 alone. J4 has none: it is resumable and chunked, and a deadline
+    /// would strand the biggest histories.
     #[must_use]
     pub const fn slice_budget(self) -> Option<Duration> {
         match self {
@@ -119,6 +126,24 @@ impl JobKind {
             | Self::J5Art
             | Self::J6Content
             | Self::J7Markers => None,
+        }
+    }
+
+    /// The wall-clock ceiling `run_one` puts on each git invocation this job makes; the backend
+    /// kills a process that outruns it and answers `GitError::Budget`. Only J2's is §4.1's
+    /// budget, whose overrun degrades and retries. J1's and J3's §4.1 budgets are *mark stale,
+    /// requeue*, never a kill, so theirs are ceilings for a git that hangs.
+    #[must_use]
+    pub const fn invocation_deadline(self) -> Option<Duration> {
+        match self {
+            Self::J1Refstate => Some(GIT_PROBE_TIMEOUT),
+            Self::J3Inventory => Some(J3_HANG_CEILING),
+            Self::J2Status
+            | Self::J15Authorship
+            | Self::J4History
+            | Self::J5Art
+            | Self::J6Content
+            | Self::J7Markers => self.slice_budget(),
         }
     }
 
@@ -300,9 +325,20 @@ pub enum JobError {
     /// §3.5: the fingerprint moved between the before and after reads.
     #[error("the repository changed while it was being read")]
     TornRead,
-    /// The slice budget was exceeded and the job has no chunking path.
-    #[error("the slice budget was exceeded")]
+    /// A git invocation outran [`JobKind::invocation_deadline`] and was killed. The scheduler
+    /// requeues it (§4.1), and a third in a row defers the job as slow.
+    #[error("a git invocation outran its deadline")]
     BudgetExceeded,
+}
+
+/// §4.1: J1's and J3's budgets are *mark stale, requeue*. A git invocation killed at its ceiling
+/// is therefore `BudgetExceeded`, which the scheduler requeues, never a hard failure; any other
+/// git failure stays `JobError::Git`.
+pub(crate) fn requeue_on_budget(e: crate::git::GitError) -> JobError {
+    match e {
+        crate::git::GitError::Budget { .. } => JobError::BudgetExceeded,
+        other => JobError::Git(other),
+    }
 }
 
 /// What one job run produced.
@@ -525,7 +561,8 @@ fn class_of(kind: JobKind, priority: Priority) -> crate::git::JobClass {
 ///
 /// `JobError::Io` when the index lock is poisoned; `JobError::Index` when the location row, the
 /// identity set or the cursor cannot be read or the job's write fails; `JobError::Git` when git
-/// fails; and, from J2, `RepositoryBusy`, `TornRead` or `BudgetExceeded`.
+/// fails; from J1 and J3, `BudgetExceeded` when an invocation outruns its ceiling; and, from J2,
+/// `RepositoryBusy`, `TornRead` or `BudgetExceeded`.
 pub fn run_one(
     index: &std::sync::Mutex<crate::index::Index>,
     deps: &JobDeps,
@@ -537,7 +574,7 @@ pub fn run_one(
     let ctx = crate::git::JobContext::new(
         class_of(job.kind, job.priority),
         &deps.cancel,
-        job.kind.slice_budget(),
+        job.kind.invocation_deadline(),
     );
     let git = deps.git.as_ref();
     let now = deps.clock.now_unix();
@@ -760,6 +797,33 @@ mod tests {
         );
         // J4 has no deadline at all; it yields and persists a cursor instead.
         assert_eq!(JobKind::J4History.slice_budget(), None);
+    }
+
+    /// §4.1: only J2's budget is a kill. J1's and J3's are *mark stale, requeue*, so the ceiling
+    /// their git runs under is one for a hang, and the jobs with no budget have none.
+    #[test]
+    fn invocation_deadlines_kill_only_at_j2s_budget() {
+        assert_eq!(
+            JobKind::J1Refstate.invocation_deadline(),
+            Some(Duration::from_secs(5))
+        );
+        assert_eq!(
+            JobKind::J2Status.invocation_deadline(),
+            Some(Duration::from_millis(500))
+        );
+        assert_eq!(
+            JobKind::J3Inventory.invocation_deadline(),
+            Some(Duration::from_secs(60))
+        );
+        for kind in [
+            JobKind::J15Authorship,
+            JobKind::J4History,
+            JobKind::J5Art,
+            JobKind::J6Content,
+            JobKind::J7Markers,
+        ] {
+            assert_eq!(kind.invocation_deadline(), None, "{kind:?}");
+        }
     }
 
     #[test]

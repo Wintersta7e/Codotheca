@@ -26,8 +26,8 @@ use super::version::{meets_floor, parse_version, GitVersion};
 
 /// What one call is: its class, its cancellation token and its budget.
 ///
-/// Budgets themselves belong to §4.1 and are chosen by the scheduler; the backend enforces
-/// whatever this carries. `None` is J4's no-deadline case.
+/// The caller chooses the deadline — a job's is `JobKind::invocation_deadline` — and the backend
+/// enforces whatever this carries by killing the invocation. `None` is no ceiling at all.
 #[derive(Debug, Clone, Copy)]
 pub struct JobContext<'a> {
     /// Which pool ceiling applies.

@@ -9,7 +9,7 @@
 
 use crate::git::{Divergence, GitBackend, JobContext, RefState, RepoHandle};
 
-use super::JobError;
+use super::{requeue_on_budget, JobError};
 
 /// Read one location's ref state, divergence included.
 ///
@@ -18,14 +18,17 @@ use super::JobError;
 ///
 /// # Errors
 ///
-/// `JobError::Git` carrying the failure of either call.
+/// `JobError::BudgetExceeded` when an invocation outruns J1's ceiling, which the scheduler
+/// requeues (§4.1); otherwise `JobError::Git` carrying the failure of either call.
 pub fn observe(
     git: &dyn GitBackend,
     repo: &RepoHandle,
     ctx: &JobContext<'_>,
 ) -> Result<RefState, JobError> {
-    let mut state = git.ref_state(repo, ctx)?;
-    let counts = git.divergence(repo, &state, ctx)?;
+    let mut state = git.ref_state(repo, ctx).map_err(requeue_on_budget)?;
+    let counts = git
+        .divergence(repo, &state, ctx)
+        .map_err(requeue_on_budget)?;
     apply_divergence(&mut state, counts);
     Ok(state)
 }

@@ -10,9 +10,9 @@
 //! that nothing ever writes would be the "declared for testability, never really implemented"
 //! defect this project keeps finding, so it is left out and recorded instead.
 //!
-//! The practical consequence is bounded: J3's budget is §4.1's *slice*, not a deadline, so the
-//! job runs to completion either way. What is lost is the ability to hand the store slot back
-//! part-way through a very large tree.
+//! The practical consequence is bounded: J3's git runs under `JobKind::invocation_deadline`, a
+//! hang ceiling of a minute rather than §4.1's 300 ms slice, so the job runs to completion. What
+//! is lost is the ability to hand the store slot back part-way through a very large tree.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -20,7 +20,7 @@ use std::path::Path;
 use rusqlite::Transaction;
 
 use super::classify::{archetype_of, language_of_path, primary_language};
-use super::JobError;
+use super::{requeue_on_budget, JobError};
 use crate::git::{GitBackend, JobContext, RepoHandle};
 use crate::index::IndexError;
 use crate::protocol::{LocationId, ProjectId};
@@ -65,14 +65,18 @@ fn mtime_secs(p: &Path) -> Option<i64> {
 ///
 /// # Errors
 ///
-/// `JobError::Git` carrying the backend's inventory failure; an unreadable mtime is skipped.
+/// `JobError::BudgetExceeded` when an invocation outruns J3's ceiling, which the scheduler requeues
+/// (§4.1); otherwise `JobError::Git` carrying the backend's inventory failure. An unreadable mtime
+/// is skipped.
 pub fn observe(
     git: &dyn GitBackend,
     repo: &RepoHandle,
     ctx: &JobContext<'_>,
     work_dir: &Path,
 ) -> Result<InventoryFacts, JobError> {
-    let inv = git.tracked_inventory(repo, ctx)?;
+    let inv = git
+        .tracked_inventory(repo, ctx)
+        .map_err(requeue_on_budget)?;
     let mut facts = InventoryFacts {
         tracked_files: u64::from(inv.tracked_files),
         head_bytes: inv.size_tracked_bytes,
