@@ -164,6 +164,14 @@ export function App(props: AppProps = {}): ReactElement {
     focusReporter.focus(focusedProjectId);
   }, [focusReporter, route.kind, focusedProjectId]);
 
+  // §11.1's summary is a drawer over the two views that open it — the shelf and first run's scan
+  // line (§10.2) — and never under a project page or Profile. Leaving those views closes it, so
+  // coming back does not find it reopened over a shelf that never asked for it.
+  const summaryOverRoute = route.kind === 'shelf' || route.kind === 'first-run';
+  useEffect(() => {
+    if (!summaryOverRoute) setSummaryOpen(false);
+  }, [summaryOverRoute]);
+
   const liveSessionProjectIds = useMemo(() => new Set(sessions.keys()), [sessions]);
 
   const showMe = useCallback(
@@ -281,7 +289,7 @@ export function App(props: AppProps = {}): ReactElement {
           }}
           onHealthInputsChanged={healthInputsChanged}
           onSettings={motion.accept}
-          summaryOpen={summaryOpen}
+          summaryOpen={summaryOpen && summaryOverRoute}
           onCloseSummary={() => {
             setSummaryOpen(false);
           }}

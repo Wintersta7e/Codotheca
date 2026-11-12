@@ -42,7 +42,8 @@ import { MOTION_GROUP_ROWS, MotionGroups } from './groupsMotion.js';
 import { MOTIVATION_GROUP_ROWS, MotivationGroups } from './groupsMotivation.js';
 import { SCAN_GROUP_ROWS, ScanGroups } from './groupsScan.js';
 import { SETTINGS_GROUP_ORDER, type SettingsRowSpec, type SettingsSlots } from './rows.js';
-import { SD, backdropAnimation, panelAnimation } from './styles.js';
+import { DrawerFrame } from './DrawerFrame.js';
+import { SD } from './styles.js';
 
 export const ESC_CHIP_LABEL = 'ESC';
 export const DRAWER_TITLE = 'SETTINGS';
@@ -207,107 +208,96 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement | null 
   if (!props.open) return null;
 
   return (
-    <div
-      data-testid="sd-backdrop"
-      style={{ ...SD.backdrop, ...backdropAnimation(tier) }}
-      onClick={props.onClose}
+    // The panel owns the settings key context (§11.7) and swallows the backdrop's close-on-click.
+    <DrawerFrame
+      tier={tier}
+      label={DRAWER_TITLE}
+      backdropTestId="sd-backdrop"
+      onClose={props.onClose}
+      onKeyDown={onKeyDown}
+      panelRef={panel}
     >
-      {/* The panel owns the settings key context (§11.7) and swallows the backdrop's
-          close-on-click, so both handlers sit on it rather than on the scrim. */}
-      <div
-        ref={panel}
-        role="dialog"
-        aria-modal="true"
-        aria-label={DRAWER_TITLE}
-        tabIndex={-1}
-        style={{ ...SD.panel, ...panelAnimation(tier) }}
-        onClick={(event) => {
-          event.stopPropagation();
-        }}
-        onKeyDown={onKeyDown}
-      >
-        <header style={SD.header}>
-          <span style={SD.title}>{DRAWER_TITLE}</span>
-          <span style={SD.escChip}>{ESC_CHIP_LABEL}</span>
-        </header>
-        <div style={SD.body}>
-          <ScanGroups
-            roots={roots}
-            targets={targets}
-            onSetEnabled={(id: RootId, enabled) => {
-              call('roots.setEnabled', { id, enabled }).then(readRoots, () => undefined);
+      <header style={SD.header}>
+        <span style={SD.title}>{DRAWER_TITLE}</span>
+        <span style={SD.escChip}>{ESC_CHIP_LABEL}</span>
+      </header>
+      <div style={SD.body}>
+        <ScanGroups
+          roots={roots}
+          targets={targets}
+          onSetEnabled={(id: RootId, enabled) => {
+            call('roots.setEnabled', { id, enabled }).then(readRoots, () => undefined);
+          }}
+          onSetDescend={(id: RootId, descendIntoRepos) => {
+            call('roots.setDescend', { id, descendIntoRepos }).then(readRoots, () => undefined);
+          }}
+          onAddFolder={() => {
+            // `false`: nothing here has shown the user a large-directory estimate to accept.
+            shell.pickRoot(false).then(
+              (reply) => {
+                if (reply.kind === 'added') readRoots();
+              },
+              () => undefined,
+            );
+          }}
+          onRescan={() => {
+            call('scan.start', { full: false }).then(
+              () => undefined,
+              () => undefined,
+            );
+          }}
+          contentScanEnabled={settings === null ? null : settings.contentScanEnabled}
+          onSetContentScan={(contentScanEnabled) => {
+            patch({ contentScanEnabled });
+          }}
+          slots={props.slots}
+        />
+        {settings !== null && <HealthGroups settings={settings} onPatch={patch} />}
+        {settings !== null && (
+          <MotionGroups
+            settings={settings}
+            shortcut={shortcut}
+            recording={recording}
+            onPatch={patch}
+            afterMotion={
+              <MotivationGroups
+                settings={settings}
+                onPatch={patch}
+                shown={settings.motivationShown}
+              />
+            }
+            onRecordChord={() => {
+              setRecording(true);
             }}
-            onSetDescend={(id: RootId, descendIntoRepos) => {
-              call('roots.setDescend', { id, descendIntoRepos }).then(readRoots, () => undefined);
-            }}
-            onAddFolder={() => {
-              // `false`: nothing here has shown the user a large-directory estimate to accept.
-              shell.pickRoot(false).then(
-                (reply) => {
-                  if (reply.kind === 'added') readRoots();
-                },
-                () => undefined,
-              );
-            }}
-            onRescan={() => {
-              call('scan.start', { full: false }).then(
-                () => undefined,
-                () => undefined,
-              );
-            }}
-            contentScanEnabled={settings === null ? null : settings.contentScanEnabled}
-            onSetContentScan={(contentScanEnabled) => {
-              patch({ contentScanEnabled });
-            }}
-            slots={props.slots}
-          />
-          {settings !== null && <HealthGroups settings={settings} onPatch={patch} />}
-          {settings !== null && (
-            <MotionGroups
-              settings={settings}
-              shortcut={shortcut}
-              recording={recording}
-              onPatch={patch}
-              afterMotion={
-                <MotivationGroups
-                  settings={settings}
-                  onPatch={patch}
-                  shown={settings.motivationShown}
-                />
-              }
-              onRecordChord={() => {
-                setRecording(true);
-              }}
-              onChordCaptured={(chord) => {
-                setRecording(false);
-                // A cancelled recording binds nothing and clears nothing.
-                if (chord !== null) patch({ residentShortcut: chord });
-              }}
-            />
-          )}
-          <DataGroups
-            indexLocation={indexLocation}
-            bundle={bundle}
-            showRealPaths={showRealPaths}
-            identities={identities}
-            buildStamp={shell.buildStamp}
-            slots={props.slots}
-            onReveal={(target) => {
-              shell.reveal(target).then(
-                () => undefined,
-                () => undefined,
-              );
-            }}
-            onShowRealPaths={setShowRealPaths}
-            onExport={() => {
-              call('diag.bundle', { includeRealPaths: showRealPaths }).then(
-                setBundle,
-                () => undefined,
-              );
+            onChordCaptured={(chord) => {
+              setRecording(false);
+              // A cancelled recording binds nothing and clears nothing.
+              if (chord !== null) patch({ residentShortcut: chord });
             }}
           />
-        </div>
+        )}
+        <DataGroups
+          indexLocation={indexLocation}
+          bundle={bundle}
+          showRealPaths={showRealPaths}
+          identities={identities}
+          buildStamp={shell.buildStamp}
+          slots={props.slots}
+          onReveal={(target) => {
+            shell.reveal(target).then(
+              () => undefined,
+              () => undefined,
+            );
+          }}
+          onShowRealPaths={setShowRealPaths}
+          onExport={() => {
+            call('diag.bundle', { includeRealPaths: showRealPaths }).then(
+              setBundle,
+              () => undefined,
+            );
+          }}
+        />
       </div>
-    </div>
+    </DrawerFrame>
   );
 }

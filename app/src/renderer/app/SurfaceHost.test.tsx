@@ -146,6 +146,40 @@ describe('SurfaceHost', () => {
     expect(onOpenProject).not.toHaveBeenCalled();
   });
 
+  // b.md defect 2: the summary rendered in normal flow, under whatever screen was mounted.
+  it('draws the scan summary in the drawer’s chrome, and closes it on the backdrop', () => {
+    const onCloseSummary = vi.fn();
+    const onOpenProject = vi.fn();
+    mount({ summaryOpen: true, problems, onCloseSummary, onOpenProject });
+    const panel = screen.getByRole('dialog', { name: 'Scan summary' });
+    const backdrop = screen.getByTestId('sum-backdrop');
+    expect(getComputedStyle(backdrop).position).toBe('fixed');
+    expect(getComputedStyle(panel).width).toBe('400px');
+    expect(panel.contains(screen.getByRole('button', { name: 'CLOSE' }))).toBe(true);
+
+    fireEvent.click(panel);
+    expect(onCloseSummary).not.toHaveBeenCalled();
+    fireEvent.click(backdrop);
+    expect(onCloseSummary).toHaveBeenCalledTimes(1);
+    expect(onOpenProject).not.toHaveBeenCalled();
+  });
+
+  it('keeps Enter on the summary’s CLOSE away from the shelf beneath it', () => {
+    mount({ summaryOpen: true, problems });
+    // The shelf's grid listens on the window; there, Enter is §11.7's Play on the selection.
+    const shelfListener = vi.fn();
+    window.addEventListener('keydown', shelfListener);
+    try {
+      fireEvent.keyDown(screen.getByRole('button', { name: 'CLOSE' }), {
+        key: 'Enter',
+        code: 'Enter',
+      });
+    } finally {
+      window.removeEventListener('keydown', shelfListener);
+    }
+    expect(shelfListener).not.toHaveBeenCalled();
+  });
+
   it('draws the failure window only for a fact, and full screen when it does', () => {
     mount({ failure: null });
     expect(screen.queryByText(/THIS LIBRARY WAS WRITTEN BY A NEWER CODOTHECA/u)).toBeNull();

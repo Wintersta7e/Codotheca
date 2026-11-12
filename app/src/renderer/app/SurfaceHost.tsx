@@ -1,9 +1,9 @@
 /**
  * §11's three overlays and the palette, over whichever top-level surface is mounted.
  *
- * They are **not** routes: closing the drawer must not navigate, and the scan summary opens
- * over the shelf and the project page alike. `route.ts` decides what is behind them; this
- * decides only what is on top.
+ * They are **not** routes: closing a drawer must not navigate. `route.ts` decides what is behind
+ * them; this decides only what is on top. The scan summary is drawn in §11.3a's drawer chrome,
+ * and the composition root opens it only over the shelf and first run.
  */
 import { useCallback, useEffect, useMemo, useRef, type ReactElement } from 'react';
 
@@ -20,8 +20,11 @@ import type { ResolvedTier } from '../motion/tier.js';
 import { QuickSwitchHost } from '../palette/QuickSwitchHost.js';
 import { seedOf, appearanceFor, fadeFor } from '../art/appearance.js';
 import { SettingsDrawer } from '../settings/Drawer.js';
+import { DrawerFrame } from '../settings/DrawerFrame.js';
+import { SD } from '../settings/styles.js';
 import type { SettingsSlots } from '../settings/rows.js';
 import { GithubPanelHost } from '../settings/GithubPanelHost.js';
+import { SCAN_SUMMARY_NAME } from '../summary/copy.js';
 import { ScanSummary } from '../summary/ScanSummary.js';
 import type { AppDeps } from './deps.js';
 
@@ -115,17 +118,26 @@ export function SurfaceHost(props: SurfaceHostProps): ReactElement {
         slots={slots}
       />
       {props.summaryOpen && props.problems !== null && (
-        <ScanSummary
-          problems={props.problems}
-          problemsDismissed={props.problemsDismissed ?? false}
-          request={request}
-          onOpenProject={(id) => {
-            props.onCloseSummary();
-            props.onOpenProject(id);
-          }}
-          onChanged={props.onProblemsChanged}
+        <DrawerFrame
+          tier={tier}
+          label={SCAN_SUMMARY_NAME}
+          backdropTestId="sum-backdrop"
           onClose={props.onCloseSummary}
-        />
+        >
+          <div style={SD.body}>
+            <ScanSummary
+              problems={props.problems}
+              problemsDismissed={props.problemsDismissed ?? false}
+              request={request}
+              onOpenProject={(id) => {
+                props.onCloseSummary();
+                props.onOpenProject(id);
+              }}
+              onChanged={props.onProblemsChanged}
+              onClose={props.onCloseSummary}
+            />
+          </div>
+        </DrawerFrame>
       )}
       {failure !== null && (
         <FailureWindow

@@ -98,6 +98,9 @@ export const AMBIGUOUS_GROUP_NOTE =
 /** The group's one control. It navigates to §8.5 and merges nothing. */
 export const OPEN_PROJECT_LABEL = 'OPEN PROJECT';
 
+/** The drawer's accessible name. The summary draws no title, so it is announced, not shown. */
+export const SCAN_SUMMARY_NAME = 'Scan summary';
+
 /**
  * §11.1's two forms. The core sends at most `AMBIGUOUS_NAMES_SHOWN` names and the full id list,
  * so the tail count is the ids' length minus the names shown — never a stored candidate set,

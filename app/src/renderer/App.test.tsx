@@ -204,6 +204,57 @@ describe('App — the composition root', () => {
     expect(screen.queryByText(/THE LAST SCAN LEFT 2 PROBLEMS/u)).toBeNull();
   });
 
+  // b.md defect 2: the summary drew in normal flow under every screen, the project page included.
+  it('opens the scan summary as a drawer over the shelf, and never under a project page', async () => {
+    const withRun: ScanStatus = { ...scanned, runId: 7 as ScanStatus['runId'], problemCount: 2 };
+    const reference = makeProjectRow({
+      id: 9 as ProjectId,
+      name: 'borrowed',
+      isReference: true,
+      lastTouchedAt: NOW - 3600,
+    });
+    const fake = fakeAppDeps(
+      {
+        ...repliesFor([row(1, 'alpha'), reference], withRun),
+        'problems.list': () => ({
+          runId: withRun.runId,
+          header: {
+            walkedDirs: 12,
+            repositories: 3,
+            problemCount: 2,
+            ambiguousLineageCount: null,
+          },
+          groups: [],
+        }),
+      },
+      { effectsTier: 'off' },
+    );
+    fake.setNow(NOW);
+    render(<App deps={fake.deps} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'SEE THE SUMMARY' }));
+    const panel = await screen.findByRole('dialog', { name: 'Scan summary' });
+    expect(getComputedStyle(required(panel.parentElement, 'the scrim')).position).toBe('fixed');
+    expect(document.querySelector('.cdt-shelf')).not.toBeNull();
+
+    // A project opened while it is up (the palette crosses every view) takes it off the screen…
+    fireEvent.click(required(document.querySelector('.cdt-reference-row'), 'reference row'));
+    await waitFor(() => {
+      expect(document.querySelector(`.${PROJECT_PAGE_ROOT_CLASS}`)).not.toBeNull();
+    });
+    expect(screen.queryByRole('dialog', { name: 'Scan summary' })).toBeNull();
+
+    // …and the shelf it lands back on does not find it reopened.
+    fireEvent.keyDown(required(document.querySelector(`.${PROJECT_PAGE_ROOT_CLASS}`), 'the page'), {
+      key: 'Escape',
+      code: 'Escape',
+    });
+    await waitFor(() => {
+      expect(document.querySelector('.cdt-shelf')).not.toBeNull();
+    });
+    expect(screen.queryByRole('dialog', { name: 'Scan summary' })).toBeNull();
+  });
+
   it('runs first run for a library that has never been scanned', async () => {
     mount([], neverScanned);
     await waitFor(() => {
