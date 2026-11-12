@@ -755,6 +755,7 @@ mod tests {
     fn a_stream_delivers_events_before_the_reply() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(dir.path().join("p/.git")).expect("mkdir");
+        std::fs::write(dir.path().join("p/.git/HEAD"), b"ref: refs/heads/main\n").expect("HEAD");
         let pool = WslWorkerPool::new(launcher());
         let worker = pool.get("alpha").expect("connects");
         let mut repos = 0_u32;

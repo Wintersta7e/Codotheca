@@ -56,9 +56,11 @@ fn key(path: &Path) -> Vec<u8> {
     path_key(path, platform_of(host_kind()))
 }
 
+/// A working tree whose `.git` holds a `HEAD` — an empty `.git` is not a repository (§4.2).
 fn repo_at(base: &Path, rel: &str) -> PathBuf {
     let p = base.join(rel);
     std::fs::create_dir_all(p.join(".git")).unwrap();
+    std::fs::write(p.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
     p
 }
 
@@ -384,6 +386,7 @@ fn a_repository_at_a_non_utf8_path_indexes_and_says_its_displayed_path_is_lossy(
     let base = tempfile::tempdir().unwrap();
     let odd = base.path().join(OsStr::from_bytes(b"pro\xffject"));
     std::fs::create_dir_all(odd.join(".git")).unwrap();
+    std::fs::write(odd.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
 
     let r = rig();
     // Indexable, so the only problem this run can produce is the one it is about.
@@ -517,6 +520,7 @@ fn build_shelf(base: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     .unwrap();
     let sub = work.join("vendor/lib");
     std::fs::create_dir_all(sub.join(".git")).unwrap();
+    std::fs::write(sub.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
 
     let wt = base.join("wt");
     std::fs::create_dir_all(&wt).unwrap();
@@ -764,6 +768,30 @@ fn a_repository_the_handoff_cannot_read_is_reported_and_queues_nothing() {
             .contains(&ScanProblemKind::UnreadableRepo),
         "the run must say which repository it could not index"
     );
+}
+
+/// An empty `.git` is no repository: the run finds nothing there and reports nothing, where it
+/// used to hand it off and report git's "not a git repository" as an unreadable repository.
+#[test]
+fn an_empty_dot_git_directory_is_neither_found_nor_reported() {
+    let base = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(base.path().join("empty/.git")).unwrap();
+    let r = rig();
+    r.store.push_root(root_row(1, base.path(), true));
+    let runner = runner(&r, mounts_at(base.path(), "store-a", Some("vol-a")));
+
+    let problems = Mutex::new(Vec::new());
+    let outcome = runner
+        .run(ScanMode::Full, &|event| {
+            if let WalkEvent::Problem(p) = event {
+                problems.lock().unwrap().push(p.kind);
+            }
+        })
+        .unwrap();
+
+    assert_eq!(outcome.found_repos, 0);
+    assert_eq!(*problems.lock().unwrap(), []);
+    assert_eq!(r.git.calls(), [], "no git call for a folder git ignores");
 }
 
 // ---------------------------------------------------------------------------

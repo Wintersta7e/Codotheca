@@ -193,8 +193,11 @@ pub fn classify_dir(
     sink: &WalkSink<'_>,
 ) -> Option<RepoCandidate> {
     let dot = dir.join(".git");
+    // An EMPTY `.git` directory is not a repository — git itself passes over it — so it is
+    // read as if absent. One git cannot list is still a candidate: the indexer reports it.
+    let empty_dir = || std::fs::read_dir(&dot).is_ok_and(|mut entries| entries.next().is_none());
     match std::fs::metadata(&dot) {
-        Ok(meta) if meta.is_dir() => Some(RepoCandidate {
+        Ok(meta) if meta.is_dir() && !empty_dir() => Some(RepoCandidate {
             path: dir.to_path_buf(),
             kind: RepoKind::WorkTree,
             git_dir: dot.clone(),

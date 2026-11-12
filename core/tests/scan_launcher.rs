@@ -64,6 +64,7 @@ fn seed_root(index: &Arc<Mutex<Index>>, path: &Path) {
 fn repo_at(base: &Path, rel: &str) -> std::path::PathBuf {
     let p = base.join(rel);
     std::fs::create_dir_all(p.join(".git")).unwrap();
+    std::fs::write(p.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
     p
 }
 

@@ -30,6 +30,7 @@ fn probe<'a>(git: &'a FakeGitBackend, cancel: &'a CancelToken) -> ProbeCtx<'a> {
 
 fn repo_dir(path: &Path) {
     std::fs::create_dir_all(path.join(".git")).unwrap();
+    std::fs::write(path.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
 }
 
 #[test]

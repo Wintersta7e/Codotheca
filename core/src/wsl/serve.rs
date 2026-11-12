@@ -581,6 +581,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = dir.path().join("p");
         std::fs::create_dir_all(repo.join(".git")).expect("mkdir");
+        std::fs::write(repo.join(".git/HEAD"), b"ref: refs/heads/main\n").expect("HEAD");
         let root = repo
             .parent()
             .expect("has a parent")

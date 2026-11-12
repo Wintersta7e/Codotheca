@@ -30,6 +30,7 @@ fn repo_at(base: &Path, rel: &str) -> PathBuf {
     let p = base.join(rel);
     std::fs::create_dir_all(p.join(".git")).unwrap();
     std::fs::write(p.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
+    std::fs::write(p.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
     std::fs::create_dir_all(p.join(".git/objects")).unwrap();
     std::fs::create_dir_all(p.join(".git/refs")).unwrap();
     p
@@ -254,6 +255,7 @@ fn a_submodule_under_a_repository_root_is_reached_without_descending() {
     .unwrap();
     let child = parent.join("vendor/lib");
     std::fs::create_dir_all(child.join(".git")).unwrap();
+    std::fs::write(child.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
 
     let opts = WalkOptions::default();
     let skip = SkipList::default();

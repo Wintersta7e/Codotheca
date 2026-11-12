@@ -64,6 +64,7 @@ fn a_dot_git_directory_is_a_working_tree_and_costs_no_git_call() {
     let base = tempfile::tempdir().unwrap();
     let dir = base.path();
     std::fs::create_dir_all(dir.join(".git")).unwrap();
+    std::fs::write(dir.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
     let git = FakeGitBackend::new();
     let cancel = CancelToken::new();
     let found = classify_dir(dir, &opts(), &probe(&git, &cancel), &|_| {}).unwrap();
@@ -72,6 +73,24 @@ fn a_dot_git_directory_is_a_working_tree_and_costs_no_git_call() {
     assert_eq!(found.git_dir, dir.join(".git"));
     assert_eq!(found.common_dir, dir.join(".git"));
     assert!(git.calls().is_empty(), "the filesystem alone answers this");
+}
+
+/// git itself passes over an empty `.git`, so it is no repository and no problem — a scan that
+/// reported it as an unreadable repository named a folder that holds none.
+#[test]
+fn an_empty_dot_git_directory_is_nothing_and_no_problem() {
+    let base = tempfile::tempdir().unwrap();
+    let dir = base.path();
+    std::fs::create_dir_all(dir.join(".git")).unwrap();
+    let git = FakeGitBackend::new();
+    let cancel = CancelToken::new();
+    let events = Mutex::new(0_usize);
+    let found = classify_dir(dir, &opts(), &probe(&git, &cancel), &|_| {
+        *events.lock().unwrap() += 1;
+    });
+    assert!(found.is_none(), "an empty `.git` is not a repository");
+    assert_eq!(*events.lock().unwrap(), 0, "and it is not a problem either");
+    assert_eq!(git.calls(), []);
 }
 
 #[test]

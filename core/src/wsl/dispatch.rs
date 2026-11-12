@@ -513,6 +513,7 @@ mod tests {
     fn a_distro_without_git_still_discovers_and_is_marked_git_missing() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(dir.path().join("p/.git")).expect("mkdir");
+        std::fs::write(dir.path().join("p/.git/HEAD"), b"ref: refs/heads/main\n").expect("HEAD");
         let l = launcher(WorkerGit::Missing {
             detail: "not on PATH".to_owned(),
         });
