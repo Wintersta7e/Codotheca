@@ -724,3 +724,87 @@ fn ac_p4_38_25_an_unread_tag_set_keeps_the_release_rows() {
     assert_eq!(rig.releases(), ["2024-05-03 v1"]);
     assert_eq!(rig.dates("commit_day"), ["2024-05-01"]);
 }
+
+// ---------------------------------------------------------------------------------------------
+// §8.4 / §8.5: the recent commits J4 reads reach the project page.
+// ---------------------------------------------------------------------------------------------
+
+#[path = "support/detail_rig.rs"]
+mod detail_rig;
+
+/// The detail reader's answer for the rig's project, over the rig's own index.
+fn detail(rig: &Rig) -> codotheca_core::protocol::ProjectDetail {
+    let page = detail_rig::Rig::new();
+    let guard = rig.index.lock().unwrap();
+    let ctx = codotheca_core::detail::DetailCtx {
+        index: &guard,
+        ..page.ctx()
+    };
+    let got = codotheca_core::detail::get::handle_project_get(
+        &ctx,
+        serde_json::json!({ "id": rig.project.0 }),
+    )
+    .unwrap();
+    drop(guard);
+    got
+}
+
+#[test]
+fn the_page_lists_the_three_newest_commits_j4_read() {
+    let repo = Repo::init();
+    for (date, subject) in [
+        ("2024-05-01T09:00:00+02:00", "first"),
+        ("2024-05-02T09:00:00+02:00", "second"),
+        ("2024-05-03T09:00:00-05:30", "third\twith a tab"),
+        ("2024-05-04T09:00:00+05:30", "fourth"),
+    ] {
+        repo.git_as(ME, date, &["commit", "-q", "--allow-empty", "-m", subject]);
+    }
+    let head = repo.git_as(ME, "2024-05-04T09:00:00+05:30", &["rev-parse", "HEAD"]);
+    let rig = Rig::new(repo, &[ME], &[ME]);
+
+    rig.settle();
+    let page = detail(&rig);
+    let listed: Vec<(&str, i64, i32)> = page
+        .recent_commits
+        .iter()
+        .map(|c| (c.subject.as_str(), c.at, c.tz_offset_min))
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            ("fourth", 1_714_793_400, 330),
+            ("third\twith a tab", 1_714_746_600, -330),
+            ("second", 1_714_633_200, 120),
+        ],
+        "newest first, three, each at its own offset"
+    );
+    assert_eq!(page.recent_commits[0].sha, head.trim());
+    // J4 has read history and nothing has read the README: the row J4 wrote is not a README
+    // that was looked for and found absent.
+    assert_eq!(
+        page.readme.state,
+        codotheca_core::protocol::ReadmeStateKind::NotIndexed
+    );
+
+    // J6 reading the README afterwards keeps the commits, and J4 again keeps the README.
+    let mut guard = rig.index.lock().unwrap();
+    guard
+        .with_tx(|tx| {
+            codotheca_core::jobs::j6_content::persist(
+                tx,
+                rig.project,
+                &codotheca_core::jobs::j6_content::ContentFacts::default(),
+                T0,
+            )
+        })
+        .unwrap();
+    drop(guard);
+    rig.settle();
+    let after_j6 = detail(&rig);
+    assert_eq!(after_j6.recent_commits.len(), 3);
+    assert_eq!(
+        after_j6.readme.state,
+        codotheca_core::protocol::ReadmeStateKind::Absent
+    );
+}

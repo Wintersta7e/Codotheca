@@ -22,16 +22,20 @@ use rusqlite::Transaction;
 
 use super::JobError;
 use crate::clock::{local_date, local_day, LocalInstant};
-use crate::git::{Authorship, GitBackend, JobContext, RepoHandle, TagFact, TagKind};
+use crate::git::{Authorship, CommitSubject, GitBackend, JobContext, RepoHandle, TagFact, TagKind};
 use crate::identity::user::IdentitySet;
 use crate::index::IndexError;
 use crate::ledger::git_rows::{j4_settle_is_silent, reconcile_git_rows, GitRow};
 use crate::ledger::receipt::Receipt;
 use crate::motivation::absorb::{SilentAbsorb, SilentClass};
-use crate::protocol::ProjectId;
+use crate::protocol::{CommitRef, ProjectId};
 
-/// How many recent subjects `fts_commits` and `peek_cache` keep (§1.9).
+/// How many recent subjects `fts_commits` keeps (§1.9).
 pub const SUBJECT_LIMIT: u32 = 200;
+
+/// How many of them `peek_cache` keeps: §8.4's "last three commit subjects with dates", which
+/// §8.5's `RECENT COMMITS` lists too.
+pub const PEEK_COMMITS: usize = 3;
 
 /// §1.1's root set and the dates that follow from it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -56,11 +60,12 @@ pub struct HistoryFacts {
     /// §5.1's first input to `last_touched_at` — the user's own last commit, which is not
     /// `last_commit_at`: a CI bot's commit must not read as the user having touched the project.
     pub last_user_commit_at: Option<i64>,
-    /// The most recent subjects, newest first, for `fts_commits` and `peek_cache` (§1.9).
+    /// The most recent commits, newest first: their subjects for `fts_commits`, the first
+    /// [`PEEK_COMMITS`] for `peek_cache` (§1.9).
     ///
     /// `project.last_commit_subject` is the first of these rather than a field of its own: two
     /// places holding the same subject is how they end up disagreeing.
-    pub recent_subjects: Vec<String>,
+    pub recent_commits: Vec<CommitSubject>,
     /// §38.8.6: each local day on which a tag of the user's peels to a commit, to that day's
     /// first such tag name in byte order. **One per day, never a tag count.** `None` when the
     /// tags were not read — a Reference project's — and then no `release` row is written or
@@ -176,11 +181,7 @@ pub fn observe(
 ) -> Result<(RootFacts, HistoryFacts), JobError> {
     let roots = read_root_facts(git, repo, ctx)?;
     let mut facts = fold_authorship(&git.authorship(repo, ctx)?, identities);
-    facts.recent_subjects = git
-        .commit_subjects(repo, SUBJECT_LIMIT, ctx)?
-        .into_iter()
-        .map(|c| c.subject)
-        .collect();
+    facts.recent_commits = git.commit_subjects(repo, SUBJECT_LIMIT, ctx)?;
     if !reference {
         facts.releases = Some(release_days(&git.release_tags(repo, ctx)?, identities));
     }
@@ -313,7 +314,31 @@ impl HistoryFacts {
     /// The newest subject, for `project.last_commit_subject`.
     #[must_use]
     pub fn last_commit_subject(&self) -> Option<&str> {
-        self.recent_subjects.first().map(String::as_str)
+        self.recent_commits.first().map(|c| c.subject.as_str())
+    }
+
+    /// The subjects, one per line, as `fts_commits` indexes them.
+    fn subjects_text(&self) -> String {
+        let subjects: Vec<&str> = self
+            .recent_commits
+            .iter()
+            .map(|c| c.subject.as_str())
+            .collect();
+        subjects.join("\n")
+    }
+
+    /// §8.4's newest [`PEEK_COMMITS`], as `peek_cache.recent_commits_json` stores them.
+    fn peek_commits(&self) -> Vec<CommitRef> {
+        self.recent_commits
+            .iter()
+            .take(PEEK_COMMITS)
+            .map(|c| CommitRef {
+                sha: c.oid.clone(),
+                subject: c.subject.clone(),
+                at: c.committed_at,
+                tz_offset_min: c.tz_offset_min,
+            })
+            .collect()
     }
 }
 
@@ -376,7 +401,19 @@ pub fn commit_history(
     tx.execute(
         "INSERT INTO fts_commits (project_id, subjects) VALUES (?1, ?2)
          ON CONFLICT(project_id) DO UPDATE SET subjects = excluded.subjects",
-        rusqlite::params![project.0, facts.recent_subjects.join("\n")],
+        rusqlite::params![project.0, facts.subjects_text()],
+    )?;
+    // §8.4's commits, beside the README excerpt J6 writes. Only `readme_read_at` says J6 has
+    // looked, so this row is never read as a README found absent.
+    // Strings and integers only, which serialise infallibly.
+    let peek = serde_json::to_string(&facts.peek_commits()).unwrap_or_else(|_| "[]".to_owned());
+    tx.execute(
+        "INSERT INTO peek_cache (project_id, recent_commits_json, computed_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(project_id) DO UPDATE SET
+             recent_commits_json = excluded.recent_commits_json,
+             computed_at = excluded.computed_at",
+        rusqlite::params![project.0, peek, now],
     )?;
     tx.execute(
         "UPDATE project

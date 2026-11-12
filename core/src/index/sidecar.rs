@@ -578,7 +578,9 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     (Entry::Table("fts_commits"), BY_HISTORY),
     (
         Entry::Table("peek_cache"),
-        derivable("J6 reads the README and the recent commits again (jobs::j6_content)"),
+        derivable(
+            "J6 reads the README and J4 the recent commits again (jobs::j6_content, jobs::j4_history)",
+        ),
     ),
     (
         Entry::Table("project_committer"),

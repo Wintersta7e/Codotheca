@@ -59,6 +59,8 @@ pub struct CommitSubject {
     pub oid: String,
     /// Committer date, epoch seconds. `last_commit_at` is the newest of these (§5.1).
     pub committed_at: i64,
+    /// The committer date's offset, minutes east of UTC, so the date reads in its own zone.
+    pub tz_offset_min: i32,
     /// The subject, which may itself contain tabs.
     pub subject: String,
 }
@@ -237,7 +239,8 @@ pub fn authorship(
     })
 }
 
-/// `log --format=%H%x09%ct%x09%s -n <limit>`, newest first.
+/// `log --format=%H%x09%ct%x09%ci%x09%s -n <limit>`, newest first. The offset is read off `%ci`
+/// because git has no `%cz` placeholder ([`tz_offset_from_iso_date`]).
 ///
 /// # Errors
 ///
@@ -256,7 +259,7 @@ pub fn commit_subjects(
         &[
             OsStr::new("log"),
             OsStr::new(&count),
-            OsStr::new("--format=%H%x09%ct%x09%s"),
+            OsStr::new("--format=%H%x09%ct%x09%ci%x09%s"),
         ],
         limits,
         cancel,
@@ -271,15 +274,21 @@ pub fn commit_subjects(
         let Some((oid, rest)) = line.split_once('\t') else {
             continue;
         };
-        let Some((at, subject)) = rest.split_once('\t') else {
+        let Some((at, rest)) = rest.split_once('\t') else {
             continue;
         };
-        let Ok(committed_at) = at.trim().parse::<i64>() else {
+        let Some((iso, subject)) = rest.split_once('\t') else {
+            continue;
+        };
+        let (Ok(committed_at), Some(tz_offset_min)) =
+            (at.trim().parse::<i64>(), tz_offset_from_iso_date(iso))
+        else {
             continue;
         };
         subjects.push(CommitSubject {
             oid: oid.trim().to_owned(),
             committed_at,
+            tz_offset_min,
             subject: subject.to_owned(),
         });
     }

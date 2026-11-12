@@ -114,7 +114,7 @@ pub struct RowFacts {
     pub has_remote: bool,
     /// Whether any submodule edge names this project as its parent.
     pub has_submodules: bool,
-    /// `Some` only once J6 has run for the project; `peek_cache.computed_at` is what says so.
+    /// `Some` only once J6 has run for the project; `peek_cache.readme_read_at` is what says so.
     ///
     /// **Worktree basis.** §8.4's Peek panel and §25.5's `projects.readme` header read this,
     /// because they **render the file** and the file they render is the one on disk. It is not
@@ -350,7 +350,7 @@ const PROJECT_COLUMNS: &str =
             p.size_tracked_bytes, p.tracked_files, p.error_kind, p.error_at,
             p.authored_by_user, p.remote_key,
             EXISTS(SELECT 1 FROM submodule_edge se WHERE se.parent_project_id = p.id),
-            pc.computed_at, pc.readme_excerpt,
+            pc.readme_read_at, pc.readme_excerpt,
             p.seed_basename, p.reroll_offset,
             cs.has_readme, cs.has_license, cs.has_tests, cs.has_ci,
             ck.state
@@ -379,7 +379,7 @@ fn map_loaded_row(
     let last_touched_at: i64 = r.get::<_, Option<i64>>(21)?.unwrap_or(created_at);
     let first_commit_at: Option<i64> = r.get(25)?;
     let first_commit_tz: Option<i64> = r.get(26)?;
-    let readme_computed_at: Option<i64> = r.get(36)?;
+    let readme_read_at: Option<i64> = r.get(36)?;
     let readme_excerpt: Option<String> = r.get(37)?;
     // NULL is *J1.5 has not run* and crosses as null, never `false` — which would say the
     // repository is someone else's. Read once; the wire row and the query facts carry the same.
@@ -488,7 +488,7 @@ fn map_loaded_row(
         distro: primary.map(|l| l.distro.clone()),
         has_remote: r.get::<_, Option<String>>(34)?.is_some(),
         has_submodules: r.get::<_, i64>(35)? != 0,
-        has_readme: readme_computed_at.map(|_| readme_excerpt.is_some()),
+        has_readme: readme_read_at.map(|_| readme_excerpt.is_some()),
         content_presence: content_presence(r)?,
     };
     Ok(LoadedRow { row, facts })

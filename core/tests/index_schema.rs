@@ -835,6 +835,30 @@ fn art_scene_and_peek_cache_are_one_row_per_project() {
     );
 }
 
+/// `0024`: every row written before it was J6's alone, so its README read time is its write
+/// time — an upgraded index keeps every README it had read instead of reading "not indexed".
+#[test]
+fn an_upgraded_peek_row_keeps_the_time_its_readme_was_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut conn = open_connection(&Index::db_path(dir.path())).unwrap();
+    let at_24 = MIGRATIONS
+        .iter()
+        .position(|m| m.version == 24)
+        .expect("migration 24");
+    apply_all(&mut conn, &MIGRATIONS[..at_24]).unwrap();
+    let p = insert_project(&conn, "thing");
+    conn.execute(
+        "INSERT INTO peek_cache (project_id, readme_excerpt, computed_at) VALUES (?1, NULL, 7)",
+        [p],
+    )
+    .unwrap();
+    apply_all(&mut conn, MIGRATIONS).unwrap();
+    let read_at: Option<i64> = conn
+        .query_row("SELECT readme_read_at FROM peek_cache", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(read_at, Some(7));
+}
+
 fn plan(conn: &rusqlite::Connection, sql: &str) -> String {
     let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
     let rows = stmt.query_map([], |r| r.get::<_, String>(3)).unwrap();

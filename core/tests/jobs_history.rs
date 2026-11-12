@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use codotheca_core::cancel::CancelToken;
 use codotheca_core::clock::SystemClock;
-use codotheca_core::git::{GitSlots, JobClass, JobContext, SystemGit};
+use codotheca_core::git::{CommitSubject, GitSlots, JobClass, JobContext, SystemGit};
 use codotheca_core::identity::user::IdentitySet;
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::{open_connection, Index};
@@ -238,7 +238,14 @@ fn committing_history_writes_dates_and_never_a_count() {
         days: std::iter::once(19_675).collect(),
         last_commit_at: Some(1_700_000_000),
         last_user_commit_at: Some(1_650_000_000),
-        recent_subjects: vec!["third".to_owned(), "second".to_owned()],
+        recent_commits: ["third", "second"]
+            .map(|subject| CommitSubject {
+                oid: "b".repeat(40),
+                committed_at: 1_700_000_000,
+                tz_offset_min: 0,
+                subject: subject.to_owned(),
+            })
+            .to_vec(),
         releases: Some(std::collections::BTreeMap::new()),
     };
 

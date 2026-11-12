@@ -52,7 +52,9 @@ fn project_facts(
 
 /// **Two states, never one string.** `not_indexed` is a promise — nothing has looked yet;
 /// `absent` is a fact — J6 looked and found none. `peek_cache.computed_at` is what tells them
-/// apart, and `read_at` carries it so the shell can draw the age slot or draw none at all. One
+/// apart (`peek_cache.readme_read_at`, NULL until J6 has looked — the row itself may be J4's,
+/// holding only the recent commits), and `read_at` carries it so the shell can draw the age slot
+/// or draw none at all. One
 /// merged string here would render unknown as zero on the surface built to triage.
 /// `pub(crate)` because §8.5.3's README panel reads the same two states from the same column —
 /// one rule, two surfaces. A second copy in `crate::detail` is R12's defect with an invariant
@@ -61,47 +63,51 @@ pub(crate) fn readme_and_commits(
     conn: &rusqlite::Connection,
     project: ProjectId,
 ) -> Result<(ReadmeState, Vec<CommitRef>), ProjectsError> {
-    // `.optional()`, not `.ok()`: no row means J6 has not run, and an index fault means the core
-    // does not know — collapsing the two would report "nothing looked" for a failed read.
-    let cached: Option<(Option<String>, Option<String>, i64)> = conn
+    // `.optional()`, not `.ok()`: no row means neither J4 nor J6 has run, and an index fault
+    // means the core does not know — collapsing the two would report "nothing looked" for a
+    // failed read.
+    let cached: Option<(Option<String>, Option<String>, Option<i64>)> = conn
         .query_row(
-            "SELECT readme_excerpt, recent_commits_json, computed_at
+            "SELECT readme_excerpt, recent_commits_json, readme_read_at
                FROM peek_cache WHERE project_id = ?1",
             rusqlite::params![project.0],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?;
 
-    let Some((excerpt, commits_json, computed_at)) = cached else {
-        return Ok((
-            ReadmeState {
-                state: ReadmeStateKind::NotIndexed,
-                text: None,
-                read_at: None,
-            },
-            Vec::new(),
-        ));
+    let Some((excerpt, commits_json, read_at)) = cached else {
+        return Ok((not_indexed(), Vec::new()));
     };
 
-    let readme = excerpt.map_or(
-        ReadmeState {
+    let readme = match (read_at, excerpt) {
+        (None, _) => not_indexed(),
+        (Some(at), None) => ReadmeState {
             state: ReadmeStateKind::Absent,
             text: None,
-            read_at: Some(computed_at),
+            read_at: Some(at),
         },
-        |text| ReadmeState {
+        (Some(at), Some(text)) => ReadmeState {
             state: ReadmeStateKind::Present,
             text: Some(text),
-            read_at: Some(computed_at),
+            read_at: Some(at),
         },
-    );
+    };
 
     // A sidecar this build cannot read is no commits, not a failed peek: the panel still has
-    // five facts to report, and the column is J6's cache rather than the source of truth.
+    // five facts to report, and the column is J4's cache rather than the source of truth.
     let commits = commits_json
         .and_then(|json| serde_json::from_str::<Vec<CommitRef>>(&json).ok())
         .unwrap_or_default();
     Ok((readme, commits))
+}
+
+/// Nothing has looked for a README yet: a promise, never `absent`.
+const fn not_indexed() -> ReadmeState {
+    ReadmeState {
+        state: ReadmeStateKind::NotIndexed,
+        text: None,
+        read_at: None,
+    }
 }
 
 /// §6: an observation the primary copy does not carry is `None`, never a `0` and never a

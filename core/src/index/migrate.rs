@@ -195,13 +195,20 @@ pub const MIGRATIONS: &[Migration] = &[
         // renamed.
         rebuilds_a_table: false,
     },
+    Migration {
+        version: 24,
+        name: "peek_readme_read_at",
+        sql: include_str!("../../migrations/0024_peek_readme_read_at.sql"),
+        // §8.4: one nullable column added and back-filled; nothing is copied or rebuilt.
+        rebuilds_a_table: false,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 23;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 24;
 
 /// The version `PRAGMA user_version` holds; a value that does not fit a `u32` reads as `0`.
 ///

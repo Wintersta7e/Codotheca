@@ -139,6 +139,7 @@ fn every_other_transported_result_survives_the_hop() {
     round_trip(&CommitSubject {
         oid: "def".to_owned(),
         committed_at: 1_600_000_001,
+        tz_offset_min: -330,
         subject: "a subject".to_owned(),
     });
 }

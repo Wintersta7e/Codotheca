@@ -464,7 +464,8 @@ fn an_unreadable_readme_opens_no_item() {
     presence(&conn, p, "present", "present", "present");
     // …and unreadable on disk, which is exactly what J6 records as a NULL excerpt.
     conn.execute(
-        "INSERT INTO peek_cache (project_id, readme_excerpt, computed_at) VALUES (?1, NULL, 1)",
+        "INSERT INTO peek_cache (project_id, readme_excerpt, readme_read_at, computed_at)
+         VALUES (?1, NULL, 1, 1)",
         [p],
     )
     .unwrap();

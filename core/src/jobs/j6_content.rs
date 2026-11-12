@@ -176,14 +176,16 @@ pub fn persist(
                 .map(crate::derive::description::DescriptionSource::slug),
         ],
     )?;
-    // A row present with a NULL excerpt is "no README in this repository"; a row absent is
-    // "no README indexed yet" (§8.4). The two are not one string, so J6 writes the row either
-    // way and leaves the column NULL when there was nothing to read.
+    // A `readme_read_at` with a NULL excerpt is "no README in this repository"; a NULL
+    // `readme_read_at` is "no README indexed yet" (§8.4). The two are not one string, so J6
+    // stamps the column either way and leaves the excerpt NULL when there was nothing to read.
+    // The row itself may be J4's, holding the recent commits, which this write keeps.
     tx.execute(
-        "INSERT INTO peek_cache (project_id, readme_excerpt, computed_at)
-         VALUES (?1, ?2, ?3)
+        "INSERT INTO peek_cache (project_id, readme_excerpt, readme_read_at, computed_at)
+         VALUES (?1, ?2, ?3, ?3)
          ON CONFLICT(project_id) DO UPDATE SET
-             readme_excerpt = excluded.readme_excerpt, computed_at = excluded.computed_at",
+             readme_excerpt = excluded.readme_excerpt,
+             readme_read_at = excluded.readme_read_at, computed_at = excluded.computed_at",
         rusqlite::params![
             project.0,
             facts.readme_excerpt.as_deref().map(first_paragraph),

@@ -149,8 +149,9 @@ impl Rig {
     pub(crate) fn peek_cache(&self, project_id: i64, excerpt: Option<&str>, computed_at: i64) {
         self.conn()
             .execute(
-                "INSERT OR REPLACE INTO peek_cache (project_id, readme_excerpt, computed_at)
-                 VALUES (?1, ?2, ?3)",
+                "INSERT OR REPLACE INTO peek_cache
+                   (project_id, readme_excerpt, readme_read_at, computed_at)
+                 VALUES (?1, ?2, ?3, ?3)",
                 rusqlite::params![project_id, excerpt, computed_at],
             )
             .expect("seed peek_cache");
