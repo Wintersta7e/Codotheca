@@ -41,6 +41,7 @@ import { cascadeDelay } from './motion';
 import { NotePanel } from './note/NotePanel';
 import { Rail } from './rail/Rail';
 import { ReadmePanel } from './readme/ReadmePanel';
+import { useRecheck } from './recheck/useRecheck';
 import { RemoteTab } from './remote/RemoteTab';
 import { RoastNote } from './RoastNote';
 import { CompletionChecklist } from './completion/CompletionChecklist';
@@ -136,6 +137,8 @@ export function ProjectPageView({
   onHealthInputsChanged,
 }: ProjectPageProps): ReactElement {
   const { state, heroHash, redirectedTo, reload } = useProjectDetail(projectId);
+  // §54.4 caller 2: opening the page asks the core for a fresh read of its primary copy.
+  useRecheck(projectId);
   const [tab, setTab] = useState<ProjectTab>('overview');
   const [shownId, setShownId] = useState<LocationId | null>(null);
   const [roastsEnabled, setRoastsEnabled] = useState(true);

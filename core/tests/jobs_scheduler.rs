@@ -492,3 +492,69 @@ fn the_visible_sink_answers_while_the_index_guard_is_held() {
          command wedges behind it."
     );
 }
+
+/// §54.2: `projects.recheck` reaches `JobSink::on_recheck` under the same held guard that
+/// `projects.get` holds for `on_visible`, so the runner's implementation must answer without
+/// taking the index mutex. Same watchdog shape: the failure is a hang.
+#[test]
+fn the_recheck_sink_answers_while_the_index_guard_is_held() {
+    let repo = TestRepo::init();
+    repo.write("a.txt", b"one\n");
+    repo.git(&["add", "a.txt"]);
+    repo.commit("first");
+
+    let dir = tempfile::tempdir().unwrap();
+    let index = Arc::new(Mutex::new(Index::open_at(dir.path(), 0).unwrap()));
+    let (project, location) = {
+        let guard = index.lock().unwrap();
+        let conn = guard.conn();
+        conn.execute(
+            "INSERT INTO project (name, seed_basename, created_at, updated_at)
+             VALUES ('p', 'p', 0, 0)",
+            [],
+        )
+        .unwrap();
+        let project = ProjectId(conn.last_insert_rowid());
+        let path = repo.path().to_string_lossy().into_owned();
+        conn.execute(
+            "INSERT INTO location (project_id, kind, path_bytes, path_key, path_display,
+                                   store_key, presence, repo_kind)
+             VALUES (?1, 'linux', ?2, ?2, ?3, 'store', 'present', 'worktree')",
+            rusqlite::params![project.0, path.as_bytes(), path],
+        )
+        .unwrap();
+        let location = LocationId(conn.last_insert_rowid());
+        drop(guard);
+        (project, location)
+    };
+
+    let pump = codotheca_core::assembly::jobs::JobPump::start(
+        Arc::clone(&index),
+        Arc::new(SystemGit::new(
+            Arc::new(repo.exec()),
+            Arc::new(GitSlots::new(4)),
+            Arc::new(SystemClock::new()),
+        )),
+        Arc::new(SystemClock::new()),
+        Arc::new(RecordingSink::default()),
+        Arc::new(codotheca_core::testing::zone::FixedZone(0)),
+    );
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let index_for_call = Arc::clone(&index);
+    std::thread::spawn(move || {
+        // Exactly what `Assembly::handle` does before it builds a `DetailCtx`.
+        let guard = index_for_call.lock().unwrap();
+        pump.sink()
+            .on_recheck(project, location, "store", StoreClass::Local);
+        drop(guard);
+        let _ = done_tx.send(());
+    });
+
+    assert!(
+        done_rx.recv_timeout(Duration::from_secs(20)).is_ok(),
+        "on_recheck did not return while the index guard was held. The sink re-entered the one \
+         index mutex, which is not reentrant, so the guard is never released and every later \
+         command wedges behind it."
+    );
+}

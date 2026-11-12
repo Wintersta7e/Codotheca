@@ -38,7 +38,7 @@ fn internal(e: impl std::fmt::Display) -> CommandFailure {
 /// §2.4's enum is closed and has no `NOT_FOUND`. A caller naming a project that is not there is
 /// a `PROTOCOL` fault — `INTERNAL` would claim a core defect that is not there — and a caller
 /// holding an id that was merged away gets `PROJECT_MERGED`, which the shell has prose for.
-fn identity_failure(e: &crate::identity::IdentityError) -> CommandFailure {
+pub(super) fn identity_failure(e: &crate::identity::IdentityError) -> CommandFailure {
     match e {
         crate::identity::IdentityError::UnknownProject(_) => {
             CommandFailure::protocol(format!("{e:?}"))

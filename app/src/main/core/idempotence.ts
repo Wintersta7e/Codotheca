@@ -50,6 +50,8 @@ export const COMMAND_EFFECT: Record<CommandName, CommandEffect> = {
   'projects.merge': 'write',
   'projects.unmergeHint': 'read',
   'projects.requeue': 'write',
+  // §54.2 rule 6: its jobs write the index, as `projects.requeue`'s do; never auto-replayed.
+  'projects.recheck': 'write',
   'projects.launch': 'write',
   'locations.setTrusted': 'write',
   'locations.relocate': 'write',

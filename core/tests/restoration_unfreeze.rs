@@ -127,6 +127,18 @@ impl JobSink for Asking<'_> {
             wants_content,
         );
     }
+
+    fn on_recheck(
+        &self,
+        project: ProjectId,
+        location: LocationId,
+        store_key: &str,
+        store_kind: StoreClass,
+    ) {
+        self.asked.lock().unwrap().push((project.0, location.0));
+        self.runner
+            .on_recheck(project, location, store_key, store_kind);
+    }
 }
 
 /// One real repository, indexed through the walk's hand-off, enrolled, authored, granted, with

@@ -1091,6 +1091,11 @@
       }
     },
     "RequeueResult": { "kind": "struct", "fields": { "jobsRequeued": "u32" } },
+    "RecheckResult": {
+      "kind": "struct",
+      "fields": { "queued": "bool" },
+      "$comment": "§54.2. `false` = no current primary copy, or it is covered by §56's exclusion gate, and nothing was queued. Not `RequeueResult`: `projects.requeue` (§11.1 TRY AGAIN) revives failed/deferred rows and counts them; a re-check revives nothing and reports only whether a read will happen."
+    },
 
     "IdentityId": { "kind": "id", "repr": "i64" },
 
@@ -1966,6 +1971,12 @@
       "args": { "id": "ProjectId" },
       "returns": "RequeueResult",
       "$comment": "§11.1: re-queues exactly one project's failed and deferred project_job_state rows. TRY AGAIN on one tile means one repository, so this is not scan.start"
+    },
+    {
+      "name": "projects.recheck",
+      "args": { "id": "ProjectId" },
+      "returns": "RecheckResult",
+      "$comment": "§54: re-reads one project's current primary copy — queues J1 at Interactive with an Interactive origin, and the chain does the rest. Reads only: no write intent, no sync task, no network. Not projects.requeue: it resets no project_job_state row"
     },
     {
       "name": "projects.launch",

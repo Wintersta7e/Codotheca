@@ -949,8 +949,10 @@ mod corehandler {
         // unowned set for an arm that takes the guard itself.
         // §11.1 raises it by one: `problems.trust`, answered **without** the guard — it runs the
         // scan's own hand-off, which takes the one mutex for its transaction after its git reads.
+        // [p4-gaps] §54.8 raises it by one: `projects.recheck`, answered **under** the guard — it
+        // reads the primary and its sink enqueues without taking the index lock.
         assert_eq!(
-            checked, 65,
+            checked, 66,
             "the schema's answerable set, minus the loop's pair and the unowned set"
         );
         assert_eq!(

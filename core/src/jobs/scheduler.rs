@@ -185,6 +185,23 @@ impl JobRunner {
         pushed
     }
 
+    /// Every queued job as `(kind, location, priority, origin)`, in queue order, so a test can
+    /// read what a command asked for without starting a worker.
+    #[cfg(feature = "testkit")]
+    #[must_use]
+    pub fn queued(&self) -> Vec<(JobKind, LocationId, Priority, JobOrigin)> {
+        self.shared.lock().map_or_else(
+            |_| Vec::new(),
+            |shared| {
+                shared
+                    .queue
+                    .jobs()
+                    .map(|job| (job.kind, job.location_id, job.priority, job.origin))
+                    .collect()
+            },
+        )
+    }
+
     /// Whether no job holds a slot and none is due.
     ///
     /// A worker settles a job — which enqueues its follow-ups — before it gives the slot back, so
@@ -675,6 +692,28 @@ impl JobSink for JobRunner {
                 origin: JobOrigin::Interactive,
             });
         }
+    }
+
+    fn on_recheck(
+        &self,
+        project: ProjectId,
+        location: LocationId,
+        store_key: &str,
+        store_kind: StoreClass,
+    ) {
+        // [p4-gaps] §54.2: J1 is what every later job's freshness gate reads, so a re-read starts
+        // there. A walk's J1 already queued is the same `(kind, location)` and is lifted to this
+        // band, origin and all, rather than run twice.
+        self.enqueue(Job {
+            kind: JobKind::J1Refstate,
+            project_id: project,
+            location_id: location,
+            store_key: store_key.to_owned(),
+            store_kind,
+            priority: Priority::Interactive,
+            not_before: 0,
+            origin: JobOrigin::Interactive,
+        });
     }
 }
 

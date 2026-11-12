@@ -48,6 +48,7 @@ impl codotheca_core::jobs::JobSink for RecordingJobs {
     }
 
     fn on_visible(&self, _: ProjectId, _: LocationId, _: &str, _: StoreClass, _: bool, _: bool) {}
+    fn on_recheck(&self, _: ProjectId, _: LocationId, _: &str, _: StoreClass) {}
 }
 
 /// What one scan recorded.

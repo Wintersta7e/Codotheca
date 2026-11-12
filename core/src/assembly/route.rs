@@ -206,9 +206,12 @@ pub const fn route(command: CommandName) -> Route {
         // [p3] §31.6's writer joins the three: it writes one `project_check.user_na`, re-runs
         // §31's evaluator in the same transaction and re-emits the row, all of which this module
         // already owns.
+        // [p4-gaps] §54.8's re-check: it reads the primary under the guard, and its sink enqueues
+        // without taking the index lock, the same rule `projects.get`'s `on_visible` keeps.
         CommandName::ProjectsGet
         | CommandName::ProjectsSetNote
         | CommandName::ProjectsSetCheckNa
+        | CommandName::ProjectsRecheck
         | CommandName::LocationsRelocate => Route::Detail,
 
         CommandName::ViewGet
@@ -351,15 +354,16 @@ mod tests {
         // [p4] §40.10 raises it by two: badges.list and badges.markLanded.
         // [p4] §43.15 raises it by two: motivation.get and motivation.acknowledge.
         // §11.1 raises it by one: problems.trust, TRUST for a folder with no location row.
+        // [p4-gaps] §54.8 raises it by one: projects.recheck, the user-started re-read.
         assert_eq!(
             commands.len(),
-            67,
+            68,
             "the schema this plan routes, §2.4 plus R33 gap 1 plus §20.8's eight plus §25.8's \
              remote.webUrl plus §25.8's three projects.readme* commands plus §24.9's three \
              install.* commands plus §21.13's sync.status plus §24.7's two locations.uninstall* \
              commands plus §33.8's health.weathering plus §31.6's projects.setCheckNa plus \
              §40.10's two badges.* commands plus §43.15's two motivation.* commands plus \
-             §11.1's problems.trust"
+             §11.1's problems.trust plus §54.8's projects.recheck"
         );
         let unnamed: Vec<&str> = commands
             .iter()

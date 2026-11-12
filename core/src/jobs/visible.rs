@@ -37,29 +37,9 @@ pub fn notify_visible(
     wants_content: bool,
 ) {
     let conn = index.conn();
-    // §46.9: a removed copy's path may hold another repository by now, so a reading asked for it
-    // would be of the wrong bytes. The dispatcher drops such a job anyway; this stops the ask. A
-    // read that fails asks for nothing, as the dispatcher's own gate would.
-    if !crate::projects::current::location_is_current(conn, location).unwrap_or(false) {
-        return;
-    }
-    let Ok((store_key, path_bytes)) = conn.query_row(
-        "SELECT store_key, path_bytes FROM location WHERE id = ?1",
-        [location.0],
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?)),
-    ) else {
+    let Some((store_key, class)) = current_place(conn, mounts, location) else {
         return;
     };
-    // The class is **not** a column (R27): it is a property of the mount right now, and a
-    // persisted copy goes stale the moment a drive is remounted elsewhere. This is not R4's
-    // forbidden second resolve either — R4 forbids re-resolving a location the walk resolved in
-    // the same run, and looking at a tile is a different act at a different time.
-    //
-    // `Unknown` is a real answer, not a fabricated one: it is what "this mount could not be
-    // identified" means, and `per_store_cap` treats it as the cautious default it is.
-    let class = mounts
-        .resolve(&path_from_bytes(&path_bytes))
-        .map_or(StoreClass::Unknown, |facts| facts.class);
     // §7.5's redraw question is answered **here**, where the index is already open, and never
     // inside the sink: `Assembly` calls both of this function's callers with the one index guard
     // held, and `std::sync::Mutex` is not reentrant, so a sink that re-locked it would wedge the
@@ -75,4 +55,56 @@ pub fn notify_visible(
         needs_art,
         wants_content,
     );
+}
+
+/// [p4-gaps] §54.2: ask for a re-read of one project's current primary copy.
+///
+/// Answers whether a read was asked for: `false` when the copy is not current (§46.9) or its row
+/// cannot be read, which is `RecheckResult.queued`. The place is resolved by the same body as
+/// [`notify_visible`], so the two cannot disagree about which copies may be read.
+pub fn request_recheck(
+    index: &crate::index::Index,
+    mounts: &dyn MountResolver,
+    jobs: &dyn JobSink,
+    project: ProjectId,
+    location: LocationId,
+) -> bool {
+    let Some((store_key, class)) = current_place(index.conn(), mounts, location) else {
+        return false;
+    };
+    jobs.on_recheck(project, location, &store_key, class);
+    true
+}
+
+/// The store a current copy lives on, as `(store_key, class)`. `None` is a copy no read may be
+/// asked for: removed, of a removed project, or a row that could not be read.
+fn current_place(
+    conn: &rusqlite::Connection,
+    mounts: &dyn MountResolver,
+    location: LocationId,
+) -> Option<(String, StoreClass)> {
+    // §46.9: a removed copy's path may hold another repository by now, so a reading asked for it
+    // would be of the wrong bytes. The dispatcher drops such a job anyway; this stops the ask. A
+    // read that fails asks for nothing, as the dispatcher's own gate would.
+    if !crate::projects::current::location_is_current(conn, location).unwrap_or(false) {
+        return None;
+    }
+    let Ok((store_key, path_bytes)) = conn.query_row(
+        "SELECT store_key, path_bytes FROM location WHERE id = ?1",
+        [location.0],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?)),
+    ) else {
+        return None;
+    };
+    // The class is **not** a column (R27): it is a property of the mount right now, and a
+    // persisted copy goes stale the moment a drive is remounted elsewhere. This is not R4's
+    // forbidden second resolve either — R4 forbids re-resolving a location the walk resolved in
+    // the same run, and looking at a tile is a different act at a different time.
+    //
+    // `Unknown` is a real answer, not a fabricated one: it is what "this mount could not be
+    // identified" means, and `per_store_cap` treats it as the cautious default it is.
+    let class = mounts
+        .resolve(&path_from_bytes(&path_bytes))
+        .map_or(StoreClass::Unknown, |facts| facts.class);
+    Some((store_key, class))
 }

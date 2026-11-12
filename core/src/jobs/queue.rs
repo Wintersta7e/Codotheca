@@ -187,6 +187,12 @@ impl JobQueue {
         self.ready.is_empty()
     }
 
+    /// Every queued job, in the order [`JobQueue::pop_ready`] would consider them.
+    #[cfg(feature = "testkit")]
+    pub fn jobs(&self) -> impl Iterator<Item = &Job> {
+        self.ready.values()
+    }
+
     /// True when a queued job is past its backoff at `now`. A parked retry is queued but not due.
     #[must_use]
     pub fn has_due(&self, now: i64) -> bool {

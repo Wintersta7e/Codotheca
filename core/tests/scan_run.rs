@@ -126,6 +126,7 @@ impl codotheca_core::jobs::JobSink for RecordingJobs {
     ) {
         self.visible.lock().unwrap().push(project.0);
     }
+    fn on_recheck(&self, _: ProjectId, _: LocationId, _: &str, _: StoreClass) {}
 }
 
 impl RecordingJobs {

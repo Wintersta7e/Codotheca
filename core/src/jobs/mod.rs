@@ -405,6 +405,19 @@ pub trait JobSink: Send + Sync + std::fmt::Debug {
         needs_art: bool,
         wants_content: bool,
     );
+    /// [p4-gaps] §54.2: the user asked for a re-read of a project's current primary copy.
+    ///
+    /// Queues J1 at `Interactive` with an `Interactive` origin, and the chain does the rest, so
+    /// every closure it observes is recorded `foreground` (§34.2). Called from
+    /// `projects.recheck` **under the index guard**, the same rule as [`JobSink::on_visible`]: an
+    /// implementation takes no index lock, or the guard is never released.
+    fn on_recheck(
+        &self,
+        project: ProjectId,
+        location: LocationId,
+        store_key: &str,
+        store_kind: crate::mount::StoreClass,
+    );
 }
 
 /// A sink that queues nothing, for a scan that runs without a scheduler behind it.
@@ -430,6 +443,7 @@ impl JobSink for NullJobSink {
         _: bool,
     ) {
     }
+    fn on_recheck(&self, _: ProjectId, _: LocationId, _: &str, _: crate::mount::StoreClass) {}
 }
 
 /// Everything one job run needs besides the index: the git seam, the clock, and the scan run's

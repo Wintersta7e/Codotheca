@@ -359,6 +359,14 @@ impl codotheca_core::jobs::JobSink for RecordingJobs {
             .expect("lock")
             .push((project.0, location.0));
     }
+    fn on_recheck(
+        &self,
+        _: codotheca_core::protocol::ProjectId,
+        _: codotheca_core::protocol::LocationId,
+        _: &str,
+        _: codotheca_core::mount::StoreClass,
+    ) {
+    }
 }
 
 /// One project with one copy, whose worktree was observed a long time ago.

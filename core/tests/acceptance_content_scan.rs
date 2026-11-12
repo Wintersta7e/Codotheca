@@ -1679,6 +1679,7 @@ impl JobSink for VisibilityRecorder {
             asks.push((project.0, wants_content));
         }
     }
+    fn on_recheck(&self, _: ProjectId, _: LocationId, _: &str, _: StoreClass) {}
 }
 
 #[derive(Debug)]

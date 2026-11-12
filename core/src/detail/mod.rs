@@ -13,6 +13,7 @@
 pub mod checkna;
 pub mod get;
 pub mod note;
+pub mod recheck;
 pub mod relocate;
 
 use crate::git::GitBackend;
@@ -89,13 +90,16 @@ pub fn upserted_payload(
 /// The commands this module owns, in the order the dispatcher matches them. Exposed so the
 /// table can be asserted without constructing an `Index`.
 #[must_use]
-pub const fn dispatch_detail_command_names() -> [&'static str; 4] {
+pub const fn dispatch_detail_command_names() -> [&'static str; 5] {
     [
         "projects.get",
         "projects.setNote",
         // [p3] §31.6's writer. It writes one `project_check.user_na`, re-runs §31's evaluator in
         // the same transaction and re-emits the row — all three of which this module owns.
         "projects.setCheckNa",
+        // [p4-gaps] §54.8: the user-started re-read. It picks the primary the way `projects.get`
+        // does, so the two commands always mean the same copy.
+        "projects.recheck",
         "locations.relocate",
     ]
 }
@@ -117,6 +121,9 @@ pub fn dispatch_detail_command(
         }
         "projects.setCheckNa" => {
             Some(checkna::handle_projects_set_check_na(ctx, args).and_then(|v| encode(&v)))
+        }
+        "projects.recheck" => {
+            Some(recheck::handle_project_recheck(ctx, args).and_then(|v| encode(&v)))
         }
         "locations.relocate" => {
             Some(relocate::handle_location_relocate(ctx, args).and_then(|v| encode(&v)))
@@ -144,6 +151,7 @@ mod tests {
                 "projects.get",
                 "projects.setNote",
                 "projects.setCheckNa",
+                "projects.recheck",
                 "locations.relocate"
             ]
         );

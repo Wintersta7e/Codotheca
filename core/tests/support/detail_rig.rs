@@ -18,6 +18,8 @@ pub(crate) struct RecordingJobs {
     pub visible: std::sync::Mutex<Vec<(i64, i64)>>,
     /// §29.7: which command asked, and whether it asked for the content scan.
     pub content_asks: std::sync::Mutex<Vec<(i64, bool)>>,
+    /// §54.2: every re-read `projects.recheck` asked for, as `(project, location)`.
+    pub rechecks: std::sync::Mutex<Vec<(i64, i64)>>,
 }
 
 impl codotheca_core::jobs::JobSink for RecordingJobs {
@@ -47,6 +49,19 @@ impl codotheca_core::jobs::JobSink for RecordingJobs {
             asks.push((project.0, wants_content));
         }
         self.visible
+            .lock()
+            .expect("lock")
+            .push((project.0, location.0));
+    }
+
+    fn on_recheck(
+        &self,
+        project: codotheca_core::protocol::ProjectId,
+        location: codotheca_core::protocol::LocationId,
+        _store_key: &str,
+        _store_kind: StoreClass,
+    ) {
+        self.rechecks
             .lock()
             .expect("lock")
             .push((project.0, location.0));
