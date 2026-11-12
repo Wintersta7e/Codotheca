@@ -1239,8 +1239,9 @@ fn an_archetype_proposal_reads_not_applicable_until_the_user_overrides_it() {
         na.contains(&DebtSource::MissingTests),
         "the archetype's proposal never reached the reading"
     );
-    // `ci_red` is N/A only through §31.1a's derived `ciGreen` rule, which §30 never reads.
-    assert!(!na.contains(&DebtSource::CiRed));
+    // §55.2: `ci_red` follows §31.1a's derived `ciGreen` rule, and `ciGreen` is N/A here because
+    // the archetype proposes `ci` N/A — one rule, read by the evaluator and the reading alike.
+    assert!(na.contains(&DebtSource::CiRed));
     assert_eq!(proposed.scored_open, Some(0));
 
     rule_na(&conn, project, CompletionCheck::Tests, Some(false));

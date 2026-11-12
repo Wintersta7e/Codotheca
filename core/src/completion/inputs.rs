@@ -275,6 +275,8 @@ pub(crate) fn stored_user_na(
 /// The debt sources that are N/A for this project (§30.3's `notApplicable`), from the two stored
 /// facts §31.4's gate reads — J3's archetype and the user's rulings — through that gate.
 ///
+/// `ci_red` also reads J7's `has_ci`: it follows §31.1a's derived CI-green rule (§55.2).
+///
 /// # Errors
 /// Fails when SQLite cannot be read.
 pub fn not_applicable_sources(
@@ -290,9 +292,11 @@ pub fn not_applicable_sources(
         .optional()?
         .flatten();
     let user_na = stored_user_na(conn, project)?;
+    // §55.2: `ci_red` also follows §31.1a's derived CI-green rule, which reads J7's `has_ci`.
+    let has_ci = presence_for_project(conn, project)?.map(|answers| answers.ci);
     Ok(DebtSource::ALL
         .into_iter()
-        .filter(|source| source_not_applicable(*source, archetype.as_deref(), &user_na))
+        .filter(|source| source_not_applicable(*source, archetype.as_deref(), &user_na, has_ci))
         .collect())
 }
 

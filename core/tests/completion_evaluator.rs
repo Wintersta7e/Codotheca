@@ -14,7 +14,8 @@
 use std::path::{Path, PathBuf};
 
 use codotheca_core::completion::evaluate::{
-    evaluate, CheckRow, CompletionInputs, Counts, DepsReading, SingletonReading,
+    evaluate, source_not_applicable, CheckRow, CompletionInputs, Counts, DepsReading,
+    SingletonReading,
 };
 use codotheca_core::jobs::presence::PresenceState;
 use codotheca_core::protocol::{
@@ -440,6 +441,64 @@ fn the_na_gate_runs_before_every_read() {
         row(&ruled_rows, CompletionCheck::Readme).user_na,
         Some(true)
     );
+}
+
+/// AC-P4-55-2: `ci_red` is N/A exactly when `ciGreen` is — by §31.4's gate on `ci` or because the
+/// enumeration found no CI configuration — and an unread or absent enumeration is never N/A.
+#[test]
+fn ac_p4_55_2_ci_red_and_ci_green_read_one_rule() {
+    let ci_index = CompletionCheck::ALL
+        .iter()
+        .position(|k| *k == CompletionCheck::Ci)
+        .unwrap();
+    let rulings = [Some(true), Some(false), None];
+    // `docs` proposes `ci` N/A and `library` does not (`completion::proposal::proposes_na`).
+    let archetypes = [None, Some("docs"), Some("library")];
+    let presences = [
+        Some(PresenceState::Present),
+        Some(PresenceState::Absent),
+        Some(PresenceState::NotRead),
+        None,
+    ];
+
+    let mut table = Vec::new();
+    for ruling in rulings {
+        for archetype in archetypes {
+            for has_ci in presences {
+                let mut inputs = baseline();
+                inputs.archetype = archetype.map(str::to_owned);
+                inputs.user_na[ci_index] = ruling;
+                inputs.has_ci = has_ci;
+                let green_na = state(&checked(&inputs), CompletionCheck::CiGreen) == CheckState::Na;
+                let red_na =
+                    source_not_applicable(DebtSource::CiRed, archetype, &inputs.user_na, has_ci);
+                table.push((ruling, archetype, has_ci, green_na, red_na));
+            }
+        }
+    }
+
+    eprintln!("ci ruling | archetype | has_ci | ciGreen na | ci_red na");
+    for (ruling, archetype, has_ci, green_na, red_na) in &table {
+        eprintln!("{ruling:?} | {archetype:?} | {has_ci:?} | {green_na} | {red_na}");
+    }
+    assert_eq!(
+        table.len(),
+        rulings.len() * archetypes.len() * presences.len()
+    );
+    let disagree: Vec<_> = table.iter().filter(|row| row.3 != row.4).collect();
+    assert!(
+        disagree.is_empty(),
+        "ciGreen and ci_red disagree: {disagree:#?}"
+    );
+
+    // Unknown is not N/A: with `ci` not N/A by the gate, an unread or row-absent enumeration
+    // leaves both applicable.
+    for (ruling, archetype, has_ci, green_na, red_na) in &table {
+        let ci_gated = *ruling == Some(true) || (ruling.is_none() && *archetype == Some("docs"));
+        if !ci_gated && matches!(has_ci, Some(PresenceState::NotRead) | None) {
+            assert!(!green_na && !red_na, "{ruling:?} {archetype:?} {has_ci:?}");
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

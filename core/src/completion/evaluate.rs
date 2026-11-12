@@ -341,20 +341,44 @@ fn is_na(key: CompletionCheck, user_na: Option<bool>, archetype: Option<&str>) -
 /// (§31.9's bijection) is N/A for this project, by the gate above and no second one.
 ///
 /// `user_na` is in `CompletionCheck::ALL` order, as [`CompletionInputs::user_na`] is. A source no
-/// check stands behind is never N/A. **§31.1a's derived `ciGreen` rule is not read**: `ci_red`
-/// is N/A only when `ciGreen` itself is, which is what `suppressed_source` promises §30.
+/// check stands behind is never N/A. **`ci_red` also reads §31.1a's derived `ciGreen` rule**
+/// (§55.2): it is N/A whenever `ciGreen` is, by the one function the evaluator calls, so the
+/// reading never holds a `ci_red` item open on a project whose `ciGreen` reads `na`.
 #[must_use]
 pub fn source_not_applicable(
     source: DebtSource,
     archetype: Option<&str>,
     user_na: &[Option<bool>; 10],
+    has_ci: Option<PresenceState>,
 ) -> bool {
-    CompletionCheck::ALL
+    let gated = CompletionCheck::ALL
         .iter()
         .zip(user_na)
         .any(|(key, ruling)| {
             suppressed_source(*key) == Some(source) && is_na(*key, *ruling, archetype)
-        })
+        });
+    gated
+        || (source == DebtSource::CiRed
+            && ci_green_derived_na(ruling_of(user_na, CompletionCheck::Ci), archetype, has_ci))
+}
+
+/// §31.1a's derived rule: `ciGreen` is `na` because `ci` is — by §31.4's gate, or because the
+/// enumeration found no CI configuration. `NotRead` and row-absent are unknown, never N/A.
+#[must_use]
+pub fn ci_green_derived_na(
+    ci_user_na: Option<bool>,
+    archetype: Option<&str>,
+    has_ci: Option<PresenceState>,
+) -> bool {
+    is_na(CompletionCheck::Ci, ci_user_na, archetype) || has_ci == Some(PresenceState::Absent)
+}
+
+/// The user's ruling on `key`, out of a `CompletionCheck::ALL`-ordered list.
+fn ruling_of(user_na: &[Option<bool>], key: CompletionCheck) -> Option<bool> {
+    CompletionCheck::ALL
+        .iter()
+        .position(|k| *k == key)
+        .and_then(|index| user_na.get(index).copied().flatten())
 }
 
 /// The ten checks, in `CompletionCheck` declaration order.
@@ -381,8 +405,8 @@ pub fn evaluate(inputs: &CompletionInputs, now: i64) -> [CheckRow; 10] {
         observed_at: now,
     });
 
-    // `ci`'s own answer is needed before `ciGreen`'s N/A gate, so it is computed first and read
-    // back below rather than evaluated twice.
+    // `ci`'s own answer, computed once; `ciGreen`'s N/A gate reads the same `has_ci` through
+    // `ci_green_derived_na`, which `source_not_applicable` calls too.
     let ci = from_presence(inputs.has_ci);
 
     for (index, row) in rows.iter_mut().enumerate() {
@@ -406,17 +430,9 @@ pub fn evaluate(inputs: &CompletionInputs, now: i64) -> [CheckRow; 10] {
             CompletionCheck::CiGreen => {
                 // §31.1a: `na` when `ci` is `na` or `fail`. This is §31's rule and it runs
                 // before the read — a green run on a project with no CI config is not a claim
-                // this check may make.
-                let ci_index = CompletionCheck::ALL
-                    .iter()
-                    .position(|k| *k == CompletionCheck::Ci)
-                    .unwrap_or(0);
-                let ci_na = is_na(
-                    CompletionCheck::Ci,
-                    inputs.user_na.get(ci_index).copied().flatten(),
-                    archetype,
-                );
-                if ci_na || ci.0 == CheckState::Fail {
+                // this check may make. One function, so `ci_red`'s N/A cannot drift from it.
+                let ci_ruling = ruling_of(&inputs.user_na, CompletionCheck::Ci);
+                if ci_green_derived_na(ci_ruling, archetype, inputs.has_ci) {
                     plain(CheckState::Na)
                 } else {
                     from_singleton(key, inputs.ci_red, account)

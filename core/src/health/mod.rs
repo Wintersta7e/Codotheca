@@ -34,6 +34,7 @@ use std::collections::BTreeMap;
 
 use rusqlite::Connection;
 
+use crate::jobs::presence::PresenceState;
 use crate::projects::ProjectsError;
 use crate::protocol::{
     DebtItem, DebtSource, DebtSweepOutcome, HealthReading, HealthState, Presence, ProjectId,
@@ -53,6 +54,15 @@ pub(crate) struct ProjectFacts {
     is_archived: bool,
     /// J3's archetype, which §31.4 proposes N/A from. `None` is J3 not having run.
     archetype: Option<String>,
+    /// J7's CI-configuration answer, which §31.1a's derived `ciGreen` rule reads (§55.2). `None`
+    /// is J7 never having observed the project — unknown, never N/A.
+    has_ci: Option<PresenceState>,
+}
+
+/// A stored `has_ci` spelling. One this build cannot name was written by a newer build, and
+/// `NotRead` is the honest reading of it, as `presence_for_project` reads it.
+fn has_ci_of(raw: &str) -> PresenceState {
+    PresenceState::from_slug(raw).unwrap_or(PresenceState::NotRead)
 }
 
 /// One project's reading, **and the item set the frozen case hands down**, from one call — so no
@@ -259,11 +269,13 @@ fn observe_checks(
             // a sweep that never comes. Which sources need the grant is `switches`' to say.
             grant_missing: switches::needs_grant(switch.check) && !shared.granted,
             // §31's archetype-proposed mechanism, read through the gate §31's evaluator runs:
-            // the user's ruling if there is one, the archetype's proposal otherwise.
+            // the user's ruling if there is one, the archetype's proposal otherwise — and, for
+            // `ci_red`, §31.1a's derived `ciGreen` rule over J7's `has_ci` (§55.2).
             not_applicable: crate::completion::evaluate::source_not_applicable(
                 switch.check,
                 project.facts.archetype.as_deref(),
                 &project.user_na,
+                project.facts.has_ci,
             ),
         };
         let grant = GrantState {
@@ -335,9 +347,11 @@ fn slug_of(source: DebtSource) -> Result<String, ProjectsError> {
 
 fn project_facts(conn: &Connection, project: ProjectId) -> Result<ProjectFacts, ProjectsError> {
     conn.query_row(
-        "SELECT is_reference, authored_by_user, error_kind, acknowledged_at, is_archived,
-                archetype
-           FROM project WHERE id = ?1",
+        "SELECT p.is_reference, p.authored_by_user, p.error_kind, p.acknowledged_at,
+                p.is_archived, p.archetype, cs.has_ci
+           FROM project p
+           LEFT JOIN project_content_scan cs ON cs.project_id = p.id
+          WHERE p.id = ?1",
         [project.0],
         |r| {
             Ok(ProjectFacts {
@@ -348,6 +362,7 @@ fn project_facts(conn: &Connection, project: ProjectId) -> Result<ProjectFacts, 
                 acknowledged_at: r.get(3)?,
                 is_archived: r.get::<_, i64>(4)? != 0,
                 archetype: r.get(5)?,
+                has_ci: r.get::<_, Option<String>>(6)?.as_deref().map(has_ci_of),
             })
         },
     )

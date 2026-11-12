@@ -143,9 +143,10 @@ fn all_project_facts(
     conn: &Connection,
 ) -> Result<BTreeMap<i64, (ProjectFacts, Option<ConditionSignal>)>, ProjectsError> {
     let mut stmt = conn.prepare(
-        "SELECT id, is_reference, authored_by_user, error_kind, acknowledged_at, is_archived,
-                condition_signal, archetype
-           FROM project",
+        "SELECT p.id, p.is_reference, p.authored_by_user, p.error_kind, p.acknowledged_at,
+                p.is_archived, p.condition_signal, p.archetype, cs.has_ci
+           FROM project p
+           LEFT JOIN project_content_scan cs ON cs.project_id = p.id",
     )?;
     let mut rows = stmt.query([])?;
     let mut out = BTreeMap::new();
@@ -158,6 +159,10 @@ fn all_project_facts(
             acknowledged_at: r.get(4)?,
             is_archived: r.get::<_, i64>(5)? != 0,
             archetype: r.get(7)?,
+            has_ci: r
+                .get::<_, Option<String>>(8)?
+                .as_deref()
+                .map(super::has_ci_of),
         };
         out.insert(id, (facts, parse_condition(r.get(6)?)?));
     }
