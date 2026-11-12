@@ -447,29 +447,28 @@ impl ScanRunner<'_> {
             let stats = walk_root(&entry.path, &ctx, &|event| match event {
                 WalkEvent::Repo(candidate) => {
                     let discovered = self.enrich(candidate, entry);
-                    if discovered.candidate.path.to_str().is_none() {
-                        // §11.1's non-UTF-8 group. The repository indexes normally — criterion 5
-                        // requires it — and this row is what tells the user the path it is shown
-                        // is the lossy one.
-                        self.report(
-                            scan_run_id,
-                            ScanProblem {
-                                kind: ScanProblemKind::NonUtf8Path,
-                                path_display: discovered.path_display.clone(),
-                                detail: "path is not valid UTF-8; the displayed form is lossy"
-                                    .to_owned(),
-                            },
-                            sink,
-                        );
-                    }
                     let seen = found_this_run.fetch_add(1, Ordering::Relaxed) + 1;
-                    self.index_one(
+                    let indexed = self.index_one(
                         &discovered,
                         entry.facts.class,
                         generation,
                         scan_run_id,
                         sink,
                     );
+                    if indexed && is_lossy(&discovered) {
+                        // §11.1's non-UTF-8 group. The repository indexes normally — criterion 5
+                        // requires it — and this row is what tells the user the path it is shown
+                        // is the lossy one. One that failed already has its row, which says so.
+                        self.report(
+                            scan_run_id,
+                            ScanProblem {
+                                kind: ScanProblemKind::NonUtf8Path,
+                                path_display: discovered.path_display.clone(),
+                                detail: LOSSY_NAME.to_owned(),
+                            },
+                            sink,
+                        );
+                    }
                     sink(WalkEvent::Discovered(Box::new(discovered)));
                     sink(WalkEvent::Progress {
                         walked_dirs: 0,
@@ -617,6 +616,9 @@ impl ScanRunner<'_> {
     /// have. A **cancelled** run is the one exception — it reports nothing, because a token that
     /// fired once would otherwise write one row per remaining repository, none of which is a
     /// problem with the repository.
+    ///
+    /// Returns whether it indexed. A failure is the folder's only row this run — one row per
+    /// path — so a lossy name rides in its detail rather than in a second row.
     fn index_one(
         &self,
         discovered: &Discovered,
@@ -624,7 +626,7 @@ impl ScanRunner<'_> {
         generation: i64,
         scan_run_id: i64,
         sink: &WalkSink<'_>,
-    ) {
+    ) -> bool {
         let ctx = HandoffCtx {
             git: self.git,
             cancel: self.cancel,
@@ -633,25 +635,34 @@ impl ScanRunner<'_> {
             now: self.clock.now_unix(),
         };
         match hand_off_discovered(self.index, &ctx, discovered) {
-            Ok(indexed) => self.jobs.on_location_indexed(
-                indexed.project,
-                indexed.location,
-                &discovered.store_key,
-                store_class,
-            ),
+            Ok(indexed) => {
+                self.jobs.on_location_indexed(
+                    indexed.project,
+                    indexed.location,
+                    &discovered.store_key,
+                    store_class,
+                );
+                true
+            }
             Err(err) => {
                 if self.cancel.is_cancelled() {
-                    return;
+                    return false;
                 }
+                let detail = if is_lossy(discovered) {
+                    format!("could not be indexed: {err}; {LOSSY_NAME}")
+                } else {
+                    format!("could not be indexed: {err}")
+                };
                 self.report(
                     scan_run_id,
                     ScanProblem {
                         kind: problem_kind_for(&err),
                         path_display: discovered.path_display.clone(),
-                        detail: format!("could not be indexed: {err}"),
+                        detail,
                     },
                     sink,
                 );
+                false
             }
         }
     }
@@ -713,6 +724,14 @@ pub fn platform_of(kind: &str) -> PathPlatform {
     } else {
         PathPlatform::Unix
     }
+}
+
+/// What §11.1's non-UTF-8 row says, and what a failed lossy-named folder's row appends.
+const LOSSY_NAME: &str = "path is not valid UTF-8; the displayed form is lossy";
+
+/// Whether the path the user is shown for `discovered` is a lossy rendering of its real name.
+fn is_lossy(discovered: &Discovered) -> bool {
+    discovered.candidate.path.to_str().is_none()
 }
 
 /// §11.1's group for a repository the hand-off could not index.
