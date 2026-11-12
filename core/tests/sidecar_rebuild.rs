@@ -10,7 +10,9 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use codotheca_core::index::migrate::{apply_all, MIGRATIONS};
 use codotheca_core::index::pending::PendingRecord;
@@ -25,15 +27,50 @@ const NOW: i64 = 5_000;
 
 /// Every file in `dir` by name, with its bytes. A file created, removed, renamed or rewritten
 /// changes it.
+///
+/// A file the listing named can be gone or share-locked by the time it is read — a resident
+/// scanner's transient copy does both on Windows — so the whole fingerprint is taken again, for at
+/// most five seconds. A file that is listed and readable always counts, whatever its name.
 fn fingerprint(dir: &Path) -> BTreeMap<String, Vec<u8>> {
-    std::fs::read_dir(dir)
-        .unwrap()
-        .map(|entry| {
-            let entry = entry.unwrap();
-            let name = entry.file_name().to_string_lossy().into_owned();
-            (name, std::fs::read(entry.path()).unwrap())
-        })
-        .collect()
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match take_fingerprint(dir) {
+            Ok(files) => return files,
+            Err((name, err)) if Instant::now() < deadline => {
+                eprintln!("fingerprint retake: {name}: {err}");
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err((name, err)) => panic!("fingerprint: {name} stayed unreadable for 5 s: {err}"),
+        }
+    }
+}
+
+/// One pass of `fingerprint`, or the listed file that vanished or was share-locked mid-read.
+fn take_fingerprint(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>, (String, io::Error)> {
+    let mut files = BTreeMap::new();
+    let listing = std::fs::read_dir(dir)
+        .unwrap_or_else(|err| panic!("fingerprint: listing {}: {err}", dir.display()));
+    for entry in listing {
+        let entry =
+            entry.unwrap_or_else(|err| panic!("fingerprint: listing {}: {err}", dir.display()));
+        let name = entry.file_name().to_string_lossy().into_owned();
+        match std::fs::read(entry.path()) {
+            Ok(bytes) => {
+                files.insert(name, bytes);
+            }
+            // 32 is Windows' sharing violation, which std leaves uncategorised.
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
+                ) || err.raw_os_error() == Some(32) =>
+            {
+                return Err((name, err));
+            }
+            Err(err) => panic!("fingerprint: reading {name}: {err}"),
+        }
+    }
+    Ok(files)
 }
 
 fn sibling(db: &Path, suffix: &str) -> PathBuf {
