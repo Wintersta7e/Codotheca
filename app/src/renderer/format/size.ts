@@ -28,5 +28,9 @@ export function formatTrackedBytes(bytes: number): string {
   }
   // A measured zero is not an unknown: `0 MB` is a fact, and §7.8a draws the same distinction
   // for `is_pinned = 0`. A caller with no measurement passes nothing and renders no figure.
+  if (bytes === 0) return '0 MB';
+  // Anything tracked under a megabyte is not nothing: rounding it to `0 MB` printed an empty
+  // repository's figure for a small one.
+  if (bytes < BYTES_PER_MB) return '<1 MB';
   return `${String(Math.round(bytes / BYTES_PER_MB))} MB`;
 }

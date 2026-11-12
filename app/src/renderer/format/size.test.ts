@@ -39,11 +39,21 @@ describe('§8.1: one decimal of GB at or above 0.1 GB, whole MB below', () => {
 
 describe('the rungs the spec does not carry are not invented', () => {
   it('has no B rung and no KB rung — "whole MB below" is the whole of the low end', () => {
-    expect(formatTrackedBytes(940)).toBe('0 MB');
+    expect(formatTrackedBytes(940)).toBe('<1 MB');
     expect(formatTrackedBytes(8_400_000)).toBe('8 MB');
     for (const bytes of [0, 1, 940, 8_400_000, 200 * BYTES_PER_MB]) {
-      expect(formatTrackedBytes(bytes)).toMatch(/^\d+(\.\d)? (MB|GB)$/);
+      expect(formatTrackedBytes(bytes)).toMatch(/^<?\d+(\.\d)? (MB|GB)$/);
     }
+  });
+
+  // Rounding to whole MB printed `0 MB` for a repository tracking a few hundred kilobytes — the
+  // same figure as a measured empty one. Only an exact zero prints zero.
+  it('prints <1 MB for anything above zero and under a megabyte, and 0 MB only for zero', () => {
+    expect(formatTrackedBytes(0)).toBe('0 MB');
+    expect(formatTrackedBytes(1)).toBe('<1 MB');
+    expect(formatTrackedBytes(BYTES_PER_MB / 2)).toBe('<1 MB');
+    expect(formatTrackedBytes(BYTES_PER_MB - 1)).toBe('<1 MB');
+    expect(formatTrackedBytes(BYTES_PER_MB)).toBe('1 MB');
   });
 
   it('divides by 1024, not by 1000 — the two disagree by 7% at a gigabyte', () => {
