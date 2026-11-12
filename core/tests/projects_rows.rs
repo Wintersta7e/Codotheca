@@ -13,11 +13,12 @@
 use codotheca_core::art::testsupport::CollectingSink;
 use codotheca_core::index::Index;
 use codotheca_core::projects::rows::{
-    any_present_dirty, enum_from_column, load_project_rows, locations_of, pick_primary,
+    any_present_dirty, enum_from_column, load_project_row, load_project_rows, locations_of,
+    pick_primary,
 };
 use codotheca_core::projects::ProjectsCtx;
 use codotheca_core::protocol::{
-    ArtState, ConditionSignal, DescriptionSource, LocationKind, Presence, ProjectId,
+    ArtState, CheckState, ConditionSignal, DescriptionSource, LocationKind, Presence, ProjectId,
 };
 
 const NOW: i64 = 1_781_000_000; // mid-2026
@@ -439,4 +440,80 @@ fn authorship_crosses_the_wire_as_stored_and_null_stays_null() {
         ],
         "the stored authorship did not cross the wire as stored"
     );
+}
+
+/// The stored `ciGreen` check for one project: ten rows, as the evaluator writes them, with every
+/// other check passing so only `ciGreen` varies between projects.
+fn checks(conn: &rusqlite::Connection, project_id: i64, ci_green: &str, reason: Option<&str>) {
+    for key in [
+        "remote",
+        "readme",
+        "license",
+        "description",
+        "tests",
+        "ci",
+        "ciGreen",
+        "pushed",
+        "deps",
+        "release",
+    ] {
+        let (state, why) = if key == "ciGreen" {
+            (ci_green, reason)
+        } else {
+            ("pass", None)
+        };
+        conn.execute(
+            "INSERT INTO project_check (project_id, check_key, state, unknown_reason, observed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![project_id, key, state, why, NOW],
+        )
+        .expect("insert project_check");
+    }
+}
+
+#[test]
+fn ci_green_crosses_as_stored_and_null_when_no_check_was_computed() {
+    let (_dir, index) = opened();
+    let conn = index.conn();
+    for (id, name, path) in [
+        (1, "pass", "/a"),
+        (2, "fail", "/b"),
+        (3, "na", "/c"),
+        (4, "unknown", "/d"),
+        (5, "never", "/e"),
+    ] {
+        project(conn, id, name, NOW - id);
+        location(conn, id, &Loc::new(id * 10, path));
+    }
+    checks(conn, 1, "pass", None);
+    checks(conn, 2, "fail", None);
+    checks(conn, 3, "na", None);
+    checks(conn, 4, "unknown", Some("notSynced"));
+    let sink = CollectingSink::default();
+    let rows = load_project_rows(&ctx(&index, &sink, &Deps::new())).expect("load");
+
+    let by_id = |id: i64| {
+        rows.iter()
+            .find(|r| r.row.id == ProjectId(id))
+            .map(|r| r.row.clone())
+            .expect("row")
+    };
+    assert_eq!(by_id(1).ci_green, Some(CheckState::Pass));
+    assert_eq!(by_id(2).ci_green, Some(CheckState::Fail));
+    assert_eq!(by_id(3).ci_green, Some(CheckState::Na));
+    assert_eq!(by_id(4).ci_green, Some(CheckState::Unknown));
+    // No stored check is *not computed*: null on the wire, never `fail` and never `na`.
+    assert_eq!(by_id(5).ci_green, None);
+    let wire = serde_json::to_value(by_id(5)).expect("serialise");
+    assert_eq!(wire["ciGreen"], serde_json::Value::Null);
+    assert_eq!(
+        serde_json::to_value(by_id(2)).expect("serialise")["ciGreen"],
+        serde_json::Value::String("fail".to_owned())
+    );
+
+    // The opened page reads the same projection, so the hero and the tile cannot disagree.
+    let one = load_project_row(conn, ProjectId(2)).expect("one row");
+    assert_eq!(one.row.ci_green, Some(CheckState::Fail));
+    let none = load_project_row(conn, ProjectId(5)).expect("one row");
+    assert_eq!(none.row.ci_green, None);
 }

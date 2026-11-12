@@ -178,6 +178,12 @@ test('completion crosses as nullable and is never a plain integer', () => {
   assert.equal(schema.types.ProjectRow.fields.completionApplicable, 'u32?');
 });
 
+// The shelf's rank demotes on a stored `ciGreen` of `fail` alone. No stored check is null, never
+// `fail`, so the row's one CI fact is the check's own state and is nullable.
+test('ciGreen crosses on the row as the stored check state and is nullable', () => {
+  assert.equal(schema.types.ProjectRow.fields.ciGreen, 'CheckState?');
+});
+
 // §6: absence of dirty means "no changes as of T", never "clean". A bool alone cannot say that.
 test('worktree state crosses with its observation time, and is nullable', () => {
   assert.equal(schema.types.WorktreeObservation.fields.observedAt, 'Timestamp?');

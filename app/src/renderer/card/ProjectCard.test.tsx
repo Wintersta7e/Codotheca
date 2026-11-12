@@ -40,6 +40,7 @@ const row = (over: Partial<ProjectRow> = {}): ProjectRow => ({
   conditionSignal: 'dormant',
   completionLit: null,
   completionApplicable: null,
+  ciGreen: null,
   isPinned: false,
   isArchived: false,
   isHidden: false,

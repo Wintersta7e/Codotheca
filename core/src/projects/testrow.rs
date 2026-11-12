@@ -38,6 +38,7 @@ impl ProjectRow {
             condition_signal: None,
             completion_lit: None,
             completion_applicable: None,
+            ci_green: None,
             is_pinned: false,
             is_archived: false,
             is_hidden: false,

@@ -29,6 +29,7 @@ export function makeProjectRow(overrides: Partial<ProjectRow> = {}): ProjectRow 
     conditionSignal: null,
     completionLit: null,
     completionApplicable: null,
+    ciGreen: null,
     isPinned: false,
     isArchived: false,
     isHidden: false,

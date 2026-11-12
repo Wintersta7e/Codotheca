@@ -97,6 +97,7 @@ export function rowFixture(over: Partial<ProjectRow> = {}): ProjectRow {
     // Phase 1 computes neither, on every project. Nothing here may render a zero for them.
     completionLit: null,
     completionApplicable: null,
+    ciGreen: null,
     isPinned: false,
     isArchived: false,
     isHidden: false,

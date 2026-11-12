@@ -14,8 +14,8 @@ use crate::index::path::{display_paths_for_ui, DisplayPathTable};
 use crate::jobs::presence::{PresenceAnswers, PresenceState};
 use crate::projects::{ProjectsCtx, ProjectsError};
 use crate::protocol::{
-    ArtState, CollectionId, ConditionSignal, ErrorCode, InterruptedOp, LocationId, LocationKind,
-    LocationRef, Presence, ProjectId, ProjectRow, SceneHash,
+    ArtState, CheckState, CollectionId, ConditionSignal, ErrorCode, InterruptedOp, LocationId,
+    LocationKind, LocationRef, Presence, ProjectId, ProjectRow, SceneHash,
 };
 
 /// Reads a stored TEXT enum through the **generated** serde renames.
@@ -352,10 +352,12 @@ const PROJECT_COLUMNS: &str =
             EXISTS(SELECT 1 FROM submodule_edge se WHERE se.parent_project_id = p.id),
             pc.computed_at, pc.readme_excerpt,
             p.seed_basename, p.reroll_offset,
-            cs.has_readme, cs.has_license, cs.has_tests, cs.has_ci
+            cs.has_readme, cs.has_license, cs.has_tests, cs.has_ci,
+            ck.state
        FROM project p
        LEFT JOIN peek_cache pc ON pc.project_id = p.id
-       LEFT JOIN project_content_scan cs ON cs.project_id = p.id";
+       LEFT JOIN project_content_scan cs ON cs.project_id = p.id
+       LEFT JOIN project_check ck ON ck.project_id = p.id AND ck.check_key = 'ciGreen'";
 
 /// The shelf's fixed shape, which `idx_project_shelf_order` exists for.
 const PROJECT_SHELF_FILTER: &str = " WHERE p.merged_into IS NULL
@@ -405,6 +407,10 @@ fn map_loaded_row(
         // downstream must render "not computed" rather than "0 of 10".
         completion_lit: count_u32(r.get(10)?),
         completion_applicable: count_u32(r.get(11)?),
+        // The stored `ciGreen` check as the evaluator last wrote it, read from the same table
+        // that `completion_lit` is recounted from. No row is *not computed* and crosses as
+        // null, never `fail`: the shelf's rank demotes on `fail` alone.
+        ci_green: optional_column::<CheckState>(r.get(44)?, "project_check.state")?,
         is_pinned: r.get::<_, i64>(12)? != 0,
         is_archived: r.get::<_, i64>(13)? != 0,
         is_hidden: r.get::<_, i64>(14)? != 0,

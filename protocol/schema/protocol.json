@@ -465,6 +465,7 @@
         "conditionSignal": "ConditionSignal?",
         "completionLit": "u32?",
         "completionApplicable": "u32?",
+        "ciGreen": "CheckState?",
         "isPinned": "bool",
         "isArchived": "bool",
         "isHidden": "bool",
