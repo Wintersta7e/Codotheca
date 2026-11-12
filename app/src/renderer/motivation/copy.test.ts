@@ -115,9 +115,23 @@ describe('the motivation copy module', () => {
     expect(copy.XP_LINE_PARTIAL(120, 3)).toContain('3 PROJECTS STILL INDEXING');
     expect(copy.XP_LINE_PARTIAL(120, 3)).toContain(copy.XP_LINE_COMPUTED(120));
     expect(copy.LINE_COVERAGE_PARTIAL(1)).toBe('1 PROJECT STILL INDEXING');
-    expect(copy.RHYTHM_LINE(3, 4, 1)).toBe('3 OF 4 DAYS · BEST 1 WEEK');
-    expect(copy.RHYTHM_LINE(3, 4, 6)).toBe('3 OF 4 DAYS · BEST 6 WEEKS');
-    expect(copy.RHYTHM_LINE(null, null, null)).toBe('— OF — DAYS · BEST — WEEKS');
+    expect(copy.RHYTHM_LINE(3, 4, 1)).toBe('3 DAYS · TARGET 4 · BEST 1 WEEK');
+    expect(copy.RHYTHM_LINE(1, 4, 6)).toBe('1 DAY · TARGET 4 · BEST 6 WEEKS');
+    expect(copy.RHYTHM_LINE(null, null, null)).toBe('— DAYS · TARGET — · BEST — WEEKS');
+  });
+
+  it('states the active days and the target as two figures, never a fraction, met or not', () => {
+    // Past the target, at it and under it, the line keeps one shape: never "3 OF 2".
+    expect(copy.RHYTHM_LINE(3, 2, 5)).toBe('3 DAYS · TARGET 2 · BEST 5 WEEKS');
+    expect(copy.RHYTHM_LINE(2, 2, 5)).toBe('2 DAYS · TARGET 2 · BEST 5 WEEKS');
+    expect(copy.RHYTHM_LINE(0, 2, 5)).toBe('0 DAYS · TARGET 2 · BEST 5 WEEKS');
+    expect(copy.RHYTHM_SHORT(3, 2, 5)).toBe('3d · T2 · 5w');
+    expect(copy.RHYTHM_SHORT(0, 7, 12)).toBe('0d · T7 · 12w');
+    expect(copy.RHYTHM_SHORT(null, null, null)).toBe('—d · T— · —w');
+    for (const text of [copy.RHYTHM_LINE(3, 2, 5), copy.RHYTHM_SHORT(3, 2, 5)]) {
+      expect(text).not.toContain(' OF ');
+      expect(text).not.toMatch(/\d\/\d/u);
+    }
   });
 
   it('makes the quiet note the list read from its module', () => {
