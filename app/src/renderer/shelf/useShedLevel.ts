@@ -32,10 +32,11 @@ export const SHED_ORDER = ['motivation', 'switch', 'keys', 'wordmarkLettering'] 
  * harness now **derives** its widest label by measuring every `SortKey` variant, and §35.2's
  * `NEEDS ATTENTION` is wider than the `LAST TOUCHED` the harness used to name.
  *
- * [p4] `1155` is the harness's measurement with §43.2's condensed block at its widest derived
- * content; the three after it re-measured unchanged with the block shed.
+ * [p4] ~~`1155`~~ `1179`: the harness's measurement with §43.2's condensed block at its widest
+ * derived content, re-measured once the rhythm figures took their unit letters; the three after it
+ * re-measured unchanged with the block shed.
  */
-export const SHED_WIDTHS: readonly [number, number, number, number] = [1155, 878, 733, 646];
+export const SHED_WIDTHS: readonly [number, number, number, number] = [1179, 878, 733, 646];
 
 export const SHED_CLASSES = [
   'cdt-topbar--shed-1',

@@ -28,7 +28,7 @@ import { SHED_WIDTHS } from '../src/renderer/shelf/useShedLevel.js';
 
 const REPOS = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot'] as const;
 /** 1440, each shed width (§36.2 rule 8) with the width one above it, and the 526 floor. */
-const BAND_WIDTHS = [1440, 1156, 1155, 879, 878, 734, 733, 647, 646, 526] as const;
+const BAND_WIDTHS = [1440, 1180, 1179, 879, 878, 734, 733, 647, 646, 526] as const;
 const HEIGHT = 873;
 /** Optional: a directory the run writes its band screenshots into, for a person to look at. */
 const SHOTS = process.env['BAND_LAYOUT_SHOTS'];
