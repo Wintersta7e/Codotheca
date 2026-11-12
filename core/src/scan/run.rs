@@ -549,7 +549,7 @@ impl ScanRunner<'_> {
                     kind: ScanProblemKind::OfflineStore,
                     path_display: path_display.to_owned(),
                     detail: format!(
-                        "{distro}: this build has no in-distro worker, so the bridge was not                          crossed"
+                        "{distro}: this build has no in-distro worker, so the bridge was not crossed"
                     ),
                     path: None,
                 },

@@ -929,13 +929,18 @@ mod bridge {
             &RunTally::new(0),
             &|event| {
                 if let WalkEvent::Problem(p) = event {
-                    problems.lock().expect("lock").push(p.kind);
+                    problems.lock().expect("lock").push((p.kind, p.detail));
                 }
             },
         );
+        // The detail is shown in the scan summary as written, so it reads as one sentence.
         assert_eq!(
             problems.into_inner().expect("lock"),
-            vec![ScanProblemKind::OfflineStore]
+            vec![(
+                ScanProblemKind::OfflineStore,
+                "distro-a: this build has no in-distro worker, so the bridge was not crossed"
+                    .to_owned()
+            )]
         );
     }
 
