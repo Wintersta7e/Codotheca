@@ -1281,11 +1281,14 @@ test('the four totals agree with the phase-2 delta table', () => {
    *
    * §11.1's `problems.trust` moves it by **+1**: `ScanProblemId`, the id `ProblemItem.problemId`
    * carries to it.
+   *
+   * The reveal's LANGUAGES fix moves it by **+1**: `RevealLanguage`, so the panel's names and
+   * its count come from one read.
    */
   assert.equal(
     types,
-    228,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9 + §40's 5 + §43's 6 + §11.1's 1; found ${types}`,
+    229,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9 + §40's 5 + §43's 6 + §11.1's 1 + RevealLanguage 1; found ${types}`,
   );
 });
 

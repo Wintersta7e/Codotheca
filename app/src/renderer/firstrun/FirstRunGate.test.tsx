@@ -87,6 +87,7 @@ const reveal: Reveal = {
   spanDays: { value: 4_400, basis },
   projectCount: { value: 1, basis },
   languageCount: { value: 1, basis },
+  languages: [{ name: 'Rust', projects: 1 }],
   bestYear: { value: 2021, basis },
   playtimeSeconds: { value: 0, basis },
   oldestStillAlive: { projectId: 1 as ProjectId, firstCommitAt: 1, basis },
@@ -118,7 +119,6 @@ function harness(
     markLanded: vi.fn<(kind: BadgeKind) => Promise<void>>(() => Promise.resolve()),
     revealDeps: {
       nowSecs: 1_760_000_000,
-      languageTally: [],
       referenceCount: 0,
       project: () => null,
     },
@@ -620,7 +620,11 @@ test('AC-12 first run asks nothing, shows no percentage, and states its coverage
   deps.loadReveal.mockResolvedValue({
     spanDays: { value: 4_400, basis: partial },
     projectCount: { value: 212, basis: partial },
-    languageCount: { value: 9, basis: partial },
+    languageCount: { value: 2, basis: partial },
+    languages: [
+      { name: 'Rust', projects: 120 },
+      { name: 'Go', projects: 92 },
+    ],
     bestYear: { value: 2021, basis: partial },
     playtimeSeconds: {
       value: 0,
@@ -684,7 +688,11 @@ const partialBasis = { projectsCovered: 212, projectsTotal: 400, historyComplete
 const partialReveal: Reveal = {
   spanDays: { value: 4_400, basis: partialBasis },
   projectCount: { value: 212, basis: partialBasis },
-  languageCount: { value: 9, basis: partialBasis },
+  languageCount: { value: 2, basis: partialBasis },
+  languages: [
+    { name: 'Rust', projects: 120 },
+    { name: 'Go', projects: 92 },
+  ],
   bestYear: { value: 2021, basis: partialBasis },
   playtimeSeconds: {
     value: 0,

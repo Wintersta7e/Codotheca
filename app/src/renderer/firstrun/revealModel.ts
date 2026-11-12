@@ -37,20 +37,15 @@ export interface RevealProject {
   readonly primaryLanguage: string | null;
 }
 
-export interface LanguageCount {
-  readonly name: string;
-  readonly count: number;
-}
-
 /**
- * What the shelf's own rows can tell the reveal that `Reveal` does not carry. All four are
+ * What the shelf's own rows can tell the reveal that `Reveal` does not carry. All three are
  * derivable from the `ProjectRow[]` the renderer already holds, so none of them is a second
- * call and none can disagree with a figure.
+ * call. LANGUAGES' names are not among them: the rows hold hidden projects the count leaves
+ * out, so the names come from `Reveal.languages`, read with the count.
  */
 export interface RevealDeps {
   /** R3: epoch seconds, handed in. This module never reads a clock. */
   readonly nowSecs: number;
-  readonly languageTally: readonly LanguageCount[];
   readonly referenceCount: number | null;
   readonly project: (id: ProjectId) => RevealProject | null;
 }
@@ -162,12 +157,12 @@ export function panelFor(key: RevealKey, reveal: Reveal, deps: RevealDeps): Reve
       };
     }
     case 'languageCount': {
-      const names = deps.languageTally.map((l) => l.name);
+      const names = reveal.languages.map((l) => l.name);
       return {
         ...shared,
         value: reveal.languageCount.value === null ? null : String(reveal.languageCount.value),
         caption: names.length === 0 ? 'Classified from what is on disk.' : `${names.join(', ')}.`,
-        evidence: deps.languageTally.map((l) => `${l.name} ${String(l.count)}`).join('  ·  '),
+        evidence: reveal.languages.map((l) => `${l.name} ${String(l.projects)}`).join('  ·  '),
       };
     }
     case 'bestYear': {

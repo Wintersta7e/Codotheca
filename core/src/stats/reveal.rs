@@ -7,7 +7,7 @@
 use crate::index::IndexError;
 use crate::jobs::state::J4_COVERED_SQL;
 use crate::projects::current::IS_CURRENT_SQL;
-use crate::protocol::{ProjectId, Reveal, RevealBasis, RevealFigure, RevealOldest};
+use crate::protocol::{ProjectId, Reveal, RevealBasis, RevealFigure, RevealLanguage, RevealOldest};
 
 /// Projects that count, and projects whose slow jobs have returned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -112,14 +112,22 @@ pub fn reveal(conn: &rusqlite::Connection, now: i64) -> Result<Reveal, IndexErro
         |r| r.get(0),
     )?;
 
-    let language_count: i64 = conn.query_row(
-        &format!(
-            "SELECT COUNT(DISTINCT primary_language) FROM project
-              WHERE {LIVE} AND primary_language IS NOT NULL"
-        ),
-        [],
-        |r| r.get(0),
-    )?;
+    // LANGUAGES' names and its count are one read: the panel lists these and counts them, so
+    // the figure can never disagree with the names beside it. Most projects first, then by name.
+    let mut languages_stmt = conn.prepare(&format!(
+        "SELECT primary_language, COUNT(*) FROM project
+          WHERE {LIVE} AND primary_language IS NOT NULL
+          GROUP BY primary_language
+          ORDER BY COUNT(*) DESC, primary_language ASC"
+    ))?;
+    let languages: Vec<RevealLanguage> = languages_stmt
+        .query_map([], |r| {
+            Ok(RevealLanguage {
+                name: r.get(0)?,
+                projects: u32::try_from(r.get::<_, i64>(1)?).unwrap_or(u32::MAX),
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut starts_stmt = conn.prepare(&format!(
         "SELECT first_commit_at, first_commit_tz_offset_min FROM project
@@ -168,9 +176,10 @@ pub fn reveal(conn: &rusqlite::Connection, now: i64) -> Result<Reveal, IndexErro
             },
         },
         language_count: RevealFigure {
-            value: Some(u32::try_from(language_count).unwrap_or(u32::MAX).into()),
+            value: Some(u32::try_from(languages.len()).unwrap_or(u32::MAX).into()),
             basis: basis(pop.inventory_covered, &pop),
         },
+        languages,
         best_year: RevealFigure {
             value: best_year(&starts),
             basis: basis(pop.history_covered, &pop),
@@ -433,6 +442,40 @@ mod tests {
             "a real zero: no language is known yet"
         );
         assert_eq!(out.oldest_still_alive.project_id, None);
+    }
+
+    #[test]
+    fn the_language_figure_is_the_number_of_names_it_carries() {
+        let (_dir, index) = open();
+        let conn = index.conn();
+        project(conn, "a", None, Some("Rust"), false, false, false);
+        project(conn, "b", None, Some("Rust"), false, true, false);
+        project(conn, "c", None, Some("Go"), false, false, false);
+        project(conn, "d", None, None, false, false, false);
+        // A hidden project and a merged-away one are not on the shelf, so their languages are not
+        // the library's either — the same LIVE rule PROJECTS counts by.
+        let hidden = project(conn, "e", None, Some("Zig"), false, false, false);
+        conn.execute("UPDATE project SET is_hidden = 1 WHERE id = ?1", [hidden])
+            .unwrap();
+        let merged = project(conn, "f", None, Some("Elm"), false, false, false);
+        let survivor = project(conn, "g", None, Some("Go"), false, false, false);
+        conn.execute(
+            "UPDATE project SET merged_into = ?2 WHERE id = ?1",
+            [merged, survivor],
+        )
+        .unwrap();
+
+        let out = reveal(conn, NOW).unwrap();
+        let names: Vec<(&str, u32)> = out
+            .languages
+            .iter()
+            .map(|l| (l.name.as_str(), l.projects))
+            .collect();
+        assert_eq!(names, vec![("Go", 2), ("Rust", 2)]);
+        assert_eq!(
+            out.language_count.value,
+            Some(f64::from(u32::try_from(out.languages.len()).unwrap()))
+        );
     }
 
     #[test]

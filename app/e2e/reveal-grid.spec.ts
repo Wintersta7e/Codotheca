@@ -38,6 +38,10 @@ const reveal: Reveal = {
   spanDays: { value: 4_400, basis },
   projectCount: { value: 4, basis },
   languageCount: { value: 2, basis },
+  languages: [
+    { name: 'Rust', projects: 3 },
+    { name: 'Go', projects: 1 },
+  ],
   bestYear: { value: 2021, basis },
   playtimeSeconds: { value: 0, basis },
   oldestStillAlive: { projectId: 1 as ProjectId, firstCommitAt: 1, basis },
@@ -111,7 +115,7 @@ async function renderReveals(): Promise<readonly string[]> {
      // window. Effects do not run here, so nothing is written either way.
      globalThis.document = { visibilityState: 'visible', hasFocus: () => false };
      const job = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-     const deps = { nowSecs: 1760000000, languageTally: [], referenceCount: 0, project: () => null };
+     const deps = { nowSecs: 1760000000, referenceCount: 0, project: () => null };
      const write = () => Promise.resolve();
      process.stdout.write(JSON.stringify(job.cases.map((c) =>
        renderToStaticMarkup(createElement(RevealScreen, {

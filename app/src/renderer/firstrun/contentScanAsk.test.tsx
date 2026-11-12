@@ -39,7 +39,8 @@ const suggestion: RootSuggestion = {
 const reveal: Reveal = {
   spanDays: { value: 400, basis },
   projectCount: { value: 4, basis },
-  languageCount: { value: 2, basis },
+  languageCount: { value: 1, basis },
+  languages: [{ name: 'Rust', projects: 2 }],
   bestYear: { value: 2021, basis },
   playtimeSeconds: { value: 0, basis },
   oldestStillAlive: { projectId: pid(7), firstCommitAt: NOW - 400 * 86_400, basis },
@@ -47,7 +48,6 @@ const reveal: Reveal = {
 
 const revealDeps: RevealDeps = {
   nowSecs: NOW,
-  languageTally: [{ name: 'Rust', count: 2 }],
   referenceCount: 0,
   project: () => ({ name: 'ledger', birthYear: 2014, primaryLanguage: 'Rust' }),
 };

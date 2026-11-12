@@ -91,14 +91,14 @@ const basis: RevealBasis = { projectsCovered: 3, projectsTotal: 3, historyComple
 const REVEAL: Reveal = {
   spanDays: { value: 400, basis },
   projectCount: { value: 3, basis },
-  languageCount: { value: 2, basis },
+  languageCount: { value: 1, basis },
+  languages: [{ name: 'Rust', projects: 2 }],
   bestYear: { value: 2021, basis },
   playtimeSeconds: { value: 0, basis },
   oldestStillAlive: { projectId: pid(1), firstCommitAt: 1_600_000_000, basis },
 };
 const REVEAL_DEPS: RevealDeps = {
   nowSecs: 1_700_000_000,
-  languageTally: [{ name: 'Rust', count: 2 }],
   referenceCount: 0,
   project: () => ({ name: 'shaped', birthYear: 2020, primaryLanguage: 'Rust' }),
 };

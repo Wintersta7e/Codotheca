@@ -39,7 +39,8 @@ const partial: RevealBasis = { projectsCovered: 212, projectsTotal: 400, history
 const reveal = (basis: RevealBasis = full): Reveal => ({
   spanDays: { value: 4_400, basis },
   projectCount: { value: 212, basis },
-  languageCount: { value: 9, basis },
+  languageCount: { value: 1, basis },
+  languages: [{ name: 'Rust', projects: 12 }],
   bestYear: { value: 2021, basis },
   playtimeSeconds: { value: 0, basis: full },
   oldestStillAlive: { projectId: pid(7), firstCommitAt: NOW - 4_400 * 86_400, basis },
@@ -47,7 +48,6 @@ const reveal = (basis: RevealBasis = full): Reveal => ({
 
 const deps: RevealDeps = {
   nowSecs: NOW,
-  languageTally: [{ name: 'Rust', count: 12 }],
   referenceCount: 3,
   project: () => ({ name: 'ledger', birthYear: 2014, primaryLanguage: 'Rust' }),
 };

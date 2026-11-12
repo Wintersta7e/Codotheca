@@ -21,7 +21,11 @@ const partial: RevealBasis = { projectsCovered: 212, projectsTotal: 400, history
 const reveal = (basis: RevealBasis = full): Reveal => ({
   spanDays: { value: 4_400, basis },
   projectCount: { value: 212, basis },
-  languageCount: { value: 9, basis },
+  languageCount: { value: 2, basis },
+  languages: [
+    { name: 'Rust', projects: 12 },
+    { name: 'TypeScript', projects: 9 },
+  ],
   bestYear: { value: 2021, basis },
   playtimeSeconds: { value: 0, basis: full },
   oldestStillAlive: { projectId: pid(7), firstCommitAt: NOW - 4_400 * 86_400, basis },
@@ -29,10 +33,6 @@ const reveal = (basis: RevealBasis = full): Reveal => ({
 
 const deps: RevealDeps = {
   nowSecs: NOW,
-  languageTally: [
-    { name: 'Rust', count: 12 },
-    { name: 'TypeScript', count: 9 },
-  ],
   referenceCount: 3,
   project: (id) =>
     id === pid(7) ? { name: 'ledger', birthYear: 2014, primaryLanguage: 'Rust' } : null,
@@ -176,4 +176,25 @@ test('every milestone maps to a reveal figure this module computes', () => {
   for (const key of Object.values(MILESTONE_FIGURES)) {
     expect(REVEAL_ORDER).toContain(key);
   }
+});
+
+// DC3: LANGUAGES had two sources — the count from the core, the names from the shelf's rows,
+// which also hold hidden projects. The panel now reads both from the one `Reveal`, so the
+// figure is always the number of names it lists.
+test('the LANGUAGES figure counts exactly the names it shows', () => {
+  // What the shelf's rows used to tally, a hidden Zig project included. It must not reach the
+  // panel, which reads the names the core counted.
+  const shelfTally = {
+    ...deps,
+    languageTally: [
+      { name: 'Rust', count: 12 },
+      { name: 'TypeScript', count: 9 },
+      { name: 'Zig', count: 1 },
+    ],
+  };
+  const panel = panelFor('languageCount', reveal(), shelfTally);
+  const shown = panel.caption.replace(/\.$/, '').split(', ');
+  expect(shown).toEqual(['Rust', 'TypeScript']);
+  expect(panel.value).toBe(String(shown.length));
+  expect(panel.evidence).toBe('Rust 12  ·  TypeScript 9');
 });

@@ -28,6 +28,10 @@ const reveal: Reveal = {
   spanDays: { value: 4_400, basis: full },
   projectCount: { value: 4, basis: full },
   languageCount: { value: 2, basis: full },
+  languages: [
+    { name: 'Rust', projects: 1 },
+    { name: 'Go', projects: 1 },
+  ],
   bestYear: { value: 2021, basis: full },
   playtimeSeconds: { value: 0, basis: full },
   oldestStillAlive: { projectId: 1 as ProjectId, firstCommitAt: 1, basis: full },
@@ -35,7 +39,6 @@ const reveal: Reveal = {
 
 const six = revealPanels(reveal, {
   nowSecs: 1_760_000_000,
-  languageTally: [],
   referenceCount: 0,
   project: () => null,
 });

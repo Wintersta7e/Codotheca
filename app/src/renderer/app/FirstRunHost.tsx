@@ -32,7 +32,7 @@ import { FirstRunGate, type TurnHandlers } from '../firstrun/FirstRunGate.js';
 import type { ScanFeedEvent } from '../firstrun/scanFeed.js';
 import { TurnScreen } from '../firstrun/TurnScreen.js';
 import type { TurnCounts } from '../firstrun/turn.js';
-import type { LanguageCount, RevealDeps, RevealProject } from '../firstrun/revealModel.js';
+import type { RevealDeps, RevealProject } from '../firstrun/revealModel.js';
 import type { ResolvedTier } from '../motion/tier.js';
 import { attentionCounts } from '../shelf/counts.js';
 import type { QueryContext } from '../shelf/evaluate.js';
@@ -109,15 +109,6 @@ export function turnCountsOf(rows: readonly ShelfRow[], ctx: QueryContext): Turn
   };
 }
 
-function languageTally(rows: readonly ShelfRow[]): readonly LanguageCount[] {
-  const tally = new Map<string, number>();
-  for (const row of rows) {
-    if (row.primaryLanguage === null) continue;
-    tally.set(row.primaryLanguage, (tally.get(row.primaryLanguage) ?? 0) + 1);
-  }
-  return [...tally].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
-}
-
 export interface TurnBeatProps {
   readonly rows: readonly ShelfRow[];
   readonly queryContext: QueryContext;
@@ -187,7 +178,6 @@ export function FirstRunHost(props: FirstRunHostProps): ReactElement {
   const revealDeps = useMemo<RevealDeps>(
     () => ({
       nowSecs: now(),
-      languageTally: languageTally(rows),
       // `null` is *not classified yet*. A zero here would claim a finished pass found none.
       referenceCount: rows.some((row) => row.authoredByUser !== null)
         ? rows.filter((row) => row.isReference).length

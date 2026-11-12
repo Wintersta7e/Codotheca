@@ -76,7 +76,6 @@ function mount(rows: Promise<readonly RootSuggestion[]>): Mounted {
     markLanded: () => Promise.resolve(),
     revealDeps: {
       nowSecs: 1_760_000_000,
-      languageTally: [],
       referenceCount: 0,
       project: () => null,
     },

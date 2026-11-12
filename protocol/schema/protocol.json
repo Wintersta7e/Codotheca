@@ -1167,12 +1167,18 @@
         "basis": "RevealBasis"
       }
     },
+    "RevealLanguage": {
+      "$comment": "DC3: one live primary language and how many live projects carry it. `Reveal.languages` is the LANGUAGES panel's names and evidence, read in the same pass as `languageCount`, so the figure is always the number of names shown.",
+      "kind": "struct",
+      "fields": { "name": "String", "projects": "u32" }
+    },
     "Reveal": {
       "kind": "struct",
       "fields": {
         "spanDays": "RevealFigure",
         "projectCount": "RevealFigure",
         "languageCount": "RevealFigure",
+        "languages": "[RevealLanguage]",
         "bestYear": "RevealFigure",
         "playtimeSeconds": "RevealFigure",
         "oldestStillAlive": "RevealOldest"
