@@ -85,6 +85,7 @@ impl WslGitBackend {
             store: StoreKey::new(format!("wsl:{}:?", self.distro())),
             store_class: StoreClass::Unknown,
             trusted: false,
+            git_dir_select: crate::git::GitDirSelect::Discover,
         }
     }
 }
@@ -365,6 +366,7 @@ mod tests {
             store: StoreKey::new("wsl:alpha:/"),
             store_class: StoreClass::Local,
             trusted: false,
+            git_dir_select: crate::git::GitDirSelect::Discover,
         }
     }
 

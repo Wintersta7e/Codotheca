@@ -101,6 +101,7 @@ pub fn repo_handle(ctx: &WorkerContext, repo: &WorkerRepo) -> RepoHandle {
         store: StoreKey::new(facts.store_key),
         store_class: facts.class,
         trusted: repo.trusted,
+        git_dir_select: crate::git::GitDirSelect::Discover,
     }
 }
 

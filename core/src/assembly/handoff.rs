@@ -21,7 +21,7 @@ use std::sync::Mutex;
 use crate::cancel::CancelToken;
 use crate::debt::store::{DebtStore as _, SqliteDebtStore};
 use crate::derive::LocationKind;
-use crate::git::{GitBackend, GitError, JobClass, JobContext, RepoHandle, StoreKey};
+use crate::git::{GitBackend, GitDirSelect, GitError, JobClass, JobContext, RepoHandle, StoreKey};
 use crate::identity::lineage::lineage_key;
 use crate::identity::probe::probe_identity;
 use crate::identity::store::{
@@ -220,6 +220,10 @@ pub fn hand_off_discovered(
 /// `RepoHandle::resolve` is deliberately not used: it re-reads `.git` and `commondir` from disk,
 /// and `classify` has already done that once for this candidate. `trusted` is false because
 /// `location.trusted_at` is a column of a row that does not exist yet.
+///
+/// A WSL-spelled pointer is the exception that reads `.git` again, because the candidate does not
+/// record how it was selected. A translated candidate reaches here only once the walk's ownership
+/// probes have passed for it (`scan::discover`), which is what establishes its ownership.
 fn repo_handle(discovered: &Discovered, store_class: StoreClass) -> RepoHandle {
     let store = StoreKey::new(discovered.store_key.clone());
     let candidate = &discovered.candidate;
@@ -233,7 +237,10 @@ fn repo_handle(discovered: &Discovered, store_class: StoreClass) -> RepoHandle {
         store,
         store_class,
         trusted: false,
+        git_dir_select: GitDirSelect::Discover,
     }
+    .follow_wsl_pointer()
+    .ownership_established()
 }
 
 /// `project.name` before anything has been derived: the directory's own name.

@@ -262,10 +262,13 @@ pub fn read_location_row(
     Ok(row)
 }
 
-/// The directory, re-resolved from disk (§24.7E) — never reconstructed from the row.
+/// The directory, re-resolved from disk (§24.7E) — never reconstructed from the row. A location
+/// row exists only for a folder whose ownership the scan that indexed it established.
 #[must_use]
 pub fn resolve(row: &LocationRow) -> Option<RepoHandle> {
-    let mut repo = RepoHandle::resolve(&row.path, row.store.clone(), StoreClass::Local).ok()?;
+    let mut repo = RepoHandle::resolve(&row.path, row.store.clone(), StoreClass::Local)
+        .ok()?
+        .ownership_established();
     repo.trusted = row.trusted;
     Some(repo)
 }

@@ -57,7 +57,7 @@ pub use refstate::{
     ref_fingerprint, Divergence, InterruptedOp, ObservationFingerprint, PushObservation,
     PushRecord, RefFingerprint, RefState, UpstreamRef, PUSH_REFLOG_MESSAGE,
 };
-pub use repo::{RepoHandle, StoreKey};
+pub use repo::{resolve_gitdir_pointer, wsl_drive_path, GitDirSelect, RepoHandle, StoreKey};
 pub use slots::{GitSlots, JobClass, SlotGuard};
 pub use status::{
     parse_status_v2, worktree_status, StatusCounts, StatusOptions, UntrackedMode, WorktreeStatus,

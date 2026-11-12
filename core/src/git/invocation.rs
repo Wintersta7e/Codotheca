@@ -12,9 +12,20 @@ use super::repo::RepoHandle;
 /// into a string a shell could see, because no shell is involved at any point.
 #[must_use]
 pub fn base_args(repo: &RepoHandle, hooks_dir: &Path) -> Vec<OsString> {
-    let mut v: Vec<OsString> = Vec::with_capacity(18);
+    let mut v: Vec<OsString> = Vec::with_capacity(20);
     v.push(OsString::from("-C"));
     v.push(repo.work_dir.clone().into_os_string());
+    if repo.selects_explicitly() {
+        // A WSL-spelled `gitdir:` this git cannot follow (`GitDirSelect`): name both directories
+        // rather than let git discover them. Argv, never `GIT_DIR`/`GIT_WORK_TREE`, which
+        // `neutralise_env` scrubs.
+        let mut git_dir = OsString::from("--git-dir=");
+        git_dir.push(&repo.git_dir);
+        v.push(git_dir);
+        let mut work_tree = OsString::from("--work-tree=");
+        work_tree.push(&repo.work_dir);
+        v.push(work_tree);
+    }
     v.push(OsString::from("--no-optional-locks"));
 
     let mut push_cfg = |value: OsString| {

@@ -520,6 +520,8 @@ impl LocationPlace {
                 .common_dir
                 .clone()
                 .unwrap_or_else(|| self.work_dir.join(".git"));
+            // A WSL-spelled pointer is re-read from `.git`; a location row exists only for a
+            // folder whose ownership the scan that indexed it established.
             crate::git::RepoHandle {
                 work_dir: self.work_dir.clone(),
                 git_dir: git_dir.clone(),
@@ -527,7 +529,10 @@ impl LocationPlace {
                 store,
                 store_class: job.store_kind,
                 trusted: false,
+                git_dir_select: crate::git::GitDirSelect::Discover,
             }
+            .follow_wsl_pointer()
+            .ownership_established()
         };
         handle.with_trust(self.trusted)
     }

@@ -70,6 +70,7 @@ mod tests {
             store: StoreKey::new("store-a"),
             store_class: StoreClass::Local,
             trusted: false,
+            git_dir_select: crate::git::GitDirSelect::Discover,
         }
     }
 

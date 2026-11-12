@@ -31,6 +31,7 @@ fn handle(dir: &str) -> RepoHandle {
         store: StoreKey::new("store-a"),
         store_class: StoreClass::Local,
         trusted: false,
+        git_dir_select: codotheca_core::git::GitDirSelect::Discover,
     }
 }
 

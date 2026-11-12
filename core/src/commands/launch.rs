@@ -308,8 +308,10 @@ fn repo_handle(
     let handle = if site_row.repo_kind == "bare" {
         crate::git::RepoHandle::bare(&work_dir, site_row.store.clone(), class)
     } else {
+        // A location row exists only for a folder whose ownership its scan established.
         crate::git::RepoHandle::resolve(&work_dir, site_row.store.clone(), class)
             .map_err(|e| git_failure(&e))?
+            .ownership_established()
     };
     Ok(handle.with_trust(site_row.trusted))
 }

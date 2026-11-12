@@ -46,6 +46,25 @@ pub struct RepoHandle {
     pub store_class: StoreClass,
     /// True when `location.trusted_at` is non-NULL, which adds `-c safe.directory=<path>`.
     pub trusted: bool,
+    /// How invocations select the repository: by discovery, or — for a WSL-spelled pointer —
+    /// by naming it.
+    pub git_dir_select: GitDirSelect,
+}
+
+/// How invocations select a repository (`base_args`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitDirSelect {
+    /// `-C <work_dir>`, and git discovers the repository itself, its ownership check
+    /// (`safe.directory`) included. Every handle but a translated one.
+    Discover,
+    /// The `.git` file names its git dir in WSL's `/mnt/<d>/` spelling, which Windows git cannot
+    /// follow ([`resolve_gitdir_pointer`]), and nothing has established that this user owns it.
+    /// Selected by `-C` like `Discover`, so git refuses the pointer and the read fails closed —
+    /// unless the location is trusted ([`RepoHandle::selects_explicitly`]).
+    Translated,
+    /// Translated, and ownership established ([`RepoHandle::ownership_established`]): selected
+    /// by `--git-dir` and `--work-tree`.
+    Established,
 }
 
 impl RepoHandle {
@@ -71,25 +90,22 @@ impl RepoHandle {
             },
         })?;
 
-        let git_dir = if meta.is_dir() {
-            dot_git
+        let (git_dir, git_dir_select) = if meta.is_dir() {
+            (dot_git, GitDirSelect::Discover)
         } else {
             let text = std::fs::read_to_string(&dot_git).map_err(|e| GitError::Stale {
                 detail: e.to_string(),
             })?;
-            let target = text
-                .lines()
-                .find_map(|l| l.trim().strip_prefix("gitdir:"))
-                .ok_or_else(|| GitError::Unreadable {
-                    detail: "`.git` file carries no gitdir:".to_owned(),
-                })?
-                .trim();
-            let p = PathBuf::from(target);
-            if p.is_absolute() {
-                p
+            let target = gitdir_line(&text).ok_or_else(|| GitError::Unreadable {
+                detail: "`.git` file carries no gitdir:".to_owned(),
+            })?;
+            let (git_dir, translated) = resolve_gitdir_pointer(work_dir, Path::new(target));
+            let select = if translated {
+                GitDirSelect::Translated
             } else {
-                work_dir.join(p)
-            }
+                GitDirSelect::Discover
+            };
+            (git_dir, select)
         };
 
         let common_dir = std::fs::read_to_string(git_dir.join("commondir")).map_or_else(
@@ -112,6 +128,7 @@ impl RepoHandle {
             store,
             store_class,
             trusted: false,
+            git_dir_select,
         })
     }
 
@@ -125,6 +142,7 @@ impl RepoHandle {
             store,
             store_class,
             trusted: false,
+            git_dir_select: GitDirSelect::Discover,
         }
     }
 
@@ -139,5 +157,245 @@ impl RepoHandle {
     #[must_use]
     pub fn is_linked_worktree(&self) -> bool {
         self.git_dir != self.common_dir
+    }
+
+    /// True when invocations name `--git-dir` and `--work-tree` rather than let git discover
+    /// the repository.
+    ///
+    /// **Explicit selection skips git's ownership check**, which runs only on discovery — and
+    /// that check is all that stands between a foreign-owned repository's config (a
+    /// `filter.<x>.clean`, run by `status`) and a read. So a translated pointer is selected
+    /// explicitly only once its location is trusted or its ownership is established.
+    #[must_use]
+    pub const fn selects_explicitly(&self) -> bool {
+        match self.git_dir_select {
+            GitDirSelect::Discover => false,
+            GitDirSelect::Translated => self.trusted,
+            GitDirSelect::Established => true,
+        }
+    }
+
+    /// Record that this user's ownership of a translated repository is established: the walk's
+    /// ownership probes passed for it this scan (`scan::discover`), or the handle is built for a
+    /// location row, which only a hand-off of a folder that passed them writes. A handle that is
+    /// not translated is unchanged.
+    #[must_use]
+    pub const fn ownership_established(mut self) -> Self {
+        if matches!(self.git_dir_select, GitDirSelect::Translated) {
+            self.git_dir_select = GitDirSelect::Established;
+        }
+        self
+    }
+
+    /// For a handle built from what the walk or the index recorded rather than by
+    /// [`Self::resolve`]: re-read the checkout's `.git` file and, where
+    /// [`resolve_gitdir_pointer`] translates its pointer, take the translation as the git dir.
+    /// Spawns nothing. Off Windows it reads nothing, and a work dir that is not absolute on this
+    /// host (an in-distro path) is left alone.
+    #[must_use]
+    pub fn follow_wsl_pointer(self) -> Self {
+        self.follow_pointer(cfg!(windows))
+    }
+
+    fn follow_pointer(mut self, translate: bool) -> Self {
+        if !translate
+            || self.git_dir_select != GitDirSelect::Discover
+            || !self.work_dir.is_absolute()
+        {
+            return self;
+        }
+        let Ok(text) = std::fs::read_to_string(self.work_dir.join(".git")) else {
+            return self;
+        };
+        if let Some(target) = gitdir_line(&text) {
+            let (git_dir, translated) = resolve_pointer(&self.work_dir, Path::new(target), true);
+            if translated {
+                self.git_dir = git_dir;
+                self.git_dir_select = GitDirSelect::Translated;
+            }
+        }
+        self
+    }
+}
+
+/// The value of a `.git` file's `gitdir:` line, trimmed.
+fn gitdir_line(text: &str) -> Option<&str> {
+    text.lines()
+        .find_map(|l| l.trim().strip_prefix("gitdir:"))
+        .map(str::trim)
+}
+
+/// WSL's spelling of a Windows drive, `/mnt/<letter>/<rest>`, as Windows spells it:
+/// `<LETTER>:/<rest>`. `None` for anything else.
+///
+/// Exactly that shape — one ASCII letter, then a separator. `/mnt/cc/…`, `/mnt/c` alone,
+/// `/mnt/`, a relative pointer, `\\wsl$\…` and every other mount root stay as they are: a
+/// worktree created from WSL records its pointer the way the distro sees the drive, and this is
+/// the spelling WSL mounts a drive at by default. Pure, so every host tests it; only Windows
+/// applies it ([`resolve_gitdir_pointer`]).
+#[must_use]
+pub fn wsl_drive_path(pointer: &str) -> Option<PathBuf> {
+    let rest = pointer.strip_prefix("/mnt/")?;
+    let mut chars = rest.chars();
+    let letter = chars.next().filter(char::is_ascii_alphabetic)?;
+    let tail = chars.as_str().strip_prefix('/')?;
+    Some(PathBuf::from(format!(
+        "{}:/{tail}",
+        letter.to_ascii_uppercase()
+    )))
+}
+
+/// Where a `gitdir:` pointer read from `<dir>/.git` leads, and whether it was translated.
+///
+/// [`wsl_drive_path`]'s translation applies only on Windows: Windows git refuses the
+/// untranslated pointer (*"gitfile does not point to a valid repository"*), and on Linux the
+/// `/mnt/<d>/` path is the real one.
+///
+/// A relative pointer is relative to `dir`. The one reading of a pointer: the walk's
+/// classification and [`RepoHandle::resolve`] both call it.
+#[must_use]
+pub fn resolve_gitdir_pointer(dir: &Path, pointer: &Path) -> (PathBuf, bool) {
+    resolve_pointer(dir, pointer, cfg!(windows))
+}
+
+fn resolve_pointer(dir: &Path, pointer: &Path, translate: bool) -> (PathBuf, bool) {
+    if translate {
+        if let Some(translated) = pointer.to_str().and_then(wsl_drive_path) {
+            return (translated, true);
+        }
+    }
+    if pointer.is_absolute() {
+        (pointer.to_path_buf(), false)
+    } else {
+        (dir.join(pointer), false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use super::*;
+
+    #[test]
+    fn a_wsl_drive_pointer_translates_to_its_drive() {
+        assert_eq!(
+            wsl_drive_path("/mnt/d/work/main-repo/.git/worktrees/lane-a"),
+            Some(PathBuf::from("D:/work/main-repo/.git/worktrees/lane-a"))
+        );
+        assert_eq!(wsl_drive_path("/mnt/E/x"), Some(PathBuf::from("E:/x")));
+    }
+
+    #[test]
+    fn nothing_but_the_exact_shape_translates() {
+        for pointer in [
+            "/mnt/cc/x",
+            "/mnt/",
+            "/mnt/c",
+            "/mnt",
+            "mnt/c/x",
+            "../main-repo/.git/worktrees/lane-a",
+            "/mnt/1/x",
+            "/mnt/é/x",
+            "/mnt/wsl/x",
+            "/home/u/main-repo/.git",
+            r"\\wsl$\distro\mnt\c\x",
+            "D:/work/main-repo/.git",
+        ] {
+            assert_eq!(wsl_drive_path(pointer), None, "{pointer}");
+        }
+    }
+
+    #[test]
+    fn a_pointer_is_translated_only_where_translation_applies() {
+        let dir = Path::new("/w/lane-a");
+        let wsl = Path::new("/mnt/d/work/main-repo/.git/worktrees/lane-a");
+        assert_eq!(
+            resolve_pointer(dir, wsl, true),
+            (
+                PathBuf::from("D:/work/main-repo/.git/worktrees/lane-a"),
+                true
+            )
+        );
+        assert!(!resolve_pointer(dir, wsl, false).1);
+        let relative = Path::new("../main-repo/.git/worktrees/lane-a");
+        assert_eq!(
+            resolve_pointer(dir, relative, true),
+            (dir.join(relative), false)
+        );
+        assert_eq!(
+            resolve_gitdir_pointer(dir, wsl).1,
+            cfg!(windows),
+            "only Windows applies the translation"
+        );
+    }
+
+    fn handle(select: GitDirSelect, trusted: bool) -> RepoHandle {
+        RepoHandle {
+            work_dir: PathBuf::from("/w/lane-a"),
+            git_dir: PathBuf::from("D:/work/main-repo/.git/worktrees/lane-a"),
+            common_dir: PathBuf::from("D:/work/main-repo/.git"),
+            store: StoreKey::new("s"),
+            store_class: StoreClass::Local,
+            trusted,
+            git_dir_select: select,
+        }
+    }
+
+    /// Explicit selection skips git's ownership check, so it needs trust or established
+    /// ownership; a handle git discovers is never selected explicitly, trusted or not.
+    #[test]
+    fn a_translated_handle_is_selected_explicitly_only_once_owned_or_trusted() {
+        assert!(!handle(GitDirSelect::Discover, false).selects_explicitly());
+        assert!(!handle(GitDirSelect::Discover, true).selects_explicitly());
+        assert!(!handle(GitDirSelect::Translated, false).selects_explicitly());
+        assert!(handle(GitDirSelect::Translated, true).selects_explicitly());
+        assert!(handle(GitDirSelect::Established, false).selects_explicitly());
+        assert_eq!(
+            handle(GitDirSelect::Translated, false)
+                .ownership_established()
+                .git_dir_select,
+            GitDirSelect::Established
+        );
+        assert_eq!(
+            handle(GitDirSelect::Discover, false)
+                .ownership_established()
+                .git_dir_select,
+            GitDirSelect::Discover
+        );
+    }
+
+    #[test]
+    fn following_a_recorded_handle_rereads_a_wsl_pointer() {
+        let base = tempfile::tempdir().unwrap();
+        let work = base.path().join("lane-a");
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::write(
+            work.join(".git"),
+            b"gitdir: /mnt/d/work/main-repo/.git/worktrees/lane-a\n",
+        )
+        .unwrap();
+        let recorded = RepoHandle {
+            work_dir: work,
+            git_dir: PathBuf::from("D:/work/main-repo/.git"),
+            common_dir: PathBuf::from("D:/work/main-repo/.git"),
+            store: StoreKey::new("s"),
+            store_class: StoreClass::Local,
+            trusted: false,
+            git_dir_select: GitDirSelect::Discover,
+        };
+        let followed = recorded.clone().follow_pointer(true);
+        assert_eq!(followed.git_dir_select, GitDirSelect::Translated);
+        assert_eq!(
+            followed.git_dir,
+            PathBuf::from("D:/work/main-repo/.git/worktrees/lane-a")
+        );
+        let untranslated = recorded.follow_pointer(false);
+        assert_eq!(untranslated.git_dir_select, GitDirSelect::Discover);
     }
 }
