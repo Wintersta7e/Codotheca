@@ -691,6 +691,14 @@
   white-space: nowrap;
 }
 
+/* The rank glyph in the list's 16px RANK column: the card's face, unlit, ink set inline. */
+.cdt-list-rank {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .cdt-list-c3 {
   grid-column: 3;
   overflow: hidden;

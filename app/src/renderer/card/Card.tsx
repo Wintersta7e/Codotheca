@@ -8,6 +8,7 @@ import { ConditionDotMark } from './ConditionDotMark';
 import { PinControl, type PinControlProps } from './PinControl';
 import type { StatusChip } from './chips';
 import { GOLD_NOTCH, type UncomputedRank } from './completion';
+import type { RankPaint } from './rank';
 import { HAZARD_TAPE_HEIGHT_PX, type CardSurface, bandsFor, densityStep } from './geometry';
 import { bloomShadow, cardCustomProperties } from './interaction';
 
@@ -39,8 +40,11 @@ export interface CardBands {
   readonly designation: string;
   readonly hazard: boolean;
   readonly conditionSignal: ConditionSignal | null;
-  /** `null` only once a later phase computes completion; in phase 1 every card has one. */
-  readonly rank: UncomputedRank | null;
+  /**
+   * Band 3: a computed rank (`rankPaint`), §7.7a's uncomputed treatment, or `null` — completion
+   * was read and nothing could be scored, which draws no band at all.
+   */
+  readonly rank: RankPaint | UncomputedRank | null;
   readonly chips: readonly StatusChip[];
   /** §7.8a mounts the control on the grid tile only. */
   readonly pin: PinControlProps | null;
@@ -98,6 +102,10 @@ export function Card(props: CardProps): ReactElement {
   const step = densityStep(props.density);
   const { bands } = props;
   const hovered = String(props.hovered);
+  // §7.7a's gap belongs to the uncomputed treatment alone. A computed rank qualifies a
+  // measurement, so it leaves the frame whole and the gold notch free to draw.
+  const uncomputed = bands.rank === null || 'rank' in bands.rank ? null : bands.rank;
+  const computed = bands.rank !== null && 'rank' in bands.rank ? bands.rank : null;
 
   const frameStyle = {
     ...cardCustomProperties(props.appearance, token(props.frameToken)),
@@ -117,7 +125,7 @@ export function Card(props: CardProps): ReactElement {
     >
       <span className="cdt-card-halo" aria-hidden="true" />
       <span className="cdt-bloom" aria-hidden="true" />
-      {props.notched !== true || bands.rank !== null ? null : (
+      {props.notched !== true || uncomputed !== null ? null : (
         <span
           className="cdt-frame-notch"
           aria-hidden="true"
@@ -130,18 +138,18 @@ export function Card(props: CardProps): ReactElement {
           }}
         />
       )}
-      {bands.rank === null ? null : (
+      {uncomputed === null ? null : (
         <span
           className="cdt-frame-gap"
           aria-hidden="true"
           style={{
-            left: bands.rank.gap.left,
-            top: bands.rank.gap.top,
-            width: bands.rank.gap.width,
-            height: bands.rank.gap.height,
+            left: uncomputed.gap.left,
+            top: uncomputed.gap.top,
+            width: uncomputed.gap.width,
+            height: uncomputed.gap.height,
             // The token, never a hex: the fill is the surface behind the frame, and a token is
             // what moves with it.
-            backgroundColor: token(bands.rank.gap.fillToken),
+            backgroundColor: token(uncomputed.gap.fillToken),
           }}
         />
       )}
@@ -211,10 +219,12 @@ export function Card(props: CardProps): ReactElement {
             }}
           />
 
-          {/* Band 3 — the rank, which in phase 1 is always the uncomputed treatment. */}
+          {/* Band 3 — the rank glyph, or the uncomputed treatment in its place. DOM text: the
+              bitmap carries none. */}
           {bands.rank === null ? null : (
             <div
               className="cdt-rank"
+              data-rank={computed?.rank}
               style={{
                 left: table.rank.left,
                 width: table.rank.width,
@@ -223,13 +233,26 @@ export function Card(props: CardProps): ReactElement {
                 bottom: `calc(100% - ${table.bands.band3Bottom})`,
               }}
             >
-              <span className="cdt-rank-glyph" aria-hidden="true">
-                {bands.rank.glyph}
+              <span
+                className="cdt-rank-glyph"
+                aria-hidden="true"
+                style={
+                  computed === null
+                    ? undefined
+                    : { color: token(computed.inkToken), textShadow: computed.glow ?? 'none' }
+                }
+              >
+                {computed?.rank ?? uncomputed?.glyph}
               </span>
               <span
                 className="cdt-rank-label"
                 aria-hidden="true"
-                style={{ marginTop: `${String(table.rank.labelMarginTop)}px` }}
+                style={{
+                  marginTop: `${String(table.rank.labelMarginTop)}px`,
+                  // A computed label names the rank, so it takes the rank's ink; the uncomputed
+                  // one names an absence and keeps `--text-3` from the stylesheet.
+                  ...(computed === null ? {} : { color: token(computed.inkToken) }),
+                }}
               >
                 {bands.rank.label}
               </span>

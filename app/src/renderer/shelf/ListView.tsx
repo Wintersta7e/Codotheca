@@ -2,6 +2,7 @@ import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import type { ProjectId } from '../../generated/protocol.js';
 import { conditionDotName } from '../a11y/names.js';
 import { rungFor, scoreText } from '../card/completion.js';
+import { rankPaint } from '../card/rank.js';
 import { DOT_SIZE_PX, conditionDot } from '../derive/condition.js';
 import { token } from '../theme/tokens.js';
 import { formatTrackedBytes } from '../format/size.js';
@@ -69,6 +70,7 @@ export function ListView(props: ListViewProps): ReactElement {
           isArchived: row.isArchived,
         });
         const score = scoreText(row.completionLit, row.completionApplicable);
+        const rank = rankPaint(row);
         const node = (
           <div
             key={`row-${String(id)}`}
@@ -100,16 +102,20 @@ export function ListView(props: ListViewProps): ReactElement {
                 />
               )}
             </span>
-            {/* [p3] §31.7's rank mark. `null` renders no node, which is the same rule the
-                grid card's rank slot already carries: a dash in a column that could have been
-                empty is a claim with no measurement behind it. */}
+            {/* [p3] §31.7's rank column, filled by RK1's glyph in the rank's own ink. `null`
+                renders no node, which is the same rule the grid card's rank slot already
+                carries: a dash in a column that could have been empty is a claim with no
+                measurement behind it. */}
             <span className="cdt-list-c2">
-              {rung === null ? null : (
+              {rank === null ? null : (
                 <span
                   className="cdt-list-rank"
+                  data-rank={rank.rank}
                   aria-hidden="true"
-                  style={{ color: token(rung.inkToken) }}
-                />
+                  style={{ color: token(rank.inkToken) }}
+                >
+                  {rank.rank}
+                </span>
               )}
             </span>
             <span className="cdt-list-c3">{row.name}</span>

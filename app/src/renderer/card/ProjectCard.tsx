@@ -10,6 +10,7 @@ import type { CardGesture } from '../motion/transition';
 import { Card } from './Card';
 import { statusChips } from './chips';
 import { frameToken, rungFor, uncomputedRank } from './completion';
+import { rankPaint } from './rank';
 import { densityStep } from './geometry';
 import { BENCH_LABEL, useBenchElapsed } from './useBenchElapsed';
 import { noop } from '../noop';
@@ -189,12 +190,15 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
         designation: appearance.designation,
         hazard: row.conditionSignal === 'abandoned' && !row.isReference,
         conditionSignal: row.conditionSignal,
-        rank: uncomputedRank('gridCard', {
-          completionLit: row.completionLit,
-          isReference: row.isReference,
-          hasWorkingCopy,
-          density: props.density,
-        }),
+        // RK1: the computed rank where completion was read; §7.7a's treatment where it was not.
+        rank:
+          rankPaint(row) ??
+          uncomputedRank('gridCard', {
+            completionLit: row.completionLit,
+            isReference: row.isReference,
+            hasWorkingCopy,
+            density: props.density,
+          }),
         chips: statusChips(row, props.now, props.firstRunCompletedAt),
         pin: {
           projectName: row.name,

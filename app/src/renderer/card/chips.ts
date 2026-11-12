@@ -50,6 +50,22 @@ export type ChipRow = Pick<
   | 'acknowledgedAt'
 >;
 
+/**
+ * The `UNCOMMITTED` chip's predicate, shared with the rank's demotion so the two cannot disagree.
+ * `null` is *not observed*, which is neither.
+ */
+export function isUncommitted(row: Pick<ProjectRow, 'isDirty'>): boolean {
+  return row.isDirty === true;
+}
+
+/**
+ * The `UNPUSHED` chip's predicate, shared with the rank's demotion. `is:unpushed` is answered from
+ * `ahead` and is null when ahead is unknown (§8.3).
+ */
+export function isUnpushed(row: Pick<ProjectRow, 'ahead'>): boolean {
+  return row.ahead !== null && row.ahead > 0;
+}
+
 /** `Uncommitted changes as of 14:02` — the chip text and its observation time (§11.7). */
 function named(sentence: string, observedAt: number | null, now: number): string {
   if (observedAt === null) return sentence;
@@ -75,7 +91,7 @@ export function statusChips(
     });
   }
 
-  if (row.isDirty === true) {
+  if (isUncommitted(row)) {
     status.push({
       id: 'uncommitted',
       text: 'UNCOMMITTED',
@@ -85,8 +101,7 @@ export function statusChips(
     });
   }
 
-  // `is:unpushed` is answered from `ahead` and is null when ahead is unknown (§8.3).
-  if (row.ahead !== null && row.ahead > 0) {
+  if (isUnpushed(row)) {
     status.push({
       id: 'unpushed',
       text: 'UNPUSHED',

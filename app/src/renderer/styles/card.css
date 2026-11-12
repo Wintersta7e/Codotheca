@@ -506,7 +506,8 @@
   box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.05);
 }
 
-/* Band 3 — the rank, which in phase 1 is always the uncomputed treatment. */
+/* Band 3 — the rank glyph, or §7.7a's uncomputed treatment. A computed glyph and its label take
+   the rank's ink and glow inline; these defaults are the uncomputed ones. */
 .cdt-rank {
   position: absolute;
   display: flex;
@@ -542,7 +543,7 @@
   letter-spacing: -0.02em;
 }
 
-/* The label names an absence, not a rank, so it is --text-3 and never the rank ink. */
+/* The uncomputed label names an absence, not a rank, so it is --text-3 and never the rank ink. */
 .cdt-rank-label {
   font-family: var(--font-mono);
   font-size: 7px;

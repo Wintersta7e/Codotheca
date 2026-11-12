@@ -5,6 +5,7 @@ import { renditionFor, useCardBitmap } from '../art/useCardBitmap';
 import { Card, type CardHalo } from './Card';
 import type { StatusChip } from './chips';
 import { frameToken, rungFor, uncomputedRank } from './completion';
+import { rankPaint } from './rank';
 import type { PinControlProps } from './PinControl';
 
 /**
@@ -34,6 +35,10 @@ export type HeroRow = Pick<
   // [p3] §31.1c: the frame reads `pct = lit / evaluable`, so the denominator has to reach the
   // hero as well as the tile. `ProjectRow` already carried both.
   | 'completionApplicable'
+  // RK1: the rank's three demotions, read by the same `rankOf` the tile and the list use.
+  | 'isDirty'
+  | 'ahead'
+  | 'ciGreen'
   | 'artSceneHash'
   | 'artState'
   // §23.5: the hero asks for `hero-blueprint` and takes the blueprint frame when the project has
@@ -140,12 +145,15 @@ export function HeroFrame(props: HeroFrameProps): ReactElement {
         designation: appearance.designation,
         hazard: row.conditionSignal === 'abandoned' && !row.isReference,
         conditionSignal: row.conditionSignal,
-        rank: uncomputedRank('hero', {
-          completionLit: row.completionLit,
-          isReference: row.isReference,
-          hasWorkingCopy,
-          density: HERO_DENSITY,
-        }),
+        // RK1: the computed rank where completion was read; §7.7a's treatment where it was not.
+        rank:
+          rankPaint(row) ??
+          uncomputedRank('hero', {
+            completionLit: row.completionLit,
+            isReference: row.isReference,
+            hasWorkingCopy,
+            density: HERO_DENSITY,
+          }),
         // §7.7 gives the hero column a geometry and §8.5 owns what goes in it.
         chips: props.chips,
         pin: props.pin,
