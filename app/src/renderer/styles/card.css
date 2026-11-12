@@ -328,19 +328,62 @@
   );
 }
 
+/* §7.8's corner brackets: each corner draws its own two sides, flies in from 18px to 7px, and
+   carries its stagger as a value (`--cdt-bracket-delay`, from `BRACKET_STAGGER_S`). `z-index: 1`
+   paints them over the bands, as the prototype does; otherwise band 5's scrim covers the bottom
+   pair. They carry no content and take no pointer events, so no control under them is blocked. */
 .cdt-bracket {
+  --cdt-bracket-at: 18px;
+
   position: absolute;
+  z-index: 1;
   width: 13px;
   height: 13px;
-  border: 2px solid var(--cdt-jewel);
+  border-color: var(--cdt-jewel);
+  border-style: solid;
+  border-width: 0;
   opacity: 0;
   pointer-events: none;
   transition:
-    inset 300ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    top 300ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    right 300ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    bottom 300ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    left 300ms cubic-bezier(0.2, 0.9, 0.2, 1),
     opacity 200ms cubic-bezier(0.2, 0.85, 0.2, 1);
+  transition-delay: var(--cdt-bracket-delay);
+}
+
+.cdt-bracket[data-corner='top-left'] {
+  top: var(--cdt-bracket-at);
+  left: var(--cdt-bracket-at);
+  border-top-width: 2px;
+  border-left-width: 2px;
+}
+
+.cdt-bracket[data-corner='top-right'] {
+  top: var(--cdt-bracket-at);
+  right: var(--cdt-bracket-at);
+  border-top-width: 2px;
+  border-right-width: 2px;
+}
+
+.cdt-bracket[data-corner='bottom-left'] {
+  bottom: var(--cdt-bracket-at);
+  left: var(--cdt-bracket-at);
+  border-bottom-width: 2px;
+  border-left-width: 2px;
+}
+
+.cdt-bracket[data-corner='bottom-right'] {
+  right: var(--cdt-bracket-at);
+  bottom: var(--cdt-bracket-at);
+  border-right-width: 2px;
+  border-bottom-width: 2px;
 }
 
 .cdt-card[data-hovered='true'] .cdt-bracket {
+  --cdt-bracket-at: 7px;
+
   opacity: 1;
 }
 

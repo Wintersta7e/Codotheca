@@ -1,6 +1,10 @@
-import type { ReactElement, ReactNode } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import { ARCHIVED_GLASS } from './completion';
 import { type CardSurface, bandsFor } from './geometry';
+import { BRACKET_STAGGER_S } from './interaction';
+
+/** §7.8's four corners, in the order `BRACKET_STAGGER_S` staggers them. */
+const BRACKET_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
 
 /**
  * Everything inside the 1px tier frame. `card.css` gives `.cdt-plate` its clip, its bezel and
@@ -60,6 +64,16 @@ export function CardPlate(props: CardPlateProps): ReactElement {
         }}
       />
       <span className="cdt-specular" aria-hidden="true" />
+      {BRACKET_CORNERS.map((corner, index) => (
+        // Mounted at rest so hover can fly them in; `card.css` keeps them transparent until then.
+        <span
+          key={corner}
+          className="cdt-bracket"
+          data-corner={corner}
+          aria-hidden="true"
+          style={{ '--cdt-bracket-delay': BRACKET_STAGGER_S[index] } as CSSProperties}
+        />
+      ))}
       <span className="cdt-scanline" aria-hidden="true" />
       {props.decay}
       {props.isArchived ? (

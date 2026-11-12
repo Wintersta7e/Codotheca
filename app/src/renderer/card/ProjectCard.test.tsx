@@ -314,7 +314,6 @@ describe('§11.7: the cell', () => {
  * on either side breaks: what the clamp names, and what a real mounted tile carries.
  */
 const UNMOUNTED = new Map([
-  ['.cdt-bracket', '§7.8 names them and no section gives them a corner geometry'],
   // [p3] §33.4: the layers mount on the **opened hero and nowhere else** — never the grid, Peek,
   // the list, the quick-switch palette, triage or the Amnesty card, the same scope roasting has.
   // Their absence from a grid tile is the rule rather than a gap, and the sibling test below is
@@ -350,9 +349,8 @@ describe('the mounted tile carries the class names motion.css clamps', () => {
   });
 
   it('names the ones that really are absent, so the exception cannot grow unnoticed', () => {
-    // §7.8 lists the corner brackets among its ten hover effects and `card.css` declares the
-    // rule, but no section gives them a corner geometry, so this plan mounts none. If one is
-    // ever mounted this fails and the exception above must shrink with it.
+    // Every entry is a class something could one day mount. If one is ever mounted this fails
+    // and the exception above must shrink with it.
     const container = draw({ row: row({ isPinned: true }) });
     expect(UNMOUNTED.size).toBeGreaterThan(0);
     for (const [name, why] of UNMOUNTED) {
