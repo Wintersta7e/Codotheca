@@ -16,6 +16,7 @@ use rusqlite::{Connection, Transaction};
 use super::markers::{scan_blob, BlobOccurrence, Marker, J7_BINARY_SNIFF_BYTES, J7_BLOB_BYTE_CAP};
 use crate::git::BlobRead;
 use crate::index::IndexError;
+use crate::protocol::ProjectId;
 
 /// §29.2's rules 4 and 5, plus the ordinary outcome. `blob_scan.outcome`'s CHECK mirrors
 /// [`BlobOutcome::slug`] character for character (R26).
@@ -251,6 +252,67 @@ pub fn revoke_content_scan(tx: &Transaction<'_>) -> Result<(), IndexError> {
                 completed_at = NULL",
         [],
     )?;
+    // [p4-gaps GA19] J7's cursor goes too: a re-grant resumes at ordinal 0, never past blobs
+    // whose cache rows were just deleted.
+    reset_scan_progress(tx, ResetScope::All)
+}
+
+/// Which content scans [`reset_scan_progress`] sends back to their first blob.
+#[derive(Debug, Clone, Copy)]
+pub enum ResetScope<'a> {
+    /// The cache was cleared under every scan but those of the projects listed, whose rows the
+    /// same transaction removes. Each **incomplete** scan restarts; a complete one stays complete,
+    /// because an unchanged head reads nothing and a moved head restarts at 0 on its own.
+    IncompleteExcept(&'a [ProjectId]),
+    /// Every scan restarts: the cache each one stands on is gone. Revocation's scope.
+    All,
+}
+
+/// [p4-gaps GA19] Send content scans back to their first blob after their cache was cleared.
+///
+/// `blobs_pending` takes `blobs_total` again, the completion stamp goes, and J7's durable cursor
+/// goes with them. Resuming at the old cursor would read only the blobs
+/// after it and then build the project's items over a cache missing every blob before it — the
+/// items whose evidence sat there would close, and pay, as if the user had resolved them.
+///
+/// # Errors
+/// Fails when SQLite refuses a read or a write.
+pub fn reset_scan_progress(tx: &Transaction<'_>, scope: ResetScope<'_>) -> Result<(), IndexError> {
+    let (select, spared): (&str, &[ProjectId]) = match scope {
+        ResetScope::All => ("SELECT project_id FROM project_content_scan", &[]),
+        ResetScope::IncompleteExcept(purged) => (
+            "SELECT project_id FROM project_content_scan
+              WHERE complete_head_oid IS NOT head_oid",
+            purged,
+        ),
+    };
+    let projects: Vec<i64> = {
+        let mut statement = tx.prepare(select)?;
+        let rows = statement.query_map([], |row| row.get(0))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    for project in projects
+        .into_iter()
+        .filter(|id| !spared.iter().any(|p| p.0 == *id))
+    {
+        tx.execute(
+            "UPDATE project_content_scan
+                SET blobs_pending = blobs_total, complete_head_oid = NULL, completed_at = NULL
+              WHERE project_id = ?1",
+            [project],
+        )?;
+        tx.execute(
+            "UPDATE project_job_state SET cursor = NULL WHERE project_id = ?1 AND job = ?2",
+            rusqlite::params![project, super::JobKind::J7Markers.slug()],
+        )?;
+    }
+    if matches!(scope, ResetScope::All) {
+        // A cursor can outlive its scan row; under `All` none survives.
+        tx.execute(
+            "UPDATE project_job_state SET cursor = NULL WHERE job = ?1",
+            [super::JobKind::J7Markers.slug()],
+        )?;
+    }
     Ok(())
 }
 

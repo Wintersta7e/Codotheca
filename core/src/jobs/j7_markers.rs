@@ -139,6 +139,7 @@ pub fn write_enumeration(
             blobs_total = excluded.blobs_total,
             blobs_pending = CASE
                 WHEN project_content_scan.head_oid = excluded.head_oid
+                     AND project_content_scan.blobs_pending IS NOT NULL
                 THEN project_content_scan.blobs_pending ELSE excluded.blobs_pending END,
             predicate_version = excluded.predicate_version,
             has_readme = excluded.has_readme,
@@ -228,10 +229,18 @@ fn restart_scan(tx: &Transaction<'_>, project: ProjectId) -> Result<(), IndexErr
     Ok(())
 }
 
-/// Record one chunk's worth of reads and move `blobs_pending` down by what it covered.
+/// Record one chunk's worth of reads and move `blobs_pending` down by what it covered, or `None`
+/// when the chunk no longer stands on the scan it was cut from.
 ///
 /// **`complete_head_oid` is set only here, in the same transaction that takes `blobs_pending` to
 /// 0** — the per-project marker aggregate exists if and only if the two heads match.
+///
+/// [p4-gaps GA19] **The chunk lands only while `blobs_pending = blobs_total - from`**, the
+/// invariant every chunk keeps from ordinal 0. A reset that cleared the cache after the run read
+/// its cursor breaks it: the chunk's reads are still recorded (they are a valid cache for a
+/// granted project), the scan goes back to ordinal 0, and the caller builds no items over it.
+/// Reads are recorded only while the grant stands — a revocation landing mid-read deleted the
+/// cache these reads would refill.
 ///
 /// # Errors
 /// Fails when SQLite refuses a write.
@@ -239,12 +248,24 @@ fn commit_chunk(
     tx: &Transaction<'_>,
     project: ProjectId,
     head_oid: &str,
+    from: i64,
     reads: &[crate::git::BlobRead],
     consumed: i64,
     now: i64,
-) -> Result<i64, IndexError> {
-    for read in reads {
-        record_read(tx, read, J7_SCANNER_VERSION, now)?;
+) -> Result<Option<i64>, IndexError> {
+    if crate::surfaces::settings::content_scan_enabled(tx)? {
+        for read in reads {
+            record_read(tx, read, J7_SCANNER_VERSION, now)?;
+        }
+    }
+    if !cursor_holds(tx, project, from)? {
+        tx.execute(
+            "UPDATE project_content_scan
+                SET blobs_pending = blobs_total, complete_head_oid = NULL, completed_at = NULL
+              WHERE project_id = ?1 AND head_oid = ?2",
+            rusqlite::params![project.0, head_oid],
+        )?;
+        return Ok(None);
     }
     tx.execute(
         "UPDATE project_content_scan
@@ -265,7 +286,56 @@ fn commit_chunk(
             rusqlite::params![project.0, head_oid, now],
         )?;
     }
-    Ok(pending)
+    Ok(Some(pending))
+}
+
+/// [p4-gaps GA19] Whether a scan resumed at ordinal `from` still stands on its row:
+/// `blobs_pending = blobs_total - from`. A missing row, or a `NULL` either side, does not.
+///
+/// J7's settle asks it too, so a `Partial` cursor a reset cleared after its chunk committed is
+/// not written back.
+///
+/// # Errors
+/// Fails when SQLite refuses the read.
+pub(crate) fn cursor_holds(
+    conn: &Connection,
+    project: ProjectId,
+    from: i64,
+) -> Result<bool, IndexError> {
+    conn.query_row(
+        "SELECT coalesce(blobs_pending = blobs_total - ?2, 0)
+           FROM project_content_scan WHERE project_id = ?1",
+        rusqlite::params![project.0, from],
+        |row| row.get::<_, bool>(0),
+    )
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(false),
+        other => Err(other),
+    })
+    .map_err(IndexError::from)
+}
+
+/// [p4-gaps GA19] The row a settle persists for `job`. A J7 chunk's cursor stands only while its
+/// scan row still agrees ([`cursor_holds`]): a reset landing after the chunk committed has already
+/// sent the scan back to 0, and writing the cursor back would undo it. Every other row is `row`.
+///
+/// # Errors
+/// Fails when SQLite refuses the read.
+pub(crate) fn settled_row(
+    tx: &Transaction<'_>,
+    job: &super::Job,
+    row: &super::state::JobStateRow,
+) -> Result<super::state::JobStateRow, IndexError> {
+    let mut kept = row.clone();
+    if job.kind == super::JobKind::J7Markers {
+        if let Some(cursor) = row.cursor.as_deref() {
+            let done = i64::try_from(cursor_ordinal(Some(cursor))).unwrap_or(i64::MAX);
+            if !cursor_holds(tx, job.project_id, done)? {
+                kept.cursor = None;
+            }
+        }
+    }
+    Ok(kept)
 }
 
 /// Where the next chunk resumes: an **ordinal into the filtered enumeration**, decimal.
@@ -439,14 +509,18 @@ pub fn run_j7(
     // 3. One chunk of misses. The window is bounded by count here and by bytes inside the read,
     //    whichever comes first (§29.6).
     let window: Vec<&TreeEntry> = filtered.iter().skip(from).take(J7_CHUNK_BLOBS).collect();
+    let from_ordinal = i64::try_from(from).unwrap_or(i64::MAX);
     if window.is_empty() {
         let (pending, delta) = super::write(index, exclusions, location, |tx| {
-            let pending = commit_chunk(tx, project, &head_oid, &[], 0, now)?;
+            let Some(pending) = commit_chunk(tx, project, &head_oid, from_ordinal, &[], 0, now)?
+            else {
+                return Ok((None, None));
+            };
             let delta = build_debt_items(tx, &run, gates, &filtered)?;
-            Ok((pending, delta))
+            Ok((Some(pending), delta))
         })?;
         hand_out(announce, delta);
-        return Ok(finish(pending, from, total));
+        return Ok(landed(pending, from, total));
     }
     let cached_before = cached_blobs(index, &window)?;
     let mut wanted: Vec<String> = Vec::new();
@@ -474,19 +548,23 @@ pub fn run_j7(
         }
     }
     let (pending, delta) = super::write(index, exclusions, location, |tx| {
-        let pending = commit_chunk(
+        let Some(pending) = commit_chunk(
             tx,
             project,
             &head_oid,
+            from_ordinal,
             &batch.reads,
             i64::try_from(consumed).unwrap_or(i64::MAX),
             now,
-        )?;
+        )?
+        else {
+            return Ok((None, None));
+        };
         let delta = build_debt_items(tx, &run, gates, &filtered)?;
-        Ok((pending, delta))
+        Ok((Some(pending), delta))
     })?;
     hand_out(announce, delta);
-    Ok(finish(pending, from + consumed, total))
+    Ok(landed(pending, from + consumed, total))
 }
 
 /// §28's item build, in the **same transaction** as the chunk that produced the evidence.
@@ -585,6 +663,12 @@ fn cached_blobs(
         .into_iter()
         .filter(|oid| !missing.contains(oid))
         .collect())
+}
+
+/// [p4-gaps GA19] The outcome of a chunk [`commit_chunk`] answered: `None` refused it and sent
+/// the scan back to ordinal 0, with every blob pending again.
+fn landed(pending: Option<i64>, done: usize, total: i64) -> JobOutcome {
+    pending.map_or_else(|| finish(total, 0, total), |p| finish(p, done, total))
 }
 
 /// `Done` once nothing is pending, `Partial` otherwise. **`total` is never a zero** — it is the

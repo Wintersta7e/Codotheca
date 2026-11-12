@@ -617,6 +617,20 @@ pub struct RecordingGitBackend<B> {
     /// When set, `version` answers this instead of asking the inner backend — the seam the
     /// governed-floor tests drive a release below the floor through.
     version: Option<GitVersion>,
+    hooks: Hooks,
+}
+
+/// A one-shot action a test runs inside a backend call.
+type Hook = Box<dyn FnOnce() + Send>;
+
+/// One-shot actions a test runs just before a named operation reaches the inner backend.
+#[derive(Default)]
+struct Hooks(Mutex<Vec<(&'static str, Hook)>>);
+
+impl std::fmt::Debug for Hooks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Hooks")
+    }
 }
 
 impl<B: GitBackend> RecordingGitBackend<B> {
@@ -626,6 +640,7 @@ impl<B: GitBackend> RecordingGitBackend<B> {
             inner,
             calls: Mutex::new(Vec::new()),
             version: None,
+            hooks: Hooks(Mutex::new(Vec::new())),
         }
     }
 
@@ -635,6 +650,7 @@ impl<B: GitBackend> RecordingGitBackend<B> {
             inner,
             calls: Mutex::new(Vec::new()),
             version: Some(version),
+            hooks: Hooks(Mutex::new(Vec::new())),
         }
     }
 
@@ -642,6 +658,26 @@ impl<B: GitBackend> RecordingGitBackend<B> {
     #[must_use]
     pub fn calls(&self) -> Vec<RecordedGitCall> {
         self.calls.lock().map_or_else(|_| Vec::new(), |c| c.clone())
+    }
+
+    /// Run `hook` once, just before the next `op` call reaches the inner backend — the seam a
+    /// test lands a concurrent write through between two of one job's reads. Only `head_tree`
+    /// and `read_blobs` fire one.
+    pub fn before_next(&self, op: &'static str, hook: impl FnOnce() + Send + 'static) {
+        if let Ok(mut hooks) = self.hooks.0.lock() {
+            hooks.push((op, Box::new(hook)));
+        }
+    }
+
+    /// The first hook queued for `op`, run outside the hook lock so it may queue another.
+    fn fire(&self, op: &'static str) {
+        let hook = self.hooks.0.lock().ok().and_then(|mut hooks| {
+            let at = hooks.iter().position(|(name, _)| *name == op)?;
+            Some(hooks.remove(at).1)
+        });
+        if let Some(hook) = hook {
+            hook();
+        }
     }
 
     fn record(&self, op: &'static str, repo: Option<&Path>) {
@@ -747,6 +783,7 @@ impl<B: GitBackend> GitBackend for RecordingGitBackend<B> {
 
     fn head_tree(&self, repo: &RepoHandle, ctx: &JobContext<'_>) -> GitResult<Vec<TreeEntry>> {
         self.record("head_tree", Some(&repo.work_dir));
+        self.fire("head_tree");
         self.inner.head_tree(repo, ctx)
     }
 
@@ -759,6 +796,7 @@ impl<B: GitBackend> GitBackend for RecordingGitBackend<B> {
         ctx: &JobContext<'_>,
     ) -> GitResult<BlobBatch> {
         self.record("read_blobs", Some(&repo.work_dir));
+        self.fire("read_blobs");
         self.inner
             .read_blobs(repo, oids, byte_cap, budget_bytes, ctx)
     }

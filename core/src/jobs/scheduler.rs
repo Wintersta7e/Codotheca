@@ -390,7 +390,8 @@ impl JobRunner {
             if self.settle_refused(tx, job, outcome)? {
                 return Ok(None);
             }
-            put(tx, job.project_id, &row)?;
+            let kept = super::j7_markers::settled_row(tx, job, &row)?;
+            put(tx, job.project_id, &kept)?;
             // §28.2's singleton evaluator, and §34's producer around it. It runs **before** §31's
             // completion evaluator, or every Group-A check answers from the previous settle; do
             // not reorder them.
