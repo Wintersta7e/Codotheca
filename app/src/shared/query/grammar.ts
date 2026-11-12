@@ -1,5 +1,5 @@
 /** §8.3's `query_grammar_version`. Adding an enum value bumps it; removing a field is forbidden. */
-export const QUERY_GRAMMAR_VERSION = 3;
+export const QUERY_GRAMMAR_VERSION = 4;
 
 export const QUERY_FIELDS = [
   'lang',
@@ -35,6 +35,8 @@ export const IS_FLAGS = [
   // prints over that section. One added VALUE, and no new field: `newfield:x` is an ignored term
   // today and would become a filter, which is not backward-compatible.
   'notcloned',
+  // §56.8: the opt-in that brings a fully excluded project back, the way `is:hidden` does.
+  'excluded',
 ] as const;
 export type IsFlag = (typeof IS_FLAGS)[number];
 

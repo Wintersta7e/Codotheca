@@ -2,6 +2,7 @@ import { parseQuery } from '../../shared/query/parse.js';
 import type { QueryContext } from './evaluate.js';
 import { evaluateQuery } from './evaluate.js';
 import type { ShelfRow } from './row.js';
+import { isOnShelf } from './visibility.js';
 
 /** §8.0b. The accents are §8.7 tokens except COLD's, which §5.4a owns as `abandoned`'s fill. */
 export const ATTENTION_CHIPS = [
@@ -44,7 +45,7 @@ export function shelfCounts(rows: readonly ShelfRow[], matchedCount: number): Sh
   let classificationKnown = false;
   for (const row of rows) {
     if (row.isReference) reference += 1;
-    else if (!row.isHidden) total += 1;
+    else if (isOnShelf(row)) total += 1;
     if (row.authoredByUser !== null) {
       classificationKnown = true;
       classified += 1;

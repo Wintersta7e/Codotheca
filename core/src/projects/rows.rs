@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 
 use crate::art::compose::local_year;
+use crate::exclusion::visibility::project_fully_excluded;
 use crate::index::path::{display_paths_for_ui, DisplayPathTable};
 use crate::jobs::presence::{PresenceAnswers, PresenceState};
 use crate::projects::{ProjectsCtx, ProjectsError};
@@ -95,6 +96,9 @@ pub struct LocationFacts {
     /// an age.** It takes precedence over `presence` on every surface, which is why the producer
     /// carries it rather than each surface re-deriving it.
     pub removed_at: Option<i64>,
+    /// §56.6: the user's exclusion list covers this copy, so nothing reads it and it is never
+    /// primary while an allowed copy exists.
+    pub excluded: bool,
 }
 
 /// What §8.3's grammar filters on and the wire row does not carry yet — the core-side view of
@@ -153,11 +157,14 @@ pub struct LoadedRow {
 /// says.** `presence` is a scan observation and the scan has not run since the removal, so it
 /// still reads `present` for a directory that is gone — which is why the precedence is
 /// implemented here, once, rather than left to six call sites to remember.
+/// **[p4-56a] §56.6 step 3: an excluded copy is never primary while an allowed copy exists**,
+/// present or not — the next key after `removed_at`, so presence cannot outrank it.
 #[must_use]
 pub fn pick_primary(locations: &[LocationFacts]) -> Option<&LocationFacts> {
     locations.iter().max_by_key(|l| {
         (
             i32::from(l.removed_at.is_none()),
+            i32::from(!l.excluded),
             i32::from(l.presence == Presence::Present),
             l.worktree_newest_mtime.unwrap_or(i64::MIN),
             i32::from(l.kind.is_native()),
@@ -217,7 +224,7 @@ pub fn scan_generation(conn: &rusqlite::Connection) -> Result<i64, ProjectsError
 const LOCATION_COLUMNS: &str = "SELECT id, project_id, kind, distro, presence, branch,
                 is_dirty, untracked_count, ahead, behind, stash_count, interrupted_op,
                 fetch_head_at, refstate_observed_at, worktree_observed_at, worktree_newest_mtime,
-                last_seen_at, head_oid, trusted_at, removed_at
+                last_seen_at, head_oid, trusted_at, removed_at, excluded
            FROM location";
 
 fn map_location(r: &rusqlite::Row<'_>) -> Result<LocationFacts, ProjectsError> {
@@ -246,6 +253,7 @@ fn map_location(r: &rusqlite::Row<'_>) -> Result<LocationFacts, ProjectsError> {
         head_oid: r.get(17)?,
         trusted_at: r.get(18)?,
         removed_at: r.get(19)?,
+        excluded: r.get::<_, i64>(20)? != 0,
     })
 }
 
@@ -340,8 +348,11 @@ fn collections_by_project(
     Ok(collections)
 }
 
-const PROJECT_COLUMNS: &str =
-    "SELECT p.id, p.name, p.owner, p.description, p.description_source, p.primary_language,
+/// The shelf's one `project` read. Column 45 is §56.8's fragment, so `isExcluded` and every
+/// count read the same text.
+fn project_columns() -> String {
+    format!(
+        "SELECT p.id, p.name, p.owner, p.description, p.description_source, p.primary_language,
             p.archetype, p.art_scene_hash, p.art_state, p.condition_signal, p.completion_lit,
             p.completion_applicable, p.is_pinned, p.is_archived, p.is_hidden, p.is_reference,
             p.is_fork, p.is_bare, p.is_shallow, p.submodule_path, p.ambiguous_lineage,
@@ -353,11 +364,14 @@ const PROJECT_COLUMNS: &str =
             pc.readme_read_at, pc.readme_excerpt,
             p.seed_basename, p.reroll_offset,
             cs.has_readme, cs.has_license, cs.has_tests, cs.has_ci,
-            ck.state
+            ck.state, {}
        FROM project p
        LEFT JOIN peek_cache pc ON pc.project_id = p.id
        LEFT JOIN project_content_scan cs ON cs.project_id = p.id
-       LEFT JOIN project_check ck ON ck.project_id = p.id AND ck.check_key = 'ciGreen'";
+       LEFT JOIN project_check ck ON ck.project_id = p.id AND ck.check_key = 'ciGreen'",
+        project_fully_excluded("p")
+    )
+}
 
 /// The shelf's fixed shape, which `idx_project_shelf_order` exists for.
 const PROJECT_SHELF_FILTER: &str = " WHERE p.merged_into IS NULL
@@ -414,6 +428,7 @@ fn map_loaded_row(
         is_pinned: r.get::<_, i64>(12)? != 0,
         is_archived: r.get::<_, i64>(13)? != 0,
         is_hidden: r.get::<_, i64>(14)? != 0,
+        is_excluded: r.get(45)?,
         is_reference: r.get::<_, i64>(15)? != 0,
         authored_by_user,
         is_fork: r.get::<_, i64>(16)? != 0,
@@ -530,7 +545,7 @@ pub fn load_project_rows(ctx: &ProjectsCtx<'_>) -> Result<Vec<LoadedRow>, Projec
     // per-row call here would be the query storm the other two maps exist to avoid.
     let health = crate::health::summary::summaries_for_all(conn)?;
 
-    let mut stmt = conn.prepare(&format!("{PROJECT_COLUMNS}{PROJECT_SHELF_FILTER}"))?;
+    let mut stmt = conn.prepare(&format!("{}{PROJECT_SHELF_FILTER}", project_columns()))?;
     let mut out: Vec<LoadedRow> = Vec::new();
     let mut rows = stmt.query([])?;
     while let Some(r) = rows.next()? {
@@ -574,7 +589,7 @@ pub fn load_project_row(
         }
     }
 
-    let mut stmt = conn.prepare(&format!("{PROJECT_COLUMNS} WHERE p.id = ?1"))?;
+    let mut stmt = conn.prepare(&format!("{} WHERE p.id = ?1", project_columns()))?;
     let mut rows = stmt.query(rusqlite::params![project.0])?;
     let Some(r) = rows.next()? else {
         return Err(ProjectsError::UnknownProject(project.0));

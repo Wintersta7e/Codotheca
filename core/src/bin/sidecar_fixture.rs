@@ -14,6 +14,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use codotheca_core::exclusion::visibility::project_visible;
 use codotheca_core::index::sidecar::{
     counts, export, read, RestoreRule, Scope, SectionRow, Sidecar, SECTIONS,
 };
@@ -88,10 +89,11 @@ fn file_name(path: &Path) -> String {
 fn shelf(index: &Index) -> Result<Vec<String>, IndexError> {
     let names = index
         .conn()
-        .prepare(
+        .prepare(&format!(
             "SELECT DISTINCT p.name FROM project p JOIN location l ON l.project_id = p.id
-              WHERE p.is_hidden = 0 AND l.presence = 'present' ORDER BY p.name",
-        )?
+              WHERE {} AND l.presence = 'present' ORDER BY p.name",
+            project_visible("p")
+        ))?
         .query_map([], |r| r.get(0))?
         .collect::<Result<_, _>>()?;
     Ok(names)

@@ -4,6 +4,7 @@
 //! mutually exclusive — a span computed over 60% of the shelf is not partial, it is wrong. The
 //! answer is not to hold numbers back; it is to make each one carry its basis.
 
+use crate::exclusion::visibility::project_visible;
 use crate::index::IndexError;
 use crate::jobs::state::J4_COVERED_SQL;
 use crate::projects::current::IS_CURRENT_SQL;
@@ -23,9 +24,12 @@ pub struct Population {
     pub history_complete: bool,
 }
 
-/// The projects the shelf shows, over a `project` row: not hidden, not merged away. The one
-/// population every other count — the reveal's and §40.2's badge populations — builds on.
-pub(crate) const LIVE: &str = "is_hidden = 0 AND merged_into IS NULL";
+/// The projects the shelf shows, over a `project` row aliased `p`: visible (§56.8's one
+/// fragment — not hidden, not fully excluded) and not merged away. The one population every
+/// other count — the reveal's and §40.2's badge populations — builds on.
+pub(crate) fn live_sql() -> String {
+    format!("{} AND p.merged_into IS NULL", project_visible("p"))
+}
 
 /// §40.11: whether no live, current project lacks J4 coverage. A project with no copy left
 /// (§23's not-cloned shape, or every copy removed) or one the user removed runs no J4, so it
@@ -34,10 +38,11 @@ pub(crate) const LIVE: &str = "is_hidden = 0 AND merged_into IS NULL";
 /// reason on a J4 row today; a later production reset giving it would count a walk that never
 /// finished as covered.
 fn history_complete_sql() -> String {
+    let live = live_sql();
     format!(
         "SELECT NOT EXISTS (
            SELECT 1 FROM project p
-            WHERE {LIVE} AND {IS_CURRENT_SQL}
+            WHERE {live} AND {IS_CURRENT_SQL}
               AND NOT EXISTS (SELECT 1 FROM project_job_state
                                WHERE project_id = p.id AND job = 'j4' AND {J4_COVERED_SQL}))"
     )
@@ -48,8 +53,9 @@ fn history_complete_sql() -> String {
 /// # Errors
 /// Returns [`IndexError`] when a read fails.
 pub fn population(conn: &rusqlite::Connection) -> Result<Population, IndexError> {
+    let live = live_sql();
     let total: i64 = conn.query_row(
-        &format!("SELECT COUNT(*) FROM project WHERE {LIVE}"),
+        &format!("SELECT COUNT(*) FROM project p WHERE {live}"),
         [],
         |r| r.get(0),
     )?;
@@ -58,7 +64,7 @@ pub fn population(conn: &rusqlite::Connection) -> Result<Population, IndexError>
             &format!(
                 "SELECT COUNT(*) FROM project p
                    JOIN project_job_state s ON s.project_id = p.id
-                  WHERE {LIVE} AND s.job = ?1 AND s.state = 'ok'"
+                  WHERE {live} AND s.job = ?1 AND s.state = 'ok'"
             ),
             rusqlite::params![job],
             |r| r.get(0),
@@ -100,13 +106,14 @@ const fn seconds_as_f64(seconds: i64) -> f64 {
 /// Returns [`IndexError`] when a read fails.
 pub fn reveal(conn: &rusqlite::Connection, now: i64) -> Result<Reveal, IndexError> {
     let pop = population(conn)?;
+    let live = live_sql();
 
     // §10.4 / criterion 23: shallow repositories are excluded from every history figure. A
     // shallow clone's first commit is the truncation point, not the beginning of anything.
     let earliest: Option<i64> = conn.query_row(
         &format!(
-            "SELECT MIN(first_commit_at) FROM project
-              WHERE {LIVE} AND is_shallow = 0 AND is_reference = 0 AND first_commit_at IS NOT NULL"
+            "SELECT MIN(first_commit_at) FROM project p
+              WHERE {live} AND is_shallow = 0 AND is_reference = 0 AND first_commit_at IS NOT NULL"
         ),
         [],
         |r| r.get(0),
@@ -115,8 +122,8 @@ pub fn reveal(conn: &rusqlite::Connection, now: i64) -> Result<Reveal, IndexErro
     // LANGUAGES' names and its count are one read: the panel lists these and counts them, so
     // the figure can never disagree with the names beside it. Most projects first, then by name.
     let mut languages_stmt = conn.prepare(&format!(
-        "SELECT primary_language, COUNT(*) FROM project
-          WHERE {LIVE} AND primary_language IS NOT NULL
+        "SELECT primary_language, COUNT(*) FROM project p
+          WHERE {live} AND primary_language IS NOT NULL
           GROUP BY primary_language
           ORDER BY COUNT(*) DESC, primary_language ASC"
     ))?;
@@ -130,8 +137,8 @@ pub fn reveal(conn: &rusqlite::Connection, now: i64) -> Result<Reveal, IndexErro
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut starts_stmt = conn.prepare(&format!(
-        "SELECT first_commit_at, first_commit_tz_offset_min FROM project
-          WHERE {LIVE} AND is_shallow = 0 AND is_reference = 0 AND first_commit_at IS NOT NULL"
+        "SELECT first_commit_at, first_commit_tz_offset_min FROM project p
+          WHERE {live} AND is_shallow = 0 AND is_reference = 0 AND first_commit_at IS NOT NULL"
     ))?;
     let starts: Vec<i32> = starts_stmt
         .query_map([], |r| {
@@ -150,8 +157,8 @@ pub fn reveal(conn: &rusqlite::Connection, now: i64) -> Result<Reveal, IndexErro
     let oldest: Option<(i64, i64)> = conn
         .query_row(
             &format!(
-                "SELECT id, first_commit_at FROM project
-                  WHERE {LIVE} AND is_shallow = 0 AND is_reference = 0 AND is_archived = 0
+                "SELECT id, first_commit_at FROM project p
+                  WHERE {live} AND is_shallow = 0 AND is_reference = 0 AND is_archived = 0
                     AND first_commit_at IS NOT NULL
                   ORDER BY first_commit_at ASC, id ASC LIMIT 1"
             ),

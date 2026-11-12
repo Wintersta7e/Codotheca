@@ -17,6 +17,8 @@ describe('isPaletteCandidate', () => {
     expect(isPaletteCandidate(makeProjectRow())).toBe(true);
     expect(isPaletteCandidate(makeProjectRow({ isReference: true }))).toBe(false);
     expect(isPaletteCandidate(makeProjectRow({ isHidden: true }))).toBe(false);
+    // AC-P4-56-23: a fully excluded project is off the palette like a hidden one.
+    expect(isPaletteCandidate(makeProjectRow({ isExcluded: true }))).toBe(false);
     expect(isPaletteCandidate(makeProjectRow({ isSubmodule: true }))).toBe(false);
     // Archived and pinned are not in the predicate; a launcher that hid archived work would
     // be a fourth filter the spec does not carry.

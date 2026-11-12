@@ -7,19 +7,22 @@ use crate::health::enrolment::{is_enrolled, surface_suppressed};
 use crate::index::IndexError;
 use crate::projects::current::IS_CURRENT_SQL;
 use crate::protocol::{ProjectId, RevealBasis};
-use crate::stats::reveal::{self, LIVE};
+use crate::stats::reveal::{self, live_sql};
 
 /// **H**, the history population: live, not Reference, not shallow. A Reference project's days
 /// are not the user's history, and a shallow clone's first commit is a truncation point, not a
 /// beginning.
 pub(crate) fn h_sql() -> String {
-    format!("({LIVE} AND p.is_reference = 0 AND p.is_shallow = 0)")
+    format!(
+        "({} AND p.is_reference = 0 AND p.is_shallow = 0)",
+        live_sql()
+    )
 }
 
 /// **S**, the state population: live, not Reference. Reference is excluded from XP and from
 /// every statistic, and a badge is one.
 pub(crate) fn s_sql() -> String {
-    format!("({LIVE} AND p.is_reference = 0)")
+    format!("({} AND p.is_reference = 0)", live_sql())
 }
 
 /// **P**, the present population: **S** with a present copy — not removed, and holding a location

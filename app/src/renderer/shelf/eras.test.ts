@@ -42,6 +42,7 @@ function at(daysAgo: number, over: Record<string, unknown> = {}): ShelfRow {
     isPinned: false,
     isArchived: false,
     isHidden: false,
+    isExcluded: false,
     isReference: false,
     isFork: false,
     isBare: false,

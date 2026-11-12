@@ -33,8 +33,9 @@ use crate::query::ast::{
 const DAY: i64 = 86_400;
 
 /// §8.0b's base predicate, stated once so a reader does not have to infer it from a `filter`.
-pub const BASE_PREDICATE: &str = "A bare query returns no is_reference rows and no is_hidden \
-rows (§8.0b). is:reference and is:hidden opt their own rows back in; a negated term does not.";
+pub const BASE_PREDICATE: &str = "A bare query returns no is_reference rows, no is_hidden rows \
+and no fully excluded rows (§8.0b, §56.8). is:reference, is:hidden and is:excluded opt their own \
+rows back in; a negated term does not.";
 
 /// §8.3's tri-state answer to one term for one row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,6 +182,7 @@ fn flag_truth(row: &LoadedRow, flag: IsFlag, ctx: &ExecContext<'_>) -> TermTruth
         IsFlag::Archived => TermTruth::known(r.is_archived),
         IsFlag::Pinned => TermTruth::known(r.is_pinned),
         IsFlag::Hidden => TermTruth::known(r.is_hidden),
+        IsFlag::Excluded => TermTruth::known(r.is_excluded),
         IsFlag::Reference => TermTruth::known(r.is_reference),
         IsFlag::Bare => TermTruth::known(r.is_bare),
         IsFlag::Fork => TermTruth::known(r.is_fork),
@@ -233,6 +235,7 @@ const fn is_about_a_working_copy(flag: IsFlag) -> bool {
         | IsFlag::Reference
         | IsFlag::Fork
         | IsFlag::New
+        | IsFlag::Excluded
         | IsFlag::Notcloned => false,
     }
 }
@@ -414,6 +417,9 @@ pub fn in_base_set(row: &ProjectRow, ast: &QueryAst) -> bool {
         return false;
     }
     if row.is_hidden && !asks_for(IsFlag::Hidden) {
+        return false;
+    }
+    if row.is_excluded && !asks_for(IsFlag::Excluded) {
         return false;
     }
     true

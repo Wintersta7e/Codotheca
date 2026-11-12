@@ -30,6 +30,7 @@ function row(id: number, over: Partial<ProjectRow> = {}): ProjectRow {
     isPinned: false,
     isArchived: false,
     isHidden: false,
+    isExcluded: false,
     isReference: false,
     authoredByUser: null,
     isFork: false,
@@ -165,6 +166,12 @@ describe('ProjectionStore', () => {
     store.setFlags(pid(1), { isPinned: true, isArchived: false, isHidden: false });
     expect(store.get(pid(1))?.isPinned).toBe(true);
     expect(store.get(pid(1))?.name).toBe('p1');
+  });
+  it('a flag delta keeps isExcluded, which flags_changed does not carry', () => {
+    const store = new ProjectionStore();
+    store.applySnapshot([row(1, { isExcluded: true })], 1);
+    store.setFlags(pid(1), { isPinned: false, isArchived: false, isHidden: true });
+    expect(store.get(pid(1))?.isExcluded).toBe(true);
   });
   it('applies a condition delta, including back to null', () => {
     const store = new ProjectionStore();

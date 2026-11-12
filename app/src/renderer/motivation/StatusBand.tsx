@@ -14,6 +14,7 @@ import type { AppDeps } from '../app/deps';
 import type { AppRoute, ProfileAnchor } from '../app/route';
 import { BENCH_LABEL, useBenchElapsed } from '../card/useBenchElapsed';
 import { useWindowActive } from '../motion/useWindowActive';
+import { isOnShelf } from '../shelf/visibility';
 import { useSettledDividers } from './bandDividers';
 import { LEVEL_LABEL, RHYTHM_LABEL } from './copy';
 import { levelBlockModel } from './levelBlock';
@@ -37,7 +38,7 @@ export function bandRenders(input: {
     input.route === 'shelf' &&
     input.state !== null &&
     input.state.shown &&
-    input.rows.some((row) => !row.isHidden)
+    input.rows.some((row) => isOnShelf(row))
   );
 }
 

@@ -92,6 +92,7 @@ function rowOf(entry: CorpusRow): ShelfRow {
     isPinned: false,
     isArchived: false,
     isHidden: false,
+    isExcluded: false,
     isReference: false,
     isFork: false,
     isBare: false,

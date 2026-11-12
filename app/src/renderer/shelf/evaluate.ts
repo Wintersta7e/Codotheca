@@ -139,6 +139,8 @@ export function termTruth(row: ShelfRow, term: QueryTerm, ctx: QueryContext): Tr
           return row.isPinned;
         case 'hidden':
           return row.isHidden;
+        case 'excluded':
+          return row.isExcluded;
         case 'reference':
           return row.isReference;
         case 'bare':
@@ -252,12 +254,16 @@ export function partitionAnswerable(
   return { runnable, ignored };
 }
 
-/** §8.0b's base predicate: reference and hidden rows are out unless the query asks for them. */
+/**
+ * §8.0b's base predicate: reference, hidden and fully excluded (§56.8) rows are out unless the
+ * query asks for them by name.
+ */
 export function inBaseSet(row: ShelfRow, ast: QueryAst): boolean {
-  const asksFor = (flag: 'reference' | 'hidden'): boolean =>
+  const asksFor = (flag: 'reference' | 'hidden' | 'excluded'): boolean =>
     ast.terms.some((t) => t.kind === 'flag' && t.flag === flag && !t.negated);
   if (row.isReference && !asksFor('reference')) return false;
   if (row.isHidden && !asksFor('hidden')) return false;
+  if (row.isExcluded && !asksFor('excluded')) return false;
   return true;
 }
 

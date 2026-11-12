@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Mutex;
 
+use crate::exclusion::visibility::project_visible;
 use crate::index::path::PathPlatform;
 use crate::index::IndexError;
 use crate::projects::current::IS_CURRENT_SQL;
@@ -283,14 +284,16 @@ fn reach(
         rusqlite::params![id],
         |r| r.get(0),
     )?;
+    let visible = project_visible("p");
     let mut stmt = conn.prepare(&format!(
-        "SELECT l.project_id, l.path_key, l.presence, p.is_hidden
+        "SELECT l.project_id, l.path_key, l.presence, {visible}
            FROM location l JOIN project p ON p.id = l.project_id
           WHERE l.kind = ?1 AND l.distro = ?2 AND l.removed_at IS NULL
             AND p.merged_into IS NULL AND {IS_CURRENT_SQL}"
     ))?;
-    // A hidden project leaves the count (§46.12) but its copy is still evidence the store was
-    // reached, so it keeps an all-hidden root out of `Uncounted` and joins the offline test.
+    // A hidden or fully excluded project leaves the count (§46.12, §56.8) but its copy is still
+    // evidence the store was reached, so it keeps an all-hidden root out of `Uncounted` and joins
+    // the offline test.
     let mut indexed = false;
     let mut shown = BTreeSet::new();
     let mut all_offline = true;
@@ -301,7 +304,7 @@ fn reach(
             continue;
         }
         indexed = true;
-        if row.get::<_, i64>(3)? == 0 {
+        if row.get::<_, bool>(3)? {
             shown.insert(row.get::<_, i64>(0)?);
         }
         all_offline &= row.get::<_, String>(2)? == "offline";

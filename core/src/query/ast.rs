@@ -75,6 +75,9 @@ pub enum IsFlag {
     /// AST's convention and **not** the generated protocol enum's — R47's hyphenated renditions
     /// are a different mechanism and the two must not be conflated.
     Notcloned,
+    /// `is:excluded` — every copy the project still has is covered by the user's exclusion list
+    /// (§56.8); asking for it opts fully excluded rows back into the base set (§8.0b).
+    Excluded,
 }
 
 /// The attributes a `has:` term can ask about.

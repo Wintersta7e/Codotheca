@@ -101,6 +101,7 @@ export function rowFixture(over: Partial<ProjectRow> = {}): ProjectRow {
     isPinned: false,
     isArchived: false,
     isHidden: false,
+    isExcluded: false,
     isReference: false,
     authoredByUser: null,
     isFork: false,

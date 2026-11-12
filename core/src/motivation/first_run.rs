@@ -16,7 +16,7 @@ use crate::firstrun::{first_run_completed_at, stamp_first_run_completed};
 use crate::index::IndexError;
 use crate::projects::current::IS_CURRENT_SQL;
 use crate::protocol::ScanRunId;
-use crate::stats::reveal::LIVE;
+use crate::stats::reveal::live_sql;
 
 /// What the stamp is waiting for.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -54,7 +54,10 @@ impl FirstRunStamp {
             return Ok(Self::default());
         }
         let shelf: bool = conn.query_row(
-            &format!("SELECT EXISTS (SELECT 1 FROM project p WHERE {LIVE} AND {IS_CURRENT_SQL})"),
+            &format!(
+                "SELECT EXISTS (SELECT 1 FROM project p WHERE {} AND {IS_CURRENT_SQL})",
+                live_sql()
+            ),
             [],
             |r| r.get(0),
         )?;

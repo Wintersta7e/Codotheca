@@ -237,6 +237,7 @@ fn an_uninstalled_copy_is_demoted_below_a_live_one_whatever_presence_says() {
             worktree_newest_mtime: Some(touched),
             last_seen_at: None,
             removed_at,
+            excluded: false,
         }
     }
 
@@ -290,6 +291,7 @@ fn an_uninstalled_project_is_not_a_not_cloned_project() {
         worktree_newest_mtime: None,
         last_seen_at: None,
         removed_at: Some(1_700_000_000),
+        excluded: false,
     };
     let locations = vec![only];
     assert!(

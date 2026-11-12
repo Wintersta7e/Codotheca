@@ -78,7 +78,13 @@ afterEach(() => {
 });
 
 const row = (id: number, over: Partial<ProjectRow> = {}): ProjectRow =>
-  ({ id: id as ProjectId, name: `project-${String(id)}`, isHidden: false, ...over }) as ProjectRow;
+  ({
+    id: id as ProjectId,
+    name: `project-${String(id)}`,
+    isHidden: false,
+    isExcluded: false,
+    ...over,
+  }) as ProjectRow;
 
 const state = (over: Partial<MotivationState> = {}): MotivationState => ({
   shown: true,
@@ -195,6 +201,9 @@ describe('the status band', () => {
     expect(bandRenders({ route: 'shelf', state: state(), rows: [] })).toBe(false);
     expect(
       bandRenders({ route: 'shelf', state: state(), rows: [row(1, { isHidden: true })] }),
+    ).toBe(false);
+    expect(
+      bandRenders({ route: 'shelf', state: state(), rows: [row(1, { isExcluded: true })] }),
     ).toBe(false);
     for (const route of ['project', 'first-run', 'failure'] as const) {
       expect(bandRenders({ route, state: state(), rows })).toBe(false);

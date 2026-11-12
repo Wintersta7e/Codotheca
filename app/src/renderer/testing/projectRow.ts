@@ -33,6 +33,7 @@ export function makeProjectRow(overrides: Partial<ProjectRow> = {}): ProjectRow 
     isPinned: false,
     isArchived: false,
     isHidden: false,
+    isExcluded: false,
     isReference: false,
     // J1.5 has not run: null, never `false`, which would say someone else's.
     authoredByUser: null,

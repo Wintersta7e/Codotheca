@@ -472,6 +472,7 @@
         "isPinned": "bool",
         "isArchived": "bool",
         "isHidden": "bool",
+        "isExcluded": "bool",
         "isReference": "bool",
         "authoredByUser": "bool?",
         "isFork": "bool",

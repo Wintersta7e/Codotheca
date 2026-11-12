@@ -32,6 +32,7 @@ function base(id: number, over: Record<string, unknown> = {}): ShelfRow {
     isPinned: false,
     isArchived: false,
     isHidden: false,
+    isExcluded: false,
     isReference: false,
     isFork: false,
     isBare: false,
@@ -175,6 +176,14 @@ describe('evaluateQuery', () => {
     // §8.0b: this is what makes ALL and the headline agree.
     const rows = [base(1), base(2, { isReference: true }), base(3, { isHidden: true })];
     expect(evaluateQuery(rows, parseQuery(''), ctx).rows.map((r) => r.id)).toEqual([1]);
+  });
+  it('AC-P4-56-23: a fully excluded row leaves the bare query and is:excluded alone brings it back', () => {
+    const rows = [base(1), base(2, { isExcluded: true })];
+    expect(evaluateQuery(rows, parseQuery(''), ctx).rows.map((r) => r.id)).toEqual([1]);
+    expect(evaluateQuery(rows, parseQuery('is:excluded'), ctx).rows.map((r) => r.id)).toEqual([2]);
+    // A negated term is not a request for excluded rows (§8.0b).
+    expect(evaluateQuery(rows, parseQuery('-is:excluded'), ctx).rows.map((r) => r.id)).toEqual([1]);
+    expect(evaluateQuery(rows, parseQuery('is:hidden'), ctx).rows.map((r) => r.id)).toEqual([]);
   });
   it('is:reference and is:hidden opt their own rows back in', () => {
     const rows = [base(1), base(2, { isReference: true })];

@@ -1,4 +1,5 @@
 import type { LocationId, ProjectId, ProjectRow } from '../../generated/protocol.js';
+import { isOnShelf } from '../shelf/visibility.js';
 
 /** §8.6: the rendered list is capped at 40 rows; the count states the full match set. */
 export const PALETTE_ROW_CAP = 40;
@@ -23,9 +24,9 @@ export const PALETTE_INSTALL_TEXT = '↵ INSTALL…';
  */
 export type PaletteOpenFocus = 'install';
 
-/** §8.6: `is_reference = 0 AND is_hidden = 0 AND submodule_path IS NULL`. */
+/** §8.6: `is_reference = 0 AND submodule_path IS NULL`, on the shelf (§56.8). */
 export function isPaletteCandidate(row: ProjectRow): boolean {
-  return !row.isReference && !row.isHidden && !row.isSubmodule;
+  return !row.isReference && isOnShelf(row) && !row.isSubmodule;
 }
 
 /** §8.6: matching on name and `primary_language`. Not description, not owner, not path. */

@@ -31,6 +31,7 @@ function base(id: number, over: Record<string, unknown> = {}): ShelfRow {
     isPinned: false,
     isArchived: false,
     isHidden: false,
+    isExcluded: false,
     isReference: false,
     // J1.5 has not run. The cast below would let this go missing, and a missing field is
     // `undefined`, which the classified count reads as known.
@@ -97,6 +98,10 @@ describe('shelfCounts', () => {
     const counts = shelfCounts(rows, 2);
     expect(counts.total).toBe(2);
     expect(counts.reference).toBe(1);
+  });
+  it('AC-P4-56-23: never counts a fully excluded row in the total', () => {
+    const rows = [base(1), base(2, { isExcluded: true }), base(3, { isHidden: true })];
+    expect(shelfCounts(rows, 1).total).toBe(1);
   });
   it('reports classification as unknown while authored_by_user is NULL everywhere', () => {
     expect(shelfCounts([base(1)], 1).classificationKnown).toBe(false);
