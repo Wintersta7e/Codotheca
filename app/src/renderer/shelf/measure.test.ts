@@ -4,11 +4,14 @@ import type { GridState, MountWindow } from '../keyboard/gridNavigation.js';
 import { parseCollapseState } from './collapse.js';
 import {
   EMPTY_MOUNT_WINDOW,
+  firstVisibleIndex,
+  GRID_PADDING_TOP,
   GRID_ROW_GAP,
   measureGrid,
   SECTION_HEADER_HEIGHT,
   sectionExtents,
   windowFor,
+  type SectionExtent,
 } from './measure.js';
 import type { ShelfPage } from './page.js';
 import { required } from '../../shared/required.js';
@@ -204,5 +207,47 @@ describe('windowFor', () => {
     };
     const empty: MountWindow = EMPTY_MOUNT_WINDOW;
     expect(mountedIndices(state, empty, { projectId: null, desiredColumn: 0 })).toEqual([]);
+  });
+});
+
+describe('firstVisibleIndex (§11.7: where a selection starts)', () => {
+  const metrics = { columns: 3, trackWidth: 100, rowHeight: 150 };
+  const pitch = metrics.rowHeight + GRID_ROW_GAP;
+  // Two open sections of 7 and 5 cards with a collapsed one of 4 between them.
+  const extent = (over: Partial<SectionExtent>): SectionExtent => ({
+    id: 'era:live',
+    top: 26,
+    headerHeight: SECTION_HEADER_HEIGHT,
+    bodyHeight: 0,
+    rowCount: 0,
+    collapsed: false,
+    firstIndex: 0,
+    ...over,
+  });
+  const a = extent({ id: 'a', top: 26, rowCount: 7, bodyHeight: GRID_PADDING_TOP + 3 * pitch });
+  const b = extent({ id: 'b', top: 1000, rowCount: 4, collapsed: true, firstIndex: 7 });
+  const c = extent({ id: 'c', top: 1100, rowCount: 5, bodyHeight: 400, firstIndex: 11 });
+  const bodyTopA = a.top + a.headerHeight + GRID_PADDING_TOP;
+
+  it('answers the first card at the top of the shelf', () => {
+    expect(firstVisibleIndex([a, b, c], metrics, 0)).toBe(0);
+  });
+
+  it('starts a row whose bottom edge is still on screen, and skips one wholly above', () => {
+    // Row 0's bottom edge sits at bodyTopA + 150: one pixel short of it, row 0 still shows.
+    expect(firstVisibleIndex([a, b, c], metrics, bodyTopA + metrics.rowHeight - 1)).toBe(0);
+    expect(firstVisibleIndex([a, b, c], metrics, bodyTopA + metrics.rowHeight)).toBe(3);
+    expect(firstVisibleIndex([a, b, c], metrics, bodyTopA + pitch + metrics.rowHeight)).toBe(6);
+  });
+
+  it('never lands in a collapsed section', () => {
+    // Past every row of `a`: the collapsed `b` is not in the sequence, so `c` starts it.
+    expect(firstVisibleIndex([a, b, c], metrics, bodyTopA + 3 * pitch)).toBe(11);
+  });
+
+  it('answers the first card when every card is above the viewport, and null with none', () => {
+    expect(firstVisibleIndex([a, b, c], metrics, 50_000)).toBe(0);
+    expect(firstVisibleIndex([b], metrics, 0)).toBeNull();
+    expect(firstVisibleIndex([], metrics, 0)).toBeNull();
   });
 });

@@ -23,7 +23,8 @@ vi.mock('../card/ProjectCard.js', () => ({
   ),
 }));
 
-vi.mock('../shelf/useVirtualizer.js', () => ({
+vi.mock('../shelf/useVirtualizer.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../shelf/useVirtualizer.js')>()),
   useVirtualizer: vi.fn(),
 }));
 
@@ -107,7 +108,7 @@ beforeEach(() => {
   mountWindow = { from: 0, to: 10_000 };
   vi.mocked(useVirtualizer).mockImplementation((input: VirtualizerInput): VirtualizerState => {
     const sized = sectionExtents(input.page, METRICS, input.collapse, input.queryIsEmpty);
-    return { ...sized, metrics: METRICS, mountWindow };
+    return { ...sized, metrics: METRICS, mountWindow, firstVisible: null };
   });
 });
 

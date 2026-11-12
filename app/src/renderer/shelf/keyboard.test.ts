@@ -96,6 +96,20 @@ describe('shelfKeyIntent', () => {
     // Enter with nothing focused must not launch, and must not be swallowed either.
     expect(shelfKeyIntent(key({ key: 'Enter', code: 'Enter', target: onGrid }), nothingFocused)) //
       .toEqual({ kind: 'decline', reason: 'noFocusedProject' });
+    // Space likewise: with nothing selected there is no card to peek at.
+    expect(shelfKeyIntent(key({ key: ' ', code: 'Space', target: onGrid }), nothingFocused)) //
+      .toEqual({ kind: 'decline', reason: 'noFocusedProject' });
+  });
+
+  it('claims every arrow with nothing focused — the first arrow is how a selection starts', () => {
+    for (const code of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']) {
+      const event = key({ key: code, code, target: onGrid });
+      expect(shelfKeyIntent(event, nothingFocused)).toEqual({
+        kind: 'claim',
+        action: resolveKey('shelf', event)?.action,
+        preventDefault: resolveKey('shelf', event)?.preventDefault,
+      });
+    }
   });
 
   it('names every card-addressed action, so none is silently actionable with nothing focused', () => {

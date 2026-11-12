@@ -89,6 +89,8 @@ export interface CardProps {
   readonly tabIndex?: 0 | -1;
   readonly onMouseEnter?: () => void;
   readonly onMouseLeave?: () => void;
+  /** Focus reaching the card or a control inside it — §11.7's roving cell takes the selection. */
+  readonly onFocus?: () => void;
   /** §7.8a: the card body is Play. `shiftKey` mirrors `Shift+Enter` — the project page. */
   readonly onClick?: (shiftKey: boolean) => void;
   /** Band 5. The hero's belongs to the project page; the tile's to `ProjectCard`. */
@@ -166,6 +168,7 @@ export function Card(props: CardProps): ReactElement {
         {...(props.selected ? { 'aria-selected': true } : {})}
         onMouseEnter={props.onMouseEnter}
         onMouseLeave={props.onMouseLeave}
+        onFocus={props.onFocus}
         onClick={(event) => {
           props.onClick?.(event.shiftKey);
         }}

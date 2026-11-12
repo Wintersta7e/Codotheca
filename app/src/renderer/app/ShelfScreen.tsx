@@ -3,6 +3,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -18,6 +19,7 @@ import type {
 import { parseQuery } from '../../shared/query/parse.js';
 import type { KeyAction } from '../keyboard/contexts.js';
 import {
+  focusIndex,
   mountedIndices,
   moveFocus,
   NO_FOCUS,
@@ -45,7 +47,7 @@ import { PeekPanel } from '../shelf/Peek.js';
 import { ReferenceTail } from '../shelf/ReferenceTail.js';
 import type { ShelfRow } from '../shelf/row.js';
 import { Shelf } from '../shelf/Shelf.js';
-import { useVirtualizer } from '../shelf/useVirtualizer.js';
+import { rowTopOf, useVirtualizer } from '../shelf/useVirtualizer.js';
 import { SORT_LABELS, offeredSorts, resolveSort, type ShelfView } from '../shelf/viewState.js';
 import type { AppDeps } from './deps.js';
 import { buildQueryContext } from './queryContext.js';
@@ -243,6 +245,37 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
     }),
     [flatRows, virtual.metrics.columns],
   );
+  const collapsedSectionIds = useMemo(
+    () => new Set(virtual.extents.filter((extent) => extent.collapsed).map((extent) => extent.id)),
+    [virtual.extents],
+  );
+  // §11.7's roving cell: the selection while it is on the grid; with none — or one hidden in a
+  // collapsed section — the first visible card, so `Tab` and the first arrow have a card to land on.
+  const selectedIndex = focusIndex(gridState, focus);
+  const selectionShown =
+    selectedIndex >= 0 && !collapsedSectionIds.has(flatEntries[selectedIndex]?.sectionId ?? '');
+  const entryId =
+    virtual.firstVisible === null ? null : (flatRows[virtual.firstVisible]?.id ?? null);
+  const tabStopId = selectionShown ? view.selectedProjectId : entryId;
+  // Set by a keyboard move: once the new selection has rendered, DOM focus follows it, so the
+  // focus ring and the selection ring are one ring and `Tab` leaves from where the keys left off.
+  const focusPending = useRef(false);
+  const focusRovingCard = useCallback((): void => {
+    scrollRef.current?.querySelector<HTMLElement>('.cdt-card[tabindex="0"]')?.focus();
+  }, []);
+  useLayoutEffect(() => {
+    if (!focusPending.current) return;
+    focusPending.current = false;
+    focusRovingCard();
+  }, [focusRovingCard, view.selectedProjectId]);
+  const selectCard = useCallback(
+    (projectId: ProjectId): void => {
+      if (projectId !== view.selectedProjectId) {
+        onViewChange({ ...view, selectedProjectId: projectId });
+      }
+    },
+    [onViewChange, view],
+  );
 
   useEffect(() => {
     if (!peekOpen || view.selectedProjectId === null) return undefined;
@@ -292,17 +325,23 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
     (action: KeyAction): void => {
       const direction = directionFor(action);
       if (direction !== null) {
-        const next = moveFocus(
-          gridState,
-          {
-            projectId: view.selectedProjectId,
-            desiredColumn: desiredColumn.current,
-          },
-          direction,
-        );
+        // With no selection on the grid the first arrow starts one rather than moving it.
+        const next = selectionShown
+          ? moveFocus(
+              gridState,
+              {
+                projectId: view.selectedProjectId,
+                desiredColumn: desiredColumn.current,
+              },
+              direction,
+            )
+          : { projectId: entryId, desiredColumn: 0 };
         desiredColumn.current = next.desiredColumn;
         if (next.projectId !== view.selectedProjectId) {
+          focusPending.current = true;
           onViewChange({ ...view, selectedProjectId: next.projectId });
+        } else {
+          focusRovingCard();
         }
         return;
       }
@@ -311,6 +350,15 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
       if (action === 'shelf.closePeek') {
         setPeekOpen(false);
       } else if (action === 'shelf.peek' && projectId !== null) {
+        // Peek opens below its card, so a selection scrolled out of view — one restored with
+        // the view, or left behind by the wheel — is brought back before it opens.
+        const el = scrollRef.current;
+        const top = rowTopOf(virtual.extents, virtual.metrics, selectedIndex);
+        if (!peekOpen && view.viewMode === 'grid' && el !== null && top !== null) {
+          const bottom = top + virtual.metrics.rowHeight;
+          if (top < el.scrollTop) el.scrollTop = top;
+          else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight;
+        }
         setPeekOpen((current) => !current);
       } else if ((action === 'shelf.openPage' || action === 'shelf.play') && projectId !== null) {
         onOpenProject(projectId);
@@ -318,7 +366,20 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
         togglePin(projectId);
       }
     },
-    [gridState, onOpenProject, onViewChange, togglePin, view],
+    [
+      entryId,
+      focusRovingCard,
+      gridState,
+      onOpenProject,
+      onViewChange,
+      peekOpen,
+      selectedIndex,
+      selectionShown,
+      togglePin,
+      view,
+      virtual.extents,
+      virtual.metrics,
+    ],
   );
 
   const onPeekHeight = useCallback(
@@ -333,10 +394,6 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
   );
 
   const scheduledFrames = allowsScheduledFrames(tier);
-  const collapsedSectionIds = useMemo(
-    () => new Set(virtual.extents.filter((extent) => extent.collapsed).map((extent) => extent.id)),
-    [virtual.extents],
-  );
   const flickerCandidates = useMemo(() => {
     if (!scheduledFrames || view.viewMode !== 'grid') return [];
     return mountedIndices(gridState, virtual.mountWindow, NO_FOCUS).flatMap((index) => {
@@ -434,6 +491,8 @@ export function ShelfScreen(props: ShelfScreenProps): ReactElement {
                 now={now}
                 firstRunCompletedAt={firstRunCompletedAt}
                 selectedId={view.selectedProjectId}
+                tabStopId={tabStopId}
+                onSelect={selectCard}
                 phase={props.phase}
                 sessions={sessions}
                 halo={halo}

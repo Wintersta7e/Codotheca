@@ -5,6 +5,7 @@ import type { CollapseState } from './collapse.js';
 import type { GridMetrics, SectionExtent } from './measure.js';
 import {
   EMPTY_MOUNT_WINDOW,
+  firstVisibleIndex,
   GRID_PADDING_TOP,
   GRID_ROW_GAP,
   measureGrid,
@@ -75,12 +76,15 @@ export interface VirtualizerState {
   readonly extents: readonly SectionExtent[];
   readonly canvasHeight: number;
   readonly mountWindow: MountWindow;
+  /** §11.7: where a selection starts — `firstVisibleIndex` at the current scroll offset. */
+  readonly firstVisible: number | null;
 }
 
 export function useVirtualizer(input: VirtualizerInput): VirtualizerState {
   const { page, tile, collapse, queryIsEmpty, focusedProjectId, peekExtra, scrollRef } = input;
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [mountWindow, setMountWindow] = useState<MountWindow>(EMPTY_MOUNT_WINDOW);
+  const [firstVisible, setFirstVisible] = useState<number | null>(null);
   const frameRef = useRef<number | null>(null);
 
   const metrics = measureGrid(viewport.width, tile);
@@ -99,6 +103,7 @@ export function useVirtualizer(input: VirtualizerInput): VirtualizerState {
     const el = scrollRef.current;
     if (!el) return;
     commit(windowFor(extents, metrics, el.scrollTop, el.clientHeight, page));
+    setFirstVisible(firstVisibleIndex(extents, metrics, el.scrollTop));
   }, [commit, extents, metrics, page, scrollRef]);
 
   useLayoutEffect(() => {
@@ -170,5 +175,5 @@ export function useVirtualizer(input: VirtualizerInput): VirtualizerState {
     if (top !== null) el.scrollTop = Math.max(0, top - el.clientHeight / 2);
   }, [extents, focusedProjectId, metrics, page, scrollRef, tile]);
 
-  return { metrics, extents, canvasHeight, mountWindow };
+  return { metrics, extents, canvasHeight, mountWindow, firstVisible };
 }

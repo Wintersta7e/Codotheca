@@ -127,3 +127,29 @@ export function windowFor(
   const total = page.sections.reduce((sum, section) => sum + section.agg.count, 0);
   return { from, to: Math.min(to, total - 1) };
 }
+
+/**
+ * The flat index of the first visible card: the first card of the topmost grid row that is not
+ * wholly above the viewport, collapsed sections skipped. It is where a selection starts when the
+ * first arrow or `Tab` reaches the grid (§11.7). With every card above the viewport it answers the
+ * first card on the shelf, so the key still lands somewhere; `null` only when no open section
+ * holds a card.
+ */
+export function firstVisibleIndex(
+  extents: readonly SectionExtent[],
+  metrics: GridMetrics,
+  scrollTop: number,
+): number | null {
+  let first: number | null = null;
+  const pitch = metrics.rowHeight + GRID_ROW_GAP;
+  for (const extent of extents) {
+    if (extent.collapsed || extent.rowCount === 0) continue;
+    first ??= extent.firstIndex;
+    const bodyTop = extent.top + extent.headerHeight + GRID_PADDING_TOP;
+    const gridRows = Math.ceil(extent.rowCount / metrics.columns);
+    // The first row whose bottom edge lies below the viewport's top edge.
+    const row = Math.max(0, Math.floor((scrollTop - bodyTop - metrics.rowHeight) / pitch) + 1);
+    if (row < gridRows) return extent.firstIndex + row * metrics.columns;
+  }
+  return first;
+}

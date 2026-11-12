@@ -20,12 +20,10 @@ export type ShelfIntent =
 export const CROSSES_CONTEXTS: readonly KeyAction[] = ['quickSwitch'];
 
 /** Every action addressed at a card. With nothing focused there is no object for the verb, so
- *  the shelf declines rather than acting on an implied first row. */
+ *  the shelf declines rather than acting on an implied first row. The four moves are not here:
+ *  with nothing selected an arrow is how a selection starts (the first visible card), and a
+ *  shelf that declined them left no key that could reach a card at all. */
 export const NEEDS_FOCUSED_PROJECT: readonly KeyAction[] = [
-  'shelf.moveUp',
-  'shelf.moveDown',
-  'shelf.moveLeft',
-  'shelf.moveRight',
   'shelf.play',
   'shelf.openPage',
   'shelf.peek',

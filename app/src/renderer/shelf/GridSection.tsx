@@ -50,6 +50,11 @@ export interface GridSectionProps {
   readonly now: number;
   readonly firstRunCompletedAt: number | null;
   readonly selectedId: ProjectId | null;
+  /** §11.7: the one card carrying `tabindex="0"` — the focused project, or with none the first
+   *  visible card, so `Tab` re-enters the grid. Absent: the focused project, as before. */
+  readonly tabStopId?: ProjectId | null;
+  /** Focus reached a card; the shelf makes it the selection. */
+  readonly onSelect?: (id: ProjectId) => void;
   /**
    * §8.5.1's per-card half of the gesture. The section derives it rather than being told, because
    * the ripple's distance is an index **within this section** — the prototype computes it that
@@ -90,6 +95,8 @@ export function GridSection(props: GridSectionProps): ReactElement {
     now,
     firstRunCompletedAt,
     selectedId,
+    tabStopId,
+    onSelect,
     phase,
     sessions,
     halo,
@@ -187,6 +194,14 @@ export function GridSection(props: GridSectionProps): ReactElement {
               rendition="card"
               selected={selectedId === id}
               focused={focus.projectId === id}
+              {...(tabStopId === undefined ? {} : { tabStop: tabStopId === id })}
+              {...(onSelect === undefined
+                ? {}
+                : {
+                    onFocus: () => {
+                      onSelect(id);
+                    },
+                  })}
               now={now}
               firstRunCompletedAt={firstRunCompletedAt}
               session={sessions.get(id) ?? null}

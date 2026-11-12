@@ -40,6 +40,13 @@ export interface ProjectCardProps {
   readonly selected: boolean;
   readonly focused: boolean;
   /**
+   * §11.7's roving cell: the one card carrying `tabindex="0"`. Defaults to `focused`; the shelf
+   * passes it for the first visible card while nothing is selected, so `Tab` can enter the grid.
+   */
+  readonly tabStop?: boolean;
+  /** Focus reached this card — the shelf makes it the selection. */
+  readonly onFocus?: () => void;
+  /**
    * Unix **seconds** (R3), and the shelf's shared instant for this paint. §11.7's as-of clauses
    * and §7.8's bench figure both re-derive from it, so a shelf that never advances it freezes
    * both. The card's own timer repaints at the minute boundary; it cannot invent a later second.
@@ -157,7 +164,8 @@ export function ProjectCard(props: ProjectCardProps): ReactElement {
       gesture={props.gesture ?? null}
       {...(props.gestureDelay === undefined ? {} : { gestureDelay: props.gestureDelay })}
       role={CARD_ROLE}
-      tabIndex={props.focused ? 0 : -1}
+      tabIndex={(props.tabStop ?? props.focused) ? 0 : -1}
+      {...(props.onFocus === undefined ? {} : { onFocus: props.onFocus })}
       onMouseEnter={() => {
         setHovered(true);
       }}
