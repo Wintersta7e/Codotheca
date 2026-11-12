@@ -17,8 +17,25 @@ import {
 // Windows the drive letter sits after it, so `readFileSync` opens a doubled-drive path.
 const registryPath = fileURLToPath(new URL('../../acceptance/criteria.json', import.meta.url));
 
+// [p4-gaps] §49.8's sections, admitted by the id form but not yet in `criteria.json`. The register
+// fold owns this list: the change that registers a section removes it here, or the test below fails.
+const UNREGISTERED_P4 = [53, 54, 55, 56];
+
 // [p4] §49.1: phase 4's criterion total lives in two places, and this file is not one of them.
-const PHASE4_CRITERIA = Object.values(PHASE4_SECTIONS).reduce((a, b) => a + b, 0);
+const PHASE4_CRITERIA = Object.entries(PHASE4_SECTIONS)
+  .filter(([section]) => !UNREGISTERED_P4.includes(Number(section)))
+  .reduce((a, [, n]) => a + n, 0);
+
+test('no registered criterion falls in a section listed as unregistered', () => {
+  for (const section of UNREGISTERED_P4) {
+    assert.ok(section in PHASE4_SECTIONS, `§${String(section)} is not a phase-4 section`);
+  }
+  const registered = loadRegistry(registryPath)
+    .criteria.map((c) => /^P4-(\d+)-/u.exec(String(c.id)))
+    .filter((m) => m !== null && UNREGISTERED_P4.includes(Number(m[1])))
+    .map((m) => m.input);
+  assert.deepEqual(registered, []);
+});
 
 test('the committed disposition table matches the registry', () => {
   const registry = loadRegistry(registryPath);

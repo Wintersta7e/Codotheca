@@ -94,6 +94,14 @@ test('§50, the follow-up review, owns criteria and mints a phase-4 tag', () => 
   assert.deepEqual(tagsIn('ac_p4_51_1'), []);
 });
 
+test('§53–§56, the gaps sections, mint a phase-4 tag and §52 and §57 do not', () => {
+  assert.deepEqual(tagsIn('AC-P4-55-1'), ['P4-55-1']);
+  assert.deepEqual(tagsIn('ac_p4_56_26'), ['P4-56-26']);
+  assert.deepEqual(tagsIn('ac_p4_53_12_x'), ['P4-53-12']);
+  assert.deepEqual(tagsIn('AC-P4-52-1'), []);
+  assert.deepEqual(tagsIn('AC-P4-57-1'), []);
+});
+
 test('a name carrying all four phases carries all four tags, in order', () => {
   assert.deepEqual(tagsIn('AC-14 and AC-P2-24-3 and AC-P3-28-1 and AC-P4-45-1'), [
     '14',

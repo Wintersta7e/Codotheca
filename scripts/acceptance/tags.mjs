@@ -32,11 +32,12 @@ export const TAG_P2 = /\bac[-_ ]?p2[-_ ](2[0-5])[-_ ](\d{1,2})(?=$|[^0-9a-z])/gi
 export const TAG_P3 = /\bac[-_ ]?p3[-_ ](2[89]|3[0-5])[-_ ](\d{1,2}[a-c]?)(?=$|[^0-9a-z])/giu;
 
 /**
- * §49.1's `AC-P4-<section>-<n>`. `3[89]|4[0-8]|50` because §37 is the scope section and §49 the
- * register contract, neither owning a criterion, and §50 is the follow-up review's; no letter,
- * because phase 4 has none.
+ * §49.1's `AC-P4-<section>-<n>`. `3[89]|4[0-8]|50|5[3-6]` because §37 is the scope section, §49
+ * the register contract and §52 the gaps scope, none owning a criterion; §50 is the follow-up
+ * review's, §53–§56 are §49.8's gaps sections, and §51's criteria are outside the register. No
+ * letter, because phase 4 has none.
  */
-export const TAG_P4 = /\bac[-_ ]?p4[-_ ](3[89]|4[0-8]|50)[-_ ](\d{1,2})(?=$|[^0-9a-z])/giu;
+export const TAG_P4 = /\bac[-_ ]?p4[-_ ](3[89]|4[0-8]|50|5[3-6])[-_ ](\d{1,2})(?=$|[^0-9a-z])/giu;
 
 export function tagsIn(name) {
   const text = String(name);

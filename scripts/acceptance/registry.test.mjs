@@ -1732,8 +1732,9 @@ test('a phase-4 criterion cites its own section, never §16', () => {
   assert.ok(!problems.some((p) => p.includes('names phase')), 'phase 4 is held');
 });
 
-test('a phase-4 id outside §38–§48 is refused by the id form', () => {
-  for (const id of ['P4-49-1', 'P4-37-2', 'P4-38-1a']) {
+// §49 and §52 own no criterion; §51's five are outside the register; §57 does not exist.
+test('a phase-4 id outside the registered sections is refused by the id form', () => {
+  for (const id of ['P4-49-1', 'P4-37-2', 'P4-38-1a', 'P4-52-1', 'P4-51-1', 'P4-57-1']) {
     const problems = validateRegistry({ version: 1, criteria: [p4Entry({ id, checks: [] })] });
     assert.ok(
       problems.some((p) => p.includes(`${id}: a phase-4 criterion id is`)),
@@ -1742,9 +1743,32 @@ test('a phase-4 id outside §38–§48 is refused by the id form', () => {
   }
 });
 
+/** One §55 criterion with its own check, citing its own section. */
+const p55One = () =>
+  p4Entry({
+    id: 'P4-55-1',
+    spec: '§55.1',
+    checks: [p4Check({ id: 'AC-P4-55-1', test: 'acceptance_p4::ac_p4_55_1' })],
+  });
+
+test('a §49.8 gaps id is accepted by the id form', () => {
+  const problems = validateRegistry({ version: 1, criteria: [p55One()] });
+  assert.ok(!problems.some((p) => p.includes('a phase-4 criterion id is')), problems.join('\n'));
+  assert.equal(criterionOf('AC-P4-55-1'), 'P4-55-1');
+  assert.equal(criterionOf('AC-P4-56-26-toggle'), 'P4-56-26');
+});
+
+test('a gaps section is held to its count', () => {
+  const problems = validateRegistry({ version: 1, criteria: [p55One()] });
+  assert.ok(
+    problems.includes('P4-55-2 is missing: §55 holds 1 of its 12 criteria'),
+    problems.join('\n'),
+  );
+});
+
 // [p4 Task 5] §49.1's table, copied for §36.5's reason: `.dev/spec/` is absent on CI. The total
-// lives in two places, §49.1 and this one assertion; no other file states it.
-test('PHASE4_SECTIONS is §49.1’s table plus §50.5 and sums to 265', () => {
+// lives in two places, §49.1 (with §49.8) and this one assertion; no other file states it.
+test('PHASE4_SECTIONS is §49.1’s table plus §50.5 and §49.8, and sums to 332', () => {
   assert.deepEqual(PHASE4_SECTIONS, {
     38: 28,
     39: 13,
@@ -1758,10 +1782,14 @@ test('PHASE4_SECTIONS is §49.1’s table plus §50.5 and sums to 265', () => {
     47: 22,
     48: 27,
     50: 8,
+    53: 12,
+    54: 17,
+    55: 12,
+    56: 26,
   });
   assert.equal(
     Object.values(PHASE4_SECTIONS).reduce((a, b) => a + b, 0),
-    265,
+    332,
   );
 });
 
