@@ -956,8 +956,11 @@ mod bridge {
         for i in 0..600 {
             std::fs::create_dir_all(tree.path().join(format!("d{i}"))).expect("mkdir");
         }
+        // An empty `.git` is not a repository; each holds the HEAD a real one has.
         for repo in ["a", "b"] {
-            std::fs::create_dir_all(tree.path().join(repo).join(".git")).expect("mkdir");
+            let dot = tree.path().join(repo).join(".git");
+            std::fs::create_dir_all(&dot).expect("mkdir");
+            std::fs::write(dot.join("HEAD"), b"ref: refs/heads/main\n").expect("HEAD");
         }
         let linux_root = tree.path().to_str().expect("utf-8 temp path").to_owned();
         // `parse_bridge_path` reads either separator, so the Linux path appends as it is.
