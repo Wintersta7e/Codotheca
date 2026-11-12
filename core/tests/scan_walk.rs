@@ -12,13 +12,13 @@
 //! unless `descend_into_repos` is set.
 
 use codotheca_core::cancel::CancelToken;
+use codotheca_core::exclusion::list::ExclusionList;
 use codotheca_core::git::{RepoFacts, StoreKey};
 use codotheca_core::index::path::native_platform;
 use codotheca_core::mount::{MountFacts, StoreClass};
 use codotheca_core::paths::path_key;
 use codotheca_core::scan::discover::{ProbeCtx, RepoKind};
 use codotheca_core::scan::links::LinkPolicy;
-use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::walk::{walk_root, WalkCtx};
 use codotheca_core::scan::{WalkEvent, WalkOptions};
 use codotheca_core::testing::{FakeGitBackend, FakeMountResolver, GitReply};
@@ -79,13 +79,14 @@ fn links_for(root: &Path, opts: &WalkOptions) -> Arc<LinkPolicy> {
 
 /// Walk `root` and return every repository found, sorted, plus the directory count.
 fn collect(root: &Path, opts: WalkOptions) -> (Vec<(PathBuf, RepoKind)>, u64) {
-    let skip = SkipList::default();
+    let exclusions = ExclusionList::default();
     let git = bare_saying_git();
     let cancel = CancelToken::new();
     let probe = ProbeCtx::new(&git, StoreKey::new("store-a"), StoreClass::Local, &cancel);
     let ctx = WalkCtx {
         opts: &opts,
-        skip: &skip,
+        exclusions: &exclusions,
+        platform: native_platform(),
         probe: &probe,
         links: links_for(root, &opts),
     };
@@ -198,14 +199,15 @@ fn cancellation_stops_the_walk() {
         threads: 1,
         ..WalkOptions::default()
     };
-    let skip = SkipList::default();
+    let exclusions = ExclusionList::default();
     let git = bare_saying_git();
     let cancel = CancelToken::new();
     cancel.cancel();
     let probe = ProbeCtx::new(&git, StoreKey::new("store-a"), StoreClass::Local, &cancel);
     let ctx = WalkCtx {
         opts: &opts,
-        skip: &skip,
+        exclusions: &exclusions,
+        platform: native_platform(),
         probe: &probe,
         links: links_for(base.path(), &opts),
     };
@@ -258,13 +260,14 @@ fn a_submodule_under_a_repository_root_is_reached_without_descending() {
     std::fs::write(child.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
 
     let opts = WalkOptions::default();
-    let skip = SkipList::default();
+    let exclusions = ExclusionList::default();
     let git = bare_saying_git();
     let cancel = CancelToken::new();
     let probe = ProbeCtx::new(&git, StoreKey::new("store-a"), StoreClass::Local, &cancel);
     let ctx = WalkCtx {
         opts: &opts,
-        skip: &skip,
+        exclusions: &exclusions,
+        platform: native_platform(),
         probe: &probe,
         links: links_for(base.path(), &opts),
     };

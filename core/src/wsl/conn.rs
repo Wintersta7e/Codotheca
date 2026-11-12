@@ -686,7 +686,24 @@ mod tests {
         assert!(
             matches!(
                 refused,
-                Err(WslError::VersionMismatch { worker: 2, core: 3 })
+                Err(WslError::VersionMismatch {
+                    worker: 2,
+                    core: crate::wsl::proto::WORKER_PROTOCOL_VERSION
+                })
+            ),
+            "{refused:?}"
+        );
+    }
+
+    /// Version 3 ignores `WalkRequest.skip_paths`, so a copy of it would walk into directories
+    /// the user excluded by path; it is refused at the handshake.
+    #[test]
+    fn a_worker_at_version_three_which_ignores_path_exclusions_is_refused() {
+        let refused = WslWorkerPool::new(Arc::new(HelloOnly(3))).get("alpha");
+        assert!(
+            matches!(
+                refused,
+                Err(WslError::VersionMismatch { worker: 3, core: 4 })
             ),
             "{refused:?}"
         );
@@ -767,6 +784,7 @@ mod tests {
                     descend_into_repos: false,
                     bare_candidates: false,
                     skip_extra: Vec::new(),
+                    skip_paths: Vec::new(),
                 }),
                 &mut |event| {
                     if matches!(event, WorkerEvent::Repo(_)) {

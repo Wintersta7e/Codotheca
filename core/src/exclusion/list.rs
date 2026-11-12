@@ -11,7 +11,7 @@ use crate::index::path::{PathPlatform, StoredPath};
 use crate::paths::{is_under, path_from_bytes, path_key};
 use crate::protocol::LocationKind;
 use crate::scan::run::platform_of;
-use crate::scan::skiplist::SkipList;
+use crate::scan::skiplist::{SkipList, SKIP_LIST};
 
 /// One user path entry, compared by key and never opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +70,36 @@ impl ExclusionList {
         &self.names
     }
 
+    /// The user's names alone, verbatim and in the order added, without the built-ins every
+    /// build already holds.
+    #[must_use]
+    pub fn user_names(&self) -> &[String] {
+        self.names
+            .entries()
+            .get(SKIP_LIST.len()..)
+            .unwrap_or_default()
+    }
+
+    /// The user's path entries, in the order added.
+    #[must_use]
+    pub fn paths(&self) -> &[PathEntry] {
+        &self.paths
+    }
+
+    /// True when a path entry of `distro` holds `dir`, whose key folds by `platform`: the path
+    /// half of [`covers_dir`](Self::covers_dir), for a walk that already tests every directory
+    /// it enters and so needs no ancestor of it tested again. Keys `dir` only when such an entry
+    /// exists.
+    #[must_use]
+    pub fn covers_path(&self, dir: &Path, distro: &str, platform: PathPlatform) -> bool {
+        let mut entries = self.paths.iter().filter(|e| e.distro == distro).peekable();
+        if entries.peek().is_none() {
+            return false;
+        }
+        let key = path_key(dir, platform);
+        entries.any(|e| is_under(&key, &e.match_key))
+    }
+
     /// True when the walk must not read `dir`, which lies at or below `root` in `distro`, whose
     /// paths fold by `platform`.
     ///
@@ -86,15 +116,7 @@ impl ExclusionList {
         if dir == root {
             return false;
         }
-        if self.names.covers(dir, root) {
-            return true;
-        }
-        let mut entries = self.paths.iter().filter(|e| e.distro == distro).peekable();
-        if entries.peek().is_none() {
-            return false;
-        }
-        let key = path_key(dir, platform);
-        entries.any(|e| is_under(&key, &e.match_key))
+        self.names.covers(dir, root) || self.covers_path(dir, distro, platform)
     }
 
     /// True when the stored copy `key` describes is covered: a path entry of its distro holds

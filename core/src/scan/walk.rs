@@ -9,10 +9,11 @@ use std::sync::Arc;
 
 use ignore::{DirEntry, WalkBuilder, WalkState};
 
+use crate::exclusion::list::ExclusionList;
+use crate::index::path::PathPlatform;
 use crate::paths::path_display;
 use crate::scan::discover::{classify_dir, ProbeCtx};
 use crate::scan::links::LinkPolicy;
-use crate::scan::skiplist::SkipList;
 use crate::scan::submodules::enumerate_submodules;
 use crate::scan::wsl::wsl_boundary;
 use crate::scan::{ScanProblem, ScanProblemKind, WalkEvent, WalkOptions, WalkSink};
@@ -42,8 +43,12 @@ pub struct WalkStats {
 pub struct WalkCtx<'a> {
     /// This root's walk policy.
     pub opts: &'a WalkOptions,
-    /// The exclusion list, applied to every directory below the root.
-    pub skip: &'a SkipList,
+    /// The exclusion list, applied to every directory below the root: its names and the path
+    /// entries of the side this walk runs on, which carry an empty distro.
+    pub exclusions: &'a ExclusionList,
+    /// The rules this walk's directories are keyed by for the path entries: the host's for the
+    /// native walk, `Unix` inside a distro whatever the host is.
+    pub platform: PathPlatform,
     /// Discovery's git probe, carrying the run's cancel token.
     pub probe: &'a ProbeCtx<'a>,
     /// The link policy every worker thread consults before entering a link.
@@ -125,7 +130,12 @@ pub fn walk_root(root: &Path, ctx: &WalkCtx<'_>, sink: &WalkSink<'_>) -> WalkSta
             // 3. §4.3 — descendants only. A root the user chose is always read.
             //    `root` is a `&Path` and therefore `Copy`, so the `move` closure may hold it;
             //    a `PathBuf` would be moved out of an `FnMut` and would not compile.
-            if dir != root && ctx.skip.skips(dir) {
+            //    The walk never enters a skipped directory, so testing this one alone is the
+            //    whole of `covers_dir` here, without its walk up the ancestors.
+            if dir != root
+                && (ctx.exclusions.names().skips(dir)
+                    || ctx.exclusions.covers_path(dir, "", ctx.platform))
+            {
                 return WalkState::Skip;
             }
 

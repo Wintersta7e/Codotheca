@@ -24,7 +24,10 @@ use std::collections::BTreeMap;
 ///
 /// 3: `WorkerGitOp::ReleaseTags` and `WorkerGitOp::ArchiveReach`. Version 2 shipped in `0.9.0`
 /// and has neither, so a copy of it left in a distro must fail the handshake, not the first read.
-pub const WORKER_PROTOCOL_VERSION: u32 = 3;
+///
+/// 4: `WalkRequest.skip_paths`. A version-3 worker ignores the field and would walk into the
+/// directories the user excluded by path; the handshake refuses it instead.
+pub const WORKER_PROTOCOL_VERSION: u32 = 4;
 
 /// One request from the core to a worker, tagged with the id its answer will echo.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,8 +81,11 @@ pub struct WalkRequest {
     pub descend_into_repos: bool,
     /// Whether a directory shaped like a bare repository is probed as one (§4.2).
     pub bare_candidates: bool,
-    /// Entries appended to the default skip list for this walk.
+    /// The user's names, appended to the default skip list for this walk.
     pub skip_extra: Vec<String>,
+    /// The `path_key`s (Unix rules) of the user's path entries for this distro, as bytes: a Linux
+    /// path need not be UTF-8, and a lossy string would exclude a different directory (GA2).
+    pub skip_paths: Vec<Vec<u8>>,
 }
 
 /// The wire form of `RepoHandle`, minus the store facts the worker resolves for itself.
@@ -578,6 +584,7 @@ mod tests {
             descend_into_repos: false,
             bare_candidates: true,
             skip_extra: vec!["scratch".to_owned()],
+            skip_paths: vec![b"/home/me/code/priv\xff".to_vec()],
         }));
         let mut wire = Vec::new();
         write_worker_call(&mut wire, &original).expect("frames");

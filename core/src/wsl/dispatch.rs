@@ -5,6 +5,7 @@
 //! machine. And a distro that was not read contributes no store keys, which is how §4.6 reaches
 //! `offline` — frozen, never `missing`, never deleted. Absent is not abandoned.
 
+use crate::exclusion::gate::{ExclusionGate, GateSite};
 use crate::index::path::PathPlatform;
 use crate::paths::{path_bytes, path_key};
 use crate::scan::discover::{RepoCandidate, RepoKind};
@@ -208,27 +209,58 @@ pub fn discovered_of(found: &WorkerRepoFound, distro: &str, root_id: i64) -> Opt
     })
 }
 
+/// The in-distro walk of `linux_root` in `distro`, carrying the exclusions in force (§56.5 row 11).
+///
+/// The user's names and that distro's path entries cross, so the worker skips what the native
+/// walk would; the path entries cross as their key bytes, never as strings (GA2).
+#[must_use]
+pub fn walk_request(
+    exclusions: &ExclusionGate,
+    distro: &str,
+    linux_root: &str,
+    opts: &WalkOptions,
+) -> WalkRequest {
+    let list = exclusions.snapshot_at(GateSite::Wsl);
+    WalkRequest {
+        root: linux_root.to_owned(),
+        follow_links: opts.follow_links,
+        descend_into_repos: opts.descend_into_repos,
+        bare_candidates: opts.bare_candidates,
+        skip_extra: list.user_names().to_vec(),
+        skip_paths: list
+            .paths()
+            .iter()
+            .filter(|entry| entry.distro == distro)
+            .map(|entry| entry.match_key.clone())
+            .collect(),
+    }
+}
+
 /// Decides whether a distro may be read and, when it may, walks it through its worker.
 #[derive(Debug)]
 pub struct WslDispatcher {
     pool: Arc<WslWorkerPool>,
     installed: Vec<DistroInfo>,
     consented: BTreeSet<String>,
+    exclusions: Arc<ExclusionGate>,
 }
 
 impl WslDispatcher {
     /// A dispatcher over `pool`, judging readiness from the `installed` distros and the
-    /// `consented` set as they were read at startup.
+    /// `consented` set as they were read at startup, and sending each walk the list `exclusions`
+    /// holds when it starts.
     #[must_use]
     pub const fn new(
         pool: Arc<WslWorkerPool>,
         installed: Vec<DistroInfo>,
         consented: BTreeSet<String>,
+        exclusions: Arc<ExclusionGate>,
     ) -> Self {
         Self {
             pool,
             installed,
             consented,
+            exclusions,
         }
     }
 
@@ -274,13 +306,8 @@ impl WslDispatcher {
         let store_keys = std::sync::Mutex::new(BTreeSet::new());
         let repos = AtomicU64::new(0);
         let dropped = AtomicBool::new(false);
-        let request = WorkerRequest::Walk(WalkRequest {
-            root: linux_root.to_owned(),
-            follow_links: opts.follow_links,
-            descend_into_repos: opts.descend_into_repos,
-            bare_candidates: opts.bare_candidates,
-            skip_extra: Vec::new(),
-        });
+        let request =
+            WorkerRequest::Walk(walk_request(&self.exclusions, &distro, linux_root, opts));
         let outcome = worker.stream(&request, &mut |event| match event {
             WorkerEvent::Repo(found) => {
                 if let Ok(mut keys) = store_keys.lock() {
@@ -467,6 +494,7 @@ mod tests {
             Arc::new(WslWorkerPool::new(l.clone())),
             installed(),
             BTreeSet::new(),
+            Arc::new(crate::exclusion::gate::ExclusionGate::default()),
         );
         let events: Mutex<Vec<String>> = Mutex::new(Vec::new());
         let sink = |event: WalkEvent| {
@@ -538,6 +566,7 @@ mod tests {
                 state: DistroState::Running,
             }],
             BTreeSet::new(),
+            Arc::new(crate::exclusion::gate::ExclusionGate::default()),
         );
         let seen: Mutex<Vec<String>> = Mutex::new(Vec::new());
         let sink = |event: WalkEvent| {

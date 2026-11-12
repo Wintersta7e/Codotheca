@@ -6,17 +6,17 @@
 //! is the shape the `cat-file --batch-check` deadlock did not have.
 
 use crate::cancel::CancelToken;
+use crate::exclusion::list::{ExclusionList, PathEntry};
 use crate::git::{
     GitBackend, GitResult, JobClass, JobContext, RepoHandle, StatusOptions, StoreKey,
 };
-use crate::index::path::PathPlatform;
+use crate::index::path::{PathPlatform, StoredPath};
 use crate::mount::MountResolver;
 use crate::paths::path_key;
 use crate::proto::frame::{read_frame, FrameError};
 use crate::proto::wire::RequestId;
 use crate::scan::discover::{ProbeCtx, RepoCandidate};
 use crate::scan::links::LinkPolicy;
-use crate::scan::skiplist::SkipList;
 use crate::scan::walk::{walk_root, WalkCtx};
 use crate::scan::{WalkEvent, WalkOptions};
 use crate::wsl::mounts::{class_slug, DistroMountResolver, MountTable, MountVerdict};
@@ -219,6 +219,24 @@ fn worker_event_of(
     }
 }
 
+/// §56.5 row 11: the core's list for this distro as the request carried it. The path entries
+/// were chosen for this distro before they crossed, so here they belong to the side the walk
+/// runs on and carry an empty distro, as a native walk's do.
+fn walk_exclusions(request: &WalkRequest) -> ExclusionList {
+    let paths = request
+        .skip_paths
+        .iter()
+        .map(|bytes| PathEntry {
+            distro: String::new(),
+            platform: PathPlatform::Unix,
+            match_key: StoredPath::from_bytes(bytes.clone(), PathPlatform::Unix)
+                .key()
+                .to_vec(),
+        })
+        .collect();
+    ExclusionList::new(&request.skip_extra, paths)
+}
+
 /// Runs plan 07's walk inside the distro and streams what it finds.
 ///
 /// The one behaviour that is not plan 07's: a root standing on a Windows-backed filesystem is
@@ -260,7 +278,7 @@ pub fn walk(
         descend_into_repos: request.descend_into_repos,
         bare_candidates: request.bare_candidates,
     };
-    let skip = SkipList::with_user_entries(&request.skip_extra);
+    let exclusions = walk_exclusions(request);
     let cancel = CancelToken::new();
     let root = PathBuf::from(&request.root);
     let root_facts = ctx.mounts.facts_for(&ctx.distro, &request.root);
@@ -289,7 +307,9 @@ pub fn walk(
     );
     let walk_ctx = WalkCtx {
         opts: &opts,
-        skip: &skip,
+        exclusions: &exclusions,
+        // R2: inside a distro a path folds by Unix rules, whatever the host is.
+        platform: PathPlatform::Unix,
         probe: &probe,
         links,
     };
@@ -617,6 +637,7 @@ mod tests {
                     descend_into_repos: false,
                     bare_candidates: false,
                     skip_extra: Vec::new(),
+                    skip_paths: Vec::new(),
                 }),
             }],
         );
@@ -680,6 +701,7 @@ mod tests {
                     descend_into_repos: false,
                     bare_candidates: false,
                     skip_extra: Vec::new(),
+                    skip_paths: Vec::new(),
                 }),
             }],
         );

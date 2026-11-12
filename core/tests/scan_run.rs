@@ -18,6 +18,7 @@
 //! walked: without a `store_key` no `location` row can be written for anything found under it.
 
 use codotheca_core::cancel::CancelToken;
+use codotheca_core::exclusion::list::ExclusionList;
 use codotheca_core::git::RepoFacts;
 use codotheca_core::index::Index;
 use codotheca_core::mount::{MountFacts, StoreClass};
@@ -26,7 +27,6 @@ use codotheca_core::protocol::{LocationId, ProjectId};
 use codotheca_core::scan::discover::RepoKind;
 use codotheca_core::scan::presence::{LocationPresenceRow, Presence, PresenceSummary, ScanRootRow};
 use codotheca_core::scan::run::{platform_of, ScanMode, ScanRunner};
-use codotheca_core::scan::skiplist::SkipList;
 use codotheca_core::scan::{ScanProblemKind, WalkEvent};
 use codotheca_core::testing::{
     FakeClock, FakeGitBackend, FakeMountResolver, GitReply, MemScanStore,
@@ -143,7 +143,7 @@ struct Rig {
     index: Arc<Mutex<Index>>,
     git: FakeGitBackend,
     clock: FakeClock,
-    skip: SkipList,
+    exclusions: ExclusionList,
     cancel: CancelToken,
     jobs: Arc<RecordingJobs>,
 }
@@ -157,7 +157,7 @@ fn rig() -> Rig {
         index: Arc::new(Mutex::new(index)),
         git: FakeGitBackend::new(),
         clock: FakeClock::new(NOW),
-        skip: SkipList::default(),
+        exclusions: ExclusionList::default(),
         cancel: CancelToken::new(),
         jobs: Arc::new(RecordingJobs::default()),
     }
@@ -195,7 +195,7 @@ fn runner_with_wsl<'a>(
         git: &r.git,
         mounts,
         clock: &r.clock,
-        skip: &r.skip,
+        exclusions: &r.exclusions,
         cancel: &r.cancel,
         index: r.index.as_ref(),
         jobs: r.jobs.clone(),
@@ -802,6 +802,7 @@ fn an_empty_dot_git_directory_is_neither_found_nor_reported() {
 
 mod bridge {
     use super::{indexable, rig, runner_with_wsl, Rig};
+    use codotheca_core::exclusion::gate::ExclusionGate;
     use codotheca_core::scan::run::RunTally;
     use codotheca_core::scan::wsl::WslBridgeRef;
     use codotheca_core::scan::{ScanProblemKind, WalkEvent, WalkOptions};
@@ -843,6 +844,7 @@ mod bridge {
             Arc::new(WslWorkerPool::new(launcher.clone())),
             installed(),
             consent,
+            Arc::new(ExclusionGate::default()),
         );
         (launcher, dispatcher)
     }

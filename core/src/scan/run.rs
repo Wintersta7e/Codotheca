@@ -18,8 +18,9 @@ use std::time::{Duration, Instant};
 use crate::assembly::handoff::{hand_off_discovered, HandoffCtx, HandoffError};
 use crate::cancel::CancelToken;
 use crate::clock::Clock;
+use crate::exclusion::list::ExclusionList;
 use crate::git::{GitBackend, GitError, StoreKey};
-use crate::index::path::PathPlatform;
+use crate::index::path::{native_platform, PathPlatform};
 use crate::index::Index;
 use crate::mount::{MountFacts, MountResolver, StoreClass};
 use crate::paths::{path_bytes, path_display, path_from_bytes, path_key};
@@ -29,7 +30,6 @@ use crate::scan::presence::{
     apply_presence, PresenceContext, PresenceSummary, ScanRootRow, ScanRunFinish, ScanRunStart,
     ScanStore, ScanStoreError,
 };
-use crate::scan::skiplist::SkipList;
 use crate::scan::walk::{walk_root, WalkCtx};
 use crate::scan::{ScanProblem, ScanProblemKind, WalkEvent, WalkOptions, WalkSink};
 
@@ -122,8 +122,8 @@ pub struct ScanRunner<'a> {
     pub mounts: Arc<dyn MountResolver>,
     /// The unix-seconds clock the `scan_run` row and the hand-off are stamped with.
     pub clock: &'a dyn Clock,
-    /// The exclusion list (§4.3) the walk and presence both apply.
-    pub skip: &'a SkipList,
+    /// The exclusion list (§4.3, §56.4) the walk and presence both apply.
+    pub exclusions: &'a ExclusionList,
     /// The run's §4.8 token, polled by the walk and handed to every git probe it makes.
     pub cancel: &'a CancelToken,
     /// The one `rusqlite::Connection`, shared rather than owned (R39).
@@ -278,7 +278,7 @@ impl ScanRunner<'_> {
                 &PresenceContext {
                     generation,
                     roots: &roots,
-                    skip: self.skip,
+                    skip: self.exclusions.names(),
                     present_stores: &survey.present_stores,
                 },
             )?
@@ -435,7 +435,8 @@ impl ScanRunner<'_> {
             );
             let ctx = WalkCtx {
                 opts: &opts,
-                skip: self.skip,
+                exclusions: self.exclusions,
+                platform: native_platform(),
                 probe: &probe,
                 links: Arc::new(LinkPolicy::new(
                     opts.follow_links,

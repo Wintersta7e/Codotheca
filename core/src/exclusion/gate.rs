@@ -134,6 +134,21 @@ impl ExclusionGate {
         self.epoch.load(Ordering::Acquire)
     }
 
+    /// The list in force, for a reader that applies the whole list itself rather than asking
+    /// about one target: the in-distro walk (row 11), which cannot reach this gate. Recorded as an
+    /// admitted check at `site`.
+    #[must_use]
+    pub fn snapshot_at(&self, site: GateSite) -> Arc<ExclusionList> {
+        #[cfg(feature = "testkit")]
+        self.record
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((site, true));
+        #[cfg(not(feature = "testkit"))]
+        let _ = site;
+        self.snapshot()
+    }
+
     /// Put `next` in force and answer the list it replaced, which a failed commit swaps back.
     #[must_use]
     pub fn swap(&self, next: Arc<ExclusionList>) -> Arc<ExclusionList> {

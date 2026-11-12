@@ -119,7 +119,7 @@ impl ThreadScanLauncher {
             git: self.git.as_ref(),
             mounts: Arc::clone(&self.mounts),
             clock: self.clock.as_ref(),
-            skip: list.names(),
+            exclusions: list,
             cancel,
             index: self.index.as_ref(),
             wsl: self.wsl.as_deref(),

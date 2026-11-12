@@ -154,6 +154,7 @@ fn first_run_env(
 fn build_wsl_dispatcher(
     worker: Option<&Path>,
     index: &Arc<Mutex<codotheca_core::index::Index>>,
+    exclusions: &Arc<ExclusionGate>,
 ) -> Option<Arc<codotheca_core::wsl::dispatch::WslDispatcher>> {
     let bytes = std::fs::read(worker?)
         .map_err(|e| note(&format!("codotheca-core: wsl worker unreadable: {e}")))
@@ -179,6 +180,7 @@ fn build_wsl_dispatcher(
         Arc::new(codotheca_core::wsl::conn::WslWorkerPool::new(launcher)),
         installed,
         consented,
+        Arc::clone(exclusions),
     )))
 }
 
@@ -328,7 +330,7 @@ fn main() -> ExitCode {
     // distros to run it in. **No null stand-in**: on Linux there is no bridge to cross, and on
     // Windows an absent worker is a fact the scan reports rather than a silence it passes off
     // as an empty distro.
-    let wsl = build_wsl_dispatcher(args.worker.as_deref(), &index);
+    let wsl = build_wsl_dispatcher(args.worker.as_deref(), &index, &exclusions);
     if args.worker.is_some() && wsl.is_none() {
         note("codotheca-core: no WSL worker; distros will not be scanned");
     }
