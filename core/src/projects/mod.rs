@@ -52,6 +52,8 @@ pub struct ProjectsCtx<'a> {
     pub now: i64,
     /// The machine's UTC offset in minutes, for §8.1's local-year bands.
     pub tz_offset_min: i32,
+    /// The core's one exclusion gate: a Peek asks no reading of a covered copy (§56.5).
+    pub exclusions: &'a crate::exclusion::gate::ExclusionGate,
 }
 
 impl std::fmt::Debug for ProjectsCtx<'_> {
@@ -169,6 +171,7 @@ mod tests {
         let mounts = crate::testing::FakeMountResolver::default();
         let sync = crate::sync::runner::NullSyncSink;
         let ctx = ProjectsCtx {
+            exclusions: &crate::exclusion::gate::ExclusionGate::default(),
             index: &index,
             events: &events,
             jobs: &jobs,

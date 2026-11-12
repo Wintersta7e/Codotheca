@@ -105,6 +105,7 @@ fn fixture() -> Fixture {
     Fixture {
         index: Arc::new(Mutex::new(index)),
         deps: Some(SyncDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             provider,
             transport: observing,
             tokens,

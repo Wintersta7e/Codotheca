@@ -942,6 +942,7 @@ fn ac_p4_40_1_curator_through_set_check_na() {
 fn rule_ci_na(rig: &BadgesRig, tenth: ProjectId) {
     let guard = rig.index.lock().unwrap();
     let ctx = DetailCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &guard,
         git: &FakeGitBackend::new(),
         mount: &FakeMountResolver::new(),
@@ -984,6 +985,7 @@ fn sync_to_gold(rig: &BadgesRig, tenth: ProjectId) {
         clock.clone(),
     ));
     let deps = SyncDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         provider: Arc::new(GitHubProvider::new(
             observing.clone(),
             "forge.example.invalid".to_owned(),
@@ -1273,6 +1275,7 @@ fn j7_open_then_close(
             &repo,
             &ctx,
             j7_markers::ScanRun {
+                exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
                 project,
                 location,
                 cursor: None,

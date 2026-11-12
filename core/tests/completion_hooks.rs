@@ -192,6 +192,7 @@ fn a_job_settle_leaves_ten_rows_and_a_moved_projection() {
 
     let clock = Arc::new(FakeClock::new(T0));
     let deps = JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git: Arc::new(SystemGit::new(
             Arc::new(repo.exec()),
             Arc::new(GitSlots::new(4)),

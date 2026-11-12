@@ -142,6 +142,7 @@ fn fixture() -> Fixture {
         transport,
         clock: Arc::clone(&clock),
         deps: SyncDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             provider,
             transport: observing,
             tokens,

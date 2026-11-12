@@ -92,6 +92,7 @@ fn location(conn: &rusqlite::Connection, project_id: i64, loc: &Loc) {
 struct Deps {
     jobs: codotheca_core::jobs::NullJobSink,
     mounts: codotheca_core::testing::FakeMountResolver,
+    exclusions: codotheca_core::exclusion::gate::ExclusionGate,
 }
 
 impl Deps {
@@ -99,12 +100,14 @@ impl Deps {
         Self {
             jobs: codotheca_core::jobs::NullJobSink,
             mounts: codotheca_core::testing::FakeMountResolver::new(),
+            exclusions: codotheca_core::exclusion::gate::ExclusionGate::default(),
         }
     }
 }
 
 fn ctx<'a>(index: &'a Index, sink: &'a CollectingSink, deps: &'a Deps) -> ProjectsCtx<'a> {
     ProjectsCtx {
+        exclusions: &deps.exclusions,
         index,
         events: sink,
         jobs: &deps.jobs,

@@ -347,6 +347,7 @@ fn ac_p3_35_9_the_sort_does_not_re_cut_the_shelf() {
     let jobs = codotheca_core::jobs::NullJobSink;
     let mounts = codotheca_core::testing::FakeMountResolver::new();
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &index,
         events: &sink,
         jobs: &jobs,
@@ -487,6 +488,7 @@ fn list(index: &Index, sink: &CollectingSink, args: serde_json::Value) -> serde_
     let jobs = codotheca_core::jobs::NullJobSink;
     let mounts = codotheca_core::testing::FakeMountResolver::new();
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index,
         events: sink,
         jobs: &jobs,

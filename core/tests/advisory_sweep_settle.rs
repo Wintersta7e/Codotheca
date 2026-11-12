@@ -185,6 +185,7 @@ fn sweep(world: &World, at: i64, response: Option<&str>) -> Vec<Emitted> {
     ));
     let provider = Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned()));
     let deps = SyncDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         provider,
         transport: observing,
         tokens: Arc::new(FakeTokenStore::available()),

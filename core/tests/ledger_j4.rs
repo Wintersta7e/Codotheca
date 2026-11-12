@@ -212,6 +212,7 @@ impl Rig {
     /// One J4 on a fresh runner with `git`, spun until the runner is idle — never a bare sleep.
     fn settle_with(&self, git: Arc<dyn GitBackend>, clock: Arc<FakeClock>) {
         let deps = JobDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             git,
             clock,
             cancel: CancelToken::new(),

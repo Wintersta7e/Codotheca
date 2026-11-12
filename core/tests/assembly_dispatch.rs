@@ -315,6 +315,7 @@ mod corehandler {
                 events.clone(),
                 // UTC, so a test's local date never depends on the machine running it.
                 Arc::new(codotheca_core::testing::zone::FixedZone(0)),
+                Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             ),
             // [p2] §21.1's runner, real and started, for the same reason the job pump above is:
             // `shutdown` stops it, and a handler built with one that never started would not
@@ -322,6 +323,7 @@ mod corehandler {
             sync: codotheca_core::assembly::sync::SyncPump::start(
                 Arc::clone(&index),
                 codotheca_core::sync::SyncDeps {
+                    exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
                     provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
                         Arc::clone(&sync_http),
                         codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),

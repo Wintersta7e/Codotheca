@@ -78,6 +78,7 @@ fn a_missing_location_is_a_path_gone_failure_that_definitely_did_not_take_effect
     let dir = tempfile::tempdir().expect("tempdir");
     let index = seeded(dir.path());
     let ctx = codotheca_core::surfaces::SurfaceCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &index,
         now: 555,
     };

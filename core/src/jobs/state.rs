@@ -111,6 +111,15 @@ pub fn apply_outcome(
             next.reason = Some(format!("{error_kind}: {detail}"));
             (next, None)
         }
+        // §56.5: done, never retried — the copy is excluded, and a retry would be refused the
+        // same way. The settle writes this row nowhere; it is what `job_done` reports.
+        JobOutcome::Excluded => {
+            next.state = JobState::Done;
+            next.fail_count = 0;
+            next.reason = Some("excluded".to_owned());
+            next.cursor = None;
+            (next, None)
+        }
     }
 }
 

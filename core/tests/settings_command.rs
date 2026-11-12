@@ -166,6 +166,7 @@ fn a_refused_chord_is_a_protocol_failure_and_writes_nothing() {
     let dir = tempfile::tempdir().expect("tempdir");
     let index = Index::open(dir.path()).expect("open");
     let ctx = codotheca_core::surfaces::SurfaceCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &index,
         now: 900,
     };

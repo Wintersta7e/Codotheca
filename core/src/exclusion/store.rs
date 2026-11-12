@@ -280,6 +280,33 @@ pub fn candidate_key(
     })
 }
 
+/// What coverage of a stored copy is decided from.
+///
+/// Its row's kind, distro, bytes and key, and the innermost root holding it (GA36: roots keyed
+/// from their bytes). Reads the row whether or not the copy is removed; a dispatcher asks
+/// `location_is_current` for that.
+///
+/// # Errors
+/// Fails when SQLite refuses the read, no row has the id, or the row holds a `kind` this build
+/// does not know.
+pub fn location_key(conn: &Connection, location: LocationId) -> Result<LocationKey, IndexError> {
+    let (kind, distro, path_bytes, path_key): (String, String, Vec<u8>, Vec<u8>) = conn.query_row(
+        "SELECT kind, distro, path_bytes, path_key FROM location WHERE id = ?1",
+        [location.0],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    )?;
+    let kind = LocationKind::parse(&kind).ok_or_else(|| IndexError::Corrupt {
+        detail: format!("location {} kind {kind:?}", location.0),
+    })?;
+    Ok(LocationKey {
+        root_path_bytes: innermost_root(&load_roots(conn)?, kind, &distro, &path_key),
+        kind,
+        distro,
+        path_bytes,
+        path_key,
+    })
+}
+
 /// Set `location.excluded` on every non-removed copy to `list`'s answer for it, and answer which
 /// copies moved.
 ///

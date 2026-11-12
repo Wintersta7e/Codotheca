@@ -138,6 +138,7 @@ impl Rig {
         let sink = CollectingSink::default();
         let mounts = FakeMountResolver::default();
         let ctx = ProjectsCtx {
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             index: &guard,
             events: &sink,
             jobs: &NullJobSink,
@@ -158,6 +159,7 @@ impl Rig {
 
     fn deps(git: Arc<dyn GitBackend>, clock: Arc<FakeClock>) -> JobDeps {
         JobDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             git,
             clock,
             cancel: CancelToken::new(),

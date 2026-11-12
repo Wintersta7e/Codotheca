@@ -46,6 +46,8 @@ pub struct DetailCtx<'a> {
     pub now: i64,
     /// The machine's zone, read at the instant of each write that persists a local date.
     pub zone: &'a dyn crate::clock::LocalZone,
+    /// The core's one exclusion gate: an opened page asks no reading of a covered copy (§56.5).
+    pub exclusions: &'a crate::exclusion::gate::ExclusionGate,
 }
 
 impl std::fmt::Debug for DetailCtx<'_> {

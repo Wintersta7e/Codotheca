@@ -122,6 +122,7 @@ fn rig() -> Rig {
 
     let events = Arc::new(RecordingSink::default());
     let deps = JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git: Arc::new(SystemGit::new(
             Arc::new(gone.repo.exec()),
             Arc::new(GitSlots::new(4)),
@@ -365,6 +366,7 @@ fn ac_p4_46_20_a_removed_projects_peek_queues_no_job() {
         .execute("UPDATE project SET removed_at = 5 WHERE id = 1", [])
         .unwrap();
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &rig.index,
         events: &rig.sink,
         jobs: &rig.jobs,

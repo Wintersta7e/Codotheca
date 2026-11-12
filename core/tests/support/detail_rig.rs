@@ -76,6 +76,8 @@ pub(crate) struct Rig {
     pub sink: CollectingSink,
     /// §6: `projects.get` asks for a current worktree reading for the copy it shows.
     pub jobs: RecordingJobs,
+    /// The core's exclusion list; holds the built-ins alone unless a test swaps it.
+    pub exclusions: codotheca_core::exclusion::gate::ExclusionGate,
 }
 
 impl Rig {
@@ -89,11 +91,13 @@ impl Rig {
             mount: FakeMountResolver::new(),
             sink: CollectingSink::default(),
             jobs: RecordingJobs::default(),
+            exclusions: codotheca_core::exclusion::gate::ExclusionGate::default(),
         }
     }
 
     pub(crate) fn ctx(&self) -> DetailCtx<'_> {
         DetailCtx {
+            exclusions: &self.exclusions,
             index: &self.index,
             git: &self.git,
             mount: &self.mount,

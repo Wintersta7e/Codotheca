@@ -136,6 +136,7 @@ impl BadgesRig {
         let sink = codotheca_core::art::testsupport::CollectingSink::default();
         let mounts = codotheca_core::testing::FakeMountResolver::default();
         let ctx = codotheca_core::projects::ProjectsCtx {
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             index: &guard,
             events: &sink,
             jobs: &codotheca_core::jobs::NullJobSink,
@@ -161,6 +162,7 @@ impl BadgesRig {
         let copy = self.copy(project);
         let clock = Arc::new(FakeClock::new(at));
         let deps = JobDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             git: Arc::new(SystemGit::new(
                 Arc::new(copy.repo.exec()),
                 Arc::new(GitSlots::new(4)),
@@ -370,6 +372,7 @@ impl BadgesRig {
             clock.clone(),
         );
         let deps = JobDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             git: Arc::new(git),
             clock,
             cancel: CancelToken::new(),

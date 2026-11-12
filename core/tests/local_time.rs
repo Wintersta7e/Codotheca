@@ -287,6 +287,7 @@ fn scheduler_site() -> Paid {
         clock.clone(),
         Arc::new(ValidatingSink::default()),
         crossing.zone.clone(),
+        Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
     );
     pump.sink()
         .on_location_indexed(project, location, "store", StoreClass::Local);
@@ -334,6 +335,7 @@ fn j7_site() -> Paid {
     let crossing = Crossing::from(NOW);
     let clock = Arc::new(FakeClock::new(NOW));
     let deps = JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git: git.clone(),
         clock: clock.clone(),
         cancel: CancelToken::new(),
@@ -391,6 +393,7 @@ fn advisory_site() -> Paid {
     let runner = SyncRunner::new(
         Arc::clone(&index),
         SyncDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             provider: Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned())),
             transport: observing,
             tokens: Arc::new(FakeTokenStore::available()),

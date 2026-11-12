@@ -136,8 +136,10 @@ fn detail_ctx<'a>(
     git: &'a dyn codotheca_core::git::GitBackend,
     mounts: &'a dyn codotheca_core::mount::MountResolver,
     events: &'a dyn EventSink,
+    exclusions: &'a codotheca_core::exclusion::gate::ExclusionGate,
 ) -> DetailCtx<'a> {
     DetailCtx {
+        exclusions,
         index,
         git,
         mount: mounts,
@@ -160,7 +162,8 @@ fn the_two_commands_enqueue_once_each_and_the_shelf_enqueues_nothing() {
     let mounts = codotheca_core::testing::FakeMountResolver::default();
     let events = Quiet;
 
-    let ctx = detail_ctx(fixture.index(), &sink, &jobs, &git, &mounts, &events);
+    let gate = codotheca_core::exclusion::gate::ExclusionGate::default();
+    let ctx = detail_ctx(fixture.index(), &sink, &jobs, &git, &mounts, &events, &gate);
     let _ = codotheca_core::detail::dispatch_detail_command(
         &ctx,
         "projects.get",
@@ -169,6 +172,7 @@ fn the_two_commands_enqueue_once_each_and_the_shelf_enqueues_nothing() {
     assert_eq!(sink.seen.lock().expect("sink").len(), 1, "projects.get");
 
     let projects = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: fixture.index(),
         events: &events,
         jobs: &jobs,
@@ -216,13 +220,15 @@ fn a_project_with_no_location_still_enqueues_from_both_commands() {
     let mounts = codotheca_core::testing::FakeMountResolver::default();
     let events = Quiet;
 
-    let ctx = detail_ctx(fixture.index(), &sink, &jobs, &git, &mounts, &events);
+    let gate = codotheca_core::exclusion::gate::ExclusionGate::default();
+    let ctx = detail_ctx(fixture.index(), &sink, &jobs, &git, &mounts, &events, &gate);
     let _ = codotheca_core::detail::dispatch_detail_command(
         &ctx,
         "projects.get",
         serde_json::json!({ "id": project.0 }),
     );
     let projects = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: fixture.index(),
         events: &events,
         jobs: &jobs,

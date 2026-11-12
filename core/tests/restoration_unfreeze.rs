@@ -274,6 +274,7 @@ impl Rig {
 
     fn deps(&self) -> JobDeps {
         JobDeps {
+            exclusions: Arc::new(ExclusionGate::default()),
             git: Arc::clone(&self.git),
             clock: self.clock.clone(),
             cancel: CancelToken::new(),
@@ -328,6 +329,7 @@ impl Rig {
         let mounts = FakeMountResolver::default();
         let events = RecordingSink::default();
         let ctx = DetailCtx {
+            exclusions: &ExclusionGate::default(),
             index: &guard,
             git: self.git.as_ref(),
             mount: &mounts,

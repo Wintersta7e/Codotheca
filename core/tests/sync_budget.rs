@@ -541,6 +541,7 @@ fn lane() -> Lane {
     let runner = codotheca_core::sync::runner::SyncRunner::new(
         Arc::clone(&index),
         codotheca_core::sync::SyncDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             provider,
             transport: observing,
             tokens,

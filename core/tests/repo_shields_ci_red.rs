@@ -122,6 +122,7 @@ impl CiRig {
     fn run(&self, until: &dyn Fn(&Self) -> bool) {
         let clock = Arc::new(FakeClock::new(T0));
         let deps = JobDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             git: Arc::new(SystemGit::new(
                 Arc::new(self.repo.exec()),
                 Arc::new(GitSlots::new(4)),
@@ -210,6 +211,7 @@ impl CiRig {
     fn page_debt(&self) -> Vec<DebtSource> {
         let guard = self.index.lock().unwrap();
         let ctx = DetailCtx {
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             index: &guard,
             git: &FakeGitBackend::new(),
             mount: &FakeMountResolver::new(),

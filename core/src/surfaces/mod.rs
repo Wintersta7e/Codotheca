@@ -24,6 +24,9 @@ pub struct SurfaceCtx<'a> {
     pub index: &'a Index,
     /// The caller's clock reading, in unix seconds.
     pub now: i64,
+    /// The core's one exclusion gate: `projects.requeue` revives nothing for a project whose
+    /// every copy it covers (§56.5 row 8).
+    pub exclusions: &'a crate::exclusion::gate::ExclusionGate,
 }
 
 /// §11.1's table, and nothing else, may be stored in `project.error_kind`.
@@ -143,6 +146,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let index = Index::open(dir.path()).expect("open");
         let ctx = SurfaceCtx {
+            exclusions: &crate::exclusion::gate::ExclusionGate::default(),
             index: &index,
             now: 1_700_000_000,
         };
@@ -166,6 +170,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let index = Index::open(dir.path()).expect("open");
         let ctx = SurfaceCtx {
+            exclusions: &crate::exclusion::gate::ExclusionGate::default(),
             index: &index,
             now: 1_700_000_000,
         };

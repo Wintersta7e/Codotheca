@@ -232,6 +232,7 @@ impl Sweep {
         let (project, location) = self.file(repo);
         let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
         let deps = JobDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             git: Arc::new(SystemGit::new(
                 Arc::new(repo.exec()),
                 Arc::new(GitSlots::new(4)),

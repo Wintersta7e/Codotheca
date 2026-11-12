@@ -157,6 +157,7 @@ impl RecheckRig {
     fn deps(&self) -> JobDeps {
         let clock = Arc::new(FakeClock::new(T0));
         JobDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             git: self.git(&clock),
             clock,
             cancel: CancelToken::new(),
@@ -258,10 +259,12 @@ impl RecheckRig {
                 clock.clone(),
                 pump_events,
                 Arc::new(codotheca_core::testing::zone::FixedZone(0)),
+                Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             ),
             sync: codotheca_core::assembly::sync::SyncPump::start(
                 Arc::clone(&self.index),
                 codotheca_core::sync::SyncDeps {
+                    exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
                     provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
                         Arc::clone(&sync_http),
                         codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
@@ -286,6 +289,7 @@ impl RecheckRig {
         let mounts = FakeMountResolver::default();
         let events = RecordingSink::default();
         let ctx = DetailCtx {
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             index: &guard,
             git: &codotheca_core::testing::FakeGitBackend::new(),
             mount: &mounts,

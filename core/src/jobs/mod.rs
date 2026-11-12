@@ -329,6 +329,10 @@ pub enum JobError {
     /// requeues it (§4.1), and a third in a row defers the job as slow.
     #[error("a git invocation outran its deadline")]
     BudgetExceeded,
+    /// §56.5: the exclusion list covers the job's copy, so its read did not start or its write
+    /// did not happen. The scheduler settles it as [`JobOutcome::Excluded`].
+    #[error("the copy is excluded")]
+    Excluded,
 }
 
 /// §4.1: J1's and J3's budgets are *mark stale, requeue*. A git invocation killed at its ceiling
@@ -369,6 +373,9 @@ pub enum JobOutcome {
         /// Diagnostic, never shown raw (§2.4).
         detail: String,
     },
+    /// §56.5: the copy is excluded. Nothing was read past the check that refused it, and the
+    /// settle writes nothing and chains nothing.
+    Excluded,
 }
 
 /// The scanner's hand-off point. Implemented by `scheduler::JobRunner`; [`NullJobSink`] keeps
@@ -463,6 +470,9 @@ pub struct JobDeps {
     /// key is a **local** date, so each payout reads the offset at its own instant through this
     /// and never a number captured when the process started.
     pub zone: std::sync::Arc<dyn crate::clock::LocalZone>,
+    /// The core's one exclusion gate (§56.5 rows 4–6): asked at dispatch, before a job's
+    /// ownership probe, and inside every job write and settle.
+    pub exclusions: std::sync::Arc<crate::exclusion::gate::ExclusionGate>,
 }
 
 impl std::fmt::Debug for JobDeps {
@@ -587,6 +597,7 @@ pub fn run_one(
     job: &Job,
     announce: &std::cell::RefCell<Vec<crate::protocol::ProjectHealthDelta>>,
 ) -> Result<JobOutcome, JobError> {
+    refuse_covered(index, deps, job)?;
     let place = read_place(index, job.location_id)?;
     let ctx = crate::git::JobContext::new(
         class_of(job.kind, job.priority),
@@ -606,24 +617,11 @@ pub fn run_one(
     match job.kind {
         // §4.1: J5 spawns no git process, so it takes no git slot and reads no repository —
         // its inputs are columns J3 already wrote.
-        //
-        // **R39**: `run_one` holds `&Mutex<Index>`, so the plan's literal
-        // `run_j5(index, ...)` does not typecheck — `run_j5` takes the `&Index` the plan
-        // declares, and the lock is taken here. It is held across the raster, which is roughly
-        // 100 ms of CPU for one card; plan 21 owns assembly and is where a narrower split
-        // belongs if that ever proves to matter.
-        JobKind::J5Art => {
-            let guard = index
-                .lock()
-                .map_err(|_| JobError::Io("index lock is poisoned".to_owned()))?;
-            let outcome = crate::art::job::run_j5(&guard, job.project_id.0, now);
-            drop(guard);
-            outcome
-        }
+        JobKind::J5Art => run_j5_locked(index, job, now),
         JobKind::J1Refstate => {
             let state = j1_refstate::observe(git, &repo, &ctx)?;
             let reached = j1_refstate::archive_reached(git, &repo, &state, place.award_open, &ctx);
-            write(index, |tx| {
+            write(index, &deps.exclusions, job.location_id, |tx| {
                 j1_refstate::persist(tx, job.location_id, &state, reached)
             })?;
             Ok(JobOutcome::Done)
@@ -631,7 +629,7 @@ pub fn run_one(
         JobKind::J15Authorship => {
             let identities = identity_set(index)?;
             let facts = j15_authorship::census(git, &repo, &identities, &ctx)?;
-            write(index, |tx| {
+            write(index, &deps.exclusions, job.location_id, |tx| {
                 j15_authorship::persist(tx, job.project_id, &facts)
             })?;
             Ok(JobOutcome::Done)
@@ -639,7 +637,9 @@ pub fn run_one(
         JobKind::J2Status => {
             let status = j2_status::observe(git, &repo, &ctx)?;
             let degraded = j2_status::is_degraded(&status);
-            write(index, |tx| j2_status::persist(tx, job.location_id, &status))?;
+            write(index, &deps.exclusions, job.location_id, |tx| {
+                j2_status::persist(tx, job.location_id, &status)
+            })?;
             Ok(if degraded {
                 JobOutcome::Degraded
             } else {
@@ -648,7 +648,7 @@ pub fn run_one(
         }
         JobKind::J3Inventory => {
             let facts = j3_inventory::observe(git, &repo, &ctx, &place.work_dir)?;
-            write(index, |tx| {
+            write(index, &deps.exclusions, job.location_id, |tx| {
                 j3_inventory::commit_inventory(tx, job.project_id, job.location_id, &facts)
             })?;
             Ok(JobOutcome::Done)
@@ -656,7 +656,7 @@ pub fn run_one(
         JobKind::J4History => {
             let (identities, reference) = j4_inputs(index, job.project_id)?;
             let (roots, facts) = j4_history::observe(git, &repo, &identities, reference, &ctx)?;
-            write(index, |tx| {
+            write(index, &deps.exclusions, job.location_id, |tx| {
                 j4_history::commit_history(tx, job.project_id, &roots, &facts, now)
             })?;
             Ok(JobOutcome::Done)
@@ -669,7 +669,7 @@ pub fn run_one(
             let facts = j6_content::read_content(&place.work_dir, j6_content::J6_BYTE_CAP);
             let lockfiles = (place.repo_kind != "bare")
                 .then(|| crate::advisories::lockfiles::read_lockfile_set(&place.work_dir));
-            write(index, |tx| {
+            write(index, &deps.exclusions, job.location_id, |tx| {
                 j6_content::persist(tx, job.project_id, &facts, now)?;
                 if let Some(reading) = &lockfiles {
                     crate::advisories::lockfiles::write_lockfile_set(
@@ -700,10 +700,30 @@ pub fn run_one(
                     zone: &*deps.zone,
                     detected_in: crate::restoration::detected_in_for(job.origin),
                     announce: Some(announce),
+                    exclusions: &deps.exclusions,
                 },
             )
         }
     }
+}
+
+/// J5 under the index lock.
+///
+/// **R39**: `run_one` holds `&Mutex<Index>`, so the plan's literal `run_j5(index, ...)` does not
+/// typecheck — `run_j5` takes the `&Index` the plan declares, and the lock is taken here. It is
+/// held across the raster, which is roughly 100 ms of CPU for one card; plan 21 owns assembly and
+/// is where a narrower split belongs if that ever proves to matter.
+fn run_j5_locked(
+    index: &std::sync::Mutex<crate::index::Index>,
+    job: &Job,
+    now: i64,
+) -> Result<JobOutcome, JobError> {
+    let guard = index
+        .lock()
+        .map_err(|_| JobError::Io("index lock is poisoned".to_owned()))?;
+    let outcome = crate::art::job::run_j5(&guard, job.project_id.0, now);
+    drop(guard);
+    outcome
 }
 
 /// `project`'s durable J7 cursor (§29.6), where a chunked run resumes.
@@ -717,6 +737,27 @@ fn j7_cursor(
             .find(|row| row.job == JobKind::J7Markers)
             .and_then(|row| row.cursor))
     })
+}
+
+/// §56.5 row 4: a covered copy is refused before its ownership probe and any other read of it.
+/// J5 reads no repository and is exempt.
+fn refuse_covered(
+    index: &std::sync::Mutex<crate::index::Index>,
+    deps: &JobDeps,
+    job: &Job,
+) -> Result<(), JobError> {
+    if job.kind == JobKind::J5Art {
+        return Ok(());
+    }
+    read(index, |conn| {
+        Ok(crate::exclusion::gate::check_location_read(
+            conn,
+            &deps.exclusions,
+            crate::exclusion::gate::GateSite::OwnershipProbe,
+            job.location_id,
+        ))
+    })?
+    .map_err(|_| JobError::Excluded)
 }
 
 /// Take the lock, read, release. Never called with a git invocation inside `f`.
@@ -768,16 +809,31 @@ fn identity_set(
 }
 
 /// Take the lock, write in one transaction, release.
+///
+/// §56.5 row 6: the transaction first asks `gate` whether `location` is covered, and a covered
+/// copy writes nothing and answers [`JobError::Excluded`] — every job's write, J7's per-chunk
+/// writes and J6's lockfile read included, because each goes through here.
 pub(crate) fn write<T>(
     index: &std::sync::Mutex<crate::index::Index>,
+    gate: &crate::exclusion::gate::ExclusionGate,
+    location: LocationId,
     f: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, crate::index::IndexError>,
 ) -> Result<T, JobError> {
     let mut guard = index
         .lock()
         .map_err(|_| JobError::Io("index lock is poisoned".to_owned()))?;
-    let out = guard.with_tx(f);
+    let out = guard.with_tx(|tx| {
+        let key = crate::exclusion::store::location_key(tx, location)?;
+        if gate
+            .check_write(crate::exclusion::gate::GateSite::JobWrite, tx, &key)
+            .is_err()
+        {
+            return Ok(None);
+        }
+        f(tx).map(Some)
+    });
     drop(guard);
-    out.map_err(JobError::Index)
+    out.map_err(JobError::Index)?.ok_or(JobError::Excluded)
 }
 
 #[cfg(test)]

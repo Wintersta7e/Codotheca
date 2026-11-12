@@ -28,15 +28,30 @@ use super::JobSink;
 ///
 /// A removed copy, or any copy of a removed project, asks for nothing (§46.9): the page still
 /// answers from what is stored, and the primary of a project with no live copy is a removed one.
+///
+/// A copy the exclusion list covers asks for nothing either (§56.5 row 7), and is not resolved.
+/// The check reads the gate's snapshot and takes no lock, so it is safe under the held guard
+/// (GA23).
 pub fn notify_visible(
     index: &crate::index::Index,
     mounts: &dyn MountResolver,
     jobs: &dyn JobSink,
+    exclusions: &crate::exclusion::gate::ExclusionGate,
     project: ProjectId,
     location: LocationId,
     wants_content: bool,
 ) {
     let conn = index.conn();
+    if crate::exclusion::gate::check_location_read(
+        conn,
+        exclusions,
+        crate::exclusion::gate::GateSite::VisibleEnqueue,
+        location,
+    )
+    .is_err()
+    {
+        return;
+    }
     let Some((store_key, class)) = current_place(conn, mounts, location) else {
         return;
     };

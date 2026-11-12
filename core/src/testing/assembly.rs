@@ -108,7 +108,7 @@ pub fn core_handler_with(
             classifier: Arc::new(crate::firstrun::classify::FixedClassifier::new(vec![])),
             distros: Arc::new(crate::firstrun::classify::NoDistros),
             platform: crate::index::path::PathPlatform::Unix,
-            exclusions,
+            exclusions: Arc::clone(&exclusions),
             cache: crate::firstrun::roots::SuggestionCache::new(),
         },
         jobs: crate::assembly::jobs::JobPump::start(
@@ -117,6 +117,7 @@ pub fn core_handler_with(
             clock.clone(),
             events.clone(),
             Arc::new(FixedZone(0)),
+            Arc::clone(&exclusions),
         ),
         sync: crate::assembly::sync::SyncPump::start(
             Arc::clone(index),
@@ -130,6 +131,7 @@ pub fn core_handler_with(
                 clock: clock.clone(),
                 cancel: crate::cancel::CancelToken::new(),
                 zone: Arc::new(FixedZone(0)),
+                exclusions,
             },
             events.clone(),
         ),

@@ -44,7 +44,11 @@ fn seeded(dir: &std::path::Path) -> Index {
 
 /// The bundle the production command wrote, as text.
 fn bundle(index: &Index, dir: &std::path::Path, reveal: bool) -> String {
-    let ctx = SurfaceCtx { index, now: NOW };
+    let ctx = SurfaceCtx {
+        index,
+        now: NOW,
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
+    };
     let answer = dispatch_surface_command(
         &ctx,
         "diag.bundle",

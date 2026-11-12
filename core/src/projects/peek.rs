@@ -204,6 +204,7 @@ pub fn handle(
             ctx.index,
             ctx.mounts,
             ctx.jobs,
+            ctx.exclusions,
             peek.id,
             location.id,
             false,

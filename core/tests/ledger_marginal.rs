@@ -203,6 +203,7 @@ impl Rig {
             &self.repo,
             &ctx,
             j7_markers::ScanRun {
+                exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
                 project: p.id,
                 location: p.location,
                 cursor: None,

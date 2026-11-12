@@ -46,6 +46,7 @@ fn deps() -> SyncDeps {
     ));
     let provider = Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned()));
     SyncDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         provider,
         transport: observing,
         tokens: Arc::new(FakeTokenStore::available()),

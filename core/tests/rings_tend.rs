@@ -70,6 +70,7 @@ fn seal(rig: &RingsRig, project: ProjectId) {
     let sink = CollectingSink::default();
     let mounts = FakeMountResolver::default();
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: rig.tmp.index(),
         events: &sink,
         jobs: &NullJobSink,

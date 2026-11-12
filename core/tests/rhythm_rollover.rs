@@ -141,10 +141,12 @@ fn handler(
             clock.clone(),
             events.clone(),
             Arc::clone(&zone),
+            Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         ),
         sync: codotheca_core::assembly::sync::SyncPump::start(
             Arc::clone(&index),
             codotheca_core::sync::SyncDeps {
+                exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
                 provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
                     sync_observing.clone(),
                     codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),
@@ -376,6 +378,7 @@ fn j4(h: &CoreHandler, clock: &Arc<FakeClock>, place: (ProjectId, LocationId), d
     .always_commit_subjects(GitReply::Ok(Vec::new()))
     .always_release_tags(GitReply::Ok(Vec::new()));
     let deps = JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git: Arc::new(git),
         clock: clock.clone(),
         cancel: CancelToken::new(),

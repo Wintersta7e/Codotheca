@@ -1512,6 +1512,7 @@ fn real_runner(
 
     let clock = Arc::new(codotheca_core::testing::FakeClock::new(1_700_000_000));
     let deps = codotheca_core::jobs::JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git: Arc::new(SystemGit::new(
             Arc::new(repo.exec()),
             Arc::new(GitSlots::new(4)),

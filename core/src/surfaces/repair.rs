@@ -38,6 +38,19 @@ pub fn handle_requeue(
     args: serde_json::Value,
 ) -> Result<RequeueResult, CommandFailure> {
     let args: ProjectsRequeueArgs = parse_args(args)?;
+    // §56.5 row 8: a project whose every copy is excluded revives nothing, on either ledger. A
+    // partly excluded one is revived whole — its state rows are per project, not per copy — and
+    // the dispatcher drops each covered copy's job when it is taken (row 5).
+    if crate::exclusion::gate::check_project_read(
+        ctx.index.conn(),
+        ctx.exclusions,
+        crate::exclusion::gate::GateSite::Requeue,
+        args.id,
+    )
+    .is_err()
+    {
+        return Ok(RequeueResult { jobs_requeued: 0 });
+    }
     let jobs_requeued = requeue(ctx.index.conn(), args.id, ctx.now)
         .map_err(|e| CommandFailure::internal(e.to_string()))?;
     Ok(RequeueResult { jobs_requeued })

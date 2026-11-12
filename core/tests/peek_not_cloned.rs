@@ -68,6 +68,7 @@ fn peek_of(index: &Index, project: i64) -> codotheca_core::protocol::Peek {
     let jobs = codotheca_core::jobs::NullJobSink;
     let mounts = codotheca_core::testing::FakeMountResolver::default();
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index,
         events: &sink,
         jobs: &jobs,

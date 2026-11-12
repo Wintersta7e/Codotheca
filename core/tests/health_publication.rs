@@ -118,6 +118,7 @@ fn rig(repo: &TestRepo) -> Rig {
     let clock = Arc::new(FakeClock::new(T0));
     let events = Arc::new(RecordingSink::default());
     let deps = JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git: Arc::new(SystemGit::new(
             Arc::new(repo.exec()),
             Arc::new(GitSlots::new(4)),

@@ -567,10 +567,12 @@ fn handler(dir: &std::path::Path) -> CoreHandler {
             clock.clone(),
             events.clone(),
             Arc::new(codotheca_core::testing::zone::FixedZone(0)),
+            Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         ),
         sync: codotheca_core::assembly::sync::SyncPump::start(
             Arc::clone(&index),
             codotheca_core::sync::SyncDeps {
+                exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
                 provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
                     sync_observing.clone(),
                     codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),

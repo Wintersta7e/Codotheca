@@ -141,6 +141,7 @@ fn round_trip() -> RoundTrip {
 /// The ids of the projects `projects.list` answers `query` with, in the shelf's order.
 fn listed(index: &Index, query: &str) -> Vec<i64> {
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index,
         events: &ValidatingSink::default(),
         jobs: &NullJobSink,

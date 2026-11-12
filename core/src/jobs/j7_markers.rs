@@ -179,12 +179,17 @@ pub fn write_enumeration(
 fn start_ordinal(
     index: &std::sync::Mutex<crate::index::Index>,
     gates: ContentGates,
-    project: ProjectId,
-    location: LocationId,
+    run: &ScanRun<'_>,
     head_oid: &str,
     stored: Option<&ContentScanRow>,
-    cursor: Option<&str>,
 ) -> Result<Option<usize>, JobError> {
+    let ScanRun {
+        project,
+        location,
+        cursor,
+        exclusions,
+        ..
+    } = *run;
     let complete = stored.is_some_and(|row| row.complete_head_oid.as_deref() == Some(head_oid));
     let withdrawn = complete
         && gates.reads_blobs()
@@ -200,7 +205,7 @@ fn start_ordinal(
         return Ok(None);
     }
     if withdrawn {
-        super::write(index, |tx| restart_scan(tx, project))?;
+        super::write(index, exclusions, location, |tx| restart_scan(tx, project))?;
     }
     let moved = stored.is_some_and(|row| row.head_oid != head_oid);
     Ok(Some(if moved || withdrawn {
@@ -359,6 +364,9 @@ pub struct ScanRun<'a> {
     /// [p3] Where the item build hands the event for a delta it wrote, **once its transaction has
     /// committed**, for the runner to announce. `None` records the rows and announces nothing.
     pub announce: Option<&'a std::cell::RefCell<Vec<crate::protocol::ProjectHealthDelta>>>,
+    /// The core's one exclusion gate (`JobDeps.exclusions`), which every chunk's write asks about
+    /// `location` first (§56.5 row 6): a list swapped in mid-scan stops the next chunk's write.
+    pub exclusions: &'a crate::exclusion::gate::ExclusionGate,
 }
 
 /// Run one chunk of J7 against one project.
@@ -375,9 +383,9 @@ pub fn run_j7(
     let ScanRun {
         project,
         location,
-        cursor,
         at,
         announce,
+        exclusions,
         ..
     } = run;
     let now = at.unix;
@@ -399,16 +407,7 @@ pub fn run_j7(
     let Some(head_oid) = head_oid else {
         return Ok(JobOutcome::Done);
     };
-    let Some(from) = start_ordinal(
-        index,
-        gates,
-        project,
-        location,
-        &head_oid,
-        stored.as_ref(),
-        cursor,
-    )?
-    else {
+    let Some(from) = start_ordinal(index, gates, &run, &head_oid, stored.as_ref())? else {
         return Ok(JobOutcome::Done);
     };
 
@@ -417,7 +416,7 @@ pub fn run_j7(
     let entries = match git.head_tree(repo, ctx) {
         Ok(entries) => entries,
         Err(err) => {
-            super::write(index, |tx| {
+            super::write(index, exclusions, location, |tx| {
                 write_enumeration(
                     tx,
                     project,
@@ -433,7 +432,7 @@ pub fn run_j7(
     let answers = presence_for(&entries);
     let filtered = filtered_entries(&entries);
     let total = i64::try_from(filtered.len()).unwrap_or(i64::MAX);
-    super::write(index, |tx| {
+    super::write(index, exclusions, location, |tx| {
         write_enumeration(tx, project, &head_oid, answers, Some(total), now)
     })?;
 
@@ -441,7 +440,7 @@ pub fn run_j7(
     //    whichever comes first (§29.6).
     let window: Vec<&TreeEntry> = filtered.iter().skip(from).take(J7_CHUNK_BLOBS).collect();
     if window.is_empty() {
-        let (pending, delta) = super::write(index, |tx| {
+        let (pending, delta) = super::write(index, exclusions, location, |tx| {
             let pending = commit_chunk(tx, project, &head_oid, &[], 0, now)?;
             let delta = build_debt_items(tx, &run, gates, &filtered)?;
             Ok((pending, delta))
@@ -474,7 +473,7 @@ pub fn run_j7(
             break;
         }
     }
-    let (pending, delta) = super::write(index, |tx| {
+    let (pending, delta) = super::write(index, exclusions, location, |tx| {
         let pending = commit_chunk(
             tx,
             project,

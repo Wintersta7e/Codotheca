@@ -148,6 +148,7 @@ fn ac_p4_48_23_emitted_payloads_validate() {
         Arc::clone(&clock),
         events.clone(),
         Arc::new(codotheca_core::testing::zone::FixedZone(0)),
+        Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
     );
     let mounts = FakeMountResolver::new();
     mounts.map(

@@ -79,6 +79,9 @@ pub struct SyncDeps {
     /// key is a **local** date and §28's singleton evaluator settles from here, so each payout
     /// reads the offset at its own instant and never a number captured at start-up.
     pub zone: Arc<dyn crate::clock::LocalZone>,
+    /// The core's one exclusion gate (§56.5 row 10): a project whose every copy it covers is
+    /// queued no `ProjectRemote` read.
+    pub exclusions: Arc<crate::exclusion::gate::ExclusionGate>,
 }
 
 impl std::fmt::Debug for SyncDeps {

@@ -128,6 +128,7 @@ fn seeded_lane() -> (
     let runner = SyncRunner::new(
         Arc::clone(&index),
         SyncDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             provider: Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned())),
             transport: observing,
             tokens,

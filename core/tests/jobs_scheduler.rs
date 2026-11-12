@@ -93,6 +93,7 @@ fn rig(repo: &TestRepo) -> Rig {
 
     let events = Arc::new(RecordingSink::default());
     let deps = JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git: Arc::new(SystemGit::new(
             Arc::new(repo.exec()),
             Arc::new(GitSlots::new(4)),
@@ -376,6 +377,7 @@ fn the_pump_the_composition_root_builds_drains_a_handed_off_location() {
         Arc::new(SystemClock::new()),
         events.clone(),
         Arc::new(codotheca_core::testing::zone::FixedZone(0)),
+        Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
     );
 
     pump.sink()
@@ -472,6 +474,7 @@ fn the_visible_sink_answers_while_the_index_guard_is_held() {
         Arc::new(SystemClock::new()),
         events,
         Arc::new(codotheca_core::testing::zone::FixedZone(0)),
+        Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
     );
 
     let (done_tx, done_rx) = std::sync::mpsc::channel();
@@ -538,6 +541,7 @@ fn the_recheck_sink_answers_while_the_index_guard_is_held() {
         Arc::new(SystemClock::new()),
         Arc::new(RecordingSink::default()),
         Arc::new(codotheca_core::testing::zone::FixedZone(0)),
+        Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
     );
 
     let (done_tx, done_rx) = std::sync::mpsc::channel();

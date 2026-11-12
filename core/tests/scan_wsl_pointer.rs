@@ -394,6 +394,7 @@ fn a_job_establishes_ownership_each_run_and_fails_untrusted_without_retry() {
             .unwrap();
     };
     let deps = JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git: Arc::new(git.git()),
         clock: Arc::new(SystemClock::new()),
         cancel: CancelToken::new(),

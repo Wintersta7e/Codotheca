@@ -352,6 +352,7 @@ impl GitRig {
             repo,
             &ctx,
             j7_markers::ScanRun {
+                exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
                 project: self.project,
                 location: self.location,
                 cursor: None,
@@ -460,6 +461,7 @@ impl GitRig {
 fn system_deps(repo: &TestRepo) -> JobDeps {
     let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
     JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git: Arc::new(SystemGit::new(
             Arc::new(repo.exec()),
             Arc::new(GitSlots::new(4)),
@@ -927,6 +929,7 @@ impl Rig {
             &self.repo,
             &ctx,
             j7_markers::ScanRun {
+                exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
                 project: self.project,
                 location: self.location,
                 cursor,
@@ -1755,6 +1758,7 @@ fn j7_is_enqueued_from_get_and_from_no_other_visibility_site() {
     let sync = NoSync;
 
     let detail = codotheca_core::detail::DetailCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: fixture.index(),
         git: &git,
         mount: &mounts,
@@ -1772,6 +1776,7 @@ fn j7_is_enqueued_from_get_and_from_no_other_visibility_site() {
     let after_get = jobs.asks.lock().unwrap().clone();
 
     let projects = codotheca_core::projects::ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: fixture.index(),
         events: &events,
         jobs: &jobs,

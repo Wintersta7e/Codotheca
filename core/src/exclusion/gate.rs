@@ -12,10 +12,11 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use rusqlite::Transaction;
+use rusqlite::{Connection, Transaction};
 
 use super::list::{ExclusionList, LocationKey};
 use crate::index::path::PathPlatform;
+use crate::protocol::{LocationId, ProjectId};
 
 /// Where a check is made: one variant per row of §56.5's audit table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -222,6 +223,57 @@ impl ExclusionGate {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+}
+
+/// The read check for a stored copy, asked by a reader that holds a connection and an id: the
+/// dispatcher (row 5), the page-open enqueue (row 7), the watch set (row 9) and `projects.recheck`.
+///
+/// # Errors
+/// `Covered` when the list in force covers the copy — and when its row cannot be read, because a
+/// reader that cannot tell must not read (fails closed, as §46.9's dispatcher does).
+pub fn check_location_read(
+    conn: &Connection,
+    gate: &ExclusionGate,
+    site: GateSite,
+    location: LocationId,
+) -> Result<(), Covered> {
+    let key = super::store::location_key(conn, location).map_err(|_| Covered { site })?;
+    gate.check_read(site, &key)
+}
+
+/// The read check for a whole project, asked where the reader is the project rather than a copy:
+/// requeue (row 8) and the remote sync's enqueue (row 10). Every non-removed copy is asked.
+///
+/// # Errors
+/// `Covered` when the project has at least one non-removed copy and the list in force covers
+/// every one of them, or when its copies cannot be read (fails closed).
+pub fn check_project_read(
+    conn: &Connection,
+    gate: &ExclusionGate,
+    site: GateSite,
+    project: ProjectId,
+) -> Result<(), Covered> {
+    let refused = Covered { site };
+    let ids: Vec<i64> = conn
+        .prepare("SELECT id FROM location WHERE project_id = ?1 AND removed_at IS NULL")
+        .and_then(|mut st| {
+            st.query_map([project.0], |r| r.get(0))?
+                .collect::<Result<_, _>>()
+        })
+        .map_err(|_| refused)?;
+    if ids.is_empty() {
+        return Ok(());
+    }
+    // Every copy is asked, never short-circuited, so the audit's record holds one check per copy.
+    let mut admitted = false;
+    for id in ids {
+        admitted |= check_location_read(conn, gate, site, LocationId(id)).is_ok();
+    }
+    if admitted {
+        Ok(())
+    } else {
+        Err(refused)
     }
 }
 

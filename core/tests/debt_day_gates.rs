@@ -138,6 +138,7 @@ impl ReleaseRig {
     fn run(&self, until: &dyn Fn(&Self) -> bool) {
         let clock = Arc::new(FakeClock::new(T0));
         let deps = JobDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             git: Arc::new(SystemGit::new(
                 Arc::new(self.repo.exec()),
                 Arc::new(GitSlots::new(4)),
@@ -286,6 +287,7 @@ impl J7Rig {
             &self.repo,
             &ctx,
             j7_markers::ScanRun {
+                exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
                 project: self.project,
                 location: self.location,
                 cursor: None,
@@ -455,6 +457,7 @@ impl AdvisoryRig {
         ));
         let provider = Arc::new(GitHubProvider::new(observing.clone(), HOST.to_owned()));
         let deps = SyncDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             provider,
             transport: observing,
             tokens: Arc::new(FakeTokenStore::available()),

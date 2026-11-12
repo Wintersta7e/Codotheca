@@ -134,6 +134,7 @@ impl Rig {
     fn settle(&self, p: &Project, at: i64) {
         let clock = Arc::new(FakeClock::new(at));
         let deps = JobDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             git: Arc::new(SystemGit::new(
                 Arc::new(p.repo.exec()),
                 Arc::new(GitSlots::new(4)),

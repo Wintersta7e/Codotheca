@@ -193,6 +193,7 @@ fn a_settled_week_keeps_its_target() {
     settle_at(&mut rig, NOW, &mut mark);
     let before = rows(&rig);
     let ctx = SurfaceCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: rig.tmp.index(),
         now: NOW,
     };

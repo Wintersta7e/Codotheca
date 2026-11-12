@@ -429,12 +429,40 @@ impl CoreHandler {
     /// clippy's `too_many_lines` ceiling, so a route added anywhere costs one of these.
     fn surfaces_arm(
         guard: &Index,
+        exclusions: &crate::exclusion::gate::ExclusionGate,
         command: &str,
         args: Value,
         now: i64,
     ) -> Option<Result<Value, CommandFailure>> {
-        let ctx = crate::surfaces::SurfaceCtx { index: guard, now };
+        let ctx = crate::surfaces::SurfaceCtx {
+            index: guard,
+            now,
+            exclusions,
+        };
         crate::surfaces::dispatch_surface_command(&ctx, command, args)
+    }
+
+    /// The project page's commands. Its own method because `handle` is at clippy's
+    /// `too_many_lines` ceiling. It borrows `self` shared, beside the guard the caller holds.
+    fn detail_arm(
+        &self,
+        guard: &Index,
+        command: &str,
+        args: Value,
+        now: i64,
+    ) -> Option<Result<Value, CommandFailure>> {
+        let ctx = crate::detail::DetailCtx {
+            index: guard,
+            git: self.git.as_ref(),
+            mount: self.mount.as_ref(),
+            events: self.events.as_ref(),
+            jobs: self.jobs.sink_ref(),
+            sync: self.sync.sink_ref(),
+            now,
+            zone: self.zone.as_ref(),
+            exclusions: &self.exclusions,
+        };
+        crate::detail::dispatch_detail_command(&ctx, command, args)
     }
 
     /// §21.13's one read. Its own method for the same reason `accounts_arm` is one: `handle` is
@@ -603,7 +631,11 @@ impl CoreHandler {
                 .map_err(|error| CommandFailure::internal(error.to_string()));
         }
         let guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
-        let ctx = crate::surfaces::SurfaceCtx { index: &guard, now };
+        let ctx = crate::surfaces::SurfaceCtx {
+            index: &guard,
+            now,
+            exclusions: &self.exclusions,
+        };
         let preview = crate::install::handle_preview(&ctx, args)?;
         drop(guard);
         serde_json::to_value(preview).map_err(|error| CommandFailure::internal(error.to_string()))
@@ -997,7 +1029,7 @@ impl CommandHandler for CoreHandler {
                 };
                 crate::art::dispatch_art_command(&ctx, command, args)
             }
-            Route::Surfaces => Self::surfaces_arm(&guard, command, args, now),
+            Route::Surfaces => Self::surfaces_arm(&guard, &self.exclusions, command, args, now),
             Route::Accounts => Self::accounts_arm(&guard, command, args),
             Route::Sync => Self::sync_arm(&guard, self.sync.live(), name, args),
             Route::Targets => {
@@ -1044,22 +1076,11 @@ impl CommandHandler for CoreHandler {
                     sync: self.sync.sink_ref(),
                     now,
                     tz_offset_min: self.tz_offset_min,
+                    exclusions: &self.exclusions,
                 };
                 crate::projects::dispatch_projects_command(&ctx, command, args)
             }
-            Route::Detail => {
-                let ctx = crate::detail::DetailCtx {
-                    index: &guard,
-                    git: self.git.as_ref(),
-                    mount: self.mount.as_ref(),
-                    events: self.events.as_ref(),
-                    jobs: self.jobs.sink_ref(),
-                    sync: self.sync.sink_ref(),
-                    now,
-                    zone: self.zone.as_ref(),
-                };
-                crate::detail::dispatch_detail_command(&ctx, command, args)
-            }
+            Route::Detail => self.detail_arm(&guard, command, args, now),
             Route::View => {
                 let ctx = crate::view::ViewCtx { index: &guard, now };
                 crate::view::dispatch_view_command(&ctx, command, args)

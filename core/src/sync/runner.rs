@@ -271,6 +271,21 @@ impl SyncRunner {
             inbox.drain(..).collect()
         };
         for task in pending {
+            // §56.5 row 10, here and not in `enqueue`: the asker holds the index guard, and this
+            // transaction is where the list in force is read. A project whose every copy is
+            // covered is queued no remote read.
+            if let SyncTask::ProjectRemote { project_id } = task {
+                if crate::exclusion::gate::check_project_read(
+                    tx,
+                    &self.deps.exclusions,
+                    crate::exclusion::gate::GateSite::RemoteSync,
+                    project_id,
+                )
+                .is_err()
+                {
+                    continue;
+                }
+            }
             let kind = task.kind();
             let key = task.key();
             let existing = load(tx, kind, key)?;
@@ -430,6 +445,9 @@ impl SyncRunner {
     }
 
     fn run_one(self: &Arc<Self>, task: SyncTask) {
+        if self.refused_at_run(&task) {
+            return;
+        }
         let kind = task.kind();
         let key = task.key();
         emit_started(self.events.as_ref(), &SyncTaskStarted { kind, key });
@@ -449,6 +467,41 @@ impl SyncRunner {
         };
         let reserved = matches!(verdict, BudgetVerdict::Reserved(_));
         self.settle(&task, outcome, reserved);
+    }
+
+    /// §56.5 row 10 where a queued read runs: a `project_remote` row written before the add still
+    /// reaches here, and a project whose every copy is covered is not read. The row goes
+    /// `deferred` with reason `excluded` — not runnable and not outstanding — and nothing else is
+    /// written: no start, no settle, no debt, no evaluator. A check that cannot answer refuses.
+    fn refused_at_run(&self, task: &SyncTask) -> bool {
+        let SyncTask::ProjectRemote { project_id } = task else {
+            return false;
+        };
+        let now = self.deps.clock.now_unix();
+        let (kind, key) = (task.kind(), task.key());
+        let mut guard = self.index.lock().unwrap_or_else(PoisonError::into_inner);
+        guard
+            .with_tx(|tx| {
+                if crate::exclusion::gate::check_project_read(
+                    tx,
+                    &self.deps.exclusions,
+                    crate::exclusion::gate::GateSite::RemoteSync,
+                    *project_id,
+                )
+                .is_ok()
+                {
+                    return Ok(false);
+                }
+                let mut row = load(tx, kind, key)?
+                    .unwrap_or_else(|| SyncTaskStateRow::queued(kind, key, now));
+                row.state = SyncTaskState::Deferred;
+                row.reason = Some("excluded".to_owned());
+                row.not_before = 0;
+                row.at = now;
+                put(tx, &row)?;
+                Ok(true)
+            })
+            .unwrap_or(true)
     }
 
     /// §21.6's *before issuing* rule, and §21.5's reserve.
@@ -1234,6 +1287,7 @@ mod tests {
         ));
         let provider_transport = Arc::clone(&observing);
         SyncDeps {
+            exclusions: Arc::new(crate::exclusion::gate::ExclusionGate::default()),
             provider: Arc::new(crate::provider::GitHubProvider::new(
                 provider_transport,
                 "h".to_owned(),

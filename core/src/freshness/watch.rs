@@ -31,14 +31,21 @@ pub struct WatchTarget {
 
 /// Choose what to watch.
 ///
-/// `recent` is (location, worktree root, last-touched epoch seconds), any order.
+/// `recent` is (location, worktree root, last-touched epoch seconds), any order. `allowed` is
+/// §56.5 row 9's read check: a copy it refuses is never watched, pinned or not, and does not
+/// take one of the `max` places — the next most recent copy does.
 #[must_use]
 pub fn select_targets(
     recent: &[(LocationId, PathBuf, i64)],
     live_sessions: &[LocationId],
     max: usize,
+    allowed: &dyn Fn(LocationId) -> bool,
 ) -> Vec<WatchTarget> {
-    let mut ordered = recent.to_vec();
+    let mut ordered: Vec<(LocationId, PathBuf, i64)> = recent
+        .iter()
+        .filter(|(id, _, _)| allowed(*id))
+        .cloned()
+        .collect();
     ordered.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0 .0.cmp(&b.0 .0)));
 
     let mut out: Vec<WatchTarget> = Vec::new();
@@ -192,21 +199,21 @@ mod tests {
     #[test]
     fn the_set_is_bounded_at_thirty() {
         // §6: watching 1,000 repositories is ruled out by inotify limits and by the stack.
-        let picked = select_targets(&recent(200), &[], WATCH_SET_MAX);
+        let picked = select_targets(&recent(200), &[], WATCH_SET_MAX, &|_| true);
         assert_eq!(picked.len(), WATCH_SET_MAX);
         assert_eq!(WATCH_SET_MAX, 30);
     }
 
     #[test]
     fn the_most_recently_touched_win() {
-        let picked = select_targets(&recent(200), &[], 3);
+        let picked = select_targets(&recent(200), &[], 3, &|_| true);
         let ids: Vec<i64> = picked.iter().map(|t| t.location_id.0).collect();
         assert_eq!(ids, vec![0, 1, 2]);
     }
 
     #[test]
     fn every_live_session_is_pinned_beyond_the_cap() {
-        let picked = select_targets(&recent(200), &[LocationId(150)], 3);
+        let picked = select_targets(&recent(200), &[LocationId(150)], 3, &|_| true);
         assert_eq!(picked.len(), 4);
         let pinned: Vec<i64> = picked
             .iter()
@@ -218,7 +225,7 @@ mod tests {
 
     #[test]
     fn a_live_session_already_in_the_recent_list_is_not_duplicated() {
-        let picked = select_targets(&recent(200), &[LocationId(1)], 3);
+        let picked = select_targets(&recent(200), &[LocationId(1)], 3, &|_| true);
         assert_eq!(picked.len(), 3);
         assert!(picked
             .iter()
@@ -226,10 +233,21 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_copy_is_never_watched_and_frees_its_place() {
+        // §56.5 row 9: copy 1 is covered, so 0, 2 and 3 fill the cap, and a covered live
+        // session (150) is not pinned either.
+        let allowed = |id: LocationId| id != LocationId(1) && id != LocationId(150);
+        let picked = select_targets(&recent(200), &[LocationId(150)], 3, &allowed);
+        let ids: Vec<i64> = picked.iter().map(|t| t.location_id.0).collect();
+        assert_eq!(ids, vec![0, 2, 3]);
+        assert!(picked.iter().all(|t| !t.pinned));
+    }
+
+    #[test]
     fn targets_are_worktree_roots_not_git_dirs() {
         // §6: the whole finding is that .git/index does not move when a tracked file is edited,
         // so watching .git would watch the one place the change is not.
-        let picked = select_targets(&recent(1), &[], 1);
+        let picked = select_targets(&recent(1), &[], 1, &|_| true);
         assert_eq!(picked[0].root, PathBuf::from("/w/0"));
         assert!(!picked[0].root.ends_with(".git"));
     }

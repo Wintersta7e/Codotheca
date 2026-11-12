@@ -344,6 +344,7 @@ fn main() -> ExitCode {
         Arc::clone(&clock),
         Arc::clone(&event_sink),
         Arc::clone(&zone),
+        Arc::clone(&exclusions),
     );
 
     // The same `Arc<Mutex<Index>>` reached a different way, never a second connection. The
@@ -396,6 +397,7 @@ fn main() -> ExitCode {
             clock: Arc::clone(&clock),
             cancel: codotheca_core::cancel::CancelToken::new(),
             zone: Arc::clone(&zone),
+            exclusions: Arc::clone(&exclusions),
         },
         Arc::clone(&event_sink),
     );

@@ -26,7 +26,11 @@ fn set(
     index: &Index,
     patch: &serde_json::Value,
 ) -> Result<codotheca_core::protocol::Settings, codotheca_core::proto::dispatch::CommandFailure> {
-    let ctx = SurfaceCtx { index, now: NOW };
+    let ctx = SurfaceCtx {
+        index,
+        now: NOW,
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
+    };
     settings::handle_set(&ctx, serde_json::json!({ "patch": patch }))
 }
 
@@ -58,6 +62,7 @@ fn put_raw(index: &Index, key: &str, value: &str) {
 fn focus_target_round_trips_and_absent_reads_45() {
     let (_dir, index) = open();
     let ctx = SurfaceCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &index,
         now: NOW,
     };

@@ -437,6 +437,7 @@ pub fn handle_project_get(
             ctx.index,
             ctx.mount,
             ctx.jobs,
+            ctx.exclusions,
             ProjectId(id),
             LocationId(location),
             true,

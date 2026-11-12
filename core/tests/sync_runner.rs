@@ -184,6 +184,7 @@ fn fixture_over(dwell: Duration, forge: Option<Arc<dyn HttpTransport>>) -> Fixtu
         events: Arc::new(Recorder::default()),
         clock: Arc::clone(&clock),
         deps: SyncDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             provider,
             transport: observing,
             tokens,

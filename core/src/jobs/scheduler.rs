@@ -295,8 +295,21 @@ impl JobRunner {
         if job.kind == JobKind::J5Art {
             return true;
         }
-        self.with_index(|conn| crate::projects::current::location_is_current(conn, job.location_id))
-            .unwrap_or(false)
+        // §56.5 row 5, in the same read: a copy the list covers is dropped like a removed one,
+        // emitting nothing (§54 owns a user-started job's answer).
+        self.with_index(|conn| {
+            Ok(
+                crate::projects::current::location_is_current(conn, job.location_id)?
+                    && crate::exclusion::gate::check_location_read(
+                        conn,
+                        &self.deps.exclusions,
+                        crate::exclusion::gate::GateSite::Dispatch,
+                        job.location_id,
+                    )
+                    .is_ok(),
+            )
+        })
+        .unwrap_or(false)
     }
 
     /// Dispatch, and turn a failure into the outcome vocabulary the retry rules read.
@@ -341,6 +354,7 @@ impl JobRunner {
                 error_kind: "REPO_UNREADABLE",
                 detail,
             },
+            Err(super::JobError::Excluded) => JobOutcome::Excluded,
         }
     }
 
@@ -371,6 +385,11 @@ impl JobRunner {
         // §39.2 rule 5: the payout is dated in the offset in force at this settle's own instant.
         let at = self.deps.zone.at(now);
         let recomputed = self.write_index(|tx| {
+            // §56.5 row 6: the settle's own write check comes first, so a covered copy's settle
+            // writes no row, no debt, no recompute, no evaluator, no archive and no badge.
+            if self.settle_refused(tx, job, outcome)? {
+                return Ok(None);
+            }
             put(tx, job.project_id, &row)?;
             // §28.2's singleton evaluator, and §34's producer around it. It runs **before** §31's
             // completion evaluator, or every Group-A check answers from the previous settle; do
@@ -403,8 +422,17 @@ impl JobRunner {
                 zone: &*self.deps.zone,
             };
             settle_badges(tx, job, written, archived, &badges)?;
-            Ok((recomputed, announce))
+            Ok(Some((recomputed, announce)))
         });
+        let recomputed = match recomputed {
+            Ok(Some(written)) => Ok(written),
+            // Refused: the event still reports the job, and nothing is requeued or chained.
+            Ok(None) => {
+                self.emit_job_done(job, &row, elapsed);
+                return;
+            }
+            Err(e) => Err(e),
+        };
         if let Ok((r, _)) = &recomputed {
             if r.changed_condition {
                 self.events.emit(
@@ -427,20 +455,7 @@ impl JobRunner {
             crate::restoration::emit_health_delta(self.events.as_ref(), delta);
         }
 
-        // A job is not run by a scan — the hand-off, a visible tile or a backoff queues it — so it
-        // names no run.
-        self.events.emit(
-            "scan",
-            "job_done",
-            serde_json::json!({
-                "runId": null,
-                "projectId": job.project_id.0,
-                "job": job.kind.slug(),
-                "ok": row.state == JobState::Done,
-                "elapsedMs": u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX),
-                "deferred": row.state == JobState::DeferredSlow,
-            }),
-        );
+        self.emit_job_done(job, &row, elapsed);
 
         if let Some(when) = requeue_at {
             // [p3] R121: `clone` carries `origin`, so a backoff requeue keeps the chain's owner.
@@ -511,6 +526,45 @@ impl JobRunner {
         if after != before {
             self.events.emit("projects", "upserted", after);
         }
+    }
+
+    /// Whether `job`'s settle must write nothing (§56.5 row 6): its run was refused, or the list
+    /// in force now covers its copy. J5 reads no repository and is exempt, as at dispatch.
+    fn settle_refused(
+        &self,
+        tx: &rusqlite::Transaction<'_>,
+        job: &Job,
+        outcome: &JobOutcome,
+    ) -> Result<bool, crate::index::IndexError> {
+        if *outcome == JobOutcome::Excluded {
+            return Ok(true);
+        }
+        if job.kind == JobKind::J5Art {
+            return Ok(false);
+        }
+        let key = crate::exclusion::store::location_key(tx, job.location_id)?;
+        Ok(self
+            .deps
+            .exclusions
+            .check_write(crate::exclusion::gate::GateSite::JobWrite, tx, &key)
+            .is_err())
+    }
+
+    /// `job_done`. A job is not run by a scan — the hand-off, a visible tile or a backoff queues
+    /// it — so it names no run.
+    fn emit_job_done(&self, job: &Job, row: &JobStateRow, elapsed: std::time::Duration) {
+        self.events.emit(
+            "scan",
+            "job_done",
+            serde_json::json!({
+                "runId": null,
+                "projectId": job.project_id.0,
+                "job": job.kind.slug(),
+                "ok": row.state == JobState::Done,
+                "elapsedMs": u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX),
+                "deferred": row.state == JobState::DeferredSlow,
+            }),
+        );
     }
 
     fn with_index<T>(

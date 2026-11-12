@@ -94,6 +94,7 @@ impl Rig {
 /// The clock never moves, so a requeued job's backoff never elapses and it is not run again.
 fn deps(git: Arc<dyn GitBackend>) -> JobDeps {
     JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git,
         clock: Arc::new(FakeClock::new(T0)),
         cancel: CancelToken::new(),

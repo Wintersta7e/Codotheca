@@ -137,6 +137,7 @@ impl Fixture {
 
     fn preview(&self, project: ProjectId) -> InstallPreview {
         let ctx = SurfaceCtx {
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             index: self.index.index(),
             now: 0,
         };

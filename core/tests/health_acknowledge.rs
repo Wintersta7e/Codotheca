@@ -80,6 +80,7 @@ fn ac_p3_30_8_peek_and_list_never_stamp() {
 
     let ctx = rig.ctx();
     let projects = codotheca_core::projects::ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &rig.index,
         events: &rig.sink,
         jobs: &rig.jobs,

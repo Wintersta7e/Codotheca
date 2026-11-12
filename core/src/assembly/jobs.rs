@@ -68,7 +68,8 @@ impl JobPump {
     /// Build the runner and spawn its pool.
     ///
     /// `zone` is the machine's zone, handed down whole: each settle reads the offset at its own
-    /// instant (§39.2 rule 1), so nothing here may capture one number from it.
+    /// instant (§39.2 rule 1), so nothing here may capture one number from it. `exclusions` is
+    /// the core's one gate, which dispatch, every job write and every settle ask (§56.5).
     #[must_use]
     pub fn start(
         index: Arc<Mutex<Index>>,
@@ -76,6 +77,7 @@ impl JobPump {
         clock: Arc<dyn Clock>,
         events: Arc<dyn EventSink>,
         zone: Arc<dyn LocalZone>,
+        exclusions: Arc<crate::exclusion::gate::ExclusionGate>,
     ) -> Self {
         let cancel = CancelToken::new();
         let runner = build_job_runner(
@@ -85,6 +87,7 @@ impl JobPump {
                 clock,
                 cancel: cancel.clone(),
                 zone,
+                exclusions,
             },
             events,
         );

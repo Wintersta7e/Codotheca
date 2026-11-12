@@ -217,6 +217,7 @@ fn settle(
 ) {
     let clock = Arc::new(FakeClock::new(now));
     let deps = JobDeps {
+        exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
         git: Arc::new(SystemGit::new(
             Arc::new(git.exec()),
             Arc::new(GitSlots::new(4)),

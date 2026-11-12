@@ -72,6 +72,7 @@ fn new_ids(index: &Index) -> Vec<i64> {
     let jobs = codotheca_core::jobs::NullJobSink;
     let mounts = codotheca_core::testing::FakeMountResolver::new();
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index,
         events: &sink,
         jobs: &jobs,

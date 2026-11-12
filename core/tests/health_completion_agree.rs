@@ -81,6 +81,7 @@ fn settle(rig: &Rig, project: i64, now: i64) {
 
 fn set_missing_license(rig: &Rig, enabled: bool, now: i64) {
     let ctx = SurfaceCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &rig.index,
         now,
     };

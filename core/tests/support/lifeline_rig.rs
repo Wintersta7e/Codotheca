@@ -54,6 +54,7 @@ pub(crate) fn real_handler(
         jobs_events.clone(),
         // UTC, so a test's local date never depends on the machine running it.
         Arc::new(FixedZone(0)),
+        Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
     );
     let http: Arc<dyn codotheca_core::http::HttpTransport> =
         Arc::new(codotheca_core::testing::FakeTransport::new());
@@ -110,6 +111,7 @@ pub(crate) fn real_handler(
         sync: codotheca_core::assembly::sync::SyncPump::start(
             Arc::clone(index),
             codotheca_core::sync::SyncDeps {
+                exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
                 provider: Arc::new(codotheca_core::provider::GitHubProvider::new(
                     Arc::clone(&sync_http),
                     codotheca_core::provider::listing::GITHUB_CANONICAL_HOST.to_owned(),

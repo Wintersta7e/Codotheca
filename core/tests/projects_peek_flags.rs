@@ -58,6 +58,7 @@ fn call(
     let jobs = codotheca_core::jobs::NullJobSink;
     let mounts = codotheca_core::testing::FakeMountResolver::default();
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index,
         events: sink,
         jobs: &jobs,
@@ -261,6 +262,7 @@ fn an_unknown_project_is_refused_rather_than_silently_creating_one() {
     let jobs = codotheca_core::jobs::NullJobSink;
     let mounts = codotheca_core::testing::FakeMountResolver::default();
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &index,
         events: &sink,
         jobs: &jobs,
@@ -304,6 +306,7 @@ fn a_merged_away_project_is_not_reachable_through_either_command() {
     let jobs = codotheca_core::jobs::NullJobSink;
     let mounts = codotheca_core::testing::FakeMountResolver::default();
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &index,
         events: &sink,
         jobs: &jobs,
@@ -392,6 +395,7 @@ fn a_peek_asks_for_one_fresh_reading_and_a_list_asks_for_none() {
     let jobs = RecordingJobs::default();
     let mounts = codotheca_core::testing::FakeMountResolver::new();
     let ctx = ProjectsCtx {
+        exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
         index: &index,
         events: &sink,
         jobs: &jobs,

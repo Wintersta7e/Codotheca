@@ -495,6 +495,7 @@ impl World {
     fn job(&self, copy: &Copy, kind: JobKind) {
         let clock = self.band.parts.clock.clone();
         let deps = JobDeps {
+            exclusions: Arc::new(codotheca_core::exclusion::gate::ExclusionGate::default()),
             git: Arc::new(SystemGit::new(
                 Arc::new(copy.repo.exec()),
                 Arc::new(GitSlots::new(4)),
@@ -545,6 +546,7 @@ impl World {
             self.band.parts.clock.clone(),
         );
         let ctx = DetailCtx {
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             index: &guard,
             git: &git,
             mount: &FakeMountResolver::default(),
@@ -564,6 +566,7 @@ impl World {
     fn archive(&self, archived: bool) {
         let guard = self.band.index.lock().unwrap();
         let ctx = ProjectsCtx {
+            exclusions: &codotheca_core::exclusion::gate::ExclusionGate::default(),
             index: &guard,
             events: &CollectingSink::default(),
             jobs: &NullJobSink,
