@@ -20,6 +20,7 @@ import {
   LEVEL_LABEL,
   LEVEL_PANEL_CAPTION,
   TERMS_SUM_LABEL,
+  XP_FIGURE,
   XP_TERM_WORDS,
 } from '../motivation/copy';
 import { COVERAGE_HISTORY_GROWS, UNCOMPUTED_NOTE } from './copy';
@@ -67,8 +68,8 @@ function levelEvidence(terms: readonly XpTermTotal[] | null, floored: boolean): 
     terms === null
       ? []
       : [
-          ...terms.map((entry) => `${XP_TERM_WORDS[entry.term]}  ${String(entry.xp)}`),
-          `${TERMS_SUM_LABEL}  ${String(terms.reduce((total, entry) => total + entry.xp, 0))}`,
+          ...terms.map((entry) => `${XP_TERM_WORDS[entry.term]}  ${XP_FIGURE(entry.xp)}`),
+          `${TERMS_SUM_LABEL}  ${XP_FIGURE(terms.reduce((total, entry) => total + entry.xp, 0))}`,
         ];
   if (floored) lines.push(FLOOR_HOLDS_LINE);
   return lines.join('\n');

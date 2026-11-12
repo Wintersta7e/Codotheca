@@ -120,10 +120,13 @@ describe('the level section', () => {
     for (const row of rows) {
       const term = row.getAttribute('data-term') as keyof typeof XP_TERM_WORDS;
       expect(row.textContent).toContain(XP_TERM_WORDS[term]);
-      total += Number(row.querySelector('[data-xp]')?.textContent);
+      // The figure carries its unit: `250` beside `NEW LANGUAGES` reads as 250 languages.
+      const figure = row.querySelector('[data-xp]')?.textContent ?? '';
+      expect(figure).toMatch(/^\d+ XP$/u);
+      total += Number.parseInt(figure, 10);
     }
     expect(total).toBe(shown.level?.figures?.xp);
-    expect(Number(document.querySelector('[data-sum]')?.textContent)).toBe(total);
+    expect(document.querySelector('[data-sum]')?.textContent).toBe(`${String(total)} XP`);
     expect(screen.queryByText(FLOOR_HOLDS_LINE)).toBeNull();
   });
 

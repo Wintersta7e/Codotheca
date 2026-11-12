@@ -124,6 +124,7 @@ test('the headline takes AT LEAST below full coverage and nothing above it', () 
 // while a history still arriving can move BEST YEAR to a different year.
 test('the two coverage strings say different things', () => {
   expect(copy.COVERAGE_PARTIAL(212)).toBe('across the 212 projects indexed so far');
+  expect(copy.COVERAGE_PARTIAL(1)).toBe('across 1 project indexed so far');
   expect(copy.COVERAGE_HISTORY_GROWS).toBe('history still indexing — this can only grow');
   expect(copy.COVERAGE_HISTORY_MOVES).toBe('history still indexing — this can move, not just grow');
 });

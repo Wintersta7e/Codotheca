@@ -14,6 +14,7 @@ import {
   LEVEL_LABEL,
   LEVEL_NOT_COMPUTED,
   TERMS_SUM_LABEL,
+  XP_FIGURE,
   XP_TERM_WORDS,
 } from '../motivation/copy';
 import { levelBlockModel } from '../motivation/levelBlock';
@@ -57,14 +58,14 @@ export function ProfileLevelSection(props: {
             {terms.map((entry) => (
               <tr key={entry.term} data-term={entry.term}>
                 <th scope="row">{XP_TERM_WORDS[entry.term]}</th>
-                <td data-xp="">{entry.xp}</td>
+                <td data-xp="">{XP_FIGURE(entry.xp)}</td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr>
               <th scope="row">{TERMS_SUM_LABEL}</th>
-              <td data-sum="">{sum}</td>
+              <td data-sum="">{XP_FIGURE(sum)}</td>
             </tr>
           </tfoot>
         </table>

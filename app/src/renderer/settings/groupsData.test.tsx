@@ -13,6 +13,7 @@ import {
   bundleResultText,
   identityCaption,
   indexSizeText,
+  notificationsFooter,
 } from './groupsData.js';
 
 afterEach(cleanup);
@@ -193,9 +194,22 @@ describe('group 9, GITHUB, and the notification block', () => {
     }
   });
 
-  it('keeps the footer verbatim, both lines', () => {
-    render(<DataGroups {...props} />);
+  // The footer counts the notification rows this build can fire — the ones not marked
+  // NOT IN THIS BUILD — so it never claims three while two rows above it say they are absent.
+  it('keeps the licence line and counts only the notifications this build has', () => {
+    const { container } = render(<DataGroups {...props} />);
     expect(screen.getByText('CODOTHECA · GPL-3.0 · NO ACCOUNT · NO TELEMETRY')).toBeTruthy();
-    expect(screen.getByText('THREE NOTIFICATIONS EXIST · NONE MENTIONS ABSENCE')).toBeTruthy();
+    const firing = [...container.querySelectorAll('[data-row^="notification-"]')].filter(
+      (row) => !row.textContent.includes(NOT_IN_THIS_BUILD),
+    );
+    expect(firing).toHaveLength(1);
+    expect(screen.getByText('ONE NOTIFICATION EXISTS · IT NEVER MENTIONS ABSENCE')).toBeTruthy();
+    expect(screen.queryByText(/THREE NOTIFICATIONS/u)).toBeNull();
+  });
+
+  // Once all three can fire, the line is §11.3a's verbatim ceiling again.
+  it('words the footer for one and for all three', () => {
+    expect(notificationsFooter(1)).toBe('ONE NOTIFICATION EXISTS · IT NEVER MENTIONS ABSENCE');
+    expect(notificationsFooter(3)).toBe('THREE NOTIFICATIONS EXIST · NONE MENTIONS ABSENCE');
   });
 });

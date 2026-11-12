@@ -48,9 +48,32 @@ export const NOT_IN_THIS_BUILD = 'NOT IN THIS BUILD';
  */
 export const NOTIFICATIONS = NOTIFICATION_LINES;
 
+/**
+ * [p3] §11.3a: whether this build can post the line. Only the advisory can (§32.12); the other two
+ * are drawn `NOT IN THIS BUILD`, and the footer counts by the same test.
+ */
+function inThisBuild(label: string): boolean {
+  return label === ADVISORY_NOTICE_TITLE;
+}
+
+const COUNT_WORDS = ['NO', 'ONE', 'TWO', 'THREE'] as const;
+
+/**
+ * The footer's second line, stating only the notifications the build has. With all three it is
+ * §11.3a's verbatim ceiling; with fewer it would otherwise claim three above rows saying otherwise.
+ */
+export function notificationsFooter(count: number): string {
+  const word = COUNT_WORDS[count] ?? String(count);
+  return count === 1
+    ? `${word} NOTIFICATION EXISTS · IT NEVER MENTIONS ABSENCE`
+    : `${word} NOTIFICATIONS EXIST · NONE MENTIONS ABSENCE`;
+}
+
 export const FOOTER_LINES = [
   'CODOTHECA · GPL-3.0 · NO ACCOUNT · NO TELEMETRY',
-  'THREE NOTIFICATIONS EXIST · NONE MENTIONS ABSENCE',
+  notificationsFooter(
+    NOTIFICATIONS.filter((notification) => inThisBuild(notification.label)).length,
+  ),
 ] as const;
 
 /** `null` is *not read yet*, and is never rendered as `0 B`. */
@@ -122,10 +145,9 @@ export const DATA_GROUP_ROWS: readonly SettingsRowSpec[] = [
     group: 'notifications' as const,
     label: notification.label,
     // [p3] §11.3a: struck for the advisory line only — this build posts that one (§32.12).
-    note:
-      notification.label === ADVISORY_NOTICE_TITLE
-        ? notification.note
-        : `${notification.note} · ${NOT_IN_THIS_BUILD}`,
+    note: inThisBuild(notification.label)
+      ? notification.note
+      : `${notification.note} · ${NOT_IN_THIS_BUILD}`,
     backing: { kind: 'statement' as const },
   })),
 ];

@@ -234,6 +234,12 @@ export const XP_TERM_WORDS: Readonly<Record<XpTerm, string>> = {
 /** §43.13's evidence row that adds the terms up, so the sum is read beside the level's XP. */
 export const TERMS_SUM_LABEL = 'SUM';
 
+/**
+ * An evidence figure with its unit. Each term is labelled by its source, so a bare `250` beside
+ * `NEW LANGUAGES` reads as a count of languages rather than the XP they earned.
+ */
+export const XP_FIGURE = (xp: number): string => `${String(xp)} XP`;
+
 /** §43.13's second section: every latched badge. */
 export const BADGES_LABEL = 'BADGES';
 

@@ -152,7 +152,9 @@ export function revealHeadline(spanYears: number | null, complete: boolean): str
 }
 
 export const COVERAGE_PARTIAL = (covered: number): string =>
-  `across the ${String(covered)} projects indexed so far`;
+  covered === 1
+    ? 'across 1 project indexed so far'
+    : `across the ${String(covered)} projects indexed so far`;
 export const COVERAGE_HISTORY_GROWS = 'history still indexing — this can only grow';
 export const COVERAGE_HISTORY_MOVES = 'history still indexing — this can move, not just grow';
 export const UNCOMPUTED_NOTE = 'NOT COMPUTED YET · HISTORY HAS NOT RETURNED';

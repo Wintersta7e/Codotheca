@@ -158,9 +158,11 @@ test('a partial level carries the growth line and a computed one carries none', 
 // §43.7: SHOW WORKING opens the terms and, when floored, the line saying the floor holds it.
 test('the level evidence is the terms, their sum, and the floor line only when floored', () => {
   const plain = levelPanel(motivation())?.evidence ?? '';
-  expect(plain).toContain(`${XP_TERM_WORDS.commitDay}  600`);
-  expect(plain).toContain(`${XP_TERM_WORDS.release}  335`);
-  expect(plain).toContain(`${TERMS_SUM_LABEL}  935`);
+  // Whole lines, so the XP unit is asserted rather than matched as a prefix.
+  const lines = plain.split('\n');
+  expect(lines).toContain(`${XP_TERM_WORDS.commitDay}  600 XP`);
+  expect(lines).toContain(`${XP_TERM_WORDS.release}  335 XP`);
+  expect(lines).toContain(`${TERMS_SUM_LABEL}  935 XP`);
   expect(plain).not.toContain(FLOOR_HOLDS_LINE);
   const floored = levelPanel(motivation({ level: reading('computed', 6, true) }))?.evidence;
   expect(floored).toContain(FLOOR_HOLDS_LINE);
