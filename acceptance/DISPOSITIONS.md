@@ -367,8 +367,8 @@ One row per criterion; the disposition is the weakest of its checks.
 
 | Disposition | Criteria | Checks |
 |---|---|---|
-| automated | 82 | 268 |
-| deferred | 227 | 456 |
+| automated | 85 | 276 |
+| deferred | 224 | 452 |
 | manual | 23 | 27 |
 | unmeasurable | 0 | 0 |
 | external | 0 | 0 |
@@ -693,7 +693,7 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-56-10 | deferred | identity add | `AC-P4-56-10` deferred, plan p4-56b — `identity_add::ac_p4_56_10`<br>`AC-P4-56-10-card` deferred, plan p4-56b — `app/src/renderer/firstrun/IdentityCard.test.tsx::AC-P4-56-10`<br>`AC-P4-56-10-drawer` deferred, plan p4-56b — `app/src/renderer/settings/groupsData.test.tsx::AC-P4-56-10` |
 | P4-56-11 | deferred | one case fold | `AC-P4-56-11` deferred, plan p4-56b — `identity_add::ac_p4_56_11_preview_and_apply_move_the_same_projects_for_a_non_ascii_capital`<br>`AC-P4-56-11-card` deferred, plan p4-56b — `app/src/renderer/firstrun/IdentityCard.test.tsx::AC-P4-56-11` |
 | P4-56-12 | deferred | hidden projects move with the set | `AC-P4-56-12` deferred, plan p4-56b — `identity_add::ac_p4_56_12_a_hidden_project_moves_with_the_set`<br>`AC-P4-56-12-refusals` deferred, plan p4-56b — `identity_add::ac_p4_56_12`<br>`AC-P4-56-12-field` deferred, plan p4-56b — `app/src/renderer/settings/identityAddress.test.ts::AC-P4-56-12` |
-| P4-56-13 | deferred | the exclusion gate audit | `AC-P4-56-13` deferred, plan p4-56a — `exclusion_audit::ac_p4_56_13` |
+| P4-56-13 | automated | the exclusion gate audit | `AC-P4-56-13` automated, runs now — `exclusion_audit::ac_p4_56_13_the_gate_audit_drives_every_row_against_one_covered_copy` |
 | P4-56-14 | deferred | add during a job | `AC-P4-56-14` deferred, plan p4-56a — `exclusion_interleave::ac_p4_56_14` |
 | P4-56-15 | deferred | mid-walk | `AC-P4-56-15` deferred, plan p4-56a — `exclusion_interleave::ac_p4_56_15` |
 | P4-56-16 | deferred | a fully excluded project leaves | `AC-P4-56-16` deferred, plan p4-56a — `exclusion_outcomes::ac_p4_56_16`<br>`AC-P4-56-16-page` deferred, plan p4-56a — `app/src/renderer/project/excludedPage.test.tsx::AC-P4-56-16` |
@@ -703,9 +703,9 @@ One row per criterion; the disposition is the weakest of its checks.
 | P4-56-20 | deferred | exclusion refusals | `AC-P4-56-20` deferred, plan p4-56a — `exclusion_commands::ac_p4_56_20` |
 | P4-56-21 | deferred | preview equals apply | `AC-P4-56-21` deferred, plan p4-56a — `exclusion_commands::ac_p4_56_21` |
 | P4-56-22 | deferred | exclusions round-trip | `AC-P4-56-22` deferred, plan p4-56a — `exclusion_roundtrip::ac_p4_56_22` |
-| P4-56-23 | deferred | one visibility predicate | `AC-P4-56-23` deferred, plan p4-56a — `visibility_fragment::ac_p4_56_23`<br>`AC-P4-56-23-renderer` deferred, plan p4-56a — `app/test/visibilityReaders.test.ts::AC-P4-56-23` |
+| P4-56-23 | automated | one visibility predicate | `AC-P4-56-23` automated, runs now — `visibility_fragment::ac_p4_56_23_every_is_hidden_read_in_core_is_the_fragment_or_classified`<br>`AC-P4-56-23-bare` automated, runs now — `visibility_fragment::ac_p4_56_23_a_fully_excluded_project_leaves_the_bare_query_and_every_count`<br>`AC-P4-56-23-renderer` automated, runs now — `AC-P4-56-23: every renderer reader of isHidden/isExcluded is isOnShelf or classified`<br>`AC-P4-56-23-evaluate` automated, runs now — `evaluateQuery AC-P4-56-23: a fully excluded row leaves the bare query and is:excluded alone brings it back`<br>`AC-P4-56-23-counts` automated, runs now — `shelfCounts AC-P4-56-23: never counts a fully excluded row in the total` |
 | P4-56-24 | deferred | the purge classification | `AC-P4-56-24` deferred, plan p4-56a — `exclusion_purge::ac_p4_56_24` |
-| P4-56-25 | deferred | exclusions reach the WSL worker | `AC-P4-56-25` deferred, plan p4-56a — `exclusion_wsl::ac_p4_56_25` |
+| P4-56-25 | automated | exclusions reach the WSL worker | `AC-P4-56-25` automated, runs now — `exclusion_wsl::ac_p4_56_25_the_request_carries_the_names_and_this_distros_path_bytes`<br>`AC-P4-56-25-walk` automated, runs now — `exclusion_wsl::ac_p4_56_25_the_workers_walk_skips_a_user_name_and_a_path_entry` |
 | P4-56-26 | deferred | group 3 is real | `AC-P4-56-26` deferred, plan p4-56a — `app/src/renderer/settings/groupsExclusions.test.tsx::AC-P4-56-26` |
 
 ## Why a check is not automated, or is automated over less than it looks

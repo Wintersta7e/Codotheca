@@ -17829,10 +17829,10 @@
       "checks": [
         {
           "id": "AC-P4-56-13",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-56a",
-          "test": "exclusion_audit::ac_p4_56_13",
+          "test": "exclusion_audit::ac_p4_56_13_the_gate_audit_drives_every_row_against_one_covered_copy",
           "assert": "GA1: every row of the gate's entry-point table, driven against a covered location through the real routes with a spawn-recording git backend and an open-recording filesystem probe, records zero spawns and zero opens and answers as its row states; the count of entry points exercised is printed and the test fails below the table's count, and so at zero.",
           "scanning": true
         }
@@ -18009,19 +18009,43 @@
       "checks": [
         {
           "id": "AC-P4-56-23",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-56a",
-          "test": "visibility_fragment::ac_p4_56_23",
+          "test": "visibility_fragment::ac_p4_56_23_every_is_hidden_read_in_core_is_the_fragment_or_classified",
           "assert": "The core is_hidden classification test prints its count of classified sites and fails on an unclassified one."
         },
         {
+          "id": "AC-P4-56-23-bare",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "visibility_fragment::ac_p4_56_23_a_fully_excluded_project_leaves_the_bare_query_and_every_count",
+          "assert": "A fully excluded project leaves the bare projects.list and every count; is:excluded alone returns it, and an offline allowed copy stays its primary."
+        },
+        {
           "id": "AC-P4-56-23-renderer",
-          "status": "deferred",
+          "status": "automated",
           "runner": "vitest",
           "owner": "p4-56a",
-          "test": "app/test/visibilityReaders.test.ts::AC-P4-56-23",
+          "test": "AC-P4-56-23: every renderer reader of isHidden/isExcluded is isOnShelf or classified",
           "assert": "The renderer reader test prints its count of classified readers and fails on an unclassified one."
+        },
+        {
+          "id": "AC-P4-56-23-evaluate",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-56a",
+          "test": "evaluateQuery AC-P4-56-23: a fully excluded row leaves the bare query and is:excluded alone brings it back",
+          "assert": "The renderer evaluator drops a fully excluded row from the bare query and is:excluded alone brings it back."
+        },
+        {
+          "id": "AC-P4-56-23-counts",
+          "status": "automated",
+          "runner": "vitest",
+          "owner": "p4-56a",
+          "test": "shelfCounts AC-P4-56-23: never counts a fully excluded row in the total",
+          "assert": "The shelf total never counts a fully excluded row."
         }
       ]
     },
@@ -18049,11 +18073,19 @@
       "checks": [
         {
           "id": "AC-P4-56-25",
-          "status": "deferred",
+          "status": "automated",
           "runner": "cargo",
           "owner": "p4-56a",
-          "test": "exclusion_wsl::ac_p4_56_25",
-          "assert": "The production request builder's skip_extra carries the user names and the distro's path entries as bytes, and the worker's list skips both."
+          "test": "exclusion_wsl::ac_p4_56_25_the_request_carries_the_names_and_this_distros_path_bytes",
+          "assert": "The production request builder's skip_extra carries the user names and the distro's path entries as bytes."
+        },
+        {
+          "id": "AC-P4-56-25-walk",
+          "status": "automated",
+          "runner": "cargo",
+          "owner": "p4-56a",
+          "test": "exclusion_wsl::ac_p4_56_25_the_workers_walk_skips_a_user_name_and_a_path_entry",
+          "assert": "The worker's walk skips a directory a user name entry covers and one a path entry covers."
         }
       ]
     },
