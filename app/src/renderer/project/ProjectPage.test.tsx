@@ -280,6 +280,21 @@ describe('opening at the top', () => {
     rerender(page(7, deps));
     expect(document.documentElement.scrollTop).toBe(300);
   });
+
+  // jsdom never scrolls on focus, so the option is what can be asserted here; in a real layout a
+  // plain `focus()` on a root taller than the window scrolls the document down to it.
+  it('takes focus on mount without scrolling the document', async () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      render(page(7, depsFor(detailFixture())));
+      const root = await screen.findByTestId('cp-page');
+      expect(document.activeElement).toBe(root);
+      const onRoot = focus.mock.calls.filter((_, i) => focus.mock.contexts[i] === root);
+      expect(onRoot).toEqual([[{ preventScroll: true }]]);
+    } finally {
+      focus.mockRestore();
+    }
+  });
 });
 
 describe('the mounted body', () => {

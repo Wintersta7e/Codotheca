@@ -153,8 +153,10 @@ export function ProjectPageView({
     if (redirectedTo !== null) onOpenProject(redirectedTo);
   }, [redirectedTo, onOpenProject]);
 
+  // The page owns its scroll position (the reset below); a root taller than the window would
+  // otherwise be scrolled to by its own focus.
   useEffect(() => {
-    rootRef.current?.focus();
+    rootRef.current?.focus({ preventScroll: true });
   }, []);
 
   // A held location id belongs to one project's set. Following a merge, or opening a second
