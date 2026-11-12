@@ -2,6 +2,9 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LocationRef, SceneHash } from '../../generated/protocol';
 import cardCss from '../styles/card.css?raw';
+import motionCss from '../styles/motion.css?raw';
+import projectPageCss from '../styles/projectPage.css?raw';
+import transitionCss from '../styles/transition.css?raw';
 import { HeroFrame, type HeroRow } from './HeroFrame';
 import { bandsFor } from './geometry';
 
@@ -183,4 +186,50 @@ describe('the address arrives from art.url, because that request is the demand',
     expect(art?.getAttribute('src')).not.toContain('/aa/');
     expect(art?.getAttribute('alt')).toBe('');
   });
+});
+
+/**
+ * The page entry's tube-catch flicker, resolved on the element `HeroFrame` really mounts, under
+ * the four stylesheets in `main.tsx`'s order. It lives inside the plate as the prototype draws it
+ * (`Codotheca v7 Shelf.dc.html:1169`), so it is inside the card subtree the `off` blanket reaches.
+ */
+describe('the tube catches once on entry, and only at `full`', () => {
+  function mountAt(tier: 'full' | 'auto' | 'reduced' | 'off'): HTMLElement {
+    for (const text of [cardCss, projectPageCss, transitionCss, motionCss]) {
+      expect(text.length, 'a stylesheet arrived empty').toBeGreaterThan(500);
+    }
+    const style = document.createElement('style');
+    style.textContent = [cardCss, projectPageCss, transitionCss, motionCss].join('\n');
+    document.head.append(style);
+    document.documentElement.setAttribute('data-effects-tier', tier);
+    const container = draw();
+    const tube = container.querySelector('.cdt-plate > .cp-tube-catch');
+    if (!(tube instanceof HTMLElement)) throw new Error('no tube-catch inside the plate');
+    return tube;
+  }
+
+  afterEach(() => {
+    document.head.innerHTML = '';
+    document.documentElement.removeAttribute('data-effects-tier');
+  });
+
+  it('mounts in the plate, out of the accessibility tree, lit in the project’s jewel', () => {
+    const tube = mountAt('full');
+    expect(tube.getAttribute('aria-hidden')).toBe('true');
+    expect(tube.style.getPropertyValue('--cdt-beam-tint')).not.toBe('');
+  });
+
+  for (const tier of ['full', 'auto'] as const) {
+    it(`flickers at ${tier}`, () => {
+      expect(getComputedStyle(mountAt(tier)).animation).toMatch(/^cp-tube-catch\b/u);
+    });
+  }
+
+  for (const tier of ['reduced', 'off'] as const) {
+    it(`does not flicker at ${tier}, and is not visible at rest`, () => {
+      const tube = getComputedStyle(mountAt(tier));
+      expect(tube.animation).not.toContain('cp-tube-catch');
+      expect(tube.opacity).toBe('0');
+    });
+  }
 });

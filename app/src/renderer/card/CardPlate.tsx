@@ -46,6 +46,11 @@ export interface CardPlateProps {
    * page*.
    */
   readonly surge?: ReactNode;
+  /**
+   * §8.5.1's page-entry light, mounted after the surge and before the sheen — the prototype's
+   * order. Only the opened hero hands one over; it plays once with the page's entry.
+   */
+  readonly entry?: ReactNode;
   /** The five bands. */
   readonly children: ReactNode;
 }
@@ -56,6 +61,7 @@ export function CardPlate(props: CardPlateProps): ReactElement {
     <div className="cdt-plate">
       {props.art}
       {props.surge}
+      {props.entry}
       <span
         className="cdt-sheen"
         aria-hidden="true"

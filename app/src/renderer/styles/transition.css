@@ -1,5 +1,5 @@
 /*
- * §8.5.1's shelf⇄project gesture. Ten keyframes, transcribed from the design handoff's prototype
+ * §8.5.1's shelf⇄project gesture. Eleven keyframes, transcribed from the design handoff's prototype
  * (`Codotheca v7 Shelf.dc.html:32-43`) rather than from its prose, because inside the handoff the
  * prototype is the authority.
  *
@@ -99,6 +99,23 @@
 
   100% {
     opacity: 0;
+  }
+}
+
+@keyframes beamTick {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+
+  40% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
   }
 }
 
@@ -224,10 +241,16 @@
  * on screen and contracts while the page is. A beam owned by either view would be unmounted
  * halfway through its own animation.
  */
-.cdt-beam-stage {
-  /* Derived from the jewel rather than carried beside it: one colour owner for one light. */
+/*
+ * Derived from the jewel rather than carried beside it: one colour owner for one light. The
+ * page's tube-catch (`projectPage.css`) is the same light caught in the hero, so it reads it here.
+ */
+.cdt-beam-stage,
+.cp-tube-catch {
   --cdt-beam-soft: color-mix(in srgb, var(--cdt-beam-tint) 42%, transparent);
+}
 
+.cdt-beam-stage {
   position: fixed;
   inset: 0;
   z-index: 40;
@@ -266,6 +289,25 @@
 
 [data-effects-tier='full'] .cdt-beam-stage[data-gesture='opening'] .cdt-beam-flare {
   animation: beamFlare 580ms 180ms ease-out both;
+}
+
+/*
+ * The measurement ticks racing along the opening beam (`.dc.html:1073`). Invisible at rest, so
+ * the closing gesture, which the prototype draws without them, paints none.
+ */
+.cdt-beam-tick {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  height: 1px;
+  opacity: 0;
+  transform-origin: left;
+  background: repeating-linear-gradient(90deg, var(--beam-tick) 0 2px, transparent 2px 16px);
+}
+
+[data-effects-tier='full'] .cdt-beam-stage[data-gesture='opening'] .cdt-beam-tick {
+  animation: beamTick 500ms 300ms cubic-bezier(0.3, 0.8, 0.2, 1) both;
 }
 
 [data-effects-tier='full'] .cdt-beam-stage[data-gesture='closing'] .cdt-beam-line {

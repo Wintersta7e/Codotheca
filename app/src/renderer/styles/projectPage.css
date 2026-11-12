@@ -367,14 +367,74 @@
 
 /* --- entry --------------------------------------------------------------------------- */
 
+/*
+ * The prototype's `crtOn` (`Codotheca v7 Shelf.dc.html:28`): the raster opens from the beam's
+ * line at four times its brightness, overshoots its height once and settles. It rests at
+ * `transform: none` and `filter: none` rather than the prototype's `brightness(1)`, which paints
+ * the same pixels — any other resting value would leave the held `both` frame making `.cp-page`
+ * the containing block for every fixed-position descendant.
+ */
 @keyframes cp-crt-on {
-  from {
+  0% {
     opacity: 0;
-    transform: scaleY(0.02);
+    transform: scaleY(0.004) scaleX(0.9);
+    filter: brightness(4);
   }
-  to {
+  18% {
     opacity: 1;
-    transform: scaleY(1);
+    transform: scaleY(0.02) scaleX(1);
+    filter: brightness(3);
+  }
+  34% {
+    transform: scaleY(0.5) scaleX(1);
+    filter: brightness(1.9);
+  }
+  52% {
+    transform: scaleY(1.04) scaleX(0.995);
+    filter: brightness(1.4);
+  }
+  68% {
+    transform: scaleY(0.99) scaleX(1);
+    filter: brightness(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/*
+ * The tube catching behind the unfold (`.dc.html:29`, `:1169`): a stutter of the project's own
+ * light inside the hero plate, held on each step rather than faded between them.
+ */
+@keyframes cp-tube-catch {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.4;
+  }
+  20% {
+    opacity: 0.08;
+  }
+  34% {
+    opacity: 0.75;
+  }
+  44% {
+    opacity: 0.2;
+  }
+  58% {
+    opacity: 0.95;
+  }
+  72% {
+    opacity: 0.4;
+  }
+  86% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }
 
@@ -415,6 +475,21 @@
   animation: cp-slide-rail 400ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
 }
 /*
+ * At rest the layer is invisible, so every tier below `full` paints nothing of it; its tint is
+ * the beam's, derived in `transition.css` so the light has one colour owner.
+ */
+.cp-tube-catch {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at 50% 50%, var(--cdt-beam-soft), transparent 70%);
+}
+[data-effects-tier='full'] .cp-tube-catch,
+[data-effects-tier='auto'] .cp-tube-catch {
+  animation: cp-tube-catch 700ms steps(1, end) 100ms both;
+}
+/*
  * The cascade's own delay is set inline, per block, from the one place that computes it: it is
  * derived from §8.5.1's 80 ms step rather than written out, and a step count is not a duration
  * the motion vocabulary should have to carry six spellings of.
@@ -432,7 +507,8 @@
   [data-effects-tier='auto'] .cp-page,
   [data-effects-tier='auto'] .cp-col-left,
   [data-effects-tier='auto'] .cp-rise,
-  [data-effects-tier='auto'] .cp-opensin-menu {
+  [data-effects-tier='auto'] .cp-opensin-menu,
+  [data-effects-tier='auto'] .cp-tube-catch {
     animation: none;
   }
 }

@@ -45,6 +45,8 @@ export const TOKENS = {
   dust: '#8e97a0',
   // §8.5.5's lane baseline. An achromatic alpha, so it is not on the ladder and carries no ratio.
   'baseline-hairline': 'rgb(255 255 255 / 0.05)',
+  // §8.5.1's beam ticks. Achromatic light like the hairline above, so it carries no ratio either.
+  'beam-tick': 'rgb(255 255 255 / 0.8)',
   'tier-gold': '#e8c268',
   'tier-brass': '#a8763f',
   'tier-steel': '#5c7c85',

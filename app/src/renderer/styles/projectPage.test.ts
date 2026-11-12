@@ -99,12 +99,73 @@ describe('the entry runs at full and at nothing else', () => {
 });
 
 /**
+ * The unfold's envelope, read off the parsed `@keyframes` and compared as numbers — the format
+ * hook rewrites `.004` as `0.004`, so the source text is not what this asserts. The figures are
+ * the prototype's (`Codotheca v7 Shelf.dc.html:28`): the tube lights at four times its brightness
+ * and settles, and the raster overshoots its height once before it rests.
+ */
+describe('the page unfolds from a line, bright, and overshoots once', () => {
+  interface Stop {
+    readonly at: number;
+    readonly scaleY: number;
+    readonly brightness: number;
+  }
+
+  /** `none` is the identity, so it reads as 1 on both axes the envelope moves. */
+  const factor = (value: string, fn: string): number => {
+    if (value === '' || value === 'none') return 1;
+    const match = new RegExp(`${fn}\\(\\s*([0-9.]+)`, 'u').exec(value);
+    if (match?.[1] === undefined) throw new Error(`${fn} missing from "${value}"`);
+    return Number(match[1]);
+  };
+
+  function stops(): Stop[] {
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.append(style);
+    const sheet = required(style.sheet, 'parsed stylesheet');
+    // Duck-typed on `name`: the DOM under test does not expose `CSSKeyframesRule` as a global.
+    const rule = [...sheet.cssRules].find(
+      (r) => (r as unknown as { name?: string }).name === 'cp-crt-on',
+    ) as unknown as { cssRules: ArrayLike<CSSRule> } | undefined;
+    if (rule === undefined) throw new Error('no @keyframes cp-crt-on');
+    return Array.from(rule.cssRules, (r) => {
+      const frame = r as unknown as { keyText: string; style: CSSStyleDeclaration };
+      const key = frame.keyText.trim();
+      const transform = frame.style.getPropertyValue('transform').trim();
+      return {
+        at: key === 'from' ? 0 : key === 'to' ? 100 : Number.parseFloat(key),
+        scaleY: factor(transform, 'scaleY'),
+        brightness: factor(frame.style.getPropertyValue('filter').trim(), 'brightness'),
+      };
+    });
+  }
+
+  it('carries the prototype’s six stops, height and brightness at each', () => {
+    const frames = stops();
+    expect(frames.map((f) => f.at)).toEqual([0, 18, 34, 52, 68, 100]);
+    expect(frames.map((f) => f.scaleY)).toEqual([0.004, 0.02, 0.5, 1.04, 0.99, 1]);
+    expect(frames.map((f) => f.brightness)).toEqual([4, 3, 1.9, 1.4, 1.1, 1]);
+  });
+
+  it('dims monotonically from 4 to rest, and passes full height exactly once', () => {
+    const frames = stops();
+    for (let i = 1; i < frames.length; i += 1) {
+      expect(required(frames[i], 'frame').brightness).toBeLessThan(
+        required(frames[i - 1], 'frame').brightness,
+      );
+    }
+    expect(frames.filter((f) => f.scaleY > 1)).toHaveLength(1);
+  });
+});
+
+/**
  * jsdom does not evaluate `prefers-reduced-motion`, so the withdrawal at `auto` is asserted
  * structurally through the CSSOM rather than by resolving a style — a substring match on the
  * source would also match this comment.
  */
 describe('the `auto` opt-in is withdrawn under a reduced-motion preference', () => {
-  it('carries a media rule that stops all four animations', () => {
+  it('carries a media rule that stops all five animations', () => {
     const style = document.createElement('style');
     style.textContent = css;
     document.head.append(style);
@@ -118,7 +179,13 @@ describe('the `auto` opt-in is withdrawn under a reduced-motion preference', () 
     const inner = [...reduce.cssRules].filter((r): r is CSSStyleRule => r instanceof CSSStyleRule);
     expect(inner.length).toBeGreaterThan(0);
     const covered = inner.flatMap((r) => r.selectorText.split(',').map((s) => s.trim()));
-    for (const selector of ['.cp-page', '.cp-col-left', '.cp-rise', '.cp-opensin-menu']) {
+    for (const selector of [
+      '.cp-page',
+      '.cp-col-left',
+      '.cp-rise',
+      '.cp-opensin-menu',
+      '.cp-tube-catch',
+    ]) {
       expect(covered.some((s) => s.endsWith(selector))).toBe(true);
     }
     for (const r of inner) expect(r.style.getPropertyValue('animation')).toBe('none');

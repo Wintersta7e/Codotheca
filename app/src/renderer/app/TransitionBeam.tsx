@@ -43,6 +43,7 @@ export function TransitionBeam({ phase, rows }: TransitionBeamProps): ReactEleme
     <div className="cdt-beam-stage" data-gesture={active.kind} style={style} aria-hidden="true">
       <div className="cdt-beam-flare" />
       <div className="cdt-beam-line" />
+      <div className="cdt-beam-tick" />
     </div>
   );
 }

@@ -73,6 +73,8 @@ export interface CardProps {
   readonly decay?: ReactNode;
   /** [p3] §34.1's surge, passed straight through to the plate. Grid tiles pass none. */
   readonly surge?: ReactNode;
+  /** §8.5.1's page-entry light, passed straight through to the plate. Grid tiles pass none. */
+  readonly entry?: ReactNode;
   readonly bands: CardBands;
   readonly halo: CardHalo;
   readonly hovered: boolean;
@@ -179,6 +181,7 @@ export function Card(props: CardProps): ReactElement {
           art={props.art}
           decay={props.decay}
           surge={props.surge}
+          entry={props.entry}
         >
           {/* Band 1 — furniture only. */}
           {bands.hazard ? (

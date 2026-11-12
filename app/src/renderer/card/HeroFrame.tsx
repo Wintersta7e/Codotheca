@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import type { ProjectRow, SceneHash } from '../../generated/protocol';
 import { appearanceFor, fadeFor, languageCode, seedOf } from '../art/appearance';
 import { renditionFor, useCardBitmap } from '../art/useCardBitmap';
@@ -123,6 +123,15 @@ export function HeroFrame(props: HeroFrameProps): ReactElement {
       selected={false}
       decay={props.decay?.(bitmap.decodedSceneHash)}
       surge={props.surge?.(bitmap.decodedSceneHash)}
+      // §8.5.1's tube catching behind the page's unfold, in this project's jewel — the beam's
+      // light, which `TransitionBeam` tints from the same `appearance.jewel`.
+      entry={
+        <span
+          className="cp-tube-catch"
+          aria-hidden="true"
+          style={{ '--cdt-beam-tint': appearance.jewel } as CSSProperties}
+        />
+      }
       art={
         bitmap.src === null ? null : (
           <img
