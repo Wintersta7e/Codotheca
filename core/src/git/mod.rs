@@ -19,6 +19,7 @@ mod inventory;
 mod invocation;
 mod lazy_fetch;
 mod observe;
+mod ownership;
 mod reach;
 pub(crate) mod refstate;
 mod repo;
@@ -52,11 +53,14 @@ pub use invocation::{
 };
 pub use lazy_fetch::{LazyFetch, LAZY_FETCH_PROBE_DIR_NAME};
 pub use observe::{busy_marker, defer_while_locked, observe_stable, Backoff, Observation};
+pub use ownership::{establish_ownership, establish_ownership_exec};
 pub use refstate::{
     divergence, local_ref_names, observation_fingerprint, read_push_record, read_ref_state,
     ref_fingerprint, Divergence, InterruptedOp, ObservationFingerprint, PushObservation,
     PushRecord, RefFingerprint, RefState, UpstreamRef, PUSH_REFLOG_MESSAGE,
 };
+#[cfg(feature = "testkit")]
+pub use repo::translate_wsl_pointers_for_tests;
 pub use repo::{resolve_gitdir_pointer, wsl_drive_path, GitDirSelect, RepoHandle, StoreKey};
 pub use slots::{GitSlots, JobClass, SlotGuard};
 pub use status::{

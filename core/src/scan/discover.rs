@@ -160,24 +160,6 @@ impl<'a> ProbeCtx<'a> {
         self.git.repo_facts(repo, &self.job()).ok()
     }
 
-    /// Whether this user owns a translated repository, asked the way git asks it — by
-    /// discovery, which a translated handle's explicit `--git-dir` would skip, and with it the
-    /// only check between a foreign-owned repository's config (a `filter.<x>.clean`) and a read.
-    ///
-    /// One discovery probe from inside the git dir and one from inside the common dir (whose
-    /// config a read obeys), each under `base_args`' neutralisation and nothing else. Any refusal
-    /// or error, `safe.bareRepository` included, is "not owned": fail closed. Run once per folder
-    /// per scan and never cached, because ownership can change between scans.
-    ///
-    /// **Residual gap:** git's discovery path also checks the worktree directory's and the
-    /// `.git` file's owner; these probes check neither.
-    fn owns(&self, repo: &RepoHandle) -> bool {
-        [&repo.git_dir, &repo.common_dir].into_iter().all(|dir| {
-            let inside = RepoHandle::bare(dir, self.store.clone(), self.store_class);
-            self.facts(&inside).is_some()
-        })
-    }
-
     /// §4.4's gitlink OIDs for one superproject. An unreadable index yields an empty map, so the
     /// edge is written with `gitlink_oid` absent — never zero and never a placeholder.
     pub(crate) fn gitlinks(
@@ -258,34 +240,28 @@ fn classify_dot_git_file(
     let (pointer, _) = resolve_gitdir_pointer(dir, &pointer);
 
     let probed = match RepoHandle::resolve(dir, probe.store.clone(), probe.store_class) {
+        // A WSL-spelled pointer is classified from what it names, and git runs on it nowhere in
+        // the walk: the hand-off establishes ownership in the resolution that reads it
+        // (`git::establish_ownership`) and reports the folder once if it cannot.
         Ok(repo) if repo.git_dir_select == GitDirSelect::Translated => {
-            if !probe.owns(&repo) {
-                sink(WalkEvent::Problem(ScanProblem {
-                    kind: ScanProblemKind::UntrustedRepo,
-                    path_display: path_display(dir),
-                    detail: "git could not confirm that you own the repository this `.git` \
-                             file points to"
-                        .to_owned(),
-                }));
-                return None;
-            }
-            probe.facts(&repo.ownership_established())
+            let linked = repo.is_linked_worktree();
+            Some((repo.git_dir, repo.common_dir, linked))
         }
-        Ok(repo) => probe.facts(&repo),
+        Ok(repo) => probe.facts(&repo).map(|facts| {
+            let linked = facts.is_linked_worktree();
+            (facts.git_dir, facts.common_dir, linked)
+        }),
         Err(_) => None,
     };
 
     // A failed probe is not itself a problem: the candidate goes on to the hand-off, which
     // reports it once, with git's own error, if it cannot be indexed — and not at all if it can.
     // Reporting it here as well counted one folder twice in §11.1's header.
-    let (git_dir, common_dir, linked) = if let Some(facts) = probed {
-        let linked = facts.is_linked_worktree();
-        (facts.git_dir, facts.common_dir, linked)
-    } else {
+    let (git_dir, common_dir, linked) = probed.unwrap_or_else(|| {
         let (git_dir, common_dir) = fallback_from_pointer(&pointer);
         let linked = git_dir != common_dir;
         (git_dir, common_dir, linked)
-    };
+    });
 
     let kind = if linked {
         RepoKind::LinkedWorktree

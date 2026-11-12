@@ -21,7 +21,10 @@ use std::sync::Mutex;
 use crate::cancel::CancelToken;
 use crate::debt::store::{DebtStore as _, SqliteDebtStore};
 use crate::derive::LocationKind;
-use crate::git::{GitBackend, GitDirSelect, GitError, JobClass, JobContext, RepoHandle, StoreKey};
+use crate::git::{
+    establish_ownership, GitBackend, GitDirSelect, GitError, JobClass, JobContext, RepoHandle,
+    StoreKey,
+};
 use crate::identity::lineage::lineage_key;
 use crate::identity::probe::probe_identity;
 use crate::identity::store::{
@@ -113,10 +116,9 @@ pub fn hand_off_discovered(
     let kind = LocationKind::parse(&discovered.kind)
         .ok_or_else(|| HandoffError::UnknownKind(discovered.kind.clone()))?;
     let platform = platform_of(&discovered.kind);
-    let repo = repo_handle(discovered, ctx.store_class);
-
     // Everything git, with **nothing locked**. A test asserts the mutex is free throughout.
     let job = JobContext::new(JobClass::Background, ctx.cancel, Some(GIT_PROBE_TIMEOUT));
+    let repo = establish_ownership(ctx.git, repo_handle(discovered, ctx.store_class), &job)?;
     let probe = probe_identity(ctx.git, &repo, platform, &job)?;
 
     // `common_dir_bytes` and the probe's `common_dir_key` are **one value**: `upsert_location`
@@ -222,8 +224,7 @@ pub fn hand_off_discovered(
 /// `location.trusted_at` is a column of a row that does not exist yet.
 ///
 /// A WSL-spelled pointer is the exception that reads `.git` again, because the candidate does not
-/// record how it was selected. A translated candidate reaches here only once the walk's ownership
-/// probes have passed for it (`scan::discover`), which is what establishes its ownership.
+/// record how it was selected; its ownership is established by the caller, never assumed.
 fn repo_handle(discovered: &Discovered, store_class: StoreClass) -> RepoHandle {
     let store = StoreKey::new(discovered.store_key.clone());
     let candidate = &discovered.candidate;
@@ -240,7 +241,6 @@ fn repo_handle(discovered: &Discovered, store_class: StoreClass) -> RepoHandle {
         git_dir_select: GitDirSelect::Discover,
     }
     .follow_wsl_pointer()
-    .ownership_established()
 }
 
 /// `project.name` before anything has been derived: the directory's own name.

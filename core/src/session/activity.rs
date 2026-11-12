@@ -49,14 +49,13 @@ pub struct GitIgnoreCheck {
 }
 
 impl IgnoreCheck for GitIgnoreCheck {
+    /// A WSL-spelled pointer's ownership is established for each batch, in the resolution that
+    /// reads it: a session can outlive an owner change by hours.
     fn ignored(&self, repo: &RepoHandle, rel: &[PathBuf]) -> Result<Vec<bool>, GitError> {
-        crate::git::check_ignore(
-            &self.exec,
-            repo,
-            self.limits,
-            &crate::cancel::CancelToken::new(),
-            rel,
-        )
+        let cancel = crate::cancel::CancelToken::new();
+        let repo =
+            crate::git::establish_ownership_exec(&self.exec, repo.clone(), self.limits, &cancel)?;
+        crate::git::check_ignore(&self.exec, &repo, self.limits, &cancel, rel)
     }
 }
 

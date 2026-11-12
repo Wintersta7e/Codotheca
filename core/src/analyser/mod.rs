@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::cancel::CancelToken;
-use crate::git::{GitBackend, JobClass, JobContext, RepoHandle, StoreKey};
+use crate::git::{establish_ownership, GitBackend, JobClass, JobContext, RepoHandle, StoreKey};
 use crate::gitw::floor::meets_governed_floor;
 use crate::gitw::intent::GIT_INVOCATION_DEADLINE;
 use crate::mount::StoreClass;
@@ -132,13 +132,13 @@ pub fn reread_before_act(
         .snapshot
         .as_ref()
         .ok_or(ActRefusal::NotSnapshotted)?;
-    let repo = resolve(row).ok_or(ActRefusal::Unresolvable)?;
     let cancel = CancelToken::new();
     let ctx = JobContext::new(
         JobClass::Interactive,
         &cancel,
         Some(GIT_INVOCATION_DEADLINE),
     );
+    let repo = resolve(row, seams.git, &ctx).ok_or(ActRefusal::Unresolvable)?;
     match identify(seams.git, &repo, row.lineage_key.as_deref(), &ctx) {
         IdentityOutcome::Match => {}
         IdentityOutcome::Mismatch | IdentityOutcome::Shallow | IdentityOutcome::Unreadable => {
@@ -262,15 +262,20 @@ pub fn read_location_row(
     Ok(row)
 }
 
-/// The directory, re-resolved from disk (§24.7E) — never reconstructed from the row. A location
-/// row exists only for a folder whose ownership the scan that indexed it established.
+/// The directory, re-resolved from disk (§24.7E) — never reconstructed from the row.
+///
+/// A WSL-spelled pointer this user cannot be shown to own now does not resolve: the row says
+/// nothing about who owns it today.
 #[must_use]
-pub fn resolve(row: &LocationRow) -> Option<RepoHandle> {
-    let mut repo = RepoHandle::resolve(&row.path, row.store.clone(), StoreClass::Local)
+pub fn resolve(
+    row: &LocationRow,
+    git: &dyn GitBackend,
+    ctx: &JobContext<'_>,
+) -> Option<RepoHandle> {
+    let repo = RepoHandle::resolve(&row.path, row.store.clone(), StoreClass::Local)
         .ok()?
-        .ownership_established();
-    repo.trusted = row.trusted;
-    Some(repo)
+        .with_trust(row.trusted);
+    establish_ownership(git, repo, ctx).ok()
 }
 
 /// The analysis's clock: the total budget, and each read's deadline inside what remains of it.
@@ -331,7 +336,7 @@ pub fn analyse(
 
     // Step 1. A directory that does not resolve is one nothing can reason about: the shipped
     // `never_observed`, beside whatever the local gates say.
-    let Some(repo) = resolve(row) else {
+    let Some(repo) = resolve(row, git, &budget.ctx(&cancel)) else {
         local_gates(row, &mut found);
         found.push(UninstallBlocker::NeverObserved);
         return finish(Findings::of(found), row, seams, now);
@@ -465,7 +470,8 @@ fn analyse_repo(
     // `submodule_unsafe` iff one is `blocked`; one that is only `unknown` passes its
     // unknown-class blockers up, so an offline submodule remote leaves the parent `unknown`.
     let mut listed: Vec<NestedRepository> = Vec::new();
-    for candidate in nested::candidates(repo, &tree.gitlinks, &tree.in_tree) {
+    let nested_ctx = budget.ctx(&cancel);
+    for candidate in nested::candidates(repo, &tree.gitlinks, &tree.in_tree, git, &nested_ctx) {
         let entries = analyse_nested(&candidate, act, seams, budget, depth + 1);
         if let Some(child) = entries.first() {
             match child.disposition {

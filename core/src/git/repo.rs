@@ -175,12 +175,12 @@ impl RepoHandle {
         }
     }
 
-    /// Record that this user's ownership of a translated repository is established: the walk's
-    /// ownership probes passed for it this scan (`scan::discover`), or the handle is built for a
-    /// location row, which only a hand-off of a folder that passed them writes. A handle that is
-    /// not translated is unchanged.
+    /// Record that this user's ownership of a translated repository is established. Reachable
+    /// only from `git::ownership`, whose probes ran in the same resolution against exactly this
+    /// handle's directories; no row, candidate or earlier scan stands in for them. A handle that
+    /// is not translated is unchanged.
     #[must_use]
-    pub const fn ownership_established(mut self) -> Self {
+    pub(super) const fn ownership_established(mut self) -> Self {
         if matches!(self.git_dir_select, GitDirSelect::Translated) {
             self.git_dir_select = GitDirSelect::Established;
         }
@@ -194,7 +194,7 @@ impl RepoHandle {
     /// host (an in-distro path) is left alone.
     #[must_use]
     pub fn follow_wsl_pointer(self) -> Self {
-        self.follow_pointer(cfg!(windows))
+        self.follow_pointer(translates_here())
     }
 
     fn follow_pointer(mut self, translate: bool) -> Self {
@@ -208,7 +208,8 @@ impl RepoHandle {
             return self;
         };
         if let Some(target) = gitdir_line(&text) {
-            let (git_dir, translated) = resolve_pointer(&self.work_dir, Path::new(target), true);
+            let (git_dir, translated) =
+                resolve_pointer(&self.work_dir, Path::new(target), translate);
             if translated {
                 self.git_dir = git_dir;
                 self.git_dir_select = GitDirSelect::Translated;
@@ -255,12 +256,12 @@ pub fn wsl_drive_path(pointer: &str) -> Option<PathBuf> {
 /// classification and [`RepoHandle::resolve`] both call it.
 #[must_use]
 pub fn resolve_gitdir_pointer(dir: &Path, pointer: &Path) -> (PathBuf, bool) {
-    resolve_pointer(dir, pointer, cfg!(windows))
+    resolve_pointer(dir, pointer, translates_here())
 }
 
 fn resolve_pointer(dir: &Path, pointer: &Path, translate: bool) -> (PathBuf, bool) {
     if translate {
-        if let Some(translated) = pointer.to_str().and_then(wsl_drive_path) {
+        if let Some(translated) = pointer.to_str().and_then(host_drive_path) {
             return (translated, true);
         }
     }
@@ -269,6 +270,41 @@ fn resolve_pointer(dir: &Path, pointer: &Path, translate: bool) -> (PathBuf, boo
     } else {
         (dir.join(pointer), false)
     }
+}
+
+/// Whether this host translates a WSL-spelled pointer: Windows does, and — under `testkit`,
+/// once a test has asked ([`translate_wsl_pointers_for_tests`]) — so does any host.
+fn translates_here() -> bool {
+    #[cfg(feature = "testkit")]
+    if TESTKIT_TRANSLATES.load(std::sync::atomic::Ordering::Relaxed) {
+        return true;
+    }
+    cfg!(windows)
+}
+
+/// [`wsl_drive_path`] on Windows. Off Windows, only a test translates, and `/mnt/<d>/<rest>`
+/// becomes `/<rest>`: the drive is this host's root, so a real repository is reachable through
+/// the translated spelling and unreachable through the WSL one, as on Windows.
+fn host_drive_path(pointer: &str) -> Option<PathBuf> {
+    let translated = wsl_drive_path(pointer)?;
+    if cfg!(windows) {
+        return Some(translated);
+    }
+    let (_, rest) = pointer.strip_prefix("/mnt/")?.split_once('/')?;
+    Some(Path::new("/").join(rest))
+}
+
+#[cfg(feature = "testkit")]
+static TESTKIT_TRANSLATES: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Translate WSL-spelled pointers on this host for the rest of the process.
+///
+/// So the sites that read one run on a Linux gate too ([`host_drive_path`]). Process-wide: a test
+/// binary that calls it translates in every test it runs.
+#[cfg(feature = "testkit")]
+pub fn translate_wsl_pointers_for_tests() {
+    TESTKIT_TRANSLATES.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[cfg(test)]
@@ -315,13 +351,7 @@ mod tests {
     fn a_pointer_is_translated_only_where_translation_applies() {
         let dir = Path::new("/w/lane-a");
         let wsl = Path::new("/mnt/d/work/main-repo/.git/worktrees/lane-a");
-        assert_eq!(
-            resolve_pointer(dir, wsl, true),
-            (
-                PathBuf::from("D:/work/main-repo/.git/worktrees/lane-a"),
-                true
-            )
-        );
+        assert_eq!(resolve_pointer(dir, wsl, true), (translated_lane(), true));
         assert!(!resolve_pointer(dir, wsl, false).1);
         let relative = Path::new("../main-repo/.git/worktrees/lane-a");
         assert_eq!(
@@ -333,6 +363,16 @@ mod tests {
             cfg!(windows),
             "only Windows applies the translation"
         );
+    }
+
+    /// What `/mnt/d/work/main-repo/.git/worktrees/lane-a` translates to on this host: the drive
+    /// on Windows, the root under a test's switch elsewhere ([`host_drive_path`]).
+    fn translated_lane() -> PathBuf {
+        PathBuf::from(if cfg!(windows) {
+            "D:/work/main-repo/.git/worktrees/lane-a"
+        } else {
+            "/work/main-repo/.git/worktrees/lane-a"
+        })
     }
 
     fn handle(select: GitDirSelect, trusted: bool) -> RepoHandle {
@@ -391,10 +431,7 @@ mod tests {
         };
         let followed = recorded.clone().follow_pointer(true);
         assert_eq!(followed.git_dir_select, GitDirSelect::Translated);
-        assert_eq!(
-            followed.git_dir,
-            PathBuf::from("D:/work/main-repo/.git/worktrees/lane-a")
-        );
+        assert_eq!(followed.git_dir, translated_lane());
         let untranslated = recorded.follow_pointer(false);
         assert_eq!(untranslated.git_dir_select, GitDirSelect::Discover);
     }

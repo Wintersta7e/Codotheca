@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use codotheca_core::git::{GitSlots, SystemGit};
+use codotheca_core::git::{GitExec, GitSlots, SystemGit};
 use codotheca_core::index::Index;
 use codotheca_core::mount::{MountFacts, StoreClass};
 use codotheca_core::paths::path_key;
@@ -60,10 +60,18 @@ pub(crate) struct Scanned {
     pub(crate) indexed: usize,
     /// `(path_display, repo_kind)` of every `location` row.
     pub(crate) locations: Vec<(String, String)>,
+    /// The index the scan wrote, for what reads its rows next.
+    pub(crate) index: Arc<Mutex<Index>>,
+    _dir: tempfile::TempDir,
 }
 
 /// One full scan of `root`, with `repo`'s git underneath.
 pub(crate) fn scan(repo: &TestRepo, root: &Path) -> Scanned {
+    scan_with(repo.exec(), root)
+}
+
+/// One full scan of `root`, running git through `exec`.
+pub(crate) fn scan_with(exec: GitExec, root: &Path) -> Scanned {
     let dir = tempfile::tempdir().unwrap();
     let index = Arc::new(Mutex::new(Index::open(dir.path()).unwrap()));
     index
@@ -99,7 +107,7 @@ pub(crate) fn scan(repo: &TestRepo, root: &Path) -> Scanned {
         store: store.clone(),
         index: Arc::clone(&index),
         git: Arc::new(SystemGit::new(
-            Arc::new(repo.exec()),
+            Arc::new(exec),
             Arc::new(GitSlots::new(4)),
             clock.clone(),
         )),
@@ -146,5 +154,7 @@ pub(crate) fn scan(repo: &TestRepo, root: &Path) -> Scanned {
         problems,
         indexed,
         locations,
+        index,
+        _dir: dir,
     }
 }

@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::analyser::worktree::holds_git;
-use crate::git::RepoHandle;
+use crate::git::{establish_ownership, GitBackend, JobContext, RepoHandle};
 use crate::protocol::NestedKind;
 
 /// The deepest nested repository the analyser reads; one deeper is `nesting_too_deep` (§45.6).
@@ -30,16 +30,21 @@ pub struct Candidate {
 
 /// Row 9's candidates in `parent`: its checked-out `gitlinks`, its `.git/modules/` git dirs that
 /// no checked-out submodule names, and its `in_tree` directories holding `.git`.
+///
+/// A nested repository whose WSL-spelled pointer this user cannot be shown to own does not
+/// resolve.
 #[must_use]
 pub fn candidates(
     parent: &RepoHandle,
     gitlinks: &[PathBuf],
     in_tree: &[PathBuf],
+    git: &dyn GitBackend,
+    ctx: &JobContext<'_>,
 ) -> Vec<Candidate> {
     let resolve = |dir: &Path| {
         RepoHandle::resolve(dir, parent.store.clone(), parent.store_class)
             .ok()
-            .map(|repo| repo.with_trust(parent.trusted))
+            .and_then(|repo| establish_ownership(git, repo.with_trust(parent.trusted), ctx).ok())
     };
     let mut out = Vec::new();
     for rel in gitlinks {

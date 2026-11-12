@@ -71,19 +71,20 @@ pub fn handle_location_relocate(
     // renderer string, and nothing here writes to it.
     let path = crate::paths::path_from_bytes(&a.path_bytes.0);
     let facts = ctx.mount.resolve(&path).map_err(internal)?;
-    let repo = crate::git::RepoHandle::resolve(
-        &path,
-        crate::git::StoreKey::new(facts.store_key),
-        facts.class,
-    )
-    .map_err(|e| git_failure(&e))?;
-
     let cancel = crate::cancel::CancelToken::new();
     let jc = crate::git::JobContext::new(
         crate::git::JobClass::Interactive,
         &cancel,
         Some(Duration::from_secs(RELOCATE_PROBE_SECS)),
     );
+    // A WSL-spelled pointer at the new path is read only once this user is shown to own it.
+    let repo = crate::git::RepoHandle::resolve(
+        &path,
+        crate::git::StoreKey::new(facts.store_key),
+        facts.class,
+    )
+    .and_then(|repo| crate::git::establish_ownership(ctx.git, repo, &jc))
+    .map_err(|e| git_failure(&e))?;
     let is_shallow = ctx
         .git
         .repo_facts(&repo, &jc)

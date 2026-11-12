@@ -520,8 +520,8 @@ impl LocationPlace {
                 .common_dir
                 .clone()
                 .unwrap_or_else(|| self.work_dir.join(".git"));
-            // A WSL-spelled pointer is re-read from `.git`; a location row exists only for a
-            // folder whose ownership the scan that indexed it established.
+            // A WSL-spelled pointer is re-read from `.git`; `run_one` establishes its ownership
+            // before any git runs on it, because the row says nothing about who owns it now.
             crate::git::RepoHandle {
                 work_dir: self.work_dir.clone(),
                 git_dir: git_dir.clone(),
@@ -532,7 +532,6 @@ impl LocationPlace {
                 git_dir_select: crate::git::GitDirSelect::Discover,
             }
             .follow_wsl_pointer()
-            .ownership_established()
         };
         handle.with_trust(self.trusted)
     }
@@ -575,13 +574,19 @@ pub fn run_one(
     announce: &std::cell::RefCell<Vec<crate::protocol::ProjectHealthDelta>>,
 ) -> Result<JobOutcome, JobError> {
     let place = read_place(index, job.location_id)?;
-    let repo = place.handle(job);
     let ctx = crate::git::JobContext::new(
         class_of(job.kind, job.priority),
         &deps.cancel,
         job.kind.invocation_deadline(),
     );
     let git = deps.git.as_ref();
+    // J5 reads no repository, so it probes nothing. Any other job establishes ownership of a
+    // WSL-spelled pointer here, or fails as `Untrusted` — a hard failure, never retried.
+    let repo = if job.kind == JobKind::J5Art {
+        place.handle(job)
+    } else {
+        crate::git::establish_ownership(git, place.handle(job), &ctx)?
+    };
     let now = deps.clock.now_unix();
 
     match job.kind {

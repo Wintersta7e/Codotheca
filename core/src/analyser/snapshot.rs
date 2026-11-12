@@ -231,7 +231,7 @@ fn take(
     if depth >= MAX_NESTING {
         return Ok(());
     }
-    for candidate in nested::candidates(repo, &gitlinks, &in_tree) {
+    for candidate in nested::candidates(repo, &gitlinks, &in_tree, git, ctx) {
         let rel = candidate.rel.to_string_lossy().replace('\\', "/");
         let child_key = if key.is_empty() {
             rel
