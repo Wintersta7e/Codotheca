@@ -59,9 +59,10 @@ describe('§25.1 the tab list is per project, not per phase', () => {
         'ACTIVITY',
         'HEALTH',
       ]);
-      // **Four at most, never five**, which is what §8.5's "three at most" becomes.
+      // **Four at most, never five**, which is what §8.5's "three at most" becomes. HEALTH sits
+      // before REMOTE, the handoff's order, whichever subset is mounted.
       const four = tabsFor(detail(FACTS, state));
-      expect(four.map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY', 'REMOTE', 'HEALTH']);
+      expect(four.map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY', 'HEALTH', 'REMOTE']);
       expect(four).toHaveLength(4);
     }
     expect(tabsFor(detail(null)).map((t) => t.label)).toEqual(['OVERVIEW', 'ACTIVITY']);
@@ -71,11 +72,11 @@ describe('§25.1 the tab list is per project, not per phase', () => {
   it('cycles the four-tab ring forwards and backwards', () => {
     const tabs = tabsFor(detail(FACTS, 'live'));
     expect(nextTab(tabs, 'overview', 1)).toBe('activity');
-    expect(nextTab(tabs, 'activity', 1)).toBe('remote');
-    expect(nextTab(tabs, 'remote', 1)).toBe('health');
-    expect(nextTab(tabs, 'health', 1)).toBe('overview');
-    expect(nextTab(tabs, 'overview', -1)).toBe('health');
-    expect(nextTab(tabs, 'health', -1)).toBe('remote');
+    expect(nextTab(tabs, 'activity', 1)).toBe('health');
+    expect(nextTab(tabs, 'health', 1)).toBe('remote');
+    expect(nextTab(tabs, 'remote', 1)).toBe('overview');
+    expect(nextTab(tabs, 'overview', -1)).toBe('remote');
+    expect(nextTab(tabs, 'remote', -1)).toBe('health');
   });
 
   it('falls back to overview when a held HEALTH tab stops being mounted', () => {

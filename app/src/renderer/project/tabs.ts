@@ -50,11 +50,14 @@ export const BASE_PROJECT_TABS: readonly ProjectTabEntry[] = [OVERVIEW, ACTIVITY
  * [p3] §30.7's predicate is `detail.health.state`, read and never re-derived: `HealthState` says
  * which reading this page is looking at, and a second derivation of *absent* or *suppressed* here
  * is the re-applied freeze §30.2 rules against.
+ *
+ * The order is the design handoff's, `HEALTH` before `REMOTE`; each predicate only decides whether
+ * its tab is in the list, never where.
  */
 export function tabsFor(detail: ProjectDetail): readonly ProjectTabEntry[] {
   const tabs = [...BASE_PROJECT_TABS];
-  if (detail.remote !== null) tabs.push(REMOTE);
   if (detail.health.state === 'frozen' || detail.health.state === 'live') tabs.push(HEALTH);
+  if (detail.remote !== null) tabs.push(REMOTE);
   return tabs;
 }
 
