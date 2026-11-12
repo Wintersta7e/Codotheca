@@ -85,6 +85,13 @@ const CASES: &[Case] = &[
                  project_id = NULL WHERE landed_at IS NULL",
         tables: &["badge_award"],
     },
+    // A present entry keeps the display and the date it was added; the restore's row for the
+    // same key is never written over it.
+    Case {
+        section: "scan_exclusions",
+        differ: "UPDATE scan_exclusion SET entry = 'present', created_at = created_at + 1000",
+        tables: &["scan_exclusion"],
+    },
 ];
 
 fn section(name: &str) -> &'static SectionSpec {

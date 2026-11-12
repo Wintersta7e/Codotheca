@@ -1290,11 +1290,14 @@ test('the four totals agree with the phase-2 delta table', () => {
    * its count come from one read.
    *
    * [p4-gaps] §54.8 moves it by **+1**: `RecheckResult`, `projects.recheck`'s answer.
+   *
+   * [p4-gaps] §56.11 moves it by **+2** here: `ExclusionId` and `ExclusionKind`, the stored
+   * list's id and its two kinds. Its other three types land with the commands that answer them.
    */
   assert.equal(
     types,
-    230,
-    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9 + §40's 5 + §43's 6 + §11.1's 1 + RevealLanguage 1 + §54's 1; found ${types}`,
+    232,
+    `types: 160 + §28's 8 + §30's 9 + §32's 5 + §33's 5 + §31's 4 + §34's 3 + §45's 4 + §46.7's 1 − §48.13's 2 + §46.15's 6 + §38.3a's 1 + §38.5's 3 + §39's 9 + §40's 5 + §43's 6 + §11.1's 1 + RevealLanguage 1 + §54's 1 + §56's 2; found ${types}`,
   );
 });
 

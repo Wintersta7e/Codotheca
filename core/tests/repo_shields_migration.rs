@@ -100,7 +100,8 @@ fn ac_p4_55_12_0025_adds_four_columns_and_rebuilds_nothing() {
         );
     }
 
-    apply_all(&mut conn, MIGRATIONS).unwrap();
+    // Through `0025` only: a later file steps the version past the one this test asserts.
+    apply_all(&mut conn, &MIGRATIONS[..=BEFORE]).unwrap();
 
     for (table, column) in ADDED {
         let names = columns(&conn, table);

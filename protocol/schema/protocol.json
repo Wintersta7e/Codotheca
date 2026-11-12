@@ -28,6 +28,8 @@
     "SessionId": { "kind": "id", "repr": "i64" },
     "ScanRunId": { "kind": "id", "repr": "i64" },
     "ScanProblemId": { "kind": "id", "repr": "i64" },
+    "ExclusionId": { "kind": "id", "repr": "i64" },
+    "ExclusionKind": { "kind": "enum", "variants": ["name", "path"] },
     "Empty": { "kind": "struct", "fields": {} },
     "LocationRef": {
       "kind": "struct",

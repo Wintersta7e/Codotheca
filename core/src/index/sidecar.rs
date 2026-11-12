@@ -367,6 +367,17 @@ pub const SECTIONS: &[SectionSpec] = &[
         export: crate::badges::store::export_section,
         restore: crate::badges::store::restore_section,
     },
+    // §56.9: the user's exclusions, in the rebuild transaction before any scan, so no scan of a
+    // rebuilt index reads what the user excluded. `match_key` is recomputed, never carried.
+    SectionSpec {
+        name: "scan_exclusions",
+        owner: "§56",
+        scope: Scope::Global,
+        rule: RestoreRule::WriteOnce,
+        preserves_ids: &[],
+        export: crate::exclusion::store::export_section,
+        restore: crate::exclusion::store::restore_section,
+    },
 ];
 
 /// Something the schema holds that a rebuild could lose: a whole table, or one column of one.
@@ -553,6 +564,11 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     (
         Entry::Table("account_org"),
         Classification::Section("accounts"),
+    ),
+    // §56.9: the user's exclusion entries are consent, which no scan can re-derive.
+    (
+        Entry::Table("scan_exclusion"),
+        Classification::Section("scan_exclusions"),
     ),
     // §46.14: a parcel travels with its refs, a removal record with its log.
     (Entry::Table("parcel"), Classification::Section("parcels")),
@@ -804,6 +820,12 @@ pub const CLASSIFIED: &[(Entry, Classification)] = &[
     (
         Entry::Column("location", "trusted_at"),
         Classification::Section("location_trust"),
+    ),
+    (
+        Entry::Column("location", "excluded"),
+        derivable(
+            "recomputed from the restored exclusion list (exclusion::store::apply_coverage)",
+        ),
     ),
 ];
 

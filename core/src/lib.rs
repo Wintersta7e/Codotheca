@@ -27,6 +27,7 @@ pub mod corpus;
 pub mod debt;
 pub mod derive;
 pub mod detail;
+pub mod exclusion;
 pub mod firstrun;
 pub mod freshness;
 pub mod git;

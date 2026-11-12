@@ -210,13 +210,21 @@ pub const MIGRATIONS: &[Migration] = &[
         // is copied or rebuilt.
         rebuilds_a_table: false,
     },
+    Migration {
+        version: 26,
+        name: "scan_exclusion",
+        sql: include_str!("../../migrations/0026_scan_exclusion.sql"),
+        // §56.11: one new table and one `ADD COLUMN` on `location`; nothing is copied or
+        // rebuilt.
+        rebuilds_a_table: false,
+    },
 ];
 
 /// The latest schema version this build understands.
 ///
 /// This stays a literal for the Rust 1.80 minimum version. The integration test keeps it in
 /// sync with the last entry in [`MIGRATIONS`].
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 25;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 26;
 
 /// The version `PRAGMA user_version` holds; a value that does not fit a `u32` reads as `0`.
 ///

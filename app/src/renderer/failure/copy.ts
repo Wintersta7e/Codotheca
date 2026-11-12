@@ -174,6 +174,7 @@ export const SIDECAR_COUNT_NOUNS: Readonly<Record<string, readonly [string, stri
   ledger_frozen_git: ['XP event', 'XP events'],
   rhythm_week: ['settled week of rhythm', 'settled weeks of rhythm'],
   badge_award: ['badge', 'badges'],
+  scan_exclusions: ['scan exclusion', 'scan exclusions'],
 };
 
 /**

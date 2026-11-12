@@ -63,6 +63,7 @@ pub const SECTION_FIXTURES: &[(&str, SectionFixture)] = &[
     ("ledger_frozen_git", frozen_git_rows),
     ("rhythm_week", settled_weeks),
     ("badge_award", awarded_badges),
+    ("scan_exclusions", user_exclusions),
 ];
 
 /// A project with one present copy, for a fixture that rules on a project or trusts a copy.
@@ -284,6 +285,40 @@ fn awarded_badges(tx: &Transaction<'_>, ids: &FixtureIds) -> Result<(), IndexErr
         },
     ];
     restore_rows(tx, &awards)?;
+    Ok(())
+}
+
+/// A typed name, a native path and an in-distro path holding a byte no UTF-8 string carries.
+/// None of them covers a fixture copy, so the library's coverage is unchanged by them.
+fn user_exclusions(tx: &Transaction<'_>, _ids: &FixtureIds) -> Result<(), IndexError> {
+    use crate::exclusion::store::{insert_restored, RestoredExclusion};
+    use crate::protocol::{Bytes, ExclusionKind};
+    let rows = [
+        RestoredExclusion {
+            kind: ExclusionKind::Name,
+            entry: "fixture-excluded".to_owned(),
+            path_bytes: None,
+            distro: String::new(),
+            created_at: 100,
+        },
+        RestoredExclusion {
+            kind: ExclusionKind::Path,
+            entry: "/nowhere/excluded".to_owned(),
+            path_bytes: Some(Bytes(b"/nowhere/excluded".to_vec())),
+            distro: String::new(),
+            created_at: 200,
+        },
+        RestoredExclusion {
+            kind: ExclusionKind::Path,
+            entry: "/home/u/caf\u{fffd}".to_owned(),
+            path_bytes: Some(Bytes(b"/home/u/caf\xff".to_vec())),
+            distro: "fixture-distro".to_owned(),
+            created_at: 300,
+        },
+    ];
+    for row in &rows {
+        insert_restored(tx, row)?;
+    }
     Ok(())
 }
 
