@@ -143,14 +143,14 @@ describe('§8.1: the era header in the design’s terse form', () => {
   });
 });
 
-const drawChip = (): void => {
+const drawChip = (active = false): void => {
   render(
     <AttentionChip
       count={4}
       label="UNPUSHED"
       subLine="WORK ONLY ON THIS DISK"
       accent="var(--sig)"
-      active={false}
+      active={active}
       onActivate={vi.fn()}
     />,
   );
@@ -221,5 +221,34 @@ describe('§8.0b: the attention chip is a row with an accent number', () => {
         node.remove();
       });
     }
+  });
+
+  // §8.0b: "On --surface-4, hover or active, the sub-line renders --text-2"; §8.8 gives every chip
+  // the active ground, the accent outline and a --text-0 label. No pointer is involved: the
+  // pressed state alone must carry it, and it must not lift.
+  it('takes --surface-4 and lifts the sub-line to --text-2 while pressed, without the pointer', () => {
+    mountShelfCss();
+    drawChip(true);
+    expect(document.querySelector('.cdt-attention-chip')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    const chip = styleOf('.cdt-attention-chip');
+    expect(chip.backgroundColor).toBe('var(--surface-4)');
+    expect(chip.transform).toBe('none');
+    expect(chip.boxShadow.match(/var\(--cdt-chip-accent\)/g)).toHaveLength(2);
+    expect(chip.boxShadow).not.toContain('var(--line-2)');
+    expect(styleOf('.cdt-attention-label').color).toBe('var(--text-0)');
+    expect(styleOf('.cdt-attention-sub').color).toBe('var(--text-2)');
+  });
+
+  it('keeps the resting ground and sub-line while not pressed', () => {
+    mountShelfCss();
+    drawChip(false);
+    expect(document.querySelector('.cdt-attention-chip')?.getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    expect(styleOf('.cdt-attention-chip').backgroundColor).toBe('var(--surface-2)');
+    expect(styleOf('.cdt-attention-label').color).toBe('var(--text-1)');
+    expect(styleOf('.cdt-attention-sub').color).toBe('var(--text-3)');
   });
 });

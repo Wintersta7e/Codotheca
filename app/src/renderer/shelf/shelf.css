@@ -549,6 +549,24 @@
   transform: translateY(-1px);
 }
 
+/* Active — the query the chip names is the query on screen: the hover ground and accent outline
+   without the lift, the label at --text-0 (section 8.8, for every chip). On --surface-4 the
+   sub-line takes --text-2, as on hover (section 8.0b). */
+.cdt-attention-chip[aria-pressed='true'] {
+  background-color: var(--surface-4);
+  box-shadow:
+    inset 0 0 0 1px var(--cdt-chip-accent),
+    inset 3px 0 0 0 var(--cdt-chip-accent);
+}
+
+.cdt-attention-chip[aria-pressed='true'] .cdt-attention-label {
+  color: var(--text-0);
+}
+
+.cdt-attention-chip[aria-pressed='true'] .cdt-attention-sub {
+  color: var(--text-2);
+}
+
 /* A saved query whose grammar has moved on. Outline only: the ground and the type are unchanged,
    because the chip still counts and is still activatable — what is broken is the query behind it,
    not the control. AttentionRow applies this class and shelf.css did not declare it, so the state
